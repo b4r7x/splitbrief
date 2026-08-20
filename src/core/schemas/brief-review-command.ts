@@ -1,49 +1,254 @@
 import { z } from 'zod';
 import type { ApprovalReviewResult } from '../approval/types.js';
-import { TaskIdSchema } from './task.js';
+import {
+  BriefRecoveryProjectionV1Schema,
+  BriefRecoveryStatusSchema,
+  EvidenceRefSchema,
+  RecoveryResultV1Schema,
+  type BriefRecoveryAction,
+  type BriefRecoveryProjectionV1,
+  type RecoveryResult,
+  type RecoveryResultV1,
+} from './brief-recovery.js';
 
+const MAX_ID = 256;
+const MAX_HASH = 512;
+const MAX_BRIEF_BYTES = 1_024 * 1_024;
+const MAX_COMMENT_BYTES = 4_096;
+const MAX_INPUTS = 4_096;
+
+const id = z.string().trim().min(1).max(MAX_ID);
+const hash = z.string().trim().min(1).max(MAX_HASH);
+const revision = z.number().int().nonnegative();
+
+export const BRIEF_REVIEW_COMMAND_VERSION = 1 as const;
+
+/**
+ * These are the command discriminants accepted by the cross-client review rail.
+ * Recovery status/action values remain owned by brief-recovery.ts; comment and import are
+ * transport intents and therefore are not added to that persisted action enum.
+ */
 export const BRIEF_REVIEW_COMMAND_ACTIONS = [
-  'approve',
+  'retry',
+  'edit',
   'reject',
-  'revise',
-  'save_draft',
-  'external_edit_applied',
+  'approve',
+  'comment',
+  'import',
+  'resolve-unresolved',
   'status',
 ] as const;
 
 export type BriefReviewCommandAction = (typeof BRIEF_REVIEW_COMMAND_ACTIONS)[number];
+export const BriefReviewActionIdSchema = z.enum(BRIEF_REVIEW_COMMAND_ACTIONS);
 
 export const BRIEF_REVIEW_PROMPT_KINDS = ['spec', 'plan', 'briefs', 'artifact'] as const;
-
 export const BriefReviewPromptKindSchema = z.enum(BRIEF_REVIEW_PROMPT_KINDS);
-
 export type BriefReviewPromptKind = z.infer<typeof BriefReviewPromptKindSchema>;
 
-const BriefReviewCommentSchema = z
+export const BriefReviewStatusSchema = BriefRecoveryStatusSchema;
+
+export const BriefReviewProjectionSchema = BriefRecoveryProjectionV1Schema;
+
+const boundedBrief = z
+  .string()
+  .min(1)
+  .refine((value) => Buffer.byteLength(value, 'utf8') <= MAX_BRIEF_BYTES, {
+    message: 'Brief payload exceeds the maximum byte length',
+  });
+
+const boundedComment = z
   .string()
   .trim()
   .min(1)
-  .max(256 * 1024);
+  .refine((value) => Buffer.byteLength(value, 'utf8') <= MAX_COMMENT_BYTES, {
+    message: 'comment exceeds the maximum byte length',
+  });
 
-export const BriefReviewCommandSchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('approve') }),
-  z.object({ action: z.literal('reject') }),
-  z.object({
-    action: z.literal('revise'),
-    comment: BriefReviewCommentSchema,
-    taskIds: z.array(TaskIdSchema).min(1).optional(),
-  }),
-  z.object({ action: z.literal('save_draft') }),
-  z.object({ action: z.literal('external_edit_applied') }),
-  z.object({ action: z.literal('status') }),
+const uniqueIds = (minimum = 0) =>
+  z
+    .array(id)
+    .min(minimum)
+    .max(MAX_INPUTS)
+    .readonly()
+    .superRefine((values, ctx) => {
+      if (new Set(values).size !== values.length) {
+        ctx.addIssue({ code: 'custom', message: 'input IDs must be unique' });
+      }
+    });
+
+const commandEnvelopeShape = {
+  version: z.literal(BRIEF_REVIEW_COMMAND_VERSION),
+  sessionId: id,
+  epochId: id,
+  operationId: id,
+  expectedBriefRevision: revision,
+  expectedReportRevision: revision.nullable(),
+  intentHash: hash,
+  base: EvidenceRefSchema,
+  baseBrief: EvidenceRefSchema.optional(),
+  baseReport: EvidenceRefSchema.nullable().optional(),
+} as const;
+
+const commandWith = <T extends z.ZodRawShape>(shape: T) =>
+  z.object({ ...commandEnvelopeShape, ...shape }).strict();
+
+const resolutionSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('rebind'),
+      acknowledgeRemoteDuplicationRisk: z.literal(true),
+    })
+    .strict(),
+  z.object({ kind: z.literal('abandon') }).strict(),
 ]);
 
+const retryCommandSchema = commandWith({
+  action: z.literal('retry'),
+  diagnosticFingerprint: hash,
+  frozenInputIds: uniqueIds(),
+}).strict();
+
+const editCommandSchema = commandWith({
+  action: z.literal('edit'),
+  briefText: boundedBrief,
+  newInputId: id,
+}).strict();
+
+const rejectCommandSchema = commandWith({
+  action: z.literal('reject'),
+  userIntentId: id,
+}).strict();
+
+const approveCommandSchema = commandWith({ action: z.literal('approve') }).strict();
+
+const commentCommandSchema = commandWith({
+  action: z.literal('comment'),
+  comment: boundedComment,
+}).strict();
+
+const importCommandSchema = commandWith({ action: z.literal('import') }).strict();
+
+const resolveUnresolvedCommandSchema = commandWith({
+  action: z.literal('resolve-unresolved'),
+  heldInputIds: uniqueIds(1),
+  resolution: resolutionSchema,
+}).strict();
+
+const statusCommandSchema = z
+  .object({
+    version: z.literal(BRIEF_REVIEW_COMMAND_VERSION),
+    sessionId: id,
+    epochId: id,
+    action: z.literal('status'),
+  })
+  .strict();
+
+/** The one versioned command contract shared by CLI, IPC, RPC, and TUI adapters. */
+const briefReviewCommandUnion = z.discriminatedUnion('action', [
+  retryCommandSchema,
+  editCommandSchema,
+  rejectCommandSchema,
+  approveCommandSchema,
+  commentCommandSchema,
+  importCommandSchema,
+  resolveUnresolvedCommandSchema,
+  statusCommandSchema,
+]);
+
+export const BriefReviewCommandSchema = briefReviewCommandUnion.superRefine((command, ctx) => {
+  if (command.action === 'status') return;
+
+  if (command.base.revision !== command.expectedBriefRevision) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['expectedBriefRevision'],
+      message: 'expectedBriefRevision must match the base Brief revision',
+    });
+  }
+  if (
+    command.baseBrief !== undefined &&
+    command.baseBrief.revision !== command.expectedBriefRevision
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['baseBrief', 'revision'],
+      message: 'baseBrief revision must match expectedBriefRevision',
+    });
+  }
+  if (
+    command.baseReport !== undefined &&
+    (command.baseReport === null
+      ? command.expectedReportRevision !== null
+      : command.baseReport.revision !== command.expectedReportRevision)
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['baseReport'],
+      message: 'baseReport revision must match expectedReportRevision',
+    });
+  }
+});
+
 export type BriefReviewCommand = z.infer<typeof BriefReviewCommandSchema>;
+
+export const BriefReviewResultSchema = RecoveryResultV1Schema;
+export type { RecoveryResult, RecoveryResultV1 };
 
 export type BriefReviewCommandDisposition =
   | { kind: 'settles'; result: ApprovalReviewResult }
   | { kind: 'save-draft' }
   | { kind: 'status' };
+
+/**
+ * A command is current only against the projection that supplied its revisions. This check is
+ * deliberately separate from structural parsing: the schema cannot know which persisted head a
+ * client observed.
+ */
+export function isBriefReviewCommandCurrent(
+  command: BriefReviewCommand,
+  projection: BriefRecoveryProjectionV1,
+): boolean {
+  if (command.sessionId !== projection.sessionId || command.epochId !== projection.epochId) {
+    return false;
+  }
+  if (command.action === 'status') return true;
+  const briefRevision = projection.activeBrief?.revision ?? 0;
+  const reportRevision = projection.matchingReport?.report.revision ?? null;
+  const revisionsMatch =
+    command.expectedBriefRevision === briefRevision &&
+    command.expectedReportRevision === reportRevision;
+  if (!revisionsMatch || projection.activeBrief === null) return false;
+  if (
+    command.base.hash !== projection.activeBrief.hash ||
+    command.base.revision !== projection.activeBrief.revision ||
+    command.base.path !== projection.activeBrief.path
+  ) {
+    return false;
+  }
+  if (command.baseBrief !== undefined) {
+    if (
+      command.baseBrief.hash !== projection.activeBrief.hash ||
+      command.baseBrief.revision !== projection.activeBrief.revision ||
+      command.baseBrief.path !== projection.activeBrief.path
+    ) {
+      return false;
+    }
+  }
+  if (command.baseReport !== undefined) {
+    if (command.baseReport === null) return projection.matchingReport === null;
+    const report = projection.matchingReport?.report;
+    if (
+      report === undefined ||
+      command.baseReport.hash !== report.hash ||
+      command.baseReport.revision !== report.revision ||
+      command.baseReport.path !== report.path
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
 
 export function allowedBriefReviewCommandsForPrompt(
   promptKind: BriefReviewPromptKind,
@@ -54,9 +259,7 @@ export function allowedBriefReviewCommandsForPrompt(
 export function allowedSettlingBriefReviewCommandsForPrompt(
   promptKind: BriefReviewPromptKind,
 ): readonly BriefReviewCommandAction[] {
-  return allowedBriefReviewCommandsForPrompt(promptKind).filter((action) => {
-    return action !== 'save_draft' && action !== 'status';
-  });
+  return allowedBriefReviewCommandsForPrompt(promptKind).filter((action) => action !== 'status');
 }
 
 export function isBriefReviewCommandAllowedForPrompt(
@@ -83,20 +286,16 @@ export function briefReviewCommandDisposition(
       return { kind: 'settles', result: { approved: true } };
     case 'reject':
       return { kind: 'settles', result: { approved: false } };
-    case 'revise':
+    case 'edit':
+      return { kind: 'settles', result: { approved: false, action: 'edit' } };
+    case 'comment':
       return {
         kind: 'settles',
-        result: {
-          approved: false,
-          action: 'revise',
-          comment: command.comment,
-          ...(command.taskIds !== undefined && { taskIds: command.taskIds }),
-        },
+        result: { approved: false, action: 'revise', comment: command.comment },
       };
-    case 'external_edit_applied':
-      return { kind: 'settles', result: { approved: false, action: 'edit' } };
-    case 'save_draft':
-      return { kind: 'save-draft' };
+    case 'retry':
+    case 'import':
+    case 'resolve-unresolved':
     case 'status':
       return { kind: 'status' };
     default: {
@@ -105,3 +304,5 @@ export function briefReviewCommandDisposition(
     }
   }
 }
+
+export type { BriefRecoveryAction, BriefRecoveryProjectionV1 };

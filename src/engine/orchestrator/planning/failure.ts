@@ -3,7 +3,8 @@ import type { PlanningPhaseResult } from './types.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import { publishError } from '../events.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
-import { loadState } from '../../../core/state/persistence.js';
+import { loadStateForResume } from '../../../core/state/persistence.js';
+import type { ResumeLoadAuthority, StateAuthorityReceipt } from '../../../core/state/types.js';
 import { typedRunnerCallErrorMessage } from '../../implementers/pipeline/call-result.js';
 import {
   isAuthFailureDiagnostic,
@@ -19,6 +20,25 @@ import {
 import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
+import { workflowAuthority } from '../run/init.js';
+
+function loadPersistedRewindState(opts: {
+  projectDir: string;
+  sessionId: string;
+  authority: StateAuthorityReceipt | undefined;
+}): WorkflowState | null {
+  if (opts.authority === undefined) return null;
+  const authority: ResumeLoadAuthority = {
+    kind: 'fenced',
+    receipt: opts.authority,
+    promotedFromVersion: null,
+  };
+  const result = loadStateForResume({
+    ref: { projectDir: opts.projectDir, sessionId: opts.sessionId },
+    authority,
+  });
+  return result.kind === 'loaded' && result.state.rewindPending !== undefined ? result.state : null;
+}
 
 export function handlePlanningFailure(opts: {
   err: unknown;
@@ -51,21 +71,23 @@ export function handlePlanningFailure(opts: {
     publishError({ bus: wctx.bus, phase: state.phase, message });
   }
   if (isAbortError(err)) {
-    const persisted = loadState({ projectDir, sessionId });
-    if (persisted?.rewindPending !== undefined) {
+    const persisted = loadPersistedRewindState({
+      projectDir,
+      sessionId,
+      authority: workflowAuthority(wctx),
+    });
+    if (persisted !== null) {
       return {
+        disposition: 'terminal',
         state: persisted,
-        tasks: [],
-        cancelled: true,
-        failed: false,
+        outcome: 'cancelled',
       };
     }
   }
   const latest = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
   return {
+    disposition: 'terminal',
     state: transitionAndSave({ projectDir, sessionId }, latest, { type: 'CANCEL' }),
-    tasks: [],
-    cancelled: true,
-    failed: !isAbortError(err),
+    outcome: isAbortError(err) ? 'cancelled' : 'failed',
   };
 }

@@ -60,24 +60,20 @@ describe('language registry', () => {
       dir = mkdtempSync(join(tmpdir(), 'ts-grammar-'));
     });
 
-    it.each([
-      '.ts',
-      '.tsx',
-      '.js',
-      '.jsx',
-      '.mjs',
-      '.cjs',
-    ])('parseFile extracts the exported symbol from a %s file', async (ext) => {
-      const file = join(dir, `widget${ext}`);
-      writeFileSync(file, "import './dep.js';\nexport function widget() {}\n");
-      const node = await parseFile(file);
-      expect(node).not.toBeNull();
-      const widget = node?.symbols.find((s) => s.name === 'widget');
-      expect(widget?.exported).toBe(true);
-      expect(widget?.kind).toBe('function');
-      expect(node?.imports).toContain('./dep.js');
-      rmSync(file);
-    });
+    it.each(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'])(
+      'parseFile extracts the exported symbol from a %s file',
+      async (ext) => {
+        const file = join(dir, `widget${ext}`);
+        writeFileSync(file, "import './dep.js';\nexport function widget() {}\n");
+        const node = await parseFile(file);
+        expect(node).not.toBeNull();
+        const widget = node?.symbols.find((s) => s.name === 'widget');
+        expect(widget?.exported).toBe(true);
+        expect(widget?.kind).toBe('function');
+        expect(node?.imports).toContain('./dep.js');
+        rmSync(file);
+      },
+    );
   });
 
   it('.py returns Python config', () => {

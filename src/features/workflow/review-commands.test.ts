@@ -41,6 +41,21 @@ describe('REVIEW_HINT', () => {
 });
 
 describe('parseReviewCommand', () => {
+  it.each([
+    ['approve', { kind: 'brief-review-command', command: { action: 'approve' } }],
+    ['reject', { kind: 'brief-review-command', command: { action: 'reject' } }],
+    [
+      'comment explain the failure',
+      {
+        kind: 'brief-review-command',
+        command: { action: 'revise', comment: 'explain the failure' },
+      },
+    ],
+    ['edit-file', { kind: 'open-external-editor' }],
+  ] as const)('keeps the typed review routes canonical: %s', (text, expected) => {
+    expect(parseReviewCommand(text)).toEqual(expected);
+  });
+
   it('parses approve', () => {
     expect(parseReviewCommand('approve')).toEqual({
       kind: 'brief-review-command',
@@ -105,5 +120,12 @@ describe('parseReviewCommand', () => {
 
   it('returns null for unknown input', () => {
     expect(parseReviewCommand('unknown command here')).toBeNull();
+  });
+
+  it('refuses override, duplicate, and incomplete intents instead of inventing an action', () => {
+    expect(parseReviewCommand('approve again overrides')).toBeNull();
+    expect(parseReviewCommand('retry retry')).toBeNull();
+    expect(parseReviewCommand('comment')).toBeNull();
+    expect(parseReviewCommand('revise')).toBeNull();
   });
 });

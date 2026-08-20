@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createInitialState, transition } from './machine.js';
+import { WorkflowStateSchema } from '../schemas/workflow.js';
 import {
   getCompletedTaskIds,
   getEscalatedTaskIds,
@@ -7,6 +8,12 @@ import {
   getSkippedTaskIds,
 } from './selectors.js';
 import type { QueuedMessage, WorkflowState } from '../schemas/workflow.js';
+import type { BriefGenerationRef, TaskExecutionPermit } from '../schemas/brief-owner.js';
+import type {
+  NormalBriefRecoveryV1,
+  RecoveryReceipt,
+  StorageBlockedBriefRecoveryV1,
+} from '../schemas/brief-recovery.js';
 import { taskId } from '../schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
@@ -23,6 +30,221 @@ function makeQueuedMessage(overrides: Partial<QueuedMessage> = {}): QueuedMessag
   };
 }
 
+const BRIEF_HASH = 'a'.repeat(64);
+const REPORT_HASH = 'b'.repeat(64);
+
+function evidence(
+  path: string,
+  hash: string = BRIEF_HASH,
+): Readonly<{ revision: 1; hash: string; path: string }> {
+  return { revision: 1, hash, path };
+}
+
+type MatchingReport = NonNullable<NormalBriefRecoveryV1['matchingReport']>;
+
+function makeMatchingReport(overrides: Partial<MatchingReport> = {}): MatchingReport {
+  return {
+    briefHash: BRIEF_HASH,
+    report: evidence('brief-quality.json', REPORT_HASH),
+    ruleVersion: 'brief-quality-v1',
+    issues: [],
+    ...overrides,
+  };
+}
+
+function makeBriefRecovery(
+  status: NormalBriefRecoveryV1['status'] = 'ready',
+  overrides: Partial<NormalBriefRecoveryV1> = {},
+): NormalBriefRecoveryV1 {
+  const activeAttempt: RecoveryReceipt | null =
+    status === 'auto-repairing' || status === 'retrying' || status === 'unresolved'
+      ? status === 'unresolved'
+        ? {
+            epochId: 'epoch-1',
+            operationId: 'operation-1',
+            intentHash: BRIEF_HASH,
+            kind: 'manual-retry',
+            acceptedAt: '2026-01-01T00:00:00.000Z',
+            baseBrief: evidence('tasks.md'),
+            baseReport: evidence('brief-quality.json', REPORT_HASH),
+            frozenInputIds: [],
+            status: 'unresolved',
+            dispatchPossibility: 'possible',
+            requestId: 'request-1',
+            remoteObservation: 'unknown',
+            unresolvedAt: '2026-01-01T00:00:00.000Z',
+            reservation: {
+              accountingKey: {
+                sessionId: 'session-1',
+                epochId: 'epoch-1',
+                operationId: 'operation-1',
+                generation: 1,
+              },
+              amount: 0,
+              state: 'held',
+              usageApplied: false,
+              appliedUsage: null,
+              history: [
+                {
+                  state: 'held',
+                  at: '2026-01-01T00:00:00.000Z',
+                  reason: 'unresolved',
+                },
+              ],
+            },
+          }
+        : {
+            epochId: 'epoch-1',
+            operationId: 'operation-1',
+            intentHash: BRIEF_HASH,
+            kind: 'manual-retry',
+            acceptedAt: '2026-01-01T00:00:00.000Z',
+            baseBrief: evidence('tasks.md'),
+            baseReport: evidence('brief-quality.json', REPORT_HASH),
+            frozenInputIds: [],
+            status: 'accepted',
+            dispatchPossibility: 'none',
+            automaticAllowanceConsumed: true,
+            reservation: {
+              accountingKey: {
+                sessionId: 'session-1',
+                epochId: 'epoch-1',
+                operationId: 'operation-1',
+                generation: 1,
+              },
+              amount: 0,
+              state: 'reserved',
+              usageApplied: false,
+              appliedUsage: null,
+              history: [
+                {
+                  state: 'reserved',
+                  at: '2026-01-01T00:00:00.000Z',
+                  reason: 'accepted',
+                },
+              ],
+            },
+          }
+      : null;
+  return {
+    version: 1,
+    recoveryRevision: 1,
+    epochId: 'epoch-1',
+    origin: { mode: 'standard', entry: 'initial' },
+    continuation: {
+      version: 1,
+      kind: 'approval',
+      mode: 'standard',
+      entry: 'initial',
+    },
+    status,
+    activeBrief: evidence('tasks.md'),
+    matchingReport: makeMatchingReport(),
+    qualityPolicyVersion: 'brief-quality-v1',
+    automaticRepair: {
+      policy: 'existing-one-shot',
+      eligible: true,
+      consumed: true,
+      operationId: 'operation-1',
+    },
+    attempts: activeAttempt === null ? {} : { [activeAttempt.operationId]: activeAttempt },
+    activeOperationId: activeAttempt?.operationId ?? null,
+    inputs: [],
+    nextInputSequence: 1,
+    noProgress: { fingerprint: null, count: 0 },
+    evidenceHead: BRIEF_HASH,
+    outbox: [],
+    ...overrides,
+  };
+}
+
+const TEST_GENERATION: BriefGenerationRef = {
+  generationId: 'generation-1',
+  manifestDigest: 'manifest-1',
+  tasksDigest: 'tasks-1',
+  qualityDigest: 'quality-1',
+  programId: null,
+};
+
+function makeExecutionPermit(epochId: string): TaskExecutionPermit {
+  return {
+    version: 1,
+    epochId,
+    authorityRevision: 1,
+    generationId: TEST_GENERATION.generationId,
+    manifestDigest: TEST_GENERATION.manifestDigest,
+    tasksDigest: TEST_GENERATION.tasksDigest,
+    qualityDigest: TEST_GENERATION.qualityDigest,
+    approvalEvidence: evidence('brief-quality.json', REPORT_HASH),
+    issuedAt: '2026-01-01T00:00:00.000Z',
+  };
+}
+
+type OwnerReadyState = WorkflowState & {
+  authorityRevision: number;
+  generation: BriefGenerationRef;
+  permit: TaskExecutionPermit;
+  briefRecovery: NormalBriefRecoveryV1;
+};
+
+function makeOwnerReadyState(tasks: WorkflowState['tasks'] = []): OwnerReadyState {
+  const briefRecovery = makeBriefRecovery();
+  const permit = makeExecutionPermit(briefRecovery.epochId);
+  return {
+    ...createInitialState('feat'),
+    phase: 'reviewing-briefs',
+    tasks,
+    briefRecovery,
+    authorityRevision: 1,
+    generation: TEST_GENERATION,
+    permit,
+  };
+}
+
+function makeStorageBlockedRecovery(): StorageBlockedBriefRecoveryV1 {
+  return {
+    version: 1,
+    recoveryRevision: 1,
+    epochId: 'epoch-1',
+    origin: { mode: 'standard', entry: 'initial' },
+    continuation: {
+      version: 1,
+      kind: 'approval',
+      mode: 'standard',
+      entry: 'initial',
+    },
+    status: 'storage-blocked',
+    activeBrief: null,
+    storageEvidence: { code: 'brief_storage_invalid', artifactRef: 'tasks.md' },
+    evidenceHead: BRIEF_HASH,
+    outbox: [],
+  };
+}
+
+function expectBriefContractBlocked(run: () => unknown, reason: string): void {
+  let caught: unknown;
+  try {
+    run();
+  } catch (error) {
+    caught = error;
+  }
+  expect(caught).toMatchObject({
+    kind: 'brief_contract_blocked',
+    data: { reason },
+  });
+}
+
+function expectPersistedState(state: WorkflowState): void {
+  const persisted = WorkflowStateSchema.safeParse({
+    ...state,
+    stateVersion: 4,
+    stateRevision: state.stateRevision ?? 0,
+    stateFence: state.stateFence ?? { token: 0, ownerId: 'test-owner' },
+    briefRecovery: state.briefRecovery ?? null,
+  });
+  expect(persisted.success).toBe(true);
+}
+
 describe('createInitialState', () => {
   it('returns idle phase with feature set and empty tasks', () => {
     const state = createInitialState('feature');
@@ -31,7 +253,6 @@ describe('createInitialState', () => {
     expect(state.tasks).toEqual([]);
   });
 });
-
 describe('transition', () => {
   it('throws when an action is not valid for the current phase', () => {
     const state = createInitialState('feat');
@@ -41,14 +262,19 @@ describe('transition', () => {
     );
   });
 
-  it('START_QUICK -> implementing with tasks set', () => {
-    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
+  it('does not expose a legacy direct path into implementation', () => {
+    const tasks = [makeTask({ id: 'T001' })];
     const state = createInitialState('feat');
-    const next = transition(state, { type: 'START_QUICK', tasks });
-    expect(next.phase).toBe('implementing');
-    expect(next.tasks).toEqual(tasks);
-    expect(next.currentTaskIndex).toBe(0);
-    expect(next.attempt).toBe(0);
+    const legacyActions = [
+      { type: 'START_QUICK', tasks },
+      { type: 'START_INSTANT', tasks },
+    ] as const;
+
+    for (const action of legacyActions) {
+      expect(() => transition(state, action as never)).toThrow(
+        `Cannot apply ${action.type} while workflow is in idle.`,
+      );
+    }
   });
 
   it('REJECT_SPEC -> idle', () => {
@@ -358,9 +584,23 @@ describe('transition', () => {
     expect(s.phase).toBe('reviewing-plan');
     expect(s.tasks).toEqual(tasks);
 
-    s = transition(s, { type: 'BRIEFS_READY', tasks });
+    s = transition(s, {
+      type: 'BRIEF_ADMISSION_OPENED',
+      briefRecovery: makeBriefRecovery(),
+    });
+    const permit = makeExecutionPermit('epoch-1');
+    s = {
+      ...s,
+      authorityRevision: 1,
+      generation: TEST_GENERATION,
+      permit,
+    };
     expect(s.phase).toBe('reviewing-briefs');
-    s = transition(s, { type: 'APPROVE_BRIEFS' });
+    s = transition(s, {
+      type: 'BEGIN_IMPLEMENTATION',
+      generation: TEST_GENERATION,
+      permit,
+    });
     expect(s.phase).toBe('implementing');
     expect(s.currentTaskIndex).toBe(0);
 
@@ -558,35 +798,383 @@ describe('transition', () => {
     expect(next.phase).toBe('analyzing');
   });
 
-  it('ANALYZE_DONE -> implementing', () => {
+  it('does not leave analyzing through a legacy implementation transition', () => {
     const state: WorkflowState = { ...createInitialState('feat'), phase: 'analyzing' };
-    const next = transition(state, { type: 'ANALYZE_DONE' });
-    expect(next.phase).toBe('implementing');
+    expect(() => transition(state, { type: 'ANALYZE_DONE' } as never)).toThrow(
+      'Cannot apply ANALYZE_DONE while workflow is in analyzing.',
+    );
   });
 
-  it('BRIEFS_READY -> reviewing-briefs with tasks set', () => {
+  it('BEGIN_IMPLEMENTATION enters implementation with the exact persisted owner permit', () => {
     const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'reviewing-plan',
+    const state = {
+      ...makeOwnerReadyState(tasks),
       currentTaskIndex: 3,
       attempt: 2,
     };
-    const next = transition(state, { type: 'BRIEFS_READY', tasks });
-    expect(next.phase).toBe('reviewing-briefs');
+    const next = transition(state, {
+      type: 'BEGIN_IMPLEMENTATION',
+      generation: TEST_GENERATION,
+      permit: state.permit,
+    });
+    expect(next.phase).toBe('implementing');
     expect(next.tasks).toEqual(tasks);
     expect(next.currentTaskIndex).toBe(0);
     expect(next.attempt).toBe(0);
+    expect(next.generation).toEqual(TEST_GENERATION);
+    expect(next.permit).toEqual(state.permit);
+    expect(next.briefRecovery?.status).toBe('ready');
   });
 
-  it('APPROVE_BRIEFS -> implementing with index and attempt reset', () => {
-    const tasks = [makeTask({ id: 'T001' })];
+  it('keeps readiness-blocked out of implementation until the persisted recovery is ready', () => {
+    const initial: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'reviewing-briefs',
+      briefRecovery: makeBriefRecovery('ready'),
+    };
+    const blockedDecision = {
+      kind: 'blocked' as const,
+      fingerprint: 'c'.repeat(64),
+      briefHash: BRIEF_HASH,
+      reportHash: REPORT_HASH,
+      qualityPolicyVersion: 'brief-quality-v1',
+    };
+    const state = transition(initial, {
+      type: 'RECORD_BRIEF_READINESS',
+      decision: blockedDecision,
+    });
+    expect(state.briefRecovery).toMatchObject({
+      status: 'readiness-blocked',
+      readinessDecision: blockedDecision,
+    });
+    expectPersistedState(state);
+
+    for (const action of [
+      {
+        type: 'BEGIN_IMPLEMENTATION' as const,
+        generation: TEST_GENERATION,
+        permit: makeExecutionPermit('epoch-1'),
+      },
+    ]) {
+      let caught: unknown;
+      try {
+        transition(state, action);
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toMatchObject({
+        kind: 'brief_readiness_blocked',
+        data: { epochId: 'epoch-1' },
+      });
+    }
+
+    const overridden = transition(state, {
+      type: 'RECORD_BRIEF_READINESS',
+      decision: { ...blockedDecision, kind: 'override' },
+    });
+    expect(overridden.briefRecovery).toMatchObject({
+      status: 'ready',
+      readinessDecision: { ...blockedDecision, kind: 'override' },
+    });
+    expectPersistedState(overridden);
+    const permit = makeExecutionPermit('epoch-1');
+    const ownerReady = {
+      ...overridden,
+      authorityRevision: 1,
+      generation: TEST_GENERATION,
+      permit,
+    };
+    expect(
+      transition(ownerReady, {
+        type: 'BEGIN_IMPLEMENTATION',
+        generation: TEST_GENERATION,
+        permit,
+      }).phase,
+    ).toBe('implementing');
+  });
+
+  it.each(['passed', 'override'] as const)(
+    'rejects an unvalidated %s readiness decision',
+    (kind) => {
+      const state: WorkflowState = {
+        ...createInitialState('feat'),
+        phase: 'reviewing-briefs',
+        briefRecovery: makeBriefRecovery('readiness-blocked'),
+      };
+
+      expect(() =>
+        transition(state, {
+          type: 'RECORD_BRIEF_READINESS',
+          decision: {
+            kind,
+            fingerprint: 'c'.repeat(64),
+            briefHash: BRIEF_HASH,
+            reportHash: REPORT_HASH,
+            qualityPolicyVersion: 'brief-quality-v1',
+          },
+        }),
+      ).toThrow('readiness must be re-evaluated or explicitly overridden');
+    },
+  );
+
+  it('keeps warning-only quality issues non-blocking', () => {
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'reviewing-briefs',
-      tasks,
+      briefRecovery: makeBriefRecovery('ready', {
+        matchingReport: makeMatchingReport({
+          issues: [
+            {
+              code: 'readiness_hint',
+              severity: 'warning',
+              taskId: null,
+              message: 'A readiness hint is available.',
+            },
+          ],
+        }),
+      }),
     };
-    const next = transition(state, { type: 'APPROVE_BRIEFS' });
+
+    const ownerState = {
+      ...state,
+      authorityRevision: 1,
+      generation: TEST_GENERATION,
+      permit: makeExecutionPermit(state.briefRecovery?.epochId ?? 'missing'),
+    };
+    expect(
+      transition(ownerState, {
+        type: 'BEGIN_IMPLEMENTATION',
+        generation: TEST_GENERATION,
+        permit: ownerState.permit,
+      }).phase,
+    ).toBe('implementing');
+  });
+
+  it.each([
+    ['checking', makeBriefRecovery('checking'), 'not-ready'],
+    ['auto-repairing', makeBriefRecovery('auto-repairing'), 'retry-in-flight'],
+    [
+      'quality errors',
+      makeBriefRecovery('blocked', {
+        matchingReport: makeMatchingReport({
+          issues: [
+            {
+              code: 'missing_steps',
+              severity: 'error',
+              taskId: 'T001',
+              message: 'Implementation steps are missing.',
+            },
+          ],
+        }),
+      }),
+      'quality-errors',
+    ],
+    [
+      'stale report',
+      makeBriefRecovery('ready', {
+        matchingReport: makeMatchingReport({ briefHash: REPORT_HASH }),
+      }),
+      'stale-report',
+    ],
+    ['retrying', makeBriefRecovery('retrying'), 'retry-in-flight'],
+    ['unresolved', makeBriefRecovery('unresolved'), 'unresolved-retry'],
+    ['storage blocked', makeStorageBlockedRecovery(), 'not-ready'],
+  ] as const)(
+    'blocks %s from BEGIN_IMPLEMENTATION with brief_contract_blocked',
+    (_label, briefRecovery, reason) => {
+      const state: WorkflowState = {
+        ...createInitialState('feat'),
+        phase: 'reviewing-briefs',
+        briefRecovery,
+      };
+
+      const before = structuredClone(state);
+      expectBriefContractBlocked(
+        () =>
+          transition(state, {
+            type: 'BEGIN_IMPLEMENTATION',
+            generation: TEST_GENERATION,
+            permit: makeExecutionPermit(briefRecovery.epochId),
+          }),
+        reason,
+      );
+      expect(state).toEqual(before);
+    },
+  );
+
+  it('opens each non-terminal recovery status under reviewing-briefs', () => {
+    const statuses = [
+      'checking',
+      'auto-repairing',
+      'blocked',
+      'retrying',
+      'unresolved',
+      'ready',
+      'readiness-blocked',
+    ] as const;
+
+    for (const status of statuses) {
+      const recovery = makeBriefRecovery(status);
+      const state: WorkflowState = {
+        ...createInitialState('feat'),
+        phase: 'reviewing-plan',
+      };
+      const next = transition(state, {
+        type: 'BRIEF_ADMISSION_OPENED',
+        briefRecovery: recovery,
+      });
+      expect(next.phase).toBe('reviewing-briefs');
+      expect(next.briefRecovery).toEqual(recovery);
+    }
+  });
+
+  it('rejects a stale recovery epoch and a rejected archive cannot reopen', () => {
+    const current = makeBriefRecovery();
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'reviewing-briefs',
+      briefRecovery: current,
+    };
+
+    expectBriefContractBlocked(
+      () =>
+        transition(state, {
+          type: 'BRIEF_ADMISSION_OPENED',
+          briefRecovery: { ...current, epochId: 'epoch-2' },
+        }),
+      'stale-report',
+    );
+
+    const rejected = transition(state, { type: 'REJECT_BRIEFS' });
+    expect(rejected.phase).toBe('idle');
+    expect(rejected.briefRecovery?.status).toBe('rejected');
+
+    expect(() =>
+      transition(rejected, {
+        type: 'BEGIN_IMPLEMENTATION',
+        generation: TEST_GENERATION,
+        permit: makeExecutionPermit(current.epochId),
+      }),
+    ).toThrow('Cannot apply BEGIN_IMPLEMENTATION');
+    expect(() =>
+      transition(rejected, {
+        type: 'BRIEF_ADMISSION_OPENED',
+        briefRecovery: current,
+      }),
+    ).toThrow('Cannot apply BRIEF_ADMISSION_OPENED');
+  });
+
+  it('REJECT_BRIEFS leaves an action-free archive until new workflow initialization', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'reviewing-briefs',
+      tasks: [makeTask({ id: 'T001' })],
+      currentTaskIndex: 1,
+      attempt: 2,
+      briefRecovery: makeBriefRecovery('blocked'),
+    };
+
+    const rejected = transition(state, { type: 'REJECT_BRIEFS' });
+    expect(rejected).toMatchObject({
+      phase: 'idle',
+      tasks: [],
+      currentTaskIndex: 0,
+      attempt: 0,
+      briefRecovery: { status: 'rejected', activeOperationId: null },
+    });
+
+    const restarted = transition(rejected, { type: 'START' });
+    expect(restarted.phase).toBe('researching');
+    expect(restarted.briefRecovery).toBeNull();
+  });
+
+  it.each([
+    'checking',
+    'auto-repairing',
+    'blocked',
+    'retrying',
+    'unresolved',
+    'ready',
+    'readiness-blocked',
+    'rejected',
+  ] as const)(
+    'REJECT_BRIEFS round-trips a legal %s recovery through the persisted schema',
+    (status) => {
+      const state: WorkflowState = {
+        ...createInitialState('feat'),
+        phase: 'reviewing-briefs',
+        briefRecovery: makeBriefRecovery(status),
+      };
+
+      const rejected = transition(state, { type: 'REJECT_BRIEFS' });
+
+      expect(rejected.phase).toBe('idle');
+      expect(rejected.briefRecovery?.status).toBe('rejected');
+      expectPersistedState(rejected);
+    },
+  );
+
+  it('REJECT_BRIEFS converts storage-blocked recovery to a null-Brief rejected archive', () => {
+    const storageEvidence = {
+      code: 'brief_storage_invalid' as const,
+      artifactRef: 'tasks.md',
+    };
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'reviewing-briefs',
+      briefRecovery: { ...makeStorageBlockedRecovery(), storageEvidence },
+    };
+
+    const rejected = transition(state, { type: 'REJECT_BRIEFS' });
+
+    expect(rejected).toMatchObject({
+      phase: 'idle',
+      briefRecovery: {
+        status: 'rejected',
+        activeBrief: null,
+        storageEvidence,
+      },
+    });
+    expectPersistedState(rejected);
+    const parsed = WorkflowStateSchema.parse({
+      ...rejected,
+      stateRevision: rejected.stateRevision ?? 0,
+      stateFence: rejected.stateFence ?? { token: 0, ownerId: 'test-owner' },
+      briefRecovery: rejected.briefRecovery ?? null,
+    });
+    expect(parsed.briefRecovery).toMatchObject({ activeBrief: null, storageEvidence });
+  });
+
+  it.each([
+    'checking',
+    'auto-repairing',
+    'blocked',
+    'retrying',
+    'unresolved',
+    'ready',
+    'readiness-blocked',
+  ] as const)('CANCEL clears non-terminal %s recovery before entering idle', (status) => {
+    const next = transition(
+      {
+        ...createInitialState('feat'),
+        phase: 'reviewing-briefs',
+        briefRecovery: makeBriefRecovery(status),
+      },
+      { type: 'CANCEL' },
+    );
+
+    expect(next.briefRecovery).toBeNull();
+    expectPersistedState(next);
+  });
+
+  it('BEGIN_IMPLEMENTATION -> implementing with index and attempt reset', () => {
+    const tasks = [makeTask({ id: 'T001' })];
+    const state = makeOwnerReadyState(tasks);
+    const next = transition(state, {
+      type: 'BEGIN_IMPLEMENTATION',
+      generation: state.generation,
+      permit: state.permit,
+    });
     expect(next.phase).toBe('implementing');
     expect(next.currentTaskIndex).toBe(0);
     expect(next.attempt).toBe(0);
@@ -598,6 +1186,7 @@ describe('transition', () => {
       ...createInitialState('feat'),
       phase: 'reviewing-briefs',
       tasks,
+      briefRecovery: makeBriefRecovery('blocked'),
       currentTaskIndex: 1,
       attempt: 2,
     };
@@ -608,11 +1197,164 @@ describe('transition', () => {
     expect(next.attempt).toBe(0);
   });
 
-  it('BRIEFS_READY can be called from implementing phase', () => {
+  it.each([null, undefined] as const)(
+    'BEGIN_IMPLEMENTATION fails closed when the current recovery proof is %s',
+    (missing) => {
+      const initial = createInitialState('feat');
+      const state: WorkflowState = {
+        ...initial,
+        phase: 'reviewing-briefs',
+        ...(missing === undefined ? {} : { briefRecovery: null }),
+      };
+      expectBriefContractBlocked(
+        () =>
+          transition(state, {
+            type: 'BEGIN_IMPLEMENTATION',
+            generation: TEST_GENERATION,
+            permit: makeExecutionPermit('epoch-1'),
+          }),
+        'missing-recovery',
+      );
+    },
+  );
+
+  it('rejects stale, missing, and mismatched owner permits', () => {
+    const state = makeOwnerReadyState([makeTask({ id: 'T001' })]);
+    const action = {
+      type: 'BEGIN_IMPLEMENTATION' as const,
+      generation: TEST_GENERATION,
+      permit: state.permit,
+    };
+    expect(transition(state, action).phase).toBe('implementing');
+    expect(() =>
+      transition(state, {
+        ...action,
+        permit: { ...action.permit, authorityRevision: 2 },
+      }),
+    ).toThrow('exact current owner-issued generation and execution permit');
+    expect(() => transition({ ...state, permit: null }, action)).toThrow(
+      'exact current owner-issued generation and execution permit',
+    );
+    expect(() =>
+      transition(state, {
+        ...action,
+        generation: { ...TEST_GENERATION, tasksDigest: 'tasks-2' },
+      }),
+    ).toThrow('exact current owner-issued generation and execution permit');
+  });
+
+  it('BEGIN_IMPLEMENTATION round-trips the ready legal path through the persisted schema', () => {
     const tasks = [makeTask({ id: 'T001' })];
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'implementing' };
-    const next = transition(state, { type: 'BRIEFS_READY', tasks });
-    expect(next.phase).toBe('reviewing-briefs');
+    const state = makeOwnerReadyState(tasks);
+    expectPersistedState(state);
+    const next = transition(state, {
+      type: 'BEGIN_IMPLEMENTATION',
+      generation: state.generation,
+      permit: state.permit,
+    });
+    expectPersistedState(next);
+    expect(next.phase).toBe('implementing');
+    expect(next.briefRecovery?.status).toBe('ready');
+  });
+
+  it('BRIEF_ADMISSION_OPENED round-trips every non-terminal recovery status', () => {
+    const statuses = [
+      'checking',
+      'auto-repairing',
+      'blocked',
+      'retrying',
+      'unresolved',
+      'ready',
+      'readiness-blocked',
+    ] as const;
+
+    for (const status of statuses) {
+      const next = transition(
+        { ...createInitialState('feat'), phase: 'reviewing-plan' },
+        { type: 'BRIEF_ADMISSION_OPENED', briefRecovery: makeBriefRecovery(status) },
+      );
+      expectPersistedState(next);
+    }
+    const storage = transition(
+      { ...createInitialState('feat'), phase: 'reviewing-plan' },
+      { type: 'BRIEF_ADMISSION_OPENED', briefRecovery: makeStorageBlockedRecovery() },
+    );
+    expectPersistedState(storage);
+  });
+
+  it('blocks an otherwise clean report whose rule identity is stale', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'reviewing-briefs',
+      briefRecovery: makeBriefRecovery('ready', {
+        matchingReport: makeMatchingReport({ ruleVersion: 'brief-quality-v0' }),
+      }),
+    };
+
+    expectBriefContractBlocked(
+      () =>
+        transition(state, {
+          type: 'BEGIN_IMPLEMENTATION',
+          generation: TEST_GENERATION,
+          permit: makeExecutionPermit(state.briefRecovery?.epochId ?? 'missing'),
+        }),
+      'stale-report',
+    );
+  });
+
+  it('blocks a ready report carrying an attempt from another epoch', () => {
+    const current = makeBriefRecovery('ready', {
+      attempts: {
+        'operation-1': {
+          epochId: 'epoch-2',
+          operationId: 'operation-1',
+          intentHash: BRIEF_HASH,
+          kind: 'manual-retry',
+          acceptedAt: '2026-01-01T00:00:00.000Z',
+          baseBrief: evidence('tasks.md'),
+          baseReport: evidence('brief-quality.json', REPORT_HASH),
+          frozenInputIds: [],
+          status: 'settled',
+          dispatchPossibility: 'none',
+          remoteObservation: 'not-dispatched',
+          resultId: 'result-1',
+          outcome: 'quality-failed',
+          providerCode: null,
+          usage: null,
+          settledAt: '2026-01-01T00:00:00.000Z',
+          candidate: null,
+          report: null,
+          reservation: {
+            accountingKey: {
+              sessionId: 'session-1',
+              epochId: 'epoch-2',
+              operationId: 'operation-1',
+              generation: 1,
+            },
+            amount: 0,
+            state: 'released',
+            usageApplied: false,
+            appliedUsage: null,
+            history: [{ state: 'released', at: '2026-01-01T00:00:00.000Z', reason: 'superseded' }],
+          },
+        },
+      },
+    });
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'reviewing-briefs',
+      briefRecovery: current,
+    };
+
+    expectBriefContractBlocked(
+      () =>
+        transition(state, {
+          type: 'BEGIN_IMPLEMENTATION',
+          generation: TEST_GENERATION,
+          permit: makeExecutionPermit(current.epochId),
+        }),
+      'stale-report',
+    );
   });
 
   it('SET_PENDING_RECOVERY stores recovery overlay without changing phase', () => {

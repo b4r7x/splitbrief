@@ -1,16 +1,14 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createInitialState } from '../../../core/state/machine.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { PLAN_FILE, SPEC_FILE } from '../../../core/paths.js';
 import { writeSpecFile } from '../../../core/paths-io.js';
-import { runPlanningPhase } from './run.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ApprovalReviewResult } from '../../../core/approval/types.js';
 import {
-  TEST_METADATA,
   REAL_TASKS_MD,
   setupProject,
   makePassingTask,
@@ -18,8 +16,8 @@ import {
   sequencedApproval,
   auto,
   manual,
-  runPhase as runPhaseHelper,
-  type RunOpts,
+  runOwnedPlanningPhase,
+  type OwnedRunOpts,
 } from '#testing/helpers/planning-phase.js';
 
 let dirs: string[] = [];
@@ -28,8 +26,8 @@ afterEach(() => {
   dirs = [];
 });
 
-function runPhase(opts: RunOpts = {}) {
-  return runPhaseHelper(dirs, opts);
+function runPhase(opts: OwnedRunOpts = {}) {
+  return runOwnedPlanningPhase(dirs, opts);
 }
 
 describe('runPlanningPhase — happy paths (modes + approval)', () => {
@@ -77,7 +75,7 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
 
     const { result } = await runPhase({ planner, callbacks, config: makeConfig({ workflow }) });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.tasks).toHaveLength(1);
     expect(result.state.phase).toBe('implementing');
     if (useQuickPlan) {
@@ -112,7 +110,7 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
       config: makeConfig({ workflow: manual() }),
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.tasks).toHaveLength(1);
     expect(result.state.phase).toBe('implementing');
     expect(regenArgs).toHaveLength(1);
@@ -139,22 +137,16 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const config = makeConfig({ workflow: manual('standard') });
 
-    const result = await runPlanningPhase({
-      wctx: {
-        projectDir,
-        config,
-        callbacks,
-        metadata: TEST_METADATA,
-        sessionId,
-        bus: makeBusRecorder().bus,
-        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      },
+    const { result } = await runPhase({
+      project: { projectDir, sessionId },
       planner,
+      callbacks,
+      config,
       state: { ...createInitialState('feature'), phase: 'idle' },
       feature: 'feature',
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expect(reviewPrompts.some((p) => p.includes('User-edited auth.'))).toBe(true);
   });
@@ -184,22 +176,16 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const config = makeConfig({ workflow: manual('speckit') });
 
-    const result = await runPlanningPhase({
-      wctx: {
-        projectDir,
-        config,
-        callbacks,
-        metadata: TEST_METADATA,
-        sessionId,
-        bus: makeBusRecorder().bus,
-        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      },
+    const { result } = await runPhase({
+      project: { projectDir, sessionId },
       planner,
+      callbacks,
+      config,
       state: { ...createInitialState('feature'), phase: 'idle' },
       feature: 'feature',
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expect(reviewPrompts.some((p) => p.includes('User-edited JWT plan.'))).toBe(true);
   });

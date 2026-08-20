@@ -10,14 +10,18 @@ import {
 } from '../../providers/cli-model-catalog.js';
 import {
   ANTIGRAVITY_CLI_CANDIDATE_PATHS,
+  CLI_COMPILER_EVIDENCE,
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
+  type CliCompilerEvidence,
   type CliToolId,
   type RunnerRole,
 } from '../../../core/runners/cli-tool-catalog.js';
 import type { PlannerCliToolId, ImplementerCliToolId } from '../../../core/schemas/enums.js';
 import { includes, isRecord } from '../../../utils/type-guards.js';
 import { runnerConfigError } from '../errors.js';
+import { refusedCompilerAdmission, type RefusedCompilerAdmission } from '../compiler-capability.js';
+import type { CompilerRuntimeEvidence } from '../compiler-runtime-evidence.js';
 import { aiderImplementerAdapter, aiderPlannerAdapter } from './aider.js';
 import { claudeCodeImplementerAdapter, claudeCodePlannerAdapter } from './claude-code.js';
 import { codexImplementerAdapter, codexPlannerAdapter } from './codex.js';
@@ -491,4 +495,56 @@ export function isCanonicalCliDeclaredProbe(
             CLI_IMPLEMENTER_ADAPTERS[input.tool].probe.declared,
           ];
   return declared.some((candidate) => candidate === input.probe);
+}
+
+export type CliCompilerRuntimeAdmission =
+  | Readonly<{ kind: 'admitted'; evidence: CliCompilerEvidence }>
+  | RefusedCompilerAdmission;
+
+/**
+ * Registry-side compiler admission (REQ-003, REQ-016, REQ-049): a gate, not a
+ * source of evidence — the seam consumes the admitted/refused decision and
+ * keeps using the bound runtime evidence. Evidence with a drifted version
+ * observation is admitted for supported tools. Runtime evidence bound for this
+ * same tool carries the catalog's identity fields by construction —
+ * `bindCompilerRuntimeEvidence` copies them out of the support table row this
+ * record owns — so the comparisons below exist to enumerate the mismatched
+ * properties when a caller binds one tool's runtime and admits it under
+ * another, and the loader-only refusal to fail closed for a caller that reaches
+ * here without that bind.
+ */
+export function admitCliCompilerRuntime(
+  input: Readonly<{ tool: CliToolId; runtime: CompilerRuntimeEvidence }>,
+): CliCompilerRuntimeAdmission {
+  const evidence = CLI_COMPILER_EVIDENCE[input.tool];
+  if (evidence.state === 'unsupported') {
+    return refusedCompilerAdmission({
+      stage: 'runtime',
+      backend: input.tool,
+      claimedVersion: input.runtime.version,
+      missing: ['backend'],
+      ...(evidence.unsupportedReason === undefined ? {} : { detail: evidence.unsupportedReason }),
+    });
+  }
+  const missing: string[] = [];
+  if (input.runtime.backend !== input.tool) missing.push('backend');
+  if (input.runtime.version !== evidence.version) missing.push('version');
+  if (input.runtime.terminalContract !== evidence.terminalContract)
+    missing.push('terminalContract');
+  if (input.runtime.fixtureDate !== evidence.fixtureDate) missing.push('fixtureDate');
+  if (
+    input.runtime.transports.length !== evidence.transports.length ||
+    !input.runtime.transports.every((transport) => evidence.transports.includes(transport))
+  ) {
+    missing.push('transport');
+  }
+  if (missing.length > 0) {
+    return refusedCompilerAdmission({
+      stage: 'runtime',
+      backend: input.tool,
+      claimedVersion: input.runtime.version,
+      missing,
+    });
+  }
+  return { kind: 'admitted', evidence };
 }

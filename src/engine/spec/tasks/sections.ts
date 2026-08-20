@@ -1,7 +1,7 @@
 import type { TaskId } from '../../../core/schemas/task.js';
 import { extractFrontmatter } from '../../../utils/frontmatter.js';
 import { TASK_BRIEF_HEADINGS } from '../headings.js';
-import { fenceMarkerLength } from './blocks.js';
+import { fenceMarkerLength } from './fence-marker.js';
 
 export type ParsedTaskSections = {
   description: string;

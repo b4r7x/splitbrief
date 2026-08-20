@@ -495,11 +495,12 @@ describe('documentation config examples', () => {
     expect(UNPARSEABLE_YAML_FENCES).toEqual([]);
   });
 
-  it.each(
-    DOC_CONFIG_FENCES.map((fence) => [fence.label, fence] as const),
-  )('loads %s through the real loader', (_label, fence) => {
-    expect(loadDocFence(fence).version).toBe(3);
-  });
+  it.each(DOC_CONFIG_FENCES.map((fence) => [fence.label, fence] as const))(
+    'loads %s through the real loader',
+    (_label, fence) => {
+      expect(loadDocFence(fence).version).toBe(3);
+    },
+  );
 
   // Loading alone does not prove the example is honest: the loader merges the
   // default implementer, so an `ollama` block that omits service/offering loads

@@ -3,6 +3,22 @@ import { USER_EDIT_CONFLICT_ACTIONS } from '../../core/schemas/enums.js';
 import { TASK_REVIEW_COMMANDS } from '../events/workflow-events.js';
 import { parseClientMessage, parseIpcPromptResponse } from './protocol.js';
 
+const BRIEF_HASH = 'a'.repeat(64);
+
+function briefCommand(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    version: 1,
+    sessionId: 'session-1',
+    epochId: 'epoch-1',
+    operationId: 'operation-1',
+    expectedBriefRevision: 2,
+    expectedReportRevision: 2,
+    intentHash: BRIEF_HASH,
+    base: { revision: 2, hash: BRIEF_HASH, path: 'brief/tasks.md' },
+    ...overrides,
+  };
+}
+
 describe('parseClientMessage', () => {
   it('parses detach', () => {
     expect(parseClientMessage({ kind: 'detach' })).toEqual({ kind: 'detach' });
@@ -13,6 +29,58 @@ describe('parseClientMessage', () => {
       kind: 'user_input',
       text: 'hello',
     });
+  });
+
+  it('round-trips a comment-free retry with its operation identity', () => {
+    const response = {
+      kind: 'approval_needed' as const,
+      command: briefCommand({
+        action: 'retry',
+        diagnosticFingerprint: BRIEF_HASH,
+        frozenInputIds: ['input-1'],
+      }),
+    };
+    const parsed = parseIpcPromptResponse(JSON.parse(JSON.stringify(response)));
+
+    expect(parsed).toEqual(response);
+    if (parsed?.kind === 'approval_needed' && 'command' in parsed) {
+      expect(parsed.command).toMatchObject({
+        action: 'retry',
+        operationId: 'operation-1',
+        epochId: 'epoch-1',
+      });
+      expect('comment' in parsed.command).toBe(false);
+    }
+  });
+
+  it('rejects retry commands without the current identity envelope', () => {
+    const command = briefCommand({
+      action: 'retry',
+      diagnosticFingerprint: BRIEF_HASH,
+      frozenInputIds: [],
+    });
+    delete command.epochId;
+
+    expect(parseIpcPromptResponse({ kind: 'approval_needed', command })).toBeNull();
+  });
+
+  it('rejects oversized comments and duplicate frozen input IDs', () => {
+    expect(
+      parseIpcPromptResponse({
+        kind: 'approval_needed',
+        command: briefCommand({ action: 'comment', comment: 'x'.repeat(4_097) }),
+      }),
+    ).toBeNull();
+    expect(
+      parseIpcPromptResponse({
+        kind: 'approval_needed',
+        command: briefCommand({
+          action: 'retry',
+          diagnosticFingerprint: BRIEF_HASH,
+          frozenInputIds: ['input-1', 'input-1'],
+        }),
+      }),
+    ).toBeNull();
   });
 
   it('rejects the removed recovery_response command', () => {
@@ -44,121 +112,70 @@ describe('parseIpcPromptResponse — approval_needed', () => {
     expect(
       parseIpcPromptResponse({
         kind: 'approval_needed',
-        command: { action: 'approve' },
+        command: briefCommand({ action: 'approve' }),
       }),
     ).toEqual({
       kind: 'approval_needed',
-      command: { action: 'approve' },
+      command: briefCommand({ action: 'approve' }),
     });
   });
 
-  it('parses command-form brief review revise responses with task ids', () => {
+  it('parses command-form brief review comments with the current report revision', () => {
     expect(
       parseIpcPromptResponse({
         kind: 'approval_needed',
-        command: { action: 'revise', comment: 'split the task', taskIds: ['T001'] },
+        command: briefCommand({ action: 'comment', comment: 'split the task' }),
       }),
     ).toEqual({
       kind: 'approval_needed',
-      command: { action: 'revise', comment: 'split the task', taskIds: ['T001'] },
+      command: briefCommand({ action: 'comment', comment: 'split the task' }),
     });
   });
 
-  it('parses command-form external edit and save draft responses', () => {
+  it('parses command-form edit and status responses', () => {
     expect(
       parseIpcPromptResponse({
         kind: 'approval_needed',
-        command: { action: 'external_edit_applied' },
+        command: briefCommand({
+          action: 'edit',
+          briefText: 'updated brief',
+          newInputId: 'input-2',
+        }),
       }),
     ).toEqual({
       kind: 'approval_needed',
-      command: { action: 'external_edit_applied' },
+      command: briefCommand({ action: 'edit', briefText: 'updated brief', newInputId: 'input-2' }),
     });
     expect(
       parseIpcPromptResponse({
         kind: 'approval_needed',
-        command: { action: 'save_draft' },
+        command: {
+          version: 1,
+          sessionId: 'session-1',
+          epochId: 'epoch-1',
+          action: 'status',
+        },
       }),
     ).toEqual({
       kind: 'approval_needed',
-      command: { action: 'save_draft' },
+      command: {
+        version: 1,
+        sessionId: 'session-1',
+        epochId: 'epoch-1',
+        action: 'status',
+      },
     });
   });
 
-  it('rejects command-form revise responses with invalid task ids', () => {
+  it('rejects command-form edits with an empty Brief or missing input identity', () => {
     expect(
       parseIpcPromptResponse({
         kind: 'approval_needed',
-        command: { action: 'revise', comment: 'split', taskIds: ['task-1'] },
+        command: briefCommand({ action: 'edit', briefText: '', newInputId: 'input-2' }),
       }),
     ).toBeNull();
-  });
-
-  it('parses revise feedback as an approval prompt response action', () => {
-    expect(
-      parseIpcPromptResponse({
-        kind: 'approval_needed',
-        approved: false,
-        action: 'revise',
-        comment: 'add evidence',
-      }),
-    ).toEqual({
-      kind: 'approval_needed',
-      approved: false,
-      action: 'revise',
-      comment: 'add evidence',
-    });
-  });
-
-  it('parses non-command revise feedback with targeted task ids', () => {
-    expect(
-      parseIpcPromptResponse({
-        kind: 'approval_needed',
-        approved: false,
-        action: 'revise',
-        comment: 'add evidence',
-        taskIds: ['T001', 'T002'],
-      }),
-    ).toEqual({
-      kind: 'approval_needed',
-      approved: false,
-      action: 'revise',
-      comment: 'add evidence',
-      taskIds: ['T001', 'T002'],
-    });
-  });
-
-  it('rejects non-command revise feedback with invalid task ids', () => {
-    expect(
-      parseIpcPromptResponse({
-        kind: 'approval_needed',
-        approved: false,
-        action: 'revise',
-        comment: 'add evidence',
-        taskIds: ['task-1'],
-      }),
-    ).toBeNull();
-  });
-
-  it('rejects revise feedback without a comment', () => {
-    expect(
-      parseIpcPromptResponse({
-        kind: 'approval_needed',
-        approved: false,
-        action: 'revise',
-      }),
-    ).toBeNull();
-  });
-
-  it('rejects revise feedback with an empty comment', () => {
-    expect(
-      parseIpcPromptResponse({
-        kind: 'approval_needed',
-        approved: false,
-        action: 'revise',
-        comment: '  ',
-      }),
-    ).toBeNull();
+    const missingInputId = briefCommand({ action: 'edit', briefText: 'updated brief' });
+    expect(parseIpcPromptResponse({ kind: 'approval_needed', command: missingInputId })).toBeNull();
   });
 
   it('rejects approved responses with review comments', () => {
@@ -183,14 +200,15 @@ describe('parseIpcPromptResponse — approval_needed', () => {
 });
 
 describe('parseIpcPromptResponse — task_review', () => {
-  it.each(
-    TASK_REVIEW_COMMANDS.filter((command) => command !== 'edit-notes'),
-  )('parses task_review response action %s from the shared command contract', (action) => {
-    expect(parseIpcPromptResponse({ kind: 'task_review', response: { action } })).toEqual({
-      kind: 'task_review',
-      response: { action },
-    });
-  });
+  it.each(TASK_REVIEW_COMMANDS.filter((command) => command !== 'edit-notes'))(
+    'parses task_review response action %s from the shared command contract',
+    (action) => {
+      expect(parseIpcPromptResponse({ kind: 'task_review', response: { action } })).toEqual({
+        kind: 'task_review',
+        response: { action },
+      });
+    },
+  );
 
   it('parses valid task_review response with notes', () => {
     const result = parseIpcPromptResponse({
@@ -241,14 +259,17 @@ describe('parseIpcPromptResponse — task_review', () => {
 });
 
 describe('parseIpcPromptResponse — user_edit_conflict', () => {
-  it.each(
-    USER_EDIT_CONFLICT_ACTIONS,
-  )('parses conflict action %s from the shared schema', (action) => {
-    expect(parseIpcPromptResponse({ kind: 'user_edit_conflict', selectedAction: action })).toEqual({
-      kind: 'user_edit_conflict',
-      selectedAction: action,
-    });
-  });
+  it.each(USER_EDIT_CONFLICT_ACTIONS)(
+    'parses conflict action %s from the shared schema',
+    (action) => {
+      expect(
+        parseIpcPromptResponse({ kind: 'user_edit_conflict', selectedAction: action }),
+      ).toEqual({
+        kind: 'user_edit_conflict',
+        selectedAction: action,
+      });
+    },
+  );
 
   it('rejects the removed regenerate-rebase action', () => {
     expect(

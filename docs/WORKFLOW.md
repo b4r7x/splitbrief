@@ -8,6 +8,139 @@ For terminology (planner, implementer, runner kinds, sessions, queue, awaiting-c
 
 ---
 
+## v4 contract and recovery fence
+
+The binary deterministic contract outcome is authoritative; the numeric score is diagnostic telemetry only.
+After the existing bounded automatic repair is exhausted, persist `CONTRACT BLOCKED` and expose retry, edit, and reject.
+A manual retry is a first-class, no-comment, idempotent operation shared by TUI, RPC, IPC/attach, and headless projections.
+Approval is impossible until a current report has zero errors.
+The primary line is binary outcome, not score.
+
+Persisted workflow state uses `stateVersion: 4`. The state head and its fence are
+the authority for every workflow mutation; state operations rebase the complete
+head, require the expected revision, and refuse stale, future, malformed, or
+unfenced writes. TUI, RPC, IPC-attach, and headless callers use the same
+controller, projection, and command contract. Observers may inspect a
+projection, but cannot mutate state or invoke a provider.
+
+The Evidence Spine is durable: the Brief, quality report, input receipts,
+attempt/usage receipts, evidence head, outbox, and state revision are persisted
+before a public projection is emitted. Its recovery statuses are `checking`,
+`auto-repairing`, `blocked`, `storage-blocked`, `retrying`, `unresolved`,
+`ready`, `readiness-blocked`, and `rejected`. `CONTRACT READY` means the
+binary Brief contract passed; `CONTRACT BLOCKED` (and the
+`brief_contract_blocked` refusal) means it did not. `READINESS BLOCKED` is a
+separate diagnostic/readiness result and is never a quality override.
+
+Contract quality is binary. A diagnostic score and its warnings explain the
+result but cannot turn a failed contract into a pass. The planner gets one
+bounded automatic `auto-repair`; after that, the contract remains blocked until
+the user explicitly chooses `retry`, `edit`, or `reject`. A user retry is a
+new operation with a fresh base and expected revision. There is no
+observational retry: an observation or status read never dispatches a provider.
+
+Review commands are explicit: `retry` (with no fabricated comment), `edit`,
+`reject`, `approve`, `comment`, `import`, and `resolve-unresolved`; `status` is
+read-only. Every mutating command carries session/epoch/operation identity and
+expected Brief/report revisions. Stale identity is refused. If dispatch may
+have happened but its result is unknown, the state is `UNRESOLVED`: held inputs
+and remote usage stay recorded until the user explicitly chooses rebind while
+acknowledging duplication risk, or abandon. No implicit retry is allowed.
+
+The same rules apply in `instant`, `quick`, `standard`, and `speckit`, and to
+interactive, attached, RPC, and headless callers. Durable evidence is retained
+even when transcript or UI projections are unavailable.
+
+---
+
+## Generation, permit, and disposition
+
+The binary contract decides whether a Brief is admissible; the generation and
+the permit decide whether that Brief may execute.
+
+**Finite batching.** The Task Brief compiler compiles the manifest in
+deterministic four-item batches, at most 64 real dispatches per operation, and
+each batch runs in a fresh detached session scope that cannot read, replace,
+expire, resume, or report into the workflow planner session. Every planner mode
+crosses the same admission boundary: standard and speckit run the compiler's
+detached batches, quick and instant stay single-call and accept only a
+current-call result.
+
+**Tiered admission.** The Task Brief compiler admits backends across tiers: the
+tested version yields a full capability receipt; other detected versions of
+supported backends are admitted with runtime-drift evidence and a run warning;
+unsupported candidates (`copilot`, `aider`, `shell`, `agent`) receive a typed
+fail-closed refusal (`task_compiler_capability_unsupported`). Runtime guards
+(envelopes, terminal contract, dispatch ledger, post-run mutation detection)
+are the enforcement surface.
+
+**Immutable generation.** A passing candidate is installed as an immutable
+Brief generation (the Tasks, the matching quality report, a provenance
+manifest, and digests), then committed by the sole fenced owner commit, and
+only after that commit are the fixed `tasks.md` and `brief-quality.json` files
+refreshed as compatibility projections of the generation
+(`publishBriefGeneration`, `src/engine/orchestrator/planning/brief-publication.ts`).
+Every fault before the owner commit — parse, quality, storage, event, or CAS —
+leaves the previous authoritative Brief and permit unchanged. The committed
+generation is the only receipt that may refresh `tasks.md` or
+`brief-quality.json`, so a crash or a CAS loser can leave only a bounded
+unreferenced candidate, never a changed authoritative Brief.
+
+**The sole owner commit.** Refusal, acceptance, generation publication, and
+permit issuance all flow through one fenced seam
+(`persistBriefOwnerTransition`, `src/engine/orchestrator/evidence/persistence.ts`):
+bounded evidence first, then the outbox projection, then the fenced state CAS,
+then delivery, then acknowledgement. The commit must advance the authority
+revision by exactly one; a stale, future, malformed, or unfenced write is
+refused.
+
+**Three-way disposition.** Every new, retry, rewind, and resume planning path
+returns exactly one of `ready-for-tasks`, `parked`, or `terminal`. Readiness is
+never inferred from cancellation, failure, task count, score, artifact
+existence, phase, or process exit. A parked result retains the recovery epoch
+and revision, evidence head, authoritative generation reference if any,
+allowance state, a durable cause, and a non-empty valid action set, and makes
+zero implementer or task-loop calls. A terminal result never enters execution.
+
+**Permit gating.** Only a current execution permit authorizes task execution.
+`runTasksAndReview` requires `ready-for-tasks` plus a persisted permit matching
+the current epoch, authority revision, and authoritative generation digests;
+at the task boundary it re-reads the owner head and the persisted Brief
+artifacts, because the planning result is only a proposal and the persisted
+head and bytes are the authority (`revalidatePersistedExecutionPermit`,
+`src/engine/orchestrator/planning/handoff.ts`). Approval of the briefs issues
+the permit through the same sole owner commit: the head must still carry the
+exact approved epoch, authority revision, generation, and quality digest, and
+an edit, rewind, recovery, or replacement that committed in between refuses
+before any mutation. A published but unapproved generation is explicitly
+non-executable.
+
+**Provider-dependent budget.** Without `workflow.maxBudget`, missing provider
+pricing alone does not refuse an otherwise eligible bounded recovery operation;
+admission records a provider-dependent reservation with the accounting key,
+runtime and pricing identity, price knownness, output bounds, dispatch cap, and
+operation identity. USD is absent or unknown, never `0`. With `maxBudget`
+configured, recovery refuses before provider dispatch unless the reservation
+and the relevant current paid spend are finite frozen USD: unknown price or
+spend uses `brief_budget_unknown`, a known finite amount beyond the cap uses
+`brief_budget_exhausted`. Unknown paid usage pauses runtime budget tracking
+with the coded `tracking_paused` warning instead of being treated as `$0`.
+
+**Refusal bounds.** Pre-acceptance refusal is durable and bounded. A refusal
+receipt records operation and intent identity, code, category, cap context,
+price and spend knownness, accounting identity, allowance state, and bounded
+evidence references; provider text and diagnostics have explicit byte limits.
+Retention is versioned with hard bounds (`RECOVERY_REFUSAL_RETENTION`,
+`src/core/schemas/brief-recovery.ts`): at most 64 refusal records and 64 KiB of
+receipts per current epoch, a 1 KiB receipt bound, a 4 KiB diagnostic bound,
+256 KiB of refusal evidence, and 16 closed-epoch summaries of 512 bytes each.
+A refusal preserves the automatic repair allowance, and replaying the same
+intent returns the same refusal without advancing state. Settled attempts are
+retained to 256, the recovery outbox is capped at 256 entries, and a repeated
+identical failed attempt stops at the no-progress threshold of 20.
+
+---
+
 ## 1. The state machine
 
 Primary state is the `phase` field — one of 15 values from the `Phase` enum. Two boolean-like sub-states overlay any phase:
@@ -187,7 +320,7 @@ Mode dispatch: `src/engine/orchestrator/planning/run.ts`. Mode determines how ma
 
 Speckit runs pre-review quality preparation while in `reviewing-plan`. After it succeeds, `ANALYZE_START` enters `analyzing`, `ANALYZE_DONE` returns to `implementing`, and `BRIEFS_READY` opens `reviewing-briefs`.
 
-**When the single call produces no briefs** (`instant` and `quick`). If the planner's single call returns no Task Briefs, the same call is retried exactly once. The planner's text output is persisted to the session directory first and a coded, transcript-safe warning (`planner_returned_zero_tasks`) is published pointing at it. If the retry also returns zero tasks, the run fails with the existing `instant`/`quick planner returned zero tasks; cannot proceed` error — with the artifact on disk and the warning in the transcript. The run never falls through to the multi-phase path, which would silently change the selected mode and its cost.
+**When the single call produces no briefs** (`instant` and `quick`). If the planner's single call returns no Task Briefs, the same call is retried exactly once. If the retry also returns zero tasks, a coded, transcript-safe warning (`planner_returned_zero_tasks`) is published stating that the failed attempt contributes no Brief generation; the attempt writes no planning artifact. The planning result is terminal in `instant`, and in `quick` it is terminal under the workflow owner or parked when no owner authority is present. The run never falls through to the multi-phase path, which would silently change the selected mode and its cost.
 
 ### Selecting a mode
 
@@ -213,11 +346,11 @@ Controlled by `workflow.approve`: `none` | `spec` | `plan` | `all` | `default`. 
 - `plan` — gate on plan only.
 - `all` — gate on spec and plan. speckit default.
 
-The brief quality gate (`src/engine/spec/brief-quality.ts`) runs for all four modes after the Task Brief is produced and before `implementing`. It writes `brief-quality.json` and publishes `brief_quality_passed` or `brief_quality_failed`. Error-level issues block a direct transition. In `standard` and `speckit`, the first error-level report triggers one bounded tasks-only regeneration of `tasks.md`, before `BRIEFS_READY` and `reviewing-briefs`. If the repaired tasks still have any error-level issue, the second report fails the run closed: briefs approval is not called, `reviewing-briefs` is not entered, and implementation does not start. This applies to every error-level issue, not only `empty_task_list`.
+The brief quality gate (`src/engine/spec/brief-quality.ts`) runs for all four modes after the Task Brief is produced and before `implementing`. It writes `brief-quality.json` and publishes `brief_quality_passed` or `brief_quality_failed`. Error-level issues block a direct transition. In `standard` and `speckit`, the first error-level report triggers one bounded tasks-only `auto-repair` of `tasks.md`, before `BRIEFS_READY` and `reviewing-briefs`. If the repaired tasks still have any error-level issue, the second report fails the run closed: briefs approval is not called, `reviewing-briefs` is not entered, and implementation does not start. This applies to every error-level issue, not only `empty_task_list`.
 
 The second unrepaired report is a terminal planning failure, not a user cancellation or abort. The failed result records the workflow failure and stops before briefs approval or implementation. A user cancellation or abort keeps cancellation semantics and does not publish the planning error.
 
-Next to it, the brief readiness gate (`src/engine/orchestrator/planning/brief-readiness-gate.ts`) runs over the Task Briefs at briefs approval and again after brief edits. It writes `brief-readiness.json` and publishes `brief_readiness_passed` or `brief_readiness_blocked`. Readiness never permanently blocks approval: a blocked report is a warning, and a second identical approval overrides it and proceeds (see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)).
+Next to it, the brief readiness gate (`src/engine/orchestrator/planning/brief-readiness-gate.ts`) runs over the Task Briefs at briefs approval and again after brief edits. It writes `brief-readiness.json` and publishes `brief_readiness_passed` or `brief_readiness_blocked`. `READINESS BLOCKED` is distinct from `CONTRACT BLOCKED`; it records a readiness diagnostic and requires re-evaluation or a user edit. It never authorizes a quality override or bypasses the binary contract (see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)).
 
 Briefs review is separate from `workflow.approve`: `standard` and `speckit` enter `reviewing-briefs` only after the initial quality check and any bounded repair pass, so the user can review `tasks.md` before implementation.
 
@@ -308,7 +441,7 @@ Dispatches `RESET_TASK`. Sets the target task to `pending`, rewinds `currentTask
 
 ## 6. Resume
 
-`splitbrief resume` reads `.splitbrief/active` to find the session, loads `state.json`. If either is missing, version-mismatched, or the phase is not resumable, resume refuses with an error.
+`splitbrief resume` reads `.splitbrief/active` to find the session, acquires the owner fence, and loads `state.json` through the v4 state operations API. If either is missing, malformed, future-versioned, storage-blocked, or the phase is not resumable, resume refuses with an error (or exposes a read-only `storage-blocked` projection). A v3 state is promoted to v4 only by the fenced owner; observers never perform local migration.
 
 ### Resumable phases
 
@@ -320,7 +453,7 @@ Every other phase — `researching`, `specifying`, `clarifying`, `constitution-c
 
 ### Recovery on resume
 
-If state has `pendingRecovery`, resume shows that recovery issue before dispatching any work. Selecting `pause-run` keeps `.splitbrief/active` intact so the same decision appears on next resume.
+If state has `pendingRecovery` or a v4 `briefRecovery`, resume shows that recovery issue before dispatching any work. Selecting `pause-run` keeps `.splitbrief/active` intact so the same decision appears on next resume. A `briefRecovery` in `UNRESOLVED` or `storage-blocked` is refusal state, not permission to retry.
 
 An unresolved recovery also makes the stop audible: when the task loop re-enters a state that still carries `pendingRecovery`, it publishes a transcript-safe `warning` with `code: 'recovery_pending_unresolved'` naming the reason, the recovery status (`awaiting-user`, `paused`, or `applying`) and the available actions, then stops without running any task. The issue is neither cleared nor re-entered. In headless `--json` mode the same state fails the command with exit code 1 for **every** status — a paused or applying recovery no longer exits 0 having done nothing.
 
@@ -423,6 +556,9 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     resolved as VISUAL, non-terminal EDITOR, detected GUI editor from safe absolute PATH, macOS open, terminal EDITOR, then vi.
 
  13. phase: reviewing-briefs → APPROVE_BRIEFS → implementing
+     Approval issues the execution permit through the sole owner commit, bound
+     to the exact approved epoch, authority revision, generation, and quality
+     digest. A newer epoch or a later owner commit rewinds or refuses it.
      Prompt-input cost prediction published. Cost gate checked. Runtime output,
      retries, validation reruns, escalation, and unknown paid pricing are tracked
      as the run proceeds.
@@ -434,6 +570,9 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
 
 14. Per task:
       implementing → START_TASK (task in_progress, attempt 0)
+      Before the loop, the permit is revalidated against the persisted owner
+      head and the Brief artifacts on disk; a mismatch parks or terminates with
+      zero implementer calls.
       implementer.implement(taskPrompt) → code written to disk
       A direct-writing implementer edits the run's isolation directory instead of
       the project — where it works is set by `workflow.isolation`
@@ -458,11 +597,13 @@ During live model-call phases, single Ctrl-C enters `awaitingContinue`; double C
 
 ## 9. WorkflowState shape
 
-Source: `src/core/schemas/workflow.ts` (Zod), `src/core/state/machine.ts` (`createInitialState`). State version: 3.
+Source: `src/core/schemas/workflow.ts` (Zod), `src/core/state/machine.ts` (`createInitialState`). State version: 4.
 
 ```typescript
 type WorkflowState = {
-  stateVersion: number
+  stateVersion: 4
+  stateRevision: number                    // CAS revision
+  stateFence: { token: number; ownerId: string }
   phase: Phase
   feature: string
   currentTaskIndex: number
@@ -478,6 +619,10 @@ type WorkflowState = {
   rewindPending?: { target: 'spec' | 'plan'; comment?: string }
   pendingRecovery?: RecoveryIssue
   discoveredValidation?: DiscoveredValidation
+  briefRecovery: BriefRecoveryV1 | null   // v4 Evidence Spine
+  authorityRevision?: number               // fenced owner authority counter
+  generation?: BriefGenerationRef | null   // authoritative immutable generation
+  permit?: TaskExecutionPermit | null      // current execution permit
 
   // Runner identity (set once at workflow start)
   plannerTool?: string

@@ -80,21 +80,19 @@ describe('planning artifact admission', () => {
     );
   });
 
-  it.each([
-    '# ATX heading',
-    '   ### indented ATX heading',
-    '#',
-  ])('accepts a visible ATX heading: %s', (text) => {
-    expect(admitPlanningArtifact({ phase: 'planning', filename: 'plan.md', text })).toBe(text);
-  });
+  it.each(['# ATX heading', '   ### indented ATX heading', '#'])(
+    'accepts a visible ATX heading: %s',
+    (text) => {
+      expect(admitPlanningArtifact({ phase: 'planning', filename: 'plan.md', text })).toBe(text);
+    },
+  );
 
-  it.each([
-    'Setext heading\n===',
-    '   Setext heading\n   ---',
-    '   Setext heading\n   ===',
-  ])('accepts a visible Setext heading: %s', (text) => {
-    expect(admitPlanningArtifact({ phase: 'planning', filename: 'plan.md', text })).toBe(text);
-  });
+  it.each(['Setext heading\n===', '   Setext heading\n   ---', '   Setext heading\n   ==='])(
+    'accepts a visible Setext heading: %s',
+    (text) => {
+      expect(admitPlanningArtifact({ phase: 'planning', filename: 'plan.md', text })).toBe(text);
+    },
+  );
 
   it('accepts a valid clarification marker embedded in headed Markdown', () => {
     const text =

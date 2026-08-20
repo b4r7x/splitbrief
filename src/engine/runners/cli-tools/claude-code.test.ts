@@ -62,6 +62,8 @@ describe('Claude Code role adapters', () => {
       'claude-sonnet-4-6',
       '--effort',
       'high',
+      '--permission-mode',
+      'plan',
       '--resume',
       'session-1',
       '--label',
@@ -122,6 +124,81 @@ describe('Claude Code role adapters', () => {
     expect(retryCall).not.toContain('--session-id');
     expect(retryCall.slice(retryCall.indexOf('--resume'))).toEqual(['--resume', capturedId]);
     expect(retryCall).not.toEqual(firstCall);
+  });
+
+  it('pins the exact read-only plan init: plan permission, no session flags, no tools flags', () => {
+    const init = claudeCodePlannerAdapter.buildArgs({
+      prompt: '<brief>',
+      model: undefined,
+      projectDir: '/project',
+      configuredArgs: [],
+      mode: 'plan',
+      sessionId: null,
+      effort: undefined,
+    });
+    expect(init).toEqual([
+      '-p',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--include-partial-messages',
+      '--permission-mode',
+      'plan',
+    ]);
+    expect(claudeCodePlannerAdapter.validateArgs(init, init)).toEqual({ valid: true });
+  });
+
+  it('rejects hostile configuration that could widen the planner plan vector', () => {
+    const init = claudeCodePlannerAdapter.buildArgs({
+      prompt: '<brief>',
+      model: undefined,
+      projectDir: '/project',
+      configuredArgs: [],
+      mode: 'plan',
+      sessionId: null,
+      effort: undefined,
+    });
+    const hostile = [
+      ['--permission-mode', 'acceptEdits'],
+      ['--permission-mode', 'bypassPermissions'],
+      ['--allowedTools', 'Write,Bash'],
+      ['--allowed-tools', 'Write'],
+      ['--disallowedTools', 'Read'],
+      ['--disallowed-tools', 'Read'],
+      ['--mcp-config', 'servers.json'],
+      ['--dangerously-skip-permissions'],
+      ['--add-dir', '/srv/other'],
+      ['--resume', 'other-session'],
+      ['--session-id', 'other-session'],
+    ] as const;
+    for (const tail of hostile) {
+      expect(claudeCodePlannerAdapter.validateArgs([...init, ...tail], init)).toEqual({
+        valid: false,
+        conflicts: expect.arrayContaining([tail[0] ?? '']),
+      });
+    }
+  });
+
+  it('keeps the implementer contained to acceptEdits: bypass and skip permission modes fail', () => {
+    const implementerArgs = claudeCodeImplementerAdapter.buildArgs({
+      prompt: '<brief>',
+      model: undefined,
+      projectDir: '/project',
+      configuredArgs: ['--label', 'fixture'],
+    });
+    const implementerBase = implementerArgs.slice(0, -2);
+    expect(
+      claudeCodeImplementerAdapter.validateArgs(
+        [...implementerBase, '--permission-mode', 'bypassPermissions'],
+        implementerBase,
+      ),
+    ).toEqual({ valid: false, conflicts: ['--permission-mode'] });
+    expect(
+      claudeCodeImplementerAdapter.validateArgs(
+        [...implementerBase, '--allowedTools', 'Write'],
+        implementerBase,
+      ),
+    ).toEqual({ valid: false, conflicts: ['--allowedTools'] });
   });
 });
 

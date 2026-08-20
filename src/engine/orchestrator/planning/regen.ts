@@ -16,7 +16,7 @@ import { buildTasksPrompt } from '../../spec/prompts/tasks.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { buildProjectContextMarkdown } from '../../planners/context.js';
 import { publishPlannerStatus, publishWarning } from '../events.js';
-import { runPlannerReview } from '../planner-review.js';
+import { runPlannerReview, type BriefRecoveryReviewOptions } from '../planner-review.js';
 import {
   commitQueueMessagesDrained,
   readQueueForPrompt,
@@ -44,6 +44,7 @@ type RegenerateFromFeedbackCtx = {
   statusPhase?: Phase | undefined;
   statusSummary?: string | undefined;
   sinks?: WorkflowSinks | undefined;
+  briefRecovery?: BriefRecoveryReviewOptions | undefined;
 };
 
 type PlanRegenResult = {
@@ -104,7 +105,6 @@ async function regenerateFromFeedback(
         ctx,
         state,
         prompt: prefix ? prefix + basePrompt : basePrompt,
-        writeTo: PLAN_FILE,
       });
       state = result.state;
       state = maybeCommitQueue(ctx, state, queued.messages);
@@ -124,7 +124,6 @@ async function regenerateFromFeedback(
       ctx,
       state,
       prompt: prefix ? prefix + basePrompt : basePrompt,
-      writeTo: TASKS_FILE,
     });
     state = result.state;
     const tasks = parseTasksStrict(result.text, (message) =>
@@ -165,7 +164,6 @@ async function runRegenerationReview(opts: {
   ctx: RegenerateFromFeedbackCtx;
   state: WorkflowState;
   prompt: string;
-  writeTo: typeof PLAN_FILE | typeof TASKS_FILE;
 }): Promise<{ state: WorkflowState; text: string }> {
   const statusPhase = opts.ctx.statusPhase ?? 'planning';
   const summary =
@@ -196,6 +194,13 @@ async function runRegenerationReview(opts: {
         bus: opts.ctx.bus,
         signal: opts.ctx.signal,
         sinks,
+        ...(opts.ctx.briefRecovery === undefined
+          ? {}
+          : {
+              briefRecovery: true,
+              operationId: opts.ctx.briefRecovery.operationId,
+              noAutomaticContinuation: true,
+            }),
       },
       state,
       onStateChange: (s) => {
@@ -210,8 +215,9 @@ async function runRegenerationReview(opts: {
           bus: opts.ctx.bus,
           state,
           metadata: opts.ctx.metadata,
-          writeTo: opts.writeTo,
           signal,
+          briefRecovery: opts.ctx.briefRecovery,
+          ...(opts.kind === 'plan' ? { writeTo: PLAN_FILE } : { returnCandidate: true }),
         }),
     });
     return loop.value;
@@ -239,6 +245,7 @@ type RegenerateBaseOptions = {
 type RegenerateTasksOptions = RegenerateBaseOptions & {
   planOverride?: string | undefined;
   feedback?: string | undefined;
+  briefRecovery?: BriefRecoveryReviewOptions | undefined;
 };
 
 type RegeneratePlanAndTasksOptions = RegenerateBaseOptions & {
@@ -271,6 +278,7 @@ export async function regenerateTasks(opts: RegenerateTasksOptions): Promise<{
     statusPhase,
     statusSummary,
     sinks,
+    briefRecovery,
   } = opts;
   const result = await regenerateFromFeedback('tasks', {
     projectDir,
@@ -288,6 +296,7 @@ export async function regenerateTasks(opts: RegenerateTasksOptions): Promise<{
     statusPhase,
     statusSummary,
     sinks,
+    briefRecovery,
   });
   return { state: result.state, tasks: result.tasks, queuedMessages: result.queuedMessages };
 }

@@ -80,9 +80,9 @@ describe('cost transparency section', () => {
   it('names the sidebar toggle and the width below which it paints nothing', () => {
     expect(ATTACHED_AVAILABLE_COMMANDS.has('/sidebar')).toBe(true);
     expect(getWorkflowSidebarWidth({ cols: 119, sidebarVisible: true })).toBe(0);
-    expect(getWorkflowSidebarWidth({ cols: 120, sidebarVisible: true })).toBeGreaterThan(0);
+    expect(getWorkflowSidebarWidth({ cols: 120, sidebarVisible: true })).toBe(0);
     expect(costSection).toContain('`/sidebar`');
-    expect(costSection).toContain('below 120 columns');
+    expect(costSection).toContain('at or below 120 columns');
   });
 
   it('names the drilldown overlay by its real shortcut', () => {

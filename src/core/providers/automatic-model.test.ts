@@ -29,15 +29,14 @@ describe('normalizeConfiguredModel', () => {
 });
 
 describe('legacy Claude Code "default" alias', () => {
-  it.each([
-    'default',
-    'DEFAULT',
-    '  default  ',
-  ])('treats %j as automatic selection for claude-code only', (input) => {
-    expect(normalizeConfiguredModel(input, 'claude-code')).toBe('auto');
-    expect(isAutomaticModel(input, 'claude-code')).toBe(true);
-    expect(resolveCliModel(input, 'claude-code')).toBeUndefined();
-  });
+  it.each(['default', 'DEFAULT', '  default  '])(
+    'treats %j as automatic selection for claude-code only',
+    (input) => {
+      expect(normalizeConfiguredModel(input, 'claude-code')).toBe('auto');
+      expect(isAutomaticModel(input, 'claude-code')).toBe(true);
+      expect(resolveCliModel(input, 'claude-code')).toBeUndefined();
+    },
+  );
 
   it('keeps "default" a literal model id for every other tool', () => {
     expect(normalizeConfiguredModel('default', 'codex')).toBe('default');
@@ -62,16 +61,12 @@ describe('isAutomaticModel', () => {
 });
 
 describe('resolveCliModel', () => {
-  it.each([
-    'auto',
-    'AUTO',
-    '  auto  ',
-    undefined,
-    '',
-    '   ',
-  ])('resolves %j to no model so the adapter omits --model', (input) => {
-    expect(resolveCliModel(input)).toBeUndefined();
-  });
+  it.each(['auto', 'AUTO', '  auto  ', undefined, '', '   '])(
+    'resolves %j to no model so the adapter omits --model',
+    (input) => {
+      expect(resolveCliModel(input)).toBeUndefined();
+    },
+  );
 
   it('passes an explicit model id through', () => {
     expect(resolveCliModel('gpt-5.4')).toBe('gpt-5.4');

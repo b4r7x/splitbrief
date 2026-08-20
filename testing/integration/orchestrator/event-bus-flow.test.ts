@@ -3,9 +3,12 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { TASK_MARKDOWN, CODE_RESPONSE } from '#testing/helpers/faux/shell-runner.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
+import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
+import { createInitialState } from '../../../src/core/state/machine.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import {
@@ -56,6 +59,23 @@ describe('EventBus end-to-end flow', { timeout: 90_000 }, () => {
       sessionId,
       generation: '3a333333-3333-4333-8333-333333333333',
     };
+    const resumeState = persistReadyExecutionState(projectDir, sessionId, {
+      ...createInitialState(feature),
+      phase: 'implementing',
+      mode: 'quick',
+      plannerTool: 'shell',
+      implementerTool: 'shell',
+      tasks: [
+        makeTask({
+          scope: {
+            inBounds: ['Modify only `src/hello.ts`.'],
+            outOfBounds: ['Do not touch anything outside the task file.'],
+          },
+          evidence: ['brief-quality.json confirms the task brief is complete'],
+          typeDefs: 'type HelloModule = { greeting: string }',
+        }),
+      ],
+    });
     const prepared: PreparedExecution = {
       purpose: 'new-workflow',
       config,
@@ -84,7 +104,7 @@ describe('EventBus end-to-end flow', { timeout: 90_000 }, () => {
         },
       ],
       session: { kind: 'existing', ref: { projectDir, sessionId }, active },
-      runtime: { feature, allowRepoRunners: false, allowHooks: true },
+      runtime: { feature, allowRepoRunners: false, allowHooks: true, resumeState },
     };
 
     await runWorkflow({
@@ -96,10 +116,10 @@ describe('EventBus end-to-end flow', { timeout: 90_000 }, () => {
 
     const types = recorded.map((e) => e.type);
 
-    // Quick mode emits plan_approved (not plan_done) — it auto-approves and skips the gate.
-    expect(types).toContain('workflow_started');
+    // The permit-gated resumed execution starts with workflow_resumed and
+    // immediately runs the one task without an approval-gate event.
+    expect(types).toContain('workflow_resumed');
     expect(types).toContain('workflow_config');
-    expect(types).toContain('plan_approved');
     expect(types).toContain('task_started');
     expect(types).toContain('implementer_generate_running');
     expect(types).toContain('implementer_generate_done');
@@ -110,9 +130,8 @@ describe('EventBus end-to-end flow', { timeout: 90_000 }, () => {
     const idx = (t: EngineEvent['type']) => types.indexOf(t);
 
     // Canonical ordering invariants:
-    expect(idx('workflow_started')).toBeLessThan(idx('workflow_config'));
-    expect(idx('workflow_config')).toBeLessThan(idx('plan_approved'));
-    expect(idx('plan_approved')).toBeLessThan(idx('task_started'));
+    expect(idx('workflow_resumed')).toBeLessThan(idx('workflow_config'));
+    expect(idx('workflow_config')).toBeLessThan(idx('task_started'));
     expect(idx('task_started')).toBeLessThan(idx('implementer_generate_running'));
     expect(idx('implementer_generate_running')).toBeLessThan(idx('implementer_generate_done'));
     expect(idx('implementer_generate_done')).toBeLessThan(idx('task_completed'));

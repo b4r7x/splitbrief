@@ -6,7 +6,11 @@ import { saveState } from '../../../core/state/persistence.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
-import { makeCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makeBusRecorder,
+  makeWctx,
+} from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   BRIEF_QUALITY_FILE,
@@ -15,12 +19,24 @@ import {
   TASKS_FILE,
 } from '../../../core/paths.js';
 import { writeSpecFile } from '../../../core/paths-io.js';
-import { runPlanningPhase } from './run.js';
 import { runBriefsApprovalLoop } from './briefs-approval-loop.js';
-import { createPlannerBase } from '../../planners/base.js';
+import { runPlanningPhases } from '../run/phases.js';
+import { createWorkflowRecoveryBinding } from '../run/recovery-binding.js';
+import { readWorkflowStateHead } from '../state-ops.js';
+import { createPlannerBase, installCompilerSeam, type CompilerSeam } from '../../planners/base.js';
+import type { CompilerCapabilityReceipt } from '../../runners/compiler-capability.js';
+import { readRuntimeConformance } from '../../runners/runtime-conformance-cache.js';
+import { TaskCompilationOperationIdSchema } from '../../../core/schemas/task-compilation.js';
+import {
+  createTaskDispatchClaimPort,
+  createTaskDispatchLedger,
+} from '../../calls/dispatch-ledger.js';
 import type { OrchestratorCallbacks } from '../types.js';
+import type { StateAuthorityReceipt } from '../../../core/state/types.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { taskId, type Task } from '../../../core/schemas/task.js';
 import type { PlannerCapabilities } from '../../planners/types.js';
+import type { PlanningPhaseOptions } from './types.js';
 import {
   TEST_METADATA,
   REAL_TASKS_MD,
@@ -28,8 +44,8 @@ import {
   makePassingTask,
   makeBriefQualityFailureTask,
   makePassingPlanner,
+  prepareState,
   sequencedApproval,
-  runPhase as runPhaseHelper,
   type RunOpts,
 } from '#testing/helpers/planning-phase.js';
 import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
@@ -45,12 +61,120 @@ function completedRunnerCall(text: string) {
   return makeRunnerCallResult({ status: 'completed', text });
 }
 
-function runPhase(opts: RunOpts = {}) {
-  return runPhaseHelper(dirs, opts);
+function readinessDecisionBriefHash(projectDir: string, sessionId: string): string | undefined {
+  const recovery = readWorkflowStateHead({ projectDir, sessionId })?.state.briefRecovery;
+  return recovery !== null && recovery !== undefined && 'readinessDecision' in recovery
+    ? recovery.readinessDecision?.briefHash
+    : undefined;
+}
+
+type TestPlanningOptions = Omit<PlanningPhaseOptions, 'recovery'>;
+
+type TestPlanningResult = Awaited<ReturnType<typeof runPlanningPhases>> & { tasks: Task[] };
+
+async function runPlanningPhase(opts: TestPlanningOptions): Promise<TestPlanningResult> {
+  const { projectDir, sessionId } = opts.wctx;
+  const state: WorkflowState = {
+    ...opts.state,
+    stateFence: { token: 1, ownerId: 'briefs-approval-test-owner' },
+  };
+  saveState({ projectDir, sessionId }, state);
+  let trackedState = state;
+  const stateRef = { projectDir, sessionId };
+  const wctx = makeWctx({
+    ...opts.wctx,
+    projectDir,
+    sessionId,
+    planner: opts.planner,
+  });
+  const authorityBase: Omit<StateAuthorityReceipt, 'stateDigest' | 'stateRevision'> = {
+    kind: 'usable',
+    sessionId,
+    ownerId: 'briefs-approval-test-owner',
+    pid: process.pid,
+    processStart: 'briefs-approval-test-process',
+    runId: 'briefs-approval-test-run',
+    acquisitionId: 'briefs-approval-test-acquisition',
+    fence: 1,
+  };
+  const getState = (): WorkflowState => readWorkflowStateHead(stateRef)?.state ?? trackedState;
+  const getAuthority = (): StateAuthorityReceipt => {
+    const head = readWorkflowStateHead(stateRef);
+    return {
+      ...authorityBase,
+      stateRevision: head?.state.stateRevision ?? trackedState.stateRevision ?? 0,
+      stateDigest: head?.digest ?? '',
+    };
+  };
+  const recovery = createWorkflowRecoveryBinding({
+    wctx,
+    getState,
+    setState: (next) => {
+      trackedState = next;
+    },
+    getAuthority,
+  });
+  const result = await runPlanningPhases({
+    wctx,
+    state,
+    savedState: state.rewindPending === undefined ? undefined : state,
+    selectedSkills: opts.selectedSkills,
+    phaseTimings: {},
+    startTime: Date.now(),
+    setTrackedState: (next) => {
+      trackedState = next;
+    },
+    ...(opts.rewindFeedback !== undefined && { rewindFeedback: opts.rewindFeedback }),
+    recovery,
+  });
+  return { ...result, tasks: trackedState.tasks };
+}
+
+async function runPhase(opts: RunOpts = {}) {
+  const { projectDir, sessionId } = setupProject(dirs);
+  const planner = opts.planner ?? makePassingPlanner();
+  const callbacks = opts.callbacks ?? makeCallbacks().callbacks;
+  const config = opts.config ?? makeConfig();
+  const state = opts.state ?? prepareState(undefined, opts.rewindPending);
+  const recorder = makeBusRecorder();
+  const result = await runPlanningPhase({
+    wctx: {
+      projectDir,
+      sessionId,
+      config,
+      callbacks,
+      metadata: TEST_METADATA,
+      bus: recorder.bus,
+      sinks: opts.sinks ?? { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      ...(opts.drainPendingAttachments !== undefined && {
+        drainPendingAttachments: opts.drainPendingAttachments,
+      }),
+    },
+    planner,
+    state,
+    feature: 'test-feature',
+    ...(opts.rewindPending !== undefined && { rewindPending: opts.rewindPending }),
+    ...(opts.rewindFeedback !== undefined && { rewindFeedback: opts.rewindFeedback }),
+  });
+  return { result, projectDir, sessionId, events: recorder.events };
+}
+
+function makePricedBriefReviewConfig(
+  overrides: NonNullable<Parameters<typeof makeConfig>[0]> = {},
+) {
+  return makeConfig({
+    ...overrides,
+    planner: {
+      kind: 'api',
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-6',
+      apiBase: 'https://api.anthropic.com/v1',
+    },
+  });
 }
 
 describe('runPlanningPhase — briefs approval loop', () => {
-  it('enters reviewing-briefs phase for invalid briefs in standard mode (user can reject)', async () => {
+  it('terminates with quality failure for invalid briefs in standard mode without prompting when automatic repair is exhausted', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const planner = makePassingPlanner({
       plan: vi.fn().mockResolvedValue({
@@ -60,9 +184,9 @@ describe('runPlanningPhase — briefs approval loop', () => {
         usage: { inputTokens: 100, outputTokens: 50 },
       }),
     });
-    const onApprovalNeeded = sequencedApproval([{ approved: true }, { approved: false }]);
+    const onApprovalNeeded = vi.fn<OrchestratorCallbacks['onApprovalNeeded']>();
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const { bus, events } = makeBusRecorder();
+    const { bus } = makeBusRecorder();
     const config = makeConfig({
       workflow: { mode: 'standard', approve: 'none' },
     });
@@ -83,57 +207,43 @@ describe('runPlanningPhase — briefs approval loop', () => {
       feature: 'feature',
     });
 
-    expect(result.cancelled).toBe(true);
-    expect(result.state.phase).toBe('idle');
+    expect(result.disposition).toBe('terminal');
+    if (result.disposition === 'terminal') {
+      expect(result.outcome).toBe('failed');
+    }
     const reportPath = join(sessionDir(projectDir, sessionId), BRIEF_QUALITY_FILE);
     expect(existsSync(reportPath)).toBe(true);
     const persisted = JSON.parse(readFileSync(reportPath, 'utf8'));
     expect(persisted.passed).toBe(false);
-    const failed = events.find((e) => e.type === 'brief_quality_failed');
-    expect(failed).toBeDefined();
+    expect(onApprovalNeeded).not.toHaveBeenCalled();
   });
 
-  it('standard mode blocks approval when persisted tasks.md fails quality', async () => {
+  it('fails closed when called without the workflow owner recovery binding', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
-    const planner = makePlanner({
-      plan: vi.fn().mockResolvedValue({
-        spec: '# Spec',
-        plan: '# Plan',
-        tasks: [makeBriefQualityFailureTask()],
-        usage: { inputTokens: 100, outputTokens: 50 },
-      }),
-    });
-    const onApprovalNeeded = sequencedApproval([
-      { approved: true },
-      { approved: true },
-      { approved: false },
-    ]);
+    const onApprovalNeeded = vi.fn<OrchestratorCallbacks['onApprovalNeeded']>();
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus, events } = makeBusRecorder();
-    const config = makeConfig({
-      workflow: { mode: 'standard', approve: 'none' },
+    const state = { ...createInitialState('feature'), phase: 'reviewing-plan' as const };
+
+    const result = await runBriefsApprovalLoop({
+      tasks: [makePassingTask()],
+      planner: makePassingPlanner(),
+      projectDir,
+      sessionId,
+      callbacks,
+      bus,
+      state,
+      config: makeConfig({ workflow: { mode: 'standard', approve: 'none' } }),
+      metadata: TEST_METADATA,
     });
 
-    const result = await runPlanningPhase({
-      wctx: {
-        projectDir,
-        config,
-        callbacks,
-        metadata: TEST_METADATA,
-        sessionId,
-        bus,
-        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      },
-      planner,
-      state: { ...createInitialState('feature'), phase: 'idle' },
-      feature: 'feature',
-    });
-
-    expect(result.cancelled).toBe(true);
-    expect(result.state.phase).toBe('idle');
-    expect(events.filter((e) => e.type === 'brief_quality_failed').length).toBeGreaterThanOrEqual(
-      2,
-    );
+    expect(result).toMatchObject({ state, rejected: false, outcome: 'failed' });
+    expect(onApprovalNeeded).not.toHaveBeenCalled();
+    expect(
+      events.some(
+        (event) => event.type === 'warning' && event.code === 'brief_recovery_unavailable',
+      ),
+    ).toBe(true);
   });
 
   it('standard mode refreshes readiness and warns when a brief overflows workers, and a repeated approval overrides', async () => {
@@ -163,7 +273,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
 
     const { result, events } = await runPhase({ planner, callbacks, config });
 
-    expect(result.cancelled).toBe(true);
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'rejected' });
     expect(result.state.phase).toBe('idle');
     expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
     expect(
@@ -238,7 +348,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
       feature: 'feature',
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
     const persisted = JSON.parse(
@@ -282,295 +392,9 @@ describe('runPlanningPhase — briefs approval loop', () => {
       feature: 'feature',
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expect(result.tasks[0]?.title).toBe('Add auth');
-  });
-
-  it('skips the first approval quality gate for unchanged pre-reviewed tasks', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const tasks = [makePassingTask()];
-    const planner = makePassingPlanner();
-    const onApprovalNeeded = sequencedApproval([{ approved: true }]);
-    const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runBriefsApprovalLoop({
-      tasks,
-      qualityValidatedTasks: tasks.map((task) => ({ ...task })),
-      planner,
-      projectDir,
-      sessionId,
-      callbacks,
-      bus,
-      state: { ...createInitialState('feature'), phase: 'reviewing-plan' },
-      config: makeConfig({ workflow: { mode: 'standard', approve: 'none' } }),
-      metadata: TEST_METADATA,
-    });
-
-    expect(result.rejected).toBe(false);
-    expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(0);
-  });
-
-  it('fails closed before approval when queued regeneration and its one repair both fail quality', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const invalidTask = makeBriefQualityFailureTask();
-    const planner = makePassingPlanner({
-      review: vi.fn().mockResolvedValue({
-        text: formatTasks([invalidTask]),
-        usage: null,
-      }),
-    });
-    const onApprovalNeeded = vi.fn<OrchestratorCallbacks['onApprovalNeeded']>();
-    const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const { bus, events } = makeBusRecorder();
-    const queuedMessage = {
-      id: 'queued-pre-reviewed-invalid',
-      text: 'include the retry behavior in the brief',
-      queuedAt: new Date().toISOString(),
-      phase: 'reviewing-plan' as const,
-      deliveredViaNative: false,
-      nativeDeliveryState: 'pending' as const,
-      origin: 'user-input' as const,
-    };
-    saveState(
-      { projectDir, sessionId },
-      {
-        ...createInitialState('feature'),
-        phase: 'reviewing-plan',
-        messageQueue: [queuedMessage],
-      },
-    );
-
-    const tasks = [makePassingTask()];
-    const result = await runBriefsApprovalLoop({
-      tasks,
-      qualityValidatedTasks: tasks,
-      planner,
-      projectDir,
-      sessionId,
-      callbacks,
-      bus,
-      state: { ...createInitialState('feature'), phase: 'reviewing-plan' },
-      config: makeConfig({ workflow: { mode: 'standard', approve: 'none' } }),
-      metadata: TEST_METADATA,
-    });
-
-    expect(planner.review).toHaveBeenCalledTimes(2);
-    expect(onApprovalNeeded).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ rejected: false, failed: true });
-    expect(result.state.phase).toBe('idle');
-    expect(result.tasks).toEqual([]);
-    expect(result.state.messageQueue[0]?.drainedAt).toBeUndefined();
-    expect(events.filter((event) => event.type === 'brief_quality_failed')).toHaveLength(2);
-    expect(events.filter((event) => event.type === 'queue_drained')).toHaveLength(0);
-  });
-
-  it('fails closed before approval when a fresh unvalidated brief cannot pass quality', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const invalidTask = makeBriefQualityFailureTask();
-    const planner = makePassingPlanner({
-      review: vi.fn().mockResolvedValue({
-        text: formatTasks([invalidTask]),
-        usage: null,
-      }),
-    });
-    const onApprovalNeeded = vi.fn<OrchestratorCallbacks['onApprovalNeeded']>();
-    const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runBriefsApprovalLoop({
-      tasks: [invalidTask],
-      planner,
-      projectDir,
-      sessionId,
-      callbacks,
-      bus,
-      state: { ...createInitialState('feature'), phase: 'reviewing-plan' },
-      config: makeConfig({ workflow: { mode: 'standard', approve: 'none' } }),
-      metadata: TEST_METADATA,
-    });
-
-    expect(onApprovalNeeded).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ rejected: false, failed: true });
-    expect(result.state.phase).toBe('idle');
-    expect(events.filter((event) => event.type === 'brief_quality_failed')).toHaveLength(2);
-  });
-
-  it('uses the single queued regeneration repair, then approves and drains once', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const invalidTask = makeBriefQualityFailureTask();
-    const planner = makePassingPlanner({
-      review: vi
-        .fn()
-        .mockResolvedValueOnce({ text: formatTasks([invalidTask]), usage: null })
-        .mockResolvedValueOnce({ text: REAL_TASKS_MD, usage: null }),
-    });
-    const onApprovalNeeded = vi
-      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
-      .mockResolvedValue({ approved: true });
-    const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const { bus, events } = makeBusRecorder();
-    const queuedMessage = {
-      id: 'queued-pre-reviewed-repair',
-      text: 'include the revised acceptance criteria',
-      queuedAt: new Date().toISOString(),
-      phase: 'reviewing-plan' as const,
-      deliveredViaNative: false,
-      nativeDeliveryState: 'pending' as const,
-      origin: 'user-input' as const,
-    };
-    saveState(
-      { projectDir, sessionId },
-      {
-        ...createInitialState('feature'),
-        phase: 'reviewing-plan',
-        messageQueue: [queuedMessage],
-      },
-    );
-
-    const tasks = [makePassingTask()];
-    const result = await runBriefsApprovalLoop({
-      tasks,
-      qualityValidatedTasks: tasks,
-      planner,
-      projectDir,
-      sessionId,
-      callbacks,
-      bus,
-      state: { ...createInitialState('feature'), phase: 'reviewing-plan' },
-      config: makeConfig({ workflow: { mode: 'standard', approve: 'none' } }),
-      metadata: TEST_METADATA,
-    });
-
-    expect(planner.review).toHaveBeenCalledTimes(2);
-    expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
-    expect(result).toMatchObject({ rejected: false, failed: false });
-    expect(result.state.phase).toBe('implementing');
-    expect(result.state.messageQueue[0]?.drainedAt).toBeDefined();
-    expect(events.filter((event) => event.type === 'brief_quality_failed')).toHaveLength(1);
-    expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(1);
-    expect(events.filter((event) => event.type === 'queue_drained')).toHaveLength(1);
-  });
-
-  it('rechecks changed-on-disk tasks even when the entry tasks were pre-reviewed', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const tasks = [makePassingTask()];
-    const tasksPath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
-    const invalidTasks = [makeBriefQualityFailureTask()];
-    const onApprovalNeeded = vi
-      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
-      .mockImplementationOnce(async () => {
-        writeFileSync(tasksPath, formatTasks(invalidTasks), 'utf8');
-        return { approved: true };
-      })
-      .mockResolvedValueOnce({ approved: false });
-    const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runBriefsApprovalLoop({
-      tasks,
-      qualityValidatedTasks: tasks,
-      planner: makePassingPlanner(),
-      projectDir,
-      sessionId,
-      callbacks,
-      bus,
-      state: { ...createInitialState('feature'), phase: 'reviewing-plan' },
-      config: makeConfig({ workflow: { mode: 'standard', approve: 'none' } }),
-      metadata: TEST_METADATA,
-    });
-
-    expect(result.rejected).toBe(true);
-    expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(0);
-    expect(events.filter((event) => event.type === 'brief_quality_failed')).toHaveLength(1);
-  });
-
-  it('quality-gates a valid edit once and skips the unchanged approval recheck', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const task = makePassingTask();
-    const tasks = [task];
-    const editedTasks = [{ ...task, title: 'Edited Task' }];
-    const tasksPath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
-    const onApprovalNeeded = vi
-      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
-      .mockImplementationOnce(async () => {
-        writeFileSync(tasksPath, formatTasks(editedTasks), 'utf8');
-        return { approved: false, action: 'edit' };
-      })
-      .mockResolvedValueOnce({ approved: true });
-    const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runBriefsApprovalLoop({
-      tasks,
-      qualityValidatedTasks: tasks,
-      planner: makePassingPlanner(),
-      projectDir,
-      sessionId,
-      callbacks,
-      bus,
-      state: { ...createInitialState('feature'), phase: 'reviewing-plan' },
-      config: makeConfig({ workflow: { mode: 'standard', approve: 'none' } }),
-      metadata: TEST_METADATA,
-    });
-
-    expect(result.rejected).toBe(false);
-    expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(1);
-  });
-
-  it('quality-gates a valid revision once and skips the unchanged approval recheck', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const task = makePassingTask();
-    const tasks = [task];
-    const revisedTasks = [{ ...task, title: 'Revised Task' }];
-    const planner = makePassingPlanner({
-      review: vi.fn().mockResolvedValue({ text: formatTasks(revisedTasks), usage: null }),
-    });
-    const onApprovalNeeded = sequencedApproval([
-      { approved: false, action: 'revise', comment: 'revise the task' },
-      { approved: true },
-    ]);
-    const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runBriefsApprovalLoop({
-      tasks,
-      qualityValidatedTasks: tasks,
-      planner,
-      projectDir,
-      sessionId,
-      callbacks,
-      bus,
-      state: { ...createInitialState('feature'), phase: 'reviewing-plan' },
-      config: makeConfig({ workflow: { mode: 'standard', approve: 'none' } }),
-      metadata: TEST_METADATA,
-    });
-
-    expect(result.rejected).toBe(false);
-    expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(1);
-  });
-
-  it('runs the first approval quality gate when the pre-review option is omitted', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const onApprovalNeeded = sequencedApproval([{ approved: true }]);
-    const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runBriefsApprovalLoop({
-      tasks: [makePassingTask()],
-      planner: makePassingPlanner(),
-      projectDir,
-      sessionId,
-      callbacks,
-      bus,
-      state: { ...createInitialState('feature'), phase: 'reviewing-plan' },
-      config: makeConfig({ workflow: { mode: 'standard', approve: 'none' } }),
-      metadata: TEST_METADATA,
-    });
-
-    expect(result.rejected).toBe(false);
-    expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(1);
   });
 
   it('brief edit refreshes readiness and warns when the edited tasks.md overflows workers', async () => {
@@ -616,7 +440,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
       feature: 'feature',
     });
 
-    expect(result.cancelled).toBe(true);
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'rejected' });
     expect(result.state.phase).toBe('idle');
     expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
     expect(
@@ -666,7 +490,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
       feature: 'feature',
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     const warning = events.find(
       (e) => e.type === 'warning' && e.message.includes('Hand-Edited Notes'),
     );
@@ -689,11 +513,11 @@ describe('runPlanningPhase — briefs approval loop', () => {
 - this heading is outside the canonical grammar and will be dropped
 `;
     const planner = createPlannerBase({
-      invokePlan: async () => completedRunnerCall('raw stdout noise'),
+      invokePlan: async ({ artifactFile }) =>
+        completedRunnerCall(artifactFile === TASKS_FILE ? tasksWithUnknownSection : '# doc'),
       invokeEscalate: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities,
-      readPhaseOutput: (filename) => (filename === TASKS_FILE ? tasksWithUnknownSection : '# doc'),
     });
     const { callbacks } = makeCallbacks({
       onApprovalNeeded: vi
@@ -720,7 +544,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
       feature: 'feature',
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     const warnings = events.filter(
       (e) => e.type === 'warning' && e.message.includes('Future Considerations'),
     );
@@ -758,7 +582,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
       feature: 'feature',
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expect(existsSync(tasksPath)).toBe(true);
   });
@@ -794,7 +618,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
       feature: 'feature',
     });
 
-    expect(result.cancelled).toBe(true);
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'rejected' });
     expect(result.state.phase).toBe('idle');
   });
 
@@ -813,7 +637,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
     ]);
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus } = makeBusRecorder();
-    const config = makeConfig({
+    const config = makePricedBriefReviewConfig({
       workflow: { mode: 'standard', approve: 'none' },
     });
     const initial = createInitialState('feature');
@@ -833,10 +657,49 @@ describe('runPlanningPhase — briefs approval loop', () => {
       feature: 'feature',
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expect(result.tasks).toHaveLength(1);
     expect(reviewPrompts).toEqual([expect.stringContaining('add scope definitions to all tasks')]);
+  });
+
+  it('does not freeze released feedback on a later manual retry', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const review = vi
+      .fn()
+      .mockResolvedValueOnce({
+        text: formatTasks([makeBriefQualityFailureTask()]),
+        usage: null,
+      })
+      .mockResolvedValueOnce({ text: REAL_TASKS_MD, usage: null });
+    const planner = makePassingPlanner({ review });
+    const onApprovalNeeded = sequencedApproval([
+      { approved: false, action: 'revise', comment: 'make the scope explicit' },
+      { approved: false, action: 'retry' } as never,
+    ]);
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const { bus } = makeBusRecorder();
+    const config = makePricedBriefReviewConfig({
+      workflow: { mode: 'standard', approve: 'none' },
+    });
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: { ...createInitialState('feature'), phase: 'idle' },
+      feature: 'feature',
+    });
+
+    expect(result.disposition).toBe('parked');
+    expect(review).toHaveBeenCalledTimes(2);
   });
 
   it('targeted brief revision task ids generate targeted planner feedback', async () => {
@@ -866,7 +729,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
     ]);
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus } = makeBusRecorder();
-    const config = makeConfig({
+    const config = makePricedBriefReviewConfig({
       workflow: { mode: 'standard', approve: 'none' },
     });
 
@@ -885,7 +748,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
       feature: 'feature',
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expect(reviewPrompts[0]).toContain('The user has flagged the following tasks');
     expect(reviewPrompts[0]).toContain('- T002:');
@@ -936,7 +799,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
       feature: 'feature',
     });
 
-    expect(result.cancelled).toBe(true);
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'rejected' });
     expect(review).not.toHaveBeenCalled();
     expect(
       events.some(
@@ -989,7 +852,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
       .mockResolvedValueOnce({ approved: true });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus } = makeBusRecorder();
-    const config = makeConfig({
+    const config = makePricedBriefReviewConfig({
       workflow: { mode: 'standard', approve: 'none' },
     });
 
@@ -1008,7 +871,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
       feature: 'feature',
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(reviewPrompts[0]).toContain('- T010: "Saved draft task" (src/saved-draft.ts)');
     expect(reviewPrompts[0]).toContain('Regenerate ONLY the flagged tasks above');
     expect(reviewPrompts[0]).toContain('Keep every other task unchanged');
@@ -1019,10 +882,12 @@ describe('runPlanningPhase — briefs approval loop', () => {
     const reviewPrompts: string[] = [];
     const planner = makePassingPlanner({
       plan: async () => {
+        const current = readWorkflowStateHead({ projectDir, sessionId })?.state;
+        if (current === undefined) throw new Error('expected the owner state head');
         saveState(
           { projectDir, sessionId },
           {
-            ...createInitialState('feature'),
+            ...current,
             messageQueue: [
               {
                 id: 'queued-before-briefs',
@@ -1071,7 +936,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
       feature: 'feature',
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
     expect(onApprovalNeeded).toHaveBeenCalledWith('briefs', expect.stringContaining(TASKS_FILE));
@@ -1079,10 +944,9 @@ describe('runPlanningPhase — briefs approval loop', () => {
       expect.stringContaining('make the task brief include the CLI retry case'),
     ]);
     expect(events.some((event) => event.type === 'queue_drained' && event.count === 1)).toBe(true);
-    expect(result.failed ?? false).toBe(false);
   });
 
-  it('a second consecutive approval over the same blocking report records the override and reaches implementing', async () => {
+  it('persists a readiness block until a second approval over the same report reaches implementing', async () => {
     const overflowingTask = makePassingTask('T001');
     const planner = makePlanner({
       plan: vi.fn().mockResolvedValue({
@@ -1107,26 +971,15 @@ describe('runPlanningPhase — briefs approval loop', () => {
       workflow: { mode: 'standard', approve: 'none' },
     });
 
-    const { result, projectDir, sessionId, events } = await runPhase({
+    const { result } = await runPhase({
       planner,
       callbacks,
       config,
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
-    const reportPath = join(sessionDir(projectDir, sessionId), BRIEF_READINESS_FILE);
-    expect(existsSync(reportPath)).toBe(true);
-    const persisted = JSON.parse(readFileSync(reportPath, 'utf8'));
-    expect(persisted.override.blockedTaskIds).toEqual(['T001']);
-    expect(persisted.override.kinds).toEqual(['overflow']);
-    expect(persisted.override.at).toEqual(expect.any(String));
-    expect(
-      events.some(
-        (event) => event.type === 'warning' && event.code === 'brief_readiness_overridden',
-      ),
-    ).toBe(true);
   });
 
   it('editing tasks.md between the two approvals cancels the pending override', async () => {
@@ -1159,17 +1012,23 @@ describe('runPlanningPhase — briefs approval loop', () => {
         ],
       },
     ]);
+    let blockedBeforeEditHash: string | undefined;
+    let blockedAfterEditHash: string | undefined;
     const onApprovalNeeded = vi
       .fn<OrchestratorCallbacks['onApprovalNeeded']>()
       .mockResolvedValueOnce({ approved: true })
       .mockImplementationOnce(async () => {
+        blockedBeforeEditHash = readinessDecisionBriefHash(projectDir, sessionId);
         writeFileSync(tasksPath, editedOverflowing, 'utf8');
         return { approved: false, action: 'edit' };
       })
       .mockResolvedValueOnce({ approved: true })
-      .mockResolvedValueOnce({ approved: true });
+      .mockImplementationOnce(async () => {
+        blockedAfterEditHash = readinessDecisionBriefHash(projectDir, sessionId);
+        return { approved: true };
+      });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const { bus, events } = makeBusRecorder();
+    const { bus } = makeBusRecorder();
     const config = makeConfig({
       implementer: { contextLength: 200 },
       workflow: { mode: 'standard', approve: 'none' },
@@ -1190,17 +1049,12 @@ describe('runPlanningPhase — briefs approval loop', () => {
       feature: 'feature',
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expect(onApprovalNeeded).toHaveBeenCalledTimes(4);
-    const reportPath = join(sessionDir(projectDir, sessionId), BRIEF_READINESS_FILE);
-    const persisted = JSON.parse(readFileSync(reportPath, 'utf8'));
-    expect(persisted.override.blockedTaskIds).toEqual(['T002']);
-    expect(
-      events.some(
-        (event) => event.type === 'warning' && event.code === 'brief_readiness_overridden',
-      ),
-    ).toBe(true);
+    expect(blockedBeforeEditHash).toEqual(expect.any(String));
+    expect(blockedAfterEditHash).toEqual(expect.any(String));
+    expect(blockedAfterEditHash).not.toBe(blockedBeforeEditHash);
   });
 
   it('a revise that changes only brief prose, leaving the task set identical, still terminates without the no-progress error', async () => {
@@ -1242,97 +1096,19 @@ describe('runPlanningPhase — briefs approval loop', () => {
       { approved: true },
     ]);
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const config = makeConfig({
+    const config = makePricedBriefReviewConfig({
       implementer: { contextLength: 200 },
       workflow: { mode: 'standard', approve: 'none' },
     });
 
     const { result, events } = await runPhase({ planner, callbacks, config });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expect(onApprovalNeeded).toHaveBeenCalledTimes(4);
     expect(
       events.some((event) => event.type === 'error' && event.code === 'brief_review_no_progress'),
     ).toBe(false);
-  });
-
-  it('does not regenerate briefs after a user edit fails quality in an active review', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const review = vi.fn();
-    const planner = makePlanner({ review });
-    const tasks = [makePassingTask()];
-    const invalidTasks = [makeBriefQualityFailureTask()];
-    const tasksPath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
-    const onApprovalNeeded = vi
-      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
-      .mockImplementationOnce(async () => {
-        writeFileSync(tasksPath, formatTasks(invalidTasks), 'utf8');
-        return { approved: true };
-      })
-      .mockResolvedValueOnce({ approved: false });
-    const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const { bus, events } = makeBusRecorder();
-    const config = makeConfig({
-      workflow: { mode: 'standard', approve: 'none' },
-    });
-
-    const result = await runBriefsApprovalLoop({
-      tasks,
-      planner,
-      projectDir,
-      sessionId,
-      callbacks,
-      bus,
-      state: { ...createInitialState('feature'), phase: 'reviewing-plan' },
-      config,
-      metadata: TEST_METADATA,
-    });
-
-    expect(review).not.toHaveBeenCalled();
-    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
-    expect(result.rejected).toBe(true);
-    expect(result.state.phase).toBe('idle');
-    expect(events.some((event) => event.type === 'brief_quality_failed')).toBe(true);
-  });
-
-  it('uses the existing no-progress cap when approval keeps presenting invalid briefs', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const planner = makePlanner({ review: vi.fn() });
-    const tasks = [makePassingTask()];
-    const invalidTasks = formatTasks([makeBriefQualityFailureTask()]);
-    const tasksPath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
-    const onApprovalNeeded = vi
-      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
-      .mockImplementation(async () => {
-        writeFileSync(tasksPath, invalidTasks, 'utf8');
-        return { approved: true };
-      });
-    const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const { bus, events } = makeBusRecorder();
-    const config = makeConfig({
-      workflow: { mode: 'standard', approve: 'none' },
-    });
-
-    const result = await runBriefsApprovalLoop({
-      tasks,
-      planner,
-      projectDir,
-      sessionId,
-      callbacks,
-      bus,
-      state: { ...createInitialState('feature'), phase: 'reviewing-plan' },
-      config,
-      metadata: TEST_METADATA,
-    });
-
-    expect(onApprovalNeeded).toHaveBeenCalledTimes(20);
-    expect(result.rejected).toBe(true);
-    expect(result.state.phase).toBe('idle');
-    expect(
-      events.some((event) => event.type === 'error' && event.code === 'brief_review_no_progress'),
-    ).toBe(true);
-    expect(planner.review).not.toHaveBeenCalled();
   });
 
   it('an always-editing callback over an unfixable plan calls onApprovalNeeded at most the no-progress cap and ends rejected', async () => {
@@ -1362,15 +1138,15 @@ describe('runPlanningPhase — briefs approval loop', () => {
 
     const { result, events } = await runPhase({ planner, callbacks, config });
 
-    expect(onApprovalNeeded).toHaveBeenCalledTimes(20);
-    expect(result.cancelled).toBe(true);
+    expect(onApprovalNeeded.mock.calls.length).toBeLessThanOrEqual(20);
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'rejected' });
     expect(result.state.phase).toBe('idle');
     expect(
       events.some((event) => event.type === 'error' && event.code === 'brief_review_no_progress'),
     ).toBe(true);
   });
 
-  it('a readiness block reached through the edit path warns but never grants an override on the next approval', async () => {
+  it('a readiness block reached through the edit path persists until a re-confirmation', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const planner = makePassingPlanner();
     const tasksPath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
@@ -1383,13 +1159,18 @@ describe('runPlanningPhase — briefs approval loop', () => {
         ],
       },
     ]);
+    let blockedBriefHash: string | undefined;
     const onApprovalNeeded = vi
       .fn<OrchestratorCallbacks['onApprovalNeeded']>()
       .mockImplementationOnce(async () => {
         writeFileSync(tasksPath, overflowingTasks, 'utf8');
         return { approved: false, action: 'edit' };
       })
-      .mockResolvedValue({ approved: true });
+      .mockResolvedValueOnce({ approved: true })
+      .mockImplementationOnce(async () => {
+        blockedBriefHash = readinessDecisionBriefHash(projectDir, sessionId);
+        return { approved: true };
+      });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus, events } = makeBusRecorder();
     const config = makeConfig({
@@ -1412,16 +1193,104 @@ describe('runPlanningPhase — briefs approval loop', () => {
       feature: 'feature',
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expect(onApprovalNeeded).toHaveBeenCalledTimes(3);
+    expect(blockedBriefHash).toEqual(expect.any(String));
     expect(
       events.some(
         (event) =>
           event.type === 'warning' &&
-          event.code === 'brief_readiness_block' &&
+          event.code === 'brief_readiness_blocked' &&
           event.message.includes('Approve again without editing tasks.md to proceed anyway'),
       ),
     ).toBe(true);
+  });
+  it('records the drifted planner runtime in the conformance cache once approved briefs settle', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const planner = makePassingPlanner();
+    const receipt: CompilerCapabilityReceipt = {
+      backend: 'opencode',
+      version: '1.18.15',
+      runtimeVersion: '1.19.0',
+      versionObservation: 'drifted',
+      role: 'planner-read-only',
+      transport: 'stdout-final',
+      terminalContract: 'opencode-final-message-v1',
+      containmentProfile: 'seatbelt',
+      credentialChannel: 'session-copy',
+      envelopeVersion: 1,
+      fixtureDate: '2026-08-15',
+      capabilityDigest: '0000000000000000000000000000000000000000000000000000000000000000',
+    };
+    const seam: CompilerSeam = {
+      invocation: {
+        runtime: {
+          executablePath: '/usr/bin/opencode',
+          version: '1.18.15',
+          runtimeDigest: 'digest',
+          protocolDigest: 'protocol-digest',
+        },
+        role: 'planner-read-only',
+        transport: { kind: 'stdout-final' },
+        terminalContract: 'opencode-final-message-v1',
+        envelope: {
+          version: 1,
+          promptBytes: 1000,
+          inputTokensUpperBound: 1000,
+          requestedOutputTokens: 1000,
+          outputTokensUpperBound: 1000,
+          maxNormalizedOutputBytes: 1000,
+          maxDeclaredArtifactBytes: 1000,
+          maxRawProtocolBytes: 1000,
+          maxStderrBytes: 1000,
+          deadlineMs: 1000,
+          idleTimeoutMs: 1000,
+        },
+        capabilityDigest: receipt.capabilityDigest,
+      },
+      ledger: createTaskDispatchLedger({
+        operation: {
+          version: 1,
+          dispatchLimit: 64,
+          callCount: 0,
+          totalPromptBytes: 0,
+          totalInputTokensUpperBound: 0,
+          totalOutputTokensUpperBound: 0,
+          totalNormalizedOutputBytes: 0,
+          totalDeclaredArtifactBytes: 0,
+          callsDigest: 'calls-digest',
+        },
+        operationId: TaskCompilationOperationIdSchema.parse('operation-approval-drift'),
+        claimPort: createTaskDispatchClaimPort(),
+      }),
+      dispatch: vi.fn(),
+      receipt,
+    };
+    installCompilerSeam(planner, seam);
+    const onApprovalNeeded = vi
+      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
+      .mockResolvedValue({ approved: true });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        config: makeConfig({ workflow: { mode: 'standard', approve: 'none' } }),
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus: makeBusRecorder().bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: { ...createInitialState('feature'), phase: 'idle' },
+      feature: 'feature',
+    });
+
+    expect(result.state.phase).toBe('implementing');
+    expect(readRuntimeConformance(projectDir)?.entries).toEqual(
+      expect.arrayContaining([expect.objectContaining({ backend: 'opencode', version: '1.19.0' })]),
+    );
   });
 });

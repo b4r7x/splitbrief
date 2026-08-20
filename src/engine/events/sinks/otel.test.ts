@@ -8,6 +8,7 @@ import { SpanStatusCode } from '@opentelemetry/api';
 import { createOtelSink } from './otel.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
+import { parseEngineEvent } from '../schema.js';
 
 describe('createOtelSink', () => {
   let exporter: InMemorySpanExporter;
@@ -623,5 +624,249 @@ describe('createOtelSink', () => {
     const second = tasks.find((s) => s.attributes['splitbrief.task.id'] === 'T002');
     expect(spans.find((s) => s.name === 'splitbrief.phase.escalating')).toBeUndefined();
     expect(second?.parentSpanContext?.spanId).toBe(implementing?.spanContext().spanId);
+  });
+
+  it('projects every recovery lifecycle variant as protected bounded span-event attributes', () => {
+    const secret = 'sk-ant-otel-recovery-secret-81942';
+    const hash = 'a'.repeat(64);
+    const otherHash = 'b'.repeat(64);
+    const base = {
+      ts: 1,
+      phase: 'reviewing-briefs' as const,
+      version: 1 as const,
+      sessionId: 'session-1',
+      epochId: 'epoch-1',
+    };
+    const refs = {
+      briefRevision: 1,
+      briefHash: hash,
+      reportRevision: 1,
+      reportHash: hash,
+    };
+    const fixtures: unknown[] = [
+      {
+        ...base,
+        type: 'brief_recovery_quality_reported',
+        eventId: 'quality-1',
+        recoveryRevision: 1,
+        ...refs,
+        status: 'blocked',
+        outcome: 'failed',
+        taskCount: 0,
+        issueCount: 256,
+        errorCount: 1,
+        warningCount: 0,
+        issueCodes: Array.from({ length: 256 }, (_, index) => `issue_${index}`),
+        score: 0.8,
+        topIssueCode: 'issue_0',
+        automaticRepairPolicy: 'existing-one-shot',
+        automaticRepairConsumed: true,
+      },
+      {
+        ...base,
+        type: 'brief_recovery_auto_repair_exhausted',
+        eventId: 'exhausted-1',
+        recoveryRevision: 2,
+        ...refs,
+        operationId: 'automatic-1',
+        intentHash: hash,
+        attemptKind: 'automatic',
+        status: 'blocked',
+        refusalCategory: 'quality',
+        automaticRepairConsumed: true,
+        taskCount: 0,
+        issueCount: 1,
+        errorCount: 1,
+        warningCount: 0,
+        issueCodes: ['empty_task_list'],
+      },
+      {
+        ...base,
+        type: 'brief_recovery_attempt_accepted',
+        eventId: 'accepted-1',
+        recoveryRevision: 3,
+        ...refs,
+        operationId: 'retry-1',
+        intentHash: hash,
+        attemptKind: 'manual-retry',
+        status: 'accepted',
+        dispatchPossibility: 'none',
+        frozenInputCount: 0,
+        queuedInputCount: 0,
+        automaticAllowanceConsumed: true,
+      },
+      {
+        ...base,
+        type: 'brief_recovery_attempt_started',
+        eventId: 'started-1',
+        recoveryRevision: 4,
+        ...refs,
+        operationId: 'retry-1',
+        intentHash: hash,
+        attemptKind: 'manual-retry',
+        status: 'started',
+        requestId: 'request-1',
+        dispatchPossibility: 'possible',
+        frozenInputCount: 0,
+      },
+      {
+        ...base,
+        type: 'brief_recovery_attempt_settled',
+        eventId: 'settled-1',
+        recoveryRevision: 5,
+        ...refs,
+        operationId: 'retry-1',
+        intentHash: hash,
+        attemptKind: 'manual-retry',
+        status: 'settled',
+        resultId: 'result-1',
+        outcome: 'provider-failed',
+        dispatchPossibility: 'possible',
+        remoteObservation: 'confirmed-final',
+        providerCode: secret,
+        refusalCategory: 'provider',
+        taskCount: 0,
+        issueCount: 1,
+        errorCount: 1,
+        warningCount: 0,
+      },
+      {
+        ...base,
+        type: 'brief_recovery_attempt_unresolved',
+        eventId: 'unresolved-1',
+        recoveryRevision: 6,
+        ...refs,
+        operationId: 'retry-2',
+        intentHash: otherHash,
+        attemptKind: 'manual-retry',
+        status: 'unresolved',
+        requestId: 'request-2',
+        dispatchPossibility: 'possible',
+        remoteObservation: 'unknown',
+        refusalCategory: 'unresolved',
+      },
+      {
+        ...base,
+        type: 'brief_recovery_provider_failed',
+        eventId: 'provider-failed-1',
+        recoveryRevision: 7,
+        ...refs,
+        operationId: 'retry-3',
+        intentHash: hash,
+        attemptKind: 'manual-retry',
+        status: 'blocked',
+        outcome: 'provider-failed',
+        providerCode: secret,
+        refusalCategory: 'authentication',
+        dispatchPossibility: 'none',
+        remoteObservation: 'not-dispatched',
+      },
+      {
+        ...base,
+        type: 'brief_recovery_input_queued',
+        eventId: 'queued-1',
+        recoveryRevision: 8,
+        ...refs,
+        inputId: 'input-1',
+        inputSequence: 1,
+        inputKind: 'feedback',
+        source: 'interactive',
+        textHash: otherHash,
+        operationId: null,
+        queuedInputCount: 1,
+      },
+      {
+        ...base,
+        type: 'brief_recovery_input_applied',
+        eventId: 'applied-1',
+        recoveryRevision: 9,
+        ...refs,
+        inputId: 'input-1',
+        inputSequence: 1,
+        inputKind: 'edit',
+        source: 'typed',
+        textHash: otherHash,
+        operationId: 'retry-1',
+        disposition: 'applied',
+        appliedRevision: 2,
+        queuedInputCount: 0,
+      },
+      {
+        ...base,
+        type: 'brief_recovery_stale_ignored',
+        eventId: 'stale-1',
+        recoveryRevision: 10,
+        operationId: 'retry-1',
+        intentHash: hash,
+        resultId: 'result-1',
+        baseBriefRevision: 1,
+        baseBriefHash: hash,
+        currentBriefRevision: 2,
+        currentBriefHash: otherHash,
+        baseReportRevision: 1,
+        baseReportHash: hash,
+        currentReportRevision: 2,
+        currentReportHash: otherHash,
+        refusalCategory: 'stale',
+      },
+      {
+        ...base,
+        type: 'brief_recovery_rejected',
+        eventId: 'rejected-1',
+        recoveryRevision: 11,
+        ...refs,
+        intentId: 'reject-1',
+        operationId: null,
+        status: 'rejected',
+        disposition: 'user-rejected',
+      },
+      {
+        ...base,
+        type: 'brief_recovery_refused',
+        eventId: 'refused-1',
+        recoveryRevision: 12,
+        ...refs,
+        intentId: 'refuse-1',
+        operationId: null,
+        action: 'approve',
+        refusalCategory: 'quality',
+        refusalCode: secret,
+        status: 'blocked',
+      },
+    ];
+    const events = fixtures.map((fixture) => {
+      const event = parseEngineEvent(fixture);
+      expect(event).not.toBeNull();
+      if (event === null) throw new Error('Expected recovery event fixture to parse');
+      return event;
+    });
+
+    const sink = createOtelSink({ provider, persistTranscript: false });
+    sink({ type: 'workflow_started', ts: 0, phase: 'reviewing-briefs', feature: 'x' });
+    for (const event of events) sink(event);
+    sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
+
+    const workflow = exporter
+      .getFinishedSpans()
+      .find((span) => span.name === 'splitbrief.workflow');
+    const recoveryEvents = workflow?.events.filter((event) =>
+      event.name.startsWith('splitbrief.brief_recovery_'),
+    );
+    expect(recoveryEvents).toHaveLength(events.length);
+    expect(recoveryEvents?.map((event) => event.name)).toEqual(
+      events.map((event) => `splitbrief.${event.type}`),
+    );
+    expect(JSON.stringify(recoveryEvents)).not.toContain(secret);
+
+    for (const event of recoveryEvents ?? []) {
+      for (const value of Object.values(event.attributes ?? {})) {
+        if (typeof value === 'string') expect(value.length).toBeLessThanOrEqual(2048);
+      }
+    }
+    expect(recoveryEvents?.[0]?.attributes?.['splitbrief.recovery.issue_count']).toBe(256);
+    expect(recoveryEvents?.[0]?.attributes?.['splitbrief.recovery.issue_codes']).toBeDefined();
+    expect(recoveryEvents?.[4]?.attributes?.['splitbrief.recovery.provider_code']).toContain(
+      '***REDACTED***',
+    );
   });
 });

@@ -52,7 +52,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
       configuredPlanner({
         contract: 'direct',
         script: [
-          "require('node:fs').writeFileSync('.splitbrief-runner/output/result', 'reviewed artifact');",
+          "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'reviewed artifact');",
           "process.stdout.write('diagnostic stdout');",
         ].join(''),
       }),
@@ -75,7 +75,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
       configuredPlanner({
         contract: 'direct',
         script:
-          "require('node:fs').writeFileSync('.splitbrief-runner/output/result', 'leased artifact');",
+          "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'leased artifact');",
       }),
       runtimeFor({
         projectDir,
@@ -106,6 +106,11 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
               operations.push('review');
               return prepared.reviewAfterChild();
             },
+            readWithReceiptAfterChild: (readInput) => prepared.readWithReceiptAfterChild(readInput),
+            get receipt() {
+              return prepared.receipt;
+            },
+            getReceipt: () => prepared.getReceipt(),
             dispose: async () => {
               operations.push('dispose');
               await prepared.dispose();
@@ -135,7 +140,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
       configuredPlanner({
         contract: 'direct',
         script:
-          "require('node:fs').writeFileSync('.splitbrief-runner/output/result', 'must not promote');",
+          "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'must not promote');",
       }),
       runtimeFor({
         projectDir,
@@ -158,7 +163,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
       configuredPlanner({
         contract: 'direct',
         script:
-          "require('node:fs').writeFileSync('.splitbrief-runner/output/result', 'original artifact');",
+          "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'original artifact');",
       }),
       runtimeFor({
         projectDir,
@@ -187,7 +192,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
       configuredPlanner({
         contract: 'direct',
         script: [
-          "require('node:fs').writeFileSync('.splitbrief-runner/output/result', 'declared');",
+          "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'declared');",
           "require('node:fs').writeFileSync('undeclared-write.txt', 'reject');",
         ].join(''),
       }),
@@ -269,7 +274,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
         contract: 'direct',
         script: [
           "if (process.env.CUSTOM_PLANNER_CANARY !== 'only-from-source') process.exit(17);",
-          "require('node:fs').writeFileSync('.splitbrief-runner/output/result', 'source env used');",
+          "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'source env used');",
         ].join(''),
         env: ['CUSTOM_PLANNER_CANARY'],
       }),

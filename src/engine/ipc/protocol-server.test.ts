@@ -4,6 +4,37 @@ import { allowedSettlingBriefReviewCommandsForPrompt } from '../../core/schemas/
 import { TASK_REVIEW_COMMANDS } from '../events/workflow-events.js';
 import { parseServerMessage } from './protocol.js';
 
+const BRIEF_HASH = 'a'.repeat(64);
+const REPORT_HASH = 'b'.repeat(64);
+
+function protectedRecoveryEvent(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    type: 'brief_recovery_attempt_settled',
+    ts: 1,
+    phase: 'reviewing-briefs',
+    version: 1,
+    eventId: 'event-1',
+    sessionId: 'session-1',
+    epochId: 'epoch-1',
+    recoveryRevision: 2,
+    briefRevision: 2,
+    briefHash: BRIEF_HASH,
+    reportRevision: 2,
+    reportHash: REPORT_HASH,
+    operationId: 'operation-1',
+    intentHash: BRIEF_HASH,
+    attemptKind: 'manual-retry',
+    status: 'settled',
+    resultId: 'result-1',
+    outcome: 'provider-failed',
+    dispatchPossibility: 'none',
+    remoteObservation: 'not-dispatched',
+    providerCode: 'provider_unavailable',
+    refusalCategory: 'provider',
+    ...overrides,
+  };
+}
+
 function taskReviewRequest(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     taskId: 'T001',
@@ -411,5 +442,47 @@ describe('parseServerMessage', () => {
 
   it('rejects error with missing message', () => {
     expect(parseServerMessage({ kind: 'error', code: 'already_attached' })).toBeNull();
+  });
+
+  it('round-trips the bounded protected recovery projection without runner payloads', () => {
+    const message = { kind: 'event', payload: protectedRecoveryEvent() };
+    const parsed = parseServerMessage(JSON.parse(JSON.stringify(message)));
+
+    expect(parsed).toEqual(message);
+    if (parsed?.kind === 'event') {
+      expect(parsed.payload).toMatchObject({
+        type: 'brief_recovery_attempt_settled',
+        sessionId: 'session-1',
+        epochId: 'epoch-1',
+        operationId: 'operation-1',
+        resultId: 'result-1',
+        outcome: 'provider-failed',
+      });
+      expect('rawProviderPayload' in parsed.payload).toBe(false);
+    }
+  });
+
+  it('rejects recovery records that carry secrets or oversized protected identifiers', () => {
+    expect(
+      parseServerMessage({
+        kind: 'event',
+        payload: protectedRecoveryEvent({ apiKey: 'secret-token-1' }),
+      }),
+    ).toBeNull();
+    expect(
+      parseServerMessage({
+        kind: 'event',
+        payload: protectedRecoveryEvent({ providerCode: 'x'.repeat(129) }),
+      }),
+    ).toBeNull();
+  });
+
+  it('replays duplicate recovery records byte-equivalently', () => {
+    const message = { kind: 'event', payload: protectedRecoveryEvent() };
+    const first = parseServerMessage(message);
+    const replay = parseServerMessage(JSON.parse(JSON.stringify(message)));
+
+    expect(first).toEqual(replay);
+    expect(JSON.stringify(first)).toBe(JSON.stringify(replay));
   });
 });

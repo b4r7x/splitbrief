@@ -7,9 +7,10 @@ import { assertNotWindows } from '../../windows-guard.js';
 import { checkServerStatus } from '../../../engine/ipc/lockfile.js';
 import { printCrashDiagnostic } from '../../crash-diagnostic.js';
 import { sessionDir, IPC_SOCK_FILE } from '../../../core/paths.js';
-import { loadState } from '../../../core/state/persistence.js';
+import { acquireStateAuthority, releaseStateAuthority } from '../../../core/state/authority.js';
+import { loadStateForResume } from '../../../core/state/persistence.js';
 import { assertModeFlagsExclusive, assertWorktreeStartOnly } from '../../options.js';
-import { renderAttachClient } from '../attach.js';
+import { assertAttachOwner, assertServerIdentity, renderAttachClient } from '../attach.js';
 import { runHeadless } from '../../headless.js';
 import { runRpc } from '../../rpc/run/host.js';
 import { resolveSessionAlias } from '../../sessions/aliases.js';
@@ -17,8 +18,33 @@ import { findSingleRunningSession } from '../../sessions/single-running.js';
 import { assertSessionExists } from '../../sessions/resolve.js';
 import { readActive } from '../../../core/sessions/lifecycle.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
+import type { SessionRef } from '../../../core/types/session-ref.js';
+import type { assertStateAuthority, readStateAuthority } from '../../../core/state/authority.js';
 import { resumeSavedSession } from './resume.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution.js';
+
+type ResumeHydration = ReturnType<typeof loadStateForResume>;
+
+function loadOwnedResumeState(ref: SessionRef): ResumeHydration {
+  let acquired: ReturnType<typeof acquireStateAuthority>;
+  try {
+    acquired = acquireStateAuthority({ ref, purpose: 'resume' });
+  } catch (cause) {
+    return {
+      kind: 'invalid',
+      code: 'malformed',
+      message: cause instanceof Error ? cause.message : 'State authority is unavailable.',
+    };
+  }
+
+  if (acquired.kind === 'new-workflow') return { kind: 'missing' };
+  if (acquired.kind !== 'fenced') return loadStateForResume({ ref, authority: acquired });
+  try {
+    return loadStateForResume({ ref, authority: acquired });
+  } finally {
+    releaseStateAuthority(ref, acquired.receipt);
+  }
+}
 
 export interface ContinueDeps {
   checkServerStatus: typeof checkServerStatus;
@@ -29,6 +55,8 @@ export interface ContinueDeps {
   setupWorkflow: typeof setupWorkflow;
   printCrashDiagnostic: typeof printCrashDiagnostic;
   prepareExecution: typeof prepareExecution;
+  readStateAuthority?: typeof readStateAuthority;
+  assertStateAuthority?: typeof assertStateAuthority;
 }
 
 export const defaultContinueDeps: ContinueDeps = {
@@ -83,17 +111,24 @@ export async function continueCommand(
   if (status.alive) {
     assertNotWindows();
     if (opts.rpc) throw cliError('--rpc cannot attach to a running detached session yet.');
-    if (status.data.authToken === undefined) {
-      throw cliError(`session ${sessionId} does not support authenticated attach`, 1);
-    }
+    const ref: SessionRef = { projectDir: opts.projectDir, sessionId };
+    const authority = assertAttachOwner(ref, {
+      ...(deps.readStateAuthority !== undefined && {
+        readStateAuthority: deps.readStateAuthority,
+      }),
+      ...(deps.assertStateAuthority !== undefined && {
+        assertStateAuthority: deps.assertStateAuthority,
+      }),
+    });
+    const server = assertServerIdentity(sessionId, status, authority);
     const { useFullscreen, useMouse, useHover } = await deps.setupWorkflow(opts);
     await renderAttachClient(
       {
         projectDir: opts.projectDir,
         sessionId,
-        feature: status.data.feature,
+        feature: server.feature,
         sockPath: join(sessDir, IPC_SOCK_FILE),
-        authToken: status.data.authToken,
+        authToken: server.authToken,
       },
       deps,
       { fullscreen: useFullscreen, mouse: useMouse, hover: useHover },
@@ -112,14 +147,27 @@ export async function continueCommand(
     await deps.printCrashDiagnostic(sessDir, status);
   }
 
-  const state = loadState({ projectDir: opts.projectDir, sessionId });
+  const hydrated = loadOwnedResumeState({ projectDir: opts.projectDir, sessionId });
 
-  if (!state) {
+  if (hydrated.kind === 'invalid') {
+    throw cliError(
+      `session '${sessionId}' has no usable saved state and is not running — invalid saved state: ${hydrated.message}`,
+      1,
+    );
+  }
+
+  if (hydrated.kind === 'missing') {
     throw cliError(
       `session '${sessionId}' has no usable saved state and is not running — cannot continue. Start a new workflow with \`splitbrief start\`.`,
       1,
     );
   }
 
-  await resumeSavedSession({ projectDir: opts.projectDir, sessionId, state, opts, deps });
+  await resumeSavedSession({
+    projectDir: opts.projectDir,
+    sessionId,
+    state: hydrated.state,
+    opts,
+    deps,
+  });
 }

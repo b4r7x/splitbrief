@@ -389,25 +389,28 @@ describe('buildRunnerChecks availability guidance', () => {
   it.each([
     ['below idle-kill threshold', 200_000, 300_000],
     ['equal to idle-kill threshold', 300_000, 300_000],
-  ])('warns when timeout is at or below the effective idleKillMs (%s)', (_label, timeout, idleKillMs) => {
-    const config = makeConfig({
-      implementer: {
-        kind: 'cli',
-        tool: 'claude-code',
-        timeout,
-        idleKillMs,
-      },
-    });
+  ])(
+    'warns when timeout is at or below the effective idleKillMs (%s)',
+    (_label, timeout, idleKillMs) => {
+      const config = makeConfig({
+        implementer: {
+          kind: 'cli',
+          tool: 'claude-code',
+          timeout,
+          idleKillMs,
+        },
+      });
 
-    const check = buildRunnerChecks(config).find(
-      (c) => c.id === 'runners.implementer.timeout-disables-watchdog',
-    );
+      const check = buildRunnerChecks(config).find(
+        (c) => c.id === 'runners.implementer.timeout-disables-watchdog',
+      );
 
-    expect(check).toMatchObject({
-      severity: 'warning',
-      metadata: { timeout, idleKillMs },
-    });
-  });
+      expect(check).toMatchObject({
+        severity: 'warning',
+        metadata: { timeout, idleKillMs },
+      });
+    },
+  );
 
   it('does not warn when timeout leaves room above the idle-kill threshold', () => {
     const config = makeConfig({

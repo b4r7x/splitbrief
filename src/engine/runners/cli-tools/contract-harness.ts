@@ -130,7 +130,7 @@ function throwConformance(code: ConformanceErrorCode, message: string): never {
   throw conformanceError(code, message);
 }
 
-function safeReason(value: unknown): string {
+export function safeReason(value: unknown): string {
   const message = value instanceof Error ? value.message : 'CLI conformance failed';
   return sanitizeCandidateOutput(message, MAX_EVIDENCE_OUTPUT_BYTES);
 }
@@ -313,7 +313,7 @@ async function writeProductionRecord(
   await writeEvidenceFile(recordPath, JSON.stringify(evidence, null, 2));
 }
 
-async function writeEvidenceFile(recordPath: string, content: string): Promise<void> {
+export async function writeEvidenceFile(recordPath: string, content: string): Promise<void> {
   const path = resolve(recordPath);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   await writeFile(path, `${content}\n`, { encoding: 'utf8', mode: 0o600 });

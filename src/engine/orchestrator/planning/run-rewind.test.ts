@@ -1,10 +1,20 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makeBusRecorder,
+  makeWctx,
+  TEST_METADATA,
+} from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { PLAN_FILE, SPEC_FILE, TASKS_FILE } from '../../../core/paths.js';
-import { readSpecFileOrEmpty, writeSpecFile } from '../../../core/paths-io.js';
-import { loadState } from '../../../core/state/persistence.js';
+import { readSpecFile, readSpecFileOrEmpty, writeSpecFile } from '../../../core/paths-io.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
+import type { StateAuthorityReceipt } from '../../../core/state/types.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { createWorkflowRecoveryBinding } from '../run/recovery-binding.js';
+import { runPlanningPhases } from '../run/phases.js';
+import { readWorkflowStateHead } from '../state-ops.js';
 import {
   REAL_TASKS_MD,
   prepareState,
@@ -13,7 +23,8 @@ import {
   makePassingPlanner,
   auto,
   manual,
-  runPhase as runPhaseHelper,
+  setupProject,
+  createTestSinks,
   type RunOpts,
 } from '#testing/helpers/planning-phase.js';
 import { formatTasks } from '../../spec/formatter.js';
@@ -24,8 +35,88 @@ afterEach(() => {
   dirs = [];
 });
 
-function runPhase(opts: RunOpts = {}) {
-  return runPhaseHelper(dirs, opts);
+async function runPhase(
+  opts: RunOpts & { project?: { projectDir: string; sessionId: string } } = {},
+) {
+  const { projectDir, sessionId } = opts.project ?? setupProject(dirs);
+  const planner = opts.planner ?? makePassingPlanner();
+  const callbacks = opts.callbacks ?? makeCallbacks().callbacks;
+  const config = opts.config ?? makeConfig();
+  const state = opts.state ?? prepareState();
+  const planningState: WorkflowState = {
+    ...state,
+    stateFence: { token: 1, ownerId: 'rewind-test-owner' },
+    ...(opts.rewindPending ? { rewindPending: opts.rewindPending } : {}),
+  };
+  const sinks = opts.sinks ?? createTestSinks();
+  const recorder = makeBusRecorder();
+  const stateRef = { projectDir, sessionId };
+  const wctx = makeWctx({
+    projectDir,
+    sessionId,
+    config,
+    callbacks,
+    planner,
+    metadata: TEST_METADATA,
+    sinks,
+    bus: recorder.bus,
+    ...(opts.drainPendingAttachments !== undefined && {
+      drainPendingAttachments: opts.drainPendingAttachments,
+    }),
+  });
+  saveState(stateRef, planningState);
+  let trackedState = planningState;
+  const readCurrentState = () => loadState(stateRef) ?? trackedState;
+  const initialHead = readWorkflowStateHead(stateRef);
+  if (initialHead === null) throw new Error('Expected persisted rewind test state');
+  const authority: StateAuthorityReceipt = {
+    kind: 'usable',
+    sessionId,
+    ownerId: 'rewind-test-owner',
+    pid: process.pid,
+    processStart: 'rewind-test-process',
+    runId: 'rewind-test-run',
+    acquisitionId: 'rewind-test-acquisition',
+    fence: 1,
+    stateRevision: initialHead.state.stateRevision ?? 0,
+    stateDigest: initialHead.digest,
+  };
+  const currentAuthority = (): StateAuthorityReceipt => {
+    const head = readWorkflowStateHead(stateRef);
+    if (head === null) return authority;
+    return {
+      ...authority,
+      stateRevision: head.state.stateRevision ?? 0,
+      stateDigest: head.digest,
+    };
+  };
+  const recovery = createWorkflowRecoveryBinding({
+    wctx,
+    getState: readCurrentState,
+    setState: (next) => {
+      trackedState = next;
+    },
+    getAuthority: currentAuthority,
+  });
+  const result = await runPlanningPhases({
+    wctx,
+    state: planningState,
+    savedState: planningState.rewindPending === undefined ? undefined : planningState,
+    selectedSkills: undefined,
+    phaseTimings: {},
+    startTime: Date.now(),
+    setTrackedState: (next) => {
+      trackedState = next;
+    },
+    ...(opts.rewindFeedback !== undefined && { rewindFeedback: opts.rewindFeedback }),
+    recovery,
+  });
+  return {
+    result: { ...result, tasks: trackedState.tasks },
+    projectDir,
+    sessionId,
+    events: recorder.events,
+  };
 }
 
 describe('runPlanningPhase — rewindPending', () => {
@@ -38,52 +129,63 @@ describe('runPlanningPhase — rewindPending', () => {
     { target: 'plan', phase: 'planning', comment: 'add caching layer' },
   ];
 
-  it.each(
-    rewindRegenCases,
-  )('rewindPending target=$target with comment triggers regenerate', async ({
-    target,
-    phase,
-    comment,
-  }) => {
-    const regenCalls: Array<{ prompt: string }> = [];
-    let planCalls = 0;
-    const planner = makePassingPlanner({
-      review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
-      regenerate: async (opts) => {
-        regenCalls.push({ prompt: opts.prompt });
-        return { text: `# Regenerated ${target}`, usage: null };
-      },
-      plan: async () => {
-        planCalls++;
-        return {
-          spec: '# Spec',
-          plan: '# Plan',
-          tasks: [makePassingTask()],
-          usage: { inputTokens: 100, outputTokens: 50 },
-        };
-      },
-    });
-    const { result, projectDir, sessionId, events } = await runPhase({
-      planner,
-      config: makeConfig({ workflow: auto() }),
-      state: prepareState(phase),
-      rewindPending: { target, comment },
-    });
+  it.each(rewindRegenCases)(
+    'rewindPending target=$target with comment triggers regenerate',
+    async ({ target, phase, comment }) => {
+      const project = setupProject(dirs);
+      writeSpecFile(
+        { projectDir: project.projectDir, sessionId: project.sessionId },
+        TASKS_FILE,
+        '# Prior Task Briefs\n\nUnchanged.\n',
+        TEST_METADATA,
+      );
+      const regenCalls: Array<{ prompt: string }> = [];
+      let planCalls = 0;
+      const planner = makePassingPlanner({
+        review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
+        regenerate: async (opts) => {
+          regenCalls.push({ prompt: opts.prompt });
+          return { text: `# Regenerated ${target}`, usage: null };
+        },
+        plan: async () => {
+          planCalls++;
+          return {
+            spec: '# Spec',
+            plan: '# Plan',
+            tasks: [makePassingTask()],
+            usage: { inputTokens: 100, outputTokens: 50 },
+          };
+        },
+      });
+      const { result, projectDir, sessionId, events } = await runPhase({
+        planner,
+        config: makeConfig({ workflow: auto() }),
+        state: prepareState(phase),
+        rewindPending: { target, comment },
+        project,
+      });
 
-    expect(result.cancelled).toBe(false);
-    expect(regenCalls).toHaveLength(1);
-    expect(regenCalls[0]?.prompt).toContain(comment);
-    expect(regenCalls[0]?.prompt).toContain(target);
-    expect(planCalls).toBe(0);
-    expect(
-      readSpecFileOrEmpty({ projectDir, sessionId }, target === 'spec' ? SPEC_FILE : PLAN_FILE),
-    ).toContain(`# Regenerated ${target}`);
-    const targetFile = target === 'spec' ? SPEC_FILE : PLAN_FILE;
-    expect(
-      events.filter((event) => event.type === 'artifact_written' && event.filename === targetFile),
-    ).toHaveLength(1);
-    expect(events.filter((event) => event.type === `${target}_regenerated`)).toHaveLength(1);
-  });
+      expect(result.disposition).toBe('ready-for-tasks');
+      expect(regenCalls).toHaveLength(1);
+      expect(regenCalls[0]?.prompt).toContain(comment);
+      expect(regenCalls[0]?.prompt).toContain(target);
+      expect(planCalls).toBe(0);
+      expect(
+        readSpecFileOrEmpty({ projectDir, sessionId }, target === 'spec' ? SPEC_FILE : PLAN_FILE),
+      ).toContain(`# Regenerated ${target}`);
+      const targetFile = target === 'spec' ? SPEC_FILE : PLAN_FILE;
+      expect(
+        events.filter(
+          (event) => event.type === 'artifact_written' && event.filename === targetFile,
+        ),
+      ).toHaveLength(1);
+      expect(events.filter((event) => event.type === `${target}_regenerated`)).toHaveLength(1);
+      const projectedBriefs = readSpecFile({ projectDir, sessionId }, TASKS_FILE);
+      expect(projectedBriefs).toContain('id: T001');
+      expect(projectedBriefs).toContain('title: Add auth');
+      expect(projectedBriefs).not.toContain('# Prior Task Briefs');
+    },
+  );
 
   const invalidRewindCases: Array<{
     target: 'spec' | 'plan';
@@ -94,38 +196,48 @@ describe('runPlanningPhase — rewindPending', () => {
     { target: 'plan', phase: 'planning', filename: PLAN_FILE },
   ];
 
-  it.each(
-    invalidRewindCases,
-  )('rejects invalid $target replacement without writing, publishing, or generating Task Briefs', async ({
-    target,
-    phase,
-    filename,
-  }) => {
-    const previous = `# Existing ${target}\n\nKeep this artifact.`;
-    const planner = makePassingPlanner({
-      regenerate: async ({ projectDir }) => {
-        writeSpecFile({ projectDir, sessionId: 'sess-planning' }, filename, previous);
-        return {
-          text: 'Which scope should this planning artifact cover?',
-          usage: null,
-        };
-      },
-      review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
-    });
+  it.each(invalidRewindCases)(
+    'rejects invalid $target replacement without writing, publishing, or generating Task Briefs',
+    async ({ target, phase, filename }) => {
+      const project = setupProject(dirs);
+      writeSpecFile(
+        { projectDir: project.projectDir, sessionId: project.sessionId },
+        TASKS_FILE,
+        '# Prior Task Briefs\n\nUnchanged.\n',
+        TEST_METADATA,
+      );
+      const priorTasksBytes = readSpecFile(
+        { projectDir: project.projectDir, sessionId: project.sessionId },
+        TASKS_FILE,
+      );
+      const previous = `# Existing ${target}\n\nKeep this artifact.`;
+      const planner = makePassingPlanner({
+        regenerate: async ({ projectDir }) => {
+          writeSpecFile({ projectDir, sessionId: 'sess-planning' }, filename, previous);
+          return {
+            text: 'Which scope should this planning artifact cover?',
+            usage: null,
+          };
+        },
+        review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
+      });
 
-    const { result, projectDir, sessionId, events } = await runPhase({
-      planner,
-      config: makeConfig({ workflow: auto() }),
-      state: prepareState(phase),
-      rewindPending: { target, comment: `reject this ${target}` },
-    });
+      const { result, projectDir, sessionId, events } = await runPhase({
+        planner,
+        config: makeConfig({ workflow: auto() }),
+        state: prepareState(phase),
+        rewindPending: { target, comment: `reject this ${target}` },
+        project,
+      });
 
-    expect(result).toMatchObject({ cancelled: true, failed: true, tasks: [] });
-    expect(readSpecFileOrEmpty({ projectDir, sessionId }, filename)).toBe(previous);
-    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
-    expect(events.filter((event) => event.type === `${target}_regenerated`)).toHaveLength(0);
-    expect(planner.review).not.toHaveBeenCalled();
-  });
+      expect(result).toMatchObject({ disposition: 'terminal', outcome: 'failed', tasks: [] });
+      expect(readSpecFileOrEmpty({ projectDir, sessionId }, filename)).toBe(previous);
+      expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
+      expect(events.filter((event) => event.type === `${target}_regenerated`)).toHaveLength(0);
+      expect(planner.review).not.toHaveBeenCalled();
+      expect(readSpecFile({ projectDir, sessionId }, TASKS_FILE)).toBe(priorTasksBytes);
+    },
+  );
 
   it('rebases planner usage when rewind admission fails', async () => {
     const planner = makePassingPlanner({
@@ -142,7 +254,7 @@ describe('runPlanningPhase — rewindPending', () => {
       rewindPending: { target: 'plan', comment: 'reject and retain usage' },
     });
 
-    expect(result).toMatchObject({ cancelled: true, failed: true, tasks: [] });
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'failed', tasks: [] });
     expect(result.state.tokenUsage).toMatchObject({ plannerInput: 17, plannerOutput: 5 });
     expect(loadState({ projectDir, sessionId })?.tokenUsage).toMatchObject({
       plannerInput: 17,
@@ -185,7 +297,7 @@ describe('runPlanningPhase — rewindPending', () => {
       rewindPending: { target: 'plan', comment: 'keep the queue input' },
     });
 
-    expect(result).toMatchObject({ cancelled: false, failed: false });
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(prompt).toContain('also preserve the queue contract');
     expect(events.filter((event) => event.type === 'queue_drained')).toEqual([
       expect.objectContaining({ count: 1, ids: ['rewind-message'] }),
@@ -201,41 +313,38 @@ describe('runPlanningPhase — rewindPending', () => {
     { target: 'plan', phase: 'planning', mode: 'speckit' },
   ];
 
-  it.each(
-    rewindRejectCases,
-  )('rewindPending target=$target — rejected during approval → cancelled', async ({
-    target,
-    phase,
-    mode,
-  }) => {
-    const { callbacks } = makeCallbacks({
-      onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false }),
-    });
-    let planCalls = 0;
-    const planner = makePassingPlanner({
-      plan: async () => {
-        planCalls++;
-        return {
-          spec: '# Spec',
-          plan: '# Plan',
-          tasks: [makePassingTask()],
-          usage: { inputTokens: 100, outputTokens: 50 },
-        };
-      },
-    });
+  it.each(rewindRejectCases)(
+    'rewindPending target=$target — rejected during approval → cancelled',
+    async ({ target, phase, mode }) => {
+      const { callbacks } = makeCallbacks({
+        onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false }),
+      });
+      let planCalls = 0;
+      const planner = makePassingPlanner({
+        plan: async () => {
+          planCalls++;
+          return {
+            spec: '# Spec',
+            plan: '# Plan',
+            tasks: [makePassingTask()],
+            usage: { inputTokens: 100, outputTokens: 50 },
+          };
+        },
+      });
 
-    const { result } = await runPhase({
-      planner,
-      callbacks,
-      config: makeConfig({ workflow: manual(mode) }),
-      state: prepareState(phase),
-      rewindPending: { target, comment: 'reject me' },
-    });
+      const { result } = await runPhase({
+        planner,
+        callbacks,
+        config: makeConfig({ workflow: manual(mode) }),
+        state: prepareState(phase),
+        rewindPending: { target, comment: 'reject me' },
+      });
 
-    expect(result.cancelled).toBe(true);
-    expect(result.tasks).toHaveLength(0);
-    expect(planCalls).toBe(0);
-  });
+      expect(result).toMatchObject({ disposition: 'terminal', outcome: 'failed' });
+      expect(result.tasks).toHaveLength(0);
+      expect(planCalls).toBe(0);
+    },
+  );
 
   it('rewindPending without comment skips regen and runs from rewound phase', async () => {
     // Rewind fast-path still calls regeneratePlanAndTasks → planner.review() → parseTasks().
@@ -265,7 +374,7 @@ describe('runPlanningPhase — rewindPending', () => {
       rewindPending: { target: 'spec' },
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(regenCalls).toBe(0);
     expect(planCalls).toBe(0);
     expect(result.tasks).toHaveLength(1);
@@ -286,9 +395,10 @@ describe('runPlanningPhase — rewindPending', () => {
       rewindPending: { target: 'plan' },
     });
 
-    expect(result.cancelled).toBe(true);
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'rejected' });
     expect(result.state.phase).not.toBe('implementing');
     expect(result.tasks).toHaveLength(0);
+    expect(result.state.briefRecovery?.status).toBe('rejected');
     expect(onApprovalNeeded).toHaveBeenCalledWith('briefs', expect.stringContaining(TASKS_FILE));
   });
 
@@ -299,7 +409,7 @@ describe('runPlanningPhase — rewindPending', () => {
       review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
     });
 
-    const { result, events } = await runPhase({
+    const { result } = await runPhase({
       planner,
       callbacks,
       config: makeConfig({ workflow: auto() }),
@@ -307,10 +417,9 @@ describe('runPlanningPhase — rewindPending', () => {
       rewindPending: { target: 'plan' },
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expect(onApprovalNeeded).toHaveBeenCalledWith('briefs', expect.stringContaining(TASKS_FILE));
-    expect(events.some((e) => e.type === 'plan_approved' && e.phase === 'implementing')).toBe(true);
   });
 
   it('rewind-to-spec publishes a running planner_status at the specifying phase', async () => {
@@ -343,7 +452,7 @@ describe('runPlanningPhase — rewindPending', () => {
       rewindPending: { target: 'spec', comment: 'use JWT' },
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.rewindPending).toBeUndefined();
   });
 
@@ -370,89 +479,85 @@ describe('runPlanningPhase — rewindPending', () => {
     return makePassingPlanner({ review });
   }
 
-  it.each(
-    qualityRewindCases,
-  )('rewind target=$target runs one passing quality gate before briefs approval', async ({
-    target,
-    phase,
-    planReviewCount,
-  }) => {
-    const { callbacks } = makeCallbacks({
-      onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false }),
+  function pricedAutoConfig() {
+    return makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-6',
+        apiBase: 'https://api.anthropic.com/v1',
+      },
+      workflow: auto(),
     });
-    const planner = plannerWithTaskReviews(target, REAL_TASKS_MD);
-    const { result, events } = await runPhase({
-      planner,
-      callbacks,
-      config: makeConfig({ workflow: auto() }),
-      state: prepareState(phase),
-      rewindPending: { target },
-    });
+  }
 
-    expect(result.cancelled).toBe(true);
-    expect(result.failed ?? false).toBe(false);
-    expect(callbacks.onApprovalNeeded).toHaveBeenCalledTimes(1);
-    expect(events.filter((event) => event.type === 'brief_quality_failed')).toHaveLength(0);
-    expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(1);
-    expect(planner.review).toHaveBeenCalledTimes(planReviewCount);
-  });
+  it.each(qualityRewindCases)(
+    'rewind target=$target runs one passing quality gate before briefs approval',
+    async ({ target, phase, planReviewCount }) => {
+      const { callbacks } = makeCallbacks({
+        onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false }),
+      });
+      const planner = plannerWithTaskReviews(target, REAL_TASKS_MD);
+      const { result } = await runPhase({
+        planner,
+        callbacks,
+        config: makeConfig({ workflow: auto() }),
+        state: prepareState(phase),
+        rewindPending: { target },
+      });
 
-  it.each(
-    qualityRewindCases,
-  )('rewind target=$target repairs one failed quality report before approval', async ({
-    target,
-    phase,
-    planReviewCount,
-  }) => {
-    const invalidTasks = formatTasks([makeBriefQualityFailureTask()]);
-    const { callbacks } = makeCallbacks({
-      onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false }),
-    });
-    const planner = plannerWithTaskReviews(target, invalidTasks, REAL_TASKS_MD);
-    const { result, events } = await runPhase({
-      planner,
-      callbacks,
-      config: makeConfig({ workflow: auto() }),
-      state: prepareState(phase),
-      rewindPending: { target },
-    });
+      expect(result).toMatchObject({ disposition: 'terminal', outcome: 'rejected' });
+      expect(callbacks.onApprovalNeeded).toHaveBeenCalledTimes(1);
+      expect(result.state.briefRecovery?.status).toBe('rejected');
+      expect(planner.review).toHaveBeenCalledTimes(planReviewCount);
+    },
+  );
 
-    expect(result.cancelled).toBe(true);
-    expect(result.failed ?? false).toBe(false);
-    expect(callbacks.onApprovalNeeded).toHaveBeenCalledTimes(1);
-    expect(planner.review).toHaveBeenCalledTimes(planReviewCount + 1);
-    expect(events.filter((event) => event.type === 'brief_quality_failed')).toHaveLength(1);
-    expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(1);
-  });
+  it.each(qualityRewindCases)(
+    'rewind target=$target repairs one failed quality report before approval',
+    async ({ target, phase, planReviewCount }) => {
+      const invalidTasks = formatTasks([makeBriefQualityFailureTask()]);
+      const { callbacks } = makeCallbacks({
+        onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false }),
+      });
+      const planner = plannerWithTaskReviews(target, invalidTasks, REAL_TASKS_MD);
+      const { result } = await runPhase({
+        planner,
+        callbacks,
+        config: pricedAutoConfig(),
+        state: prepareState(phase),
+        rewindPending: { target },
+      });
 
-  it.each(
-    qualityRewindCases,
-  )('rewind target=$target fails closed after a second quality failure', async ({
-    target,
-    phase,
-    planReviewCount,
-  }) => {
-    const invalidTasks = formatTasks([makeBriefQualityFailureTask()]);
-    const { callbacks } = makeCallbacks({
-      onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
-    });
-    const planner = plannerWithTaskReviews(target, invalidTasks, invalidTasks);
-    const { result, events } = await runPhase({
-      planner,
-      callbacks,
-      config: makeConfig({ workflow: auto() }),
-      state: prepareState(phase),
-      rewindPending: { target },
-    });
+      expect(result).toMatchObject({ disposition: 'terminal', outcome: 'rejected' });
+      expect(callbacks.onApprovalNeeded).toHaveBeenCalledTimes(1);
+      expect(result.state.briefRecovery?.status).toBe('rejected');
+      expect(planner.review).toHaveBeenCalledTimes(planReviewCount + 1);
+    },
+  );
 
-    expect(result.cancelled).toBe(true);
-    expect(result.failed).toBe(true);
-    expect(result.tasks).toEqual([]);
-    expect(callbacks.onApprovalNeeded).not.toHaveBeenCalled();
-    expect(planner.review).toHaveBeenCalledTimes(planReviewCount + 1);
-    expect(events.filter((event) => event.type === 'brief_quality_failed')).toHaveLength(2);
-    expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(0);
-  });
+  it.each(qualityRewindCases)(
+    'rewind target=$target fails closed after a second quality failure',
+    async ({ target, phase, planReviewCount }) => {
+      const invalidTasks = formatTasks([makeBriefQualityFailureTask()]);
+      const { callbacks } = makeCallbacks({
+        onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
+      });
+      const planner = plannerWithTaskReviews(target, invalidTasks, invalidTasks);
+      const { result } = await runPhase({
+        planner,
+        callbacks,
+        config: pricedAutoConfig(),
+        state: prepareState(phase),
+        rewindPending: { target },
+      });
+
+      expect(result).toMatchObject({ disposition: 'terminal', outcome: 'failed' });
+      expect(result.tasks).toEqual([]);
+      expect(callbacks.onApprovalNeeded).not.toHaveBeenCalled();
+      expect(planner.review).toHaveBeenCalledTimes(planReviewCount + 1);
+    },
+  );
 
   it('does not persist transient rewind feedback if planning fails before rewind is cleared', async () => {
     const secret = 'secret raw rewind comment';
@@ -507,30 +612,30 @@ describe('runPlanningPhase — rewindPending', () => {
     },
   ];
 
-  it.each(rewindSpecGateCases)('rewind-to-spec gate honors workflow.approve — $name', async ({
-    workflow,
-    prompts,
-  }) => {
-    const approvalTypes: string[] = [];
-    const onApprovalNeeded = vi.fn(async (type: string) => {
-      approvalTypes.push(type);
-      return { approved: true as const };
-    });
-    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+  it.each(rewindSpecGateCases)(
+    'rewind-to-spec gate honors workflow.approve — $name',
+    async ({ workflow, prompts }) => {
+      const approvalTypes: string[] = [];
+      const onApprovalNeeded = vi.fn(async (type: string) => {
+        approvalTypes.push(type);
+        return { approved: true as const };
+      });
+      const { callbacks } = makeCallbacks({ onApprovalNeeded });
 
-    const { result } = await runPhase({
-      planner: makePassingPlanner({
-        review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
-      }),
-      callbacks,
-      config: makeConfig({ workflow }),
-      state: prepareState('specifying'),
-      rewindPending: { target: 'spec' },
-    });
+      const { result } = await runPhase({
+        planner: makePassingPlanner({
+          review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
+        }),
+        callbacks,
+        config: makeConfig({ workflow }),
+        state: prepareState('specifying'),
+        rewindPending: { target: 'spec' },
+      });
 
-    expect(result.cancelled).toBe(false);
-    expect(approvalTypes.includes('spec')).toBe(prompts);
-  });
+      expect(result.disposition).toBe('ready-for-tasks');
+      expect(approvalTypes.includes('spec')).toBe(prompts);
+    },
+  );
 
   it('speckit mode new-planning (no rewind) invokes planner.plan exactly once', async () => {
     let planCalls = 0;
@@ -558,7 +663,7 @@ describe('runPlanningPhase — rewindPending', () => {
       config: makeConfig({ workflow: auto('speckit') }),
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.tasks).toHaveLength(1);
     expect(result.tasks[0]?.id).toBe('T099');
     expect(result.state.phase).toBe('implementing');

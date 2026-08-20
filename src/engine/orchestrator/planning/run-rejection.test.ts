@@ -76,7 +76,7 @@ describe('runPlanningPhase — planner rejection context', () => {
       planner,
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('parked');
     expect(prompts).toEqual([expect.stringContaining('Previous rejections:')]);
     expect(prompts[0]).toContain(rejectionSummary);
     expect(prompts[0]).toContain(feature);
@@ -101,7 +101,7 @@ describe('runPlanningPhase — planner rejection context', () => {
       approval: { enabled: true, feedRejectionsToPlanner: true },
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('parked');
     expect(prompts).toEqual([expect.stringContaining('Previous rejections:')]);
     expect(prompts[0]).toContain(rejectionSummary);
     expect(prompts[0]).toContain(feature);
@@ -121,7 +121,7 @@ describe('runPlanningPhase — planner rejection context', () => {
       approval: { enabled: true, feedRejectionsToPlanner: false },
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('parked');
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).not.toContain('Previous rejections:');
     expect(prompts[0]).not.toContain(rejectionSummary);
@@ -153,9 +153,9 @@ describe('runPlanningPhase — rejection paths', () => {
     const { callbacks } = makeCallbacks({ onApprovalNeeded: sequencedApproval(approvals) });
     const { result } = await runPhase({ callbacks, config: makeConfig({ workflow }) });
 
-    expect(result.cancelled).toBe(true);
+    expect(result.disposition).toBe('terminal');
     if (expectPhase !== undefined) {
-      expect(result.tasks).toHaveLength(0);
+      expect(result.state.tasks).toHaveLength(0);
       expect(result.state.phase).toBe(expectPhase);
     }
   });

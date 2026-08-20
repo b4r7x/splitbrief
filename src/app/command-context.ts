@@ -8,6 +8,7 @@ import {
   requestWorkflowResume,
 } from '../features/workflow/handlers.js';
 import { findLatestExpandableActivityBatchKey } from '../features/workflow/conversation-rows/activity-batch-key.js';
+import { createTuiSink } from '../features/workflow/tui-sink.js';
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
 import { resolveCopyValue } from '../features/workflow/copy/resolve.js';
 import { getSections } from '../stores/workflow/actions/sections.js';
@@ -43,6 +44,7 @@ import { sessionDir } from '../core/paths.js';
 import { rebuildRepomap } from '../engine/codebase/rebuild.js';
 import { writeHandoffPack } from '../engine/handoff/write.js';
 import { acceptRunSnapshot, rejectRunSnapshot } from '../engine/snapshots/run/lifecycle.js';
+import { createEventBus } from '../engine/events/bus.js';
 import { performManualCompaction } from '../engine/orchestrator/transcript/compaction.js';
 import { writeSessionHtmlReport } from '../engine/export/collect.js';
 import {
@@ -50,6 +52,7 @@ import {
   mutateApprovalsStore,
   clearGrantsByScope,
 } from '../core/approval/store.js';
+import { writeUiPrefs } from '../core/ui-prefs.js';
 import { error } from '../utils/error.js';
 import { assertNever } from '../utils/type-guards.js';
 import type { RouteData } from '../stores/navigation/router.js';
@@ -252,11 +255,16 @@ export function buildCommandContext({
       if (prepared === null) {
         throw appCommandContextError.noActiveSession('/compact-transcript');
       }
+      const bus = createEventBus();
+      bus.subscribe(
+        createTuiSink({ persistTranscript: prepared.config.workflow.persistTranscript }),
+      );
       return performManualCompaction({
         config: prepared.config,
         ref: prepared.session.ref,
         preparationId: prepared.preparationId,
         gates: prepared.gates,
+        bus,
       });
     },
     exportSession: async (projectDir, sessionId) =>
@@ -269,7 +277,11 @@ export function buildCommandContext({
         return { status: 'unavailable', message: 'Sidebar is hidden on small terminals.' };
       }
       controlsStore.toggleSidebar();
-      return { status: 'toggled', visible: controlsStore.get().sidebarVisible };
+      const visible = controlsStore.get().sidebarVisible;
+      if (projectDir) {
+        writeUiPrefs(projectDir, { sidebarVisible: visible });
+      }
+      return { status: 'toggled', visible };
     },
   });
 }

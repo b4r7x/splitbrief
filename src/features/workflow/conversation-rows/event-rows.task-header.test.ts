@@ -136,22 +136,21 @@ describe('eventRows task header and planner phase header', () => {
   // The artifact card names Spec, Plan, Tasks and Research in the same column, so a bare phase
   // header above it repeated the label without adding a fact. Only escalation, which has no card,
   // still gets one.
-  it.each([
-    'planning',
-    'researching',
-    'specifying',
-  ] as const)('prepends no phase header for %s markdown, because the artifact card names the artifact', (phase) => {
-    const event = makeMarkdownPlannerText({ phase });
-    const rows = eventRows({
-      event,
-      globalIndex: 0,
-      expanded: false,
-      ctx: { width: 80, viewportRows: 20, streaming },
-    });
+  it.each(['planning', 'researching', 'specifying'] as const)(
+    'prepends no phase header for %s markdown, because the artifact card names the artifact',
+    (phase) => {
+      const event = makeMarkdownPlannerText({ phase });
+      const rows = eventRows({
+        event,
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width: 80, viewportRows: 20, streaming },
+      });
 
-    expect(rowText(requireRow(rows, 0))).toBe('id: T001');
-    expect(rows.map(rowText).join('\n')).not.toMatch(/^(Plan|Research|Spec)$/m);
-  });
+      expect(rowText(requireRow(rows, 0))).toBe('id: T001');
+      expect(rows.map(rowText).join('\n')).not.toMatch(/^(Plan|Research|Spec)$/m);
+    },
+  );
 
   it('keeps the Escalation header, which no card covers', () => {
     const event = makeMarkdownPlannerText({ phase: 'escalating' });

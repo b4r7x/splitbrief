@@ -11,6 +11,7 @@ import { configStore } from '../stores/project/config.js';
 import { detectionStore } from '../stores/project/detection.js';
 import { sessionsStore } from '../stores/project/sessions.js';
 import { skillsStore } from '../stores/project/skills.js';
+import { controlsStore } from '../stores/ui/controls.js';
 import { SPLITBRIEF_DIR } from '../core/paths.js';
 import { toYaml } from '../core/config/load/transform.js';
 import { createDefaultConfig } from '../core/config/load/io.js';
@@ -548,5 +549,28 @@ Skill body for bootstrap proof.
     );
 
     await expect(initStores(dir)).rejects.toThrow();
+  }, 30_000);
+
+  it('restores persisted sidebar visibility on startup', async () => {
+    const dir = makeProjectDir();
+    writeConfigYaml(
+      dir,
+      toYaml({
+        ...createDefaultConfig(),
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
+      }),
+    );
+    writeFileSync(
+      join(dir, SPLITBRIEF_DIR, 'ui-prefs.json'),
+      JSON.stringify({ sidebarVisible: false }),
+      'utf-8',
+    );
+
+    expect(controlsStore.get().sidebarVisible).toBe(true);
+
+    await initStores(dir);
+
+    expect(controlsStore.get().sidebarVisible).toBe(false);
   }, 30_000);
 });

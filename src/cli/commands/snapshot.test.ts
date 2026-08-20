@@ -118,20 +118,20 @@ describe('snapshot list', () => {
 });
 
 describe('snapshot session resolution', () => {
-  it.each([
-    ['create'],
-    ['list'],
-  ])('%s exits 1 with actionable message when no active session and no --session', async (subcommand) => {
-    let captured: unknown;
-    try {
-      await runSnapshot([subcommand, '--project', tmp]);
-    } catch (err) {
-      captured = err;
-    }
-    expect(isCliError(captured)).toBe(true);
-    const msg = (captured as Error).message;
-    expect(msg).toMatch(/active session|--session/i);
-  });
+  it.each([['create'], ['list']])(
+    '%s exits 1 with actionable message when no active session and no --session',
+    async (subcommand) => {
+      let captured: unknown;
+      try {
+        await runSnapshot([subcommand, '--project', tmp]);
+      } catch (err) {
+        captured = err;
+      }
+      expect(isCliError(captured)).toBe(true);
+      const msg = (captured as Error).message;
+      expect(msg).toMatch(/active session|--session/i);
+    },
+  );
 
   it('resolves numeric --session aliases for create, list, restore, and diff', async () => {
     await makeAliasableSession('older-session', 1_000);

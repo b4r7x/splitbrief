@@ -1,7 +1,5 @@
-import type {
-  BriefReviewCommand,
-  BriefReviewCommandAction,
-} from '../../core/schemas/brief-review-command.js';
+import type { ApprovalReviewResult } from '../../core/approval/types.js';
+import type { BriefReviewCommandAction } from '../../core/schemas/brief-review-command.js';
 import { SOFT_SEP } from '../../components/separators.js';
 
 // Both review phases take the same four keys and the same typed commands; the phase split only
@@ -15,8 +13,17 @@ export const REVIEW_UNKNOWN_COMMAND_MESSAGE =
 const APPROVE_ALIASES = new Set(['approve', 'yes', 'y', 'ok', 'lgtm', 'continue']);
 const REJECT_ALIASES = new Set(['quit', 'reject', 'no', 'n', 'q']);
 
+type LocalBriefReviewAction = Extract<BriefReviewCommandAction, 'approve' | 'reject' | 'status'>;
+
+export type LegacyReviewCommand =
+  | { readonly action: 'revise'; readonly comment: string }
+  | { readonly action: 'save_draft' }
+  | { readonly action: 'external_edit_applied' };
+
+export type ReviewCommand = { readonly action: LocalBriefReviewAction } | LegacyReviewCommand;
+
 export type ReviewAction =
-  | { kind: 'brief-review-command'; command: BriefReviewCommand }
+  | { kind: 'brief-review-command'; command: ReviewCommand }
   | { kind: 'open-external-editor' }
   | null;
 
@@ -29,8 +36,12 @@ export function parseReviewCommand(text: string): ReviewAction {
   const cmd = raw.toLowerCase();
   if (APPROVE_ALIASES.has(cmd)) return briefReviewAction('approve');
   if (REJECT_ALIASES.has(cmd)) return briefReviewAction('reject');
-  if (cmd === 'external_edit_applied') return briefReviewAction('external_edit_applied');
-  if (cmd === 'save_draft' || cmd === 'save') return briefReviewAction('save_draft');
+  if (cmd === 'external_edit_applied') {
+    return legacyReviewAction({ action: 'external_edit_applied' });
+  }
+  if (cmd === 'save_draft' || cmd === 'save') {
+    return legacyReviewAction({ action: 'save_draft' });
+  }
   if (cmd === 'status') return briefReviewAction('status');
   if (cmd === 'edit-file' || raw === 'E' || cmd === 'edit' || cmd === 'e') {
     return { kind: 'open-external-editor' };
@@ -45,6 +56,32 @@ export function parseReviewCommand(text: string): ReviewAction {
   return null;
 }
 
-function briefReviewAction(action: Exclude<BriefReviewCommandAction, 'revise'>): ReviewAction {
+export function reviewCommandToApprovalReviewResult(
+  command: ReviewCommand,
+): ApprovalReviewResult | null {
+  switch (command.action) {
+    case 'approve':
+      return { approved: true };
+    case 'reject':
+      return { approved: false };
+    case 'revise':
+      return { approved: false, action: 'revise', comment: command.comment };
+    case 'external_edit_applied':
+      return { approved: false, action: 'edit' };
+    case 'save_draft':
+    case 'status':
+      return null;
+    default: {
+      const exhaustive: never = command;
+      return exhaustive;
+    }
+  }
+}
+
+function briefReviewAction(action: LocalBriefReviewAction): ReviewAction {
   return { kind: 'brief-review-command', command: { action } };
+}
+
+function legacyReviewAction(command: LegacyReviewCommand): ReviewAction {
+  return { kind: 'brief-review-command', command };
 }

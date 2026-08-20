@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { BRIEF_QUALITY_FILE, STATE_FILE } from '../../../../src/core/paths.js';
 import type { WorkflowScreenDeps } from '../../../../src/features/workflow/hooks/workflow-screen/use-model.js';
 import type { RunWorkflowFn } from '../../../../src/features/workflow/hooks/use-runner.js';
 import {
@@ -7,6 +8,7 @@ import {
   openApprovalPrompt,
 } from '../../../../src/stores/approval-prompt/prompt.js';
 import { routerStore } from '../../../../src/stores/navigation/router.js';
+import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle.js';
 import { questionPromptStore } from '../../../../src/stores/question-prompt/prompt.js';
 import { controlsStore } from '../../../../src/stores/ui/controls.js';
 import { addEvent } from '../../../../src/stores/workflow/actions/event.js';
@@ -18,10 +20,20 @@ import {
   teardownVisualFixture,
   VISUAL_FIXTURE_PROJECT_DIR,
 } from '../screen-fixtures.js';
+import {
+  persistedRecoveryWorkflowState,
+  type BriefRecoveryFixtureProjection,
+} from './brief-recovery-projections.js';
+import type { PersistedBriefRecoveryFixtureProjection } from './persisted-brief-recovery.js';
 import { WORKFLOW_FIXTURE_TASK_ID, type WorkflowFixtureProjection } from './projections.js';
 
+type RegisteredWorkflowProjection =
+  | WorkflowFixtureProjection
+  | BriefRecoveryFixtureProjection
+  | PersistedBriefRecoveryFixtureProjection;
+
 function getReviewFilePath(review: NonNullable<WorkflowFixtureProjection['review']>): string {
-  return join(VISUAL_FIXTURE_PROJECT_DIR, review.filePath);
+  return resolve(VISUAL_FIXTURE_PROJECT_DIR, review.filePath);
 }
 
 function teardownWorkflowFixture(): void {
@@ -29,7 +41,7 @@ function teardownWorkflowFixture(): void {
   teardownVisualFixture();
 }
 
-function applyProjection(projection: WorkflowFixtureProjection): void {
+function applyProjection(projection: RegisteredWorkflowProjection): void {
   for (const event of projection.events) addEvent(event);
 
   if (projection.streaming !== undefined) {
@@ -42,6 +54,10 @@ function applyProjection(projection: WorkflowFixtureProjection): void {
     reviewStore.setReviewFile(filePath);
     reviewStore.setBriefSources([projection.review.source]);
     reviewStore.setBriefPaths([filePath]);
+  }
+
+  if ('recovery' in projection || 'persistedState' in projection) {
+    lifecycleStore.__testReset({ phase: 'reviewing-briefs', status: 'running' });
   }
 
   if (projection.question !== undefined) {
@@ -63,7 +79,7 @@ function applyProjection(projection: WorkflowFixtureProjection): void {
 }
 
 async function setupProjection(
-  projection: WorkflowFixtureProjection,
+  projection: RegisteredWorkflowProjection,
   context: FixtureContext,
 ): Promise<void> {
   if (context.scenario.id !== projection.scenarioId) {
@@ -77,6 +93,29 @@ async function setupProjection(
     const filePath = getReviewFilePath(projection.review);
     await mkdir(dirname(filePath), { recursive: true });
     await writeFile(filePath, projection.review.source);
+  }
+  if ('recovery' in projection) {
+    const statePath = join(
+      VISUAL_FIXTURE_PROJECT_DIR,
+      '.splitbrief',
+      'sessions',
+      'visual-workflow',
+      STATE_FILE,
+    );
+    await writeFile(statePath, JSON.stringify(persistedRecoveryWorkflowState(projection)));
+  }
+  if ('persistedState' in projection) {
+    const sessionDirPath = join(
+      VISUAL_FIXTURE_PROJECT_DIR,
+      '.splitbrief',
+      'sessions',
+      'visual-workflow',
+    );
+    await writeFile(join(sessionDirPath, STATE_FILE), JSON.stringify(projection.persistedState));
+    await writeFile(
+      join(sessionDirPath, BRIEF_QUALITY_FILE),
+      JSON.stringify(projection.legacyQuality),
+    );
   }
 
   if (projection.summary !== undefined) {
@@ -92,7 +131,7 @@ async function setupProjection(
 }
 
 function activateFixtureInputMode(
-  projection: WorkflowFixtureProjection,
+  projection: RegisteredWorkflowProjection,
   options: Parameters<RunWorkflowFn>[0],
 ): void {
   if (projection.review !== undefined) {
@@ -119,7 +158,7 @@ function waitForFixtureAbort(signal?: AbortSignal): Promise<never> {
 }
 
 export function createWorkflowFixtureAppDeps(
-  projection?: WorkflowFixtureProjection,
+  projection?: RegisteredWorkflowProjection,
 ): WorkflowScreenDeps {
   const runWorkflow: RunWorkflowFn = (options) => {
     if (projection !== undefined) {
@@ -128,11 +167,16 @@ export function createWorkflowFixtureAppDeps(
     }
     return waitForFixtureAbort(options.signal);
   };
-  return { runWorkflow };
+  return {
+    runWorkflow,
+    ...(projection !== undefined && 'recovery' in projection
+      ? { recovery: projection.recovery }
+      : {}),
+  };
 }
 
 export function createWorkflowFixtureFactory(
-  projection: WorkflowFixtureProjection,
+  projection: RegisteredWorkflowProjection,
 ): FixtureFactory {
   return () => ({
     setup: (context) => setupProjection(projection, context),

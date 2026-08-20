@@ -126,6 +126,7 @@ describe('start preparation', () => {
               usedFallback: false,
             }),
             prepareNewSession: prepareSession,
+            collectArgVectorPreflightChecks: async () => [],
             newPreparationId: () => 'start-preparation',
           },
         }),

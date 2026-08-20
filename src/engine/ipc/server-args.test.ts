@@ -122,26 +122,22 @@ describe('parseIpcServerArgs launch contract', () => {
     expect(parsed).toBeNull();
   });
 
-  it.each([
-    'config',
-    'gates',
-    'preparationId',
-    'apiKey',
-    'diagnostics',
-    'environment',
-  ])('rejects transported %s authority', (field) => {
-    expect(
-      parseIpcServerArgs({
-        version: 1,
-        parentPid: process.pid,
-        candidate,
-        projectDir: '/repo',
-        feature: 'feature',
-        overrides: {},
-        [field]: {},
-      }),
-    ).toBeNull();
-  });
+  it.each(['config', 'gates', 'preparationId', 'apiKey', 'diagnostics', 'environment'])(
+    'rejects transported %s authority',
+    (field) => {
+      expect(
+        parseIpcServerArgs({
+          version: 1,
+          parentPid: process.pid,
+          candidate,
+          projectDir: '/repo',
+          feature: 'feature',
+          overrides: {},
+          [field]: {},
+        }),
+      ).toBeNull();
+    },
+  );
 
   it.each(['full', 'spec-kit'])('rejects the removed %s alias inside overrides', (mode) => {
     expect(

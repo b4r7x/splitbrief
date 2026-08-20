@@ -85,6 +85,7 @@ function makeManifest(options: { readonly includeDerived?: boolean } = {}): Mani
     motion: false,
     clock: '2026-07-19T00:00:00.000Z',
     randomSeed: 'visual-contracts-v1',
+    profile: 'unicode-color',
   });
   const controlPolicy: ControlPolicyMetadata = ControlPolicyMetadataSchema.parse({
     version: CONTROL_POLICY_VERSION,
@@ -118,7 +119,8 @@ function makeManifest(options: { readonly includeDerived?: boolean } = {}): Mani
     cellSchemaVersion: CELL_GRID_SCHEMA_VERSION,
     tool: { name: 'splitbrief-tui-shots', version: '1.0.0' },
     gitRevision: 'abcdef1',
-    selection: { requests: [request], targets: [target] },
+    profile: 'unicode-color',
+    selection: { profile: 'unicode-color', requests: [request], targets: [target] },
     determinism,
     controlPolicy,
     hyperlinkPolicy,
@@ -129,7 +131,143 @@ function makeManifest(options: { readonly includeDerived?: boolean } = {}): Mani
   });
 }
 
+function omitProfile<T extends { readonly profile: unknown }>(value: T): Omit<T, 'profile'> {
+  const { profile, ...rest } = value;
+  void profile;
+  return rest;
+}
+
+type ManifestWithoutProfiles = Omit<Manifest, 'profile' | 'selection' | 'determinism'> & {
+  readonly selection: Omit<Manifest['selection'], 'profile'>;
+  readonly determinism: Omit<Manifest['determinism'], 'profile'>;
+};
+
+function manifestWithoutProfiles(manifest: Manifest): ManifestWithoutProfiles {
+  return {
+    ...omitProfile(manifest),
+    selection: omitProfile(manifest.selection),
+    determinism: omitProfile(manifest.determinism),
+  };
+}
+
 describe('visual manifest contracts', () => {
+  it.each(['unicode-color', 'unicode-mono', 'ascii-mono'] as const)(
+    'accepts a homogeneous %s profile triple',
+    (profile) => {
+      const manifest = makeManifest();
+      const parsed = parseManifest({
+        ...manifest,
+        profile,
+        selection: { ...manifest.selection, profile },
+        determinism: { ...manifest.determinism, profile },
+      });
+
+      expect(parsed.profile).toBe(profile);
+      expect(parsed.selection.profile).toBe(profile);
+      expect(parsed.determinism.profile).toBe(profile);
+    },
+  );
+
+  it.each([
+    [
+      'top-level versus selection',
+      { profile: 'unicode-mono', selection: 'unicode-color', determinism: 'unicode-color' },
+    ],
+    [
+      'selection versus top-level',
+      { profile: 'unicode-color', selection: 'unicode-mono', determinism: 'unicode-color' },
+    ],
+    [
+      'top-level versus determinism',
+      { profile: 'unicode-mono', selection: 'unicode-color', determinism: 'unicode-color' },
+    ],
+    [
+      'determinism versus top-level',
+      { profile: 'unicode-color', selection: 'unicode-color', determinism: 'unicode-mono' },
+    ],
+    [
+      'selection versus determinism',
+      { profile: 'unicode-color', selection: 'unicode-mono', determinism: 'unicode-color' },
+    ],
+    [
+      'determinism versus selection',
+      { profile: 'unicode-color', selection: 'unicode-color', determinism: 'unicode-mono' },
+    ],
+  ] as const)('rejects a %s pairwise profile mismatch', (_location, profiles) => {
+    const manifest = makeManifest();
+    expect(
+      ManifestSchema.safeParse({
+        ...manifest,
+        profile: profiles.profile,
+        selection: { ...manifest.selection, profile: profiles.selection },
+        determinism: { ...manifest.determinism, profile: profiles.determinism },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a missing profile when the other two fields explicitly select another profile', () => {
+    const manifest = makeManifest();
+    const explicit = 'unicode-mono';
+    expect(
+      ManifestSchema.safeParse({
+        ...manifestWithoutProfiles(manifest),
+        profile: explicit,
+        selection: { ...omitProfile(manifest.selection), profile: explicit },
+      }).success,
+    ).toBe(false);
+    expect(
+      ManifestSchema.safeParse({
+        ...manifestWithoutProfiles(manifest),
+        profile: explicit,
+        determinism: { ...omitProfile(manifest.determinism), profile: explicit },
+      }).success,
+    ).toBe(false);
+    expect(
+      ManifestSchema.safeParse({
+        ...manifestWithoutProfiles(manifest),
+        selection: { ...omitProfile(manifest.selection), profile: explicit },
+        determinism: { ...omitProfile(manifest.determinism), profile: explicit },
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each(['profile', 'selection.profile', 'determinism.profile'] as const)(
+    'rejects a future profile value at %s',
+    (location) => {
+      const manifest = makeManifest();
+      const future = 'unicode-rainbow';
+      const value =
+        location === 'profile'
+          ? { ...manifest, profile: future }
+          : location === 'selection.profile'
+            ? { ...manifest, selection: { ...manifest.selection, profile: future } }
+            : { ...manifest, determinism: { ...manifest.determinism, profile: future } };
+
+      expect(ManifestSchema.safeParse(value).success).toBe(false);
+    },
+  );
+
+  it('canonicalizes and serializes the all-omitted legacy profile triple', () => {
+    const parsed = parseManifest(manifestWithoutProfiles(makeManifest()));
+
+    expect(parsed.profile).toBe('unicode-color');
+    expect(parsed.selection.profile).toBe('unicode-color');
+    expect(parsed.determinism.profile).toBe('unicode-color');
+    const serialized = JSON.parse(serializeManifest(parsed));
+    expect(serialized).toMatchObject({
+      profile: 'unicode-color',
+      selection: { profile: 'unicode-color' },
+      determinism: { profile: 'unicode-color' },
+    });
+  });
+
+  it('rejects profile-like extra fields under the strict manifest contract', () => {
+    const manifest = makeManifest();
+    expect(
+      ManifestSchema.safeParse({ ...manifest, terminalProfile: 'unicode-color' }).success,
+    ).toBe(false);
+  });
+
   it('bounds renderer metrics, rejects blank identity, and accepts exact policy envelopes', () => {
     const renderer: RendererMetadata = RendererMetadataSchema.parse({
       name: 'sharp',

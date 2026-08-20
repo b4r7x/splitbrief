@@ -486,41 +486,41 @@ describe('PTY behavior smoke', () => {
     expect(earlyExit.state.active).toBe(false);
   });
 
-  it.each([
-    'optional',
-    'required',
-  ] as const)('reaps and disposes after data listener registration fails in %s mode', async (requirement) => {
-    const failed = listenerFailureCapability('data');
-    await expect(
-      runPtySmoke(
-        { timeoutMs: 100, requirement },
-        { loadCapability: async () => failed.capability },
-      ),
-    ).rejects.toMatchObject({ name: 'pty-contract-listener' });
+  it.each(['optional', 'required'] as const)(
+    'reaps and disposes after data listener registration fails in %s mode',
+    async (requirement) => {
+      const failed = listenerFailureCapability('data');
+      await expect(
+        runPtySmoke(
+          { timeoutMs: 100, requirement },
+          { loadCapability: async () => failed.capability },
+        ),
+      ).rejects.toMatchObject({ name: 'pty-contract-listener' });
 
-    expect(failed.state.kills).toEqual(['SIGTERM']);
-    expect(failed.state.active).toBe(false);
-    expect(failed.state.exitDisposed).toBe(true);
-    expect(existsSync(failed.state.environmentRoot)).toBe(false);
-  });
+      expect(failed.state.kills).toEqual(['SIGTERM']);
+      expect(failed.state.active).toBe(false);
+      expect(failed.state.exitDisposed).toBe(true);
+      expect(existsSync(failed.state.environmentRoot)).toBe(false);
+    },
+  );
 
-  it.each([
-    'optional',
-    'required',
-  ] as const)('rejects an invalid data disposable and reaps the child in %s mode', async (requirement) => {
-    const failed = invalidDisposableCapability('data');
-    await expect(
-      runPtySmoke(
-        { timeoutMs: 100, requirement },
-        { loadCapability: async () => failed.capability },
-      ),
-    ).rejects.toMatchObject({ name: 'pty-contract-listener' });
+  it.each(['optional', 'required'] as const)(
+    'rejects an invalid data disposable and reaps the child in %s mode',
+    async (requirement) => {
+      const failed = invalidDisposableCapability('data');
+      await expect(
+        runPtySmoke(
+          { timeoutMs: 100, requirement },
+          { loadCapability: async () => failed.capability },
+        ),
+      ).rejects.toMatchObject({ name: 'pty-contract-listener' });
 
-    expect(failed.state.kills).toEqual(['SIGTERM']);
-    expect(failed.state.exitDisposed).toBe(true);
-    expect(failed.state.active).toBe(false);
-    expect(existsSync(failed.state.environmentRoot)).toBe(false);
-  });
+      expect(failed.state.kills).toEqual(['SIGTERM']);
+      expect(failed.state.exitDisposed).toBe(true);
+      expect(failed.state.active).toBe(false);
+      expect(existsSync(failed.state.environmentRoot)).toBe(false);
+    },
+  );
 
   it.each([
     { pid: 0, requirement: 'optional' as const },
@@ -580,23 +580,23 @@ describe('PTY behavior smoke', () => {
     expect(existsSync(failed.state.environmentRoot)).toBe(false);
   });
 
-  it.each([
-    'optional',
-    'required',
-  ] as const)('rejects an invalid exit disposable after observable reaping in %s mode', async (requirement) => {
-    const failed = invalidDisposableCapability('exit');
-    await expect(
-      runPtySmoke(
-        { timeoutMs: 100, requirement },
-        { loadCapability: async () => failed.capability },
-      ),
-    ).rejects.toMatchObject({ name: 'pty-contract-listener' });
+  it.each(['optional', 'required'] as const)(
+    'rejects an invalid exit disposable after observable reaping in %s mode',
+    async (requirement) => {
+      const failed = invalidDisposableCapability('exit');
+      await expect(
+        runPtySmoke(
+          { timeoutMs: 100, requirement },
+          { loadCapability: async () => failed.capability },
+        ),
+      ).rejects.toMatchObject({ name: 'pty-contract-listener' });
 
-    expect(failed.state.kills).toEqual(['SIGTERM']);
-    expect(failed.state.dataDisposed).toBe(true);
-    expect(failed.state.active).toBe(false);
-    expect(existsSync(failed.state.environmentRoot)).toBe(false);
-  });
+      expect(failed.state.kills).toEqual(['SIGTERM']);
+      expect(failed.state.dataDisposed).toBe(true);
+      expect(failed.state.active).toBe(false);
+      expect(existsSync(failed.state.environmentRoot)).toBe(false);
+    },
+  );
 
   it('requires restoration after the latest terminal re-entry', async () => {
     const missingFinalRestore = fakeCapability('missing-final-restore');

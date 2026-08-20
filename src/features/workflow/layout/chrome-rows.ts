@@ -8,18 +8,58 @@ import { assertNever } from '../../../utils/type-guards.js';
 // The header row (which now carries the phase rail inline) + the divider (1). The divider alone
 // separates the chrome from the body — no gap row below it — and the live status rides inline, so
 // no chrome row is reserved for it either.
-const TOP_FIXED_CHROME_ROWS = 2;
-// Footer divider (1) + feedback row (1) + composer + the one-row input footer byline, which hugs
-// the terminal's last line.
-const BOTTOM_FOOTER_DIVIDER_ROWS = 1;
-const BOTTOM_FIXED_CHROME_ROWS = 2 + BOTTOM_FOOTER_DIVIDER_ROWS;
+export const WORKFLOW_CHROME_ROWS = {
+  header: 1,
+  headerDivider: 1,
+  footerDivider: 1,
+  feedback: 1,
+  inputFooter: 1,
+} as const;
+
+export const WORKFLOW_CHROME_ORDER = [
+  'header',
+  'header-divider',
+  'body',
+  'footer-divider',
+  'feedback',
+  'composer',
+  'input-footer',
+] as const;
+
+export interface WorkflowChromeRows {
+  header: number;
+  headerDivider: number;
+  footerDivider: number;
+  feedback: number;
+  composer: number;
+  inputFooter: number;
+}
+
+export const TOP_FIXED_CHROME_ROWS =
+  WORKFLOW_CHROME_ROWS.header + WORKFLOW_CHROME_ROWS.headerDivider;
+export const BOTTOM_FIXED_CHROME_ROWS =
+  WORKFLOW_CHROME_ROWS.footerDivider +
+  WORKFLOW_CHROME_ROWS.feedback +
+  WORKFLOW_CHROME_ROWS.inputFooter;
+export const FIXED_CHROME_ROWS = TOP_FIXED_CHROME_ROWS + BOTTOM_FIXED_CHROME_ROWS;
+
+function normalizeInputRows(inputRows: number): number {
+  return Number.isFinite(inputRows) ? Math.max(0, Math.floor(inputRows)) : 0;
+}
+
+export function getWorkflowChromeRows(inputRows: number): WorkflowChromeRows {
+  return {
+    ...WORKFLOW_CHROME_ROWS,
+    composer: normalizeInputRows(inputRows),
+  };
+}
 
 export function getChromeContentWidth(cols: number): number {
-  return Math.max(1, cols);
+  return Number.isFinite(cols) ? Math.max(1, Math.floor(cols)) : 1;
 }
 
 export function getChromeHeight(inputRows: number): number {
-  return TOP_FIXED_CHROME_ROWS + BOTTOM_FIXED_CHROME_ROWS + inputRows;
+  return FIXED_CHROME_ROWS + normalizeInputRows(inputRows);
 }
 
 export function getContentTopRow(): number {

@@ -427,18 +427,14 @@ describe('runner-owned catalog resolution', () => {
     expect(rows.some((row) => row.selectionId === 'claude-opus-4-6')).toBe(true);
   });
 
-  it.each([
-    undefined,
-    '',
-    '   ',
-    'auto',
-    'AUTO',
-    '  auto  ',
-  ])('does not create a custom recovery for an automatic or empty configured selection %j', (configuredSelectionId) => {
-    const rows = resolveModelCatalog('anthropic', { configuredSelectionId });
+  it.each([undefined, '', '   ', 'auto', 'AUTO', '  auto  '])(
+    'does not create a custom recovery for an automatic or empty configured selection %j',
+    (configuredSelectionId) => {
+      const rows = resolveModelCatalog('anthropic', { configuredSelectionId });
 
-    expect(rows.some((row) => row.source === 'configured-recovery')).toBe(false);
-  });
+      expect(rows.some((row) => row.source === 'configured-recovery')).toBe(false);
+    },
+  );
 
   it('does not create a custom recovery for Claude Code’s legacy automatic alias', () => {
     const rows = resolveModelCatalog('claude-code', { configuredSelectionId: 'default' });

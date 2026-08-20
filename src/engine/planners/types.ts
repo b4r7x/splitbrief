@@ -7,9 +7,41 @@ import type { DiscoveredValidation } from '../../core/schemas/workflow.js';
 import type { StructuredSummary } from '../../core/schemas/compaction.js';
 import type { ChangeDetectionKind } from '../change-detection.js';
 import type { LanguageContext } from '../spec/prompts/language-context.js';
-import type { CustomRunnerRuntimePort, RunnerRuntime } from '../runners/types.js';
-import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
+import type {
+  CustomRunnerRuntimePort,
+  DeclaredArtifactReceipt,
+  PreparedPlannerInvocation,
+  RunnerRuntime,
+} from '../runners/types.js';
+import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import type { CliStartGate } from '../runners/start-gate.js';
+import {
+  OwnedPlannerArtifactSchema,
+  type DeclaredArtifactLease,
+  type OwnedPlannerArtifact,
+  type PlannerArtifactTransport,
+  type PlannerSessionScope,
+  type TaskCompilationAttemptId,
+  type TaskCompilationBatchId,
+  type TaskCompilationCallEnvelope,
+  type TaskCompilationProgramId,
+  type TaskCompilationSemanticId,
+} from '../../core/schemas/task-compilation.js';
+
+export type {
+  DeclaredArtifactLease,
+  OwnedPlannerArtifact,
+  PreparedPlannerInvocation,
+  PlannerArtifactTransport,
+  PlannerSessionScope,
+};
+
+/** Internal result extension used to carry the validated declared-file receipt
+ * from the runtime adapter into the phase-owned artifact. */
+export type PlannerInvokeResult = RunnerCallResult &
+  Readonly<{
+    ownedArtifactReceipt?: DeclaredArtifactReceipt | undefined;
+  }>;
 
 export interface PlannerFactoryOptions {
   /** Canonical CLI identity admitted by the start-readiness gate. */
@@ -128,13 +160,45 @@ export interface PlannerOutputCallbacks {
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
 }
 
-/** Result from a single planning phase. */
-export interface PhaseResult {
-  /** Resolved artifact content (what should be persisted to disk). */
-  text: string;
-  filename: string;
-  /** Raw planner stdout, retained when it differs from the resolved artifact. */
+/** Result from a single planning phase, owned by its current physical call. */
+export type PhaseResult = Readonly<{
+  artifact: OwnedPlannerArtifact;
   rawOutput?: string | undefined;
+}>;
+
+export type PlannerArtifactLogicalName = 'research.md' | 'spec.md' | 'plan.md' | 'tasks.md';
+
+export type PlannerArtifactRequest = Readonly<{
+  semanticId: TaskCompilationSemanticId;
+  programId: TaskCompilationProgramId | null;
+  batchId: TaskCompilationBatchId | null;
+  attemptId: TaskCompilationAttemptId;
+  logicalName: PlannerArtifactLogicalName;
+  transport: PlannerArtifactTransport;
+  envelope: TaskCompilationCallEnvelope;
+}>;
+
+export function isOwnedPlannerArtifactFor(
+  request: PlannerArtifactRequest,
+  input: unknown,
+): input is OwnedPlannerArtifact {
+  const parsed = OwnedPlannerArtifactSchema.safeParse(input);
+  if (!parsed.success) return false;
+  const artifact = parsed.data;
+  if (
+    artifact.semanticId !== request.semanticId ||
+    artifact.programId !== request.programId ||
+    artifact.batchId !== request.batchId ||
+    artifact.attemptId !== request.attemptId ||
+    artifact.logicalName !== request.logicalName ||
+    artifact.transport !== request.transport.kind
+  ) {
+    return false;
+  }
+  if (request.transport.kind !== 'declared-file') return true;
+  if (request.transport.lease.attemptId !== request.attemptId) return false;
+  if (artifact.sourceReceipt.kind !== 'declared-file') return false;
+  return artifact.sourceReceipt.leaseId === request.transport.lease.leaseId;
 }
 
 /**

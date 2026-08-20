@@ -4,7 +4,7 @@ import { getChromeHeight, getContentTopRow } from './chrome-rows.js';
 export const WORKFLOW_CONTENT_PADDING_X = 0;
 export const WORKFLOW_SIDEBAR_GAP = 2;
 
-const WORKFLOW_SIDEBAR_MIN_COLS = 120;
+export const SIDEBAR_BREAKPOINT_COLS = 120;
 const WORKFLOW_SIDEBAR_SHARE = 0.25;
 const WORKFLOW_SIDEBAR_MIN_WIDTH = 34;
 const WORKFLOW_SIDEBAR_MAX_WIDTH = 48;
@@ -21,7 +21,7 @@ export interface SidebarWidthInput {
 
 export function getWorkflowSidebarWidth(input: SidebarWidthInput): number {
   const { cols, sidebarVisible } = input;
-  if (!sidebarVisible || cols < WORKFLOW_SIDEBAR_MIN_COLS) return 0;
+  if (!sidebarVisible || cols <= SIDEBAR_BREAKPOINT_COLS) return 0;
   return clamp(
     Math.floor(cols * WORKFLOW_SIDEBAR_SHARE),
     WORKFLOW_SIDEBAR_MIN_WIDTH,
@@ -29,11 +29,9 @@ export function getWorkflowSidebarWidth(input: SidebarWidthInput): number {
   );
 }
 
-export function getWorkflowConversationHeight(input: {
-  height: number;
-  sidebarWidth: number;
-}): number {
-  return Math.max(0, input.height - (input.sidebarWidth > 0 ? 1 : 0));
+function getWorkflowBodyBottom(input: { contentTop: number; contentHeight: number }): number {
+  const bodyHeight = Math.max(0, input.contentHeight);
+  return bodyHeight > 0 ? input.contentTop + bodyHeight - 1 : input.contentTop;
 }
 
 export function getSidebarTaskTitleWidth(input: {
@@ -212,7 +210,7 @@ export function getWorkflowContentRect(input: WorkflowContentRectInput): Workflo
     sidebarWidth + getWorkflowSidebarGap({ cols, sidebarVisible }) + WORKFLOW_CONTENT_PADDING_X + 1;
   const top = getContentTopRow();
   const right = width > 0 ? left + width - 1 : left;
-  const bottom = height > 0 ? top + height - 1 : top;
+  const bottom = getWorkflowBodyBottom({ contentTop: top, contentHeight: height });
   return {
     left,
     right,

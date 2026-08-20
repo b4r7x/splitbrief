@@ -296,27 +296,27 @@ describe('createApiPlanner', () => {
     expect(body.max_tokens!).toBeGreaterThan(body.thinking!.budget_tokens);
   });
 
-  it.each([
-    ['anthropic'],
-    ['ollama'],
-  ] as const)('planner.contextLength drives the derived max_tokens for the %s api kind', async (provider) => {
-    const cfg = makeApiPlannerConfig(provider);
-    cfg.planner.contextLength = 5000;
-    const planner = createApiPlanner(cfg);
+  it.each([['anthropic'], ['ollama']] as const)(
+    'planner.contextLength drives the derived max_tokens for the %s api kind',
+    async (provider) => {
+      const cfg = makeApiPlannerConfig(provider);
+      cfg.planner.contextLength = 5000;
+      const planner = createApiPlanner(cfg);
 
-    await planner.regenerate({
-      prompt: 'the prompt',
-      projectDir,
-      callbacks: { onOutput: () => {} },
-    });
+      await planner.regenerate({
+        prompt: 'the prompt',
+        projectDir,
+        callbacks: { onOutput: () => {} },
+      });
 
-    expect(receivedBodies).toHaveLength(1);
-    const body = receivedBodies[0] as unknown as { max_tokens?: number };
-    // contextLength 5000 minus the tiny prompt stays under the 8192 output cap,
-    // so the budget tracks the configured window rather than a hard-coded default.
-    expect(body.max_tokens).toBeLessThan(5000);
-    expect(body.max_tokens!).toBeGreaterThan(4096);
-  });
+      expect(receivedBodies).toHaveLength(1);
+      const body = receivedBodies[0] as unknown as { max_tokens?: number };
+      // contextLength 5000 minus the tiny prompt stays under the 8192 output cap,
+      // so the budget tracks the configured window rather than a hard-coded default.
+      expect(body.max_tokens).toBeLessThan(5000);
+      expect(body.max_tokens!).toBeGreaterThan(4096);
+    },
+  );
 
   it('strips effort for an Anthropic model that does not support reasoning', async () => {
     const cfg = makeApiPlannerConfig('anthropic');
@@ -385,16 +385,16 @@ describe('createApiPlanner', () => {
     expect(hasAssistantPrior).toBe(false);
   });
 
-  it.each([
-    ['ollama'],
-    ['anthropic'],
-  ] as const)('isAvailable returns true for %s when endpoint responds', async (provider) => {
-    const planner = createApiPlanner(makeApiPlannerConfig(provider));
-    expect(await planner.isAvailable()).toBe(true);
-    if (provider === 'anthropic') {
-      expect(receivedCatalogRequests).toContainEqual({ pathname: '/v1/models', limit: '1000' });
-    }
-  });
+  it.each([['ollama'], ['anthropic']] as const)(
+    'isAvailable returns true for %s when endpoint responds',
+    async (provider) => {
+      const planner = createApiPlanner(makeApiPlannerConfig(provider));
+      expect(await planner.isAvailable()).toBe(true);
+      if (provider === 'anthropic') {
+        expect(receivedCatalogRequests).toContainEqual({ pathname: '/v1/models', limit: '1000' });
+      }
+    },
+  );
 
   it('isAvailable returns false when endpoint is unreachable', async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));

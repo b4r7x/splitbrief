@@ -147,24 +147,23 @@ describe('createOllamaProvider native inventory', () => {
     );
   });
 
-  it.each([
-    'inline-local-secret',
-    'env:ARBITRARY_LOCAL_KEY',
-    'env:OLLAMA_API_KEY',
-  ])('rejects %s before a local factory can resolve or send a cloud credential', async (apiKey) => {
-    const cloudKeyCanary = 'cloud-key-must-not-reach-loopback';
-    process.env.OLLAMA_API_KEY = cloudKeyCanary;
-    await withLoopbackOllama(
-      (_request, response) => sendJson(response, 500, { unexpected: 'request' }),
-      async ({ apiBase, requests }) => {
-        expect(() => createOllamaProvider({ apiBase, apiKey })).toThrow(
-          expect.objectContaining({ kind: 'provider-ollama-local-credential-invalid' }),
-        );
-        expect(requests).toEqual([]);
-        expect(JSON.stringify(requests)).not.toContain(cloudKeyCanary);
-      },
-    );
-  });
+  it.each(['inline-local-secret', 'env:ARBITRARY_LOCAL_KEY', 'env:OLLAMA_API_KEY'])(
+    'rejects %s before a local factory can resolve or send a cloud credential',
+    async (apiKey) => {
+      const cloudKeyCanary = 'cloud-key-must-not-reach-loopback';
+      process.env.OLLAMA_API_KEY = cloudKeyCanary;
+      await withLoopbackOllama(
+        (_request, response) => sendJson(response, 500, { unexpected: 'request' }),
+        async ({ apiBase, requests }) => {
+          expect(() => createOllamaProvider({ apiBase, apiKey })).toThrow(
+            expect.objectContaining({ kind: 'provider-ollama-local-credential-invalid' }),
+          );
+          expect(requests).toEqual([]);
+          expect(JSON.stringify(requests)).not.toContain(cloudKeyCanary);
+        },
+      );
+    },
+  );
 
   it('treats a valid empty tag inventory as empty rather than inventing a bundled model', async () => {
     await withLoopbackOllama(

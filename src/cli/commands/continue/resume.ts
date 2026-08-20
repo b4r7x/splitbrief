@@ -57,9 +57,12 @@ export async function resumeSavedSession(args: {
 }): Promise<void> {
   const { projectDir, sessionId, opts } = args;
   const deps = { ...defaultResumeTailDeps, ...(args.deps ?? {}) };
+  // The caller must pass the result of loadStateForResume.  That seam is the
+  // only place allowed to validate or promote persisted state; keeping this
+  // helper v4-only prevents a raw legacy object from reaching preparation,
+  // rendering, or a provider.
+  assertResumableState(args.state, sessionId);
   const state = reconcileResumeMode(args.state, opts.mode);
-
-  assertResumableState(state, sessionId);
 
   const currentConfig = resolveEffectiveConfig({
     base: loadConfig(projectDir).config,

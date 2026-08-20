@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { ensureSessionDir, readSpecFile, writeSpecFile } from '../../../core/paths-io.js';
-import { PLAN_FILE, SPEC_FILE, TASKS_FILE } from '../../../core/paths.js';
+import { PLAN_FILE, SPEC_FILE, TASKS_FILE, sessionDir } from '../../../core/paths.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
   makeBusRecorder,
@@ -13,6 +15,7 @@ import {
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { REAL_TASKS_MD } from '#testing/helpers/planning-phase.js';
 import { formatTasks } from '../../spec/formatter.js';
+import { createEventBus } from '../../events/bus.js';
 import { regeneratePlanAndTasks, regenerateTasks } from './regen.js';
 import type { WorkflowSinks } from '../types.js';
 
@@ -136,6 +139,13 @@ describe('regeneratePlanAndTasks', () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
+    writeSpecFile(
+      { projectDir, sessionId },
+      TASKS_FILE,
+      '# Prior Task Briefs\n\nUnchanged.\n',
+      TEST_METADATA,
+    );
+    const priorTasksBytes = readSpecFile({ projectDir, sessionId }, TASKS_FILE);
     const planner = makePlanner({
       review: vi
         .fn()
@@ -156,14 +166,96 @@ describe('regeneratePlanAndTasks', () => {
     expect(result.tasks).toHaveLength(1);
     expect(result.state.messageQueue[0]?.drainedAt).toBeDefined();
     expect(events.some((event) => event.type === 'queue_drained' && event.count === 1)).toBe(true);
-    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(2);
     expect(
       events.filter((event) => event.type === 'artifact_written').map((event) => event.filename),
-    ).toEqual([PLAN_FILE, TASKS_FILE]);
+    ).toEqual([PLAN_FILE]);
+    expect(readSpecFile({ projectDir, sessionId }, TASKS_FILE)).toBe(priorTasksBytes);
   });
 });
 
 describe('regenerateTasks', () => {
+  it('binds the recovery provider call to the supplied epoch, operation, and request identity', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    const dispatch = vi.fn().mockResolvedValue({
+      kind: 'completed',
+      requestId: 'request-expected',
+      dispatchPossibility: 'possible',
+      remoteObservation: 'confirmed-final',
+      text: REAL_TASKS_MD,
+      providerCode: null,
+      usage: null,
+    });
+    const planner = makePlanner();
+
+    const result = await regenerateTasks({
+      projectDir,
+      sessionId,
+      planner,
+      callbacks: makeCallbacks().callbacks,
+      bus: createEventBus(),
+      state: createInitialState('feature'),
+      metadata: TEST_METADATA,
+      briefRecovery: {
+        epochId: 'epoch-expected',
+        operationId: 'operation-expected',
+        requestId: 'request-expected',
+        provider: { dispatch },
+      },
+    });
+
+    expect(result.tasks).toHaveLength(1);
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId,
+        epochId: 'epoch-expected',
+        operationId: 'operation-expected',
+        requestId: 'request-expected',
+      }),
+    );
+    expect(planner.review).not.toHaveBeenCalled();
+  });
+
+  it('preserves the paid operation identity when malformed regenerated output fails parsing', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    const dispatch = vi.fn().mockResolvedValue({
+      kind: 'completed',
+      requestId: 'request-malformed',
+      dispatchPossibility: 'possible',
+      remoteObservation: 'confirmed-final',
+      text: '---\nid: T001\n---\n',
+      providerCode: null,
+      usage: { inputTokens: 11, outputTokens: 5 },
+    });
+    const planner = makePlanner();
+
+    await expect(
+      regenerateTasks({
+        projectDir,
+        sessionId,
+        planner,
+        callbacks: makeCallbacks().callbacks,
+        bus: createEventBus(),
+        state: createInitialState('feature'),
+        metadata: TEST_METADATA,
+        briefRecovery: {
+          epochId: 'epoch-malformed',
+          operationId: 'operation-malformed',
+          requestId: 'request-malformed',
+          provider: { dispatch },
+        },
+      }),
+    ).rejects.toThrow('Invalid task block');
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
+      epochId: 'epoch-malformed',
+      operationId: 'operation-malformed',
+      requestId: 'request-malformed',
+    });
+    expect(planner.review).not.toHaveBeenCalled();
+  });
+
   it('compiles the prompt from the tasks.md on disk, not the stale in-memory state.tasks', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { bus } = makeBusRecorder();
@@ -171,6 +263,7 @@ describe('regenerateTasks', () => {
     const onDisk = makeTask({ id: 'T001', title: 'Disk version of the brief' });
     const stale = makeTask({ id: 'T001', title: 'Stale in-memory brief' });
     writeSpecFile({ projectDir, sessionId }, TASKS_FILE, formatTasks([onDisk]), TEST_METADATA);
+    const priorTasksBytes = readSpecFile({ projectDir, sessionId }, TASKS_FILE);
 
     let seenPrompt = '';
     const planner = makePlanner({
@@ -194,6 +287,7 @@ describe('regenerateTasks', () => {
 
     expect(seenPrompt).toContain('Disk version of the brief');
     expect(seenPrompt).not.toContain('Stale in-memory brief');
+    expect(readSpecFile({ projectDir, sessionId }, TASKS_FILE)).toBe(priorTasksBytes);
   });
 
   it('falls back to state.tasks when tasks.md is absent on disk', async () => {
@@ -223,6 +317,7 @@ describe('regenerateTasks', () => {
     });
 
     expect(seenPrompt).toContain('Only-in-memory brief');
+    expect(existsSync(join(sessionDir(projectDir, sessionId), TASKS_FILE))).toBe(false);
   });
 
   it('warns on the bus when regenerated Task Briefs contain an unknown ### section (F-429 / N399)', async () => {
@@ -255,11 +350,19 @@ describe('regenerateTasks', () => {
       (e) => e.type === 'warning' && e.message.includes('Future Considerations'),
     );
     expect(warning).toBeDefined();
+    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
   });
 
   it('persists planner usage when strict Task Brief parsing rejects a replacement', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { bus, events } = makeBusRecorder();
+    writeSpecFile(
+      { projectDir, sessionId },
+      TASKS_FILE,
+      '# Prior Task Briefs\n\nUnchanged.\n',
+      TEST_METADATA,
+    );
+    const priorTasksBytes = readSpecFile({ projectDir, sessionId }, TASKS_FILE);
     const malformedTaskLikeBlock = `---
 id: T002
 title:
@@ -294,7 +397,8 @@ This replacement must fail strict parsing.
     expect(persisted).not.toBeNull();
     if (persisted === null) throw new Error('expected usage state to be persisted');
     expect(persisted.tokenUsage).toMatchObject({ plannerInput: 31, plannerOutput: 7 });
-    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(1);
+    expect(readSpecFile({ projectDir, sessionId }, TASKS_FILE)).toBe(priorTasksBytes);
+    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
   });
 
   it('an abort during regeneration review parks the retry prompt instead of failing', async () => {
@@ -333,5 +437,6 @@ This replacement must fail strict parsing.
     expect(prompts[1]).toContain('retry with more detail');
     expect(result.tasks).toHaveLength(1);
     expect(events.filter((e) => e.type === 'turn_interrupted')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
   });
 });

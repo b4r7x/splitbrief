@@ -4,14 +4,14 @@ import type { PlanResult } from '../../planners/types.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
-import { SPEC_FILE, PLAN_FILE, sessionDir } from '../../../core/paths.js';
-import { saveState } from '../../../core/state/persistence.js';
+import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery.js';
+import { SPEC_FILE, PLAN_FILE, TASKS_FILE, sessionDir } from '../../../core/paths.js';
 import { getPlannerToolId } from '../../../core/config/accessors/runner-config.js';
 import { parseDiscoveredValidation } from './parse-validation.js';
 import { sanitizeDiscoveredValidation } from './sanitize-discovered-validation.js';
 import { buildSkillsSection, discoverSkills } from '../../skill-discovery.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
-import { publishPlannerStatus } from '../events.js';
+import { publishPlannerStatus, publishWarning } from '../events.js';
 import { collectAndPersistClarifications } from '../clarifications.js';
 import { runApprovalLoop } from '../approval/loop.js';
 import {
@@ -24,12 +24,59 @@ import { handleRewindSpec, handleRewindPlan } from './rewind.js';
 import { resetDriftChainState } from '../drift/chain-state.js';
 import { drainAndFormat } from './queue-drain.js';
 import { handlePlanningFailure } from './failure.js';
-import { runBriefQuality } from './brief-quality-run.js';
-import { runBriefsApprovalLoop } from './briefs-approval-loop.js';
 import { persistPhases } from './io.js';
 import { runPlannerCallInContinuationLoop } from './call-loop.js';
 import { regenerateTasks, regeneratePlanAndTasks } from './regen.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult, PlanningRunContext } from './types.js';
+import { fallbackBriefRecoveryProjection, parkedResult } from './brief-quality-preparation.js';
+import { isRecord } from '../../../utils/type-guards.js';
+
+function compilerFailureCode(err: unknown): string | null {
+  if (!isRecord(err)) return null;
+  const kind = err.kind;
+  return typeof kind === 'string' && kind.startsWith('task_compiler_') ? kind : null;
+}
+
+function compilerBlockerProjection(
+  base: BriefRecoveryProjectionV1,
+  code: string,
+): BriefRecoveryProjectionV1 {
+  return {
+    ...base,
+    status: 'blocked',
+    blocker: { kind: 'provider', code, message: `Task Brief compilation failed: ${code}` },
+    allowedActions: ['retry', 'edit', 'reject'],
+  };
+}
+
+export function isCompilerFailureProjection(projection: BriefRecoveryProjectionV1): boolean {
+  return (
+    projection.blocker?.kind === 'provider' && projection.blocker.code.startsWith('task_compiler_')
+  );
+}
+
+function parkCompilerFailure(
+  opts: PlanningPhaseOptions,
+  state: WorkflowState,
+  code: string,
+  err: unknown,
+): PlanningPhaseResult {
+  const detail = err instanceof Error ? err.message : String(err);
+  publishWarning({
+    bus: opts.wctx.bus,
+    phase: state.phase,
+    message: `Task Brief compilation failed (${code}): ${detail}`,
+    safety: { category: 'planning', code, transcriptSafe: true },
+  });
+  return {
+    disposition: 'parked',
+    state,
+    projection: compilerBlockerProjection(
+      opts.recovery?.projection ?? fallbackBriefRecoveryProjection(opts.wctx.sessionId, state),
+      code,
+    ),
+  };
+}
 
 async function resolvePlanningSkills(
   selectedSkills: SkillMeta[] | undefined,
@@ -83,13 +130,19 @@ async function runNewPlanning(
     state = run.state;
     planResult = run.result;
   } catch (err) {
+    const compilerCode = compilerFailureCode(err);
+    if (compilerCode !== null) return parkCompilerFailure(opts, state, compilerCode, err);
     return handlePlanningFailure({ err, projectDir, sessionId, state, wctx });
   }
 
+  // Fixed tasks.md is a compatibility projection that may be refreshed only
+  // after the authoritative generation commit; the initial planning pass
+  // persists the research/spec/plan phases and leaves task-brief phases to the
+  // owner publication path.
   persistPhases({
     projectDir,
     sessionId,
-    phases: planResult.phases,
+    phases: planResult.phases?.filter((phase) => phase.artifact.logicalName !== TASKS_FILE),
     metadata,
     bus: wctx.bus,
     phase: state.phase,
@@ -98,10 +151,11 @@ async function runNewPlanning(
 
   const researchPhase = planResult.phases?.[0];
   if (researchPhase) {
-    const discovered = sanitizeDiscoveredValidation(parseDiscoveredValidation(researchPhase.text));
+    const discovered = sanitizeDiscoveredValidation(
+      parseDiscoveredValidation(researchPhase.artifact.text),
+    );
     if (discovered) {
       state = { ...state, discoveredValidation: discovered };
-      saveState({ projectDir, sessionId }, state);
     }
   }
 
@@ -158,7 +212,7 @@ async function runNewPlanning(
     });
     state = specLoop.state;
     if (specLoop.rejected || specLoop.aborted)
-      return { state, tasks: [], cancelled: true, failed: false };
+      return { disposition: 'terminal', state, outcome: 'rejected' };
     if (specLoop.regenerated) {
       ({ state, tasks } = await regeneratePlanAndTasks({
         projectDir,
@@ -179,7 +233,7 @@ async function runNewPlanning(
     const advanced = await opts.afterSpecReview({ state, tasks });
     state = advanced.state;
     tasks = advanced.tasks;
-    if (advanced.cancelled) return { state, tasks: [], cancelled: true, failed: false };
+    if (advanced.cancelled) return { disposition: 'terminal', state, outcome: 'cancelled' };
   } else {
     state = transitionAndSave({ projectDir, sessionId }, state, { type: 'APPROVE_SPEC' });
     publishPlannerStatus(wctx.bus, state, 'running');
@@ -207,7 +261,7 @@ async function runNewPlanning(
     });
     state = planLoop.state;
     if (planLoop.rejected || planLoop.aborted)
-      return { state, tasks: [], cancelled: true, failed: false };
+      return { disposition: 'terminal', state, outcome: 'rejected' };
     if (planLoop.regenerated) {
       const taskRegen = await regenerateTasks({
         projectDir,
@@ -225,41 +279,7 @@ async function runNewPlanning(
     }
   }
 
-  const quality = await runBriefQuality({ tasks, state, planner, wctx });
-  if (!quality.ok) return quality.result;
-  state = quality.state;
-  tasks = quality.tasks;
-
-  if (!opts.deferBriefGate) {
-    const briefsLoop = await runBriefsApprovalLoop({
-      tasks,
-      qualityValidatedTasks: tasks,
-      ...(wctx.modelCache !== undefined && { modelCache: wctx.modelCache }),
-      ...(wctx.detectedContextLength !== undefined && {
-        detectedContextLength: wctx.detectedContextLength,
-      }),
-      planner,
-      projectDir,
-      sessionId,
-      callbacks,
-      bus: wctx.bus,
-      state,
-      config,
-      metadata,
-      signal,
-      sinks: wctx.sinks,
-    });
-    state = briefsLoop.state;
-    tasks = briefsLoop.tasks;
-    if (briefsLoop.failed) return { state, tasks: [], cancelled: true, failed: true };
-    if (briefsLoop.rejected || briefsLoop.aborted)
-      return { state, tasks: [], cancelled: true, failed: false };
-
-    publishPlannerStatus(wctx.bus, state, 'running');
-    wctx.bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });
-  }
-
-  return { state, tasks, cancelled: false, failed: false };
+  return parkedResult({ recovery: opts.recovery, sessionId, state: { ...state, tasks } });
 }
 
 export async function runFullPlanning(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
@@ -286,6 +306,9 @@ export async function runFullPlanning(opts: PlanningPhaseOptions): Promise<Plann
     } catch {
       // non-fatal: rewind continues even if chain state reset fails
     }
+    if (opts.recovery === undefined) {
+      return parkedResult({ recovery: opts.recovery, sessionId, state });
+    }
     if (rewindPending.target === 'spec') {
       return handleRewindSpec({
         opts,
@@ -295,9 +318,17 @@ export async function runFullPlanning(opts: PlanningPhaseOptions): Promise<Plann
         metadata,
         skillsContext,
         state,
+        recovery: opts.recovery,
       });
     }
-    return handleRewindPlan({ opts, rewindPending, skipPlanApproval, metadata, state });
+    return handleRewindPlan({
+      opts,
+      rewindPending,
+      skipPlanApproval,
+      metadata,
+      state,
+      recovery: opts.recovery,
+    });
   }
 
   return runNewPlanning(opts, { approveLevel, metadata, skillsContext, state });

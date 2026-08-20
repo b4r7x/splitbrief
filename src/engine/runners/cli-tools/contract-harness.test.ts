@@ -1,8 +1,10 @@
 import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { tmpdir } from 'node:os';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
+import { effectScenario, runEffect } from '#testing/helpers/factories/cli-effect-fixture.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import {
   CLI_CONFORMANCE_EXIT_CODES,
   runProductionCliConformance,
@@ -12,6 +14,7 @@ import {
 } from './contract-harness.js';
 import { replacePromptSentinel, type RawCliCandidateContract } from './candidate-contract.js';
 import {
+  admitCandidateEffect,
   CandidateEvidence,
   CONFORMANCE_PROMPT,
   MAX_EVIDENCE_OUTPUT_BYTES,
@@ -160,6 +163,8 @@ async function fileExists(path: string): Promise<boolean> {
     return false;
   }
 }
+
+const EFFECT_NONCE = 'nonce-1a2b3c4d';
 
 describe('CLI conformance harness', () => {
   it('captures raw argv evidence before parser or adapter code exists', async () => {
@@ -389,7 +394,6 @@ describe('CLI conformance harness', () => {
   it('runs the version/auth probes and fails closed for timeout and abort-shaped results', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'splitbrief-cli-harness-'));
     try {
-      const calls: readonly string[][] = [];
       const observed: string[][] = [];
       const authenticated = {
         ...baseContract,
@@ -432,7 +436,6 @@ describe('CLI conformance harness', () => {
       expect(invocation).toBe(true);
       expect(timedOut.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.OMIT);
       expect(timedOut.verdict).toBe('OMIT');
-      expect(calls).toEqual([]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -677,4 +680,181 @@ describe('CLI conformance harness', () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+});
+
+describe('candidate effect contract admission', () => {
+  it('requires a PASS terminal outcome before any receipt admits', () => {
+    const planner = {
+      candidateId: 'opencode',
+      role: 'planner' as const,
+      verdict: 'PASS' as const,
+      exitCode: 0,
+      changedFiles: [] as string[],
+    };
+    expect(admitCandidateEffect({ receipt: planner, role: 'planner' })).toEqual({
+      admitted: true,
+      receipt: planner,
+    });
+    const omitted = { ...planner, verdict: 'OMIT' as const, exitCode: 2 };
+    expect(admitCandidateEffect({ receipt: omitted, role: 'planner' })).toMatchObject({
+      admitted: false,
+      reason: expect.stringContaining('OMIT'),
+    });
+    const validBytes = { ...omitted, changedFiles: ['src/example.ts'] };
+    expect(admitCandidateEffect({ receipt: validBytes, role: 'planner' })).toMatchObject({
+      admitted: false,
+    });
+    const forged = { ...planner, exitCode: 1 };
+    expect(admitCandidateEffect({ receipt: forged, role: 'planner' })).toMatchObject({
+      admitted: false,
+    });
+  });
+
+  it('admits a planner only with zero staged changes and the matching role', () => {
+    const receipt = {
+      candidateId: 'opencode',
+      role: 'planner' as const,
+      verdict: 'PASS' as const,
+      exitCode: 0,
+      changedFiles: ['src/hello.ts'],
+    };
+    expect(admitCandidateEffect({ receipt, role: 'planner' })).toMatchObject({
+      admitted: false,
+      reason: expect.stringContaining('src/hello.ts'),
+    });
+    const otherRole = { ...receipt, role: 'implementer' as const };
+    expect(admitCandidateEffect({ receipt: otherRole, role: 'planner' })).toMatchObject({
+      admitted: false,
+      reason: expect.stringContaining('does not match'),
+    });
+    const incomplete = { candidateId: 'opencode', verdict: 'PASS', exitCode: 0 };
+    expect(admitCandidateEffect({ receipt: incomplete, role: 'planner' })).toMatchObject({
+      admitted: false,
+      reason: expect.stringContaining('missing or invalid'),
+    });
+  });
+
+  it('admits an implementer only for the exact declared staged file', () => {
+    const base = {
+      candidateId: 'opencode',
+      role: 'implementer' as const,
+      verdict: 'PASS' as const,
+      exitCode: 0,
+    };
+    const exact = { ...base, changedFiles: ['src/hello.ts'] };
+    expect(
+      admitCandidateEffect({ receipt: exact, role: 'implementer', declaredFile: 'src/hello.ts' }),
+    ).toEqual({ admitted: true, receipt: exact });
+    expect(admitCandidateEffect({ receipt: exact, role: 'implementer' })).toMatchObject({
+      admitted: false,
+      reason: expect.stringContaining('declared staged file'),
+    });
+    expect(
+      admitCandidateEffect({
+        receipt: { ...base, changedFiles: [] },
+        role: 'implementer',
+        declaredFile: 'src/hello.ts',
+      }),
+    ).toMatchObject({ admitted: false, reason: expect.stringContaining('nothing') });
+    expect(
+      admitCandidateEffect({
+        receipt: { ...base, changedFiles: ['unrelated.txt'] },
+        role: 'implementer',
+        declaredFile: 'src/hello.ts',
+      }),
+    ).toMatchObject({ admitted: false, reason: expect.stringContaining('unrelated.txt') });
+    expect(
+      admitCandidateEffect({
+        receipt: { ...base, changedFiles: ['src/hello.ts', 'extra.txt'] },
+        role: 'implementer',
+        declaredFile: 'src/hello.ts',
+      }),
+    ).toMatchObject({ admitted: false, reason: expect.stringContaining('extra.txt') });
+  });
+});
+
+describe('role-distinct prompts and real sentinel files', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('proves the planner prompt on a real capture file and admits the receipt', async () => {
+    const scenario = await effectScenario('planner-distinct-prompt');
+    try {
+      const plannerPrompt = 'review the staged plan read-only; do not modify any file';
+      const outcome = await runEffect({
+        role: 'planner',
+        prompt: plannerPrompt,
+        body: `printf '%s\\n' "$*" > "$(dirname "$0")/prompt-received.txt"\nexit 0`,
+        effect: { kind: 'planner-read-only' },
+        ...scenario,
+      });
+      expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
+      expect(await readFile(join(scenario.toolsDir, 'prompt-received.txt'), 'utf8')).toContain(
+        plannerPrompt,
+      );
+      const record = JSON.parse(await readFile(scenario.recordPath, 'utf8'));
+      expect(admitCandidateEffect({ receipt: record, role: 'planner' })).toMatchObject({
+        admitted: true,
+      });
+    } finally {
+      await scenario.cleanup();
+    }
+  }, 30_000);
+
+  it('proves the exact implementer effect on a real sentinel file with a role-distinct prompt', async () => {
+    const scenario = await effectScenario('implementer-distinct-prompt');
+    try {
+      const plannerPrompt = 'review-only-marker-9d41';
+      const outcome = await runEffect({
+        role: 'implementer',
+        prompt: plannerPrompt,
+        body: `mkdir -p src\nprintf '%s' '${EFFECT_NONCE}' > src/hello.ts\nprintf '%s\\n' "$*" > "$(dirname "$0")/prompt-received.txt"\nexit 0`,
+        effect: { kind: 'direct-write', file: 'src/hello.ts', nonceContent: EFFECT_NONCE },
+        task: makeTask(),
+        ...scenario,
+      });
+      expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
+      expect(await readFile(join(scenario.projectDir, 'src', 'hello.ts'), 'utf8')).toBe(
+        EFFECT_NONCE,
+      );
+      const captured = await readFile(join(scenario.toolsDir, 'prompt-received.txt'), 'utf8');
+      expect(captured).toContain('src/hello.ts');
+      expect(captured).not.toContain(plannerPrompt);
+      const record = JSON.parse(await readFile(scenario.recordPath, 'utf8'));
+      expect(
+        admitCandidateEffect({
+          receipt: record,
+          role: 'implementer',
+          declaredFile: 'src/hello.ts',
+        }),
+      ).toMatchObject({ admitted: true });
+    } finally {
+      await scenario.cleanup();
+    }
+  }, 30_000);
+
+  it('refuses admission when the observed receipt is not the required effect', async () => {
+    const scenario = await effectScenario('mutating-planner-refused');
+    try {
+      const outcome = await runEffect({
+        role: 'planner',
+        prompt: 'review the staged plan read-only; do not modify any file',
+        body: `printf '%s' 'mutated' > src/hello.ts\nexit 0`,
+        effect: { kind: 'planner-read-only' },
+        ...scenario,
+      });
+      expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.OMIT);
+      const record = JSON.parse(await readFile(scenario.recordPath, 'utf8')) as {
+        changedFiles: string[];
+      };
+      expect(record.changedFiles).toContain('src/hello.ts');
+      expect(admitCandidateEffect({ receipt: record, role: 'planner' })).toMatchObject({
+        admitted: false,
+        reason: expect.stringContaining('OMIT'),
+      });
+    } finally {
+      await scenario.cleanup();
+    }
+  }, 30_000);
 });

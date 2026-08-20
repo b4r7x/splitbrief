@@ -3,6 +3,10 @@ import { chmod, mkdir, realpath, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
+import {
+  capabilityTuple,
+  unverifiedConformanceProof,
+} from '#testing/helpers/factories/compiler-capability.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { AuthFact } from '../../../core/discovery/runner-evidence.js';
 import {
@@ -12,6 +16,7 @@ import {
 } from './contract.js';
 import { probeCliReadiness, probeDeclaredCliReadinessEvidence } from './readiness-probe.js';
 import { resolveCliExecutable } from '../resolve-cli-executable.js';
+import { admitCompilerCapability } from '../compiler-capability.js';
 
 async function nodeExecutable(): Promise<CliExecutableIdentity> {
   const path = await realpath(process.execPath);
@@ -570,5 +575,43 @@ describe('CLI readiness probe', () => {
     });
 
     expect(result).toMatchObject({ auth: 'unknown', status: 'unverified' });
+  });
+
+  it('a help-only binary is readiness-unverified and never admits compiler capability', async () => {
+    const executable = await nodeExecutable();
+    const result = await probeCliReadiness({
+      tool: 'codex',
+      executable,
+      probe: declaredProbe({
+        versionScript: "console.log('Usage: codex exec [OPTIONS]\\n  --json  Emit JSON output')",
+        authNotRun: true,
+      }),
+    });
+
+    expect(result.status).toBe('unverified');
+    const admission = admitCompilerCapability(
+      capabilityTuple('codex', { conformance: unverifiedConformanceProof() }),
+    );
+    expect(admission.kind).toBe('refused');
+    if (admission.kind === 'refused') expect(admission.missing).toContain('conformance');
+  });
+
+  it('a readiness-ready result never admits compiler capability without a conformance proof', async () => {
+    const executable = await nodeExecutable();
+    vi.stubEnv('OPENAI_API_KEY', 'readiness-key');
+    const result = await probeCliReadiness({
+      tool: 'codex',
+      executable,
+      authChannel: 'api-key',
+      probe: declaredProbe(),
+      classifyVersion: () => 'compatible',
+    });
+    expect(result.status).toBe('ready');
+
+    const admission = admitCompilerCapability(
+      capabilityTuple('codex', { conformance: unverifiedConformanceProof() }),
+    );
+    expect(admission.kind).toBe('refused');
+    if (admission.kind === 'refused') expect(admission.missing).toContain('conformance');
   });
 });

@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
@@ -8,6 +8,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
+import { STATE_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
@@ -16,6 +17,8 @@ import {
   type PreparedExecution,
 } from '../../engine/runners/prepared-execution.js';
 import { formatTasks } from '../../engine/spec/formatter.js';
+import { createBriefRecoveryState } from '../../engine/orchestrator/planning/brief-recovery.js';
+import { createInitialState } from '../../core/state/machine.js';
 import { getContentTopRow } from '../../features/workflow/layout/chrome-rows.js';
 import { getWorkflowContentRect } from '../../features/workflow/layout/rect.js';
 import { glyph } from '../../lib/glyphs.js';
@@ -31,6 +34,7 @@ const { inputHeightStore } = await import('../../stores/ui/input-height.js');
 const { inputHistoryStore } = await import('../../stores/ui/input-history.js');
 const { focusStore } = await import('../../stores/ui/focus.js');
 const { lifecycleStore } = await import('../../stores/workflow/lifecycle.js');
+const { reviewStore } = await import('../../stores/workflow/review.js');
 
 const FIXED_TS = 1_783_958_400_000;
 const SHIFT_ENTER = '\x1b[13;2u';
@@ -129,6 +133,65 @@ describe('WorkflowScreen chrome calibration', () => {
     });
     expect(contentRect.top).toBe(getContentTopRow());
     expect(paintedBodyRow + 1).toBe(contentRect.top);
+
+    ui.unmount();
+  });
+
+  it('passes persisted Brief recovery through the production screen mount', async () => {
+    const sessionId = 'workflow-screen-session';
+    const sessionPath = sessionDir(projectDir, sessionId);
+    const tasksPath = join(sessionPath, TASKS_FILE);
+    mkdirSync(sessionPath, { recursive: true });
+    writeFileSync(
+      tasksPath,
+      formatTasks([makeTask({ id: 'T001', title: 'Persisted recovery task' })]),
+      'utf8',
+    );
+    const activeBrief = { revision: 1, hash: 'persisted-brief-hash', path: TASKS_FILE };
+    const report = {
+      briefHash: activeBrief.hash,
+      report: { revision: 1, hash: 'persisted-report-hash', path: 'brief-quality.json' },
+      ruleVersion: 'brief-quality-v1',
+      issues: [],
+      errorCount: 0,
+    };
+    const state = {
+      ...createInitialState('persisted recovery mount'),
+      stateRevision: 7,
+      stateFence: { token: 1, ownerId: 'workflow-screen-test' },
+      phase: 'reviewing-briefs' as const,
+      briefRecovery: createBriefRecoveryState(
+        {
+          sessionId,
+          origin: { mode: 'standard', entry: 'initial' },
+          continuation: { version: 1, kind: 'approval', mode: 'standard', entry: 'initial' },
+          activeBrief,
+          report,
+          qualityPolicyVersion: 'brief-quality-v1',
+        },
+        { epochId: 'persisted-recovery-epoch', recoveryRevision: 3 },
+      ),
+    };
+    writeFileSync(join(sessionPath, STATE_FILE), JSON.stringify(state), 'utf8');
+    reviewStore.setReviewFile(tasksPath);
+    lifecycleStore.__testReset({ phase: 'reviewing-briefs', status: 'running' });
+    runWorkflow.mockImplementation(async (opts) => {
+      lifecycleStore.__testReset({ phase: 'reviewing-briefs', status: 'running' });
+      await opts.callbacks.onApprovalNeeded('briefs', tasksPath);
+      return pendingWorkflow();
+    });
+    configStore.__testReset({ config: makeConfig(), projectDir });
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    navigatePreparedWorkflow(projectDir, 'persisted recovery mount');
+
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+    );
+    await vi.waitFor(() => {
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain('CONTRACT READY');
+      expect(frame).toContain('Persisted recovery task');
+    });
 
     ui.unmount();
   });

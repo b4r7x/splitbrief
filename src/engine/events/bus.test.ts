@@ -1,15 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { createEventBus } from './bus.js';
+import { parseEngineEvent } from './schema.js';
 import type { EngineEvent } from './types.js';
 
-function ev(overrides: Partial<EngineEvent> = {}): EngineEvent {
-  return {
+function ev(overrides: { feature?: string } = {}): EngineEvent {
+  const event = parseEngineEvent({
     type: 'workflow_started',
     ts: 1,
     phase: 'idle',
     feature: 'x',
     ...overrides,
-  } as EngineEvent;
+  });
+  if (event === null) throw new Error('expected a valid engine event fixture');
+  return event;
 }
 
 describe('eventBus', () => {
@@ -40,7 +43,7 @@ describe('eventBus', () => {
     bus.subscribe((e) => b.push(e));
     bus.publish(ev());
     unsubA();
-    bus.publish(ev({ feature: 'y' } as Partial<EngineEvent>));
+    bus.publish(ev({ feature: 'y' }));
     expect(a).toHaveLength(1);
     expect(b).toHaveLength(2);
   });

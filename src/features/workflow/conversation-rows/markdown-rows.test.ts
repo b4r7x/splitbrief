@@ -716,53 +716,55 @@ describe('streaming tail repair', () => {
   const boldOpenerEnd = boldText.indexOf('**') + 2;
   const boldCloserStart = boldText.indexOf('**', boldOpenerEnd);
 
-  it.each(
-    spanOffsets(boldOpenerEnd, boldCloserStart, 6),
-  )('keeps a mid-** split styled with no dangling delimiter at offset %i', (offset) => {
-    const keyPrefix = `streaming-bold-${offset}`;
-    resetMarkdownConversationRowsCache();
-    markdownConversationRows({ keyPrefix, text: '', width: 80 });
-    const intermediate = markdownConversationRows({
-      keyPrefix,
-      text: boldText.slice(0, offset),
-      width: 80,
-    });
-    expect(intermediate.map(rowText).join('\n')).not.toContain('**');
+  it.each(spanOffsets(boldOpenerEnd, boldCloserStart, 6))(
+    'keeps a mid-** split styled with no dangling delimiter at offset %i',
+    (offset) => {
+      const keyPrefix = `streaming-bold-${offset}`;
+      resetMarkdownConversationRowsCache();
+      markdownConversationRows({ keyPrefix, text: '', width: 80 });
+      const intermediate = markdownConversationRows({
+        keyPrefix,
+        text: boldText.slice(0, offset),
+        width: 80,
+      });
+      expect(intermediate.map(rowText).join('\n')).not.toContain('**');
 
-    const final = markdownConversationRows({ keyPrefix, text: boldText, width: 80 });
-    const scratch = markdownConversationRows({
-      keyPrefix: `${keyPrefix}-scratch`,
-      text: boldText,
-      width: 80,
-    });
-    expect(comparableRows(final)).toEqual(comparableRows(scratch));
-  });
+      const final = markdownConversationRows({ keyPrefix, text: boldText, width: 80 });
+      const scratch = markdownConversationRows({
+        keyPrefix: `${keyPrefix}-scratch`,
+        text: boldText,
+        width: 80,
+      });
+      expect(comparableRows(final)).toEqual(comparableRows(scratch));
+    },
+  );
 
   const strikeText = 'before ~~strike text example content~~ after';
   const strikeOpenerEnd = strikeText.indexOf('~~') + 2;
   const strikeCloserStart = strikeText.indexOf('~~', strikeOpenerEnd);
 
-  it.each(
-    spanOffsets(strikeOpenerEnd, strikeCloserStart, 6),
-  )('keeps a mid-~~ split styled with no dangling delimiter at offset %i', (offset) => {
-    const keyPrefix = `streaming-strike-${offset}`;
-    resetMarkdownConversationRowsCache();
-    markdownConversationRows({ keyPrefix, text: '', width: 80 });
-    const intermediate = markdownConversationRows({
-      keyPrefix,
-      text: strikeText.slice(0, offset),
-      width: 80,
-    });
-    expect(intermediate.map(rowText).join('\n')).not.toContain('~~');
+  it.each(spanOffsets(strikeOpenerEnd, strikeCloserStart, 6))(
+    'keeps a mid-~~ split styled with no dangling delimiter at offset %i',
+    (offset) => {
+      const keyPrefix = `streaming-strike-${offset}`;
+      resetMarkdownConversationRowsCache();
+      markdownConversationRows({ keyPrefix, text: '', width: 80 });
+      const intermediate = markdownConversationRows({
+        keyPrefix,
+        text: strikeText.slice(0, offset),
+        width: 80,
+      });
+      expect(intermediate.map(rowText).join('\n')).not.toContain('~~');
 
-    const final = markdownConversationRows({ keyPrefix, text: strikeText, width: 80 });
-    const scratch = markdownConversationRows({
-      keyPrefix: `${keyPrefix}-scratch`,
-      text: strikeText,
-      width: 80,
-    });
-    expect(comparableRows(final)).toEqual(comparableRows(scratch));
-  });
+      const final = markdownConversationRows({ keyPrefix, text: strikeText, width: 80 });
+      const scratch = markdownConversationRows({
+        keyPrefix: `${keyPrefix}-scratch`,
+        text: strikeText,
+        width: 80,
+      });
+      expect(comparableRows(final)).toEqual(comparableRows(scratch));
+    },
+  );
 
   const fenceText = [
     'before',
@@ -778,27 +780,28 @@ describe('streaming tail repair', () => {
   const fenceOpenerEnd = fenceText.indexOf('\n', fenceText.indexOf('```ts')) + 1;
   const fenceCloserStart = fenceText.lastIndexOf('```');
 
-  it.each(
-    spanOffsets(fenceOpenerEnd, fenceCloserStart, 6),
-  )('keeps a mid-fence split styled with no dangling delimiter at offset %i', (offset) => {
-    const keyPrefix = `streaming-fence-${offset}`;
-    resetMarkdownConversationRowsCache();
-    markdownConversationRows({ keyPrefix, text: '', width: 80 });
-    const intermediate = markdownConversationRows({
-      keyPrefix,
-      text: fenceText.slice(0, offset),
-      width: 80,
-    });
-    expect(intermediate.map(rowText).join('\n')).not.toContain('```');
+  it.each(spanOffsets(fenceOpenerEnd, fenceCloserStart, 6))(
+    'keeps a mid-fence split styled with no dangling delimiter at offset %i',
+    (offset) => {
+      const keyPrefix = `streaming-fence-${offset}`;
+      resetMarkdownConversationRowsCache();
+      markdownConversationRows({ keyPrefix, text: '', width: 80 });
+      const intermediate = markdownConversationRows({
+        keyPrefix,
+        text: fenceText.slice(0, offset),
+        width: 80,
+      });
+      expect(intermediate.map(rowText).join('\n')).not.toContain('```');
 
-    const final = markdownConversationRows({ keyPrefix, text: fenceText, width: 80 });
-    const scratch = markdownConversationRows({
-      keyPrefix: `${keyPrefix}-scratch`,
-      text: fenceText,
-      width: 80,
-    });
-    expect(comparableRows(final)).toEqual(comparableRows(scratch));
-  });
+      const final = markdownConversationRows({ keyPrefix, text: fenceText, width: 80 });
+      const scratch = markdownConversationRows({
+        keyPrefix: `${keyPrefix}-scratch`,
+        text: fenceText,
+        width: 80,
+      });
+      expect(comparableRows(final)).toEqual(comparableRows(scratch));
+    },
+  );
 });
 
 describe('q-marker invisibility', () => {
@@ -1272,24 +1275,25 @@ describe('streamed rows equal a cold render', () => {
     expect(cold.map(rowText)).toEqual(canonicalMarkdownLineText(text, width));
   });
 
-  it.each(
-    chunkSizes,
-  )('never renders a clarification marker at any point while streaming (%d chars per append)', (chunkSize) => {
-    const { steps } = appendedInChunkSizeRows({
-      keyPrefix: `q-marker-stream-${chunkSize}`,
-      text: scenarioDocument,
-      width: 78,
-      chunkSize,
-    });
+  it.each(chunkSizes)(
+    'never renders a clarification marker at any point while streaming (%d chars per append)',
+    (chunkSize) => {
+      const { steps } = appendedInChunkSizeRows({
+        keyPrefix: `q-marker-stream-${chunkSize}`,
+        text: scenarioDocument,
+        width: 78,
+        chunkSize,
+      });
 
-    for (const step of steps) {
-      const text = step.map(rowText).join('\n');
-      expect(text).not.toContain('<!--');
-      expect(text).not.toContain('-->');
-      expect(text).not.toContain('Q:');
-      expect(text).not.toContain('which runner?');
-    }
-  });
+      for (const step of steps) {
+        const text = step.map(rowText).join('\n');
+        expect(text).not.toContain('<!--');
+        expect(text).not.toContain('-->');
+        expect(text).not.toContain('Q:');
+        expect(text).not.toContain('which runner?');
+      }
+    },
+  );
 
   it('keeps every item of a 70-item list on exactly one row, with no gap at the chunk seam', () => {
     resetMarkdownConversationRowsCache();
@@ -1354,18 +1358,19 @@ describe('review and transcript resolve a segment the same way', () => {
     );
   }
 
-  it.each(
-    repoDocuments.flatMap((path) => [78, 110].map((width) => [path, width] as const)),
-  )('renders %s byte for byte identically on both pipelines at width %d', (path, width) => {
-    const source = readFileSync(new URL(`../../../../${path}`, import.meta.url), 'utf8');
-    resetMarkdownConversationRowsCache();
-    const transcript = markdownConversationRows({
-      keyPrefix: `pipeline-parity-${path}-${width}`,
-      text: source,
-      width,
-    });
+  it.each(repoDocuments.flatMap((path) => [78, 110].map((width) => [path, width] as const)))(
+    'renders %s byte for byte identically on both pipelines at width %d',
+    (path, width) => {
+      const source = readFileSync(new URL(`../../../../${path}`, import.meta.url), 'utf8');
+      resetMarkdownConversationRowsCache();
+      const transcript = markdownConversationRows({
+        keyPrefix: `pipeline-parity-${path}-${width}`,
+        text: source,
+        width,
+      });
 
-    expect(transcript.map(rowText)).toEqual(reviewLineText(source, width));
-    expect(transcript.every((row) => getTerminalCellWidth(rowText(row)) <= width)).toBe(true);
-  });
+      expect(transcript.map(rowText)).toEqual(reviewLineText(source, width));
+      expect(transcript.every((row) => getTerminalCellWidth(rowText(row)) <= width)).toBe(true);
+    },
+  );
 });

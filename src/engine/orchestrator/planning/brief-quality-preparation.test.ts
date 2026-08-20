@@ -3,6 +3,18 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState } from '../../../core/state/persistence.js';
+import type {
+  BriefAdmissionInput,
+  BriefQualityIssue,
+  BriefRecoveryController,
+  BriefRecoveryControllerDeps,
+  BudgetAccountingKey,
+  BudgetReservation,
+  RecoveryProviderRequest,
+  RecoveryProviderResult,
+  StateAuthorityReceipt,
+} from '../../../core/schemas/brief-recovery.js';
+import type { BriefOwnerCommitPort } from '../../../core/schemas/brief-owner.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { BRIEF_QUALITY_FILE, sessionDir } from '../../../core/paths.js';
 import {
@@ -21,7 +33,10 @@ import { makeMessage } from '#testing/helpers/queue.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { formatTasks } from '../../spec/formatter.js';
 import { dispatchNativeInjection } from '../queue/native-injection.js';
+import { createBriefRecoveryController } from './brief-recovery-controller.js';
 import { prepareBriefQuality } from './brief-quality-preparation.js';
+import { observeGenerationStorage } from './brief-generation.js';
+import { makeTestOwnerCommit } from '#testing/helpers/brief-owner.js';
 
 const dirs: string[] = [];
 
@@ -55,6 +70,135 @@ function makePreparationInput(tasks: Parameters<typeof prepareBriefQuality>[0]['
   };
 }
 
+const PREPARATION_AUTHORITY: StateAuthorityReceipt = {
+  kind: 'usable',
+  sessionId: 'session-1',
+  ownerId: 'owner-1',
+  pid: 1,
+  processStart: 'start-1',
+  runId: 'run-1',
+  acquisitionId: 'acquisition-1',
+  fence: 1,
+  stateRevision: 0,
+  stateDigest: 'state-digest',
+};
+
+const PREPARATION_ERROR: BriefQualityIssue = {
+  code: 'missing_scope',
+  severity: 'error',
+  taskId: 'T001',
+  message: 'scope is missing',
+};
+
+function preparationAdmission(
+  sessionId = PREPARATION_AUTHORITY.sessionId,
+  issues: readonly BriefQualityIssue[] = [PREPARATION_ERROR],
+): BriefAdmissionInput {
+  const activeBrief = { revision: 1, hash: 'b'.repeat(64), path: 'tasks.md' };
+  return {
+    sessionId,
+    origin: { mode: 'standard', entry: 'initial' },
+    continuation: { version: 1, kind: 'approval', mode: 'standard', entry: 'initial' },
+    activeBrief,
+    report: {
+      briefHash: activeBrief.hash,
+      report: { revision: 1, hash: 'r'.repeat(64), path: 'brief-quality.json' },
+      ruleVersion: 'brief-quality-v1',
+      issues,
+      errorCount: issues.filter((issue) => issue.severity === 'error').length,
+    },
+    qualityPolicyVersion: 'brief-quality-v1',
+  };
+}
+
+function preparationReservation(accountingKey: BudgetAccountingKey): BudgetReservation {
+  return {
+    accountingKey,
+    amount: 0.1,
+    state: 'reserved',
+    usageApplied: false,
+    appliedUsage: null,
+    history: [{ state: 'reserved', at: '2026-01-01T00:00:00.000Z', reason: 'accepted' }],
+  };
+}
+
+function preparationController(
+  options: {
+    providerResult?: (input: RecoveryProviderRequest) => RecoveryProviderResult;
+    commit?: BriefOwnerCommitPort;
+    qualityIssues?: BriefQualityIssue[];
+  } = {},
+): { controller: BriefRecoveryController; calls: RecoveryProviderRequest[] } {
+  const calls: RecoveryProviderRequest[] = [];
+  let generatedId = 0;
+  const deps: BriefRecoveryControllerDeps = {
+    provider: {
+      async dispatch(input) {
+        calls.push(input);
+        return (
+          options.providerResult?.(input) ?? {
+            kind: 'completed',
+            requestId: input.requestId,
+            dispatchPossibility: 'possible',
+            remoteObservation: 'confirmed-final',
+            text: 'corrected brief',
+            providerCode: null,
+            usage: null,
+          }
+        );
+      },
+    },
+    budget: {
+      estimate: () => ({
+        kind: 'finite',
+        budgetUnit: 'usd',
+        inputTokens: 1,
+        outputTokens: 1,
+        amount: 0.1,
+        pricingIdentity: 'test',
+      }),
+      reserve: ({ accountingKey }) => ({
+        kind: 'reserved',
+        reservation: preparationReservation(accountingKey),
+      }),
+      reconcile: ({ reservation, remoteObservation, usage }) => ({
+        reservation: {
+          ...reservation,
+          state:
+            remoteObservation === 'not-dispatched'
+              ? 'released'
+              : remoteObservation === 'unknown'
+                ? 'held'
+                : 'reconciled',
+          usageApplied: usage !== null,
+          appliedUsage: usage,
+        },
+        usageApplied: usage !== null,
+        appliedAmount: 0,
+      }),
+      terminalCharge: ({ reservation }) => ({
+        reservation: { ...reservation, state: 'terminal-charged' },
+        usageApplied: reservation.usageApplied,
+        appliedAmount: reservation.amount,
+      }),
+    },
+    commit: options.commit ?? makeTestOwnerCommit(),
+    readRetryContext: () => ({
+      prompt: 'repair the original Task Briefs',
+      projectDir: '/tmp/original-project',
+      currentKnownSpend: 0,
+      maxBudget: 1,
+    }),
+    evaluateQuality: () => options.qualityIssues ?? [PREPARATION_ERROR],
+    now: () => '2026-01-01T00:00:00.000Z',
+    nextId: () => {
+      generatedId += 1;
+      return `preparation-id-${generatedId}`;
+    },
+  };
+  return { controller: createBriefRecoveryController(deps), calls };
+}
+
 describe('prepareBriefQuality', () => {
   it('persists a passing initial report without regenerating tasks', async () => {
     const prepared = makePreparationInput([makePassingTask()]);
@@ -77,6 +221,35 @@ describe('prepareBriefQuality', () => {
     expect(prepared.events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(
       1,
     );
+  });
+
+  it('applies pending queued planner input before owner admission', async () => {
+    const prepared = makePreparationInput([makePassingTask()]);
+    const queued = makeMessage('include the retry case in the brief');
+    prepared.input.state = {
+      ...prepared.input.state,
+      stateFence: { token: PREPARATION_AUTHORITY.fence, ownerId: PREPARATION_AUTHORITY.ownerId },
+      messageQueue: [queued],
+    };
+    vi.mocked(prepared.planner.review).mockResolvedValue({ text: REAL_TASKS_MD, usage: null });
+    const harness = preparationController({ qualityIssues: [] });
+    const authority = { ...PREPARATION_AUTHORITY, sessionId: prepared.sessionId };
+
+    const result = await prepareBriefQuality({
+      ...prepared.input,
+      recovery: {
+        controller: harness.controller,
+        authority,
+        createAdmissionInput: ({ sessionId }) => preparationAdmission(sessionId, []),
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    const review = vi.mocked(prepared.planner.review);
+    expect(review).toHaveBeenCalledTimes(1);
+    expect(review.mock.calls[0]?.[0]).toContain(queued.text);
+    expect(result.state.messageQueue[0]?.drainedAt).toBeDefined();
+    expect(prepared.events.filter((event) => event.type === 'queue_drained')).toHaveLength(1);
   });
 
   it('repairs invalid tasks once before review and persists the passing second report', async () => {
@@ -297,5 +470,119 @@ describe('prepareBriefQuality', () => {
     expect(
       prepared.events.filter((event) => event.type === 'message_injected_native'),
     ).toHaveLength(0);
+  });
+});
+
+describe('preparation leaves no generation authority on failure', () => {
+  it('installs no generation and issues no permit after a typed quality failure', async () => {
+    const invalidTask = makeBriefQualityFailureTask();
+    const prepared = makePreparationInput([invalidTask]);
+    vi.mocked(prepared.planner.review).mockResolvedValue({
+      text: formatTasks([invalidTask]),
+      usage: null,
+    });
+
+    const result = await prepareBriefQuality(prepared.input);
+
+    expect(result.ok).toBe(false);
+    const observation = observeGenerationStorage({
+      projectDir: prepared.projectDir,
+      sessionId: prepared.sessionId,
+    });
+    expect(observation.generations).toHaveLength(0);
+    const saved = loadState({ projectDir: prepared.projectDir, sessionId: prepared.sessionId });
+    expect(saved?.generation ?? null).toBeNull();
+    expect(saved?.permit ?? null).toBeNull();
+  });
+});
+
+describe('controller failure identity', () => {
+  it('returns storage-blocked before reserving or dispatching when the admission checkpoint fails', async () => {
+    const harness = preparationController({
+      commit: makeTestOwnerCommit({ fail: true }),
+    });
+
+    const result = await harness.controller.enterBriefAdmission(
+      preparationAdmission(),
+      PREPARATION_AUTHORITY,
+    );
+
+    expect(result).toMatchObject({ kind: 'blocked', code: 'brief_storage_invalid' });
+    expect(harness.calls).toHaveLength(0);
+  });
+
+  it.each([
+    [
+      'auth failure',
+      {
+        kind: 'definite-failure' as const,
+        dispatchPossibility: 'possible' as const,
+        remoteObservation: 'confirmed-final' as const,
+        providerCode: 'auth_failed',
+        text: null,
+        usage: null,
+      },
+      'blocked',
+    ],
+    [
+      'quota failure',
+      {
+        kind: 'definite-failure' as const,
+        dispatchPossibility: 'possible' as const,
+        remoteObservation: 'confirmed-final' as const,
+        providerCode: 'quota_exhausted',
+        text: null,
+        usage: null,
+      },
+      'blocked',
+    ],
+    [
+      'ambiguous abort',
+      {
+        kind: 'ambiguous-failure' as const,
+        dispatchPossibility: 'possible' as const,
+        remoteObservation: 'unknown' as const,
+        providerCode: 'aborted',
+        text: null,
+        usage: null,
+      },
+      'unresolved',
+    ],
+  ])('retains operation identity for %s settlement', async (_label, provider, expectedKind) => {
+    const harness = preparationController({
+      providerResult: (input) => ({ requestId: input.requestId, ...provider }),
+    });
+
+    const result = await harness.controller.enterBriefAdmission(
+      preparationAdmission(),
+      PREPARATION_AUTHORITY,
+    );
+    const call = harness.calls[0];
+
+    expect(result.kind).toBe(expectedKind);
+    expect(call).toBeDefined();
+    expect(result.projection.latestAttempt?.operationId).toBe(call?.operationId);
+    expect(result.projection.latestAttempt?.outcome).toBe(
+      expectedKind === 'unresolved' ? null : 'provider-failed',
+    );
+  });
+
+  it('blocks a failed owner commit without losing the operation receipt', async () => {
+    const harness = preparationController({
+      commit: makeTestOwnerCommit({ failOnCommit: 4 }),
+    });
+
+    const result = await harness.controller.enterBriefAdmission(
+      preparationAdmission(),
+      PREPARATION_AUTHORITY,
+    );
+    const call = harness.calls[0];
+
+    expect(result).toMatchObject({ kind: 'blocked', code: 'brief_storage_invalid' });
+    expect(call).toBeDefined();
+    expect(result.projection.latestAttempt).toMatchObject({
+      operationId: call?.operationId,
+      outcome: null,
+    });
   });
 });

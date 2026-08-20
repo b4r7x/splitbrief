@@ -750,17 +750,18 @@ describe('provider conformance replay', () => {
     );
   });
 
-  it.each(
-    REPLAY_ROWS,
-  )('$taskId replays PASS evidence or executes OMIT-NOT-APPLICABLE without network', async (row) => {
-    vi.stubGlobal('fetch', vi.fn());
-    if (isPassCandidateId(row.candidateId)) {
-      await replayPassEvidence(row);
-    } else {
-      executeOmitNotApplicable(row);
-    }
-    expect(vi.mocked(globalThis.fetch)).not.toHaveBeenCalled();
-  });
+  it.each(REPLAY_ROWS)(
+    '$taskId replays PASS evidence or executes OMIT-NOT-APPLICABLE without network',
+    async (row) => {
+      vi.stubGlobal('fetch', vi.fn());
+      if (isPassCandidateId(row.candidateId)) {
+        await replayPassEvidence(row);
+      } else {
+        executeOmitNotApplicable(row);
+      }
+      expect(vi.mocked(globalThis.fetch)).not.toHaveBeenCalled();
+    },
+  );
 
   it('records one resolved row per T-043–T-053 verdict', () => {
     expect(replayRowResults).toHaveLength(11);

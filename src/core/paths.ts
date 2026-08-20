@@ -5,6 +5,7 @@ import { fsError } from '../lib/fs.js';
 import { sha256Hex } from '../utils/sha256.js';
 import { validateSafeIdentifier } from '../utils/validate-identifier.js';
 import { SPLITBRIEF_IDENTITY } from './identity.js';
+import type { SessionRef } from './types/session-ref.js';
 
 export const SPLITBRIEF_DIR = SPLITBRIEF_IDENTITY.stateDir;
 export const SANDBOX_DIR = `${SPLITBRIEF_IDENTITY.stateDir}/sandbox`;
@@ -13,6 +14,7 @@ export const SKILLS_DIR = 'skills';
 export const SESSIONS_DIR = 'sessions';
 export const ACTIVE_FILE = 'active';
 export const DETACHED_BOOTSTRAP_DIR = 'bootstrap';
+const STATE_AUTHORITY_DIRECTORY = 'state-authority.lock';
 
 export const activeFile = (projectDir: string): string =>
   join(projectDir, SPLITBRIEF_DIR, ACTIVE_FILE);
@@ -53,6 +55,9 @@ export function sessionDir(projectDir: string, sessionId: string): string {
   return join(projectDir, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
 }
 
+export const stateAuthorityDirectory = (ref: SessionRef): string =>
+  join(sessionDir(ref.projectDir, ref.sessionId), STATE_AUTHORITY_DIRECTORY);
+
 export const reviewPacketJsonPath = (projectDir: string, sessionId: string): string =>
   join(sessionDir(projectDir, sessionId), REVIEW_PACKET_JSON_FILE);
 
@@ -91,6 +96,8 @@ export const REVIEW_PACKET_MARKDOWN_FILE = 'review-packet.md';
 export const LOCKFILE = 'lockfile.json';
 export const SERVER_LOG_FILE = 'server.log';
 export const IPC_SOCK_FILE = 'ipc.sock';
+export const UI_PREFS_FILE = 'ui-prefs.json';
+export const RUNTIME_CONFORMANCE_FILE = 'runtime-conformance.json';
 
 export const MAX_IPC_SOCK_PATH_BYTES = 103;
 

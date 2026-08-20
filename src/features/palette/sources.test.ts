@@ -93,7 +93,7 @@ describe('buildPaletteSources command items', () => {
     expect(items.map((item) => item.label)).toEqual(['/visible']);
   });
 
-  it('runs command item actions through the runtime command callback', () => {
+  it('runs command item actions through the runtime command callback', async () => {
     const calls: string[] = [];
     const items = buildCommandSources(
       [
@@ -109,7 +109,8 @@ describe('buildPaletteSources command items', () => {
       (raw) => calls.push(raw),
     );
 
-    items[0]?.action();
+    // biome-ignore lint/nursery/noFloatingPromises: the action result is awaited here; the rule mis-reads the void | Promise<void> union
+    await items[0]?.action();
 
     expect(calls).toEqual(['/settings']);
   });

@@ -9,11 +9,8 @@ import { clamp } from '../../../utils/math.js';
 import {
   getReviewColumnWidth,
   getReviewContentLayout,
-  getWorkflowConversationHeight,
   getWorkflowContentRect,
-  getWorkflowContentWidth,
   getWorkflowSidebarWidth,
-  getWorkflowViewportHeight,
   REVIEW_FRAME_ROWS,
 } from './rect.js';
 import {
@@ -38,7 +35,6 @@ import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
 import { splitConversationViewport } from '../conversation-rows/viewport.js';
 
 export interface ConversationScrollSnapshot {
-  conversationRect: ReturnType<typeof getWorkflowContentRect>;
   conversationWidth: number;
   contentRect: ReturnType<typeof getWorkflowContentRect>;
   maxOffset: number;
@@ -51,13 +47,12 @@ export interface ConversationScrollSnapshot {
 }
 
 export interface ConversationHoverSnapshot {
-  conversationRect: ReturnType<typeof getWorkflowContentRect>;
+  contentRect: ReturnType<typeof getWorkflowContentRect>;
   stickyLeadingRows: number;
   viewportHeight: number;
 }
 
 interface ConversationLayoutSnapshot {
-  conversationRect: ReturnType<typeof getWorkflowContentRect>;
   conversationWidth: number;
   contentRect: ReturnType<typeof getWorkflowContentRect>;
   viewportSplit: ReturnType<typeof splitConversationViewport>;
@@ -185,33 +180,7 @@ export function readBriefListSnapshot(): BriefListSnapshot | null {
 function readConversationLayoutSnapshot(): ConversationLayoutSnapshot {
   const { rows, cols } = terminalSizeStore.get();
   const promptRows = readWorkflowPromptRows();
-  const viewportHeight = getWorkflowViewportHeight({
-    rows,
-    inputRows: inputHeightStore.get().rows,
-    promptRows,
-  });
-  const sections = getSections();
   const sidebarVisible = controlsStore.get().sidebarVisible;
-  const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible });
-  const conversationHeight = getWorkflowConversationHeight({
-    height: viewportHeight,
-    sidebarWidth,
-  });
-  // The queued block stands down while the sidebar lists the same pending work, so the keyboard
-  // path has to read the same suppression the transcript renders under or it budgets rows for a
-  // block that paints nothing.
-  const sidebarShowsTasks = sidebarWidth > 0;
-  const viewportSplit = splitConversationViewport({
-    viewportHeight: conversationHeight,
-    sections,
-    pendingTaskCount: sidebarShowsTasks
-      ? 0
-      : tasksStore.get().tasks.filter((task) => task.status === 'pending').length,
-  });
-  const contentWidth = getWorkflowContentWidth({
-    cols,
-    sidebarVisible,
-  });
   const contentRect = getWorkflowContentRect({
     cols,
     rows,
@@ -219,14 +188,19 @@ function readConversationLayoutSnapshot(): ConversationLayoutSnapshot {
     sidebarVisible,
     promptRows,
   });
-  const conversationRect = {
-    ...contentRect,
-    height: conversationHeight,
-    bottom: conversationHeight > 0 ? contentRect.top + conversationHeight - 1 : contentRect.top,
-  };
+  // The queued block stands down while the sidebar lists the same pending work, so the keyboard
+  // path has to read the same suppression the transcript renders under or it budgets rows for a
+  // block that paints nothing.
+  const sidebarShowsTasks = getWorkflowSidebarWidth({ cols, sidebarVisible }) > 0;
+  const viewportSplit = splitConversationViewport({
+    viewportHeight: contentRect.height,
+    sections: getSections(),
+    pendingTaskCount: sidebarShowsTasks
+      ? 0
+      : tasksStore.get().tasks.filter((task) => task.status === 'pending').length,
+  });
   return {
-    conversationRect,
-    conversationWidth: contentWidth,
+    conversationWidth: contentRect.width,
     contentRect,
     viewportSplit,
     transcriptViewportHeight: viewportSplit.transcriptViewportHeight,
@@ -236,7 +210,7 @@ function readConversationLayoutSnapshot(): ConversationLayoutSnapshot {
 export function readConversationHoverSnapshot(): ConversationHoverSnapshot {
   const layout = readConversationLayoutSnapshot();
   return {
-    conversationRect: layout.conversationRect,
+    contentRect: layout.contentRect,
     stickyLeadingRows: layout.viewportSplit.stickyLeadingRows,
     viewportHeight: layout.transcriptViewportHeight,
   };
@@ -263,7 +237,6 @@ export function readConversationScrollSnapshot(): ConversationScrollSnapshot {
     streaming: streamingOutputStore.get(),
   });
   return {
-    conversationRect: layout.conversationRect,
     conversationWidth: layout.conversationWidth,
     contentRect: layout.contentRect,
     maxOffset,

@@ -467,10 +467,20 @@ async function copyReadOnlyStateEntry(
     await rm(destination, { force: true });
   }
   await ensureReadOnlyDirectory(dirname(destination), tool);
-  await writeFile(destination, content, {
-    mode: READONLY_STATE_FILE_MODE,
-    flag: 'wx',
-  });
+  try {
+    await writeFile(destination, content, {
+      mode: READONLY_STATE_FILE_MODE,
+      flag: 'wx',
+    });
+  } catch (err) {
+    if (!(err instanceof Error && 'code' in err && err.code === 'EEXIST')) throw err;
+    // A concurrent acquisition sealed the same snapshot between the check above
+    // and this write (teardown runs outside the creation lock). Accept it only
+    // when the content is already the intended copy; anything else is a genuine
+    // conflict.
+    const existing = await readFile(destination);
+    if (!existing.equals(content)) throw stateBridgeFailure(tool);
+  }
   await chmod(destination, READONLY_STATE_FILE_MODE);
   await chmod(dirname(destination), READONLY_STATE_DIRECTORY_MODE);
   return credentialValues;
@@ -785,6 +795,29 @@ function hostAccountState(): Readonly<Record<string, string>> {
 }
 
 /**
+ * Serializes sandbox creation for one (projectDir, role, tool) root. Concurrent
+ * acquisitions of the same root — exactly what concurrent batches do — would
+ * interleave clear and bridge: one clears while the other writes, `wx` writes
+ * collide with EEXIST, and a just-sealed read-only state dir can reject a
+ * concurrent `rm` with EACCES. Each root gets one in-process chain; teardown
+ * (`clearBridgedCliState`) still runs outside it, so the snapshot write
+ * re-checks EEXIST instead of assuming the chain held.
+ */
+const sandboxCreationChains = new Map<string, Promise<void>>();
+
+function withSandboxCreationLock<T>(key: string, work: () => Promise<T>): Promise<T> {
+  const previous = sandboxCreationChains.get(key) ?? Promise.resolve();
+  const run = previous.then(work);
+  const tail = run.then(releaseChain, releaseChain);
+  sandboxCreationChains.set(key, tail);
+  return run;
+
+  function releaseChain(): void {
+    if (sandboxCreationChains.get(key) === tail) sandboxCreationChains.delete(key);
+  }
+}
+
+/**
  * Builds the sandbox environment one runner is handed. `selectedCli` names the
  * CLI the environment belongs to: only that tool's snapshot is cleared, so a
  * second runner sharing this sandbox keeps the state it is still reading.
@@ -805,58 +838,59 @@ export async function createSandboxEnv(
   hostState: CliHostStateAccess = 'bridged-files',
   role?: RunnerRole | undefined,
 ): Promise<NodeJS.ProcessEnv> {
-  const root = sandboxRoot(projectDir, role, selectedCli);
-  const home = join(root, 'home');
-  const tmp = join(root, 'tmp');
-  const cache = join(root, 'cache');
-  const config = join(root, 'config');
-  const data = join(root, 'data');
-  const npmCache = join(root, 'npm-cache');
-  const pipCache = join(root, 'pip-cache');
-  const cargoHome = join(root, 'cargo');
-  await Promise.all(
-    [home, tmp, cache, config, data, npmCache, pipCache, cargoHome].map((dir) =>
-      mkdir(dir, { recursive: true, mode: SECURE_DIR_MODE }),
-    ),
+  return withSandboxCreationLock(
+    `${projectDir}\u0000${role ?? ''}\u0000${selectedCli ?? ''}`,
+    async () => {
+      const root = sandboxRoot(projectDir, role, selectedCli);
+      const home = join(root, 'home');
+      const tmp = join(root, 'tmp');
+      const cache = join(root, 'cache');
+      const config = join(root, 'config');
+      const data = join(root, 'data');
+      const npmCache = join(root, 'npm-cache');
+      const pipCache = join(root, 'pip-cache');
+      const cargoHome = join(root, 'cargo');
+      await Promise.all(
+        [home, tmp, cache, config, data, npmCache, pipCache, cargoHome].map((dir) =>
+          mkdir(dir, { recursive: true, mode: SECURE_DIR_MODE }),
+        ),
+      );
+      // A new child must never inherit a previous run's selected session state,
+      // including when this invocation selects an API-key channel instead. The clear
+      // is confined to this role's own root, so it can only reach a snapshot this
+      // role bridged. A runner with no CLI identity has no snapshot of its own to
+      // drop and must not touch another runner's. Teardown sweeps what is left.
+      if (selectedCli !== undefined) await clearBridgedStateUnder(root, selectedCli);
+      const env = createSanitizedChildEnv(process.env, preserveEnvKeys);
+      const sandboxState = {
+        PATH: await sanitizedRuntimePath(projectDir),
+        ...(hostState === 'host-account' ? hostAccountState() : { HOME: home, USERPROFILE: home }),
+        TMPDIR: tmp,
+        TMP: tmp,
+        TEMP: tmp,
+        XDG_CACHE_HOME: cache,
+        XDG_CONFIG_HOME: config,
+        XDG_DATA_HOME: data,
+        APPDATA: config,
+        LOCALAPPDATA: data,
+        npm_config_cache: npmCache,
+        PIP_CACHE_DIR: pipCache,
+        CARGO_HOME: cargoHome,
+      };
+      let credentialValues: readonly string[] = [];
+      if (selectedCli !== undefined && hostState === 'bridged-files') {
+        credentialValues = await bridgeCliState(selectedCli, process.env, { home, config, data });
+      }
+      const result = { ...env, ...sandboxState };
+      Object.defineProperty(result, SANDBOX_CREDENTIAL_VALUES, {
+        value: Object.freeze([...credentialValues]),
+        enumerable: false,
+        configurable: false,
+        writable: false,
+      });
+      return result;
+    },
   );
-  // A new child must never inherit a previous run's selected session state,
-  // including when this invocation selects an API-key channel instead. The clear
-  // is confined to this role's own root, so it can only reach a snapshot this
-  // role bridged. A runner with no CLI identity has no snapshot of its own to
-  // drop and must not touch another runner's. Teardown sweeps what is left.
-  if (selectedCli !== undefined) await clearBridgedStateUnder(root, selectedCli);
-  const env = createSanitizedChildEnv(process.env, preserveEnvKeys);
-  const sandboxState = {
-    PATH: await sanitizedRuntimePath(projectDir),
-    ...(hostState === 'host-account' ? hostAccountState() : { HOME: home, USERPROFILE: home }),
-    TMPDIR: tmp,
-    TMP: tmp,
-    TEMP: tmp,
-    XDG_CACHE_HOME: cache,
-    XDG_CONFIG_HOME: config,
-    XDG_DATA_HOME: data,
-    APPDATA: config,
-    LOCALAPPDATA: data,
-    npm_config_cache: npmCache,
-    PIP_CACHE_DIR: pipCache,
-    CARGO_HOME: cargoHome,
-  };
-  let credentialValues: readonly string[] = [];
-  if (selectedCli !== undefined && hostState === 'bridged-files') {
-    credentialValues = await bridgeCliState(selectedCli, process.env, {
-      home,
-      config,
-      data,
-    });
-  }
-  const result = { ...env, ...sandboxState };
-  Object.defineProperty(result, SANDBOX_CREDENTIAL_VALUES, {
-    value: Object.freeze([...credentialValues]),
-    enumerable: false,
-    configurable: false,
-    writable: false,
-  });
-  return result;
 }
 
 /**

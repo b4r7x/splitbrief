@@ -207,11 +207,12 @@ describe('formatCatalogDiagnostic', () => {
       { kind: 'probe-failed', failure: 'not-run' },
       'Model detection has not run yet. Press ctrl+r to refresh',
     ],
-  ] satisfies Array<
-    [ModelCatalogDiagnostic, string]
-  >)('gives actionable copy for %j', (diagnostic, copy) => {
-    expect(formatCatalogDiagnostic(diagnostic, 'Aider')).toBe(copy);
-  });
+  ] satisfies Array<[ModelCatalogDiagnostic, string]>)(
+    'gives actionable copy for %j',
+    (diagnostic, copy) => {
+      expect(formatCatalogDiagnostic(diagnostic, 'Aider')).toBe(copy);
+    },
+  );
 });
 
 describe('provider axis copy', () => {

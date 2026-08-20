@@ -101,22 +101,17 @@ describe('layoutMarkdown', () => {
     expect(row?.lines.at(-1)?.segments).toEqual([{ kind: 'codeGutter', text: RAIL }]);
   });
 
-  it.each([
-    'text',
-    'txt',
-    'plain',
-    'plaintext',
-    'none',
-    'raw',
-    'output',
-    'TEXT',
-  ])('opens a fence tagged %s on the bare rail, with no label to read as code', (language) => {
-    const source = [`\`\`\`${language}`, 'value', '```'].join('\n');
-    const row = layoutMarkdown(parseMarkdownBlocks(source), { glyphs: GLYPHS, width: 40 }).rows[0];
+  it.each(['text', 'txt', 'plain', 'plaintext', 'none', 'raw', 'output', 'TEXT'])(
+    'opens a fence tagged %s on the bare rail, with no label to read as code',
+    (language) => {
+      const source = [`\`\`\`${language}`, 'value', '```'].join('\n');
+      const row = layoutMarkdown(parseMarkdownBlocks(source), { glyphs: GLYPHS, width: 40 })
+        .rows[0];
 
-    expect(row?.lines.map(lineText)).toEqual([RAIL, `${RAIL} value`, RAIL]);
-    expect(row?.lines.at(0)?.segments).toEqual([{ kind: 'codeGutter', text: RAIL }]);
-  });
+      expect(row?.lines.map(lineText)).toEqual([RAIL, `${RAIL} value`, RAIL]);
+      expect(row?.lines.at(0)?.segments).toEqual([{ kind: 'codeGutter', text: RAIL }]);
+    },
+  );
 
   it('marks wrapped code continuation lines in the gutter', () => {
     const source = ['```', `const value = '${'x'.repeat(40)}';`, '```'].join('\n');
@@ -565,18 +560,19 @@ describe('layoutMarkdown', () => {
 
     // Wrapping trims the whitespace it breaks on, so the invariant is that highlighting
     // neither drops nor duplicates any non-space character, at any width.
-    it.each([
-      16, 24, 40, 60, 80,
-    ])('reconstructs the highlighted fence source within the width at %d', (width) => {
-      const lines = ['const value = 42;', '', '// done'];
-      const rendered = fenceLayout('ts', lines, width)
-        .rows.flatMap((row) => row.lines)
-        .map(lineText);
-      const body = rendered.slice(1, -1).map((text) => stripCodeRail(text));
-      const withoutSpace = (text: string) => text.replace(/\s/g, '');
+    it.each([16, 24, 40, 60, 80])(
+      'reconstructs the highlighted fence source within the width at %d',
+      (width) => {
+        const lines = ['const value = 42;', '', '// done'];
+        const rendered = fenceLayout('ts', lines, width)
+          .rows.flatMap((row) => row.lines)
+          .map(lineText);
+        const body = rendered.slice(1, -1).map((text) => stripCodeRail(text));
+        const withoutSpace = (text: string) => text.replace(/\s/g, '');
 
-      expect(withoutSpace(body.join(''))).toBe(withoutSpace(lines.join('')));
-      expect(rendered.every((text) => getTerminalCellWidth(text) <= width)).toBe(true);
-    });
+        expect(withoutSpace(body.join(''))).toBe(withoutSpace(lines.join('')));
+        expect(rendered.every((text) => getTerminalCellWidth(text) <= width)).toBe(true);
+      },
+    );
   });
 });

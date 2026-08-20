@@ -54,16 +54,17 @@ describe('setupWorkflow', () => {
   it.each([
     { label: 'planner', opts: { planner: 'claude-code' } },
     { label: 'implementer', opts: { implementer: 'ollama' } },
-  ] as const)('writes the config without requesting setup when a $label override is provided', async ({
-    opts,
-  }) => {
-    createTestGitRepo(tmp);
+  ] as const)(
+    'writes the config without requesting setup when a $label override is provided',
+    async ({ opts }) => {
+      createTestGitRepo(tmp);
 
-    const result = await setupWorkflow({ project: tmp, fullscreen: false, ...opts });
+      const result = await setupWorkflow({ project: tmp, fullscreen: false, ...opts });
 
-    expect(result.needsSetup).toBeUndefined();
-    expect(existsSync(join(tmp, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(true);
-  });
+      expect(result.needsSetup).toBeUndefined();
+      expect(existsSync(join(tmp, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(true);
+    },
+  );
 
   it('still requests setup when non-runner flags (mode / auto / budget) are the only extras', async () => {
     createTestGitRepo(tmp);

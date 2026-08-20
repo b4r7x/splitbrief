@@ -81,38 +81,38 @@ describe('handleWorkflowMouseWheel', () => {
     expect(conversationScrollStore.get().scrollOffset).toBe(1);
   });
 
-  it.each(VIEWPORTS)('$label wheel input starts from canonical clamped offsets', ({
-    cols,
-    rows,
-  }) => {
-    terminalSizeStore.__testReset({ cols, rows });
-    inputHeightStore.__testReset({ rows: 3 });
-    seedLongConversation();
+  it.each(VIEWPORTS)(
+    '$label wheel input starts from canonical clamped offsets',
+    ({ cols, rows }) => {
+      terminalSizeStore.__testReset({ cols, rows });
+      inputHeightStore.__testReset({ rows: 3 });
+      seedLongConversation();
 
-    const initialConversation = readConversationScrollSnapshot();
-    expect(initialConversation.maxOffset).toBeGreaterThan(1);
-    conversationScrollStore.__testReset({
-      scrollOffset: initialConversation.maxOffset + 10,
-    });
-    const visibleConversation = readConversationScrollSnapshot();
-    reviewStore.setScrollOffset(7);
+      const initialConversation = readConversationScrollSnapshot();
+      expect(initialConversation.maxOffset).toBeGreaterThan(1);
+      conversationScrollStore.__testReset({
+        scrollOffset: initialConversation.maxOffset + 10,
+      });
+      const visibleConversation = readConversationScrollSnapshot();
+      reviewStore.setScrollOffset(7);
 
-    handleWorkflowMouseWheel(wheelEvent('wheel-down', 2, 7));
+      handleWorkflowMouseWheel(wheelEvent('wheel-down', 2, 7));
 
-    expect(readConversationScrollSnapshot().scrollOffset).toBe(visibleConversation.maxOffset - 1);
-    expect(reviewStore.get().scrollOffset).toBe(7);
+      expect(readConversationScrollSnapshot().scrollOffset).toBe(visibleConversation.maxOffset - 1);
+      expect(reviewStore.get().scrollOffset).toBe(7);
 
-    const conversationOffset = conversationScrollStore.get().scrollOffset;
-    reviewStore.setReviewFile('spec.md', 100);
-    controlsStore.setInputMode('review');
-    const reviewMaxOffset = 100 - readReviewContentHeight();
-    reviewStore.setScrollOffset(reviewMaxOffset + 10);
+      const conversationOffset = conversationScrollStore.get().scrollOffset;
+      reviewStore.setReviewFile('spec.md', 100);
+      controlsStore.setInputMode('review');
+      const reviewMaxOffset = 100 - readReviewContentHeight();
+      reviewStore.setScrollOffset(reviewMaxOffset + 10);
 
-    handleWorkflowMouseWheel(wheelEvent('wheel-up', 2, 7));
+      handleWorkflowMouseWheel(wheelEvent('wheel-up', 2, 7));
 
-    expect(reviewStore.get().scrollOffset).toBe(reviewMaxOffset - 1);
-    expect(conversationScrollStore.get().scrollOffset).toBe(conversationOffset);
-  });
+      expect(reviewStore.get().scrollOffset).toBe(reviewMaxOffset - 1);
+      expect(conversationScrollStore.get().scrollOffset).toBe(conversationOffset);
+    },
+  );
 
   it('question mode owns presses but leaves the wheel to the transcript', () => {
     controlsStore.setInputMode('question');

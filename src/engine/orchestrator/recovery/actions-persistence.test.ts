@@ -3,13 +3,13 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { evidenceLedgerPath, readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { createEventBus } from '../../events/bus.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
@@ -48,15 +48,7 @@ function makeBus(projectDir: string, sessionId: string): { bus: EventBus; events
 }
 
 function implementingState(tasks: Task[], currentTaskIndex = 0): WorkflowState {
-  let state = createInitialState('feat');
-  state = transition(state, { type: 'START' });
-  state = transition(state, { type: 'RESEARCH_DONE' });
-  state = transition(state, { type: 'SPEC_DONE' });
-  state = transition(state, { type: 'APPROVE_SPEC' });
-  state = transition(state, { type: 'PLAN_DONE', tasks });
-  state = transition(state, { type: 'BRIEFS_READY', tasks });
-  state = transition(state, { type: 'APPROVE_BRIEFS' });
-  return { ...state, currentTaskIndex };
+  return makeImplState(tasks, { currentTaskIndex });
 }
 
 function readSessionLog(projectDir: string, sessionId: string): string {
@@ -167,6 +159,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
 
   it('aborts intentionally without mutating task status', () => {
     const { projectDir, sessionId } = setupSession('abort-workflow');
+    const completedTask = makeTask({ id: 'T032', status: 'done' });
     const task = makeTask({ id: 'T033', status: 'in_progress' });
     const issue = buildRetryExhaustedRecoveryIssue({
       task,
@@ -175,7 +168,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
       attempts: 3,
       maxAttempts: 3,
     });
-    const state = { ...implementingState([task]), pendingRecovery: issue };
+    const state = { ...implementingState([completedTask, task], 1), pendingRecovery: issue };
     const { bus, events } = makeBus(projectDir, sessionId);
 
     const result = applyRecoveryAction({
@@ -189,12 +182,14 @@ describe('applyRecoveryAction: persisted success effects', () => {
     expect(result).toMatchObject({ ok: true, status: 'aborted' });
     expect(result.state.phase).toBe('idle');
     expect(result.state.pendingRecovery).toBeUndefined();
-    expect(result.state.tasks.map((task) => task.id)).toEqual(['T033']);
-    expect(result.state.tasks[0]?.status).toBe('in_progress');
+    expect(result.state.tasks.map((task) => task.id)).toEqual(['T032', 'T033']);
+    expect(result.state.currentTaskIndex).toBe(1);
+    expect(result.state.tasks[1]?.status).toBe('in_progress');
     const persisted = loadState({ projectDir, sessionId });
     expect(persisted?.phase).toBe('idle');
     expect(persisted?.pendingRecovery).toBeUndefined();
-    expect(persisted?.tasks.map((task) => task.id)).toEqual(['T033']);
+    expect(persisted?.tasks.map((task) => task.id)).toEqual(['T032', 'T033']);
+    expect(persisted?.currentTaskIndex).toBe(1);
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']),
     );

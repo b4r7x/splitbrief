@@ -6,6 +6,7 @@ import { ensureSessionDir } from '../../../core/paths-io.js';
 import { sessionDir, SESSION_LOG_FILE } from '../../../core/paths.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { createInitialState } from '../../../core/state/machine.js';
+import { acquireStateAuthority, releaseStateAuthority } from '../../../core/state/authority.js';
 import { buildResumeContext } from './rebuild.js';
 
 let dirs: string[] = [];
@@ -26,6 +27,27 @@ function setupProject(): { projectDir: string; sessionId: string } {
 function writeSessionLog(projectDir: string, sessionId: string, entries: unknown[]): void {
   const filePath = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);
   writeFileSync(filePath, entries.map((e) => JSON.stringify(e)).join('\n') + '\n');
+}
+
+async function buildResumeContextWithAuthority(ref: {
+  projectDir: string;
+  sessionId: string;
+}): Promise<Awaited<ReturnType<typeof buildResumeContext>>> {
+  const acquired = acquireStateAuthority({
+    ref,
+    purpose: 'resume',
+    acquisitionId: 'transcript-rebuild-test',
+  });
+  if (acquired.kind !== 'fenced') throw new Error('expected a fenced test authority');
+  try {
+    return await buildResumeContext({
+      ref,
+      persistTranscript: true,
+      authority: acquired.receipt,
+    });
+  } finally {
+    releaseStateAuthority(ref, acquired.receipt);
+  }
 }
 
 describe('buildResumeContext', () => {
@@ -177,10 +199,7 @@ describe('buildResumeContext', () => {
       { kind: 'message', ts: queuedAt, role: 'assistant', phase: 'planning', text: 'working' },
     ]);
 
-    const result = await buildResumeContext({
-      ref: { projectDir, sessionId },
-      persistTranscript: true,
-    });
+    const result = await buildResumeContextWithAuthority({ projectDir, sessionId });
 
     expect(result.messages).toEqual([{ role: 'assistant', content: 'working' }]);
   });
@@ -222,10 +241,7 @@ describe('buildResumeContext', () => {
       { kind: 'message', ts: 3001, role: 'user', phase: 'planning', text: 'later request' },
     ]);
 
-    const result = await buildResumeContext({
-      ref: { projectDir, sessionId },
-      persistTranscript: true,
-    });
+    const result = await buildResumeContextWithAuthority({ projectDir, sessionId });
 
     expect(result.messages).toEqual([
       { role: 'user', content: '## Summary\nOld work preserved' },

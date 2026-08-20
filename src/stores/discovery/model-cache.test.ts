@@ -1107,59 +1107,59 @@ describe('modelCacheStore', () => {
     });
   });
 
-  it.each([
-    'stale',
-    'failed',
-  ] as const)('marks the last configured catalog stale after an outer readiness %s', (kind) => {
-    const lastGood = [
-      configuredOutcome({ role: 'planner', contextKey: 'planner-a', models: ['last-good'] }),
-    ];
-    publishConfigured(lastGood, 1);
+  it.each(['stale', 'failed'] as const)(
+    'marks the last configured catalog stale after an outer readiness %s',
+    (kind) => {
+      const lastGood = [
+        configuredOutcome({ role: 'planner', contextKey: 'planner-a', models: ['last-good'] }),
+      ];
+      publishConfigured(lastGood, 1);
 
-    const request = modelCacheStore.beginRefresh({ contexts: scopedContexts });
-    expect(
-      modelCacheStore.publish({
-        result: outerReadinessFailureResult({
-          kind,
-          configuredProviderOutcomes: lastGood,
-          generation: 2,
+      const request = modelCacheStore.beginRefresh({ contexts: scopedContexts });
+      expect(
+        modelCacheStore.publish({
+          result: outerReadinessFailureResult({
+            kind,
+            configuredProviderOutcomes: lastGood,
+            generation: 2,
+          }),
+          request,
         }),
-        request,
-      }),
-    ).toBe(true);
+      ).toBe(true);
 
-    expect(
-      modelCacheStore.getScopedProviderRuntime({ role: 'planner', provider: 'openai' }),
-    ).toEqual({
-      connection: { role: 'planner', provider: 'openai', contextKey: 'planner-a' },
-      state: 'stale',
-      catalog: 'populated',
-      models: [{ id: 'last-good' }],
-      fetchedAt: 100,
-      validatedAt: 200,
-      failure: 'timeout',
-      diagnostic: 'Configured provider catalog refresh did not complete.',
-    });
+      expect(
+        modelCacheStore.getScopedProviderRuntime({ role: 'planner', provider: 'openai' }),
+      ).toEqual({
+        connection: { role: 'planner', provider: 'openai', contextKey: 'planner-a' },
+        state: 'stale',
+        catalog: 'populated',
+        models: [{ id: 'last-good' }],
+        fetchedAt: 100,
+        validatedAt: 200,
+        failure: 'timeout',
+        diagnostic: 'Configured provider catalog refresh did not complete.',
+      });
 
-    expect(
-      resolveModelCatalog('openai', { cache: modelCacheStore, role: 'planner' }).find(
-        (entry) => entry.id === 'last-good',
-      ),
-    ).toMatchObject({ membership: 'stale', isStale: true, isDetected: false });
-    const openai = buildPickerOptions(
-      'planner',
-      assemblePickerDescriptors(),
-      modelCacheStore.getDetection(),
-      undefined,
-    ).find((item) => item.id === 'openai');
-    expect(openai).toMatchObject({
-      available: false,
-      status: {
-        state: 'unavailable',
-        remediation: 'Last confirmed openai catalog is stale. Refresh detection.',
-      },
-    });
-  });
+      expect(
+        resolveModelCatalog('openai', { cache: modelCacheStore, role: 'planner' }).find(
+          (entry) => entry.id === 'last-good',
+        ),
+      ).toMatchObject({ membership: 'stale', isStale: true, isDetected: false });
+      const openai = buildPickerOptions(
+        'planner',
+        assemblePickerDescriptors(),
+        modelCacheStore.getDetection(),
+        undefined,
+      ).find((item) => item.id === 'openai');
+      expect(openai).toMatchObject({
+        available: false,
+        status: {
+          state: 'unavailable',
+          remediation: 'Last confirmed openai catalog is stale. Refresh detection.',
+        },
+      });
+    },
+  );
 
   it('does not stale a configured runtime when an outer stale snapshot names a different context', () => {
     publishConfigured(

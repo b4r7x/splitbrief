@@ -153,7 +153,7 @@ Key components: `Header` (phase rail), `ConversationFlow` (row-based event strea
 
 `Sidebar` asks `layout/rect.ts` for its task-title budget (`getSidebarTaskTitleWidth`) instead of deriving one: the budget is the exact interior of the row it renders into — border, padding, and the bar/marker/space prefix accounted for — and shortens further when a status tail claims cells, so a long title always fits on one line.
 
-The sidebar is the run's persistent task list, and it ships on: `controlsStore.sidebarVisible` starts `true`, `getWorkflowSidebarWidth` still suppresses it below 120 columns, and `/sidebar` toggles it. Every task in the plan stays listed for the whole run, marked `✓` done (dim), `◉` running (foreground, bold, with the `▌` live bar), `○` pending, `▲` escalated, `✗` failed, `–` skipped. None of those glyphs may be tinted with `accent` — cyan is reserved for paths and links.
+The sidebar is the run's persistent task list, and it ships on: `controlsStore.sidebarVisible` starts `true`, `getWorkflowSidebarWidth` suppresses it at 120 columns and below, and `/sidebar` toggles it. Every task in the plan stays listed for the whole run, marked `✓` done (dim), `◉` running (foreground, bold, with the `▌` live bar), `○` pending, `▲` escalated, `✗` failed, `–` skipped. None of those glyphs may be tinted with `accent` — cyan is reserved for paths and links.
 
 `tasks_planned` announces the whole plan once, before the task loop, so the list shows pending rows from the start instead of learning each task only when it begins. `updateTaskMap` seeds one `pending` entry per announced task and never downgrades a task that already earned a status, which is what makes the event safe to republish on resume and on detached re-attach. **`tasks_planned.total` is the authoritative plan size**; `task_started.total` remains only for streams that predate the announcement. The two cannot disagree — `runTaskLoop` derives both from the same `state.tasks.length` on the same entry — so the header cannot flicker as the first task starts.
 
@@ -163,13 +163,13 @@ When the list is taller than its row budget, `getSidebarTaskWindow` windows it a
 
 The panel reads on two left edges, not four: the header, the divider and every footer row sit on the marker column, titles and overflow markers sit on the title column, and the `▌` live bar hangs alone in the column left of the markers. The footer gives the planner and the implementer a row each — one shared row spent its whole width on the planner and cut the implementer away at the 34-column floor. The empty state uses the same grid: `No tasks yet` on the title column, the spinner on the marker column with the stage label beside it, and no separate "planner is working" line, since the spinner row already says the planner is running and names the stage.
 
-Completed tasks leave the transcript by design: `groupEventsIntoSections` turns a finished task's event range into a `completed-task` section, and `walkTranscript` skips those sections, so the rows collapse into the sticky summary block above the transcript. That block's header carries the same `tasks N/M` counts, which is the only place the counts appear below the 120-column sidebar breakpoint.
+Completed tasks leave the transcript by design: `groupEventsIntoSections` turns a finished task's event range into a `completed-task` section, and `walkTranscript` skips those sections, so the rows collapse into the sticky summary block above the transcript. That block's header carries the same `tasks N/M` counts, which is the only place the counts appear at or below the 120-column sidebar breakpoint.
 
 `ConversationFlow` batches safe `runner_call_activity` events by model call and builds one canonical activity batch view model whose render-facing fields are `visibleItems`, `hiddenCount`, `headerCount`, `renderableUnits`, `expandableKey`, `severityCounts`, `groups`, and `rawMarkers`, alongside identity/state fields `batchKey`, `expanded`, `headerText`, and `tone`. Header text, hidden-row affordance, scroll math, and activity target discovery all use that model, whose item identity is the normalized visible label/value rather than raw event count. The compact block shows the latest three distinct items, such as `Run  npm run typecheck`, `Read  src/app.ts`, `Search  useWorkflowRunner`, `Call  github/list_issues`, `Sess  captured`, or `Art  plan.md`; when older distinct items are hidden, the batch shows the compact `ctrl+a` affordance for only that targetable batch. `/activity` and `Ctrl+A` both toggle the latest expandable activity batch. Assistant/result text from runner streams is transcript/output content only. `FeedbackRow` reads `lifecycleStore.queueDepth` so the pending queue count remains visible near the composer without echoing queued text outside the conversation.
 
 Raw activity expansion is an explicit boundary. `rawAvailable:true` means a safe display row has an expansion target in the persisted transcript/log; it does not mean raw text can be shown inline or shown without re-sanitizing. The transcript uses a `raw` marker only as an affordance. With `persistTranscript:false`, protected events force `rawAvailable:false` and omit `expandId`, so the UI has no raw expansion target. Default display payloads and expansion payloads canonicalize terminal controls before redaction.
 
-Transcript rows share one column model. Columns 0–1 are the glyph slot (`❯` prompt marker, `◉`/`●` batch dots, `│` callout bar) and content starts at column 2; activity children hang under their batch header with `├`/`└` at column 2 and text at column 4. `rowLeading()` in `conversation-rows/row-markers.ts` owns that leading, and every row builder wraps at `width - rowLeadingCells(kind)`, so full lines do not clip at the right edge. Hovering a row paints the accent `▌` bar directly into cell 0 rather than reserving a column for it. There is no transcript max-width cap: the conversation spans the full content width, and a visible sidebar squeezes it by a clamped 25% share — floored at 34 and capped at 48 columns, gated on the workflow-local 120-column breakpoint — plus a 2-column gap (`layout/rect.ts`).
+Transcript rows share one column model. Columns 0–1 are the glyph slot (`❯` prompt marker, `◉`/`●` batch dots, `│` callout bar) and content starts at column 2; activity children hang under their batch header with `├`/`└` at column 2 and text at column 4. `rowLeading()` in `conversation-rows/row-markers.ts` owns that leading, and every row builder wraps at `width - rowLeadingCells(kind)`, so full lines do not clip at the right edge. Hovering a row paints the accent `▌` bar directly into cell 0 rather than reserving a column for it. There is no transcript max-width cap: the conversation spans the full content width, and a visible sidebar squeezes it by a clamped 25% share — floored at 34 and capped at 48 columns, gated on widths above the workflow-local 120-column breakpoint — plus a 2-column gap (`layout/rect.ts`).
 
 Activity batches always render a header (`Plan activity  4 updates  [Codex]`), even for a single event, so the header does not flicker in as a batch grows. Ledger labels render as Capitalized display strings via `display/activity-label-display.ts` (`Run`, `Read`, `Edit`, `Search`, `Call`, `List`, …); stage ids and hints stay lowercase (`spec › plan`, `+3 more · ctrl+a`, `git:none`). Shell commands from CLI runners pass through the conservative prettifier in `display/shell-activity-pretty.ts`: `cat` / `sed -n` / `head` / `tail` become `Read`, `rg` / `grep` become `Search`, `ls` becomes `List`, and anything compound (`&&`, `|`, `;`, redirects) stays a raw `Run`.
 
@@ -186,6 +186,115 @@ Clarification-question prompts now fire in every workflow mode, not just `specki
 Brief review has one text-editing path. `workflow.briefReview: rich` is deprecated and maps to simple review. Pressing `Ctrl+E` or typing `e`, `edit`, `E`, or `edit-file` opens the persisted `.splitbrief/sessions/<id>/tasks.md` in the external editor. Resolution uses explicit `VISUAL` first, then non-terminal `EDITOR`, then detected GUI editors (`cursor`, `code`, `zed`, `subl`, `mate`, `bbedit`) with wait flags, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`. Implicit GUI auto-detection probes only safe absolute `PATH` segments (empty, `.`, and relative segments are skipped) and spawns the resolved absolute executable path; on Windows it also honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` suffixes. After the editor exits, SPLITBRIEF re-reads `tasks.md`, re-runs brief-quality validation, and keeps the gate open on parse or quality errors. The brief review overlay loads `brief-readiness.json` alongside `brief-quality.json` (defensively: a missing or malformed readiness artifact is treated as absent). The review header folds a `readiness N blocked` slot into its existing width budget while a blocking report is loaded, and appends the override instruction `approve again overrides` in the same header line — the confirm-by-repeat affordance for the readiness override is carried there and only there, because the header is the one surface that holds the loaded report. The composer briefs hint stays fixed at the four review commands. Per-task state words stay first-match-wins: `overflow`, `conflict`, `no worker` (a task no configured profile can run), `failed`, then `stale`. The brief readiness gate renders the same way as the quality gate: `brief_readiness_passed` shows a `brief readiness` card (`passed · N tasks`), and `brief_readiness_blocked` shows an error-toned `brief readiness` card (`blocked · N of M`) in the conversation row stream.
 
 ---
+
+### Brief recovery: projection, authority, and ownership
+
+Brief recovery has one authority and many projections. The orchestrator's
+`BriefRecoveryController` (the `BriefRecoveryController` contract in
+`src/core/schemas/brief-recovery.ts`) owns admission, the fenced state/evidence mutation, the
+provider call, budget reservation, operation identity, allowed actions, and the durable receipt.
+It returns the versioned `BriefRecoveryProjectionV1` together with a `RecoveryResultV1` or
+`QueueResultV1`. The controller is the only place that may turn a retry, edit, reject, approve, or
+`resolve-unresolved` command into a mutation or provider call. A quality score is diagnostic data;
+it never grants an approve override to a blocked contract.
+
+The production loader is contract-first. `loadBriefReviewData()`
+(`src/features/workflow/brief-review-loader.ts`) reads the persisted `tasks.md`,
+`brief-quality.json`, `brief-readiness.json`, and `state.json`, projects the
+brief recovery from the persisted state, and resolves that projection as the
+authority before any legacy file. The primary status is the binary contract
+outcome — `CONTRACT READY`, `CONTRACT BLOCKED`, or the corresponding non-ready
+recovery state — with the durable cause and the valid action set.
+Score and task count are diagnostic only. A persisted contract projection wins
+over a contradictory legacy score or count display: with zero Tasks and a
+quality score of 0.80 on disk, the blocked contract and its durable cause
+render as the primary state, never `0 tasks · quality 0.80`. The loader and
+the render perform no UI mutation and no provider call; mutating intents are
+forwarded to the owner with the current epoch and receipt.
+
+`src/stores/workflow/review.ts` is the UI projection store, not a recovery authority. It owns the
+current review source, owner token, revision, scroll offset, rendered/visible row counts, brief
+paths/sources, and load error used to paint the review. Components read it with `store.use()` and
+local review actions update only that display state. The store does not own the recovery status,
+allowed-action set, receipts, persistence, CAS/fence, budget, or provider client. `BriefReviewView`
+renders the bounded recovery projection (including `CHECKING CONTRACT`, `CONTRACT BLOCKED`,
+`RETRYING`, `RETRY UNRESOLVED`, `CONTRACT READY`, `READINESS BLOCKED`, and `rejected`) and sends
+an action through the controller/owner command boundary; it never edits persisted recovery state
+or calls a provider directly.
+
+The owner is the only workflow process allowed to hydrate resumable state through the v4
+`loadStateForResume` path and to dispatch a mutating command with its current authority receipt.
+An attached or reconnecting client receives the same projection and replays it for display, but is
+projection-only: status/attach/reconnect performs zero recovery calls and zero local state writes.
+A mutation from an attached client is routed to the live owner, which returns the same versioned
+receipt/result. If the owner is dead, takeover happens through the normal fence acquisition before
+hydration; a stale owner cannot commit or unlock the epoch.
+
+`splitbrief attach <session-id> --project .` reconnects a live detached TUI to that owner's
+projection. A status or reconnect replay is observational; `retry`, edit, reject, and approve are
+the only mutation intents, and they are forwarded to the owner with the current epoch and receipt.
+
+The status/action grammar remains visible after restart:
+
+| Projection | Meaning | Valid next move |
+| --- | --- | --- |
+| `checking` | local contract evidence is being checked | wait; no retry is fabricated |
+| `blocked` | quality/provider/storage evidence prevents approval | retry when allowed, edit, or reject |
+| `retrying` | one identified retry is in flight | observe the operation; duplicate retry is refused |
+| `unresolved` / `UNRESOLVED` | dispatch may have happened, so the operation will not replay | `resolve-unresolved` with explicit rebind or abandon, then edit/reject as allowed |
+| `ready` | the current Brief/report pair passed the contract gate | approve or edit |
+| `readiness-blocked` | operational readiness is separate from Brief quality | edit or reject; no quality override is implied |
+| `rejected` | the Brief epoch is closed by user intent | start a new epoch |
+
+A parked planning result renders the same projection surface with its durable
+cause and valid actions. Resume rehydrates it through the owner fence, and the
+same projection returns; status, attach, and reconnect replays perform zero
+recovery calls and zero local state writes. A park is a decision point, not a
+completion or a failure, so it never renders as done work.
+
+The wire command for a retry contains no comment or fabricated revision request. It is an explicit,
+idempotent action with the current epoch, evidence base, diagnostic fingerprint, and frozen queued
+input IDs:
+
+```json
+{
+  "version": 1,
+  "sessionId": "session-1",
+  "epochId": "epoch-1",
+  "operationId": "operation-1",
+  "base": { "revision": 1, "hash": "brief-hash", "path": "tasks.md" },
+  "intentHash": "retry-intent-hash",
+  "action": "retry",
+  "diagnosticFingerprint": "diagnostic-hash",
+  "frozenInputIds": []
+}
+```
+
+Read-only status and refusal are machine-readable and stable; terminal prose is not an API:
+
+```json
+{ "version": 1, "sessionId": "session-1", "epochId": "epoch-1", "action": "status" }
+{ "type": "status", "data": { "status": "UNRESOLVED", "operationId": "operation-1" } }
+{ "type": "error", "code": "brief_contract_blocked", "status": "blocked", "operationId": null }
+```
+
+### Whole-screen geometry and composer ownership
+
+The workflow's fixed rows are owned by `ScreenShell`: one header row, one header divider, the
+scrollable body, one footer divider, one feedback row, the variable-height composer, and one input
+footer/byline row. `layout/chrome-rows.ts` is the shared row contract used by viewport and pointer
+geometry; scroll banners ride the dividers and never consume body rows. The composer is outside the
+body rectangle and is always terminal-originated: `x = 0`, `width = cols`. Recovery status,
+help text, prompt text, sidebar visibility, and review content width may change the composer height
+or its hint, but never its x-coordinate or width.
+
+The sidebar rule is exact: it renders iff `cols > 120`. At 121 columns it has its clamped width and
+the two-column gap; the body and the sidebar end on the same bottom row. At 120 and 119 columns the
+sidebar and gap both disappear and the body reaches the content
+bottom. At 80, 50, and 40 columns the content pane stays full-width; at 40 the rail/review layout
+recomposes to one column rather than shrinking the composer or dropping recovery outcome/action
+text. The same rectangle equation is used for conversation, document review, and Brief review, so
+zero-height and prompt-clamped bodies cannot introduce a second breakpoint or hidden bottom row.
 
 ## Overlays
 

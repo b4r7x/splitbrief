@@ -30,7 +30,19 @@ import {
 } from '../../core/paths.js';
 import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { Planner } from '../../engine/planners/types.js';
+import {
+  createTaskCompilationAttemptId,
+  OwnedPlannerArtifactSchema,
+} from '../../core/schemas/task-compilation.js';
+import { recordRuntimeConformance } from '../../engine/runners/runtime-conformance-cache.js';
+import type {
+  PhaseResult,
+  Planner,
+  PlannerArtifactLogicalName,
+} from '../../engine/planners/types.js';
+import { installCompilerSeam } from '../../engine/planners/base.js';
+import { makeCompilerSeam } from '#testing/helpers/factories/compiler-seam.js';
+import { sha256Hex } from '../../utils/sha256.js';
 import { registerSpecCommand } from './spec.js';
 
 const createPlannerMock = vi.fn<(config: Config) => Promise<Planner>>();
@@ -39,6 +51,26 @@ let tmp: string;
 let shimDir: string;
 let restoreCompatibleCliShim: (() => void) | undefined;
 let consoleSpy: MockInstance<typeof console.log>;
+
+function phaseResult(logicalName: PlannerArtifactLogicalName, text: string): PhaseResult {
+  const digest = sha256Hex(text);
+  return {
+    artifact: OwnedPlannerArtifactSchema.parse({
+      semanticId: `test-${logicalName}`,
+      programId: null,
+      batchId: null,
+      attemptId: createTaskCompilationAttemptId(),
+      logicalName,
+      transport: 'stdout-final',
+      text,
+      byteLength: Buffer.byteLength(text, 'utf8'),
+      sha256: digest,
+      runtimeReceipt: digest,
+      terminal: { status: 'completed', recordId: `test-${logicalName}`, protocolDigest: digest },
+      sourceReceipt: { kind: 'stdout-final', resultDigest: digest },
+    }),
+  };
+}
 
 beforeEach(() => {
   tmp = realpathSync(createTempDir('spec-command-test'));
@@ -69,7 +101,7 @@ beforeEach(() => {
         plan: '# Generated Plan',
         tasks: [],
         usage: null,
-        phases: [{ text: '# Generated Spec', filename: SPEC_FILE }],
+        phases: [phaseResult(SPEC_FILE, '# Generated Spec')],
       }),
     }),
   );
@@ -214,7 +246,7 @@ describe('spec command', () => {
             plan: '# Generated Plan',
             tasks: [],
             usage: null,
-            phases: [{ text: '# Generated Spec', filename: SPEC_FILE }],
+            phases: [phaseResult(SPEC_FILE, '# Generated Spec')],
           };
         }),
       }),
@@ -269,10 +301,10 @@ describe('spec command — resolved-mode reporting', () => {
 
   function standardPhases() {
     return [
-      { text: '# Research', filename: RESEARCH_FILE },
-      { text: '# Spec', filename: SPEC_FILE },
-      { text: '# Plan', filename: PLAN_FILE },
-      { text: '# Tasks', filename: TASKS_FILE },
+      phaseResult(RESEARCH_FILE, '# Research'),
+      phaseResult(SPEC_FILE, '# Spec'),
+      phaseResult(PLAN_FILE, '# Plan'),
+      phaseResult(TASKS_FILE, '# Tasks'),
     ];
   }
 
@@ -314,7 +346,7 @@ describe('spec command — resolved-mode reporting', () => {
           plan: '',
           tasks: [makeTask()],
           usage: null,
-          phases: [{ text: '# Tasks', filename: TASKS_FILE }],
+          phases: [phaseResult(TASKS_FILE, '# Tasks')],
         }),
       }),
     );
@@ -426,5 +458,91 @@ describe('spec command — preparation ownership across the planner call', () =>
     const sessionPath = join(sessionsRoot(), session);
     expect(readFileSync(join(sessionPath, SPEC_FILE), 'utf8')).toContain('# Generated Spec');
     expect(existsSync(join(sessionPath, '.prepare-owner.json'))).toBe(false);
+  });
+
+  it('publishes one compiler version drift warning', async () => {
+    const stderrChunks: string[] = [];
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderrChunks.push(String(chunk));
+      return true;
+    });
+    const planner = makePlanner({
+      plan: vi.fn().mockResolvedValue({
+        spec: '# Generated Spec',
+        plan: '# Generated Plan',
+        tasks: [],
+        usage: null,
+        phases: [phaseResult(SPEC_FILE, '# Generated Spec')],
+      }),
+    });
+    installCompilerSeam(planner, makeCompilerSeam({ backend: 'claude-code' }));
+    createPlannerMock.mockResolvedValue(planner);
+
+    try {
+      const program = new Command();
+      program.exitOverride();
+      registerSpecCommand(program, { createPlanner: createPlannerMock });
+
+      await program.parseAsync([
+        'node',
+        'splitbrief',
+        'spec',
+        '--project',
+        tmp,
+        '--allow-hooks',
+        'add health endpoint',
+      ]);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+
+    const stderr = stderrChunks.join('');
+    expect(stderr).toContain('runtime-drift evidence');
+    const matches = stderr.match(
+      /planner claude-code 2\.1\.235 differs from the tested 2\.1\.232; compiled with runtime-drift evidence/g,
+    );
+    expect(matches).toHaveLength(1);
+  });
+
+  it('suppresses the warning when the cache holds the version', async () => {
+    recordRuntimeConformance(tmp, { backend: 'claude-code', version: '2.1.235' });
+
+    const stderrChunks: string[] = [];
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderrChunks.push(String(chunk));
+      return true;
+    });
+    const planner = makePlanner({
+      plan: vi.fn().mockResolvedValue({
+        spec: '# Generated Spec',
+        plan: '# Generated Plan',
+        tasks: [],
+        usage: null,
+        phases: [phaseResult(SPEC_FILE, '# Generated Spec')],
+      }),
+    });
+    installCompilerSeam(planner, makeCompilerSeam({ backend: 'claude-code' }));
+    createPlannerMock.mockResolvedValue(planner);
+
+    try {
+      const program = new Command();
+      program.exitOverride();
+      registerSpecCommand(program, { createPlanner: createPlannerMock });
+
+      await program.parseAsync([
+        'node',
+        'splitbrief',
+        'spec',
+        '--project',
+        tmp,
+        '--allow-hooks',
+        'add health endpoint',
+      ]);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+
+    const stderr = stderrChunks.join('');
+    expect(stderr).not.toContain('runtime-drift evidence');
   });
 });

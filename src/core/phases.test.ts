@@ -73,19 +73,18 @@ describe('isResumable', () => {
     expect(shouldPreserveActiveState(state)).toBe(true);
   });
 
-  it.each([
-    'reviewing-spec',
-    'validating-task',
-    'escalating',
-  ] as const)('returns true for %s when pendingRecovery is present', (phase) => {
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase,
-      pendingRecovery: makeRecoveryIssue({ phase }),
-    };
+  it.each(['reviewing-spec', 'validating-task', 'escalating'] as const)(
+    'returns true for %s when pendingRecovery is present',
+    (phase) => {
+      const state: WorkflowState = {
+        ...createInitialState('feat'),
+        phase,
+        pendingRecovery: makeRecoveryIssue({ phase }),
+      };
 
-    expect(isResumable(state)).toBe(true);
-  });
+      expect(isResumable(state)).toBe(true);
+    },
+  );
 
   it('returns false on a terminal phase even when pendingRecovery is stale', () => {
     const state: WorkflowState = {

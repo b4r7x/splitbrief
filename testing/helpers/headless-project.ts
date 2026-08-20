@@ -17,6 +17,7 @@ export function preparedHeadlessExecution(input: {
   sessionId: string;
   feature: string;
   resumeState?: WorkflowState | undefined;
+  purpose?: PreparedExecution['purpose'];
 }): PreparedExecution {
   const ref = { projectDir: input.projectDir, sessionId: input.sessionId };
   const config = parsePreparedConfig(
@@ -24,7 +25,7 @@ export function preparedHeadlessExecution(input: {
   );
   const active = reactivateExistingSession(ref);
   return {
-    purpose: input.resumeState === undefined ? 'new-workflow' : 'resume',
+    purpose: input.purpose ?? (input.resumeState === undefined ? 'new-workflow' : 'resume'),
     config,
     preparationId: `headless-test-${input.sessionId}`,
     report: {

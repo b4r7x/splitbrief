@@ -13,6 +13,7 @@ import {
 } from './limits.js';
 import { PersistedDiagnosticTextSchema } from './persisted-data.js';
 import { addDuplicateIssues } from './refinement.js';
+import { TerminalProfileSchema } from './manifest-fields.js';
 
 export const ArtifactProvenanceSchema = z
   .object({
@@ -51,6 +52,7 @@ export type CaptureTarget = z.infer<typeof CaptureTargetSchema>;
 
 const CaptureSelectionShapeSchema = z
   .object({
+    profile: TerminalProfileSchema.default('unicode-color'),
     requests: z
       .array(CaptureRequestSchema)
       .min(1)

@@ -2,7 +2,7 @@ import type { Config } from '../../core/schemas/config.js';
 import type { BriefReviewPromptKind } from '../../core/schemas/brief-review-command.js';
 import type { Phase, UserEditConflictAction } from '../../core/schemas/enums.js';
 import type { TaskId } from '../../core/schemas/task.js';
-import type { ProjectContext } from '../../core/state/types.js';
+import type { ProjectContext, StateAuthorityReceipt } from '../../core/state/types.js';
 import type { Planner, PriorMessage } from '../planners/types.js';
 import type { Implementer, ImplementerFactoryOptions } from '../implementers/types.js';
 import type { SpecMetadata } from '../../core/paths-io.js';
@@ -118,6 +118,7 @@ export interface WorkflowContext {
   sinks: WorkflowSinks;
   isolation: RunIsolation;
   validator: Validator;
+  stateAuthority?: StateAuthorityReceipt | undefined;
   modelCache?: ModelCacheAccessor | undefined;
   drainPendingAttachments?: (() => Attachment[]) | undefined;
   streamingSink?: StreamingSink | undefined;
@@ -130,6 +131,7 @@ export type WorkflowPersistenceContext = SessionRef & { bus: EventBus };
 
 export type PlannerCallbacksContext = Pick<
   WorkflowContext,
+  | 'stateAuthority'
   | 'projectDir'
   | 'sessionId'
   | 'config'

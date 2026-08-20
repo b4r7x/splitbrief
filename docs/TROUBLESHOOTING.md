@@ -334,13 +334,14 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ### Symptom: instant mode failed with zero tasks
 
-**Likely cause:** The single planner call returned no parsable Task Briefs. Before failing, the same call is retried exactly once; if the retry also returns nothing, the run ends with `instant planner returned zero tasks; cannot proceed`. The planner's text output was persisted to the session directory before the failure and a coded warning (`planner_returned_zero_tasks`) was published pointing at it.
+**Likely cause:** The single planner call returned no parsable Task Briefs, and the one retry returned none either. The failed attempt contributes no Brief generation: a coded, transcript-safe warning (`planner_returned_zero_tasks`) is published, and the attempt writes no planning artifact. The planning result is terminal in `instant`, and in `quick` it is terminal under the workflow owner or parked when no owner authority is present.
 
 **Fix:**
-1. Open the session directory — the planner's output is on disk (typically `tasks.md` or the phase files named in the warning), so you can read what the planner actually said.
-2. If the output is prose with no briefs, the planner model may be too weak to emit Task Briefs: raise the planner model or switch to `--mode standard`.
+1. Read the `planner_returned_zero_tasks` warning in the transcript or `session.jsonl` — it states that the failed attempt contributes no Brief generation, so there is no planner artifact on disk to inspect for the attempt.
+2. If the planner's output was prose with no briefs, the planner model may be too weak to emit Task Briefs: raise the planner model or switch to `--mode standard`.
 3. If the planner produced nothing at all, check the runner diagnostics (`planner.timeout`, stream-idle guard, provider health) and re-run.
-4. Re-run with `splitbrief start --mode instant "<feature>"`.
+4. If the result parked, resume the session and choose `retry`, `edit`, or `reject` from the persisted projection.
+5. Re-run with `splitbrief start --mode instant "<feature>"`.
 
 **Prevention:** Keep `instant`/`quick` for trivial edits and reserve the multi-call modes for anything where brief quality matters — a zero-task outcome is usually a mode/model mismatch.
 
@@ -628,6 +629,120 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 **Prevention:** Configure `contextLength` on implementer profiles that run outside a known catalog, and keep briefs under roughly 28 000 estimated tokens when the window is unknown.
 
 **See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) (`context-overflow` recovery), [docs/CONFIGURATION.md](./CONFIGURATION.md).
+
+---
+
+## Brief contract and recovery
+
+### Symptom: the brief review shows `CONTRACT BLOCKED` and approval does not advance the run
+
+**Likely cause:** The binary Brief contract failed and the one bounded automatic repair is exhausted. The diagnostic score and warnings explain the result; they cannot pass it. A repeated approval does not grant a quality override — the readiness override in `brief-readiness.json` is the only confirm-by-repeat affordance, and it never bypasses the contract. Repeated identical quality failures also stop at the no-progress threshold of 20 rather than churning forever.
+
+**Fix:**
+1. Read the durable cause and the allowed actions on the projection: `retry` (a new operation with a fresh base), `edit` (rewrite `tasks.md`; the edit is re-gated), or `reject`.
+2. Change the input instead of retrying identical content — the same intent replays, it does not repair.
+3. If the score looks contradictory, remember that the score is diagnostic; the run presents `CONTRACT READY` only when the current report has zero errors.
+
+**Prevention:** Treat the quality score as telemetry, not as a second approval channel.
+
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) (contract fence), [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md) (generation and execution permit).
+
+---
+
+### Symptom: a recovery operation is refused with `brief_budget_unknown` or `brief_budget_exhausted`
+
+**Likely cause:** With `workflow.maxBudget` configured, recovery refuses before provider dispatch unless the operation reservation and the relevant current paid spend are finite frozen USD. Unknown price or spend is `brief_budget_unknown`; a known finite amount beyond the cap is `brief_budget_exhausted`. Without `maxBudget`, missing provider pricing does not refuse an otherwise eligible bounded operation — it records a provider-dependent reservation — and unknown cost is never `$0`.
+
+**Fix:**
+1. Read the refusal receipt's code, category, and diagnostic for the concrete reason.
+2. Configure pricing for the paid runner, or raise `maxBudget` when the cap is too tight.
+3. A `tracking_paused` warning means the run stopped over unknown paid usage: continue only after acknowledging unknown spend or configuring pricing.
+
+**Prevention:** Set `workflow.maxBudget` for paid runners and keep their pricing known.
+
+**See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) (provider-dependent cost), [docs/CONFIGURATION.md](./CONFIGURATION.md) (§5 `workflow`).
+
+---
+
+### Symptom: retrying a refused operation replays the same refusal or reports a conflict
+
+**Likely cause:** Refusals are durable and bounded. The same operation and intent identity replays exactly, without a second state or evidence advance; an operation ID already bound to different bytes is a conflict. Retention is versioned with hard bounds (64 refusal records and 64 KiB of receipts per current epoch, a 1 KiB receipt bound, a 4 KiB diagnostic bound, 256 KiB of refusal evidence, and 16 closed-epoch summaries). If safe retention is impossible, the operation fails storage-safe before dispatch.
+
+**Fix:**
+1. Read the refusal receipt — it carries the code, category, cap context, price and spend knownness, and a bounded diagnostic.
+2. Start a new operation with a new intent, or resolve the conflict; replaying the same intent returns the same refusal by design.
+3. A refusal preserves the automatic repair allowance, so the blocked contract never consumes it.
+
+**Prevention:** Treat refusals as idempotent; change the input before expecting a different verdict.
+
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) (refusal bounds).
+
+---
+
+### Symptom: status or attach shows the contract blocked but nothing changes
+
+**Likely cause:** Observation is side-effect free. Status, attach, reconnect, projection load, and resume hydration make zero provider calls, zero compiler dispatches, zero recovery mutations, and no state migration. A projection from an older epoch or revision is refused, not applied.
+
+**Fix:**
+1. Observation never retries or repairs. Send an explicit mutating command — `retry`, `edit`, `reject`, `approve`, or `resolve-unresolved` — carrying the current epoch, revision, and operation identity; stale identity is refused.
+2. If the state is `UNRESOLVED`, resolve it explicitly by rebinding while acknowledging duplication risk, or abandon; the system never silently retries an ambiguous dispatch.
+
+**Prevention:** Treat projections as read-only displays; route every mutation through the owner.
+
+**See also:** [docs/STORES-AND-UI.md](./STORES-AND-UI.md) (projection and ownership).
+
+---
+
+### Symptom: the run parks instead of implementing, or resume shows a parked projection
+
+**Likely cause:** Planning ended in the `parked` disposition: a blocked contract, a refused recovery operation, or a published generation with no issued permit. Parked retains the recovery epoch, evidence head, allowance state, durable cause, and valid actions; it never masquerades as completed or failed work.
+
+**Fix:**
+1. Read the durable cause and the allowed actions on the projection.
+2. Choose `retry`, `edit`, or `reject` as permitted; resume rehydrates the same projection through the owner fence.
+3. If the cause is a missing permit, the generation is non-executable by design until approval issues one — re-approve through the brief review, not by starting a new run.
+
+**Prevention:** A parked run is waiting for a decision, not for time; observing it again changes nothing.
+
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) (three-way disposition), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) (permit-gated execution).
+
+---
+
+### Symptom: `brief_storage_invalid` or a `storage-blocked` projection
+
+**Likely cause:** The brief recovery storage or evidence is unavailable or invalid, so the controller exposes a read-only `storage-blocked` projection with only `status` allowed. This is refusal state, not permission to retry.
+
+**Fix:**
+1. Check disk space and permissions under `.splitbrief/sessions/<id>/`.
+2. Inspect `state.json` and the recovery evidence files for corruption.
+3. Resume or continue shows the same projection until the storage problem is fixed; no mutating command succeeds against a storage-blocked head.
+
+**Prevention:** Keep the session directory on a writable, healthy volume.
+
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) (recovery on resume).
+
+---
+
+### Symptom: the planner refuses before any dispatch with `task_compiler_capability_unsupported`
+
+**Likely cause:** The configured backend is unsupported for the planner role (such as Copilot, Aider, shell, or agent), or its conformance row has not been verified. Under tiered admission, tested versions yield a full capability receipt and other detected versions of supported backends are admitted with runtime-drift evidence and a run warning; unsupported rows refuse with typed fail-closed zero dispatches. Runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) are the enforcement surface.
+
+**Fix:**
+1. Check the support table in [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) for the backend's V1 state and tested runtime.
+2. A `--agent plan`, `--permission-mode plan`, or `--sandbox read-only` flag cannot admit a dispatch — no CLI flag alone proves read-only behavior; only the production-factory conformance proof does.
+3. Use an admitted planner row, or accept the typed refusal and its remediation.
+
+**Prevention:** Match the configured runner to an admitted support-table row before starting a run.
+
+**See also:** [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) (compiler capability), [docs/CONFIGURATION.md](./CONFIGURATION.md) (compiler capability).
+
+---
+
+### Symptom: warning "planner <backend> <detected> differs from the tested <tested>; compiled with runtime-drift evidence"
+
+**Meaning:** The installed planner CLI version differs from the version verified in the compiler support table. Under tiered admission, the runner is admitted with runtime-drift evidence rather than refused. This is a warning, not an error: execution proceeds normally because runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) protect the stage.
+
+**When to worry:** If planning produces syntax errors, protocol errors, or unexpected outputs, align the installed CLI version with the tested version listed in [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 
 ---
 

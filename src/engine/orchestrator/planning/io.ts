@@ -3,15 +3,16 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { EventBus } from '../../events/types.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
-import { writeSpecFile } from '../../../core/paths-io.js';
 import { PLAN_FILE, RESEARCH_FILE, SPEC_FILE, TASKS_FILE } from '../../../core/paths.js';
 import { readSessionFileConfined } from '../../../core/sessions/confinement.js';
-import { formatTasks } from '../../spec/formatter.js';
 import { parseTasksStrict } from '../../spec/tasks/parse.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { error } from '../../../utils/error.js';
-import { writeAndPublishArtifact, type ArtifactKind } from '../artifact-write.js';
+import { writeAndPublishArtifacts, type ArtifactKind } from '../artifact-write.js';
 import type { PlanResult } from '../../planners/types.js';
+import type { BriefGenerationRef, TaskExecutionPermit } from '../../../core/schemas/brief-owner.js';
+import type { SessionRef } from '../../../core/types/session-ref.js';
+import { readWorkflowStateHead } from '../state-ops.js';
 
 function artifactKindFor(filename: string): ArtifactKind {
   switch (filename) {
@@ -37,22 +38,19 @@ export function persistPhases(opts: {
   metadata: SpecMetadata;
   bus: EventBus;
   phase: Phase;
+  /** Committed generation receipt required by fixed Tasks projections. */
+  generation?: BriefGenerationRef | undefined;
 }): void {
-  const { projectDir, sessionId, metadata, bus, phase } = opts;
-  for (const phaseResult of opts.phases ?? []) {
-    const kind = artifactKindFor(phaseResult.filename);
-    const admission = kind === 'spec' || kind === 'plan' ? 'already-admitted' : undefined;
-    writeAndPublishArtifact({
-      kind,
-      bus,
-      phase,
-      projectDir,
-      sessionId,
-      text: phaseResult.text,
-      metadata,
-      ...(admission !== undefined ? { admission } : {}),
-    });
-  }
+  const { projectDir, sessionId, metadata, bus, phase, generation } = opts;
+  const items = (opts.phases ?? []).map((phaseResult) => ({
+    kind: artifactKindFor(phaseResult.artifact.logicalName),
+    text: phaseResult.artifact.text,
+    ...(phaseResult.artifact.logicalName === SPEC_FILE ||
+    phaseResult.artifact.logicalName === PLAN_FILE
+      ? { admission: 'already-admitted' as const }
+      : {}),
+  }));
+  writeAndPublishArtifacts({ projectDir, sessionId, bus, phase, metadata, items, generation });
 }
 
 export type PersistedTasksResult =
@@ -122,18 +120,40 @@ export async function readPersistedTasks(
   }
 }
 
-export async function readTasksForApproval(opts: {
-  tasksFilePath: string;
-  currentTasks: Task[];
-  projectDir: string;
-  sessionId: string;
-  metadata: SpecMetadata;
-  onWarning?: (message: string) => void;
-}): Promise<PersistedTasksResult> {
-  const { tasksFilePath, currentTasks, projectDir, sessionId, metadata, onWarning } = opts;
-  const first = await readPersistedTasks(tasksFilePath, onWarning);
-  if (first.ok || first.reason !== 'missing') return first;
-  if (currentTasks.length === 0) return first;
-  writeSpecFile({ projectDir, sessionId }, TASKS_FILE, formatTasks(currentTasks), metadata);
-  return readPersistedTasks(tasksFilePath, onWarning);
+export type OwnerReadiness =
+  | Readonly<{
+      ok: true;
+      authorityRevision: number;
+      generation: BriefGenerationRef;
+      permit: TaskExecutionPermit;
+    }>
+  | Readonly<{
+      ok: false;
+      reason: 'no-state' | 'no-recovery' | 'not-ready' | 'no-generation' | 'no-permit';
+    }>;
+
+/**
+ * Contract readiness resolves the owner-committed authority, never the fixed
+ * `tasks.md` projection or a provider-returned candidate. The persisted head
+ * schema already binds a current permit to the current generation, authority
+ * revision, recovery epoch, and ready recovery status.
+ */
+export function resolveOwnerReadiness(ref: SessionRef): OwnerReadiness {
+  const head = readWorkflowStateHead(ref);
+  if (head === null) return { ok: false, reason: 'no-state' };
+  const recovery = head.state.briefRecovery;
+  if (recovery === null || recovery === undefined) return { ok: false, reason: 'no-recovery' };
+  if (recovery.status !== 'ready') return { ok: false, reason: 'not-ready' };
+  if (head.state.generation === undefined || head.state.generation === null) {
+    return { ok: false, reason: 'no-generation' };
+  }
+  if (head.state.permit === undefined || head.state.permit === null) {
+    return { ok: false, reason: 'no-permit' };
+  }
+  return {
+    ok: true,
+    authorityRevision: head.state.authorityRevision ?? 0,
+    generation: head.state.generation,
+    permit: head.state.permit,
+  };
 }

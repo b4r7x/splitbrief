@@ -229,24 +229,27 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
     ['aider', '0.85.9'],
     ['opencode', '0.4.9'],
     ['kilo-code', '0.0.9'],
-  ] as const)('does not spawn a %s catalog outside canonical compatibility', async (tool, version) => {
-    const command = tool === 'kilo-code' ? 'kilo' : tool;
-    const logPath = join(shimDir, `${command}.args`);
-    installCatalogShim(command, {
-      logPath,
-      version,
-      catalog: tool === 'codex' ? JSON.stringify({ models: [{ id: 'must-not-run' }] }) : 'x/y',
-    });
+  ] as const)(
+    'does not spawn a %s catalog outside canonical compatibility',
+    async (tool, version) => {
+      const command = tool === 'kilo-code' ? 'kilo' : tool;
+      const logPath = join(shimDir, `${command}.args`);
+      installCatalogShim(command, {
+        logPath,
+        version,
+        catalog: tool === 'codex' ? JSON.stringify({ models: [{ id: 'must-not-run' }] }) : 'x/y',
+      });
 
-    const attempts = await discoverAllCliTools({
-      contexts: [context(tool)],
-      projectDir,
-      resolveExecutable: exactResolver,
-    });
+      const attempts = await discoverAllCliTools({
+        contexts: [context(tool)],
+        projectDir,
+        resolveExecutable: exactResolver,
+      });
 
-    expect(attemptFor(attempts, tool)?.outcome).toEqual({ kind: 'unsupported' });
-    expect(loggedArgs(logPath)).toEqual(['--version|']);
-  });
+      expect(attemptFor(attempts, tool)?.outcome).toEqual({ kind: 'unsupported' });
+      expect(loggedArgs(logPath)).toEqual(['--version|']);
+    },
+  );
 
   it('admits a codex catalog for a version newer than the tested release', async () => {
     const logPath = join(shimDir, 'codex.args');
@@ -271,19 +274,22 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
     ['aider', 'broken-version'],
     ['opencode', '0.5.0-rc.1'],
     ['kilo-code', 'not-a-version'],
-  ] as const)('does not spawn a %s catalog for prerelease or malformed version evidence', async (tool, version) => {
-    const command = tool === 'kilo-code' ? 'kilo' : tool;
-    const logPath = join(shimDir, `${command}.args`);
-    installCatalogShim(command, { logPath, version, catalog: 'must-not-run/model' });
+  ] as const)(
+    'does not spawn a %s catalog for prerelease or malformed version evidence',
+    async (tool, version) => {
+      const command = tool === 'kilo-code' ? 'kilo' : tool;
+      const logPath = join(shimDir, `${command}.args`);
+      installCatalogShim(command, { logPath, version, catalog: 'must-not-run/model' });
 
-    await discoverAllCliTools({
-      contexts: [context(tool)],
-      projectDir,
-      resolveExecutable: exactResolver,
-    });
+      await discoverAllCliTools({
+        contexts: [context(tool)],
+        projectDir,
+        resolveExecutable: exactResolver,
+      });
 
-    expect(loggedArgs(logPath)).toEqual(['--version|']);
-  });
+      expect(loggedArgs(logPath)).toEqual(['--version|']);
+    },
+  );
 
   for (const tool of ['codex', 'aider', 'opencode', 'kilo-code'] as const) {
     const command = tool === 'kilo-code' ? 'kilo' : tool;

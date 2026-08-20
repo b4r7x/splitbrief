@@ -295,39 +295,40 @@ describe('runHook — kind: module', () => {
     { onFailure: 'block', outcome: 'deny' },
     { onFailure: 'warn', outcome: 'warn' },
     { onFailure: 'ignore', outcome: 'allow' },
-  ] as const)('maps module timeout with on_failure=$onFailure to $outcome', async ({
-    onFailure,
-    outcome,
-  }) => {
-    await withTempModule(
-      'export default async function hook() { await new Promise((resolve) => setTimeout(resolve, 50)); return { kind: "allow" }; }',
-      async (moduleProjectDir, modulePath) => {
-        const entry = mkModuleEntry({ path: modulePath, timeout_ms: 10, on_failure: onFailure });
-        const result = await runHook(entry, event, {
-          projectDir: moduleProjectDir,
-          sessionId: 's',
-        });
-        expect(result.kind).toBe(outcome);
-        if (result.kind !== 'allow') expect(result.message).toContain('hook timed out after 10ms');
-      },
-    );
-  });
+  ] as const)(
+    'maps module timeout with on_failure=$onFailure to $outcome',
+    async ({ onFailure, outcome }) => {
+      await withTempModule(
+        'export default async function hook() { await new Promise((resolve) => setTimeout(resolve, 50)); return { kind: "allow" }; }',
+        async (moduleProjectDir, modulePath) => {
+          const entry = mkModuleEntry({ path: modulePath, timeout_ms: 10, on_failure: onFailure });
+          const result = await runHook(entry, event, {
+            projectDir: moduleProjectDir,
+            sessionId: 's',
+          });
+          expect(result.kind).toBe(outcome);
+          if (result.kind !== 'allow')
+            expect(result.message).toContain('hook timed out after 10ms');
+        },
+      );
+    },
+  );
 
   it.each([
     { onFailure: 'block', outcome: 'deny' },
     { onFailure: 'warn', outcome: 'warn' },
     { onFailure: 'ignore', outcome: 'allow' },
-  ] as const)('maps module throw with on_failure=$onFailure to $outcome', async ({
-    onFailure,
-    outcome,
-  }) => {
-    const entry = makeThrowingModuleHook({ on_failure: onFailure });
-    const result = await runHook(entry, event, { projectDir, sessionId: 's' });
-    expect(result.kind).toBe(outcome);
-    if (result.kind === 'warn' || result.kind === 'deny') {
-      expect(result.message).toContain('segfault');
-    }
-  });
+  ] as const)(
+    'maps module throw with on_failure=$onFailure to $outcome',
+    async ({ onFailure, outcome }) => {
+      const entry = makeThrowingModuleHook({ on_failure: onFailure });
+      const result = await runHook(entry, event, { projectDir, sessionId: 's' });
+      expect(result.kind).toBe(outcome);
+      if (result.kind === 'warn' || result.kind === 'deny') {
+        expect(result.message).toContain('segfault');
+      }
+    },
+  );
 
   it('maps malformed module outcomes through on_failure', async () => {
     const entry = mkModuleEntry({ path: 'testing/fixtures/hooks/invalid-outcome.mjs' });

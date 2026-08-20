@@ -1,30 +1,11 @@
 import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
-import { createRunnerCallRecorder } from '../calls/recorder.js';
 import { toTokenDelta } from '../calls/projection.js';
-import {
-  boundedRunnerCallMessage,
-  createRunnerCallCredentialRedactor,
-  runnerCallIdleTimeoutError,
-  runnerCallInterruptedStatus,
-} from '../calls/status.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
-import { credentialValuesFromEnvironment, spawnAndCollect } from '../streaming/spawn-collect.js';
-import { getLineParser } from '../streaming/output-parsers.js';
-import { createParsedLineRecorder } from '../streaming/parsed-line-recorder.js';
-import { createRunnerCallStderrBuffer } from '../streaming/stderr-lines.js';
+import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { createBoundedOutput } from '../../lib/process/bounded-output.js';
-import {
-  DEFAULT_PROCESS_LINE_MAX_BYTES,
-  DEFAULT_PROCESS_STDERR_MAX_BYTES,
-} from '../../lib/process/spawn/lifecycle.js';
-import { spawnWithShellFallback } from '../../lib/process/spawn/progress.js';
-import { createLineBuffer } from '../../lib/process/line-buffer.js';
-import { processError } from '../../lib/process/errors.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
-import { redactSecrets } from '../../utils/redact.js';
+import { DEFAULT_PROCESS_STDERR_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
 import { error } from '../../utils/error.js';
-import { finishRunnerCallOutputLimit, runnerCallLineOutputLimit } from '../calls/output-limit.js';
 import { commandName, isShellEvaluatedPromptArg } from '../../core/trust/path-classification.js';
 import { RUNNER_IDLE_KILL_MS, RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
 import { createCustomRunnerRedactor, resolveCustomRunnerEnvironment } from './redaction.js';
@@ -87,6 +68,7 @@ export interface CustomCommandBasedOptions {
   authorizationPathExt?: string | undefined;
   cwd: string;
   sourceEnv: NodeJS.ProcessEnv;
+  preserveEnvironmentKeys?: readonly string[] | undefined;
   onOutput?: ((chunk: string) => void) | undefined;
   onStderr?: ((chunk: string) => void) | undefined;
   onSessionId?: ((id: string) => void) | undefined;
@@ -164,7 +146,10 @@ async function invokeCustomCommandBasedRunnerWithDeadline(
     throw commandBasedInvocationError.customPromptTooLarge(CUSTOM_RUNNER_PROMPT_MAX_BYTES);
   }
 
-  const environment = resolveCustomRunnerEnvironment(opts.sourceEnv, admission.runner.command.env);
+  const environment = resolveCustomRunnerEnvironment(opts.sourceEnv, [
+    ...admission.runner.command.env,
+    ...(opts.preserveEnvironmentKeys ?? []),
+  ]);
   const redact = createCustomRunnerRedactor(environment.redactionValues);
   const executable = await revalidateCustomRunnerInvocation({
     invocation: admission,
@@ -245,148 +230,38 @@ export async function invokeCommandBasedRunner(
     useStdin = substituted.useStdin;
   }
 
-  let stdout: string;
-  let stderr = '';
-  let usage: TokenDelta | null = null;
-  let callResult: RunnerCallResult;
-  const context = createCommandCallContext({
+  const stderrOutput = createBoundedOutput({
+    maxBytes: DEFAULT_PROCESS_STDERR_MAX_BYTES,
+    policy: 'tail',
+  });
+  // The canonical envelope is enforced at the spawn boundary by `spawnAndCollect`.
+  const result = await spawnAndCollect({
     command: finalCommand,
-    callContext: opts.callContext,
+    args: finalArgs,
+    cwd: projectDir,
+    env: opts.env,
+    stdin: useStdin ? prompt : undefined,
+    format,
+    notFoundMessage: opts.notFoundMessage,
+    onText: onOutput,
+    onSessionId: opts.onSessionId,
+    onCallEvent: opts.onCallEvent,
+    callContext: createCommandCallContext({
+      command: finalCommand,
+      callContext: opts.callContext,
+    }),
+    signal,
+    timeoutMs: opts.timeout,
+    idle: { warnMs: idleWarnMs, killMs: idleKillMs },
+    onStderr: (chunk) => {
+      stderrOutput.append(chunk);
+    },
   });
 
-  if (opts.timeout !== undefined) {
-    const parseLine = getLineParser(format);
-    const credentialValues = credentialValuesFromEnvironment(opts.env ?? process.env);
-    const explicitRedactor = createRunnerCallCredentialRedactor(credentialValues);
-    const redactCredential = (value: string): string => redactSecrets(explicitRedactor(value));
-    const recorder = createRunnerCallRecorder({
-      context,
-      credentialValues,
-      onEvent: opts.onCallEvent,
-    });
-    const parsedRecorder = createParsedLineRecorder({
-      recorder,
-      onText: (text) => onOutput?.(redactCredential(text)),
-      onSessionId: (id) => opts.onSessionId?.(redactCredential(id)),
-    });
-    const stderrBuffer = createRunnerCallStderrBuffer(recorder);
-    const liveOutputBuffer = createLineBuffer(
-      (line) => {
-        parsedRecorder.apply(parseLine(line));
-      },
-      {
-        maxLineBytes: DEFAULT_PROCESS_LINE_MAX_BYTES,
-        onOverflow: (overflow) => {
-          finishRunnerCallOutputLimit(
-            recorder,
-            runnerCallLineOutputLimit({
-              code: 'stdout_line_overflow',
-              label: 'stdout line',
-              lineBytes: overflow.lineBytes,
-              maxLineBytes: overflow.maxLineBytes,
-            }),
-            {
-              usage: parsedRecorder.usage,
-              nativeSessionId: parsedRecorder.sessionId,
-            },
-          );
-        },
-      },
-    );
-    try {
-      const result = await spawnWithShellFallback({
-        command: finalCommand,
-        args: finalArgs,
-        cwd: projectDir,
-        env: opts.env,
-        timeout: opts.timeout,
-        onProgress: (chunk) => liveOutputBuffer.push(chunk),
-        onStderr: (chunk) => stderrBuffer.push(chunk),
-        stdinInput: useStdin ? prompt : undefined,
-        notFoundMessage: opts.notFoundMessage,
-        signal,
-        idle: {
-          warnMs: idleWarnMs,
-          killMs: idleKillMs,
-          onWarn: (silentMs) => recorder.stalled({ silentMs }),
-          onClear: () => recorder.stallCleared(),
-        },
-      });
-      liveOutputBuffer.flush();
-      stderrBuffer.flush();
-
-      if (result.timedOut) {
-        recorder.finishFailed({
-          status: 'timeout',
-          error: {
-            code: 'command_timeout',
-            message: `Command timed out after ${opts.timeout}ms`,
-          },
-        });
-        throw processError.timeout({
-          command: 'Command',
-          label: 'Command',
-          timeoutMs: opts.timeout,
-          output: redactCredential(result.output),
-        });
-      }
-
-      stdout = parsedRecorder.text;
-      usage = parsedRecorder.usage;
-      stderr = result.stderr;
-      if (!recorder.hasTerminal()) recorder.finishCompleted();
-      callResult = recorder.finalResult();
-    } catch (err) {
-      liveOutputBuffer.flush();
-      stderrBuffer.flush();
-      if (!recorder.hasTerminal()) {
-        if (processError.isIdleTimeout(err)) {
-          recorder.finishFailed({
-            status: 'failed',
-            error: runnerCallIdleTimeoutError(err, credentialValues),
-          });
-        } else {
-          recorder.finishFailed({
-            status: signal?.aborted ? runnerCallInterruptedStatus(signal) : 'failed',
-            error: {
-              code: 'command_failed',
-              message: boundedRunnerCallMessage(toErrorMessage(err), credentialValues),
-            },
-          });
-        }
-      }
-      throw err;
-    }
-  } else {
-    const stderrOutput = createBoundedOutput({
-      maxBytes: DEFAULT_PROCESS_STDERR_MAX_BYTES,
-      policy: 'tail',
-    });
-    const result = await spawnAndCollect({
-      command: finalCommand,
-      args: finalArgs,
-      cwd: projectDir,
-      env: opts.env,
-      stdin: useStdin ? prompt : undefined,
-      format,
-      notFoundMessage: opts.notFoundMessage,
-      onText: onOutput,
-      onSessionId: opts.onSessionId,
-      onCallEvent: opts.onCallEvent,
-      callContext: context,
-      signal,
-      idle: { warnMs: idleWarnMs, killMs: idleKillMs },
-      abortOnOutputLimits: false,
-      onStderr: (chunk) => {
-        stderrOutput.append(chunk);
-      },
-    });
-
-    stdout = result.text;
-    stderr = stderrOutput.snapshot().text;
-    usage = toTokenDelta(result.usage);
-    callResult = result;
-  }
-
-  return { stdout, stderr, usage, callResult };
+  return {
+    stdout: result.text,
+    stderr: stderrOutput.snapshot().text,
+    usage: toTokenDelta(result.usage),
+    callResult: result,
+  };
 }

@@ -149,34 +149,30 @@ afterEach(() => {
 });
 
 describe('custom runner disclosure', () => {
-  it.each(
-    LITERAL_DISCLOSURE_FIXTURES,
-  )('renders the complete $source $role $contract disclosure literal', ({
-    source,
-    role,
-    contract,
-    expected,
-  }) => {
-    const disclosure = buildCustomRunnerDisclosure({
-      runner: runner(
-        command({
-          id: `${source}-${role}-${contract}-literal-disclosure`,
-          contract,
-          executable: LITERAL_DISCLOSURE_EXECUTABLE.path,
-        }),
-        source,
-      ),
-      posture:
-        source === 'configured'
-          ? customRunnerSecurityPosture(role, contract)
-          : inlineRunnerSecurityPosture(role, contract),
-      executable: LITERAL_DISCLOSURE_EXECUTABLE,
-    });
+  it.each(LITERAL_DISCLOSURE_FIXTURES)(
+    'renders the complete $source $role $contract disclosure literal',
+    ({ source, role, contract, expected }) => {
+      const disclosure = buildCustomRunnerDisclosure({
+        runner: runner(
+          command({
+            id: `${source}-${role}-${contract}-literal-disclosure`,
+            contract,
+            executable: LITERAL_DISCLOSURE_EXECUTABLE.path,
+          }),
+          source,
+        ),
+        posture:
+          source === 'configured'
+            ? customRunnerSecurityPosture(role, contract)
+            : inlineRunnerSecurityPosture(role, contract),
+        executable: LITERAL_DISCLOSURE_EXECUTABLE,
+      });
 
-    expect(disclosure).not.toBeNull();
-    if (disclosure === null) throw new Error('literal disclosure fixture was rejected');
-    expect(formatCustomRunnerDisclosure(disclosure)).toBe(expected);
-  });
+      expect(disclosure).not.toBeNull();
+      if (disclosure === null) throw new Error('literal disclosure fixture was rejected');
+      expect(formatCustomRunnerDisclosure(disclosure)).toBe(expected);
+    },
+  );
 
   it('escapes executable and argv controls and exposes env names without values', async () => {
     const projectDir = createTempDir('custom-trust-disclosure-project');

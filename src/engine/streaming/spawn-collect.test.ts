@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { afterEach } from 'vitest';
 import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
 import { runnerCallEventToSessionLogEntry } from '../calls/session-log.js';
@@ -14,12 +15,17 @@ import {
 } from '../runners/redaction.js';
 import { createRunnerSandboxEnv } from '../runners/sandbox-env.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
-import type { RunnerCallEvent } from '../calls/types.js';
+import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
 import {
   replayRunnerCallEventsIntoOperations,
   runnerCallErrors,
   runnerCallTerminals,
 } from '#testing/helpers/runner-call-events.js';
+import {
+  TASK_BRIEF_COMPILER_POLICY,
+  type TaskCompilationCallEnvelope,
+} from '../../core/schemas/task-compilation.js';
+import { killAllProcesses } from '../../lib/process/registry.js';
 
 describe('spawnAndCollect', () => {
   it('redacts selected environment credentials from result and live callbacks', async () => {
@@ -1096,4 +1102,160 @@ describe('CLI implementer JSONL parsing', () => {
     expect(result.text).toContain('Applied changes to src/main.ts');
     expect(result.text).toContain('Done.');
   });
+});
+
+describe('spawnAndCollect envelope enforcement', () => {
+  const itUnix = process.platform === 'win32' ? it.skip : it;
+
+  function envelope(
+    overrides: Readonly<Partial<TaskCompilationCallEnvelope>>,
+  ): TaskCompilationCallEnvelope {
+    return {
+      version: 1,
+      promptBytes: 512,
+      inputTokensUpperBound: 512,
+      requestedOutputTokens: TASK_BRIEF_COMPILER_POLICY.requestedOutputTokens,
+      outputTokensUpperBound: TASK_BRIEF_COMPILER_POLICY.maxNormalizedOutputBytes,
+      maxNormalizedOutputBytes: TASK_BRIEF_COMPILER_POLICY.maxNormalizedOutputBytes,
+      maxDeclaredArtifactBytes: TASK_BRIEF_COMPILER_POLICY.maxDeclaredArtifactBytes,
+      maxRawProtocolBytes: TASK_BRIEF_COMPILER_POLICY.maxRawProtocolBytes,
+      maxStderrBytes: TASK_BRIEF_COMPILER_POLICY.maxStderrBytes,
+      deadlineMs: TASK_BRIEF_COMPILER_POLICY.deadlineMs,
+      idleTimeoutMs: TASK_BRIEF_COMPILER_POLICY.idleTimeoutMs,
+      ...overrides,
+    };
+  }
+
+  function contextWith(env: TaskCompilationCallEnvelope): RunnerCallContext {
+    return {
+      callId: 'spawn-collect-envelope',
+      role: 'planner' as const,
+      backendKind: 'shell' as const,
+      runnerName: 'fixture',
+      envelope: env,
+    };
+  }
+
+  function descendantScript(body: string): string {
+    return [
+      "const { spawn } = require('node:child_process');",
+      "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 60_000)'], { stdio: 'ignore' });",
+      body,
+      'setInterval(() => {}, 60_000);',
+    ].join('');
+  }
+
+  function processIsAbsent(pid: number): boolean {
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch {
+      return true;
+    }
+  }
+
+  afterEach(async () => {
+    await killAllProcesses();
+  });
+
+  itUnix(
+    'tears the tree down on a canonical normalized breach and stays terminally truncated',
+    async () => {
+      const descendantPid = { current: 0 };
+      const env = envelope({ maxNormalizedOutputBytes: 8 * 1024 });
+      const program = descendantScript(
+        `process.stdout.write('descendant:' + child.pid + '\\n');process.stdout.write('x'.repeat(12 * 1024) + '\\n');`,
+      );
+
+      const result = await spawnAndCollect({
+        command: process.execPath,
+        args: ['-e', program],
+        cwd: process.cwd(),
+        callContext: contextWith(env),
+        onText: (text) => {
+          const match = /descendant:(\d+)/.exec(text);
+          if (match?.[1] !== undefined) descendantPid.current = Number.parseInt(match[1], 10);
+        },
+      });
+
+      expect(result).toMatchObject({
+        status: 'truncated',
+        partial: true,
+        error: { code: 'task_compiler_output_limited' },
+      });
+      expect(result.warnings).toContainEqual(
+        expect.objectContaining({ code: 'task_compiler_output_limited' }),
+      );
+      expect(descendantPid.current).toBeGreaterThan(1);
+      expect(processIsAbsent(descendantPid.current)).toBe(true);
+    },
+    30_000,
+  );
+
+  itUnix(
+    'clamps the hard deadline to the canonical envelope and reaps the tree',
+    async () => {
+      const descendantPid = { current: 0 };
+      const events: RunnerCallEvent[] = [];
+      const env = envelope({ deadlineMs: 400 });
+      const program = descendantScript(
+        `process.stdout.write('descendant:' + child.pid + '\\n');setInterval(() => process.stdout.write('chatty\\n'), 2);`,
+      );
+
+      await expect(
+        spawnAndCollect({
+          command: process.execPath,
+          args: ['-e', program],
+          cwd: process.cwd(),
+          callContext: contextWith(env),
+          onText: (text) => {
+            const match = /descendant:(\d+)/.exec(text);
+            if (match?.[1] !== undefined) descendantPid.current = Number.parseInt(match[1], 10);
+          },
+          onCallEvent: (event) => events.push(event),
+        }),
+      ).rejects.toMatchObject({ kind: 'command-timeout' });
+
+      expect(runnerCallErrors(events)).toEqual([expect.objectContaining({ status: 'timeout' })]);
+      expect(descendantPid.current).toBeGreaterThan(1);
+      expect(processIsAbsent(descendantPid.current)).toBe(true);
+    },
+    30_000,
+  );
+
+  itUnix(
+    'clamps the idle watchdog to the canonical envelope idle bound',
+    async () => {
+      const descendantPid = { current: 0 };
+      const events: RunnerCallEvent[] = [];
+      const env = envelope({ idleTimeoutMs: 250 });
+      const program = descendantScript(
+        `process.stdout.write('descendant:' + child.pid + '\\n');setInterval(() => {}, 60_000);`,
+      );
+
+      await expect(
+        spawnAndCollect({
+          command: process.execPath,
+          args: ['-e', program],
+          cwd: process.cwd(),
+          callContext: contextWith(env),
+          onText: (text) => {
+            const match = /descendant:(\d+)/.exec(text);
+            if (match?.[1] !== undefined) descendantPid.current = Number.parseInt(match[1], 10);
+          },
+          onCallEvent: (event) => events.push(event),
+        }),
+      ).rejects.toMatchObject({ kind: 'command-idle-timeout' });
+
+      expect(runnerCallErrors(events)).toEqual([
+        expect.objectContaining({
+          status: 'failed',
+          error: expect.objectContaining({ code: 'runner_idle_timeout' }),
+        }),
+      ]);
+      expect(descendantPid.current).toBeGreaterThan(1);
+      expect(processIsAbsent(descendantPid.current)).toBe(true);
+    },
+    30_000,
+  );
 });

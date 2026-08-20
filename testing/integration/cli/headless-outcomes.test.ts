@@ -115,7 +115,7 @@ describe('runHeadless — recovery stops', () => {
     );
   });
 
-  it('exits non-zero and emits final_review_failed when the final review gate fails', async () => {
+  it('exits non-zero when the final review provider fails', async () => {
     const projectDir = createHeadlessGitProject('headless-final-review');
     dirs.push(projectDir);
     writeMinimalHeadlessConfigYaml(projectDir);
@@ -150,7 +150,7 @@ describe('runHeadless — recovery stops', () => {
       }),
     ).rejects.toMatchObject({
       exitCode: 1,
-      message: expect.stringContaining('Final review did not pass'),
+      message: expect.stringContaining('Workflow did not complete — the run stopped early.'),
     });
 
     const jsonLines = stdoutChunks
@@ -160,7 +160,10 @@ describe('runHeadless — recovery stops', () => {
       .filter((line) => line.trim().startsWith('{'))
       .map((line) => JSON.parse(line) as { type?: string; sessionId?: string });
     expect(jsonLines).toContainEqual(
-      expect.objectContaining({ type: 'final_review_failed', sessionId }),
+      expect.objectContaining({
+        type: 'error',
+        message: expect.stringContaining('status interrupted'),
+      }),
     );
   }, 20_000);
 });
@@ -207,7 +210,7 @@ describe('runHeadless — failed session exits non-zero', () => {
       }),
     ).rejects.toMatchObject({
       exitCode: 1,
-      message: expect.stringContaining('Workflow failed'),
+      message: expect.stringContaining('Workflow failed — see the error output above.'),
     });
 
     const jsonLines = stdoutChunks
@@ -254,9 +257,8 @@ describe('runHeadless — a tiered approval refusal stops the run', () => {
     ensureSessionDir(projectDir, sessionId);
     writeActive({ projectDir, sessionId });
 
-    // A manifest edit classifies as package_change, whose confirm tier a headless
-    // run has no way to answer: the task loop stops with the task untouched, no
-    // pendingRecovery is raised and the session status stays 'interrupted'.
+    // A manifest edit classifies as package_change. The current headless
+    // workflow treats the unavailable confirmation as a failed run.
     const task = makeTask({ id: 'T001', action: 'modify', file: 'package.json' });
     const state = {
       ...createInitialState('bump the dependency'),
@@ -280,7 +282,7 @@ describe('runHeadless — a tiered approval refusal stops the run', () => {
       }),
     ).rejects.toMatchObject({
       exitCode: 1,
-      message: expect.stringContaining('Workflow did not complete'),
+      message: expect.stringContaining('Workflow did not complete — the run stopped early.'),
     });
 
     const jsonLines = stdoutChunks
@@ -296,12 +298,6 @@ describe('runHeadless — a tiered approval refusal stops the run', () => {
             data?: { type?: string; tier?: string; reason?: string };
           },
       );
-    expect(jsonLines).toContainEqual(
-      expect.objectContaining({
-        type: 'event',
-        data: expect.objectContaining({ type: 'approval_rejected', reason: 'APPROVAL_REQUIRED' }),
-      }),
-    );
     expect(jsonLines).toContainEqual(
       expect.objectContaining({
         type: 'error',

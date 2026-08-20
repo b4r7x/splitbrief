@@ -4,14 +4,11 @@ import type { Phase } from '../../core/schemas/enums.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { EventBus } from '../../engine/events/types.js';
 import type { ClearQueueHandler, QueueHandler } from '../../engine/orchestrator/types.js';
-import { transitionAndSave } from '../../engine/orchestrator/state-ops.js';
-import { WORKFLOW_REWIND_ABORT_REASON } from '../../engine/orchestrator/run/workflow.js';
 import type {
   RuntimeCommandContext,
   RuntimeConfigSaveResult,
 } from '../../core/runtime/commands/types.js';
 import { createCommandContext } from '../../core/runtime/commands/context-factory.js';
-import { buildRewindAction } from '../../core/state/build-rewind-action.js';
 import { sessionDir } from '../../core/paths.js';
 import { rebuildRepomap } from '../../engine/codebase/rebuild.js';
 import { writeHandoffPack } from '../../engine/handoff/write.js';
@@ -39,6 +36,8 @@ import type { PreparedExecution } from '../../engine/runners/prepared-execution.
 
 const rpcCommandContextError = {
   noActiveSession: () => error('rpc-command-no-active-session', 'No active session.'),
+  unavailable: (command: 'rewind' | 'task redo') =>
+    error('rpc-command-unavailable', `RPC ${command} is unavailable without a live workflow.`),
 } as const;
 
 export function createRpcCommandContext(opts: {
@@ -59,6 +58,8 @@ export function createRpcCommandContext(opts: {
   abortTurn?: ((reason?: unknown) => void) | undefined;
   bus: EventBus;
   setRewindFeedback?: ((feedback: string | undefined) => void) | undefined;
+  requestRewind?: ((request: { target: 'spec' | 'plan'; comment?: string }) => boolean) | undefined;
+  requestTaskRedo?: ((taskId: string) => boolean) | undefined;
   messages: string[];
   errors: string[];
   pendingQueueDepth: (state: WorkflowState | null) => number;
@@ -177,41 +178,16 @@ export function createRpcCommandContext(opts: {
     },
     getCurrentPhase: opts.getPhase,
     requestRewind: (request) => {
-      const state = opts.getState();
-      const sessionId = opts.getSessionId();
-      if (!state || !sessionId) return false;
-      const persistTranscript = opts.getRunConfig()?.config.workflow.persistTranscript ?? true;
-      const { action, persistedAction, event } = buildRewindAction({
-        request,
-        ref: { projectDir: opts.projectDir, sessionId },
-        state,
-        persistEvent: false,
-        persistTranscript,
-      });
-      if (action.type === 'REWIND_TO_SPEC' || action.type === 'REWIND_TO_PLAN') {
-        opts.setRewindFeedback?.(action.comment);
+      if (opts.requestRewind === undefined) {
+        throw rpcCommandContextError.unavailable('rewind');
       }
-      transitionAndSave({ projectDir: opts.projectDir, sessionId }, state, persistedAction);
-      opts.bus.publish(event);
-      opts.abortTurn?.(WORKFLOW_REWIND_ABORT_REASON);
-      return true;
+      return opts.requestRewind(request);
     },
     requestTaskRedo: (taskId) => {
-      const state = opts.getState();
-      const sessionId = opts.getSessionId();
-      if (!state || !sessionId) return false;
-      const persistTranscript = opts.getRunConfig()?.config.workflow.persistTranscript ?? true;
-      const { persistedAction, event } = buildRewindAction({
-        request: { target: 'task', taskId },
-        ref: { projectDir: opts.projectDir, sessionId },
-        state,
-        persistEvent: false,
-        persistTranscript,
-      });
-      transitionAndSave({ projectDir: opts.projectDir, sessionId }, state, persistedAction);
-      opts.bus.publish(event);
-      opts.abortTurn?.(WORKFLOW_REWIND_ABORT_REASON);
-      return true;
+      if (opts.requestTaskRedo === undefined) {
+        throw rpcCommandContextError.unavailable('task redo');
+      }
+      return opts.requestTaskRedo(taskId);
     },
     requestWorkflowResume: () => false,
     getQueueDepth: () => opts.pendingQueueDepth(opts.getState()),
@@ -257,6 +233,7 @@ export function createRpcCommandContext(opts: {
         ref: prepared.session.ref,
         preparationId: prepared.preparationId,
         gates: prepared.gates,
+        bus: opts.bus,
       });
     },
     exportSession: async (projectDir, sessionId) =>

@@ -6,6 +6,138 @@ For the workflow state machine, see `docs/WORKFLOW.md`. For the event model, see
 
 ---
 
+## v4 contract, evidence, and refusal rules
+
+The persisted workflow contract is `stateVersion: 4`. The fenced state head is
+the authority: state operations rebase complete state, require an expected
+revision, and refuse stale, future, malformed, or unfenced writes. The TUI,
+RPC, IPC-attach, and headless callers share the same controller, projection,
+and command policy in every mode (`instant`, `quick`, `standard`, and
+`speckit`). A read-only observer may inspect a projection but cannot mutate
+state, migrate a session locally, or invoke a provider.
+
+The Evidence Spine persists the Brief, quality report, input receipts,
+attempt/usage receipts, evidence head, outbox, and revisions before publishing
+the projection. Recovery status is one of `checking`, `auto-repairing`,
+`blocked`, `storage-blocked`, `retrying`, `unresolved`, `ready`,
+`readiness-blocked`, or `rejected`. `CONTRACT READY` is a binary contract
+pass. `CONTRACT BLOCKED` and `brief_contract_blocked` are explicit refusal
+states. `READINESS BLOCKED` is a separate diagnostic state and cannot be used
+as a quality override.
+
+The quality score and issue list are diagnostic evidence, not a second approval
+channel. There is one bounded automatic `auto-repair`; after it is consumed,
+the user chooses `retry`, `edit`, or `reject`. Retry is an explicit new
+operation with a fresh base and expected Brief/report revisions; it carries no
+fabricated comment. The command vocabulary also includes `approve`, `comment`,
+`import`, and `resolve-unresolved`; `status` is read-only. No observational
+retry is permitted.
+
+If a provider may have received a request but no final result is known, the
+attempt is `UNRESOLVED`. Inputs and budget/remote usage remain held and
+durable. The user must explicitly resolve it by rebinding while acknowledging
+duplication risk, or by abandoning it; the system never silently retries an
+ambiguous dispatch. These rules preserve evidence even if a transcript or UI
+projection is unavailable.
+
+### Recovery policy matrix
+
+| Mode / surface | Automatic repair | Recovery actions |
+|---|---|---|
+| standard / Speckit initial and their continuations | one bounded repair | retry, edit, reject |
+| instant | one shot only for its existing zero-task failure case; otherwise none | retry, edit, reject |
+| Quick | none | retry, edit, reject |
+| resume / attach | none | restore persisted allowance; make zero calls merely to observe |
+| auto-split review | none | retry, edit, reject |
+| RPC / IPC / headless / native observation | none | zero calls merely to observe |
+
+| Surface | Observation rule |
+|---|---|
+| resume / attach | restore persisted allowance; make zero calls merely to observe |
+| RPC / IPC / headless / native observation | zero calls merely to observe |
+
+### Tiered compiler admission
+
+The Task Brief compiler enforces tiered capability admission before planning dispatch: the tested version yields a full capability receipt; other detected versions of supported backends are admitted with runtime-drift evidence and a run warning; unsupported backends (`copilot`, `aider`, `shell`, `agent`) produce a typed fail-closed refusal (`task_compiler_capability_unsupported`). Runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) are the enforcement surface.
+
+### Three-way disposition
+
+Every new, retry, rewind, and resume planning path returns exactly one of
+`ready-for-tasks`, `parked`, or `terminal` (`PlanningPhaseResult`,
+`src/engine/orchestrator/planning/types.ts`). Readiness is never inferred from
+`!cancelled`, `!failed`, task count, score, artifact existence, phase, or
+process exit. A parked result retains the recovery epoch and revision, evidence
+head, authoritative generation reference if any, allowance state, a durable
+cause, and a non-empty valid action set; it is actionable (`retry`, `edit`,
+`reject` as permitted) and never masquerades as completed or failed work.
+`terminal` covers `cancelled`, `rejected`, and `failed`. Parked and terminal
+results make zero implementer or task-loop calls.
+
+### Permit-gated execution
+
+Only a current execution permit authorizes task execution. Approving the
+briefs issues the permit through the sole owner commit
+(`issueApprovedGenerationPermit`,
+`src/engine/orchestrator/planning/briefs-approval-queue.ts`): the head must
+still carry the exact approved epoch, authority revision, generation, and
+quality digest, and the permit binds execution to that generation. The refusal
+reasons are `no-authority`, `not-ready`, `epoch-mismatch`, `revision-mismatch`,
+`generation-mismatch`, `digest-mismatch`, and `uncommitted`. A repeated
+issuance of the same generation converges idempotently.
+
+At the task boundary `runTasksAndReview` re-reads the owner head and the
+persisted Brief artifacts before any implementer call
+(`revalidatePersistedExecutionPermit`,
+`src/engine/orchestrator/planning/handoff.ts`). A planning result that no
+longer matches the persisted epoch, revision, and generation digests parks or
+terminates instead of executing; a published but unapproved generation is
+explicitly non-executable.
+
+### Recovery budget: provider-dependent cost
+
+Brief recovery admission is budget-policy aware. Without `workflow.maxBudget`,
+missing provider pricing alone does not refuse an otherwise eligible bounded
+recovery operation: admission creates a provider-dependent reservation
+recording the accounting key, runtime and pricing identity, price knownness,
+prompt/input and output bounds, dispatch cap, and operation identity
+(`reserveProviderDependentRecoveryCall`,
+`src/engine/orchestrator/budget/enforce.ts`). USD is absent or unknown, never
+`0` — a provider-dependent reservation is not a zero-cost reservation.
+
+With `maxBudget` configured, recovery refuses before provider dispatch unless
+the operation reservation and the relevant current paid spend are finite
+frozen USD values. Unknown price or spend uses the stable code
+`brief_budget_unknown`; a known finite amount beyond the cap uses
+`brief_budget_exhausted`. Runtime budget tracking pauses on unknown paid usage
+with the coded `tracking_paused` warning instead of treating that usage as
+`$0` — continue only after acknowledging unknown spend or configuring pricing.
+
+### Refusal retention
+
+A pre-acceptance refusal is durable and bounded. It persists the operation and
+intent identity, refusal code and category, cap context, price and spend
+knownness, accounting identity, allowance state, and bounded evidence
+references before returning. Retention is versioned with hard bounds
+(`RECOVERY_REFUSAL_RETENTION`, `src/core/schemas/brief-recovery.ts`): 64
+records and 64 KiB of receipts per current epoch, a 1 KiB receipt bound, a
+4 KiB diagnostic bound, 256 KiB of refusal evidence, and 16 closed-epoch
+summaries of 512 bytes each. Retained identities replay exactly — the same
+intent hash returns the same refusal without a second state or evidence
+advance — and the current projection plus the active operation and
+automatic-repair intents can never be evicted.
+
+A refusal leaves `automaticRepair.eligible` true and `consumed` false with zero
+provider dispatches, so a blocked contract never consumes the repair allowance.
+Refusal reprojects consistently after restart: blocked, with the same durable
+reason and allowed actions, never budget-available and never inferred
+exhausted from unknown pricing. Repeated identical quality failures stop at
+the no-progress threshold of 20 settled attempts; settled attempts are
+retained to 256 and the recovery outbox to 256 entries. If safe retention is
+impossible, the operation fails storage-safe before dispatch rather than
+growing without bound or losing idempotency.
+
+---
+
 ## Promotion and conflict semantics
 
 `gateAndPromoteChangedFiles()` (`src/engine/orchestrator/approval/gate-and-promote.ts`) computes the changed set once per task by diffing the implementer's working directory against its start snapshot, puts it through the tiered approval gate, and promotes the approved set into the user's real project directory.
@@ -32,7 +164,7 @@ Three review gates:
 
 **Plan approval** — Same mechanics as spec approval, applied to the plan. Active by default only in speckit mode. `onApprovalNeeded('plan', filePath)` fires, with the same approve/comment/reject loop.
 
-**Briefs review** — Standard and speckit evaluate Task Brief quality before entering the `reviewing-briefs` phase. A first error-level failure gets one bounded tasks-only regeneration. Passing original or repaired tasks enter review; a second failed report ends the run before briefs approval or implementation. Any error-level issue follows this path, including issues in a non-empty task set. The user reviews `tasks.md` on disk before any code is written. This gate is separate from `workflow.approve`. Before approval, the brief readiness gate (`runBriefReadinessGate()`, `src/engine/orchestrator/planning/brief-readiness-gate.ts`) warns on briefs that overflow the selected worker's context window. It resolves context from the same model cache and detected context length the task-loop router uses at dispatch time, so the gate and the router agree on what fits. The warning never permanently blocks approval: a second identical approval proceeds (see the brief readiness gate section below). A briefs review interrupted by a crash is resumable: `resumeBriefsApproval()` (`src/engine/orchestrator/planning/resume-briefs.ts`) re-opens the same prompt over the persisted `tasks.md`, and approving on resume advances the run to implementing exactly as a first-time approval would.
+**Briefs review** — Standard and speckit evaluate Task Brief quality before entering the `reviewing-briefs` phase. A first error-level failure gets one bounded tasks-only regeneration. Passing original or repaired tasks enter review; a second failed report ends the run before briefs approval or implementation. Any error-level issue follows this path, including issues in a non-empty task set. The user reviews `tasks.md` on disk before any code is written. This gate is separate from `workflow.approve`. Before approval, the brief readiness gate (`runBriefReadinessGate()`, `src/engine/orchestrator/planning/brief-readiness-gate.ts`) warns on briefs that overflow the selected worker's context window. It resolves context from the same model cache and detected context length the task-loop router uses at dispatch time, so the gate and the router agree on what fits. A readiness warning requires re-evaluation or a user edit; a repeated approval does not make `CONTRACT BLOCKED` ready (see the brief readiness gate section below). A briefs review interrupted by a crash is resumable: `resumeBriefsApproval()` (`src/engine/orchestrator/planning/resume-briefs.ts`) re-opens the same prompt over the persisted `tasks.md`, and approving on resume advances the run to implementing exactly as a first-time approval would.
 
 `workflow.approve` controls only the spec and plan document gates:
 
@@ -49,6 +181,8 @@ Each mode has a default. `instant` and `quick` default to `none`. `standard` def
 All three approval gates resume into their own prompt. A session interrupted at `reviewing-spec`, `reviewing-plan`, or `reviewing-briefs` is resumable: `resumeArtifactApproval()` (`src/engine/orchestrator/planning/resume-artifact-approval.ts`) re-opens the spec or plan gate over the persisted `spec.md` / `plan.md`, honouring a `revise` through the planner exactly as on the original turn, and re-derives the effective `workflow.approve` level from the current config — a user who changed it between runs gets the current level. The briefs gate resumes through `resumeBriefsApproval()` as described above.
 
 Approving on resume continues from the persisted artifacts; it never restarts the planning turn. An approved `spec.md` regenerates `plan.md` and `tasks.md` from that spec and moves on to the plan gate; an approved `plan.md` moves on to the briefs gate. A `revise` at either gate rewrites the artifact through the planner, and a revised plan regenerates the Task Briefs it invalidated before the briefs gate opens. The approved artifact is never overwritten by a fresh planner call, and no gate is shown twice.
+
+Approving the briefs issues the execution permit through the sole owner commit only while the persisted head still carries the exact approved epoch, authority revision, generation, and quality digest. A newer epoch or any owner commit in between rewinds or refuses the permit, so a resume approval never grants execution against a generation the persisted head no longer holds (see [Permit-gated execution](#permit-gated-execution)).
 
 ---
 
@@ -121,7 +255,7 @@ Before any code is written, `src/engine/spec/brief-quality.ts` scores each Task 
 
 **Scoring.** `score = 1 - errorCount * 0.2 - warningCount * 0.05`, clamped to [0, 1]. The gate passes only when `errorCount === 0` -- warnings lower the score but don't block.
 
-The report is written to the session folder as `brief-quality.json`. If it passes, `brief_quality_passed` publishes and the workflow continues. If it fails, `brief_quality_failed` publishes and the workflow blocks.
+The report is written to the session folder as `brief-quality.json`. If it passes, `brief_quality_passed` publishes and the workflow continues with `CONTRACT READY`. If it fails, `brief_quality_failed` publishes, `brief_contract_blocked` is recorded, and the workflow refuses the transition. The score is diagnostic and never supplies a quality override.
 
 For `standard` and `speckit`, an initial error-level report triggers one bounded tasks-only regeneration before briefs review. If the repaired tasks pass, they enter review. If the second report still has any error-level issue, planning fails closed without briefs approval, `reviewing-briefs`, or implementation. This applies to every error-level issue, not only `empty_task_list`.
 
@@ -135,7 +269,7 @@ Alongside the quality gate, the brief readiness gate (`runBriefReadinessGateAndR
 
 The report is written to the session folder as `brief-readiness.json`. If it passes, `brief_readiness_passed` publishes and the workflow continues. If it fails, `brief_readiness_blocked` publishes carrying every blocked task id and every distinct block kind.
 
-The block is advisory, not a permanent stop. The briefs approval loop (`runBriefsApprovalLoop()`, `src/engine/orchestrator/planning/briefs-approval-loop.ts`) treats a blocked report as a warning that names every blocked task and offers an override: approving again without editing `tasks.md` confirms the override, `brief-readiness.json` is rewritten with an `override` field (`at`, `blockedTaskIds`, `kinds`), and the workflow proceeds. Editing or revising `tasks.md` between two approvals changes the briefs fingerprint and cancels the pending offer, so a confirmation is never granted against stale briefs. The review loop also terminates: a failure that repeats unchanged for `MAX_UNPRODUCTIVE_BRIEF_REVIEW_ATTEMPTS` (20) consecutive attempts ends the review with a `brief_review_no_progress` error and rejects the briefs instead of re-prompting forever. That cap covers the readiness, edit, and unreadable-`tasks.md` paths. Quality failures caused by edits in an already-valid review are reported and re-prompted; the invalid edits are never overwritten. Initial quality failures take the pre-review fail-closed path described above.
+The block is advisory evidence, not permission to bypass the contract. A `READINESS BLOCKED` report must be re-evaluated after a user edit or a routing/configuration change; a repeated approval does not grant a quality override. Editing or revising `tasks.md` changes the briefs fingerprint, so a decision is never granted against stale briefs. The review loop also terminates: a failure that repeats unchanged for `MAX_UNPRODUCTIVE_BRIEF_REVIEW_ATTEMPTS` (20) consecutive attempts ends the review with a `brief_review_no_progress` error and rejects the briefs instead of re-prompting forever. That cap covers the readiness, edit, and unreadable-`tasks.md` paths. Quality failures caused by edits in an already-valid review are reported and re-prompted; the invalid edits are never overwritten. Initial quality failures take the pre-review fail-closed path described above.
 
 ---
 

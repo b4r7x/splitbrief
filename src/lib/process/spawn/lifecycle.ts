@@ -273,6 +273,9 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
         if (unregister) unregisterProcess(proc);
         reject(err);
       };
+      // A reaping failure is the one outcome that must replace the first cause:
+      // the tree could not be verified dead, and the caller has to know that
+      // rather than trusting a terminal classification.
       void killProcess(proc, { group: opts.detached ?? false }).then(
         () =>
           settleTermination(
@@ -368,22 +371,23 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
     stdout.on('data', (chunk: string) => {
       partialStdout.append(chunk);
       outputBytesSeen += Buffer.byteLength(chunk, 'utf8');
+      if (!noteIdleOutput()) return;
+      // The recording callback runs before the byte-budget kill so the
+      // recorder's cumulative accounting observes the chunk and its own
+      // envelope latch classifies the breach before the backstop fires.
+      if (!invokeGuarded(() => opts.onStdout(chunk))) return;
       if (outputBudgetBytes !== undefined && outputBytesSeen >= outputBudgetBytes) {
         terminateFatal({ state: 'output-budget-breach', remediation: '' });
-        return;
       }
-      if (!noteIdleOutput()) return;
-      invokeGuarded(() => opts.onStdout(chunk));
     });
     stderr.on('data', (chunk: string) => {
       partialStderr.append(chunk);
       outputBytesSeen += Buffer.byteLength(chunk, 'utf8');
+      if (!noteIdleOutput()) return;
+      if (!invokeGuarded(() => opts.onStderr(chunk))) return;
       if (outputBudgetBytes !== undefined && outputBytesSeen >= outputBudgetBytes) {
         terminateFatal({ state: 'output-budget-breach', remediation: '' });
-        return;
       }
-      if (!noteIdleOutput()) return;
-      invokeGuarded(() => opts.onStderr(chunk));
     });
 
     proc.on('error', (err: NodeJS.ErrnoException) => {

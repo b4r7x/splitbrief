@@ -167,21 +167,22 @@ describe('same target runner rebuilds', () => {
     expect(rebuilt).toEqual(testCase.existing);
   });
 
-  it.each(
-    sameTargetCases,
-  )('changes only the model for a complete $role $existing.kind config', (testCase) => {
-    const model = 'same-target-model-override';
-    const rebuilt =
-      testCase.role === 'planner'
-        ? applyCLIOverrides(makeConfig({ planner: testCase.existing }), {
-            planner: { model },
-          }).planner
-        : applyCLIOverrides(makeConfig({ implementer: testCase.existing }), {
-            implementer: { model },
-          }).implementer;
+  it.each(sameTargetCases)(
+    'changes only the model for a complete $role $existing.kind config',
+    (testCase) => {
+      const model = 'same-target-model-override';
+      const rebuilt =
+        testCase.role === 'planner'
+          ? applyCLIOverrides(makeConfig({ planner: testCase.existing }), {
+              planner: { model },
+            }).planner
+          : applyCLIOverrides(makeConfig({ implementer: testCase.existing }), {
+              implementer: { model },
+            }).implementer;
 
-    expect(rebuilt).toEqual({ ...testCase.existing, model });
-  });
+      expect(rebuilt).toEqual({ ...testCase.existing, model });
+    },
+  );
 });
 
 describe('applyCLIOverrides — unusable provider overrides', () => {

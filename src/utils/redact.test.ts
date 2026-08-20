@@ -314,14 +314,10 @@ describe('isCredentialEnvironmentName', () => {
     expect(isCredentialEnvironmentName(name)).toBe(true);
   });
 
-  it.each([
-    'PATH',
-    'HOME',
-    'TERM',
-    'KEYBOARD_LAYOUT',
-    'MONKEY',
-    'AUTHOR',
-  ])('leaves %s alone', (name) => {
-    expect(isCredentialEnvironmentName(name)).toBe(false);
-  });
+  it.each(['PATH', 'HOME', 'TERM', 'KEYBOARD_LAYOUT', 'MONKEY', 'AUTHOR'])(
+    'leaves %s alone',
+    (name) => {
+      expect(isCredentialEnvironmentName(name)).toBe(false);
+    },
+  );
 });

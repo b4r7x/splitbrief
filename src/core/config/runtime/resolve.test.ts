@@ -99,14 +99,13 @@ describe('blocksSpecGate / blocksPlanGate', () => {
     { description: 'plan', input: 'plan' as const, expectedSpec: false, expectedPlan: true },
     { description: 'all', input: 'all' as const, expectedSpec: true, expectedPlan: true },
     { description: 'default', input: 'default' as const, expectedSpec: false, expectedPlan: false },
-  ])('$description -> spec=$expectedSpec plan=$expectedPlan', ({
-    input,
-    expectedSpec,
-    expectedPlan,
-  }) => {
-    expect(blocksSpecGate(input)).toBe(expectedSpec);
-    expect(blocksPlanGate(input)).toBe(expectedPlan);
-  });
+  ])(
+    '$description -> spec=$expectedSpec plan=$expectedPlan',
+    ({ input, expectedSpec, expectedPlan }) => {
+      expect(blocksSpecGate(input)).toBe(expectedSpec);
+      expect(blocksPlanGate(input)).toBe(expectedPlan);
+    },
+  );
 });
 
 describe('resolveEffortLevel', () => {

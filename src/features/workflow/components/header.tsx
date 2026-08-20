@@ -63,16 +63,17 @@ function ElapsedClock({
   durationMs: number | null;
 }) {
   const t = useTheme();
+  const status = lifecycleStore.use((s) => s.status);
   const mountedAtMs = Date.parse(mountedAt);
   const startedAt = lifecycleStartedAt ?? (Number.isFinite(mountedAtMs) ? mountedAtMs : Date.now());
   const [elapsed, setElapsed] = useState(() => formatElapsed(startedAt, endedAt, durationMs));
 
   useEffect(() => {
     setElapsed(formatElapsed(startedAt, endedAt, durationMs));
-    if (endedAt != null || durationMs != null) return;
+    if (endedAt != null || durationMs != null || status !== 'running') return;
     const id = setInterval(() => setElapsed(formatElapsed(startedAt, null, null)), 1000);
     return () => clearInterval(id);
-  }, [startedAt, endedAt, durationMs]);
+  }, [startedAt, endedAt, durationMs, status]);
 
   return <Text color={t.textDim}>{elapsed}</Text>;
 }

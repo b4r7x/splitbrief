@@ -255,7 +255,7 @@ describe('home navigation flow (through real App)', () => {
     await flushEffects();
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
-      expect(sessionSelectStore.get().error).toContain('missing or invalid');
+      expect(sessionSelectStore.get().error).toContain('usable owner receipt');
       expect(routerStore.get().screen).toBe('home');
     });
 

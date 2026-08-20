@@ -28,15 +28,15 @@ import {
   makePlanner,
 } from '#testing/helpers/orchestrator-factories.js';
 import {
-  makeWorkflowMetadata,
-  TEST_WORKFLOW_SINKS,
-} from '#testing/helpers/orchestrator-context.js';
-import {
   auto,
   makePassingTask,
   REAL_TASKS_MD,
   setupProject,
 } from '#testing/helpers/planning-phase.js';
+import {
+  makeWorkflowMetadata,
+  TEST_WORKFLOW_SINKS,
+} from '#testing/helpers/orchestrator-context.js';
 
 const Q1_MARKER =
   '<!-- Q:{"id":"q1","type":"choice","text":"Which auth approach should the module use?","options":["jwt","session"]} -->';
@@ -49,6 +49,12 @@ const SEVEN_MARKERS = Array.from(
 );
 const ANSWER = 'use-jwt-for-auth';
 const FLAVORS = ['conversational', 'command'] as const;
+const PRODUCER_HANDOFF_PHASE: Record<WorkflowMode, WorkflowState['phase']> = {
+  instant: 'idle',
+  quick: 'idle',
+  standard: 'reviewing-plan',
+  speckit: 'analyzing',
+};
 
 let dirs: string[] = [];
 afterEach(() => {
@@ -200,8 +206,8 @@ function modeSuite(mode: WorkflowMode): void {
 
     expect(onQuestionAsked).toHaveBeenNthCalledWith(1, expect.objectContaining({ id: 'q1' }), 1, 2);
     expect(onQuestionAsked).toHaveBeenNthCalledWith(2, expect.objectContaining({ id: 'q2' }), 2, 2);
-    expect(result.cancelled).toBe(false);
-    expect(result.state.phase).toBe('implementing');
+    expect(result.disposition).toBe('parked');
+    expect(result.state.phase).toBe(PRODUCER_HANDOFF_PHASE[mode]);
     expectMarkerFreePlannerText(events);
   });
 
@@ -212,8 +218,8 @@ function modeSuite(mode: WorkflowMode): void {
     const { result, events } = await runMode({ mode, planner, onQuestionAsked });
 
     expect(onQuestionAsked).toHaveBeenCalledTimes(5);
-    expect(result.cancelled).toBe(false);
-    expect(result.state.phase).toBe('implementing');
+    expect(result.disposition).toBe('parked');
+    expect(result.state.phase).toBe(PRODUCER_HANDOFF_PHASE[mode]);
     expectMarkerFreePlannerText(events);
   });
 
@@ -226,7 +232,7 @@ function modeSuite(mode: WorkflowMode): void {
 
     const first = await runMode({ mode, planner, onQuestionAsked });
 
-    expect(first.result.cancelled).toBe(false);
+    expect(first.result.disposition).toBe('parked');
     const specContent = readFileSync(
       join(sessionDir(first.projectDir, first.sessionId), SPEC_FILE),
       'utf8',
@@ -246,7 +252,7 @@ function modeSuite(mode: WorkflowMode): void {
         state: secondState,
         feature: 'follow-up tweak',
       });
-      expect(second.result.cancelled).toBe(false);
+      expect(second.result.disposition).toBe('parked');
       expect(planningInputs).toHaveLength(2);
       expect(planningInputs[0]).not.toContain(ANSWER);
       expect(planningInputs[1]).toContain(ANSWER);
@@ -262,8 +268,8 @@ function modeSuite(mode: WorkflowMode): void {
     const { result, events } = await runMode({ mode, planner, onQuestionAsked });
 
     expect(onQuestionAsked).toHaveBeenCalledTimes(2);
-    expect(result.cancelled).toBe(false);
-    expect(result.state.phase).toBe('implementing');
+    expect(result.disposition).toBe('parked');
+    expect(result.state.phase).toBe(PRODUCER_HANDOFF_PHASE[mode]);
     expectMarkerFreePlannerText(events);
   });
 }

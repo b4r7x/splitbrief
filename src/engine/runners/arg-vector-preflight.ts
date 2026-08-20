@@ -1,3 +1,6 @@
+import { chmod, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Config } from '../../core/schemas/config.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { ReadinessCheck } from '../../core/readiness/types.js';
@@ -59,6 +62,105 @@ function emittedLongFlags(argv: readonly string[]): string[] {
     if (match !== null) flags.push(match[0].toLowerCase());
   }
   return flags;
+}
+
+/**
+ * Authority-bearing long-flag stems (REQ-018): role, permissions,
+ * sandbox/containment, cwd or added roots, configuration sources, tools,
+ * hooks/plugins/MCP, session selection, prompt transport, output
+ * parser/format, terminal protocol, final-output path, updates, and approval
+ * behavior. A flag whose normalized name equals a stem or carries it as a
+ * dash-delimited segment is a candidate override; SPLITBRIEF owns these fields
+ * and user arguments cannot.
+ */
+const AUTHORITY_LONG_ARGUMENT_STEMS = Object.freeze([
+  'role',
+  'agent',
+  'persona',
+  'subagent',
+  'permission',
+  'dangerously',
+  'bypass',
+  'sandbox',
+  'cwd',
+  'cd',
+  'dir',
+  'root',
+  'config',
+  'settings',
+  'profile',
+  'rc',
+  'tool',
+  'toolset',
+  'hook',
+  'plugin',
+  'mcp',
+  'session',
+  'resume',
+  'continue',
+  'fork',
+  'transport',
+  'stdin',
+  'pipe',
+  'print',
+  'format',
+  'parser',
+  'json',
+  'terminal',
+  'tty',
+  'pty',
+  'output',
+  'out-file',
+  'artifact',
+  'log-file',
+  'update',
+  'upgrade',
+  'approval',
+  'allow',
+  'yes',
+  'accept',
+  'ask',
+] as const);
+
+/** Authority-bearing short flags shared by the admitted CLI families. */
+const AUTHORITY_SHORT_ARGUMENTS = new Set(['-c', '-p', '-r', '-y']);
+
+function longFlagName(argument: string): string | null {
+  if (!argument.startsWith('--') || argument.length === 2) return null;
+  return argument.slice(2).split('=', 1)[0]?.toLowerCase() ?? null;
+}
+
+function isAuthorityLongFlag(name: string): boolean {
+  return AUTHORITY_LONG_ARGUMENT_STEMS.some(
+    (stem) => name === stem || name.startsWith(`${stem}-`) || name.endsWith(`-${stem}`),
+  );
+}
+
+/**
+ * Semantic override rejection over user-configured arguments (REQ-018): a
+ * configured flag that can override role, permissions, sandbox, cwd or added
+ * roots, configuration sources, tools, hooks/plugins/MCP, session selection,
+ * prompt transport, output parser/format, terminal protocol, final-output
+ * path, updates, or approval behavior is reported before any process spawns.
+ * Long forms, `--flag=value` attached forms, short forms, and attached short
+ * forms are all scanned; a positional separator (`--`) does not hide a flag
+ * from the scan. The adapter's own emitted vector is adapter-owned and never
+ * reaches this check.
+ */
+export function semanticConfiguredArgViolations(args: readonly string[]): readonly string[] {
+  const violations: string[] = [];
+  for (const argument of args) {
+    const name = longFlagName(argument);
+    if (name !== null) {
+      if (isAuthorityLongFlag(name)) violations.push(argument.split('=', 1)[0] ?? argument);
+      continue;
+    }
+    if (argument.startsWith('-') && argument !== '-' && !argument.startsWith('--')) {
+      const short = argument.slice(0, 2).toLowerCase();
+      if (AUTHORITY_SHORT_ARGUMENTS.has(short)) violations.push(short);
+    }
+  }
+  return violations;
 }
 
 function advertisedLongFlags(helpText: string): Set<string> {
@@ -165,6 +267,8 @@ async function buildPreflightCheck(
   runner: PreflightRunner,
   runHelp: (tool: CliToolId, argv: readonly string[]) => Promise<string | null>,
 ): Promise<ReadinessCheck> {
+  const semantic = semanticConfiguredArgViolations(runner.args ?? []);
+  if (semantic.length > 0) return semanticOverrideCheck(runner, semantic);
   const argVectors = emittedArgVectors(runner);
   const unsupported = new Set<string>();
   const deprecated = new Set<string>();
@@ -274,9 +378,38 @@ function argVectorCheckId(tool: CliToolId, role: ArgVectorPreflightRole): string
   return `runners.cli.${tool}.arg-vector.${role}`;
 }
 
+/**
+ * A configured arg vector that overrides authority-bearing semantics refuses
+ * before any help probe or task spawn (REQ-018): the rejection is the check,
+ * and no subprocess runs for the runner.
+ */
+function semanticOverrideCheck(
+  runner: PreflightRunner,
+  violations: readonly string[],
+): ReadinessCheck {
+  const descriptor = CLI_TOOL_CATALOG[runner.tool];
+  return {
+    id: argVectorCheckId(runner.tool, runner.role),
+    severity: 'blocker',
+    summary: `${descriptor.displayName} ${runner.role} configuration overrides authority SPLITBRIEF owns: ${violations.join(', ')}.`,
+    details: [
+      `Configured args: ${(runner.args ?? []).join(' ')}`,
+      'SPLITBRIEF owns role, permissions, sandbox/containment, cwd and added roots, configuration sources, tools, hooks/plugins/MCP, session selection, prompt transport, output parser/format, terminal protocol, final-output path, updates, and approval behavior; user arguments cannot override them.',
+    ],
+    fix: 'Remove the authority-bearing flags from the runner configuration.',
+    nextAction: 'fix-config',
+    metadata: {
+      tool: runner.tool,
+      role: runner.role,
+      semantic: [...violations],
+      unsupported: [],
+      deprecated: [],
+    },
+  };
+}
+
 type HelpInvocation = Readonly<{
   executablePath: string;
-  cwd: string;
   env: NodeJS.ProcessEnv;
 }>;
 
@@ -298,12 +431,20 @@ async function resolveHelpInvocation(
     });
     const env = createSanitizedChildEnv(process.env);
     env.PATH = await sanitizedRuntimePath(projectDir);
-    return { executablePath: resolved.executable.path, cwd: projectDir, env };
+    return { executablePath: resolved.executable.path, env };
   } catch {
     return null;
   }
 }
 
+/**
+ * The comparison text is every help the binary itself prints for this argv:
+ * the top-level help plus the subcommand's, joined. A single argv legitimately
+ * mixes both scopes — Codex 0.147 takes `--sandbox` and `--ask-for-approval`
+ * only before `exec`, and `--json` only after it — so scoring one help against
+ * the other and keeping the winner reported the loser's flags as unsupported
+ * and blocked a run the binary accepts.
+ */
 function defaultRunHelp(projectDir: string) {
   const helpTexts = new Map<string, Promise<string | null>>();
   const helpFor = (tool: CliToolId, subcommand?: string): Promise<string | null> => {
@@ -321,10 +462,7 @@ function defaultRunHelp(projectDir: string) {
     if (subcommand === null) return topLevel;
     const subcommandHelp = await helpFor(tool, subcommand);
     if (subcommandHelp === null) return topLevel;
-    return advertisedEmittedFlagCount(subcommandHelp, argv) >=
-      advertisedEmittedFlagCount(topLevel, argv)
-      ? subcommandHelp
-      : topLevel;
+    return `${topLevel}\n${subcommandHelp}`;
   };
 }
 
@@ -335,11 +473,20 @@ async function fetchHelp(
 ): Promise<string | null> {
   const invocation = await resolveHelpInvocation(tool, projectDir);
   if (invocation === null) return null;
-  return runHelpCommand(invocation, subcommand);
+  // The help probe runs in a disposable sealed stage, never in the project:
+  // a read-only staged probe cannot observe or write project state.
+  const stageDir = await mkdtemp(join(tmpdir(), 'splitbrief-help-'));
+  try {
+    await chmod(stageDir, 0o500);
+    return await runHelpCommand(invocation, stageDir, subcommand);
+  } finally {
+    await rm(stageDir, { recursive: true, force: true });
+  }
 }
 
 async function runHelpCommand(
   invocation: HelpInvocation,
+  cwd: string,
   subcommand?: string | undefined,
 ): Promise<string | null> {
   const args = subcommand === undefined ? ['--help'] : [subcommand, '--help'];
@@ -347,7 +494,7 @@ async function runHelpCommand(
     const result = await spawnWithTimeout({
       command: invocation.executablePath,
       args,
-      cwd: invocation.cwd,
+      cwd,
       env: invocation.env,
       timeout: HELP_TIMEOUT_MS,
       onProgress: () => undefined,
@@ -404,9 +551,4 @@ function commandNames(helpText: string, command: string): Set<string> {
     names.add(name.toLowerCase());
   }
   return names;
-}
-
-function advertisedEmittedFlagCount(helpText: string, argv: readonly string[]): number {
-  const advertised = advertisedLongFlags(helpText);
-  return emittedLongFlags(argv).filter((flag) => advertised.has(flag)).length;
 }

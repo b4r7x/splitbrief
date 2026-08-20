@@ -1,4 +1,5 @@
 import type { Attachment } from '../../core/schemas/attachment.js';
+import type { Task } from '../../core/schemas/task.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type {
@@ -7,7 +8,10 @@ import type {
   PlannerCallbacks,
   PhaseResult,
   PriorMessage,
+  PlannerArtifactLogicalName,
+  PlannerInvokeResult,
 } from './types.js';
+import { normalizePlannerPhase } from './normalize.js';
 import { RESEARCH_FILE, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
 import { buildResearchPrompt } from '../spec/prompts/research.js';
 import { buildSpecPrompt } from '../spec/prompts/spec.js';
@@ -16,13 +20,17 @@ import { buildTasksPrompt } from '../spec/prompts/tasks.js';
 import {
   buildProjectLanguageContext,
   extractLanguageFromResearch,
+  type LanguageContext,
 } from '../spec/prompts/language-context.js';
 import { parseTasksStrict } from '../spec/tasks/parse.js';
+import { compileTaskBriefs } from '../spec/tasks/compiler.js';
 import { buildProjectContextMarkdown } from './context.js';
 import { accumulateTokenUsage } from '../calls/usage.js';
 import { toTokenDelta } from '../calls/projection.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
-import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
+import type { RunnerCallContext } from '../calls/types.js';
+import type { TaskDispatchLedger } from '../calls/dispatch-ledger.js';
+import type { PreparedPlannerInvocation } from '../runners/types.js';
 import { requireCompletedCall } from './require-completed-call.js';
 import { formatRepoMapBlock, prepareInvokeArgs } from './single-phase.js';
 import { createPlannerCallContext } from './call-context.js';
@@ -41,17 +49,21 @@ type MultiPhaseConfig = {
     images?: Attachment[] | undefined;
     artifactFile?: string | undefined;
     signal?: AbortSignal | undefined;
-  }) => Promise<RunnerCallResult>;
+  }) => Promise<PlannerInvokeResult>;
   backendKind?: RunnerCallContext['backendKind'];
   runnerName?: string | undefined;
   model?: string | undefined;
-  readPhaseOutput?: (
-    filename: string,
-    resultText: string,
-    projectDir: string,
-    sessionId?: string,
-  ) => string;
   consumesPriorMessages?: boolean;
+  /**
+   * Deterministic Task compiler wiring. When present, standard/speckit Task
+   * production runs through the compiler's detached fresh batches instead of
+   * one legacy tasks prompt. The ledger is claimed immediately before every
+   * batch invoke; detached batches never touch workflow session callbacks.
+   */
+  compiler?: Readonly<{
+    invocation: PreparedPlannerInvocation;
+    ledger: TaskDispatchLedger;
+  }>;
 };
 
 const PHASE_MAP: Partial<Record<string, Phase>> = {
@@ -79,7 +91,7 @@ export async function runMultiPhasePlanning(
   async function runPhase(
     phase: PlannerArtifactPhase,
     prompt: string,
-    filename: string,
+    filename: PlannerArtifactLogicalName,
   ): Promise<string> {
     const plannerPhase = PHASE_MAP[phase];
     if (plannerPhase) callbacks.onPhase?.(plannerPhase);
@@ -104,7 +116,7 @@ export async function runMultiPhasePlanning(
     });
 
     const callContext = createPlannerCallContext(config, 'planner');
-    let result: RunnerCallResult;
+    let result: PlannerInvokeResult;
     try {
       result = requireCompletedCall(
         await config.invokePlan({
@@ -138,15 +150,102 @@ export async function runMultiPhasePlanning(
     buffer.flush();
     const usageDelta = toTokenDelta(result.usage);
     if (usageDelta) usage = accumulateTokenUsage(usage, usageDelta);
-    const artifactText = config.readPhaseOutput
-      ? config.readPhaseOutput(filename, result.text, projectDir, callbacks.sessionId)
-      : result.text;
-    const rawOutput = artifactText !== result.text ? result.text : undefined;
+    const artifactText = result.text;
     if (phase === 'specifying' || phase === 'planning') {
       admitPlanningArtifact({ phase, filename, text: artifactText });
     }
-    phases.push({ text: artifactText, filename, rawOutput });
+    phases.push(
+      normalizePlannerPhase({
+        result,
+        callContext,
+        logicalName: filename,
+        text: artifactText,
+      }),
+    );
     return artifactText;
+  }
+
+  async function runTasksPhase(input: {
+    spec: string;
+    plan: string;
+    languageContext: LanguageContext;
+  }): Promise<{ tasks: Task[] }> {
+    if (config.compiler === undefined) {
+      const tasksMarkdown = await runPhase(
+        'generating-tasks',
+        buildTasksPrompt(input.spec, input.plan, input.languageContext),
+        TASKS_FILE,
+      );
+      return { tasks: parseTasksStrict(tasksMarkdown, callbacks.onWarning) };
+    }
+    callbacks.onPhase?.('planning');
+    const compiler = config.compiler;
+    let batchUsage: TokenDelta | null = null;
+    const candidate = await compileTaskBriefs({
+      inputs: {
+        spec: input.spec,
+        plan: input.plan,
+        languageContext: input.languageContext.language,
+      },
+      invocation: compiler.invocation,
+      ledger: compiler.ledger,
+      dispatch: async ({ attemptId, batch, sessionScope, ledger }) => {
+        const claim = ledger.claimDispatch(attemptId);
+        if (claim.kind === 'refused') {
+          return {
+            callId: attemptId,
+            attemptId,
+            role: 'planner',
+            backendKind: config.backendKind ?? 'cli',
+            status: 'refused',
+            terminalStatus: 'refused',
+            failureCode: 'task_compiler_dispatch_limit',
+            error: {
+              code: 'task_compiler_dispatch_limit',
+              message: `The task dispatch ceiling is refused (${claim.dispatchCount}/${claim.dispatchLimit}).`,
+            },
+            partial: false,
+            startedAt: 0,
+            endedAt: 0,
+            durationMs: 0,
+            text: '',
+            usage: null,
+            nativeSessionId: null,
+            toolUses: [],
+            artifacts: [],
+            warnings: [],
+          };
+        }
+        const result = await config.invokePlan({
+          prompt: batch.prompt,
+          projectDir,
+          callContext: {
+            ...createPlannerCallContext(
+              {
+                transport: compiler.invocation.transport,
+                sessionScope,
+                envelope: batch.envelope,
+                ...(config.backendKind !== undefined && { backendKind: config.backendKind }),
+                ...(config.runnerName !== undefined && { runnerName: config.runnerName }),
+                ...(config.model !== undefined && { model: config.model }),
+              },
+              'planner',
+            ),
+            callId: attemptId,
+            attemptId,
+          },
+          callbacks: { onOutput: () => {} },
+          artifactFile: TASKS_FILE,
+          signal: callbacks.signal,
+        });
+        const usageDelta = toTokenDelta(result.usage);
+        if (usageDelta) batchUsage = accumulateTokenUsage(batchUsage, usageDelta);
+        return result;
+      },
+    });
+    if (batchUsage) usage = accumulateTokenUsage(usage, batchUsage);
+    for (const artifact of candidate.artifacts) phases.push({ artifact });
+    return { tasks: [...candidate.merge.tasks] };
   }
 
   const research = await runPhase(
@@ -173,13 +272,7 @@ export async function runMultiPhasePlanning(
     ),
     PLAN_FILE,
   );
-  const tasksMarkdown = await runPhase(
-    'generating-tasks',
-    buildTasksPrompt(spec, plan, languageContext),
-    TASKS_FILE,
-  );
-
-  const tasks = parseTasksStrict(tasksMarkdown, callbacks.onWarning);
+  const { tasks } = await runTasksPhase({ spec, plan, languageContext });
 
   return { spec, plan, tasks, usage, phases };
 }

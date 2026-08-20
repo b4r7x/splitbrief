@@ -467,61 +467,61 @@ describe('createMetadataProvider', () => {
 });
 
 describe('metadata provider cancellation', () => {
-  it.each([
-    'model IDs',
-    'model metadata',
-  ] as const)('aborts real local HTTP work for %s promptly without returning a late result', async (method) => {
-    const requestStarted = Promise.withResolvers<void>();
-    const requestAborted = Promise.withResolvers<void>();
-    const socketClosed = Promise.withResolvers<void>();
-    const server = http.createServer((request) => {
-      request.once('aborted', () => requestAborted.resolve());
-      request.socket.once('close', () => socketClosed.resolve());
-      requestStarted.resolve();
-    });
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const address = server.address();
-    if (address === null || typeof address === 'string') {
-      throw new Error('Expected a TCP provider test server address.');
-    }
-    const baseURL = `http://127.0.0.1:${address.port}/v1`;
-
-    try {
-      const provider = createMetadataProvider({
-        name: 'local-cancellation',
-        defaultBaseURL: baseURL,
-        envKeyName: '',
-        isLocal: true,
-        schema: z.object({ id: z.string() }),
-        fallback: (id) => ({ id }),
-        endpointPolicy: { kind: 'loopback', defaultBaseURL: baseURL },
+  it.each(['model IDs', 'model metadata'] as const)(
+    'aborts real local HTTP work for %s promptly without returning a late result',
+    async (method) => {
+      const requestStarted = Promise.withResolvers<void>();
+      const requestAborted = Promise.withResolvers<void>();
+      const socketClosed = Promise.withResolvers<void>();
+      const server = http.createServer((request) => {
+        request.once('aborted', () => requestAborted.resolve());
+        request.socket.once('close', () => socketClosed.resolve());
+        requestStarted.resolve();
       });
-      const controller = new AbortController();
-      const pending =
-        method === 'model IDs'
-          ? provider.listModels({ signal: controller.signal })
-          : provider.listModelsWithMetadata({ signal: controller.signal });
-      let published = false;
-      void pending.then(
-        () => {
-          published = true;
-        },
-        () => undefined,
-      );
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      const address = server.address();
+      if (address === null || typeof address === 'string') {
+        throw new Error('Expected a TCP provider test server address.');
+      }
+      const baseURL = `http://127.0.0.1:${address.port}/v1`;
 
-      await requestStarted.promise;
-      const abortedAt = Date.now();
-      controller.abort();
+      try {
+        const provider = createMetadataProvider({
+          name: 'local-cancellation',
+          defaultBaseURL: baseURL,
+          envKeyName: '',
+          isLocal: true,
+          schema: z.object({ id: z.string() }),
+          fallback: (id) => ({ id }),
+          endpointPolicy: { kind: 'loopback', defaultBaseURL: baseURL },
+        });
+        const controller = new AbortController();
+        const pending =
+          method === 'model IDs'
+            ? provider.listModels({ signal: controller.signal })
+            : provider.listModelsWithMetadata({ signal: controller.signal });
+        let published = false;
+        void pending.then(
+          () => {
+            published = true;
+          },
+          () => undefined,
+        );
 
-      await expect(pending).rejects.toThrow(/abort/i);
-      await waitForPromptHttpRelease(requestAborted.promise, socketClosed.promise);
-      expect(Date.now() - abortedAt).toBeLessThan(REAL_HTTP_RELEASE_DEADLINE_MS);
-      expect(published).toBe(false);
-    } finally {
-      server.closeAllConnections();
-      if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
-    }
-  });
+        await requestStarted.promise;
+        const abortedAt = Date.now();
+        controller.abort();
+
+        await expect(pending).rejects.toThrow(/abort/i);
+        await waitForPromptHttpRelease(requestAborted.promise, socketClosed.promise);
+        expect(Date.now() - abortedAt).toBeLessThan(REAL_HTTP_RELEASE_DEADLINE_MS);
+        expect(published).toBe(false);
+      } finally {
+        server.closeAllConnections();
+        if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    },
+  );
 });
 
 describe('metadata provider offering billing metadata', () => {

@@ -8,7 +8,9 @@ import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { error } from '../../../utils/error.js';
-import { addUsageAndSave } from '../state-ops.js';
+import { addUsageAndSave, readWorkflowStateHead } from '../state-ops.js';
+import { attachWorkflowAuthority } from '../run/init.js';
+import type { StateAuthorityReceipt } from '../../../core/state/types.js';
 import { handlePlanningFailure } from './failure.js';
 
 let dirs: string[] = [];
@@ -24,6 +26,23 @@ function setupProject(): { projectDir: string; sessionId: string } {
   const sessionId = 'sess-planning-failure';
   ensureSessionDir(projectDir, sessionId);
   return { projectDir, sessionId };
+}
+
+function authorityForPersistedState(projectDir: string, sessionId: string): StateAuthorityReceipt {
+  const head = readWorkflowStateHead({ projectDir, sessionId });
+  if (head === null) throw new Error('Expected a persisted workflow state head.');
+  return {
+    kind: 'usable',
+    sessionId,
+    ownerId: head.state.stateFence?.ownerId ?? 'initial',
+    pid: process.pid,
+    processStart: 'planning-failure-test-process',
+    runId: 'planning-failure-test-run',
+    acquisitionId: 'planning-failure-test-acquisition',
+    fence: head.state.stateFence?.token ?? 0,
+    stateRevision: head.state.stateRevision ?? 0,
+    stateDigest: head.digest,
+  };
 }
 
 describe('handlePlanningFailure', () => {
@@ -67,15 +86,18 @@ describe('handlePlanningFailure', () => {
     };
     saveState({ projectDir, sessionId }, persistedState);
 
+    const wctx = makeWctx({ projectDir, sessionId });
+    attachWorkflowAuthority(wctx, authorityForPersistedState(projectDir, sessionId));
+
     const result = handlePlanningFailure({
       err: error('operation-aborted', 'workflow-rewind'),
       projectDir,
       sessionId,
       state: staleState,
-      wctx: makeWctx({ projectDir, sessionId }),
+      wctx,
     });
 
-    expect(result).toMatchObject({ cancelled: true, failed: false });
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'cancelled' });
     expect(result.state.rewindPending).toEqual({
       target: 'plan',
       comment: TRANSCRIPT_OMITTED_MESSAGE,
@@ -106,7 +128,7 @@ describe('handlePlanningFailure', () => {
       wctx: makeWctx({ projectDir, sessionId }),
     });
 
-    expect(result).toMatchObject({ cancelled: true, failed: true });
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'failed' });
     expect(result.state.phase).toBe('idle');
     expect(result.state.tokenUsage).toMatchObject({ plannerInput: 125, plannerOutput: 40 });
     expect(loadState({ projectDir, sessionId })?.tokenUsage).toMatchObject({
@@ -143,7 +165,7 @@ describe('handlePlanningFailure', () => {
       }),
     });
 
-    expect(result).toMatchObject({ cancelled: true, failed: true });
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'failed' });
     const published = events.find((event) => event.type === 'error');
     expect(published?.type === 'error' && published.message).toContain(codexMessage);
     expect(published?.type === 'error' && published.message).toContain('codex logout');
@@ -178,7 +200,7 @@ describe('handlePlanningFailure', () => {
       }),
     });
 
-    expect(result).toMatchObject({ cancelled: true, failed: true });
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'failed' });
     const published = events.find((event) => event.type === 'error');
     expect(published?.type === 'error' && published.message).toContain(codexLimit);
     expect(published?.type === 'error' && published.message).toContain('hit its usage limit');

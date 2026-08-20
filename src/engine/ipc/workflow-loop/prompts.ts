@@ -6,7 +6,12 @@ import {
   briefReviewCommandToApprovalReviewResult,
   type BriefReviewPromptKind,
 } from '../../../core/schemas/brief-review-command.js';
+import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery.js';
 import type { IpcServer } from '../server.js';
+
+export type IpcWorkflowPromptOptions = {
+  briefRecovery?: BriefRecoveryProjectionV1 | undefined;
+};
 
 const ipcWorkflowLoopError = {
   promptResponseKindMismatch: (expected: string, actual: string) =>
@@ -39,7 +44,10 @@ export function assertPromptResponse<T extends IpcPromptResponse['kind']>(
   return response as Extract<IpcPromptResponse, { kind: T }>;
 }
 
-export function makeCallbacks(ipcServer: IpcServer): OrchestratorCallbacks {
+export function makeCallbacks(
+  ipcServer: IpcServer,
+  options: IpcWorkflowPromptOptions = {},
+): OrchestratorCallbacks {
   // Approval, question, and tiered prompts round-trip over IPC (prompt_response). Rewind commands
   // (/revise-spec, /revise-plan, /redo-task) are not exposed to attach clients — send revision
   // text via user_input or settle at the next prompt instead.
@@ -65,6 +73,9 @@ export function makeCallbacks(ipcServer: IpcServer): OrchestratorCallbacks {
           kind: 'approval_needed',
           approvalType,
           filePath: input,
+          ...(approvalType === 'briefs' && options.briefRecovery !== undefined
+            ? { briefRecovery: options.briefRecovery }
+            : {}),
         }),
         'approval_needed',
       );

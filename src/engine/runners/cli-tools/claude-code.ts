@@ -28,6 +28,11 @@ const CLAUDE_PROTECTED_FLAGS = new Set([
   '--resume',
   '--stream-json',
   '--terminal-event',
+  '--allowedTools',
+  '--allowed-tools',
+  '--disallowedTools',
+  '--disallowed-tools',
+  '--mcp-config',
 ]);
 
 type ClaudeBuildCommon = Readonly<{
@@ -60,6 +65,10 @@ function buildBaseArgs(opts: ClaudeBuildCommon): string[] {
 
 function plannerBaseArgs(opts: ClaudePlannerBuild): string[] {
   const args = buildBaseArgs(opts);
+  // REQ-017: the planner's read-only plan permission mode allows Read, Glob,
+  // Grep, and Plan only; no write, shell, agent, skill, or MCP tool is in its
+  // toolset. A configured --permission-mode or --allowedTools cannot widen it.
+  if (opts.mode === 'plan') args.push('--permission-mode', 'plan');
   // A non-null sessionId is a handle Claude already minted, so continue that
   // conversation with --resume; --session-id names a NEW session and exits 1
   // ("Session ID <uuid> is already in use.") when given a consumed id.
@@ -234,7 +243,7 @@ function rawContract(role: 'planner' | 'implementer'): RawClaudeCliContract {
     auth: { kind: 'env-or-native', env: ['ANTHROPIC_API_KEY'] },
     rawInvocation:
       role === 'planner'
-        ? [...CLAUDE_BASE_ARGS]
+        ? [...CLAUDE_BASE_ARGS, '--permission-mode', 'plan']
         : [...CLAUDE_BASE_ARGS, '--permission-mode', 'acceptEdits'],
     promptTransport: 'stdin',
     expectedRawTerminal: 'result',

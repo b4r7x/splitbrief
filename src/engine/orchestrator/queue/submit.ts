@@ -6,7 +6,7 @@ import type { Planner } from '../../planners/types.js';
 import { mergePersistedMessageQueue, transitionAndSave } from '../state-ops.js';
 import { publishWarning } from '../events.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
-import { dispatchNativeInjection } from './native-injection.js';
+import { dispatchNativeInjection, type RecoveryQueueBinding } from './native-injection.js';
 import { warnError } from '../../../lib/warn.js';
 import { nowIso } from '../../../utils/format-time.js';
 import type { WriteSequencer } from '../serial-executor.js';
@@ -109,6 +109,7 @@ export function createQueueHandler(
     planner: Planner;
     serialize: WriteSequencer;
     signal?: AbortSignal | undefined;
+    recovery?: RecoveryQueueBinding | undefined;
   },
 ): (text: string, phase: Phase) => Promise<QueueSubmissionResult> {
   const {
@@ -121,6 +122,7 @@ export function createQueueHandler(
     planner,
     serialize,
     signal,
+    recovery,
   } = opts;
   return async (text: string, phase: Phase) => {
     try {
@@ -167,6 +169,7 @@ export function createQueueHandler(
             setState,
             bus,
             ...(signal !== undefined && { signal }),
+            ...(recovery !== undefined && { recovery }),
           }),
         ).catch((err) => warnError('queue-handler failed', err));
       }

@@ -11,6 +11,8 @@ import type { ServerStatus } from '../../../engine/ipc/lockfile.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { skillsStore } from '../../../stores/project/skills.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { StateAuthorityReceipt } from '../../../core/state/types.js';
+import type { SessionRef } from '../../../core/types/session-ref.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { activeFile, CONFIG_FILE, sessionsRoot, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution.js';
@@ -132,6 +134,21 @@ function liveStatus(sessionId: string, feature: string): ServerStatus {
   };
 }
 
+function liveAuthority(ref: SessionRef): StateAuthorityReceipt {
+  return {
+    kind: 'usable',
+    sessionId: ref.sessionId,
+    ownerId: 'owner-1',
+    pid: process.pid,
+    processStart: String(Date.now()),
+    runId: 'run-1',
+    acquisitionId: 'acquisition-1',
+    fence: 1,
+    stateRevision: 1,
+    stateDigest: 'a'.repeat(64),
+  };
+}
+
 function readyReport(projectDir: string): ReadinessReport {
   return {
     generatedAt: '2026-08-04T00:00:00.000Z',
@@ -208,6 +225,8 @@ function createDeps(overrides: Partial<ContinueDeps> = {}): ContinueDeps {
       cause: null,
       logTail: null,
     }),
+    readStateAuthority: liveAuthority,
+    assertStateAuthority: () => {},
     ...overrides,
   };
 }
@@ -409,10 +428,46 @@ describe('continueCommand', () => {
     });
 
     await expect(continueCommand(sessionId, { projectDir }, deps)).rejects.toThrow(
-      /does not support authenticated attach/,
+      /server and owner authority identities do not match/,
     );
     expect(renderRuns).toHaveLength(0);
     expect(rpcRuns).toHaveLength(0);
+  });
+
+  it('rejects a live continue when the server identity does not match the owner fence', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-live-mismatch';
+    makeSessionDir(projectDir, sessionId);
+    deps = createDeps({
+      checkServerStatus: async (): Promise<ServerStatus> => {
+        const status = liveStatus(sessionId, 'live feature');
+        if (status.data === null) throw new Error('expected live status data');
+        return { ...status, data: { ...status.data, pid: process.pid + 1 } };
+      },
+    });
+
+    await expect(continueCommand(sessionId, { projectDir }, deps)).rejects.toThrow(
+      `cannot attach to session ${sessionId}: server and owner authority identities do not match`,
+    );
+    expect(renderRuns).toHaveLength(0);
+  });
+
+  it('rejects a live continue when the server process start does not match the owner fence', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-live-start-mismatch';
+    makeSessionDir(projectDir, sessionId);
+    deps = createDeps({
+      checkServerStatus: async (): Promise<ServerStatus> => {
+        const status = liveStatus(sessionId, 'live feature');
+        if (status.data === null) throw new Error('expected live status data');
+        return { ...status, data: { ...status.data, startTimeMs: Date.now() - 10_000 } };
+      },
+    });
+
+    await expect(continueCommand(sessionId, { projectDir }, deps)).rejects.toThrow(
+      `cannot attach to session ${sessionId}: server and owner authority identities do not match`,
+    );
+    expect(renderRuns).toHaveLength(0);
   });
 
   it('rejects --json and --rpc together', async () => {

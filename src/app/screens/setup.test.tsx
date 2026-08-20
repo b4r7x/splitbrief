@@ -491,72 +491,72 @@ describe('SetupScreen', () => {
     });
   });
 
-  it.each([
-    'Escape',
-    'unmount',
-  ] as const)('reports a real stale cleanup failure after %s without navigating', async (exitMode) => {
-    await withTempDir(`setup-cleanup-${exitMode.toLowerCase()}`, async (projectDir) => {
-      configStore.load(projectDir);
-      const request = beginDiscovery();
-      freshDiscovery(request, 1);
-      routerStore.init({ screen: 'setup', onComplete: 'workflow', feature: 'Late result' });
-      const pending = Promise.withResolvers<PreparationOutcome>();
-      let signal: AbortSignal | undefined;
-      const prepare = vi.fn((input: PrepareExecutionInput) => {
-        signal = input.signal;
-        return pending.promise;
-      });
-      let picker: SetupToolPickerArgs | undefined;
-      const ui = renderFeature(
-        <SetupScreen
-          renderToolPicker={(args) => {
-            picker = args;
-            return <Text>{args.stepLabel}</Text>;
-          }}
-          prepare={prepare}
-        />,
-      );
-      await flushEffects();
-
-      await picker?.onConfirm(makeConfig());
-      await flushEffects();
-      await picker?.onConfirm(makeConfig());
-      await vi.waitFor(() => expect(prepare).toHaveBeenCalledOnce());
-      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Preparing your tools'));
-
-      if (exitMode === 'Escape') {
-        ui.stdin.write('\u001b');
-        await flushEffects();
-        expect(ui.lastFrame() ?? '').toContain('Choose model · 2 of 2');
-      } else {
-        ui.unmount();
-      }
-      expect(signal?.aborted).toBe(true);
-
-      const input = prepare.mock.calls[0]?.[0];
-      if (!input) throw new Error('Expected a preparation input.');
-      const late = preparedOutcome(input);
-      if (late.kind !== 'prepared' || late.execution.session.kind !== 'new') {
-        throw new Error('Expected a newly prepared late result.');
-      }
-      const lateSessionDir = sessionDir(
-        late.execution.session.ref.projectDir,
-        late.execution.session.ref.sessionId,
-      );
-      unlinkSync(join(lateSessionDir, '.prepare-owner.json'));
-      pending.resolve(late);
-
-      await vi.waitFor(() => {
-        expect(feedbackStore.get()).toMatchObject({
-          isError: true,
-          message: expect.stringContaining('Could not clean up tool preparation'),
+  it.each(['Escape', 'unmount'] as const)(
+    'reports a real stale cleanup failure after %s without navigating',
+    async (exitMode) => {
+      await withTempDir(`setup-cleanup-${exitMode.toLowerCase()}`, async (projectDir) => {
+        configStore.load(projectDir);
+        const request = beginDiscovery();
+        freshDiscovery(request, 1);
+        routerStore.init({ screen: 'setup', onComplete: 'workflow', feature: 'Late result' });
+        const pending = Promise.withResolvers<PreparationOutcome>();
+        let signal: AbortSignal | undefined;
+        const prepare = vi.fn((input: PrepareExecutionInput) => {
+          signal = input.signal;
+          return pending.promise;
         });
+        let picker: SetupToolPickerArgs | undefined;
+        const ui = renderFeature(
+          <SetupScreen
+            renderToolPicker={(args) => {
+              picker = args;
+              return <Text>{args.stepLabel}</Text>;
+            }}
+            prepare={prepare}
+          />,
+        );
+        await flushEffects();
+
+        await picker?.onConfirm(makeConfig());
+        await flushEffects();
+        await picker?.onConfirm(makeConfig());
+        await vi.waitFor(() => expect(prepare).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Preparing your tools'));
+
+        if (exitMode === 'Escape') {
+          ui.stdin.write('\u001b');
+          await flushEffects();
+          expect(ui.lastFrame() ?? '').toContain('Choose model · 2 of 2');
+        } else {
+          ui.unmount();
+        }
+        expect(signal?.aborted).toBe(true);
+
+        const input = prepare.mock.calls[0]?.[0];
+        if (!input) throw new Error('Expected a preparation input.');
+        const late = preparedOutcome(input);
+        if (late.kind !== 'prepared' || late.execution.session.kind !== 'new') {
+          throw new Error('Expected a newly prepared late result.');
+        }
+        const lateSessionDir = sessionDir(
+          late.execution.session.ref.projectDir,
+          late.execution.session.ref.sessionId,
+        );
+        unlinkSync(join(lateSessionDir, '.prepare-owner.json'));
+        pending.resolve(late);
+
+        await vi.waitFor(() => {
+          expect(feedbackStore.get()).toMatchObject({
+            isError: true,
+            message: expect.stringContaining('Could not clean up tool preparation'),
+          });
+        });
+        expect(existsSync(lateSessionDir)).toBe(true);
+        expect(routerStore.get().screen).toBe('setup');
+        if (exitMode === 'Escape') ui.unmount();
       });
-      expect(existsSync(lateSessionDir)).toBe(true);
-      expect(routerStore.get().screen).toBe('setup');
-      if (exitMode === 'Escape') ui.unmount();
-    });
-  });
+    },
+  );
 
   it('failed preparation stays in Setup with generic retry back settings and prioritized blockers', async () => {
     await withTempDir('setup-failed', async (projectDir) => {

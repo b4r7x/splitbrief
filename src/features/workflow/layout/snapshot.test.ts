@@ -24,7 +24,6 @@ import { getQuestionPromptRows } from '../prompt-rows/question.js';
 import {
   getReviewContentLayout,
   getWorkflowContentWidth,
-  getWorkflowConversationHeight,
   getWorkflowSidebarWidth,
   getWorkflowViewportHeight,
   REVIEW_FRAME_ROWS,
@@ -100,11 +99,9 @@ describe('readConversationScrollSnapshot', () => {
 
     expect(snap.contentRect.width).toBe(160);
     expect(snap.conversationWidth).toBe(160);
-    expect(snap.conversationRect.width).toBe(160);
     expect(snap.viewportHeight).toBe(fullBodyHeight);
     expect(snap.viewportHeight).toBeLessThan(40);
-    expect(snap.conversationRect.top).toBe(snap.contentRect.top);
-    expect(snap.conversationRect.height).toBe(snap.viewportHeight);
+    expect(snap.contentRect.height).toBe(snap.viewportHeight);
   });
 
   it('reduces viewportHeight on a small terminal', () => {
@@ -235,12 +232,11 @@ describe('readConversationScrollSnapshot', () => {
 
     expect(snap.contentRect.width).toBe(120);
     expect(snap.conversationWidth).toBe(120);
-    expect(snap.conversationRect.width).toBe(120);
-    expect(snap.conversationRect.right).toBe(snap.conversationRect.left + 119);
+    expect(snap.contentRect.right).toBe(snap.contentRect.left + 119);
   });
 
   it('sidebar presence narrows content width', () => {
-    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
+    terminalSizeStore.__testReset({ cols: 121, rows: 30, isSmall: false });
     controlsStore.setSidebar(false);
 
     const snapNoSidebar = readConversationScrollSnapshot();
@@ -252,9 +248,9 @@ describe('readConversationScrollSnapshot', () => {
     expect(snapWithSidebar.contentRect.width).toBeLessThan(snapNoSidebar.contentRect.width);
   });
 
-  it('uses one visible-sidebar bottom inset for scroll, hover, and pointer geometry while review keeps full height', () => {
+  it('shares one body height and bottom row across scroll, hover, and pointer geometry', () => {
     const rows = 30;
-    const cols = 120;
+    const cols = 121;
     const inputRows = 3;
     terminalSizeStore.__testReset({ cols, rows, isSmall: false });
     inputHeightStore.__testReset({ rows: inputRows });
@@ -263,32 +259,28 @@ describe('readConversationScrollSnapshot', () => {
 
     const fullBodyHeight = getWorkflowViewportHeight({ rows, inputRows });
     const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible: true });
-    const conversationHeight = getWorkflowConversationHeight({
-      height: fullBodyHeight,
-      sidebarWidth,
-    });
     const scroll = readConversationScrollSnapshot();
     const hover = readConversationHoverSnapshot();
     const pointerVisibleCount = hover.stickyLeadingRows + hover.viewportHeight;
 
+    expect(sidebarWidth).toBeGreaterThan(0);
     expect(scroll.contentRect.height).toBe(fullBodyHeight);
-    expect(scroll.conversationRect.height).toBe(conversationHeight);
-    expect(scroll.transcriptViewportHeight).toBe(conversationHeight);
+    expect(scroll.transcriptViewportHeight).toBe(fullBodyHeight);
     expect(hover.viewportHeight).toBe(scroll.transcriptViewportHeight);
-    expect(hover.conversationRect.bottom).toBe(scroll.contentRect.bottom - 1);
+    expect(hover.contentRect.bottom).toBe(scroll.contentRect.bottom);
     expect(
       hitTranscriptRow({
-        rect: hover.conversationRect,
-        sgrX: hover.conversationRect.left,
-        sgrY: hover.conversationRect.bottom,
+        rect: hover.contentRect,
+        sgrX: hover.contentRect.left,
+        sgrY: hover.contentRect.bottom,
         visibleCount: pointerVisibleCount,
       }),
     ).toBe(pointerVisibleCount - 1);
     expect(
       hitTranscriptRow({
-        rect: hover.conversationRect,
-        sgrX: hover.conversationRect.left,
-        sgrY: scroll.contentRect.bottom,
+        rect: hover.contentRect,
+        sgrX: hover.contentRect.left,
+        sgrY: scroll.contentRect.bottom + 1,
         visibleCount: pointerVisibleCount,
       }),
     ).toBeNull();
@@ -311,23 +303,23 @@ describe('readConversationScrollSnapshot', () => {
     const hover = readConversationHoverSnapshot();
     const pointerVisibleCount = hover.stickyLeadingRows + hover.viewportHeight;
 
-    expect(scroll.conversationRect.height).toBe(fullBodyHeight);
+    expect(scroll.contentRect.height).toBe(fullBodyHeight);
     expect(scroll.transcriptViewportHeight).toBe(fullBodyHeight);
     expect(hover.viewportHeight).toBe(fullBodyHeight);
-    expect(hover.conversationRect.bottom).toBe(scroll.contentRect.bottom);
+    expect(hover.contentRect.bottom).toBe(scroll.contentRect.bottom);
     expect(
       hitTranscriptRow({
-        rect: hover.conversationRect,
-        sgrX: hover.conversationRect.left,
-        sgrY: hover.conversationRect.bottom,
+        rect: hover.contentRect,
+        sgrX: hover.contentRect.left,
+        sgrY: hover.contentRect.bottom,
         visibleCount: pointerVisibleCount,
       }),
     ).toBe(pointerVisibleCount - 1);
     expect(
       hitTranscriptRow({
-        rect: hover.conversationRect,
-        sgrX: hover.conversationRect.left,
-        sgrY: hover.conversationRect.bottom + 1,
+        rect: hover.contentRect,
+        sgrX: hover.contentRect.left,
+        sgrY: hover.contentRect.bottom + 1,
         visibleCount: pointerVisibleCount,
       }),
     ).toBeNull();
@@ -419,6 +411,29 @@ describe('readReviewContentHeight', () => {
 });
 
 describe('readBriefListSnapshot phantom-hotspot clamp', () => {
+  it('gives brief review the same body height as the conversation when the sidebar is visible', () => {
+    const rows = 30;
+    const inputRows = 3;
+    const cols = 121;
+    terminalSizeStore.__testReset({ cols, rows, isSmall: false });
+    inputHeightStore.__testReset({ rows: inputRows });
+    controlsStore.setSidebar(true);
+    lifecycleStore.__testReset({ phase: 'reviewing-briefs', status: 'running', startedAt: 0 });
+    reviewStore.setRenderedLineCount(1);
+
+    const snap = readBriefListSnapshot();
+    if (!snap) throw new Error('expected a brief list snapshot while reviewing briefs');
+
+    const fullBodyHeight = getWorkflowViewportHeight({ rows, inputRows });
+    const conversation = readConversationScrollSnapshot().contentRect;
+
+    expect(getWorkflowSidebarWidth({ cols, sidebarVisible: true })).toBeGreaterThan(0);
+    expect(snap.rect.height).toBe(fullBodyHeight);
+    expect(snap.rect.height).toBe(conversation.height);
+    expect(snap.rect.bottom).toBe(conversation.bottom);
+    expect(snap.rect.bottom).toBe(snap.rect.top + fullBodyHeight - 1);
+  });
+
   it('clamps the visible window to the rendered briefs on a tall terminal with few tasks', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     inputHeightStore.__testReset({ rows: 3 });

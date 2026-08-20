@@ -418,62 +418,62 @@ describe('createStagedProject', () => {
 });
 
 describe('createStagedProject — sensitive file exclusion', () => {
-  it.each([
-    'planner',
-    'implementer',
-  ] as const)('recursively excludes .env* files for the %s stage without excluding boundary names', async (runnerRole) => {
-    const dir = createTempDir('staged-env-test');
-    try {
-      createTestGitRepo(dir);
-      mkdirSync(join(dir, 'src'), { recursive: true });
-      mkdirSync(join(dir, 'nested', 'deep'), { recursive: true });
-      writeFileSync(join(dir, 'src', 'app.ts'), 'export const app = true;\n');
-      const excluded = [
-        '.env',
-        '.env.local',
-        '.env.production',
-        '.envrc',
-        'nested/.env',
-        'nested/.env.local',
-        'nested/deep/.envrc',
-      ];
-      const retained = ['env', 'app.env', 'config.env', 'nested/config.env'];
-      for (const file of excluded) writeFileSync(join(dir, file), 'SECRET=canary\n');
-      for (const file of retained) writeFileSync(join(dir, file), 'public boundary\n');
-
-      const staged = await createStagedProject(
-        dir,
-        makeConfig({
-          implementer: {
-            kind: 'api',
-            provider: 'openai',
-            apiBase: 'https://api.openai.com/v1',
-            model: 'gpt-4',
-          },
-          planner: {
-            kind: 'api',
-            provider: 'anthropic',
-            apiBase: 'https://api.anthropic.com/v1',
-            model: 'claude-sonnet',
-          },
-        }),
-        runnerRole,
-      );
+  it.each(['planner', 'implementer'] as const)(
+    'recursively excludes .env* files for the %s stage without excluding boundary names',
+    async (runnerRole) => {
+      const dir = createTempDir('staged-env-test');
       try {
-        expect(existsSync(join(staged.projectDir, 'src', 'app.ts'))).toBe(true);
-        for (const file of excluded) {
-          expect(existsSync(join(staged.projectDir, file))).toBe(false);
-        }
-        for (const file of retained) {
-          expect(readFileSync(join(staged.projectDir, file), 'utf8')).toBe('public boundary\n');
+        createTestGitRepo(dir);
+        mkdirSync(join(dir, 'src'), { recursive: true });
+        mkdirSync(join(dir, 'nested', 'deep'), { recursive: true });
+        writeFileSync(join(dir, 'src', 'app.ts'), 'export const app = true;\n');
+        const excluded = [
+          '.env',
+          '.env.local',
+          '.env.production',
+          '.envrc',
+          'nested/.env',
+          'nested/.env.local',
+          'nested/deep/.envrc',
+        ];
+        const retained = ['env', 'app.env', 'config.env', 'nested/config.env'];
+        for (const file of excluded) writeFileSync(join(dir, file), 'SECRET=canary\n');
+        for (const file of retained) writeFileSync(join(dir, file), 'public boundary\n');
+
+        const staged = await createStagedProject(
+          dir,
+          makeConfig({
+            implementer: {
+              kind: 'api',
+              provider: 'openai',
+              apiBase: 'https://api.openai.com/v1',
+              model: 'gpt-4',
+            },
+            planner: {
+              kind: 'api',
+              provider: 'anthropic',
+              apiBase: 'https://api.anthropic.com/v1',
+              model: 'claude-sonnet',
+            },
+          }),
+          runnerRole,
+        );
+        try {
+          expect(existsSync(join(staged.projectDir, 'src', 'app.ts'))).toBe(true);
+          for (const file of excluded) {
+            expect(existsSync(join(staged.projectDir, file))).toBe(false);
+          }
+          for (const file of retained) {
+            expect(readFileSync(join(staged.projectDir, file), 'utf8')).toBe('public boundary\n');
+          }
+        } finally {
+          staged.cleanup();
         }
       } finally {
-        staged.cleanup();
+        cleanupTempDir(dir);
       }
-    } finally {
-      cleanupTempDir(dir);
-    }
-  });
+    },
+  );
 
   it("preserves the implementer's auth key by default while stripping planner credentials", async () => {
     const dir = createTempDir('staged-runner-auth-test');

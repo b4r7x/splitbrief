@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { makePassingTask } from '#testing/helpers/planning-phase.js';
+import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   createHeadlessGitProject,
@@ -10,7 +11,6 @@ import {
 } from '#testing/helpers/headless-project.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
-import { saveState } from '../../../src/core/state/persistence.js';
 import { writeActive } from '../../../src/core/sessions/lifecycle.js';
 import { listSessions } from '../../../src/core/sessions/io.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
@@ -38,14 +38,22 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
     dirs = [];
   });
 
+  function makeTaskForFile(id: string, file: string) {
+    return {
+      ...makePassingTask(id),
+      file,
+      scope: {
+        inBounds: [`Modify only \`${file}\`.`],
+        outOfBounds: ['Do not touch anything outside the task file.'],
+      },
+    };
+  }
+
   function makeTwoTaskState(): WorkflowState {
     return {
       ...createInitialState('stop me'),
       phase: 'implementing',
-      tasks: [
-        makeTask({ id: 'T001', file: 'src/one.ts' }),
-        makeTask({ id: 'T002', file: 'src/two.ts' }),
-      ],
+      tasks: [makeTaskForFile('T001', 'src/one.ts'), makeTaskForFile('T002', 'src/two.ts')],
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
     };
@@ -58,7 +66,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
     const sessionId = 'sess-headless-signal';
     ensureSessionDir(projectDir, sessionId);
     writeActive({ projectDir, sessionId });
-    saveState({ projectDir, sessionId }, makeTwoTaskState());
+    persistReadyExecutionState(projectDir, sessionId, makeTwoTaskState());
     return { projectDir, sessionId };
   }
 
@@ -71,12 +79,14 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
     const implementer = makeImplementer({ implement });
     const state = makeTwoTaskState();
 
+    const resumeState = persistReadyExecutionState(projectDir, sessionId, state);
     await runHeadless({
       prepared: preparedHeadlessExecution({
         projectDir,
         sessionId,
         feature: 'stop me',
-        resumeState: state,
+        resumeState,
+        purpose: 'new-workflow',
       }),
       _planner: planner,
       _implementer: implementer,
@@ -95,7 +105,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
     ensureSessionDir(projectDir, sessionId);
     writeActive({ projectDir, sessionId });
     const state = makeTwoTaskState();
-    saveState({ projectDir, sessionId }, state);
+    const resumeState = persistReadyExecutionState(projectDir, sessionId, state);
     let seenPersistTranscript: boolean | undefined;
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async (opts) => {
@@ -110,7 +120,8 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
         projectDir,
         sessionId,
         feature: 'secret oauth login',
-        resumeState: state,
+        resumeState,
+        purpose: 'new-workflow',
       }),
       _planner: planner,
       _implementer: implementer,
@@ -128,12 +139,14 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
     const implementer = makeImplementer({ implement });
     const state = makeTwoTaskState();
 
+    const resumeState = persistReadyExecutionState(projectDir, sessionId, state);
     await runHeadless({
       prepared: preparedHeadlessExecution({
         projectDir,
         sessionId,
         feature: 'stop me',
-        resumeState: state,
+        resumeState,
+        purpose: 'new-workflow',
       }),
       _planner: planner,
       _implementer: implementer,
@@ -158,12 +171,14 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
     const implementer = makeImplementer({ implement });
     const state = makeTwoTaskState();
 
+    const resumeState = persistReadyExecutionState(projectDir, sessionId, state);
     await runHeadless({
       prepared: preparedHeadlessExecution({
         projectDir,
         sessionId,
         feature: 'stop me',
-        resumeState: state,
+        resumeState,
+        purpose: 'new-workflow',
       }),
       _planner: planner,
       _implementer: implementer,
@@ -196,13 +211,15 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
     });
     const implementer = makeImplementer({ implement });
     const state = makeTwoTaskState();
+    const resumeState = persistReadyExecutionState(projectDir, sessionId, state);
 
     await runHeadless({
       prepared: preparedHeadlessExecution({
         projectDir,
         sessionId,
         feature: 'stop me',
-        resumeState: state,
+        resumeState,
+        purpose: 'new-workflow',
       }),
       _planner: planner,
       _implementer: implementer,

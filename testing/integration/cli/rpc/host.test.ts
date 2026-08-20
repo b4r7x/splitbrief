@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { PassThrough, Writable } from 'node:stream';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -6,17 +6,23 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createInitialState } from '../../../../src/core/state/machine.js';
+import {
+  acquireStateAuthority,
+  releaseStateAuthority,
+} from '../../../../src/core/state/authority.js';
+import type { StateAuthorityReceipt } from '../../../../src/core/state/types.js';
 import { loadState, saveState } from '../../../../src/core/state/persistence.js';
 import type { WorkflowState } from '../../../../src/core/schemas/workflow.js';
-import { ensureSessionDir } from '../../../../src/core/paths-io.js';
+import type { BriefAdmissionInput } from '../../../../src/core/schemas/brief-recovery.js';
 import {
-  BRIEF_QUALITY_FILE,
-  CONFIG_FILE,
-  SPLITBRIEF_DIR,
-  sessionDir,
-  TASKS_FILE,
-} from '../../../../src/core/paths.js';
+  BriefReviewCommandSchema,
+  type BriefReviewCommand,
+} from '../../../../src/core/schemas/brief-review-command.js';
+import { ensureSessionDir } from '../../../../src/core/paths-io.js';
+import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../../../src/core/paths.js';
 import { taskId } from '../../../../src/core/schemas/task.js';
+import { createBriefRecoveryState } from '../../../../src/engine/orchestrator/planning/brief-recovery.js';
+import { projectBriefRecovery } from '../../../../src/engine/orchestrator/planning/brief-recovery-controller.js';
 import { loadConfig } from '../../../../src/core/config/load/io.js';
 import { configForSessionTranscriptPolicy } from '../../../../src/core/sessions/io.js';
 import { reactivateExistingSession } from '../../../../src/core/sessions/lifecycle.js';
@@ -27,13 +33,99 @@ import {
   type PreparedExecution,
 } from '../../../../src/engine/runners/prepared-execution.js';
 import { WORKFLOW_REWIND_ABORT_REASON } from '../../../../src/engine/orchestrator/run/workflow.js';
-import { formatTasks } from '../../../../src/engine/spec/formatter.js';
 import { runRpc } from '../../../../src/cli/rpc/run/host.js';
 import { matches } from '../../../../src/utils/error.js';
 
 const isRpcShuttingDown = matches('rpc-shutting-down');
 
 let dirs: string[] = [];
+const ownedAuthorities: Array<{
+  ref: { projectDir: string; sessionId: string };
+  receipt: StateAuthorityReceipt;
+}> = [];
+
+function saveOwnedState(
+  ref: { projectDir: string; sessionId: string },
+  state: WorkflowState,
+): WorkflowState {
+  ensureSessionDir(ref.projectDir, ref.sessionId);
+  saveState(ref, state);
+  const acquired = acquireStateAuthority({ ref, purpose: 'resume' });
+  if (acquired.kind !== 'fenced') {
+    throw new Error('RPC host fixture did not acquire a fenced state authority.');
+  }
+  ownedAuthorities.push({ ref, receipt: acquired.receipt });
+  const loaded = loadState(ref);
+  if (loaded === null) throw new Error('RPC host fixture state did not persist.');
+  return loaded;
+}
+
+function briefReviewState(sessionId: string, feature: string): WorkflowState {
+  const admission: BriefAdmissionInput = {
+    sessionId,
+    origin: { mode: 'standard', entry: 'initial' },
+    continuation: { version: 1, kind: 'approval', mode: 'standard', entry: 'initial' },
+    activeBrief: { revision: 1, hash: `brief-${sessionId}`, path: 'tasks.md' },
+    report: {
+      briefHash: `brief-${sessionId}`,
+      report: { revision: 1, hash: `report-${sessionId}`, path: 'brief-quality.json' },
+      ruleVersion: 'brief-quality-v1',
+      issues: [],
+      errorCount: 0,
+    },
+    qualityPolicyVersion: 'brief-quality-v1',
+  };
+  return {
+    ...createInitialState(feature),
+    phase: 'reviewing-briefs',
+    briefRecovery: createBriefRecoveryState(admission, { epochId: `epoch-${sessionId}` }),
+  };
+}
+
+function briefReviewCommand(
+  ref: { projectDir: string; sessionId: string },
+  action: 'status' | 'approve' | 'edit',
+  operationId = `operation-${action}`,
+  briefText = '# Edited Brief\n',
+): BriefReviewCommand {
+  const state = loadState(ref);
+  if (state === null || state.briefRecovery === null || state.briefRecovery === undefined) {
+    throw new Error('RPC host fixture has no Brief recovery state.');
+  }
+  const projection = projectBriefRecovery({
+    sessionId: ref.sessionId,
+    now: '2026-08-14T00:00:00.000Z',
+    state: {
+      stateVersion: state.stateVersion,
+      stateRevision: state.stateRevision ?? 0,
+      stateFence: state.stateFence ?? { token: 0, ownerId: 'rpc-host-fixture' },
+      phase: state.phase,
+      briefRecovery: state.briefRecovery,
+    },
+  });
+  if (action === 'status') {
+    return BriefReviewCommandSchema.parse({
+      version: 1,
+      sessionId: ref.sessionId,
+      epochId: projection.epochId,
+      action,
+    });
+  }
+  if (projection.activeBrief === null) throw new Error('RPC host fixture Brief is missing.');
+  const command = {
+    version: 1,
+    sessionId: ref.sessionId,
+    epochId: projection.epochId,
+    operationId,
+    expectedBriefRevision: projection.activeBrief.revision,
+    expectedReportRevision: projection.matchingReport?.report.revision ?? null,
+    intentHash: `intent-${operationId}`,
+    base: projection.activeBrief,
+    action,
+    ...(action === 'edit' && { briefText, newInputId: `input-${operationId}` }),
+  };
+  return BriefReviewCommandSchema.parse(command);
+}
 
 function writeConfig(projectDir: string, persistTranscript = false): void {
   const splitbriefDir = join(projectDir, SPLITBRIEF_DIR);
@@ -183,6 +275,9 @@ async function waitForLine(
 }
 describe('runRpc', () => {
   afterEach(() => {
+    for (const { ref, receipt } of ownedAuthorities.splice(0)) {
+      releaseStateAuthority(ref, receipt);
+    }
     for (const dir of dirs) cleanupTempDir(dir);
     dirs = [];
   });
@@ -297,6 +392,9 @@ describe('runRpc', () => {
 
   it('correlates prompt-scoped brief review command ids across interleaved events', async () => {
     const projectDir = setupProject();
+    const sessionId = 'rpc-brief-review-session';
+    const ref = { projectDir, sessionId };
+    saveOwnedState(ref, briefReviewState(sessionId, 'brief rpc correlation'));
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
     let approved: boolean | undefined;
@@ -313,7 +411,7 @@ describe('runRpc', () => {
     const run = runRpc({
       prepared: preparedRpcExecution({
         projectDir,
-        sessionId: 'rpc-brief-review-session',
+        sessionId,
         feature: 'brief rpc correlation',
       }),
       deps: { input, output, runWorkflow: runWorkflowStub },
@@ -347,7 +445,7 @@ describe('runRpc', () => {
         id: 'cmd-status',
         operationId: 'op-status',
         promptId,
-        command: { action: 'status' },
+        command: briefReviewCommand(ref, 'status'),
       })}\n`,
     );
     await waitForLine(
@@ -374,7 +472,7 @@ describe('runRpc', () => {
         id: 'cmd-approve',
         operationId: 'op-approve',
         promptId,
-        command: { action: 'approve' },
+        command: briefReviewCommand(ref, 'approve', 'op-approve'),
       })}\n`,
     );
     await run;
@@ -403,40 +501,26 @@ describe('runRpc', () => {
     expect(approved).toBe(true);
   });
 
-  it('saves an RPC Task Brief draft without settling the brief prompt', async () => {
+  it('settles a current RPC Task Brief edit through the fenced projection', async () => {
     const projectDir = setupProject();
-    const sessionId = 'rpc-brief-save-session';
-    ensureSessionDir(projectDir, sessionId);
-    saveState(
-      { projectDir, sessionId },
-      { ...createInitialState('brief rpc save draft'), phase: 'reviewing-briefs' },
-    );
-    const tasksPath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
-    writeFileSync(
-      tasksPath,
-      formatTasks([
-        makeTask({
-          title: 'Saved through RPC',
-          scope: { inBounds: ['src/hello.ts'] },
-          evidence: ['Focused test output is captured'],
-        }),
-      ]),
-    );
-
+    const sessionId = 'rpc-brief-edit-envelope-session';
+    const ref = { projectDir, sessionId };
+    saveOwnedState(ref, briefReviewState(sessionId, 'brief rpc edit envelope'));
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
     let approved: boolean | undefined;
+    let action: string | undefined;
     const runWorkflowStub = async (workflowOpts: RunWorkflowOptions) => {
-      const result = await workflowOpts.callbacks.onApprovalNeeded('briefs', tasksPath);
+      const result = await workflowOpts.callbacks.onApprovalNeeded(
+        'briefs',
+        join(projectDir, 'tasks.md'),
+      );
       approved = result.approved;
+      action = result.action;
     };
 
     const run = runRpc({
-      prepared: preparedRpcExecution({
-        projectDir,
-        sessionId,
-        feature: 'brief rpc save draft',
-      }),
+      prepared: preparedRpcExecution({ projectDir, sessionId, feature: 'brief rpc edit envelope' }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -459,52 +543,38 @@ describe('runRpc', () => {
       throw new Error('missing prompt id');
     }
     const promptId = pendingLine.data.promptId;
-
     input.write(
       `${JSON.stringify({
         type: 'brief_review',
-        id: 'cmd-save',
-        operationId: 'op-save',
+        id: 'cmd-edit-envelope',
+        operationId: 'op-edit-envelope',
         promptId,
-        command: { action: 'save_draft' },
-      })}\n`,
-    );
-    await waitForLine(
-      chunks,
-      (line) =>
-        line.type === 'ack' &&
-        line.command === 'brief_review' &&
-        isTestRecord(line.data) &&
-        line.data.id === 'cmd-save' &&
-        line.data.operationId === 'op-save' &&
-        line.data.promptId === promptId &&
-        line.data.action === 'save_draft' &&
-        line.data.status === 'saved' &&
-        line.data.qualityPassed === true &&
-        line.data.taskCount === 1,
-    );
-    expect(approved).toBeUndefined();
-    expect(loadState({ projectDir, sessionId })?.tasks[0]?.title).toBe('Saved through RPC');
-    expect(
-      JSON.parse(readFileSync(join(sessionDir(projectDir, sessionId), BRIEF_QUALITY_FILE), 'utf8'))
-        .passed,
-    ).toBe(true);
-
-    input.write(
-      `${JSON.stringify({
-        type: 'brief_review',
-        id: 'cmd-approve',
-        promptId,
-        command: { action: 'approve' },
+        command: briefReviewCommand(ref, 'edit', 'op-edit-envelope'),
       })}\n`,
     );
     await run;
 
-    expect(approved).toBe(true);
+    expect(approved).toBe(false);
+    expect(action).toBe('edit');
+    expect(parseLines(chunks)).toContainEqual(
+      expect.objectContaining({
+        type: 'ack',
+        command: 'brief_review',
+        data: expect.objectContaining({
+          id: 'cmd-edit-envelope',
+          promptId,
+          action: 'edit',
+          status: 'accepted',
+        }),
+      }),
+    );
   });
 
-  it('maps RPC external_edit_applied to the workflow edit action', async () => {
+  it('maps a current RPC edit command to the workflow edit action', async () => {
     const projectDir = setupProject();
+    const sessionId = 'rpc-brief-edit-session';
+    const ref = { projectDir, sessionId };
+    saveOwnedState(ref, briefReviewState(sessionId, 'brief rpc external edit'));
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
     let approved: boolean | undefined;
@@ -521,7 +591,7 @@ describe('runRpc', () => {
     const run = runRpc({
       prepared: preparedRpcExecution({
         projectDir,
-        sessionId: 'rpc-brief-edit-session',
+        sessionId,
         feature: 'brief rpc external edit',
       }),
       deps: { input, output, runWorkflow: runWorkflowStub },
@@ -552,7 +622,8 @@ describe('runRpc', () => {
         type: 'brief_review',
         id: 'cmd-edit',
         promptId,
-        command: { action: 'external_edit_applied' },
+        operationId: 'op-edit',
+        command: briefReviewCommand(ref, 'edit', 'op-edit'),
       })}\n`,
     );
     await run;
@@ -566,7 +637,7 @@ describe('runRpc', () => {
         data: expect.objectContaining({
           id: 'cmd-edit',
           promptId,
-          action: 'external_edit_applied',
+          action: 'edit',
           status: 'accepted',
         }),
       }),
@@ -576,13 +647,9 @@ describe('runRpc', () => {
   it('answers status commands with the persisted workflow state', async () => {
     const projectDir = setupProject();
     const sessionId = 'rpc-status-session';
-    ensureSessionDir(projectDir, sessionId);
-    saveState(
+    saveOwnedState(
       { projectDir, sessionId },
-      {
-        ...createInitialState('status feature'),
-        phase: 'planning',
-      },
+      { ...createInitialState('status feature'), phase: 'planning' },
     );
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
@@ -625,8 +692,7 @@ describe('runRpc', () => {
   it('reports only undrained messages that were not delivered natively as queued', async () => {
     const projectDir = setupProject();
     const sessionId = 'rpc-status-queue-session';
-    ensureSessionDir(projectDir, sessionId);
-    saveState({ projectDir, sessionId }, makeStateWithMixedQueue('status queue feature'));
+    saveOwnedState({ projectDir, sessionId }, makeStateWithMixedQueue('status queue feature'));
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
     let finishWorkflow: (() => void) | undefined;
@@ -777,7 +843,6 @@ describe('runRpc', () => {
   it('resumes applying recovery without re-prompting when selectedAction is set', async () => {
     const projectDir = setupProject();
     const sessionId = 'rpc-applying-session';
-    ensureSessionDir(projectDir, sessionId);
     const stateWithApplyingRecovery = {
       ...createInitialState('applying recovery'),
       phase: 'implementing' as const,
@@ -796,7 +861,7 @@ describe('runRpc', () => {
         createdAt: new Date().toISOString(),
       },
     };
-    saveState({ projectDir, sessionId }, stateWithApplyingRecovery);
+    saveOwnedState({ projectDir, sessionId }, stateWithApplyingRecovery);
 
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
@@ -835,7 +900,6 @@ describe('runRpc', () => {
   it('dispatches recovery actions to the recovery gate', async () => {
     const projectDir = setupProject();
     const sessionId = 'rpc-recovery-session';
-    ensureSessionDir(projectDir, sessionId);
     const stateWithRecovery = {
       ...createInitialState('recovery feature'),
       phase: 'implementing' as const,
@@ -858,7 +922,7 @@ describe('runRpc', () => {
         createdAt: new Date().toISOString(),
       },
     };
-    saveState({ projectDir, sessionId }, stateWithRecovery);
+    saveOwnedState({ projectDir, sessionId }, stateWithRecovery);
 
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
@@ -917,7 +981,6 @@ describe('runRpc', () => {
   it('reopens paused recovery instead of stopping the RPC run', async () => {
     const projectDir = setupProject();
     const sessionId = 'rpc-paused-recovery-session';
-    ensureSessionDir(projectDir, sessionId);
     const stateWithPausedRecovery: WorkflowState = {
       ...createInitialState('paused recovery feature'),
       phase: 'implementing',
@@ -931,7 +994,7 @@ describe('runRpc', () => {
         recommendedAction: 'retry-same-worker',
       }),
     };
-    saveState({ projectDir, sessionId }, stateWithPausedRecovery);
+    saveOwnedState({ projectDir, sessionId }, stateWithPausedRecovery);
 
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
@@ -1013,7 +1076,6 @@ describe('runRpc', () => {
   it('does not acknowledge invalid or unavailable recovery actions', async () => {
     const projectDir = setupProject();
     const sessionId = 'rpc-invalid-recovery-session';
-    ensureSessionDir(projectDir, sessionId);
     const stateWithRecovery: WorkflowState = {
       ...createInitialState('invalid recovery feature'),
       phase: 'implementing',
@@ -1031,7 +1093,7 @@ describe('runRpc', () => {
         createdAt: new Date().toISOString(),
       },
     };
-    saveState({ projectDir, sessionId }, stateWithRecovery);
+    saveOwnedState({ projectDir, sessionId }, stateWithRecovery);
 
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
@@ -1101,7 +1163,6 @@ describe('runRpc', () => {
   it('does not send a second queued recovery ACK after the prompt is resolved', async () => {
     const projectDir = setupProject();
     const sessionId = 'rpc-double-recovery-session';
-    ensureSessionDir(projectDir, sessionId);
     const stateWithRecovery: WorkflowState = {
       ...createInitialState('double recovery feature'),
       phase: 'implementing',
@@ -1119,7 +1180,7 @@ describe('runRpc', () => {
         createdAt: new Date().toISOString(),
       },
     };
-    saveState({ projectDir, sessionId }, stateWithRecovery);
+    saveOwnedState({ projectDir, sessionId }, stateWithRecovery);
 
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
@@ -1168,8 +1229,7 @@ describe('runRpc', () => {
       ...createInitialState('revise rpc feature'),
       phase: 'reviewing-plan',
     };
-    ensureSessionDir(projectDir, sessionId);
-    saveState({ projectDir, sessionId }, state);
+    saveOwnedState({ projectDir, sessionId }, state);
 
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
@@ -1240,8 +1300,7 @@ describe('runRpc', () => {
       ...createInitialState('approval revise rpc feature'),
       phase: 'reviewing-plan',
     };
-    ensureSessionDir(projectDir, sessionId);
-    saveState({ projectDir, sessionId }, state);
+    saveOwnedState({ projectDir, sessionId }, state);
 
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
@@ -1324,8 +1383,7 @@ describe('runRpc', () => {
         createdAt: new Date().toISOString(),
       },
     };
-    ensureSessionDir(projectDir, sessionId);
-    saveState({ projectDir, sessionId }, stateWithRecovery);
+    saveOwnedState({ projectDir, sessionId }, stateWithRecovery);
 
     const input = new PassThrough();
     const { chunks, output } = captureWritable();

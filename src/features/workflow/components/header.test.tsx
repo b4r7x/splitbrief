@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { act } from 'react';
 import { render } from 'ink-testing-library';
 import { tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
+import { markInterruptRequested } from '../../../stores/workflow/actions/interrupt.js';
+import { markInterruptResumed } from '../../../stores/workflow/actions/resume.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
@@ -315,6 +318,74 @@ describe('Header — rail and elapsed', () => {
 
     expect(firstFrame).toContain('0:12');
     expect(instance.lastFrame() ?? '').toContain('0:12');
+    instance.unmount();
+  });
+
+  it('freezes the elapsed clock when the workflow is interrupted', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(5_000);
+    lifecycleStore.__testReset({
+      phase: 'implementing',
+      status: 'running',
+      startedAt: 0,
+    });
+
+    const instance = render(<Header startedAt={STARTED_AT} />);
+    expect(instance.lastFrame() ?? '').toContain('0:05');
+
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(instance.lastFrame() ?? '').toContain('0:10');
+
+    act(() => {
+      markInterruptRequested();
+    });
+    expect(instance.lastFrame() ?? '').toContain('0:10');
+
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(instance.lastFrame() ?? '').toContain('0:10');
+    instance.unmount();
+  });
+
+  it('resumes ticking when the workflow returns to running', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(5_000);
+    lifecycleStore.__testReset({
+      phase: 'implementing',
+      status: 'running',
+      startedAt: 0,
+    });
+
+    const instance = render(<Header startedAt={STARTED_AT} />);
+    expect(instance.lastFrame() ?? '').toContain('0:05');
+
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(instance.lastFrame() ?? '').toContain('0:10');
+
+    act(() => {
+      markInterruptRequested();
+    });
+    expect(instance.lastFrame() ?? '').toContain('0:10');
+
+    act(() => {
+      vi.advanceTimersByTime(20_000);
+    });
+    expect(instance.lastFrame() ?? '').toContain('0:10');
+
+    act(() => {
+      markInterruptResumed();
+    });
+    expect(instance.lastFrame() ?? '').toContain('0:30');
+
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+    expect(instance.lastFrame() ?? '').toContain('0:32');
     instance.unmount();
   });
 });

@@ -104,19 +104,21 @@ function startWithFreshPreparation() {
 }
 
 describe('CLI integration: fresh CLI runner start gate', () => {
-  it.each([
-    '0.1.0',
-    '0.39.9',
-  ] as const)('blocks fresh incompatible Codex %s before creating a session', async (version) => {
-    activateCodexShim(version);
+  it.each(['0.1.0', '0.39.9'] as const)(
+    'blocks fresh incompatible Codex %s before creating a session',
+    async (version) => {
+      activateCodexShim(version);
 
-    const { exitCode, run } = await startWithFreshPreparation();
+      const { exitCode, run } = await startWithFreshPreparation();
 
-    expect(exitCode).not.toBe(0);
-    expect(stdoutWrites.join('')).toContain('Fresh CLI evidence denied admission: compatibility.');
-    expect(run.gates).toBeUndefined();
-    expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
-  });
+      expect(exitCode).not.toBe(0);
+      expect(stdoutWrites.join('')).toContain(
+        'Fresh CLI evidence denied admission: compatibility.',
+      );
+      expect(run.gates).toBeUndefined();
+      expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
+    },
+  );
 
   it('fail-closes a headless start on unverified auth and names the escape hatch', async () => {
     activateCodexShim('0.999.0');

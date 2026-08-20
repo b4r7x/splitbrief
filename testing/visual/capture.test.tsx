@@ -36,9 +36,10 @@ describe('visual gallery capture orchestration', () => {
       captureEntry(workflow.id, workflow.viewports[0], []),
       captureEntry(home.id, home.viewports[0], []),
     ];
-    const selection = selectionFrom(captures);
+    const selection = selectionFrom(captures, 'unicode-color');
     const outputRoot = await createOutputRoot();
     const events: string[] = [];
+    const mountedProfiles: Array<string | undefined> = [];
     let activeMounts = 0;
     let maximumActiveMounts = 0;
 
@@ -49,6 +50,7 @@ describe('visual gallery capture orchestration', () => {
       gitRevision: 'abcdef1',
       selection,
       mountScenario: async (options) => {
+        mountedProfiles.push(options.profile);
         activeMounts += 1;
         maximumActiveMounts = Math.max(maximumActiveMounts, activeMounts);
         events.push(`mount:${captureLabel(options.scenario.id, options.viewport)}`);
@@ -67,6 +69,7 @@ describe('visual gallery capture orchestration', () => {
 
     expect(maximumActiveMounts).toBe(1);
     expect(activeMounts).toBe(0);
+    expect(new Set(mountedProfiles)).toEqual(new Set(['unicode-color']));
     expect(events).toEqual([
       'mount:home-empty:120x40',
       'unmount:home-empty:120x40',
@@ -98,14 +101,48 @@ describe('visual gallery capture orchestration', () => {
     }
   }, 20_000);
 
+  it('propagates one validated profile through repeated nested captures', async () => {
+    const scenario = requireScenario('home-empty');
+    const captures = [
+      captureEntry(scenario.id, scenario.viewports[0], []),
+      captureEntry(scenario.id, scenario.viewports[1], []),
+    ];
+    const profile = 'ascii-mono';
+    const selection = selectionFrom(captures, profile);
+    const outputRoot = await createOutputRoot();
+    const mountedProfiles: Array<string | undefined> = [];
+
+    const publication = await captureGallery({
+      outputRoot,
+      projectRoot: process.cwd(),
+      toolVersion: '0.1.0',
+      gitRevision: null,
+      selection,
+      mountScenario: async (options) => {
+        mountedProfiles.push(options.profile);
+        return mountGalleryScenario(options);
+      },
+    });
+
+    expect(mountedProfiles).toHaveLength(captures.length);
+    expect(mountedProfiles.every((mountedProfile) => mountedProfile === profile)).toBe(true);
+    expect(publication.manifest.profile).toBe(profile);
+    expect(publication.manifest.selection.profile).toBe(profile);
+    expect(publication.manifest.determinism.profile).toBe(profile);
+    expect(publication.manifest.artifacts).toHaveLength(captures.length);
+  }, 20_000);
+
   it('continues after fixture and parser failures and records locator identity after cleanup', async () => {
     const scenario = requireScenario('home-empty');
     const hero = elementId('hero');
-    const selection = selectionFrom([
-      captureEntry(scenario.id, scenario.viewports[0], []),
-      captureEntry(scenario.id, scenario.viewports[1], []),
-      captureEntry(scenario.id, scenario.viewports[2], [hero]),
-    ]);
+    const selection = selectionFrom(
+      [
+        captureEntry(scenario.id, scenario.viewports[0], []),
+        captureEntry(scenario.id, scenario.viewports[1], []),
+        captureEntry(scenario.id, scenario.viewports[2], [hero]),
+      ],
+      'unicode-mono',
+    );
     const outputRoot = await createOutputRoot();
     const terminalBefore = terminalSizeStore.get();
     const dateNowBefore = Date.now;
@@ -140,6 +177,7 @@ describe('visual gallery capture orchestration', () => {
     expect(Date.now).toBe(dateNowBefore);
     expect(terminalSizeStore.get()).toEqual(terminalBefore);
     expect(publication.manifest.artifacts).toHaveLength(1);
+    expect(publication.manifest.profile).toBe('unicode-mono');
     expect(publication.manifest.failures.map((failure) => failure.stage)).toEqual([
       'fixture',
       'terminal',
@@ -159,7 +197,10 @@ describe('visual gallery capture orchestration', () => {
 
   it('cleans the mounted capture and staging after a writer exception without escaping root', async () => {
     const scenario = requireScenario('home-empty');
-    const selection = selectionFrom([captureEntry(scenario.id, scenario.viewports[2], [])]);
+    const selection = selectionFrom(
+      [captureEntry(scenario.id, scenario.viewports[2], [])],
+      'unicode-mono',
+    );
     const outputRoot = await createOutputRoot();
     const layout = createPublicationLayout({
       outputRoot,
@@ -195,6 +236,9 @@ interface CaptureEntryInput {
   readonly elementIds: readonly ElementId[];
 }
 
+const TERMINAL_PROFILES = ['unicode-color', 'unicode-mono', 'ascii-mono'] as const;
+type TerminalProfile = (typeof TERMINAL_PROFILES)[number];
+
 function captureEntry(
   scenarioId: string,
   viewport: Viewport | undefined,
@@ -217,8 +261,12 @@ function captureEntry(
   };
 }
 
-function selectionFrom(entries: readonly CaptureEntryInput[]): CaptureSelection {
+function selectionFrom(
+  entries: readonly CaptureEntryInput[],
+  profile?: TerminalProfile,
+): CaptureSelection {
   return CaptureSelectionSchema.parse({
+    ...(profile === undefined ? {} : { profile }),
     requests: [...entries].reverse(),
     targets: [...entries].reverse(),
   });

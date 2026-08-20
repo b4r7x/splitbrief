@@ -5,34 +5,35 @@ import { tmpdir } from 'node:os';
 import { routerStore } from '../../stores/navigation/router.js';
 import { attachCommand } from './attach.js';
 import type { AttachDeps } from './attach.js';
-import { showCrashDiagnostic } from '../crash-diagnostic.js';
 import type { ServerStatus } from '../../engine/ipc/lockfile.js';
+import type { SessionRef } from '../../core/types/session-ref.js';
+import type { StateAuthorityReceipt } from '../../core/state/types.js';
 
 const mockCheckServerStatus = vi.fn<(dir: string) => Promise<ServerStatus>>();
-const mockShowCrashDiagnostic = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
-const mockInitStores = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+const mockInitObserverStores = vi.fn<(projectDir: string) => void>();
+const mockReadStateAuthority = vi.fn<(ref: SessionRef) => StateAuthorityReceipt | null>((ref) => ({
+  kind: 'usable',
+  sessionId: ref.sessionId,
+  ownerId: 'owner-1',
+  pid: process.pid,
+  processStart: '1',
+  runId: 'run-1',
+  acquisitionId: 'acquisition-1',
+  fence: 1,
+  stateRevision: 1,
+  stateDigest: 'a'.repeat(64),
+}));
+const mockAssertStateAuthority = vi.fn();
 const renderCalls: Array<Parameters<AttachDeps['renderApp']>[1]> = [];
 const mockRenderAppWithCapture: AttachDeps['renderApp'] = async (_app, options) => {
   renderCalls.push(options);
 };
-const FIXED_SETUP_RESULT = {
-  projectDir: '',
-  useFullscreen: true,
-  useMouse: true,
-  useHover: false,
-} as const;
-
-const mockSetupWorkflow: AttachDeps['setupWorkflow'] = async (opts) => ({
-  ...FIXED_SETUP_RESULT,
-  projectDir: opts.project ?? testDir,
-});
-
 const fakeDeps: AttachDeps = {
   checkServerStatus: mockCheckServerStatus,
-  showCrashDiagnostic: mockShowCrashDiagnostic,
-  initStores: mockInitStores,
+  initObserverStores: mockInitObserverStores,
   renderApp: mockRenderAppWithCapture,
-  setupWorkflow: mockSetupWorkflow,
+  readStateAuthority: mockReadStateAuthority,
+  assertStateAuthority: mockAssertStateAuthority,
 };
 
 let testDir: string;
@@ -43,6 +44,19 @@ beforeEach(() => {
   testDir = join(tmpdir(), `attach-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   mkdirSync(testDir, { recursive: true });
   vi.clearAllMocks();
+  mockAssertStateAuthority.mockReset();
+  mockReadStateAuthority.mockImplementation((ref) => ({
+    kind: 'usable',
+    sessionId: ref.sessionId,
+    ownerId: 'owner-1',
+    pid: process.pid,
+    processStart: '1',
+    runId: 'run-1',
+    acquisitionId: 'acquisition-1',
+    fence: 1,
+    stateRevision: 1,
+    stateDigest: 'a'.repeat(64),
+  }));
   renderCalls.length = 0;
   routerStore.reset();
   Object.defineProperty(process.stdout, 'isTTY', { value: false, configurable: true });
@@ -81,7 +95,7 @@ describe('attachCommand', () => {
     expect(mockCheckServerStatus).not.toHaveBeenCalled();
   });
 
-  it('throws exit-1 for a dead session using the real crash diagnostic without exiting the process', async () => {
+  it('refuses a dead session without a local fallback or crash-side effect', async () => {
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
 
     const sessDir = join(testDir, '.splitbrief', 'sessions', 'dead-session');
@@ -103,36 +117,14 @@ describe('attachCommand', () => {
       },
     };
     mockCheckServerStatus.mockResolvedValue(status);
+    mockReadStateAuthority.mockReturnValue(null);
 
-    const written: string[] = [];
-    const origWrite = process.stdout.write.bind(process.stdout);
-    process.stdout.write = (data: unknown) => {
-      written.push(String(data));
-      return true;
-    };
-    let exitCode: number | undefined;
-    const origExit = process.exit.bind(process);
-    process.exit = ((code?: number) => {
-      exitCode = code;
-    }) as typeof process.exit;
-
-    try {
-      await expect(
-        attachCommand(
-          'dead-session',
-          { projectDir: testDir },
-          {
-            ...fakeDeps,
-            showCrashDiagnostic: (dir, st) => showCrashDiagnostic(dir, st, async () => '2'),
-          },
-        ),
-      ).rejects.toMatchObject({ exitCode: 1 });
-      expect(written.join('')).toContain('CRASHED');
-      expect(exitCode).toBeUndefined();
-    } finally {
-      process.stdout.write = origWrite;
-      process.exit = origExit;
-    }
+    await expect(
+      attachCommand('dead-session', { projectDir: testDir }, fakeDeps),
+    ).rejects.toMatchObject({
+      exitCode: 1,
+      message: expect.stringContaining('no matching live owner authority'),
+    });
   });
 
   it('attached entry bypasses local preparation and runner factories', async () => {
@@ -145,8 +137,8 @@ describe('attachCommand', () => {
       alive: true,
       data: {
         version: 1,
-        pid: 99,
-        startTimeMs: Date.now(),
+        pid: process.pid,
+        startTimeMs: 1,
         lastAliveMs: Date.now(),
         sessionId: 'alive-session',
         mode: 'quick',
@@ -173,9 +165,17 @@ describe('attachCommand', () => {
     });
     expect(renderCalls).toHaveLength(1);
     expect(renderCalls[0]).toEqual({
-      fullscreen: true,
-      mouse: true,
+      fullscreen: false,
+      mouse: false,
       hover: false,
+    });
+    expect(mockReadStateAuthority).toHaveBeenCalledWith({
+      projectDir: testDir,
+      sessionId: 'alive-session',
+    });
+    expect(mockAssertStateAuthority).toHaveBeenCalledWith({
+      ref: { projectDir: testDir, sessionId: 'alive-session' },
+      receipt: expect.objectContaining({ sessionId: 'alive-session' }),
     });
   });
 
@@ -189,8 +189,8 @@ describe('attachCommand', () => {
       alive: true,
       data: {
         version: 1,
-        pid: 88,
-        startTimeMs: Date.now(),
+        pid: process.pid,
+        startTimeMs: 1,
         lastAliveMs: Date.now(),
         sessionId: 'solo-session',
         mode: 'instant',
@@ -215,5 +215,91 @@ describe('attachCommand', () => {
         },
       },
     });
+  });
+
+  it('uses authority identity instead of heartbeat freshness for a live owner', async () => {
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+    const sessDir = join(testDir, '.splitbrief', 'sessions', 'stale-heartbeat');
+    mkdirSync(sessDir, { recursive: true });
+    mockCheckServerStatus.mockResolvedValue({
+      alive: false,
+      crashed: true,
+      processAlive: true,
+      data: {
+        version: 1,
+        pid: process.pid,
+        startTimeMs: 1,
+        lastAliveMs: 1,
+        sessionId: 'stale-heartbeat',
+        mode: 'quick',
+        feature: 'owner feature',
+        authToken: 'test-auth-token',
+      },
+    });
+
+    await expect(
+      attachCommand('stale-heartbeat', { projectDir: testDir }, fakeDeps),
+    ).resolves.toBeUndefined();
+    expect(renderCalls).toHaveLength(1);
+  });
+
+  it('refuses a running session without a matching authority before initialization or render', async () => {
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+    const sessDir = join(testDir, '.splitbrief', 'sessions', 'missing-authority');
+    mkdirSync(sessDir, { recursive: true });
+    mockCheckServerStatus.mockResolvedValue({
+      alive: true,
+      data: {
+        version: 1,
+        pid: 99,
+        startTimeMs: Date.now(),
+        lastAliveMs: Date.now(),
+        sessionId: 'missing-authority',
+        mode: 'quick',
+        feature: 'observe only',
+        authToken: 'test-auth-token',
+      },
+    });
+    mockReadStateAuthority.mockReturnValue(null);
+
+    await expect(
+      attachCommand('missing-authority', { projectDir: testDir }, fakeDeps),
+    ).rejects.toMatchObject({
+      exitCode: 1,
+      message: expect.stringContaining('no matching live owner authority'),
+    });
+    expect(mockInitObserverStores).not.toHaveBeenCalled();
+    expect(renderCalls).toHaveLength(0);
+  });
+
+  it('refuses a dead or mismatched owner without falling back locally', async () => {
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+    const sessDir = join(testDir, '.splitbrief', 'sessions', 'dead-authority');
+    mkdirSync(sessDir, { recursive: true });
+    mockCheckServerStatus.mockResolvedValue({
+      alive: true,
+      data: {
+        version: 1,
+        pid: 99,
+        startTimeMs: Date.now(),
+        lastAliveMs: Date.now(),
+        sessionId: 'dead-authority',
+        mode: 'quick',
+        feature: 'observe only',
+        authToken: 'test-auth-token',
+      },
+    });
+    mockAssertStateAuthority.mockImplementation(() => {
+      throw new Error('owner process is dead');
+    });
+
+    await expect(
+      attachCommand('dead-authority', { projectDir: testDir }, fakeDeps),
+    ).rejects.toMatchObject({
+      exitCode: 1,
+      message: expect.stringContaining('owner authority is dead or mismatched'),
+    });
+    expect(mockInitObserverStores).not.toHaveBeenCalled();
+    expect(renderCalls).toHaveLength(0);
   });
 });

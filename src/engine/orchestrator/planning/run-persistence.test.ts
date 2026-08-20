@@ -10,6 +10,12 @@ import {
   type RunOpts,
 } from '#testing/helpers/planning-phase.js';
 import { loadState } from '../../../core/state/persistence.js';
+import {
+  createTaskCompilationAttemptId,
+  OwnedPlannerArtifactSchema,
+} from '../../../core/schemas/task-compilation.js';
+import type { PhaseResult, PlannerArtifactLogicalName } from '../../planners/types.js';
+import { sha256Hex } from '../../../utils/sha256.js';
 
 let dirs: string[] = [];
 afterEach(() => {
@@ -19,6 +25,31 @@ afterEach(() => {
 
 function runPhase(opts: RunOpts = {}) {
   return runPhaseHelper(dirs, opts);
+}
+
+function phaseResult(
+  logicalName: PlannerArtifactLogicalName,
+  text: string,
+  rawOutput: string,
+): PhaseResult {
+  const digest = sha256Hex(text);
+  return {
+    artifact: OwnedPlannerArtifactSchema.parse({
+      semanticId: `test-${logicalName}`,
+      programId: null,
+      batchId: null,
+      attemptId: createTaskCompilationAttemptId(),
+      logicalName,
+      transport: 'stdout-final',
+      text,
+      byteLength: Buffer.byteLength(text, 'utf8'),
+      sha256: digest,
+      runtimeReceipt: digest,
+      terminal: { status: 'completed', recordId: `test-${logicalName}`, protocolDigest: digest },
+      sourceReceipt: { kind: 'stdout-final', resultDigest: digest },
+    }),
+    rawOutput,
+  };
 }
 
 describe('runPlanningPhase — mode persistence', () => {
@@ -55,8 +86,8 @@ describe('runPlanningPhase — persistence', () => {
       tasks: [makePassingTask()],
       usage: { inputTokens: 100, outputTokens: 50 },
       phases: [
-        { text: artifactSpec, filename: 'spec.md', rawOutput: 'raw planner noise for spec' },
-        { text: artifactPlan, filename: 'plan.md', rawOutput: 'raw planner noise for plan' },
+        phaseResult('spec.md', artifactSpec, 'raw planner noise for spec'),
+        phaseResult('plan.md', artifactPlan, 'raw planner noise for plan'),
       ],
     });
 

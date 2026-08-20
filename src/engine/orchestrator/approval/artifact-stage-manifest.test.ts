@@ -14,10 +14,13 @@ import {
 import { createServer, type Server } from 'node:net';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import {
+  createTaskCompilationAttemptId,
+  TaskCompilationSemanticIdSchema,
+} from '../../../core/schemas/task-compilation.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
   DECLARED_ARTIFACT_STAGE_MAX_BYTES,
-  DECLARED_ARTIFACT_STAGE_PATH,
   prepareArtifactStageLease,
   type ArtifactStageLease,
 } from './artifact-stage-manifest.js';
@@ -27,7 +30,12 @@ const itUnix = process.platform === 'win32' ? it.skip : it;
 type Fixture = Readonly<{
   root: string;
   artifactPath: string;
-  lease: ArtifactStageLease;
+  lease: ArtifactStageLease &
+    Readonly<{
+      readAfterChild: (
+        input: Readonly<{ declaredRedactionValues: readonly string[] }>,
+      ) => Promise<string>;
+    }>;
 }>;
 
 let tempDirs: string[] = [];
@@ -61,12 +69,36 @@ async function createFixture(): Promise<Fixture> {
   const root = trackedTempDir('artifact-stage-manifest');
   mkdirSync(join(root, 'src'));
   writeFileSync(join(root, 'src', 'baseline.ts'), 'export const baseline = true;\n');
-  const lease = await prepareArtifactStageLease({ stagedProjectDir: root });
+  const attemptId = createTaskCompilationAttemptId();
+  const leaseId = `fixture-${attemptId}`;
+  const relativePath = `.splitbrief-runner/output/${leaseId}/result`;
+  const lease = await prepareArtifactStageLease({
+    stagedProjectDir: root,
+    provenance: {
+      semanticId: TaskCompilationSemanticIdSchema.parse('artifact-stage-test'),
+      programId: null,
+      batchId: null,
+      attemptId,
+      transport: {
+        kind: 'declared-file',
+        lease: { leaseId, attemptId, relativePath },
+      },
+      maxBytes: 96 * 1_024,
+      relativePath,
+    },
+  });
   leases.push(lease);
+  const textLease = Object.assign(lease, {
+    readAfterChild: async ({
+      declaredRedactionValues,
+    }: Readonly<{
+      declaredRedactionValues: readonly string[];
+    }>) => (await lease.readWithReceiptAfterChild({ declaredRedactionValues })).text,
+  });
   return {
     root,
-    artifactPath: join(root, DECLARED_ARTIFACT_STAGE_PATH),
-    lease,
+    artifactPath: lease.artifactPath,
+    lease: textLease,
   };
 }
 
@@ -144,7 +176,9 @@ describe('prepareArtifactStageLease', () => {
     const root = trackedTempDir('artifact-stage-existing-control');
     mkdirSync(join(root, '.splitbrief-runner'));
 
-    await expectInvalid(() => prepareArtifactStageLease({ stagedProjectDir: root }));
+    await expectInvalid(() =>
+      prepareArtifactStageLease({ stagedProjectDir: root, provenance: undefined }),
+    );
   });
 
   it('returns an exact multibyte UTF-8 artifact and revalidates its retained descriptor', async () => {

@@ -3,6 +3,39 @@ import type { ActionClass } from '../schemas/enums.js';
 import type { Phase } from '../schemas/enums.js';
 import type { TaskId } from '../schemas/task.js';
 
+export type {
+  BriefAdmissionInput,
+  BriefContinuationV1,
+  BriefContractStatus,
+  BriefQualityIssue,
+  BriefQualityReportEvidence,
+  BriefRecoveryAction,
+  BriefRecoveryCommand,
+  BriefRecoveryController,
+  BriefRecoveryControllerDeps,
+  BriefRecoveryInspection,
+  BriefRecoveryMigrationInput,
+  BriefRecoveryOrigin,
+  BriefRecoveryProjectionV1,
+  BriefRecoveryProviderPort,
+  BriefRecoveryBudgetPort,
+  DispatchPossibility,
+  EvidenceRef,
+  InputLifecycleEvent,
+  InputReceipt,
+  InputState,
+  MigrationResultV1,
+  PlannerAttemptSettlement,
+  QueueBriefInput,
+  QueueResultV1,
+  RecoveryBlocker,
+  RecoveryReceipt,
+  RecoveryResult,
+  RecoveryResultV1,
+  RecoveryUsage,
+  StateAuthorityReceipt,
+} from '../schemas/brief-recovery.js';
+
 export const CONFIRM_PHRASE = 'I confirm';
 
 export type TieredApprovalRequest = {

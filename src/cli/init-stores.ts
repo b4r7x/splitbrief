@@ -4,6 +4,8 @@ import { skillsStore } from '../stores/project/skills.js';
 import { installHistoryPersistence } from '../stores/ui/persistence.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
+import { controlsStore } from '../stores/ui/controls.js';
+import { readUiPrefs } from '../core/ui-prefs.js';
 import { detectionStore } from '../stores/project/detection.js';
 import { warnError } from '../lib/warn.js';
 import { detectCapabilities } from '../engine/providers/capabilities.js';
@@ -82,6 +84,8 @@ function loadProjectState(projectDir: string, opts: WorkflowOpts): void {
   if (!storeConfig) throw cliError('configStore.load did not populate config');
   sessionsStore.load(projectDir);
   historyPersistenceTeardown = installHistoryPersistence();
+  const prefs = readUiPrefs(projectDir);
+  controlsStore.setSidebar(prefs.sidebarVisible);
 }
 
 async function loadDiscovery(projectDir: string): Promise<void> {

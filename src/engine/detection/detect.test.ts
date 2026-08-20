@@ -349,23 +349,26 @@ describe('context-bound runner evidence', () => {
     ['an earlier pre-1.0 Codex minor', '0.1.0', 'incompatible'],
     ['a Codex prerelease', '0.40.0-rc.1', 'unknown'],
     ['a malformed Codex version', '0.40', 'unknown'],
-  ] as const)("classifies %s through Codex's minimum admitted version", async (_label, version, kind) => {
-    const evidence = await detectRunnerEvidence({
-      context: cliContext({ authChannel: 'api-key' }),
-      resolveExecutable: async () => executable,
-      probeDeclaredReadiness: async () => ({
-        version: { kind: 'success', value: version },
-        auth: 'verified',
-      }),
-      now: () => 102,
-    });
+  ] as const)(
+    "classifies %s through Codex's minimum admitted version",
+    async (_label, version, kind) => {
+      const evidence = await detectRunnerEvidence({
+        context: cliContext({ authChannel: 'api-key' }),
+        resolveExecutable: async () => executable,
+        probeDeclaredReadiness: async () => ({
+          version: { kind: 'success', value: version },
+          auth: 'verified',
+        }),
+        now: () => 102,
+      });
 
-    expect(evidence.compatibility).toMatchObject({
-      kind,
-      installedVersion: version,
-      testedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
-    });
-  });
+      expect(evidence.compatibility).toMatchObject({
+        kind,
+        installedVersion: version,
+        testedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
+      });
+    },
+  );
 
   it.each([
     ['missing', 'absent'],

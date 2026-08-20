@@ -1,14 +1,14 @@
 import type { CheckpointId } from '../../contracts/identifiers.js';
 import { checkpointId } from '../../contracts/identifiers.js';
 import type { CheckpointPredicate, FixtureRegistry } from '../common.js';
+import { briefRecoveryFixtureProjections } from './brief-recovery-projections.js';
 import { WORKFLOW_FIXTURE_TEXT, workflowFixtureProjections } from './projections.js';
 import { createWorkflowFixtureFactory } from './setup.js';
 
 export const workflowFixtureRegistry: FixtureRegistry = new Map(
-  [...workflowFixtureProjections.values()].map((projection) => [
-    projection.scenarioId,
-    createWorkflowFixtureFactory(projection),
-  ]),
+  [...workflowFixtureProjections.values(), ...briefRecoveryFixtureProjections.values()].map(
+    (projection) => [projection.scenarioId, createWorkflowFixtureFactory(projection)],
+  ),
 );
 
 function includesAll(...markers: readonly string[]): CheckpointPredicate {

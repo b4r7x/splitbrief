@@ -42,6 +42,22 @@ const TRANSCRIPT_ROWLESS_EVENT_TYPES = [
   'clarification_answered',
   'runner_call_stalled',
   'runner_call_stall_cleared',
+  'brief_recovery_quality_reported',
+  'brief_recovery_auto_repair_exhausted',
+  'brief_recovery_attempt_accepted',
+  'brief_recovery_attempt_started',
+  'brief_recovery_attempt_settled',
+  'brief_recovery_attempt_unresolved',
+  'brief_recovery_provider_failed',
+  'brief_recovery_input_queued',
+  'brief_recovery_input_applied',
+  'brief_recovery_stale_ignored',
+  'brief_recovery_rejected',
+  'brief_recovery_refused',
+  'brief_recovery_transition',
+  'brief_recovery_accepted',
+  'brief_generation_published',
+  'brief_execution_permit_issued',
 ] as const satisfies readonly EngineEvent['type'][];
 
 type TranscriptRowlessEventType = (typeof TRANSCRIPT_ROWLESS_EVENT_TYPES)[number];

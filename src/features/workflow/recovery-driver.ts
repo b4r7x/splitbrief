@@ -1,5 +1,6 @@
 import type { TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { StateAuthorityReceipt } from '../../core/state/types.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { markWorkflowPaused } from '../../stores/workflow/actions/pause.js';
@@ -15,11 +16,13 @@ import { createTuiSink } from './tui-sink.js';
 import { formatRecoveryPrompt, parseRecoveryActionAnswer } from './recovery-prompt.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
+import { refreshWorkflowAuthority } from '../../engine/orchestrator/run/init.js';
 
 export type PendingRecoveryResult =
   | {
       shouldRun: true;
       state: WorkflowState;
+      authority?: StateAuthorityReceipt | undefined;
       retryProfileOverride?: string | undefined;
       retryProfileOverrideTaskId?: TaskId | undefined;
     }
@@ -33,6 +36,7 @@ interface PromptPendingRecoveryArgs {
 
 interface UseRecoveryDriverOptions {
   prepared: PreparedExecution;
+  authority?: StateAuthorityReceipt | undefined;
   inputMode: UseInputModeResult;
   abortedRef: { current: boolean };
   setInlineResume: (state: WorkflowState) => void;
@@ -42,7 +46,7 @@ export function createRecoveryDriver(): (
   opts: UseRecoveryDriverOptions,
 ) => (args: PromptPendingRecoveryArgs) => Promise<PendingRecoveryResult> {
   return (opts: UseRecoveryDriverOptions) => {
-    const { prepared, inputMode, abortedRef, setInlineResume } = opts;
+    const { prepared, authority, inputMode, abortedRef, setInlineResume } = opts;
     const { ref, active } = prepared.session;
     const { projectDir, sessionId } = ref;
     const config = prepared.config;
@@ -52,7 +56,7 @@ export function createRecoveryDriver(): (
       controller,
       republishPrompt,
     }: PromptPendingRecoveryArgs): Promise<PendingRecoveryResult> {
-      const loaded = loadPendingRecoveryState(ref, state);
+      const loaded = loadPendingRecoveryState(ref, state, authority);
       if (!loaded.pending) return { shouldRun: true, state: loaded.state };
 
       const bus = createRecoveryBus({
@@ -76,6 +80,7 @@ export function createRecoveryDriver(): (
           action,
           bus,
           config,
+          ...(authority === undefined ? {} : { authority }),
         });
 
         setInlineResume(result.state);
@@ -114,9 +119,14 @@ export function createRecoveryDriver(): (
                 ...(retryProfileOverrideTaskId !== undefined ? { retryProfileOverrideTaskId } : {}),
               }
             : {};
+        const nextAuthority =
+          authority === undefined
+            ? undefined
+            : refreshWorkflowAuthority(ref, authority, result.state);
         return {
           shouldRun: true as const,
           state: result.state,
+          ...(nextAuthority === undefined ? {} : { authority: nextAuthority }),
           ...retryOverrides,
         };
       };
@@ -133,14 +143,14 @@ export function createRecoveryDriver(): (
       publishPendingRecoveryPrompt(bus, loaded.issue, republishPrompt);
 
       while (true) {
-        const promptLoaded = loadPendingRecoveryState(ref, loaded.state);
+        const promptLoaded = loadPendingRecoveryState(ref, loaded.state, authority);
         const promptIssue = promptLoaded.pending ? promptLoaded.issue : loaded.issue;
         const answer = await inputMode.setQuestionMode(formatRecoveryPrompt(promptIssue));
         if (controller.signal.aborted || abortedRef.current) {
           return { shouldRun: false, state: loaded.state };
         }
 
-        const latest = loadPendingRecoveryState(ref, loaded.state);
+        const latest = loadPendingRecoveryState(ref, loaded.state, authority);
         if (!latest.pending) return { shouldRun: true, state: latest.state };
 
         const action = parseRecoveryActionAnswer(answer, latest.issue);

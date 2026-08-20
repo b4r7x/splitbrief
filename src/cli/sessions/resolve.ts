@@ -40,9 +40,9 @@ export async function resolveRunningSession(
 }
 
 export function assertResumableState(state: WorkflowState, sessionId: string): void {
-  if (state.stateVersion < CURRENT_STATE_VERSION) {
+  if (state.stateVersion !== CURRENT_STATE_VERSION) {
     throw cliError(
-      `session '${sessionId}' state is from an older version and cannot be resumed.\nStart a new workflow with \`splitbrief start\`.`,
+      `session '${sessionId}' state is not current v4 and cannot be resumed before explicit migration.\nStart a new workflow with \`splitbrief start\`.`,
       1,
     );
   }

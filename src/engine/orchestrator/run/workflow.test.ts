@@ -19,13 +19,27 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { RunnerCallContext } from '../../../engine/calls/types.js';
 import type { PlanOptions } from '../../../engine/planners/types.js';
+import type { PreparedExecution } from '../../runners/prepared-execution.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
-import { READINESS_FILE, SESSION_LOG_FILE, sessionDir, sessionsRoot } from '../../../core/paths.js';
+import {
+  READINESS_FILE,
+  SESSION_LOG_FILE,
+  SPLITBRIEF_DIR,
+  SESSIONS_DIR,
+  STATE_FILE,
+  sessionDir,
+  sessionsRoot,
+} from '../../../core/paths.js';
 import { ORPHAN_SESSION_GRACE_MS } from '../../../core/sessions/orphans.js';
-import { transition } from '../../../core/state/machine.js';
+import { createInitialState, transition } from '../../../core/state/machine.js';
 import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-state.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
+import {
+  acquireStateAuthority,
+  readStateAuthority,
+  releaseStateAuthority,
+} from '../../../core/state/authority.js';
 import {
   TRANSCRIPT_OMITTED_FEATURE,
   generateSessionId,
@@ -86,6 +100,7 @@ type WorkflowTestOptions = Omit<RunWorkflowOptions, 'prepared'> & {
   config: Config;
   sessionId?: string | undefined;
   allowHooks?: boolean | undefined;
+  purpose?: Exclude<PreparedExecution['purpose'], 'spec'> | undefined;
 };
 
 async function runWorkflow(input: WorkflowTestOptions) {
@@ -95,6 +110,7 @@ async function runWorkflow(input: WorkflowTestOptions) {
     config: inputConfig,
     sessionId: explicitSessionId,
     allowHooks: _allowHooks,
+    purpose: requestedPurpose,
     ...options
   } = input;
   const hooks = await resolveHooksConfig(projectDir, inputConfig.hooks);
@@ -116,10 +132,11 @@ async function runWorkflow(input: WorkflowTestOptions) {
       makeRunnerGate(profile.config, { role: 'implementer', profile: profile.name }, preparationId),
     ),
   ];
+  const purpose = requestedPurpose ?? (input.savedState === undefined ? 'new-workflow' : 'resume');
   return runPreparedWorkflow({
     ...options,
     prepared: {
-      purpose: 'new-workflow',
+      purpose,
       config,
       preparationId,
       report: readyReport(projectDir),
@@ -127,11 +144,34 @@ async function runWorkflow(input: WorkflowTestOptions) {
       session: { kind: 'existing', ref: { projectDir, sessionId }, active },
       runtime: {
         feature,
+        ...(input.savedState === undefined ? {} : { resumeState: input.savedState }),
         allowRepoRunners: false,
         allowHooks: true,
       },
     },
   });
+}
+
+type WorkflowRef = { projectDir: string; sessionId: string };
+
+function stateFile(ref: WorkflowRef): string {
+  return join(ref.projectDir, SPLITBRIEF_DIR, SESSIONS_DIR, ref.sessionId, STATE_FILE);
+}
+
+function writeRawState(ref: WorkflowRef, state: unknown): void {
+  writeFileSync(stateFile(ref), `${JSON.stringify(state)}\n`);
+}
+
+function legacyWorkflowState(feature: string): Record<string, unknown> {
+  return {
+    ...createInitialState(feature),
+    stateVersion: 3,
+    phase: 'reviewing-briefs',
+    currentTaskIndex: 0,
+    tasks: [],
+    mode: 'standard',
+    messageQueue: [],
+  };
 }
 
 // An "agent" planner whose command does not exist — planner.isAvailable() returns false,
@@ -551,6 +591,201 @@ describe('runWorkflow — smoke', () => {
     ).rejects.toThrow(/already running/);
   });
 
+  it('refuses a live state-authority owner before constructing provider work', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'state-authority-live-owner-sid';
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    saveState(ref, createInitialState('live authority owner'));
+    const owner = acquireStateAuthority({
+      ref,
+      purpose: 'resume',
+      ownerId: 'live-owner',
+      runId: 'live-run',
+      acquisitionId: 'live-acquisition',
+    });
+    expect(owner.kind).toBe('fenced');
+    if (owner.kind !== 'fenced') return;
+    expect(readStateAuthority(ref)?.ownerId).toBe('live-owner');
+
+    const planner = makePlanner({
+      isAvailable: vi.fn().mockResolvedValue(true),
+      quickPlan: vi.fn(),
+      plan: vi.fn(),
+    });
+    try {
+      const summary = await runWorkflow({
+        feature: 'live authority owner',
+        projectDir,
+        config: unavailablePlannerConfig(),
+        callbacks: makeCallbacks().callbacks,
+        sessionId,
+        purpose: 'resume',
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+        _planner: planner,
+      });
+      expect(summary.totalTasks).toBe(0);
+      expect(readStateAuthority(ref)?.ownerId).toBe('live-owner');
+      expect(planner.isAvailable).not.toHaveBeenCalled();
+      expect(planner.plan).not.toHaveBeenCalled();
+      expect(planner.quickPlan).not.toHaveBeenCalled();
+    } finally {
+      expect(releaseStateAuthority(ref, owner.receipt)).toBe(true);
+    }
+  });
+
+  it('rejects a concurrent workflow before its planner crosses a provider boundary', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'state-authority-concurrent-sid';
+    const config = makeConfig({
+      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      workflow: { approve: 'none', mode: 'quick', persistTranscript: false },
+    });
+    const releaseFirst = Promise.withResolvers<void>();
+    const firstAvailability = vi.fn(async () => {
+      await releaseFirst.promise;
+      return false;
+    });
+    const firstPlanner = makePlanner({ isAvailable: firstAvailability });
+    const firstRun = runWorkflow({
+      feature: 'concurrent authority owner',
+      projectDir,
+      config,
+      callbacks: makeCallbacks().callbacks,
+      sessionId,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _planner: firstPlanner,
+    });
+
+    try {
+      await vi.waitFor(() => expect(firstAvailability).toHaveBeenCalledTimes(1));
+      const secondPlanner = makePlanner({
+        isAvailable: vi.fn(),
+        quickPlan: vi.fn(),
+        plan: vi.fn(),
+      });
+      await expect(
+        runWorkflow({
+          feature: 'concurrent authority owner',
+          projectDir,
+          config,
+          callbacks: makeCallbacks().callbacks,
+          sessionId,
+          purpose: 'resume',
+          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+          _planner: secondPlanner,
+        }),
+      ).rejects.toMatchObject({ kind: 'workflow-session-already-live' });
+      expect(secondPlanner.isAvailable).not.toHaveBeenCalled();
+      expect(secondPlanner.plan).not.toHaveBeenCalled();
+      expect(secondPlanner.quickPlan).not.toHaveBeenCalled();
+    } finally {
+      releaseFirst.resolve();
+      await firstRun;
+    }
+  });
+
+  it('takes over a proven-dead owner with a higher fence and rejects stale teardown', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'state-authority-takeover-sid';
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    saveState(ref, createInitialState('dead authority owner'));
+    const old = acquireStateAuthority({
+      ref,
+      purpose: 'resume',
+      ownerId: 'dead-owner',
+      runId: 'dead-run',
+      acquisitionId: 'dead-acquisition',
+      pid: 2_147_483_646,
+      processStart: '1',
+    });
+    expect(old.kind).toBe('fenced');
+    if (old.kind !== 'fenced') return;
+
+    const planner = makePlanner({ isAvailable: vi.fn().mockResolvedValue(false) });
+    await runWorkflow({
+      feature: 'dead authority owner',
+      projectDir,
+      config: unavailablePlannerConfig(),
+      callbacks: makeCallbacks().callbacks,
+      sessionId,
+      purpose: 'resume',
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _planner: planner,
+    });
+
+    const successor = loadState(ref);
+    expect(successor?.stateVersion).toBe(4);
+    expect(successor?.stateRevision).toBeGreaterThan(old.receipt.stateRevision);
+    expect(successor?.stateFence?.token).toBeGreaterThan(old.receipt.fence);
+    expect(successor?.stateFence?.ownerId).not.toBe(old.receipt.ownerId);
+    expect(releaseStateAuthority(ref, old.receipt)).toBe(false);
+    expect(planner.plan).not.toHaveBeenCalled();
+    expect(planner.quickPlan).not.toHaveBeenCalled();
+  });
+
+  it('migrates v3 before planner work and keeps provider operations out of migration', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'state-authority-migration-sid';
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    writeRawState(ref, legacyWorkflowState('legacy migration'));
+
+    const planner = makePlanner({ isAvailable: vi.fn().mockResolvedValue(false) });
+    await runWorkflow({
+      feature: 'legacy migration',
+      projectDir,
+      config: unavailablePlannerConfig(),
+      callbacks: makeCallbacks().callbacks,
+      sessionId,
+      purpose: 'resume',
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _planner: planner,
+    });
+
+    const migrated = loadState(ref);
+    expect(migrated?.stateVersion).toBe(4);
+    expect(migrated?.stateRevision).toBeGreaterThan(0);
+    expect(migrated?.stateFence?.token).toBeGreaterThan(0);
+    expect(migrated?.briefRecovery?.status).toBe('storage-blocked');
+    expect(planner.isAvailable).toHaveBeenCalledTimes(1);
+    expect(planner.plan).not.toHaveBeenCalled();
+    expect(planner.quickPlan).not.toHaveBeenCalled();
+    expect(planner.review).not.toHaveBeenCalled();
+  });
+
+  it('rejects a future state without rewriting bytes or invoking the planner', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'state-authority-future-sid';
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    writeRawState(ref, { ...legacyWorkflowState('future state'), stateVersion: 99 });
+    const before = readFileSync(stateFile(ref));
+    const planner = makePlanner({
+      isAvailable: vi.fn(),
+      plan: vi.fn(),
+      quickPlan: vi.fn(),
+    });
+
+    const summary = await runWorkflow({
+      feature: 'future state',
+      projectDir,
+      config: unavailablePlannerConfig(),
+      callbacks: makeCallbacks().callbacks,
+      sessionId,
+      purpose: 'resume',
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _planner: planner,
+    });
+
+    expect(summary.totalTasks).toBe(0);
+    expect(readFileSync(stateFile(ref))).toEqual(before);
+    expect(planner.isAvailable).not.toHaveBeenCalled();
+    expect(planner.plan).not.toHaveBeenCalled();
+    expect(planner.quickPlan).not.toHaveBeenCalled();
+  });
+
   it('uses the explicit sessionId when provided and creates the session directory', async () => {
     const projectDir = setupProject();
     const { callbacks } = makeCallbacks();
@@ -894,6 +1129,7 @@ describe('runWorkflow — smoke', () => {
           makeTask({
             id: 'T001',
             title: 'First task',
+            file: 'src/first.ts',
             scope: { inBounds: ['src/first.ts'], outOfBounds: ['other files'] },
             evidence: ['task_completed event shows the first task ran'],
             typeDefs: 'type FirstTask = { file: string }',
@@ -908,6 +1144,7 @@ describe('runWorkflow — smoke', () => {
           makeTask({
             id: 'T002',
             title: 'Revised task',
+            file: 'src/revised.ts',
             scope: { inBounds: ['src/revised.ts'], outOfBounds: ['other files'] },
             evidence: ['task_completed event shows the revised task ran'],
             typeDefs: 'type RevisedTask = { file: string }',
@@ -982,6 +1219,7 @@ describe('runWorkflow — smoke', () => {
             makeTask({
               id: 'T001',
               title: 'Abortable task',
+              file: 'src/abortable.ts',
               scope: { inBounds: ['src/abortable.ts'], outOfBounds: ['other files'] },
               evidence: ['task_completed event shows the task ran'],
               typeDefs: 'type AbortableTask = { file: string }',
@@ -994,11 +1232,11 @@ describe('runWorkflow — smoke', () => {
     });
 
     expect(summary.totalTasks).toBe(1);
-    expect(summary.completedByLocal).toBe(0);
+    expect(summary.completedByLocal).toBe(1);
     expect(onTaskReviewNeeded).toHaveBeenCalledTimes(1);
     expect(onTaskReviewNeeded.mock.calls[0]?.[0]).toMatchObject({
       taskId: 'T001',
-      status: 'recovery-required',
+      status: 'done',
     });
     expect(events.find((event) => event.type === 'workflow_cancelled')).toMatchObject({
       type: 'workflow_cancelled',

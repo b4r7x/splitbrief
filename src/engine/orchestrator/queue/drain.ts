@@ -1,10 +1,13 @@
 import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
-import { rebaseOnPersistedWorkflowState } from '../state-ops.js';
-import { saveState } from '../../../core/state/persistence.js';
+import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
+import type { StateAuthorityReceipt } from '../../../core/state/types.js';
 import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
-import { nowIso } from '../../../utils/format-time.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { QueueStateMutationOptions } from './types.js';
+
+type QueueMutationOptions = QueueStateMutationOptions & {
+  authority?: StateAuthorityReceipt | undefined;
+};
 
 type LiveQueueOwner = 'native' | 'prompt';
 
@@ -39,7 +42,7 @@ export function readQueueForPrompt({
   projectDir,
   sessionId,
   state,
-}: Omit<QueueStateMutationOptions, 'bus'>): {
+}: Omit<QueueMutationOptions, 'bus'>): {
   state: WorkflowState;
   messages: QueuedMessage[];
 } {
@@ -69,7 +72,8 @@ export function commitQueueMessagesDrained({
   state,
   messages,
   bus,
-}: QueueStateMutationOptions & { messages: readonly QueuedMessage[] }): {
+  authority,
+}: QueueMutationOptions & { messages: readonly QueuedMessage[] }): {
   state: WorkflowState;
   count: number;
 } {
@@ -78,44 +82,53 @@ export function commitQueueMessagesDrained({
   const ref = { projectDir, sessionId };
   const base = rebaseOnPersistedWorkflowState(ref, state);
   const ids = new Set(messages.map((message) => message.id));
-  const drainedAt = nowIso();
-  const drainedIds: string[] = [];
-  let count = 0;
-  const messageQueue = base.messageQueue.map((message) => {
-    if (
-      !ids.has(message.id) ||
-      !isQueuedMessagePendingDelivery(message) ||
-      ownerFor(ref, message.id) === 'native'
-    )
-      return message;
-    count += 1;
-    drainedIds.push(message.id);
-    return { ...message, drainedAt };
-  });
+  const pending = base.messageQueue.filter(
+    (message) => isQueuedMessagePendingDelivery(message) && ownerFor(ref, message.id) !== 'native',
+  );
+  const drainable = pending.filter((message) => ids.has(message.id));
 
-  if (count === 0) {
+  if (
+    drainable.length === 0 ||
+    pending.length !== drainable.length ||
+    base.messageQueue.some(
+      (message) =>
+        isQueuedMessagePendingDelivery(message) && ownerFor(ref, message.id) === 'native',
+    )
+  ) {
     releaseQueueMessagesForPrompt(ref, messages);
     return { state: base, count: 0 };
   }
 
-  const next = { ...base, messageQueue };
   try {
-    saveState(ref, next);
+    const next = transitionAndSave(
+      ref,
+      base,
+      { type: 'DRAIN_QUEUE' },
+      {
+        ...(authority !== undefined ? { authority } : {}),
+        expectedRevision: base.stateRevision,
+      },
+    );
     bus.publish({
       type: 'queue_drained',
       ts: Date.now(),
       phase: next.phase,
-      count,
-      ids: drainedIds,
+      count: drainable.length,
+      ids: drainable.map((message) => message.id),
     });
+    return { state: next, count: drainable.length };
   } finally {
     releaseQueueMessagesForPrompt(ref, messages);
   }
-
-  return { state: next, count };
 }
 
-export function drainQueue({ projectDir, sessionId, state, bus }: QueueStateMutationOptions): {
+export function drainQueue({
+  projectDir,
+  sessionId,
+  state,
+  bus,
+  authority,
+}: QueueMutationOptions): {
   state: WorkflowState;
   messages: QueuedMessage[];
 } {
@@ -128,6 +141,7 @@ export function drainQueue({ projectDir, sessionId, state, bus }: QueueStateMuta
     state: read.state,
     messages: read.messages,
     bus,
+    ...(authority !== undefined ? { authority } : {}),
   });
 
   return { state: committed.state, messages: read.messages };

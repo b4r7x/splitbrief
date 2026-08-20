@@ -115,29 +115,28 @@ describe('/mode command', () => {
     expect(savedMode).toBe('speckit');
   });
 
-  it.each([
-    'conflict',
-    'durability-uncertain',
-    'failure',
-  ] as const)('does not show success feedback when mode persistence resolves %s', async (kind) => {
-    let feedback: string | undefined;
-    const completion = Promise.withResolvers<RuntimeConfigSaveResult>();
-    const commands = createRuntimeCommands(
-      makeCtx({
-        setWorkflowMode: () => completion.promise,
-        setFeedbackMessage: (m) => {
-          feedback = m;
-        },
-      }),
-    );
-    const execution = executeRuntimeCommand(commands, '/mode quick', 'home', noop);
+  it.each(['conflict', 'durability-uncertain', 'failure'] as const)(
+    'does not show success feedback when mode persistence resolves %s',
+    async (kind) => {
+      let feedback: string | undefined;
+      const completion = Promise.withResolvers<RuntimeConfigSaveResult>();
+      const commands = createRuntimeCommands(
+        makeCtx({
+          setWorkflowMode: () => completion.promise,
+          setFeedbackMessage: (m) => {
+            feedback = m;
+          },
+        }),
+      );
+      const execution = executeRuntimeCommand(commands, '/mode quick', 'home', noop);
 
-    expect(feedback).toBeUndefined();
-    completion.resolve({ kind, ok: false });
-    await execution;
+      expect(feedback).toBeUndefined();
+      completion.resolve({ kind, ok: false });
+      await execution;
 
-    expect(feedback).toBeUndefined();
-  });
+      expect(feedback).toBeUndefined();
+    },
+  );
 
   it('rejects invalid mode and surfaces an error', async () => {
     let savedMode: string | undefined;
@@ -186,29 +185,28 @@ describe('/effort command', () => {
     expect(feedback).toMatch(/high/);
   });
 
-  it.each([
-    'conflict',
-    'durability-uncertain',
-    'failure',
-  ] as const)('does not show success feedback when effort persistence resolves %s', async (kind) => {
-    let feedback: string | undefined;
-    const completion = Promise.withResolvers<RuntimeConfigSaveResult>();
-    const commands = createRuntimeCommands(
-      makeCtx({
-        setPlannerEffort: () => completion.promise,
-        setFeedbackMessage: (message) => {
-          feedback = message;
-        },
-      }),
-    );
-    const execution = executeRuntimeCommand(commands, '/effort medium', 'home', noop);
+  it.each(['conflict', 'durability-uncertain', 'failure'] as const)(
+    'does not show success feedback when effort persistence resolves %s',
+    async (kind) => {
+      let feedback: string | undefined;
+      const completion = Promise.withResolvers<RuntimeConfigSaveResult>();
+      const commands = createRuntimeCommands(
+        makeCtx({
+          setPlannerEffort: () => completion.promise,
+          setFeedbackMessage: (message) => {
+            feedback = message;
+          },
+        }),
+      );
+      const execution = executeRuntimeCommand(commands, '/effort medium', 'home', noop);
 
-    expect(feedback).toBeUndefined();
-    completion.resolve({ kind, ok: false });
-    await execution;
+      expect(feedback).toBeUndefined();
+      completion.resolve({ kind, ok: false });
+      await execution;
 
-    expect(feedback).toBeUndefined();
-  });
+      expect(feedback).toBeUndefined();
+    },
+  );
 });
 
 describe('/refresh command', () => {

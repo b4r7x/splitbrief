@@ -143,6 +143,13 @@ function runtimeHarness(
     cleanupStaleArtifactReviews: async () => undefined,
     beginDeclaredArtifactReview: async () => ({
       reviewAfterChild: async () => '',
+      readWithReceiptAfterChild: async () => {
+        throw new Error('not used by implementer tests');
+      },
+      get receipt() {
+        return undefined;
+      },
+      getReceipt: () => undefined,
       dispose: async () => undefined,
     }),
   };

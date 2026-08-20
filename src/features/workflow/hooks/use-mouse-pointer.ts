@@ -56,7 +56,7 @@ function resolveWorkflowHit(
   }
   const visibleCount = hoverSnapshot.stickyLeadingRows + hoverSnapshot.viewportHeight;
   const index = hitTranscriptRow({
-    rect: hoverSnapshot.conversationRect,
+    rect: hoverSnapshot.contentRect,
     sgrX,
     sgrY,
     visibleCount,

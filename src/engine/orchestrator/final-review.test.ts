@@ -22,7 +22,7 @@ import {
   REVIEW_PACKET_MARKDOWN_FILE,
 } from '../../core/paths.js';
 import { hashTaskBrief } from '../brief-hash.js';
-import { createInitialState, transition } from '../../core/state/machine.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { loadState } from '../../core/state/persistence.js';
 import { finalReviewError, runFinalReviewPhase } from './final-review.js';
 import type { Task } from '../../core/schemas/task.js';
@@ -56,15 +56,7 @@ function setupProject(): { projectDir: string; sessionId: string; runStartHead: 
 }
 
 function allTasksDoneState(tasks: Task[], runStartHead: string | null): WorkflowState {
-  // Walk the state machine into a state where ALL_DONE is valid.
-  let s = createInitialState('feat');
-  s = transition(s, { type: 'START' });
-  s = transition(s, { type: 'RESEARCH_DONE' });
-  s = transition(s, { type: 'SPEC_DONE' });
-  s = transition(s, { type: 'APPROVE_SPEC' });
-  s = transition(s, { type: 'PLAN_DONE', tasks });
-  s = transition(s, { type: 'BRIEFS_READY', tasks });
-  s = transition(s, { type: 'APPROVE_BRIEFS' });
+  const s = makeImplState(tasks);
   return {
     ...s,
     implementerTool: 'ollama',

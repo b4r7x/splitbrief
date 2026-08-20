@@ -10,9 +10,12 @@ import {
 } from '../contracts/identifiers.js';
 import { CATALOG_SCHEMA_VERSION } from '../contracts/schema-versions.js';
 import { CaptureSelectionSchema, type CaptureSelection } from '../contracts/selection.js';
+import { TerminalProfileSchema, type TerminalProfile } from '../contracts/manifest-fields.js';
 
 export const DEFAULT_VISUAL_OUTPUT_ROOT = '.test-artifacts/ui';
 export const MANIFEST_RELATIVE_PATH = relativeArtifactPath('manifest.json');
+
+const DEFAULT_TERMINAL_PROFILE: TerminalProfile = 'unicode-color';
 
 export interface ArtifactFilesOptions {
   readonly identity: ArtifactIdentity;
@@ -23,6 +26,7 @@ export interface ArtifactFilesOptions {
 export function createRunKey(selectionInput: CaptureSelection): SafeId {
   const selection = CaptureSelectionSchema.parse(selectionInput);
   const canonicalSelection = {
+    profile: terminalProfileOf(selection),
     requests: canonicalEntries(selection.requests),
     targets: canonicalEntries(selection.targets),
   };
@@ -31,6 +35,19 @@ export function createRunKey(selectionInput: CaptureSelection): SafeId {
     .digest('hex')
     .slice(0, 20);
   return SafeIdSchema.parse(`catalog-${CATALOG_SCHEMA_VERSION}-${digest}`);
+}
+
+function terminalProfileOf(value: unknown): TerminalProfile {
+  if (typeof value !== 'object' || value === null || !('profile' in value)) {
+    return DEFAULT_TERMINAL_PROFILE;
+  }
+  const profile = value.profile;
+  if (isTerminalProfile(profile)) return profile;
+  throw new Error('Visual capture profile is invalid');
+}
+
+function isTerminalProfile(value: unknown): value is TerminalProfile {
+  return TerminalProfileSchema.safeParse(value).success;
 }
 
 export function createArtifactFiles(options: ArtifactFilesOptions): ArtifactFiles {

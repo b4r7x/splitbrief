@@ -7,6 +7,7 @@ import {
   codexProtocolEvents,
 } from './codex.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import type { CliProtocolEvent } from './contract.js';
 
 const PROMPT = '<PROMPT>';
 
@@ -86,10 +87,16 @@ describe('Codex role adapters', () => {
       effort: 'high',
     });
     expect(resumed).toEqual([
+      '--sandbox',
+      'read-only',
+      '--ask-for-approval',
+      'never',
       'exec',
       'resume',
       '--model',
       'gpt-5',
+      '--ignore-user-config',
+      '--ignore-rules',
       '--json',
       'session-1',
       PROMPT,
@@ -110,8 +117,28 @@ describe('Codex role adapters', () => {
       sessionId: null,
       effort: undefined,
     });
-    expect(readOnly).toEqual(['--model', 'gpt-5', 'exec', '--json', '--cd', '/project', PROMPT]);
-    expect(readOnly).not.toContain('--sandbox');
+    // REQ-017: the fresh compiler vector owns global read-only + never
+    // approval before `exec`, ignores ambient config/rules, and is ephemeral.
+    expect(readOnly).toEqual([
+      '--model',
+      'gpt-5',
+      '--sandbox',
+      'read-only',
+      '--ask-for-approval',
+      'never',
+      'exec',
+      '--ignore-user-config',
+      '--ignore-rules',
+      '--ephemeral',
+      '--json',
+      '--cd',
+      '/project',
+      PROMPT,
+    ]);
+    expect(readOnly).toContain('read-only');
+    expect(readOnly).toContain('never');
+    expect(readOnly).toContain('--ephemeral');
+    expect(readOnly).not.toContain('workspace-write');
 
     const escalation = codexPlannerAdapter.buildArgs({
       prompt: PROMPT,
@@ -123,15 +150,19 @@ describe('Codex role adapters', () => {
       effort: undefined,
     });
     expect(escalation).toEqual([
-      'exec',
-      '--json',
       '--sandbox',
       'workspace-write',
+      '--ask-for-approval',
+      'never',
+      'exec',
+      '--ignore-user-config',
+      '--json',
       '--skip-git-repo-check',
       '--cd',
       '/project',
       PROMPT,
     ]);
+    expect(escalation).not.toContain('--ephemeral');
   });
 
   it('preserves implementer workspace-write, cd, model, and prompt placement', () => {
@@ -144,10 +175,13 @@ describe('Codex role adapters', () => {
     expect(args).toEqual([
       '--model',
       'gpt-5.2',
-      'exec',
-      '--json',
       '--sandbox',
       'workspace-write',
+      '--ask-for-approval',
+      'never',
+      'exec',
+      '--ignore-user-config',
+      '--json',
       '--skip-git-repo-check',
       '--cd',
       '/staged',
@@ -165,6 +199,41 @@ describe('Codex role adapters', () => {
       valid: false,
       conflicts: ['prompt-transport'],
     });
+  });
+
+  it.each([
+    ['--sandbox', 'danger'],
+    ['--ask-for-approval', 'full-auto'],
+    ['-a', 'plan'],
+    ['--ignore-user-config'],
+    ['--ignore-rules'],
+    ['--ephemeral'],
+    ['--output-last-message', '/tmp/out.md'],
+    ['--approve-for-me'],
+    ['--yolo'],
+    ['--dangerously-bypass-approvals-and-sandbox'],
+    ['--dangerously-bypass-hook-trust'],
+    ['--config', 'custom.toml'],
+    ['-c', 'sandbox_mode="danger-full-access"'],
+    ['--add-dir', '/elsewhere'],
+    ['-C', '/elsewhere'],
+    ['-s', 'danger-full-access'],
+  ])('rejects the configured authority override %j with zero dispatch', (...tokens) => {
+    const base = codexPlannerAdapter.buildArgs({
+      prompt: PROMPT,
+      model: undefined,
+      projectDir: '/project',
+      configuredArgs: [],
+      mode: 'plan',
+      sessionId: null,
+      effort: undefined,
+    });
+    const invocation = [...base, ...tokens];
+    const validation = codexPlannerAdapter.validateArgs(invocation, base);
+    expect(validation.valid).toBe(false);
+    if (!validation.valid) {
+      expect(validation.conflicts.length).toBeGreaterThan(0);
+    }
   });
 });
 
@@ -294,5 +363,168 @@ describe('Codex JSONL protocol adapter', () => {
     expect(codexProtocolEvents(JSON.stringify({ type: 'future.event', id: 'fixture' }))).toEqual([
       { type: 'warning', code: 'unknown-codex-record', message: 'Unknown Codex record' },
     ]);
+  });
+});
+
+describe('Codex exact last-message terminal (REQ-013)', () => {
+  function turnEvents(input: {
+    earlierMessage?: string | undefined;
+    toolInput?: string | undefined;
+    finalMessage?: string | undefined;
+    failed?: boolean | undefined;
+  }): CliProtocolEvent[] {
+    const events: CliProtocolEvent[] = [
+      ...codexProtocolEvents(JSON.stringify({ type: 'thread.started', thread_id: 'session-last' })),
+    ];
+    if (input.earlierMessage !== undefined) {
+      events.push(
+        ...codexProtocolEvents(
+          JSON.stringify({
+            type: 'item.completed',
+            item: { type: 'agent_message', text: input.earlierMessage },
+          }),
+        ),
+      );
+    }
+    if (input.toolInput !== undefined) {
+      events.push(
+        ...codexProtocolEvents(
+          JSON.stringify({
+            type: 'item.completed',
+            item: { type: 'local_shell_exec', input: { command: input.toolInput } },
+          }),
+        ),
+      );
+    }
+    if (input.finalMessage !== undefined) {
+      events.push(
+        ...codexProtocolEvents(
+          JSON.stringify({
+            type: 'item.completed',
+            item: { type: 'agent_message', text: input.finalMessage },
+          }),
+        ),
+      );
+    }
+    events.push(
+      ...(input.failed === true
+        ? codexProtocolEvents(
+            JSON.stringify({ type: 'turn.failed', error: { message: 'turn exploded' } }),
+          )
+        : codexProtocolEvents(JSON.stringify({ type: 'turn.completed' }))),
+    );
+    return events;
+  }
+
+  it('leases exactly the fresh turn final message as terminal content', () => {
+    const terminal = terminalInput(
+      codexPlannerAdapter,
+      turnEvents({
+        earlierMessage: 'EARLIER MESSAGE TEXT',
+        toolInput: 'tool ran',
+        finalMessage: 'FINAL MESSAGE ONLY',
+      }),
+    );
+
+    expect(terminal).toMatchObject({
+      type: 'result',
+      status: 'completed',
+      nativeSessionId: 'session-last',
+      error: null,
+      partial: false,
+    });
+    expect(terminal.text).toBe('FINAL MESSAGE ONLY');
+  });
+
+  it('rejects stale earlier-message and tool traffic from the leased content', () => {
+    const terminal = terminalInput(
+      codexPlannerAdapter,
+      turnEvents({
+        earlierMessage: 'STALE PROGRESS MESSAGE',
+        toolInput: 'TOOL TRAFFIC PAYLOAD',
+        finalMessage: 'final brief text',
+      }),
+    );
+
+    expect(terminal.text).toBe('final brief text');
+    expect(terminal.text).not.toContain('STALE PROGRESS MESSAGE');
+    expect(terminal.text).not.toContain('TOOL TRAFFIC PAYLOAD');
+  });
+
+  it('never promotes tool traffic when the turn ends without a final message', () => {
+    const terminal = terminalInput(
+      codexPlannerAdapter,
+      turnEvents({ earlierMessage: 'progress', toolInput: 'tool ran' }),
+    );
+
+    expect(terminal.status).toBe('completed');
+    expect(terminal.text).toBe('');
+    expect(terminal.text).not.toContain('progress');
+    expect(terminal.text).not.toContain('tool ran');
+  });
+
+  it('joins deltas only within the final message', () => {
+    const events = [
+      ...codexProtocolEvents(
+        JSON.stringify({
+          type: 'item.completed',
+          item: { type: 'agent_message', text: 'part one' },
+        }),
+      ),
+      ...codexProtocolEvents(
+        JSON.stringify({
+          type: 'item.completed',
+          item: { type: 'agent_message', text: ' part two' },
+        }),
+      ),
+      ...codexProtocolEvents(JSON.stringify({ type: 'turn.completed' })),
+    ];
+    expect(terminalInput(codexPlannerAdapter, events).text).toBe('part one part two');
+  });
+
+  it('rejects an oversize or malformed protocol line instead of treating it as content', () => {
+    const events = codexProtocolEvents(`${'x'.repeat(1024 * 1024)}`);
+    expect(terminalInput(codexPlannerAdapter, events)).toMatchObject({
+      status: 'failed',
+      error: { code: 'malformed-codex-json' },
+    });
+  });
+
+  it('does not promote earlier text when the terminal record is missing', () => {
+    const events = codexProtocolEvents(
+      JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'partial' } }),
+    );
+    expect(() => terminalInput(codexPlannerAdapter, events)).toThrow(
+      'Codex output ended without a terminal result',
+    );
+  });
+
+  it('keeps a failed terminal content-free and failed', () => {
+    const terminal = terminalInput(
+      codexPlannerAdapter,
+      turnEvents({ finalMessage: 'should never promote', failed: true }),
+    );
+
+    expect(terminal.status).toBe('failed');
+    expect(terminal.error).toEqual({
+      code: 'codex-turn-failed',
+      message: 'turn exploded',
+    });
+  });
+
+  it('keeps unknown additive records as bounded warnings without drifting the terminal', () => {
+    const events = [
+      ...codexProtocolEvents(JSON.stringify({ type: 'future.event', id: 'drift-1' })),
+      ...codexProtocolEvents(
+        JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'final' } }),
+      ),
+      ...codexProtocolEvents(JSON.stringify({ type: 'turn.completed' })),
+    ];
+    expect(events).toContainEqual({
+      type: 'warning',
+      code: 'unknown-codex-record',
+      message: 'Unknown Codex record',
+    });
+    expect(terminalInput(codexPlannerAdapter, events).text).toBe('final');
   });
 });

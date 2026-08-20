@@ -5,7 +5,7 @@ import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import { REVIEW_FILE, SANDBOX_DIR, sessionDir } from '../../../src/core/paths.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { cleanupTempDir, createTempDir, normalizeMacTmpPath } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
@@ -107,25 +107,23 @@ function installFakeCodexPlanner(binDir: string): string {
   const executablePath = join(binDir, 'codex');
   const script = [
     '#!/usr/bin/env node',
-    "const { appendFileSync, writeFileSync } = require('node:fs');",
-    "const { join } = require('node:path');",
+    "const { appendFileSync } = require('node:fs');",
     `const runLogPath = ${JSON.stringify(runLogPath)};`,
     `const tasks = ${JSON.stringify(tasksMarkdown())};`,
     'appendFileSync(runLogPath, JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2) }) + "\\n");',
     'if (process.argv.includes("--version")) {',
-    '  console.log("codex 1.0.0");',
+    '  console.log("codex 0.147.0");',
     '  process.exit(0);',
     '}',
     'const prompt = process.argv[process.argv.length - 1] ?? "";',
+    'const threadId = process.argv[process.argv.length - 2] ?? "fake-codex-thread";',
     'if (prompt.includes("Final Implementation Review")) {',
     '  console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "# Final review\\n\\nCLI planner and CLI implementer completed." } }));',
     '  console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 17, output_tokens: 9 } }));',
     '  process.exit(0);',
     '}',
-    "const artifactPath = join(process.cwd(), 'tasks.md');",
-    'writeFileSync(artifactPath, tasks, "utf-8");',
-    'console.log(JSON.stringify({ type: "thread.started", thread_id: "fake-codex-thread" }));',
-    'console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "Wrote [tasks.md](" + artifactPath + ")." } }));',
+    'console.log(JSON.stringify({ type: "thread.started", thread_id: threadId }));',
+    'console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: tasks } }));',
     'console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 101, output_tokens: 33 } }));',
   ].join('\n');
   writeFileSync(executablePath, script + '\n', 'utf-8');
@@ -142,6 +140,10 @@ function installFakeOpencodeImplementer(binDir: string, marker: string): string 
     "const { join } = require('node:path');",
     `const marker = ${JSON.stringify(marker)};`,
     `const runLogPath = ${JSON.stringify(runLogPath)};`,
+    'if (process.argv.includes("--version")) {',
+    '  console.log("opencode 1.18.15");',
+    '  process.exit(0);',
+    '}',
     'const prompt = process.argv[process.argv.length - 1] ?? "";',
     'writeFileSync(runLogPath, JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2), env: { HOME: process.env.HOME ?? null, TMPDIR: process.env.TMPDIR ?? null, npm_config_cache: process.env.npm_config_cache ?? null } }));',
     'if (!prompt.includes("CLI planner implementer module")) {',
@@ -150,16 +152,12 @@ function installFakeOpencodeImplementer(binDir: string, marker: string): string 
     '}',
     "mkdirSync('src', { recursive: true });",
     "writeFileSync('src/cli-planner-implementer.ts', 'export const cliPlannerImplementer = \"' + marker + '\";\\n', 'utf-8');",
-    "console.log('implemented src/cli-planner-implementer.ts');",
-    "console.log('Tokens: 77 sent, 22 received');",
+    "console.log(JSON.stringify({ type: 'text', part: { type: 'text', text: 'implemented src/cli-planner-implementer.ts' } }));",
+    "console.log(JSON.stringify({ type: 'step_finish', part: { type: 'step-finish', tokens: { input: 77, output: 22 } } }));",
   ].join('\n');
   writeFileSync(executablePath, script + '\n', 'utf-8');
   chmodSync(executablePath, 0o755);
   return runLogPath;
-}
-
-function normalizeMacTmpPath(path: string | null): string | null {
-  return path?.replace(/^\/private(\/(?:tmp|var)\/)/, '$1') ?? null;
 }
 
 describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
@@ -303,7 +301,6 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining([
         'workflow_started',
-        'plan_approved',
         'implementer_generate_done',
         'task_completed',
         'workflow_complete',

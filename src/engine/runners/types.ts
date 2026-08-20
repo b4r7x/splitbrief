@@ -1,6 +1,7 @@
 import type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/approval/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { ChangedFilesSnapshot } from '../../core/schemas/workflow.js';
+import { TASK_BRIEF_COMPILER_POLICY } from '../../core/schemas/task-compilation.js';
 import type {
   RunnerCallTextChannel,
   RUNNER_CALL_USAGE_SEMANTICS,
@@ -8,6 +9,14 @@ import type {
   RUNNER_CALL_WARNING_SURFACES,
 } from '../../core/runner-call-contract.js';
 import type { RunnerCallTextSemantics } from '../calls/types.js';
+import type {
+  PlannerArtifactTransport,
+  TaskCompilationCallEnvelope,
+  TaskCompilationAttemptId,
+  TaskCompilationBatchId,
+  TaskCompilationProgramId,
+  TaskCompilationSemanticId,
+} from '../../core/schemas/task-compilation.js';
 
 export interface ToolUseInfo {
   id?: string | undefined;
@@ -112,8 +121,8 @@ export type CustomRunnerAdmissionPolicy = Readonly<{
     | undefined;
 }>;
 
-export const DECLARED_PLANNER_ARTIFACT_PATH = '.splitbrief-runner/output/result';
-export const PLANNER_ARTIFACT_MAX_BYTES = 131_072;
+export const DECLARED_PLANNER_ARTIFACT_PATH_ENV = 'SPLITBRIEF_DECLARED_ARTIFACT_PATH';
+export const PLANNER_ARTIFACT_MAX_BYTES = TASK_BRIEF_COMPILER_POLICY.maxDeclaredArtifactBytes;
 
 /**
  * Immutable canonical text for the direct-planner artifact approval surface.
@@ -127,14 +136,56 @@ export type ArtifactApprovalReview = Readonly<{
 
 export type ApprovalReviewInput = string | ArtifactApprovalReview;
 
+/**
+ * Canonical provenance supplied by the host before a declared-file planner
+ * invocation.  Every field is required so a runtime adapter cannot silently
+ * fall back to an unscoped artifact path or receipt.
+ */
+export type DeclaredArtifactProvenance = Readonly<{
+  semanticId: TaskCompilationSemanticId;
+  programId: TaskCompilationProgramId | null;
+  batchId: TaskCompilationBatchId | null;
+  attemptId: TaskCompilationAttemptId;
+  transport: Extract<PlannerArtifactTransport, { kind: 'declared-file' }>;
+  maxBytes: number;
+  relativePath: string;
+}>;
+
+export type DeclaredArtifactReceipt = Readonly<{
+  semanticId: TaskCompilationSemanticId;
+  programId: TaskCompilationProgramId | null;
+  batchId: TaskCompilationBatchId | null;
+  attemptId: TaskCompilationAttemptId;
+  leaseId: string;
+  relativePath: string;
+  inodeIdentity: string;
+  ancestryDigest: string;
+  sha256: string;
+  byteLength: number;
+  leaseReceiptDigest: string;
+}>;
+
+export type DeclaredArtifactRead = Readonly<{
+  text: string;
+  receipt: DeclaredArtifactReceipt;
+}>;
+
 export type BeginDeclaredArtifactReviewInput = Readonly<{
   stagedProjectDir: string;
   callId: string;
   declaredRedactionValues: readonly string[];
+  provenance: DeclaredArtifactProvenance;
 }>;
 
 export type PreparedDeclaredArtifactReview = Readonly<{
   reviewAfterChild: () => Promise<string>;
+  readWithReceiptAfterChild: (
+    input?: Readonly<{
+      declaredRedactionValues?: readonly string[] | undefined;
+    }>,
+  ) => Promise<DeclaredArtifactRead>;
+  readonly receipt: DeclaredArtifactReceipt | undefined;
+  getReceipt: () => DeclaredArtifactReceipt | undefined;
   dispose: () => Promise<void>;
 }>;
 
@@ -153,4 +204,28 @@ export type CustomRunnerRuntimePort = Readonly<{
   beginDeclaredArtifactReview: (
     input: BeginDeclaredArtifactReviewInput,
   ) => Promise<PreparedDeclaredArtifactReview>;
+}>;
+
+export type RuntimeExecutionReceipt = Readonly<{
+  /** The admitted CLI binary; a backend that owns no executable records none. */
+  executablePath?: string | undefined;
+  version: string;
+  runtimeDigest: string;
+  protocolDigest: string;
+}>;
+
+/**
+ * The prepared compiler call: exactly what the admitted capability receipt
+ * certifies. Compiler preparation launches nothing, so the members a launch
+ * would observe — argument vector, working directory, credential copy,
+ * containment lease, environment fingerprint, session scope — are not part of
+ * the record; the planner adapter prepares them per batch at dispatch.
+ */
+export type PreparedPlannerInvocation = Readonly<{
+  runtime: RuntimeExecutionReceipt;
+  role: 'planner-read-only';
+  transport: PlannerArtifactTransport;
+  terminalContract: string;
+  envelope: TaskCompilationCallEnvelope;
+  capabilityDigest: string;
 }>;

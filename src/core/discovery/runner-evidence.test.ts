@@ -174,14 +174,17 @@ describe('runner evidence', () => {
     { kind: 'malformed' },
     { kind: 'cancelled' },
     { kind: 'not-run' },
-  ] satisfies readonly ProbeOutcome<null>[])('keeps the $kind probe outcome distinct', (endpoint) => {
-    const admission = startAdmission(freshEvidence({ endpoint }), ['reachable-endpoint']);
+  ] satisfies readonly ProbeOutcome<null>[])(
+    'keeps the $kind probe outcome distinct',
+    (endpoint) => {
+      const admission = startAdmission(freshEvidence({ endpoint }), ['reachable-endpoint']);
 
-    expect(admission).toEqual({
-      kind: 'denied',
-      reason: { kind: 'probe', fact: 'reachable-endpoint', outcome: endpoint.kind },
-    });
-  });
+      expect(admission).toEqual({
+        kind: 'denied',
+        reason: { kind: 'probe', fact: 'reachable-endpoint', outcome: endpoint.kind },
+      });
+    },
+  );
 
   it('keeps a successful empty catalog distinct from an endpoint failure', () => {
     const evidence: RunnerEvidence = {

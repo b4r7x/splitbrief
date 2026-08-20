@@ -20,7 +20,16 @@ import {
 } from '../../core/paths.js';
 import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { Planner } from '../../engine/planners/types.js';
+import {
+  createTaskCompilationAttemptId,
+  OwnedPlannerArtifactSchema,
+} from '../../core/schemas/task-compilation.js';
+import type {
+  PhaseResult,
+  Planner,
+  PlannerArtifactLogicalName,
+} from '../../engine/planners/types.js';
+import { sha256Hex } from '../../utils/sha256.js';
 import { registerSpecCommand } from './spec.js';
 
 const createPlannerMock = vi.fn<(config: Config) => Promise<Planner>>();
@@ -29,6 +38,26 @@ let tmp: string;
 let shimDir: string;
 let restoreCompatibleCliShim: (() => void) | undefined;
 let consoleSpy: ReturnType<typeof vi.spyOn>;
+
+function phaseResult(logicalName: PlannerArtifactLogicalName, text: string): PhaseResult {
+  const digest = sha256Hex(text);
+  return {
+    artifact: OwnedPlannerArtifactSchema.parse({
+      semanticId: `test-${logicalName}`,
+      programId: null,
+      batchId: null,
+      attemptId: createTaskCompilationAttemptId(),
+      logicalName,
+      transport: 'stdout-final',
+      text,
+      byteLength: Buffer.byteLength(text, 'utf8'),
+      sha256: digest,
+      runtimeReceipt: digest,
+      terminal: { status: 'completed', recordId: `test-${logicalName}`, protocolDigest: digest },
+      sourceReceipt: { kind: 'stdout-final', resultDigest: digest },
+    }),
+  };
+}
 
 beforeEach(() => {
   tmp = realpathSync(createTempDir('spec-mode-test'));
@@ -89,10 +118,10 @@ function plannerWithStandardPhases(): Planner {
       tasks: [],
       usage: null,
       phases: [
-        { text: '# Research', filename: 'research.md' },
-        { text: '# Generated Spec', filename: SPEC_FILE },
-        { text: '# Generated Plan', filename: PLAN_FILE },
-        { text: '# Generated Tasks', filename: TASKS_FILE },
+        phaseResult('research.md', '# Research'),
+        phaseResult(SPEC_FILE, '# Generated Spec'),
+        phaseResult(PLAN_FILE, '# Generated Plan'),
+        phaseResult(TASKS_FILE, '# Generated Tasks'),
       ],
     }),
   });
@@ -105,14 +134,14 @@ function plannerWithSingleTaskPhase(): Planner {
       plan: '',
       tasks: [],
       usage: null,
-      phases: [{ text: '# Generated Tasks', filename: TASKS_FILE }],
+      phases: [phaseResult(TASKS_FILE, '# Generated Tasks')],
     }),
     quickPlan: vi.fn().mockResolvedValue({
       spec: '',
       plan: '',
       tasks: [],
       usage: null,
-      phases: [{ text: '# Generated Tasks', filename: TASKS_FILE }],
+      phases: [phaseResult(TASKS_FILE, '# Generated Tasks')],
     }),
   });
 }
@@ -154,7 +183,7 @@ describe('spec --mode', () => {
       plan: '',
       tasks: [],
       usage: null,
-      phases: [{ text: '# Instant Tasks', filename: TASKS_FILE }],
+      phases: [phaseResult(TASKS_FILE, '# Instant Tasks')],
     });
     const planner = makePlanner({ instantPlan });
     createPlannerMock.mockResolvedValue(planner);

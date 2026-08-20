@@ -68,23 +68,27 @@ describe('TROUBLESHOOTING diagnostic parity', () => {
     expect(support).toContain('CLI-REFERENCE.md');
   });
 
-  it.each(
-    READINESS_DIAGNOSTIC_STATE_IDS,
-  )('maps readiness stateId %s to the runtime remediation string', (stateId: ReadinessDiagnosticStateId) => {
-    const table = parseDiagnosticTable(sectionBetween(READINESS_TABLE_MARKER, RUNNER_TABLE_MARKER));
-    expect(table.has(stateId), `missing readiness row for ${stateId}`).toBe(true);
-    expect(table.get(stateId)).toBe(READINESS_DIAGNOSTIC_REMEDIATION[stateId]);
-  });
+  it.each(READINESS_DIAGNOSTIC_STATE_IDS)(
+    'maps readiness stateId %s to the runtime remediation string',
+    (stateId: ReadinessDiagnosticStateId) => {
+      const table = parseDiagnosticTable(
+        sectionBetween(READINESS_TABLE_MARKER, RUNNER_TABLE_MARKER),
+      );
+      expect(table.has(stateId), `missing readiness row for ${stateId}`).toBe(true);
+      expect(table.get(stateId)).toBe(READINESS_DIAGNOSTIC_REMEDIATION[stateId]);
+    },
+  );
 
-  it.each(
-    RUNNER_WORKFLOW_STATES,
-  )('maps runner state %s to the runtime remediation string', (state) => {
-    const table = parseDiagnosticTable(
-      sectionBetween(RUNNER_TABLE_MARKER, '### Canonical support documentation'),
-    );
-    expect(table.has(state), `missing runner row for ${state}`).toBe(true);
-    expect(table.get(state)).toBe(runnerOutcome.failure(state).remediation);
-  });
+  it.each(RUNNER_WORKFLOW_STATES)(
+    'maps runner state %s to the runtime remediation string',
+    (state) => {
+      const table = parseDiagnosticTable(
+        sectionBetween(RUNNER_TABLE_MARKER, '### Canonical support documentation'),
+      );
+      expect(table.has(state), `missing runner row for ${state}`).toBe(true);
+      expect(table.get(state)).toBe(runnerOutcome.failure(state).remediation);
+    },
+  );
 
   it('indexes every required diagnostic family without decoration-dependent matching', () => {
     const readiness = sectionBetween(READINESS_TABLE_MARKER, RUNNER_TABLE_MARKER).toLowerCase();
@@ -119,5 +123,12 @@ describe('TROUBLESHOOTING diagnostic parity', () => {
 
     expect(readiness).not.toMatch(/^config:/m);
     expect(runner).not.toMatch(/^repository:/m);
+  });
+
+  it('documents compiler runtime-drift warning symptom and meaning', () => {
+    expect(troubleshootingDoc).toContain(
+      'planner <backend> <detected> differs from the tested <tested>; compiled with runtime-drift evidence',
+    );
+    expect(troubleshootingDoc).toContain('runtime-drift evidence');
   });
 });

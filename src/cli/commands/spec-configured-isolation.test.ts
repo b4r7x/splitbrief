@@ -14,7 +14,6 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { CONFIG_FILE, SANDBOX_DIR, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { ConfigSchema, type Config } from '../../core/schemas/config.js';
-import { DECLARED_PLANNER_ARTIFACT_PATH } from '../../engine/runners/types.js';
 import { registerSpecCommand } from './spec.js';
 
 let tmp: string;
@@ -93,7 +92,7 @@ describe('spec command', () => {
         '  stagedEnvFiles: checkedEnvFiles.filter((file) => fs.existsSync(path.join(process.cwd(), file))),',
         '};',
         'fs.writeFileSync(process.env.R2_STANDALONE_EVIDENCE, JSON.stringify(evidence));',
-        `fs.writeFileSync(${JSON.stringify(DECLARED_PLANNER_ARTIFACT_PATH)}, '# isolated configured planner result\\n');`,
+        "fs.writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, '# isolated configured planner result\\n');",
       ].join('');
       const command = {
         label: 'Standalone direct isolation canary',

@@ -272,82 +272,81 @@ describe('runTaskLoop configured custom routing', { timeout: 90_000 }, () => {
         costTier: 'cheap' as const,
       },
     },
-  ] as const)('executes the selected configured runner without falling back for $name', async ({
-    fallback,
-    selected,
-    scope,
-  }) => {
-    const { projectDir, sessionId } = setupProject();
-    const markerDir = createTempDir('selected-configured-runner-markers');
-    const stateDir = createTempDir('selected-configured-runner-state');
-    dirs.push(markerDir, stateDir);
-    const taskFile =
-      selected.contract === 'direct' ? 'src/profile-direct.ts' : 'src/profile-output.ts';
-    const selectedMarkerPath = join(markerDir, 'selected-runner.json');
-    const fallbackMarkerPath = join(markerDir, 'fallback-runner.json');
-    const task = makeTask({
-      id: 'T001',
-      file: taskFile,
-      ...(scope === undefined ? {} : { scope: { inBounds: [...scope.inBounds] } }),
-    });
-    const config = configuredProfileConfig({
-      fallback,
-      selected,
-      fallbackMarkerPath,
-      selectedMarkerPath,
-      taskFile,
-    });
-    const runtime = configuredRuntime({ projectDir, sessionId, stateDir });
-    const preparationId = `task-loop-${sessionId}`;
-    const gates = await configuredGates(config, runtime, preparationId);
-    let dynamicImplementer: Awaited<ReturnType<typeof createImplementer>> | undefined;
-    const { callbacks } = makeCallbacks();
-    const { bus, events } = makeBusRecorder();
+  ] as const)(
+    'executes the selected configured runner without falling back for $name',
+    async ({ fallback, selected, scope }) => {
+      const { projectDir, sessionId } = setupProject();
+      const markerDir = createTempDir('selected-configured-runner-markers');
+      const stateDir = createTempDir('selected-configured-runner-state');
+      dirs.push(markerDir, stateDir);
+      const taskFile =
+        selected.contract === 'direct' ? 'src/profile-direct.ts' : 'src/profile-output.ts';
+      const selectedMarkerPath = join(markerDir, 'selected-runner.json');
+      const fallbackMarkerPath = join(markerDir, 'fallback-runner.json');
+      const task = makeTask({
+        id: 'T001',
+        file: taskFile,
+        ...(scope === undefined ? {} : { scope: { inBounds: [...scope.inBounds] } }),
+      });
+      const config = configuredProfileConfig({
+        fallback,
+        selected,
+        fallbackMarkerPath,
+        selectedMarkerPath,
+        taskFile,
+      });
+      const runtime = configuredRuntime({ projectDir, sessionId, stateDir });
+      const preparationId = `task-loop-${sessionId}`;
+      const gates = await configuredGates(config, runtime, preparationId);
+      let dynamicImplementer: Awaited<ReturnType<typeof createImplementer>> | undefined;
+      const { callbacks } = makeCallbacks();
+      const { bus, events } = makeBusRecorder();
 
-    const result = await runTaskLoop({
-      wctx: makeWctx({
-        projectDir,
-        sessionId,
-        config,
-        callbacks,
-        bus,
-        allowRepoRunners: true,
-        createImplementer: async (_profileConfig, options) => {
-          if (options?.slot === undefined) throw new Error('Expected a named implementer slot.');
-          dynamicImplementer = await createImplementer(config, {
-            ...options,
-            customRuntime: runtime,
-            preparedConfig: config,
-            preparationId,
-            gates,
-            slot: options.slot,
-          });
-          return dynamicImplementer;
-        },
-      }),
-      initialState: makeImplState([task]),
-      setTrackedState: () => {},
-      setCurrentTask: () => {},
-    });
+      const result = await runTaskLoop({
+        wctx: makeWctx({
+          projectDir,
+          sessionId,
+          config,
+          callbacks,
+          bus,
+          allowRepoRunners: true,
+          createImplementer: async (_profileConfig, options) => {
+            if (options?.slot === undefined) throw new Error('Expected a named implementer slot.');
+            dynamicImplementer = await createImplementer(config, {
+              ...options,
+              customRuntime: runtime,
+              preparedConfig: config,
+              preparationId,
+              gates,
+              slot: options.slot,
+            });
+            return dynamicImplementer;
+          },
+        }),
+        initialState: makeImplState([task]),
+        setTrackedState: () => {},
+        setCurrentTask: () => {},
+      });
 
-    expect(result.status).toBe('complete');
-    expect(dynamicImplementer?.capabilities).toEqual({
-      writesFiles: writesFiles(selected.contract),
-    });
-    expect(readFileSync(selectedMarkerPath, 'utf8')).toBe(executionRecord(selected));
-    expect(existsSync(fallbackMarkerPath)).toBe(false);
-    expect(readFileSync(join(projectDir, taskFile), 'utf8').trimEnd()).toBe(
-      expectedSource(selected).trimEnd(),
-    );
-    expect(events.find((event) => event.type === 'task_started')).toMatchObject({
-      taskId: 'T001',
-      implementerProfile: selected.profile,
-    });
-    expect(result.taskBreakdowns).toEqual([
-      expect.objectContaining({
+      expect(result.status).toBe('complete');
+      expect(dynamicImplementer?.capabilities).toEqual({
+        writesFiles: writesFiles(selected.contract),
+      });
+      expect(readFileSync(selectedMarkerPath, 'utf8')).toBe(executionRecord(selected));
+      expect(existsSync(fallbackMarkerPath)).toBe(false);
+      expect(readFileSync(join(projectDir, taskFile), 'utf8').trimEnd()).toBe(
+        expectedSource(selected).trimEnd(),
+      );
+      expect(events.find((event) => event.type === 'task_started')).toMatchObject({
         taskId: 'T001',
         implementerProfile: selected.profile,
-      }),
-    ]);
-  });
+      });
+      expect(result.taskBreakdowns).toEqual([
+        expect.objectContaining({
+          taskId: 'T001',
+          implementerProfile: selected.profile,
+        }),
+      ]);
+    },
+  );
 });

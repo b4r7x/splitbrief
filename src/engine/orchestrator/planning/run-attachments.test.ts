@@ -48,12 +48,11 @@ describe('runPlanningPhase — attachments capability gate (F-123 seam)', () => 
     const planner = createPlannerBase({
       invokePlan: async ({ images }) => {
         seenImages = images;
-        return completedRunnerCall('raw stdout noise');
+        return completedRunnerCall(REAL_TASKS_MD);
       },
       invokeEscalate: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities: { ...defaultCapabilities, supportsImages },
-      readPhaseOutput: () => REAL_TASKS_MD,
     });
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
@@ -79,7 +78,7 @@ describe('runPlanningPhase — attachments capability gate (F-123 seam)', () => 
   it('supportsImages false → emits planner_attachments_dropped and strips before the backend call', async () => {
     const { result, events, getSeenImages } = await runInstantWithAttachment(false);
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('parked');
     const dropped = events.find((e) => e.type === 'planner_attachments_dropped');
     expect(dropped).toBeDefined();
     expect(dropped && 'count' in dropped ? dropped.count : 0).toBe(1);
@@ -90,7 +89,7 @@ describe('runPlanningPhase — attachments capability gate (F-123 seam)', () => 
   it('supportsImages true → forwards attachments verbatim to the backend, no drop event', async () => {
     const { result, events, getSeenImages } = await runInstantWithAttachment(true);
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('parked');
     expect(events.find((e) => e.type === 'planner_attachments_dropped')).toBeUndefined();
     expect(getSeenImages()).toEqual([attachment]);
   });

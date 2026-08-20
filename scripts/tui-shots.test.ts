@@ -26,7 +26,7 @@ describe('tui-shots CLI behavior', () => {
     const help = createHarness({ cwd, capture, gitRevision });
     expect(await runTuiShots(['--help'], help.dependencies)).toBe(0);
     expect(help.stdout()).toContain('Usage: tui-shots [options]');
-    for (const option of ['--scenario', '--viewport', '--element', '--output']) {
+    for (const option of ['--scenario', '--viewport', '--element', '--profile', '--output']) {
       expect(help.stdout()).toContain(option);
     }
     expect(help.stderr()).toBe('');
@@ -104,6 +104,90 @@ describe('tui-shots CLI behavior', () => {
       ].join('\n'),
     );
     expect(harness.stderr()).toBe('');
+  });
+
+  it.each(['unicode-color', 'unicode-mono', 'ascii-mono'] as const)(
+    'passes one homogeneous %s profile into the selection',
+    async (profile) => {
+      const cwd = await createTemporaryCwd();
+      const capture = vi.fn<CaptureFunction>(async (options) =>
+        successfulCapture(options.outputRoot, 1),
+      );
+      const harness = createHarness({ cwd, capture, gitRevision: async () => null });
+
+      expect(
+        await runTuiShots(
+          ['--scenario', 'home-empty', '--viewport', '80x24', '--profile', profile],
+          harness.dependencies,
+        ),
+      ).toBe(0);
+
+      expect(capture).toHaveBeenCalledTimes(1);
+      expect(capture.mock.calls[0]?.[0]?.selection).toMatchObject({ profile });
+    },
+  );
+
+  it('uses unicode-color as the compatibility default', async () => {
+    const cwd = await createTemporaryCwd();
+    const capture = vi.fn<CaptureFunction>(async (options) =>
+      successfulCapture(options.outputRoot, 1),
+    );
+    const harness = createHarness({ cwd, capture, gitRevision: async () => null });
+
+    expect(
+      await runTuiShots(['--scenario', 'home-empty', '--viewport', '80x24'], harness.dependencies),
+    ).toBe(0);
+    expect(capture.mock.calls[0]?.[0]?.selection).toMatchObject({ profile: 'unicode-color' });
+  });
+
+  it.each([
+    ['unknown profile', ['--profile', 'future-terminal'], 'Unknown terminal profile'],
+    [
+      'mixed profiles',
+      ['--profile', 'unicode-color', '--profile', 'ascii-mono'],
+      'Terminal profile must be homogeneous',
+    ],
+  ] as const)('rejects %s before capture', async (_name, profileArgs, message) => {
+    const cwd = await createTemporaryCwd();
+    const capture = vi.fn<CaptureFunction>();
+    const gitRevision = vi.fn(async () => 'abcdef1');
+    const harness = createHarness({ cwd, capture, gitRevision });
+
+    expect(
+      await runTuiShots(
+        ['--scenario', 'home-empty', '--viewport', '80x24', ...profileArgs],
+        harness.dependencies,
+      ),
+    ).toBe(1);
+    expect(harness.stderr()).toContain(`Error: ${message}`);
+    expect(capture).not.toHaveBeenCalled();
+    expect(gitRevision).not.toHaveBeenCalled();
+  });
+
+  it('combines repeated scenario-local viewport flags without a cross-product', async () => {
+    const cwd = await createTemporaryCwd();
+    const capture = vi.fn<CaptureFunction>(async (options) =>
+      successfulCapture(options.outputRoot, options.selection.targets.length),
+    );
+    const harness = createHarness({ cwd, capture, gitRevision: async () => null });
+
+    expect(
+      await runTuiShots(
+        [
+          '--scenario',
+          'home-empty',
+          '--viewport',
+          '80x24',
+          '--viewport',
+          '60x18',
+          '--profile',
+          'unicode-color',
+        ],
+        harness.dependencies,
+      ),
+    ).toBe(0);
+
+    expect(capture.mock.calls[0]?.[0]?.selection.targets).toHaveLength(2);
   });
 
   it.each([

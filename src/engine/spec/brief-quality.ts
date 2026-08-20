@@ -52,10 +52,6 @@ export function firstBriefError(report: BriefQualityReport): BriefQualityIssue |
   return report.issues.find((issue) => issue.severity === 'error');
 }
 
-export function firstBriefErrorMessage(report: BriefQualityReport): string {
-  return firstBriefError(report)?.message ?? 'unknown error';
-}
-
 export function briefErrorMessages(report: BriefQualityReport): string[] {
   return report.issues.filter((issue) => issue.severity === 'error').map((issue) => issue.message);
 }
@@ -185,6 +181,24 @@ function writeTargetFiles(task: Task): string[] {
   return [...targets.values()];
 }
 
+/**
+ * The brief-quality verdict is a pure function of the recorded issues, so a
+ * consumer holding only a persisted issue list derives the same `passed` and
+ * `score` the evaluation produced.
+ */
+export function briefQualityVerdict(
+  issues: readonly unknown[],
+): Readonly<{ passed: boolean; score: number }> {
+  let errorCount = 0;
+  let warningCount = 0;
+  for (const issue of issues) {
+    const severity = isRecord(issue) ? issue.severity : undefined;
+    if (severity === 'error') errorCount += 1;
+    else if (severity === 'warning') warningCount += 1;
+  }
+  return { passed: errorCount === 0, score: clamp01(1 - errorCount * 0.2 - warningCount * 0.05) };
+}
+
 export function evaluateBriefQuality(tasks: Task[]): BriefQualityReport {
   const issues: BriefQualityIssue[] = [];
 
@@ -279,10 +293,7 @@ export function evaluateBriefQuality(tasks: Task[]): BriefQualityReport {
     }
   }
 
-  const errorCount = issues.filter((i) => i.severity === 'error').length;
-  const warningCount = issues.filter((i) => i.severity === 'warning').length;
-  const score = clamp01(1 - errorCount * 0.2 - warningCount * 0.05);
-  const passed = errorCount === 0;
+  const { passed, score } = briefQualityVerdict(issues);
 
   return { version: 1, passed, score, issues };
 }

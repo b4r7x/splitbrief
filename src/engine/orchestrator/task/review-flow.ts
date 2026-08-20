@@ -8,8 +8,7 @@ import { buildTaskReviewRequest, shouldReviewTask } from './review.js';
 import type { TaskReviewRequest } from '../../events/workflow-events.js';
 import { buildRewindAction } from '../../../core/state/build-rewind-action.js';
 import { enqueueUserMessage } from '../queue/submit.js';
-import { transition } from '../../../core/state/machine.js';
-import { saveState } from '../../../core/state/persistence.js';
+import { transitionAndSave } from '../state-ops.js';
 
 export type ReviewTaskDecision = 'continue' | 'stop' | 'redo-task' | 'abort';
 
@@ -29,17 +28,12 @@ function applyTaskReviewRewind(
       state,
       persistTranscript,
     });
-    let next = transition(state, persistedAction);
-    let persistedNext = transition(state, persistedAction);
+    let next = transitionAndSave({ projectDir, sessionId }, state, persistedAction);
     if (next.pendingRecovery?.taskId === request.taskId) {
-      next = transition(next, {
-        type: 'RESOLVE_PENDING_RECOVERY',
-      });
-      persistedNext = transition(persistedNext, {
+      next = transitionAndSave({ projectDir, sessionId }, next, {
         type: 'RESOLVE_PENDING_RECOVERY',
       });
     }
-    saveState({ projectDir, sessionId }, persistedNext);
     return next;
   }
 
@@ -55,9 +49,7 @@ function applyTaskReviewRewind(
   if (action.type === 'REWIND_TO_PLAN') {
     setRewindFeedback?.(action.comment);
   }
-  const next = transition(state, persistedAction);
-  saveState({ projectDir, sessionId }, next);
-  return next;
+  return transitionAndSave({ projectDir, sessionId }, state, persistedAction);
 }
 
 export async function reviewTaskIfNeeded(opts: {

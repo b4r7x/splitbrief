@@ -275,40 +275,40 @@ describe('strikethrough (REQ-005)', () => {
 });
 
 describe('heading rank ladder (REQ-006)', () => {
-  it.each([
-    'terminal' as const,
-    'mono' as const,
-  ])('resolves the top ranks from theme.markdown.heading and the deep ranks from textDim (%s)', async (preset) => {
-    const theme = getTheme(preset);
-    const top = await renderMarkdown({ source: '## T', width: 40, theme });
-    const deep = await renderMarkdown({ source: '##### T', width: 40, theme });
+  it.each(['terminal' as const, 'mono' as const])(
+    'resolves the top ranks from theme.markdown.heading and the deep ranks from textDim (%s)',
+    async (preset) => {
+      const theme = getTheme(preset);
+      const top = await renderMarkdown({ source: '## T', width: 40, theme });
+      const deep = await renderMarkdown({ source: '##### T', width: 40, theme });
 
-    expectFrameUsesThemeColor(top.raw, theme.markdown.heading);
-    expectFrameUsesThemeColor(deep.raw, theme.textDim);
-    top.unmount();
-    deep.unmount();
-  });
+      expectFrameUsesThemeColor(top.raw, theme.markdown.heading);
+      expectFrameUsesThemeColor(deep.raw, theme.textDim);
+      top.unmount();
+      deep.unmount();
+    },
+  );
 
   // The review overlay renders through this module and the transcript through
   // markdown-rows; a rank that reads the same as its neighbour flattens the outline in both.
-  it.each([
-    'terminal' as const,
-    'mono' as const,
-  ])('gives each of the six ranks its own rendered form (%s)', async (preset) => {
-    const theme = getTheme(preset);
-    const forms: string[] = [];
-    for (const depth of [1, 2, 3, 4, 5, 6]) {
-      const { raw, unmount } = await renderMarkdown({
-        source: `${'#'.repeat(depth)} Rank`,
-        width: 40,
-        theme,
-      });
-      forms.push(raw);
-      unmount();
-    }
+  it.each(['terminal' as const, 'mono' as const])(
+    'gives each of the six ranks its own rendered form (%s)',
+    async (preset) => {
+      const theme = getTheme(preset);
+      const forms: string[] = [];
+      for (const depth of [1, 2, 3, 4, 5, 6]) {
+        const { raw, unmount } = await renderMarkdown({
+          source: `${'#'.repeat(depth)} Rank`,
+          width: 40,
+          theme,
+        });
+        forms.push(raw);
+        unmount();
+      }
 
-    expect(new Set(forms).size).toBe(6);
-  });
+      expect(new Set(forms).size).toBe(6);
+    },
+  );
 });
 
 describe('fenced code highlighting (REQ-007)', () => {

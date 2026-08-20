@@ -223,7 +223,7 @@ For every other planner/implementer combination, swap tools and models via the c
 
 Spend is not painted across the top of the screen. There is no persistent cost header; these are the four places a number actually appears.
 
-**Sidebar footer** — `/sidebar` toggles the workflow sidebar, which starts hidden and is unavailable below 120 columns. Its last line reads `Local NN%`, the share of tasks the implementer finished without escalating, followed by the run's spend when there is something priced to report:
+**Sidebar footer** — `/sidebar` toggles the workflow sidebar, which starts hidden and is unavailable at or below 120 columns. Its last line reads `Local NN%`, the share of tasks the implementer finished without escalating, followed by the run's spend when there is something priced to report:
 
 ```
 Local 80% · $0.42

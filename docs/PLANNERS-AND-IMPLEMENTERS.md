@@ -115,7 +115,7 @@ Each phase:
 - Creates a transcript buffer (16KB, flushed to `session.jsonl`)
 - On resume, injects prior messages into the first phase. API backends receive them as an OpenAI messages array (`consumesPriorMessages: true`). CLI backends get a prompt-level prefix.
 - Converts the backend response into `RunnerCallResult` immediately, then accumulates token usage from the typed call result
-- Returns artifact text via `readPhaseOutput()` (backends that write files to disk) or raw stdout
+- Returns the phase artifact text from the completed terminal result only; stdin/stdout adapters never reopen files that a backend wrote
 
 The `quickPlan()` and `instantPlan()` paths skip straight to a single-phase call using `buildQuickPlanPrompt()` or `buildInstantPrompt()` respectively. Same pipeline machinery, one invocation instead of four.
 
@@ -361,7 +361,7 @@ The 25% reserve is for output. The remaining budget goes to `currentCode`. If th
 
 Spawns a CLI tool as a subprocess. Supported tools: `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`.
 
-The planner reads artifacts from disk (session directory or project root) via `readCliPhaseOutput()`. It checks the session folder first, then looks for markdown-linked paths in stdout, then falls back to stdout text. Claude Code uses `--session-id` for session resume. Output is parsed line by line via each tool's `parseLine` function.
+Every planner call declares its transport before dispatch: the current call's final response (`stdout-final`) or an exact declared-file lease. The candidate is that call's authoritative final output; session files, project-root artifacts, markdown-linked paths, prose mentions, stderr, and earlier attempts are evidence at most, never content (see [Compiler capability and planner conformance](#compiler-capability-and-planner-conformance)). The compiler path never resumes the workflow session. Claude Code continues a session it already minted with `--resume`. Output is parsed line by line via each tool's protocol parser; a configured `outputFormat` cannot replace a structured terminal contract.
 
 The implementer writes files directly (`writesFiles: 'direct'`) inside the run's isolation directory, and change detection runs there. Claude Code gets a special path through `runClaudeOneShot()`. A CLI configured with a cheaper model than the planner's is one of the two canonical implementer setups -- see [Write modes](#write-modes).
 
@@ -498,6 +498,63 @@ Anthropic Agent SDK library call via `@anthropic-ai/claude-agent-sdk` (optional 
 The planner uses `CONVERSATIONAL_CAPS` (all capabilities on) except `supportsHintEscalation: false`. It supports `injectUserTurn()` for conversational context.
 
 The implementer writes files directly with git-based change detection.
+
+---
+
+## Compiler capability and planner conformance
+
+The Task Brief compiler (`src/engine/spec/tasks/compiler.ts`) compiles the manifest in deterministic four-item batches, at most 64 real dispatches per operation, each batch in a fresh detached session scope that cannot read, replace, expire, resume, or report into the workflow planner session. Every planner mode crosses the same admission boundary: standard and speckit run the compiler's detached batches, and quick and instant stay single-call while accepting only a current-call result.
+
+`admitCompilerCapability` (`src/engine/runners/compiler-capability.ts`) admits a backend only on the exact tuple: runtime identity, effective role vector, declared transport, terminal contract, containment profile, credential channel, envelope version, and a verified conformance proof. Admission fails closed (REQ-016): a missing or unverified property returns the typed zero-dispatch refusal `task_compiler_capability_unsupported`, and no combination is downgraded to a weaker mode. Tiered capability admission applies: the tested version yields a full capability receipt; other detected versions of a supported backend are admitted with runtime-drift evidence and a run warning; unsupported candidates (`copilot`, `aider`, `shell`, `agent`) receive a typed fail-closed refusal. Versionless rows (`api`, `agent-sdk`, `custom-command`) admit only an empty version claim, and the verified conformance proof carries the identity evidence. Runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) are the enforcement surface.
+
+Planner mode does not grant artifact authority. A `--agent plan`, `--permission-mode plan`, or `--sandbox read-only` flag bounds what the tool may do; it does not prove what the process could reach, what its output means, or that an artifact is fresh. The production-factory conformance harness (`src/engine/runners/cli-tools/contract-harness.ts`, driven by `scripts/cli-conformance.ts`) is what can prove the effective role, containment, and final-response contract, but its verdicts do not reach admission on their own: they are recorded by hand into `COMPILER_SUPPORT_TABLE`, and nothing reads a harness record when a claim is admitted. A run's claim carries that row's recorded vector plus two live host observations — the detected runtime version and containment-launcher availability — and those two are what a running host can still refuse on.
+
+### V1 support table
+
+Source: `COMPILER_SUPPORT_TABLE` in `src/engine/runners/compiler-capability.ts`, mirrored for CLIs by `CLI_COMPILER_EVIDENCE` in `src/core/runners/cli-tool-catalog.ts` (registry parity tests fail on divergence). Every admitted row accepts both containment profiles: `seatbelt` (macOS `sandbox-exec`) and `bubblewrap` (Linux `bwrap`). Envelope version is 1 for every row.
+
+| Backend | Tested runtime | V1 state | Transport | Terminal contract | Credential channels |
+|---|---|---|---|---|---|
+| `opencode` | 1.18.15 | required-baseline | `stdout-final` | `opencode-final-message-v1` | `session-copy` |
+| `claude-code` | 2.1.232 | conformance-gated | `stdout-final` | `claude-terminal-result-v1` | `api-key`, `session-copy` |
+| `codex` | 0.147.0 | conformance-gated | `declared-file` | `codex-output-last-message-v1` | `api-key`, `session-copy` |
+| `kilo-code` | 7.0.49 | conformance-gated | `stdout-final` | `kilo-final-message-v1` | `session-copy` |
+| `api` | (versionless) | conformance-gated | `stdout-final` | `provider-final-assistant-response-v1` | `api-key` |
+| `agent-sdk` | (versionless) | conformance-gated | `stdout-final` | `agent-sdk-final-assistant-turn-v1` | `api-key` |
+| `custom-command` | (versionless) | conformance-gated | `stdout-final`, `declared-file` | `custom-command-final-response-v1` | `api-key` |
+| `copilot` | — | unsupported | — | — | — |
+| `aider` | — | unsupported | — | — | — |
+| `shell` | — | unsupported | — | — | — |
+| `agent` | — | unsupported | — | — | — |
+
+`required-baseline` means OpenCode 1.18.15 is the production planner once its full factory-path conformance passes. `conformance-gated` means the row admits only when the complete conformance row passes and fails closed otherwise: Kilo, the OpenAI-compatible API, the Agent SDK, and configured custom commands stay inactive until that happens. `unsupported` means a typed zero-dispatch refusal no matter what a candidate claims: Copilot has no proven non-writing programmatic planner posture in V1, Aider has no proven read-only planner contract, the legacy shell planner lacks compiler containment and final-response conformance, and the legacy agent planner's ambient session-file behavior violates exact lease ownership.
+
+### Transports and containment
+
+`stdout-final` derives the candidate from the current call's authoritative final response only. Earlier messages, partials, tool-call text, stderr, and prior attempts are evidence at most (REQ-010, REQ-020). `declared-file` hands the child one host-prepared, invocation-unique lease; acceptance requires that exact regular file, a bounded no-follow read, unchanged ancestry and identity, and a matching receipt. Missing, pre-existing, sibling, same-basename, traversal, absolute, symlinked, path-swapped, non-UTF-8, or oversized files fail. There is no `auto` source, source priority, prose sniffing, or filesystem search.
+
+The containment profile in a capability tuple records which OS-level write-denial launcher the host offers -- `seatbelt` (macOS `sandbox-exec`) or `bubblewrap` (Linux `bwrap`) -- as observed by `platformContainmentProfile` (`src/engine/runners/planner-containment.ts`). Availability is all that observation reports: nothing in the compiler path launches that binary or stages a snapshot, and the planner child runs against the project checkout. On `unavailable` the tuple matches no row's containment profiles, so the backend lacks compiler capability and refuses before dispatch. Writes are observed after the fact by post-run mutation detection (`src/engine/orchestrator/planning/mutation-guard.ts`), which fails the planning call on unexpected filesystem mutations.
+
+### Credential channels
+
+`api-key` passes the provider's environment variable into the sanitized child environment. `session-copy` bridges exactly the tool's allowlisted credential files into the disposable HOME/XDG roots, with one exception on the shipping dispatch path: a channel whose credential is an OS keychain item — the Claude Code `session` channel on macOS — has no file to copy, so its child is handed the host `HOME` and `USER` the login keychain resolves through and does read and write the real home directory. Compiler calls take the same `createRunnerSandboxEnv` (`src/engine/runners/sandbox-env.ts`) as every other planner call; there is no stricter compiler-only credential isolation, so a keychain channel is as wide for a compiler batch as it is for a workflow planner call. Bridged values are redacted from diagnostics, and the capability receipt records no secret value.
+
+### Effective roles by backend
+
+The role vector is pinned and effect-verified per backend (REQ-017). A role that is missing, overridden, falls back, prompts interactively, or cannot be verified makes the backend unsupported for that role.
+
+| Backend | Planner role | Implementer role |
+|---|---|---|
+| `opencode` | `--agent plan` | `--agent build` |
+| `kilo-code` | `--agent plan` | `--agent code --auto` |
+| `claude-code` | `--permission-mode plan` (Read, Glob, Grep, Plan only) | `--permission-mode acceptEdits` |
+| `codex` | `--sandbox read-only --ask-for-approval never` exec, ambient config and rules ignored, ephemeral detached | `--sandbox workspace-write --ask-for-approval never` in the staged checkout |
+
+A planner never gains canonical write authority. Candidates stay non-canonical until the authoritative generation commit; the fixed `tasks.md`, `brief-quality.json`, `spec.md`, and `plan.md` files are compatibility projections of that generation. See [WORKFLOW.md](./WORKFLOW.md) for the generation, permit, and disposition flow.
+
+### Deterministic conformance vs opt-in live checks
+
+Normal CI proves the conformance rows deterministically through the production factory. Subprocess shims speak each tool's real protocol terminal: `testing/integration/orchestrator/runner-capability-matrix.test.ts` (exact-version, protocol, and credential rows), `testing/integration/orchestrator/planner-effect-matrix.test.ts` (planner immutability, one nonce edit, zero unsupported spawn), and `src/engine/runners/cli-tools/contract-harness-effects.test.ts` (mutating planner, no-op or wrong implementer, fallback role). Unsupported rows are pinned by `src/engine/runners/compiler-unsupported-backends.test.ts`. Live authenticated checks (`testing/e2e/scenarios/real-cli-planner-implementer-smoke.test.ts`, gated on `SPLITBRIEF_REAL_CLI_E2E=1`) are opt-in drift evidence, never the admission proof. See [TESTING.md](./TESTING.md).
 
 ---
 

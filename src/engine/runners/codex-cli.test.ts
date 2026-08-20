@@ -8,7 +8,7 @@ import {
 const PROMPT = '<PROMPT>';
 
 describe('Codex planner adapter — session resume', () => {
-  it('uses exec resume with model, json, session, and prompt in order', () => {
+  it('uses exec resume with global read-only flags, model, ignore flags, json, session, and prompt in order', () => {
     const args = codexPlannerAdapter.buildArgs({
       prompt: PROMPT,
       model: 'gpt-5',
@@ -18,11 +18,25 @@ describe('Codex planner adapter — session resume', () => {
       sessionId: 'session-1',
       effort: 'high',
     });
-    expect(args).toEqual(['exec', 'resume', '--model', 'gpt-5', '--json', 'session-1', PROMPT]);
+    expect(args).toEqual([
+      '--sandbox',
+      'read-only',
+      '--ask-for-approval',
+      'never',
+      'exec',
+      'resume',
+      '--model',
+      'gpt-5',
+      '--ignore-user-config',
+      '--ignore-rules',
+      '--json',
+      'session-1',
+      PROMPT,
+    ]);
     expect(args).not.toContain('--reasoning-effort');
   });
 
-  it('uses read-only exec --json with --cd when no session is provided', () => {
+  it('uses global read-only exec with never approval and --cd when no session is provided', () => {
     const args = codexPlannerAdapter.buildArgs({
       prompt: PROMPT,
       model: 'gpt-5',
@@ -32,11 +46,29 @@ describe('Codex planner adapter — session resume', () => {
       sessionId: null,
       effort: undefined,
     });
-    expect(args).toEqual(['--model', 'gpt-5', 'exec', '--json', '--cd', '/project', PROMPT]);
-    expect(args).not.toContain('--sandbox');
+    expect(args).toEqual([
+      '--model',
+      'gpt-5',
+      '--sandbox',
+      'read-only',
+      '--ask-for-approval',
+      'never',
+      'exec',
+      '--ignore-user-config',
+      '--ignore-rules',
+      '--ephemeral',
+      '--json',
+      '--cd',
+      '/project',
+      PROMPT,
+    ]);
+    expect(args.slice(args.indexOf('--sandbox'), args.indexOf('--sandbox') + 2)).toEqual([
+      '--sandbox',
+      'read-only',
+    ]);
   });
 
-  it('uses workspace-write escalation and skips the git repository check', () => {
+  it('uses global workspace-write escalation and skips the git repository check', () => {
     const args = codexPlannerAdapter.buildArgs({
       prompt: PROMPT,
       model: undefined,
@@ -47,10 +79,13 @@ describe('Codex planner adapter — session resume', () => {
       effort: undefined,
     });
     expect(args).toEqual([
-      'exec',
-      '--json',
       '--sandbox',
       'workspace-write',
+      '--ask-for-approval',
+      'never',
+      'exec',
+      '--ignore-user-config',
+      '--json',
       '--skip-git-repo-check',
       '--cd',
       '/project',
@@ -70,10 +105,13 @@ describe('Codex implementer adapter — staged direct writes', () => {
     expect(args).toEqual([
       '--model',
       'gpt-5.2',
-      'exec',
-      '--json',
       '--sandbox',
       'workspace-write',
+      '--ask-for-approval',
+      'never',
+      'exec',
+      '--ignore-user-config',
+      '--json',
       '--skip-git-repo-check',
       '--cd',
       '/staged',

@@ -5,6 +5,11 @@ import type { RunnerCallTextChannel } from '../../../core/runner-call-contract.j
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type {
+  CliArgumentValidation,
+  CliAuthorityCategory,
+  CliParsedSemanticArg,
+} from './validate-args.js';
+import type {
   RunnerCallFailureStatus,
   RunnerCallTextSemantics,
   RunnerCallUsageSemantics,
@@ -145,9 +150,37 @@ export function isDeclaredCliProbeContract(
   return probe.declared !== undefined && probe.declared.kind === 'declared';
 }
 
-type CliArgumentValidation =
-  | Readonly<{ valid: true }>
-  | Readonly<{ valid: false; conflicts: readonly string[] }>;
+/**
+ * The REQ-018 authority categories one role's adapter is allowed to own.
+ * `role` binds the allowlist to the role it governs, so a planner allowlist
+ * can never be attached to an implementer adapter and vice versa.
+ */
+export type CliRoleAllowlist<Role extends 'planner' | 'implementer'> = Readonly<{
+  role: Role;
+  owned: readonly CliAuthorityCategory[];
+}>;
+
+/**
+ * Positive role allowlist admission (REQ-017, REQ-018): a parsed semantic
+ * vector whose authority-bearing flags all fall inside the role's allowlist is
+ * admitted; any flag outside the allowlist is a pre-dispatch rejection, and
+ * the caller spawns nothing for a rejected vector.
+ */
+export function admitCliRoleVector(input: {
+  role: 'planner' | 'implementer';
+  vector: readonly CliParsedSemanticArg[];
+  allowlist: CliRoleAllowlist<'planner' | 'implementer'>;
+}): CliArgumentValidation {
+  if (input.role !== input.allowlist.role) return { valid: false, conflicts: ['role'] };
+  const conflicts: string[] = [];
+  for (const arg of input.vector) {
+    if (arg.category === null || input.allowlist.owned.includes(arg.category)) continue;
+    conflicts.push(arg.token);
+  }
+  return conflicts.length === 0
+    ? { valid: true }
+    : { valid: false, conflicts: [...new Set(conflicts)] };
+}
 
 export type CliTerminalInput = Readonly<{
   outputContract: CliOutputContract;
@@ -177,6 +210,8 @@ type CliAdapterContract<
   parse: (line: string) => readonly CliProtocolEvent[];
   terminal: (input: CliTerminalInput) => CliProtocolTerminalEvent;
   probe: CliProbeContract;
+  /** The positive REQ-018 allowlist this role's adapter owns; absent means none declared. */
+  roleAllowlist?: CliRoleAllowlist<Role> | undefined;
 }>;
 
 export type CliPlannerBuildArgsInput = Readonly<{

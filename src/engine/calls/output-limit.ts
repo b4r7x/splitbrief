@@ -2,6 +2,10 @@ import { error, matches } from '../../utils/error.js';
 import { sanitizeTerminalDiagnosticText } from '../../utils/display-text.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { protectConsumerPayload } from '../../core/consumer-policy.js';
+import type {
+  TaskCompilationCallEnvelope,
+  TaskCompilationFailureCode,
+} from '../../core/schemas/task-compilation.js';
 import type { RunnerCallRecorder } from './recorder.js';
 import { UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH } from './schema.js';
 import type {
@@ -23,6 +27,9 @@ export const RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS = 128;
 export const RUNNER_CALL_HTTP_ERROR_BODY_MAX_BYTES = 256 * 1024;
 export const RUNNER_CALL_SSE_EVENT_MAX_BYTES = 1024 * 1024;
 export const RUNNER_CALL_PAYLOAD_TRUNCATED_KEY = '_truncated';
+
+const ENVELOPE_OUTPUT_LIMITED_CODE: TaskCompilationFailureCode = 'task_compiler_output_limited';
+const ENVELOPE_TIMEOUT_CODE: TaskCompilationFailureCode = 'task_compiler_timeout';
 
 export interface RunnerCallOutputLimit {
   code: string;
@@ -106,6 +113,98 @@ export function createRunnerCallDeltaLimiter(opts: {
       bytesStored += textBytes;
       if (shouldCountEvent) eventsStored += 1;
       return { text, limit: null };
+    },
+    get limit() {
+      return limit;
+    },
+  };
+}
+
+export interface RunnerCallEnvelopeLimiter {
+  recordRaw: (bytes: number) => void;
+  recordNormalized: (deltaBytes: number) => void;
+  recordStderr: (bytes: number) => void;
+  checkDeadline: (now: number) => void;
+  checkIdle: (silentMs: number) => void;
+  readonly limit: RunnerCallOutputLimit | null;
+}
+
+/**
+ * Cumulative counters for one canonical call envelope. Counters never reset;
+ * the first breach latches permanently and every later record returns it, so a
+ * shorter final response can never clear an overflow. `recordNormalized`
+ * accepts a signed delta: a `final` restatement replaces the draft bytes it
+ * restates instead of double-counting them. The counter is zero-clamped, so
+ * negative deltas can never drive it below zero.
+ */
+export function createRunnerCallEnvelopeLimiter(opts: {
+  envelope: TaskCompilationCallEnvelope;
+  startedAt: number;
+}): RunnerCallEnvelopeLimiter {
+  let limit: RunnerCallOutputLimit | null = null;
+  let rawBytes = 0;
+  let normalizedBytes = 0;
+  let stderrBytes = 0;
+
+  function latch(next: RunnerCallOutputLimit): void {
+    if (limit === null) limit = next;
+  }
+
+  return {
+    recordRaw(bytes) {
+      if (limit !== null) return;
+      rawBytes += bytes;
+      if (rawBytes > opts.envelope.maxRawProtocolBytes) {
+        latch({
+          code: ENVELOPE_OUTPUT_LIMITED_CODE,
+          message: `runner call raw protocol exceeded ${opts.envelope.maxRawProtocolBytes} bytes`,
+          bytesSeen: rawBytes,
+          maxBytes: opts.envelope.maxRawProtocolBytes,
+        });
+      }
+    },
+    recordNormalized(deltaBytes) {
+      if (limit !== null) return;
+      normalizedBytes = Math.max(0, normalizedBytes + deltaBytes);
+      if (normalizedBytes > opts.envelope.maxNormalizedOutputBytes) {
+        latch({
+          code: ENVELOPE_OUTPUT_LIMITED_CODE,
+          message: `runner call normalized output exceeded ${opts.envelope.maxNormalizedOutputBytes} bytes`,
+          bytesSeen: normalizedBytes,
+          maxBytes: opts.envelope.maxNormalizedOutputBytes,
+        });
+      }
+    },
+    recordStderr(bytes) {
+      if (limit !== null) return;
+      stderrBytes += bytes;
+      if (stderrBytes > opts.envelope.maxStderrBytes) {
+        latch({
+          code: ENVELOPE_OUTPUT_LIMITED_CODE,
+          message: `runner call stderr exceeded ${opts.envelope.maxStderrBytes} bytes`,
+          bytesSeen: stderrBytes,
+          maxBytes: opts.envelope.maxStderrBytes,
+        });
+      }
+    },
+    checkDeadline(now) {
+      if (limit !== null) return;
+      const elapsedMs = Math.max(0, now - opts.startedAt);
+      if (elapsedMs > opts.envelope.deadlineMs) {
+        latch({
+          code: ENVELOPE_TIMEOUT_CODE,
+          message: `runner call exceeded ${opts.envelope.deadlineMs} ms deadline`,
+        });
+      }
+    },
+    checkIdle(silentMs) {
+      if (limit !== null) return;
+      if (silentMs > opts.envelope.idleTimeoutMs) {
+        latch({
+          code: ENVELOPE_TIMEOUT_CODE,
+          message: `runner call idle exceeded ${opts.envelope.idleTimeoutMs} ms`,
+        });
+      }
     },
     get limit() {
       return limit;

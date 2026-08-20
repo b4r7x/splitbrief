@@ -14,20 +14,17 @@ describe('buildTaskFormatExample round-trip', () => {
     expect(tasks[0]?.dependsOn).toEqual([]);
   });
 
-  it.each([
-    'typescript',
-    'javascript',
-    'python',
-    'go',
-    'rust',
-  ])('parses back into one task for a %s project', (language) => {
-    const ctx = buildLanguageContext(language);
-    const tasks = parseTasks(buildTaskFormatExample(ctx));
+  it.each(['typescript', 'javascript', 'python', 'go', 'rust'])(
+    'parses back into one task for a %s project',
+    (language) => {
+      const ctx = buildLanguageContext(language);
+      const tasks = parseTasks(buildTaskFormatExample(ctx));
 
-    expect(tasks).toHaveLength(1);
-    expect(tasks[0]?.id).toBe('T001');
-    expect(tasks[0]?.file).toBe(`src/path/to/file${ctx.fileExtension}`);
-  });
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0]?.id).toBe('T001');
+      expect(tasks[0]?.file).toBe(`src/path/to/file${ctx.fileExtension}`);
+    },
+  );
 
   it('survives parseTasksStrict without a single warning', () => {
     const warnings: string[] = [];

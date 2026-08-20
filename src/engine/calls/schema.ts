@@ -15,6 +15,16 @@ import {
   RUNNER_CALL_WARNING_SURFACES,
   RUNNER_CALL_USAGE_SEMANTICS,
 } from '../../core/runner-call-contract.js';
+import {
+  CallEnvelopeSchema,
+  OperationEnvelopeSchema,
+  PlannerArtifactTransportSchema,
+  PlannerSessionScopeSchema,
+  TaskCompilationAttemptIdSchema,
+  TaskCompilationFailureCodeSchema,
+  TaskCompilationFailureStatusSchema,
+  TaskCompilationTerminalStatusSchema,
+} from '../../core/schemas/task-compilation.js';
 
 export const UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH = 4096;
 export const RUNNER_CALL_MESSAGE_MAX_LENGTH = 8192;
@@ -39,16 +49,26 @@ export const RunnerCallActivityKindSchema = z.enum(RUNNER_CALL_ACTIVITY_KINDS);
 
 export const RunnerCallFailureStatusSchema = z.enum(RUNNER_CALL_FAILURE_STATUSES);
 export const RunnerCallTextSemanticsSchema = z.enum(['delta', 'final']);
+export const RunnerCallAttemptIdSchema = TaskCompilationAttemptIdSchema;
+export const RunnerCallTransportSchema = PlannerArtifactTransportSchema;
+export const RunnerCallSessionScopeSchema = PlannerSessionScopeSchema;
+export const RunnerCallEnvelopeSchema = CallEnvelopeSchema;
+export const RunnerCallOperationEnvelopeSchema = OperationEnvelopeSchema;
 
 export const CallIdSchema = boundedId;
 
 export const runnerCallContextFields = {
   callId: CallIdSchema,
+  attemptId: RunnerCallAttemptIdSchema.optional(),
   role: RunnerCallRoleSchema,
   backendKind: RunnerCallBackendKindSchema,
   runnerName: boundedName.optional(),
   model: boundedName.optional(),
   attempt: nonnegativeInteger.optional(),
+  transport: RunnerCallTransportSchema.optional(),
+  sessionScope: RunnerCallSessionScopeSchema.optional(),
+  envelope: RunnerCallEnvelopeSchema.optional(),
+  operationEnvelope: RunnerCallOperationEnvelopeSchema.optional(),
 } as const;
 
 export const RunnerCallContextSchema = z.strictObject(runnerCallContextFields);
@@ -184,12 +204,21 @@ export const RunnerCallEventSchema = z.discriminatedUnion('type', [
 
 const runnerCallResultBaseFields = {
   callId: CallIdSchema,
+  attemptId: RunnerCallAttemptIdSchema.optional(),
   role: RunnerCallRoleSchema,
   backendKind: RunnerCallBackendKindSchema,
   runnerName: boundedName.optional(),
   model: boundedName.optional(),
   attempt: nonnegativeInteger.optional(),
-  status: RunnerCallStatusSchema,
+  transport: RunnerCallTransportSchema.optional(),
+  sessionScope: RunnerCallSessionScopeSchema.optional(),
+  envelope: RunnerCallEnvelopeSchema.optional(),
+  operationEnvelope: RunnerCallOperationEnvelopeSchema.optional(),
+  // RunnerCallStatusSchema is the peer event lifecycle vocabulary above. A
+  // persisted result uses the canonical task-compilation terminal vocabulary.
+  terminalStatus: TaskCompilationTerminalStatusSchema.nullable().optional(),
+  failureCode: TaskCompilationFailureCodeSchema.nullable().optional(),
+  status: TaskCompilationTerminalStatusSchema,
   startedAt: timestampMillis,
   endedAt: timestampMillis,
   durationMs: nonnegativeInteger,
@@ -201,19 +230,61 @@ const runnerCallResultBaseFields = {
   warnings: z.array(RunnerCallWarningSchema),
 } as const;
 
-const RunnerCallCompletedResultSchema = z.strictObject({
-  ...runnerCallResultBaseFields,
-  status: z.literal('completed'),
-  error: z.null(),
-  partial: z.literal(false),
-});
+const RunnerCallCompletedResultSchema = z
+  .strictObject({
+    ...runnerCallResultBaseFields,
+    status: z.literal('completed'),
+    error: z.null(),
+    partial: z.literal(false),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      value.terminalStatus !== undefined &&
+      value.terminalStatus !== null &&
+      value.terminalStatus !== 'completed'
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['terminalStatus'],
+        message: 'completed results cannot carry a failure terminal status',
+      });
+    }
+    if (value.failureCode !== undefined && value.failureCode !== null) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['failureCode'],
+        message: 'completed results cannot carry a failure code',
+      });
+    }
+  });
 
-const RunnerCallFailureResultSchema = z.strictObject({
-  ...runnerCallResultBaseFields,
-  status: RunnerCallFailureStatusSchema,
-  error: RunnerCallErrorSchema,
-  partial: z.boolean(),
-});
+const RunnerCallFailureResultSchema = z
+  .strictObject({
+    ...runnerCallResultBaseFields,
+    status: TaskCompilationFailureStatusSchema,
+    error: RunnerCallErrorSchema,
+    partial: z.boolean(),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      value.terminalStatus !== undefined &&
+      value.terminalStatus !== null &&
+      value.terminalStatus !== value.status
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['terminalStatus'],
+        message: 'failure terminal status must match result status',
+      });
+    }
+    if (value.failureCode === null) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['failureCode'],
+        message: 'failure results cannot carry a null failure code',
+      });
+    }
+  });
 
 export const RunnerCallResultSchema = z.union([
   RunnerCallCompletedResultSchema,

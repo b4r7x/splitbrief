@@ -157,7 +157,7 @@ describe('invokeCommandBasedRunner', () => {
     expect(result.stderr).toContain('error');
   });
 
-  it('returns bounded stderr on the non-timeout branch', async () => {
+  it('treats a stderr line overflow as a fatal truncation with bounded stderr', async () => {
     const result = await invokeCommandBasedRunner({
       command: 'node',
       args: [
@@ -172,16 +172,23 @@ describe('invokeCommandBasedRunner', () => {
       projectDir: process.cwd(),
     });
 
+    expect(result.callResult).toMatchObject({
+      status: 'truncated',
+      partial: true,
+      error: { code: 'stderr_line_overflow' },
+    });
     expect(Buffer.byteLength(result.stderr, 'utf8')).toBeLessThanOrEqual(
       DEFAULT_PROCESS_STDERR_MAX_BYTES,
     );
-    expect(result.stderr).toContain('output truncated');
-    expect(result.stderr).toContain('stderr-tail');
-    expect(result.stderr).not.toContain('stderr-head');
-    expect(result.stderr).not.toContain('x'.repeat(1024 * 1024));
+    expect(result.callResult.warnings).toContainEqual(
+      expect.objectContaining({
+        code: 'stderr_line_overflow',
+        message: expect.stringContaining('stderr line exceeded'),
+      }),
+    );
   });
 
-  it('keeps collecting past a stdout line overflow on the non-timeout branch', async () => {
+  it('treats a stdout line overflow as a fatal truncation that stops the collection', async () => {
     const result = await invokeCommandBasedRunner({
       command: 'node',
       args: [
@@ -195,13 +202,17 @@ describe('invokeCommandBasedRunner', () => {
       projectDir: process.cwd(),
     });
 
-    expect(result.callResult.status).toBe('completed');
-    expect(result.stdout).toContain('after-overflow');
-    expect(result.callResult.warnings).toEqual([
+    expect(result.callResult).toMatchObject({
+      status: 'truncated',
+      partial: true,
+      error: { code: 'stdout_line_overflow' },
+    });
+    expect(result.stdout).not.toContain('after-overflow');
+    expect(result.callResult.warnings).toContainEqual(
       expect.objectContaining({
         code: 'stdout_line_overflow',
         message: expect.stringContaining('stdout line exceeded'),
       }),
-    ]);
+    );
   });
 });

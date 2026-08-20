@@ -91,7 +91,7 @@ function isWithin(path: string, parent: string): boolean {
   return pathFromParent === '' || (!pathFromParent.startsWith('..') && !isAbsolute(pathFromParent));
 }
 
-function fingerprintsEqual(
+export function fingerprintsEqual(
   left: CliExecutableIdentity['fingerprint'],
   right: CliExecutableIdentity['fingerprint'],
 ): boolean {

@@ -136,11 +136,11 @@ describe('session replay', () => {
     });
   });
 
-  it('handles large files (>1000 lines) using streaming readline', async () => {
+  it('handles large files (>1000 lines) with bounded streaming reads', async () => {
     const dir = createTempDir('replay-test');
     tmpDirs.push(dir);
     const filePath = join(dir, 'session.jsonl');
-    // Write 1200 events with enough data per line to exceed typical buffer sizes
+    // Write 1200 events with enough data per line to exercise chunk boundaries.
     const lines: string[] = [];
     for (let i = 0; i < 1200; i++) {
       const entry = {
@@ -225,4 +225,59 @@ describe('session replay', () => {
       skippedOversized: 1,
     });
   });
+
+  it('skips an oversized unterminated replay tail without waiting for a newline', async () => {
+    const dir = createTempDir('replay-test');
+    tmpDirs.push(dir);
+    const filePath = join(dir, 'session.jsonl');
+    writeFileSync(filePath, 'x'.repeat(33));
+
+    await expect(collectReplayEvents(filePath)).resolves.toEqual([]);
+    await expect(
+      summarizeReplayEvents({ sessionJsonlPath: filePath, maxLineBytes: 32 }),
+    ).resolves.toMatchObject({
+      totalEvents: 0,
+      diagnostics: { totalLines: 1, skippedOversized: 1 },
+    });
+  });
+
+  it('enforces replay event and byte budgets before parsing unbounded history', async () => {
+    const dir = createTempDir('replay-test');
+    tmpDirs.push(dir);
+    const filePath = join(dir, 'session.jsonl');
+    const lines = Array.from({ length: 4 }, (_, index) =>
+      makeSessionEntry({
+        type: 'warning',
+        ts: index + 1,
+        phase: 'idle',
+        message: `event-${index}`,
+      }),
+    );
+    writeFileSync(filePath, `${lines.join('\n')}\n`);
+
+    const eventLimited = await collectReplayEventsWithOptions(filePath, { maxEvents: 2 });
+    expect(eventLimited).toHaveLength(2);
+
+    const firstLineBytes = Buffer.byteLength(`${lines[0]}\n`, 'utf8');
+    const exactlyOneLine = await collectReplayEventsWithOptions(filePath, {
+      maxBytes: firstLineBytes,
+    });
+    expect(exactlyOneLine).toHaveLength(1);
+
+    const byteLimited = await collectReplayEventsWithOptions(filePath, {
+      maxBytes: firstLineBytes + 1,
+    });
+    expect(byteLimited).toHaveLength(1);
+  });
 });
+
+async function collectReplayEventsWithOptions(
+  sessionJsonlPath: string,
+  options: { maxEvents?: number; maxBytes?: number },
+): Promise<EngineEvent[]> {
+  const events: EngineEvent[] = [];
+  for await (const event of streamReplayEvents({ sessionJsonlPath, ...options })) {
+    events.push(event);
+  }
+  return events;
+}

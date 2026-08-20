@@ -29,6 +29,11 @@ import { extractAssistantText, extractToolUses, recordInvalidSdkPayload } from '
 
 type StreamResult = RunnerCallResult & { sessionId?: string | null };
 
+const ENVELOPE_LIMIT_CODES: ReadonlySet<string> = new Set([
+  'task_compiler_output_limited',
+  'task_compiler_timeout',
+]);
+
 export interface ProcessStreamOptions {
   stream: AsyncIterable<unknown>;
   onOutput: (text: string) => void;
@@ -72,12 +77,22 @@ function throwForSdkCallFailure(result: RunnerCallResult): never {
 }
 
 export async function processStream(opts: ProcessStreamOptions): Promise<StreamResult> {
-  const { stream, onOutput, onSessionId, onCallEvent, signal, forwardedAbortController } = opts;
+  const { stream, onOutput, onSessionId, signal, forwardedAbortController } = opts;
   const context = opts.callContext ?? createSdkCallContext({ role: 'implementer' });
-  const recorder = createRunnerCallRecorder({ context, onEvent: onCallEvent });
   let collectedText = '';
   let usage: Pick<TokenDelta, 'inputTokens' | 'outputTokens'> | null = null;
   let sessionId: string | null = null;
+  let envelopeLimitFired = false;
+  const onEvent = (event: RunnerCallEvent): void => {
+    if (event.type === 'call_warning' && ENVELOPE_LIMIT_CODES.has(event.warning.code)) {
+      envelopeLimitFired = true;
+      forwardedAbortController?.abort(
+        error('agent-sdk-envelope-limit', event.warning.message, { code: event.warning.code }),
+      );
+    }
+    opts.onCallEvent?.(event);
+  };
+  const recorder = createRunnerCallRecorder({ context, onEvent });
   const textLimiter = createRunnerCallDeltaLimiter({
     code: 'agent_sdk_output_text_limit',
     label: 'Agent SDK output text',
@@ -94,8 +109,14 @@ export async function processStream(opts: ProcessStreamOptions): Promise<StreamR
   const watchdog = createIdleWatchdog({
     recorder,
     onKill: (idleError) => forwardedAbortController?.abort(idleError),
-    warnMs: opts.idle?.warnMs ?? RUNNER_IDLE_WARN_MS,
-    killMs: opts.idle?.killMs ?? RUNNER_IDLE_KILL_MS,
+    warnMs: Math.min(
+      opts.idle?.warnMs ?? RUNNER_IDLE_WARN_MS,
+      context.envelope?.idleTimeoutMs ?? Infinity,
+    ),
+    killMs: Math.min(
+      opts.idle?.killMs ?? RUNNER_IDLE_KILL_MS,
+      context.envelope?.idleTimeoutMs ?? Infinity,
+    ),
   });
 
   let iterator: AsyncIterator<unknown> | undefined;
@@ -126,8 +147,12 @@ export async function processStream(opts: ProcessStreamOptions): Promise<StreamR
       }
 
       if (message.type === 'assistant') {
-        for (const toolUse of extractToolUses(message, recorder)) {
-          recorder.toolUseDone({ toolUse });
+        const toolUses = extractToolUses(message, recorder);
+        if (toolUses.length > 0) {
+          for (const toolUse of toolUses) {
+            recorder.toolUseDone({ toolUse });
+          }
+          collectedText = '';
         }
         const text = extractAssistantText(message, recorder);
         if (text) {
@@ -171,6 +196,18 @@ export async function processStream(opts: ProcessStreamOptions): Promise<StreamR
           continue;
         }
         const resultText = extractResultText(message);
+        if (context.envelope !== undefined && resultText.length === 0) {
+          recorder.finishFailed({
+            status: 'failed',
+            error: {
+              code: 'task_compiler_final_response_missing',
+              message: 'Agent SDK result carried no final response text',
+            },
+            usage,
+            nativeSessionId: sessionId,
+          });
+          continue;
+        }
         if (resultText) {
           const reconciliation = reconcileFinalText(collectedText, resultText);
           const accepted =
@@ -208,6 +245,7 @@ export async function processStream(opts: ProcessStreamOptions): Promise<StreamR
         }
         recorder.finishCompleted({ usage, nativeSessionId: sessionId });
       }
+      if (envelopeLimitFired) break;
     }
   } catch (err) {
     if (signal?.aborted) {
@@ -219,6 +257,8 @@ export async function processStream(opts: ProcessStreamOptions): Promise<StreamR
         },
         nativeSessionId: sessionId,
       });
+    } else if (envelopeLimitFired) {
+      recorder.finalResult();
     } else if (!recorder.hasTerminal()) {
       recorder.finishFailed({
         status: 'failed',

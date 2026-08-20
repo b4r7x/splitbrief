@@ -242,16 +242,17 @@ afterEach(() => {
 });
 
 describe('renderHandoffWithCustom', () => {
-  it.each(
-    HANDOFF_TARGETS,
-  )('renders built-in target %s without loading a custom file', async (target) => {
-    const pack = await renderHandoffWithCustom(
-      { ...customRendererBaseInput, target },
-      customRendererTmp,
-      { trustCustomRenderers: false },
-    );
-    expect(pack.files.length).toBeGreaterThan(0);
-  });
+  it.each(HANDOFF_TARGETS)(
+    'renders built-in target %s without loading a custom file',
+    async (target) => {
+      const pack = await renderHandoffWithCustom(
+        { ...customRendererBaseInput, target },
+        customRendererTmp,
+        { trustCustomRenderers: false },
+      );
+      expect(pack.files.length).toBeGreaterThan(0);
+    },
+  );
 
   it('delegates to sync renderHandoff for built-in targets without loading a file', async () => {
     const pack = await renderHandoffWithCustom(

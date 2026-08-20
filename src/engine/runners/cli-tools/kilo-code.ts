@@ -1,6 +1,4 @@
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
-import type { TokenDelta } from '../../../core/schemas/tokens.js';
-import { accumulateTokenUsage } from '../../calls/usage.js';
 import type { ParsedLine } from '../types.js';
 import { envelopeErrorDetail } from '../../streaming/error-envelope.js';
 import { parseOpencodeLine } from '../../streaming/parse-opencode.js';
@@ -9,6 +7,7 @@ import { isRecord } from '../../../utils/type-guards.js';
 import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
+import { finalGroupTerminal } from './final-group.js';
 import { validateCliArgs } from './validate-args.js';
 
 const KILO_ID = 'kilo-code' as const;
@@ -35,7 +34,6 @@ const KILO_PROTECTED_SHORT_VALUE_FLAGS = new Set(['-m']);
 
 type KiloPlannerBuildInput = Parameters<CliPlannerAdapter<'kilo-code'>['buildArgs']>[0];
 type KiloImplementerBuildInput = Parameters<CliImplementerAdapter<'kilo-code'>['buildArgs']>[0];
-type KiloTerminalEvent = Extract<CliProtocolEvent, { type: 'result' }>;
 
 function validateArgs(invocationArgs: readonly string[], baseArgs: readonly string[]) {
   return validateCliArgs({
@@ -145,29 +143,6 @@ export function kiloImplementerProtocolEvents(line: string): readonly CliProtoco
   return textEvents(parseTextLine(line));
 }
 
-function terminal(input: { events: readonly CliProtocolEvent[] }): KiloTerminalEvent {
-  const explicit = input.events.findLast(
-    (event): event is KiloTerminalEvent => event.type === 'result',
-  );
-  if (explicit !== undefined) return explicit;
-
-  let usage: TokenDelta | null = null;
-  let nativeSessionId: string | null = null;
-  for (const event of input.events) {
-    if (event.type === 'usage') usage = accumulateTokenUsage(usage, event.usage, event.semantics);
-    if (event.type === 'session') nativeSessionId = event.nativeSessionId;
-  }
-  return {
-    type: 'result',
-    status: 'completed',
-    text: '',
-    usage,
-    nativeSessionId,
-    error: null,
-    partial: false,
-  };
-}
-
 function plannerBaseArgs(input: KiloPlannerBuildInput): string[] {
   return [
     'run',
@@ -183,6 +158,8 @@ function implementerBaseArgs(input: KiloImplementerBuildInput): string[] {
   return [
     'run',
     ...(input.model === undefined ? [] : ['--model', input.model]),
+    '--agent',
+    'code',
     '--auto',
     input.prompt,
   ];
@@ -218,7 +195,7 @@ function createPlannerAdapter(): CliPlannerAdapter<'kilo-code'> {
     environment: {},
     outputContract: { kind: 'text-exit', successfulExitCodes: [0] },
     parse: kiloPlannerProtocolEvents,
-    terminal,
+    terminal: (input) => finalGroupTerminal({ events: input.events, includeFinalGroupText: true }),
     probe: createProbe(),
   };
 }
@@ -234,7 +211,7 @@ function createImplementerAdapter(): CliImplementerAdapter<'kilo-code'> {
     environment: {},
     outputContract: { kind: 'text-exit', successfulExitCodes: [0] },
     parse: kiloImplementerProtocolEvents,
-    terminal,
+    terminal: (input) => finalGroupTerminal({ events: input.events, includeFinalGroupText: false }),
     probe: createProbe(),
   };
 }
@@ -272,7 +249,7 @@ function rawContract(role: 'planner' | 'implementer'): RawKiloCliContract {
     rawInvocation:
       role === 'planner'
         ? ['run', '--format', 'json', '--agent', 'plan', CLI_PROMPT_SENTINEL]
-        : ['run', '--auto', CLI_PROMPT_SENTINEL],
+        : ['run', '--agent', 'code', '--auto', CLI_PROMPT_SENTINEL],
     promptTransport: 'argv',
     expectedRawTerminal: 'process-exit',
     asOf: '2026-07-31',

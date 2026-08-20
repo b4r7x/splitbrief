@@ -5,6 +5,13 @@ import {
   RecoveryReasonSchema,
   RecoveryStatusSchema,
 } from '../../core/schemas/enums.js';
+import {
+  BriefRecoveryProjectionV1Schema,
+  RecoveryResultV1Schema,
+  type BriefQualityIssue,
+  type BriefRecoveryProjectionV1,
+  type RecoveryResultV1,
+} from '../../core/schemas/brief-recovery.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import { protectConsumerPayload, type CallConsumerContext } from '../../core/consumer-policy.js';
 import { EngineEventSchema } from './schema.js';
@@ -33,6 +40,14 @@ export const HeadlessJsonRecordSchema = z.discriminatedUnion('type', [
     recommendedAction: RecoveryActionSchema,
   }),
   z.strictObject({
+    type: z.literal('brief_recovery'),
+    projection: BriefRecoveryProjectionV1Schema,
+  }),
+  z.strictObject({
+    type: z.literal('brief_recovery_result'),
+    result: RecoveryResultV1Schema,
+  }),
+  z.strictObject({
     type: z.literal('final_review_failed'),
     sessionId: z.string(),
   }),
@@ -51,6 +66,34 @@ export type HeadlessJsonRecord = z.infer<typeof HeadlessJsonRecordSchema>;
 interface ProtectHeadlessJsonRecordOptions {
   context?: CallConsumerContext | undefined;
   persistTranscript?: boolean | undefined;
+}
+
+export function protectBriefRecoveryProjectionForConsumer(
+  projection: BriefRecoveryProjectionV1,
+  opts: CallConsumerContext | ProtectHeadlessJsonRecordOptions = {},
+): BriefRecoveryProjectionV1 | null {
+  const { context, persistTranscript } = resolveProtectHeadlessOptions(opts);
+  const parsed = BriefRecoveryProjectionV1Schema.safeParse(projection);
+  if (!parsed.success) return null;
+  return protectRecoveryValue(
+    projectBriefRecoveryProjectionForTranscriptPolicy(parsed.data, persistTranscript),
+    BriefRecoveryProjectionV1Schema,
+    context,
+  );
+}
+
+export function protectRecoveryResultForConsumer(
+  result: RecoveryResultV1,
+  opts: CallConsumerContext | ProtectHeadlessJsonRecordOptions = {},
+): RecoveryResultV1 | null {
+  const { context, persistTranscript } = resolveProtectHeadlessOptions(opts);
+  const parsed = RecoveryResultV1Schema.safeParse(result);
+  if (!parsed.success) return null;
+  return protectRecoveryValue(
+    projectRecoveryResultForTranscriptPolicy(parsed.data, persistTranscript),
+    RecoveryResultV1Schema,
+    context,
+  );
 }
 
 export function projectRecoveryIssueForTranscriptPolicy(
@@ -141,8 +184,92 @@ function projectHeadlessJsonRecordForTranscriptPolicy(
     const event = protectEngineEventForConsumer(record.data, { context, persistTranscript });
     return event === null ? null : { type: 'event', data: event };
   }
+  if (record.type === 'brief_recovery') {
+    const projection = protectBriefRecoveryProjectionForConsumer(record.projection, {
+      context,
+      persistTranscript,
+    });
+    return projection === null ? record : { type: 'brief_recovery', projection };
+  }
+  if (record.type === 'brief_recovery_result') {
+    const result = protectRecoveryResultForConsumer(record.result, {
+      context,
+      persistTranscript,
+    });
+    return result === null ? record : { type: 'brief_recovery_result', result };
+  }
   if (record.type !== 'recovery_required' || persistTranscript) return record;
   return { ...record, message: TRANSCRIPT_OMITTED_MESSAGE };
+}
+
+function protectRecoveryValue<T>(
+  value: T,
+  schema: z.ZodType<T>,
+  context: CallConsumerContext,
+): T | null {
+  const protectedPayload = protectConsumerPayload({ context, payload: value });
+  if (protectedPayload.oversized) return null;
+  const parsed = schema.safeParse(protectedPayload.payload);
+  return parsed.success ? parsed.data : null;
+}
+
+function projectBriefRecoveryProjectionForTranscriptPolicy(
+  projection: BriefRecoveryProjectionV1,
+  persistTranscript: boolean,
+): BriefRecoveryProjectionV1 {
+  if (persistTranscript) return projection;
+  return {
+    ...projection,
+    matchingReport:
+      projection.matchingReport === null
+        ? null
+        : {
+            ...projection.matchingReport,
+            issues: projection.matchingReport.issues.map(projectBriefIssueForTranscriptPolicy),
+          },
+    blocker: projectBriefBlockerForTranscriptPolicy(projection.blocker),
+  };
+}
+
+function projectRecoveryResultForTranscriptPolicy(
+  result: RecoveryResultV1,
+  persistTranscript: boolean,
+): RecoveryResultV1 {
+  const projection = projectBriefRecoveryProjectionForTranscriptPolicy(
+    result.projection,
+    persistTranscript,
+  );
+  if (persistTranscript) return { ...result, projection };
+  if (!('reason' in result)) return { ...result, projection };
+  return { ...result, projection, reason: TRANSCRIPT_OMITTED_MESSAGE };
+}
+
+function projectBriefIssueForTranscriptPolicy(issue: BriefQualityIssue): BriefQualityIssue {
+  return { ...issue, message: TRANSCRIPT_OMITTED_MESSAGE };
+}
+
+function projectBriefBlockerForTranscriptPolicy(
+  blocker: BriefRecoveryProjectionV1['blocker'],
+): BriefRecoveryProjectionV1['blocker'] {
+  if (blocker === null) return null;
+  switch (blocker.kind) {
+    case 'quality':
+      return {
+        ...blocker,
+        issues: blocker.issues.map(projectBriefIssueForTranscriptPolicy),
+      };
+    case 'provider':
+    case 'storage':
+      return { ...blocker, message: TRANSCRIPT_OMITTED_MESSAGE };
+    case 'budget':
+    case 'no-progress':
+    case 'unresolved':
+      return blocker;
+    default: {
+      const exhaustive: never = blocker;
+      return exhaustive;
+    }
+  }
 }
 
 function omittedText(): string {

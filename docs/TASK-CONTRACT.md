@@ -1,7 +1,84 @@
 # Task Contract
 
-> **Status:** stable (config v3).
+> **Status:** stable (state/config v4).
 > **Audience:** implementer runners, reviewers, and advanced read-only integrations inspecting Task Brief state.
+
+## v4 contract boundary
+
+`state.json` is a versioned, fenced contract. The current persisted
+`stateVersion` is `4`; `stateRevision` and `stateFence` identify the state
+head. Only the state-operations/controller path may mutate it. Every mutation
+rebases complete state, supplies the expected revision, and refuses a stale,
+future, malformed, or owner-less write. All modes (`instant`, `quick`,
+`standard`, and `speckit`) and all callers (TUI, RPC, IPC attach, and headless)
+consume the same v4 projection and command policy. Read-only integrations may
+observe state but never promote a local migration, retry a provider, or bypass
+the fence.
+
+The v4 Evidence Spine keeps the active Brief, quality report, input receipts,
+attempt and usage receipts, evidence head, outbox, and revisions durable. Its
+state moves through `checking`, `auto-repairing`, `blocked`,
+`storage-blocked`, `retrying`, `unresolved`, `ready`, `readiness-blocked`, or
+`rejected`. `CONTRACT READY` is a binary contract result. `CONTRACT BLOCKED`
+and `brief_contract_blocked` are refusal outcomes; a diagnostic score or
+warning cannot change them. `READINESS BLOCKED` is a separate readiness
+diagnostic and is not a quality override.
+
+The planner receives one bounded automatic `auto-repair`. After that repair,
+the user must explicitly choose `retry`, `edit`, or `reject`; there is no
+unbounded repair and no observational retry. Commands also include explicit
+`approve`, `comment`, `import`, and `resolve-unresolved` actions, while
+`status` is read-only. Retry carries identity and expected Brief/report
+revisions and does not fabricate a comment. If remote dispatch is ambiguous,
+the state is `UNRESOLVED`: held inputs and usage stay durable until an explicit
+rebind with acknowledged duplication risk or abandon. No action may override a
+failed quality contract.
+
+A Task Brief may enter implementation only when the current deterministic Brief Quality report has zero errors.
+Warnings remain non-blocking, and an invalid brief must never be advanced through an approval override.
+The report is written to the session folder as `brief-quality.json`.
+Recovery leaves durable, inspectable evidence for the initial quality result, automatic repair exhaustion, each accepted manual retry, each provider failure, user edits or queued input, and conscious rejection.
+
+## Generation and execution permit
+
+Zero errors on the current deterministic quality report is the admission
+condition, not the execution authority. A passing candidate is installed as an
+immutable Brief generation (the Tasks, the matching quality report, a
+provenance manifest, and digests), made authoritative by the sole fenced owner
+commit, and only then are the fixed `tasks.md` and `brief-quality.json` files
+refreshed as compatibility projections of that generation. Readers that decide
+readiness or execution resolve the owner-committed generation and permit; the
+fixed files are projections, never authority.
+
+Only a current execution permit authorizes task execution. Approval of the
+briefs issues the permit through the same sole owner commit
+(`issueApprovedGenerationPermit`,
+`src/engine/orchestrator/planning/briefs-approval-queue.ts`), binding
+execution to the exact approved epoch, authority revision, generation, and
+quality digest. The refusal reasons are `no-authority`, `not-ready`,
+`epoch-mismatch`, `revision-mismatch`, `generation-mismatch`,
+`digest-mismatch`, and `uncommitted`; a repeated issuance of the same
+generation converges idempotently. A published but unapproved generation is
+explicitly non-executable.
+
+At the task boundary the orchestrator re-reads the owner head and the persisted
+Brief artifacts before any implementer call (`revalidatePersistedExecutionPermit`,
+`src/engine/orchestrator/planning/handoff.ts`). The planning result is only a
+proposal; execution proceeds only while a persisted permit matches the current
+epoch, authority revision, and generation digests. A mismatch parks or
+terminates the run with zero implementer calls.
+
+`state.json` carries the authority alongside `tasks`: `authorityRevision`
+(fenced owner authority counter), `generation` (a `BriefGenerationRef` with
+generation id, manifest, tasks, and quality digests plus program id), and
+`permit` (a `TaskExecutionPermit` with epoch, authority revision, generation
+digests, and approval evidence). Read-only consumers may read these fields for
+status; they must not use task count, score, or the fixed files to infer
+execution readiness.
+
+### Tiered compiler admission
+
+Task Brief compilation admits backends under tiered capability rules: the tested version produces a full capability receipt; other detected versions of supported backends are admitted with runtime-drift evidence and a run warning; unsupported backends (`copilot`, `aider`, `shell`, `agent`) receive a typed fail-closed refusal (`task_compiler_capability_unsupported`). Runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) are the enforcement surface.
 
 ## Task Brief v1: the semantic contract
 
@@ -156,7 +233,7 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 
 - **Non-breaking changes** (new optional fields, new status values that are ignored by old consumers) can happen in any minor release.
 - **Breaking changes** (field rename, status removal, type change) trigger a `stateVersion` bump. Consumers should check `state.stateVersion` and refuse to read unfamiliar versions.
-- The current `stateVersion` is `3`. Future bumps are documented in `CHANGELOG.md`.
+- The current persisted `stateVersion` is `4`. A v3 state is promoted only by the fenced owner during resume; malformed or future state is refusal/read-only state. Future bumps are documented in `CHANGELOG.md`.
 
 ## What is NOT stable
 
@@ -214,7 +291,7 @@ The output must match the shape above.
 
 ## Brief quality gate
 
-After each planning phase produces its Task Brief, the orchestrator runs a quality gate before transitioning to `implementing`. The gate is implemented in `src/engine/spec/brief-quality.ts` and produces `brief-quality.json` in the session directory.
+After each planning phase produces its Task Brief, the orchestrator runs a quality gate before transitioning to `implementing`. The gate is implemented in `src/engine/spec/brief-quality.ts` and produces `brief-quality.json` in the session directory. The gate is a binary contract decision; its score and issue list are diagnostic evidence only.
 
 ### Errors (gate blocks when any error is present)
 
@@ -253,7 +330,7 @@ After each planning phase produces its Task Brief, the orchestrator runs a quali
 }
 ```
 
-`score` ranges from 0–1: `1 - (errorCount × 0.2) - (warningCount × 0.05)`, clamped to `[0, 1]`.
+`score` ranges from 0–1: `1 - (errorCount × 0.2) - (warningCount × 0.05)`, clamped to `[0, 1]`. A score never authorizes a quality override: any error keeps the result `CONTRACT BLOCKED`.
 
 ## Evidence ledger
 

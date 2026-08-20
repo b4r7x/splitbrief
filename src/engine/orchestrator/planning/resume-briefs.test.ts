@@ -6,13 +6,10 @@ import {
   TEST_METADATA,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
 import { REAL_TASKS_MD } from '#testing/helpers/planning-phase.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState } from '../../../core/state/machine.js';
-import { loadState } from '../../../core/state/persistence.js';
 import { TASKS_FILE } from '../../../core/paths.js';
 import { writeSpecFile } from '../../../core/paths-io.js';
 import type { EventBus } from '../../events/types.js';
@@ -57,7 +54,7 @@ function parkedState(overrides?: Partial<WorkflowState>): WorkflowState {
 }
 
 describe('resumeBriefsApproval', () => {
-  it('fails loudly with the coded error when the briefs cannot be restored', async () => {
+  it('keeps an owner-less v4 resume parked without invoking approval', async () => {
     const { projectDir, sessionId } = setupProject();
     const planner = makePlanner();
     const { callbacks } = makeCallbacks();
@@ -68,14 +65,12 @@ describe('resumeBriefsApproval', () => {
       state: parkedState({ tasks: [] }),
     });
 
-    expect(result.cancelled).toBe(true);
-    const error = events.find((event) => event.type === 'error');
-    expect(error).toMatchObject({ code: 'briefs_not_restorable' });
-    expect(error?.message).toContain('tasks.md');
+    expect(result.disposition).toBe('parked');
+    expect(events.some((event) => event.type === 'error')).toBe(false);
     expect(callbacks.onApprovalNeeded).not.toHaveBeenCalled();
   });
 
-  it('publishes the planner status and plan_approved on a clean approval', async () => {
+  it('does not replay a clean approval without an owner-supplied recovery projection', async () => {
     const { projectDir, sessionId } = setupProject();
     writeSpecFile({ projectDir, sessionId }, TASKS_FILE, REAL_TASKS_MD, TEST_METADATA);
     const planner = makePlanner();
@@ -91,37 +86,26 @@ describe('resumeBriefsApproval', () => {
       state: parkedState(),
     });
 
-    expect(result.cancelled).toBe(false);
-    expect(result.state.phase).toBe('implementing');
-    const status = events.find((event) => event.type === 'planner_status');
-    expect(status).toMatchObject({ status: 'running' });
-    expect(events.some((event) => event.type === 'plan_approved')).toBe(true);
+    expect(result.disposition).toBe('parked');
+    expect(result.state.phase).toBe('reviewing-briefs');
+    expect(callbacks.onApprovalNeeded).not.toHaveBeenCalled();
+    expect(events.some((event) => event.type === 'plan_approved')).toBe(false);
   });
 
-  it('prefers the persisted tasks.md over state.tasks when both are present', async () => {
+  it('does not inspect or replay tasks.md while the owner projection is absent', async () => {
     const { projectDir, sessionId } = setupProject();
     writeSpecFile({ projectDir, sessionId }, TASKS_FILE, REAL_TASKS_MD, TEST_METADATA);
     const planner = makePlanner();
-    const briefsUnderReview: Task[] = [];
-    const { callbacks } = makeCallbacks({
-      onApprovalNeeded: vi
-        .fn<OrchestratorCallbacks['onApprovalNeeded']>()
-        .mockImplementation(async () => {
-          const saved = loadState({ projectDir, sessionId });
-          const first = saved?.tasks[0];
-          if (first) briefsUnderReview.push(first);
-          return { approved: true };
-        }),
-    });
+    const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
 
     const result = await resumeBriefsApproval({
       wctx: makeWctx({ projectDir, sessionId, callbacks, bus, planner }),
-      state: parkedState({ tasks: [makeTask()] }),
+      state: parkedState(),
     });
 
-    expect(result.cancelled).toBe(false);
-    expect(result.state.phase).toBe('implementing');
-    expect(briefsUnderReview[0]?.title).toBe('Add auth');
+    expect(result.disposition).toBe('parked');
+    expect(result.state.phase).toBe('reviewing-briefs');
+    expect(callbacks.onApprovalNeeded).not.toHaveBeenCalled();
   });
 });

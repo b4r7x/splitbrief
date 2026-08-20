@@ -10,14 +10,51 @@ import {
 import { createInitialState, transition } from '../core/state/machine.js';
 import { ensureSessionDir } from '../core/paths-io.js';
 import { saveState } from '../core/state/persistence.js';
+import {
+  createBriefRecoveryState,
+  createStorageBlockedRecovery,
+} from '../engine/orchestrator/planning/brief-recovery.js';
+import { HeadlessJsonRecordSchema } from '../engine/events/public-json.js';
+import type { HeadlessJsonRecord } from '../engine/events/public-json.js';
+import {
+  RejectedStorageBriefRecoveryV1Schema,
+  type BriefRecoveryV1,
+} from '../core/schemas/brief-recovery.js';
 import { writeActive } from '../core/sessions/lifecycle.js';
 import { buildContextOverflowRecoveryIssue } from '../engine/orchestrator/recovery/builders/task.js';
-import { runHeadless } from './headless.js';
+import { headlessRecoveryOutcome, headlessRecoveryStatus, runHeadless } from './headless.js';
 import type { Implementer } from '../engine/implementers/types.js';
 import type { Planner } from '../engine/planners/types.js';
 
 let stderrSpy: ReturnType<typeof vi.spyOn>;
 let dirs: string[] = [];
+
+function recoveryInput(sessionId: string, blocked: boolean) {
+  const briefHash = 'a'.repeat(64);
+  const reportHash = 'b'.repeat(64);
+  const issues = blocked
+    ? [{ code: 'empty_task_list', severity: 'error' as const, taskId: null, message: 'No tasks' }]
+    : [];
+  return {
+    sessionId,
+    origin: { mode: 'standard' as const, entry: 'initial' as const },
+    continuation: {
+      version: 1 as const,
+      kind: 'approval' as const,
+      mode: 'standard' as const,
+      entry: 'initial' as const,
+    },
+    activeBrief: { revision: 1, hash: briefHash, path: 'tasks.md' },
+    report: {
+      briefHash,
+      report: { revision: 1, hash: reportHash, path: 'brief-quality.json' },
+      ruleVersion: 'brief-quality-v1',
+      issues,
+      errorCount: issues.length,
+    },
+    qualityPolicyVersion: 'brief-quality-v1',
+  };
+}
 
 describe('runHeadless — every pending recovery status fails the run', () => {
   let stdoutChunks: string[];
@@ -44,71 +81,218 @@ describe('runHeadless — every pending recovery status fails the run', () => {
     dirs = [];
   });
 
-  it.each([
-    'paused',
-    'applying',
-  ] as const)('a run ending with a %s recovery exits 1, emits the record and names the resolution route', async (status) => {
-    const projectDir = createHeadlessGitProject(`headless-recovery-${status}`);
+  it.each(['paused', 'applying'] as const)(
+    'a run ending with a %s recovery exits 1, emits the record and names the resolution route',
+    async (status) => {
+      const projectDir = createHeadlessGitProject(`headless-recovery-${status}`);
+      dirs.push(projectDir);
+      writeMinimalHeadlessConfigYaml(projectDir);
+      const sessionId = `sess-headless-${status}`;
+      ensureSessionDir(projectDir, sessionId);
+      writeActive({ projectDir: projectDir, sessionId: sessionId });
+
+      const task = makeTask({ id: 'T001' });
+      const issue = {
+        ...buildContextOverflowRecoveryIssue({
+          task,
+          phase: 'implementing',
+          createdAt: '2026-04-28T12:00:00.000Z',
+        }),
+        status,
+      };
+      const state = transition(
+        {
+          ...createInitialState('recover me'),
+          phase: 'implementing',
+          tasks: [task],
+          plannerTool: 'claude-code',
+          implementerTool: 'ollama',
+        },
+        { type: 'SET_PENDING_RECOVERY', issue },
+      );
+      saveState({ projectDir, sessionId }, state);
+
+      const error = await runHeadless({
+        prepared: preparedHeadlessExecution({
+          projectDir,
+          sessionId,
+          feature: 'recover me',
+          resumeState: state,
+        }),
+        _planner: planner,
+        _implementer: implementer,
+      }).then(
+        () => {
+          throw new Error('runHeadless unexpectedly resolved');
+        },
+        (err: { exitCode?: number; message?: string }) => err,
+      );
+
+      expect(error).toMatchObject({
+        exitCode: 1,
+        message: expect.stringContaining(`Recovery required (status: ${status})`),
+      });
+      expect(error.message).toContain('abort-workflow');
+
+      const jsonLines = stdoutChunks
+        .join('')
+        .trim()
+        .split('\n')
+        .filter((line) => line.trim().startsWith('{'))
+        .map((line) => JSON.parse(line) as { type?: string; status?: string });
+      expect(jsonLines).toContainEqual(
+        expect.objectContaining({
+          type: 'recovery_required',
+          status,
+        }),
+      );
+    },
+  );
+});
+
+describe('runHeadless — v4 Brief recovery outcomes', () => {
+  let stdoutChunks: string[];
+  let stdoutSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    stdoutChunks = [];
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      stdoutChunks.push(String(chunk));
+      return true;
+    });
+  });
+
+  afterEach(() => {
+    stderrSpy.mockRestore();
+    stdoutSpy.mockRestore();
+    vi.clearAllMocks();
+    for (const d of dirs) cleanupTempDir(d);
+    dirs = [];
+  });
+
+  async function runRecovery(
+    recovery: BriefRecoveryV1,
+    phase: 'idle' | 'reviewing-briefs',
+  ): Promise<{ planner: Planner; lines: HeadlessJsonRecord[] }> {
+    const projectDir = createHeadlessGitProject(`headless-v4-${recovery.status}`);
     dirs.push(projectDir);
     writeMinimalHeadlessConfigYaml(projectDir);
-    const sessionId = `sess-headless-${status}`;
+    const sessionId = `sess-headless-v4-${recovery.status}`;
     ensureSessionDir(projectDir, sessionId);
-    writeActive({ projectDir: projectDir, sessionId: sessionId });
-
-    const task = makeTask({ id: 'T001' });
-    const issue = {
-      ...buildContextOverflowRecoveryIssue({
-        task,
-        phase: 'implementing',
-        createdAt: '2026-04-28T12:00:00.000Z',
-      }),
-      status,
+    writeActive({ projectDir, sessionId });
+    const state = {
+      ...createInitialState('v4 recovery'),
+      phase,
+      briefRecovery: recovery,
     };
-    const state = transition(
-      {
-        ...createInitialState('recover me'),
-        phase: 'implementing',
-        tasks: [task],
-        plannerTool: 'claude-code',
-        implementerTool: 'ollama',
-      },
-      { type: 'SET_PENDING_RECOVERY', issue },
-    );
     saveState({ projectDir, sessionId }, state);
-
-    const error = await runHeadless({
-      prepared: preparedHeadlessExecution({
-        projectDir,
-        sessionId,
-        feature: 'recover me',
-        resumeState: state,
-      }),
-      _planner: planner,
-      _implementer: implementer,
-    }).then(
-      () => {
-        throw new Error('runHeadless unexpectedly resolved');
-      },
-      (err: { exitCode?: number; message?: string }) => err,
-    );
-
-    expect(error).toMatchObject({
-      exitCode: 1,
-      message: expect.stringContaining(`Recovery required (status: ${status})`),
-    });
-    expect(error.message).toContain('abort-workflow');
-
-    const jsonLines = stdoutChunks
+    const planner = makePlanner();
+    const implementer = makeImplementer();
+    try {
+      await runHeadless({
+        prepared: preparedHeadlessExecution({
+          projectDir,
+          sessionId,
+          feature: 'v4 recovery',
+          resumeState: state,
+        }),
+        _planner: planner,
+        _implementer: implementer,
+      });
+    } catch (error) {
+      expect(error).toMatchObject({ exitCode: recovery.status === 'ready' ? undefined : 1 });
+    }
+    const lines = stdoutChunks
       .join('')
       .trim()
       .split('\n')
       .filter((line) => line.trim().startsWith('{'))
-      .map((line) => JSON.parse(line) as { type?: string; status?: string });
-    expect(jsonLines).toContainEqual(
-      expect.objectContaining({
-        type: 'recovery_required',
-        status,
-      }),
+      .map((line) => HeadlessJsonRecordSchema.parse(JSON.parse(line)));
+    return { planner, lines };
+  }
+
+  it.each([
+    ['blocked', true, 'reviewing-briefs'] as const,
+    ['readiness-blocked', false, 'reviewing-briefs'] as const,
+    ['ready', false, 'reviewing-briefs'] as const,
+  ])('reports a %s v4 projection without invoking the planner', async (status, blocked, phase) => {
+    const admitted = createBriefRecoveryState(recoveryInput(`status-${status}`, blocked), {
+      status: status === 'readiness-blocked' ? 'ready' : status,
+    });
+    const recovery =
+      status === 'readiness-blocked'
+        ? ({ ...admitted, status } satisfies BriefRecoveryV1)
+        : admitted;
+    const { planner, lines } = await runRecovery(recovery, phase);
+    expect(planner.quickPlan).not.toHaveBeenCalled();
+    expect(planner.plan).not.toHaveBeenCalled();
+    expect(planner.review).not.toHaveBeenCalled();
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'brief_recovery' }),
+        expect.objectContaining({ type: 'brief_recovery_result' }),
+      ]),
     );
+  });
+
+  it('preserves readiness-blocked as a distinct non-zero machine-readable outcome', async () => {
+    const recovery = {
+      ...createBriefRecoveryState(recoveryInput('readiness-blocked', false)),
+      status: 'readiness-blocked',
+    } satisfies BriefRecoveryV1;
+    const { lines } = await runRecovery(recovery, 'reviewing-briefs');
+    const projectionRecord = lines.find(
+      (line): line is Extract<HeadlessJsonRecord, { type: 'brief_recovery' }> =>
+        line.type === 'brief_recovery',
+    );
+    const resultRecord = lines.find(
+      (line): line is Extract<HeadlessJsonRecord, { type: 'brief_recovery_result' }> =>
+        line.type === 'brief_recovery_result',
+    );
+
+    expect(projectionRecord?.projection.status).toBe('readiness-blocked');
+    if (projectionRecord?.type === 'brief_recovery') {
+      expect(headlessRecoveryStatus(projectionRecord.projection)).toBe('readiness-blocked');
+      expect(headlessRecoveryOutcome(projectionRecord.projection)).toEqual({
+        status: 'readiness-blocked',
+        exitCode: 1,
+      });
+    }
+    expect(resultRecord?.result).toMatchObject({
+      kind: 'blocked',
+      code: 'brief_readiness_blocked',
+    });
+  });
+
+  it('reports storage-blocked and rejected recovery without a provider call', async () => {
+    const input = recoveryInput('storage', false);
+    const storage = createStorageBlockedRecovery(input, {
+      code: 'brief_storage_invalid',
+      artifactRef: 'tasks.md',
+    });
+    const storageRun = await runRecovery(storage, 'reviewing-briefs');
+    expect(storageRun.planner.isAvailable).not.toHaveBeenCalled();
+    const storageRecord = storageRun.lines.find(
+      (line): line is Extract<HeadlessJsonRecord, { type: 'brief_recovery' }> =>
+        line.type === 'brief_recovery',
+    );
+    if (storageRecord?.type === 'brief_recovery') {
+      expect(headlessRecoveryStatus(storageRecord.projection)).toBe('storage-blocked');
+    }
+
+    const rejected = RejectedStorageBriefRecoveryV1Schema.parse({
+      ...storage,
+      status: 'rejected',
+    });
+    const rejectedRun = await runRecovery(rejected, 'idle');
+    expect(rejectedRun.planner.isAvailable).not.toHaveBeenCalled();
+    const rejectedRecord = rejectedRun.lines.findLast(
+      (line): line is Extract<HeadlessJsonRecord, { type: 'brief_recovery' }> =>
+        line.type === 'brief_recovery',
+    );
+    if (rejectedRecord?.type === 'brief_recovery') {
+      expect(headlessRecoveryStatus(rejectedRecord.projection)).toBe('rejected');
+    }
   });
 });

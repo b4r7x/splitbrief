@@ -146,17 +146,17 @@ describe('usePickerCatalog catalog diagnostic', () => {
     ui.unmount();
   });
 
-  it.each([
-    'missing-credential',
-    'malformed',
-  ] as const)('surfaces a %s probe failure for the probed tool', (failure) => {
-    publishCliCatalogs([cliCatalogAttempt({ role: 'planner', tool: 'codex', failure })]);
+  it.each(['missing-credential', 'malformed'] as const)(
+    'surfaces a %s probe failure for the probed tool',
+    (failure) => {
+      publishCliCatalogs([cliCatalogAttempt({ role: 'planner', tool: 'codex', failure })]);
 
-    const ui = renderFeature(<Probe role="planner" toolId="codex" />);
+      const ui = renderFeature(<Probe role="planner" toolId="codex" />);
 
-    expect(captured).toEqual({ kind: 'probe-failed', failure });
-    ui.unmount();
-  });
+      expect(captured).toEqual({ kind: 'probe-failed', failure });
+      ui.unmount();
+    },
+  );
 
   it('does not let another role supply the probe outcome', () => {
     publishCliCatalogs([cliCatalogAttempt({ role: 'planner', tool: 'codex', failure: 'timeout' })]);

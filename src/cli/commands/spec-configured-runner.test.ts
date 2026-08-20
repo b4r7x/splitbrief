@@ -13,7 +13,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { CONFIRM_PHRASE } from '../../core/approval/types.js';
-import { CONFIG_FILE, SPLITBRIEF_DIR, SPEC_FILE, TASKS_FILE } from '../../core/paths.js';
+import { CONFIG_FILE, SPLITBRIEF_DIR, TASKS_FILE } from '../../core/paths.js';
 import { ConfigSchema, type Config } from '../../core/schemas/config.js';
 import type { ArtifactApprovalReview } from '../../engine/runners/types.js';
 import {
@@ -79,8 +79,7 @@ function configuredDirectPlannerConfig(markerEnv: string): Config {
     `const markerPath = process.env[${JSON.stringify(markerEnv)}];`,
     "if (typeof markerPath !== 'string') throw new Error('missing standalone marker path');",
     "fs.appendFileSync(markerPath, process.cwd() + '\\n');",
-    "fs.mkdirSync('.splitbrief-runner/output', { recursive: true });",
-    `fs.writeFileSync('.splitbrief-runner/output/result', ${JSON.stringify(configuredPlannerArtifact)});`,
+    `fs.writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, ${JSON.stringify(configuredPlannerArtifact)});`,
   ].join('');
   const command = {
     label: 'Standalone configured direct planner',
@@ -95,6 +94,7 @@ function configuredDirectPlannerConfig(markerEnv: string): Config {
 
   return ConfigSchema.parse({
     ...makeConfig({
+      workflow: { mode: 'quick' },
       planner: {
         kind: 'agent',
         command: command.executable,
@@ -188,9 +188,9 @@ describe('spec command', () => {
         .map((entry) => entry.name);
       expect(sessions).toHaveLength(2);
       for (const session of sessions) {
-        const sessionPath = join(sessionsRoot(), session);
-        expect(readFileSync(join(sessionPath, SPEC_FILE), 'utf8')).toBe(configuredPlannerArtifact);
-        expect(readFileSync(join(sessionPath, TASKS_FILE), 'utf8')).toBe(configuredPlannerArtifact);
+        expect(readFileSync(join(sessionsRoot(), session, TASKS_FILE), 'utf8')).toBe(
+          configuredPlannerArtifact,
+        );
       }
     } finally {
       if (originalHome === undefined) delete process.env.HOME;

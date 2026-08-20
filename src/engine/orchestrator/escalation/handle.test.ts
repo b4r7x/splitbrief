@@ -5,9 +5,10 @@ import { dirname, join } from 'node:path';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
 import { normalizeCustomCommand } from '../../../core/config/custom-commands.js';
-import { createInitialState, transition } from '../../../core/state/machine.js';
+import { transition } from '../../../core/state/machine.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import {
   makeCallbacks,
   makePlanner,
@@ -61,14 +62,7 @@ function setupProject(): { projectDir: string; sessionId: string } {
 
 function makeValidatingState(): WorkflowState {
   const task = makeTask();
-  let state = createInitialState('feat');
-  state = transition(state, { type: 'START' });
-  state = transition(state, { type: 'RESEARCH_DONE' });
-  state = transition(state, { type: 'SPEC_DONE' });
-  state = transition(state, { type: 'APPROVE_SPEC' });
-  state = transition(state, { type: 'PLAN_DONE', tasks: [task] });
-  state = transition(state, { type: 'BRIEFS_READY', tasks: [task] });
-  state = transition(state, { type: 'APPROVE_BRIEFS' });
+  let state = makeImplState([task]);
   state = transition(state, { type: 'TASK_SENT' });
   return state;
 }

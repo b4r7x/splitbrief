@@ -2,7 +2,8 @@ import { DEFAULT_WORKFLOW_MODE, type Config } from '../../../core/schemas/config
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { loadState } from '../../../core/state/persistence.js';
+import { loadStateForResume } from '../../../core/state/persistence.js';
+import type { ResumeLoadAuthority, StateAuthorityReceipt } from '../../../core/state/types.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { ActiveSessionReceipt } from '../../../core/sessions/lifecycle.js';
 import {
@@ -18,6 +19,7 @@ import { applyRecoveryAction } from './actions.js';
 import type { ApplyRecoveryActionResult } from './actions.js';
 import { buildSummary } from '../summary/build.js';
 import { saveFinalSession } from '../session-lifecycle/finalize.js';
+import { error } from '../../../utils/error.js';
 
 export type PendingRecoveryState =
   | { pending: true; state: WorkflowState; issue: NonNullable<WorkflowState['pendingRecovery']> }
@@ -53,8 +55,21 @@ export function publishPendingRecoveryPrompt(
 export function loadPendingRecoveryState(
   ref: SessionRef,
   fallback: WorkflowState,
+  authority?: StateAuthorityReceipt,
 ): PendingRecoveryState {
-  const state = loadState(ref) ?? fallback;
+  let state = fallback;
+  if (authority !== undefined) {
+    const resumeAuthority: ResumeLoadAuthority = {
+      kind: 'fenced',
+      receipt: authority,
+      promotedFromVersion: null,
+    };
+    const result = loadStateForResume({ ref, authority: resumeAuthority });
+    if (result.kind === 'loaded') state = result.state;
+    else if (result.kind === 'invalid') {
+      throw error('workflow-state-invalid', result.message, { code: result.code });
+    }
+  }
   if (state.pendingRecovery) {
     return { pending: true, state, issue: state.pendingRecovery };
   }
@@ -68,6 +83,7 @@ export function applySelectedRecoveryAction(opts: {
   action: RecoveryAction;
   bus: EventBus;
   config: Config;
+  authority?: StateAuthorityReceipt | undefined;
 }): ApplyRecoveryActionResult {
   return applyRecoveryAction({
     projectDir: opts.projectDir,
@@ -77,6 +93,7 @@ export function applySelectedRecoveryAction(opts: {
     bus: opts.bus,
     config: opts.config,
     mode: opts.config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+    ...(opts.authority === undefined ? {} : { authority: opts.authority }),
   });
 }
 

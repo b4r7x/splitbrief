@@ -4,7 +4,7 @@ import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
+import { cliDetectionFor, PROBE_EXECUTABLE } from '#testing/helpers/factories/detection.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { createDefaultConfig } from '../../core/config/load/io.js';
 import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
@@ -15,6 +15,7 @@ import {
   invalidateCache,
   loadDetectionCache,
   loadDetectionCacheSnapshot,
+  loadRememberedCliRuntime,
   saveDetectionCache,
 } from './cache.js';
 
@@ -533,19 +534,19 @@ describe('detection cache', () => {
     await expect(readFile(cachePath, 'utf8')).resolves.toBe(before);
   });
 
-  it.each([
-    'sk-private-context-canary',
-    'acct_private_context_canary',
-  ])('refuses to persist a credential-like or account-visible context key', async (contextKey) => {
-    await saveDetectionCache({
-      projectDir: tempDir,
-      snapshot: cacheSnapshot({ contextKey }),
-    });
+  it.each(['sk-private-context-canary', 'acct_private_context_canary'])(
+    'refuses to persist a credential-like or account-visible context key',
+    async (contextKey) => {
+      await saveDetectionCache({
+        projectDir: tempDir,
+        snapshot: cacheSnapshot({ contextKey }),
+      });
 
-    await expect(
-      loadDetectionCacheSnapshot({ projectDir: tempDir, contextKey }),
-    ).resolves.toBeNull();
-  });
+      await expect(
+        loadDetectionCacheSnapshot({ projectDir: tempDir, contextKey }),
+      ).resolves.toBeNull();
+    },
+  );
 
   it('refuses to persist a digest-shaped version value', async () => {
     await saveDetectionCache({
@@ -637,5 +638,52 @@ describe('detection cache', () => {
     await expect(
       loadDetectionCacheSnapshot({ projectDir: tempDir, contextKey: CACHE_CONTEXT }),
     ).resolves.toBeNull();
+  });
+
+  describe('remembered CLI runtime', () => {
+    async function rememberCliTools(cliTools: CliToolDetection[]): Promise<void> {
+      await saveDetectionCache({
+        projectDir: tempDir,
+        snapshot: cacheSnapshot({ fetchedAt: Date.now(), cliTools }),
+      });
+    }
+
+    it('returns the remembered version bound to the executable it was probed against', async () => {
+      const remembered = cliDetectionFor('ready', 'claude-code');
+      await rememberCliTools([remembered]);
+
+      await expect(
+        loadRememberedCliRuntime({ projectDir: tempDir, tool: 'claude-code' }),
+      ).resolves.toEqual({
+        installedVersion: remembered.installedVersion,
+        fingerprint: { ...PROBE_EXECUTABLE.fingerprint },
+      });
+    });
+
+    it('withholds a version when the record carries no row for the requested tool', async () => {
+      await rememberCliTools([cliDetectionFor('ready', 'codex')]);
+
+      await expect(
+        loadRememberedCliRuntime({ projectDir: tempDir, tool: 'claude-code' }),
+      ).resolves.toBeNull();
+    });
+
+    it('withholds a version the record never bound to an executable', async () => {
+      await rememberCliTools([cliDetectionFor('unavailable', 'claude-code')]);
+
+      await expect(
+        loadRememberedCliRuntime({ projectDir: tempDir, tool: 'claude-code' }),
+      ).resolves.toBeNull();
+    });
+
+    it('withholds an executable whose row records no installed version', async () => {
+      const untrusted = cliDetectionFor('untrusted', 'claude-code');
+      expect(untrusted.executable).not.toBeNull();
+      await rememberCliTools([untrusted]);
+
+      await expect(
+        loadRememberedCliRuntime({ projectDir: tempDir, tool: 'claude-code' }),
+      ).resolves.toBeNull();
+    });
   });
 });

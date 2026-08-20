@@ -1,3 +1,4 @@
+import { error } from '../../../utils/error.js';
 import type { OutputFormat } from '../../../core/schemas/enums.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import { accumulateTokenUsage } from '../../calls/usage.js';
@@ -83,6 +84,16 @@ export function withOutputFormat(
   adapter: CliPlannerAdapter | CliImplementerAdapter,
   format: OutputFormat,
 ): CliPlannerAdapter | CliImplementerAdapter {
+  // REQ-018: user configuration cannot downgrade the backend's terminal
+  // protocol. A required terminal event is the adapter's own parser contract;
+  // substituting a text parser would let a bare process exit pass as
+  // completed, so the conflicting configuration refuses before any spawn.
+  if (adapter.outputContract.kind === 'structured-terminal') {
+    throw error(
+      'cli-output-format-conflict',
+      `Configured outputFormat cannot replace the ${adapter.descriptor.id} ${adapter.outputContract.terminalEvent} terminal contract; the backend's native parser and terminal protocol stay authoritative.`,
+    );
+  }
   const parseLine = getLineParser(format);
   return {
     ...adapter,

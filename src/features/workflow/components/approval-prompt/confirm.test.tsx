@@ -223,40 +223,43 @@ describe('ApprovalPrompt confirm tier', () => {
     [40, 'destructive' as const, '.splitbrief/sessions/2026-08-10-a/state.json'],
     [60, 'package_change' as const, 'package.json'],
     [120, 'destructive' as const, '.git/config'],
-  ])('renders both steps inside the row budget it reports at %i cols', async (cols, actionClass, description) => {
-    terminalSizeStore.__testReset({ cols, rows: 40 });
-    const ui = renderFeature(<ApprovalPrompt />, { cols, rows: 40 });
-    const pending = openApprovalPrompt(makeConfirmRequest(description, actionClass));
-    await tick(PAST_GRACE);
-    await flushEffects();
+  ])(
+    'renders both steps inside the row budget it reports at %i cols',
+    async (cols, actionClass, description) => {
+      terminalSizeStore.__testReset({ cols, rows: 40 });
+      const ui = renderFeature(<ApprovalPrompt />, { cols, rows: 40 });
+      const pending = openApprovalPrompt(makeConfirmRequest(description, actionClass));
+      await tick(PAST_GRACE);
+      await flushEffects();
 
-    const budget = getApprovalPromptRows(approvalPromptStore.get(), cols);
-    expect(frameRows(ui.lastFrame())).toBe(budget);
+      const budget = getApprovalPromptRows(approvalPromptStore.get(), cols);
+      expect(frameRows(ui.lastFrame())).toBe(budget);
 
-    // A row count cannot see a clipped line, so the choose step is judged on what it shows: the
-    // title, every option with its padded key cell, and a legend that ends in a whole token.
-    const chooseStep = stripColor(ui.lastFrame());
-    const keyCell = actionClass === 'destructive' ? 'enter  ' : 'y  ';
-    expect(chooseStep).toContain('Approval');
-    expect(chooseStep).toContain(`${keyCell} Confirm`);
-    expect(chooseStep).toContain('Confirm with a reason');
-    expect(chooseStep).toContain('Deny');
-    expect(chooseStep).toContain(getConfirmChooseHints(actionClass));
-    expect(chooseStep).not.toContain('…');
+      // A row count cannot see a clipped line, so the choose step is judged on what it shows: the
+      // title, every option with its padded key cell, and a legend that ends in a whole token.
+      const chooseStep = stripColor(ui.lastFrame());
+      const keyCell = actionClass === 'destructive' ? 'enter  ' : 'y  ';
+      expect(chooseStep).toContain('Approval');
+      expect(chooseStep).toContain(`${keyCell} Confirm`);
+      expect(chooseStep).toContain('Confirm with a reason');
+      expect(chooseStep).toContain('Deny');
+      expect(chooseStep).toContain(getConfirmChooseHints(actionClass));
+      expect(chooseStep).not.toContain('…');
 
-    ui.stdin.write('r');
-    await tick(30);
-    expect(frameRows(ui.lastFrame())).toBe(budget);
+      ui.stdin.write('r');
+      await tick(30);
+      expect(frameRows(ui.lastFrame())).toBe(budget);
 
-    const reasonStep = stripColor(ui.lastFrame());
-    expect(reasonStep).toContain(CONFIRM_QUESTION);
-    expect(reasonStep).toContain(CONFIRM_REASON_OPTIONAL);
-    expect(reasonStep).toContain(CONFIRM_REASON_HINTS);
+      const reasonStep = stripColor(ui.lastFrame());
+      expect(reasonStep).toContain(CONFIRM_QUESTION);
+      expect(reasonStep).toContain(CONFIRM_REASON_OPTIONAL);
+      expect(reasonStep).toContain(CONFIRM_REASON_HINTS);
 
-    ui.stdin.write(ESC);
-    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
-    ui.unmount();
-  });
+      ui.stdin.write(ESC);
+      await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+      ui.unmount();
+    },
+  );
 
   it('resets confirmation progress when a pending request is superseded', async () => {
     const ui = render(<ApprovalPrompt />);

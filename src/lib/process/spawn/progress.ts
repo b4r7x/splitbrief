@@ -116,19 +116,3 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult>
     };
   }
 }
-
-export async function spawnWithShellFallback(opts: SpawnOptions): Promise<SpawnResult> {
-  const { notFoundMessage: _drop, ...firstAttemptOpts } = opts;
-  void _drop;
-  try {
-    return await spawnWithTimeout(firstAttemptOpts);
-  } catch (err: unknown) {
-    if (!isENOENT(err)) throw err;
-
-    const userShell = process.env['SHELL'] ?? '/bin/bash';
-    const fullCommand = [opts.command, ...opts.args]
-      .map((a) => `'${a.replace(/'/g, "'\\''")}'`)
-      .join(' ');
-    return spawnWithTimeout({ ...opts, command: userShell, args: ['-c', fullCommand] });
-  }
-}

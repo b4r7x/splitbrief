@@ -9,6 +9,8 @@ import type {
   CliPromptTransport,
   CliProtocolEvent,
 } from './contract.js';
+import { admitCliRoleVector, type CliRoleAllowlist } from './contract.js';
+import { parseCliSemanticVector } from './validate-args.js';
 
 const probe = {
   version: {
@@ -66,6 +68,11 @@ const wrongDescriptorAdapter = {
   ...plannerAdapter,
   descriptor: CLI_TOOL_CATALOG.aider,
 };
+
+const plannerAllowlist = {
+  role: 'planner',
+  owned: ['role', 'session', 'prompt', 'output'],
+} as const satisfies CliRoleAllowlist<'planner'>;
 
 describe('CLI adapter contract', () => {
   it('models stdin, bounded lossless argv, and private-file prompt transports', () => {
@@ -144,5 +151,85 @@ describe('CLI adapter contract', () => {
     expect('promptTransport' in plannerWithoutTransport).toBe(false);
     expect('descriptor' in implementerWithoutDescriptor).toBe(false);
     expect(wrongDescriptorAdapter.descriptor.id).toBe('aider');
+  });
+});
+
+describe('positive role allowlists (REQ-017, REQ-018)', () => {
+  it('admits vectors whose authority flags stay inside the role allowlist', () => {
+    const verdict = admitCliRoleVector({
+      role: 'planner',
+      vector: parseCliSemanticVector(['--agent', 'plan', '--resume', 's1']),
+      allowlist: plannerAllowlist,
+    });
+
+    expect(verdict).toEqual({ valid: true });
+  });
+
+  it('rejects authority flags outside the role allowlist', () => {
+    const verdict = admitCliRoleVector({
+      role: 'planner',
+      vector: parseCliSemanticVector([
+        '--permission-mode',
+        'acceptEdits',
+        '--sandbox',
+        'read-only',
+      ]),
+      allowlist: plannerAllowlist,
+    });
+
+    expect(verdict).toEqual({ valid: false, conflicts: ['--permission-mode', '--sandbox'] });
+  });
+
+  it('rejects vectors governed by another role', () => {
+    const verdict = admitCliRoleVector({
+      role: 'implementer',
+      vector: parseCliSemanticVector(['--sandbox', 'workspace-write']),
+      allowlist: plannerAllowlist,
+    });
+
+    expect(verdict).toEqual({ valid: false, conflicts: ['role'] });
+  });
+
+  it('ignores benign flags regardless of the allowlist', () => {
+    const verdict = admitCliRoleVector({
+      role: 'planner',
+      vector: parseCliSemanticVector(['--model', 'gpt-5', '--verbose']),
+      allowlist: plannerAllowlist,
+    });
+
+    expect(verdict).toEqual({ valid: true });
+  });
+
+  it('rejected vectors record zero spawn', () => {
+    let spawns = 0;
+    const rejected = admitCliRoleVector({
+      role: 'planner',
+      vector: parseCliSemanticVector(['--mcp-config', 'x.json']),
+      allowlist: plannerAllowlist,
+    });
+    if (rejected.valid) spawns += 1;
+    expect(rejected).toEqual({ valid: false, conflicts: ['--mcp-config'] });
+    expect(spawns).toBe(0);
+
+    const admitted = admitCliRoleVector({
+      role: 'planner',
+      vector: parseCliSemanticVector(['--agent', 'plan']),
+      allowlist: plannerAllowlist,
+    });
+    if (admitted.valid) spawns += 1;
+    expect(admitted).toEqual({ valid: true });
+    expect(spawns).toBe(1);
+  });
+
+  it('binds an adapter-declared allowlist to its role', () => {
+    const declared = { ...plannerAdapter, roleAllowlist: plannerAllowlist };
+    expect(declared.roleAllowlist).toBe(plannerAllowlist);
+
+    const mismatched: CliPlannerAdapter<'codex'> = {
+      ...plannerAdapter,
+      // @ts-expect-error An implementer allowlist cannot ride on a planner adapter.
+      roleAllowlist: { role: 'implementer', owned: ['sandbox'] },
+    };
+    expect(mismatched.roleAllowlist?.role).toBe('implementer');
   });
 });

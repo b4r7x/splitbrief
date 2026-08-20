@@ -608,44 +608,45 @@ codebase:
   });
 
   describe('same-target matrix', () => {
-    it.each(
-      sameTargetCases,
-    )('changes only the model for $role $existing.kind through save/reload', async (testCase) => {
-      const dir = createTempDir(`same-target-${testCase.role}-${testCase.existing.kind}`);
-      dirs.push(dir);
-      const modelOverride = 'same-target-model-override';
+    it.each(sameTargetCases)(
+      'changes only the model for $role $existing.kind through save/reload',
+      async (testCase) => {
+        const dir = createTempDir(`same-target-${testCase.role}-${testCase.existing.kind}`);
+        dirs.push(dir);
+        const modelOverride = 'same-target-model-override';
 
-      if (testCase.role === 'planner') {
-        writeRunnerConfigYaml(dir, { planner: testCase.existing });
+        if (testCase.role === 'planner') {
+          writeRunnerConfigYaml(dir, { planner: testCase.existing });
+          configStore.load(dir);
+          const before = loadConfig(dir).config;
+          const updated = commitPlannerSelection(
+            before,
+            pickerForRunner('planner', testCase.existing),
+            { id: modelOverride },
+          );
+          const reloaded = await saveAndReload(dir, updated);
+          expect(reloaded.planner).toEqual({ ...testCase.existing, model: modelOverride });
+          return;
+        }
+
+        writeRunnerConfigYaml(dir, { profile: testCase.existing });
         configStore.load(dir);
         const before = loadConfig(dir).config;
-        const updated = commitPlannerSelection(
+        const updated = commitImplementerSelection(
           before,
-          pickerForRunner('planner', testCase.existing),
+          pickerForRunner('implementer', testCase.existing),
           { id: modelOverride },
         );
         const reloaded = await saveAndReload(dir, updated);
-        expect(reloaded.planner).toEqual({ ...testCase.existing, model: modelOverride });
-        return;
-      }
-
-      writeRunnerConfigYaml(dir, { profile: testCase.existing });
-      configStore.load(dir);
-      const before = loadConfig(dir).config;
-      const updated = commitImplementerSelection(
-        before,
-        pickerForRunner('implementer', testCase.existing),
-        { id: modelOverride },
-      );
-      const reloaded = await saveAndReload(dir, updated);
-      expect(resolvedDefaultProfile(reloaded)).toEqual({
-        ...testCase.existing,
-        model: modelOverride,
-      });
-      expect(reloaded.implementerProfiles?.profiles['dormant-local']).toEqual(
-        before.implementerProfiles?.profiles['dormant-local'],
-      );
-    });
+        expect(resolvedDefaultProfile(reloaded)).toEqual({
+          ...testCase.existing,
+          model: modelOverride,
+        });
+        expect(reloaded.implementerProfiles?.profiles['dormant-local']).toEqual(
+          before.implementerProfiles?.profiles['dormant-local'],
+        );
+      },
+    );
   });
 
   describe('cross-target matrix', () => {
@@ -692,26 +693,23 @@ codebase:
       expect(MATRIX_CELLS.some((cell) => cell.model === null)).toBe(true);
     });
 
-    it.each(MATRIX_CELLS)('loads a $role $optionId selection of model $model', ({
-      role,
-      optionId,
-      model,
-      credentialEnv,
-      custom,
-    }) => {
-      const dir = createTempDir(`matrix-${role}-${optionId}`);
-      dirs.push(dir);
-      clearRunnerCredentials();
-      if (credentialEnv) vi.stubEnv(credentialEnv, 'matrix-credential');
+    it.each(MATRIX_CELLS)(
+      'loads a $role $optionId selection of model $model',
+      ({ role, optionId, model, credentialEnv, custom }) => {
+        const dir = createTempDir(`matrix-${role}-${optionId}`);
+        dirs.push(dir);
+        clearRunnerCredentials();
+        if (credentialEnv) vi.stubEnv(credentialEnv, 'matrix-credential');
 
-      writeConfig(dir, commitCell({ role, optionId, model, credentialEnv, custom }));
-      const reloaded = loadConfig(dir).config;
+        writeConfig(dir, commitCell({ role, optionId, model, credentialEnv, custom }));
+        const reloaded = loadConfig(dir).config;
 
-      const runner = role === 'planner' ? reloaded.planner : resolvedDefaultProfile(reloaded);
-      expect(getRunnerDisplayName(runner)).toBe(optionId);
-      expect(runner.model ?? null).toBe(model);
-      if (custom && model !== null) expect(runner.customModels).toContain(model);
-    });
+        const runner = role === 'planner' ? reloaded.planner : resolvedDefaultProfile(reloaded);
+        expect(getRunnerDisplayName(runner)).toBe(optionId);
+        expect(runner.model ?? null).toBe(model);
+        if (custom && model !== null) expect(runner.customModels).toContain(model);
+      },
+    );
 
     it('fails only for destinations whose credential is missing, and says which one', () => {
       clearRunnerCredentials();

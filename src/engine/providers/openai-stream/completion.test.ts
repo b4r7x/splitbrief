@@ -501,28 +501,33 @@ describe('streamCompletion', () => {
     });
   });
 
-  it.each([
-    'tool_calls',
-    'function_call',
-  ] as const)('returns unsupported_tool status when the finish_reason is %s', async (finishReason) => {
-    const delta =
-      finishReason === 'tool_calls'
-        ? { tool_calls: [{ id: 'tool-1', function: { name: 'search', arguments: '{"q":' } }] }
-        : {
-            function_call: { name: 'legacy_search', arguments: '{"q":' },
-          };
-    const client = makeMockClient([{ delta }, { finishReason }]);
+  it.each(['tool_calls', 'function_call'] as const)(
+    'returns unsupported_tool status when the finish_reason is %s',
+    async (finishReason) => {
+      const delta =
+        finishReason === 'tool_calls'
+          ? { tool_calls: [{ id: 'tool-1', function: { name: 'search', arguments: '{"q":' } }] }
+          : {
+              function_call: { name: 'legacy_search', arguments: '{"q":' },
+            };
+      const client = makeMockClient([{ delta }, { finishReason }]);
 
-    const result = await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
-      temperature: 0.2,
-      onProgress: () => {},
-    });
+      const result = await streamCompletion(
+        client,
+        'test-model',
+        [{ role: 'user', content: 'hi' }],
+        {
+          temperature: 0.2,
+          onProgress: () => {},
+        },
+      );
 
-    expect(result).toMatchObject({
-      status: 'unsupported_tool',
-      error: { code: `openai_finish_reason_${finishReason}` },
-    });
-  });
+      expect(result).toMatchObject({
+        status: 'unsupported_tool',
+        error: { code: `openai_finish_reason_${finishReason}` },
+      });
+    },
+  );
 
   it('emits one call_error when the stream ends with a null finish_reason', async () => {
     const client = makeMockClient([{ content: 'partial' }, { finishReason: null }]);

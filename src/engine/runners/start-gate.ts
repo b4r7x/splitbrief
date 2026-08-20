@@ -1,3 +1,4 @@
+import { statSync } from 'node:fs';
 import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import {
   CliExecutableReceiptSchema,
@@ -158,10 +159,44 @@ function missingCliStartGate(tool: CliToolId): never {
   );
 }
 
+/**
+ * The final receipt recheck immediately before spawn: a digest-bound receipt
+ * must still match the executable on disk at gate-consumption time, so a
+ * binary replaced or removed since detection fails closed. Legacy
+ * metadata-only identities carry no digest-bound receipt; the resolver trust
+ * ladder revalidates them at resolve time.
+ */
+function receiptStillMatchesDisk(executable: CliExecutableTrust): boolean {
+  if (executable === null || executable === undefined) return false;
+  if (!('executableIdentity' in executable)) return true;
+  const identity = executable.executableIdentity;
+  const expected = parseDigestBoundExecutableFingerprint(identity.fingerprint);
+  if (expected === null) return false;
+  try {
+    const info = statSync(identity.realPath);
+    if (!info.isFile()) return false;
+    return (
+      info.dev === expected.dev &&
+      info.ino === expected.ino &&
+      info.size === expected.size &&
+      info.mtimeMs === expected.mtimeMs
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function assertCliStartGate(
   tool: CliToolId,
   gate: CliStartGate | null | undefined,
 ): CliExecutableIdentity {
   if (gate === null || gate === undefined || gate.tool !== tool) return missingCliStartGate(tool);
+  if (!receiptStillMatchesDisk(gate.executable)) {
+    throw error(
+      'cli-executable-identity-drift',
+      `Executable identity changed for ${tool}; run readiness checks again before execution.`,
+      { tool },
+    );
+  }
   return gate.executable;
 }

@@ -14,6 +14,7 @@ import { Divider } from './divider.js';
 import { FramePanel } from './frame-panel.js';
 import { useTheme } from '../../../components/theme.js';
 import { getReviewColumnWidth, getReviewContentLayout, REVIEW_FRAME_ROWS } from '../layout/rect.js';
+import { normalizeScrollRows } from '../layout/scroll-window.js';
 import { useReviewContent } from '../hooks/use-review-content.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { configStore } from '../../../stores/project/config.js';
@@ -29,7 +30,7 @@ export function ReviewView({ height, width }: ReviewViewProps) {
   const t = useTheme();
   const [{ source, scrollOffset: offset }] = useStores(reviewStore);
   const content = useReviewContent(source);
-  const containerHeight = height ?? 20;
+  const containerHeight = normalizeScrollRows(height ?? 20);
   const documentWidth = Math.max(1, getReviewColumnWidth(width ?? 80));
   const frameInnerWidth = Math.max(1, documentWidth - 4);
   const scrollableWidth = Math.max(1, documentWidth - 2);

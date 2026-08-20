@@ -74,11 +74,14 @@ describe('adviseMode — trivial patterns', () => {
       'speckit',
     ],
     ['fix typo', 'instant', false, 'instant'],
-  ])('prompt=%s mode=%s → expectAdvice=%s suggested=%s', (prompt, mode, expectAdvice, suggested) => {
-    const result = adviseMode(prompt, mode);
-    expect(result.kind !== 'none').toBe(expectAdvice);
-    expect(result.suggestedMode).toBe(suggested);
-  });
+  ])(
+    'prompt=%s mode=%s → expectAdvice=%s suggested=%s',
+    (prompt, mode, expectAdvice, suggested) => {
+      const result = adviseMode(prompt, mode);
+      expect(result.kind !== 'none').toBe(expectAdvice);
+      expect(result.suggestedMode).toBe(suggested);
+    },
+  );
 
   it('handles empty prompt without advising', () => {
     const result = adviseMode('', 'standard');

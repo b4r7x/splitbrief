@@ -352,70 +352,71 @@ describe('runCommand', () => {
     await Promise.all([waitForPidExit(leaderPid), waitForPidExit(descendantPid)]);
   });
 
-  it.each([
-    'abort',
-    'fatal callback',
-  ] as const)('propagates a process-group cleanup limitation from %s termination', {
-    timeout: 60_000,
-  }, async (trigger) => {
-    const controller = new AbortController();
-    const recorded: number[] = [];
-    const released: number[] = [];
-    let proc: ChildProcess | undefined;
-    let resolveSpawned = () => {};
-    const spawned = new Promise<void>((resolve) => {
-      resolveSpawned = resolve;
-    });
-    const signalCause: NodeJS.ErrnoException = new Error('signal unavailable');
-    signalCause.code = 'EPERM';
-    const realKill = process.kill.bind(process);
-    setProcessLedger({
-      record: (pid) => recorded.push(pid),
-      release: (pid) => released.push(pid),
-    });
-    const processKill = vi.spyOn(process, 'kill').mockImplementation((targetPid, signal) => {
-      if (proc?.pid !== undefined && targetPid === -proc.pid && signal === 'SIGTERM') {
-        throw signalCause;
+  it.each(['abort', 'fatal callback'] as const)(
+    'propagates a process-group cleanup limitation from %s termination',
+    {
+      timeout: 60_000,
+    },
+    async (trigger) => {
+      const controller = new AbortController();
+      const recorded: number[] = [];
+      const released: number[] = [];
+      let proc: ChildProcess | undefined;
+      let resolveSpawned = () => {};
+      const spawned = new Promise<void>((resolve) => {
+        resolveSpawned = resolve;
+      });
+      const signalCause: NodeJS.ErrnoException = new Error('signal unavailable');
+      signalCause.code = 'EPERM';
+      const realKill = process.kill.bind(process);
+      setProcessLedger({
+        record: (pid) => recorded.push(pid),
+        release: (pid) => released.push(pid),
+      });
+      const processKill = vi.spyOn(process, 'kill').mockImplementation((targetPid, signal) => {
+        if (proc?.pid !== undefined && targetPid === -proc.pid && signal === 'SIGTERM') {
+          throw signalCause;
+        }
+        return realKill(targetPid, signal);
+      });
+
+      try {
+        const result = spawnPipe({
+          command: process.execPath,
+          args: ['-e', 'process.stdout.write("ready"); setInterval(() => {}, 1000);'],
+          detached: true,
+          signal: controller.signal,
+          onSpawned: (spawnedProc) => {
+            proc = spawnedProc;
+            resolveSpawned();
+          },
+          onStdout: () =>
+            trigger === 'fatal callback'
+              ? { state: 'protocol-failure', remediation: 'invalid output' }
+              : undefined,
+          onStderr: () => {},
+          onClose: () => undefined,
+        });
+        await spawned;
+        if (trigger === 'abort') controller.abort();
+
+        await expect(result).rejects.toMatchObject({
+          kind: 'platform-limitation',
+          data: { operation: 'signal', target: 'process-group', signal: 'SIGTERM' },
+          cause: signalCause,
+        });
+        expect(recorded).toEqual([proc?.pid]);
+        expect(released).toEqual([]);
+      } finally {
+        processKill.mockRestore();
+        controller.abort();
+        if (proc !== undefined) await killProcess(proc, { group: true });
+        setProcessLedger(null);
       }
-      return realKill(targetPid, signal);
-    });
 
-    try {
-      const result = spawnPipe({
-        command: process.execPath,
-        args: ['-e', 'process.stdout.write("ready"); setInterval(() => {}, 1000);'],
-        detached: true,
-        signal: controller.signal,
-        onSpawned: (spawnedProc) => {
-          proc = spawnedProc;
-          resolveSpawned();
-        },
-        onStdout: () =>
-          trigger === 'fatal callback'
-            ? { state: 'protocol-failure', remediation: 'invalid output' }
-            : undefined,
-        onStderr: () => {},
-        onClose: () => undefined,
-      });
-      await spawned;
-      if (trigger === 'abort') controller.abort();
-
-      await expect(result).rejects.toMatchObject({
-        kind: 'platform-limitation',
-        data: { operation: 'signal', target: 'process-group', signal: 'SIGTERM' },
-        cause: signalCause,
-      });
-      expect(recorded).toEqual([proc?.pid]);
-      expect(released).toEqual([]);
-    } finally {
-      processKill.mockRestore();
-      controller.abort();
-      if (proc !== undefined) await killProcess(proc, { group: true });
-      setProcessLedger(null);
-    }
-
-    expect(released).toEqual([proc?.pid]);
-  });
+      expect(released).toEqual([proc?.pid]);
+    },
+  );
 
   it('fatal line, event, diagnostic, and parser signals retain distinct outcomes', {
     timeout: 60_000,

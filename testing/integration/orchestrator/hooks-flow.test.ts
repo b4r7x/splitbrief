@@ -6,9 +6,12 @@ import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { TASK_MARKDOWN, CODE_RESPONSE } from '#testing/helpers/faux/shell-runner.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
+import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
+import { createInitialState } from '../../../src/core/state/machine.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { HooksConfig } from '../../../src/core/schemas/hooks.js';
@@ -78,6 +81,23 @@ function preparedExecution(
     sessionId,
     generation: '4a444444-4444-4444-8444-444444444444',
   };
+  const resumeState = persistReadyExecutionState(projectDir, sessionId, {
+    ...createInitialState(feature),
+    phase: 'implementing',
+    mode: 'quick',
+    plannerTool: 'shell',
+    implementerTool: 'shell',
+    tasks: [
+      makeTask({
+        scope: {
+          inBounds: ['Modify only `src/hello.ts`.'],
+          outOfBounds: ['Do not touch anything outside the task file.'],
+        },
+        evidence: ['brief-quality.json confirms the task brief is complete'],
+        typeDefs: 'type HelloModule = { greeting: string }',
+      }),
+    ],
+  });
   return {
     purpose: 'new-workflow',
     config,
@@ -106,7 +126,7 @@ function preparedExecution(
       },
     ],
     session: { kind: 'existing', ref: { projectDir, sessionId }, active },
-    runtime: { feature, allowRepoRunners: true, allowHooks: true },
+    runtime: { feature, allowRepoRunners: true, allowHooks: true, resumeState },
   };
 }
 

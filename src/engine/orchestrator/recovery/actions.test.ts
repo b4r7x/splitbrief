@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { createEventBus } from '../../events/bus.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
@@ -42,14 +42,7 @@ function makeBus(projectDir: string, sessionId: string): { bus: EventBus; events
 }
 
 function implementingState(tasks: Task[]): WorkflowState {
-  let state = createInitialState('feat');
-  state = transition(state, { type: 'START' });
-  state = transition(state, { type: 'RESEARCH_DONE' });
-  state = transition(state, { type: 'SPEC_DONE' });
-  state = transition(state, { type: 'APPROVE_SPEC' });
-  state = transition(state, { type: 'PLAN_DONE', tasks });
-  state = transition(state, { type: 'BRIEFS_READY', tasks });
-  return transition(state, { type: 'APPROVE_BRIEFS' });
+  return makeImplState(tasks);
 }
 
 function routeBiggerIssue(task: Task, facts?: RecoveryIssue['facts']): RecoveryIssue {

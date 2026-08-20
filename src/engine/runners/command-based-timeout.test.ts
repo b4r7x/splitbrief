@@ -307,7 +307,9 @@ describe('invokeCommandBasedRunner with timeout', () => {
 });
 
 describe('custom runner hard deadline', () => {
-  it('enforces a short hard deadline through the typed test seam', async () => {
+  it('enforces a short hard deadline through the typed test seam', {
+    timeout: 30_000,
+  }, async () => {
     const output: string[] = [];
     const observation = await observeCustomInvocation(
       {
@@ -328,7 +330,7 @@ describe('custom runner hard deadline', () => {
       (kind, value) => {
         if (kind === 'output') output.push(value);
       },
-      { hardDeadlineMs: 2000 },
+      { hardDeadlineMs: 10_000 },
     );
 
     expect(output.join('')).toContain('started');

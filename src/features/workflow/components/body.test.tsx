@@ -74,26 +74,27 @@ function rightPaneBottomRow(frame: string, startColumn: number): number {
 }
 
 describe('WorkflowBody brief review rendering', () => {
-  it.each([
-    0, 1, 2,
-  ])('bounds conversation rendering at a %i-row visible-sidebar height', (height) => {
-    const ui = renderFeature(
-      <WorkflowBody
-        showSidebar={true}
-        sidebarWidth={34}
-        inputMode={normalInputMode()}
-        reviewFilePath={null}
-        phase="implementing"
-        contentHeight={height}
-        contentWidth={80}
-      />,
-    );
+  it.each([0, 1, 2])(
+    'bounds conversation rendering at a %i-row visible-sidebar height',
+    (height) => {
+      const ui = renderFeature(
+        <WorkflowBody
+          showSidebar={true}
+          sidebarWidth={34}
+          inputMode={normalInputMode()}
+          reviewFilePath={null}
+          phase="implementing"
+          contentHeight={height}
+          contentWidth={80}
+        />,
+      );
 
-    const frame = ui.lastFrame() ?? '';
-    const lines = frame === '' ? [] : frame.split('\n');
-    expect(lines.length, `conversation rows at height ${height}`).toBeLessThanOrEqual(height);
-    ui.unmount();
-  });
+      const frame = ui.lastFrame() ?? '';
+      const lines = frame === '' ? [] : frame.split('\n');
+      expect(lines.length, `conversation rows at height ${height}`).toBeLessThanOrEqual(height);
+      ui.unmount();
+    },
+  );
 
   it.each([0, 1, 2])('bounds review rendering at a %i-row visible-sidebar height', (height) => {
     reviewStore.setReviewArtifact('# Review\n\nA review line.');
@@ -115,38 +116,39 @@ describe('WorkflowBody brief review rendering', () => {
     ui.unmount();
   });
 
-  it.each([
-    119, 120,
-  ])('keeps the workflow input at full width through review transition at %i columns', async (cols) => {
-    terminalSizeStore.__testReset({ cols, rows: 24 });
-    const composer = (mode: 'normal' | 'review') => (
-      <Composer
-        commands={[]}
-        currentScreen="workflow"
-        mode={mode}
-        hint=""
-        onSubmit={() => {}}
-        onRuntimeCommand={() => {}}
-      />
-    );
-    const ui = renderFeature(composer('normal'), { cols, rows: 24 });
-    await flushEffects();
-    const normalWidth = Math.max(
-      ...(ui.lastFrame() ?? '').split('\n').map((line) => getTerminalCellWidth(line)),
-    );
+  it.each([119, 120, 121])(
+    'keeps the workflow input at full width through review transition at %i columns',
+    async (cols) => {
+      terminalSizeStore.__testReset({ cols, rows: 24 });
+      const composer = (mode: 'normal' | 'review') => (
+        <Composer
+          commands={[]}
+          currentScreen="workflow"
+          mode={mode}
+          hint=""
+          onSubmit={() => {}}
+          onRuntimeCommand={() => {}}
+        />
+      );
+      const ui = renderFeature(composer('normal'), { cols, rows: 24 });
+      await flushEffects();
+      const normalWidth = Math.max(
+        ...(ui.lastFrame() ?? '').split('\n').map((line) => getTerminalCellWidth(line)),
+      );
 
-    ui.rerender(composer('review'));
-    await flushEffects();
-    const reviewWidth = Math.max(
-      ...(ui.lastFrame() ?? '').split('\n').map((line) => getTerminalCellWidth(line)),
-    );
+      ui.rerender(composer('review'));
+      await flushEffects();
+      const reviewWidth = Math.max(
+        ...(ui.lastFrame() ?? '').split('\n').map((line) => getTerminalCellWidth(line)),
+      );
 
-    expect(normalWidth).toBe(cols);
-    expect(reviewWidth).toBe(cols);
-    ui.unmount();
-  });
+      expect(normalWidth).toBe(cols);
+      expect(reviewWidth).toBe(cols);
+      ui.unmount();
+    },
+  );
 
-  it('keeps one sidebar bottom inset across conversation, document review, and brief review', async () => {
+  it('lets the conversation, document, and brief panes reach the same body bottom', async () => {
     const contentHeight = 8;
     const sidebarWidth = 34;
     const contentStartColumn = sidebarWidth + 2;
@@ -214,9 +216,9 @@ describe('WorkflowBody brief review rendering', () => {
     });
     const briefBottomRow = rightPaneBottomRow(ui.lastFrame() ?? '', contentStartColumn);
 
-    expect(conversationBottomRow).toBe(contentHeight - 2);
-    expect(documentBottomRow).toBe(conversationBottomRow);
-    expect(briefBottomRow).toBe(conversationBottomRow);
+    expect(conversationBottomRow).toBe(contentHeight - 1);
+    expect(documentBottomRow).toBe(contentHeight - 1);
+    expect(briefBottomRow).toBe(contentHeight - 1);
     ui.unmount();
   });
 
@@ -269,7 +271,7 @@ describe('WorkflowBody brief review rendering', () => {
     ui.unmount();
   });
 
-  it('visible-sidebar clips the transcript one row above the bottom border', () => {
+  it('lets the visible-sidebar transcript reach the sidebar bottom border row', () => {
     const contentHeight = 8;
     eventsStore.__testReset({
       events: [
@@ -296,7 +298,7 @@ describe('WorkflowBody brief review rendering', () => {
 
     expect(lines).toHaveLength(contentHeight);
     expect(lines[bottomBorderRow]?.[0]).toMatch(/[+└]/);
-    expect(lastTranscriptLine).toBe(bottomBorderRow - 1);
+    expect(lastTranscriptLine).toBe(bottomBorderRow);
     expect(lines[lastTranscriptLine]).toContain('transcript-20');
 
     ui.unmount();

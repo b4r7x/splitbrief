@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import type { ServerMessage } from './protocol.js';
+import { IPC_AUTH_DEADLINE_MS, IPC_MAX_PENDING_UNAUTHENTICATED_SOCKETS } from './server.js';
 import { createIpcServerTestHarness } from '#testing/helpers/ipc-server.js';
 
 describe('startIpcServer — auth', () => {
@@ -66,6 +67,41 @@ describe('startIpcServer — auth', () => {
 
     await harness.waitForClose(socket);
     expect(socket.destroyed).toBe(true);
+  });
+
+  it('closes a client that stays idle before authentication', async () => {
+    const { srv, bus } = await harness.makeServer();
+    const events: string[] = [];
+    bus.subscribe((event) => {
+      if (event.type === 'warning') events.push(event.code ?? 'warning');
+    });
+    const socket = await harness.connectClient(srv.sockPath);
+    harness.sockets.push(socket);
+    socket.resume();
+
+    const closePromise = new Promise<void>((resolve) => socket.once('close', () => resolve()));
+    await new Promise((resolve) => setTimeout(resolve, IPC_AUTH_DEADLINE_MS + 250));
+    expect(events).toContain('authentication_timeout');
+    await closePromise;
+    expect(socket.destroyed).toBe(true);
+    expect(IPC_AUTH_DEADLINE_MS).toBeGreaterThan(0);
+  });
+
+  it('rejects connections beyond the pending unauthenticated socket budget', async () => {
+    const { srv } = await harness.makeServer();
+    const pending = await Promise.all(
+      Array.from({ length: IPC_MAX_PENDING_UNAUTHENTICATED_SOCKETS }, () =>
+        harness.connectClient(srv.sockPath),
+      ),
+    );
+    harness.sockets.push(...pending);
+
+    const excess = await harness.connectClient(srv.sockPath);
+    harness.sockets.push(excess);
+    const messages = await harness.readLines(excess, 1);
+
+    expect(messages[0]).toMatchObject({ kind: 'error', code: 'unauthorized' });
+    await harness.waitForClose(excess);
   });
 
   it('accepts the detached parent exactly once with auth and the prepared receipt', async () => {

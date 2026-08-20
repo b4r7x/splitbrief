@@ -1,7 +1,7 @@
 import { DEFAULT_WORKFLOW_MODE, type Config } from '../../../core/schemas/config.js';
 import { isImplementerPhase, isLivePhase } from '../../../core/phases.js';
 import type { ProjectContext } from '../../../core/state/types.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { WorkflowStateSchema, type WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
@@ -15,7 +15,19 @@ import type { RunIsolation } from '../isolation/types.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { recoverInterruptedNativeDeliveries } from '../../../core/queue-state.js';
-import { saveState } from '../../../core/state/persistence.js';
+import type {
+  StateAction,
+  StateAuthorityCandidate,
+  StateAuthorityReceipt,
+} from '../../../core/state/types.js';
+import {
+  assertCandidateAuthority,
+  promoteCandidateAuthority,
+  refreshStateAuthority,
+} from '../../../core/state/authority.js';
+import { workflowStateDigest } from '../../../core/state/persistence.js';
+import type { SessionRef } from '../../../core/types/session-ref.js';
+import { error } from '../../../utils/error.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
 import {
   ensureSessionDir,
@@ -23,6 +35,7 @@ import {
   type SpecMetadata,
 } from '../../../core/paths-io.js';
 import { readPackageJson } from '../../../core/project-meta.js';
+import { compilerDriftWarning } from '../../runners/compiler-drift-warning.js';
 import { createPlanner, createImplementer } from '../../runners/factory.js';
 import { createEventBus } from '../../events/bus.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
@@ -50,10 +63,11 @@ import {
   publishPlannerStatus,
   publishWorkflowConfig,
   publishUserMessage,
+  publishWarning,
   publishWarningFromError,
   publishGitBranchCreated,
 } from '../events.js';
-import { transitionAndSave } from '../state-ops.js';
+import { commitWorkflowState, transitionAndSave, type StateMutationOptions } from '../state-ops.js';
 import { applyRebuiltContext, autoCompactResumeContext } from '../resume-context.js';
 import { createValidator } from '../validation/run.js';
 import { createStagedProject } from '../approval/staged-project.js';
@@ -66,6 +80,106 @@ import { resolveImplementerProfiles } from '../../../core/config/accessors/imple
 import { configForProfile } from '../task/routing.js';
 
 const initSinkUnsubscribers = new WeakMap<EventBus, Array<() => void>>();
+
+export type WorkflowAuthorityHolder = { current: StateAuthorityReceipt };
+
+type WorkflowAuthorityCarrier = Pick<WorkflowContext, 'stateAuthority'>;
+
+export function attachWorkflowAuthority<T extends WorkflowAuthorityCarrier>(
+  value: T,
+  authority: StateAuthorityReceipt,
+): T {
+  value.stateAuthority = authority;
+  return value;
+}
+
+export function workflowAuthority(
+  value: WorkflowAuthorityCarrier,
+): StateAuthorityReceipt | undefined {
+  return value.stateAuthority;
+}
+
+export function deriveWorkflowAuthority(
+  authority: StateAuthorityReceipt,
+  state: WorkflowState,
+): StateAuthorityReceipt {
+  if (
+    state.stateFence?.ownerId !== authority.ownerId ||
+    state.stateFence.token !== authority.fence
+  ) {
+    throw error('state-authority-invalid', 'Workflow state fence does not match its owner.');
+  }
+  return {
+    ...authority,
+    stateRevision: state.stateRevision ?? 0,
+    stateDigest: workflowStateDigest(state),
+  };
+}
+
+export function refreshWorkflowAuthority(
+  ref: SessionRef,
+  authority: StateAuthorityReceipt,
+  state: WorkflowState,
+): StateAuthorityReceipt {
+  const next = deriveWorkflowAuthority(authority, state);
+  if (
+    next.stateRevision === authority.stateRevision &&
+    next.stateDigest === authority.stateDigest
+  ) {
+    return authority;
+  }
+  return refreshStateAuthority(ref, authority, {
+    stateRevision: next.stateRevision,
+    stateDigest: next.stateDigest,
+  });
+}
+
+export function workflowMutationOptions(
+  state: WorkflowState,
+  authority: StateAuthorityReceipt | undefined,
+  extra: Pick<StateMutationOptions, 'maxRetries' | 'conflictRetries'> = {},
+): StateMutationOptions {
+  return {
+    expectedRevision: state.stateRevision,
+    ...(authority !== undefined && { authority }),
+    ...extra,
+  };
+}
+
+export function consumeNewWorkflowCandidate(
+  ref: SessionRef,
+  candidate: StateAuthorityCandidate,
+  feature: string,
+): StateAuthorityReceipt {
+  if (candidate.fence !== 0 || candidate.stateRevision !== 0) {
+    throw error('state-authority-invalid', 'A new workflow candidate must start at fence zero.');
+  }
+  assertCandidateAuthority(ref, candidate);
+  const state = WorkflowStateSchema.parse({
+    ...createInitialState(feature),
+    stateRevision: 1,
+    stateFence: { token: 1, ownerId: candidate.ownerId },
+  });
+  const stateWrite = commitWorkflowState({
+    ref,
+    expected: null,
+    next: state,
+  });
+  if (stateWrite.kind === 'conflict') {
+    throw error('state-persistence-conflict', 'Initial workflow state already exists.');
+  }
+  if (stateWrite.kind === 'durability-uncertain') {
+    throw error(
+      'state-persistence-durability-uncertain',
+      'Initial workflow state durability is uncertain.',
+    );
+  }
+  return promoteCandidateAuthority(ref, candidate, {
+    fence: 1,
+    stateRevision: 1,
+    stateDigest: stateWrite.revision.rawSha256,
+  });
+}
 
 function plannerUnavailableMessage(plannerConfig: Config['planner'], planner: Planner): string {
   const name = getRunnerDisplayName(plannerConfig);
@@ -124,6 +238,10 @@ export type InitializeWorkflowArgs = {
   setTrackedState: (s: WorkflowState) => void;
   resumeHolder: ResumeContextHolder;
   isolation: RunIsolation;
+  authority?: StateAuthorityReceipt | undefined;
+  authorityHolder?: WorkflowAuthorityHolder | undefined;
+  savedState?: WorkflowState | undefined;
+  newWorkflow?: boolean | undefined;
 };
 
 export function composeWorkflowCustomRunnerRuntime(
@@ -187,6 +305,9 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     setTrackedState,
     resumeHolder,
     isolation,
+    authority,
+    authorityHolder,
+    newWorkflow = false,
   } = args;
   const { callbacks, sinks } = opts;
   const { preparationId, gates, runtime } = opts.prepared;
@@ -258,12 +379,27 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     bus.publish({ type: 'approval_mode_changed', ts: Date.now(), mode: 'yolo' });
   }
 
-  let savedState = opts.savedState;
+  let savedState = newWorkflow ? undefined : (args.savedState ?? opts.savedState);
   if (savedState !== undefined) {
     const recovered = recoverInterruptedNativeDeliveries(savedState);
     if (recovered !== savedState) {
-      saveState({ projectDir, sessionId }, recovered);
-      savedState = recovered;
+      let recoveredState = savedState;
+      for (const [index, message] of savedState.messageQueue.entries()) {
+        const normalized = recovered.messageQueue[index];
+        if (normalized === undefined || normalized === message) continue;
+        const action: StateAction =
+          normalized.deliveredViaNative || normalized.nativeDeliveryState === 'delivered'
+            ? { type: 'MARK_DELIVERED_NATIVE', id: message.id }
+            : { type: 'MARK_NATIVE_DELIVERY_FAILED', id: message.id };
+        recoveredState = transitionAndSave(
+          { projectDir, sessionId },
+          recoveredState,
+          action,
+          workflowMutationOptions(recoveredState, authorityHolder?.current ?? authority),
+        );
+        setTrackedState(recoveredState);
+      }
+      savedState = recoveredState;
     }
   }
   if (savedState) setTrackedState(savedState);
@@ -275,12 +411,17 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     opts._planner ??
     (await createPlanner(config, {
       initialSessionId,
+      projectDir,
       preparedConfig: opts.prepared.config,
       preparationId,
       gates,
       slot: { role: 'planner' },
       customRuntime,
     }));
+  const driftWarning = compilerDriftWarning({ planner, projectDir });
+  if (driftWarning !== null) {
+    publishWarning({ bus, phase: savedState?.phase ?? 'idle', message: driftWarning });
+  }
   if (savedState && !hasPendingRecovery) {
     savedState = await autoCompactResumeContext({
       projectDir,
@@ -289,6 +430,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       config,
       planner,
       state: savedState,
+      authority: authorityHolder?.current ?? authority,
       ...(opts.signal !== undefined && { signal: opts.signal }),
     });
     setTrackedState(savedState);
@@ -300,6 +442,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
         config,
         resumeHolder,
         requireNonEmpty: true,
+        authority: authorityHolder?.current ?? authority,
       });
     }
   }
@@ -358,7 +501,8 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       publishPlannerStatus(bus, state, 'running');
     }
   } else {
-    state = createInitialState(feature);
+    state =
+      newWorkflow && args.savedState !== undefined ? args.savedState : createInitialState(feature);
     state = {
       ...state,
       plannerTool: summaryBase.plannerTool,
@@ -371,7 +515,12 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
         ? { selectedSkills: opts.selectedSkills.map((s) => s.id) }
         : {}),
     };
-    state = transitionAndSave({ projectDir, sessionId }, state, { type: 'START' });
+    state = transitionAndSave(
+      { projectDir, sessionId },
+      state,
+      { type: 'START' },
+      workflowMutationOptions(state, authorityHolder?.current ?? authority),
+    );
     setTrackedState(state);
     bus.publish({ type: 'workflow_started', ts: Date.now(), phase: state.phase, feature });
     publishPlannerStatus(bus, state, 'running');
@@ -447,6 +596,11 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     ...(opts.streamingSink !== undefined && { streamingSink: opts.streamingSink }),
     ...(runtime.plannerContext !== undefined && { plannerContext: runtime.plannerContext }),
   };
+  if (authorityHolder?.current !== undefined) {
+    attachWorkflowAuthority(wctx, authorityHolder.current);
+  } else if (authority !== undefined) {
+    attachWorkflowAuthority(wctx, authority);
+  }
 
   return { ok: true, state, wctx };
 }

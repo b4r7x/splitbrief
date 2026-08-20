@@ -5,7 +5,6 @@ import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { CONVERSATIONAL_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
-import { readCliPhaseOutput } from './cli.js';
 import { createCommandAvailability } from '../availability.js';
 import { writeProjectFile } from '../../core/paths-io.js';
 import { runClaudePlannerStream, runClaudeOneShot } from '../runners/claude/invoke.js';
@@ -55,6 +54,41 @@ export function createClaudeCodePlanner(opts: {
   const session = createSessionResumeState();
   session.capture(initialSessionId ?? null);
 
+  /**
+   * One prep for every specialized path (plan stream, one-shot escalate, user
+   * injection): the admitted vector is model + auth channel + trusted
+   * executable + effort + configured tail + idle bounds, assembled exactly
+   * once so no path can diverge on what reaches the child. The prompt itself
+   * is the only instruction channel — everything else stays the adapter's
+   * admitted argv.
+   */
+  function claudeRunnerPrep(input: {
+    env: NodeJS.ProcessEnv;
+    signal?: AbortSignal | undefined;
+  }): Readonly<{
+    model: string | undefined;
+    authChannel: CliAuthChannelId;
+    env: NodeJS.ProcessEnv;
+    executable?: CliExecutableIdentity | undefined;
+    effort?: EffortLevel | undefined;
+    configuredArgs: readonly string[] | undefined;
+    signal?: AbortSignal | undefined;
+    idleWarnMs?: number | undefined;
+    idleKillMs?: number | undefined;
+  }> {
+    return {
+      model: resolvedModel,
+      authChannel,
+      env: input.env,
+      ...(trustedCli !== undefined && { executable: trustedCli.executable }),
+      ...(effort !== undefined && { effort }),
+      configuredArgs: args,
+      ...(input.signal !== undefined && { signal: input.signal }),
+      ...(idleWarnMs !== undefined && { idleWarnMs }),
+      ...(idleKillMs !== undefined && { idleKillMs }),
+    };
+  }
+
   async function invokeWithSessionFallback(
     prompt: string,
     projectDir: string,
@@ -88,16 +122,8 @@ export function createClaudeCodePlanner(opts: {
             onQuestion: attemptCallbacks.onQuestion,
             onCallEvent: attemptCallbacks.onCallEvent,
             callContext: createSessionAttemptCallContext(callContext, attempt),
-            model: resolvedModel,
-            authChannel,
-            env,
-            ...(trustedCli !== undefined && { executable: trustedCli.executable }),
-            ...(effort !== undefined && { effort }),
-            configuredArgs: args,
+            ...claudeRunnerPrep({ env, signal: effectiveSignal }),
             ...(images && images.length > 0 ? { images } : {}),
-            ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
-            ...(idleWarnMs !== undefined && { idleWarnMs }),
-            ...(idleKillMs !== undefined && { idleKillMs }),
           });
           const returnedSessionId = result.sessionId ?? result.nativeSessionId;
           if (
@@ -146,24 +172,13 @@ export function createClaudeCodePlanner(opts: {
         onOutput: callbacks.onOutput,
         onCallEvent: callbacks.onCallEvent,
         callContext,
-        authChannel,
-        model: resolvedModel,
-        ...(trustedCli !== undefined && { executable: trustedCli.executable }),
-        ...(effort !== undefined && { effort }),
-        configuredArgs: args,
-        ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
-        env,
-        ...(idleWarnMs !== undefined && { idleWarnMs }),
-        ...(idleKillMs !== undefined && { idleKillMs }),
+        ...claudeRunnerPrep({ env, signal: effectiveSignal }),
       });
     },
 
     ...createCommandAvailability('claude'),
     runnerName: 'claude',
     ...(resolvedModel !== undefined && { model: resolvedModel }),
-    // Claude Code is an agentic CLI: it often writes the phase artifact to disk
-    // and only describes it on stdout, so phase reads share the CLI recovery chain.
-    readPhaseOutput: readCliPhaseOutput,
 
     async injectUserTurn(injection): Promise<TokenDelta | null> {
       const sessionId = session.getResumeId();
@@ -183,15 +198,7 @@ export function createClaudeCodePlanner(opts: {
           onOutput: callbackBuffer.callbacks.onOutput,
           onCallEvent: callbackBuffer.callbacks.onCallEvent,
           ...(injection.callContext !== undefined && { callContext: injection.callContext }),
-          authChannel,
-          env,
-          model: resolvedModel,
-          ...(trustedCli !== undefined && { executable: trustedCli.executable }),
-          ...(effort !== undefined && { effort }),
-          configuredArgs: args,
-          ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
-          ...(idleWarnMs !== undefined && { idleWarnMs }),
-          ...(idleKillMs !== undefined && { idleKillMs }),
+          ...claudeRunnerPrep({ env, signal: effectiveSignal }),
         });
         const returnedSessionId = result.sessionId ?? result.nativeSessionId;
         if (returnedSessionId !== null && returnedSessionId !== sessionId) {

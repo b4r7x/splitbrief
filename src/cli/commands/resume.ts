@@ -1,5 +1,6 @@
 import type { Command } from 'commander';
-import { loadState } from '../../core/state/persistence.js';
+import { acquireStateAuthority, releaseStateAuthority } from '../../core/state/authority.js';
+import { loadStateForResume } from '../../core/state/persistence.js';
 import {
   addWorkflowOptions,
   assertModeFlagsExclusive,
@@ -12,6 +13,30 @@ import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import { sessionDir } from '../../core/paths.js';
 import { resumeSavedSession } from './continue/resume.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
+import type { SessionRef } from '../../core/types/session-ref.js';
+
+type ResumeHydration = ReturnType<typeof loadStateForResume>;
+
+function loadOwnedResumeState(ref: SessionRef): ResumeHydration {
+  let acquired: ReturnType<typeof acquireStateAuthority>;
+  try {
+    acquired = acquireStateAuthority({ ref, purpose: 'resume' });
+  } catch (cause) {
+    return {
+      kind: 'invalid',
+      code: 'malformed',
+      message: cause instanceof Error ? cause.message : 'State authority is unavailable.',
+    };
+  }
+
+  if (acquired.kind === 'new-workflow') return { kind: 'missing' };
+  if (acquired.kind !== 'fenced') return loadStateForResume({ ref, authority: acquired });
+  try {
+    return loadStateForResume({ ref, authority: acquired });
+  } finally {
+    releaseStateAuthority(ref, acquired.receipt);
+  }
+}
 
 export interface ResumeDeps {
   checkServerStatus: typeof checkServerStatus;
@@ -51,15 +76,19 @@ export async function resumeCommand(
     );
   }
 
-  const state = loadState({ projectDir, sessionId });
+  const hydrated = loadOwnedResumeState({ projectDir, sessionId });
 
-  if (!state) {
+  if (hydrated.kind === 'invalid') {
+    throw cliError(`session '${sessionId}' has invalid saved state: ${hydrated.message}`, 1);
+  }
+
+  if (hydrated.kind === 'missing') {
     throw cliError(
       `session '${sessionId}' has no usable state.json — cannot resume. Start a new workflow with \`splitbrief start\`.`,
     );
   }
 
-  await deps.resumeSavedSession({ projectDir, sessionId, state, opts });
+  await deps.resumeSavedSession({ projectDir, sessionId, state: hydrated.state, opts });
 }
 
 export function registerResumeCommand(program: Command): void {

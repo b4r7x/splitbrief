@@ -64,15 +64,14 @@ describe('detectLintCommand', () => {
     expect(detectLintCommand(tmpDir)).toBe('npx biome check .');
   });
 
-  it.each([
-    'eslint . --fix',
-    'biome check --write .',
-    'biome check --apply-unsafe .',
-  ])('ignores the rewriting lint script %s and falls through to config detection', (script) => {
-    writeFileSync(join(tmpDir, 'package.json'), JSON.stringify({ scripts: { lint: script } }));
-    writeFileSync(join(tmpDir, 'biome.json'), '{}');
-    expect(detectLintCommand(tmpDir)).toBe('npx biome check .');
-  });
+  it.each(['eslint . --fix', 'biome check --write .', 'biome check --apply-unsafe .'])(
+    'ignores the rewriting lint script %s and falls through to config detection',
+    (script) => {
+      writeFileSync(join(tmpDir, 'package.json'), JSON.stringify({ scripts: { lint: script } }));
+      writeFileSync(join(tmpDir, 'biome.json'), '{}');
+      expect(detectLintCommand(tmpDir)).toBe('npx biome check .');
+    },
+  );
 
   it('ignores a blank lint script and falls through to config detection', () => {
     writeFileSync(join(tmpDir, 'package.json'), '{"scripts":{"lint":"   "}}');

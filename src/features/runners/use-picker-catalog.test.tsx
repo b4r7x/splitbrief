@@ -123,25 +123,24 @@ describe('usePickerCatalog', () => {
     _resetMouseZones();
   });
 
-  it.each([
-    'auto',
-    'AUTO',
-    undefined,
-  ])('canonicalizes a CLI planner model of %j onto the Auto row', async (model) => {
-    configStore.__testReset({
-      projectDir: '/tmp/project',
-      config: makeConfig({
-        planner: { kind: 'cli', tool: 'codex', ...(model === undefined ? {} : { model }) },
-      }),
-    });
-    seedDetections();
+  it.each(['auto', 'AUTO', undefined])(
+    'canonicalizes a CLI planner model of %j onto the Auto row',
+    async (model) => {
+      configStore.__testReset({
+        projectDir: '/tmp/project',
+        config: makeConfig({
+          planner: { kind: 'cli', tool: 'codex', ...(model === undefined ? {} : { model }) },
+        }),
+      });
+      seedDetections();
 
-    const ui = renderFeature(<CatalogProbe role="planner" selectedItemId="codex" />);
-    await tick(20);
+      const ui = renderFeature(<CatalogProbe role="planner" selectedItemId="codex" />);
+      await tick(20);
 
-    expect(ui.lastFrame()).toContain('planner:codex:auto');
-    ui.unmount();
-  });
+      expect(ui.lastFrame()).toContain('planner:codex:auto');
+      ui.unmount();
+    },
+  );
 
   it('keeps the configured model off a tool the user is only browsing', async () => {
     configStore.__testReset({

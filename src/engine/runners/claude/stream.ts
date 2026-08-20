@@ -31,6 +31,7 @@ interface StreamHandlerState {
   usage: TokenDelta | null;
   resultText: string | null;
   sawResult: boolean;
+  sawResultText: boolean;
   isError: boolean;
   recorder: RunnerCallRecorder;
   credentialValues: readonly string[];
@@ -68,6 +69,7 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     usage: null,
     resultText: null,
     sawResult: false,
+    sawResultText: false,
     isError: false,
     recorder,
     credentialValues,
@@ -142,6 +144,8 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
   function applyResultText(text: string): boolean {
     const safeText = redactCredential(text);
     state.resultText = safeText;
+    // Only a terminal `result` record carrying text can complete the call.
+    state.sawResultText = true;
     const reconciliation = reconcileFinalText(state.text, safeText);
     if (reconciliation.kind === 'none') return false;
 
@@ -348,7 +352,7 @@ function resolveToolUseDelta(
   };
 }
 
-function throwForClaudeCallFailure(result: RunnerCallResult): never {
+export function throwForClaudeCallFailure(result: RunnerCallResult): never {
   throw processError.exitCode({
     command: 'claude',
     code: 0,
@@ -360,10 +364,25 @@ function throwForClaudeCallFailure(result: RunnerCallResult): never {
 
 export function finishClaudeStream(state: ClaudeStreamState): RunnerCallResult {
   if (!state.isError && state.sawResult) {
-    state.recorder.finishCompleted({
-      usage: state.usage,
-      nativeSessionId: state.sessionId,
-    });
+    if (!state.sawResultText && state.recorder.context.envelope !== undefined) {
+      // A `result` record without text is a missing final response: it cannot
+      // complete the call or fall back to earlier partials (REQ-013).
+      state.recorder.finishFailed({
+        status: 'failed',
+        error: {
+          code: 'task_compiler_final_response_missing',
+          message: 'Claude result carried no final response text',
+        },
+        usage: state.usage,
+        nativeSessionId: state.sessionId,
+        partial: true,
+      });
+    } else {
+      state.recorder.finishCompleted({
+        usage: state.usage,
+        nativeSessionId: state.sessionId,
+      });
+    }
   }
 
   const result = state.recorder.finalResult();

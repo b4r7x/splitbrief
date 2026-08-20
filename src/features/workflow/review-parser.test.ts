@@ -9,7 +9,8 @@ import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { setActiveTerminalHandover } from '../../lib/terminal/editor-handover.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
-import { openReviewFileExternally } from './review-parser.js';
+import { createReviewInputHandler, openReviewFileExternally } from './review-parser.js';
+import { reviewOpeningPromptMessage } from './review-commands.js';
 
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }));
 
@@ -19,9 +20,9 @@ type EditorOutcome =
 
 const spawnMock = vi.mocked(spawn);
 
-function makeInputMode(): UseInputModeResult {
+function makeInputMode(mode: UseInputModeResult['mode'] = 'review'): UseInputModeResult {
   return {
-    mode: 'review',
+    mode,
     hint: '',
     questionEpoch: 0,
     setReviewMode: vi.fn(async () => ({ approved: false as const })),
@@ -109,5 +110,44 @@ describe('openReviewFileExternally stale-owner feedback', () => {
       message: 'new-owner feedback',
       isError: false,
     });
+  });
+});
+
+describe('review input ownership', () => {
+  beforeEach(() => {
+    feedbackStore.reset();
+    reviewStore.reset();
+    lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+  });
+
+  afterEach(() => {
+    feedbackStore.reset();
+    reviewStore.reset();
+    lifecycleStore.reset();
+  });
+
+  it('does not parse composer text as a review shortcut', async () => {
+    const inputMode = makeInputMode('normal');
+
+    await createReviewInputHandler(inputMode).handleInput('q');
+
+    expect(inputMode.resolve).not.toHaveBeenCalled();
+    expect(feedbackStore.get().message).toBe(reviewOpeningPromptMessage());
+  });
+
+  it('passes question/editor-owned text through without shortcut parsing', async () => {
+    const inputMode = makeInputMode('question');
+
+    await createReviewInputHandler(inputMode).handleInput('q');
+
+    expect(inputMode.resolve).toHaveBeenCalledWith('q');
+  });
+
+  it('uses the same typed refusal path for a review reject key', async () => {
+    const inputMode = makeInputMode('review');
+
+    await createReviewInputHandler(inputMode).handleInput('q');
+
+    expect(inputMode.resolve).toHaveBeenCalledWith({ approved: false });
   });
 });

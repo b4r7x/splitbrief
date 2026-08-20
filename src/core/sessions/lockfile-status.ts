@@ -9,7 +9,9 @@ import { assertSessionConfinement } from './confinement.js';
 
 export const HEARTBEAT_STALENESS_MS = 8000;
 
-const PROCESS_START_TOLERANCE_MS = 2000;
+export const PROCESS_START_TOLERANCE_MS = 2000;
+
+export type ProcessIdentityStatus = 'live' | 'dead' | 'pid-reused' | 'unknown';
 
 export const LockfileDataSchema = z.object({
   version: z.literal(1),
@@ -98,13 +100,29 @@ function canSignalProcess(pid: number): boolean {
   }
 }
 
+export function checkProcessIdentity(
+  pid: number,
+  expectedStartTimeMs: number,
+): ProcessIdentityStatus {
+  const actualStartTimeMs = readProcessStartTimeMs(pid);
+  if (actualStartTimeMs !== null && Number.isFinite(expectedStartTimeMs)) {
+    return Math.abs(actualStartTimeMs - expectedStartTimeMs) <= PROCESS_START_TOLERANCE_MS
+      ? 'live'
+      : 'pid-reused';
+  }
+
+  if (canSignalProcess(pid)) return 'unknown';
+  try {
+    process.kill(pid, 0);
+    return 'unknown';
+  } catch (err) {
+    return isNodeError(err) && err.code === 'ESRCH' ? 'dead' : 'unknown';
+  }
+}
+
 function processMatchesLockfile(data: LockfileData): boolean {
-  if (!canSignalProcess(data.pid)) return false;
-
-  const actualStartTimeMs = readProcessStartTimeMs(data.pid);
-  if (actualStartTimeMs === null) return true;
-
-  return Math.abs(actualStartTimeMs - data.startTimeMs) <= PROCESS_START_TOLERANCE_MS;
+  const identity = checkProcessIdentity(data.pid, data.startTimeMs);
+  return identity === 'live' || identity === 'unknown';
 }
 
 export function checkSessionLockStatus(options: SessionLockStatusOptions): SessionLockStatus {
