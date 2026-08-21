@@ -90,22 +90,22 @@ describe('buildPromptCallbacks onApprovalNeeded', () => {
     expect(setReviewMode).toHaveBeenCalledWith(REVIEW_HINT);
   });
 
-  it.each([
-    'spec',
-    'plan',
-  ] as const)('uses the generic review hint for %s approvals', async (type) => {
-    const setReviewMode = vi
-      .fn<UseInputModeResult['setReviewMode']>()
-      .mockResolvedValue({ approved: false });
-    const callbacks = makeCallbacksWithInputMode({
-      ...makeInputMode(''),
-      setReviewMode,
-    });
+  it.each(['spec', 'plan'] as const)(
+    'uses the generic review hint for %s approvals',
+    async (type) => {
+      const setReviewMode = vi
+        .fn<UseInputModeResult['setReviewMode']>()
+        .mockResolvedValue({ approved: false });
+      const callbacks = makeCallbacksWithInputMode({
+        ...makeInputMode(''),
+        setReviewMode,
+      });
 
-    await callbacks.onApprovalNeeded(type, '/tmp/review.md');
+      await callbacks.onApprovalNeeded(type, '/tmp/review.md');
 
-    expect(setReviewMode).toHaveBeenCalledWith(REVIEW_HINT);
-  });
+      expect(setReviewMode).toHaveBeenCalledWith(REVIEW_HINT);
+    },
+  );
 
   it('uses the frozen artifact text without retaining its display label as a path', async () => {
     const review = Object.freeze({

@@ -4,21 +4,72 @@ import type { IpcWorkflowBridge } from '../workflow-bridge.js';
 import { createServerArgsAttachmentDrain } from '../server-args.js';
 import type { IpcServer } from '../server.js';
 import type { Summary } from '../../../core/schemas/summary.js';
-import { loadState, saveState } from '../../../core/state/persistence.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import { buildDetachedRetryState } from '../retry-state.js';
 import type { EventBus } from '../../events/types.js';
+import { transitionAndSave } from '../../orchestrator/state-ops.js';
+import { refreshWorkflowAuthority } from '../../orchestrator/run/init.js';
 import { assertPromptResponse, makeCallbacks } from './prompts.js';
 import {
   buildPausedSummary,
+  loadOwnerWorkflowState,
   resolveDetachedPendingRecovery,
+  workflowLoopResumeAuthority,
   type WorkflowLoopContext,
 } from './recovery.js';
 
 export type { WorkflowLoopContext };
 
 export type RunWorkflowFn = (options: RunWorkflowOptions) => Promise<Summary>;
+
+function refreshOwnerAuthority(ctx: WorkflowLoopContext, state: WorkflowState): void {
+  const current = workflowLoopResumeAuthority(ctx);
+  if (current === undefined) return;
+  const refreshed = refreshWorkflowAuthority(ctx.prepared.session.ref, current.receipt, state);
+  if (ctx.resumeAuthority !== undefined) {
+    ctx.resumeAuthority = { ...ctx.resumeAuthority, receipt: refreshed };
+  } else {
+    ctx.authority = refreshed;
+  }
+}
+
+function persistDetachedRetryState(ctx: WorkflowLoopContext, state: WorkflowState): WorkflowState {
+  const authority = workflowLoopResumeAuthority(ctx)?.receipt;
+  if (authority === undefined) {
+    // A context without an owner receipt is retained for the legacy unit-test
+    // harness. It cannot write session state; the next owner hydration remains
+    // the authority for a real detached process.
+    return buildDetachedRetryState(state);
+  }
+
+  const ref = ctx.prepared.session.ref;
+  let next = state;
+  const failedTasks = state.tasks
+    .map((task, index) => ({ task, index }))
+    .filter(({ task }) => task.status === 'failed')
+    .sort((left, right) => right.index - left.index);
+
+  for (const { task } of failedTasks) {
+    next = transitionAndSave(
+      ref,
+      next,
+      { type: 'RESET_TASK', taskId: task.id },
+      { expectedRevision: next.stateRevision, authority },
+    );
+  }
+
+  if (next.pendingRecovery !== undefined) {
+    next = transitionAndSave(
+      ref,
+      next,
+      { type: 'RESOLVE_PENDING_RECOVERY' },
+      { expectedRevision: next.stateRevision, authority },
+    );
+  }
+  refreshOwnerAuthority(ctx, next);
+  return next;
+}
 
 export async function runWorkflowLoop(
   ctx: WorkflowLoopContext,
@@ -27,9 +78,12 @@ export async function runWorkflowLoop(
   ipcBus: EventBus,
   runWorkflow: RunWorkflowFn = runWorkflowDefault,
 ): Promise<Summary> {
-  const sessionRef = ctx.prepared.session.ref;
   const config = ctx.prepared.config;
-  let stateForRun: WorkflowState | undefined = loadState(sessionRef) ?? undefined;
+  if (ctx.observerProjection !== undefined) {
+    return buildPausedSummary(ctx, ctx.observerProjection, config);
+  }
+
+  let stateForRun: WorkflowState | undefined = loadOwnerWorkflowState(ctx);
   let retryProfileOverride: string | undefined;
   let retryProfileOverrideTaskId: TaskId | undefined;
   const drainPendingAttachments = createServerArgsAttachmentDrain(ctx.attachments);
@@ -44,9 +98,11 @@ export async function runWorkflowLoop(
         stateForRun,
       );
       if (!recovery.shouldRun) {
+        refreshOwnerAuthority(ctx, recovery.state);
         return buildPausedSummary(ctx, recovery.state, config);
       }
       stateForRun = recovery.state;
+      refreshOwnerAuthority(ctx, stateForRun);
       retryProfileOverride = recovery.retryProfileOverride;
       retryProfileOverrideTaskId = recovery.retryProfileOverrideTaskId;
     }
@@ -65,7 +121,7 @@ export async function runWorkflowLoop(
     retryProfileOverride = undefined;
     retryProfileOverrideTaskId = undefined;
 
-    const saved = loadState(sessionRef);
+    const saved = loadOwnerWorkflowState(ctx);
     if (saved?.pendingRecovery) {
       stateForRun = saved;
       continue;
@@ -106,8 +162,7 @@ export async function runWorkflowLoop(
     }
 
     if (stateForRun) {
-      stateForRun = buildDetachedRetryState(stateForRun);
-      saveState(sessionRef, stateForRun);
+      stateForRun = persistDetachedRetryState(ctx, stateForRun);
     }
   }
 }

@@ -25,7 +25,16 @@ describe('OpenCode role adapters', () => {
       expect(candidate.contractSha256).toMatch(/^[a-f0-9]{64}$/);
       expect(candidate.adapter.role).toBe(candidate.role);
       expect(candidate.adapter.descriptor).toBe(CLI_TOOL_CATALOG.opencode);
+      // Activation requires the complete receipt: the declared raw terminal is
+      // the process exit, and the adapter binds the same stdout-final contract.
+      expect(candidate.rawContract.expectedRawTerminal).toBe('process-exit');
+      expect(candidate.adapter.outputContract).toEqual({
+        kind: 'text-exit',
+        successfulExitCodes: [0],
+      });
     }
+    const implementerRaw = CLI_CONFORMANCE_CANDIDATES[1]?.rawContract.rawInvocation ?? [];
+    expect(implementerRaw.slice(0, 5)).toEqual(['run', '--format', 'json', '--agent', 'build']);
     expect(CLI_CONFORMANCE_CANDIDATES[0]?.contractSha256).not.toBe(
       CLI_CONFORMANCE_CANDIDATES[1]?.contractSha256,
     );
@@ -52,7 +61,7 @@ describe('OpenCode role adapters', () => {
     }
   });
 
-  it('preserves planner agent, model placement, implementer invocation, and configured order', () => {
+  it('preserves planner agent, model placement, implementer build role, and configured order', () => {
     expect(
       opencodePromptArgs({ role: 'planner', model: undefined, configuredArgs: ['--label', 'one'] }),
     ).toEqual(['run', '--format', 'json', '--agent', 'plan', PROMPT, '--label', 'one']);
@@ -65,7 +74,16 @@ describe('OpenCode role adapters', () => {
         model: 'anthropic/claude-sonnet',
         configuredArgs: [],
       }),
-    ).toEqual(['run', '--model', 'anthropic/claude-sonnet', '--format', 'json', PROMPT]);
+    ).toEqual([
+      'run',
+      '--model',
+      'anthropic/claude-sonnet',
+      '--format',
+      'json',
+      '--agent',
+      'build',
+      PROMPT,
+    ]);
     const plannerBase = opencodePromptArgs({ role: 'planner' });
     const implementerBase = opencodePromptArgs({ role: 'implementer' });
     expect(opencodePlannerAdapter.validateArgs(plannerBase, plannerBase)).toEqual({ valid: true });
@@ -75,6 +93,35 @@ describe('OpenCode role adapters', () => {
         implementerBase,
       ),
     ).toEqual({ valid: false, conflicts: ['--format'] });
+  });
+
+  it('pins the effective role on every vector: default-role, fallback, and subagent runs fail', () => {
+    const plannerBase = opencodePromptArgs({ role: 'planner' });
+    const implementerBase = opencodePromptArgs({ role: 'implementer' });
+    const escalationArgs = opencodePromptArgs({ role: 'planner', mode: 'escalate' });
+
+    expect(plannerBase).toContain('--agent');
+    expect(plannerBase[plannerBase.indexOf('--agent') + 1]).toBe('plan');
+    expect(implementerBase).toContain('--agent');
+    expect(implementerBase[implementerBase.indexOf('--agent') + 1]).toBe('build');
+    expect(escalationArgs).toContain('--agent');
+    expect(escalationArgs[escalationArgs.indexOf('--agent') + 1]).toBe('build');
+
+    for (const base of [plannerBase, implementerBase]) {
+      expect(
+        opencodeImplementerAdapter.validateArgs([...base, '--agent', 'subagent'], base),
+      ).toEqual({ valid: false, conflicts: ['--agent'] });
+      expect(opencodeImplementerAdapter.validateArgs([...base, '--agent=plan'], base)).toEqual({
+        valid: false,
+        conflicts: ['--agent'],
+      });
+      expect(
+        opencodeImplementerAdapter.validateArgs([...base, '--agent', 'default'], base),
+      ).toEqual({
+        valid: false,
+        conflicts: ['--agent'],
+      });
+    }
   });
 
   it('overrides read-only agent defaults with the verified build agent for full escalation', () => {
@@ -203,26 +250,69 @@ describe('OpenCode JSON envelope adapter', () => {
     ]);
   });
 
-  it('returns process completion with accumulated usage and session identity', () => {
+  it('returns the exact final group after the last tool call with accumulated usage and session', () => {
     const events = [
       ...opencodeProtocolEvents(
         JSON.stringify({
           type: 'text',
           sessionID: 'ses-final',
-          part: { type: 'text', text: 'done' },
+          part: { type: 'text', text: 'earlier draft' },
+        }),
+      ),
+      ...opencodeProtocolEvents(
+        JSON.stringify({
+          type: 'tool_result',
+          sessionID: 'ses-final',
+          part: { type: 'tool', id: 'tool-1', name: 'read', input: { path: 'src/a.ts' } },
+        }),
+      ),
+      ...opencodeProtocolEvents(
+        JSON.stringify({
+          type: 'text',
+          sessionID: 'ses-final',
+          part: { type: 'text', text: 'final message' },
         }),
       ),
       ...opencodeProtocolEvents(
         JSON.stringify({
           type: 'step_finish',
           sessionID: 'ses-final',
-          part: { type: 'step-finish', tokens: { input: 2, output: 1 } },
+          part: { type: 'step-finish', tokens: { input: 5, output: 3, reasoning: 1 } },
+        }),
+      ),
+    ];
+    const terminal = opencodePlannerAdapter.terminal({
+      outputContract: opencodePlannerAdapter.outputContract,
+      events,
+      stdout: '',
+      stderr: '',
+      exitCode: 0,
+      signal: null,
+    });
+    expect(terminal).toEqual({
+      type: 'result',
+      status: 'completed',
+      text: 'final message',
+      usage: { inputTokens: 5, outputTokens: 3, reasoningTokens: 1 },
+      nativeSessionId: 'ses-final',
+      error: null,
+      partial: false,
+    });
+  });
+
+  it('keeps the implementer terminal on the same exact final group', () => {
+    const events = [
+      ...opencodeProtocolEvents(
+        JSON.stringify({
+          type: 'text',
+          sessionID: 'ses-impl',
+          part: { type: 'text', text: 'edit applied' },
         }),
       ),
     ];
     expect(
-      opencodePlannerAdapter.terminal({
-        outputContract: opencodePlannerAdapter.outputContract,
+      opencodeImplementerAdapter.terminal({
+        outputContract: opencodeImplementerAdapter.outputContract,
         events,
         stdout: '',
         stderr: '',
@@ -232,9 +322,9 @@ describe('OpenCode JSON envelope adapter', () => {
     ).toEqual({
       type: 'result',
       status: 'completed',
-      text: '',
-      usage: { inputTokens: 2, outputTokens: 1 },
-      nativeSessionId: 'ses-final',
+      text: 'edit applied',
+      usage: null,
+      nativeSessionId: 'ses-impl',
       error: null,
       partial: false,
     });

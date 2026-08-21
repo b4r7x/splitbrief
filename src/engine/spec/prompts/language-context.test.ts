@@ -23,15 +23,18 @@ describe('buildLanguageContext', () => {
       '',
       'the project module system',
     ],
-  ] as const)('returns conventions for %s', (input, language, importText, typeText, fileExtension, moduleSystem) => {
-    const ctx = buildLanguageContext(input);
+  ] as const)(
+    'returns conventions for %s',
+    (input, language, importText, typeText, fileExtension, moduleSystem) => {
+      const ctx = buildLanguageContext(input);
 
-    expect(ctx.language).toBe(language);
-    expect(ctx.importConvention).toContain(importText);
-    expect(ctx.typeAnnotationStyle).toContain(typeText);
-    expect(ctx.fileExtension).toBe(fileExtension);
-    expect(ctx.moduleSystem).toBe(moduleSystem);
-  });
+      expect(ctx.language).toBe(language);
+      expect(ctx.importConvention).toContain(importText);
+      expect(ctx.typeAnnotationStyle).toContain(typeText);
+      expect(ctx.fileExtension).toBe(fileExtension);
+      expect(ctx.moduleSystem).toBe(moduleSystem);
+    },
+  );
 });
 
 describe('normalizeLanguage', () => {
@@ -84,16 +87,19 @@ describe('buildLanguageContextSections', () => {
     ['python', 'Python', 'PEP 484'],
     ['go', 'Go', 'Go packages'],
     ['rust', 'Rust', 'Rust crates/modules'],
-  ] as const)('returns a complete Language Context section for %s', (language, languageText, detailText) => {
-    const [section] = buildLanguageContextSections(buildLanguageContext(language));
+  ] as const)(
+    'returns a complete Language Context section for %s',
+    (language, languageText, detailText) => {
+      const [section] = buildLanguageContextSections(buildLanguageContext(language));
 
-    expect(section).toMatchObject({ heading: 'Language Context' });
-    expect(section?.body).toContain(languageText);
-    expect(section?.body).toContain(detailText);
-    expect(section?.body).toContain('Target language:');
-    expect(section?.body).toContain('Module system:');
-    expect(section?.body).toContain('Imports:');
-    expect(section?.body).toContain('Types:');
-    expect(section?.body).toContain('File extension:');
-  });
+      expect(section).toMatchObject({ heading: 'Language Context' });
+      expect(section?.body).toContain(languageText);
+      expect(section?.body).toContain(detailText);
+      expect(section?.body).toContain('Target language:');
+      expect(section?.body).toContain('Module system:');
+      expect(section?.body).toContain('Imports:');
+      expect(section?.body).toContain('Types:');
+      expect(section?.body).toContain('File extension:');
+    },
+  );
 });

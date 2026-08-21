@@ -292,28 +292,26 @@ describe('createReviewInputHandler – brief review edit mode', () => {
     });
   });
 
-  it.each([
-    'e',
-    'edit',
-    'E',
-    'edit-file',
-  ])('opens persisted tasks.md and resolves edit for %s during brief review', async (command) => {
-    lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
-    reviewStore.setReviewFile(join(tmpDir, 'tasks.md'));
-    stubReviewEditor('true');
-    const resolve = vi.fn();
-    const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
+  it.each(['e', 'edit', 'E', 'edit-file'])(
+    'opens persisted tasks.md and resolves edit for %s during brief review',
+    async (command) => {
+      lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+      reviewStore.setReviewFile(join(tmpDir, 'tasks.md'));
+      stubReviewEditor('true');
+      const resolve = vi.fn();
+      const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
 
-    await handleInput(command);
+      await handleInput(command);
 
-    expect(resolve).toHaveBeenCalledWith({ approved: false, action: 'edit' });
-    // The file never existed, so neither snapshot is readable: the gate still settles on
-    // whatever the approval loop reads back, but the message must not claim an edit.
-    expect(feedbackStore.get()).toMatchObject({
-      isError: false,
-      message: 'Could not read tasks.md after editing — applying changes',
-    });
-  });
+      expect(resolve).toHaveBeenCalledWith({ approved: false, action: 'edit' });
+      // The file never existed, so neither snapshot is readable: the gate still settles on
+      // whatever the approval loop reads back, but the message must not claim an edit.
+      expect(feedbackStore.get()).toMatchObject({
+        isError: false,
+        message: 'Could not read tasks.md after editing — applying changes',
+      });
+    },
+  );
 
   it('keeps external editor behavior for non-brief reviews', async () => {
     lifecycleStore.__testReset({ phase: 'reviewing-plan' });

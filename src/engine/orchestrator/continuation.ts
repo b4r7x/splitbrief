@@ -1,16 +1,17 @@
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from './types.js';
 import type { EventBus } from '../events/types.js';
-import { transitionAndSave } from './state-ops.js';
+import { rebaseOnPersistedWorkflowState, transitionAndSave } from './state-ops.js';
 import { processError } from '../../lib/process/errors.js';
 import { throwIfAborted } from '../../utils/abort.js';
+import { error } from '../../utils/error.js';
 
 export function buildContinuationPrompt(partialResponse: string, userMessage: string): string {
   const instruction = userMessage.trim() || 'Please continue from where you left off.';
   return `The previous attempt was interrupted. Here is the partial response:\n\n${partialResponse}\n\n${instruction}`;
 }
 
-export interface ContinuationLoopCtx {
+interface ContinuationLoopBaseCtx {
   projectDir: string;
   sessionId: string;
   /** When execution cwd differs from the real session tree, persist transitions here. */
@@ -20,6 +21,22 @@ export interface ContinuationLoopCtx {
   signal?: AbortSignal | undefined;
   sinks: WorkflowSinks;
 }
+
+export type RecoveryContinuationMarker = {
+  briefRecovery: true;
+  operationId: string;
+  noAutomaticContinuation: true;
+};
+
+type OrdinaryContinuationLoopCtx = ContinuationLoopBaseCtx & {
+  briefRecovery?: false | undefined;
+  operationId?: undefined;
+  noAutomaticContinuation?: false | undefined;
+};
+
+export type ContinuationLoopCtx =
+  | OrdinaryContinuationLoopCtx
+  | (ContinuationLoopBaseCtx & RecoveryContinuationMarker);
 
 export interface ContinuationLoopBodyArgs {
   signal: AbortSignal;
@@ -41,6 +58,7 @@ export async function withContinuationLoop<T>(
 ): Promise<{ state: WorkflowState; value: T }> {
   const { ctx, onStateChange, body } = opts;
   const { projectDir, sessionId, callbacks, sinks, bus } = ctx;
+  const recoveryContinuation = ctx.briefRecovery === true;
   const persistRef = ctx.persistRef ?? { projectDir, sessionId };
   let state = opts.state;
   let continuationPrompt: string | undefined;
@@ -60,7 +78,8 @@ export async function withContinuationLoop<T>(
     onContinuationNeeded: NonNullable<OrchestratorCallbacks['onContinuationNeeded']>,
     source: 'user' | 'watchdog',
   ): Promise<string> => {
-    applyState(transitionAndSave(persistRef, state, { type: 'ABORT_TURN' }));
+    const current = rebaseOnPersistedWorkflowState(persistRef, state);
+    applyState(transitionAndSave(persistRef, current, { type: 'ABORT_TURN' }));
     bus.publish({ type: 'turn_interrupted', ts: Date.now(), phase: state.phase, source });
     const userText = await onContinuationNeeded(partialOutput);
     throwIfAborted(ctx.signal);
@@ -69,7 +88,14 @@ export async function withContinuationLoop<T>(
   };
 
   while (true) {
-    if (sinks.consumeBoundaryInterrupt?.() && callbacks.onContinuationNeeded) {
+    if (sinks.consumeBoundaryInterrupt?.()) {
+      if (recoveryContinuation) {
+        throw error(
+          'continuation-recovery-operation-invalid',
+          `Recovery operation ${ctx.operationId} requires a new operation.`,
+        );
+      }
+      if (!callbacks.onContinuationNeeded) continue;
       const userText = await continueAfterAbort(callbacks.onContinuationNeeded, 'user');
       steer = userText.trim() === '' ? undefined : userText;
     }
@@ -86,6 +112,8 @@ export async function withContinuationLoop<T>(
       attempt = await body({ signal: bodySignal, continuationPrompt, steer, recordOutput });
     } catch (err) {
       sinks.setAbortHandler(null);
+
+      if (recoveryContinuation) throw err;
 
       if (
         (callController.signal.aborted || processError.isIdleTimeout(err)) &&
@@ -106,7 +134,12 @@ export async function withContinuationLoop<T>(
 
     sinks.setAbortHandler(null);
 
-    if (callController.signal.aborted && !ctx.signal?.aborted && callbacks.onContinuationNeeded) {
+    if (
+      callController.signal.aborted &&
+      !ctx.signal?.aborted &&
+      !recoveryContinuation &&
+      callbacks.onContinuationNeeded
+    ) {
       const userText = await continueAfterAbort(callbacks.onContinuationNeeded, 'user');
       continuationPrompt = buildContinuationPrompt(partialOutput, userText);
       steer = undefined;

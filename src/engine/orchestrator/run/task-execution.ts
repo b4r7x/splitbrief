@@ -1,4 +1,3 @@
-import { join } from 'node:path';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { CostPrediction, Summary } from '../../../core/schemas/summary.js';
@@ -16,15 +15,24 @@ import { autoSplitOverflowTasks } from '../auto-split-overflow.js';
 import { runTaskLoop } from '../task/loop.js';
 import { runFinalReviewPhase } from '../final-review.js';
 import { formatSkippedSplitNotice, reviewAutoSplitOutput } from './auto-split-review.js';
-import { PLAN_FILE, SPEC_FILE, TASKS_FILE, sessionDir } from '../../../core/paths.js';
+import { PLAN_FILE, SPEC_FILE, TASKS_FILE } from '../../../core/paths.js';
+import type { PhaseRecoveryBinding } from './phases.js';
+import type { PlanningPhaseResult } from '../planning/types.js';
+import {
+  matchesPersistedExecutionPermit,
+  revalidatePersistedExecutionPermit,
+} from '../planning/handoff.js';
+import { workflowAuthority } from './init.js';
 
 export type RunTasksAndReviewOptions = {
   wctx: WorkflowContext;
   state: WorkflowState;
+  planning: PlanningPhaseResult;
   summaryBase: SummaryBase;
   phaseTimings: Record<string, number>;
   setTrackedState: (s: WorkflowState) => void;
   setCurrentTask: (t: Pick<Task, 'file' | 'action'> | undefined) => void;
+  recovery?: PhaseRecoveryBinding | undefined;
 };
 
 export const APPROVAL_PARKED_ARTIFACT: Partial<Record<Phase, string>> = {
@@ -77,19 +85,11 @@ export async function runTasksAndReview(
   let { state } = opts;
   const { callbacks } = wctx;
 
-  const parkedArtifact = APPROVAL_PARKED_ARTIFACT[state.phase];
-  if (parkedArtifact !== undefined) {
-    const artifactPath = join(sessionDir(wctx.projectDir, wctx.sessionId), parkedArtifact);
-    publishWarning({
-      bus: wctx.bus,
-      phase: state.phase,
-      safety: {
-        category: 'approval',
-        code: 'approval_prompt_not_restored',
-        transcriptSafe: true,
-      },
-      message: `Refusing to continue from ${state.phase} without a restored approval prompt. Review artifact: ${artifactPath}`,
-    });
+  const planning = opts.planning;
+  if (
+    planning.disposition !== 'ready-for-tasks' ||
+    !matchesPersistedExecutionPermit(planning, state)
+  ) {
     return {
       summary: buildSummary({ ...summaryBase, state, phaseTimings }),
       completed: false,
@@ -97,6 +97,34 @@ export async function runTasksAndReview(
       state,
     };
   }
+
+  const authority = workflowAuthority(wctx);
+  if (authority === undefined) {
+    return {
+      summary: buildSummary({ ...summaryBase, state, phaseTimings }),
+      completed: false,
+      cancelled: false,
+      state,
+    };
+  }
+
+  const revalidated = revalidatePersistedExecutionPermit({
+    ref: { projectDir: wctx.projectDir, sessionId: wctx.sessionId },
+    state,
+    planning,
+    authority,
+  });
+  if (revalidated === null) {
+    return {
+      summary: buildSummary({ ...summaryBase, state, phaseTimings }),
+      completed: false,
+      cancelled: false,
+      state,
+    };
+  }
+  state = revalidated.state;
+  let handoff = revalidated.planning;
+  setTrackedState(state);
 
   // On resume the task loop continues from currentTaskIndex, so the pre-task cost
   // gauntlet must predict over the remaining tasks only and must not re-gate, re-run
@@ -134,6 +162,7 @@ export async function runTasksAndReview(
       });
       state = reviewed.state;
       setTrackedState(state);
+      handoff = { ...handoff, state };
       prediction = { ...prediction, plannerEstimateReview: reviewed.review };
       publishCostPrediction({ bus: wctx.bus, phase: state.phase }, prediction);
     }
@@ -179,14 +208,17 @@ export async function runTasksAndReview(
         });
       }
       if (split.changed) {
-        const reviewed = await reviewAutoSplitOutput({
-          wctx,
-          state,
-          tasks: split.tasks,
-          setTrackedState,
-        });
-        state = reviewed.state;
-        if (!reviewed.approved) {
+        if (opts.recovery?.createAdmissionInput === undefined) {
+          publishWarning({
+            bus: wctx.bus,
+            phase: state.phase,
+            message: 'Auto-split output remains in review because Brief recovery is unavailable.',
+            safety: {
+              category: 'workflow',
+              code: 'brief_recovery_unavailable',
+              transcriptSafe: true,
+            },
+          });
           return {
             summary: buildSummary({ ...summaryBase, state, phaseTimings }),
             completed: false,
@@ -194,6 +226,23 @@ export async function runTasksAndReview(
             state,
           };
         }
+        const reviewed = await reviewAutoSplitOutput({
+          wctx,
+          state,
+          tasks: split.tasks,
+          setTrackedState,
+          recovery: opts.recovery,
+        });
+        state = reviewed.state;
+        if (reviewed.disposition !== 'ready-for-tasks') {
+          return {
+            summary: buildSummary({ ...summaryBase, state, phaseTimings }),
+            completed: false,
+            cancelled: false,
+            state,
+          };
+        }
+        handoff = reviewed;
         prediction = predictTasksCost({
           tasks: state.tasks,
           summaryBase,
@@ -206,6 +255,32 @@ export async function runTasksAndReview(
     }
     summaryBase = { ...summaryBase, costPrediction: prediction };
   }
+
+  const finalAuthority = workflowAuthority(wctx);
+  if (finalAuthority === undefined) {
+    return {
+      summary: buildSummary({ ...summaryBase, state, phaseTimings }),
+      completed: false,
+      cancelled: false,
+      state,
+    };
+  }
+  const finalRevalidated = revalidatePersistedExecutionPermit({
+    ref: { projectDir: wctx.projectDir, sessionId: wctx.sessionId },
+    state,
+    planning: handoff,
+    authority: finalAuthority,
+  });
+  if (finalRevalidated === null) {
+    return {
+      summary: buildSummary({ ...summaryBase, state, phaseTimings }),
+      completed: false,
+      cancelled: false,
+      state,
+    };
+  }
+  state = finalRevalidated.state;
+  setTrackedState(state);
 
   const phaseStart = Date.now();
   const taskResult = await runTaskLoop({

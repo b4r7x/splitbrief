@@ -203,6 +203,7 @@ const CLAUDE_HELP_WITHOUT_PARTIAL_MESSAGES = [
   '  --output-format <format>   Output format: text, json, stream-json',
   '  --verbose                  Override verbose mode',
   '  -r, --resume [sessionId]   Resume a conversation by session ID',
+  '  --permission-mode <mode>   Permission mode for the session',
   '  -h, --help                 Display help for command',
 ].join('\n');
 
@@ -220,13 +221,14 @@ function syntheticCheck(
 }
 
 describe('readiness diagnostic states', () => {
-  it.each(
-    READINESS_DIAGNOSTIC_STATE_IDS,
-  )('maps %s to a stable state ID and copyable remediation', (stateId) => {
-    const check = syntheticCheck(stateId);
-    expect(deriveReadinessDiagnosticState(check)).toBe(stateId);
-    expect(readinessCheckRemediation(check)).toBe(READINESS_DIAGNOSTIC_REMEDIATION[stateId]);
-  });
+  it.each(READINESS_DIAGNOSTIC_STATE_IDS)(
+    'maps %s to a stable state ID and copyable remediation',
+    (stateId) => {
+      const check = syntheticCheck(stateId);
+      expect(deriveReadinessDiagnosticState(check)).toBe(stateId);
+      expect(readinessCheckRemediation(check)).toBe(READINESS_DIAGNOSTIC_REMEDIATION[stateId]);
+    },
+  );
 
   it.each([
     ['endpoint-invalid', 'provider-endpoint-invalid: host not allowed'],
@@ -395,19 +397,19 @@ describe('doctor command', () => {
   it.each([
     { label: 'an explicit model', model: '\n  model: opus', expected: 'explicit' },
     { label: 'no model key', model: '', expected: 'unset' },
-  ])('publishes $label as a JSON model selection distinct from auto', async ({
-    model,
-    expected,
-  }) => {
-    initGitRepo(tmp);
-    const checks = await doctorJsonChecks(
-      validConfigYaml().replace('  tool: claude-code', `  tool: claude-code${model}`),
-    );
+  ])(
+    'publishes $label as a JSON model selection distinct from auto',
+    async ({ model, expected }) => {
+      initGitRepo(tmp);
+      const checks = await doctorJsonChecks(
+        validConfigYaml().replace('  tool: claude-code', `  tool: claude-code${model}`),
+      );
 
-    const planner = checks.find((check) => check.id === 'runners.planner.configured');
-    expect(planner?.modelSelection).toBe(expected);
-    expect(planner?.summary).not.toContain('(auto)');
-  });
+      const planner = checks.find((check) => check.id === 'runners.planner.configured');
+      expect(planner?.modelSelection).toBe(expected);
+      expect(planner?.summary).not.toContain('(auto)');
+    },
+  );
 
   it('doctor readiness for a config denied headless admission contains a `runners.preparation.` check whose remediation names `--allow-unverified-auth`', async () => {
     initGitRepo(tmp);

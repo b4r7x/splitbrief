@@ -1,9 +1,40 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createAgentSdkBackend } from './backend.js';
 import { RUNNER_CALL_OUTPUT_MAX_EVENTS } from '../../calls/output-limit.js';
+import {
+  TASK_BRIEF_COMPILER_POLICY,
+  TaskCompilationOperationIdSchema,
+  type TaskCompilationOperationEnvelope,
+} from '../../../core/schemas/task-compilation.js';
+import {
+  createTaskDispatchClaimPort,
+  createTaskDispatchLedger,
+} from '../../calls/dispatch-ledger.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: vi.fn() }));
+
+function operationEnvelope(dispatchLimit: number): TaskCompilationOperationEnvelope {
+  return {
+    version: 1,
+    dispatchLimit,
+    callCount: 0,
+    totalPromptBytes: 0,
+    totalInputTokensUpperBound: 0,
+    totalOutputTokensUpperBound: 0,
+    totalNormalizedOutputBytes: 0,
+    totalDeclaredArtifactBytes: 0,
+    callsDigest: 'agent-sdk-session-test',
+  };
+}
+
+function sessionLedger(dispatchLimit: number): ReturnType<typeof createTaskDispatchLedger> {
+  return createTaskDispatchLedger({
+    operation: operationEnvelope(dispatchLimit),
+    operationId: TaskCompilationOperationIdSchema.parse('agent-sdk-session-operation'),
+    claimPort: createTaskDispatchClaimPort(),
+  });
+}
 
 async function* asyncIter<T>(items: T[]): AsyncIterable<T> {
   for (const i of items) yield i;
@@ -380,5 +411,53 @@ describe('createAgentSdkBackend — session resume', () => {
 
     await expect(invoke).rejects.toThrow('cancelled');
     expect(sdkAbortController?.signal.aborted).toBe(true);
+  });
+
+  it('consumes exactly one ledger claim per physical invoke across session-expiry fallback', async () => {
+    const sdk = await import('@anthropic-ai/claude-agent-sdk');
+    const query = vi.mocked(sdk.query);
+    query.mockReset();
+
+    query.mockImplementationOnce(() =>
+      asyncIter([
+        {
+          type: 'result',
+          is_error: true,
+          session_id: 'sess-old',
+          result: 'session not found: sess-old',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        },
+      ]),
+    );
+    query.mockImplementationOnce(() =>
+      asyncIter([
+        { type: 'system', subtype: 'init', session_id: 'sess-new' },
+        {
+          type: 'result',
+          subtype: 'success',
+          session_id: 'sess-new',
+          result: 'fresh reply',
+          usage: { input_tokens: 3, output_tokens: 2 },
+        },
+      ]),
+    );
+
+    const ledger = sessionLedger(TASK_BRIEF_COMPILER_POLICY.maxDispatches);
+    const backend = sessionBackend('sess-old');
+    const result = await backend.invoke({
+      prompt: 'hi',
+      projectDir: '/tmp/proj',
+      model: 'claude-sonnet-4-5',
+      onOutput: vi.fn(),
+      onSessionExpired: vi.fn(),
+      ledger,
+    });
+
+    expect(result.status).toBe('completed');
+    expect(query).toHaveBeenCalledTimes(2);
+    const snapshot = ledger.snapshot();
+    expect(snapshot.dispatchCount).toBe(2);
+    expect(snapshot.claimedAttemptIds).toHaveLength(2);
+    expect(new Set(snapshot.claimedAttemptIds).size).toBe(2);
   });
 });

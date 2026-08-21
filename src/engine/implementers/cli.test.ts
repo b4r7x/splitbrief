@@ -3,8 +3,10 @@ import {
   writeFileSync,
   chmodSync,
   existsSync,
+  mkdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   statSync,
 } from 'node:fs';
 import { join } from 'node:path';
@@ -279,7 +281,7 @@ describe('createCliImplementer (claude-code)', () => {
     expect(result.error).toContain('without changing any files');
   });
 
-  it('completes with a configured outputFormat that replaces the structured-terminal parser', async () => {
+  it('refuses a configured outputFormat that would replace the structured-terminal parser', async () => {
     installRecordingShim('claude', 'src/hello.ts');
     const implementerConfig: CliImplementerConfig = {
       ...cliClaudeImplementer,
@@ -296,7 +298,62 @@ describe('createCliImplementer (claude-code)', () => {
       onOutput: () => {},
     });
 
-    expect(result.success).toBe(true);
+    // REQ-018: user configuration cannot replace the backend's terminal
+    // protocol; the refusal happens before any spawn.
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('outputFormat');
+    expect(existsSync(join(shimDir, 'argv.txt'))).toBe(false);
+  });
+
+  it('fails when the claude subprocess changes an unrelated file instead of the declared one', async () => {
+    installRecordingClaudeShim('src/unrelated.ts');
+    const config = makeClaudeConfig();
+
+    const implementer = createCliImplementer(cliClaudeImplementer);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('changed src/unrelated.ts instead of exactly src/hello.ts');
+    expect(readFileSync(join(projectDir, 'src/unrelated.ts'), 'utf8')).toBe('generated');
+  });
+
+  it('fails when the claude subprocess changes the declared file plus an extra file', async () => {
+    const shimPath = join(shimDir, 'claude');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        'cat > /dev/null',
+        'mkdir -p src',
+        "printf '%s' 'generated' > src/hello.ts",
+        "printf '%s' 'extra' > notes.md",
+        `printf '%s\\n' '{"type":"result","result":"done"}'`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+    const config = makeClaudeConfig();
+
+    const implementer = createCliImplementer(cliClaudeImplementer);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('instead of exactly src/hello.ts');
+    expect(result.error).toContain('notes.md');
+    expect(result.error).toContain('src/hello.ts');
   });
 
   it('reports result usage from the structured terminal as implementer usage', async () => {
@@ -354,6 +411,168 @@ describe('createCliImplementer (claude-code)', () => {
 
     expect(result.success).toBe(true);
     expect(result.usage).toEqual({ inputTokens: 5, outputTokens: 2 });
+  });
+});
+
+describe('createCliImplementer (exact-effect gate fixtures)', () => {
+  function removeGit(): void {
+    rmSync(join(projectDir, '.git'), { recursive: true, force: true });
+  }
+
+  it('passes on the file-hashes path when the child creates exactly the declared file', async () => {
+    removeGit();
+    installRecordingClaudeShim('src/hello.ts');
+    const config = makeClaudeConfig();
+
+    const implementer = createCliImplementer(cliClaudeImplementer);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+
+    expect(result.success).toBe(true);
+    expect(readFileSync(join(projectDir, 'src/hello.ts'), 'utf8')).toBe('generated');
+  });
+
+  it('fails on the file-hashes path when the child modifies the declared file and adds an extra new file', async () => {
+    removeGit();
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/hello.ts'), 'original', 'utf8');
+    const shimPath = join(shimDir, 'claude');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        'cat > /dev/null',
+        'mkdir -p src',
+        "printf '%s' 'generated' > src/hello.ts",
+        "printf '%s' 'extra' > notes.md",
+        `printf '%s\\n' '{"type":"result","result":"done"}'`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+    const config = makeClaudeConfig();
+
+    const implementer = createCliImplementer(cliClaudeImplementer);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('instead of exactly src/hello.ts');
+    expect(result.error).toContain('src/hello.ts');
+    expect(result.error).toContain('notes.md');
+  });
+
+  it('fails with no-staged-change on the file-hashes path when the child changes nothing', async () => {
+    removeGit();
+    const shimPath = join(shimDir, 'claude');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        'cat > /dev/null',
+        `printf '%s\\n' '{"type":"result","result":"nothing to do"}'`,
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+    const config = makeClaudeConfig();
+
+    const implementer = createCliImplementer(cliClaudeImplementer);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.outcome).toBe('no-staged-change');
+    expect(result.error).toContain('without changing any files');
+  });
+
+  it('passes on the git-status path when the child writes to its sandbox home beside the declared file', async () => {
+    const target = join(projectDir, 'src/hello.ts');
+    const sandboxHomeFile = join(
+      projectDir,
+      '.splitbrief',
+      'sandbox',
+      'implementer',
+      'claude-code',
+      'home',
+      '.claude.json',
+    );
+    const shimPath = join(shimDir, 'claude');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        'cat > /dev/null',
+        `mkdir -p "$(dirname '${target}')"`,
+        `printf '%s' 'generated' > '${target}'`,
+        `mkdir -p "$(dirname '${sandboxHomeFile}')"`,
+        `printf '%s' '{}' > '${sandboxHomeFile}'`,
+        `printf '%s\\n' '{"type":"result","result":"done"}'`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+    const config = makeClaudeConfig();
+
+    const implementer = createCliImplementer(cliClaudeImplementer);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+
+    expect(result.success).toBe(true);
+    expect(readFileSync(target, 'utf8')).toBe('generated');
+  });
+
+  it('still fails on the git-status path for a non-internal extra write beside the declared file', async () => {
+    const shimPath = join(shimDir, 'claude');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        'cat > /dev/null',
+        'mkdir -p src',
+        "printf '%s' 'generated' > src/hello.ts",
+        "printf '%s' 'extra' > notes.md",
+        `printf '%s\\n' '{"type":"result","result":"done"}'`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+    const config = makeClaudeConfig();
+
+    const implementer = createCliImplementer(cliClaudeImplementer);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('instead of exactly src/hello.ts');
   });
 });
 
@@ -499,30 +718,28 @@ describe('createCliImplementer (opencode arg vector)', () => {
     expect(argv.at(-1)).toContain('src/hello.ts');
   });
 
-  it.each([
-    'auto',
-    'AUTO',
-    '  auto  ',
-    undefined,
-  ])('omits --model entirely for automatic selection (%j) so the tool keeps its own default', async (model) => {
-    const { argvFile } = installRecordingShim('opencode', 'src/hello.ts');
-    const automatic: CliImplementerConfig = {
-      ...opencodeImplementer,
-      ...(model === undefined ? {} : { model }),
-    };
-    const config = makeConfig({ implementer: automatic });
+  it.each(['auto', 'AUTO', '  auto  ', undefined])(
+    'omits --model entirely for automatic selection (%j) so the tool keeps its own default',
+    async (model) => {
+      const { argvFile } = installRecordingShim('opencode', 'src/hello.ts');
+      const automatic: CliImplementerConfig = {
+        ...opencodeImplementer,
+        ...(model === undefined ? {} : { model }),
+      };
+      const config = makeConfig({ implementer: automatic });
 
-    const implementer = createCliImplementer(automatic);
-    await implementer.implement({
-      task: makeTask(),
-      projectDir,
-      config,
-      context: { ...defaultContext, dir: projectDir },
-      onOutput: () => {},
-    });
+      const implementer = createCliImplementer(automatic);
+      await implementer.implement({
+        task: makeTask(),
+        projectDir,
+        config,
+        context: { ...defaultContext, dir: projectDir },
+        onOutput: () => {},
+      });
 
-    expect(readArgv(argvFile)).not.toContain('--model');
-  });
+      expect(readArgv(argvFile)).not.toContain('--model');
+    },
+  );
 
   it('retry() drives the same `run` arg vector and reports success on a file change', async () => {
     const { argvFile } = installRecordingShim('opencode', 'src/hello.ts');

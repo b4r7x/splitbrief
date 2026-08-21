@@ -1,24 +1,66 @@
-import type { StateAction } from './types.js';
+import type { BriefAdmissionStateAction, StateAction } from './types.js';
 import type { WorkflowState } from '../schemas/workflow.js';
 import type { TaskId } from '../schemas/task.js';
 import type { Phase, TaskStatus } from '../schemas/enums.js';
 import type { TokenUsage } from '../schemas/tokens.js';
+import type {
+  BriefReadinessDecision,
+  BriefRecoveryV1,
+  NormalBriefRecoveryV1,
+  RejectedStorageBriefRecoveryV1,
+} from '../schemas/brief-recovery.js';
+import { sameExecutionPermit, sameGeneration } from '../schemas/brief-owner.js';
 import { isQueuedMessageClearable, isQueuedMessagePendingDelivery } from '../queue-state.js';
 import { taskStatusForCompletionMethod } from '../task-completion.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { includes } from '../../utils/type-guards.js';
 import { error } from '../../utils/error.js';
 
-export const CURRENT_STATE_VERSION = 3;
+export const CURRENT_STATE_VERSION = 4;
+
+type MachineAction = StateAction | BriefAdmissionStateAction;
+
+type BriefContractBlockReason =
+  | 'missing-recovery'
+  | 'stale-report'
+  | 'quality-errors'
+  | 'retry-in-flight'
+  | 'unresolved-retry'
+  | 'not-ready';
 
 export const transitionError = {
-  invalidActionForPhase: (phase: Phase, action: StateAction['type']) =>
+  invalidActionForPhase: (phase: Phase, action: MachineAction['type']) =>
     error(
       'state-invalid-action-for-phase',
       `Cannot apply ${action} while workflow is in ${phase}.`,
       { phase, action },
     ),
+  briefContractBlocked: (reason: BriefContractBlockReason, epochId?: string) =>
+    error(
+      'brief_contract_blocked',
+      'Task Briefs cannot enter implementation until the current report has zero errors.',
+      { reason, ...(epochId === undefined ? {} : { epochId }) },
+    ),
+  briefReadinessBlocked: (epochId: string) =>
+    error(
+      'brief_readiness_blocked',
+      'Task Brief readiness must be re-evaluated or explicitly overridden before implementation.',
+      { epochId },
+    ),
+  executionPermitInvalid: () =>
+    error(
+      'execution_permit_invalid',
+      'Implementation requires the exact current owner-issued generation and execution permit.',
+    ),
 } as const;
+
+function isRejectedStorageBriefRecovery(
+  recovery: BriefRecoveryV1,
+): recovery is RejectedStorageBriefRecoveryV1 {
+  return (
+    recovery.status === 'rejected' && 'storageEvidence' in recovery && recovery.activeBrief === null
+  );
+}
 
 const zeroTokenUsage: TokenUsage = {
   plannerInput: 0,
@@ -46,8 +88,10 @@ const anytimeActions = [
   'SET_PENDING_RECOVERY',
   'PAUSE_PENDING_RECOVERY',
   'MARK_RECOVERY_APPLYING',
+  'ACKNOWLEDGE_BUDGET_PAUSE',
+  'ABORT_PENDING_RECOVERY',
   'RESOLVE_PENDING_RECOVERY',
-] as const satisfies readonly StateAction['type'][];
+] as const satisfies readonly MachineAction['type'][];
 
 const VALIDATION_OR_ESCALATION_SHARED_ACTIONS = [
   'VALIDATION_PASS',
@@ -55,19 +99,24 @@ const VALIDATION_OR_ESCALATION_SHARED_ACTIONS = [
   'FULL_SUCCESS',
   'SKIP_TASK',
   'RESET_TASK',
-] as const satisfies readonly StateAction['type'][];
+] as const satisfies readonly MachineAction['type'][];
 
 const phaseActions = {
-  idle: ['START', 'START_QUICK', 'START_INSTANT', 'RESEARCH_DONE', 'SPEC_CLARIFY_START'],
-  researching: ['RESEARCH_DONE', 'SPEC_CLARIFY_START', 'START_QUICK', 'START_INSTANT'],
-  specifying: ['SPEC_DONE', 'START_QUICK', 'START_INSTANT'],
+  idle: ['START', 'RESEARCH_DONE', 'SPEC_CLARIFY_START'],
+  researching: ['RESEARCH_DONE', 'SPEC_CLARIFY_START', 'BRIEF_ADMISSION_OPENED'],
+  specifying: ['SPEC_DONE', 'BRIEF_ADMISSION_OPENED'],
   'reviewing-spec': ['APPROVE_SPEC', 'REJECT_SPEC', 'SPEC_CLARIFY_START'],
   clarifying: ['SPEC_CLARIFY_DONE'],
   'constitution-check': ['CONSTITUTION_CHECK_PASS', 'CONSTITUTION_CHECK_FAIL'],
-  planning: ['RESEARCH_DONE', 'PLAN_DONE', 'SPEC_CLARIFY_START', 'START_QUICK', 'START_INSTANT'],
-  'reviewing-plan': ['REJECT_PLAN', 'PLAN_DONE', 'BRIEFS_READY', 'ANALYZE_START'],
-  'reviewing-briefs': ['BRIEFS_READY', 'APPROVE_BRIEFS', 'REJECT_BRIEFS'],
-  analyzing: ['ANALYZE_DONE'],
+  planning: ['RESEARCH_DONE', 'PLAN_DONE', 'SPEC_CLARIFY_START', 'BRIEF_ADMISSION_OPENED'],
+  'reviewing-plan': ['REJECT_PLAN', 'PLAN_DONE', 'BRIEF_ADMISSION_OPENED', 'ANALYZE_START'],
+  'reviewing-briefs': [
+    'BRIEF_ADMISSION_OPENED',
+    'BEGIN_IMPLEMENTATION',
+    'RECORD_BRIEF_READINESS',
+    'REJECT_BRIEFS',
+  ],
+  analyzing: [],
   implementing: [
     'START_TASK',
     'UPDATE_TASK_CODE',
@@ -77,7 +126,7 @@ const phaseActions = {
     'HINT_SUCCESS',
     'SKIP_TASK',
     'RESET_TASK',
-    'BRIEFS_READY',
+    'BRIEF_ADMISSION_OPENED',
     'ANALYZE_START',
     'ALL_DONE',
   ],
@@ -90,15 +139,208 @@ const phaseActions = {
   ],
   'final-review': ['REVIEW_DONE'],
   complete: [],
-} as const satisfies Record<Phase, readonly StateAction['type'][]>;
+} as const satisfies Record<Phase, readonly MachineAction['type'][]>;
 
-function canApplyAction(phase: Phase, action: StateAction['type']): boolean {
+function canApplyAction(phase: Phase, action: MachineAction['type']): boolean {
   return includes(anytimeActions, action) || includes(phaseActions[phase], action);
+}
+
+function hasCurrentZeroErrorReport(recovery: BriefRecoveryV1 | null | undefined): boolean {
+  if (recovery === undefined || recovery === null) return false;
+  if (!('matchingReport' in recovery) || !('activeBrief' in recovery)) return false;
+  if (recovery.status !== 'ready') return false;
+  if (recovery.activeBrief === null || recovery.matchingReport === null) return false;
+  if (recovery.matchingReport.briefHash !== recovery.activeBrief.hash) return false;
+  if (recovery.matchingReport.ruleVersion !== recovery.qualityPolicyVersion) return false;
+  if (
+    recovery.readinessDecision !== undefined &&
+    !readinessDecisionMatchesRecovery(recovery.readinessDecision, recovery)
+  ) {
+    return false;
+  }
+  if (recovery.readinessDecision?.kind === 'blocked') return false;
+  if (recovery.matchingReport.issues.some((issue) => issue.severity === 'error')) return false;
+  if (Object.values(recovery.attempts).some((attempt) => attempt.epochId !== recovery.epochId)) {
+    return false;
+  }
+  if (
+    Object.values(recovery.attempts).some(
+      (attempt) =>
+        attempt.status === 'accepted' ||
+        attempt.status === 'started' ||
+        attempt.status === 'unresolved',
+    )
+  ) {
+    return false;
+  }
+  return recovery.activeOperationId === null;
+}
+
+function readinessDecisionMatchesRecovery(
+  decision: BriefReadinessDecision,
+  recovery: NormalBriefRecoveryV1,
+): boolean {
+  return (
+    recovery.matchingReport !== null &&
+    decision.briefHash === recovery.activeBrief.hash &&
+    decision.reportHash === recovery.matchingReport.report.hash &&
+    decision.qualityPolicyVersion === recovery.qualityPolicyVersion
+  );
+}
+
+function recordBriefReadiness(
+  state: WorkflowState,
+  decision: BriefReadinessDecision,
+): WorkflowState {
+  const recovery = state.briefRecovery;
+  if (
+    recovery === undefined ||
+    recovery === null ||
+    recovery.status === 'storage-blocked' ||
+    recovery.status === 'rejected' ||
+    !readinessDecisionMatchesRecovery(decision, recovery)
+  ) {
+    throw transitionError.briefReadinessBlocked(recovery?.epochId ?? 'missing');
+  }
+  if (
+    decision.kind !== 'blocked' &&
+    (recovery.status !== 'readiness-blocked' ||
+      recovery.readinessDecision?.kind !== 'blocked' ||
+      (decision.kind === 'override' &&
+        recovery.readinessDecision.fingerprint !== decision.fingerprint))
+  ) {
+    throw transitionError.briefReadinessBlocked(recovery.epochId);
+  }
+  return {
+    ...state,
+    briefRecovery: {
+      ...recovery,
+      recoveryRevision: recovery.recoveryRevision + 1,
+      status: decision.kind === 'blocked' ? 'readiness-blocked' : 'ready',
+      readinessDecision: decision,
+    },
+  };
+}
+
+function assertBriefAdmissionMayExit(state: WorkflowState): void {
+  const recovery = state.briefRecovery;
+  if (recovery === undefined || recovery === null) {
+    throw transitionError.briefContractBlocked('missing-recovery');
+  }
+  if (recovery.status === 'retrying' || recovery.status === 'auto-repairing') {
+    throw transitionError.briefContractBlocked('retry-in-flight', recovery.epochId);
+  }
+  if (recovery.status === 'unresolved') {
+    throw transitionError.briefContractBlocked('unresolved-retry', recovery.epochId);
+  }
+  if (recovery.status === 'readiness-blocked') {
+    throw transitionError.briefReadinessBlocked(recovery.epochId);
+  }
+  if (!('matchingReport' in recovery) || !('activeBrief' in recovery)) {
+    throw transitionError.briefContractBlocked('not-ready', recovery.epochId);
+  }
+  if (recovery.matchingReport?.issues.some((issue) => issue.severity === 'error')) {
+    throw transitionError.briefContractBlocked('quality-errors', recovery.epochId);
+  }
+  if (
+    recovery.matchingReport !== null &&
+    recovery.activeBrief !== null &&
+    recovery.matchingReport.briefHash !== recovery.activeBrief.hash
+  ) {
+    throw transitionError.briefContractBlocked('stale-report', recovery.epochId);
+  }
+  if (
+    recovery.matchingReport !== null &&
+    recovery.matchingReport.ruleVersion !== recovery.qualityPolicyVersion
+  ) {
+    throw transitionError.briefContractBlocked('stale-report', recovery.epochId);
+  }
+  if (Object.values(recovery.attempts).some((attempt) => attempt.epochId !== recovery.epochId)) {
+    throw transitionError.briefContractBlocked('stale-report', recovery.epochId);
+  }
+  if (
+    Object.values(recovery.attempts).some(
+      (attempt) =>
+        attempt.status === 'accepted' ||
+        attempt.status === 'started' ||
+        attempt.status === 'unresolved',
+    )
+  ) {
+    throw transitionError.briefContractBlocked('retry-in-flight', recovery.epochId);
+  }
+  if (!hasCurrentZeroErrorReport(recovery)) {
+    throw transitionError.briefContractBlocked('not-ready', recovery.epochId);
+  }
+}
+
+function assertCurrentExecutionPermit(
+  state: WorkflowState,
+  action: Extract<StateAction, { type: 'BEGIN_IMPLEMENTATION' }>,
+): void {
+  assertBriefAdmissionMayExit(state);
+  const recovery = state.briefRecovery;
+  const persistedGeneration = state.generation;
+  const persistedPermit = state.permit;
+  if (
+    recovery === undefined ||
+    recovery === null ||
+    recovery.status !== 'ready' ||
+    state.authorityRevision === undefined ||
+    persistedGeneration === undefined ||
+    persistedGeneration === null ||
+    persistedPermit === undefined ||
+    persistedPermit === null
+  ) {
+    throw transitionError.executionPermitInvalid();
+  }
+  if (
+    action.permit.epochId !== recovery.epochId ||
+    action.permit.authorityRevision !== state.authorityRevision ||
+    !sameGeneration(action.generation, persistedGeneration) ||
+    !sameExecutionPermit(action.permit, persistedPermit) ||
+    action.permit.generationId !== action.generation.generationId ||
+    action.permit.manifestDigest !== action.generation.manifestDigest ||
+    action.permit.tasksDigest !== action.generation.tasksDigest ||
+    action.permit.qualityDigest !== action.generation.qualityDigest
+  ) {
+    throw transitionError.executionPermitInvalid();
+  }
+}
+
+function rejectBriefAdmission(state: WorkflowState): WorkflowState {
+  const recovery = state.briefRecovery;
+  if (recovery === undefined || recovery === null) return resetToIdle(state);
+  if (recovery.status === 'storage-blocked') {
+    const rejectedStorageRecovery: RejectedStorageBriefRecoveryV1 = {
+      ...recovery,
+      status: 'rejected',
+    };
+    return {
+      ...resetToIdle(state),
+      briefRecovery: rejectedStorageRecovery,
+    };
+  }
+  if (isRejectedStorageBriefRecovery(recovery)) {
+    return {
+      ...resetToIdle(state),
+      briefRecovery: recovery,
+    };
+  }
+  return {
+    ...resetToIdle(state),
+    briefRecovery: {
+      ...recovery,
+      status: 'rejected',
+      activeOperationId: null,
+    },
+  };
 }
 
 export function createInitialState(feature: string, now: Date = new Date()): WorkflowState {
   return {
     stateVersion: CURRENT_STATE_VERSION,
+    stateRevision: 0,
+    stateFence: { token: 0, ownerId: 'initial' },
     phase: 'idle',
     feature,
     currentTaskIndex: 0,
@@ -109,6 +351,7 @@ export function createInitialState(feature: string, now: Date = new Date()): Wor
     tokenUsage: { ...zeroTokenUsage },
     awaitingContinue: false,
     messageQueue: [],
+    briefRecovery: null,
   };
 }
 
@@ -173,6 +416,10 @@ function rewindReset(
     changedFilesBaseline: undefined,
     discoveredValidation: undefined,
     pendingRecovery: undefined,
+    authorityRevision: undefined,
+    generation: null,
+    permit: null,
+    briefRecovery: null,
     rewindPending: { target, ...(comment ? { comment } : {}) },
   };
 }
@@ -181,6 +428,9 @@ function resetToIdle(
   state: WorkflowState,
   opts: { clearAwaitingContinue?: boolean } = {},
 ): WorkflowState {
+  const shouldClearBriefRecovery =
+    state.briefRecovery === undefined ||
+    (state.briefRecovery !== null && state.briefRecovery.status !== 'rejected');
   return {
     ...state,
     phase: 'idle',
@@ -188,12 +438,16 @@ function resetToIdle(
     tasks: [],
     currentTaskIndex: 0,
     attempt: 0,
+    authorityRevision: undefined,
+    generation: null,
+    permit: null,
+    ...(shouldClearBriefRecovery ? { briefRecovery: null } : {}),
   };
 }
 
 export function transition(
   state: WorkflowState,
-  action: StateAction,
+  action: MachineAction,
   opts: { maxRetries?: number | undefined; now?: Date | undefined } = {},
 ): WorkflowState {
   const maxRetries = opts.maxRetries ?? 3;
@@ -204,26 +458,13 @@ export function transition(
 
   switch (action.type) {
     case 'START':
-      return { ...state, phase: 'researching' };
-
-    case 'START_QUICK':
       return {
         ...state,
-        phase: 'implementing',
-        tasks: action.tasks,
-        currentTaskIndex: 0,
-        attempt: 0,
-        rewindPending: undefined,
-      };
-
-    case 'START_INSTANT':
-      return {
-        ...state,
-        phase: 'implementing',
-        tasks: action.tasks,
-        currentTaskIndex: 0,
-        attempt: 0,
-        rewindPending: undefined,
+        phase: 'researching',
+        authorityRevision: undefined,
+        generation: null,
+        permit: null,
+        briefRecovery: null,
       };
 
     case 'RESEARCH_DONE':
@@ -244,20 +485,45 @@ export function transition(
     case 'REJECT_PLAN':
       return resetToIdle(state);
 
-    case 'BRIEFS_READY':
+    case 'BEGIN_IMPLEMENTATION':
+      assertCurrentExecutionPermit(state, action);
+      return {
+        ...state,
+        phase: 'implementing',
+        currentTaskIndex: 0,
+        attempt: 0,
+        generation: action.generation,
+        permit: action.permit,
+      };
+
+    case 'RECORD_BRIEF_READINESS':
+      return recordBriefReadiness(state, action.decision);
+
+    case 'REJECT_BRIEFS':
+      return rejectBriefAdmission(state);
+
+    case 'BRIEF_ADMISSION_OPENED':
+      if (action.briefRecovery.status === 'rejected') {
+        throw transitionError.briefContractBlocked('not-ready', action.briefRecovery.epochId);
+      }
+      if (
+        state.briefRecovery !== undefined &&
+        state.briefRecovery !== null &&
+        (state.briefRecovery.status === 'rejected' ||
+          state.briefRecovery.epochId !== action.briefRecovery.epochId)
+      ) {
+        throw transitionError.briefContractBlocked('stale-report', state.briefRecovery.epochId);
+      }
       return {
         ...state,
         phase: 'reviewing-briefs',
-        tasks: action.tasks,
         currentTaskIndex: 0,
         attempt: 0,
+        authorityRevision: undefined,
+        generation: null,
+        permit: null,
+        briefRecovery: action.briefRecovery,
       };
-
-    case 'APPROVE_BRIEFS':
-      return { ...state, phase: 'implementing', currentTaskIndex: 0, attempt: 0 };
-
-    case 'REJECT_BRIEFS':
-      return resetToIdle(state);
 
     case 'SPEC_CLARIFY_START':
       return { ...state, phase: 'clarifying' };
@@ -273,9 +539,6 @@ export function transition(
 
     case 'ANALYZE_START':
       return { ...state, phase: 'analyzing' };
-
-    case 'ANALYZE_DONE':
-      return { ...state, phase: 'implementing' };
 
     case 'START_TASK':
       return setTaskStatus(state, action.taskId, 'in_progress');
@@ -339,7 +602,14 @@ export function transition(
       return { ...state, phase: 'final-review' };
 
     case 'REVIEW_DONE':
-      return { ...state, phase: 'complete' };
+      return {
+        ...state,
+        phase: 'complete',
+        authorityRevision: undefined,
+        generation: null,
+        permit: null,
+        briefRecovery: null,
+      };
 
     case 'CANCEL':
       return resetToIdle(state, { clearAwaitingContinue: true });
@@ -381,6 +651,7 @@ export function transition(
     case 'MARK_INJECTING_NATIVE':
       return {
         ...state,
+        ...(action.attempt === undefined ? {} : { attempt: action.attempt }),
         messageQueue: state.messageQueue.map((m) =>
           m.id === action.id ? { ...m, nativeDeliveryState: 'injecting' } : m,
         ),
@@ -437,6 +708,17 @@ export function transition(
 
     case 'MARK_RECOVERY_APPLYING':
       return markRecoveryApplying(state, action);
+
+    case 'ACKNOWLEDGE_BUDGET_PAUSE':
+      return { ...state, budgetPauseAcknowledgedAtCost: action.cost };
+
+    case 'ABORT_PENDING_RECOVERY':
+      return {
+        ...resetToIdle(state, { clearAwaitingContinue: true }),
+        tasks: state.tasks,
+        currentTaskIndex: state.currentTaskIndex,
+        pendingRecovery: undefined,
+      };
 
     case 'RESOLVE_PENDING_RECOVERY':
       return { ...state, pendingRecovery: undefined };

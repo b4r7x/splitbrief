@@ -4,6 +4,8 @@ import { runnerCallWarningFingerprint } from '../../calls/warning-fingerprint.js
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { protectEngineEventForConsumer } from './protect.js';
 import type { EngineEvent } from '../types.js';
+import { parseEngineEvent } from '../schema.js';
+import { projectEngineEventForTranscriptPolicy } from './transcript.js';
 
 describe('protectEngineEventForConsumer', () => {
   it('drops transcript-only runner payload events when transcript persistence is disabled', () => {
@@ -857,6 +859,268 @@ describe('protectEngineEventForConsumer', () => {
   });
 });
 
+describe('brief recovery transcript protection', () => {
+  it('keeps bounded identities and categories while removing prompt/provider/issue detail', () => {
+    const secret = 'sk-ant-recovery-secret-81942';
+    const promptSentinel = 'raw-recovery-prompt-81942';
+    const issueSentinel = 'long-recovery-issue-81942';
+    const hash = 'a'.repeat(64);
+    const otherHash = 'b'.repeat(64);
+    const base = {
+      ts: 2_000,
+      phase: 'reviewing-briefs' as const,
+      version: 1 as const,
+      sessionId: 'session-recovery',
+      epochId: 'epoch-recovery',
+      recoveryRevision: 1,
+    };
+    const refs = {
+      briefRevision: 1,
+      briefHash: hash,
+      reportRevision: 1,
+      reportHash: hash,
+    };
+    const fixtures: unknown[] = [
+      {
+        ...base,
+        type: 'brief_recovery_quality_reported',
+        eventId: 'quality-1',
+        ...refs,
+        status: 'blocked',
+        outcome: 'failed',
+        taskCount: 0,
+        issueCount: 1,
+        errorCount: 1,
+        warningCount: 0,
+        issueCodes: ['empty_task_list'],
+        score: 0.8,
+        topIssueCode: 'empty_task_list',
+        automaticRepairPolicy: 'existing-one-shot',
+        automaticRepairConsumed: true,
+      },
+      {
+        ...base,
+        type: 'brief_recovery_auto_repair_exhausted',
+        eventId: 'exhausted-1',
+        ...refs,
+        operationId: 'automatic-1',
+        intentHash: hash,
+        attemptKind: 'automatic',
+        status: 'blocked',
+        refusalCategory: 'quality',
+        automaticRepairConsumed: true,
+        taskCount: 0,
+        issueCount: 1,
+        errorCount: 1,
+        warningCount: 0,
+        issueCodes: ['empty_task_list'],
+      },
+      {
+        ...base,
+        type: 'brief_recovery_attempt_accepted',
+        eventId: 'accepted-1',
+        ...refs,
+        operationId: 'retry-1',
+        intentHash: hash,
+        attemptKind: 'manual-retry',
+        status: 'accepted',
+        dispatchPossibility: 'none',
+        frozenInputCount: 0,
+        queuedInputCount: 0,
+        automaticAllowanceConsumed: true,
+      },
+      {
+        ...base,
+        type: 'brief_recovery_attempt_started',
+        eventId: 'started-1',
+        ...refs,
+        operationId: 'retry-1',
+        intentHash: hash,
+        attemptKind: 'manual-retry',
+        status: 'started',
+        requestId: 'request-1',
+        dispatchPossibility: 'possible',
+        frozenInputCount: 0,
+      },
+      {
+        ...base,
+        type: 'brief_recovery_attempt_settled',
+        eventId: 'settled-1',
+        ...refs,
+        operationId: 'retry-1',
+        intentHash: hash,
+        attemptKind: 'manual-retry',
+        status: 'settled',
+        resultId: 'result-1',
+        outcome: 'provider-failed',
+        dispatchPossibility: 'possible',
+        remoteObservation: 'confirmed-final',
+        providerCode: 'provider_failed',
+        refusalCategory: 'provider',
+        taskCount: 0,
+        issueCount: 1,
+        errorCount: 1,
+        warningCount: 0,
+      },
+      {
+        ...base,
+        type: 'brief_recovery_attempt_unresolved',
+        eventId: 'unresolved-1',
+        ...refs,
+        operationId: 'retry-2',
+        intentHash: otherHash,
+        attemptKind: 'manual-retry',
+        status: 'unresolved',
+        requestId: 'request-2',
+        dispatchPossibility: 'possible',
+        remoteObservation: 'unknown',
+        refusalCategory: 'unresolved',
+      },
+      {
+        ...base,
+        type: 'brief_recovery_provider_failed',
+        eventId: 'provider-1',
+        ...refs,
+        operationId: 'retry-3',
+        intentHash: hash,
+        attemptKind: 'manual-retry',
+        status: 'blocked',
+        outcome: 'provider-failed',
+        providerCode: 'auth_failed',
+        refusalCategory: 'authentication',
+        dispatchPossibility: 'none',
+        remoteObservation: 'not-dispatched',
+      },
+      {
+        ...base,
+        type: 'brief_recovery_input_queued',
+        eventId: 'queued-1',
+        ...refs,
+        inputId: 'input-1',
+        inputSequence: 1,
+        inputKind: 'feedback',
+        source: 'interactive',
+        textHash: otherHash,
+        operationId: null,
+        queuedInputCount: 1,
+      },
+      {
+        ...base,
+        type: 'brief_recovery_input_applied',
+        eventId: 'applied-1',
+        ...refs,
+        inputId: 'input-1',
+        inputSequence: 1,
+        inputKind: 'edit',
+        source: 'typed',
+        textHash: otherHash,
+        operationId: 'retry-1',
+        disposition: 'applied',
+        appliedRevision: 2,
+        queuedInputCount: 0,
+      },
+      {
+        ...base,
+        type: 'brief_recovery_stale_ignored',
+        eventId: 'stale-1',
+        operationId: 'retry-1',
+        intentHash: hash,
+        resultId: 'result-1',
+        baseBriefRevision: 1,
+        baseBriefHash: hash,
+        currentBriefRevision: 2,
+        currentBriefHash: otherHash,
+        baseReportRevision: 1,
+        baseReportHash: hash,
+        currentReportRevision: 2,
+        currentReportHash: otherHash,
+        refusalCategory: 'stale',
+      },
+      {
+        ...base,
+        type: 'brief_recovery_rejected',
+        eventId: 'rejected-1',
+        ...refs,
+        intentId: 'reject-1',
+        operationId: null,
+        status: 'rejected',
+        disposition: 'user-rejected',
+      },
+      {
+        ...base,
+        type: 'brief_recovery_refused',
+        eventId: 'refused-1',
+        ...refs,
+        intentId: 'approve-1',
+        operationId: null,
+        action: 'approve',
+        refusalCategory: 'quality',
+        refusalCode: 'brief_contract_blocked',
+        status: 'blocked',
+      },
+    ];
+
+    const events = fixtures.map((fixture) => {
+      const event = parseEngineEvent(fixture);
+      expect(event).not.toBeNull();
+      if (event === null) throw new Error('Expected recovery fixture to parse');
+      return event;
+    });
+
+    for (const event of events) {
+      const protectedEvent = protectEngineEventForConsumer(event, {
+        context: 'session-log',
+        persistTranscript: true,
+      });
+      expect(protectedEvent).not.toBeNull();
+      expect(JSON.stringify(protectedEvent)).not.toContain(secret);
+      expect(JSON.stringify(protectedEvent)).not.toContain(promptSentinel);
+      expect(JSON.stringify(protectedEvent)).not.toContain(issueSentinel);
+      expect(protectedEvent).toMatchObject({
+        type: event.type,
+        eventId: expect.any(String),
+        sessionId: 'session-recovery',
+        epochId: 'epoch-recovery',
+      });
+    }
+
+    const hostileEvent = {
+      ...events[0],
+      inputText: promptSentinel,
+      providerDetail: `${secret} ${issueSentinel} ${'x'.repeat(40_000)}`,
+      issueEvidence: issueSentinel,
+    } as EngineEvent;
+    const protectedHostile = protectEngineEventForConsumer(hostileEvent, {
+      context: 'session-log',
+      persistTranscript: true,
+    });
+    expect(JSON.stringify(protectedHostile)).not.toContain(promptSentinel);
+    expect(JSON.stringify(protectedHostile)).not.toContain(issueSentinel);
+  });
+
+  it('fails closed for an unknown recovery variant even when transcript persistence is enabled', () => {
+    const unknownEvent = {
+      type: 'brief_recovery_future_variant',
+      ts: 1,
+      phase: 'reviewing-briefs',
+      version: 1,
+      eventId: 'unknown-1',
+      sessionId: 'session-recovery',
+      epochId: 'epoch-recovery',
+      recoveryRevision: 1,
+      secret: 'raw-unknown-recovery-secret',
+    } as unknown as EngineEvent;
+
+    expect(projectEngineEventForTranscriptPolicy(unknownEvent, true)).toBeNull();
+    expect(
+      protectEngineEventForConsumer(unknownEvent, {
+        context: 'session-log',
+        persistTranscript: true,
+      }),
+    ).toBeNull();
+  });
+});
+
 function droppedTranscriptEvent(type: EngineEvent['type']): EngineEvent {
   switch (type) {
     case 'planner_text':
@@ -942,10 +1206,13 @@ describe('transcript-off dropped event types', () => {
     'runner_call_text_delta',
     'runner_call_tool_use',
     'runner_call_artifact',
-  ] as const satisfies readonly EngineEvent['type'][])(`drops %s when transcript persistence is disabled`, (type) => {
-    const event = droppedTranscriptEvent(type);
-    expect(
-      protectEngineEventForConsumer(event, { context: 'session-log', persistTranscript: false }),
-    ).toBeNull();
-  });
+  ] as const satisfies readonly EngineEvent['type'][])(
+    `drops %s when transcript persistence is disabled`,
+    (type) => {
+      const event = droppedTranscriptEvent(type);
+      expect(
+        protectEngineEventForConsumer(event, { context: 'session-log', persistTranscript: false }),
+      ).toBeNull();
+    },
+  );
 });

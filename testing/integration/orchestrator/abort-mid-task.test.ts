@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { runTaskLoop } from '../../../src/engine/orchestrator/task/loop.js';
 import { createValidator } from '../../../src/engine/orchestrator/validation/run.js';
@@ -14,6 +13,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import {
   makeWorkflowMetadata,
@@ -38,20 +38,7 @@ describe('abort during implementer phase terminates the task loop cleanly', {
     const sessionId = 'sess-abort';
     ensureSessionDir(projectDir, sessionId);
 
-    let state = createInitialState('feat');
-    state = transition(state, { type: 'START' });
-    state = transition(state, { type: 'RESEARCH_DONE' });
-    state = transition(state, { type: 'SPEC_DONE' });
-    state = transition(state, { type: 'APPROVE_SPEC' });
-    state = transition(state, {
-      type: 'PLAN_DONE',
-      tasks: [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })],
-    });
-    state = transition(state, {
-      type: 'BRIEFS_READY',
-      tasks: [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })],
-    });
-    state = transition(state, { type: 'APPROVE_BRIEFS' });
+    const state = makeImplState([makeTask({ id: 'T001' }), makeTask({ id: 'T002' })]);
 
     const controller = new AbortController();
     const { callbacks } = makeCallbacks();

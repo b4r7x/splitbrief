@@ -9,6 +9,10 @@ type ReplaySessionOptions = {
   socket: Socket;
   sessionJsonlPath: string;
   writeMessage: (socket: Socket, msg: ServerMessage) => boolean;
+  onEvent?: ((event: EngineEvent) => void) | undefined;
+  maxEvents?: number | undefined;
+  maxBytes?: number | undefined;
+  maxLineBytes?: number | undefined;
 };
 
 async function writeAndAwaitDrain(
@@ -48,12 +52,13 @@ function replayUnknownEventsWarning(diagnostics: ReplayDiagnostics): EngineEvent
   };
 }
 
-export async function replaySession(opts: ReplaySessionOptions): Promise<EngineEvent[]> {
-  const { socket, sessionJsonlPath, writeMessage } = opts;
+export async function replaySession(opts: ReplaySessionOptions): Promise<void> {
+  const { socket, sessionJsonlPath, writeMessage, onEvent, maxEvents, maxBytes, maxLineBytes } =
+    opts;
+  const replayOptions = { sessionJsonlPath, maxEvents, maxBytes, maxLineBytes };
   const replayStart = Date.now();
-  const { totalEvents, diagnostics } = await summarizeReplayEvents({ sessionJsonlPath });
+  const { totalEvents, diagnostics } = await summarizeReplayEvents(replayOptions);
 
-  const replayed: EngineEvent[] = [];
   if (
     !(await writeAndAwaitDrain(
       socket,
@@ -70,19 +75,19 @@ export async function replaySession(opts: ReplaySessionOptions): Promise<EngineE
       writeMessage,
     ))
   )
-    return replayed;
+    return;
 
   const warning = replayUnknownEventsWarning(diagnostics);
   if (
     warning !== null &&
     !(await writeAndAwaitDrain(socket, { kind: 'event', payload: warning }, writeMessage))
   ) {
-    return replayed;
+    return;
   }
 
-  for await (const event of streamReplayEvents({ sessionJsonlPath })) {
-    replayed.push(event);
+  for await (const event of streamReplayEvents(replayOptions)) {
     if (!(await writeAndAwaitDrain(socket, { kind: 'event', payload: event }, writeMessage))) break;
+    onEvent?.(event);
   }
 
   const durationMs = Date.now() - replayStart;
@@ -97,6 +102,4 @@ export async function replaySession(opts: ReplaySessionOptions): Promise<EngineE
   if (!socket.destroyed) {
     writeMessage(socket, { kind: 'event', payload: completeEvent });
   }
-
-  return replayed;
 }

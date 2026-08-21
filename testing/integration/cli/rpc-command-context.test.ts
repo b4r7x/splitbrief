@@ -7,24 +7,14 @@ import {
   type ResolvedRunConfig,
 } from '../../../src/cli/build-overrides.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
-import { createJsonlSink } from '../../../src/engine/events/sinks/jsonl.js';
 import {
   createDefaultConfig,
   loadConfig,
   writeConfig as writeProjectConfig,
 } from '../../../src/core/config/load/io.js';
-import type { Config } from '../../../src/core/schemas/config.js';
-import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { WorkflowOpts } from '../../../src/core/types/config-options.js';
 import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
-import { SESSION_LOG_FILE, sessionDir } from '../../../src/core/paths.js';
-import { ensureSessionDir } from '../../../src/core/paths-io.js';
-import { SessionLogEventEntrySchema } from '../../../src/core/schemas/session-log.js';
-import { loadState } from '../../../src/core/state/persistence.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../src/core/transcript-policy.js';
-import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 function createMutableRpcContext(args: {
@@ -36,6 +26,8 @@ function createMutableRpcContext(args: {
   getState?: () => WorkflowState | null;
   bus?: ReturnType<typeof createEventBus>;
   setRewindFeedback?: (feedback: string | undefined) => void;
+  requestRewind?: (request: { target: 'spec' | 'plan'; comment?: string }) => boolean;
+  requestTaskRedo?: (taskId: string) => boolean;
 }) {
   const projectDir = args.projectDir ?? process.cwd();
   const opts = args.opts ?? {};
@@ -62,6 +54,8 @@ function createMutableRpcContext(args: {
     ...(args.setRewindFeedback !== undefined && {
       setRewindFeedback: args.setRewindFeedback,
     }),
+    ...(args.requestRewind !== undefined && { requestRewind: args.requestRewind }),
+    ...(args.requestTaskRedo !== undefined && { requestTaskRedo: args.requestTaskRedo }),
     messages: [],
     errors: [],
     pendingQueueDepth: () => 0,
@@ -168,116 +162,32 @@ describe('createRpcCommandContext integration', () => {
     });
   });
 
-  describe('rewind publishing', () => {
-    let projectDir: string;
-    const sessionId = 'sess-1';
+  describe('live recovery callbacks', () => {
+    it('forwards rewind requests to the live workflow callback', () => {
+      const requestRewind = vi.fn(() => true);
+      const rpc = createMutableRpcContext({ requestRewind });
 
-    beforeEach(() => {
-      projectDir = createTempDir('rpc-command-context-rewind');
-      ensureSessionDir(projectDir, sessionId);
+      expect(rpc.context.requestRewind('spec', 'redo the spec')).toBe(true);
+      expect(requestRewind).toHaveBeenCalledWith({ target: 'spec', comment: 'redo the spec' });
     });
 
-    afterEach(() => {
-      cleanupTempDir(projectDir);
+    it('forwards task redo requests to the live workflow callback', () => {
+      const requestTaskRedo = vi.fn(() => true);
+      const rpc = createMutableRpcContext({ requestTaskRedo });
+
+      expect(rpc.context.requestTaskRedo('T001')).toBe(true);
+      expect(requestTaskRedo).toHaveBeenCalledWith('T001');
     });
 
-    function makeRewindContext(
-      state: WorkflowState,
-      overrides: {
-        config?: Config;
-        setRewindFeedback?: (feedback: string | undefined) => void;
-      } = {},
-    ) {
-      const config = overrides.config ?? createDefaultConfig();
-      const published: EngineEvent[] = [];
-      const bus = createEventBus();
-      bus.subscribe((event) => published.push(event));
-      bus.subscribe(
-        createJsonlSink({
-          projectDir,
-          sessionId,
-          persistTranscript: config.workflow.persistTranscript,
-        }),
+    it('reports a typed unavailable error when no live recovery callback exists', () => {
+      const rpc = createMutableRpcContext({});
+
+      expect(() => rpc.context.requestRewind('spec')).toThrow(
+        'RPC rewind is unavailable without a live workflow.',
       );
-      const initial = resolveRunConfigWithBase({ projectDir, opts: {} });
-      const rpc = createMutableRpcContext({
-        projectDir,
-        getSessionId: () => sessionId,
-        getState: () => state,
-        initial: { ...initial, config, persistedConfig: config },
-        bus,
-        ...(overrides.setRewindFeedback !== undefined && {
-          setRewindFeedback: overrides.setRewindFeedback,
-        }),
-      });
-      return { ctx: rpc.context, published };
-    }
-
-    function readSessionEvents() {
-      return readFileSync(join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE), 'utf-8')
-        .trim()
-        .split('\n')
-        .map((line) => SessionLogEventEntrySchema.parse(JSON.parse(line)));
-    }
-
-    it('publishes a rewind_to_spec event on the bus and persists it to the ledger exactly once', () => {
-      const state = makeImplState([makeTask()]);
-      const { ctx, published } = makeRewindContext(state);
-
-      const ok = ctx.requestRewind('spec', 'redo the spec');
-
-      expect(ok).toBe(true);
-      expect(published).toEqual([
-        expect.objectContaining({ type: 'rewind_to_spec', comment: 'redo the spec' }),
-      ]);
-      expect(readSessionEvents()).toEqual([
-        expect.objectContaining({ type: 'rewind_to_spec', data: { comment: 'redo the spec' } }),
-      ]);
-    });
-
-    it('keeps transcript-off RPC rewind feedback transient while persisting protected state', () => {
-      const state = makeImplState([makeTask()]);
-      const rawFeedback = 'redo the spec with private deployment detail';
-      const config = createDefaultConfig();
-      config.workflow.persistTranscript = false;
-      const setRewindFeedback = vi.fn();
-      const { ctx, published } = makeRewindContext(state, { config, setRewindFeedback });
-
-      const ok = ctx.requestRewind('spec', rawFeedback);
-
-      expect(ok).toBe(true);
-      expect(setRewindFeedback).toHaveBeenCalledWith(rawFeedback);
-      expect(published).toEqual([
-        expect.objectContaining({
-          type: 'rewind_to_spec',
-          comment: TRANSCRIPT_OMITTED_MESSAGE,
-        }),
-      ]);
-      expect(readSessionEvents()).toEqual([
-        expect.objectContaining({
-          type: 'rewind_to_spec',
-          data: { comment: TRANSCRIPT_OMITTED_MESSAGE },
-        }),
-      ]);
-      const saved = loadState({ projectDir, sessionId });
-      expect(saved?.rewindPending).toEqual({
-        target: 'spec',
-        comment: TRANSCRIPT_OMITTED_MESSAGE,
-      });
-      expect(JSON.stringify(saved)).not.toContain(rawFeedback);
-    });
-
-    it('publishes a task_reset event on the bus and persists it to the ledger exactly once', () => {
-      const state = makeImplState([makeTask({ id: 'T001' })]);
-      const { ctx, published } = makeRewindContext(state);
-
-      const ok = ctx.requestTaskRedo('T001');
-
-      expect(ok).toBe(true);
-      expect(published).toEqual([expect.objectContaining({ type: 'task_reset', taskId: 'T001' })]);
-      expect(readSessionEvents()).toEqual([
-        expect.objectContaining({ type: 'task_reset', taskId: 'T001' }),
-      ]);
+      expect(() => rpc.context.requestTaskRedo('T001')).toThrow(
+        'RPC task redo is unavailable without a live workflow.',
+      );
     });
   });
 });

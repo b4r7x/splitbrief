@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { makePassingTask } from '#testing/helpers/planning-phase.js';
+import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   createHeadlessGitProject,
@@ -9,7 +10,6 @@ import {
 } from '#testing/helpers/headless-project.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
-import { saveState } from '../../../src/core/state/persistence.js';
 import { writeActive, TRANSCRIPT_OMITTED_FEATURE } from '../../../src/core/sessions/lifecycle.js';
 import { sessionDir } from '../../../src/core/paths.js';
 import { readLockfile, checkServerStatus } from '../../../src/engine/ipc/lockfile.js';
@@ -39,6 +39,17 @@ describe('runHeadless — liveness record (F-261)', () => {
     dirs = [];
   });
 
+  function makeTaskForFile(id: string, file: string) {
+    return {
+      ...makePassingTask(id),
+      file,
+      scope: {
+        inBounds: [`Modify only \`${file}\`.`],
+        outOfBounds: ['Do not touch anything outside the task file.'],
+      },
+    };
+  }
+
   function setupLivenessProject(): { projectDir: string; sessionId: string } {
     const projectDir = createHeadlessGitProject('headless-liveness');
     dirs.push(projectDir);
@@ -49,11 +60,11 @@ describe('runHeadless — liveness record (F-261)', () => {
     const state: WorkflowState = {
       ...createInitialState('liveness feature'),
       phase: 'implementing',
-      tasks: [makeTask({ id: 'T001', file: 'src/one.ts' })],
+      tasks: [makeTaskForFile('T001', 'src/one.ts')],
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
     };
-    saveState({ projectDir, sessionId }, state);
+    persistReadyExecutionState(projectDir, sessionId, state);
     return { projectDir, sessionId };
   }
 
@@ -70,22 +81,23 @@ describe('runHeadless — liveness record (F-261)', () => {
     const state = {
       ...createInitialState('liveness feature'),
       phase: 'implementing' as const,
-      tasks: [makeTask({ id: 'T001', file: 'src/one.ts' })],
+      tasks: [makeTaskForFile('T001', 'src/one.ts')],
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
     };
 
+    const resumeState = persistReadyExecutionState(projectDir, sessionId, state);
     await runHeadless({
       prepared: preparedHeadlessExecution({
         projectDir,
         sessionId,
         feature: 'liveness feature',
-        resumeState: state,
+        resumeState,
+        purpose: 'new-workflow',
       }),
       _planner: planner,
       _implementer: implementer,
     });
-
     expect(midRunLocks).toHaveLength(1);
     const midRunLock = midRunLocks[0];
     expect(midRunLock).not.toBeNull();

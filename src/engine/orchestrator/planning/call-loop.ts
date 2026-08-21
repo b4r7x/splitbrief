@@ -1,13 +1,14 @@
 import { createBusTextHandler, publishRunnerCallEvent, publishWarning } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { createSessionExpiredHandler } from '../resume-context.js';
+import { workflowAuthority } from '../run/init.js';
 import { withContinuationLoop } from '../continuation.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { buildRejectionContext } from '../evidence/reporting.js';
 import { startPlannerHeartbeat } from './heartbeat.js';
 import { createQuestionMarkerStripper } from '../../parsers/question.js';
 import { composeSteeredPrompt } from '../../implementers/types.js';
-import type { PhaseResult, PlanResult, PlannerCallbacks } from '../../planners/types.js';
+import type { PlanResult, PlannerCallbacks } from '../../planners/types.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import type { PlannerCallRunResult, PlannerCallOptions } from './types.js';
@@ -110,6 +111,7 @@ export async function runPlannerCallInContinuationLoop(
             bus: wctx.bus,
             config,
             resumeHolder,
+            authority: workflowAuthority(wctx),
           }),
           sessionId,
           persistTranscript: config.workflow.persistTranscript,
@@ -187,26 +189,15 @@ function plannerCallTokens(usage: TokenDelta | null): number {
 
 /**
  * Folds the zero-task retry into one result the caller can book once: tokens are summed
- * and phases are unioned by filename, with the retry winning a filename both attempts wrote.
+ * (bounded evidence aggregation) but the retry is the terminal accepted attempt, so it is
+ * the sole phase owner — the earlier zero-task attempt contributes no promotable phase.
  */
 export function mergePlannerAttempts(first: PlanResult, retry: PlanResult): PlanResult {
   return {
     ...retry,
     usage: sumTokenDeltas(first.usage, retry.usage),
-    phases: mergePhases(first.phases, retry.phases),
+    phases: retry.phases,
   };
-}
-
-function mergePhases(
-  first: PhaseResult[] | undefined,
-  retry: PhaseResult[] | undefined,
-): PhaseResult[] | undefined {
-  if (first === undefined || first.length === 0) return retry;
-  if (retry === undefined || retry.length === 0) return first;
-  const byFilename = new Map<string, PhaseResult>();
-  for (const phase of first) byFilename.set(phase.filename, phase);
-  for (const phase of retry) byFilename.set(phase.filename, phase);
-  return [...byFilename.values()];
 }
 
 function sumTokenDeltas(first: TokenDelta | null, retry: TokenDelta | null): TokenDelta | null {

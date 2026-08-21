@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderFeature, type RenderFeatureResult, tick } from '#testing/helpers/ink.js';
 import { App } from '../../src/app/root.js';
+import { BRIEF_QUALITY_FILE, STATE_FILE, TASKS_FILE } from '../../src/core/paths.js';
+import { WorkflowStateSchema } from '../../src/core/schemas/workflow.js';
+import { parseTasksStrict } from '../../src/engine/spec/tasks/parse.js';
 import { getWorkflowPromptRows } from '../../src/features/workflow/prompt-rows/workflow.js';
 import { approvalPromptStore } from '../../src/stores/approval-prompt/prompt.js';
 import { costApprovalStore } from '../../src/stores/cost-approval/prompt.js';
@@ -16,19 +21,44 @@ import { findVisualScenario } from './catalog.js';
 import { viewport } from './contracts/geometry.js';
 import { scenarioId, type ScenarioId } from './contracts/identifiers.js';
 import type { FixtureLifecycle } from './fixtures/common.js';
-import { teardownVisualFixture } from './fixtures/screen-fixtures.js';
+import { teardownVisualFixture, VISUAL_FIXTURE_PROJECT_DIR } from './fixtures/screen-fixtures.js';
 import {
   getWorkflowFixturePromptRows,
   workflowFixtureProjections,
   type WorkflowFixtureProjection,
 } from './fixtures/workflow/projections.js';
-import { createWorkflowFixtureAppDeps } from './fixtures/workflow/setup.js';
+import { persistedBriefRecoveryFixture } from './fixtures/workflow/persisted-brief-recovery.js';
+import {
+  createWorkflowFixtureAppDeps,
+  createWorkflowFixtureFactory,
+} from './fixtures/workflow/setup.js';
+import { briefRecoveryFixtureProjections } from './fixtures/workflow/brief-recovery-projections.js';
+import { enterCaptureEnvironment } from './gallery/environment.js';
+import { waitForCheckpoint } from './gallery/checkpoints.js';
 import {
   workflowCheckpointPredicates,
   workflowFixtureRegistry,
 } from './fixtures/workflow/registry.js';
+import { LOCATOR_REGISTRY } from './locators/registry.js';
 
 const VIEWPORT = viewport({ cols: 80, rows: 24 });
+const RECOVERY_FIXTURE_IDS = [
+  scenarioId('workflow-brief-recovery-zero-task-blocked'),
+  scenarioId('workflow-brief-recovery-storage-blocked'),
+  scenarioId('workflow-brief-recovery-task-blocked'),
+  scenarioId('workflow-brief-recovery-retrying-queued'),
+  scenarioId('workflow-brief-recovery-unresolved'),
+  scenarioId('workflow-brief-recovery-ready'),
+  scenarioId('workflow-brief-recovery-provider-failed'),
+  scenarioId('workflow-brief-recovery-budget-blocked'),
+] as const;
+
+const RECOVERY_PROFILES = [
+  { name: 'unicode-color', viewport: viewport({ cols: 121, rows: 16 }) },
+  { name: 'unicode-mono', viewport: viewport({ cols: 120, rows: 16 }) },
+  { name: 'ascii-mono', viewport: viewport({ cols: 119, rows: 16 }) },
+] as const;
+const ANSI_CONTROL_SEQUENCE = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, 'gu');
 
 function lifecycleFor(scenarioId: ScenarioId): FixtureLifecycle {
   const factory = workflowFixtureRegistry.get(scenarioId);
@@ -80,6 +110,67 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
   } finally {
     ui?.unmount();
     await lifecycle.teardown();
+  }
+}
+
+async function renderRecoveryFixture(
+  recoveryScenarioId: (typeof RECOVERY_FIXTURE_IDS)[number],
+  profile: (typeof RECOVERY_PROFILES)[number],
+): Promise<void> {
+  const scenario = findVisualScenario(recoveryScenarioId);
+  if (!scenario) throw new Error(`Missing recovery scenario ${recoveryScenarioId}`);
+  const checkpoint = scenario.checkpoints[0];
+  if (!checkpoint) throw new Error(`Missing recovery checkpoint ${recoveryScenarioId}`);
+  const factory = workflowFixtureRegistry.get(scenario.id);
+  if (!factory) throw new Error(`Missing recovery fixture ${recoveryScenarioId}`);
+
+  const projection = briefRecoveryFixtureProjections.get(recoveryScenarioId);
+  if (projection === undefined)
+    throw new Error(`Missing recovery projection ${recoveryScenarioId}`);
+  const environment = enterCaptureEnvironment({
+    viewport: profile.viewport,
+    profile: profile.name,
+  });
+  const lifecycle = factory();
+  let ui: RenderFeatureResult | null = null;
+  try {
+    await lifecycle.setup({ scenario, checkpoint, viewport: profile.viewport });
+    ui = renderFeature(
+      <App workflowDeps={createWorkflowFixtureAppDeps(projection)} />,
+      profile.viewport,
+    );
+    const frame = await waitForCheckpoint({
+      scenario,
+      checkpoint,
+      viewport: profile.viewport,
+      lastFrame: ui.lastFrame,
+    });
+    const plainFrame = frame.replace(ANSI_CONTROL_SEQUENCE, '');
+    const label = `${recoveryScenarioId}/${profile.name}`;
+    expect(plainFrame, label).toMatch(/(?:CONTRACT|RETRYING|RETRY UNRESOLVED|REJECTED|CHECKING)/u);
+    expect(plainFrame, label).toContain('BECAUSE');
+    expect(plainFrame, label).toContain('SO');
+    expect(plainFrame, label).toContain('NOW');
+    expect(plainFrame, label).toMatch(/(?:Retry|Edit|Reject|Approve|Import|Resolve|Rebind)/iu);
+
+    const declaredElements = new Set(scenario.elements.map((element) => element.id));
+    for (const element of scenario.elements) {
+      expect(LOCATOR_REGISTRY[`workflow:${element.id}`], `${label}/${element.id}`).toBeDefined();
+    }
+    const inputElement = [...declaredElements].find((element) =>
+      /(?:composer|input)/iu.test(element),
+    );
+    expect(inputElement, `${label} stable input element`).toBeDefined();
+    const actionElement = [...declaredElements].find((element) => /(?:action|now)/iu.test(element));
+    expect(actionElement, `${label} action element`).toBeDefined();
+    const causeElement = [...declaredElements].find((element) =>
+      /(?:because|cause)/iu.test(element),
+    );
+    expect(causeElement, `${label} cause element`).toBeDefined();
+  } finally {
+    ui?.unmount();
+    await lifecycle.teardown();
+    environment.restore();
   }
 }
 
@@ -168,6 +259,71 @@ describe('workflow visual fixtures', () => {
         }),
       );
       await lifecycle.teardown();
+    }
+  });
+
+  it('renders all recovery scenarios across the three homogeneous profiles', async () => {
+    const registeredIds = new Set<ScenarioId>(workflowFixtureRegistry.keys());
+    expect([...RECOVERY_FIXTURE_IDS].every((id) => registeredIds.has(id))).toBe(true);
+
+    for (const scenarioId of RECOVERY_FIXTURE_IDS) {
+      for (const profile of RECOVERY_PROFILES) {
+        await renderRecoveryFixture(scenarioId, profile);
+      }
+    }
+  });
+
+  it('renders persisted blocked authority over the contradictory zero-task and 0.80 legacy projections', async () => {
+    const fixture = persistedBriefRecoveryFixture();
+    const scenario = findVisualScenario(fixture.scenarioId);
+    if (!scenario) throw new Error(`Missing persisted recovery scenario ${fixture.scenarioId}`);
+    const checkpoint = scenario.checkpoints[0];
+    if (!checkpoint) throw new Error(`Missing persisted recovery checkpoint ${fixture.scenarioId}`);
+    const profile = RECOVERY_PROFILES[0];
+    const environment = enterCaptureEnvironment({
+      viewport: profile.viewport,
+      profile: profile.name,
+    });
+    const lifecycle = createWorkflowFixtureFactory(fixture)();
+    let ui: RenderFeatureResult | null = null;
+    try {
+      await lifecycle.setup({ scenario, checkpoint, viewport: profile.viewport });
+
+      const sessionDir = join(
+        VISUAL_FIXTURE_PROJECT_DIR,
+        '.splitbrief',
+        'sessions',
+        'visual-workflow',
+      );
+      const persistedState = WorkflowStateSchema.parse(
+        JSON.parse(await readFile(join(sessionDir, STATE_FILE), 'utf8')),
+      );
+      expect(persistedState.briefRecovery?.status).toBe('blocked');
+      expect(parseTasksStrict(await readFile(join(sessionDir, TASKS_FILE), 'utf8'))).toEqual([]);
+      const legacyQualityText = await readFile(join(sessionDir, BRIEF_QUALITY_FILE), 'utf8');
+      expect(JSON.parse(legacyQualityText)).toEqual(fixture.legacyQuality);
+      expect(legacyQualityText).toContain('"score":0.8');
+
+      ui = renderFeature(
+        <App workflowDeps={createWorkflowFixtureAppDeps(fixture)} />,
+        profile.viewport,
+      );
+      const frame = await waitForCheckpoint({
+        scenario,
+        checkpoint,
+        viewport: profile.viewport,
+        lastFrame: ui.lastFrame,
+      });
+      const plainFrame = frame.replace(ANSI_CONTROL_SEQUENCE, '');
+      expect(plainFrame, fixture.scenarioId).toContain('CONTRACT BLOCKED');
+      expect(plainFrame, fixture.scenarioId).toContain('BECAUSE');
+      expect(plainFrame, fixture.scenarioId).toContain('NOW');
+      expect(plainFrame, fixture.scenarioId).toMatch(/(?:Retry|Edit|Reject)/iu);
+      expect(plainFrame, fixture.scenarioId).not.toContain('quality 0.80');
+    } finally {
+      ui?.unmount();
+      await lifecycle.teardown();
+      environment.restore();
     }
   });
 });

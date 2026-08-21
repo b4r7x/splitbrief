@@ -8,7 +8,12 @@ import type {
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
 import { isUserEditConflictAction } from '../../engine/events/workflow-events.js';
 import { normalizeUserEditConflictAction } from '../../engine/orchestrator/user-edit/conflicts.js';
+import type {
+  BriefRecoveryProjectionV1,
+  RecoveryResultV1,
+} from '../../core/schemas/brief-recovery.js';
 import { validateConfirmApprovalFields, type ApprovalGateResult } from './gates.js';
+import { withRecoveryStatus, type RpcRecoveryStatus } from './run/status.js';
 
 function parseTaskReviewResponse(
   text: string,
@@ -57,10 +62,27 @@ export function createWorkflowCallbacks(deps: {
   waitForApproval: (data: unknown) => Promise<ApprovalGateResult>;
   waitForMessage: (data: unknown) => Promise<string>;
   reportError: (message: string) => void;
+  getRecoveryProjection?: () => BriefRecoveryProjectionV1 | null;
+  getRecoveryResult?: () => RecoveryResultV1 | null;
 }): RunWorkflowOptions['callbacks'] {
+  const recoveryStatus = (): RpcRecoveryStatus | null => {
+    if (deps.getRecoveryProjection === undefined && deps.getRecoveryResult === undefined) {
+      return null;
+    }
+    const result = deps.getRecoveryResult?.() ?? null;
+    return {
+      briefRecovery: deps.getRecoveryProjection?.() ?? result?.projection ?? null,
+      result,
+    };
+  };
+  const waitForApproval = (data: unknown) =>
+    deps.waitForApproval(withRecoveryStatus(data, recoveryStatus()));
+  const waitForMessage = (data: unknown) =>
+    deps.waitForMessage(withRecoveryStatus(data, recoveryStatus()));
+
   return {
     onApprovalNeeded: async (approvalType, input) => {
-      const result = await deps.waitForApproval(
+      const result = await waitForApproval(
         approvalType === 'artifact'
           ? { pending: 'approval', approvalType, review: input }
           : { pending: 'approval', approvalType, filePath: input },
@@ -80,20 +102,20 @@ export function createWorkflowCallbacks(deps: {
       return { approved: false };
     },
     onUserEditConflict: async (conflict) => {
-      const answer = await deps.waitForMessage({ pending: 'user_edit_conflict', conflict });
+      const answer = await waitForMessage({ pending: 'user_edit_conflict', conflict });
       const action = isUserEditConflictAction(answer) ? answer : 'pause';
       return normalizeUserEditConflictAction(conflict, action);
     },
     onQuestionAsked: async (question, num, total) =>
-      deps.waitForMessage({ pending: 'question', question, num, total }),
+      waitForMessage({ pending: 'question', question, num, total }),
     onCostApprovalNeeded: async (prediction) => {
-      const result = await deps.waitForApproval({ pending: 'cost_approval', prediction });
+      const result = await waitForApproval({ pending: 'cost_approval', prediction });
       return result.approved;
     },
     onContinuationNeeded: async (partialResponse) =>
-      deps.waitForMessage({ pending: 'continuation', partialResponse }),
+      waitForMessage({ pending: 'continuation', partialResponse }),
     onTieredApproval: async (request): Promise<TieredApprovalResponse> => {
-      const result = await deps.waitForApproval({ pending: 'tiered_approval', request });
+      const result = await waitForApproval({ pending: 'tiered_approval', request });
       if (!result.approved) {
         return { decision: 'deny', reason: result.comment ?? 'Rejected via RPC' };
       }
@@ -108,7 +130,7 @@ export function createWorkflowCallbacks(deps: {
     },
     onTaskReviewNeeded: async (request: TaskReviewRequest) => {
       while (true) {
-        const answer = await deps.waitForMessage({ pending: 'task_review', request });
+        const answer = await waitForMessage({ pending: 'task_review', request });
         const response = parseTaskReviewResponse(answer, request.availableCommands);
         if (response) {
           return response;

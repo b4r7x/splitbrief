@@ -1,4 +1,5 @@
 import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../providers/automatic-model.js';
+import type { PlannerArtifactTransport } from '../schemas/task-compilation.js';
 import { typedEntries } from '../../utils/type-guards.js';
 import { assertCandidateFilesAbsent } from './candidate-admission.js';
 import { cliAdmissionError } from './cli-admission-error.js';
@@ -153,6 +154,28 @@ export function classifyCliAdmittedVersion(
   return compareCanonicalSemver({ left: installed, right: minimum }) < 0
     ? 'incompatible'
     : 'compatible';
+}
+
+export type CliCompilerVersionClassification = 'exact' | 'older' | 'newer' | 'mismatch';
+
+/**
+ * The compiler path admits exactly the tested runtime version (REQ-049).
+ * Older releases, newer releases, and unparseable claims are never ready —
+ * unlike the forward-compatible `classifyCliAdmittedVersion` used by the
+ * implementer path, this classifier has no compatibility arm to borrow.
+ */
+export function classifyCliCompilerVersion(
+  input: Readonly<{
+    installedVersion: string;
+    exactAdmittedVersion: string;
+  }>,
+): CliCompilerVersionClassification {
+  const installed = parseCanonicalSemver(input.installedVersion);
+  const exact = parseCanonicalSemver(input.exactAdmittedVersion);
+  if (installed === null || exact === null) return 'mismatch';
+  const order = compareCanonicalSemver({ left: installed, right: exact });
+  if (order === 0) return 'exact';
+  return order < 0 ? 'older' : 'newer';
 }
 
 export type CliCompatibility = Readonly<{
@@ -712,6 +735,81 @@ function assembleCliToolCatalog(
 export const CLI_TOOL_TRUST = assembleCliToolTrust();
 export const CLI_TOOL_CATALOG = assembleCliToolCatalog(CLI_TOOL_TRUST);
 export const CLI_TOOL_IDS = Object.freeze(typedEntries(CLI_TOOL_CATALOG).map(([id]) => id));
+
+export type CliCompilerSupportState = 'required-baseline' | 'conformance-gated' | 'unsupported';
+
+export type CliCompilerEvidence = Readonly<{
+  state: CliCompilerSupportState;
+  /** The exact admitted runtime version; always empty for an unsupported tool. */
+  version: string;
+  transports: readonly PlannerArtifactTransport['kind'][];
+  terminalContract: string;
+  fixtureDate: string;
+  unsupportedReason?: string;
+}>;
+
+function compilerEvidence(evidence: CliCompilerEvidence): CliCompilerEvidence {
+  return Object.freeze({
+    ...evidence,
+    transports: Object.freeze([...evidence.transports]),
+  });
+}
+
+/**
+ * The single owner of the CLI rows of the compiler support table: the engine
+ * table (`src/engine/runners/compiler-capability.ts`) builds its six CLI rows
+ * from this record and adds only the capability-only fields, so the identity
+ * evidence cannot diverge. The compiler path admits only the exact tested
+ * runtime (REQ-019, REQ-049), so this evidence never carries a minimum, a
+ * range, or a secret value.
+ */
+export const CLI_COMPILER_EVIDENCE: Readonly<Record<CliToolId, CliCompilerEvidence>> =
+  Object.freeze({
+    'claude-code': compilerEvidence({
+      state: 'conformance-gated',
+      version: '2.1.232',
+      transports: Object.freeze(['stdout-final']),
+      terminalContract: 'claude-terminal-result-v1',
+      fixtureDate: '2026-08-15',
+    }),
+    codex: compilerEvidence({
+      state: 'conformance-gated',
+      version: '0.147.0',
+      transports: Object.freeze(['declared-file']),
+      terminalContract: 'codex-output-last-message-v1',
+      fixtureDate: '2026-08-15',
+    }),
+    opencode: compilerEvidence({
+      state: 'required-baseline',
+      version: '1.18.15',
+      transports: Object.freeze(['stdout-final']),
+      terminalContract: 'opencode-final-message-v1',
+      fixtureDate: '2026-08-15',
+    }),
+    aider: compilerEvidence({
+      state: 'unsupported',
+      version: '',
+      transports: Object.freeze([]),
+      terminalContract: 'unsupported',
+      fixtureDate: '2026-08-15',
+      unsupportedReason: 'no proven read-only planner contract in V1',
+    }),
+    copilot: compilerEvidence({
+      state: 'unsupported',
+      version: '',
+      transports: Object.freeze([]),
+      terminalContract: 'unsupported',
+      fixtureDate: '2026-08-15',
+      unsupportedReason: 'no proven non-writing programmatic planner posture in V1',
+    }),
+    'kilo-code': compilerEvidence({
+      state: 'conformance-gated',
+      version: '7.0.49',
+      transports: Object.freeze(['stdout-final']),
+      terminalContract: 'kilo-final-message-v1',
+      fixtureDate: '2026-08-15',
+    }),
+  });
 
 /**
  * The only admitted CLIs with a structural, non-interactive native model

@@ -11,8 +11,9 @@ import { getRunnerDisplayName } from '../../../core/config/accessors/runner-conf
 import type { Planner, PlannerSummaryMessage } from '../../planners/types.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import { accumulateTokenUsage } from '../../calls/usage.js';
-import { addUsage } from '../tokens.js';
-import { loadState, saveState } from '../../../core/state/persistence.js';
+import type { EventBus } from '../../events/types.js';
+import { loadState } from '../../../core/state/persistence.js';
+import { addUsageAndSave } from '../state-ops.js';
 import {
   resolveCompactionFormat,
   type ResolvedCompactionFormat,
@@ -134,6 +135,7 @@ export async function performManualCompaction(opts: {
   ref: SessionRef;
   preparationId: string;
   gates: readonly RunnerGate[];
+  bus: EventBus;
 }): Promise<CompactTranscriptResult> {
   const { config, ref } = opts;
   const plannerName = getRunnerDisplayName(config.planner);
@@ -142,6 +144,7 @@ export async function performManualCompaction(opts: {
   }
   const planner = await createPlanner(config, {
     preparedConfig: config,
+    projectDir: ref.projectDir,
     preparationId: opts.preparationId,
     gates: opts.gates,
     slot: { role: 'planner' },
@@ -166,13 +169,13 @@ export async function performManualCompaction(opts: {
     format,
     planner: adapter,
   });
-  bookCompactionUsage(ref, usage);
+  bookCompactionUsage(ref, usage, opts.bus);
   return { status: 'compacted', ...result };
 }
 
-function bookCompactionUsage(ref: SessionRef, usage: TokenDelta | null): void {
+function bookCompactionUsage(ref: SessionRef, usage: TokenDelta | null, bus: EventBus): void {
   if (!usage) return;
   const state = loadState(ref);
   if (!state) return;
-  saveState(ref, addUsage(state, 'planner', usage));
+  addUsageAndSave({ ...ref, bus }, state, 'planner', usage);
 }

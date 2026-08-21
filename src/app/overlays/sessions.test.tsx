@@ -183,7 +183,7 @@ describe('SessionsPicker', () => {
     await vi.waitFor(() => {
       const current = instance.lastFrame() ?? '';
       expect(current).toContain('resume missing state');
-      expect(current).toContain('saved workflow state');
+      expect(current).toContain('usable owner receipt');
     });
 
     const frame = instance.lastFrame() ?? '';

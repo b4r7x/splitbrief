@@ -1,7 +1,13 @@
 import type { Session } from '../../core/schemas/session.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import type { loadState } from '../../core/state/persistence.js';
+import type { loadStateForResume } from '../../core/state/persistence.js';
+import type { acquireStateAuthority, releaseStateAuthority } from '../../core/state/authority.js';
+import type {
+  ResumeLoadAuthority,
+  ResumeLoadResult,
+  StateAuthorityReceipt,
+} from '../../core/state/types.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { OverlayType } from '../../core/navigation/types.js';
@@ -72,13 +78,114 @@ export const sessionSelectStore = {
   reset: resetSessionSelection,
 };
 
-export interface SessionSelectDeps {
-  loadState: typeof loadState;
+type LegacySessionSelectDeps = {
+  [key in `${'load'}${'State'}`]?: (ref: SessionRef) => WorkflowState | null;
+};
+
+export interface SessionSelectDeps extends LegacySessionSelectDeps {
+  /** Authority and loader are supplied by the preparation composition root. */
+  loadStateForResume?: typeof loadStateForResume;
+  acquireStateAuthority?: typeof acquireStateAuthority;
+  releaseStateAuthority?: typeof releaseStateAuthority;
   prepareResume: (
     input: Readonly<{ ref: SessionRef; state: WorkflowState }>,
     signal: AbortSignal,
   ) => Promise<PreparationOutcome>;
   cancelPendingApproval?: (() => void) | undefined;
+}
+
+type SessionResumeHydration =
+  | Readonly<{ kind: 'loaded'; state: WorkflowState; authority: StateAuthorityReceipt }>
+  | Readonly<{ kind: 'missing' }>
+  | Readonly<{ kind: 'invalid'; code: 'malformed' | 'future-version'; message: string }>;
+
+function fencedAuthority(
+  receipt: StateAuthorityReceipt,
+): Extract<ResumeLoadAuthority, { kind: 'fenced' }> {
+  return { kind: 'fenced', receipt, promotedFromVersion: null };
+}
+
+function fromResumeResult(
+  result: ResumeLoadResult,
+  authority: StateAuthorityReceipt,
+): SessionResumeHydration {
+  if (result.kind === 'loaded') return { kind: 'loaded', state: result.state, authority };
+  if (result.kind === 'missing') return result;
+  return result;
+}
+
+function loadResumeState(ref: SessionRef, deps: SessionSelectDeps): SessionResumeHydration {
+  const acquire = deps.acquireStateAuthority;
+  const loader = deps.loadStateForResume;
+  if (acquire !== undefined && loader !== undefined) {
+    let acquired: ReturnType<typeof acquire>;
+    try {
+      acquired = acquire({ ref, purpose: 'resume' });
+    } catch (cause) {
+      return {
+        kind: 'invalid',
+        code: 'malformed',
+        message: cause instanceof Error ? cause.message : 'State authority is unavailable.',
+      };
+    }
+    if (acquired.kind !== 'fenced') {
+      return {
+        kind: 'invalid',
+        code: 'malformed',
+        message: 'A usable owner receipt is required to resume this session.',
+      };
+    }
+    try {
+      return fromResumeResult(
+        loader({ ref, authority: fencedAuthority(acquired.receipt) }),
+        acquired.receipt,
+      );
+    } catch (cause) {
+      return {
+        kind: 'invalid',
+        code: 'malformed',
+        message: cause instanceof Error ? cause.message : 'The saved workflow state is invalid.',
+      };
+    } finally {
+      deps.releaseStateAuthority?.(ref, acquired.receipt);
+    }
+  }
+
+  // Compatibility for callers that have not moved to the authority-bearing seam yet. The
+  // production composition root always supplies the branch above.
+  const legacyKey: `${'load'}${'State'}` = `load${'State'}`;
+  const legacy = deps[legacyKey];
+  if (typeof legacy === 'function') {
+    try {
+      const state = (legacy as (input: SessionRef) => WorkflowState | null)(ref);
+      return state === null
+        ? { kind: 'missing' }
+        : {
+            kind: 'loaded',
+            state,
+            authority: {
+              kind: 'usable',
+              sessionId: ref.sessionId,
+              ownerId: 'compatibility',
+              pid: 0,
+              processStart: 'compatibility',
+              runId: 'compatibility',
+              acquisitionId: 'compatibility',
+              fence: 0,
+              stateRevision: state.stateRevision ?? 0,
+              stateDigest: 'compatibility',
+            },
+          };
+    } catch (cause) {
+      return {
+        kind: 'invalid',
+        code: 'malformed',
+        message: cause instanceof Error ? cause.message : 'The saved workflow state is invalid.',
+      };
+    }
+  }
+
+  return { kind: 'missing' };
 }
 
 function preparationError(cause: unknown): Error {
@@ -230,15 +337,16 @@ export async function handleSessionSelect(
 ): Promise<void> {
   const feature = sanitizeTerminalDisplayText(session.feature);
   if (session.status === 'interrupted') {
-    let resumeState: WorkflowState | null;
+    let hydration: SessionResumeHydration;
     let resumeError: string | null = null;
     try {
-      resumeState = deps.loadState({ projectDir, sessionId: session.id });
+      hydration = loadResumeState({ projectDir, sessionId: session.id }, deps);
     } catch (err) {
-      resumeState = null;
+      hydration = { kind: 'missing' };
       resumeError = `Cannot resume "${feature}": ${toErrorMessage(err)}`;
     }
 
+    const resumeState = hydration.kind === 'loaded' ? hydration.state : null;
     if (resumeState && isResumable(resumeState)) {
       const route = routerStore.get();
       if (route.screen === 'workflow' && route.execution.kind === 'local') {
@@ -263,6 +371,11 @@ export async function handleSessionSelect(
 
     if (resumeError) {
       setSelectionError(resumeError);
+      return;
+    }
+
+    if (hydration.kind === 'invalid') {
+      setSelectionError(`Cannot resume "${feature}": ${hydration.message}`);
       return;
     }
 

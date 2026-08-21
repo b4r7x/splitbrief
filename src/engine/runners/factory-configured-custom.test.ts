@@ -273,8 +273,7 @@ describe('configured custom runner factory behavior', () => {
         : ["fs.writeFileSync('stage-only.txt', 'discarded');"]),
       ...(input.writeDeclaredArtifact
         ? [
-            "fs.mkdirSync('.splitbrief-runner/output', { recursive: true });",
-            "fs.writeFileSync('.splitbrief-runner/output/result', declaredArtifact);",
+            'fs.writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, declaredArtifact);',
             "process.stdout.write('diagnostic only');",
           ]
         : ['process.stdout.write(observation);']),
@@ -372,8 +371,18 @@ describe('configured custom runner factory behavior', () => {
       legacyProgram: `require('node:fs').writeFileSync(${JSON.stringify(fixture.legacyMarker)}, 'legacy');`,
     });
 
+    let observedProvenance:
+      | Parameters<CustomRunnerRuntimePort['beginDeclaredArtifactReview']>[0]['provenance']
+      | undefined;
+    const runtime = factoryRuntime(fixture, 'interactive');
     const planner = await createPlanner(config, undefined, {
-      customRuntime: factoryRuntime(fixture, 'interactive'),
+      customRuntime: {
+        ...runtime,
+        beginDeclaredArtifactReview: (input) => {
+          observedProvenance = input.provenance;
+          return runtime.beginDeclaredArtifactReview(input);
+        },
+      },
     });
     const result = await planner.review('review the fixture', fixture.projectDir, {
       onOutput: () => {},
@@ -388,6 +397,80 @@ describe('configured custom runner factory behavior', () => {
     expectDiscardedChildStage(fixture, observation);
     expect(existsSync(join(fixture.projectDir, '.splitbrief-runner'))).toBe(false);
     expectStableReceipt(fixture, 'factory-r7-planner-direct');
+    if (observedProvenance === undefined) {
+      throw new Error('The production factory did not receive declared artifact provenance.');
+    }
+    expect(observedProvenance).toEqual(
+      expect.objectContaining({
+        programId: null,
+        batchId: null,
+        transport: expect.objectContaining({
+          kind: 'declared-file',
+          lease: expect.objectContaining({ attemptId: expect.any(String) }),
+        }),
+      }),
+    );
+    expect(observedProvenance?.attemptId).toBe(
+      observedProvenance?.transport.kind === 'declared-file'
+        ? observedProvenance.transport.lease.attemptId
+        : undefined,
+    );
+  });
+
+  it('carries the production declared-file receipt into the owned planner artifact', async () => {
+    const fixture = createFixture('planner-direct-owned-artifact');
+    const taskMarkdown = `---
+id: T001
+title: Preserve the receipt
+action: create
+file: src/receipt.ts
+depends_on: []
+---
+
+### Description
+Preserve the declared-file receipt.
+
+### Implementation Steps
+1. Keep the receipt attached to the phase artifact.
+
+### Tests
+- vitest passes
+
+### Constraints
+- Keep the receipt attempt-bound
+`;
+    const config = configuredFactoryBehaviorConfig({
+      role: 'planner',
+      contract: 'direct',
+      sourceName: fixture.sourceName,
+      program: [
+        "const fs = require('node:fs');",
+        `fs.writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, ${JSON.stringify(taskMarkdown)});`,
+      ].join('\n'),
+      legacyProgram: `require('node:fs').writeFileSync(${JSON.stringify(fixture.legacyMarker)}, 'legacy');`,
+    });
+
+    const planner = await createPlanner(config, undefined, {
+      customRuntime: factoryRuntime(fixture, 'interactive'),
+    });
+    const result = await planner.quickPlan({
+      feature: 'preserve the declared artifact receipt',
+      projectDir: fixture.projectDir,
+      callbacks: { onOutput: () => {}, persistTranscript: false },
+    });
+    const artifact = result.phases?.[0]?.artifact;
+
+    expect(artifact).toBeDefined();
+    expect(artifact?.transport).toBe('declared-file');
+    expect(artifact?.sourceReceipt).toMatchObject({
+      kind: 'declared-file',
+      leaseId: expect.any(String),
+      inodeIdentity: expect.stringMatching(/^\d+:\d+$/),
+      leaseReceiptDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    expect(artifact?.programId).toBeNull();
+    expect(artifact?.batchId).toBeNull();
+    expect(artifact?.text).toBe(taskMarkdown);
   });
 
   it('runs a configured implementer output child through the public factory', async () => {
@@ -505,48 +588,49 @@ describe('configured custom runner factory behavior', () => {
     expect(onTieredApproval).toHaveBeenCalledOnce();
   });
 
-  it.each(
-    configuredRoutes,
-  )('denies a configured %s %s child before it can start or fall back', async (role, contract) => {
-    const fixture = createFixture(`denied-${role}-${contract}`);
-    const config = configuredFactoryBehaviorConfig({
-      role,
-      contract,
-      sourceName: fixture.sourceName,
-      program: [
-        "const fs = require('node:fs');",
-        `fs.writeFileSync(${JSON.stringify(fixture.configuredMarker)}, 'configured');`,
-        "process.stdout.write('configured');",
-      ].join('\n'),
-      legacyProgram: [
-        "const fs = require('node:fs');",
-        `fs.writeFileSync(${JSON.stringify(fixture.legacyMarker)}, 'legacy');`,
-        "process.stdout.write('legacy');",
-      ].join('\n'),
-    });
-    const output: string[] = [];
+  it.each(configuredRoutes)(
+    'denies a configured %s %s child before it can start or fall back',
+    async (role, contract) => {
+      const fixture = createFixture(`denied-${role}-${contract}`);
+      const config = configuredFactoryBehaviorConfig({
+        role,
+        contract,
+        sourceName: fixture.sourceName,
+        program: [
+          "const fs = require('node:fs');",
+          `fs.writeFileSync(${JSON.stringify(fixture.configuredMarker)}, 'configured');`,
+          "process.stdout.write('configured');",
+        ].join('\n'),
+        legacyProgram: [
+          "const fs = require('node:fs');",
+          `fs.writeFileSync(${JSON.stringify(fixture.legacyMarker)}, 'legacy');`,
+          "process.stdout.write('legacy');",
+        ].join('\n'),
+      });
+      const output: string[] = [];
 
-    expect(process.env[fixture.sourceName]).toBeUndefined();
+      expect(process.env[fixture.sourceName]).toBeUndefined();
 
-    if (role === 'planner') {
-      await expect(
-        createPlanner(config, undefined, {
-          customRuntime: factoryRuntime(fixture, 'headless'),
-        }),
-      ).rejects.toMatchObject({ kind: 'custom-runner-admission-denied' });
-      expect(existsSync(join(fixture.projectDir, '.splitbrief-runner'))).toBe(false);
-    } else {
-      await expect(
-        createImplementer(config, {
-          customRuntime: factoryRuntime(fixture, 'headless'),
-        }),
-      ).rejects.toMatchObject({ kind: 'custom-runner-admission-denied' });
-      expect(existsSync(join(fixture.projectDir, `src/denied-${contract}.ts`))).toBe(false);
-    }
+      if (role === 'planner') {
+        await expect(
+          createPlanner(config, undefined, {
+            customRuntime: factoryRuntime(fixture, 'headless'),
+          }),
+        ).rejects.toMatchObject({ kind: 'custom-runner-admission-denied' });
+        expect(existsSync(join(fixture.projectDir, '.splitbrief-runner'))).toBe(false);
+      } else {
+        await expect(
+          createImplementer(config, {
+            customRuntime: factoryRuntime(fixture, 'headless'),
+          }),
+        ).rejects.toMatchObject({ kind: 'custom-runner-admission-denied' });
+        expect(existsSync(join(fixture.projectDir, `src/denied-${contract}.ts`))).toBe(false);
+      }
 
-    expect(output).toEqual([]);
-    expect(existsSync(fixture.configuredMarker)).toBe(false);
-    expect(existsSync(fixture.legacyMarker)).toBe(false);
-    expect(existsSync(resolveCustomRunnerTrustFile(fixture.stateDir))).toBe(false);
-  });
+      expect(output).toEqual([]);
+      expect(existsSync(fixture.configuredMarker)).toBe(false);
+      expect(existsSync(fixture.legacyMarker)).toBe(false);
+      expect(existsSync(resolveCustomRunnerTrustFile(fixture.stateDir))).toBe(false);
+    },
+  );
 });

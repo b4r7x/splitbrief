@@ -92,32 +92,33 @@ describe('CLI readiness reachability from the real detection producer', () => {
     }
   });
 
-  it.each(
-    CLI_READINESS_STATES.filter((state) => !UNREACHABLE_PICKER_STATES.includes(state)),
-  )('reaches picker status %s through the real detection chain', async (state) => {
-    const resolveExecutable =
-      state === 'unavailable'
-        ? async () => {
-            throw error('cli-executable-unavailable', 'not installed');
-          }
-        : state === 'untrusted'
+  it.each(CLI_READINESS_STATES.filter((state) => !UNREACHABLE_PICKER_STATES.includes(state)))(
+    'reaches picker status %s through the real detection chain',
+    async (state) => {
+      const resolveExecutable =
+        state === 'unavailable'
           ? async () => {
-              throw error('cli-executable-untrusted', 'project-local shadow');
+              throw error('cli-executable-unavailable', 'not installed');
             }
-          : undefined;
+          : state === 'untrusted'
+            ? async () => {
+                throw error('cli-executable-untrusted', 'project-local shadow');
+              }
+            : undefined;
 
-    const options = await cliPickerOptions('implementer', {
-      state,
-      ...(resolveExecutable !== undefined && { resolveExecutable }),
-    });
+      const options = await cliPickerOptions('implementer', {
+        state,
+        ...(resolveExecutable !== undefined && { resolveExecutable }),
+      });
 
-    expect(options.length).toBeGreaterThan(0);
-    for (const option of options) {
-      expect(option.status.state).toBe(state);
-      expect(option.available).toBe(state === 'ready');
-      if (state !== 'ready') expect(option.status.remediation).toBeTruthy();
-    }
-  });
+      expect(options.length).toBeGreaterThan(0);
+      for (const option of options) {
+        expect(option.status.state).toBe(state);
+        expect(option.available).toBe(state === 'ready');
+        if (state !== 'ready') expect(option.status.remediation).toBeTruthy();
+      }
+    },
+  );
 
   it('proves the listed unreachable state stays unreachable', async () => {
     const facts = cliReadinessFactsFor('ready', 'codex');

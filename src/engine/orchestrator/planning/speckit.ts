@@ -1,12 +1,13 @@
 import { join } from 'node:path';
-import { runFullPlanning } from './full.js';
+import { runFullPlanning, isCompilerFailureProjection } from './full.js';
 import { transitionAndSave } from '../state-ops.js';
-import { publishPlannerStatus } from '../events.js';
+import { publishPlannerStatus, publishWarning } from '../events.js';
 import {
   ANALYZE_FILE,
   CLARIFICATIONS_FILE,
   CONSTITUTION_CHECK_FILE,
   PLAN_FILE,
+  RESEARCH_FILE,
   SPECIFY_CONSTITUTION_FILE,
   SPEC_FILE,
   TASKS_FILE,
@@ -17,20 +18,23 @@ import { confinedReadFileOrEmpty } from '../../../lib/confined-fs.js';
 import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
 import { buildConstitutionPrompt } from '../../spec/prompts/constitution.js';
 import { buildAnalyzePrompt } from '../../spec/prompts/analyze.js';
-import { runBriefsApprovalLoop } from './briefs-approval-loop.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 import type {
   ConstitutionCheckResult,
   ConstitutionViolation,
 } from '../../../core/schemas/constitution.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { Task } from '../../../core/schemas/task.js';
 import type { AnalyzeResult } from '../../../core/schemas/analyze.js';
+import { PhaseSchema } from '../../../core/schemas/enums.js';
 import { narrowRecord } from '../../../utils/type-guards.js';
 import { extractJsonBlock } from '../../../utils/extract-json-block.js';
 import { clamp01 } from '../../../utils/math.js';
 import { runPlannerReview } from '../planner-review.js';
 import { withContinuationLoop } from '../continuation.js';
 import { composeSteeredPrompt } from '../../implementers/types.js';
+import { fallbackBriefRecoveryProjection } from './brief-quality-preparation.js';
+import { publishProducerGeneration } from './brief-publication.js';
 
 const DEFAULT_MIN_COVERAGE = 0.9;
 
@@ -116,13 +120,17 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
     },
   });
   state = planResult.state;
-  if (planResult.cancelled || planResult.failed) return planResult;
-  let tasks = planResult.tasks;
+  if (planResult.disposition === 'terminal') return planResult;
+  if (planResult.disposition === 'parked' && isCompilerFailureProjection(planResult.projection)) {
+    return planResult;
+  }
+  const tasks = planResult.disposition === 'ready-for-tasks' ? [...planResult.tasks] : state.tasks;
 
   state = transitionAndSave({ projectDir, sessionId }, state, { type: 'ANALYZE_START' });
   publishPlannerStatus(bus, state, 'running');
 
-  const [specText, planText, tasksText] = await Promise.all([
+  const [researchText, specText, planText, tasksText] = await Promise.all([
+    readArtifact(dir, RESEARCH_FILE),
     readArtifact(dir, SPEC_FILE),
     readArtifact(dir, PLAN_FILE),
     readArtifact(dir, TASKS_FILE),
@@ -166,37 +174,60 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
     });
   }
 
-  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'ANALYZE_DONE' });
   publishPlannerStatus(bus, state, 'done');
 
-  const briefsLoop = await runBriefsApprovalLoop({
-    tasks,
-    qualityValidatedTasks: tasks,
-    ...(wctx.modelCache !== undefined && { modelCache: wctx.modelCache }),
-    ...(wctx.detectedContextLength !== undefined && {
-      detectedContextLength: wctx.detectedContextLength,
-    }),
-    planner,
-    projectDir,
-    sessionId,
-    callbacks: wctx.callbacks,
-    bus,
-    state,
-    config: wctx.config,
-    metadata: wctx.metadata,
-    signal: wctx.signal,
-    sinks: wctx.sinks,
-  });
-  state = briefsLoop.state;
-  tasks = briefsLoop.tasks;
-  if (briefsLoop.failed) return { state, tasks: [], cancelled: true, failed: true };
-  if (briefsLoop.rejected || briefsLoop.aborted)
-    return { state, tasks: [], cancelled: true, failed: false };
+  // Without an owner binding the speckit producer publishes the compiled
+  // candidate itself: the immutable generation install and the fenced parked
+  // commit come first, and the fixed tasks.md / brief-quality.json projections
+  // are refreshed only after that commit. A publication fault parks with the
+  // previous authority untouched. With an owner binding the producer parks
+  // pre-admission so the shared controller accepts at most one automatic
+  // repair operation against the durable allowance.
+  if (opts.recovery === undefined) {
+    const published = publishProducerGeneration({
+      ref: { projectDir, sessionId },
+      state,
+      planResult: { tasks, research: researchText, spec: specText, plan: planText },
+      bus,
+      phase: state.phase,
+      metadata: wctx.metadata,
+    });
+    if (!published.ok) {
+      publishWarning({
+        bus,
+        phase: state.phase,
+        message: `speckit mode: the Task Brief could not be published; ${published.message}`,
+        safety: { category: 'planning', code: 'brief_publication_blocked', transcriptSafe: true },
+      });
+      return parkedSpeckitResult(opts, state, tasks, planResult);
+    }
+    state = {
+      ...state,
+      phase: PhaseSchema.parse(published.committed.recovery.phase),
+      briefRecovery: published.committed.recovery.briefRecovery,
+      authorityRevision: published.committed.authorityRevision,
+      generation: published.committed.generation,
+      permit: published.committed.permit,
+    };
+  }
 
-  publishPlannerStatus(bus, state, 'running');
-  bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });
+  return parkedSpeckitResult(opts, state, tasks, planResult);
+}
 
-  return { state, tasks, cancelled: false, failed: false };
+function parkedSpeckitResult(
+  opts: PlanningPhaseOptions,
+  state: WorkflowState,
+  tasks: Task[],
+  planResult: PlanningPhaseResult,
+): PlanningPhaseResult {
+  return {
+    disposition: 'parked',
+    state: { ...state, tasks },
+    projection:
+      planResult.disposition === 'parked'
+        ? planResult.projection
+        : fallbackBriefRecoveryProjection(opts.wctx.sessionId, state),
+  };
 }
 
 async function runConstitutionGate(

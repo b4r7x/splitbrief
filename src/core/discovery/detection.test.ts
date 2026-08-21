@@ -171,19 +171,18 @@ describe('detection schemas', () => {
     ).toBe(true);
   });
 
-  it.each([
-    'claude-code',
-    'shell',
-    'agent-sdk',
-  ])('rejects non-API runner ID %s as provider detection', (provider) => {
-    expect(
-      ProviderDetectionSchema.safeParse({
-        provider,
-        available: true,
-        isLocal: false,
-      }).success,
-    ).toBe(false);
-  });
+  it.each(['claude-code', 'shell', 'agent-sdk'])(
+    'rejects non-API runner ID %s as provider detection',
+    (provider) => {
+      expect(
+        ProviderDetectionSchema.safeParse({
+          provider,
+          available: true,
+          isLocal: false,
+        }).success,
+      ).toBe(false);
+    },
+  );
 
   it.each(PROVIDER_DETECTION_FAILURE_KINDS)('round-trips a %s provider failure', (failure) => {
     const detection = {
@@ -408,16 +407,17 @@ describe('detection schemas', () => {
     ['unauthenticated auth', { auth: 'unauthenticated' }],
     ['unknown auth', { auth: 'unknown' }],
     ['unchecked auth', { auth: 'not-checked' }],
-  ] satisfies ReadonlyArray<
-    readonly [string, Partial<CliToolDetection>]
-  >)('rejects a ready diagnostic with %s facts', (_label, contradictoryFacts) => {
-    expect(
-      CliToolDetectionSchema.safeParse({
-        ...detectionFor('ready'),
-        ...contradictoryFacts,
-      }).success,
-    ).toBe(false);
-  });
+  ] satisfies ReadonlyArray<readonly [string, Partial<CliToolDetection>]>)(
+    'rejects a ready diagnostic with %s facts',
+    (_label, contradictoryFacts) => {
+      expect(
+        CliToolDetectionSchema.safeParse({
+          ...detectionFor('ready'),
+          ...contradictoryFacts,
+        }).success,
+      ).toBe(false);
+    },
+  );
 
   it('accepts a ready diagnostic when authentication is not required', () => {
     expect(

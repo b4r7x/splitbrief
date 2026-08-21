@@ -7,6 +7,7 @@ import { sessionDir, SESSION_LOG_FILE } from '../../core/paths.js';
 import { writeLockfile, markExited, markCrashed, markSignaled } from './lockfile.js';
 import { startHeartbeat } from './heartbeat.js';
 import { startIpcServer } from './server.js';
+import type { IpcServer } from './server.js';
 import { createEventBus } from '../events/bus.js';
 import { createIpcWorkflowBridge } from './workflow-bridge.js';
 import {
@@ -31,7 +32,16 @@ import {
   rollbackPreparedSession,
   settleDetachedSessionHandoff,
 } from '../../core/sessions/prepare.js';
-import { loadState } from '../../core/state/persistence.js';
+import { loadState, loadStateForResume } from '../../core/state/persistence.js';
+import {
+  acquireStateAuthority,
+  assertStateAuthority,
+  releaseStateAuthority,
+} from '../../core/state/authority.js';
+import type {
+  StateAuthorityAcquisitionResult,
+  StateAuthorityReceipt,
+} from '../../core/state/types.js';
 import { shouldPreserveActiveState } from '../orchestrator/session-lifecycle/finalize.js';
 import { killAllProcesses } from '../../lib/process/registry.js';
 import { bootstrapOtel, flushOtel } from '../../lib/otel.js';
@@ -52,6 +62,7 @@ type ServerCleanupOptions = {
   closeServer: () => Promise<void>;
   terminalize: (termination: ServerTermination) => Promise<void>;
   flushTelemetry: () => Promise<void>;
+  releaseAuthority?: (() => boolean | undefined | Promise<boolean | undefined>) | undefined;
 };
 
 type ExitProcess = (code: number) => void;
@@ -65,6 +76,10 @@ type ServerMainDependencies = Readonly<{
   rollbackHandoff: typeof rollbackDetachedSessionHandoff;
   acceptHandoff: typeof acceptDetachedSessionHandoff;
   settleHandoff: typeof settleDetachedSessionHandoff;
+  acquireAuthority: typeof acquireStateAuthority;
+  assertAuthority: typeof assertStateAuthority;
+  hydrateState: typeof loadStateForResume;
+  releaseAuthority: typeof releaseStateAuthority;
 }>;
 
 const DEFAULT_SERVER_MAIN_DEPENDENCIES: ServerMainDependencies = {
@@ -76,6 +91,10 @@ const DEFAULT_SERVER_MAIN_DEPENDENCIES: ServerMainDependencies = {
   rollbackHandoff: rollbackDetachedSessionHandoff,
   acceptHandoff: acceptDetachedSessionHandoff,
   settleHandoff: settleDetachedSessionHandoff,
+  acquireAuthority: acquireStateAuthority,
+  assertAuthority: assertStateAuthority,
+  hydrateState: loadStateForResume,
+  releaseAuthority: releaseStateAuthority,
 };
 
 type ParentAcceptance = Readonly<{
@@ -95,6 +114,18 @@ export const detachedServerEntryError = {
       'detached-parent-acceptance-timeout',
       'Timed out waiting for detached parent acceptance.',
       { timeoutMs },
+    ),
+  authorityUnavailable: (kind: StateAuthorityAcquisitionResult['kind']) =>
+    error(
+      'detached-state-authority-unavailable',
+      `Detached startup requires a usable state authority; acquisition returned ${kind}.`,
+      { kind },
+    ),
+  authorityHydration: (kind: string) =>
+    error(
+      'detached-state-authority-hydration-failed',
+      `Detached startup could not hydrate the owner state (${kind}).`,
+      { kind },
     ),
   startupCleanup: (failureCount: number, cause: unknown) =>
     error(
@@ -117,6 +148,8 @@ function processIsAlive(pid: number): boolean {
 export function createParentAcceptanceBarrier(
   input: Readonly<{
     candidate: SessionOwnershipReceipt;
+    authority?: StateAuthorityReceipt | undefined;
+    assertAuthority?: (() => void) | undefined;
     parentPid: number;
     childPid: number;
     timeoutMs: number;
@@ -146,6 +179,13 @@ export function createParentAcceptanceBarrier(
       ) {
         return false;
       }
+      if (input.assertAuthority !== undefined) {
+        try {
+          input.assertAuthority();
+        } catch {
+          return false;
+        }
+      }
       accepted = true;
       handoffDeadline = Date.now() + input.timeoutMs;
       return true;
@@ -165,6 +205,7 @@ export function createParentAcceptanceBarrier(
           const now = Date.now();
           if (accepted) {
             try {
+              input.assertAuthority?.();
               if (input.acceptHandoff()) {
                 succeed();
                 return;
@@ -234,6 +275,9 @@ export function createServerCleanup(
       options.closeBridge();
       await options.closeServer();
       await options.terminalize(termination);
+      if (termination.kind !== 'crash' && options.releaseAuthority !== undefined) {
+        await options.releaseAuthority();
+      }
       await options.flushTelemetry();
       if (reaping !== undefined) throw reaping.error;
     })();
@@ -340,7 +384,7 @@ async function cleanupBeforeParentAcceptance(
 ): Promise<void> {
   const failures: unknown[] = [];
   try {
-    await input.cleanup({ kind: 'crash', cause: toErrorMessage(input.cause) });
+    await input.cleanup({ kind: 'exit', exitCode: 1 });
   } catch (err) {
     failures.push(err);
   }
@@ -350,6 +394,78 @@ async function cleanupBeforeParentAcceptance(
     failures.push(err);
     try {
       clearActiveReceipt(input.session.ref, input.active);
+    } catch (clearErr) {
+      failures.push(clearErr);
+    }
+  }
+  try {
+    rmSync(input.bootstrapDir, { recursive: true, force: true });
+  } catch (err) {
+    failures.push(err);
+  }
+  if (failures.length > 0) {
+    throw detachedServerEntryError.startupCleanup(failures.length, {
+      startupCause: input.cause,
+      failures,
+    });
+  }
+}
+
+async function cleanupBeforeServe(
+  input: Readonly<{
+    rollback: (session: Parameters<typeof rollbackPreparedSession>[0]) => void;
+    rollbackHandoff: (session: Parameters<typeof rollbackDetachedSessionHandoff>[0]) => void;
+    session: Parameters<typeof rollbackPreparedSession>[0];
+    ref: Parameters<typeof releaseStateAuthority>[0];
+    receipt: StateAuthorityReceipt | undefined;
+    releaseAuthority: typeof releaseStateAuthority;
+    stopHeartbeat?: (() => void) | undefined;
+    closeBridge?: (() => void) | undefined;
+    closeServer?: (() => Promise<void>) | undefined;
+    terminalize?: ((termination: ServerTermination) => Promise<void>) | undefined;
+    bootstrapDir: string;
+    cause: unknown;
+  }>,
+): Promise<void> {
+  const failures: unknown[] = [];
+  try {
+    input.stopHeartbeat?.();
+  } catch (err) {
+    failures.push(err);
+  }
+  try {
+    input.closeBridge?.();
+  } catch (err) {
+    failures.push(err);
+  }
+  try {
+    await input.closeServer?.();
+  } catch (err) {
+    failures.push(err);
+  }
+  try {
+    await input.terminalize?.({ kind: 'exit', exitCode: 1 });
+  } catch (err) {
+    failures.push(err);
+  }
+  if (input.receipt !== undefined) {
+    try {
+      input.releaseAuthority(input.ref, input.receipt);
+    } catch (err) {
+      failures.push(err);
+    }
+  }
+  try {
+    input.rollback(input.session);
+  } catch (err) {
+    failures.push(err);
+    try {
+      input.rollbackHandoff(input.session);
+    } catch (handoffErr) {
+      failures.push(handoffErr);
+    }
+    try {
+      clearActiveReceipt(input.session.ref, input.session.ownership);
     } catch (clearErr) {
       failures.push(clearErr);
     }
@@ -423,59 +539,144 @@ export async function main(
   ) {
     throw error('detached-preparation-mismatch', 'Detached preparation returned another session.');
   }
-  const dir = sessionDir(argv.projectDir, argv.candidate.sessionId);
-  const { authToken, startedAt } = await writeStartupLockfile(dir, {
-    argv,
-    mode: prepared.config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
-    persistTranscript: prepared.config.workflow.persistTranscript,
-  });
-
-  const stopHeartbeat = startHeartbeat(dir);
-  const ipcBus = createEventBus();
-  const ipcBridge = createIpcWorkflowBridge(ipcBus);
+  const sessionRef = prepared.session.ref;
   const owned = {
-    ref: prepared.session.ref,
+    ref: sessionRef,
     ownership: prepared.session.ownership,
   };
+  let authorityReceipt: StateAuthorityReceipt | undefined;
+  let authorityResult: StateAuthorityAcquisitionResult | undefined;
+  try {
+    authorityResult = deps.acquireAuthority({
+      ref: sessionRef,
+      purpose: prepared.session.kind === 'new' ? 'new-workflow' : 'resume',
+    });
+    if (authorityResult.kind === 'read-only') {
+      throw detachedServerEntryError.authorityUnavailable(authorityResult.kind);
+    }
+    if (authorityResult.kind === 'fenced') {
+      const hydrated = deps.hydrateState({ ref: sessionRef, authority: authorityResult });
+      if (hydrated.kind === 'invalid') {
+        throw detachedServerEntryError.authorityHydration(hydrated.code);
+      }
+      authorityReceipt = authorityResult.receipt;
+      deps.assertAuthority({ ref: sessionRef, receipt: authorityReceipt });
+    }
+  } catch (cause) {
+    await cleanupBeforeServe({
+      rollback: deps.rollback,
+      rollbackHandoff: deps.rollbackHandoff,
+      session: owned,
+      ref: sessionRef,
+      receipt: authorityResult?.kind === 'fenced' ? authorityResult.receipt : undefined,
+      releaseAuthority: deps.releaseAuthority,
+      bootstrapDir,
+      cause,
+    });
+    throw cause;
+  }
+  const dir = sessionDir(argv.projectDir, argv.candidate.sessionId);
+  let authToken: string;
+  let startedAt: number;
+  try {
+    ({ authToken, startedAt } = await writeStartupLockfile(dir, {
+      argv,
+      mode: prepared.config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+      persistTranscript: prepared.config.workflow.persistTranscript,
+    }));
+  } catch (cause) {
+    await cleanupBeforeServe({
+      rollback: deps.rollback,
+      rollbackHandoff: deps.rollbackHandoff,
+      session: owned,
+      ref: sessionRef,
+      receipt: authorityReceipt,
+      releaseAuthority: deps.releaseAuthority,
+      terminalize: async (termination) => {
+        if (termination.kind === 'exit' && existsSync(dir))
+          await markExited(dir, termination.exitCode);
+      },
+      bootstrapDir,
+      cause,
+    });
+    throw cause;
+  }
+
+  let stopHeartbeat: () => void = () => {};
+  try {
+    stopHeartbeat = startHeartbeat(dir);
+  } catch (cause) {
+    await cleanupBeforeServe({
+      rollback: deps.rollback,
+      rollbackHandoff: deps.rollbackHandoff,
+      session: owned,
+      ref: sessionRef,
+      receipt: authorityReceipt,
+      releaseAuthority: deps.releaseAuthority,
+      terminalize: async (termination) => {
+        if (termination.kind === 'exit' && existsSync(dir))
+          await markExited(dir, termination.exitCode);
+      },
+      bootstrapDir,
+      cause,
+    });
+    throw cause;
+  }
+  const ipcBus = createEventBus();
+  const ipcBridge = createIpcWorkflowBridge(ipcBus);
   const acceptance = createParentAcceptanceBarrier({
     candidate: argv.candidate,
+    ...(authorityReceipt === undefined
+      ? {}
+      : {
+          authority: authorityReceipt,
+          assertAuthority: () =>
+            deps.assertAuthority({ ref: sessionRef, receipt: authorityReceipt }),
+        }),
     parentPid: argv.parentPid,
     childPid: process.pid,
     timeoutMs: 10_000,
     acceptHandoff: () => deps.acceptHandoff(owned),
     settleHandoff: () => deps.settleHandoff(owned),
   });
-  const ipcServer = await deps.startServer({
-    // Attached TUI clients connect here; user_input and queue_clear are the runtime-command IPC
-    // bridges documented in docs/SLASH-COMMANDS-REFERENCE.md § Attached clients.
-    sessionId: argv.candidate.sessionId,
-    sessionDir: dir,
-    startedAt,
-    mode: prepared.config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
-    feature: argv.feature,
-    authToken,
-    bus: ipcBus,
-    onUserInput: ipcBridge.onUserInput,
-    onQueueClear: ipcBridge.onQueueClear,
-    sessionJsonlPath: join(dir, SESSION_LOG_FILE),
-    noClientPromptBehavior: prepared.config.approval?.headless === true ? 'fail-closed' : 'wait',
-    persistTranscript: prepared.config.workflow.persistTranscript,
-    onParentAccept: acceptance.accept,
-  });
-
-  deps.writePreparedResult({
-    bootstrapDir,
-    result: {
-      version: 1,
-      kind: 'prepared',
+  let ipcServer: IpcServer;
+  try {
+    ipcServer = await deps.startServer({
+      // Attached TUI clients connect here; user_input and queue_clear are the runtime-command IPC
+      // bridges documented in docs/SLASH-COMMANDS-REFERENCE.md § Attached clients.
       sessionId: argv.candidate.sessionId,
-      ownership: prepared.session.ownership,
-      active: prepared.session.active,
-      pid: process.pid,
-    },
-  });
-
-  const sessionRef = prepared.session.ref;
+      sessionDir: dir,
+      startedAt,
+      mode: prepared.config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+      feature: argv.feature,
+      authToken,
+      bus: ipcBus,
+      onUserInput: ipcBridge.onUserInput,
+      onQueueClear: ipcBridge.onQueueClear,
+      sessionJsonlPath: join(dir, SESSION_LOG_FILE),
+      noClientPromptBehavior: prepared.config.approval?.headless === true ? 'fail-closed' : 'wait',
+      persistTranscript: prepared.config.workflow.persistTranscript,
+      onParentAccept: acceptance.accept,
+    });
+  } catch (cause) {
+    await cleanupBeforeServe({
+      rollback: deps.rollback,
+      rollbackHandoff: deps.rollbackHandoff,
+      session: owned,
+      ref: sessionRef,
+      receipt: authorityReceipt,
+      releaseAuthority: deps.releaseAuthority,
+      stopHeartbeat,
+      closeBridge: ipcBridge.close,
+      terminalize: async (termination) => {
+        if (termination.kind === 'exit' && existsSync(dir))
+          await markExited(dir, termination.exitCode);
+      },
+      bootstrapDir,
+      cause,
+    });
+    throw cause;
+  }
   const onCleanup = createServerCleanup({
     cleanupProcesses,
     stopHeartbeat,
@@ -501,7 +702,40 @@ export async function main(
       }
     },
     flushTelemetry: flushOtel,
+    ...(authorityReceipt === undefined
+      ? {}
+      : { releaseAuthority: () => deps.releaseAuthority(sessionRef, authorityReceipt) }),
   });
+
+  try {
+    deps.writePreparedResult({
+      bootstrapDir,
+      result: {
+        version: 1,
+        kind: 'prepared',
+        sessionId: argv.candidate.sessionId,
+        ownership: prepared.session.ownership,
+        active: prepared.session.active,
+        pid: process.pid,
+      },
+    });
+  } catch (cause) {
+    await cleanupBeforeParentAcceptance({
+      cleanup: onCleanup,
+      rollback: (session) => {
+        try {
+          deps.rollback(session);
+        } catch {
+          deps.rollbackHandoff(session);
+        }
+      },
+      session: owned,
+      active: prepared.session.active,
+      bootstrapDir,
+      cause,
+    });
+    throw cause;
+  }
 
   try {
     await acceptance.wait();
@@ -541,15 +775,12 @@ export async function main(
   });
 
   try {
-    const summary = await deps.runLoop(
-      {
-        prepared,
-        attachments: argv.attachments,
-      },
-      ipcServer,
-      ipcBridge,
-      ipcBus,
-    );
+    const loopContext = {
+      prepared,
+      attachments: argv.attachments,
+      authority: authorityReceipt,
+    };
+    const summary = await deps.runLoop(loopContext, ipcServer, ipcBridge, ipcBus);
 
     const completedTasks = summary.completedByLocal + summary.escalatedToPlanner + summary.skipped;
     const isIncomplete = summary.totalTasks > 0 && completedTasks < summary.totalTasks;

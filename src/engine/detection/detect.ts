@@ -52,6 +52,7 @@ import type { ConfiguredProviderOutcome } from './provider-outcomes.js';
 import {
   resolveCliExecutable,
   resolveCliExecutableAliases,
+  resolveCustomExecutable,
   type CliExecutableResolver,
 } from '../runners/resolve-cli-executable.js';
 import {
@@ -75,7 +76,6 @@ import {
   type CliProbeCommand,
   type CliProbeOutput,
 } from '../runners/cli-tools/contract.js';
-import { revalidateCliExecutableIdentity } from '../runners/resolve-cli-executable.js';
 
 type ResolveCliExecutable = CliExecutableResolver;
 type ProbeCliReadiness = typeof probeCliReadiness;
@@ -103,6 +103,13 @@ const FORBIDDEN_CATALOG_PROBE_ARGUMENTS = new Set([
 type AdmittedCatalogOperation = Readonly<{
   context: CliRunnerDiscoveryContext;
   executable: CliExecutableReceipt;
+  /**
+   * The one identity/cache namespace detection, readiness, and dispatch share
+   * (REQ-019, REQ-049): the digest-bound identity of the executable the probe
+   * will actually run. A fake loader or a receipt from a different runtime
+   * cannot produce this namespace, so the operation is never admitted.
+   */
+  runtimeNamespace: string;
   probe: Exclude<CliCatalogProbe, { kind: 'not-run' }>;
   installedVersion: string;
   refresh: 'automatic' | 'manual';
@@ -256,6 +263,22 @@ function richCliExecutable(executable: CliExecutableIdentity): CliExecutableRece
   return result.success ? result.data : undefined;
 }
 
+const DETECTION_RUNTIME_NAMESPACE_PREFIX = 'splitbrief-detection-runtime-v1';
+
+/**
+ * The identity/cache namespace shared by detection rows, the catalog operation
+ * cache, readiness, and dispatch: the digest-bound runtime receipt identity
+ * (REQ-019, REQ-049). A metadata-only identity — a fake loader with no
+ * digest-bound receipt — has no namespace and therefore no admitted dispatch;
+ * a receipt whose content no longer matches the on-disk binary derives a
+ * different namespace at re-read time and fails closed.
+ */
+export function detectionRuntimeNamespace(executable: CliExecutableIdentity): string | undefined {
+  const receipt = richCliExecutable(executable);
+  if (receipt === undefined) return undefined;
+  return `${DETECTION_RUNTIME_NAMESPACE_PREFIX}:${receipt.executableIdentity.fingerprint}`;
+}
+
 function immutableCliExecutableIdentity(executable: CliExecutableIdentity): CliExecutableIdentity {
   const receipt = richCliExecutable(executable);
   if (receipt !== undefined) return immutableCliExecutableReceipt(receipt);
@@ -303,10 +326,13 @@ function admitCatalogOperation(
   ) {
     return undefined;
   }
+  const runtimeNamespace = detectionRuntimeNamespace(executable);
+  if (runtimeNamespace === undefined) return undefined;
 
   return Object.freeze({
     context: snapshotCliContext(input.context),
     executable: immutableCliExecutableReceipt(executable),
+    runtimeNamespace,
     probe: immutableCatalogProbe(input.probe.catalog),
     installedVersion: input.version.value,
     refresh: input.refresh,
@@ -466,6 +492,7 @@ async function probeContextCatalog(
     probe: CliDeclaredProbeContract;
     version: ProbeOutcome<string>;
     refresh: 'automatic' | 'manual';
+    projectDir: string;
     now: () => number;
     signal: AbortSignal | undefined;
   }>,
@@ -491,9 +518,16 @@ async function probeContextCatalog(
     return { kind: 'unsupported' };
   }
   const probe = selectedCatalogProbe(operation.probe, operation.refresh);
-  if ((await revalidateCliExecutableIdentity(operation.executable)) !== 'match') {
-    return { kind: 'cancelled' };
-  }
+  // Immediately before dispatch, re-read the runtime receipt from disk
+  // (content digest included): the admitted identity/cache namespace must
+  // still match the executable that will run, so a fake loader, a replaced
+  // binary, or a different cache namespace fails closed with zero dispatch.
+  const reRead = await resolveCustomExecutable({
+    command: operation.executable.executableIdentity.canonicalPath,
+    projectDir: input.projectDir,
+    expected: operation.executable,
+  });
+  if (reRead.kind !== 'resolved') return { kind: 'cancelled' };
   const neutralDir = await mkdtemp(join(tmpdir(), 'splitbrief-catalog-'));
   try {
     const environment = await catalogProbeEnvironment(operation, neutralDir);
@@ -509,9 +543,12 @@ async function probeContextCatalog(
       probe,
       await runAdmittedCatalogProbe(operation, probe, neutralDir, environment.env, input.signal),
     );
-    return (await revalidateCliExecutableIdentity(operation.executable)) === 'match'
-      ? outcome
-      : { kind: 'cancelled' };
+    const after = await resolveCustomExecutable({
+      command: operation.executable.executableIdentity.canonicalPath,
+      projectDir: input.projectDir,
+      expected: operation.executable,
+    });
+    return after.kind === 'resolved' ? outcome : { kind: 'cancelled' };
   } finally {
     await rm(neutralDir, { recursive: true, force: true });
   }
@@ -1316,6 +1353,7 @@ export async function detectRunnerEvidence(
         probe: probe.declared,
         version: declaredEvidence.version,
         refresh: options.catalogRefresh ?? 'automatic',
+        projectDir: options.projectDir ?? process.cwd(),
         now,
         signal: options.signal,
       });

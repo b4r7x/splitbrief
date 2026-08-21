@@ -2,9 +2,8 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
-import { saveState } from '../../../core/state/persistence.js';
 import { runSingleTask } from './step.js';
-import { raisePendingRecovery, refreshAndPersistCode } from '../state-ops.js';
+import { commitWorkflowState, raisePendingRecovery, refreshAndPersistCode } from '../state-ops.js';
 import {
   getRunnerDisplayName,
   getRunnerModelName,
@@ -28,6 +27,7 @@ import { selectRoutingProfile } from './routing-selection.js';
 import { absorbAcceptedFiles, reconcileAfterTask } from './post-task.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
+import { error } from '../../../utils/error.js';
 import { buildImplementerUnavailableRecoveryIssue } from '../recovery/builders/task.js';
 
 type RunTaskLoopOptions = {
@@ -63,15 +63,31 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
   function persistBaselineState(nextState: WorkflowState = state): WorkflowState {
     const synced = syncBaselineIntoState(nextState);
     setTrackedState(synced);
-    saveState({ projectDir, sessionId }, synced);
     return synced;
   }
 
   function persistTaskBreakdowns(): void {
     state = { ...state, taskBreakdowns: [...taskBreakdowns] };
-    syncBaselineIntoState();
+    const nextState = syncBaselineIntoState();
+    const committed = commitWorkflowState({
+      ref: { projectDir, sessionId },
+      expected: nextState,
+      next: nextState,
+    });
+    if (committed.kind === 'conflict') {
+      throw error(
+        'state-persistence-conflict',
+        'Workflow state changed before task metadata could be persisted.',
+      );
+    }
+    if (committed.kind === 'durability-uncertain') {
+      throw error(
+        'state-persistence-durability-uncertain',
+        'Workflow task metadata persistence is uncertain.',
+      );
+    }
+    state = committed.state;
     setTrackedState(state);
-    saveState({ projectDir, sessionId }, state);
   }
 
   const resolvedProfiles = resolveImplementerProfiles(config);

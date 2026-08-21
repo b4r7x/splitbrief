@@ -3,6 +3,8 @@ import {
   ROOT_CONTEXT,
   SpanKind,
   SpanStatusCode,
+  type AttributeValue,
+  type Attributes,
   type Span,
   type Context,
   type TracerProvider,
@@ -10,7 +12,7 @@ import {
 import type { EngineEvent, EventSink } from '../types.js';
 import { taskIdToString } from '../../../core/schemas/task.js';
 import { totalInputTokens, totalOutputTokens } from '../../../core/schemas/tokens.js';
-import { assertNever } from '../../../utils/type-guards.js';
+import { assertNever, includes } from '../../../utils/type-guards.js';
 import { error } from '../../../utils/error.js';
 import { protectConsumerPayload } from '../../../core/consumer-policy.js';
 import { projectEngineEventForTranscriptPolicy } from '../protection/protect.js';
@@ -21,6 +23,83 @@ export interface OtelSinkOptions {
   serviceName?: string;
   persistTranscript?: boolean | undefined;
 }
+
+const BRIEF_RECOVERY_EVENT_TYPES = [
+  'brief_recovery_quality_reported',
+  'brief_recovery_auto_repair_exhausted',
+  'brief_recovery_attempt_accepted',
+  'brief_recovery_attempt_started',
+  'brief_recovery_attempt_settled',
+  'brief_recovery_attempt_unresolved',
+  'brief_recovery_provider_failed',
+  'brief_recovery_input_queued',
+  'brief_recovery_input_applied',
+  'brief_recovery_stale_ignored',
+  'brief_recovery_rejected',
+  'brief_recovery_refused',
+  'brief_recovery_transition',
+  'brief_recovery_accepted',
+  'brief_generation_published',
+  'brief_execution_permit_issued',
+] as const satisfies readonly EngineEvent['type'][];
+
+type BriefRecoveryEventType = (typeof BRIEF_RECOVERY_EVENT_TYPES)[number];
+
+const RECOVERY_ATTRIBUTE_FIELDS = new Set([
+  'version',
+  'eventId',
+  'sessionId',
+  'epochId',
+  'recoveryRevision',
+  'phase',
+  'briefRevision',
+  'briefHash',
+  'reportRevision',
+  'reportHash',
+  'status',
+  'outcome',
+  'taskCount',
+  'issueCount',
+  'errorCount',
+  'warningCount',
+  'issueCodes',
+  'score',
+  'topIssueCode',
+  'automaticRepairPolicy',
+  'automaticRepairConsumed',
+  'operationId',
+  'intentHash',
+  'attemptKind',
+  'refusalCategory',
+  'dispatchPossibility',
+  'frozenInputCount',
+  'queuedInputCount',
+  'automaticAllowanceConsumed',
+  'requestId',
+  'resultId',
+  'remoteObservation',
+  'providerCode',
+  'inputId',
+  'inputSequence',
+  'inputKind',
+  'source',
+  'textHash',
+  'disposition',
+  'appliedRevision',
+  'baseBriefRevision',
+  'baseBriefHash',
+  'currentBriefRevision',
+  'currentBriefHash',
+  'baseReportRevision',
+  'baseReportHash',
+  'currentReportRevision',
+  'currentReportHash',
+  'intentId',
+  'action',
+  'refusalCode',
+]);
+
+type BriefRecoveryEvent = Extract<EngineEvent, { type: BriefRecoveryEventType }>;
 
 function otelString(value: string): string {
   const payload = protectConsumerPayload({ context: 'otel', payload: value }).payload;
@@ -256,6 +335,28 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
         }
         return;
       }
+      case 'brief_recovery_quality_reported':
+      case 'brief_recovery_auto_repair_exhausted':
+      case 'brief_recovery_attempt_accepted':
+      case 'brief_recovery_attempt_started':
+      case 'brief_recovery_attempt_settled':
+      case 'brief_recovery_attempt_unresolved':
+      case 'brief_recovery_provider_failed':
+      case 'brief_recovery_input_queued':
+      case 'brief_recovery_input_applied':
+      case 'brief_recovery_stale_ignored':
+      case 'brief_recovery_rejected':
+      case 'brief_recovery_refused':
+      case 'brief_recovery_transition':
+      case 'brief_recovery_accepted':
+      case 'brief_generation_published':
+      case 'brief_execution_permit_issued': {
+        const span = phaseSpan ?? workflowSpan;
+        if (span && isBriefRecoveryEvent(event)) {
+          recordBriefRecoveryEvent(span, event, namespace);
+        }
+        return;
+      }
       case 'paused_external_changes':
       case 'recovery_prompted':
       case 'recovery_action_selected':
@@ -341,4 +442,56 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
         return assertNever(event);
     }
   };
+}
+
+function recordBriefRecoveryEvent(span: Span, event: BriefRecoveryEvent, namespace: string): void {
+  switch (event.type) {
+    case 'brief_recovery_quality_reported':
+    case 'brief_recovery_auto_repair_exhausted':
+    case 'brief_recovery_attempt_accepted':
+    case 'brief_recovery_attempt_started':
+    case 'brief_recovery_attempt_settled':
+    case 'brief_recovery_attempt_unresolved':
+    case 'brief_recovery_provider_failed':
+    case 'brief_recovery_input_queued':
+    case 'brief_recovery_input_applied':
+    case 'brief_recovery_stale_ignored':
+    case 'brief_recovery_rejected':
+    case 'brief_recovery_refused':
+    case 'brief_recovery_transition':
+    case 'brief_recovery_accepted':
+    case 'brief_generation_published':
+    case 'brief_execution_permit_issued':
+      break;
+    default:
+      assertNever(event);
+  }
+
+  const attributes: Attributes = {};
+  for (const [name, value] of Object.entries(event)) {
+    if (!RECOVERY_ATTRIBUTE_FIELDS.has(name)) continue;
+    const attribute = recoveryAttributeValue(value);
+    if (attribute !== undefined) {
+      attributes[`${namespace}.recovery.${toSnakeCase(name)}`] = attribute;
+    }
+  }
+  span.addEvent(`${namespace}.${event.type}`, attributes);
+}
+
+function isBriefRecoveryEvent(event: EngineEvent): event is BriefRecoveryEvent {
+  return includes(BRIEF_RECOVERY_EVENT_TYPES, event.type);
+}
+
+function recoveryAttributeValue(value: unknown): AttributeValue | undefined {
+  if (typeof value === 'string') return otelString(value);
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (typeof value === 'boolean') return value;
+  if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
+    return otelString(value.join(','));
+  }
+  return undefined;
+}
+
+function toSnakeCase(value: string): string {
+  return value.replace(/[A-Z]/gu, (character) => `_${character.toLowerCase()}`);
 }

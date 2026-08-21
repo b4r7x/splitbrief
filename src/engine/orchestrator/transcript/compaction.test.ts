@@ -1,7 +1,13 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { createEventBus } from '../../events/bus.js';
+import type { EngineEvent, EventBus } from '../../events/types.js';
+import { createInitialState } from '../../../core/state/machine.js';
+import { saveState } from '../../../core/state/persistence.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { approvalsFile, sessionDir, SESSION_LOG_FILE } from '../../../core/paths.js';
 import { ConfigSchema, type Config } from '../../../core/schemas/config.js';
@@ -77,12 +83,15 @@ function plannerGate(config: Config, preparationId: string): RunnerGate {
 function performManualCompaction(opts: {
   config: Config;
   ref: { projectDir: string; sessionId: string };
+  bus?: EventBus;
 }) {
   const preparationId = 'manual-compaction-preparation';
+  const { bus, ...rest } = opts;
   return performPreparedManualCompaction({
-    ...opts,
+    ...rest,
     preparationId,
     gates: [plannerGate(opts.config, preparationId)],
+    bus: bus ?? createEventBus(),
   });
 }
 
@@ -234,6 +243,45 @@ describe('performManualCompaction', () => {
     ).resolves.toEqual({ status: 'compacted', summary: '', entriesRemoved: 0 });
   });
 
+  it('publishes a cost update on the caller bus when compaction books planner usage', async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeCompactionTriggeringLog(projectDir, sessionId);
+    saveState({ projectDir, sessionId }, createInitialState('manual-compaction-usage'));
+    const planner = await startUsageReportingPlanner();
+    const events: EngineEvent[] = [];
+    const bus = createEventBus();
+    bus.subscribe((event) => events.push(event));
+
+    try {
+      await expect(
+        performManualCompaction({
+          config: makeConfig({
+            planner: {
+              kind: 'api',
+              provider: 'custom-compaction-planner',
+              model: 'test-model',
+              apiBase: `http://127.0.0.1:${planner.port}/v1`,
+              apiKey: 'test-key',
+              contextLength: 8192,
+            },
+            workflow: { compactionFormat: 'freeform' },
+          }),
+          ref: { projectDir, sessionId },
+          bus,
+        }),
+      ).resolves.toMatchObject({ status: 'compacted', entriesRemoved: 2 });
+    } finally {
+      await planner.close();
+    }
+
+    expect(events.filter((event) => event.type === 'cost_update')).toEqual([
+      expect.objectContaining({
+        type: 'cost_update',
+        tokenUsage: expect.objectContaining({ plannerInput: 42, plannerOutput: 17 }),
+      }),
+    ]);
+  });
+
   it('retains the legacy shell result when no custom command matches', async () => {
     const { projectDir, sessionId } = setupProject();
 
@@ -245,28 +293,28 @@ describe('performManualCompaction', () => {
     ).resolves.toEqual({ status: 'unsupported', plannerName: 'shell' });
   });
 
-  it.each([
-    'output',
-    'direct',
-  ] as const)('rejects configured %s planners before custom-runner setup can affect the session', async (contract) => {
-    const { projectDir, sessionId } = setupProject();
-    const declaredEnvironmentName = `COMPACTION_${contract.toUpperCase()}_DECLARED_ENV_MUST_NOT_BE_READ`;
-    expect(process.env[declaredEnvironmentName]).toBeUndefined();
-    seedCustomRunnerSurface(projectDir, sessionId);
-    const before = customRunnerSurface(projectDir, sessionId, contract);
+  it.each(['output', 'direct'] as const)(
+    'rejects configured %s planners before custom-runner setup can affect the session',
+    async (contract) => {
+      const { projectDir, sessionId } = setupProject();
+      const declaredEnvironmentName = `COMPACTION_${contract.toUpperCase()}_DECLARED_ENV_MUST_NOT_BE_READ`;
+      expect(process.env[declaredEnvironmentName]).toBeUndefined();
+      seedCustomRunnerSurface(projectDir, sessionId);
+      const before = customRunnerSurface(projectDir, sessionId, contract);
 
-    await expect(
-      performManualCompaction({
-        config: configuredPlannerConfig({ projectDir, contract }),
-        ref: { projectDir, sessionId },
-      }),
-    ).resolves.toEqual({
-      status: 'unsupported',
-      plannerName: contract === 'output' ? 'shell' : 'agent',
-    });
+      await expect(
+        performManualCompaction({
+          config: configuredPlannerConfig({ projectDir, contract }),
+          ref: { projectDir, sessionId },
+        }),
+      ).resolves.toEqual({
+        status: 'unsupported',
+        plannerName: contract === 'output' ? 'shell' : 'agent',
+      });
 
-    expect(customRunnerSurface(projectDir, sessionId, contract)).toEqual(before);
-  });
+      expect(customRunnerSurface(projectDir, sessionId, contract)).toEqual(before);
+    },
+  );
 });
 
 type ManualCompactionEffects = Readonly<{
@@ -339,6 +387,38 @@ function configuredManualCompactionFixture(input: {
     declaredEnvironmentName,
     declaredEnvironmentValue: `manual-compaction-r7-${contract}-${manualCompactionSequence}`,
     effects,
+  };
+}
+
+async function startUsageReportingPlanner(): Promise<{ port: number; close: () => Promise<void> }> {
+  const server = http.createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/v1/models') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ data: [{ id: 'test-model' }] }));
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/v1/chat/completions') {
+      req.on('data', () => {});
+      req.on('end', () => {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        res.write(
+          `data: ${JSON.stringify({ choices: [{ delta: { content: 'compacted summary' }, index: 0 }] })}\n\n`,
+        );
+        res.write(
+          `data: ${JSON.stringify({ choices: [{ delta: {}, index: 0, finish_reason: 'stop' }], usage: { prompt_tokens: 42, completion_tokens: 17 } })}\n\n`,
+        );
+        res.write('data: [DONE]\n\n');
+        res.end();
+      });
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return {
+    port: (server.address() as AddressInfo).port,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }
 

@@ -2,6 +2,8 @@
 
 Complete reference for every `splitbrief` command. Maintained against `src/cli.ts` and `src/cli/commands/*.ts`.
 
+`retry` needs no fabricated comment.
+
 ```
 SPLITBRIEF — an orchestrator of two coding tools: one plans and reviews, the other executes, and it holds the contract, validation, retry, escalation and evidence
 ```

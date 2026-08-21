@@ -57,7 +57,9 @@ function writeExitedLockfile(sessDir: string, sessionId: string): void {
 
 function writeState(sessDir: string, feature = 'unresponsive feature'): void {
   const state = {
-    stateVersion: 3,
+    stateVersion: 4,
+    stateRevision: 0,
+    stateFence: { token: 0, ownerId: 'initial' },
     phase: 'implementing',
     feature,
     currentTaskIndex: 0,
@@ -88,6 +90,8 @@ function writeState(sessDir: string, feature = 'unresponsive feature'): void {
       },
     ],
     awaitingContinue: false,
+    messageQueue: [],
+    briefRecovery: null,
   };
   writeFileSync(join(sessDir, 'state.json'), JSON.stringify(state));
 }

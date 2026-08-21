@@ -86,31 +86,32 @@ describe('production App gallery mount', () => {
 describe('workflow chrome spans the declared viewport', () => {
   const NARROWEST_COLS = Math.min(...REQUIRED_VIEWPORTS.map((candidate) => candidate.cols));
 
-  it.each(
-    REQUIRED_VIEWPORTS,
-  )('workflow-implementation chrome spans the declared $cols x $rows viewport', async (renderViewport) => {
-    const scenario = requireScenario('workflow-implementation');
-    const checkpoint = requireCheckpoint(scenario);
-    const handle = await mountGalleryScenario({
-      scenario,
-      checkpoint,
-      viewport: renderViewport,
-    });
+  it.each(REQUIRED_VIEWPORTS)(
+    'workflow-implementation chrome spans the declared $cols x $rows viewport',
+    async (renderViewport) => {
+      const scenario = requireScenario('workflow-implementation');
+      const checkpoint = requireCheckpoint(scenario);
+      const handle = await mountGalleryScenario({
+        scenario,
+        checkpoint,
+        viewport: renderViewport,
+      });
 
-    try {
-      const rows = frameRows(await handle.waitForCheckpoint());
-      const headerDivider = findFullWidthRuleRow(rows, renderViewport.cols, 'first');
-      const footerDivider = findFullWidthRuleRow(rows, renderViewport.cols, 'last');
-      const composerFrame = findComposerFrameRow(rows, footerDivider);
-      const narrowest = renderViewport.cols === NARROWEST_COLS;
+      try {
+        const rows = frameRows(await handle.waitForCheckpoint());
+        const headerDivider = findFullWidthRuleRow(rows, renderViewport.cols, 'first');
+        const footerDivider = findFullWidthRuleRow(rows, renderViewport.cols, 'last');
+        const composerFrame = findComposerFrameRow(rows, footerDivider);
+        const narrowest = renderViewport.cols === NARROWEST_COLS;
 
-      assertChromeRowWidth('header divider', rows, headerDivider, renderViewport, narrowest);
-      assertChromeRowWidth('footer divider', rows, footerDivider, renderViewport, narrowest);
-      assertChromeRowWidth('composer frame', rows, composerFrame, renderViewport, narrowest);
-    } finally {
-      await handle.unmount();
-    }
-  });
+        assertChromeRowWidth('header divider', rows, headerDivider, renderViewport, narrowest);
+        assertChromeRowWidth('footer divider', rows, footerDivider, renderViewport, narrowest);
+        assertChromeRowWidth('composer frame', rows, composerFrame, renderViewport, narrowest);
+      } finally {
+        await handle.unmount();
+      }
+    },
+  );
 });
 
 function assertChromeRowWidth(

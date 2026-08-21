@@ -6,6 +6,8 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
+import { acquireStateAuthority } from '../../core/state/authority.js';
+import type { StateAuthorityReceipt } from '../../core/state/types.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { reactivateExistingSession } from '../../core/sessions/lifecycle.js';
 import { saveState } from '../../core/state/persistence.js';
@@ -31,6 +33,7 @@ type RecoveryOverrides = Partial<ReturnType<typeof makeRecoveryIssue>>;
 function setupSession(recoveryOverrides: RecoveryOverrides = {}): {
   projectDir: string;
   sessionId: string;
+  authority: StateAuthorityReceipt;
 } {
   const projectDir = createTempDir('recovery-driver-test');
   dirs.push(projectDir);
@@ -40,7 +43,15 @@ function setupSession(recoveryOverrides: RecoveryOverrides = {}): {
     pendingRecovery: makeRecoveryIssue(recoveryOverrides),
   });
   saveState({ projectDir, sessionId }, state);
-  return { projectDir, sessionId };
+  const acquired = acquireStateAuthority({
+    ref: { projectDir, sessionId },
+    purpose: 'resume',
+    ownerId: 'recovery-driver-test-owner',
+    runId: 'recovery-driver-test-run',
+    acquisitionId: `recovery-driver-test-${recoveryOverrides.status ?? 'awaiting-user'}`,
+  });
+  if (acquired.kind !== 'fenced') throw new Error('expected a fenced recovery authority');
+  return { projectDir, sessionId, authority: acquired.receipt };
 }
 
 function makeInputMode(answers: string[]): {
@@ -68,10 +79,12 @@ function runDriver(
   projectDir: string,
   sessionId: string,
   inputMode: UseInputModeResult,
+  authority: StateAuthorityReceipt,
 ): ReturnType<ReturnType<ReturnType<typeof createRecoveryDriver>>> {
   const prepared = makePreparedExecution(projectDir, sessionId);
   const promptPendingRecovery = createRecoveryDriver()({
     prepared,
+    authority,
     inputMode,
     abortedRef: { current: false },
     setInlineResume: () => {},
@@ -132,10 +145,10 @@ function makePreparedExecution(projectDir: string, sessionId: string): PreparedE
 
 describe('createRecoveryDriver — unparseable answers', () => {
   it('re-prompts with an error instead of applying a fallback action when the answer is unknown', async () => {
-    const { projectDir, sessionId } = setupSession();
+    const { projectDir, sessionId, authority } = setupSession();
     const { inputMode, feedbackAtPrompt } = makeInputMode(['not-a-real-action', 'pause']);
 
-    const result = await runDriver(projectDir, sessionId, inputMode);
+    const result = await runDriver(projectDir, sessionId, inputMode, authority);
 
     expect(feedbackAtPrompt).toHaveLength(2);
     expect(feedbackAtPrompt[0]).toEqual({ message: null, isError: false });
@@ -144,10 +157,10 @@ describe('createRecoveryDriver — unparseable answers', () => {
   });
 
   it('applies a valid action on the first answer without re-prompting', async () => {
-    const { projectDir, sessionId } = setupSession();
+    const { projectDir, sessionId, authority } = setupSession();
     const { inputMode, feedbackAtPrompt } = makeInputMode(['pause']);
 
-    const result = await runDriver(projectDir, sessionId, inputMode);
+    const result = await runDriver(projectDir, sessionId, inputMode, authority);
 
     expect(feedbackAtPrompt).toHaveLength(1);
     expect(result.shouldRun).toBe(false);
@@ -155,13 +168,13 @@ describe('createRecoveryDriver — unparseable answers', () => {
   });
 
   it('reopens paused recovery and applies the selected action', async () => {
-    const { projectDir, sessionId } = setupSession({
+    const { projectDir, sessionId, authority } = setupSession({
       status: 'paused',
       selectedAction: 'pause-run',
     });
     const { inputMode, feedbackAtPrompt } = makeInputMode(['retry-same-worker']);
 
-    const result = await runDriver(projectDir, sessionId, inputMode);
+    const result = await runDriver(projectDir, sessionId, inputMode, authority);
 
     expect(feedbackAtPrompt).toHaveLength(1);
     expect(result.shouldRun).toBe(true);
@@ -172,13 +185,13 @@ describe('createRecoveryDriver — unparseable answers', () => {
   });
 
   it('replays an applying selected action without prompting', async () => {
-    const { projectDir, sessionId } = setupSession({
+    const { projectDir, sessionId, authority } = setupSession({
       status: 'applying',
       selectedAction: 'retry-same-worker',
     });
     const { inputMode, feedbackAtPrompt } = makeInputMode([]);
 
-    const result = await runDriver(projectDir, sessionId, inputMode);
+    const result = await runDriver(projectDir, sessionId, inputMode, authority);
 
     expect(feedbackAtPrompt).toHaveLength(0);
     expect(result.shouldRun).toBe(true);

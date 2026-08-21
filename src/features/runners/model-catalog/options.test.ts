@@ -164,32 +164,31 @@ describe('status projection', () => {
     expect(openai?.available).toBe(false);
   });
 
-  it.each([
-    'offline',
-    'timeout',
-    'request-failed',
-  ] as const)('keeps a present-key %s detection unavailable rather than unauthenticated', (failure) => {
-    const options = buildPickerOptions(
-      'planner',
-      assemblePickerDescriptors(),
-      {
-        cliTools: [],
-        providers: [
-          makeImplementerDetection('openai', {
-            available: false,
-            hasKey: true,
-            failure,
-            error: 'openai is not currently reachable.',
-          }),
-        ],
-      },
-      undefined,
-    );
-    expect(options.find((item) => item.id === 'openai')?.status).toEqual({
-      state: 'unavailable',
-      remediation: 'openai is not currently reachable.',
-    });
-  });
+  it.each(['offline', 'timeout', 'request-failed'] as const)(
+    'keeps a present-key %s detection unavailable rather than unauthenticated',
+    (failure) => {
+      const options = buildPickerOptions(
+        'planner',
+        assemblePickerDescriptors(),
+        {
+          cliTools: [],
+          providers: [
+            makeImplementerDetection('openai', {
+              available: false,
+              hasKey: true,
+              failure,
+              error: 'openai is not currently reachable.',
+            }),
+          ],
+        },
+        undefined,
+      );
+      expect(options.find((item) => item.id === 'openai')?.status).toEqual({
+        state: 'unavailable',
+        remediation: 'openai is not currently reachable.',
+      });
+    },
+  );
 
   it('keeps an unverified provider unselectable even when reachable with a credential', () => {
     const options = buildPickerOptions(

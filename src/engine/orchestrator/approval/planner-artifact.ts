@@ -16,9 +16,13 @@ import {
   PLANNER_ARTIFACT_MAX_BYTES,
   type ArtifactApprovalReview,
   type BeginDeclaredArtifactReviewInput,
-  type PreparedDeclaredArtifactReview,
 } from '../../runners/types.js';
-import { prepareArtifactStageLease } from './artifact-stage-manifest.js';
+import type * as RunnerTypes from '../../runners/types.js';
+import {
+  prepareArtifactStageLease,
+  type ArtifactLeaseReceipt,
+  type ArtifactStageRead,
+} from './artifact-stage-manifest.js';
 
 const REVIEW_DIRECTORY = '.custom-runner-review';
 const ARTIFACT_REVIEW_LABEL = 'Custom planner artifact';
@@ -31,6 +35,16 @@ type BeginPlannerArtifactReviewInput = BeginDeclaredArtifactReviewInput &
       type: 'artifact',
       review: ArtifactApprovalReview,
     ) => Promise<ApprovalReviewResult>;
+  }>;
+
+export type PreparedDeclaredArtifactReview = RunnerTypes.PreparedDeclaredArtifactReview &
+  Readonly<{
+    artifactPath: string;
+    readWithReceiptAfterChild: (
+      input?: Readonly<{ declaredRedactionValues?: readonly string[] }>,
+    ) => Promise<ArtifactStageRead>;
+    readonly receipt: ArtifactLeaseReceipt | undefined;
+    getReceipt: () => ArtifactLeaseReceipt | undefined;
   }>;
 
 const plannerArtifactError = {
@@ -78,11 +92,17 @@ export async function beginDeclaredArtifactReview(
   input: BeginPlannerArtifactReviewInput,
 ): Promise<PreparedDeclaredArtifactReview> {
   assertSafeCallId(input.callId);
-  const lease = await prepareArtifactStageLease({ stagedProjectDir: input.stagedProjectDir });
+  const lease = await prepareArtifactStageLease({
+    stagedProjectDir: input.stagedProjectDir,
+    provenance: input.provenance,
+  });
   let disposed = false;
   let reviewStarted = false;
+  let reviewedRead: ArtifactStageRead | undefined;
+  let approvalCompleted = false;
 
   return {
+    artifactPath: lease.artifactPath,
     reviewAfterChild: async () => {
       if (disposed) throw plannerArtifactError.disposed();
       if (reviewStarted) {
@@ -90,22 +110,33 @@ export async function beginDeclaredArtifactReview(
       }
       reviewStarted = true;
 
-      const reviewedText = await lease.readAfterChild({
+      const reviewed = await lease.readWithReceiptAfterChild({
         declaredRedactionValues: input.declaredRedactionValues,
       });
-      assertArtifactTextBound(reviewedText);
+      reviewedRead = reviewed;
+      assertArtifactTextBound(reviewed.text);
       const approval = await input.onApprovalNeeded(
         'artifact',
-        immutableArtifactReview(reviewedText),
+        immutableArtifactReview(reviewed.text),
       );
       if (!approval.approved) throw plannerArtifactError.rejected();
 
       const promotedText = await lease.revalidateBeforePromotion();
-      if (promotedText !== reviewedText) {
+      if (promotedText !== reviewed.text) {
         throw plannerArtifactError.invalidArtifact('declared artifact changed after review');
       }
+      approvalCompleted = true;
       return promotedText;
     },
+    readWithReceiptAfterChild: ({ declaredRedactionValues = [] } = {}) => {
+      if (disposed) return Promise.reject(plannerArtifactError.disposed());
+      if (approvalCompleted && reviewedRead !== undefined) return Promise.resolve(reviewedRead);
+      return lease.readWithReceiptAfterChild({ declaredRedactionValues });
+    },
+    get receipt() {
+      return lease.receipt;
+    },
+    getReceipt: lease.getReceipt,
     dispose: async () => {
       if (disposed) return;
       disposed = true;

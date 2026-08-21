@@ -12,8 +12,11 @@ import type { TaskReviewCommand, TaskReviewResponse } from '../events/workflow-e
 import {
   allowedSettlingBriefReviewCommandsForPrompt,
   briefReviewCommandToApprovalReviewResult,
+  isBriefReviewCommandCurrent,
 } from '../../core/schemas/brief-review-command.js';
+import { BriefRecoveryProjectionV1Schema } from '../../core/schemas/brief-recovery.js';
 import { PLANNER_ARTIFACT_MAX_BYTES } from '../runners/types.js';
+import { allowedBriefReviewCommandsForProjection } from './protocol.js';
 
 type PendingPrompt = {
   request: IpcPromptRequest;
@@ -129,7 +132,7 @@ export function createPromptTracker(opts: PromptTrackerOptions) {
     },
     sendPendingPrompts(socket: Socket): void {
       for (const pending of pendingPrompts.values()) {
-        sendPrompt(socket, pending.request);
+        sendPrompt(socket, rebuildPromptForAttach(pending.request));
       }
     },
     requestClientPrompt(requestWithoutId: IpcPromptRequestInput): Promise<IpcPromptResponse> {
@@ -184,16 +187,24 @@ function createPromptRequest(
   requestId: string,
 ): IpcPromptRequest {
   switch (requestWithoutId.kind) {
-    case 'approval_needed':
+    case 'approval_needed': {
+      const briefRecovery =
+        requestWithoutId.briefRecovery === undefined
+          ? undefined
+          : BriefRecoveryProjectionV1Schema.parse(requestWithoutId.briefRecovery);
       return {
         requestId,
         kind: requestWithoutId.kind,
         approvalType: requestWithoutId.approvalType,
         filePath: requestWithoutId.filePath,
         allowedCommands: [
-          ...allowedSettlingBriefReviewCommandsForPrompt(requestWithoutId.approvalType),
+          ...(briefRecovery === undefined
+            ? allowedSettlingBriefReviewCommandsForPrompt(requestWithoutId.approvalType)
+            : allowedBriefReviewCommandsForProjection(briefRecovery)),
         ],
+        ...(briefRecovery !== undefined && { briefRecovery }),
       };
+    }
     case 'artifact_review':
       return {
         requestId,
@@ -231,6 +242,17 @@ function createPromptRequest(
   }
 }
 
+function rebuildPromptForAttach(request: IpcPromptRequest): IpcPromptRequest {
+  if (request.kind !== 'approval_needed' || request.briefRecovery === undefined) return request;
+
+  const briefRecovery = BriefRecoveryProjectionV1Schema.parse(request.briefRecovery);
+  return {
+    ...request,
+    allowedCommands: [...allowedBriefReviewCommandsForProjection(briefRecovery)],
+    briefRecovery,
+  };
+}
+
 function artifactReviewTransportError(request: IpcPromptRequest): Error | null {
   if (request.kind !== 'artifact_review') return null;
 
@@ -257,14 +279,30 @@ function responseAllowedForRequest(
       : { ok: false, message: 'recovery action is not available' };
   }
   if (response.kind === 'approval_needed' && request.kind === 'approval_needed') {
-    if (!('command' in response)) return { ok: true };
+    if (!('command' in response)) {
+      return request.briefRecovery === undefined
+        ? { ok: true }
+        : { ok: false, message: 'Brief recovery requires a versioned review command' };
+    }
     if (request.approvalType !== 'briefs') {
       return { ok: false, message: 'Task Brief review command is not available for this prompt' };
     }
     if (!request.allowedCommands.includes(response.command.action)) {
       return { ok: false, message: 'Task Brief review command is not allowed for this prompt' };
     }
-    if (briefReviewCommandToApprovalReviewResult(response.command) === null) {
+    if (
+      request.briefRecovery !== undefined &&
+      !isBriefReviewCommandCurrent(response.command, request.briefRecovery)
+    ) {
+      return {
+        ok: false,
+        message: 'Task Brief review command is stale for this recovery projection',
+      };
+    }
+    if (
+      request.briefRecovery === undefined &&
+      briefReviewCommandToApprovalReviewResult(response.command) === null
+    ) {
       return {
         ok: false,
         message: `Task Brief review command does not resolve the prompt: ${response.command.action}`,

@@ -6,6 +6,7 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+import { ensureSessionDir } from '../../../core/paths-io.js';
 import type { UserEditConflictAction } from '../../../core/schemas/enums.js';
 import type { UserEditConflict } from '../../events/workflow-events.js';
 import { captureChangedFilesBaseline } from '../changed-files-baseline.js';
@@ -28,6 +29,7 @@ async function runCheck(opts: {
     | ((conflict: UserEditConflict) => Promise<UserEditConflictAction>)
     | undefined;
 }) {
+  ensureSessionDir(projectDir, 'sess-detection');
   const task = opts.tasks[0];
   if (!task) throw new Error('checkUserEditConflicts needs at least one task');
   const state = makeImplState(opts.tasks);

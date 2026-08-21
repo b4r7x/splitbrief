@@ -3,8 +3,11 @@ import { delimiter, join } from 'node:path';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { checkRunnerArgVector, collectArgVectorPreflightChecks } from './arg-vector-preflight.js';
-import { buildClaudeArgs } from './claude/invoke.js';
+import {
+  checkRunnerArgVector,
+  collectArgVectorPreflightChecks,
+  semanticConfiguredArgViolations,
+} from './arg-vector-preflight.js';
 
 const CLI_HELP_FIXTURES = join(import.meta.dirname, '../../../testing/fixtures/cli-help');
 
@@ -105,17 +108,20 @@ describe('checkRunnerArgVector — recorded runner arg-vector failures', () => {
     ["unexpected argument '--quiet…'", '--quiet', ['exec', '--quiet']],
     ['unexpected stdin read', '--input-format', ['exec', '--input-format', 'json']],
     ['claude session-id error', '--session-id', ['-p', '--session-id', 'session-1']],
-  ] as const)('%s maps to an unsupported finding against a help text that omits the flag', (_failure, flag, argv) => {
-    const helpText = [
-      'Usage: tool exec [OPTIONS]',
-      '  --json         Emit JSON output',
-      '  --cd <DIR>     Working directory',
-    ].join('\n');
-    const outcome = checkRunnerArgVector({ argv, helpText });
-    expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
-    expect(outcome.unsupported).toContain(flag);
-  });
+  ] as const)(
+    '%s maps to an unsupported finding against a help text that omits the flag',
+    (_failure, flag, argv) => {
+      const helpText = [
+        'Usage: tool exec [OPTIONS]',
+        '  --json         Emit JSON output',
+        '  --cd <DIR>     Working directory',
+      ].join('\n');
+      const outcome = checkRunnerArgVector({ argv, helpText });
+      expect(outcome.ok).toBe(false);
+      if (outcome.ok) return;
+      expect(outcome.unsupported).toContain(flag);
+    },
+  );
 
   it('maps "warning: --full-auto is deprecated" to a deprecated finding', () => {
     const outcome = checkRunnerArgVector({
@@ -128,6 +134,45 @@ describe('checkRunnerArgVector — recorded runner arg-vector failures', () => {
       ].join('\n'),
     });
     expect(outcome).toEqual({ ok: false, unsupported: [], deprecated: ['--full-auto'] });
+  });
+});
+
+describe('semanticConfiguredArgViolations (REQ-018)', () => {
+  it('reports authority-bearing long flags in plain and attached value forms', () => {
+    expect(semanticConfiguredArgViolations(['--sandbox', 'workspace-write'])).toEqual([
+      '--sandbox',
+    ]);
+    expect(semanticConfiguredArgViolations(['--sandbox=read-only'])).toEqual(['--sandbox']);
+    expect(semanticConfiguredArgViolations(['--cwd', '/tmp/work'])).toEqual(['--cwd']);
+  });
+
+  it('reports authority-bearing short flags and their attached short forms', () => {
+    expect(semanticConfiguredArgViolations(['-y'])).toEqual(['-y']);
+    expect(semanticConfiguredArgViolations(['-yyes'])).toEqual(['-y']);
+  });
+
+  it('a positional separator does not hide a flag from the scan', () => {
+    expect(semanticConfiguredArgViolations(['--', '--session-id', 's1'])).toEqual(['--session-id']);
+  });
+
+  it('covers role, permission, approval, config-source, and session aliases', () => {
+    expect(semanticConfiguredArgViolations(['--approval-mode', 'acceptEdits'])).toEqual([
+      '--approval-mode',
+    ]);
+    expect(semanticConfiguredArgViolations(['--dangerously-skip-permissions'])).toEqual([
+      '--dangerously-skip-permissions',
+    ]);
+    expect(semanticConfiguredArgViolations(['--mcp-config', 'x.json'])).toEqual(['--mcp-config']);
+    expect(semanticConfiguredArgViolations(['--output-format', 'text'])).toEqual([
+      '--output-format',
+    ]);
+    expect(semanticConfiguredArgViolations(['--resume', 'session-1'])).toEqual(['--resume']);
+  });
+
+  it('leaves ordinary configured flags alone', () => {
+    expect(
+      semanticConfiguredArgViolations(['--model', 'gpt-5', '--verbose', '--max-turns', '5']),
+    ).toEqual([]);
   });
 });
 
@@ -170,7 +215,17 @@ describe('collectArgVectorPreflightChecks', () => {
       projectDir: '/project',
       includeImplementers: true,
       runHelp: runHelp(
-        'Usage: codex exec [OPTIONS]\n  --json (deprecated)  Use --output-format instead\n  --sandbox <MODE>\n  --skip-git-repo-check\n  --cd <DIR>',
+        [
+          'Usage: codex exec [OPTIONS]',
+          '  --json (deprecated)               Use --output-format instead',
+          '  --sandbox <SANDBOX_MODE>          Sandbox policy',
+          '  --ask-for-approval <APPROVAL_POLICY>  Approval policy',
+          '  --ignore-user-config              Do not load the user config',
+          '  --ignore-rules                    Do not load rules files',
+          '  --ephemeral                       Run without persisting sessions',
+          '  --skip-git-repo-check             Allow running outside a git repo',
+          '  --cd <DIR>                        Working directory',
+        ].join('\n'),
       ),
     });
 
@@ -195,11 +250,15 @@ describe('collectArgVectorPreflightChecks', () => {
       runHelp: runHelp(
         [
           'Usage: codex exec [OPTIONS]',
-          '  --model <MODEL>             Model to use',
-          '  --json                      Emit JSON output',
-          '  --sandbox <SANDBOX_MODE>    Sandbox policy',
-          '  --skip-git-repo-check       Allow running outside a git repo',
-          '  --cd <DIR>                  Working directory',
+          '  --model <MODEL>                   Model to use',
+          '  --json                            Emit JSON output',
+          '  --sandbox <SANDBOX_MODE>          Sandbox policy',
+          '  --ask-for-approval <APPROVAL_POLICY>  Approval policy',
+          '  --ignore-user-config              Do not load the user config',
+          '  --ignore-rules                    Do not load rules files',
+          '  --ephemeral                       Run without persisting sessions',
+          '  --skip-git-repo-check             Allow running outside a git repo',
+          '  --cd <DIR>                        Working directory',
         ].join('\n'),
       ),
     });
@@ -264,6 +323,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       '  --verbose                      Verbose output',
       '  --include-partial-messages     Stream partial message events',
       '  --model <model>                Model for the session',
+      '  --permission-mode <mode>       Permission mode for the session',
       ...extra,
     ].join('\n');
 
@@ -302,12 +362,13 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       }),
     ]);
     expect(checks[0]?.details).toContain(
-      'Emitted argv: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high',
+      'Emitted argv: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode plan',
     );
   });
 
-  it('preflight claude-code planner argv matches the run builder output', async () => {
+  it('refuses a configured added-roots override before any help probe (REQ-018)', async () => {
     const configuredArgs = ['--add-dir', '/srv/shared-context'];
+    let helpSpawns = 0;
     const checks = await collectArgVectorPreflightChecks({
       config: makeConfig({
         planner: {
@@ -320,30 +381,24 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       }),
       projectDir: '/project',
       includeImplementers: false,
-      runHelp: async () =>
-        claudeHelp(
+      runHelp: async () => {
+        helpSpawns += 1;
+        return claudeHelp(
           '  --effort <level>               Effort level for the session',
           '  -r, --resume [sessionId]       Resume a conversation by session ID',
           '  --add-dir <dir>                Additional directory to expose',
-        ),
-    });
-
-    const runArgv = buildClaudeArgs({
-      projectDir: '/project',
-      mode: 'plan',
-      model: 'sonnet',
-      effort: 'high',
-      configuredArgs,
+        );
+      },
     });
 
     expect(checks[0]).toMatchObject({
       id: 'runners.cli.claude-code.arg-vector.planner',
-      severity: 'ok',
+      severity: 'blocker',
+      nextAction: 'fix-config',
+      metadata: { semantic: ['--add-dir'], tool: 'claude-code', role: 'planner' },
     });
-    expect(checks[0]?.details).toContain(`Emitted argv: ${runArgv.join(' ')}`);
-    for (const detail of checks[0]?.details ?? []) {
-      expect(detail.endsWith(' --add-dir /srv/shared-context')).toBe(true);
-    }
+    expect(checks[0]?.fix).toContain('Remove the authority-bearing flags');
+    expect(helpSpawns).toBe(0);
   });
 });
 
@@ -506,9 +561,9 @@ describe('collectArgVectorPreflightChecks — default help invocation', () => {
       }),
     ]);
     expect(checks[0]?.details).toEqual([
-      'Emitted argv: exec --json --cd . <PROMPT>',
-      'Emitted argv: exec --json --sandbox workspace-write --skip-git-repo-check --cd . <PROMPT>',
-      'Emitted argv: exec resume --json 00000000-0000-4000-8000-000000000000 <PROMPT>',
+      'Emitted argv: --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd . <PROMPT>',
+      'Emitted argv: --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --json --skip-git-repo-check --cd . <PROMPT>',
+      'Emitted argv: --sandbox read-only --ask-for-approval never exec resume --ignore-user-config --ignore-rules --json 00000000-0000-4000-8000-000000000000 <PROMPT>',
     ]);
     expect(helpInvocations(log)).toEqual(['--help', 'exec --help']);
   });

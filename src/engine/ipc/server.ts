@@ -12,7 +12,6 @@ import {
   type ServerMessage,
 } from './protocol.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { createLineBuffer } from '../../lib/process/line-buffer.js';
 import { rejectAsAlreadyAttached, tokensMatch, tryControlDetach } from './control-detach.js';
 import { createPromptTracker, ipcPromptError } from './prompt-tracker.js';
 import { error } from '../../utils/error.js';
@@ -48,6 +47,12 @@ export type IpcServer = {
 };
 
 const MAX_LIVE_BACKLOG_EVENTS = 1000;
+const MAX_REPLAY_IDENTITY_COUNT = 1024;
+const MAX_REPLAY_IDENTITY_BYTES = 4 * 1024 * 1024;
+
+export const IPC_AUTH_DEADLINE_MS = 1_000;
+export const IPC_MAX_PENDING_UNAUTHENTICATED_SOCKETS = 32;
+export const IPC_MAX_PENDING_UNAUTHENTICATED_BYTES = 4 * IPC_MAX_FRAME_BYTES;
 
 function eventIdentity(event: EngineEvent, persistTranscript: boolean): string | null {
   const protectedEvent = protectEngineEventForConsumer(event, {
@@ -72,6 +77,69 @@ function publishIpcOperationalWarning(bus: EventBus, message: string, code: stri
     transcriptSafe: true,
     message,
   });
+}
+
+type SocketLineBufferOptions = {
+  maxLineBytes: number;
+  onLine: (line: string) => void;
+  onOverflow: (lineBytes: number) => void;
+};
+
+function createSocketLineBuffer(opts: SocketLineBufferOptions): {
+  push(chunk: Buffer): void;
+  bufferedBytes(): number;
+} {
+  const lineParts: Buffer[] = [];
+  let lineBytes = 0;
+  let oversized = false;
+  let overflowReported = false;
+
+  function append(segment: Buffer): void {
+    if (oversized || segment.length === 0) return;
+    const remaining = opts.maxLineBytes - lineBytes;
+    if (segment.length > remaining) {
+      if (remaining > 0) lineParts.push(segment.subarray(0, remaining));
+      lineBytes = opts.maxLineBytes;
+      oversized = true;
+      if (!overflowReported) {
+        overflowReported = true;
+        opts.onOverflow(opts.maxLineBytes + 1);
+      }
+      return;
+    }
+    lineParts.push(segment);
+    lineBytes += segment.length;
+  }
+
+  function finish(): void {
+    if (oversized) {
+      if (!overflowReported) opts.onOverflow(opts.maxLineBytes + 1);
+    } else {
+      const line = Buffer.concat(lineParts, lineBytes).toString('utf8');
+      opts.onLine(line.endsWith('\r') ? line.slice(0, -1) : line);
+    }
+    lineParts.length = 0;
+    lineBytes = 0;
+    oversized = false;
+    overflowReported = false;
+  }
+
+  return {
+    push(chunk) {
+      let offset = 0;
+      while (offset < chunk.length) {
+        const newlineIndex = chunk.indexOf(0x0a, offset);
+        const segmentEnd = newlineIndex === -1 ? chunk.length : newlineIndex;
+        append(chunk.subarray(offset, segmentEnd));
+        if (newlineIndex === -1) return;
+        finish();
+        offset = newlineIndex + 1;
+      }
+    },
+    bufferedBytes() {
+      return lineBytes;
+    },
+  };
 }
 
 export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer> {
@@ -103,6 +171,8 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
   }
 
   let currentClient: { socket: Socket; unsubscribe: () => void } | null = null;
+  const pendingUnauthenticatedSockets = new Set<Socket>();
+  let pendingUnauthenticatedBytes = 0;
 
   const server: Server = createServer((socket: Socket) => {
     void handleConnection(socket);
@@ -128,16 +198,91 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
       return;
     }
 
+    if (pendingUnauthenticatedSockets.size >= IPC_MAX_PENDING_UNAUTHENTICATED_SOCKETS) {
+      writeMessage(socket, {
+        kind: 'error',
+        code: 'unauthorized',
+        message: 'IPC: too many unauthenticated clients',
+      });
+      socket.destroy();
+      return;
+    }
+
+    pendingUnauthenticatedSockets.add(socket);
+
     let detached = false;
     let authenticated = false;
     let replaying = true;
-    const replayedIdentities = new Set<string>();
+    const replayedIdentities = new Map<string, number>();
+    let replayedIdentityBytes = 0;
     let replayStarted = false;
     const liveBacklog: EngineEvent[] = [];
+    let pendingBufferedBytes = 0;
+    let pendingReleased = false;
+    let authTimer: ReturnType<typeof setTimeout> | undefined;
     const client: { socket: Socket; unsubscribe: () => void } = {
       socket,
       unsubscribe: () => undefined,
     };
+
+    function releasePendingUnauthenticated(): void {
+      if (pendingReleased) return;
+      pendingReleased = true;
+      pendingUnauthenticatedSockets.delete(socket);
+      pendingUnauthenticatedBytes = Math.max(0, pendingUnauthenticatedBytes - pendingBufferedBytes);
+      pendingBufferedBytes = 0;
+      if (authTimer !== undefined) clearTimeout(authTimer);
+    }
+
+    function syncPendingBufferedBytes(lineBuffer: { bufferedBytes(): number }): void {
+      if (pendingReleased) return;
+      const nextBytes = lineBuffer.bufferedBytes();
+      pendingUnauthenticatedBytes += nextBytes - pendingBufferedBytes;
+      pendingBufferedBytes = nextBytes;
+      if (pendingUnauthenticatedBytes <= IPC_MAX_PENDING_UNAUTHENTICATED_BYTES) return;
+      publishIpcOperationalWarning(
+        bus,
+        'IPC: unauthenticated client buffer budget exceeded',
+        'unauthenticated_buffer_budget_exceeded',
+      );
+      writeMessage(socket, {
+        kind: 'error',
+        code: 'unauthorized',
+        message: 'IPC: unauthenticated client buffer budget exceeded',
+      });
+      socket.destroy();
+      detachClient();
+    }
+
+    function rememberReplayIdentity(identity: string): void {
+      const bytes = Buffer.byteLength(identity, 'utf8');
+      if (bytes > MAX_REPLAY_IDENTITY_BYTES) return;
+      const previous = replayedIdentities.get(identity);
+      if (previous !== undefined) {
+        replayedIdentityBytes -= previous;
+        replayedIdentities.delete(identity);
+      }
+      replayedIdentities.set(identity, bytes);
+      replayedIdentityBytes += bytes;
+      while (
+        replayedIdentities.size > MAX_REPLAY_IDENTITY_COUNT ||
+        replayedIdentityBytes > MAX_REPLAY_IDENTITY_BYTES
+      ) {
+        const oldest = replayedIdentities.keys().next();
+        if (oldest.done) break;
+        const oldestBytes = replayedIdentities.get(oldest.value);
+        if (oldestBytes !== undefined) replayedIdentityBytes -= oldestBytes;
+        replayedIdentities.delete(oldest.value);
+      }
+    }
+
+    function consumeReplayIdentity(identity: string): boolean {
+      const bytes = replayedIdentities.get(identity);
+      if (bytes === undefined) return false;
+      replayedIdentityBytes -= bytes;
+      replayedIdentities.delete(identity);
+      return true;
+    }
 
     function writeEvent(event: EngineEvent): void {
       writeMessage(socket, { kind: 'event', payload: event });
@@ -146,6 +291,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
     function detachClient() {
       if (detached) return;
       detached = true;
+      releasePendingUnauthenticated();
       client.unsubscribe();
       if (currentClient?.socket !== socket) return;
       currentClient = null;
@@ -204,15 +350,15 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
 
       if (sessionJsonlPath) {
         try {
-          const replayed = await replaySession({
+          await replaySession({
             socket,
             sessionJsonlPath,
             writeMessage,
+            onEvent: (event) => {
+              const identity = eventIdentity(event, persistTranscript);
+              if (identity !== null) rememberReplayIdentity(identity);
+            },
           });
-          for (const event of replayed) {
-            const identity = eventIdentity(event, persistTranscript);
-            if (identity !== null) replayedIdentities.add(identity);
-          }
         } catch (err) {
           bus.publish({
             type: 'warning',
@@ -230,13 +376,17 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
       replaying = false;
       for (const event of liveBacklog.splice(0)) {
         const identity = eventIdentity(event, persistTranscript);
-        if (identity !== null && replayedIdentities.delete(identity)) continue;
+        if (identity !== null && consumeReplayIdentity(identity)) continue;
         writeEvent(event);
       }
+      replayedIdentities.clear();
+      replayedIdentityBytes = 0;
     }
 
-    const lineBuffer = createLineBuffer(
-      (line) => {
+    const lineBuffer = createSocketLineBuffer({
+      maxLineBytes: IPC_MAX_FRAME_BYTES,
+      onLine: (line) => {
+        if (socket.destroyed) return;
         const trimmed = line.trim();
         if (!trimmed) return;
         let msg: ReturnType<typeof parseClientMessage>;
@@ -274,6 +424,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
             return;
           }
           authenticated = true;
+          releasePendingUnauthenticated();
           void startAuthenticatedSession();
           return;
         }
@@ -293,9 +444,11 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
               code: 'unauthorized',
               message: 'IPC: invalid detached parent acceptance',
             });
+            releasePendingUnauthenticated();
             socket.end();
             return;
           }
+          releasePendingUnauthenticated();
           writeMessage(socket, {
             kind: 'parent_accepted',
             version: msg.version,
@@ -362,23 +515,38 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
           socket.destroy();
         }
       },
-      {
-        maxLineBytes: IPC_MAX_FRAME_BYTES,
-        onOverflow: (overflow) => {
-          publishIpcOperationalWarning(
-            bus,
-            `IPC: client frame too large: ${overflow.lineBytes} bytes`,
-            'client_frame_too_large',
-          );
-          socket.destroy();
-          detachClient();
-        },
+      onOverflow: (lineBytes) => {
+        publishIpcOperationalWarning(
+          bus,
+          `IPC: client frame too large: ${lineBytes} bytes`,
+          'client_frame_too_large',
+        );
+        socket.destroy();
+        detachClient();
       },
-    );
+    });
 
-    socket.setEncoding('utf8');
-    socket.on('data', (chunk: string) => {
+    authTimer = setTimeout(() => {
+      if (authenticated || detached || socket.destroyed) return;
+      publishIpcOperationalWarning(
+        bus,
+        'IPC: client authentication timed out',
+        'authentication_timeout',
+      );
+      writeMessage(socket, {
+        kind: 'error',
+        code: 'unauthorized',
+        message: 'IPC: client authentication timed out',
+      });
+      socket.destroy();
+      detachClient();
+    }, IPC_AUTH_DEADLINE_MS);
+    authTimer.unref?.();
+
+    socket.on('data', (chunk: Buffer) => {
+      if (socket.destroyed) return;
       lineBuffer.push(chunk);
+      syncPendingBufferedBytes(lineBuffer);
     });
 
     socket.on('close', () => {
@@ -414,6 +582,10 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
     },
     close(): Promise<void> {
       promptTracker.rejectAll((request) => ipcPromptError.cancelledWhileClosing(request.kind));
+
+      for (const socket of pendingUnauthenticatedSockets) {
+        socket.destroy();
+      }
 
       if (currentClient) {
         try {

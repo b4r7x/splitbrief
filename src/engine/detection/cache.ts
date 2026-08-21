@@ -15,12 +15,14 @@ import {
   CliTrustStateSchema,
   CliToolDetectionSchema,
   ProviderDetectionSchema,
+  type CliExecutableFingerprint,
   type CliToolDetection,
   type ProviderDetection,
 } from '../../core/discovery/detection.js';
 import type { ActiveRunnerRole } from '../../core/config/accessors/active-runner.js';
 import type { DetectedModel } from '../../core/discovery/detection.js';
 import { getSplitbriefPath, SPLITBRIEF_DIR } from '../../core/paths.js';
+import { CacheVersionStringBaseSchema } from '../../core/schemas/cache-version.js';
 import { CliToolIdSchema } from '../../core/schemas/enums.js';
 import { CLI_AUTH_CHANNEL_IDS, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
 
@@ -73,15 +75,10 @@ const CacheContextKeySchema = z
     return !hasSensitiveCacheValue(scanned) && !hasPrivateContextIdentifier(scanned);
   }, 'Cache context must not include credential material, hashes, or private identifiers');
 
-const CacheVersionStringSchema = z
-  .string()
-  .min(1)
-  .max(128)
-  .regex(/^[A-Za-z0-9][A-Za-z0-9._+-]*$/)
-  .refine(
-    (value) => !hasSensitiveCacheValue(value),
-    'Cache version metadata must not include credential material or hashes',
-  );
+const CacheVersionStringSchema = CacheVersionStringBaseSchema.refine(
+  (value) => !hasSensitiveCacheValue(value),
+  'Cache version metadata must not include credential material or hashes',
+);
 
 const MAX_CACHED_MODELS_PER_ENTRY = 500;
 
@@ -399,6 +396,32 @@ export async function loadDetectionCacheSnapshot(
   const cache = await readCache(input.projectDir);
   if (cache === null || cache.contextKey !== input.contextKey) return null;
   return snapshotFromCache(cache);
+}
+
+export interface RememberedCliRuntime {
+  readonly installedVersion: string;
+  readonly fingerprint: CliExecutableFingerprint;
+}
+
+/**
+ * Answers the single question a runner construction asks of the remembered
+ * record: which version did the last readiness pass observe for this tool. The
+ * context-keyed reader cannot answer it across processes — the generated key
+ * embeds a per-process config identity — so the record's own executable
+ * fingerprint travels back with the version instead, and the caller binds the
+ * answer to the binary it is about to start. Records past the readiness
+ * freshness bound are withheld.
+ */
+export async function loadRememberedCliRuntime(
+  input: Readonly<{ projectDir: string; tool: CliToolId }>,
+): Promise<RememberedCliRuntime | null> {
+  const cache = await readCache(input.projectDir);
+  if (cache === null || Date.now() - cache.fetchedAt >= DEFAULT_TTL_MS) return null;
+  const remembered = cache.cliTools.find((cli) => cli.tool === input.tool);
+  if (remembered === undefined) return null;
+  const { installedVersion, fingerprint } = remembered;
+  if (installedVersion === null || fingerprint === null) return null;
+  return { installedVersion, fingerprint };
 }
 
 /**

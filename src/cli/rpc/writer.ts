@@ -1,7 +1,10 @@
 import type { EngineEvent } from '../../engine/events/types.js';
 import { RecoveryIssueSchema } from '../../core/schemas/recovery/schemas.js';
 import { CostPredictionSchema } from '../../core/schemas/summary.js';
-import { protectConsumerPayload } from '../../core/consumer-policy.js';
+import {
+  CALL_CONSUMER_REDACTION_MARKER,
+  protectConsumerPayload,
+} from '../../core/consumer-policy.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import {
   projectCostPredictionForTranscriptPolicy,
@@ -10,9 +13,12 @@ import {
 } from '../../engine/events/protection/protect.js';
 import { projectRecoveryIssueForTranscriptPolicy } from '../../engine/events/public-json.js';
 import { userEditConflictSchema } from '../../engine/events/schema.js';
+import type { ArtifactApprovalReview } from '../../engine/runners/types.js';
+import { redactSecretsWithMetadata } from '../../utils/redact.js';
+import { stripTerminalControls } from '../../utils/display-text.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { isArtifactApprovalStatus } from './gates.js';
-import { RPC_MAX_FRAME_BYTES } from './types.js';
+import { RPC_MAX_FRAME_BYTES, RPC_MAX_PENDING_OUTPUT_BYTES } from './types.js';
 import type { RpcResponse } from './types.js';
 
 export interface RpcErrorOptions {
@@ -25,20 +31,74 @@ export function createResponseWriter(deps: {
   stream: NodeJS.WritableStream;
   onClose: (reason: string) => void;
   getPersistTranscript?: (() => boolean) | undefined;
+  maxPendingBytes?: number | undefined;
 }) {
+  const maxPendingBytes = Number.isFinite(deps.maxPendingBytes)
+    ? Math.max(0, Math.floor(deps.maxPendingBytes ?? 0))
+    : RPC_MAX_PENDING_OUTPUT_BYTES;
   let broken = false;
+  let pendingBytes = 0;
+  let current: { frame: string; bytes: number } | null = null;
+  let waitingForDrain = false;
+  let drainHandler: (() => void) | null = null;
+  const queue: Array<{ frame: string; bytes: number }> = [];
 
-  deps.stream.on('error', (err) => {
+  function closeWriter(reason: string): void {
     if (broken) return;
     broken = true;
-    deps.onClose(`output stream error: ${String(err)}`);
+    pendingBytes = 0;
+    current = null;
+    queue.length = 0;
+    if (drainHandler !== null) {
+      deps.stream.removeListener('drain', drainHandler);
+      drainHandler = null;
+    }
+    waitingForDrain = false;
+    deps.onClose(reason);
+  }
+
+  deps.stream.on('error', (err) => {
+    closeWriter(`output stream error: ${String(err)}`);
   });
 
   deps.stream.on('close', () => {
-    if (broken) return;
-    broken = true;
-    deps.onClose('output stream closed');
+    closeWriter('output stream closed');
   });
+
+  function pump(): void {
+    if (broken || current !== null || waitingForDrain) return;
+    while (!broken && current === null && !waitingForDrain) {
+      const next = queue.shift();
+      if (next === undefined) return;
+      current = next;
+      let accepted: boolean;
+      try {
+        accepted = deps.stream.write(next.frame);
+      } catch {
+        closeWriter('output stream write failed');
+        return;
+      }
+      if (broken) return;
+      if (!accepted) {
+        waitingForDrain = true;
+        const onDrain = () => {
+          if (drainHandler !== onDrain) return;
+          drainHandler = null;
+          waitingForDrain = false;
+          if (current !== null) {
+            pendingBytes -= current.bytes;
+            current = null;
+          }
+          pump();
+        };
+        drainHandler = onDrain;
+        deps.stream.once('drain', onDrain);
+        return;
+      }
+      pendingBytes -= next.bytes;
+      current = null;
+    }
+  }
 
   function write(response: RpcResponse): boolean {
     if (broken) return false;
@@ -54,28 +114,30 @@ export function createResponseWriter(deps: {
       if (serialized === undefined) return false;
       return writeSerialized(serialized);
     } catch {
-      broken = true;
-      deps.onClose('output stream write failed');
+      closeWriter('output stream write failed');
       return false;
     }
   }
 
   function writeSerialized(serialized: string): boolean {
     if (broken) return false;
-    try {
-      deps.stream.write(`${serialized}\n`);
-      return true;
-    } catch {
-      broken = true;
-      deps.onClose('output stream write failed');
+    const frame = `${serialized}\n`;
+    const bytes = Buffer.byteLength(frame, 'utf8');
+    if (pendingBytes + bytes > maxPendingBytes) {
+      closeWriter(`pending RPC output exceeded ${maxPendingBytes} bytes`);
       return false;
     }
+    queue.push({ frame, bytes });
+    pendingBytes += bytes;
+    pump();
+    return true;
   }
 
   function writeArtifactApprovalStatus(data: unknown, persistTranscript: boolean): boolean {
     if (!isArtifactApprovalStatus(data)) return false;
     try {
       const { review, ...status } = data;
+      const protectedReview = protectArtifactReview(review);
       const protectedResponse = protectConsumerPayload({
         context: 'rpc',
         payload: { type: 'status', data: protectStatusData(status, persistTranscript) },
@@ -90,7 +152,7 @@ export function createResponseWriter(deps: {
       }
       const serialized = JSON.stringify({
         type: 'status',
-        data: { ...protectedResponse.payload.data, review },
+        data: { ...protectedResponse.payload.data, review: protectedReview },
       });
       if (
         serialized === undefined ||
@@ -136,6 +198,19 @@ export function createResponseWriter(deps: {
   function persistTranscript(): boolean {
     return deps.getPersistTranscript?.() ?? true;
   }
+}
+
+function protectArtifactReview(review: ArtifactApprovalReview): ArtifactApprovalReview {
+  const textWithoutTerminalControls = review.text
+    .split('\u0000')
+    .map((part) => stripTerminalControls(part, { preserveLineBreaks: true }))
+    .join('\u0000');
+  return {
+    ...review,
+    text: redactSecretsWithMetadata(textWithoutTerminalControls, {
+      marker: CALL_CONSUMER_REDACTION_MARKER,
+    }).text,
+  };
 }
 
 function protectAckData(command: string, data: unknown, persistTranscript: boolean): unknown {

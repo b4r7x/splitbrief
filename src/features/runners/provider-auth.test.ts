@@ -64,16 +64,17 @@ describe('validateProviderKey', () => {
 describe('failureCopy', () => {
   const descriptors = [API_PROVIDER_CATALOG.openai, API_PROVIDER_CATALOG.groq];
 
-  it.each(
-    PROVIDER_CATALOG_FAILURE_KINDS,
-  )('returns actionable %s copy that cannot contain a pasted key', (failure) => {
-    for (const descriptor of descriptors) {
-      const copy = failureCopy(failure, descriptor);
-      expect(copy.length).toBeGreaterThan(0);
-      expect(copy).toContain(descriptor.displayName);
-      expect(copy).not.toContain(PASTED_KEY);
-    }
-  });
+  it.each(PROVIDER_CATALOG_FAILURE_KINDS)(
+    'returns actionable %s copy that cannot contain a pasted key',
+    (failure) => {
+      for (const descriptor of descriptors) {
+        const copy = failureCopy(failure, descriptor);
+        expect(copy.length).toBeGreaterThan(0);
+        expect(copy).toContain(descriptor.displayName);
+        expect(copy).not.toContain(PASTED_KEY);
+      }
+    },
+  );
 });
 
 describe('needsAuthAction', () => {

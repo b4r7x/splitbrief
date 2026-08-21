@@ -34,6 +34,11 @@ import type { PlannerCapabilities } from '../../planners/types.js';
 import type { Planner, PlannerCallbacks, PlanResult } from '../../planners/types.js';
 import type { RunnerCallContext } from '../../calls/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
+import {
+  OwnedPlannerArtifactSchema,
+  createTaskCompilationAttemptId,
+} from '../../../core/schemas/task-compilation.js';
+import { sha256Hex } from '../../../utils/sha256.js';
 import { zeroTaskRetryPrompt } from '../../spec/prompts/zero-task-retry.js';
 
 const TEST_METADATA = {
@@ -65,6 +70,29 @@ Rename the symbol.
 ### Evidence
 - brief-quality.json shows the task brief is complete
 `;
+
+function phaseResult(
+  logicalName: 'research.md' | 'spec.md' | 'plan.md' | 'tasks.md',
+  text: string,
+) {
+  const digest = sha256Hex(text);
+  return {
+    artifact: OwnedPlannerArtifactSchema.parse({
+      semanticId: `test-${logicalName}`,
+      programId: null,
+      batchId: null,
+      attemptId: createTaskCompilationAttemptId(),
+      logicalName,
+      transport: 'stdout-final',
+      text,
+      byteLength: Buffer.byteLength(text, 'utf8'),
+      sha256: digest,
+      runtimeReceipt: digest,
+      terminal: { status: 'completed', recordId: `test-${logicalName}`, protocolDigest: digest },
+      sourceReceipt: { kind: 'stdout-final', resultDigest: digest },
+    }),
+  };
+}
 
 let dirs: string[] = [];
 afterEach(() => {
@@ -102,7 +130,7 @@ function instantPlanResult(overrides?: Partial<PlanResult>): PlanResult {
       }),
     ],
     usage: { inputTokens: 30, outputTokens: 15 },
-    phases: [{ text: SAMPLE_TASKS_MD, filename: TASKS_FILE }],
+    phases: [phaseResult(TASKS_FILE, SAMPLE_TASKS_MD)],
     ...overrides,
   };
 }
@@ -120,7 +148,7 @@ function invalidPlanResult(overrides?: Partial<PlanResult>): PlanResult {
       },
     ],
     usage: { inputTokens: 30, outputTokens: 15 },
-    phases: [{ text: SAMPLE_TASKS_MD, filename: TASKS_FILE }],
+    phases: [phaseResult(TASKS_FILE, SAMPLE_TASKS_MD)],
     ...overrides,
   };
 }
@@ -188,8 +216,8 @@ describe('runInstantPlanning', () => {
       rewindPending: { target: 'plan', comment: rawFeedback },
     });
 
-    expect(result.cancelled).toBe(false);
-    expect(result.failed).toBe(false);
+    expect(result.disposition).toBe('parked');
+    expect(result.disposition).toBe('parked');
     expect(instantPlan).toHaveBeenCalledWith(
       expect.objectContaining({
         feature: expect.stringContaining(rawFeedback),
@@ -232,15 +260,18 @@ describe('runInstantPlanning', () => {
     expect(existsSync(join(dir, PLAN_FILE))).toBe(false);
     expect(existsSync(join(dir, RESEARCH_FILE))).toBe(false);
 
-    expect(result.cancelled).toBe(false);
-    expect(result.state.phase).toBe('implementing');
-    expect(result.tasks).toHaveLength(1);
-    expect(result.tasks[0]?.id).toBe('T099');
+    expect(result.disposition).toBe('parked');
+    expect(result.state.phase).toBe('idle');
+    expect(result.state.tasks).toHaveLength(1);
+    expect(result.state.tasks[0]?.id).toBe('T099');
+    expect(result.state.generation).toBeDefined();
+    expect(result.state.generation?.programId).toBeNull();
+    expect(result.state.permit ?? null).toBeNull();
 
     const implementingRunning = events.find(
       (e) => e.type === 'planner_status' && e.status === 'running' && e.phase === 'implementing',
     );
-    expect(implementingRunning).toBeDefined();
+    expect(implementingRunning).toBeUndefined();
 
     const modeResolved = events.find((e) => e.type === 'mode_resolved');
     const instantReceived = events.find((e) => e.type === 'instant_plan_received');
@@ -274,7 +305,7 @@ describe('runInstantPlanning', () => {
       state: { ...initial, phase: 'idle' },
       feature: 'feature',
     });
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('parked');
   });
 
   it('passes the workflow signal to instantPlan callbacks', async () => {
@@ -377,33 +408,29 @@ describe('runInstantPlanning', () => {
       instantPlan: vi
         .fn()
         .mockResolvedValue(
-          instantPlanResult({ tasks: [], phases: [{ text: '# empty', filename: TASKS_FILE }] }),
+          instantPlanResult({ tasks: [], phases: [phaseResult(TASKS_FILE, '# empty')] }),
         ),
     });
-    expect(result.cancelled).toBe(true);
-    expect(result.failed).toBe(true);
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'failed' });
     expect(result.state.phase).toBe('idle');
-    expect(result.tasks).toHaveLength(0);
+    expect(result.state.tasks).toHaveLength(0);
     const errorEvent = events.find((e) => e.type === 'error');
     expect(errorEvent && 'message' in errorEvent ? errorEvent.message : null).toBe(
       'Planning failed: instant planner returned zero tasks; cannot proceed',
     );
   });
 
-  it('retries the zero-task single call exactly once before failing, persisting the planner text', async () => {
+  it('retries the zero-task single call exactly once before failing without promoting its text', async () => {
     const instantPlan = vi
       .fn()
       .mockResolvedValue(
-        instantPlanResult({ tasks: [], phases: [{ text: '# empty', filename: TASKS_FILE }] }),
+        instantPlanResult({ tasks: [], phases: [phaseResult(TASKS_FILE, '# empty')] }),
       );
     const { result, projectDir, sessionId, events } = await runInstant({ instantPlan });
 
     expect(instantPlan).toHaveBeenCalledTimes(2);
-    expect(result.cancelled).toBe(true);
-    expect(existsSync(join(sessionDir(projectDir, sessionId), TASKS_FILE))).toBe(true);
-    expect(readFileSync(join(sessionDir(projectDir, sessionId), TASKS_FILE), 'utf-8')).toContain(
-      '# empty',
-    );
+    expect(result.disposition).toBe('terminal');
+    expect(existsSync(join(sessionDir(projectDir, sessionId), TASKS_FILE))).toBe(false);
     const warning = events.find(
       (e) => e.type === 'warning' && 'code' in e && e.code === 'planner_returned_zero_tasks',
     );
@@ -415,7 +442,6 @@ describe('runInstantPlanning', () => {
     if (warning && 'message' in warning) {
       expect(warning.message).toContain('instant');
       expect(warning.message).toContain('no parsable Task Brief');
-      expect(warning.message).toContain(TASKS_FILE);
     }
   });
 
@@ -423,15 +449,15 @@ describe('runInstantPlanning', () => {
     const instantPlan = vi
       .fn()
       .mockResolvedValueOnce(
-        instantPlanResult({ tasks: [], phases: [{ text: '# empty', filename: TASKS_FILE }] }),
+        instantPlanResult({ tasks: [], phases: [phaseResult(TASKS_FILE, '# empty')] }),
       )
       .mockResolvedValueOnce(instantPlanResult());
     const { result, events } = await runInstant({ instantPlan });
 
     expect(instantPlan).toHaveBeenCalledTimes(2);
-    expect(result.cancelled).toBe(false);
-    expect(result.state.phase).toBe('implementing');
-    expect(result.tasks).toHaveLength(1);
+    expect(result.disposition).toBe('parked');
+    expect(result.state.phase).toBe('idle');
+    expect(result.state.tasks).toHaveLength(1);
     expect(events.find((e) => e.type === 'warning')).toBeUndefined();
   });
 
@@ -440,12 +466,12 @@ describe('runInstantPlanning', () => {
     const instantPlan = vi.fn().mockImplementation(async ({ feature }: { feature: string }) => {
       prompts.push(feature);
       return prompts.length === 1
-        ? instantPlanResult({ tasks: [], phases: [{ text: '# empty', filename: TASKS_FILE }] })
+        ? instantPlanResult({ tasks: [], phases: [phaseResult(TASKS_FILE, '# empty')] })
         : instantPlanResult();
     });
     const { result } = await runInstant({ instantPlan });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('parked');
     expect(prompts[0]).toContain('rename foo to bar');
     expect(prompts[1]).toBe(zeroTaskRetryPrompt('rename foo to bar', []));
   });
@@ -457,56 +483,63 @@ describe('runInstantPlanning', () => {
         instantPlanResult({
           tasks: [],
           usage: { inputTokens: 30, outputTokens: 15 },
-          phases: [{ text: '# empty', filename: TASKS_FILE }],
+          phases: [phaseResult(TASKS_FILE, '# empty')],
         }),
       )
       .mockResolvedValueOnce(instantPlanResult({ usage: { inputTokens: 12, outputTokens: 7 } }));
     const { result } = await runInstant({ instantPlan });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('parked');
     expect(result.state.tokenUsage.plannerInput).toBe(42);
     expect(result.state.tokenUsage.plannerOutput).toBe(22);
   });
 
-  it('persists the first call phases when the retry produces none', async () => {
-    const instantPlan = vi
-      .fn()
-      .mockResolvedValueOnce(
-        instantPlanResult({
-          tasks: [],
-          phases: [{ text: '# first attempt text', filename: TASKS_FILE }],
-        }),
-      )
-      .mockResolvedValueOnce(instantPlanResult({ phases: [] }));
-    const { result, projectDir, sessionId } = await runInstant({ instantPlan });
-
-    expect(result.cancelled).toBe(false);
-    expect(readFileSync(join(sessionDir(projectDir, sessionId), TASKS_FILE), 'utf-8')).toContain(
-      '# first attempt text',
-    );
-  });
-
-  it('lets the retry phase win a filename the first call also produced', async () => {
+  it('persists nothing when the terminal retry produces no phases', async () => {
     const instantPlan = vi
       .fn()
       .mockResolvedValueOnce(
         instantPlanResult({
           tasks: [],
           phases: [
-            { text: '# first tasks', filename: TASKS_FILE },
-            { text: '# first spec', filename: SPEC_FILE },
+            phaseResult(TASKS_FILE, '# first attempt text'),
+            phaseResult(SPEC_FILE, '# first attempt spec'),
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(instantPlanResult({ tasks: [], phases: [] }));
+    const { result, projectDir, sessionId } = await runInstant({ instantPlan });
+
+    expect(instantPlan).toHaveBeenCalledTimes(2);
+    expect(result.disposition).toBe('terminal');
+    const dir = sessionDir(projectDir, sessionId);
+    expect(existsSync(join(dir, TASKS_FILE))).toBe(false);
+    expect(existsSync(join(dir, SPEC_FILE))).toBe(false);
+  });
+
+  it('persists only the terminal retry phases when the first call also produced a filename', async () => {
+    const instantPlan = vi
+      .fn()
+      .mockResolvedValueOnce(
+        instantPlanResult({
+          tasks: [],
+          phases: [
+            phaseResult(TASKS_FILE, '# first tasks'),
+            phaseResult(SPEC_FILE, '# first spec'),
           ],
         }),
       )
       .mockResolvedValueOnce(
-        instantPlanResult({ phases: [{ text: '# retry tasks', filename: TASKS_FILE }] }),
+        instantPlanResult({ phases: [phaseResult(TASKS_FILE, SAMPLE_TASKS_MD)] }),
       );
-    const { projectDir, sessionId } = await runInstant({ instantPlan });
+    const { result, projectDir, sessionId } = await runInstant({ instantPlan });
 
+    expect(instantPlan).toHaveBeenCalledTimes(2);
+    expect(result.disposition).toBe('parked');
     const dir = sessionDir(projectDir, sessionId);
-    expect(readFileSync(join(dir, TASKS_FILE), 'utf-8')).toContain('# retry tasks');
-    expect(readFileSync(join(dir, TASKS_FILE), 'utf-8')).not.toContain('# first tasks');
-    expect(readFileSync(join(dir, SPEC_FILE), 'utf-8')).toContain('# first spec');
+    const tasksText = readFileSync(join(dir, TASKS_FILE), 'utf-8');
+    expect(tasksText).toContain('Rename foo to bar');
+    expect(tasksText).not.toContain('# first tasks');
+    expect(existsSync(join(dir, SPEC_FILE))).toBe(false);
   });
 
   it('performs exactly one planner call when the first call returns tasks', async () => {
@@ -610,7 +643,7 @@ describe('runInstantPlanning', () => {
     );
   });
 
-  it('asks collected questions before START_INSTANT', async () => {
+  it('asks collected questions before parking the owner handoff', async () => {
     const { projectDir, sessionId } = setupProject();
     const question: ClarificationQuestion = { id: 'q1', type: 'input', text: 'Module name?' };
     const planner = makePlanner({
@@ -641,7 +674,7 @@ describe('runInstantPlanning', () => {
       feature: 'feature',
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('parked');
     expect(onQuestionAsked).toHaveBeenCalledWith(question, 1, 1);
     const specContent = readFileSync(join(sessionDir(projectDir, sessionId), SPEC_FILE), 'utf-8');
     expect(specContent).toContain('## Clarifications');
@@ -696,7 +729,7 @@ describe('runInstantPlanning', () => {
       feature: 'feature',
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('parked');
     expect(onQuestionAsked.mock.calls).toEqual([
       [firstQuestion, 1, 5],
       [distinctQuestions[0], 2, 5],
@@ -706,7 +739,7 @@ describe('runInstantPlanning', () => {
     ]);
   });
 
-  it('all-skip proceeds to START_INSTANT', async () => {
+  it('all-skip parks without entering implementation', async () => {
     const { projectDir, sessionId } = setupProject();
     const question: ClarificationQuestion = { id: 'q1', type: 'input', text: 'Module name?' };
     const planner = makePlanner({
@@ -738,8 +771,8 @@ describe('runInstantPlanning', () => {
     });
 
     expect(onQuestionAsked).toHaveBeenCalledWith(question, 1, 1);
-    expect(result.cancelled).toBe(false);
-    expect(result.state.phase).toBe('implementing');
+    expect(result.disposition).toBe('parked');
+    expect(result.state.phase).toBe('idle');
   });
 });
 
@@ -772,11 +805,10 @@ describe('createPlannerBase — unknown Task Brief section warning (F-429 / N399
   it('emits a warning event when planner-generated briefs contain an unknown ### section', async () => {
     const { projectDir, sessionId } = setupPlanningProject(dirs);
     const planner = createPlannerBase({
-      invokePlan: async () => completedPlannerBaseRunnerCall('raw stdout noise'),
+      invokePlan: async () => completedPlannerBaseRunnerCall(tasksWithUnknownSection),
       invokeEscalate: async () => completedPlannerBaseRunnerCall(''),
       isAvailable: async () => true,
       capabilities: plannerBaseCapabilities,
-      readPhaseOutput: () => tasksWithUnknownSection,
     });
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
@@ -798,7 +830,7 @@ describe('createPlannerBase — unknown Task Brief section warning (F-429 / N399
       feature: 'add auth',
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('parked');
     const warning = events.find(
       (e) => e.type === 'warning' && e.message.includes('Future Considerations'),
     );

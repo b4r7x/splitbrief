@@ -1,12 +1,23 @@
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { error } from '../../utils/error.js';
 import { isRecord } from '../../utils/type-guards.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { PlanTaskReviewMetadata } from '../../core/plan-review/types.js';
-import { BRIEF_QUALITY_FILE, BRIEF_READINESS_FILE } from '../../core/paths.js';
+import {
+  BRIEF_QUALITY_FILE,
+  BRIEF_READINESS_FILE,
+  STATE_FILE,
+  isValidSessionId,
+} from '../../core/paths.js';
+import {
+  BriefRecoveryProjectionV1Schema,
+  type BriefRecoveryProjectionV1,
+} from '../../core/schemas/brief-recovery.js';
+import { WorkflowStateSchema } from '../../core/schemas/workflow.js';
 import { readSessionFileConfined } from '../../core/sessions/confinement.js';
 import { isBriefQualityReport, type BriefQualityReport } from '../../engine/spec/brief-quality.js';
 import type { BriefReadinessGateReport } from '../../engine/orchestrator/planning/brief-readiness-gate.js';
+import { projectBriefRecovery } from '../../engine/orchestrator/planning/brief-recovery-controller.js';
 import { parseTaskSourceBlocks, parseTasksStrict } from '../../engine/spec/tasks/parse.js';
 import { refreshPlanReviewMetadata } from './plan-review-metadata.js';
 
@@ -16,10 +27,11 @@ interface LoadBriefReviewDataOptions {
   signal?: AbortSignal | undefined;
 }
 
-interface LoadBriefReviewDataResult {
+export interface LoadBriefReviewDataResult {
   tasks: Task[];
   quality: BriefQualityReport | null;
   readiness: BriefReadinessGateReport | null;
+  recovery: BriefRecoveryProjectionV1 | null;
   reviewMetadata: ReadonlyMap<string, PlanTaskReviewMetadata>;
   briefSources: string[];
 }
@@ -49,6 +61,36 @@ function parseReadinessReport(text: string | null): BriefReadinessGateReport | n
   }
 }
 
+function parseRecoveryProjection(
+  text: string | null,
+  sessionDirPath: string,
+): BriefRecoveryProjectionV1 | null {
+  if (!text) return null;
+  const sessionId = basename(sessionDirPath);
+  if (!isValidSessionId(sessionId)) return null;
+
+  try {
+    const parsedState: unknown = JSON.parse(text);
+    const state = WorkflowStateSchema.safeParse(parsedState);
+    if (!state.success || state.data.briefRecovery === null) return null;
+    return BriefRecoveryProjectionV1Schema.parse(
+      projectBriefRecovery({
+        sessionId,
+        now: new Date().toISOString(),
+        state: {
+          stateVersion: state.data.stateVersion,
+          stateRevision: state.data.stateRevision ?? 0,
+          stateFence: state.data.stateFence ?? { token: 0, ownerId: 'brief-review-loader' },
+          phase: state.data.phase,
+          briefRecovery: state.data.briefRecovery,
+        },
+      }),
+    );
+  } catch {
+    return null;
+  }
+}
+
 function metadataMap(
   metadata: readonly PlanTaskReviewMetadata[] | null,
 ): ReadonlyMap<string, PlanTaskReviewMetadata> {
@@ -72,14 +114,16 @@ export async function loadBriefReviewData(
     tasks: [],
     quality: null,
     readiness: null,
+    recovery: null,
     reviewMetadata: emptyMetadata,
     briefSources: [],
   };
   if (opts.signal?.aborted) return aborted;
-  const [tasksText, qualityText, readinessText] = await Promise.all([
+  const [tasksText, qualityText, readinessText, stateText] = await Promise.all([
     readSessionFileConfined(opts.sessionDirPath, opts.filePath),
     readSessionFileConfined(opts.sessionDirPath, join(opts.sessionDirPath, BRIEF_QUALITY_FILE)),
     readSessionFileConfined(opts.sessionDirPath, join(opts.sessionDirPath, BRIEF_READINESS_FILE)),
+    readSessionFileConfined(opts.sessionDirPath, join(opts.sessionDirPath, STATE_FILE)),
   ]);
   if (opts.signal?.aborted) return aborted;
   if (tasksText === null) {
@@ -91,10 +135,18 @@ export async function loadBriefReviewData(
   const tasks = parseTasksStrict(tasksText);
   const quality = parseQualityReport(qualityText);
   const readiness = parseReadinessReport(readinessText);
+  const recovery = parseRecoveryProjection(stateText, opts.sessionDirPath);
   const briefSources = alignBriefSources(tasksText, tasks);
   const metadata = await refreshPlanReviewMetadata(tasks);
   if (opts.signal?.aborted) {
-    return { tasks, quality, readiness, reviewMetadata: emptyMetadata, briefSources };
+    return { tasks, quality, readiness, recovery, reviewMetadata: emptyMetadata, briefSources };
   }
-  return { tasks, quality, readiness, reviewMetadata: metadataMap(metadata), briefSources };
+  return {
+    tasks,
+    quality,
+    readiness,
+    recovery,
+    reviewMetadata: metadataMap(metadata),
+    briefSources,
+  };
 }

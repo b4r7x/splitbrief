@@ -219,39 +219,39 @@ describe('killAllProcesses', () => {
     }
   });
 
-  it.each([
-    'ESRCH',
-    'EPERM',
-  ] as const)('accepts %s when the process group disappears during signal reconciliation', async (signalCode) => {
-    vi.useFakeTimers();
-    const pid = 2_147_482_992;
-    const proc = { pid, exitCode: null, signalCode: null } as ChildProcess;
-    let groupAlive = true;
-    const signalCause: NodeJS.ErrnoException = new Error('signal target disappeared');
-    signalCause.code = signalCode;
-    const processKill = vi.spyOn(process, 'kill').mockImplementation((targetPid, signal) => {
-      if (targetPid !== -pid) return true;
-      if (signal === 0) {
-        if (groupAlive) return true;
-        const absent: NodeJS.ErrnoException = new Error('absent');
-        absent.code = 'ESRCH';
-        throw absent;
-      }
-      throw signalCause;
-    });
+  it.each(['ESRCH', 'EPERM'] as const)(
+    'accepts %s when the process group disappears during signal reconciliation',
+    async (signalCode) => {
+      vi.useFakeTimers();
+      const pid = 2_147_482_992;
+      const proc = { pid, exitCode: null, signalCode: null } as ChildProcess;
+      let groupAlive = true;
+      const signalCause: NodeJS.ErrnoException = new Error('signal target disappeared');
+      signalCause.code = signalCode;
+      const processKill = vi.spyOn(process, 'kill').mockImplementation((targetPid, signal) => {
+        if (targetPid !== -pid) return true;
+        if (signal === 0) {
+          if (groupAlive) return true;
+          const absent: NodeJS.ErrnoException = new Error('absent');
+          absent.code = 'ESRCH';
+          throw absent;
+        }
+        throw signalCause;
+      });
 
-    try {
-      const termination = killProcess(proc, { group: true });
-      setTimeout(() => {
-        groupAlive = false;
-      }, 20);
-      await vi.advanceTimersByTimeAsync(30);
-      await expect(termination).resolves.toBeUndefined();
-    } finally {
-      processKill.mockRestore();
-      vi.useRealTimers();
-    }
-  });
+      try {
+        const termination = killProcess(proc, { group: true });
+        setTimeout(() => {
+          groupAlive = false;
+        }, 20);
+        await vi.advanceTimersByTimeAsync(30);
+        await expect(termination).resolves.toBeUndefined();
+      } finally {
+        processKill.mockRestore();
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it('types an inspection failure after ESRCH as absence verification', async () => {
     const pid = 2_147_482_993;

@@ -5,9 +5,13 @@ import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js'
 import { formatRepoMapBlock, prepareInvokeArgs, runSinglePhasePlanning } from './single-phase.js';
 import type { PlannerCallbacks } from './types.js';
 import type { LanguageContext } from '../spec/prompts/language-context.js';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SESSION_LOG_FILE, sessionDir } from '../../core/paths.js';
+import {
+  createTaskCompilationAttemptId,
+  TaskCompilationSemanticIdSchema,
+} from '../../core/schemas/task-compilation.js';
 
 const taskMarkdown = `---
 id: T001
@@ -125,16 +129,15 @@ describe('runSinglePhasePlanning', () => {
     expect(result.tasks).toHaveLength(1);
     expect(result.tasks[0]?.id).toBe('T001');
     expect(result.phases).toHaveLength(1);
-    expect(result.phases?.[0]?.filename).toBe('tasks.md');
-    expect(result.phases?.[0]?.text).toBe(taskMarkdown);
+    expect(result.phases?.[0]?.artifact.logicalName).toBe('tasks.md');
+    expect(result.phases?.[0]?.artifact.text).toBe(taskMarkdown);
     expect(result.phases?.[0]?.rawOutput).toBeUndefined();
   });
 
-  it('resolves the artifact via readPhaseOutput and retains raw stdout separately', async () => {
+  it('uses the terminal result text as the artifact and never reopens a file', async () => {
     const result = await runSinglePhasePlanning(
       {
-        invokePlan: async () => completedRunnerCall('raw stdout noise'),
-        readPhaseOutput: () => taskMarkdown,
+        invokePlan: async () => completedRunnerCall(taskMarkdown),
       },
       promptBuilder,
       'add a widget',
@@ -143,8 +146,8 @@ describe('runSinglePhasePlanning', () => {
       undefined,
     );
 
-    expect(result.phases?.[0]?.text).toBe(taskMarkdown);
-    expect(result.phases?.[0]?.rawOutput).toBe('raw stdout noise');
+    expect(result.phases?.[0]?.artifact.text).toBe(taskMarkdown);
+    expect(result.phases?.[0]?.rawOutput).toBeUndefined();
     expect(result.tasks[0]?.id).toBe('T001');
   });
 
@@ -184,5 +187,102 @@ describe('runSinglePhasePlanning', () => {
         interrupted: true,
       }),
     ]);
+  });
+});
+
+describe('runSinglePhasePlanning — current-call ownership', () => {
+  it('derives the phase from the completed current result and retains the receipt', async () => {
+    const attemptIds: string[] = [];
+    const result = await runSinglePhasePlanning(
+      {
+        invokePlan: async ({ callContext }) => {
+          attemptIds.push(callContext.attemptId ?? '');
+          return completedRunnerCall(taskMarkdown);
+        },
+      },
+      promptBuilder,
+      'add a widget',
+      projectDir,
+      { onOutput: () => {} },
+      undefined,
+    );
+
+    const phase = result.phases?.[0];
+    expect(phase?.artifact.text).toBe(taskMarkdown);
+    expect(phase?.artifact.attemptId).toBe(attemptIds[0]);
+    expect(phase?.artifact.transport).toBe('stdout-final');
+    expect(phase?.artifact.sourceReceipt).toMatchObject({ kind: 'stdout-final' });
+  });
+
+  it('rejects a failed call without phase bytes and stays single-call', async () => {
+    let invokes = 0;
+    await expect(
+      runSinglePhasePlanning(
+        {
+          invokePlan: async () => {
+            invokes += 1;
+            return makeRunnerCallResult({
+              status: 'failed',
+              text: 'partial bytes',
+              error: { code: 'provider', message: 'boom' },
+            });
+          },
+        },
+        promptBuilder,
+        'add a widget',
+        projectDir,
+        { onOutput: () => {} },
+        undefined,
+      ),
+    ).rejects.toMatchObject({ kind: 'runner-call-failed' });
+    expect(invokes).toBe(1);
+  });
+
+  it('ignores stale files on disk when deriving phase bytes', async () => {
+    writeFileSync(join(projectDir, 'tasks.md'), 'stale disk bytes');
+    const result = await runSinglePhasePlanning(
+      { invokePlan: async () => completedRunnerCall(taskMarkdown) },
+      promptBuilder,
+      'add a widget',
+      projectDir,
+      { onOutput: () => {} },
+      undefined,
+    );
+    expect(result.phases?.[0]?.artifact.text).toBe(taskMarkdown);
+  });
+
+  it('rejects a declared-file receipt bound to a different attempt', async () => {
+    const staleAttemptId = createTaskCompilationAttemptId();
+    await expect(
+      runSinglePhasePlanning(
+        {
+          invokePlan: async () => ({
+            ...completedRunnerCall(taskMarkdown),
+            transport: {
+              kind: 'declared-file',
+              lease: { leaseId: 'lease-1', relativePath: 'out/result' },
+            },
+            ownedArtifactReceipt: {
+              semanticId: TaskCompilationSemanticIdSchema.parse('tasks-program'),
+              programId: null,
+              batchId: null,
+              attemptId: staleAttemptId,
+              leaseId: 'lease-1',
+              relativePath: 'out/result',
+              inodeIdentity: 'inode-1',
+              ancestryDigest: 'ancestry-1',
+              sha256: 'sha-1',
+              byteLength: 10,
+              leaseReceiptDigest: 'lease-digest',
+            },
+          }),
+        },
+        promptBuilder,
+        'add a widget',
+        projectDir,
+        { onOutput: () => {} },
+        undefined,
+      ),
+    ).rejects.toMatchObject({ kind: 'custom-planner-artifact-invalid' });
   });
 });

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ANTIGRAVITY_CLI_ADMISSION_VERDICT,
   ANTIGRAVITY_CLI_CANDIDATE_PATHS,
+  CLI_COMPILER_EVIDENCE,
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
   CLI_TOOL_TRUST,
@@ -17,6 +18,7 @@ import {
   NATIVE_CLI_CATALOG_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
   classifyCliAdmittedVersion,
+  classifyCliCompilerVersion,
   cliAuthChannelHostStateAccess,
   cliModelPolicyViolations,
   cliToolSupportsRole,
@@ -168,13 +170,84 @@ describe('CLI tool catalog', () => {
     ['0.39.9', 'incompatible'],
     ['0.40.0-rc.1', 'unverified'],
     ['0.40', 'unverified'],
-  ] as const)('classifies %s through the descriptor-owned compatibility gate', (version, expected) => {
-    expect(
-      classifyCliAdmittedVersion({
-        installedVersion: version,
-        minimumAdmittedVersion: CLI_TOOL_CATALOG.codex.compatibility.minimumAdmittedVersion,
-      }),
-    ).toBe(expected);
+  ] as const)(
+    'classifies %s through the descriptor-owned compatibility gate',
+    (version, expected) => {
+      expect(
+        classifyCliAdmittedVersion({
+          installedVersion: version,
+          minimumAdmittedVersion: CLI_TOOL_CATALOG.codex.compatibility.minimumAdmittedVersion,
+        }),
+      ).toBe(expected);
+    },
+  );
+
+  it.each([
+    ['1.18.15', 'exact'],
+    ['1.18.14', 'older'],
+    ['1.18.16', 'newer'],
+    ['1.19.0', 'newer'],
+    ['1.18.15-beta.1', 'mismatch'],
+    ['latest', 'mismatch'],
+    ['', 'mismatch'],
+    ['0.40', 'mismatch'],
+  ] as const)(
+    'classifies compiler version %s against the exact admitted version',
+    (installedVersion, expected) => {
+      expect(
+        classifyCliCompilerVersion({
+          installedVersion,
+          exactAdmittedVersion: '1.18.15',
+        }),
+      ).toBe(expected);
+    },
+  );
+
+  it('keeps compiler evidence exact-version-only and immutable', () => {
+    expect(Object.keys(CLI_COMPILER_EVIDENCE)).toEqual(EXISTING_CLI_TOOL_IDS);
+    for (const id of EXISTING_CLI_TOOL_IDS) {
+      const evidence = CLI_COMPILER_EVIDENCE[id];
+      expect(Object.isFrozen(evidence)).toBe(true);
+      expect(Object.isFrozen(evidence.transports)).toBe(true);
+      expect(evidence.fixtureDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      if (evidence.state === 'unsupported') {
+        expect(evidence.version).toBe('');
+        expect(evidence.transports).toEqual([]);
+        expect(evidence.unsupportedReason).toBeTruthy();
+        continue;
+      }
+      expect(evidence.version).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(evidence.transports.length).toBeGreaterThan(0);
+      expect(evidence.terminalContract).toMatch(/v1$/);
+    }
+  });
+
+  it('never reports compiler readiness beyond the exact tested version', () => {
+    const newerPairs = [
+      ['opencode', '1.18.16'],
+      ['claude-code', '2.1.233'],
+      ['codex', '0.147.1'],
+      ['kilo-code', '7.0.50'],
+    ] as const;
+
+    for (const [id, newerVersion] of newerPairs) {
+      const evidence = CLI_COMPILER_EVIDENCE[id];
+      expect(evidence.state).not.toBe('unsupported');
+      // The implementer-path gate stays forward-compatible...
+      expect(
+        classifyCliAdmittedVersion({
+          installedVersion: newerVersion,
+          minimumAdmittedVersion: evidence.version,
+        }),
+      ).toBe('compatible');
+      // ...but the compiler path must not borrow that readiness (REQ-049).
+      expect(
+        classifyCliCompilerVersion({
+          installedVersion: newerVersion,
+          exactAdmittedVersion: evidence.version,
+        }),
+      ).toBe('newer');
+    }
   });
 
   it.each([

@@ -1,466 +1,360 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { writeFile } from 'node:fs/promises';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { formatTasks } from '../../spec/formatter.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
-import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { createInitialState } from '../../../core/state/machine.js';
+import type {
+  BriefAdmissionInput,
+  BriefRecoveryController,
+  BriefRecoveryCommand,
+  QueueBriefInput,
+  QueueResultV1,
+  RecoveryResultV1,
+  StateAuthorityReceipt,
+} from '../../../core/schemas/brief-recovery.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { ApprovalReviewInput } from '../../runners/types.js';
 import {
   makeBusRecorder,
   makeCallbacks,
+  makeImplementer,
   makePlanner,
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
-import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import type { ApprovalReviewInput } from '../../runners/types.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { ensureSessionDir, readSpecFile, writeSpecFile } from '../../../core/paths-io.js';
+import { saveState } from '../../../core/state/persistence.js';
+import { BRIEF_QUALITY_FILE, TASKS_FILE } from '../../../core/paths.js';
+import { sha256Hex } from '../../../utils/sha256.js';
+import { createBriefRecoveryState, inspectBriefRecovery } from '../planning/brief-recovery.js';
 import { reviewAutoSplitOutput } from './auto-split-review.js';
-import { MAX_UNPRODUCTIVE_BRIEF_REVIEW_ATTEMPTS } from '../planning/brief-review-gate.js';
-import { BRIEF_READINESS_FILE, sessionDir } from '../../../core/paths.js';
+import type { PhaseRecoveryBinding } from './phases.js';
 
-let dirs: string[] = [];
+const dirs: string[] = [];
 
 afterEach(() => {
-  for (const dir of dirs) cleanupTempDir(dir);
-  dirs = [];
+  while (dirs.length > 0) {
+    const dir = dirs.pop();
+    if (dir !== undefined) cleanupTempDir(dir);
+  }
   vi.restoreAllMocks();
 });
 
-function makePassingTask(overrides?: Parameters<typeof makeTask>[0]) {
+const QUALITY_POLICY_VERSION = 'quality-v1';
+
+function authority(sessionId: string): StateAuthorityReceipt {
+  return {
+    kind: 'usable',
+    sessionId,
+    ownerId: 'owner-auto-split',
+    pid: 1,
+    processStart: 'start-auto-split',
+    runId: 'run-auto-split',
+    acquisitionId: 'acquisition-auto-split',
+    fence: 1,
+    stateRevision: 0,
+    stateDigest: 'digest-auto-split',
+  };
+}
+
+function admission(projectDir: string, sessionId: string, briefText: string): BriefAdmissionInput {
+  const briefHash = sha256Hex(briefText);
+  const reportBody = JSON.stringify({ briefHash, ruleVersion: QUALITY_POLICY_VERSION });
+  writeSpecFile({ projectDir, sessionId }, BRIEF_QUALITY_FILE, reportBody, null);
+  return {
+    sessionId,
+    origin: { mode: 'standard', entry: 'auto-split' },
+    continuation: { version: 1, kind: 'approval', mode: 'standard', entry: 'auto-split' },
+    activeBrief: { revision: 1, hash: briefHash, path: TASKS_FILE },
+    report: {
+      briefHash,
+      report: { revision: 1, hash: sha256Hex(reportBody), path: BRIEF_QUALITY_FILE },
+      ruleVersion: QUALITY_POLICY_VERSION,
+      issues: [],
+      errorCount: 0,
+    },
+    qualityPolicyVersion: QUALITY_POLICY_VERSION,
+  };
+}
+
+function baseState(): WorkflowState {
+  return { ...createInitialState('auto-split'), phase: 'reviewing-briefs' };
+}
+
+function makeRecovery(
+  sessionId: string,
+  initialStatus: 'blocked' | 'ready',
+  initialState: WorkflowState,
+  projectDir: string,
+  admissionFailure = false,
+): { binding: PhaseRecoveryBinding; commands: BriefRecoveryCommand[]; providerCalls: number } {
+  const initialInput = admission(projectDir, sessionId, formatTasks(initialState.tasks));
+  let recoveryState = createBriefRecoveryState(initialInput, { status: initialStatus });
+  let state = initialState;
+  const commands: BriefRecoveryCommand[] = [];
+  let providerCalls = 0;
+  const currentProjection = () =>
+    inspectBriefRecovery({
+      sessionId,
+      stateRevision: state.stateRevision ?? 0,
+      state: recoveryState,
+    });
+  const persistRecovery = () => {
+    state = { ...state, phase: 'reviewing-briefs', briefRecovery: recoveryState };
+    saveState({ projectDir, sessionId }, state);
+  };
+  const resultFor = (
+    kind: RecoveryResultV1['kind'],
+    operationId: string | null = null,
+  ): RecoveryResultV1 => {
+    if (kind === 'ready')
+      return {
+        version: 1,
+        sessionId,
+        epochId: recoveryState.epochId,
+        kind: 'ready',
+        operationId: null,
+        projection: currentProjection(),
+      };
+    if (kind === 'rejected')
+      return {
+        version: 1,
+        sessionId,
+        epochId: recoveryState.epochId,
+        kind: 'rejected',
+        operationId,
+        projection: currentProjection(),
+      };
+    return {
+      version: 1,
+      sessionId,
+      epochId: recoveryState.epochId,
+      kind: 'blocked',
+      code: 'brief_contract_blocked',
+      operationId,
+      reason: 'Brief remains blocked until a conscious action settles it.',
+      projection: currentProjection(),
+    };
+  };
+  const controller: BriefRecoveryController = {
+    inspectBriefRecovery: () => currentProjection(),
+    enterBriefAdmission: async (input) => {
+      if (admissionFailure) throw new Error('simulated brief admission failure');
+      recoveryState = createBriefRecoveryState(input, { status: initialStatus });
+      persistRecovery();
+      return resultFor(initialStatus === 'ready' ? 'ready' : 'blocked');
+    },
+    dispatchBriefAction: async (command) => {
+      commands.push(command);
+      if (command.action === 'status') return resultFor('blocked');
+      if (command.action === 'approve') {
+        recoveryState = { ...recoveryState, status: 'ready' };
+        persistRecovery();
+        return resultFor('ready');
+      }
+      if (command.action === 'reject') {
+        return resultFor('rejected', command.operationId);
+      }
+      if (command.action === 'retry') {
+        providerCalls += 1;
+        return resultFor('blocked', command.operationId);
+      }
+      if (command.action !== 'edit') return resultFor('blocked', command.operationId);
+      const editedInput = admission(projectDir, sessionId, command.briefText);
+      recoveryState = createBriefRecoveryState(editedInput, { status: 'ready' });
+      persistRecovery();
+      return resultFor('ready', command.operationId);
+    },
+    queueBriefInput: async (input: QueueBriefInput): Promise<QueueResultV1> => ({
+      version: 1,
+      sessionId,
+      epochId: input.epochId,
+      kind: 'accepted',
+      input: {
+        inputId: input.inputId,
+        epochId: input.epochId,
+        sequence: input.sequence,
+        kind: input.kind,
+        source: input.source,
+        payloadRef: input.base,
+        textHash: 'a'.repeat(64),
+        state: 'queued',
+        operationId: input.operationId,
+        appliedRevision: null,
+        remoteObservation: null,
+        history: [
+          {
+            state: 'queued',
+            at: '2026-08-13T00:00:00.000Z',
+            operationId: input.operationId,
+            remoteObservation: null,
+          },
+        ],
+      },
+      projection: currentProjection(),
+    }),
+    settlePlannerAttempt: async () => resultFor('blocked'),
+    migrateBriefRecovery: async () => {
+      throw new Error('unused in auto-split review');
+    },
+  };
+  return {
+    binding: {
+      controller,
+      authority: authority(sessionId),
+      admission: resultFor(initialStatus === 'ready' ? 'ready' : 'blocked'),
+      projection: currentProjection(),
+      createAdmissionInput: ({
+        tasks: _tasks,
+        state: _state,
+        projectDir: inputProjectDir,
+        sessionId: inputSessionId,
+      }) =>
+        admission(
+          inputProjectDir,
+          inputSessionId,
+          readSpecFile({ projectDir: inputProjectDir, sessionId: inputSessionId }, TASKS_FILE) ??
+            '',
+        ),
+      readState: () => state,
+      writeState: (next) => {
+        state = next;
+      },
+    },
+    commands,
+    providerCalls,
+  };
+}
+
+function task(id: string, title = 'Split task') {
   return makeTask({
-    implementationSteps: ['Implement the parser branch'],
-    tests: ['parser handles the accepted branch'],
+    id,
+    title,
+    file: 'src/parser.ts',
+    implementationSteps: ['Implement the parser branch.'],
+    tests: ['The parser branch is covered.'],
     scope: { inBounds: ['src/parser.ts'] },
-    evidence: ['Parser-focused test passes'],
-    ...overrides,
+    evidence: ['The focused parser test passes.'],
   });
 }
 
-const malformedTaskLikeBlock = `---
-id: T002
-title:
-action: invalid
-file:
-depends_on: []
----
-
-### Description
-This block looks like a task but has invalid frontmatter.
-`;
-
 describe('reviewAutoSplitOutput', () => {
-  it('approves when refreshed readiness passes', async () => {
-    const projectDir = createTempDir('auto-split-review-test');
+  it('routes a clean split through admission and controller approval', async () => {
+    const projectDir = createTempDir('auto-split-controller-clean');
     dirs.push(projectDir);
-    const sessionId = 'sess-auto-split-ready';
-    const task = makePassingTask({ id: 'T001', file: 'src/parser.ts' });
-    const state = makeImplState([task]);
+    const sessionId = 'sess-auto-split-clean';
+    ensureSessionDir(projectDir, sessionId);
+    const initial = baseState();
     const { bus } = makeBusRecorder();
-    const onApprovalNeeded = vi.fn(async () => ({ approved: true as const }));
-    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi.fn(async () => ({ approved: true as const })),
+    });
+    const recovery = makeRecovery(sessionId, 'ready', initial, projectDir);
     const setTrackedState = vi.fn();
 
     const result = await reviewAutoSplitOutput({
-      wctx: makeWctx({ projectDir, sessionId, bus, callbacks }),
-      state,
-      tasks: [task],
+      wctx: makeWctx({ projectDir, sessionId, bus, callbacks, planner: makePlanner() }),
+      state: initial,
+      tasks: [task('T001')],
       setTrackedState,
+      recovery: recovery.binding,
     });
 
-    expect(onApprovalNeeded).toHaveBeenCalledOnce();
-    expect(result.approved).toBe(true);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
+    expect(recovery.commands.map((command) => command.action)).toEqual(['approve']);
+    expect(recovery.providerCalls).toBe(0);
   });
 
-  it('re-prompts after a malformed tasks.md, then adopts a corrected file', async () => {
-    const projectDir = createTempDir('auto-split-review-test');
+  it('enters blocked recovery without an automatic retry and allows conscious rejection', async () => {
+    const projectDir = createTempDir('auto-split-controller-reject');
     dirs.push(projectDir);
-    const sessionId = 'sess-auto-split';
-    const task = makePassingTask({ id: 'T001', file: 'src/parser.ts' });
-    const fixedTask = makePassingTask({ id: 'T010', file: 'src/parser.ts', title: 'Corrected' });
-    const state = makeImplState([task]);
-    const { bus, events } = makeBusRecorder();
-    const onApprovalNeeded = vi.fn(
-      async (_type: 'spec' | 'plan' | 'briefs' | 'artifact', input: ApprovalReviewInput) => {
-        if (typeof input !== 'string') {
-          throw new Error('Expected a task briefs file path');
-        }
-        const filePath = input;
-        if (onApprovalNeeded.mock.calls.length === 1) {
-          await writeFile(filePath, `${formatTasks([task])}\n${malformedTaskLikeBlock}`, 'utf8');
-        } else {
-          await writeFile(filePath, formatTasks([fixedTask]), 'utf8');
-        }
-        return { approved: true as const };
-      },
-    );
+    const sessionId = 'sess-auto-split-reject';
+    ensureSessionDir(projectDir, sessionId);
+    const initial = baseState();
+    const { bus } = makeBusRecorder();
+    const onApprovalNeeded = vi.fn(async () => ({ approved: false as const }));
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const setTrackedState = vi.fn();
+    const recovery = makeRecovery(sessionId, 'blocked', initial, projectDir);
 
     const result = await reviewAutoSplitOutput({
       wctx: makeWctx({ projectDir, sessionId, bus, callbacks }),
-      state,
-      tasks: [task],
-      setTrackedState,
+      state: initial,
+      tasks: [task('T001')],
+      setTrackedState: vi.fn(),
+      recovery: recovery.binding,
     });
 
-    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
-    expect(result.approved).toBe(true);
-    expect(result.state.phase).toBe('implementing');
-    expect(result.tasks.map((t) => t.id)).toEqual(['T010']);
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'error',
-        message: expect.stringContaining('invalid Task Briefs'),
-      }),
-    );
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'rejected' });
+    expect(onApprovalNeeded).toHaveBeenCalledOnce();
+    expect(recovery.commands.map((command) => command.action)).toEqual(['reject']);
+    expect(recovery.providerCalls).toBe(0);
   });
 
-  it('re-prompts after an edit instead of approving on the first edit', async () => {
-    const projectDir = createTempDir('auto-split-review-test');
+  it('routes an explicit edit back through blocked recovery before approval', async () => {
+    const projectDir = createTempDir('auto-split-controller-edit');
     dirs.push(projectDir);
     const sessionId = 'sess-auto-split-edit';
-    const task = makePassingTask({ id: 'T001', file: 'src/parser.ts' });
-    const editedTask = makePassingTask({ id: 'T020', file: 'src/parser.ts', title: 'Edited' });
-    const state = makeImplState([task]);
+    ensureSessionDir(projectDir, sessionId);
+    const initial = baseState();
+    const edited = task('T002', 'Edited split task');
     const { bus } = makeBusRecorder();
     const onApprovalNeeded = vi.fn(
       async (_type: 'spec' | 'plan' | 'briefs' | 'artifact', input: ApprovalReviewInput) => {
-        if (typeof input !== 'string') {
-          throw new Error('Expected a task briefs file path');
-        }
-        const filePath = input;
         if (onApprovalNeeded.mock.calls.length === 1) {
-          await writeFile(filePath, formatTasks([editedTask]), 'utf8');
+          if (typeof input !== 'string') throw new Error('expected tasks path');
+          await writeFile(input, formatTasks([edited]), 'utf8');
           return { approved: false as const, action: 'edit' as const };
         }
         return { approved: true as const };
       },
     );
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const setTrackedState = vi.fn();
+    const recovery = makeRecovery(sessionId, 'blocked', initial, projectDir);
 
     const result = await reviewAutoSplitOutput({
       wctx: makeWctx({ projectDir, sessionId, bus, callbacks }),
-      state,
-      tasks: [task],
-      setTrackedState,
+      state: initial,
+      tasks: [task('T001')],
+      setTrackedState: vi.fn(),
+      recovery: recovery.binding,
     });
 
-    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
-    expect(result.approved).toBe(true);
-    expect(result.state.phase).toBe('implementing');
-    expect(result.tasks.map((t) => t.id)).toEqual(['T020']);
+    expect(result.disposition).toBe('ready-for-tasks');
+    if (result.disposition === 'ready-for-tasks') {
+      expect(result.tasks.map((candidate) => candidate.id)).toEqual(['T002']);
+    }
+    expect(recovery.commands.map((command) => command.action)).toEqual(['edit', 'approve']);
+    expect(recovery.providerCalls).toBe(0);
   });
 
-  it('regenerates from revise feedback instead of rejecting auto-split briefs', async () => {
-    const projectDir = createTempDir('auto-split-review-test');
+  it('parks without entering the task loop when brief admission fails', async () => {
+    const projectDir = createTempDir('auto-split-controller-admission-failure');
     dirs.push(projectDir);
-    const sessionId = 'sess-auto-split-revise';
-    const task = makePassingTask({ id: 'T001', file: 'src/parser.ts' });
-    const regeneratedTask = makePassingTask({
-      id: 'T030',
-      file: 'src/parser.ts',
-      title: 'Regenerated',
-    });
-    const state = makeImplState([task]);
+    const sessionId = 'sess-auto-split-admission-failure';
+    ensureSessionDir(projectDir, sessionId);
+    const initial = baseState();
     const { bus } = makeBusRecorder();
-    const onApprovalNeeded = vi
-      .fn()
-      .mockResolvedValueOnce({
-        approved: false as const,
-        action: 'revise' as const,
-        comment: 'keep only the parser branch and add concrete evidence',
-      })
-      .mockResolvedValueOnce({ approved: true as const });
-    const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const planner = makePlanner({
-      review: vi.fn(async () => ({ text: formatTasks([regeneratedTask]), usage: null })),
-    });
-    const setTrackedState = vi.fn();
-
-    const result = await reviewAutoSplitOutput({
-      wctx: makeWctx({ projectDir, sessionId, bus, callbacks, planner }),
-      state,
-      tasks: [task],
-      setTrackedState,
-    });
-
-    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
-    expect(planner.review).toHaveBeenCalledOnce();
-    expect(planner.review).toHaveBeenCalledWith(
-      expect.stringContaining('keep only the parser branch and add concrete evidence'),
-      projectDir,
-      expect.any(Object),
-    );
-    expect(result.approved).toBe(true);
-    expect(result.state.phase).toBe('implementing');
-    expect(result.tasks.map((t) => t.id)).toEqual(['T030']);
-    expect(setTrackedState.mock.calls.some(([nextState]) => nextState.phase === 'idle')).toBe(
-      false,
-    );
-  });
-
-  it('rejects into a resumable state when the reviewer quits', async () => {
-    const projectDir = createTempDir('auto-split-review-test');
-    dirs.push(projectDir);
-    const sessionId = 'sess-auto-split-reject';
-    const task = makePassingTask({ id: 'T001', file: 'src/parser.ts' });
-    const state = makeImplState([task]);
-    const { bus, events } = makeBusRecorder();
-    const onApprovalNeeded = vi.fn(async () => ({ approved: false as const }));
-    const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const setTrackedState = vi.fn();
-
-    const result = await reviewAutoSplitOutput({
-      wctx: makeWctx({ projectDir, sessionId, bus, callbacks }),
-      state,
-      tasks: [task],
-      setTrackedState,
-    });
-
-    expect(onApprovalNeeded).toHaveBeenCalledOnce();
-    expect(result.approved).toBe(false);
-    expect(result.state.phase).toBe('idle');
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'error',
-        message: expect.stringContaining('rejected'),
-      }),
-    );
-  });
-
-  it('a blocked auto-split brief warns with the override sentence and a rejection ends the run', async () => {
-    const projectDir = createTempDir('auto-split-review-test');
-    dirs.push(projectDir);
-    const sessionId = 'sess-auto-split-overflow';
-    const task = makePassingTask({
-      id: 'T001',
-      file: 'src/parser.ts',
-      description: 'Create an intentionally large split task',
-      implementationSteps: [
-        Array.from({ length: 300 }, (_, index) => `implementation detail ${index}`).join(' '),
-      ],
-    });
-    const state = makeImplState([task]);
-    const { bus, events } = makeBusRecorder();
-    const onApprovalNeeded = vi
-      .fn()
-      .mockResolvedValueOnce({ approved: true as const })
-      .mockResolvedValueOnce({ approved: false as const });
-    const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const setTrackedState = vi.fn();
-
-    const result = await reviewAutoSplitOutput({
-      wctx: makeWctx({
-        projectDir,
-        sessionId,
-        bus,
-        callbacks,
-        config: makeConfig({ implementer: { contextLength: 200 } }),
-      }),
-      state,
-      tasks: [task],
-      setTrackedState,
-    });
-
-    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
-    expect(result.approved).toBe(false);
-    expect(result.state.phase).toBe('idle');
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'warning',
-        code: 'brief_readiness_block',
-        message: expect.stringContaining(
-          'Approve again without editing tasks.md to proceed anyway',
-        ),
-      }),
-    );
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'error',
-        message: expect.stringContaining('rejected before implementation'),
-      }),
-    );
-  });
-
-  it('a second identical approval over a blocking report records the override and reaches implementing', async () => {
-    const projectDir = createTempDir('auto-split-review-test');
-    dirs.push(projectDir);
-    const sessionId = 'sess-auto-split-override';
-    const task = makePassingTask({
-      id: 'T001',
-      file: 'src/parser.ts',
-      description: 'Create an intentionally large split task',
-      implementationSteps: [
-        Array.from({ length: 300 }, (_, index) => `implementation detail ${index}`).join(' '),
-      ],
-    });
-    const state = makeImplState([task]);
-    const { bus, events } = makeBusRecorder();
     const onApprovalNeeded = vi.fn(async () => ({ approved: true as const }));
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const setTrackedState = vi.fn();
+    const planner = makePlanner();
+    const implementer = makeImplementer();
+    const recovery = makeRecovery(sessionId, 'blocked', initial, projectDir, true);
 
     const result = await reviewAutoSplitOutput({
-      wctx: makeWctx({
-        projectDir,
-        sessionId,
-        bus,
-        callbacks,
-        config: makeConfig({ implementer: { contextLength: 200 } }),
-      }),
-      state,
-      tasks: [task],
-      setTrackedState,
+      wctx: makeWctx({ projectDir, sessionId, bus, callbacks, planner, implementer }),
+      state: initial,
+      tasks: [task('T001')],
+      setTrackedState: vi.fn(),
+      recovery: recovery.binding,
     });
 
-    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
-    expect(result.approved).toBe(true);
-    expect(result.state.phase).toBe('implementing');
-    const reportPath = join(sessionDir(projectDir, sessionId), BRIEF_READINESS_FILE);
-    expect(existsSync(reportPath)).toBe(true);
-    const persisted = JSON.parse(readFileSync(reportPath, 'utf8'));
-    expect(persisted.override.blockedTaskIds).toEqual(['T001']);
-    expect(persisted.override.kinds).toEqual(['overflow']);
-    expect(persisted.override.at).toEqual(expect.any(String));
-    expect(
-      events.some(
-        (event) => event.type === 'warning' && event.code === 'brief_readiness_overridden',
-      ),
-    ).toBe(true);
-  });
-
-  it('a repeating unchanged failure ends the auto-split review with the no-progress error', async () => {
-    const projectDir = createTempDir('auto-split-review-test');
-    dirs.push(projectDir);
-    const sessionId = 'sess-auto-split-no-progress';
-    const task = makeTask({
-      id: 'T001',
-      file: 'src/parser.ts',
-      scope: undefined,
-      evidence: [],
-    });
-    const state = makeImplState([task]);
-    const { bus, events } = makeBusRecorder();
-    const onApprovalNeeded = vi.fn(async () => ({ approved: true as const }));
-    const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const setTrackedState = vi.fn();
-
-    const result = await reviewAutoSplitOutput({
-      wctx: makeWctx({ projectDir, sessionId, bus, callbacks }),
-      state,
-      tasks: [task],
-      setTrackedState,
-    });
-
-    expect(onApprovalNeeded).toHaveBeenCalledTimes(MAX_UNPRODUCTIVE_BRIEF_REVIEW_ATTEMPTS);
-    expect(result.approved).toBe(false);
-    expect(result.state.phase).toBe('idle');
-    expect(
-      events.some((event) => event.type === 'error' && event.code === 'brief_review_no_progress'),
-    ).toBe(true);
-  });
-
-  it('an always-editing callback over an unfixable split ends rejected at the no-progress cap', async () => {
-    const projectDir = createTempDir('auto-split-review-test');
-    dirs.push(projectDir);
-    const sessionId = 'sess-auto-split-edit-cap';
-    const task = makePassingTask({ id: 'T001', file: 'src/parser.ts' });
-    const overflowingBriefs = formatTasks([
-      makePassingTask({
-        id: 'T001',
-        file: 'src/parser.ts',
-        description: 'Create an intentionally large split task',
-        implementationSteps: [
-          Array.from({ length: 300 }, (_, index) => `implementation detail ${index}`).join(' '),
-        ],
-      }),
-    ]);
-    const state = makeImplState([task]);
-    const { bus, events } = makeBusRecorder();
-    const onApprovalNeeded = vi.fn(
-      async (_type: 'spec' | 'plan' | 'briefs' | 'artifact', input: ApprovalReviewInput) => {
-        if (typeof input !== 'string') {
-          throw new Error('Expected a task briefs file path');
-        }
-        await writeFile(input, overflowingBriefs, 'utf8');
-        return { approved: false as const, action: 'edit' as const };
-      },
-    );
-    const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const setTrackedState = vi.fn();
-
-    const result = await reviewAutoSplitOutput({
-      wctx: makeWctx({
-        projectDir,
-        sessionId,
-        bus,
-        callbacks,
-        config: makeConfig({ implementer: { contextLength: 200 } }),
-      }),
-      state,
-      tasks: [task],
-      setTrackedState,
-    });
-
-    expect(onApprovalNeeded).toHaveBeenCalledTimes(MAX_UNPRODUCTIVE_BRIEF_REVIEW_ATTEMPTS);
-    expect(result.approved).toBe(false);
-    expect(result.state.phase).toBe('idle');
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'warning',
-        code: 'brief_readiness_block',
-        message: expect.stringContaining(
-          'Approve again without editing tasks.md to proceed anyway',
-        ),
-      }),
-    );
-    expect(
-      events.some((event) => event.type === 'error' && event.code === 'brief_review_no_progress'),
-    ).toBe(true);
-  });
-
-  it('blocks approval when refreshed readiness reports no capable worker', async () => {
-    const projectDir = createTempDir('auto-split-review-test');
-    dirs.push(projectDir);
-    const sessionId = 'sess-auto-split-no-worker';
-    const task = makePassingTask({
-      id: 'T001',
-      file: 'src/parser.ts',
-      scope: { inBounds: ['src/parser.ts', 'src/sidecar.ts'] },
-    });
-    const state = makeImplState([task]);
-    const { bus, events } = makeBusRecorder();
-    const onApprovalNeeded = vi
-      .fn()
-      .mockResolvedValueOnce({ approved: true as const })
-      .mockResolvedValueOnce({ approved: false as const });
-    const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const setTrackedState = vi.fn();
-
-    const result = await reviewAutoSplitOutput({
-      wctx: makeWctx({ projectDir, sessionId, bus, callbacks }),
-      state,
-      tasks: [task],
-      setTrackedState,
-    });
-
-    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
-    expect(result.approved).toBe(false);
-    expect(result.state.phase).toBe('idle');
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'warning',
-        code: 'brief_readiness_block',
-        message: expect.stringContaining('no-capable-worker'),
-      }),
-    );
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'error',
-        message: expect.stringContaining('rejected before implementation'),
-      }),
-    );
+    expect(result.disposition).toBe('parked');
+    expect(result.state.phase).toBe('reviewing-briefs');
+    expect(recovery.commands).toEqual([]);
+    expect(recovery.providerCalls).toBe(0);
+    expect(onApprovalNeeded).not.toHaveBeenCalled();
+    expect(planner.plan).not.toHaveBeenCalled();
+    expect(implementer.implement).not.toHaveBeenCalled();
   });
 });

@@ -19,6 +19,15 @@ export const REQUIRED_VIEWPORTS: readonly Viewport[] = Object.freeze([
   viewport({ cols: 60, rows: 18 }),
 ]);
 
+export const BRIEF_RECOVERY_VIEWPORTS: readonly Viewport[] = Object.freeze([
+  viewport({ cols: 121, rows: 16 }),
+  viewport({ cols: 120, rows: 16 }),
+  viewport({ cols: 119, rows: 16 }),
+  viewport({ cols: 80, rows: 16 }),
+  viewport({ cols: 50, rows: 16 }),
+  viewport({ cols: 40, rows: 16 }),
+]);
+
 export const REQUIRED_WORKFLOW_CHECKPOINT_IDS = [
   'idle',
   'planning',
@@ -58,6 +67,7 @@ interface ScenarioInput {
   readonly surface: Surface;
   readonly checkpoint: CheckpointInput;
   readonly elements: readonly ElementInput[];
+  readonly viewports?: readonly Viewport[];
 }
 
 function defineScenario(input: ScenarioInput): ScenarioDefinition {
@@ -66,7 +76,7 @@ function defineScenario(input: ScenarioInput): ScenarioDefinition {
     title: input.title,
     surface: input.surface,
     fixtureVersion: VISUAL_FIXTURE_VERSION,
-    viewports: REQUIRED_VIEWPORTS,
+    viewports: input.viewports ?? REQUIRED_VIEWPORTS,
     checkpoints: [
       {
         ...input.checkpoint,
@@ -88,6 +98,17 @@ function screenSurface(screen: Screen): Surface {
 function overlaySurface(overlay: OverlaySurface, underlyingScreen: Screen): Surface {
   return { kind: 'overlay', overlay, underlyingScreen };
 }
+
+const BRIEF_RECOVERY_SCENARIOS = [
+  ['workflow-brief-recovery-zero-task-blocked', 'Zero-task contract blocked', 'CONTRACT BLOCKED'],
+  ['workflow-brief-recovery-storage-blocked', 'Storage-blocked contract', 'BECAUSE STORAGE'],
+  ['workflow-brief-recovery-task-blocked', 'Task-specific contract blocked', 'QUALITY ISSUE'],
+  ['workflow-brief-recovery-retrying-queued', 'Retrying with queued input', 'RETRYING'],
+  ['workflow-brief-recovery-unresolved', 'Unresolved retry', 'RETRY UNRESOLVED'],
+  ['workflow-brief-recovery-ready', 'Ready after repair', 'CONTRACT READY'],
+  ['workflow-brief-recovery-provider-failed', 'Provider failure', 'PROVIDER REFUSAL'],
+  ['workflow-brief-recovery-budget-blocked', 'Budget blocked', 'BUDGET REFUSAL'],
+] as const satisfies readonly (readonly [string, string, string])[];
 
 const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
   home: [
@@ -209,6 +230,30 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
+    ...BRIEF_RECOVERY_SCENARIOS.map(([id, title, marker]) =>
+      defineScenario({
+        id,
+        title: `Workflow · Brief recovery · ${title}`,
+        surface: screenSurface('workflow'),
+        viewports: BRIEF_RECOVERY_VIEWPORTS,
+        checkpoint: {
+          id: 'review',
+          title,
+          kind: 'review',
+          marker,
+        },
+        elements: [
+          { id: 'recovery-public-status', title: 'Recovery public status' },
+          { id: 'recovery-status', title: 'Recovery contract status' },
+          { id: 'recovery-evidence', title: 'Recovery evidence spine' },
+          { id: 'recovery-cause', title: 'Recovery cause explanation' },
+          { id: 'recovery-actions', title: 'Recovery action group' },
+          { id: 'recovery-composer', title: 'Recovery composer input' },
+          { id: 'recovery-body', title: 'Recovery workflow body' },
+          { id: 'recovery-sidebar', title: 'Recovery workflow sidebar' },
+        ],
+      }),
+    ),
   ],
   summary: [
     defineScenario({

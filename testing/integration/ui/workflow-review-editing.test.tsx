@@ -273,68 +273,71 @@ describe('WorkflowScreen review editing', () => {
   it.each([
     ['spec', 'reviewing-spec'],
     ['plan', 'reviewing-plan'],
-  ] as const)('the edit command opens the external editor for %s review and refreshes before approval', async (type, phase) => {
-    const projectDir = createTempDir(`workflow-screen-${type}-editor`);
-    try {
-      const reviewPath = join(projectDir, `${type}.md`);
-      const { editorPath, logPath } = writeFakeReviewEditor(projectDir);
-      const editedText = `# Edited ${type} review\n\nfresh editor content\n`;
-      writeFileSync(reviewPath, `# Original ${type} review\n\nstale content\n`, 'utf-8');
-      stubReviewEditor(editorPath);
-      vi.stubEnv('FAKE_REVIEW_EDITOR_LOG', logPath);
-      vi.stubEnv('FAKE_REVIEW_EDITOR_CONTENT', editedText);
-      let approvalResult: ApprovalReviewResult | undefined;
+  ] as const)(
+    'the edit command opens the external editor for %s review and refreshes before approval',
+    async (type, phase) => {
+      const projectDir = createTempDir(`workflow-screen-${type}-editor`);
+      try {
+        const reviewPath = join(projectDir, `${type}.md`);
+        const { editorPath, logPath } = writeFakeReviewEditor(projectDir);
+        const editedText = `# Edited ${type} review\n\nfresh editor content\n`;
+        writeFileSync(reviewPath, `# Original ${type} review\n\nstale content\n`, 'utf-8');
+        stubReviewEditor(editorPath);
+        vi.stubEnv('FAKE_REVIEW_EDITOR_LOG', logPath);
+        vi.stubEnv('FAKE_REVIEW_EDITOR_CONTENT', editedText);
+        let approvalResult: ApprovalReviewResult | undefined;
 
-      runWorkflow.mockImplementationOnce(async (opts) => {
-        lifecycleStore.__testReset({ phase });
-        approvalResult = await opts.callbacks.onApprovalNeeded(type, reviewPath);
-        return makeSummary({ feature: `${type} review editor` });
-      });
+        runWorkflow.mockImplementationOnce(async (opts) => {
+          lifecycleStore.__testReset({ phase });
+          approvalResult = await opts.callbacks.onApprovalNeeded(type, reviewPath);
+          return makeSummary({ feature: `${type} review editor` });
+        });
 
-      const ui = mountWorkflow(projectDir);
+        const ui = mountWorkflow(projectDir);
 
-      await vi.waitFor(() => {
-        expect(ui.lastFrame() ?? '').toContain(`Original ${type} review`);
-      });
-      await waitForReviewPrompt(ui);
+        await vi.waitFor(() => {
+          expect(ui.lastFrame() ?? '').toContain(`Original ${type} review`);
+        });
+        await waitForReviewPrompt(ui);
 
-      await flushEffects();
-      ui.stdin.write('edit');
-      await vi.waitFor(() => {
-        expect(ui.lastFrame() ?? '').toContain('edit');
-      }, REVIEW_EDITOR_WAIT_MS);
-      await flushEffects();
-      ui.stdin.write(ENTER);
+        await flushEffects();
+        ui.stdin.write('edit');
+        await vi.waitFor(() => {
+          expect(ui.lastFrame() ?? '').toContain('edit');
+        }, REVIEW_EDITOR_WAIT_MS);
+        await flushEffects();
+        ui.stdin.write(ENTER);
 
-      await vi.waitFor(() => {
-        expect(readFileSync(logPath, 'utf-8')).toContain(reviewPath);
-      }, REVIEW_EDITOR_WAIT_MS);
-      await vi.waitFor(() => {
-        expect(ui.lastFrame() ?? '').toContain(`Edited ${type} review`);
-      }, REVIEW_EDITOR_WAIT_MS);
-      expect(readFileSync(reviewPath, 'utf-8')).toContain(`Edited ${type} review`);
-      expect(approvalResult).toBeUndefined();
+        await vi.waitFor(() => {
+          expect(readFileSync(logPath, 'utf-8')).toContain(reviewPath);
+        }, REVIEW_EDITOR_WAIT_MS);
+        await vi.waitFor(() => {
+          expect(ui.lastFrame() ?? '').toContain(`Edited ${type} review`);
+        }, REVIEW_EDITOR_WAIT_MS);
+        expect(readFileSync(reviewPath, 'utf-8')).toContain(`Edited ${type} review`);
+        expect(approvalResult).toBeUndefined();
 
-      // "Edited … — content reloaded" owns the feedback row until it auto-clears (3s);
-      // the review key legend returns after that.
-      await waitForReviewPrompt(ui, REVIEW_EDITOR_WAIT_MS);
-      await flushEffects();
-      ui.stdin.write('approve');
-      await vi.waitFor(() => {
-        expect(ui.lastFrame() ?? '').toContain('approve');
-      }, REVIEW_EDITOR_WAIT_MS);
-      await flushEffects();
-      ui.stdin.write(ENTER);
+        // "Edited … — content reloaded" owns the feedback row until it auto-clears (3s);
+        // the review key legend returns after that.
+        await waitForReviewPrompt(ui, REVIEW_EDITOR_WAIT_MS);
+        await flushEffects();
+        ui.stdin.write('approve');
+        await vi.waitFor(() => {
+          expect(ui.lastFrame() ?? '').toContain('approve');
+        }, REVIEW_EDITOR_WAIT_MS);
+        await flushEffects();
+        ui.stdin.write(ENTER);
 
-      await vi.waitFor(() => {
-        expect(approvalResult).toEqual({ approved: true });
-      }, REVIEW_EDITOR_WAIT_MS);
+        await vi.waitFor(() => {
+          expect(approvalResult).toEqual({ approved: true });
+        }, REVIEW_EDITOR_WAIT_MS);
 
-      ui.unmount();
-    } finally {
-      cleanupTempDir(projectDir);
-    }
-  });
+        ui.unmount();
+      } finally {
+        cleanupTempDir(projectDir);
+      }
+    },
+  );
 
   it('refreshes the review overlay with an edit the editor saved before exiting non-zero', async () => {
     const projectDir = createTempDir('workflow-screen-spec-editor-failure');

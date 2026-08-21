@@ -7,6 +7,11 @@ import {
   RAIL_MARKER_SLOT_WIDTH,
   RAIL_SHORT_LABEL,
   RAIL_STAGES,
+  BOTTOM_FIXED_CHROME_ROWS,
+  FIXED_CHROME_ROWS,
+  TOP_FIXED_CHROME_ROWS,
+  WORKFLOW_CHROME_ORDER,
+  WORKFLOW_CHROME_ROWS,
   chooseFormBVariant,
   getActiveRailStage,
   getChromeContentWidth,
@@ -15,6 +20,7 @@ import {
   getRailActiveIndex,
   getRailDriftPassed,
   getRailStages,
+  getWorkflowChromeRows,
   isRailCurrent,
   measureFormB,
   railConnectorWidth,
@@ -57,6 +63,43 @@ describe('getChromeHeight', () => {
   it('each additional input row increases chrome height by exactly 1', () => {
     const base = getChromeHeight(1);
     expect(getChromeHeight(4) - base).toBe(3);
+  });
+
+  it('uses the named fixed rows and clamps malformed composer heights', () => {
+    expect(TOP_FIXED_CHROME_ROWS).toBe(
+      WORKFLOW_CHROME_ROWS.header + WORKFLOW_CHROME_ROWS.headerDivider,
+    );
+    expect(BOTTOM_FIXED_CHROME_ROWS).toBe(
+      WORKFLOW_CHROME_ROWS.footerDivider +
+        WORKFLOW_CHROME_ROWS.feedback +
+        WORKFLOW_CHROME_ROWS.inputFooter,
+    );
+    expect(FIXED_CHROME_ROWS).toBe(TOP_FIXED_CHROME_ROWS + BOTTOM_FIXED_CHROME_ROWS);
+    expect(getChromeHeight(-4)).toBe(FIXED_CHROME_ROWS);
+    expect(getChromeHeight(Number.NaN)).toBe(FIXED_CHROME_ROWS);
+  });
+});
+
+describe('workflow chrome row contract', () => {
+  it('keeps the body between the header divider and footer divider', () => {
+    expect(WORKFLOW_CHROME_ORDER).toEqual([
+      'header',
+      'header-divider',
+      'body',
+      'footer-divider',
+      'feedback',
+      'composer',
+      'input-footer',
+    ]);
+  });
+
+  it('accounts for the composer as the only variable fixed-row block', () => {
+    expect(getWorkflowChromeRows(3)).toEqual({
+      ...WORKFLOW_CHROME_ROWS,
+      composer: 3,
+    });
+    expect(getWorkflowChromeRows(-2).composer).toBe(0);
+    expect(getWorkflowChromeRows(Number.POSITIVE_INFINITY).composer).toBe(0);
   });
 });
 

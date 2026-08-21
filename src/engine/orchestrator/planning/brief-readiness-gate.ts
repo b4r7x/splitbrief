@@ -106,14 +106,6 @@ export function writeBriefReadiness(ref: SpecFileRef, report: BriefReadinessGate
   writeSpecFile(ref, BRIEF_READINESS_FILE, JSON.stringify(report, null, 2), null);
 }
 
-export function writeBriefReadinessOverride(
-  ref: SpecFileRef,
-  report: BriefReadinessGateReport,
-  override: BriefReadinessOverride,
-): void {
-  writeBriefReadiness(ref, { ...report, override });
-}
-
 export async function runBriefReadinessGateAndReport(opts: {
   tasks: Task[];
   config: Config;

@@ -90,15 +90,16 @@ describe('createQuestionAccumulator', () => {
     expect(questions[0]?.id).toBe('q1');
   });
 
-  it.each(
-    Array.from({ length: markerPrefix.length - 1 }, (_, index) => index + 1),
-  )('reassembles a marker split after prefix character %i', (splitAt) => {
-    const acc = createQuestionAccumulator();
-    expect(acc.addChunk(marker.slice(0, splitAt))).toEqual([]);
-    const questions = acc.addChunk(marker.slice(splitAt));
-    expect(questions).toHaveLength(1);
-    expect(questions[0]?.id).toBe('q1');
-  });
+  it.each(Array.from({ length: markerPrefix.length - 1 }, (_, index) => index + 1))(
+    'reassembles a marker split after prefix character %i',
+    (splitAt) => {
+      const acc = createQuestionAccumulator();
+      expect(acc.addChunk(marker.slice(0, splitAt))).toEqual([]);
+      const questions = acc.addChunk(marker.slice(splitAt));
+      expect(questions).toHaveLength(1);
+      expect(questions[0]?.id).toBe('q1');
+    },
+  );
 
   it('returns question only after it is complete across chunks', () => {
     const acc = createQuestionAccumulator();
@@ -261,26 +262,21 @@ describe('createQuestionMarkerStripper', () => {
     expect(stripper.flush()).toBe('');
   });
 
-  it.each([
-    ['<'],
-    ['<!'],
-    ['<!-'],
-    ['<!--'],
-    ['<!-- '],
-    ['<!-- Q'],
-    ['<!-- Q:'],
-  ])('never emits marker text when the stream splits after %j', (prefix) => {
-    const stripper = createQuestionMarkerStripper();
-    const outputs = [
-      stripper.push(`Intro.\n${prefix}`),
-      stripper.push(`${marker.slice(prefix.length)}\nOutro.`),
-      stripper.flush(),
-    ];
-    for (const out of outputs) {
-      expect(out).not.toContain('<!-- Q:');
-    }
-    expect(outputs.join('')).toBe('Intro.\nOutro.');
-  });
+  it.each([['<'], ['<!'], ['<!-'], ['<!--'], ['<!-- '], ['<!-- Q'], ['<!-- Q:']])(
+    'never emits marker text when the stream splits after %j',
+    (prefix) => {
+      const stripper = createQuestionMarkerStripper();
+      const outputs = [
+        stripper.push(`Intro.\n${prefix}`),
+        stripper.push(`${marker.slice(prefix.length)}\nOutro.`),
+        stripper.flush(),
+      ];
+      for (const out of outputs) {
+        expect(out).not.toContain('<!-- Q:');
+      }
+      expect(outputs.join('')).toBe('Intro.\nOutro.');
+    },
+  );
 
   it('never emits marker text when the stream splits inside the closing suffix', () => {
     const stripper = createQuestionMarkerStripper();

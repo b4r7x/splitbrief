@@ -274,15 +274,13 @@ describe('shouldPreserveActiveState', () => {
     expect(shouldPreserveActiveState(state)).toBe(true);
   });
 
-  it.each([
-    'planning',
-    'reviewing-briefs',
-    'implementing',
-    'final-review',
-  ] as const)('preserves resumable %s phase', (phase) => {
-    const state: WorkflowState = { ...createInitialState('feat'), phase };
-    expect(shouldPreserveActiveState(state)).toBe(true);
-  });
+  it.each(['planning', 'reviewing-briefs', 'implementing', 'final-review'] as const)(
+    'preserves resumable %s phase',
+    (phase) => {
+      const state: WorkflowState = { ...createInitialState('feat'), phase };
+      expect(shouldPreserveActiveState(state)).toBe(true);
+    },
+  );
 
   it('clears a non-resumable phase without explicit resume state', () => {
     const state: WorkflowState = { ...createInitialState('feat'), phase: 'validating-task' };

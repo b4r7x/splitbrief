@@ -8,13 +8,13 @@ import {
   makePlanner,
   TEST_METADATA,
 } from '#testing/helpers/orchestrator-factories.js';
-import { makeBriefQualityFailureTask, REAL_TASKS_MD } from '#testing/helpers/planning-phase.js';
+import { REAL_TASKS_MD } from '#testing/helpers/planning-phase.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
-import { PLAN_FILE, TASKS_FILE, sessionDir } from '../../../core/paths.js';
+import { TASKS_FILE } from '../../../core/paths.js';
 import { writeSpecFile } from '../../../core/paths-io.js';
-import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { createInitialState } from '../../../core/state/machine.js';
 import type { OrchestratorCallbacks, WorkflowContext, WorkflowSinks } from '../types.js';
 import { createValidator } from '../validation/run.js';
 import { runPlanningPhases } from './phases.js';
@@ -67,25 +67,19 @@ function makeResumeWctx(opts: {
 }
 
 function parkedState(phase: 'reviewing-plan' | 'reviewing-briefs'): WorkflowState {
-  return { ...makeImplState([]), phase };
+  return { ...createInitialState('feature'), phase };
 }
 
 describe('resumed planning brief-quality admission', () => {
-  it('fails closed before briefs approval when a resumed plan produces invalid Task Briefs', async () => {
+  it('does not replay parked Brief Review without an owner-supplied recovery projection', async () => {
     const { projectDir, sessionId } = setupProject();
-    writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Approved plan', TEST_METADATA);
-    const planner = makePlanner({
-      review: vi.fn().mockResolvedValue({ text: 'planner prose, not Task Briefs', usage: null }),
-    });
+    const planner = makePlanner({ review: vi.fn() });
     const onApprovalNeeded = vi.fn<OrchestratorCallbacks['onApprovalNeeded']>().mockResolvedValue({
       approved: true,
     });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus, events } = makeBusRecorder();
-    const state = {
-      ...parkedState('reviewing-plan'),
-      tasks: [makeBriefQualityFailureTask()],
-    };
+    const state = parkedState('reviewing-briefs');
 
     const result = await runPlanningPhases({
       wctx: makeResumeWctx({ projectDir, sessionId, callbacks, bus, planner }),
@@ -97,17 +91,13 @@ describe('resumed planning brief-quality admission', () => {
       setTrackedState: vi.fn(),
     });
 
-    expect(result).toMatchObject({ cancelled: true, failed: true, state: { phase: 'idle' } });
-    expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
-    expect(onApprovalNeeded).toHaveBeenCalledWith(
-      'plan',
-      `${sessionDir(projectDir, sessionId)}/${PLAN_FILE}`,
-    );
-    expect(events.filter((event) => event.type === 'brief_quality_failed')).toHaveLength(2);
-    expect(events.some((event) => event.type === 'error')).toBe(true);
+    expect(result).toMatchObject({ disposition: 'parked', state: { phase: 'reviewing-briefs' } });
+    expect(onApprovalNeeded).not.toHaveBeenCalled();
+    expect(planner.review).not.toHaveBeenCalled();
+    expect(events.some((event) => event.type === 'brief_quality_failed')).toBe(false);
   });
 
-  it('keeps an already parked briefs review on the normal approval path', async () => {
+  it('does not inspect persisted tasks or invoke a provider while the owner projection is absent', async () => {
     const { projectDir, sessionId } = setupProject();
     writeSpecFile({ projectDir, sessionId }, TASKS_FILE, REAL_TASKS_MD, TEST_METADATA);
     const planner = makePlanner();
@@ -128,16 +118,9 @@ describe('resumed planning brief-quality admission', () => {
       setTrackedState: vi.fn(),
     });
 
-    expect(result).toMatchObject({
-      cancelled: false,
-      failed: false,
-      state: { phase: 'implementing' },
-    });
-    expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
-    expect(onApprovalNeeded).toHaveBeenCalledWith(
-      'briefs',
-      `${sessionDir(projectDir, sessionId)}/${TASKS_FILE}`,
-    );
-    expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(1);
+    expect(result).toMatchObject({ disposition: 'parked', state: { phase: 'reviewing-briefs' } });
+    expect(onApprovalNeeded).not.toHaveBeenCalled();
+    expect(planner.review).not.toHaveBeenCalled();
+    expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(0);
   });
 });

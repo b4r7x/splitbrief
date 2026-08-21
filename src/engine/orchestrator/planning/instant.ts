@@ -10,17 +10,38 @@ import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { collectAndPersistClarifications } from '../clarifications.js';
 import { drainAndFormat } from './queue-drain.js';
 import { handlePlanningFailure } from './failure.js';
-import { runBriefQualityGate } from './brief-quality-gate.js';
 import { persistPhases } from './io.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 import { createTranscriptBuffer } from '../../streaming/transcript-buffer.js';
 import { createSessionExpiredHandler } from '../resume-context.js';
+import { workflowAuthority } from '../run/init.js';
 import { createQuestionMarkerStripper } from '../../parsers/question.js';
 import { firstBriefError } from '../../spec/brief-quality.js';
 import { planningError } from './errors.js';
 import { createClarificationQuestionCollector, mergePlannerAttempts } from './call-loop.js';
 import { zeroTaskRetryPrompt } from '../../spec/prompts/zero-task-retry.js';
 import { withRewindFeedback } from './rewind-feedback.js';
+import { parkedResult } from './brief-quality-preparation.js';
+import { planningResultForState, terminalPlanningResult } from './handoff.js';
+import {
+  publishProducerGeneration,
+  settleApprovedAdmission,
+  type BriefPublicationResult,
+} from './brief-publication.js';
+import { TASKS_FILE } from '../../../core/paths.js';
+import { writeBriefQualityReport } from '../../spec/brief-quality-file.js';
+import { PhaseSchema } from '../../../core/schemas/enums.js';
+
+type CommittedEnforcement = Extract<BriefPublicationResult, { ok: true }>['committed'];
+
+function syncRecoveryState(opts: PlanningPhaseOptions, state: typeof opts.state): void {
+  if (
+    opts.recovery !== undefined &&
+    (state.stateRevision ?? 0) > opts.recovery.authority.stateRevision
+  ) {
+    opts.recovery.writeState?.(state);
+  }
+}
 
 export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx, planner } = opts;
@@ -72,6 +93,7 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
       bus: wctx.bus,
       config,
       resumeHolder,
+      authority: workflowAuthority(wctx),
     }),
     sessionId,
     persistTranscript: config.workflow.persistTranscript,
@@ -126,15 +148,104 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
     return handlePlanningFailure({ err, projectDir, sessionId, state, wctx });
   }
 
+  state = addUsageAndSave(wctx, state, 'planner', planResult.usage);
+  syncRecoveryState(opts, state);
+
+  if (planResult.tasks.length === 0) {
+    publishWarning({
+      bus: wctx.bus,
+      phase: state.phase,
+      message:
+        'instant mode: the planner produced text but no parsable Task Brief; the failed attempt contributes no Brief generation',
+      safety: { category: 'planner', code: 'planner_returned_zero_tasks', transcriptSafe: true },
+    });
+    return handlePlanningFailure({
+      err: planningError.zeroTasks('instant'),
+      projectDir,
+      sessionId,
+      state,
+      wctx,
+    });
+  }
+
+  // The owner-owned publication seam evaluates the Brief contract, installs
+  // the immutable generation, and commits the parked enforcement authority.
+  // A quality fault blocks the run and its diagnostic report is the seam's
+  // evaluated report; any other fault parks with the previous authority.
+  let committedEnforcement: CommittedEnforcement | null = null;
+  if (opts.recovery === undefined) {
+    const publication = publishProducerGeneration({
+      ref: { projectDir, sessionId },
+      state,
+      planResult,
+      bus: wctx.bus,
+      phase: state.phase,
+      metadata,
+    });
+    if (publication.ok) {
+      committedEnforcement = publication.committed;
+    } else if (publication.fault === 'quality') {
+      writeBriefQualityReport({
+        ref: { projectDir, sessionId },
+        content: { issues: publication.report.issues },
+        metadata: null,
+      });
+      const errorCount = publication.report.issues.filter(
+        (issue) => issue.severity === 'error',
+      ).length;
+      const warningCount = publication.report.issues.filter(
+        (issue) => issue.severity === 'warning',
+      ).length;
+      wctx.bus.publish({
+        type: 'brief_quality_failed',
+        ts: Date.now(),
+        phase: state.phase,
+        score: publication.report.score,
+        errorCount,
+        warningCount,
+      });
+      const firstError = firstBriefError(publication.report);
+      return handlePlanningFailure({
+        err: planningError.briefQualityGateFailed(
+          firstError?.code ?? 'unknown',
+          String(firstError?.taskId ?? 'unknown'),
+        ),
+        projectDir,
+        sessionId,
+        state,
+        wctx,
+      });
+    } else {
+      publishWarning({
+        bus: wctx.bus,
+        phase: state.phase,
+        message: `instant mode: the Task Brief could not be published; ${publication.message}`,
+        safety: { category: 'planning', code: 'brief_publication_blocked', transcriptSafe: true },
+      });
+      return parkedResult({
+        recovery: opts.recovery,
+        sessionId,
+        state: { ...state, tasks: planResult.tasks },
+      });
+    }
+  }
+
+  // The fixed tasks.md is a compatibility projection that may be refreshed
+  // only after the authoritative generation commit, so the publication seam
+  // writes it and the phase persistence here carries only the support
+  // documents. brief-quality.json follows the same rule: the success path
+  // leaves it to the publication seam, and the quality fault above wrote it
+  // only as the terminal diagnostic of a blocked run. Without the owner
+  // binding, the producer publishes the generation itself and parks the
+  // committed authority.
   persistPhases({
     projectDir,
     sessionId,
-    phases: planResult.phases,
+    phases: (planResult.phases ?? []).filter((phase) => phase.artifact.logicalName !== TASKS_FILE),
     metadata,
     bus: wctx.bus,
     phase: state.phase,
   });
-  state = addUsageAndSave(wctx, state, 'planner', planResult.usage);
 
   if (collected.length > 0 && wctx.callbacks.onQuestionAsked) {
     state = await collectAndPersistClarifications({
@@ -148,26 +259,18 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
       metadata,
       planner,
     });
+    syncRecoveryState(opts, state);
   }
 
-  if (planResult.tasks.length === 0) {
-    const phaseFiles = (planResult.phases ?? []).map((phase) => phase.filename);
-    publishWarning({
-      bus: wctx.bus,
-      phase: state.phase,
-      message:
-        phaseFiles.length > 0
-          ? `instant mode: the planner produced text but no parsable Task Brief; its output is persisted in the session directory (${phaseFiles.join(', ')})`
-          : 'instant mode: the planner produced text but no parsable Task Brief',
-      safety: { category: 'planner', code: 'planner_returned_zero_tasks', transcriptSafe: true },
-    });
-    return handlePlanningFailure({
-      err: planningError.zeroTasks('instant'),
-      projectDir,
-      sessionId,
-      state,
-      wctx,
-    });
+  if (committedEnforcement !== null) {
+    state = {
+      ...state,
+      phase: PhaseSchema.parse(committedEnforcement.recovery.phase),
+      briefRecovery: committedEnforcement.recovery.briefRecovery,
+      authorityRevision: committedEnforcement.authorityRevision,
+      generation: committedEnforcement.generation,
+      permit: committedEnforcement.permit,
+    };
   }
 
   wctx.bus.publish({
@@ -177,33 +280,66 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
     taskCount: planResult.tasks.length,
   });
 
-  const { report: qualityReport, ok: qualityOk } = runBriefQualityGate({
-    tasks: planResult.tasks,
-    projectDir,
-    sessionId,
-    bus: wctx.bus,
-    phase: state.phase,
-  });
-  if (!qualityOk) {
-    const firstError = firstBriefError(qualityReport);
-    return handlePlanningFailure({
-      err: planningError.briefQualityGateFailed(
-        firstError?.code ?? 'unknown',
-        String(firstError?.taskId ?? 'unknown'),
-      ),
-      projectDir,
-      sessionId,
-      state,
-      wctx,
-    });
+  // The workflow owner admits the instant Brief; the settlement then issues
+  // the execution permit for the approved generation before the task runner
+  // receives the exact persisted generation and permit.
+  if (opts.recovery !== undefined) {
+    try {
+      const admission = await opts.recovery.controller.enterBriefAdmission(
+        opts.recovery.createAdmissionInput({
+          tasks: planResult.tasks,
+          state,
+          projectDir,
+          sessionId,
+        }),
+        opts.recovery.authority,
+      );
+      if (admission.kind === 'rejected') {
+        const rejected = opts.recovery.readState?.() ?? state;
+        return terminalPlanningResult(rejected, 'rejected');
+      }
+      if (admission.kind !== 'ready') {
+        const parked = opts.recovery.readState?.() ?? state;
+        return parkedResult({ recovery: opts.recovery, sessionId, state: parked });
+      }
+      const admitted = opts.recovery.readState?.() ?? state;
+      const settled = settleApprovedAdmission({
+        ref: { projectDir, sessionId },
+        state: admitted,
+        tasks: planResult.tasks,
+        bus: wctx.bus,
+        writeState: opts.recovery.writeState,
+      });
+      if (!settled.ok) {
+        publishWarning({
+          bus: wctx.bus,
+          phase: state.phase,
+          message: `instant mode: the approved Task Briefs could not receive their execution permit; ${settled.message}`,
+          safety: { category: 'planning', code: 'brief_permit_refused', transcriptSafe: true },
+        });
+        return parkedResult({
+          recovery: opts.recovery,
+          sessionId,
+          state: opts.recovery.readState?.() ?? state,
+        });
+      }
+      state = settled.state;
+      publishPlannerStatus(wctx.bus, state, 'running');
+      return planningResultForState({ sessionId, state, tasks: planResult.tasks });
+    } catch {
+      const parked = opts.recovery.readState?.() ?? state;
+      return parkedResult({ recovery: opts.recovery, sessionId, state: parked });
+    }
   }
 
-  state = transitionAndSave({ projectDir, sessionId }, state, {
-    type: 'START_INSTANT',
-    tasks: planResult.tasks,
+  if (state.rewindPending !== undefined) {
+    state = transitionAndSave({ projectDir, sessionId }, state, {
+      type: 'CLEAR_REWIND_PENDING',
+    });
+  }
+  return parkedResult({
+    recovery: opts.recovery,
+    sessionId,
+    state: { ...state, tasks: planResult.tasks },
   });
-  publishPlannerStatus(wctx.bus, state, 'running');
-  wctx.bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });
-
-  return { state, tasks: planResult.tasks, cancelled: false, failed: false };
 }

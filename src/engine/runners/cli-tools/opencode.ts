@@ -1,9 +1,9 @@
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
-import { accumulateTokenUsage } from '../../calls/usage.js';
 import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
 import { validateCliArgs } from './validate-args.js';
+import { finalGroupTerminal } from './final-group.js';
 import { envelopeErrorDetail } from '../../streaming/error-envelope.js';
 import { parseOpencodeLine } from '../../streaming/parse-opencode.js';
 import type { ParsedLine } from '../types.js';
@@ -31,7 +31,6 @@ const OPENCODE_PROTECTED_SHORT_VALUE_FLAGS = new Set(['-m']);
 
 type OpenCodePlannerBuildInput = Parameters<CliPlannerAdapter<'opencode'>['buildArgs']>[0];
 type OpenCodeImplementerBuildInput = Parameters<CliImplementerAdapter<'opencode'>['buildArgs']>[0];
-type OpenCodeTerminalEvent = Extract<CliProtocolEvent, { type: 'result' }>;
 
 function validateArgs(invocationArgs: readonly string[], baseArgs: readonly string[]) {
   return validateCliArgs({
@@ -116,29 +115,6 @@ export function opencodeProtocolEvents(line: string): readonly CliProtocolEvent[
   return errorEvents ?? toProtocolEvents(parseOpencodeLine(line));
 }
 
-function terminal(input: { events: readonly CliProtocolEvent[] }): OpenCodeTerminalEvent {
-  const explicit = input.events.findLast(
-    (event): event is OpenCodeTerminalEvent => event.type === 'result',
-  );
-  if (explicit !== undefined) return explicit;
-
-  let usage = null;
-  let nativeSessionId: string | null = null;
-  for (const event of input.events) {
-    if (event.type === 'usage') usage = accumulateTokenUsage(usage, event.usage, event.semantics);
-    if (event.type === 'session') nativeSessionId = event.nativeSessionId;
-  }
-  return {
-    type: 'result',
-    status: 'completed',
-    text: '',
-    usage,
-    nativeSessionId,
-    error: null,
-    partial: false,
-  };
-}
-
 function createProbe() {
   return {
     version: {
@@ -168,7 +144,7 @@ function plannerBaseArgs(input: OpenCodePlannerBuildInput): string[] {
 function implementerBaseArgs(input: OpenCodeImplementerBuildInput): string[] {
   const args = ['run'];
   if (input.model !== undefined) args.push('--model', input.model);
-  args.push('--format', 'json', input.prompt);
+  args.push('--format', 'json', '--agent', 'build', input.prompt);
   return args;
 }
 
@@ -185,7 +161,7 @@ function createPlannerAdapter(): CliPlannerAdapter<'opencode'> {
     environment: {},
     outputContract: { kind: 'text-exit', successfulExitCodes: [0] },
     parse: opencodeProtocolEvents,
-    terminal,
+    terminal: (input) => finalGroupTerminal({ events: input.events, includeFinalGroupText: true }),
     probe: createProbe(),
   };
 }
@@ -201,7 +177,7 @@ function createImplementerAdapter(): CliImplementerAdapter<'opencode'> {
     environment: {},
     outputContract: { kind: 'text-exit', successfulExitCodes: [0] },
     parse: opencodeProtocolEvents,
-    terminal,
+    terminal: (input) => finalGroupTerminal({ events: input.events, includeFinalGroupText: true }),
     probe: createProbe(),
   };
 }
@@ -239,7 +215,7 @@ function rawContract(role: 'planner' | 'implementer'): RawOpenCodeCliContract {
     rawInvocation:
       role === 'planner'
         ? ['run', '--format', 'json', '--agent', 'plan', CLI_PROMPT_SENTINEL]
-        : ['run', '--format', 'json', CLI_PROMPT_SENTINEL],
+        : ['run', '--format', 'json', '--agent', 'build', CLI_PROMPT_SENTINEL],
     promptTransport: 'argv',
     expectedRawTerminal: 'process-exit',
     asOf: '2026-07-31',

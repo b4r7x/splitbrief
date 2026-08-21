@@ -3,7 +3,11 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../../calls/recorder.js';
-import { RUNNER_CALL_STDERR_MAX_BYTES } from '../../calls/output-limit.js';
+import {
+  finishRunnerCallOutputLimit,
+  RUNNER_CALL_STDERR_MAX_BYTES,
+  type RunnerCallOutputLimit,
+} from '../../calls/output-limit.js';
 import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../../calls/status.js';
 import type {
   RunnerCallContext,
@@ -11,6 +15,7 @@ import type {
   RunnerCallFailureStatus,
   RunnerCallResult,
 } from '../../calls/types.js';
+import { TASK_COMPILATION_FAILURE_CODE } from '../../spec/tasks/task-compilation-codes.js';
 import {
   DEFAULT_PROCESS_LINE_MAX_BYTES,
   spawnPipe,
@@ -95,12 +100,24 @@ export async function invokeProcessCli(
     );
   }
   let callbackFailed = false;
+  let envelopeLimit: RunnerCallOutputLimit | null = null;
+  let timeoutController: AbortController | undefined;
   let recorder: RunnerCallRecorder;
   try {
     recorder = createRunnerCallRecorder({
       context: context.callContext,
       credentialValues,
       onEvent: (event) => {
+        // A canonical envelope breach latches in the recorder and surfaces as
+        // this warning; tear the process tree down immediately so the hard
+        // bound is enforced at spawn, not only recorded. The catch below
+        // classifies the awaited abort as truncated with the latch code.
+        if (event.type === 'call_warning' && isCanonicalEnvelopeLimitWarning(event.warning.code)) {
+          envelopeLimit = { code: event.warning.code, message: event.warning.message };
+          timeoutController?.abort(
+            new DOMException('CLI invocation envelope limit reached', 'TimeoutError'),
+          );
+        }
         try {
           context.onEvent?.(event);
         } catch (cause) {
@@ -189,10 +206,18 @@ export async function invokeProcessCli(
   let stderr = '';
   let eventCount = 0;
   let terminalSeen = false;
-  const timeoutController = new AbortController();
+  const envelope = context.callContext.envelope;
+  // The canonical envelope is the hard ceiling at the spawn boundary: its
+  // deadline clamps the invocation timer and its raw protocol bound clamps the
+  // spawn byte budget, so a breach kills the tree instead of only latching.
+  timeoutController = new AbortController();
+  const timeoutMs =
+    envelope === undefined
+      ? context.invocation.timeoutMs
+      : Math.min(context.invocation.timeoutMs, envelope.deadlineMs);
   const timeout = setTimeout(
-    () => timeoutController.abort(new DOMException('CLI invocation timed out', 'TimeoutError')),
-    context.invocation.timeoutMs,
+    () => timeoutController?.abort(new DOMException('CLI invocation timed out', 'TimeoutError')),
+    timeoutMs,
   );
   timeout.unref?.();
   const signal = context.invocation.signal
@@ -292,7 +317,10 @@ export async function invokeProcessCli(
       detached: process.platform !== 'win32',
       stdin: prepared.stdin,
       signal,
-      outputBudgetBytes: CLI_RAW_OUTPUT_MAX_BYTES,
+      outputBudgetBytes:
+        envelope === undefined
+          ? CLI_RAW_OUTPUT_MAX_BYTES
+          : Math.min(CLI_RAW_OUTPUT_MAX_BYTES, envelope.maxRawProtocolBytes),
       // The recorder owns every retained byte of this call and nothing here
       // reads the spawn-level stdout snapshot, so a rolling megabyte tail of a
       // multi-megabyte protocol stream would be pure cost.
@@ -307,6 +335,10 @@ export async function invokeProcessCli(
           label: adapter.descriptor.id,
           onWarn: (silentMs) => recorder.stalled({ silentMs }),
           onClear: () => recorder.stallCleared(),
+          ...(envelope !== undefined && {
+            warnMs: Math.min(context.idle.warnMs, envelope.idleTimeoutMs),
+            killMs: Math.min(context.idle.killMs, envelope.idleTimeoutMs),
+          }),
         },
       }),
       ...(context.onSpawned !== undefined && { onSpawned: context.onSpawned }),
@@ -399,6 +431,12 @@ export async function invokeProcessCli(
     if (callbackFailed) {
       return callbackFailure(context.callContext, credentialValues);
     }
+    if (envelopeLimit !== null) {
+      // The recorder latched the envelope breach before the awaited reap; the
+      // terminal stays truncated with the canonical limit code and no later
+      // record can clear it.
+      return finishRunnerCallOutputLimit(recorder, envelopeLimit);
+    }
     if (signal.aborted) {
       const status = runnerCallInterruptedStatus(signal);
       return finishFailureSafely(
@@ -434,12 +472,19 @@ export async function invokeProcessCli(
     }
     const fatalState = fatalStateOf(cause);
     if (fatalState !== null) {
+      // The spawn byte budget is clamped to the canonical envelope raw bound,
+      // so its breach is the envelope raw breach: classify with the canonical
+      // limit code instead of the transport backstop code.
+      const code =
+        fatalState === 'output-budget-breach' && envelope !== undefined
+          ? TASK_COMPILATION_FAILURE_CODE.task_compiler_output_limited
+          : fatalState;
       return finishFailureSafely(
         recorder,
         context.callContext,
         credentialValues,
         fatalState === 'output-budget-breach' ? 'truncated' : 'failed',
-        fatalState,
+        code,
         errorMessage(cause),
       );
     }
@@ -629,6 +674,13 @@ function isFailureExit(contract: CliOutputContract, exitCode: number | null): bo
     default:
       return assertNever(contract);
   }
+}
+
+function isCanonicalEnvelopeLimitWarning(code: string): boolean {
+  return (
+    code === TASK_COMPILATION_FAILURE_CODE.task_compiler_output_limited ||
+    code === TASK_COMPILATION_FAILURE_CODE.task_compiler_timeout
+  );
 }
 
 function fatal(state: 'output-budget-breach' | 'protocol-failure', message: string): Error {

@@ -5,11 +5,128 @@ import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { formatTasks } from '../../../engine/spec/formatter.js';
+import { TASKS_FILE } from '../../../core/paths.js';
+import {
+  BriefRecoveryProjectionV1Schema,
+  type BriefRecoveryProjectionV1,
+} from '../../../core/schemas/brief-recovery.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { glyph } from '../../../lib/glyphs.js';
+import * as briefReviewLoader from '../brief-review-loader.js';
+import type { UseInputModeResult } from '../hooks/use-input-mode.js';
+import { getWorkflowContentWidth, getWorkflowSidebarWidth } from '../layout/rect.js';
+import { WorkflowBody } from './body.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
+import { configStore } from '../../../stores/project/config.js';
+import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { ReviewView } from './review-view.js';
+
+type WholeScreenRecoveryStatus = Extract<
+  BriefRecoveryProjectionV1['status'],
+  'checking' | 'blocked' | 'retrying' | 'unresolved' | 'ready' | 'readiness-blocked'
+>;
+
+const WHOLE_SCREEN_WIDTHS = [121, 120, 119, 80, 50, 40] as const;
+
+const wholeScreenBrief = { revision: 1, hash: 'b'.repeat(64), path: TASKS_FILE };
+const wholeScreenReport = {
+  revision: 1,
+  hash: 'r'.repeat(64),
+  path: 'brief-quality.json',
+};
+
+const wholeScreenIssue = {
+  code: 'missing_validation',
+  severity: 'error' as const,
+  taskId: null,
+  message: 'Planner returned an invalid Task Brief contract',
+};
+
+const WHOLE_SCREEN_OUTCOME: Record<WholeScreenRecoveryStatus, string> = {
+  checking: 'CHECKING CONTRACT',
+  blocked: 'CONTRACT BLOCKED',
+  retrying: 'RETRYING',
+  unresolved: 'RETRY UNRESOLVED',
+  ready: 'CONTRACT READY',
+  'readiness-blocked': 'READINESS BLOCKED',
+};
+
+function wholeScreenRecovery(status: WholeScreenRecoveryStatus): BriefRecoveryProjectionV1 {
+  const blocked = status === 'blocked';
+  const unresolved = status === 'unresolved';
+  const retrying = status === 'retrying';
+  const matchingReport = {
+    briefHash: wholeScreenBrief.hash,
+    report: wholeScreenReport,
+    ruleVersion: 'brief-quality-v1',
+    // Keep the diagnostic in the projection blocker so the whole-screen fixture exercises the
+    // recovery header without entering the task-row general-issue branch.
+    issues: [],
+  };
+  return BriefRecoveryProjectionV1Schema.parse({
+    version: 1,
+    sessionId: 'whole-screen-session',
+    stateRevision: 1,
+    recoveryRevision: 1,
+    epochId: 'epoch-1',
+    status,
+    origin: { mode: 'standard', entry: 'initial' },
+    continuation: { version: 1, kind: 'approval', mode: 'standard', entry: 'initial' },
+    activeBrief: wholeScreenBrief,
+    matchingReport,
+    blocker: blocked
+      ? { kind: 'quality', issues: [wholeScreenIssue] }
+      : unresolved
+        ? { kind: 'unresolved', code: 'brief_unresolved', operationId: 'operation-1' }
+        : null,
+    allowedActions: blocked
+      ? ['retry', 'edit', 'reject', 'status']
+      : retrying
+        ? ['edit', 'reject', 'status']
+        : unresolved
+          ? ['resolve-unresolved', 'edit', 'reject', 'status']
+          : status === 'ready'
+            ? ['approve', 'edit', 'reject', 'status']
+            : ['edit', 'reject', 'status'],
+    activeOperation: null,
+    latestAttempt: null,
+    queuedInputs: {
+      ids: retrying ? ['input-1'] : [],
+      count: retrying ? 1 : 0,
+      carriedCount: 0,
+      heldCount: 0,
+      releasedCount: 0,
+    },
+  });
+}
+
+function reviewInputMode(): UseInputModeResult {
+  return {
+    mode: 'review',
+    hint: '',
+    questionEpoch: 0,
+    setReviewMode: vi.fn(),
+    setQuestionMode: vi.fn(),
+    resolve: vi.fn(),
+    resetMode: vi.fn(),
+  };
+}
+
+function rightPaneBottomRow(frame: string, startColumn: number): number {
+  const rows = stripAnsiStyles(frame)
+    .split('\n')
+    .flatMap((line, row) => {
+      const corner = line[startColumn];
+      return (corner === '+' || corner === '└') && /[-─]{2,}/u.test(line.slice(startColumn))
+        ? [row]
+        : [];
+    });
+  return rows.length > 0 ? (rows[rows.length - 1] ?? -1) : -1;
+}
 
 describe('ReviewView', () => {
   let tmp: string;
@@ -211,4 +328,70 @@ describe('ReviewView', () => {
     expect(frame).not.toContain('\u0007');
     expect(frame.split('\n').every((line) => getTerminalCellWidth(line) <= 24)).toBe(true);
   });
+
+  it.each(['checking', 'blocked', 'retrying', 'unresolved', 'ready', 'readiness-blocked'] as const)(
+    'keeps the whole workflow body bounded for %s at every recovery width',
+    async (status) => {
+      const file = join(tmp, TASKS_FILE);
+      configStore.__testReset({ config: makeConfig(), projectDir: tmp });
+      writeFileSync(
+        file,
+        formatTasks([makeTask({ id: 'T001', title: 'whole-screen task' })]),
+        'utf8',
+      );
+
+      const projection = wholeScreenRecovery(status);
+      const loadBriefData = briefReviewLoader.loadBriefReviewData;
+      const loaderSpy = vi
+        .spyOn(briefReviewLoader, 'loadBriefReviewData')
+        .mockImplementation(async (options) => ({
+          ...(await loadBriefData(options)),
+          recovery: projection,
+        }));
+
+      try {
+        for (const cols of WHOLE_SCREEN_WIDTHS) {
+          const contentHeight = 16;
+          terminalSizeStore.__testReset({ cols, rows: 24 });
+          const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible: true });
+          const showSidebar = sidebarWidth > 0;
+          const contentWidth = getWorkflowContentWidth({ cols, sidebarVisible: true });
+          const rendered = renderFeature(
+            <WorkflowBody
+              showSidebar={showSidebar}
+              sidebarWidth={sidebarWidth}
+              inputMode={reviewInputMode()}
+              reviewFilePath={file}
+              phase="reviewing-briefs"
+              contentHeight={contentHeight}
+              contentWidth={contentWidth}
+            />,
+            { cols, rows: 24 },
+          );
+
+          await vi.waitFor(() => {
+            expect(stripAnsiStyles(rendered.lastFrame() ?? '')).toContain(
+              WHOLE_SCREEN_OUTCOME[status],
+            );
+          });
+
+          const frame = stripAnsiStyles(rendered.lastFrame() ?? '');
+          const lines = frame.split('\n');
+          expect(lines.length).toBeLessThanOrEqual(contentHeight);
+          expect(lines.every((line) => getTerminalCellWidth(line) <= cols)).toBe(true);
+          if (showSidebar) {
+            expect(frame).toContain('No tasks yet');
+            expect(rightPaneBottomRow(frame, sidebarWidth + 2)).toBe(contentHeight - 1);
+          } else {
+            expect(frame).not.toContain('No tasks yet');
+            expect(rightPaneBottomRow(frame, 0)).toBe(contentHeight - 1);
+          }
+          rendered.unmount();
+        }
+      } finally {
+        loaderSpy.mockRestore();
+        configStore.__testReset();
+      }
+    },
+  );
 });

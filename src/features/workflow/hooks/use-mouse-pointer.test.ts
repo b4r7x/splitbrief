@@ -129,7 +129,7 @@ function transcriptRows() {
     expandedDiffs: scroll.expandedDiffs,
     expandedActivityBatches: scroll.expandedActivityBatches,
     cols: snapshot.conversationWidth,
-    viewportHeight: snapshot.conversationRect.height,
+    viewportHeight: snapshot.contentRect.height,
     rawScrollOffset: scroll.scrollOffset,
     renderableCountAtScroll: scroll.renderableCountAtScroll,
     heightAtScroll: scroll.heightAtScroll,
@@ -292,8 +292,8 @@ describe('workflow pointer handling', () => {
     const snapshot = readConversationScrollSnapshot();
     const windowIndex = transcriptRows().findIndex((row) => rowText(row).includes('ctrl+d'));
     expect(windowIndex).toBeGreaterThanOrEqual(0);
-    const x = snapshot.conversationRect.left;
-    const y = snapshot.conversationRect.top + windowIndex;
+    const x = snapshot.contentRect.left;
+    const y = snapshot.contentRect.top + windowIndex;
     const onClick = vi.fn();
     registerMouseZone({ id: 'covered', left: x, right: x, top: y, bottom: y, z: 5, onClick });
     hoverStore.set('conversation', windowIndex);
@@ -402,7 +402,7 @@ describe('workflow pointer handling', () => {
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     const snapshot = readConversationScrollSnapshot();
     dispatchWorkflowPointer(
-      pointerEvent('move', snapshot.conversationRect.left, snapshot.conversationRect.top),
+      pointerEvent('move', snapshot.contentRect.left, snapshot.contentRect.top),
     );
 
     expect(hoverStore.get()).toEqual({ surface: 'conversation', index: 0 });
@@ -415,8 +415,8 @@ describe('workflow pointer handling', () => {
     const snapshot = readConversationScrollSnapshot();
     const windowIndex = transcriptRows().findIndex((row) => rowText(row).includes('ctrl+d'));
     expect(windowIndex).toBeGreaterThanOrEqual(0);
-    const x = snapshot.conversationRect.left;
-    const y = snapshot.conversationRect.top + windowIndex;
+    const x = snapshot.contentRect.left;
+    const y = snapshot.contentRect.top + windowIndex;
     hoverStore.set('conversation', windowIndex);
 
     controlsStore.setInputMode('review');
@@ -438,8 +438,8 @@ describe('workflow pointer handling', () => {
     const snapshot = readConversationScrollSnapshot();
     const windowIndex = transcriptRows().findIndex((row) => rowText(row).includes('ctrl+d'));
     expect(windowIndex).toBeGreaterThanOrEqual(0);
-    const x = snapshot.conversationRect.left;
-    const y = snapshot.conversationRect.top + windowIndex;
+    const x = snapshot.contentRect.left;
+    const y = snapshot.contentRect.top + windowIndex;
 
     dispatchWorkflowPointer(pointerEvent('move', x, y));
     dispatchWorkflowPointer(pointerEvent('press', x, y));
@@ -471,11 +471,7 @@ describe('workflow pointer handling', () => {
     expect(conversationScrollStore.get().expandedActivityBatches.has(batchKey)).toBe(false);
 
     dispatchWorkflowPointer(
-      pointerEvent(
-        'press',
-        snapshot.conversationRect.left,
-        snapshot.conversationRect.top + windowIndex,
-      ),
+      pointerEvent('press', snapshot.contentRect.left, snapshot.contentRect.top + windowIndex),
     );
 
     expect(conversationScrollStore.get().expandedActivityBatches.has(batchKey)).toBe(true);
@@ -494,11 +490,7 @@ describe('workflow pointer handling', () => {
     expect(windowIndex).toBeGreaterThanOrEqual(0);
 
     dispatchWorkflowPointer(
-      pointerEvent(
-        'press',
-        snapshot.conversationRect.left,
-        snapshot.conversationRect.top + windowIndex,
-      ),
+      pointerEvent('press', snapshot.contentRect.left, snapshot.contentRect.top + windowIndex),
     );
 
     expect(conversationScrollStore.get().expandedActivityBatches.has(batchKey)).toBe(false);
@@ -514,11 +506,7 @@ describe('workflow pointer handling', () => {
     expect(conversationScrollStore.get().expandedDiffs.size).toBe(0);
 
     dispatchWorkflowPointer(
-      pointerEvent(
-        'press',
-        snapshot.conversationRect.left,
-        snapshot.conversationRect.top + windowIndex,
-      ),
+      pointerEvent('press', snapshot.contentRect.left, snapshot.contentRect.top + windowIndex),
     );
 
     expect(conversationScrollStore.get().expandedDiffs.has('implementer_generate_done:0')).toBe(
@@ -546,8 +534,8 @@ describe('workflow pointer handling', () => {
     dispatchWorkflowPointer(
       pointerEvent(
         'press',
-        snapshot.conversationRect.left,
-        snapshot.conversationRect.top + snapshot.stickyLeadingRows + windowIndex,
+        snapshot.contentRect.left,
+        snapshot.contentRect.top + snapshot.stickyLeadingRows + windowIndex,
       ),
     );
 
@@ -562,7 +550,7 @@ describe('workflow pointer handling', () => {
     const snapshot = readConversationScrollSnapshot();
 
     dispatchWorkflowPointer(
-      pointerEvent('press', snapshot.conversationRect.left, snapshot.conversationRect.top + 1),
+      pointerEvent('press', snapshot.contentRect.left, snapshot.contentRect.top + 1),
     );
 
     expect(conversationScrollStore.get().expandedDiffs.size).toBe(0);

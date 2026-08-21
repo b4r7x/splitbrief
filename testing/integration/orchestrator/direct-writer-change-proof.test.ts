@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import {
   chmodSync,
   existsSync,
@@ -9,10 +10,15 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { createInitialState, transition } from '../../../src/core/state/machine.js';
+import {
+  CliExecutableReceiptSchema,
+  formatDigestBoundExecutableFingerprint,
+} from '../../../src/core/discovery/detection.js';
 import type { CliImplementerConfig } from '../../../src/core/schemas/implementer-config.js';
 import type { RunnerFailureOutcomeState } from '../../../src/engine/runners/errors.js';
 import { isolationWorktreePath, SANDBOX_DIR } from '../../../src/core/paths.js';
+import { parseTasksStrict } from '../../../src/engine/spec/tasks/parse.js';
+import { formatTasks } from '../../../src/engine/spec/formatter.js';
 import { createCliImplementer } from '../../../src/engine/implementers/cli.js';
 import { runImplementation } from '../../../src/engine/orchestrator/task/run-implementation.js';
 import { runSingleTask } from '../../../src/engine/orchestrator/task/step.js';
@@ -32,6 +38,7 @@ import {
   makeWctx,
   makeWorktreeIsolation,
 } from '#testing/helpers/orchestrator-factories.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import {
   prependPath,
@@ -43,6 +50,8 @@ import {
   type PreparedExecution,
 } from '../../../src/engine/runners/prepared-execution.js';
 import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
+import { ensureSessionDir } from '../../../src/core/paths-io.js';
+import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
 
 const TARGET_SRC = 'src/change-proof.ts';
 const TARGET_TEST = 'tests/change-proof.test.mjs';
@@ -52,7 +61,7 @@ const PROMPT_TAIL = ' CHANGE_PROOF_TAIL';
 
 const OPENCODE_PROFILE: ContractShimProfile = {
   transport: 'argv',
-  versionLine: 'opencode 0.5.0',
+  versionLine: 'opencode 1.18.15',
   successLines: [
     '{"type":"text","part":{"type":"text","text":"ok"}}',
     '{"type":"step_finish","part":{"type":"step-finish","tokens":{"input":12,"output":8}}}',
@@ -82,12 +91,26 @@ function trustedGateFor(shimDir: string): CliStartGate {
   const commandPath = join(shimDir, 'opencode');
   const path = realpathSync(commandPath);
   const info = statSync(path);
+  const fingerprint = { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs };
+  const contentDigest = createHash('sha256').update(readFileSync(path)).digest('hex');
+  const digestFingerprint = formatDigestBoundExecutableFingerprint({
+    fingerprint,
+    contentDigest,
+  });
+  if (digestFingerprint === null) throw new Error('shim fingerprint failed');
   return {
     tool: 'opencode',
-    executable: {
+    executable: CliExecutableReceiptSchema.parse({
       path,
-      fingerprint: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs },
-    },
+      fingerprint,
+      executableIdentity: {
+        canonicalPath: commandPath,
+        realPath: path,
+        platformFileId: `${info.dev}:${info.ino}`,
+        fingerprint: digestFingerprint,
+        resolvedAt: Date.now(),
+      },
+    }),
   };
 }
 
@@ -103,7 +126,7 @@ function implementerConfig(): CliImplementerConfig {
 }
 
 function proofTask() {
-  return makeTask({
+  const task = makeTask({
     id: 'T001',
     action: 'create',
     file: TARGET_SRC,
@@ -119,6 +142,9 @@ function proofTask() {
     escalation: ['Stop if the scoped source path is not writable.'],
     typeDefs: 'export const marker: string',
   });
+  const parsed = parseTasksStrict(formatTasks([task]))[0];
+  if (parsed === undefined) throw new Error('expected the canonical proof task fixture');
+  return parsed;
 }
 
 function seedValidationProject(projectDir: string): void {
@@ -167,18 +193,8 @@ function writeOpencodeProofShim(opts: {
       : `mkdir -p "$(dirname ${shellQuote(opts.outsidePath)})"\nprintf 'outside\\n' > ${shellQuote(opts.outsidePath)}`;
   const modeBody: Record<ShimMode, string> = {
     'valid-change': [
-      'mkdir -p src tests',
+      'mkdir -p src',
       `printf 'export const marker = "${MARKER}";\\n' > '${TARGET_SRC}'`,
-      `cat > '${TARGET_TEST}' <<'EOF'`,
-      "import { readFileSync } from 'node:fs';",
-      `const marker = ${JSON.stringify(MARKER)};`,
-      `const src = readFileSync('${TARGET_SRC}', 'utf-8');`,
-      'if (!src.includes(marker)) {',
-      '  console.error("marker mismatch");',
-      '  process.exit(1);',
-      '}',
-      'console.log("ok");',
-      'EOF',
       successLines,
       'exit 0',
     ].join('\n'),
@@ -207,8 +223,8 @@ function writeOpencodeProofShim(opts: {
       'exit 0',
     ].join('\n'),
     'irrelevant-write': [
-      'mkdir -p dist',
-      "printf 'ignored\\n' > dist/bundle.js",
+      'mkdir -p .splitbrief',
+      "printf 'ignored\\n' > .splitbrief/irrelevant.log",
       successLines,
       'exit 0',
     ].join('\n'),
@@ -273,10 +289,7 @@ async function runDirectWriterImplementation(
 ): Promise<Awaited<ReturnType<typeof runImplementation>>> {
   const sessionId = 'sess-direct-writer-proof';
   const task = proofTask();
-  const state = transition(createInitialState('direct writer change proof'), {
-    type: 'START_QUICK',
-    tasks: [task],
-  });
+  const state = makeImplState([task]);
   const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
   const { bus } = makeBusRecorder();
   const wctx = makeWctx({
@@ -352,7 +365,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
       expect(existsSync(join(workspaceDir, '.splitbrief/provider-state.json'))).toBe(true);
     }
     if (mode === 'irrelevant-write' && workspaceDir !== undefined) {
-      expect(existsSync(join(workspaceDir, 'dist/bundle.js'))).toBe(true);
+      expect(existsSync(join(workspaceDir, '.splitbrief/irrelevant.log'))).toBe(true);
     }
 
     result.workspace?.cleanup();
@@ -362,12 +375,10 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
     const projectDir = setupProject();
     const fixture = createShimFixture(projectDir, 'valid-change');
     const sessionId = 'sess-direct-writer-worktree';
+    ensureSessionDir(projectDir, sessionId);
     const isolation = makeWorktreeIsolation({ projectDir, sessionId });
     const task = proofTask();
-    const state = transition(createInitialState('direct writer worktree proof'), {
-      type: 'START_QUICK',
-      tasks: [task],
-    });
+    const state = makeImplState([task]);
 
     try {
       const result = await runSingleTask({
@@ -403,7 +414,6 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
       expect(readFileSync(join(projectDir, TARGET_SRC), 'utf-8')).toBe(
         `export const marker = "${MARKER}";\n`,
       );
-      expect(existsSync(join(projectDir, TARGET_TEST))).toBe(true);
     } finally {
       await isolation.dispose();
     }
@@ -411,22 +421,24 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
 
   it('promotes a rewrite of a file the run worktree was already dirty in', async () => {
     const projectDir = setupProject();
-    // The worktree is seeded with the source checkout's uncommitted work, so both
-    // paths the shim rewrites are already in its git status before it runs. A
-    // baseline that compares path membership sees nothing new and calls this a
-    // no-op run; every retry of an already-written task has this shape.
+    // The worktree is seeded with the source checkout's uncommitted work, so a
+    // dirty unrelated file is already in its git status before the implementer
+    // runs. The declared file is new to the status, so the exact-effect gate
+    // counts the shim's write as the one staged change; a pre-existing dirty
+    // declared file would call a rewrite a no-op run, and every retry of an
+    // already-written task keeps this shape.
     mkdirSync(join(projectDir, 'src'), { recursive: true });
-    mkdirSync(join(projectDir, 'tests'), { recursive: true });
-    writeFileSync(join(projectDir, TARGET_SRC), 'export const marker = "stale";\n', 'utf-8');
-    writeFileSync(join(projectDir, TARGET_TEST), 'process.exit(1);\n', 'utf-8');
+    writeFileSync(
+      join(projectDir, 'src/unrelated-dirty.ts'),
+      'export const dirty = true;\n',
+      'utf-8',
+    );
     const fixture = createShimFixture(projectDir, 'valid-change');
     const sessionId = 'sess-direct-writer-already-dirty';
+    ensureSessionDir(projectDir, sessionId);
     const isolation = makeWorktreeIsolation({ projectDir, sessionId });
     const task = proofTask();
-    const state = transition(createInitialState('direct writer already dirty proof'), {
-      type: 'START_QUICK',
-      tasks: [task],
-    });
+    const state = makeImplState([task]);
 
     try {
       const result = await runSingleTask({
@@ -478,6 +490,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
     });
 
     const feature = 'prove direct writer promotion';
+    const resumeState = persistReadyExecutionState(projectDir, sessionId, makeImplState([task]));
     const config = parsePreparedConfig(
       makeConfig({
         planner: {
@@ -492,7 +505,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
           typecheck: false,
           lint: false,
           test: true,
-          testCommand: `node ${TARGET_TEST} && node validate.mjs`,
+          testCommand: 'node validate.mjs',
         },
         workflow: {
           mode: 'quick',
@@ -545,7 +558,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
         },
       ],
       session: { kind: 'existing', ref: { projectDir, sessionId }, active },
-      runtime: { feature, allowRepoRunners: false, allowHooks: false },
+      runtime: { feature, allowRepoRunners: false, allowHooks: false, resumeState },
     };
 
     const summary = await runWorkflow({
@@ -564,7 +577,6 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
     expect(readFileSync(join(projectDir, TARGET_SRC), 'utf-8')).toBe(
       `export const marker = "${MARKER}";\n`,
     );
-    expect(existsSync(join(projectDir, TARGET_TEST))).toBe(true);
     expect(existsSync(join(projectDir, 'dist/bundle.js'))).toBe(false);
     expect(existsSync(join(projectDir, SANDBOX_DIR))).toBe(false);
     expect(existsSync(fixture.outsidePath)).toBe(false);

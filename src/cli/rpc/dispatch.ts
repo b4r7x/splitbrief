@@ -1,6 +1,10 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
+import {
+  BriefReviewCommandSchema,
+  type BriefReviewCommand,
+} from '../../core/schemas/brief-review-command.js';
 import type { EventBus } from '../../engine/events/types.js';
 import type { ClearQueueHandler, QueueHandler } from '../../engine/orchestrator/types.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
@@ -37,6 +41,17 @@ export function createCommandHandler(deps: {
       promptId?: string | undefined,
     ) => Promise<BriefReviewGateResult>;
   };
+  /**
+   * The live host may provide the authoritative controller route.  The gate
+   * remains the compatibility fallback for generic approval prompts; no RPC
+   * adapter is allowed to invent a local recovery reducer.
+   */
+  briefReviewController?: {
+    dispatch: (
+      command: BriefReviewCommand,
+      promptId?: string | undefined,
+    ) => Promise<BriefReviewGateResult>;
+  };
   messageGate: { resolve: (value: string) => boolean };
   receiveRecoveryAction: (action: string) => boolean;
   writeStatus: () => void;
@@ -46,6 +61,8 @@ export function createCommandHandler(deps: {
     status: (data: unknown) => void;
   };
   pendingQueueDepth: (state: WorkflowState | null) => number;
+  requestRewind?: ((request: { target: 'spec' | 'plan'; comment?: string }) => boolean) | undefined;
+  requestTaskRedo?: ((taskId: string) => boolean) | undefined;
   setRewindFeedback?: ((feedback: string | undefined) => void) | undefined;
 }): (cmd: RpcCommand) => void {
   let runtimeChain: Promise<void> = Promise.resolve();
@@ -72,6 +89,8 @@ export function createCommandHandler(deps: {
       abortTurn: deps.abortTurn,
       bus: deps.bus,
       setRewindFeedback: deps.setRewindFeedback,
+      requestRewind: deps.requestRewind,
+      requestTaskRedo: deps.requestTaskRedo,
       messages,
       errors,
       pendingQueueDepth: deps.pendingQueueDepth,
@@ -94,8 +113,14 @@ export function createCommandHandler(deps: {
     cmd: Extract<RpcCommand, { type: 'brief_review' }>,
     prompt: ApprovalGatePrompt | null,
   ) => ({
+    sessionId: cmd.command.sessionId,
+    epochId: cmd.command.epochId,
     ...(cmd.id !== undefined && { id: cmd.id }),
-    ...(cmd.operationId !== undefined && { operationId: cmd.operationId }),
+    ...(cmd.operationId !== undefined
+      ? { operationId: cmd.operationId }
+      : cmd.command.action !== 'status'
+        ? { operationId: cmd.command.operationId }
+        : {}),
     promptId: cmd.promptId ?? prompt?.promptId ?? null,
     action: cmd.command.action,
   });
@@ -160,8 +185,21 @@ export function createCommandHandler(deps: {
     }
 
     if (cmd.type === 'brief_review') {
+      const parsedCommand = BriefReviewCommandSchema.safeParse(cmd.command);
+      if (!parsedCommand.success) {
+        deps.writer.error('Task Brief review command is invalid.', {
+          transcriptSensitive: true,
+          summary: 'Brief review command rejected.',
+          data: {
+            type: 'brief_review',
+            status: 'rejected',
+          },
+        });
+        return;
+      }
+      const route = deps.briefReviewController?.dispatch ?? deps.approvalGate.handleBriefReview;
       briefReviewChain = briefReviewChain
-        .then(() => deps.approvalGate.handleBriefReview(cmd.command, cmd.promptId))
+        .then(() => route(parsedCommand.data, cmd.promptId))
         .then((result) => writeBriefReviewResult(cmd, result))
         .catch((err) => {
           deps.writer.error(toErrorMessage(err), {

@@ -1,6 +1,5 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { mergePersistedMessageQueue } from '../state-ops.js';
-import { saveState } from '../../../core/state/persistence.js';
+import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
 import { isQueuedMessageClearable } from '../../../core/queue-state.js';
 import type { QueueClearResult } from '../types.js';
 import type { WriteSequencer } from '../serial-executor.js';
@@ -12,15 +11,12 @@ export function clearPendingQueue({
   state,
   bus,
 }: QueueStateMutationOptions): { state: WorkflowState; count: number } {
-  const base = mergePersistedMessageQueue({ projectDir, sessionId }, state);
+  const ref = { projectDir, sessionId };
+  const base = rebaseOnPersistedWorkflowState(ref, state);
   const pending = base.messageQueue.filter(isQueuedMessageClearable);
   if (pending.length === 0) return { state: base, count: 0 };
 
-  const next = {
-    ...base,
-    messageQueue: base.messageQueue.filter((message) => !isQueuedMessageClearable(message)),
-  };
-  saveState({ projectDir, sessionId }, next);
+  const next = transitionAndSave(ref, base, { type: 'CLEAR_QUEUE' });
   bus.publish({ type: 'queue_cleared', ts: Date.now(), phase: next.phase, count: pending.length });
   return { state: next, count: pending.length };
 }

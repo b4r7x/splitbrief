@@ -1,8 +1,10 @@
 import type { Config } from '../../core/schemas/config.js';
 import {
+  CLI_COMPILER_EVIDENCE,
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
 } from '../../core/runners/cli-tool-catalog.js';
+import { semanticConfiguredArgViolations } from './arg-vector-preflight.js';
 import type { Implementer, ImplementerFactoryOptions } from '../implementers/types.js';
 import type { Planner, PlannerFactoryOptions } from '../planners/types.js';
 import { warnStderr } from '../../lib/warn.js';
@@ -10,7 +12,8 @@ import { error } from '../../utils/error.js';
 import { assertNever, includes } from '../../utils/type-guards.js';
 import { resolveConfiguredCustomRunner } from './configured-custom.js';
 import { runnerConfigError } from './errors.js';
-import { runnerGateFor } from './start-gate.js';
+import { runnerGateFor, type CliStartGate } from './start-gate.js';
+import { installRunCompiler } from './compiler-seam.js';
 import type {
   PreparedConfig,
   RunnerGate,
@@ -30,7 +33,16 @@ export type RunnerFactoryAuthority = Readonly<{
 
 export type PlannerCreationOptions = PlannerFactoryOptions &
   RunnerFactoryAuthority &
-  Readonly<{ initialSessionId?: string | null | undefined }>;
+  Readonly<{
+    initialSessionId?: string | null | undefined;
+    /**
+     * The run's project root. The remembered detection evidence a compiler
+     * claim reuses is written per project, so a construction that omits it
+     * pays for a fresh runtime probe instead of reading another project's
+     * record.
+     */
+    projectDir?: string | undefined;
+  }>;
 export type ImplementerCreationOptions = ImplementerFactoryOptions &
   RunnerFactoryAuthority &
   Readonly<{ intermediateContextLength?: number | undefined }>;
@@ -188,6 +200,67 @@ function assertCliImplementerTool(tool: string): void {
   }
 }
 
+/**
+ * One admission path (REQ-016, REQ-018, REQ-047): every planner construction
+ * crosses this decision before any adapter exists, so no backend can bypass
+ * capability admission. A CLI row the compiler catalog marks unsupported, or a
+ * configured argument vector that overrides authority SPLITBRIEF owns, is a
+ * typed zero-dispatch refusal; an admitted CLI tool is bound to its prepared
+ * start gate, which the adapter revalidates immediately before every spawn.
+ */
+function admitPlannerBackend(
+  input: Readonly<{
+    config: Config;
+    authority: RunnerFactoryAuthority;
+  }>,
+): Readonly<{ trustedCli?: CliStartGate | undefined }> {
+  const runner = input.config.planner;
+  if (runner.kind === 'cli') {
+    assertCliPlannerTool(runner.tool);
+    const evidence = CLI_COMPILER_EVIDENCE[runner.tool];
+    if (evidence.state === 'unsupported') {
+      throw plannerCapabilityRefusal({
+        backend: runner.tool,
+        reason: evidence.unsupportedReason ?? 'no compiler conformance row exists',
+        missing: ['backend'],
+      });
+    }
+    const violations = semanticConfiguredArgViolations(runner.args ?? []);
+    if (violations.length > 0) {
+      throw plannerCapabilityRefusal({
+        backend: runner.tool,
+        reason: `the configured arguments override authority SPLITBRIEF owns: ${violations.join(', ')}`,
+        missing: ['configuration'],
+      });
+    }
+  }
+  const gate = runnerGateFor(
+    input.authority.gates,
+    gateExpectation({
+      runner,
+      slot: input.authority.slot,
+      preparationId: input.authority.preparationId,
+    }),
+  );
+  return gate.kind === 'cli'
+    ? { trustedCli: { tool: gate.tool, executable: gate.executable } }
+    : {};
+}
+
+function plannerCapabilityRefusal(
+  input: Readonly<{
+    backend: string;
+    reason: string;
+    missing: readonly string[];
+  }>,
+): never {
+  throw error(
+    'task_compiler_capability_unsupported',
+    `The ${input.backend} planner is not admitted for Task Brief compilation in V1: ${input.reason}`,
+    { backend: input.backend, missing: [...input.missing] },
+  );
+}
+
 async function loadPlanner(
   config: Config,
   initialSessionId?: string | null,
@@ -248,6 +321,9 @@ export async function createPlanner(
 ): Promise<Planner> {
   const authority = requireFactoryAuthority(config, options, 'planner');
   const configured = resolveConfiguredCustomRunner(config, 'planner');
+  let planner: Planner;
+  let trustedCli: CliStartGate | undefined;
+
   if (configured !== null) {
     const configuredKind = configured.command.contract === 'output' ? 'shell' : 'agent';
     const gate = configuredCommandGate(authority, configuredKind, configured.command.id);
@@ -259,24 +335,17 @@ export async function createPlanner(
       throw customRunnerFactoryError.runtimeUnavailable('planner');
     }
     const mod = await loadConfiguredCustomPlanner();
-    return mod.createConfiguredCustomPlanner(configured, runtime, gate.command.invocation);
+    planner = mod.createConfiguredCustomPlanner(configured, runtime, gate.command.invocation);
+  } else {
+    const admission = admitPlannerBackend({ config, authority });
+    trustedCli = admission.trustedCli;
+    planner = await loadPlanner(config, options.initialSessionId, {
+      ...options,
+      ...(admission.trustedCli !== undefined && { trustedCli: admission.trustedCli }),
+    });
   }
 
-  if (config.planner.kind === 'cli') {
-    assertCliPlannerTool(config.planner.tool);
-  }
-  const gate = runnerGateFor(
-    authority.gates,
-    gateExpectation({
-      runner: config.planner,
-      slot: authority.slot,
-      preparationId: authority.preparationId,
-    }),
-  );
-  const planner = await loadPlanner(config, options.initialSessionId, {
-    ...options,
-    ...(gate.kind === 'cli' && { trustedCli: { tool: gate.tool, executable: gate.executable } }),
-  });
+  await installRunCompiler({ planner, config, projectDir: options.projectDir, trustedCli });
   if (config.planner.effort && !planner.capabilities.supportsEffort) {
     warnStderr(`planner-effort: dropped (${config.planner.kind} backend has no reasoning control)`);
   }

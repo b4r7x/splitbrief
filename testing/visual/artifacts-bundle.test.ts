@@ -16,6 +16,8 @@ import { createRunKey } from './artifacts/layout.js';
 import { writeArtifactBundle } from './artifacts/write.js';
 import { parseTerminalFrame } from './terminal/parse.js';
 
+type TerminalProfile = 'unicode-color' | 'unicode-mono' | 'ascii-mono';
+
 const temporaryRoots: string[] = [];
 
 afterEach(async () => {
@@ -25,6 +27,72 @@ afterEach(async () => {
 });
 
 describe('visual artifact bundle writer', () => {
+  it.each(['unicode-color', 'unicode-mono', 'ascii-mono'] as const)(
+    'persists the %s profile through publication and reparsing',
+    async (profile) => {
+      const fixture = await createBundleFixture(profile);
+      const outputRoot = await createOutputRoot();
+
+      const publication = await writeArtifactBundle({
+        ...fixture.options,
+        outputRoot,
+      });
+      const persistedManifest = parseManifest(
+        JSON.parse(await readFile(publication.manifestPath, 'utf8')),
+      );
+
+      expect('profile' in publication.manifest && publication.manifest.profile).toBe(profile);
+      expect('profile' in persistedManifest && persistedManifest.profile).toBe(profile);
+      expect('profile' in persistedManifest.selection && persistedManifest.selection.profile).toBe(
+        profile,
+      );
+      expect(
+        'profile' in persistedManifest.determinism && persistedManifest.determinism.profile,
+      ).toBe(profile);
+    },
+  );
+
+  it('uses a profile-specific publication key without changing artifact identity', async () => {
+    const colorFixture = await createBundleFixture('unicode-color');
+    const monoFixture = await createBundleFixture('unicode-mono');
+    const asciiFixture = await createBundleFixture('ascii-mono');
+
+    expect(createRunKey(colorFixture.options.selection)).not.toBe(
+      createRunKey(monoFixture.options.selection),
+    );
+    expect(createRunKey(colorFixture.options.selection)).not.toBe(
+      createRunKey(asciiFixture.options.selection),
+    );
+    expect(createRunKey(monoFixture.options.selection)).not.toBe(
+      createRunKey(asciiFixture.options.selection),
+    );
+
+    const identityKeys = (fixture: Awaited<ReturnType<typeof createBundleFixture>>) =>
+      fixture.options.captures.map((capture) => capture.grid.identity.key);
+    expect(identityKeys(colorFixture)).toEqual(identityKeys(monoFixture));
+    expect(identityKeys(colorFixture)).toEqual(identityKeys(asciiFixture));
+  });
+
+  it('rejects a determinism profile mismatch before publishing a run root', async () => {
+    const fixture = await createBundleFixture('unicode-color');
+    const outputRoot = await createOutputRoot();
+
+    await expect(
+      writeArtifactBundle({
+        ...fixture.options,
+        outputRoot,
+        determinism: { ...fixture.options.determinism, profile: 'ascii-mono' },
+      }),
+    ).rejects.toThrow('Visual artifact bundle publication failed');
+
+    const layout = createPublicationLayout({
+      outputRoot,
+      runKey: createRunKey(fixture.options.selection),
+    });
+    await expect(pathExists(layout.runRoot)).resolves.toBe(false);
+    await expect(pathExists(layout.stagingRoot)).resolves.toBe(false);
+  });
+
   it('publishes validated frame and crop diagnostic, SVG, PNG, and manifest files', async () => {
     const fixture = await createBundleFixture();
     const outputRoot = await createOutputRoot();
@@ -134,7 +202,7 @@ describe('visual artifact bundle writer', () => {
   });
 });
 
-async function createBundleFixture() {
+async function createBundleFixture(profile?: TerminalProfile) {
   const frameViewport = viewport({ cols: 40, rows: 8 });
   const checkpoint = CheckpointDefinitionSchema.parse({
     id: 'success',
@@ -175,6 +243,7 @@ async function createBundleFixture() {
   const selection = CaptureSelectionSchema.parse({
     requests: [{ provenance, elementIds: [summaryHero] }],
     targets: [{ provenance, elementIds: [summaryHero] }],
+    ...(profile === undefined ? {} : { profile }),
   });
   const determinism = DeterminismEnvelopeSchema.parse({
     timezone: 'UTC',
@@ -185,6 +254,7 @@ async function createBundleFixture() {
     motion: false,
     clock: '2026-07-19T00:00:00.000Z',
     randomSeed: 'artifact-bundle-v1',
+    ...(profile === undefined ? {} : { profile }),
   });
 
   return {

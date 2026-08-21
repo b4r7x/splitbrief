@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { computeScrollMaxOffset, getScrollWindowState } from './scroll-window.js';
+import {
+  computeScrollMaxOffset,
+  getScrollWindowState,
+  normalizeScrollRows,
+} from './scroll-window.js';
+import { getWorkflowContentRect, getWorkflowSidebarWidth } from './rect.js';
 
 describe('computeScrollMaxOffset', () => {
   it('is the overflow beyond the viewport', () => {
@@ -72,5 +77,50 @@ describe('getScrollWindowState', () => {
     expect(state.innerHeight).toBe(0);
     expect(state.linesAbove).toBe(0);
     expect(state.linesBelow).toBe(0);
+  });
+
+  it('clips to the whole caller-owned body height at every sidebar width', () => {
+    const rows = 24;
+    const inputRows = 3;
+    const noSidebar = getWorkflowContentRect({ cols: 80, rows, inputRows, sidebarVisible: false });
+
+    for (const cols of [121, 120, 119, 80, 50, 40]) {
+      const rect = getWorkflowContentRect({ cols, rows, inputRows, sidebarVisible: true });
+      const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible: true });
+      const state = getScrollWindowState({
+        totalHeight: rect.height,
+        viewportHeight: rect.height,
+        scrollOffset: 0,
+      });
+
+      expect(rect.height, `body height beside a ${sidebarWidth}-wide sidebar`).toBe(
+        noSidebar.height,
+      );
+      expect(state.innerHeight).toBe(rect.height);
+      expect(state.windowEnd).toBe(rect.height);
+      expect(rect.top + state.windowEnd - 1).toBe(rect.bottom);
+      expect(rect.bottom).toBe(noSidebar.bottom);
+    }
+  });
+
+  it('uses only whole, non-negative rows while a resize is incomplete', () => {
+    expect(normalizeScrollRows(8.9)).toBe(8);
+    expect(normalizeScrollRows(-2)).toBe(0);
+    expect(normalizeScrollRows(Number.NaN)).toBe(0);
+    expect(normalizeScrollRows(Number.POSITIVE_INFINITY)).toBe(0);
+
+    expect(
+      getScrollWindowState({
+        totalHeight: 8.9,
+        viewportHeight: 3.9,
+        scrollOffset: Number.NaN,
+      }),
+    ).toEqual({
+      innerHeight: 3,
+      windowStart: 5,
+      windowEnd: 8,
+      linesAbove: 5,
+      linesBelow: 0,
+    });
   });
 });

@@ -2,18 +2,20 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ApprovalReviewResult } from '../../../core/approval/types.js';
+import {
+  createTaskCompilationAttemptId,
+  TaskCompilationSemanticIdSchema,
+} from '../../../core/schemas/task-compilation.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import {
-  DECLARED_PLANNER_ARTIFACT_PATH,
-  PLANNER_ARTIFACT_MAX_BYTES,
-  type ArtifactApprovalReview,
-} from '../../runners/types.js';
+import { PLANNER_ARTIFACT_MAX_BYTES, type ArtifactApprovalReview } from '../../runners/types.js';
 import { beginDeclaredArtifactReview } from './planner-artifact.js';
 import { createStagedProject } from './staged-project.js';
 import type { IsolatedWorkspace } from '../isolation/types.js';
 
 const SESSION_ID = 'immutable-artifact-review';
+const ATTEMPT_ID = createTaskCompilationAttemptId();
+const ARTIFACT_RELATIVE_PATH = `.splitbrief-runner/output/${ATTEMPT_ID}/result`;
 
 type Fixture = Readonly<{
   projectDir: string;
@@ -34,7 +36,7 @@ async function createFixture(): Promise<Fixture> {
 }
 
 function artifactPath(fixture: Fixture): string {
-  return join(fixture.staged.projectDir, DECLARED_PLANNER_ARTIFACT_PATH);
+  return join(fixture.staged.projectDir, ARTIFACT_RELATIVE_PATH);
 }
 
 async function withArtifactReview<T>(
@@ -56,6 +58,22 @@ async function withArtifactReview<T>(
       sessionId: SESSION_ID,
       callId: 'call-1',
       declaredRedactionValues: [],
+      provenance: {
+        semanticId: TaskCompilationSemanticIdSchema.parse('immutable-artifact-test'),
+        programId: null,
+        batchId: null,
+        attemptId: ATTEMPT_ID,
+        transport: {
+          kind: 'declared-file',
+          lease: {
+            leaseId: ATTEMPT_ID,
+            attemptId: ATTEMPT_ID,
+            relativePath: ARTIFACT_RELATIVE_PATH,
+          },
+        },
+        maxBytes: PLANNER_ARTIFACT_MAX_BYTES,
+        relativePath: ARTIFACT_RELATIVE_PATH,
+      },
       onApprovalNeeded,
     });
     return await test(fixture, review);

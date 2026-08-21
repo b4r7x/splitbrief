@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
-import { loadState } from '../../../src/core/state/persistence.js';
+import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
@@ -98,6 +98,7 @@ describe('resume planning continuation with a direct-writing implementer', {
     });
 
     const resumeState = savedPlanningContinuationState(feature);
+    saveState({ projectDir, sessionId }, resumeState);
     const config = parsePreparedConfig(
       makeConfig({
         implementer: {
@@ -182,7 +183,7 @@ describe('resume planning continuation with a direct-writing implementer', {
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining([
         'workflow_resumed',
-        'plan_approved',
+        'tasks_planned',
         'task_completed',
         'workflow_complete',
       ]),

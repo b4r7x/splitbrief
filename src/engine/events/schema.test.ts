@@ -661,3 +661,375 @@ describe('parseEngineEvent', () => {
     ).toBeNull();
   });
 });
+
+describe('versioned Brief recovery events', () => {
+  const hash = 'a'.repeat(64);
+  const otherHash = 'b'.repeat(64);
+  const base = {
+    ts: 1,
+    phase: 'reviewing-briefs' as const,
+    version: 1 as const,
+    eventId: 'event-1',
+    sessionId: 'session-1',
+    epochId: 'epoch-1',
+    recoveryRevision: 1,
+  };
+  const refs = {
+    briefRevision: 1,
+    briefHash: hash,
+    reportRevision: 1,
+    reportHash: hash,
+  };
+
+  const events = [
+    {
+      ...base,
+      type: 'brief_recovery_quality_reported' as const,
+      ...refs,
+      status: 'blocked' as const,
+      outcome: 'failed' as const,
+      taskCount: 0,
+      issueCount: 1,
+      errorCount: 1,
+      warningCount: 0,
+      issueCodes: ['empty_task_list'],
+      score: 0.8,
+      topIssueCode: 'empty_task_list',
+      automaticRepairPolicy: 'existing-one-shot' as const,
+      automaticRepairConsumed: true,
+    },
+    {
+      ...base,
+      type: 'brief_recovery_auto_repair_exhausted' as const,
+      ...refs,
+      operationId: 'automatic-1',
+      intentHash: hash,
+      attemptKind: 'automatic' as const,
+      status: 'blocked' as const,
+      refusalCategory: 'quality' as const,
+      automaticRepairConsumed: true as const,
+      taskCount: 0,
+      issueCount: 1,
+      errorCount: 1,
+      warningCount: 0,
+      issueCodes: ['empty_task_list'],
+    },
+    {
+      ...base,
+      type: 'brief_recovery_attempt_accepted' as const,
+      ...refs,
+      operationId: 'retry-1',
+      intentHash: hash,
+      attemptKind: 'manual-retry' as const,
+      status: 'accepted' as const,
+      dispatchPossibility: 'none' as const,
+      frozenInputCount: 0,
+      queuedInputCount: 0,
+      automaticAllowanceConsumed: true,
+    },
+    {
+      ...base,
+      type: 'brief_recovery_attempt_started' as const,
+      ...refs,
+      operationId: 'retry-1',
+      intentHash: hash,
+      attemptKind: 'manual-retry' as const,
+      status: 'started' as const,
+      requestId: 'request-1',
+      dispatchPossibility: 'possible' as const,
+      frozenInputCount: 0,
+    },
+    {
+      ...base,
+      type: 'brief_recovery_attempt_settled' as const,
+      ...refs,
+      operationId: 'retry-1',
+      intentHash: hash,
+      attemptKind: 'manual-retry' as const,
+      status: 'settled' as const,
+      resultId: 'result-1',
+      outcome: 'quality-failed' as const,
+      dispatchPossibility: 'possible' as const,
+      remoteObservation: 'confirmed-final' as const,
+      providerCode: null,
+      refusalCategory: 'quality' as const,
+      taskCount: 0,
+      issueCount: 1,
+      errorCount: 1,
+      warningCount: 0,
+    },
+    {
+      ...base,
+      type: 'brief_recovery_attempt_unresolved' as const,
+      ...refs,
+      operationId: 'retry-2',
+      intentHash: otherHash,
+      attemptKind: 'manual-retry' as const,
+      status: 'unresolved' as const,
+      requestId: 'request-2',
+      dispatchPossibility: 'possible' as const,
+      remoteObservation: 'unknown' as const,
+      refusalCategory: 'unresolved' as const,
+    },
+    {
+      ...base,
+      type: 'brief_recovery_provider_failed' as const,
+      ...refs,
+      operationId: 'retry-3',
+      intentHash: hash,
+      attemptKind: 'manual-retry' as const,
+      status: 'blocked' as const,
+      outcome: 'provider-failed' as const,
+      providerCode: 'auth_failed',
+      refusalCategory: 'authentication' as const,
+      dispatchPossibility: 'none' as const,
+      remoteObservation: 'not-dispatched' as const,
+    },
+    {
+      ...base,
+      type: 'brief_recovery_input_queued' as const,
+      ...refs,
+      inputId: 'input-1',
+      inputSequence: 1,
+      inputKind: 'feedback' as const,
+      source: 'interactive' as const,
+      textHash: otherHash,
+      operationId: null,
+      queuedInputCount: 1,
+    },
+    {
+      ...base,
+      type: 'brief_recovery_input_applied' as const,
+      ...refs,
+      inputId: 'input-1',
+      inputSequence: 1,
+      inputKind: 'edit' as const,
+      source: 'typed' as const,
+      textHash: otherHash,
+      operationId: 'retry-1',
+      disposition: 'applied' as const,
+      appliedRevision: 2,
+      queuedInputCount: 0,
+    },
+    {
+      ...base,
+      type: 'brief_recovery_stale_ignored' as const,
+      operationId: 'retry-1',
+      intentHash: hash,
+      resultId: 'result-1',
+      baseBriefRevision: 1,
+      baseBriefHash: hash,
+      currentBriefRevision: 2,
+      currentBriefHash: otherHash,
+      baseReportRevision: 1,
+      baseReportHash: hash,
+      currentReportRevision: 2,
+      currentReportHash: otherHash,
+      refusalCategory: 'stale' as const,
+    },
+    {
+      ...base,
+      type: 'brief_recovery_rejected' as const,
+      ...refs,
+      intentId: 'reject-1',
+      operationId: null,
+      status: 'rejected' as const,
+      disposition: 'user-rejected' as const,
+    },
+    {
+      ...base,
+      type: 'brief_recovery_refused' as const,
+      ...refs,
+      intentId: 'approve-1',
+      operationId: null,
+      action: 'approve' as const,
+      refusalCategory: 'quality' as const,
+      refusalCode: 'brief_contract_blocked',
+      status: 'blocked' as const,
+    },
+  ] as const;
+
+  it('accepts every versioned recovery lifecycle variant without raw content', () => {
+    for (const event of events) {
+      expect(parseEngineEvent(event)).toEqual(expect.objectContaining(event));
+    }
+  });
+
+  it('keeps the deterministic outcome authoritative over the diagnostic score', () => {
+    const event = events[0];
+    expect(parseEngineEvent({ ...event, outcome: 'failed', errorCount: 1, score: 1 })).toEqual(
+      expect.objectContaining({ outcome: 'failed', score: 1 }),
+    );
+  });
+
+  it('rejects unknown recovery versions and missing epoch/operation identity', () => {
+    const quality = events[0];
+    const accepted = events[2];
+    const withoutEpoch = Object.fromEntries(
+      Object.entries(quality).filter(([key]) => key !== 'epochId'),
+    );
+    const withoutOperation = Object.fromEntries(
+      Object.entries(accepted).filter(([key]) => key !== 'operationId'),
+    );
+
+    expect(parseEngineEvent({ ...quality, version: 2 })).toBeNull();
+    expect(parseEngineEvent(withoutEpoch)).toBeNull();
+    expect(parseEngineEvent(withoutOperation)).toBeNull();
+  });
+
+  it('rejects oversized identities and issue-code collections', () => {
+    const quality = events[0];
+    expect(parseEngineEvent({ ...quality, eventId: 'x'.repeat(257) })).toBeNull();
+    expect(parseEngineEvent({ ...quality, issueCodes: ['x'.repeat(129)] })).toBeNull();
+    expect(
+      parseEngineEvent({
+        ...quality,
+        issueCodes: Array.from({ length: 257 }, () => 'empty_task_list'),
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects secret-only and raw-content payload keys', () => {
+    const quality = events[0];
+    for (const key of ['briefText', 'apiKey', 'credentials', 'providerPayload', 'issueMessage']) {
+      expect(parseEngineEvent({ ...quality, [key]: 'sentinel-secret' })).toBeNull();
+    }
+  });
+});
+
+describe('durable owner publication events', () => {
+  const hash = 'a'.repeat(64);
+  const otherHash = 'b'.repeat(64);
+  const base = {
+    ts: 1,
+    phase: 'reviewing-briefs' as const,
+    version: 1 as const,
+    eventId: 'event-1',
+    sessionId: 'session-1',
+    epochId: 'epoch-1',
+    recoveryRevision: 1,
+  };
+  const refs = {
+    briefRevision: 1,
+    briefHash: hash,
+    reportRevision: 1,
+    reportHash: hash,
+  };
+  const generation = {
+    generationId: 'generation-1',
+    manifestDigest: hash,
+    tasksDigest: hash,
+    qualityDigest: hash,
+    programId: 'program-1',
+  } as const;
+  const evidence = { revision: 1, hash, path: 'brief-recovery/receipt.json' } as const;
+  const permit = {
+    version: 1,
+    epochId: 'epoch-1',
+    authorityRevision: 2,
+    generationId: generation.generationId,
+    manifestDigest: generation.manifestDigest,
+    tasksDigest: generation.tasksDigest,
+    qualityDigest: generation.qualityDigest,
+    approvalEvidence: evidence,
+    issuedAt: '2026-08-15T00:00:00.000Z',
+  } as const;
+
+  const refused = {
+    ...base,
+    type: 'brief_recovery_refused' as const,
+    ...refs,
+    intentId: 'intent-1',
+    operationId: null,
+    action: 'approve' as const,
+    refusalCategory: 'quality' as const,
+    refusalCode: 'brief_quality_blocked',
+    status: 'blocked' as const,
+  };
+  const accepted = {
+    ...base,
+    type: 'brief_recovery_accepted' as const,
+    ...refs,
+    operationId: 'operation-1',
+    intentHash: hash,
+    attemptKind: 'automatic' as const,
+    status: 'accepted' as const,
+    dispatchPossibility: 'none' as const,
+    frozenInputCount: 0,
+    queuedInputCount: 0,
+    automaticAllowanceConsumed: true,
+  };
+  const published = {
+    ...base,
+    type: 'brief_generation_published' as const,
+    operationId: 'operation-1',
+    generation,
+    provenanceDigest: otherHash,
+  };
+  const permitIssued = {
+    ...base,
+    type: 'brief_execution_permit_issued' as const,
+    operationId: 'operation-1',
+    generation,
+    permit,
+  };
+
+  it('accepts every durable owner publication variant', () => {
+    for (const event of [refused, accepted, published, permitIssued]) {
+      expect(parseEngineEvent(event)).toEqual(expect.objectContaining(event));
+    }
+    expect(parseEngineEvent(published)).toEqual(
+      expect.objectContaining({
+        type: 'brief_generation_published',
+        generation: expect.objectContaining({ programId: 'program-1' }),
+        provenanceDigest: otherHash,
+      }),
+    );
+  });
+
+  it('keeps unknown and malformed owner event types rejected', () => {
+    expect(parseEngineEvent({ ...published, type: 'brief_generation_failed' })).toBeNull();
+    expect(parseEngineEvent({ ...published, type: 'brief_execution_permit_revoked' })).toBeNull();
+    expect(parseEngineEvent({ ...permitIssued, version: 2 })).toBeNull();
+    expect(
+      parseEngineEvent(
+        Object.fromEntries(Object.entries(accepted).filter(([key]) => key !== 'operationId')),
+      ),
+    ).toBeNull();
+  });
+
+  it('rejects permits that do not bind the published generation or epoch', () => {
+    expect(
+      parseEngineEvent({ ...permitIssued, permit: { ...permit, generationId: 'other' } }),
+    ).toBeNull();
+    expect(
+      parseEngineEvent({ ...permitIssued, permit: { ...permit, tasksDigest: otherHash } }),
+    ).toBeNull();
+    expect(
+      parseEngineEvent({ ...permitIssued, permit: { ...permit, epochId: 'epoch-other' } }),
+    ).toBeNull();
+  });
+
+  it('rejects secret and physical-lease payload keys on owner events', () => {
+    for (const event of [refused, accepted, published, permitIssued]) {
+      for (const key of ['apiKey', 'credentials', 'providerPayload', 'leasePath', 'sockPath']) {
+        expect(parseEngineEvent({ ...event, [key]: 'sentinel-secret' })).toBeNull();
+      }
+    }
+  });
+
+  it('requires the matching permit before any readiness claim', () => {
+    expect(
+      parseEngineEvent({
+        ...published,
+        disposition: 'ready-for-tasks',
+      }),
+    ).toBeNull();
+    expect(
+      parseEngineEvent({
+        ...published,
+        type: 'brief_execution_permit_issued',
+      }),
+    ).toBeNull();
+  });
+});

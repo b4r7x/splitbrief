@@ -3,6 +3,7 @@ import { ACTIVE_OVERLAYS, ALL_SCREENS } from '../../src/core/navigation/types.js
 import { configStore } from '../../src/stores/project/config.js';
 import { routerStore } from '../../src/stores/navigation/router.js';
 import {
+  BRIEF_RECOVERY_VIEWPORTS,
   listVisualScenarios,
   REQUIRED_VIEWPORTS,
   REQUIRED_WORKFLOW_CHECKPOINT_IDS,
@@ -12,6 +13,7 @@ import {
   VISUAL_FIXTURE_VERSION,
 } from './catalog.js';
 import { formatViewport } from './contracts/geometry.js';
+import { createCaptureRequest } from '../../scripts/tui-shots/selection.js';
 
 function sorted(values: Iterable<string>): string[] {
   return [...values].sort();
@@ -62,6 +64,78 @@ describe('visual catalog', () => {
       true,
     );
     expect(VISUAL_CATALOG.every((scenario) => scenario.elements.length > 0)).toBe(true);
+  });
+
+  it('keeps recovery viewports scenario-local while preserving legacy defaults', async () => {
+    const recovery = VISUAL_CATALOG.filter((scenario) =>
+      scenario.id.startsWith('workflow-brief-recovery-'),
+    );
+    expect(recovery).toHaveLength(8);
+    for (const scenario of recovery) {
+      expect(scenario.viewports.map(formatViewport)).toEqual(
+        BRIEF_RECOVERY_VIEWPORTS.map(formatViewport),
+      );
+    }
+    for (const scenario of VISUAL_CATALOG.filter(
+      (candidate) => !candidate.id.startsWith('workflow-brief-recovery-'),
+    )) {
+      expect(scenario.viewports.map(formatViewport)).toEqual(
+        REQUIRED_VIEWPORTS.map(formatViewport),
+      );
+    }
+
+    const selection = await createCaptureRequest(
+      {
+        scenario: ['home-empty', 'workflow-brief-recovery-zero-task-blocked'],
+        viewport: [],
+        element: [],
+        output: '.test-artifacts/ui/catalog-test',
+        profile: 'unicode-color',
+      },
+      async (value) => value,
+    );
+    expect(selection.selection.profile).toBe('unicode-color');
+    expect(selection.selection.targets).toHaveLength(
+      REQUIRED_VIEWPORTS.length + BRIEF_RECOVERY_VIEWPORTS.length,
+    );
+    expect(
+      selection.selection.targets.filter((target) => target.provenance.scenarioId === 'home-empty'),
+    ).toHaveLength(REQUIRED_VIEWPORTS.length);
+    expect(
+      selection.selection.targets.filter(
+        (target) => target.provenance.scenarioId === 'workflow-brief-recovery-zero-task-blocked',
+      ),
+    ).toHaveLength(BRIEF_RECOVERY_VIEWPORTS.length);
+
+    await expect(
+      createCaptureRequest(
+        {
+          scenario: ['home-empty'],
+          viewport: ['119x16'],
+          element: [],
+          output: '.test-artifacts/ui/catalog-test',
+          profile: 'unicode-color',
+        },
+        async (value) => value,
+      ),
+    ).rejects.toThrow(/Unsupported viewport "119x16" for scenario home-empty/);
+
+    const recoverySelection = await createCaptureRequest(
+      {
+        scenario: ['workflow-brief-recovery-zero-task-blocked'],
+        viewport: ['119x16'],
+        element: [],
+        output: '.test-artifacts/ui/catalog-test',
+        profile: 'ascii-mono',
+      },
+      async (value) => value,
+    );
+    expect(recoverySelection.selection.profile).toBe('ascii-mono');
+    expect(recoverySelection.selection.targets).toHaveLength(1);
+    expect(recoverySelection.selection.targets[0]?.provenance.viewport).toEqual({
+      cols: 119,
+      rows: 16,
+    });
   });
 
   it('lists the catalog without changing stores or starting network work', () => {

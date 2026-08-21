@@ -230,13 +230,13 @@ describe('multi_file_task write-target semantics', () => {
         implementationSteps: ['Do not modify `src/slug.ts`; keep it as the style reference.'],
       },
     ],
-  ] as [
-    string,
-    Record<string, unknown>,
-  ][])('does not flag %s as multi_file_task', (_label, overrides) => {
-    const report = evaluateBriefQuality([makeTask(overrides)]);
-    expect(report.issues.find((i) => i.code === 'multi_file_task')).toBeUndefined();
-  });
+  ] as [string, Record<string, unknown>][])(
+    'does not flag %s as multi_file_task',
+    (_label, overrides) => {
+      const report = evaluateBriefQuality([makeTask(overrides)]);
+      expect(report.issues.find((i) => i.code === 'multi_file_task')).toBeUndefined();
+    },
+  );
 
   it.each([
     [

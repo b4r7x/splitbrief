@@ -5,12 +5,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import type { Config } from '../../core/schemas/config.js';
+import { createBriefRecoveryState } from '../../engine/orchestrator/planning/brief-recovery.js';
+import type { BriefAdmissionInput } from '../../core/schemas/brief-recovery.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
+import { createInitialState } from '../../core/state/machine.js';
+import { acquireStateAuthority, releaseStateAuthority } from '../../core/state/authority.js';
 import { saveState } from '../../core/state/persistence.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
 import { PLANNER_ARTIFACT_MAX_BYTES } from '../../engine/runners/types.js';
@@ -126,6 +129,28 @@ function preparedExecution(
   };
 }
 
+function briefReviewState(sessionId: string): WorkflowState {
+  const admission: BriefAdmissionInput = {
+    sessionId,
+    origin: { mode: 'standard', entry: 'initial' },
+    continuation: { version: 1, kind: 'approval', mode: 'standard', entry: 'initial' },
+    activeBrief: { revision: 1, hash: 'rpc-brief-hash', path: 'tasks.md' },
+    report: {
+      briefHash: 'rpc-brief-hash',
+      report: { revision: 1, hash: 'rpc-report-hash', path: 'brief-quality.json' },
+      ruleVersion: 'brief-quality-v1',
+      issues: [],
+      errorCount: 0,
+    },
+    qualityPolicyVersion: 'brief-quality-v1',
+  };
+  return {
+    ...createInitialState('rpc-brief-review'),
+    phase: 'reviewing-briefs',
+    briefRecovery: createBriefRecoveryState(admission, { epochId: 'rpc-epoch' }),
+  };
+}
+
 describe('runRpc', () => {
   afterEach(() => {
     for (const dir of dirs) cleanupTempDir(dir);
@@ -163,50 +188,53 @@ describe('runRpc', () => {
   it.each([
     ['deleted', (path: string) => unlinkSync(path)],
     ['invalid', (path: string) => writeFileSync(path, 'version: invalid\nplanner: [')],
-  ])('runs from the prepared config when the disk config is %s after admission', async (_mutation, mutateConfig) => {
-    const projectDir = createTempDir('rpc-run-prepared-config');
-    dirs.push(projectDir);
-    writeConfig(projectDir);
-    const prepared = preparedExecution(projectDir, 'rpc-prepared-config-session');
-    const configPath = join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE);
-    mutateConfig(configPath);
-    const input = new PassThrough();
-    const chunks: string[] = [];
-    const output = new Writable({
-      write(chunk, _encoding, callback) {
-        chunks.push(String(chunk));
-        callback();
-      },
-    });
-    const workflowTurn = Promise.withResolvers<void>();
-    let received: PreparedExecution | undefined;
-
-    const run = runRpc({
-      prepared,
-      deps: {
-        input,
-        output,
-        runWorkflow: async (options) => {
-          received = options.prepared;
-          await workflowTurn.promise;
+  ])(
+    'runs from the prepared config when the disk config is %s after admission',
+    async (_mutation, mutateConfig) => {
+      const projectDir = createTempDir('rpc-run-prepared-config');
+      dirs.push(projectDir);
+      writeConfig(projectDir);
+      const prepared = preparedExecution(projectDir, 'rpc-prepared-config-session');
+      const configPath = join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE);
+      mutateConfig(configPath);
+      const input = new PassThrough();
+      const chunks: string[] = [];
+      const output = new Writable({
+        write(chunk, _encoding, callback) {
+          chunks.push(String(chunk));
+          callback();
         },
-      },
-    });
+      });
+      const workflowTurn = Promise.withResolvers<void>();
+      let received: PreparedExecution | undefined;
 
-    await vi.waitFor(() => {
+      const run = runRpc({
+        prepared,
+        deps: {
+          input,
+          output,
+          runWorkflow: async (options) => {
+            received = options.prepared;
+            await workflowTurn.promise;
+          },
+        },
+      });
+
+      await vi.waitFor(() => {
+        expect(received).toBe(prepared);
+      });
+      input.write('{"type":"slash","command":"/yolo"}\n');
+      await vi.waitFor(() => {
+        expect(chunks.join('')).toContain('"command":"slash"');
+      });
+      workflowTurn.resolve();
+      await run;
+
       expect(received).toBe(prepared);
-    });
-    input.write('{"type":"slash","command":"/yolo"}\n');
-    await vi.waitFor(() => {
-      expect(chunks.join('')).toContain('"command":"slash"');
-    });
-    workflowTurn.resolve();
-    await run;
-
-    expect(received).toBe(prepared);
-    expect(received?.config).toBe(prepared.config);
-    expect(received?.config.workflow.mode).toBe('standard');
-  });
+      expect(received?.config).toBe(prepared.config);
+      expect(received?.config.workflow.mode).toBe('standard');
+    },
+  );
 
   it('rejects a pending approval gate when stdin closes unexpectedly', async () => {
     const projectDir = createTempDir('rpc-run-gate-close');
@@ -239,6 +267,95 @@ describe('runRpc', () => {
       expect(err.data).toEqual({ reason: 'stdin closed unexpectedly' });
       return true;
     });
+  });
+
+  it('observes only the live owner state through its receipt-bound resume seam', async () => {
+    const projectDir = createTempDir('rpc-owner-hydration');
+    dirs.push(projectDir);
+    writeConfig(projectDir);
+    const sessionId = 'rpc-owner-hydration-session';
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    const input = new PassThrough();
+    const chunks: string[] = [];
+    const output = new Writable({
+      write(chunk, _encoding, callback) {
+        chunks.push(String(chunk));
+        callback();
+      },
+    });
+    const workflowTurn = Promise.withResolvers<void>();
+    let ownerReceipt: ReturnType<typeof acquireStateAuthority> | undefined;
+
+    const run = runRpc({
+      prepared: preparedExecution(projectDir, sessionId),
+      deps: {
+        input,
+        output,
+        runWorkflow: async () => {
+          saveState(ref, createInitialState('owner-hydration'));
+          ownerReceipt = acquireStateAuthority({ ref, purpose: 'resume' });
+          await workflowTurn.promise;
+        },
+      },
+    });
+
+    await vi.waitFor(() => expect(ownerReceipt?.kind).toBe('fenced'));
+    input.write('{"type":"status"}\n');
+    await vi.waitFor(() => {
+      const status = chunks
+        .join('')
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+        .find((response) => response.type === 'status');
+      expect(status).toMatchObject({
+        data: {
+          sessionId,
+          state: { stateVersion: 4, stateRevision: 1, stateFence: { token: 1 } },
+        },
+      });
+    });
+
+    workflowTurn.resolve();
+    await run;
+    if (ownerReceipt?.kind === 'fenced') releaseStateAuthority(ref, ownerReceipt.receipt);
+  });
+
+  it('treats an output sink failure as transport shutdown without a recovery write', async () => {
+    const projectDir = createTempDir('rpc-output-failure');
+    dirs.push(projectDir);
+    writeConfig(projectDir);
+    const input = new PassThrough();
+    const output = new Writable({
+      write(_chunk, _encoding, callback) {
+        callback(new Error('rpc output failed'));
+      },
+    });
+    let providerCalls = 0;
+
+    const run = runRpc({
+      prepared: preparedExecution(projectDir, 'rpc-output-failure-session'),
+      deps: {
+        input,
+        output,
+        runWorkflow: async (options) => {
+          await options.callbacks.onQuestionAsked?.(
+            { id: 'private-question', type: 'input', text: 'private question' },
+            1,
+            1,
+          );
+          providerCalls += 1;
+        },
+      },
+    });
+
+    await expect(run).rejects.toSatisfy((cause: unknown) => {
+      if (!isRpcShuttingDown(cause)) return false;
+      expect(cause.message).toContain('output stream error');
+      return true;
+    });
+    expect(providerCalls).toBe(0);
   });
 
   it('replays exact artifact approval text through RPC status without a pathname', async () => {
@@ -382,7 +499,10 @@ describe('runRpc', () => {
     const sessionId = 'rpc-prepared-authority-session';
     ensureSessionDir(projectDir, sessionId);
     const task = makeTask({ id: 'T001' });
-    const resumeState = makeImplState([task], {
+    const resumeState: WorkflowState = {
+      ...createInitialState('rpc-prepared-authority'),
+      phase: 'implementing',
+      tasks: [task],
       pendingRecovery: makeRecoveryIssue({
         reason: 'context-overflow',
         phase: 'implementing',
@@ -391,8 +511,13 @@ describe('runRpc', () => {
         availableActions: ['route-bigger-worker'],
         recommendedAction: 'route-bigger-worker',
       }),
-    });
+    };
     saveState({ projectDir, sessionId }, resumeState);
+    const ownerAuthority = acquireStateAuthority({
+      ref: { projectDir, sessionId },
+      purpose: 'resume',
+    });
+    expect(ownerAuthority.kind).toBe('fenced');
     const config = makeConfig({
       planner: {
         kind: 'api',
@@ -491,6 +616,193 @@ describe('runRpc', () => {
     expect(compactionAuthority?.gates).toBe(prepared.gates);
     await vi.waitFor(() => {
       expect(chunks.join('')).toContain('does not support transcript compaction');
+    });
+
+    workflowTurn.resolve();
+    await run;
+    if (ownerAuthority.kind === 'fenced') {
+      releaseStateAuthority({ projectDir, sessionId }, ownerAuthority.receipt);
+    }
+  });
+
+  it('routes current Brief Review commands through the authoritative host projection', async () => {
+    const projectDir = createTempDir('rpc-brief-review-authority');
+    dirs.push(projectDir);
+    writeConfig(projectDir);
+    const sessionId = 'rpc-brief-review-authority-session';
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    saveState(ref, briefReviewState(sessionId));
+    const ownerAuthority = acquireStateAuthority({ ref, purpose: 'resume' });
+    expect(ownerAuthority.kind).toBe('fenced');
+
+    const input = new PassThrough();
+    const chunks: string[] = [];
+    const output = new Writable({
+      write(chunk, _encoding, callback) {
+        chunks.push(String(chunk));
+        callback();
+      },
+    });
+    let approvalResult: unknown;
+    let workflowStarted = false;
+
+    const run = runRpc({
+      prepared: preparedExecution(projectDir, sessionId),
+      deps: {
+        input,
+        output,
+        runWorkflow: async (options) => {
+          workflowStarted = true;
+          approvalResult = await options.callbacks.onApprovalNeeded(
+            'briefs',
+            join(projectDir, 'tasks.md'),
+          );
+        },
+      },
+    });
+
+    await vi.waitFor(() => expect(workflowStarted).toBe(true));
+    input.write(
+      `${JSON.stringify({
+        type: 'brief_review',
+        id: 'rpc-stale-status',
+        command: { version: 1, sessionId, epochId: 'stale-epoch', action: 'status' },
+      })}\n`,
+    );
+    await vi.waitFor(() => {
+      const response = chunks
+        .join('')
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+        .find((entry) => entry.type === 'error');
+      expect(response).toEqual({
+        type: 'error',
+        error: 'RPC command epoch does not match the current projection.',
+        data: { code: 'stale-epoch' },
+      });
+    });
+
+    input.write(
+      `${JSON.stringify({
+        type: 'brief_review',
+        id: 'rpc-current-status',
+        command: { version: 1, sessionId, epochId: 'rpc-epoch', action: 'status' },
+      })}\n`,
+    );
+    await vi.waitFor(() => {
+      const response = chunks
+        .join('')
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+        .find((entry) => entry.data?.action === 'status');
+      expect(response).toMatchObject({
+        type: 'status',
+        data: {
+          sessionId,
+          epochId: 'rpc-epoch',
+          action: 'status',
+          pending: 'brief_review',
+          allowedCommands: expect.arrayContaining(['approve']),
+        },
+      });
+    });
+
+    const operationId = 'rpc-brief-approval-operation';
+    input.write(
+      `${JSON.stringify({
+        type: 'brief_review',
+        id: 'rpc-current-approve',
+        operationId,
+        command: {
+          version: 1,
+          sessionId,
+          epochId: 'rpc-epoch',
+          operationId,
+          expectedBriefRevision: 1,
+          expectedReportRevision: 1,
+          intentHash: 'rpc-approval-intent',
+          base: { revision: 1, hash: 'rpc-brief-hash', path: 'tasks.md' },
+          baseReport: {
+            revision: 1,
+            hash: 'rpc-report-hash',
+            path: 'brief-quality.json',
+          },
+          action: 'approve',
+        },
+      })}\n`,
+    );
+    await vi.waitFor(() => {
+      const response = chunks
+        .join('')
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+        .find((entry) => entry.type === 'ack' && entry.command === 'brief_review');
+      expect(response).toMatchObject({
+        type: 'ack',
+        command: 'brief_review',
+        data: { action: 'approve', status: 'accepted' },
+      });
+    });
+
+    await run;
+    expect(approvalResult).toEqual({ approved: true });
+    if (ownerAuthority.kind === 'fenced') releaseStateAuthority(ref, ownerAuthority.receipt);
+  });
+
+  it('preserves the typed authority error on the RPC wire', async () => {
+    const projectDir = createTempDir('rpc-brief-review-no-authority');
+    dirs.push(projectDir);
+    writeConfig(projectDir);
+    const sessionId = 'rpc-brief-review-no-authority-session';
+    const input = new PassThrough();
+    const chunks: string[] = [];
+    const output = new Writable({
+      write(chunk, _encoding, callback) {
+        chunks.push(String(chunk));
+        callback();
+      },
+    });
+    const workflowTurn = Promise.withResolvers<void>();
+    let workflowStarted = false;
+
+    const run = runRpc({
+      prepared: preparedExecution(projectDir, sessionId),
+      deps: {
+        input,
+        output,
+        runWorkflow: async () => {
+          workflowStarted = true;
+          await workflowTurn.promise;
+        },
+      },
+    });
+
+    await vi.waitFor(() => expect(workflowStarted).toBe(true));
+    input.write(
+      `${JSON.stringify({
+        type: 'brief_review',
+        id: 'rpc-authority-missing',
+        command: { version: 1, sessionId, epochId: 'rpc-epoch', action: 'status' },
+      })}\n`,
+    );
+    await vi.waitFor(() => {
+      const errors = chunks
+        .join('')
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+        .filter((entry) => entry.type === 'error');
+      expect(errors).toEqual([
+        {
+          type: 'error',
+          error: 'Brief review command requires the authoritative current-v4 projection.',
+          data: { code: 'authority-unavailable' },
+        },
+      ]);
     });
 
     workflowTurn.resolve();

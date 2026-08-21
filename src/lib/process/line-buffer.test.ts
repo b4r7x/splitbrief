@@ -141,6 +141,51 @@ describe('createLineBuffer', () => {
     expect(lines).toEqual(['ok']);
   });
 
+  it('reports an unterminated capped tail without emitting the partial line', () => {
+    const lines: string[] = [];
+    const unterminated: number[] = [];
+    const buffer = createLineBuffer(
+      (line) => {
+        lines.push(line);
+      },
+      {
+        maxLineBytes: 8,
+        onUnterminated: (overflow) => {
+          unterminated.push(overflow.lineBytes);
+        },
+      },
+    );
+
+    buffer.push('1234');
+    buffer.push('5678');
+    buffer.flush();
+
+    expect(lines).toEqual([]);
+    expect(unterminated).toEqual([8]);
+  });
+
+  it('counts a UTF-8 code point split across chunks once', () => {
+    const lines: string[] = [];
+    const overflows: number[] = [];
+    const buffer = createLineBuffer(
+      (line) => {
+        lines.push(line);
+      },
+      {
+        maxLineBytes: 4,
+        onOverflow: (overflow) => {
+          overflows.push(overflow.lineBytes);
+        },
+      },
+    );
+
+    buffer.push('\ud83d');
+    buffer.push('\ude00\n');
+
+    expect(overflows).toEqual([]);
+    expect(lines).toEqual(['😀']);
+  });
+
   it('returns the first callback signal from a chunk or flush and stops delivering lines', () => {
     const lineSignal = { state: 'line' };
     const overflowSignal = { state: 'overflow' };

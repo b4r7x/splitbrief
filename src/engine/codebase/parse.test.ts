@@ -94,14 +94,17 @@ describe('parseFile', () => {
       ['Meters', 'Pair'],
     ],
     ['test.rs', 'pub struct Config;\n\npub fn run() {}\n', ['Config', 'run']],
-  ])('extracts symbols from %s — a grammar that must load, not silently degrade', async (name, source, expected) => {
-    const file = join(tmpDir, name);
-    writeFileSync(file, source);
-    const node = await parseFile(file);
-    expect(node).toBeTruthy();
-    expect(node?.path).toBe(file);
-    expect(node?.symbols.map((s) => s.name).sort()).toEqual(expected);
-  });
+  ])(
+    'extracts symbols from %s — a grammar that must load, not silently degrade',
+    async (name, source, expected) => {
+      const file = join(tmpDir, name);
+      writeFileSync(file, source);
+      const node = await parseFile(file);
+      expect(node).toBeTruthy();
+      expect(node?.path).toBe(file);
+      expect(node?.symbols.map((s) => s.name).sort()).toEqual(expected);
+    },
+  );
 });
 
 describe('kindForNodeType polyglot', () => {

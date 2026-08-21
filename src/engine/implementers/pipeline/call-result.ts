@@ -68,6 +68,12 @@ function runnerCallStatusMessage(status: Exclude<RunnerCallResult['status'], 'co
       return 'Implementer used an unsupported tool';
     case 'incomplete':
       return 'Implementer call was incomplete';
+    case 'cancelled':
+      return 'Implementer call was cancelled';
+    case 'protocol-invalid':
+      return 'Implementer call returned an invalid protocol result';
+    case 'unknown':
+      return 'Implementer call ended with an unknown status';
     default: {
       const _exhaustive: never = status;
       return _exhaustive;
@@ -122,11 +128,15 @@ export function runnerCallOutcome(result: RunnerCallResult): RunnerOutcome {
     case 'truncated':
       return runnerOutcome.failure('output-budget-breach');
     case 'aborted':
+    case 'cancelled':
       return runnerOutcome.failure('user-abort');
     case 'timeout':
       return runnerOutcome.failure('timeout');
     case 'unsupported_tool':
       return runnerOutcome.failure('platform-limitation');
+    case 'protocol-invalid':
+    case 'unknown':
+      return runnerOutcome.failure('protocol-failure');
     default: {
       const _exhaustive: never = result;
       return _exhaustive;

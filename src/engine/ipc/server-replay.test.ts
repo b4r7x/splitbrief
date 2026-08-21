@@ -418,6 +418,47 @@ describe('startIpcServer replay', () => {
     expect((complete!.payload as { totalEvents: number }).totalEvents).toBe(replayWarnings.length);
   });
 
+  it('bounds replay identity retention for long logs', async () => {
+    const tmpDir = createTempDir('ipc-test');
+    harness.tmpDirs.push(tmpDir);
+    const sessionJsonlPath = join(tmpDir, 'session.jsonl');
+    const storedEvents: EngineEvent[] = Array.from({ length: 1100 }, (_, i) => ({
+      type: 'warning',
+      ts: 1000 + i,
+      phase: 'idle',
+      message: `stored ${i}`,
+    }));
+    writeFileSync(sessionJsonlPath, storedEvents.map(makeSessionLogLine).join('\n') + '\n');
+
+    const bus = createEventBus();
+    const srv = await startIpcServer({
+      sessionId: 'long-log-identity-test',
+      sessionDir: tmpDir,
+      startedAt: 1000,
+      mode: 'standard',
+      feature: 'long-log',
+      authToken: harness.authToken,
+      bus,
+      onUserInput: vi.fn(),
+      sessionJsonlPath,
+    });
+    harness.servers.push(srv);
+
+    const socket = await connectAuthenticated(harness, srv.sockPath);
+    await readUntilReplayComplete(socket);
+
+    const live = harness.readLines(socket, 1);
+    bus.publish(storedEvents[0]!);
+    bus.publish(storedEvents.at(-1)!);
+    const liveMessages = await live;
+
+    expect(liveMessages).toHaveLength(1);
+    expect(liveMessages[0]).toMatchObject({
+      kind: 'event',
+      payload: { type: 'warning', message: 'stored 0' },
+    });
+  });
+
   it('keeps a same-ms live event buffered during replay and dedupes only true replay duplicates', async () => {
     const tmpDir = createTempDir('ipc-test');
     harness.tmpDirs.push(tmpDir);

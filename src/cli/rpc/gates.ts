@@ -2,6 +2,9 @@ import { CONFIRM_PHRASE } from '../../core/approval/types.js';
 import {
   allowedBriefReviewCommandsForPrompt,
   briefReviewCommandDisposition,
+  BriefReviewCommandSchema,
+  BriefReviewProjectionSchema,
+  isBriefReviewCommandCurrent,
   isBriefReviewCommandAllowedForPrompt,
   type BriefReviewCommand,
   type BriefReviewCommandAction,
@@ -84,6 +87,15 @@ type ApprovalGateWaitOptions = {
   onSaveDraft?: BriefReviewDraftSaveHandler | undefined;
 };
 
+export type ApprovalGateOptions = {
+  /**
+   * Read the authoritative public projection supplied by the live controller.
+   * RPC commands are still valid without this callback for legacy generic
+   * approval prompts, but a supplied projection is always schema-checked.
+   */
+  getBriefReviewProjection?: (() => unknown) | undefined;
+};
+
 export type BriefReviewDraftSaveResult =
   | {
       ok: true;
@@ -151,7 +163,7 @@ export function createGate<T>() {
   };
 }
 
-export function createApprovalGate() {
+export function createApprovalGate(options: ApprovalGateOptions = {}) {
   const gate = createGate<ApprovalGateResult>();
   let nextPromptId = 1;
   let currentPrompt: ApprovalGatePrompt | null = null;
@@ -193,6 +205,25 @@ export function createApprovalGate() {
     command: BriefReviewCommand,
     promptId?: string | undefined,
   ): Promise<BriefReviewGateResult> {
+    const parsedCommand = BriefReviewCommandSchema.safeParse(command);
+    if (!parsedCommand.success) {
+      return {
+        status: 'rejected',
+        prompt: currentPrompt,
+        message: 'Task Brief review command is invalid.',
+      };
+    }
+
+    const validatedCommand = validateBriefReviewProjection(parsedCommand.data, options);
+    if (!validatedCommand.ok) {
+      return {
+        status: 'rejected',
+        prompt: currentPrompt,
+        message: validatedCommand.message,
+      };
+    }
+
+    command = validatedCommand.command;
     const prompt = currentPrompt;
     if (command.action === 'status') {
       if (promptId !== undefined && prompt !== null && promptId !== prompt.promptId) {
@@ -292,4 +323,32 @@ export function createApprovalGate() {
     isPending: gate.isPending,
     pendingPrompt: () => currentPrompt,
   };
+}
+
+type BriefReviewProjectionValidation =
+  | { ok: true; command: BriefReviewCommand }
+  | { ok: false; message: string };
+
+function validateBriefReviewProjection(
+  command: BriefReviewCommand,
+  options: ApprovalGateOptions,
+): BriefReviewProjectionValidation {
+  const readProjection = options.getBriefReviewProjection;
+  if (readProjection === undefined) return { ok: true, command };
+
+  let rawProjection: unknown;
+  try {
+    rawProjection = readProjection();
+  } catch {
+    return { ok: false, message: 'Task Brief recovery projection is unavailable.' };
+  }
+
+  const parsedProjection = BriefReviewProjectionSchema.safeParse(rawProjection);
+  if (!parsedProjection.success) {
+    return { ok: false, message: 'Task Brief recovery projection is invalid.' };
+  }
+  if (!isBriefReviewCommandCurrent(command, parsedProjection.data)) {
+    return { ok: false, message: 'Task Brief review command is stale.' };
+  }
+  return { ok: true, command };
 }

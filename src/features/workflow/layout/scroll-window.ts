@@ -1,5 +1,14 @@
 import { clamp } from '../../../utils/math.js';
 
+/**
+ * Workflow dimensions are terminal rows. Normalizing them at this boundary keeps the window
+ * arithmetic integer-valued even while a terminal resize is settling, and turns invalid sizes
+ * into the same empty-body geometry used by the renderers.
+ */
+export function normalizeScrollRows(value: number): number {
+  return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+}
+
 export interface ScrollWindowState {
   innerHeight: number;
   windowStart: number;
@@ -14,23 +23,23 @@ export function computeScrollMaxOffset(input: {
   totalHeight: number;
   viewportHeight: number;
 }): number {
-  const { totalHeight, viewportHeight } = input;
-  const contentHeight = Math.max(0, totalHeight);
-  const visibleHeight = Math.max(0, viewportHeight);
+  const contentHeight = normalizeScrollRows(input.totalHeight);
+  const visibleHeight = normalizeScrollRows(input.viewportHeight);
   return Math.max(0, contentHeight - visibleHeight);
 }
 
 export interface ScrollWindowStateInput {
   totalHeight: number;
+  /** The already-clipped T-077 body height; no sidebar or chrome rows belong here. */
   viewportHeight: number;
   scrollOffset: number;
 }
 
 export function getScrollWindowState(input: ScrollWindowStateInput): ScrollWindowState {
-  const contentHeight = Math.max(0, input.totalHeight);
-  const visibleHeight = Math.max(0, input.viewportHeight);
+  const contentHeight = normalizeScrollRows(input.totalHeight);
+  const visibleHeight = normalizeScrollRows(input.viewportHeight);
   const clampedOffset = clamp(
-    input.scrollOffset,
+    Number.isFinite(input.scrollOffset) ? Math.floor(input.scrollOffset) : 0,
     0,
     computeScrollMaxOffset({ totalHeight: contentHeight, viewportHeight: visibleHeight }),
   );

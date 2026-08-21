@@ -1,9 +1,16 @@
 import YAML from 'yaml';
 import { z } from 'zod';
 import { FileActionSchema } from '../../../core/schemas/enums.js';
+import type { Task, TaskId } from '../../../core/schemas/task.js';
+import { taskId } from '../../../core/schemas/task.js';
 import { isPathConfined } from '../../../lib/path-confinement.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
+import { error, matches } from '../../../utils/error.js';
 import { isRecord } from '../../../utils/type-guards.js';
+import { fenceMarkerLength } from './fence-marker.js';
+import type { TaskManifestBatch } from './partition.js';
+import { extractSections } from './sections.js';
+import { TASK_COMPILATION_FAILURE_CODE } from './task-compilation-codes.js';
 
 export const TaskFrontmatterSchema = z.object({
   id: z.string().min(1),
@@ -22,11 +29,6 @@ export const TaskFrontmatterSchema = z.object({
 });
 
 export type TaskFrontmatter = z.infer<typeof TaskFrontmatterSchema>;
-
-export function fenceMarkerLength(trimmed: string): number | null {
-  const match = trimmed.match(/^(`{3,})/);
-  return match?.[1] ? match[1].length : null;
-}
 
 /**
  * A fence is content when it sits inside a Task Brief; it is wrapping when the
@@ -325,4 +327,185 @@ function fenceClosesBefore(lines: string[], from: number, openLength: number): b
     if (marker !== null && marker >= openLength) return true;
   }
   return false;
+}
+
+export function stripFileFrontmatter(content: string): string {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
+  if (!match?.[1]?.includes('generated_by:')) return content;
+  return content.slice(match[0].length);
+}
+
+export type TaskBlockResult = { ok: true; task: Task } | { ok: false; reason: string };
+
+/** Block-local schema parse: one `---` delimited Task Brief block into a Task. */
+export function parseTaskBlock(block: string): TaskBlockResult {
+  const frontmatter = readTaskFrontmatter(block);
+  if (!frontmatter.ok) return frontmatter;
+
+  const { id, title, action, file } = frontmatter.data;
+  const dependsOn: TaskId[] = frontmatter.data.depends_on.map(taskId);
+  const sections = extractSections(block);
+
+  const task: Task = {
+    id: taskId(id),
+    title,
+    action,
+    file,
+    dependsOn,
+    description: sections.description,
+    signature: sections.signature || undefined,
+    tests: sections.tests,
+    constraints: sections.constraints,
+    pattern: sections.pattern || undefined,
+    typeDefs: sections.typeDefs || '',
+    implementationSteps: sections.implementationSteps,
+    status: 'pending',
+  };
+
+  if (sections.currentCode) task.currentCode = sections.currentCode;
+
+  const scope: {
+    inBounds?: string[];
+    outOfBounds?: string[];
+    approvedOutOfBounds?: string[];
+  } = {};
+  if (sections.scopeInBounds.length > 0) scope.inBounds = sections.scopeInBounds;
+  if (sections.scopeOutOfBounds.length > 0) scope.outOfBounds = sections.scopeOutOfBounds;
+  if (sections.scopeApprovedOutOfBounds.length > 0) {
+    scope.approvedOutOfBounds = sections.scopeApprovedOutOfBounds;
+  }
+  if (scope.inBounds || scope.outOfBounds || scope.approvedOutOfBounds) task.scope = scope;
+  if (sections.escalation.length > 0) task.escalation = sections.escalation;
+  if (sections.evidence.length > 0) task.evidence = sections.evidence;
+
+  return { ok: true, task };
+}
+
+export const batchAdmissionError = {
+  empty: () =>
+    error(
+      TASK_COMPILATION_FAILURE_CODE.task_compiler_final_response_missing,
+      'The batch artifact is empty; the required final response is missing.',
+    ),
+  refused: (detail: string) =>
+    error(
+      TASK_COMPILATION_FAILURE_CODE.task_compiler_provider_refused,
+      `The batch reply contains no Task Briefs: ${detail}`,
+      { detail },
+    ),
+  partial: () =>
+    error(
+      TASK_COMPILATION_FAILURE_CODE.task_compiler_output_limited,
+      'The batch output is truncated: a Task Brief block is unterminated at end of input.',
+    ),
+  malformed: (detail: string) =>
+    error(
+      TASK_COMPILATION_FAILURE_CODE.task_compiler_invalid_markdown,
+      `Invalid Task Brief block: ${detail}`,
+      { detail },
+    ),
+  missingMember: (ids: readonly string[]) =>
+    error(
+      TASK_COMPILATION_FAILURE_CODE.task_compiler_manifest_mismatch,
+      `Batch is missing expected items: ${ids.join(', ')}`,
+      { ids },
+    ),
+  duplicateMember: (id: string) =>
+    error(
+      TASK_COMPILATION_FAILURE_CODE.task_compiler_duplicate_id,
+      `Batch contains a duplicate Task ID: ${id}`,
+      { id },
+    ),
+  unexpectedMember: (id: string) =>
+    error(
+      TASK_COMPILATION_FAILURE_CODE.task_compiler_manifest_mismatch,
+      `Batch contains an unexpected Task ID: ${id}`,
+      { id },
+    ),
+  memberMismatch: (id: string, detail: string) =>
+    error(
+      TASK_COMPILATION_FAILURE_CODE.task_compiler_manifest_mismatch,
+      `Task ${id} does not cover its manifest item: ${detail}`,
+      { id, detail },
+    ),
+  isRefused: matches(TASK_COMPILATION_FAILURE_CODE.task_compiler_provider_refused),
+  isEmpty: matches(TASK_COMPILATION_FAILURE_CODE.task_compiler_final_response_missing),
+  isPartial: matches(TASK_COMPILATION_FAILURE_CODE.task_compiler_output_limited),
+  isMalformed: matches(TASK_COMPILATION_FAILURE_CODE.task_compiler_invalid_markdown),
+  isMissingMember: matches(TASK_COMPILATION_FAILURE_CODE.task_compiler_manifest_mismatch),
+  isDuplicateMember: matches(TASK_COMPILATION_FAILURE_CODE.task_compiler_duplicate_id),
+  isUnexpectedMember: matches(TASK_COMPILATION_FAILURE_CODE.task_compiler_manifest_mismatch),
+} as const;
+
+export type AdmitTaskBatchOptions = Readonly<
+  | {
+      batch: Pick<TaskManifestBatch, 'items'>;
+      expectedIds?: undefined;
+    }
+  | {
+      batch?: undefined;
+      expectedIds: readonly string[];
+    }
+>;
+
+type ExpectedBatchMember = TaskManifestBatch['items'][number] | Readonly<{ id: string }>;
+
+function expectedBatchMembers(
+  options: AdmitTaskBatchOptions,
+): ReadonlyMap<string, ExpectedBatchMember> {
+  const members =
+    options.batch !== undefined ? options.batch.items : options.expectedIds.map((id) => ({ id }));
+  return new Map(members.map((member) => [String(member.id), member]));
+}
+
+/**
+ * Batch admission: block schema parse only, never global resolution. The artifact must be
+ * non-empty, parse as Task Brief blocks, and cover every expected manifest item exactly once.
+ * Refusal prose, truncation, partial output, malformed blocks, and missing, duplicate, or
+ * unexpected items fail with stable compiler failure codes before any global merge.
+ */
+export function admitTaskBatch(text: string, options: AdmitTaskBatchOptions): Task[] {
+  if (text.trim() === '') throw batchAdmissionError.empty();
+
+  const stripped = normalizeTaskSeparators(stripFileFrontmatter(text));
+  const blocks = splitTaskBlocks(stripped);
+  const tasks: Task[] = [];
+  let unterminated = false;
+
+  for (const block of blocks) {
+    const parsed = parseTaskBlock(block);
+    if (parsed.ok) {
+      tasks.push(parsed.task);
+      continue;
+    }
+    if (opensUnterminatedFrontmatter(block)) {
+      unterminated = true;
+      continue;
+    }
+    if (looksLikeTaskBlock(block)) throw batchAdmissionError.malformed(parsed.reason);
+  }
+  if (unterminated) throw batchAdmissionError.partial();
+  if (tasks.length === 0) {
+    throw batchAdmissionError.refused('no --- delimited block with an id: field was found');
+  }
+
+  const expectedById = expectedBatchMembers(options);
+  const seen = new Set<string>();
+  for (const task of tasks) {
+    const id = String(task.id);
+    if (seen.has(id)) throw batchAdmissionError.duplicateMember(id);
+    seen.add(id);
+    const expected = expectedById.get(id);
+    if (expected === undefined) throw batchAdmissionError.unexpectedMember(id);
+    if ('file' in expected && (task.file !== expected.file || task.action !== expected.action)) {
+      throw batchAdmissionError.memberMismatch(
+        id,
+        `expected ${expected.action} ${expected.file}, received ${task.action} ${task.file}`,
+      );
+    }
+  }
+  const missing = [...expectedById.keys()].filter((id) => !seen.has(id));
+  if (missing.length > 0) throw batchAdmissionError.missingMember(missing);
+
+  return tasks;
 }

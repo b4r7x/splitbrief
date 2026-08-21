@@ -25,15 +25,31 @@ export const CODEX_NATIVE_MODEL_CATALOG_PROBE = Object.freeze({
 });
 
 const CODEX_PROTECTED_FLAGS = new Set([
+  '--add-dir',
+  '--approve-for-me',
+  '--ask-for-approval',
   '--cd',
+  '--config',
+  '--dangerously-bypass-approvals-and-sandbox',
+  '--dangerously-bypass-hook-trust',
+  '--ephemeral',
+  '--ignore-rules',
+  '--ignore-user-config',
   '--json',
   '--model',
+  '--output-last-message',
   '--sandbox',
   '--skip-git-repo-check',
+  '--yolo',
+  '-a',
+  '-C',
+  '-c',
+  '-s',
   'exec',
   'resume',
   'workspace-write',
 ]);
+const CODEX_PROTECTED_SHORT_VALUE_FLAGS = new Set(['-a', '-C', '-c', '-s']);
 
 type CodexPlannerBuildInput = Parameters<CliPlannerAdapter<'codex'>['buildArgs']>[0];
 type CodexImplementerBuildInput = Parameters<CliImplementerAdapter<'codex'>['buildArgs']>[0];
@@ -44,40 +60,71 @@ function validateArgs(invocationArgs: readonly string[], baseArgs: readonly stri
     invocationArgs,
     baseArgs,
     protectedFlags: CODEX_PROTECTED_FLAGS,
+    protectedShortValueFlags: CODEX_PROTECTED_SHORT_VALUE_FLAGS,
     promptTransport: 'argv',
   });
 }
 
+/**
+ * REQ-017 read-only planner vector for Codex 0.147.0. Sandbox and approval are
+ * GLOBAL flags in v0.147 and must precede `exec`; `exec resume` does not accept
+ * local `--sandbox`/`--ask-for-approval`. Ambient user config and AGENTS.md
+ * rules are adapter-owned inputs the planner ignores; a fresh (compiler) exec
+ * is ephemeral and never resumes. The escalated planner row keeps its tier-2
+ * workspace-write within the staged project under the same never-approval
+ * policy.
+ */
 function plannerBaseArgs(input: CodexPlannerBuildInput): string[] {
   if (input.sessionId !== null && input.mode === 'plan') {
     return [
+      '--sandbox',
+      'read-only',
+      '--ask-for-approval',
+      'never',
       'exec',
       'resume',
       ...(input.model === undefined ? [] : ['--model', input.model]),
+      '--ignore-user-config',
+      '--ignore-rules',
       '--json',
       input.sessionId,
       input.prompt,
     ];
   }
 
+  const escalate = input.mode === 'escalate';
   return [
     ...(input.model === undefined ? [] : ['--model', input.model]),
+    '--sandbox',
+    escalate ? 'workspace-write' : 'read-only',
+    '--ask-for-approval',
+    'never',
     'exec',
+    '--ignore-user-config',
+    ...(escalate ? [] : ['--ignore-rules', '--ephemeral']),
     '--json',
-    ...(input.mode === 'escalate' ? ['--sandbox', 'workspace-write', '--skip-git-repo-check'] : []),
+    ...(escalate ? ['--skip-git-repo-check'] : []),
     '--cd',
     input.projectDir,
     input.prompt,
   ];
 }
 
+/**
+ * REQ-048 implementer vector: global workspace-write + never approval inside
+ * the disposable staged checkout; no added roots, no config override, exact
+ * staged `--cd`.
+ */
 function implementerBaseArgs(input: CodexImplementerBuildInput): string[] {
   return [
     ...(input.model === undefined ? [] : ['--model', input.model]),
-    'exec',
-    '--json',
     '--sandbox',
     'workspace-write',
+    '--ask-for-approval',
+    'never',
+    'exec',
+    '--ignore-user-config',
+    '--json',
     '--skip-git-repo-check',
     '--cd',
     input.projectDir,
@@ -320,6 +367,25 @@ export function codexProtocolEvents(line: string): readonly CliProtocolEvent[] {
   return parseCodexRecord(value);
 }
 
+/**
+ * REQ-013 exact last-message reduction: only the assistant text after the last
+ * tool call is the authoritative final response of the turn; earlier messages,
+ * partials, and tool-call text are evidence, never content. Deltas are joined
+ * only within that final message.
+ */
+export function codexLastMessageText(events: readonly CliProtocolEvent[]): string {
+  let boundary = -1;
+  for (let index = 0; index < events.length; index += 1) {
+    if (events[index]?.type === 'tool-use') boundary = index;
+  }
+  let groupText = '';
+  for (let index = boundary + 1; index < events.length; index += 1) {
+    const event = events[index];
+    if (event?.type === 'text' && event.channel !== 'stderr') groupText += event.text;
+  }
+  return groupText;
+}
+
 function codexTerminal(input: { events: readonly CliProtocolEvent[] }): CodexTerminalEvent {
   const terminal = input.events.findLast(
     (event): event is CodexTerminalEvent => event.type === 'result',
@@ -330,8 +396,17 @@ function codexTerminal(input: { events: readonly CliProtocolEvent[] }): CodexTer
   const session = input.events.findLast(
     (event): event is Extract<CliProtocolEvent, { type: 'session' }> => event.type === 'session',
   );
-  if (session === undefined || terminal.nativeSessionId !== null) return terminal;
-  return { ...terminal, nativeSessionId: session.nativeSessionId };
+  const nativeSessionId = session === undefined ? null : session.nativeSessionId;
+  if (terminal.status !== 'completed') {
+    return terminal.nativeSessionId === null && nativeSessionId !== null
+      ? { ...terminal, nativeSessionId }
+      : terminal;
+  }
+  return {
+    ...terminal,
+    text: codexLastMessageText(input.events),
+    ...(terminal.nativeSessionId === null && nativeSessionId !== null ? { nativeSessionId } : {}),
+  };
 }
 
 export const codexPlannerAdapter = createCodexPlannerAdapter();
@@ -366,12 +441,28 @@ function codexRawContract(role: 'planner' | 'implementer'): RawCodexCliContract 
     auth: { kind: 'env-or-native', env: ['OPENAI_API_KEY'] },
     rawInvocation:
       role === 'planner'
-        ? ['exec', '--json', '--cd', '.', CLI_PROMPT_SENTINEL]
-        : [
+        ? [
+            '--sandbox',
+            'read-only',
+            '--ask-for-approval',
+            'never',
             'exec',
+            '--ignore-user-config',
+            '--ignore-rules',
+            '--ephemeral',
             '--json',
+            '--cd',
+            '.',
+            CLI_PROMPT_SENTINEL,
+          ]
+        : [
             '--sandbox',
             'workspace-write',
+            '--ask-for-approval',
+            'never',
+            'exec',
+            '--ignore-user-config',
+            '--json',
             '--skip-git-repo-check',
             '--cd',
             '.',

@@ -12,8 +12,18 @@ import {
 import { throwIfAborted } from '../../../utils/abort.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../../calls/types.js';
 import { createRunnerAttemptCallbackBuffer } from '../../calls/callback-buffer.js';
+import { createRunnerCallRecorder } from '../../calls/recorder.js';
+import type { TaskDispatchLedger } from '../../calls/dispatch-ledger.js';
+import {
+  createTaskCompilationAttemptId,
+  type TaskCompilationAttemptId,
+  type TaskCompilationCallEnvelope,
+  type TaskCompilationFailureCode,
+} from '../../../core/schemas/task-compilation.js';
 import { loadSdk } from './availability.js';
 import { createSdkCallContext, processStream } from './stream.js';
+
+const PLANNER_READ_ONLY_TOOLS: readonly string[] = ['Read', 'Glob', 'Grep'];
 
 export interface AgentSdkBackendOpts {
   allowedTools: string[];
@@ -39,6 +49,9 @@ export interface AgentSdkInvokeOpts {
   signal?: AbortSignal | undefined;
   callContext?: RunnerCallContext | undefined;
   env?: Record<string, string | undefined> | undefined;
+  ledger?: TaskDispatchLedger | undefined;
+  envelope?: TaskCompilationCallEnvelope | undefined;
+  attemptId?: TaskCompilationAttemptId | undefined;
 }
 
 export interface AgentSdkBackend {
@@ -50,6 +63,31 @@ function buildPromptWithImages(prompt: string, images: Attachment[] | undefined)
   if (!images || images.length === 0) return prompt;
   const refs = images.map((img) => `[image attachment: ${img.path}]`).join('\n');
   return `${refs}\n\n${prompt}`;
+}
+
+function plannerCapabilityViolation(
+  allowedTools: readonly string[],
+  permissionMode: string,
+): string | null {
+  if (permissionMode !== 'plan') {
+    return `Agent SDK planner role requires permissionMode 'plan', got '${permissionMode}'`;
+  }
+  const foreignTools = allowedTools.filter((tool) => !PLANNER_READ_ONLY_TOOLS.includes(tool));
+  if (foreignTools.length > 0) {
+    return `Agent SDK planner role allows only Read/Glob/Grep tools, got ${foreignTools.join(', ')}`;
+  }
+  return null;
+}
+
+function refusedAgentSdkResult(
+  callContext: RunnerCallContext,
+  code: TaskCompilationFailureCode,
+  message: string,
+): RunnerCallResult {
+  return createRunnerCallRecorder({ context: callContext }).finishFailed({
+    status: 'refused',
+    error: { code, message },
+  });
 }
 
 function createForwardedAbortController(signal: AbortSignal | undefined): {
@@ -86,16 +124,52 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
       signal,
       callContext,
       env,
+      ledger,
+      envelope,
+      attemptId,
     }) {
       throwIfAborted(signal);
+      const baseCallContext = {
+        ...(callContext ?? createSdkCallContext({ role, model })),
+        ...(envelope !== undefined && { envelope }),
+      };
+      if (role === 'planner') {
+        const violation = plannerCapabilityViolation(opts.allowedTools, permissionMode);
+        if (violation !== null) {
+          return refusedAgentSdkResult(
+            baseCallContext,
+            'task_compiler_capability_unsupported',
+            violation,
+          );
+        }
+      }
+
       const { query } = await loadSdk();
 
       const apiKey = opts.apiKey;
       const finalPrompt = buildPromptWithImages(prompt, images);
-      const baseCallContext = callContext ?? createSdkCallContext({ role, model });
+      const detached = baseCallContext.sessionScope?.kind === 'detached-fresh';
 
       const runQuery = async (resumeId: string | undefined, attempt: number) => {
         throwIfAborted(signal);
+        const claimAttemptId =
+          attempt === 1
+            ? (attemptId ?? baseCallContext.attemptId ?? createTaskCompilationAttemptId())
+            : createTaskCompilationAttemptId();
+        const attemptCallContext = {
+          ...createSessionAttemptCallContext(baseCallContext, attempt),
+          attemptId: claimAttemptId,
+        };
+        if (ledger !== undefined) {
+          const claim = ledger.claimDispatch(claimAttemptId);
+          if (claim.kind === 'refused') {
+            return refusedAgentSdkResult(
+              attemptCallContext,
+              'task_compiler_dispatch_limit',
+              `operation dispatch limit reached (${claim.dispatchCount}/${claim.dispatchLimit})`,
+            );
+          }
+        }
         const forwardedAbort = createForwardedAbortController(signal);
         const callbackBuffer =
           resumeId === undefined
@@ -112,8 +186,10 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
             unexpectedResumeSessionId = id;
             return;
           }
-          session.capture(id);
-          attemptCallbacks.onSessionId?.(id);
+          if (!detached) {
+            session.capture(id);
+            attemptCallbacks.onSessionId?.(id);
+          }
         };
         const options: QueryParams['options'] = {
           allowedTools: opts.allowedTools,
@@ -123,7 +199,7 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
           includePartialMessages: true,
           abortController: forwardedAbort.controller,
         };
-        if (resumeId) options.resume = resumeId;
+        if (resumeId && !detached) options.resume = resumeId;
         if (effort) options.effort = effort;
         if (env || apiKey) {
           options.env = {
@@ -137,7 +213,7 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
             onOutput: attemptCallbacks.onOutput,
             onSessionId: captureSession,
             onCallEvent: attemptCallbacks.onCallEvent,
-            callContext: createSessionAttemptCallContext(baseCallContext, attempt),
+            callContext: attemptCallContext,
             signal,
             forwardedAbortController: forwardedAbort.controller,
             idle: { warnMs: opts.idleWarnMs, killMs: opts.idleKillMs },
@@ -161,13 +237,15 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
       };
 
       const priorId = session.getResumeId();
-      const result = await runWithResumeFallback(
-        session,
-        (resumeId, attempt) => runQuery(resumeId, attempt),
-        () => {
-          if (priorId) onSessionExpired?.(priorId);
-        },
-      );
+      const result = detached
+        ? await runQuery(undefined, 1)
+        : await runWithResumeFallback(
+            session,
+            (resumeId, attempt) => runQuery(resumeId, attempt),
+            () => {
+              if (priorId) onSessionExpired?.(priorId);
+            },
+          );
       return result;
     },
   };

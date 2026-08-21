@@ -1,23 +1,35 @@
-import type { Planner, PlannerCallbacks, PlannerCapabilities } from './types.js';
+import type {
+  Planner,
+  PlannerCallbacks,
+  PlannerCapabilities,
+  PlannerInvokeResult,
+} from './types.js';
 import { createPlannerBase, type PlannerBaseConfig } from './base.js';
 import {
   invokeCommandBasedRunner,
   invokeCustomCommandBasedRunner,
 } from '../runners/command-based.js';
+import { COMPILER_SUPPORT_TABLE } from '../runners/compiler-capability.js';
 import { extractQuestionsFromStream } from '../parsers/question.js';
 import { createCommandExistsAvailability, DEFAULT_AVAILABILITY } from '../availability.js';
 import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { RunnerCallContext } from '../calls/types.js';
 import type { RunnerCallResult } from '../calls/types.js';
 import {
-  DECLARED_PLANNER_ARTIFACT_PATH,
   PLANNER_ARTIFACT_MAX_BYTES,
+  DECLARED_PLANNER_ARTIFACT_PATH_ENV,
+  type DeclaredArtifactProvenance,
   type CustomRunnerRuntimePort,
   type PreparedDeclaredArtifactReview,
 } from '../runners/types.js';
 import type { AdmittedCustomRunnerInvocation } from '../runners/trust.js';
 import type { ConfiguredCustomRunner } from '../runners/custom-trust.js';
 import { resolveCustomRunnerEnvironment } from '../runners/redaction.js';
+import {
+  TaskCompilationAttemptIdSchema,
+  TaskCompilationSemanticIdSchema,
+} from '../../core/schemas/task-compilation.js';
+import { error } from '../../utils/error.js';
 
 export function resolveCapabilities(
   override: { [K in keyof PlannerCapabilities]?: boolean | undefined } | undefined,
@@ -32,6 +44,106 @@ export function resolveCapabilities(
   };
 }
 
+/** Legacy `shell` and `agent` planner rows that are typed-unsupported in V1. */
+export type LegacyCommandPlannerBackend = 'agent' | 'shell';
+
+export type LegacyCommandInvokeOptions = Readonly<{
+  command: string;
+  args?: string[] | undefined;
+  outputFormat?: OutputFormat | undefined;
+  notFoundMessage: string;
+  backendId?: LegacyCommandPlannerBackend | undefined;
+  idleWarnMs?: number | undefined;
+  idleKillMs?: number | undefined;
+}>;
+
+export type LegacyCommandInvokeInput = Readonly<{
+  prompt: string;
+  projectDir: string;
+  callContext: RunnerCallContext;
+  callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion' | 'onCallEvent'>;
+  signal?: AbortSignal | undefined;
+  sandboxEnv?: NodeJS.ProcessEnv | undefined;
+}>;
+
+function isCompilerGradeContext(callContext: RunnerCallContext): boolean {
+  return (
+    callContext.transport?.kind === 'declared-file' ||
+    callContext.envelope !== undefined ||
+    callContext.operationEnvelope !== undefined ||
+    callContext.sessionScope?.kind === 'detached-fresh'
+  );
+}
+
+function legacyCompilerRefusal(
+  callContext: RunnerCallContext,
+  backendId: LegacyCommandPlannerBackend | undefined,
+): RunnerCallResult | null {
+  if (!isCompilerGradeContext(callContext)) return null;
+  const row = backendId === undefined ? undefined : COMPILER_SUPPORT_TABLE[backendId];
+  const reason =
+    row?.unsupportedReason ??
+    'legacy command planners lack compiler containment, final-response, and envelope conformance in V1';
+  const backend = backendId ?? 'legacy command';
+  return {
+    callId: callContext.callId,
+    attemptId: callContext.attemptId,
+    role: callContext.role,
+    backendKind: callContext.backendKind ?? 'cli',
+    status: 'unsupported_tool',
+    terminalStatus: 'unsupported_tool',
+    failureCode: 'task_compiler_capability_unsupported',
+    error: {
+      code: 'task_compiler_capability_unsupported',
+      message: `Compiler dispatch is not supported for the ${backend} planner in V1: ${reason}`,
+    },
+    partial: false,
+    startedAt: 0,
+    endedAt: 0,
+    durationMs: 0,
+    text: '',
+    usage: null,
+    nativeSessionId: null,
+    toolUses: [],
+    artifacts: [],
+    warnings: [],
+  };
+}
+
+export function createLegacyCommandInvoke(
+  options: LegacyCommandInvokeOptions,
+): (input: LegacyCommandInvokeInput) => Promise<RunnerCallResult> {
+  return async (input) => {
+    const refusal = legacyCompilerRefusal(input.callContext, options.backendId);
+    if (refusal !== null) return refusal;
+
+    const result = await invokeCommandBasedRunner({
+      command: options.command,
+      args: options.args ?? [],
+      outputFormat: options.outputFormat ?? 'text',
+      notFoundMessage: options.notFoundMessage,
+      prompt: input.prompt,
+      projectDir: input.projectDir,
+      env: input.sandboxEnv,
+      onOutput: input.callbacks.onOutput,
+      onCallEvent: input.callbacks.onCallEvent,
+      callContext: input.callContext,
+      signal: input.signal,
+      ...(options.idleWarnMs !== undefined && { idleWarnMs: options.idleWarnMs }),
+      ...(options.idleKillMs !== undefined && { idleKillMs: options.idleKillMs }),
+    });
+
+    if (input.callbacks.onQuestion) {
+      const questions = extractQuestionsFromStream(result.stdout);
+      if (questions.length > 0) {
+        input.callbacks.onQuestion(questions);
+      }
+    }
+
+    return result.callResult;
+  };
+}
+
 export function createCommandBasedPlanner(
   config: {
     command: string;
@@ -39,10 +151,10 @@ export function createCommandBasedPlanner(
     outputFormat?: OutputFormat | undefined;
     idleWarnMs?: number | undefined;
     idleKillMs?: number | undefined;
+    compilerBackend?: LegacyCommandPlannerBackend | undefined;
   },
   label: string,
   overrides?: {
-    readPhaseOutput?: PlannerBaseConfig['readPhaseOutput'] | undefined;
     capabilities?: PlannerCapabilities | undefined;
     escalateFullMode?: PlannerBaseConfig['escalateFullMode'] | undefined;
     notFoundMessage?: string | undefined;
@@ -50,46 +162,15 @@ export function createCommandBasedPlanner(
 ): Planner {
   const notFoundMessage =
     overrides?.notFoundMessage ?? `${label} command not found: ${config.command}`;
-  const invoke = async ({
-    prompt,
-    projectDir,
-    callbacks,
-    signal,
-    sandboxEnv,
-    callContext,
-  }: {
-    prompt: string;
-    projectDir: string;
-    callContext: RunnerCallContext;
-    callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion' | 'onCallEvent'>;
-    signal?: AbortSignal | undefined;
-    sandboxEnv?: NodeJS.ProcessEnv | undefined;
-  }): Promise<RunnerCallResult> => {
-    const result = await invokeCommandBasedRunner({
-      command: config.command,
-      args: config.args ?? [],
-      outputFormat: config.outputFormat ?? 'text',
-      notFoundMessage,
-      prompt,
-      projectDir,
-      env: sandboxEnv,
-      onOutput: callbacks.onOutput,
-      onCallEvent: callbacks.onCallEvent,
-      callContext,
-      signal,
-      ...(config.idleWarnMs !== undefined && { idleWarnMs: config.idleWarnMs }),
-      ...(config.idleKillMs !== undefined && { idleKillMs: config.idleKillMs }),
-    });
-
-    if (callbacks.onQuestion) {
-      const questions = extractQuestionsFromStream(result.stdout);
-      if (questions.length > 0) {
-        callbacks.onQuestion(questions);
-      }
-    }
-
-    return result.callResult;
-  };
+  const invoke = createLegacyCommandInvoke({
+    command: config.command,
+    args: config.args,
+    outputFormat: config.outputFormat,
+    notFoundMessage,
+    ...(config.compilerBackend !== undefined && { backendId: config.compilerBackend }),
+    ...(config.idleWarnMs !== undefined && { idleWarnMs: config.idleWarnMs }),
+    ...(config.idleKillMs !== undefined && { idleKillMs: config.idleKillMs }),
+  });
 
   return createPlannerBase({
     invokePlan: invoke,
@@ -99,13 +180,52 @@ export function createCommandBasedPlanner(
     hintSuccessMode: 'files',
     capabilities: resolveCapabilities(overrides?.capabilities),
     ...(overrides?.escalateFullMode && { escalateFullMode: overrides.escalateFullMode }),
-    ...(overrides?.readPhaseOutput && { readPhaseOutput: overrides.readPhaseOutput }),
     ...createCommandExistsAvailability(config.command),
   });
 }
 
-function declaredArtifactPrompt(prompt: string): string {
-  return `${prompt}\n\nStdout is diagnostic only. Write the complete result to ${DECLARED_PLANNER_ARTIFACT_PATH}. The result must not exceed ${PLANNER_ARTIFACT_MAX_BYTES} bytes.`;
+function declaredArtifactPrompt(prompt: string, provenance: DeclaredArtifactProvenance): string {
+  return `${prompt}\n\nStdout is diagnostic only. Write the complete result to ${provenance.relativePath}. The result must not exceed ${provenance.maxBytes} bytes.`;
+}
+
+function declaredArtifactProvenance(
+  callContext: RunnerCallContext,
+  artifactFile: string | undefined,
+): DeclaredArtifactProvenance {
+  const attemptId = TaskCompilationAttemptIdSchema.safeParse(callContext.attemptId);
+  if (!attemptId.success) {
+    throw error(
+      'custom-planner-artifact-invalid',
+      'Configured custom planner invocation is missing a canonical attempt identity.',
+    );
+  }
+  const relativePath = `.splitbrief-runner/output/${attemptId.data}/result`;
+  return {
+    semanticId: TaskCompilationSemanticIdSchema.parse(
+      `planner-artifact-${artifactFile ?? 'result'}`,
+    ),
+    programId: null,
+    batchId: null,
+    attemptId: attemptId.data,
+    transport: {
+      kind: 'declared-file',
+      lease: { leaseId: attemptId.data, attemptId: attemptId.data, relativePath },
+    },
+    maxBytes: PLANNER_ARTIFACT_MAX_BYTES,
+    relativePath,
+  };
+}
+
+function assertReceiptCapableReview(prepared: PreparedDeclaredArtifactReview): void {
+  if (
+    typeof prepared.readWithReceiptAfterChild !== 'function' ||
+    typeof prepared.getReceipt !== 'function'
+  ) {
+    throw error(
+      'custom-planner-artifact-invalid',
+      'Configured custom planner runtime does not support receipt-bound artifact review.',
+    );
+  }
 }
 
 /**
@@ -127,6 +247,7 @@ export function createConfiguredCustomPlanner(
     callbacks,
     signal,
     callContext,
+    artifactFile,
   }: {
     prompt: string;
     projectDir: string;
@@ -134,7 +255,8 @@ export function createConfiguredCustomPlanner(
     callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion' | 'onCallEvent'>;
     signal?: AbortSignal | undefined;
     sandboxEnv?: NodeJS.ProcessEnv | undefined;
-  }): Promise<RunnerCallResult> => {
+    artifactFile?: string | undefined;
+  }): Promise<PlannerInvokeResult> => {
     const requiresDeclaredArtifactReview = direct && callContext.role !== 'escalation';
     await runtime.cleanupStaleArtifactReviews();
 
@@ -144,9 +266,11 @@ export function createConfiguredCustomPlanner(
       const invokeAdmittedRunner = ({
         cwd,
         childPrompt,
+        sourceEnv,
       }: Readonly<{
         cwd: string;
         childPrompt: string;
+        sourceEnv?: NodeJS.ProcessEnv | undefined;
       }>) =>
         invokeCustomCommandBasedRunner({
           admission,
@@ -155,7 +279,10 @@ export function createConfiguredCustomPlanner(
           authorizationPathEnv,
           authorizationPathExt,
           cwd,
-          sourceEnv: runtime.sourceEnv,
+          sourceEnv: sourceEnv ?? runtime.sourceEnv,
+          ...(sourceEnv === undefined
+            ? {}
+            : { preserveEnvironmentKeys: [DECLARED_PLANNER_ARTIFACT_PATH_ENV] }),
           onOutput: callbacks.onOutput,
           onCallEvent: callbacks.onCallEvent,
           callContext,
@@ -175,18 +302,44 @@ export function createConfiguredCustomPlanner(
         const environment = resolveCustomRunnerEnvironment(runtime.sourceEnv, runner.command.env);
         let prepared: PreparedDeclaredArtifactReview | undefined;
         try {
+          const provenance = declaredArtifactProvenance(callContext, artifactFile);
           prepared = await runtime.beginDeclaredArtifactReview({
             stagedProjectDir: staged.projectDir,
             callId: callContext.callId,
             declaredRedactionValues: environment.redactionValues,
+            provenance,
           });
+          assertReceiptCapableReview(prepared);
           const result = await invokeAdmittedRunner({
             cwd: staged.projectDir,
-            childPrompt: declaredArtifactPrompt(prompt),
+            childPrompt: declaredArtifactPrompt(prompt, provenance),
+            sourceEnv: {
+              ...runtime.sourceEnv,
+              [DECLARED_PLANNER_ARTIFACT_PATH_ENV]: provenance.relativePath,
+            },
           });
           if (result.status !== 'completed') return result;
 
-          return { ...result, text: await prepared.reviewAfterChild() };
+          const text = await prepared.reviewAfterChild();
+          const reviewed = await prepared.readWithReceiptAfterChild();
+          const receipt = prepared.getReceipt();
+          if (
+            receipt === undefined ||
+            reviewed.text !== text ||
+            receipt.leaseReceiptDigest !== reviewed.receipt.leaseReceiptDigest
+          ) {
+            throw error(
+              'custom-planner-artifact-invalid',
+              'Configured custom planner artifact review completed without a lease receipt.',
+            );
+          }
+          return {
+            ...result,
+            attemptId: provenance.attemptId,
+            transport: provenance.transport,
+            text,
+            ownedArtifactReceipt: receipt,
+          };
         } finally {
           if (prepared !== undefined) await prepared.dispose();
         }

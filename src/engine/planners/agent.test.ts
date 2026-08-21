@@ -104,7 +104,7 @@ describe('createAgentPlanner', () => {
     expect(result.usage).toBe(null);
   });
 
-  it('supports quickPlan and reads generated tasks file', async () => {
+  it('quickPlan ignores pre-seeded session tasks.md and derives content from stdout only', async () => {
     const config = defaultAgentConfig();
     const planner = createAgentPlanner(config);
     const SESSION_ID = 'test-session-2024';
@@ -131,12 +131,15 @@ Create a test file.
     const result = await planner.quickPlan({ feature: 'test feature', projectDir, callbacks });
     expect(result.spec).toBe('');
     expect(result.plan).toBe('');
-    expect(result.tasks).toHaveLength(1);
-    expect(result.tasks[0]?.id).toBe('T001');
+    expect(result.tasks).toHaveLength(0);
+    const artifactText = result.phases?.[0]?.artifact.text ?? '';
     expect(result.phases).toHaveLength(1);
+    expect(artifactText).toContain('test output');
+    expect(artifactText).not.toContain('Create a test file.');
+    expect(artifactText).not.toContain('T001');
   });
 
-  it('supports full plan and reads generated files', async () => {
+  it('full plan ignores pre-seeded session files and rejects non-spec stdout', async () => {
     const config = defaultAgentConfig();
     const planner = createAgentPlanner(config);
     const SESSION_ID = 'test-session-2024';
@@ -165,12 +168,12 @@ Create the main feature.
     };
     setupMockFiles(projectDir, SESSION_ID, mockFiles);
 
-    const result = await planner.plan({ feature: 'test feature', projectDir, callbacks });
-    expect(result.spec).toContain('Feature requirements');
-    expect(result.plan).toContain('Implementation strategy');
-    expect(result.tasks).toHaveLength(1);
-    expect(result.tasks[0]?.id).toBe('T001');
-    expect(result.phases).toHaveLength(4);
+    await expect(
+      planner.plan({ feature: 'test feature', projectDir, callbacks }),
+    ).rejects.toMatchObject({
+      kind: 'planning-invalid-artifact',
+      data: { phase: 'specifying', filename: 'spec.md' },
+    });
   });
 
   it('handles command not found error', async () => {

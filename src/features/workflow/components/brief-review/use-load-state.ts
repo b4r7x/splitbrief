@@ -2,32 +2,50 @@ import { useEffect, useState } from 'react';
 import { dirname } from 'node:path';
 import type { Task } from '../../../../core/schemas/task.js';
 import type { PlanTaskReviewMetadata } from '../../../../core/plan-review/types.js';
+import type { BriefRecoveryProjectionV1 } from '../../../../core/schemas/brief-recovery.js';
 import type { BriefQualityReport } from '../../../../engine/spec/brief-quality.js';
 import type { BriefReadinessGateReport } from '../../../../engine/orchestrator/planning/brief-readiness-gate.js';
+import { briefQualityReportFromProjection } from '../../../../engine/orchestrator/planning/brief-quality-preparation.js';
 import { toErrorMessage } from '../../../../utils/format-errors.js';
 import { loadBriefReviewData } from '../../brief-review-loader.js';
 import { reviewStore } from '../../../../stores/workflow/review.js';
 
-interface BriefData {
+interface BriefDataFields {
   tasks: Task[];
   quality: BriefQualityReport | null;
   readiness: BriefReadinessGateReport | null;
+  recovery: BriefRecoveryProjectionV1 | null;
   reviewMetadata: ReadonlyMap<string, PlanTaskReviewMetadata>;
   briefSources: string[];
 }
 
-interface LoadedBriefData extends BriefData {
+interface LoadingBriefData extends BriefDataFields {
+  status: 'loading';
+  tasks: [];
+  quality: null;
+  readiness: null;
+  recovery: null;
+  reviewMetadata: ReadonlyMap<string, PlanTaskReviewMetadata>;
+  briefSources: [];
+}
+
+interface LoadedBriefData extends BriefDataFields {
+  status: 'loaded';
   filePath: string;
   ownerToken: number;
   revision: number;
 }
 
-const EMPTY_BRIEF_DATA: BriefData = {
+type BriefData = LoadingBriefData | LoadedBriefData;
+
+const EMPTY_BRIEF_DATA: LoadingBriefData = {
+  status: 'loading',
   tasks: [],
   quality: null,
   readiness: null,
   reviewMetadata: new Map<string, PlanTaskReviewMetadata>(),
   briefSources: [],
+  recovery: null,
 };
 
 export function useBriefData(filePath: string): BriefData {
@@ -51,23 +69,24 @@ export function useBriefData(filePath: string): BriefData {
     if (loadStillCurrent()) reviewStore.setLoadError(null);
 
     async function load() {
-      const { tasks, quality, readiness, reviewMetadata, briefSources } = await loadBriefReviewData(
-        {
-          filePath,
-          sessionDirPath: dirname(filePath),
-          signal,
-        },
-      );
+      const result = await loadBriefReviewData({
+        filePath,
+        sessionDirPath: dirname(filePath),
+        signal,
+      });
       if (!loadStillCurrent()) return;
+      const recovery = result.recovery ?? null;
       setLoaded({
+        status: 'loaded',
         filePath,
         ownerToken: loadOwnerToken,
         revision: loadRevision,
-        tasks,
-        quality,
-        readiness,
-        reviewMetadata,
-        briefSources,
+        tasks: result.tasks,
+        quality: recovery === null ? result.quality : briefQualityReportFromProjection(recovery),
+        readiness: result.readiness,
+        recovery,
+        reviewMetadata: result.reviewMetadata,
+        briefSources: result.briefSources,
       });
       reviewStore.setLoadError(null);
     }

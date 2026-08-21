@@ -1,23 +1,17 @@
-import type { Task, TaskId } from '../../../core/schemas/task.js';
-import { taskId } from '../../../core/schemas/task.js';
+import type { Task } from '../../../core/schemas/task.js';
 import { topoSort } from '../../../core/state/topo-sort.js';
 import { error, matches } from '../../../utils/error.js';
 import {
-  fenceMarkerLength,
   looksLikeTaskBlock,
   normalizeTaskSeparators,
   opensUnterminatedFrontmatter,
-  readTaskFrontmatter,
+  parseTaskBlock,
   splitTaskBlocks,
+  stripFileFrontmatter,
   unwrapFencedTaskDocument,
 } from './blocks.js';
-import { extractSections, warnUnknownSections } from './sections.js';
-
-function stripFileFrontmatter(content: string): string {
-  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
-  if (!match?.[1]?.includes('generated_by:')) return content;
-  return content.slice(match[0].length);
-}
+import { fenceMarkerLength } from './fence-marker.js';
+import { warnUnknownSections } from './sections.js';
 
 export const parseTasksError = {
   invalidTaskBlock: (detail: string) =>
@@ -138,49 +132,4 @@ function noTasksReason(stripped: string): string | null {
     return 'No Task Brief was parsed: the output contains a ``` code fence, but neither the fenced content nor the text around it has a --- frontmatter block with an id: field. Emit Task Briefs as top-level markdown, not inside a fence.';
   }
   return 'No Task Brief was parsed: the output has no --- delimited block with an id: field.';
-}
-
-type TaskBlockResult = { ok: true; task: Task } | { ok: false; reason: string };
-
-function parseTaskBlock(block: string): TaskBlockResult {
-  const frontmatter = readTaskFrontmatter(block);
-  if (!frontmatter.ok) return frontmatter;
-
-  const { id, title, action, file } = frontmatter.data;
-  const dependsOn: TaskId[] = frontmatter.data.depends_on.map(taskId);
-  const sections = extractSections(block);
-
-  const task: Task = {
-    id: taskId(id),
-    title,
-    action,
-    file,
-    dependsOn,
-    description: sections.description,
-    signature: sections.signature || undefined,
-    tests: sections.tests,
-    constraints: sections.constraints,
-    pattern: sections.pattern || undefined,
-    typeDefs: sections.typeDefs || '',
-    implementationSteps: sections.implementationSteps,
-    status: 'pending',
-  };
-
-  if (sections.currentCode) task.currentCode = sections.currentCode;
-
-  const scope: {
-    inBounds?: string[];
-    outOfBounds?: string[];
-    approvedOutOfBounds?: string[];
-  } = {};
-  if (sections.scopeInBounds.length > 0) scope.inBounds = sections.scopeInBounds;
-  if (sections.scopeOutOfBounds.length > 0) scope.outOfBounds = sections.scopeOutOfBounds;
-  if (sections.scopeApprovedOutOfBounds.length > 0) {
-    scope.approvedOutOfBounds = sections.scopeApprovedOutOfBounds;
-  }
-  if (scope.inBounds || scope.outOfBounds || scope.approvedOutOfBounds) task.scope = scope;
-  if (sections.escalation.length > 0) task.escalation = sections.escalation;
-  if (sections.evidence.length > 0) task.evidence = sections.evidence;
-
-  return { ok: true, task };
 }

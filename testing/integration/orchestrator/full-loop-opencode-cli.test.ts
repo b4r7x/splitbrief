@@ -7,7 +7,7 @@ import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { cleanupTempDir, createTempDir, normalizeMacTmpPath } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
@@ -65,10 +65,6 @@ type FakeOpencodeRun = {
     npm_config_cache: string | null;
   };
 };
-
-function normalizeMacTmpPath(path: string | null): string | null {
-  return path?.replace(/^\/private(\/(?:tmp|var)\/)/, '$1') ?? null;
-}
 
 function prependFakeOpencodeToPath(opts: { marker: string; requiredPromptText: string }): {
   binDir: string;
@@ -234,7 +230,6 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
       _planner: planner,
       _eventSink: (event) => events.push(event),
     });
-
     expect(existsSync(fakeOpencode.executablePath)).toBe(true);
     const runLog = JSON.parse(readFileSync(fakeOpencode.runLogPath, 'utf-8')) as FakeOpencodeRun;
     expect(runLog.cwd).not.toBe(projectDir);

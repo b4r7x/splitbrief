@@ -1,4 +1,3 @@
-import { saveState } from '../../../core/state/persistence.js';
 import { defaultImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
 import { formatValidationError } from '../validation/format-error.js';
 import { refreshAndPersistCode, addUsageAndSave } from '../state-ops.js';
@@ -45,7 +44,6 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
   };
   if (retryRuntime.profile !== undefined) {
     state = stateForRetryProfile(state, retryRuntime.profile);
-    saveState(ctx, state);
   }
 
   const workspace = await ctx.isolation.acquire({

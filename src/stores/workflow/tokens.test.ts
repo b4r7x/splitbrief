@@ -7,6 +7,7 @@ import { makeTaskComplete, makeCostUpdate, makeTaskSkipped } from '#testing/help
 import { taskId } from '../../core/schemas/task.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { EngineEvent } from '../../engine/events/types.js';
+import { parseEngineEvent } from '../../engine/events/schema.js';
 
 type TaskTokensEvent = Extract<EngineEvent, { type: 'task_tokens' }> & Partial<TaskTokenUsage>;
 
@@ -27,6 +28,212 @@ function makeTaskTokens(overrides?: Partial<TaskTokensEvent>): EngineEvent {
 function makeTaskReset(id = 'T001'): EngineEvent {
   return { type: 'task_reset', ts: Date.now(), phase: 'implementing', taskId: taskId(id) };
 }
+
+type BriefRecoveryEvent = Extract<
+  EngineEvent,
+  {
+    type:
+      | 'brief_recovery_quality_reported'
+      | 'brief_recovery_auto_repair_exhausted'
+      | 'brief_recovery_attempt_accepted'
+      | 'brief_recovery_attempt_started'
+      | 'brief_recovery_attempt_settled'
+      | 'brief_recovery_attempt_unresolved'
+      | 'brief_recovery_provider_failed'
+      | 'brief_recovery_input_queued'
+      | 'brief_recovery_input_applied'
+      | 'brief_recovery_stale_ignored'
+      | 'brief_recovery_rejected'
+      | 'brief_recovery_refused';
+  }
+> &
+  Record<string, unknown>;
+
+const recoveryHash = 'a'.repeat(64);
+const otherRecoveryHash = 'b'.repeat(64);
+const recoveryEventBase = {
+  ts: 1,
+  phase: 'reviewing-briefs',
+  version: 1,
+  eventId: 'event-1',
+  sessionId: 'session-1',
+  epochId: 'epoch-1',
+  recoveryRevision: 1,
+} as const;
+const recoveryRefs = {
+  briefRevision: 1,
+  briefHash: recoveryHash,
+  reportRevision: 1,
+  reportHash: recoveryHash,
+} as const;
+
+const briefRecoveryEvents: readonly BriefRecoveryEvent[] = [
+  {
+    ...recoveryEventBase,
+    type: 'brief_recovery_quality_reported',
+    ...recoveryRefs,
+    status: 'blocked',
+    outcome: 'failed',
+    taskCount: 0,
+    issueCount: 1,
+    errorCount: 1,
+    warningCount: 0,
+    issueCodes: ['empty_task_list'],
+    score: 0.8,
+    topIssueCode: 'empty_task_list',
+    automaticRepairPolicy: 'existing-one-shot',
+    automaticRepairConsumed: true,
+  },
+  {
+    ...recoveryEventBase,
+    type: 'brief_recovery_auto_repair_exhausted',
+    ...recoveryRefs,
+    operationId: 'automatic-1',
+    intentHash: recoveryHash,
+    attemptKind: 'automatic',
+    status: 'blocked',
+    refusalCategory: 'quality',
+    automaticRepairConsumed: true,
+    taskCount: 0,
+    issueCount: 1,
+    errorCount: 1,
+    warningCount: 0,
+    issueCodes: ['empty_task_list'],
+  },
+  {
+    ...recoveryEventBase,
+    type: 'brief_recovery_attempt_accepted',
+    ...recoveryRefs,
+    operationId: 'retry-1',
+    intentHash: recoveryHash,
+    attemptKind: 'manual-retry',
+    status: 'accepted',
+    dispatchPossibility: 'none',
+    frozenInputCount: 0,
+    queuedInputCount: 0,
+    automaticAllowanceConsumed: true,
+  },
+  {
+    ...recoveryEventBase,
+    type: 'brief_recovery_attempt_started',
+    ...recoveryRefs,
+    operationId: 'retry-1',
+    intentHash: recoveryHash,
+    attemptKind: 'manual-retry',
+    status: 'started',
+    requestId: 'request-1',
+    dispatchPossibility: 'possible',
+    frozenInputCount: 0,
+  },
+  {
+    ...recoveryEventBase,
+    type: 'brief_recovery_attempt_settled',
+    ...recoveryRefs,
+    operationId: 'retry-1',
+    intentHash: recoveryHash,
+    attemptKind: 'manual-retry',
+    status: 'settled',
+    resultId: 'result-1',
+    outcome: 'quality-failed',
+    dispatchPossibility: 'possible',
+    remoteObservation: 'confirmed-final',
+    providerCode: null,
+    refusalCategory: 'quality',
+    taskCount: 0,
+    issueCount: 1,
+    errorCount: 1,
+    warningCount: 0,
+  },
+  {
+    ...recoveryEventBase,
+    type: 'brief_recovery_attempt_unresolved',
+    ...recoveryRefs,
+    operationId: 'retry-2',
+    intentHash: otherRecoveryHash,
+    attemptKind: 'manual-retry',
+    status: 'unresolved',
+    requestId: 'request-2',
+    dispatchPossibility: 'possible',
+    remoteObservation: 'unknown',
+    refusalCategory: 'unresolved',
+  },
+  {
+    ...recoveryEventBase,
+    type: 'brief_recovery_provider_failed',
+    ...recoveryRefs,
+    operationId: 'retry-3',
+    intentHash: recoveryHash,
+    attemptKind: 'manual-retry',
+    status: 'blocked',
+    outcome: 'provider-failed',
+    providerCode: 'auth_failed',
+    refusalCategory: 'authentication',
+    dispatchPossibility: 'none',
+    remoteObservation: 'not-dispatched',
+  },
+  {
+    ...recoveryEventBase,
+    type: 'brief_recovery_input_queued',
+    ...recoveryRefs,
+    inputId: 'input-1',
+    inputSequence: 1,
+    inputKind: 'feedback',
+    source: 'interactive',
+    textHash: otherRecoveryHash,
+    operationId: null,
+    queuedInputCount: 1,
+  },
+  {
+    ...recoveryEventBase,
+    type: 'brief_recovery_input_applied',
+    ...recoveryRefs,
+    inputId: 'input-1',
+    inputSequence: 1,
+    inputKind: 'edit',
+    source: 'typed',
+    textHash: otherRecoveryHash,
+    operationId: 'retry-1',
+    disposition: 'applied',
+    appliedRevision: 2,
+    queuedInputCount: 0,
+  },
+  {
+    ...recoveryEventBase,
+    type: 'brief_recovery_stale_ignored',
+    operationId: 'retry-1',
+    intentHash: recoveryHash,
+    resultId: 'result-1',
+    baseBriefRevision: 1,
+    baseBriefHash: recoveryHash,
+    currentBriefRevision: 2,
+    currentBriefHash: otherRecoveryHash,
+    baseReportRevision: 1,
+    baseReportHash: recoveryHash,
+    currentReportRevision: 2,
+    currentReportHash: otherRecoveryHash,
+    refusalCategory: 'stale',
+  },
+  {
+    ...recoveryEventBase,
+    type: 'brief_recovery_rejected',
+    ...recoveryRefs,
+    intentId: 'reject-1',
+    operationId: null,
+    status: 'rejected',
+    disposition: 'user-rejected',
+  },
+  {
+    ...recoveryEventBase,
+    type: 'brief_recovery_refused',
+    ...recoveryRefs,
+    intentId: 'approve-1',
+    operationId: null,
+    action: 'approve',
+    refusalCategory: 'quality',
+    refusalCode: 'brief_contract_blocked',
+    status: 'blocked',
+  },
+];
 
 describe('tokensStore — cost-update', () => {
   beforeEach(() => resetWorkflow());
@@ -86,16 +293,15 @@ describe('tokensStore — task-complete counters', () => {
     { method: 'escalated-full' as const, localCount: 0, escalatedCount: 1 },
     { method: 'failed' as const, localCount: 0, escalatedCount: 0 },
     { method: 'skipped' as const, localCount: 0, escalatedCount: 0 },
-  ])('method=$method → local=$localCount, escalated=$escalatedCount', ({
-    method,
-    localCount,
-    escalatedCount,
-  }) => {
-    addEvent(makeTaskComplete({ method }));
-    const s = tokensStore.get();
-    expect(s.localCount).toBe(localCount);
-    expect(s.escalatedCount).toBe(escalatedCount);
-  });
+  ])(
+    'method=$method → local=$localCount, escalated=$escalatedCount',
+    ({ method, localCount, escalatedCount }) => {
+      addEvent(makeTaskComplete({ method }));
+      const s = tokensStore.get();
+      expect(s.localCount).toBe(localCount);
+      expect(s.escalatedCount).toBe(escalatedCount);
+    },
+  );
 
   it('does not count workflow lifecycle events as completed tasks', () => {
     addEvent({ type: 'workflow_started', ts: Date.now(), phase: 'idle', feature: 'test' });
@@ -257,5 +463,17 @@ describe('tokensStore — pass-through events', () => {
     });
 
     expect(tokensStore.get()).toEqual(before);
+  });
+
+  it('passes every canonical brief recovery event through without changing state', () => {
+    const before = tokensStore.get();
+
+    for (const value of briefRecoveryEvents) {
+      const event = parseEngineEvent(value);
+      if (event === null) throw new Error('expected a valid brief recovery event fixture');
+      addEvent(event);
+    }
+
+    expect(tokensStore.get()).toBe(before);
   });
 });

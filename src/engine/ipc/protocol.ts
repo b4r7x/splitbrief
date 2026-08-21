@@ -25,6 +25,11 @@ import {
   type BriefReviewCommand,
   type BriefReviewCommandAction,
 } from '../../core/schemas/brief-review-command.js';
+import {
+  BriefRecoveryProjectionV1Schema,
+  type BriefRecoveryAction,
+  type BriefRecoveryProjectionV1,
+} from '../../core/schemas/brief-recovery.js';
 import { CostPredictionSchema } from '../../core/schemas/summary.js';
 import { IpcRecoveryIssueSchema } from '../../core/schemas/recovery/ipc.js';
 import { PLANNER_ARTIFACT_MAX_BYTES } from '../runners/types.js';
@@ -61,6 +66,7 @@ const ApprovalNeededPromptRequestSchema = z.object({
   approvalType: OrdinaryApprovalPromptKindSchema,
   filePath: z.string(),
   allowedCommands: z.array(BriefReviewCommandActionSchema),
+  briefRecovery: BriefRecoveryProjectionV1Schema.optional(),
 });
 
 const ArtifactReviewPromptRequestSchema = z.strictObject({
@@ -113,7 +119,18 @@ const IpcPromptRequestSchema = z
   ])
   .superRefine((request, ctx) => {
     if (request.kind !== 'approval_needed') return;
-    const expected = allowedSettlingBriefReviewCommandsForPrompt(request.approvalType);
+    if (request.briefRecovery !== undefined && request.approvalType !== 'briefs') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['briefRecovery'],
+        message: 'briefRecovery is only available for briefs approval prompts',
+      });
+      return;
+    }
+    const expected =
+      request.briefRecovery === undefined
+        ? allowedSettlingBriefReviewCommandsForPrompt(request.approvalType)
+        : allowedBriefReviewCommandsForProjection(request.briefRecovery);
     if (sameAllowedCommands(request.allowedCommands, expected)) return;
     ctx.addIssue({
       code: 'custom',
@@ -121,6 +138,42 @@ const IpcPromptRequestSchema = z
       message: 'allowedCommands must match the approval prompt kind',
     });
   });
+
+/**
+ * Translate persisted recovery actions into the settling commands that an approval prompt can
+ * accept. The status action remains part of the public projection, but it cannot settle a prompt.
+ */
+export function allowedBriefReviewCommandsForProjection(
+  projection: BriefRecoveryProjectionV1,
+): readonly BriefReviewCommandAction[] {
+  const commands = new Set<BriefReviewCommandAction>();
+  for (const action of projection.allowedActions) {
+    const command = briefRecoveryActionToReviewCommand(action);
+    if (command !== null && command !== 'status') commands.add(command);
+  }
+  return [...commands];
+}
+
+function briefRecoveryActionToReviewCommand(
+  action: BriefRecoveryAction,
+): BriefReviewCommandAction | null {
+  switch (action) {
+    case 'retry':
+    case 'edit':
+    case 'reject':
+    case 'approve':
+    case 'resolve-unresolved':
+      return action;
+    case 'revise':
+      return 'comment';
+    case 'status':
+      return 'status';
+    default: {
+      const exhaustive: never = action;
+      return exhaustive;
+    }
+  }
+}
 
 function sameAllowedCommands(
   actual: readonly BriefReviewCommandAction[],

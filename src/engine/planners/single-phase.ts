@@ -1,6 +1,7 @@
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { TASKS_FILE } from '../../core/paths.js';
-import type { PlannerCallbacks, PlanResult, PriorMessage } from './types.js';
+import type { PlannerCallbacks, PlanResult, PriorMessage, PlannerInvokeResult } from './types.js';
+import { normalizePlannerPhase } from './normalize.js';
 import { formatMessagesForCli } from '../streaming/format-messages.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
 import {
@@ -10,8 +11,9 @@ import {
 import { parseTasksStrict } from '../spec/tasks/parse.js';
 import { buildProjectContextMarkdown } from './context.js';
 import { toTokenDelta } from '../calls/projection.js';
-import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
+import type { RunnerCallContext } from '../calls/types.js';
 import { requireCompletedCall } from './require-completed-call.js';
+import { createTaskCompilationAttemptId } from '../../core/schemas/task-compilation.js';
 
 type SinglePhaseConfig = {
   invokePlan: (opts: {
@@ -26,16 +28,10 @@ type SinglePhaseConfig = {
     images?: Attachment[] | undefined;
     artifactFile?: string | undefined;
     signal?: AbortSignal | undefined;
-  }) => Promise<RunnerCallResult>;
+  }) => Promise<PlannerInvokeResult>;
   backendKind?: RunnerCallContext['backendKind'];
   runnerName?: string | undefined;
   model?: string | undefined;
-  readPhaseOutput?: (
-    filename: string,
-    resultText: string,
-    projectDir: string,
-    sessionId?: string,
-  ) => string;
   consumesPriorMessages?: boolean;
 };
 
@@ -51,8 +47,10 @@ let singlePhaseCallSequence = 0;
 function createSinglePhaseCallContext(config: SinglePhaseConfig): RunnerCallContext {
   return {
     callId: `single-phase-${++singlePhaseCallSequence}`,
+    attemptId: createTaskCompilationAttemptId(),
     role: 'planner',
     backendKind: config.backendKind ?? DEFAULT_BACKEND_KIND,
+    transport: { kind: 'stdout-final' },
     ...(config.runnerName !== undefined && { runnerName: config.runnerName }),
     ...(config.model !== undefined && { model: config.model }),
   };
@@ -114,7 +112,7 @@ export async function runSinglePhasePlanning(
     consumesPriorMessages: config.consumesPriorMessages,
   });
   const callContext = createSinglePhaseCallContext(config);
-  let result: RunnerCallResult;
+  let result: PlannerInvokeResult;
   try {
     result = requireCompletedCall(
       await config.invokePlan({
@@ -147,16 +145,20 @@ export async function runSinglePhasePlanning(
   }
   buffer.flush();
 
-  const tasksContent = config.readPhaseOutput
-    ? config.readPhaseOutput(TASKS_FILE, result.text, projectDir, callbacks.sessionId)
-    : result.text;
+  const tasksContent = result.text;
   const tasks = parseTasksStrict(tasksContent, callbacks.onWarning);
-  const rawOutput = tasksContent !== result.text ? result.text : undefined;
   return {
     spec: '',
     plan: '',
     tasks,
     usage: toTokenDelta(result.usage),
-    phases: [{ text: tasksContent, filename: TASKS_FILE, rawOutput }],
+    phases: [
+      normalizePlannerPhase({
+        result,
+        callContext,
+        logicalName: TASKS_FILE,
+        text: tasksContent,
+      }),
+    ],
   };
 }

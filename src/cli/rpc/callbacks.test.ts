@@ -55,6 +55,27 @@ describe('createWorkflowCallbacks confirm-tier RPC approval', () => {
     });
   });
 
+  it('returns a stable brief refusal without starting another callback flow', async () => {
+    const waitForApproval = vi.fn(async (data: unknown) => {
+      expect(data).toEqual({
+        pending: 'approval',
+        approvalType: 'briefs',
+        filePath: '/tmp/tasks.md',
+      });
+      return { approved: false } as const;
+    });
+    const waitForMessage = vi.fn(async () => 'unexpected');
+    const reportError = vi.fn();
+    const callbacks = createWorkflowCallbacks({ waitForApproval, waitForMessage, reportError });
+
+    await expect(callbacks.onApprovalNeeded('briefs', '/tmp/tasks.md')).resolves.toEqual({
+      approved: false,
+    });
+    expect(waitForApproval).toHaveBeenCalledTimes(1);
+    expect(waitForMessage).not.toHaveBeenCalled();
+    expect(reportError).not.toHaveBeenCalled();
+  });
+
   it('forwards immutable artifact review text to the RPC approval status without a path', async () => {
     const review = Object.freeze({
       label: 'Custom planner artifact',

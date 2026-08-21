@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { Box, Text } from 'ink';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -43,6 +43,8 @@ import {
   reactivateExistingSession,
   writeActive,
 } from '../../../core/sessions/lifecycle.js';
+import { acquireStateAuthority, releaseStateAuthority } from '../../../core/state/authority.js';
+import type { StateAuthorityReceipt } from '../../../core/state/types.js';
 import { ensureSplitbriefDir, ensureSessionDir } from '../../../core/paths-io.js';
 import { saveState, loadState } from '../../../core/state/persistence.js';
 import { configForSessionTranscriptPolicy, saveSummary } from '../../../core/sessions/io.js';
@@ -63,15 +65,17 @@ interface RunnerHandle {
 
 interface HarnessProps {
   prepared: PreparedExecution;
+  authority?: StateAuthorityReceipt | undefined;
   onComplete: (completion: WorkflowCompletion) => void;
   captureRunner?: { current: RunnerHandle | null };
   runWorkflow?: RunWorkflowFn | undefined;
 }
 
-function Harness({ prepared, onComplete, captureRunner, runWorkflow }: HarnessProps) {
+function Harness({ prepared, authority, onComplete, captureRunner, runWorkflow }: HarnessProps) {
   const inputMode = useInputMode();
   const runner = useWorkflowRunner({
     prepared,
+    authority,
     onComplete,
     inputMode,
     runWorkflow,
@@ -221,6 +225,7 @@ describe('useWorkflowRunner', () => {
     // Seed the lifecycle store with stale data. The start effect no longer resets
     // the stores itself; startWorkflow's own reset is the single authoritative reset.
     lifecycleStore.__testReset({ cancelled: true, queueDepth: 7, phase: 'final-review' });
+    const sessionId = '2026-08-14-resume-reset';
     const resume: WorkflowState = {
       ...createInitialState('add auth'),
       phase: 'reviewing-spec',
@@ -228,8 +233,10 @@ describe('useWorkflowRunner', () => {
     const prepared = preparedExecution({
       projectDir,
       feature: 'add auth',
+      sessionId,
       resumeState: resume,
     });
+    saveState({ projectDir, sessionId }, resume);
 
     const inst = render(<Harness prepared={prepared} onComplete={() => {}} />);
 
@@ -242,6 +249,75 @@ describe('useWorkflowRunner', () => {
       expect(lifecycle.queueDepth).toBe(0);
       expect(lifecycle.phase).toBe('reviewing-spec');
     });
+    inst.unmount();
+  });
+
+  it('clears session state before a missing persisted resume exits', async () => {
+    lifecycleStore.__testReset({ cancelled: true, queueDepth: 7, phase: 'final-review' });
+    eventsStore.__testReset({
+      events: [
+        {
+          type: 'workflow_started',
+          ts: Date.now(),
+          phase: 'final-review',
+          feature: 'old session',
+        },
+      ],
+    });
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async () => makeSummary());
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'new session',
+      sessionId: '2026-08-14-missing-resume',
+      resumeState: createInitialState('new session'),
+    });
+
+    const inst = render(
+      <Harness prepared={prepared} onComplete={() => {}} runWorkflow={runWorkflowStub} />,
+    );
+    await vi.waitFor(() => {
+      expect(lifecycleStore.get().phase).toBe('idle');
+      expect(lifecycleStore.get().cancelled).toBe(false);
+    });
+
+    expect(lifecycleStore.get().queueDepth).toBe(0);
+    expect(eventsStore.get().events).toEqual([]);
+    expect(runWorkflowStub).not.toHaveBeenCalled();
+    inst.unmount();
+  });
+
+  it('clears session state before an invalid persisted resume exits', async () => {
+    lifecycleStore.__testReset({ cancelled: true, queueDepth: 9, phase: 'implementing' });
+    const sessionId = '2026-08-14-invalid-resume';
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'invalid session',
+      sessionId,
+      resumeState: createInitialState('invalid session'),
+    });
+    writeFileSync(
+      join(sessionDir(projectDir, sessionId), 'state.json'),
+      JSON.stringify({ stateVersion: 999 }),
+      'utf8',
+    );
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async () => makeSummary());
+
+    const inst = render(
+      <Harness prepared={prepared} onComplete={() => {}} runWorkflow={runWorkflowStub} />,
+    );
+    await vi.waitFor(() => {
+      expect(lifecycleStore.get().phase).toBe('idle');
+      expect(eventsStore.get().events).toEqual([
+        expect.objectContaining({
+          type: 'error',
+          message: expect.stringContaining('Cannot resume'),
+        }),
+      ]);
+    });
+
+    expect(lifecycleStore.get().cancelled).toBe(false);
+    expect(lifecycleStore.get().queueDepth).toBe(0);
+    expect(runWorkflowStub).not.toHaveBeenCalled();
     inst.unmount();
   });
 
@@ -508,6 +584,166 @@ describe('useWorkflowRunner', () => {
     inst.unmount();
   });
 
+  it('commits a rewind through the live owner fence and revision', async () => {
+    const sessionId = '2026-08-13-live-rewind-owner';
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    const saved: WorkflowState = {
+      ...createInitialState('add auth'),
+      phase: 'reviewing-spec',
+    };
+    saveState(ref, saved);
+    const acquired = acquireStateAuthority({ ref, purpose: 'resume' });
+    if (acquired.kind !== 'fenced') throw new Error('expected a fenced authority');
+
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+    const inst = render(
+      <Harness
+        prepared={prepared}
+        authority={acquired.receipt}
+        onComplete={() => {}}
+        runWorkflow={vi.fn(async () => makeSummary())}
+      />,
+    );
+    await flush();
+
+    expect(requestRewind({ target: 'spec', comment: 'owner fenced' })).toBe(true);
+    await flush();
+
+    const persisted = loadState(ref);
+    expect(persisted?.phase).toBe('specifying');
+    expect(persisted?.stateRevision).toBe(acquired.receipt.stateRevision + 1);
+    expect(persisted?.stateFence).toEqual(
+      expect.objectContaining({ token: acquired.receipt.fence, ownerId: acquired.receipt.ownerId }),
+    );
+
+    inst.unmount();
+    expect(releaseStateAuthority(ref, acquired.receipt)).toBe(false);
+  });
+
+  it('refreshes the live owner receipt across successive rewinds', async () => {
+    const sessionId = '2026-08-14-successive-rewinds';
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    const saved: WorkflowState = {
+      ...createInitialState('successive rewinds'),
+      phase: 'reviewing-spec',
+    };
+    saveState(ref, saved);
+    const acquired = acquireStateAuthority({ ref, purpose: 'resume' });
+    if (acquired.kind !== 'fenced') throw new Error('expected a fenced authority');
+
+    const attempts: Array<WorkflowState | undefined> = [];
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async (options) => {
+      attempts.push(options.savedState);
+      return makeSummary();
+    });
+    const prepared = preparedExecution({ projectDir, feature: 'successive rewinds', sessionId });
+    const inst = render(
+      <Harness
+        prepared={prepared}
+        authority={acquired.receipt}
+        onComplete={() => {}}
+        runWorkflow={runWorkflowStub}
+      />,
+    );
+
+    await vi.waitFor(() => expect(attempts).toHaveLength(1));
+    expect(requestRewind({ target: 'spec', comment: 'first rewind' })).toBe(true);
+    await vi.waitFor(() => expect(attempts).toHaveLength(2));
+    expect(requestRewind({ target: 'plan', comment: 'second rewind' })).toBe(true);
+    await vi.waitFor(() => {
+      expect(loadState(ref)?.phase).toBe('planning');
+    });
+
+    expect(loadState(ref)?.stateRevision).toBe(acquired.receipt.stateRevision + 2);
+    expect(feedbackStore.get().isError).toBe(false);
+    inst.unmount();
+    expect(releaseStateAuthority(ref, acquired.receipt)).toBe(false);
+  });
+
+  it('refuses a rewind when the live owner receipt has a stale revision', async () => {
+    const sessionId = '2026-08-13-stale-rewind-owner';
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    const saved: WorkflowState = {
+      ...createInitialState('add auth'),
+      phase: 'reviewing-spec',
+    };
+    saveState(ref, saved);
+    const acquired = acquireStateAuthority({ ref, purpose: 'resume' });
+    if (acquired.kind !== 'fenced') throw new Error('expected a fenced authority');
+    const current = loadState(ref);
+    if (current === null) throw new Error('expected the fenced state to remain readable');
+    saveState(ref, { ...current, stateRevision: acquired.receipt.stateRevision + 1 });
+
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+    const inst = render(
+      <Harness
+        prepared={prepared}
+        authority={acquired.receipt}
+        onComplete={() => {}}
+        runWorkflow={vi.fn(async () => makeSummary())}
+      />,
+    );
+    await flush();
+
+    expect(requestRewind({ target: 'spec' })).toBe(true);
+    await flush();
+
+    expect(loadState(ref)?.phase).toBe('reviewing-spec');
+    expect(feedbackStore.get().isError).toBe(true);
+    inst.unmount();
+  });
+
+  it('cannot rewind after a successor takes over the owner fence', async () => {
+    const sessionId = '2026-08-13-takeover-rewind-owner';
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    const saved: WorkflowState = {
+      ...createInitialState('add auth'),
+      phase: 'reviewing-spec',
+    };
+    saveState(ref, saved);
+    const old = acquireStateAuthority({
+      ref,
+      purpose: 'resume',
+      ownerId: 'old-owner',
+      runId: 'old-run',
+      acquisitionId: 'old-acquisition',
+      pid: 2_147_483_646,
+      processStart: '1',
+    });
+    if (old.kind !== 'fenced') throw new Error('expected the old owner to be fenced');
+    const successor = acquireStateAuthority({
+      ref,
+      purpose: 'resume',
+      ownerId: 'successor-owner',
+      runId: 'successor-run',
+      acquisitionId: 'successor-acquisition',
+    });
+    if (successor.kind !== 'fenced') throw new Error('expected the successor to be fenced');
+
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+    const inst = render(
+      <Harness
+        prepared={prepared}
+        authority={old.receipt}
+        onComplete={() => {}}
+        runWorkflow={vi.fn(async () => makeSummary())}
+      />,
+    );
+    await flush();
+
+    expect(requestRewind({ target: 'spec' })).toBe(true);
+    await flush();
+
+    expect(loadState(ref)?.phase).toBe('reviewing-spec');
+    expect(feedbackStore.get().isError).toBe(true);
+    inst.unmount();
+    expect(releaseStateAuthority(ref, successor.receipt)).toBe(true);
+  });
+
   it('rewind retry reuses prepared runner authority after store changes', async () => {
     const sessionId = '2024-01-01-prepared-rewind';
     const saved: WorkflowState = {
@@ -613,9 +849,15 @@ describe('useWorkflowRunner', () => {
   it('handleResume shows a feedback error when there is no saved state on disk', async () => {
     const captureRunner: HarnessProps['captureRunner'] = { current: null };
     const prepared = preparedExecution({ projectDir, feature: 'add auth' });
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async () => makeSummary());
 
     const inst = render(
-      <Harness prepared={prepared} onComplete={() => {}} captureRunner={captureRunner} />,
+      <Harness
+        prepared={prepared}
+        onComplete={() => {}}
+        captureRunner={captureRunner}
+        runWorkflow={runWorkflowStub}
+      />,
     );
     await flush();
 
@@ -623,11 +865,25 @@ describe('useWorkflowRunner', () => {
     // error instead of trying to resume.
     const runner = captureRunner.current;
     if (!runner) throw new Error('expected captureRunner.current to be populated');
+    lifecycleStore.__testReset({ cancelled: true, queueDepth: 4, phase: 'final-review' });
+    eventsStore.__testReset({
+      events: [
+        {
+          type: 'workflow_started',
+          ts: Date.now(),
+          phase: 'final-review',
+          feature: 'stale session',
+        },
+      ],
+    });
     runner.handleResume();
     await flush();
 
     expect(feedbackStore.get().message).toMatch(/no saved state/i);
     expect(feedbackStore.get().isError).toBe(true);
+    expect(lifecycleStore.get().cancelled).toBe(false);
+    expect(lifecycleStore.get().queueDepth).toBe(0);
+    expect(eventsStore.get().events).toEqual([]);
 
     inst.unmount();
   });

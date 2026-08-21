@@ -66,12 +66,13 @@ describe('classifyAction — config-file writes are scope-classified, not valida
 });
 
 describe('classifyAction — read', () => {
-  it.each([
-    { desc: 'read src/core/paths.ts', actionClass: 'read', tier: 'auto' },
-  ])('$desc → $actionClass/$tier', ({ desc, actionClass, tier }) => {
-    const result = classifyAction(make(desc));
-    expect(result).toEqual({ actionClass, tier });
-  });
+  it.each([{ desc: 'read src/core/paths.ts', actionClass: 'read', tier: 'auto' }])(
+    '$desc → $actionClass/$tier',
+    ({ desc, actionClass, tier }) => {
+      const result = classifyAction(make(desc));
+      expect(result).toEqual({ actionClass, tier });
+    },
+  );
 });
 
 describe('classifyAction — write_in_scope', () => {

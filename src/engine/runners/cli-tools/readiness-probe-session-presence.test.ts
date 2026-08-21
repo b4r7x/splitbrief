@@ -2,10 +2,15 @@ import { chmod, mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promi
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
+import {
+  capabilityTuple,
+  unverifiedConformanceProof,
+} from '#testing/helpers/factories/compiler-capability.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { CliProbeContract } from './contract.js';
 import { providerOracleAuthFact } from './provider-oracle.js';
 import { probeCliReadiness } from './readiness-probe.js';
+import { admitCompilerCapability } from '../compiler-capability.js';
 
 async function nodeExecutable(): Promise<CliExecutableIdentity> {
   const path = await realpath(process.execPath);
@@ -393,93 +398,116 @@ describe.runIf(process.platform !== 'win32')('provider oracle three-way readines
     vi.stubEnv('XDG_DATA_HOME', join(hostHome, 'xdg-data'));
   }
 
-  it.each([
-    'opencode',
-    'kilo-code',
-  ] as const)('verifies %s from a clean oracle listing over bridged data-dir state and surfaces facts', async (tool) => {
-    await withTempDir(`readiness-${tool}-oracle-verified`, async (hostHome) => {
-      await seedOracleState(hostHome, tool);
-      const executable = await oracleShim(hostHome, tool, reportBody(tool));
+  it.each(['opencode', 'kilo-code'] as const)(
+    'verifies %s from a clean oracle listing over bridged data-dir state and surfaces facts',
+    async (tool) => {
+      await withTempDir(`readiness-${tool}-oracle-verified`, async (hostHome) => {
+        await seedOracleState(hostHome, tool);
+        const executable = await oracleShim(hostHome, tool, reportBody(tool));
+        stubHostState(hostHome);
+
+        const result = await probeCliReadiness({
+          tool,
+          executable,
+          authChannel: 'provider-dependent',
+          probe: oracleContract(tool),
+          classifyVersion: () => 'compatible',
+        });
+
+        expect(result).toMatchObject({ auth: 'authenticated', status: 'ready' });
+        expect(result.providerAuth).toEqual(ORACLE_TOOLS[tool].facts);
+      });
+    },
+  );
+
+  it.each(['opencode', 'kilo-code'] as const)(
+    'treats a clean zero-provider %s listing as a truthful negative over bridged presence',
+    async (tool) => {
+      await withTempDir(`readiness-${tool}-oracle-zero`, async (hostHome) => {
+        await seedOracleState(hostHome, tool);
+        const executable = await oracleShim(
+          hostHome,
+          tool,
+          "printf '%s\\n' '┌  Credentials' '│' '└  0 credentials'\nexit 0",
+        );
+        stubHostState(hostHome);
+
+        const result = await probeCliReadiness({
+          tool,
+          executable,
+          authChannel: 'provider-dependent',
+          probe: oracleContract(tool),
+          classifyVersion: () => 'compatible',
+        });
+
+        expect(result).toMatchObject({ auth: 'unauthenticated', status: 'unauthenticated' });
+        expect(result.providerAuth).toBeUndefined();
+      });
+    },
+  );
+
+  it.each(['opencode', 'kilo-code'] as const)(
+    'falls back to bridged-state presence when the %s oracle cannot determine',
+    async (tool) => {
+      await withTempDir(`readiness-${tool}-oracle-fallback`, async (hostHome) => {
+        await seedOracleState(hostHome, tool);
+        const executable = await oracleShim(hostHome, tool, "echo 'oracle exploded' >&2\nexit 1");
+        stubHostState(hostHome);
+
+        const result = await probeCliReadiness({
+          tool,
+          executable,
+          authChannel: 'provider-dependent',
+          probe: oracleContract(tool),
+          classifyVersion: () => 'compatible',
+        });
+
+        expect(result).toMatchObject({ auth: 'authenticated', status: 'ready' });
+        expect(result.providerAuth).toBeUndefined();
+      });
+    },
+  );
+
+  it.each(['opencode', 'kilo-code'] as const)(
+    'keeps %s unauthenticated when no allowlisted state reaches the sandboxed oracle',
+    async (tool) => {
+      await withTempDir(`readiness-${tool}-oracle-absent`, async (hostHome) => {
+        const executable = await oracleShim(hostHome, tool, reportBody(tool));
+        stubHostState(hostHome);
+
+        const result = await probeCliReadiness({
+          tool,
+          executable,
+          authChannel: 'provider-dependent',
+          probe: oracleContract(tool),
+          classifyVersion: () => 'compatible',
+        });
+
+        expect(result).toMatchObject({ auth: 'unauthenticated', status: 'unauthenticated' });
+      });
+    },
+  );
+
+  it('a verified oracle listing never admits compiler capability without exact conformance', async () => {
+    await withTempDir('readiness-oracle-capability', async (hostHome) => {
+      await seedOracleState(hostHome, 'opencode');
+      const executable = await oracleShim(hostHome, 'opencode', reportBody('opencode'));
       stubHostState(hostHome);
 
       const result = await probeCliReadiness({
-        tool,
+        tool: 'opencode',
         executable,
         authChannel: 'provider-dependent',
-        probe: oracleContract(tool),
+        probe: oracleContract('opencode'),
         classifyVersion: () => 'compatible',
       });
 
       expect(result).toMatchObject({ auth: 'authenticated', status: 'ready' });
-      expect(result.providerAuth).toEqual(ORACLE_TOOLS[tool].facts);
-    });
-  });
-
-  it.each([
-    'opencode',
-    'kilo-code',
-  ] as const)('treats a clean zero-provider %s listing as a truthful negative over bridged presence', async (tool) => {
-    await withTempDir(`readiness-${tool}-oracle-zero`, async (hostHome) => {
-      await seedOracleState(hostHome, tool);
-      const executable = await oracleShim(
-        hostHome,
-        tool,
-        "printf '%s\\n' '┌  Credentials' '│' '└  0 credentials'\nexit 0",
+      const admission = admitCompilerCapability(
+        capabilityTuple('opencode', { conformance: unverifiedConformanceProof() }),
       );
-      stubHostState(hostHome);
-
-      const result = await probeCliReadiness({
-        tool,
-        executable,
-        authChannel: 'provider-dependent',
-        probe: oracleContract(tool),
-        classifyVersion: () => 'compatible',
-      });
-
-      expect(result).toMatchObject({ auth: 'unauthenticated', status: 'unauthenticated' });
-      expect(result.providerAuth).toBeUndefined();
-    });
-  });
-
-  it.each([
-    'opencode',
-    'kilo-code',
-  ] as const)('falls back to bridged-state presence when the %s oracle cannot determine', async (tool) => {
-    await withTempDir(`readiness-${tool}-oracle-fallback`, async (hostHome) => {
-      await seedOracleState(hostHome, tool);
-      const executable = await oracleShim(hostHome, tool, "echo 'oracle exploded' >&2\nexit 1");
-      stubHostState(hostHome);
-
-      const result = await probeCliReadiness({
-        tool,
-        executable,
-        authChannel: 'provider-dependent',
-        probe: oracleContract(tool),
-        classifyVersion: () => 'compatible',
-      });
-
-      expect(result).toMatchObject({ auth: 'authenticated', status: 'ready' });
-      expect(result.providerAuth).toBeUndefined();
-    });
-  });
-
-  it.each([
-    'opencode',
-    'kilo-code',
-  ] as const)('keeps %s unauthenticated when no allowlisted state reaches the sandboxed oracle', async (tool) => {
-    await withTempDir(`readiness-${tool}-oracle-absent`, async (hostHome) => {
-      const executable = await oracleShim(hostHome, tool, reportBody(tool));
-      stubHostState(hostHome);
-
-      const result = await probeCliReadiness({
-        tool,
-        executable,
-        authChannel: 'provider-dependent',
-        probe: oracleContract(tool),
-        classifyVersion: () => 'compatible',
-      });
-
-      expect(result).toMatchObject({ auth: 'unauthenticated', status: 'unauthenticated' });
+      expect(admission.kind).toBe('refused');
+      if (admission.kind === 'refused') expect(admission.missing).toContain('conformance');
     });
   });
 });

@@ -6,7 +6,7 @@ import type { PlannerCallbacksContext } from '../types.js';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE, sessionDir } from '../../../core/paths.js';
 import { buildRegeneratePrompt } from '../../spec/prompts/plan.js';
-import { createBusTextHandler, publishPlannerStatus, publishPlanApproved } from '../events.js';
+import { createBusTextHandler, publishPlannerStatus } from '../events.js';
 import { writeAndPublishArtifact } from '../artifact-write.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
@@ -17,11 +17,12 @@ import {
   releaseQueueMessagesForPrompt,
 } from '../queue/drain.js';
 import { formatDrainedMessages } from '../queue/prompt.js';
-import { runBriefsApprovalLoop } from './briefs-approval-loop.js';
 import { regenerateTasks, regenerateTasksIfNeeded, regeneratePlanAndTasks } from './regen.js';
 import { handlePlanningFailure } from './failure.js';
 import { runBriefQuality } from './brief-quality-run.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
+import type { PhaseRecoveryBinding } from '../run/phases.js';
+import { parkedResult } from './brief-quality-preparation.js';
 
 type RewindPending = NonNullable<PlanningPhaseOptions['rewindPending']>;
 
@@ -32,8 +33,9 @@ async function finishPlanAndBriefsApproval(args: {
   tasks: Task[];
   skipPlanApproval: boolean;
   metadata: SpecMetadata;
+  recovery: PhaseRecoveryBinding;
 }): Promise<PlanningPhaseResult> {
-  const { wctx, planner, tasks, skipPlanApproval, metadata } = args;
+  const { wctx, planner, tasks, skipPlanApproval, metadata, recovery } = args;
   const { projectDir, sessionId, config, callbacks } = wctx;
   const signal = wctx.signal;
   let state = args.state;
@@ -60,7 +62,7 @@ async function finishPlanAndBriefsApproval(args: {
     });
     state = planLoop.state;
     if (planLoop.rejected || planLoop.aborted) {
-      return { state, tasks: [], cancelled: true, failed: false };
+      return { disposition: 'terminal', state, outcome: 'rejected' };
     }
     const regen = await regenerateTasksIfNeeded({
       regenerated: planLoop.regenerated,
@@ -84,38 +86,15 @@ async function finishPlanAndBriefsApproval(args: {
     state,
     planner,
     wctx,
+    recovery,
   });
   if (!briefQuality.ok) return briefQuality.result;
   state = briefQuality.state;
   finalTasks = briefQuality.tasks;
 
-  const briefsLoop = await runBriefsApprovalLoop({
-    tasks: finalTasks,
-    qualityValidatedTasks: finalTasks,
-    ...(wctx.modelCache !== undefined && { modelCache: wctx.modelCache }),
-    ...(wctx.detectedContextLength !== undefined && {
-      detectedContextLength: wctx.detectedContextLength,
-    }),
-    planner,
-    projectDir,
-    sessionId,
-    callbacks,
-    bus: wctx.bus,
-    state,
-    config,
-    metadata,
-    signal,
-    sinks: wctx.sinks,
-  });
-  state = briefsLoop.state;
-  finalTasks = briefsLoop.tasks;
-  if (briefsLoop.failed) return { state, tasks: [], cancelled: true, failed: true };
-  if (briefsLoop.rejected || briefsLoop.aborted) {
-    return { state, tasks: [], cancelled: true, failed: false };
-  }
-
-  publishPlanApproved(state, wctx.bus);
-  return { state, tasks: finalTasks, cancelled: false, failed: false };
+  // Brief approval belongs to the owner-level phase runner. The producer only
+  // prepares and admits the quality-checked Briefs, then returns to it.
+  return parkedResult({ recovery, sessionId, state: { ...state, tasks: finalTasks } });
 }
 
 async function regenerateRewoundArtifact(args: {
@@ -164,8 +143,17 @@ export async function handleRewindSpec(args: {
   metadata: SpecMetadata;
   skillsContext: string | undefined;
   state: WorkflowState;
+  recovery: PhaseRecoveryBinding;
 }): Promise<PlanningPhaseResult> {
-  const { opts, rewindPending, skipSpecApproval, skipPlanApproval, metadata, skillsContext } = args;
+  const {
+    opts,
+    rewindPending,
+    skipSpecApproval,
+    skipPlanApproval,
+    metadata,
+    skillsContext,
+    recovery,
+  } = args;
   const { wctx, planner } = opts;
   const { projectDir, sessionId, config, callbacks } = wctx;
   const signal = wctx.signal;
@@ -234,7 +222,7 @@ export async function handleRewindSpec(args: {
     });
     state = specLoop.state;
     if (specLoop.rejected || specLoop.aborted) {
-      return { state, tasks: [], cancelled: true, failed: false };
+      return { disposition: 'terminal', state, outcome: 'rejected' };
     }
   }
 
@@ -255,7 +243,15 @@ export async function handleRewindSpec(args: {
   });
   state = planAndTasksState;
 
-  return finishPlanAndBriefsApproval({ wctx, planner, state, tasks, skipPlanApproval, metadata });
+  return finishPlanAndBriefsApproval({
+    wctx,
+    planner,
+    state,
+    tasks,
+    skipPlanApproval,
+    metadata,
+    recovery,
+  });
 }
 
 export async function handleRewindPlan(args: {
@@ -264,8 +260,9 @@ export async function handleRewindPlan(args: {
   skipPlanApproval: boolean;
   metadata: SpecMetadata;
   state: WorkflowState;
+  recovery: PhaseRecoveryBinding;
 }): Promise<PlanningPhaseResult> {
-  const { opts, rewindPending, skipPlanApproval, metadata } = args;
+  const { opts, rewindPending, skipPlanApproval, metadata, recovery } = args;
   const { wctx, planner } = opts;
   const { projectDir, sessionId, config, callbacks } = wctx;
   const signal = wctx.signal;
@@ -332,5 +329,6 @@ export async function handleRewindPlan(args: {
     tasks: rewindTasks,
     skipPlanApproval,
     metadata,
+    recovery,
   });
 }

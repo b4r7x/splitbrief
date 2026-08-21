@@ -1264,6 +1264,93 @@ splitbrief start --rpc --allow-hooks "add auth audit logging"
 
 `brief_review` commands are scoped to a pending Task Brief prompt. `save_draft` re-reads `tasks.md`, parses the Task Briefs, runs brief quality checks, persists the updated `BRIEFS_READY` and brief quality state, and returns `ack` / `status` responses marked `saved` with the original correlation ids. It does not approve, reject, or resolve the prompt. `--rpc` is mutually exclusive with `--json`. Workflow events are wrapped in `event` responses; command failures use `error` responses and do not crash the stream.
 
+### 36a. Recover a blocked Brief from JSON/RPC
+
+**When:** a headless run reports a Brief contract problem and you need to inspect or resolve it
+without inventing a planner comment.
+
+For an owner-facing RPC resume, use `splitbrief resume --rpc`.
+
+**Inspect first:**
+
+```json
+{
+  "version": 1,
+  "sessionId": "session-1",
+  "epochId": "epoch-1",
+  "action": "status"
+}
+```
+
+Status is observational: it reads the owner's current projection and makes no recovery/provider
+call. A public result is versioned and machine-readable, for example:
+
+```json
+{ "type": "status", "data": { "status": "UNRESOLVED", "operationId": "operation-1" } }
+{ "type": "error", "code": "brief_contract_blocked", "status": "blocked", "operationId": null }
+```
+
+**Retry once, deliberately:**
+
+Forward this owner-facing command only when the projection advertises `retry`:
+
+```json
+{
+  "version": 1,
+  "sessionId": "session-1",
+  "epochId": "epoch-1",
+  "operationId": "operation-1",
+  "base": { "revision": 1, "hash": "brief-hash", "path": "tasks.md" },
+  "intentHash": "retry-intent-hash",
+  "action": "retry",
+  "diagnosticFingerprint": "diagnostic-hash",
+  "frozenInputIds": []
+}
+```
+
+The retry payload has no fabricated comment or revision request. The owner revalidates the epoch,
+base evidence, allowed action, and operation identity; a duplicate operation ID is replayed or
+refused rather than dispatched a second time. A `brief_recovery_result` record reports whether the
+attempt was accepted, is in flight, became ready, or was blocked. A blocked headless outcome exits
+non-zero with its typed code (`brief_contract_blocked`, `brief_provider_error`, or
+`brief_budget_exhausted`).
+
+**Resolve terminal outcomes:**
+
+| Projection | Meaning | Next action |
+| --- | --- | --- |
+| `blocked` | quality, provider, budget, or storage evidence prevents approval | `retry` when advertised, edit, or `reject` |
+| `UNRESOLVED` | a provider dispatch may have happened; replay is unsafe | explicit `resolve-unresolved` with `rebind` or `abandon`, then edit/reject |
+| `rejected` | the Brief epoch is closed by user intent | start a new epoch; do not approve or retry the old one |
+| `ready` | the current Brief/report pair passed the contract gate | approve or edit |
+
+**Attach or reconnect:**
+
+```bash
+splitbrief start --detach "rewrite the billing pipeline"
+splitbrief attach <session-id> --project .
+splitbrief status --project .
+```
+
+`attach` and reconnect replay the live owner's projection. `status`, attach, and reconnect are
+observational and perform zero recovery/provider calls and zero local recovery-state writes. Retry,
+edit, reject, approve, and unresolved resolution are forwarded to the live owner; if that owner is
+gone, the normal fenced takeover path must complete before state is hydrated.
+The UI keeps this projection in `src/stores/workflow/review.ts`; that store owns display state only,
+not recovery authority, receipts, persistence, budget, or provider calls.
+
+**Layout check:**
+
+The composer/input is always full width (`x = 0`, `width = cols`) and remains outside the scrollable
+body. The sidebar renders only when `cols > 120`; at `121` the body and the sidebar end on the same
+bottom row, and at `120`, `119`, `80`, `50`, and `40` the sidebar and gap disappear and the body
+reaches the content bottom on its own. The body height is passed once to the conversation
+or review viewport, so status/help rows cannot be clipped into the scroll range or subtract a
+second row.
+
+**See also:** [docs/STORES-AND-UI.md](./STORES-AND-UI.md) §Brief recovery and whole-screen geometry,
+[docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md), recipe 32.
+
 ---
 
 ### 37. Parse cost in CI

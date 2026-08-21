@@ -2,6 +2,10 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { normalizeCustomCommand } from '../../core/config/custom-commands.js';
+import {
+  createTaskCompilationAttemptId,
+  TaskCompilationSemanticIdSchema,
+} from '../../core/schemas/task-compilation.js';
 import { beginDeclaredArtifactReview } from '../orchestrator/approval/planner-artifact.js';
 import { createStagedProject } from '../orchestrator/approval/staged-project.js';
 import {
@@ -123,6 +127,11 @@ describe('configured direct planner terminal cleanup', () => {
           });
           return {
             reviewAfterChild: () => prepared.reviewAfterChild(),
+            readWithReceiptAfterChild: (readInput) => prepared.readWithReceiptAfterChild(readInput),
+            get receipt() {
+              return prepared.receipt;
+            },
+            getReceipt: () => prepared.getReceipt(),
             dispose: async () => {
               leaseDisposeCalls += 1;
               await prepared.dispose();
@@ -189,56 +198,57 @@ describe('configured direct planner terminal cleanup', () => {
     {
       name: 'nonzero',
       script:
-        "require('node:fs').writeFileSync('.splitbrief-runner/output/result', 'never promote');process.exit(17);",
+        "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'never promote');process.exit(17);",
     },
     {
       name: 'missing-result',
-      script: "require('node:fs').unlinkSync('.splitbrief-runner/output/result');",
+      script: "require('node:fs').unlinkSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH);",
     },
     {
       name: 'extra-stage-write',
       script:
-        "require('node:fs').writeFileSync('.splitbrief-runner/output/result', 'declared');require('node:fs').writeFileSync('extra-stage-write', 'reject');",
+        "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'declared');require('node:fs').writeFileSync('extra-stage-write', 'reject');",
     },
     {
       name: 'idle-timeout',
       script:
-        "require('node:fs').writeFileSync('.splitbrief-runner/output/result', 'would be valid');setInterval(() => {}, 1_000);",
+        "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'would be valid');setInterval(() => {}, 1_000);",
       runnerOptions: { idleWarnMs: 10, idleKillMs: 20 },
     },
     {
       name: 'output-limit',
       script:
-        "require('node:fs').writeFileSync('.splitbrief-runner/output/result', 'would be valid');process.stdout.write('x'.repeat(1_310_721));",
+        "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'would be valid');process.stdout.write('x'.repeat(1_310_721));",
     },
     {
       name: 'parser-failure',
       script:
-        "require('node:fs').writeFileSync('.splitbrief-runner/output/result', 'would be valid');process.stdout.write(JSON.stringify({ type: 'result', is_error: true }) + '\\n');",
+        "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'would be valid');process.stdout.write(JSON.stringify({ type: 'result', is_error: true }) + '\\n');",
       runnerOptions: { outputFormat: 'stream-json' as const },
     },
     {
       name: 'invalid-utf8',
       script:
-        "require('node:fs').writeFileSync('.splitbrief-runner/output/result', Buffer.from([0xc3, 0x28]));",
+        "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, Buffer.from([0xc3, 0x28]));",
     },
     {
       name: 'declared-secret',
       script:
-        "require('node:fs').writeFileSync('.splitbrief-runner/output/result', process.env.DIRECT_TERMINAL_SECRET);",
+        "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, process.env.DIRECT_TERMINAL_SECRET);",
       runnerOptions: { env: ['DIRECT_TERMINAL_SECRET'] },
       sourceEnv: { DIRECT_TERMINAL_SECRET: terminalSecret },
     },
   ] as const;
 
-  it.each(
-    terminalFailureRows,
-  )('leaves no approval, promotion, candidate, lease, or stage behind after $name', async (row) => {
-    const observed = await expectTerminalFailure(row);
-    expect(observed.approvalRequests).toBe(0);
-    expect(observed.output).toEqual([]);
-    expect(JSON.stringify(observed.failure)).not.toContain(terminalSecret);
-  });
+  it.each(terminalFailureRows)(
+    'leaves no approval, promotion, candidate, lease, or stage behind after $name',
+    async (row) => {
+      const observed = await expectTerminalFailure(row);
+      expect(observed.approvalRequests).toBe(0);
+      expect(observed.output).toEqual([]);
+      expect(JSON.stringify(observed.failure)).not.toContain(terminalSecret);
+    },
+  );
 
   it('cleans the direct lease and stage when the caller aborts after child start', async () => {
     const observed = await expectTerminalFailure({
@@ -256,7 +266,7 @@ describe('configured direct planner terminal cleanup', () => {
     const observed = await expectTerminalFailure({
       name: 'approval-rejected',
       script:
-        "require('node:fs').writeFileSync('.splitbrief-runner/output/result', 'reviewed but rejected');",
+        "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'reviewed but rejected');",
       onApprovalNeeded: async () => {
         approvalRequests += 1;
         return { approved: false };
@@ -272,6 +282,8 @@ describe('configured direct planner terminal cleanup', () => {
   it('permits lease and stage cleanup after a real child exceeds the hard deadline', async () => {
     const { projectDir } = testProject('configured-direct-terminal-hard-timeout');
     const stage = await createStagedProject(projectDir);
+    const attemptId = createTaskCompilationAttemptId();
+    const relativePath = `.splitbrief-runner/output/${attemptId}/result`;
     let approvalRequests = 0;
     const review = await beginDeclaredArtifactReview({
       stagedProjectDir: stage.projectDir,
@@ -279,6 +291,22 @@ describe('configured direct planner terminal cleanup', () => {
       sessionId: 'planner-adapter-session',
       callId: 'hard-timeout',
       declaredRedactionValues: [],
+      provenance: {
+        semanticId: TaskCompilationSemanticIdSchema.parse('terminal-timeout-test'),
+        programId: null,
+        batchId: null,
+        attemptId,
+        transport: {
+          kind: 'declared-file',
+          lease: {
+            leaseId: attemptId,
+            attemptId,
+            relativePath,
+          },
+        },
+        maxBytes: 96 * 1_024,
+        relativePath,
+      },
       onApprovalNeeded: async () => {
         approvalRequests += 1;
         return { approved: true };
@@ -293,7 +321,7 @@ describe('configured direct planner terminal cleanup', () => {
             terminalRunner(
               'hard-timeout',
               [
-                "require('node:fs').writeFileSync('.splitbrief-runner/output/result', 'would be valid');",
+                "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'would be valid');",
                 'setInterval(() => {}, 1_000);',
               ].join(''),
             ),
@@ -301,7 +329,8 @@ describe('configured direct planner terminal cleanup', () => {
           prompt: 'review this',
           authorizationProjectDir: projectDir,
           cwd: stage.projectDir,
-          sourceEnv: {},
+          sourceEnv: { SPLITBRIEF_DECLARED_ARTIFACT_PATH: relativePath },
+          preserveEnvironmentKeys: ['SPLITBRIEF_DECLARED_ARTIFACT_PATH'],
         },
         undefined,
         { hardDeadlineMs: 50 },

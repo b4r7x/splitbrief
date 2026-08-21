@@ -1,14 +1,11 @@
-import { loadState } from '../../../core/state/persistence.js';
+import { loadStateForResume } from '../../../core/state/persistence.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import { RecoveryActionSchema } from '../../../core/schemas/enums.js';
 import { projectIpcRecoveryIssue } from '../../../core/schemas/recovery/ipc.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import { applyRecoveryAction } from '../../orchestrator/recovery/actions.js';
-import {
-  finalizeRecoveryResult,
-  loadPendingRecoveryState,
-} from '../../orchestrator/recovery/driver.js';
+import { finalizeRecoveryResult } from '../../orchestrator/recovery/driver.js';
 import { publishRecoveryPrompted } from '../../orchestrator/events.js';
 import { buildSummary } from '../../orchestrator/summary/build.js';
 import { runPricingIdentity } from '../../../core/providers/pricing-identity.js';
@@ -19,13 +16,92 @@ import { assertPromptResponse } from './prompts.js';
 import type { IpcServer } from '../server.js';
 import type { IpcServerAttachment } from '../server-args.js';
 import type { PreparedExecution } from '../../runners/prepared-execution.js';
+import type { ResumeLoadAuthority, StateAuthorityReceipt } from '../../../core/state/types.js';
+import { error } from '../../../utils/error.js';
 
 type PreparedConfig = PreparedExecution['config'];
 
 export type WorkflowLoopContext = {
   prepared: PreparedExecution;
   attachments?: IpcServerAttachment[] | undefined;
+  /** The usable receipt held by the process hosting the workflow owner. */
+  authority?: StateAuthorityReceipt | undefined;
+  /**
+   * A receipt-bearing loader supplied by startup when it already knows whether a v3
+   * promotion occurred. Keeping this as the full loader authority avoids making the
+   * workflow loop infer migration state from a raw snapshot.
+   */
+  resumeAuthority?: Extract<ResumeLoadAuthority, { kind: 'fenced' }> | undefined;
+  /**
+   * Attached clients are observers. They receive the owner's validated v4 projection
+   * and must not hydrate, migrate, or write the session locally.
+   */
+  observerProjection?: WorkflowState | undefined;
 };
+
+export type FencedWorkflowLoopAuthority = Extract<ResumeLoadAuthority, { kind: 'fenced' }>;
+
+/**
+ * Resolve the authority passed through the IPC hand-off into the resume seam's
+ * canonical fenced form. A bare receipt is accepted for callers that do not need
+ * to report a v3 promotion; startup may pass the complete form when it does.
+ */
+export function workflowLoopResumeAuthority(
+  ctx: WorkflowLoopContext,
+): FencedWorkflowLoopAuthority | undefined {
+  if (ctx.resumeAuthority !== undefined) return ctx.resumeAuthority;
+  if (ctx.authority === undefined) return undefined;
+  return {
+    kind: 'fenced',
+    receipt: ctx.authority,
+    promotedFromVersion: null,
+  };
+}
+
+function invalidResumeError(
+  ref: PreparedExecution['session']['ref'],
+  result: Extract<ReturnType<typeof loadStateForResume>, { kind: 'invalid' }>,
+): Error {
+  return error(
+    'workflow-state-invalid',
+    `Cannot resume IPC workflow ${ref.sessionId}: ${result.code} state (${result.message}).`,
+  );
+}
+
+/**
+ * Hydrate only on the owner side. The observer branch deliberately returns its
+ * supplied projection and never invokes the persistence seam.
+ */
+export function loadOwnerWorkflowState(ctx: WorkflowLoopContext): WorkflowState | undefined {
+  if (ctx.observerProjection !== undefined) return ctx.observerProjection;
+  const authority = workflowLoopResumeAuthority(ctx);
+  if (authority === undefined) return undefined;
+
+  const result = loadStateForResume({
+    ref: ctx.prepared.session.ref,
+    authority,
+  });
+  if (result.kind === 'invalid') {
+    throw invalidResumeError(ctx.prepared.session.ref, result);
+  }
+  return result.kind === 'loaded' ? result.state : undefined;
+}
+
+function pendingRecoveryState(
+  ctx: WorkflowLoopContext,
+  fallback: WorkflowState,
+):
+  | { pending: true; state: WorkflowState; issue: NonNullable<WorkflowState['pendingRecovery']> }
+  | {
+      pending: false;
+      state: WorkflowState;
+    } {
+  const state = loadOwnerWorkflowState(ctx) ?? fallback;
+  if (state.pendingRecovery) {
+    return { pending: true, state, issue: state.pendingRecovery };
+  }
+  return { pending: false, state };
+}
 
 type DetachedRecoveryResolution = {
   shouldRun: boolean;
@@ -92,12 +168,14 @@ export async function resolveDetachedPendingRecovery(
   config: PreparedConfig,
   state: WorkflowState,
 ): Promise<DetachedRecoveryResolution> {
-  const ref = ctx.prepared.session.ref;
-  const pending = loadPendingRecoveryState(ref, state);
+  if (ctx.observerProjection !== undefined) {
+    return { shouldRun: false, state: ctx.observerProjection };
+  }
+  const pending = pendingRecoveryState(ctx, state);
   if (!pending.pending) return { shouldRun: true, state: pending.state };
 
   const applyAction = (action: RecoveryAction) => {
-    const current = loadState(ref) ?? pending.state;
+    const current = loadOwnerWorkflowState(ctx) ?? pending.state;
     return applyDetachedRecoveryAction(ctx, bus, config, current, action);
   };
 

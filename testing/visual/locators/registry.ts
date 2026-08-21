@@ -1,15 +1,21 @@
-import { getWorkflowSidebarWidth } from '../../../src/features/workflow/layout/rect.js';
+import {
+  getWorkflowSidebarWidth,
+  WORKFLOW_SIDEBAR_GAP,
+} from '../../../src/features/workflow/layout/rect.js';
 import { getHomeLayout } from '../../../src/features/home/layout.js';
 import { getLogoHeight } from '../../../src/features/home/logo.js';
 import { getResponsivePanelWidth } from '../../../src/utils/terminal-width.js';
+import { listVisualScenarios } from '../catalog.js';
+import { briefRecoveryFixtureProjections } from '../fixtures/workflow/brief-recovery-projections.js';
 import { workflowFixtureProjections } from '../fixtures/workflow/projections.js';
 import { CellRectSchema, type CellRect } from '../contracts/geometry.js';
+import { resolveMarkerRect } from './markers.js';
 import type { LocatorContext, LocatorDefinition } from './types.js';
 
 const DEFAULT_INPUT_ROWS = 3;
 const PAINTED_WORKFLOW_HEADER_ROWS = 2;
 
-export const LOCATOR_REGISTRY: Readonly<Record<string, LocatorDefinition>> = Object.freeze({
+const BASE_LOCATOR_REGISTRY: Record<string, LocatorDefinition> = {
   'home:header': {
     kind: 'layout',
     description: 'Home logo and runner summary bounds',
@@ -96,7 +102,68 @@ export const LOCATOR_REGISTRY: Readonly<Record<string, LocatorDefinition>> = Obj
     description: 'Active overlay terminal bounds',
     resolve: resolveFullFrame,
   },
-});
+};
+
+const RECOVERY_LOCATOR_DEFINITIONS: Readonly<Record<string, LocatorDefinition>> = {
+  'recovery-public-status': {
+    kind: 'layout',
+    description: 'Workflow status byline outside the recovery panel',
+    resolve: resolveWorkflowStatusByline,
+  },
+  'recovery-status': {
+    kind: 'layout',
+    description: 'Recovery contract status row',
+    resolve: resolveRecoveryStatusRow,
+  },
+  'recovery-evidence': {
+    kind: 'layout',
+    description: 'Recovery evidence revision row',
+    resolve: resolveRecoveryEvidenceRow,
+  },
+  'recovery-cause': {
+    kind: 'layout',
+    description: 'Recovery cause row',
+    resolve: resolveRecoveryCauseRow,
+  },
+  'recovery-actions': {
+    kind: 'layout',
+    description: 'Recovery action row',
+    resolve: resolveRecoveryActionRow,
+  },
+  'recovery-composer': {
+    kind: 'layout',
+    description: 'Full-width recovery composer bounds',
+    resolve: resolveWorkflowComposer,
+  },
+  'recovery-body': {
+    kind: 'layout',
+    description: 'Recovery workflow body bounds',
+    resolve: resolveWorkflowTranscript,
+  },
+  'recovery-sidebar': {
+    kind: 'layout',
+    description: 'Recovery workflow sidebar bounds',
+    resolve: resolveWorkflowSidebar,
+  },
+};
+
+for (const scenario of listVisualScenarios()) {
+  if (scenario.surface.kind !== 'screen' || scenario.surface.screen !== 'workflow') continue;
+  if (!scenario.id.startsWith('workflow-brief-recovery-')) continue;
+
+  for (const element of scenario.elements) {
+    const key = `workflow:${element.id}`;
+    if (BASE_LOCATOR_REGISTRY[key] !== undefined) continue;
+    const definition = RECOVERY_LOCATOR_DEFINITIONS[element.id];
+    if (definition === undefined) {
+      throw new Error(`Missing recovery locator definition for ${element.id}`);
+    }
+    BASE_LOCATOR_REGISTRY[key] = definition;
+  }
+}
+
+export const LOCATOR_REGISTRY: Readonly<Record<string, LocatorDefinition>> =
+  Object.freeze(BASE_LOCATOR_REGISTRY);
 
 function resolveHomeHeader(context: LocatorContext): CellRect {
   const { cols, rows } = context.grid.identity.provenance.viewport;
@@ -121,16 +188,20 @@ function resolveHomeComposer(context: LocatorContext): CellRect {
   });
 }
 
-function resolveWorkflowSidebar(context: LocatorContext): CellRect {
-  const { cols, rows } = context.grid.identity.provenance.viewport;
-  const projection = workflowFixtureProjections.get(context.scenario.id);
+function sidebarWidthFor(context: LocatorContext): number {
+  const { cols } = context.grid.identity.provenance.viewport;
+  const projection =
+    workflowFixtureProjections.get(context.scenario.id) ??
+    briefRecoveryFixtureProjections.get(context.scenario.id);
   if (projection === undefined) {
     throw new Error(`Missing workflow fixture projection ${context.scenario.id}`);
   }
-  const width = getWorkflowSidebarWidth({
-    cols,
-    sidebarVisible: projection.sidebarVisible,
-  });
+  return getWorkflowSidebarWidth({ cols, sidebarVisible: projection.sidebarVisible });
+}
+
+function resolveWorkflowSidebar(context: LocatorContext): CellRect {
+  const { rows } = context.grid.identity.provenance.viewport;
+  const width = sidebarWidthFor(context);
   if (width === 0) return resolveWorkflowHeader(context);
   return CellRectSchema.parse({
     x: 0,
@@ -147,11 +218,12 @@ function resolveWorkflowHeader(context: LocatorContext): CellRect {
 
 function resolveWorkflowTranscript(context: LocatorContext): CellRect {
   const { cols, rows } = context.grid.identity.provenance.viewport;
+  const baseHeight = rows - PAINTED_WORKFLOW_HEADER_ROWS - DEFAULT_INPUT_ROWS - 3;
   return CellRectSchema.parse({
     x: 0,
     y: PAINTED_WORKFLOW_HEADER_ROWS,
     width: cols,
-    height: rows - PAINTED_WORKFLOW_HEADER_ROWS - DEFAULT_INPUT_ROWS - 3,
+    height: Math.max(0, baseHeight),
   });
 }
 
@@ -196,4 +268,57 @@ function resolveSummaryDetails(context: LocatorContext): CellRect {
 
 function resolveFullFrame(context: LocatorContext): CellRect {
   return CellRectSchema.parse(context.grid.rect);
+}
+
+// The evidence spine paints six consecutive content rows — status, evidence, cause,
+// consequence, action, supplemental — so every spine element resolves to one row
+// anchored on the cause row's `BECAUSE` label rather than to a shared band.
+const RECOVERY_CAUSE_LABEL = 'BECAUSE';
+const RECOVERY_ACTION_LABEL = 'NOW ';
+const RECOVERY_STATUS_ROWS_ABOVE_CAUSE = 2;
+const RECOVERY_EVIDENCE_ROWS_ABOVE_CAUSE = 1;
+
+function resolveRecoveryContent(context: LocatorContext): CellRect {
+  const { cols } = context.grid.identity.provenance.viewport;
+  const body = resolveWorkflowTranscript(context);
+  const sidebarWidth = sidebarWidthFor(context);
+  const x = sidebarWidth === 0 ? 0 : sidebarWidth + WORKFLOW_SIDEBAR_GAP;
+  return CellRectSchema.parse({ x, y: body.y, width: cols - x, height: body.height });
+}
+
+function resolveRecoveryRow(context: LocatorContext, label: string, rowsAbove: number): CellRect {
+  const content = resolveRecoveryContent(context);
+  const anchor = resolveMarkerRect({
+    grid: context.grid,
+    marker: label,
+    bounds: content,
+    selection: { kind: 'index', index: 0 },
+  });
+  return CellRectSchema.parse({
+    x: content.x,
+    y: anchor.y - rowsAbove,
+    width: content.width,
+    height: 1,
+  });
+}
+
+function resolveRecoveryStatusRow(context: LocatorContext): CellRect {
+  return resolveRecoveryRow(context, RECOVERY_CAUSE_LABEL, RECOVERY_STATUS_ROWS_ABOVE_CAUSE);
+}
+
+function resolveRecoveryEvidenceRow(context: LocatorContext): CellRect {
+  return resolveRecoveryRow(context, RECOVERY_CAUSE_LABEL, RECOVERY_EVIDENCE_ROWS_ABOVE_CAUSE);
+}
+
+function resolveRecoveryCauseRow(context: LocatorContext): CellRect {
+  return resolveRecoveryRow(context, RECOVERY_CAUSE_LABEL, 0);
+}
+
+function resolveRecoveryActionRow(context: LocatorContext): CellRect {
+  return resolveRecoveryRow(context, RECOVERY_ACTION_LABEL, 0);
+}
+
+function resolveWorkflowStatusByline(context: LocatorContext): CellRect {
+  const { cols, rows } = context.grid.identity.provenance.viewport;
+  return CellRectSchema.parse({ x: 0, y: rows - 1, width: cols, height: 1 });
 }

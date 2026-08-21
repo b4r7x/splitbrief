@@ -700,40 +700,41 @@ describe('runner picker semantics integration', () => {
     it.each([
       { branch: 'printable input', keys: ['codex'] },
       { branch: 'backspace', keys: ['codexz', BACKSPACE] },
-    ])('keeps the configured model when a $branch filter re-selects the configured tool', async ({
-      keys,
-    }) => {
-      await withTempDir('picker-filter-model', async (projectDir) => {
-        writeConfigYaml(projectDir, {
-          planner: { kind: 'cli', tool: 'codex', model: 'gpt-5.4' },
-        });
-        configStore.load(projectDir);
-        detectionStore.setDetection({
-          cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'codex')],
-          providers: [],
-        });
+    ])(
+      'keeps the configured model when a $branch filter re-selects the configured tool',
+      async ({ keys }) => {
+        await withTempDir('picker-filter-model', async (projectDir) => {
+          writeConfigYaml(projectDir, {
+            planner: { kind: 'cli', tool: 'codex', model: 'gpt-5.4' },
+          });
+          configStore.load(projectDir);
+          detectionStore.setDetection({
+            cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'codex')],
+            providers: [],
+          });
 
-        const ui = await renderPicker('planner');
-        for (const keystroke of keys) {
+          const ui = await renderPicker('planner');
+          for (const keystroke of keys) {
+            await flushEffects();
+            ui.stdin.write(keystroke);
+            await flushEffects();
+          }
+          expect(frameText(ui)).not.toContain('Claude Code');
           await flushEffects();
-          ui.stdin.write(keystroke);
+          ui.stdin.write(ENTER);
           await flushEffects();
-        }
-        expect(frameText(ui)).not.toContain('Claude Code');
-        await flushEffects();
-        ui.stdin.write(ENTER);
-        await flushEffects();
-        ui.stdin.write(ENTER);
-        await flushEffects();
-        ui.unmount();
+          ui.stdin.write(ENTER);
+          await flushEffects();
+          ui.unmount();
 
-        expect(loadConfig(projectDir).config.planner).toMatchObject({
-          kind: 'cli',
-          tool: 'codex',
-          model: 'gpt-5.4',
+          expect(loadConfig(projectDir).config.planner).toMatchObject({
+            kind: 'cli',
+            tool: 'codex',
+            model: 'gpt-5.4',
+          });
         });
-      });
-    });
+      },
+    );
   });
 
   describe('generic admitted descriptor rendering', () => {

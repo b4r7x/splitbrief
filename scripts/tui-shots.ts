@@ -7,6 +7,10 @@ import { getCurrentCommitSha } from '../src/lib/git/refs.js';
 import { listVisualScenarios, VISUAL_CATALOG_VERSION } from '../testing/visual/catalog.js';
 import { formatViewport } from '../testing/visual/contracts/geometry.js';
 import type { CaptureSelection } from '../testing/visual/contracts/selection.js';
+import {
+  TerminalProfileSchema,
+  type TerminalProfile,
+} from '../testing/visual/contracts/manifest-fields.js';
 import { DEFAULT_VISUAL_OUTPUT_ROOT } from '../testing/visual/artifacts/layout.js';
 import { captureGallery } from '../testing/visual/gallery/capture.js';
 import { resolveOutputRoot } from './tui-shots/output-root.js';
@@ -17,6 +21,7 @@ const CliOptionsSchema = z
     scenario: z.array(z.string()),
     viewport: z.array(z.string()),
     element: z.array(z.string()),
+    profile: z.array(z.string()),
     output: z.string().min(1),
     list: z.boolean(),
   })
@@ -68,24 +73,26 @@ export async function runTuiShots(
   try {
     const options = parseArguments(args, io);
     if (options === null) return 0;
+    const profile = selectProfile(options.profile);
     if (options.list) {
       printCatalog(io);
       return 0;
     }
 
     const cwd = resolve(dependencies.cwd ?? process.cwd());
-    const request = await createCaptureRequest(options, (value) =>
+    const request = await createCaptureRequest({ ...options, profile }, (value) =>
       resolveOutputRoot({ cwd, value }),
     );
+    const selection = stampProfile(request.selection, profile);
     const capture = dependencies.capture ?? captureWithGallery;
     const result = await capture({
       outputRoot: request.outputRoot,
       projectRoot: cwd,
       toolVersion: dependencies.toolVersion ?? getSplitbriefVersion(),
       gitRevision: await (dependencies.gitRevision ?? (() => readGitRevision(cwd)))(),
-      selection: request.selection,
+      selection,
     });
-    printSummary({ io, cwd, selection: request.selection, result });
+    printSummary({ io, cwd, selection, result });
     return result.failureCount === 0 ? 0 : 1;
   } catch (error) {
     if (error instanceof CommanderError) return error.exitCode;
@@ -107,6 +114,12 @@ function parseArguments(args: readonly string[], io: TuiShotsIo): CliOptions | n
       [],
     )
     .option('-e, --element <id>', 'named semantic crop to include (repeatable)', collect, [])
+    .option(
+      '-p, --profile <name>',
+      'terminal profile to capture (repeatable; one profile per run)',
+      collect,
+      [],
+    )
     .option(
       '-o, --output <path>',
       'artifact root beneath .test-artifacts/ui',
@@ -133,6 +146,28 @@ function parseArguments(args: readonly string[], io: TuiShotsIo): CliOptions | n
     throw error;
   }
   return CliOptionsSchema.parse(program.opts());
+}
+
+const TERMINAL_PROFILES = TerminalProfileSchema.options;
+
+function selectProfile(requested: readonly string[]): TerminalProfile {
+  const unique = [...new Set(requested)];
+  if (unique.length > 1) {
+    throw new Error(
+      `Terminal profile must be homogeneous; received: ${unique.join(', ')}. ` +
+        `Choose one of ${TERMINAL_PROFILES.join(', ')}.`,
+    );
+  }
+
+  const selected = unique[0] ?? TERMINAL_PROFILES[0];
+  const parsed = TerminalProfileSchema.safeParse(selected);
+  if (!parsed.success) {
+    throw new Error(
+      `Unknown terminal profile "${selected}". ` +
+        `Available profiles: ${TERMINAL_PROFILES.join(', ')}.`,
+    );
+  }
+  return parsed.data;
 }
 
 function printCatalog(io: TuiShotsIo): void {
@@ -177,6 +212,14 @@ async function captureWithGallery(options: TuiShotsCaptureOptions): Promise<TuiS
     warningCount: publication.manifest.warnings.length,
     failureCount: publication.manifest.failures.length,
   };
+}
+
+type ProfiledSelection = CaptureSelection & {
+  readonly profile: TerminalProfile;
+};
+
+function stampProfile(selection: CaptureSelection, profile: TerminalProfile): ProfiledSelection {
+  return { ...selection, profile };
 }
 
 async function readGitRevision(cwd: string): Promise<string | null> {

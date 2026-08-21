@@ -74,33 +74,32 @@ const acceptedScopeCases = [
 ] as const;
 
 describe('analyzeBriefDrift', () => {
-  it.each(acceptedScopeCases)('matches task attribution for $label paths', async ({
-    task,
-    changedFile,
-    accepted,
-  }) => {
-    await withTempDir('drift-scope-parity', async (projectDir) => {
-      createTestGitRepo(projectDir);
-      const target = join(projectDir, changedFile);
-      mkdirSync(dirname(target), { recursive: true });
-      writeFileSync(target, 'export const changed = true;\n');
-      const baseline = await captureChangedFilesBaseline(projectDir, []);
+  it.each(acceptedScopeCases)(
+    'matches task attribution for $label paths',
+    async ({ task, changedFile, accepted }) => {
+      await withTempDir('drift-scope-parity', async (projectDir) => {
+        createTestGitRepo(projectDir);
+        const target = join(projectDir, changedFile);
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, 'export const changed = true;\n');
+        const baseline = await captureChangedFilesBaseline(projectDir, []);
 
-      const attributed = await inferTaskAcceptedChangedFiles(projectDir, task, baseline.head);
-      const report = analyzeBriefDrift({
-        tasks: [task],
-        changedFiles: [changedFile],
-        diff: '',
-        preRunChangedFiles: [],
+        const attributed = await inferTaskAcceptedChangedFiles(projectDir, task, baseline.head);
+        const report = analyzeBriefDrift({
+          tasks: [task],
+          changedFiles: [changedFile],
+          diff: '',
+          preRunChangedFiles: [],
+        });
+        const reportedUntargeted = report.findings.some(
+          (finding) => finding.code === 'out_of_scope_file' && finding.file === changedFile,
+        );
+
+        expect(attributed.includes(changedFile)).toBe(accepted);
+        expect(reportedUntargeted).toBe(!accepted);
       });
-      const reportedUntargeted = report.findings.some(
-        (finding) => finding.code === 'out_of_scope_file' && finding.file === changedFile,
-      );
-
-      expect(attributed.includes(changedFile)).toBe(accepted);
-      expect(reportedUntargeted).toBe(!accepted);
-    });
-  });
+    },
+  );
 
   it('passes when only the exact task files changed', () => {
     const tasks = [

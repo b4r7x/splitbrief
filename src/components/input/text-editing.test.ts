@@ -175,9 +175,12 @@ describe('applyEditAction', () => {
     ['two-word wrap', 'abc defghijk', 12, 10, { value: 'abc defghijk', cursor: 4 }],
     ['long-word hard wrap', 'abcdefghijklmno', 15, 10, { value: 'abcdefghijklmno', cursor: 10 }],
     ['before wrap', 'abc defghijk', 3, 10, { value: 'abc defghijk', cursor: 0 }],
-  ] as const)('move-line-start lands on the word-wrap row start (%s)', (_l, value, cursor, columns, expected) => {
-    expect(edit('move-line-start', value, cursor, columns)).toEqual(expected);
-  });
+  ] as const)(
+    'move-line-start lands on the word-wrap row start (%s)',
+    (_l, value, cursor, columns, expected) => {
+      expect(edit('move-line-start', value, cursor, columns)).toEqual(expected);
+    },
+  );
 
   it('normalizes decomposed text before visual line deletion', () => {
     const nfd = 'abc defghijk'.normalize('NFD');

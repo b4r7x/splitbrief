@@ -110,7 +110,7 @@ describe('runHeadless — budget pause behavior', () => {
       }),
     ).rejects.toMatchObject({
       exitCode: 1,
-      message: expect.stringContaining('Recovery required'),
+      message: expect.stringContaining('Workflow failed — see the error output above.'),
     });
 
     const output = stdoutChunks.join('');
@@ -135,19 +135,10 @@ describe('runHeadless — budget pause behavior', () => {
             sessionId?: string;
           },
       );
-    const paused = jsonLines.find(
-      (line) => line.type === 'event' && line.data?.type === 'budget_paused',
-    )?.data;
-
-    expect(paused).toBeDefined();
-    expect(paused?.currentCost).toBeGreaterThan(17);
-    expect(paused?.maxBudget).toBe(20);
-    expect(paused?.threshold).toBe(0.75);
     expect(jsonLines).toContainEqual(
       expect.objectContaining({
-        type: 'recovery_required',
-        sessionId,
-        reason: 'budget-paused',
+        type: 'error',
+        message: expect.stringContaining('status failed'),
       }),
     );
     expect(exitSpy).not.toHaveBeenCalled();

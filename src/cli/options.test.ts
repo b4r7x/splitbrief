@@ -142,16 +142,13 @@ describe('runner selection help', () => {
 });
 
 describe('removed --auto flag', () => {
-  it.each([
-    'start',
-    'spec',
-    'resume',
-    'continue',
-    'last',
-  ])('rejects --auto on the %s command', async (command) => {
-    const { exitCode, stderr } = await runCommand([command, '--auto', 'add health endpoint']);
+  it.each(['start', 'spec', 'resume', 'continue', 'last'])(
+    'rejects --auto on the %s command',
+    async (command) => {
+      const { exitCode, stderr } = await runCommand([command, '--auto', 'add health endpoint']);
 
-    expect(exitCode).not.toBe(0);
-    expect(stderr).toMatch(/unknown option.*--auto/i);
-  });
+      expect(exitCode).not.toBe(0);
+      expect(stderr).toMatch(/unknown option.*--auto/i);
+    },
+  );
 });

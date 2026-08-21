@@ -949,35 +949,39 @@ describe('createRunIsolation', () => {
         writeFileSync(join(dir, 'node_modules', 'installed.txt'), 'dependency\n');
       },
     },
-  ])('removes the worktree it created when the run falls back over $label', {
-    timeout: 60_000,
-  }, async ({ prepare }) => {
-    const dir = createTempDir('isolation-fallback-cleanup');
-    try {
-      prepare(dir);
-      const retained: string[] = [];
-      const handle = createRunIsolation({
-        projectDir: dir,
-        sessionId: SESSION_ID,
-        strategy: 'worktree',
-        onFallback: () => {},
-        onRetained: (worktreeDir) => retained.push(worktreeDir),
-      });
+  ])(
+    'removes the worktree it created when the run falls back over $label',
+    {
+      timeout: 60_000,
+    },
+    async ({ prepare }) => {
+      const dir = createTempDir('isolation-fallback-cleanup');
+      try {
+        prepare(dir);
+        const retained: string[] = [];
+        const handle = createRunIsolation({
+          projectDir: dir,
+          sessionId: SESSION_ID,
+          strategy: 'worktree',
+          onFallback: () => {},
+          onRetained: (worktreeDir) => retained.push(worktreeDir),
+        });
 
-      const ws = await acquireDirect(handle);
-      expect(ws.projectDir).not.toBe(dir);
-      expect(existsSync(isolationWorktree(dir))).toBe(true);
+        const ws = await acquireDirect(handle);
+        expect(ws.projectDir).not.toBe(dir);
+        expect(existsSync(isolationWorktree(dir))).toBe(true);
 
-      await handle.dispose();
+        await handle.dispose();
 
-      expect(retained).toEqual([]);
-      expect(existsSync(isolationWorktree(dir))).toBe(false);
-      const branches = await createGitClient(dir).branch();
-      expect(branches.all.filter((branch) => branch.startsWith('splitbrief/'))).toEqual([]);
-    } finally {
-      cleanupTempDir(dir);
-    }
-  });
+        expect(retained).toEqual([]);
+        expect(existsSync(isolationWorktree(dir))).toBe(false);
+        const branches = await createGitClient(dir).branch();
+        expect(branches.all.filter((branch) => branch.startsWith('splitbrief/'))).toEqual([]);
+      } finally {
+        cleanupTempDir(dir);
+      }
+    },
+  );
 
   itUnix(
     'runs a project .bin executable by bare name from a worktree workspace',

@@ -1,4 +1,8 @@
 import type { Phase } from '../../../core/schemas/enums.js';
+import type {
+  BriefRecoveryProjectionV1,
+  RecoveryResultV1,
+} from '../../../core/schemas/brief-recovery.js';
 import {
   BriefReviewPromptKindSchema,
   type BriefReviewPromptKind,
@@ -22,6 +26,11 @@ type ApprovalGate = ReturnType<typeof createApprovalGate>;
 type MessageGate = ReturnType<typeof createGate<string>>;
 type RecoveryGate = ReturnType<typeof createGate<string>>;
 type ResponseWriter = ReturnType<typeof createResponseWriter>;
+
+export type RpcRecoveryStatus = Readonly<{
+  briefRecovery: BriefRecoveryProjectionV1 | null;
+  result: RecoveryResultV1 | null;
+}>;
 
 const rpcStatusError = {
   invalidArtifactApproval: () =>
@@ -101,6 +110,19 @@ export function pendingGateType(
   return null;
 }
 
+/**
+ * Add the owner-produced recovery view to a transport status without deriving
+ * anything from events, task files, or the legacy workflow phase.
+ */
+export function withRecoveryStatus(data: unknown, recovery: RpcRecoveryStatus | null): unknown {
+  if (!isRecord(data) || recovery === null) return data;
+  return {
+    ...data,
+    briefRecovery: recovery.briefRecovery,
+    result: recovery.result,
+  };
+}
+
 export type RpcStatusProjectionDeps = {
   readCurrentState: () => WorkflowState | null;
   getActiveSessionId: () => string | undefined;
@@ -113,11 +135,25 @@ export type RpcStatusProjectionDeps = {
   writer: ResponseWriter;
   isRpcClosed: () => boolean;
   saveBriefDraft: (tasksFilePath: string) => Promise<BriefReviewDraftSaveResult>;
+  getRecoveryProjection?: () => BriefRecoveryProjectionV1 | null;
+  getRecoveryResult?: () => RecoveryResultV1 | null;
 };
+
+function recoveryStatusFromDeps(deps: RpcStatusProjectionDeps): RpcRecoveryStatus | null {
+  if (deps.getRecoveryProjection === undefined && deps.getRecoveryResult === undefined) {
+    return null;
+  }
+  const result = deps.getRecoveryResult?.() ?? null;
+  return {
+    briefRecovery: deps.getRecoveryProjection?.() ?? result?.projection ?? null,
+    result,
+  };
+}
 
 export function createRpcStatusProjection(deps: RpcStatusProjectionDeps) {
   const writeStatus = () => {
     const state = deps.readCurrentState();
+    const recovery = recoveryStatusFromDeps(deps);
     const approvalPrompt = deps.approvalGate.pendingPrompt();
     const artifactStatus = artifactApprovalStatusFromPrompt(approvalPrompt);
     const artifactPromptStatus =
@@ -137,6 +173,10 @@ export function createRpcStatusProjection(deps: RpcStatusProjectionDeps) {
       pending: pendingGateType(deps.approvalGate, deps.messageGate, deps.recoveryGate),
       approvalPrompt: approvalPromptStatus(approvalPrompt),
       aborted: deps.transportAborted(),
+      ...(recovery !== null && {
+        briefRecovery: recovery.briefRecovery,
+        result: recovery.result,
+      }),
       ...(artifactPromptStatus !== null && artifactPromptStatus),
     });
     if (artifactPromptStatus !== null && !delivered) {
@@ -159,8 +199,12 @@ export function createRpcStatusProjection(deps: RpcStatusProjectionDeps) {
         ? { onSaveDraft: () => deps.saveBriefDraft(filePath) }
         : {}),
     });
+    const recovery = recoveryStatusFromDeps(deps);
     const delivered = deps.writer.status(
-      withApprovalPromptStatus(data, deps.approvalGate.pendingPrompt()),
+      withRecoveryStatus(
+        withApprovalPromptStatus(data, deps.approvalGate.pendingPrompt()),
+        recovery,
+      ),
     );
     if (artifactStatus !== undefined && !delivered) {
       deps.approvalGate.reject(rpcStatusError.artifactApprovalUndeliverable());
@@ -171,7 +215,7 @@ export function createRpcStatusProjection(deps: RpcStatusProjectionDeps) {
   const waitForMessage = async (data: unknown) => {
     if (deps.isRpcClosed()) throw rpcError.transportClosed();
     const pending = deps.messageGate.wait();
-    deps.writer.status(data);
+    deps.writer.status(withRecoveryStatus(data, recoveryStatusFromDeps(deps)));
     return pending;
   };
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import {
   existsSync,
   lstatSync,
@@ -1208,4 +1209,140 @@ describe('runnerSandboxIdentity', () => {
 
     expect(identity).not.toContain(literalKey);
   });
+});
+
+describe('backend compatibility fixtures', () => {
+  itUnix('bridges the OpenCode state directory as a live passthrough link', async () => {
+    const hostHome = createTempDir('sandbox-opencode-host');
+    const projectDir = createTempDir('sandbox-opencode-project');
+    dirs.push(hostHome, projectDir);
+    const token = 'opencode-session-compat-canary-7e3a';
+    mkdirSync(join(hostHome, '.config', 'opencode'), { recursive: true });
+    writeFileSync(join(hostHome, '.config', 'opencode', 'auth.json'), JSON.stringify({ token }));
+    writeFileSync(join(hostHome, '.config', 'opencode', 'opencode.json'), '{"dangerous":true}');
+    setEnv('HOME', hostHome);
+
+    const env = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'opencode', authChannel: 'provider-dependent' },
+      'planner',
+    );
+
+    const linkDir = join(env.XDG_CONFIG_HOME as string, 'opencode');
+    expect(lstatSync(linkDir).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(linkDir)).toBe(realpathSync(join(hostHome, '.config', 'opencode')));
+    expect(readFileSync(join(linkDir, 'auth.json'), 'utf8')).toBe(JSON.stringify({ token }));
+    expect(sandboxCredentialValues(env)).toContain(token);
+  });
+
+  itUnix('bridges the Kilo auth entries as live passthrough links', async () => {
+    const hostHome = createTempDir('sandbox-kilo-host');
+    const projectDir = createTempDir('sandbox-kilo-project');
+    dirs.push(hostHome, projectDir);
+    const kiloToken = 'kilo-session-compat-canary-1f2b';
+    const kilocodeToken = 'kilocode-session-compat-canary-3c4d';
+    mkdirSync(join(hostHome, '.config', 'kilo'), { recursive: true });
+    mkdirSync(join(hostHome, '.config', 'kilocode'), { recursive: true });
+    writeFileSync(join(hostHome, '.config', 'kilo', 'auth.json'), JSON.stringify({ kiloToken }));
+    writeFileSync(
+      join(hostHome, '.config', 'kilocode', 'auth.json'),
+      JSON.stringify({ kilocodeToken }),
+    );
+    setEnv('HOME', hostHome);
+
+    const env = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'kilo-code', authChannel: 'provider-dependent' },
+      'planner',
+    );
+
+    const kiloLink = join(env.XDG_CONFIG_HOME as string, 'kilo');
+    const kilocodeLink = join(env.XDG_CONFIG_HOME as string, 'kilocode');
+    expect(readlinkSync(kiloLink)).toBe(realpathSync(join(hostHome, '.config', 'kilo')));
+    expect(readlinkSync(kilocodeLink)).toBe(realpathSync(join(hostHome, '.config', 'kilocode')));
+    expect(readFileSync(join(kiloLink, 'auth.json'), 'utf8')).toBe(JSON.stringify({ kiloToken }));
+    expect(readFileSync(join(kilocodeLink, 'auth.json'), 'utf8')).toBe(
+      JSON.stringify({ kilocodeToken }),
+    );
+    expect(sandboxCredentialValues(env)).toEqual(
+      expect.arrayContaining([kiloToken, kilocodeToken]),
+    );
+  });
+
+  it('keeps the OpenCode and Kilo provider-dependent channels env-credential-free', () => {
+    expect(resolveCliRunnerAuth({ kind: 'cli', tool: 'opencode' }).id).toBe('provider-dependent');
+    expect(resolveCliRunnerAuth({ kind: 'cli', tool: 'kilo-code' }).id).toBe('provider-dependent');
+    expect(
+      runnerAuthEnvKeys({ kind: 'cli', tool: 'opencode', authChannel: 'provider-dependent' }),
+    ).toEqual([]);
+    expect(
+      runnerAuthEnvKeys({ kind: 'cli', tool: 'kilo-code', authChannel: 'provider-dependent' }),
+    ).toEqual([]);
+    expect(resolveCliRunnerAuth({ kind: 'cli', tool: 'opencode' }).billing).toBe(
+      'provider-dependent',
+    );
+    expect(resolveCliRunnerAuth({ kind: 'cli', tool: 'kilo-code' }).billing).toBe(
+      'provider-dependent',
+    );
+  });
+
+  it('preserves ANTHROPIC_API_KEY for a Claude api-key runner and stages no state', async () => {
+    const hostHome = createTempDir('sandbox-claude-api-host');
+    const projectDir = createTempDir('sandbox-claude-api-project');
+    dirs.push(hostHome, projectDir);
+    mkdirSync(join(hostHome, '.claude'), { recursive: true });
+    writeFileSync(join(hostHome, '.claude', '.credentials.json'), '{"token":"host-session"}');
+    setEnv('HOME', hostHome);
+    setEnv('ANTHROPIC_API_KEY', 'sk-ant-compat-canary');
+
+    const env = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'claude-code', authChannel: 'api-key' },
+      'planner',
+    );
+
+    expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-compat-canary');
+    expect(env.HOME).toBe(join(projectDir, SANDBOX_DIR, 'planner', 'claude-code', 'home'));
+    expect(existsSync(join(env.HOME as string, '.claude'))).toBe(false);
+    expect(sandboxCredentialValues(env)).toEqual([]);
+  });
+});
+
+describe('concurrent sandbox acquisition', () => {
+  itUnix(
+    'serializes two concurrent acquisitions of one root; both succeed and each child reads the credential',
+    async () => {
+      const hostHome = createTempDir('sandbox-concurrent-host');
+      const projectDir = createTempDir('sandbox-concurrent-project');
+      dirs.push(hostHome, projectDir);
+      const credential = JSON.stringify({ token: 'concurrent-acquisition-canary-4f9d' });
+      mkdirSync(join(hostHome, '.copilot'), { recursive: true });
+      writeFileSync(join(hostHome, '.copilot', 'config.json'), credential);
+      setEnv('HOME', hostHome);
+      const runner = { kind: 'cli', tool: 'copilot', authChannel: 'session' } as const;
+
+      const [first, second] = await Promise.all([
+        createRunnerSandboxEnv(projectDir, runner, 'implementer'),
+        createRunnerSandboxEnv(projectDir, runner, 'implementer'),
+      ]);
+
+      expect(first.HOME).toBe(second.HOME);
+      for (const env of [first, second]) {
+        expect(await bridgedCliStatePresent(env, 'copilot')).toBe(true);
+        const child = spawnSync(
+          process.execPath,
+          [
+            '-e',
+            "const fs=require('node:fs');const p=require('node:path');process.stdout.write(fs.readFileSync(p.join(process.env.HOME,'.copilot','config.json'),'utf8'))",
+          ],
+          { env },
+        );
+        expect(child.status).toBe(0);
+        expect(child.stdout.toString('utf8')).toBe(credential);
+      }
+      const sealed = join(first.HOME as string, '.copilot', 'config.json');
+      expect(readFileSync(sealed, 'utf8')).toBe(credential);
+      expect(statSync(sealed).mode & 0o777).toBe(0o400);
+    },
+  );
 });

@@ -2,6 +2,10 @@ import { Writable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import type { EngineEvent } from '../../engine/events/types.js';
 import { PLANNER_ARTIFACT_MAX_BYTES } from '../../engine/runners/types.js';
+import {
+  BriefRecoveryProjectionV1Schema,
+  type BriefRecoveryProjectionV1,
+} from '../../core/schemas/brief-recovery.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { taskId } from '../../core/schemas/task.js';
 import { RPC_MAX_FRAME_BYTES } from './types.js';
@@ -25,6 +29,113 @@ function parseJsonLines(chunks: string[]): unknown[] {
     .split('\n')
     .filter(Boolean)
     .map((line) => JSON.parse(line));
+}
+
+function waitForWriter(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+const RECOVERY_STATUSES = [
+  'blocked',
+  'retrying',
+  'unresolved',
+  'storage-blocked',
+  'ready',
+  'rejected',
+] as const;
+const RECOVERY_SECRET = 'sk-rpc-projection-secret-abcdefghijklmnop';
+type RecoveryStatus = (typeof RECOVERY_STATUSES)[number];
+
+function evidenceRef(path: string, hash = 'brief-hash') {
+  return { revision: 1, hash, path };
+}
+
+function attemptSummary(status: 'started' | 'unresolved') {
+  return {
+    operationId: 'operation-1',
+    status,
+    dispatchPossibility: 'possible' as const,
+    outcome: null,
+    reservation: {
+      accountingKey: {
+        sessionId: 'session-1',
+        epochId: 'epoch-1',
+        operationId: 'operation-1',
+        generation: 1,
+      },
+      amount: 1,
+      state: 'held' as const,
+    },
+  };
+}
+
+function recoveryProjection(status: RecoveryStatus): BriefRecoveryProjectionV1 {
+  const storageBlocked = status === 'storage-blocked';
+  const rejected = status === 'rejected';
+  const unavailable = storageBlocked || rejected;
+  const activeBrief = unavailable ? null : evidenceRef('tasks.md');
+  const hasIssue = status === 'blocked' || status === 'retrying' || status === 'unresolved';
+  const issue = {
+    code: 'empty_task_list',
+    severity: 'error' as const,
+    taskId: null,
+    message: RECOVERY_SECRET,
+  };
+
+  return BriefRecoveryProjectionV1Schema.parse({
+    version: 1,
+    sessionId: 'session-1',
+    stateRevision: 9,
+    recoveryRevision: 4,
+    epochId: 'epoch-1',
+    status,
+    origin: unavailable ? null : { mode: 'standard', entry: 'initial' },
+    continuation: unavailable
+      ? null
+      : { version: 1, kind: 'approval', mode: 'standard', entry: 'initial' },
+    activeBrief,
+    matchingReport:
+      activeBrief === null
+        ? null
+        : {
+            briefHash: 'brief-hash',
+            report: evidenceRef('brief-quality.json'),
+            ruleVersion: 'brief-quality-v1',
+            issues: hasIssue ? [issue] : [],
+          },
+    blocker: unavailable
+      ? { kind: 'storage', code: 'brief_storage_invalid', message: RECOVERY_SECRET }
+      : status === 'blocked'
+        ? { kind: 'quality', issues: [issue] }
+        : status === 'unresolved'
+          ? { kind: 'unresolved', code: 'brief_unresolved', operationId: 'operation-1' }
+          : null,
+    allowedActions: unavailable
+      ? ['status']
+      : status === 'ready'
+        ? ['approve', 'status']
+        : status === 'unresolved'
+          ? ['resolve-unresolved', 'edit', 'reject', 'status']
+          : status === 'retrying'
+            ? ['edit', 'reject', 'status']
+            : ['retry', 'edit', 'reject', 'status'],
+    activeOperation:
+      status === 'retrying'
+        ? attemptSummary('started')
+        : status === 'unresolved'
+          ? attemptSummary('unresolved')
+          : null,
+    latestAttempt:
+      status === 'retrying'
+        ? attemptSummary('started')
+        : status === 'unresolved'
+          ? attemptSummary('unresolved')
+          : null,
+    queuedInputs:
+      status === 'retrying' || status === 'unresolved'
+        ? { ids: ['input-1'], count: 1, carriedCount: 0, heldCount: 1, releasedCount: 0 }
+        : { ids: [], count: 0, carriedCount: 0, heldCount: 0, releasedCount: 0 },
+  });
 }
 
 describe('createResponseWriter', () => {
@@ -64,6 +175,70 @@ describe('createResponseWriter', () => {
       { type: 'status', data: { message: 'line one\nline two' } },
     ]);
   });
+
+  it('pauses for drain, resumes, and closes when pending output reaches its cap', async () => {
+    const chunks: string[] = [];
+    const releases: Array<() => void> = [];
+    const stream = new Writable({
+      highWaterMark: 1,
+      write(chunk, _encoding, callback) {
+        chunks.push(chunk.toString());
+        releases.push(callback);
+      },
+    });
+    const reasons: string[] = [];
+    const frameBytes = Buffer.byteLength('{"type":"ack","command":"status"}\n', 'utf8');
+    const writer = createResponseWriter({
+      stream,
+      onClose: (reason) => reasons.push(reason),
+      maxPendingBytes: frameBytes * 3,
+    });
+
+    writer.ack('status');
+    writer.ack('status');
+    writer.ack('status');
+    expect(chunks).toHaveLength(1);
+    expect(reasons).toEqual([]);
+
+    releases.shift()?.();
+    await waitForWriter();
+    expect(chunks).toHaveLength(2);
+
+    writer.ack('status');
+    writer.ack('status');
+    expect(reasons).toEqual([`pending RPC output exceeded ${frameBytes * 3} bytes`]);
+    expect(chunks).toHaveLength(2);
+
+    releases.shift()?.();
+    await waitForWriter();
+    stream.destroy();
+  });
+
+  it.each(RECOVERY_STATUSES)(
+    'writes a protected public projection for %s without exposing transcript secrets',
+    (status) => {
+      const { chunks, stream } = createCaptureStream();
+      const writer = createResponseWriter({ stream, onClose: () => {} });
+      const projection = recoveryProjection(status);
+
+      expect(writer.status({ briefRecovery: projection })).toBe(true);
+
+      const lines = parseJsonLines(chunks);
+      expect(lines).toEqual([
+        {
+          type: 'status',
+          data: expect.objectContaining({
+            briefRecovery: expect.objectContaining({
+              status,
+              sessionId: 'session-1',
+              allowedActions: projection.allowedActions,
+            }),
+          }),
+        },
+      ]);
+      expect(JSON.stringify(lines)).not.toContain(RECOVERY_SECRET);
+    },
+  );
 
   it('writes at-limit immutable artifact text unchanged in one RPC status frame', () => {
     const { chunks, stream } = createCaptureStream();

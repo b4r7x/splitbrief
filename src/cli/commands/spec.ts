@@ -1,6 +1,7 @@
 import type { Command } from 'commander';
 import ansis from 'ansis';
 import { createPlanner } from '../../engine/runners/factory.js';
+import { compilerDriftWarning } from '../../engine/runners/compiler-drift-warning.js';
 import type { Planner, PlanOptions, PlanResult } from '../../engine/planners/types.js';
 import type { Phase, WorkflowMode } from '../../core/schemas/enums.js';
 import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
@@ -11,6 +12,7 @@ import { TASKS_FILE, sessionDir } from '../../core/paths.js';
 import { writeSpecFile } from '../../core/paths-io.js';
 import { ensureHooksTrusted } from '../hook-trust-prompt.js';
 import { resolveHooksConfig } from '../../engine/hooks/discover.js';
+import { warnStderr } from '../../lib/warn.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 import {
   emitEffectiveConfigWarnings,
@@ -148,6 +150,7 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
       try {
         planner = await createPlannerForCommand(execution.config, {
           initialSessionId: undefined,
+          projectDir,
           preparedConfig: execution.config,
           customRuntime,
           preparationId: execution.preparationId,
@@ -158,6 +161,8 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
         rollbackPreparedExecutionOwnership(execution);
         throw cause;
       }
+      const driftWarning = compilerDriftWarning({ planner, projectDir });
+      if (driftWarning !== null) warnStderr(driftWarning);
 
       console.log(
         `Planning feature: ${stripTerminalControls(feature)} (planner: ${getRunnerDisplayName(config.planner)}, mode: ${mode})\n`,
@@ -187,15 +192,16 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
       releasePreparedExecutionOwnership(execution);
 
       for (const phase of result.phases ?? []) {
-        writeSpecFile({ projectDir, sessionId }, phase.filename, phase.text);
+        writeSpecFile({ projectDir, sessionId }, phase.artifact.logicalName, phase.artifact.text);
       }
 
       const sessionPath = sessionDir(projectDir, sessionId);
       console.log('\nSpec generation complete.');
       console.log(`  Session: ${ansis.dim(sessionId)}`);
       for (const phase of result.phases ?? []) {
-        const taskSuffix = phase.filename === TASKS_FILE ? ` (${result.tasks.length} tasks)` : '';
-        console.log(`  ${ansis.dim(`${sessionPath}/${phase.filename}`)}${taskSuffix}`);
+        const taskSuffix =
+          phase.artifact.logicalName === TASKS_FILE ? ` (${result.tasks.length} tasks)` : '';
+        console.log(`  ${ansis.dim(`${sessionPath}/${phase.artifact.logicalName}`)}${taskSuffix}`);
       }
     });
 }

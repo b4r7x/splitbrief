@@ -27,6 +27,26 @@ describe('spawnWithStdin', () => {
     expect(lines.some((l) => l.includes('hello world'))).toBe(true);
   });
 
+  it('skips an oversized unterminated stdout tail on a clean exit', {
+    timeout: 60_000,
+  }, async () => {
+    const lines: string[] = [];
+    const overflows: Array<{ lineBytes: number; maxLineBytes: number }> = [];
+    const result = await spawnWithStdin({
+      command: 'node',
+      args: ['-e', 'process.stdout.write("x".repeat(100))'],
+      cwd: '.',
+      notFoundMessage: 'node not found',
+      onLine: (line) => lines.push(line),
+      onStdoutLineOverflow: (overflow) => overflows.push(overflow),
+      stdoutLineMaxBytes: 16,
+    });
+
+    expect(result.code).toBe(0);
+    expect(lines).toEqual([]);
+    expect(overflows).toEqual([expect.objectContaining({ lineBytes: 100, maxLineBytes: 16 })]);
+  });
+
   it('writes stdin to process', { timeout: 60_000 }, async () => {
     const lines: string[] = [];
     const result = await spawnWithStdin({

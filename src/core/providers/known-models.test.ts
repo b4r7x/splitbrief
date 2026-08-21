@@ -236,24 +236,25 @@ describe('automatic-selection sentinel coherence', () => {
     }
   });
 
-  it.each([
-    ...ADMITTED_API_PROVIDER_IDS,
-  ])('ships a default model %s can be configured with', (providerId) => {
-    const descriptor = API_PROVIDER_CATALOG[providerId];
-    const defaultModel = (KNOWN_MODELS[providerId] ?? []).find(({ isDefault }) => isDefault);
-    expect(defaultModel?.name, providerId).toBeTypeOf('string');
+  it.each([...ADMITTED_API_PROVIDER_IDS])(
+    'ships a default model %s can be configured with',
+    (providerId) => {
+      const descriptor = API_PROVIDER_CATALOG[providerId];
+      const defaultModel = (KNOWN_MODELS[providerId] ?? []).find(({ isDefault }) => isDefault);
+      expect(defaultModel?.name, providerId).toBeTypeOf('string');
 
-    const runner = {
-      kind: 'api',
-      provider: descriptor.id,
-      service: descriptor.service,
-      offering: descriptor.offering,
-      apiBase: resolveDefaultApiBase(providerId),
-      model: defaultModel?.name,
-    };
-    for (const role of descriptor.roles) {
-      const schema = role === 'planner' ? PlannerConfigSchema : ImplementerConfigSchema;
-      expect(schema.safeParse(runner).success, `${role} ${providerId}`).toBe(true);
-    }
-  });
+      const runner = {
+        kind: 'api',
+        provider: descriptor.id,
+        service: descriptor.service,
+        offering: descriptor.offering,
+        apiBase: resolveDefaultApiBase(providerId),
+        model: defaultModel?.name,
+      };
+      for (const role of descriptor.roles) {
+        const schema = role === 'planner' ? PlannerConfigSchema : ImplementerConfigSchema;
+        expect(schema.safeParse(runner).success, `${role} ${providerId}`).toBe(true);
+      }
+    },
+  );
 });

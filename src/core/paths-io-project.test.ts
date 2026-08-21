@@ -25,14 +25,14 @@ describe('writeProjectFile', () => {
     expect(readFileSync(written, 'utf-8')).toBe('export const x = 1;');
   });
 
-  it.each([
-    ['.git/config'],
-    ['.splitbrief/config.yaml'],
-  ])('rejects model-named write into the control plane (%s) and leaves nothing on disk', (path) => {
-    const dir = makeTmp();
-    expect(() => writeProjectFile(dir, path, 'malicious')).toThrow('escapes project directory');
-    expect(existsSync(join(dir, path))).toBe(false);
-  });
+  it.each([['.git/config'], ['.splitbrief/config.yaml']])(
+    'rejects model-named write into the control plane (%s) and leaves nothing on disk',
+    (path) => {
+      const dir = makeTmp();
+      expect(() => writeProjectFile(dir, path, 'malicious')).toThrow('escapes project directory');
+      expect(existsSync(join(dir, path))).toBe(false);
+    },
+  );
 });
 
 describe('validateTaskPath', () => {
@@ -77,14 +77,13 @@ describe('validateTaskPath', () => {
     }
   });
 
-  it.each([
-    ['.git/config'],
-    ['.git/hooks/pre-commit'],
-    ['.splitbrief/config.yaml'],
-  ])('rejects model-named write into the control plane (%s)', (path) => {
-    const dir = makeTmp();
-    expect(() => validateTaskPath(dir, path)).toThrow('escapes project directory');
-  });
+  it.each([['.git/config'], ['.git/hooks/pre-commit'], ['.splitbrief/config.yaml']])(
+    'rejects model-named write into the control plane (%s)',
+    (path) => {
+      const dir = makeTmp();
+      expect(() => validateTaskPath(dir, path)).toThrow('escapes project directory');
+    },
+  );
 
   itUnix('rejects a control-plane write reaching .git through an in-repo symlink', () => {
     const dir = makeTmp();

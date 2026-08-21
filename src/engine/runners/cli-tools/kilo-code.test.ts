@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_COMPILER_EVIDENCE, CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { contractSha256 } from '../../providers/candidate-contract.js';
 import {
   CLI_CONFORMANCE_CANDIDATES,
   kiloImplementerAdapter,
@@ -27,9 +28,32 @@ describe('Kilo Code role adapters', () => {
       expect(candidate.adapter.role).toBe(candidate.role);
       expect(candidate.adapter.descriptor).toBe(CLI_TOOL_CATALOG['kilo-code']);
     }
+    const plannerRaw = CLI_CONFORMANCE_CANDIDATES[0]?.rawContract.rawInvocation ?? [];
+    const implementerRaw = CLI_CONFORMANCE_CANDIDATES[1]?.rawContract.rawInvocation ?? [];
+    expect(plannerRaw.slice(0, 6)).toEqual(['run', '--format', 'json', '--agent', 'plan', PROMPT]);
+    expect(implementerRaw).toEqual(['run', '--agent', 'code', '--auto', PROMPT]);
     expect(CLI_CONFORMANCE_CANDIDATES[0]?.contractSha256).not.toBe(
       CLI_CONFORMANCE_CANDIDATES[1]?.contractSha256,
     );
+  });
+
+  it('refuses incomplete conformance with zero dispatch: the row stays conditional until a complete receipt', () => {
+    // The registry row is conformance-gated: without a PASS receipt the Kilo
+    // backend stays unsupported, so no Task dispatch can occur.
+    expect(CLI_COMPILER_EVIDENCE['kilo-code'].state).toBe('conformance-gated');
+    expect(CLI_COMPILER_EVIDENCE['kilo-code'].version).toBe('7.0.49');
+    // Activation requires the complete candidate receipt: the adapter and the
+    // raw contract must hash to the exact identity the harness verifies.
+    for (const candidate of CLI_CONFORMANCE_CANDIDATES) {
+      expect(contractSha256(candidate.rawContract)).toBe(candidate.contractSha256);
+      expect(candidate.rawContract.expectedRawTerminal).toBe('process-exit');
+    }
+    // A hostile role override is a pre-dispatch refusal: the adapter reports
+    // the conflict before any subprocess spawn.
+    const implementerBase = kiloPromptArgs({ role: 'implementer' });
+    expect(
+      kiloImplementerAdapter.validateArgs([...implementerBase, '--agent', 'plan'], implementerBase),
+    ).toEqual({ valid: false, conflicts: ['--agent', 'plan'] });
   });
 
   it('keeps argv transport, process-exit completion, and five-second probes explicit', () => {
@@ -57,7 +81,7 @@ describe('Kilo Code role adapters', () => {
     }
   });
 
-  it('preserves planner read-only JSON flags, implementer auto mode, model placement, and order', () => {
+  it('preserves planner read-only JSON flags, implementer code role, model placement, and order', () => {
     expect(
       kiloPromptArgs({ role: 'planner', model: undefined, configuredArgs: ['--verbose'] }),
     ).toEqual(['run', '--format', 'json', '--agent', 'plan', PROMPT, '--verbose']);
@@ -79,13 +103,48 @@ describe('Kilo Code role adapters', () => {
         model: 'qwen2.5-coder:7b',
         configuredArgs: ['--verbose'],
       }),
-    ).toEqual(['run', '--model', 'qwen2.5-coder:7b', '--auto', PROMPT, '--verbose']);
+    ).toEqual([
+      'run',
+      '--model',
+      'qwen2.5-coder:7b',
+      '--agent',
+      'code',
+      '--auto',
+      PROMPT,
+      '--verbose',
+    ]);
     const plannerBase = kiloPromptArgs({ role: 'planner' });
     const implementerBase = kiloPromptArgs({ role: 'implementer' });
     expect(kiloPlannerAdapter.validateArgs(plannerBase, plannerBase)).toEqual({ valid: true });
     expect(kiloImplementerAdapter.validateArgs(implementerBase, implementerBase)).toEqual({
       valid: true,
     });
+  });
+
+  it('pins the effective role on every vector: default-role, fallback, and subagent runs fail', () => {
+    const plannerBase = kiloPromptArgs({ role: 'planner' });
+    const implementerBase = kiloPromptArgs({ role: 'implementer' });
+
+    expect(plannerBase).toContain('--agent');
+    expect(plannerBase[plannerBase.indexOf('--agent') + 1]).toBe('plan');
+    expect(implementerBase).toContain('--agent');
+    expect(implementerBase[implementerBase.indexOf('--agent') + 1]).toBe('code');
+    expect(implementerBase).toContain('--auto');
+
+    for (const base of [plannerBase, implementerBase]) {
+      expect(kiloImplementerAdapter.validateArgs([...base, '--agent', 'subagent'], base)).toEqual({
+        valid: false,
+        conflicts: ['--agent'],
+      });
+      expect(kiloImplementerAdapter.validateArgs([...base, '--agent=plan'], base)).toEqual({
+        valid: false,
+        conflicts: ['--agent'],
+      });
+      expect(kiloImplementerAdapter.validateArgs([...base, '--agent', 'default'], base)).toEqual({
+        valid: false,
+        conflicts: ['--agent'],
+      });
+    }
   });
 
   it('overrides read-only agent defaults with the verified code agent for full escalation', () => {
@@ -210,20 +269,34 @@ describe('Kilo Code implementer text adapter', () => {
 });
 
 describe('Kilo Code terminal outcomes', () => {
-  it('accumulates planner usage and session identity on process completion', () => {
+  it('returns the exact final group after the last tool call with accumulated usage and session', () => {
     const events = [
       ...kiloPlannerProtocolEvents(
         JSON.stringify({
           type: 'text',
           sessionID: 'ses-final',
-          part: { type: 'text', text: 'done' },
+          part: { type: 'text', text: 'earlier draft' },
+        }),
+      ),
+      ...kiloPlannerProtocolEvents(
+        JSON.stringify({
+          type: 'tool_result',
+          sessionID: 'ses-final',
+          part: { type: 'tool', id: 'tool-1', name: 'read', input: { path: 'src/a.ts' } },
+        }),
+      ),
+      ...kiloPlannerProtocolEvents(
+        JSON.stringify({
+          type: 'text',
+          sessionID: 'ses-final',
+          part: { type: 'text', text: 'final plan' },
         }),
       ),
       ...kiloPlannerProtocolEvents(
         JSON.stringify({
           type: 'step_finish',
           sessionID: 'ses-final',
-          part: { type: 'step-finish', tokens: { input: 2, output: 1 } },
+          part: { type: 'step-finish', tokens: { input: 5, output: 3, reasoning: 1 } },
         }),
       ),
     ];
@@ -239,8 +312,8 @@ describe('Kilo Code terminal outcomes', () => {
     ).toEqual({
       type: 'result',
       status: 'completed',
-      text: '',
-      usage: { inputTokens: 2, outputTokens: 1 },
+      text: 'final plan',
+      usage: { inputTokens: 5, outputTokens: 3, reasoningTokens: 1 },
       nativeSessionId: 'ses-final',
       error: null,
       partial: false,

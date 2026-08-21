@@ -371,149 +371,155 @@ describe('createRetryRuntime', () => {
   it.each([
     ['output', 'direct'],
     ['direct', 'output'],
-  ] as const)('runs the selected %s-to-%s retry runner through a real child without fallback', async (defaultContract, retryContract) => {
-    const { projectDir, sessionId } = setupProject();
-    const markerDir = createTempDir('retry-configured-runner-markers');
-    const stateDir = createTempDir('retry-configured-runner-state');
-    dirs.push(markerDir, stateDir);
-    const taskFile = `src/retry-${retryContract}.ts`;
-    const defaultMarker = join(markerDir, 'default.json');
-    const retryMarker = join(markerDir, 'retry.json');
-    const config = retryConfigWithContracts(defaultContract, retryContract, {
-      outputFormat: 'text',
-      argvById: {
-        'default-id': [
-          '-e',
-          retryChildProgram({
-            id: 'default-id',
-            contract: defaultContract,
-            markerPath: defaultMarker,
-            taskFile,
-          }),
-        ],
-        'retry-id': [
-          '-e',
-          retryChildProgram({
-            id: 'retry-id',
-            contract: retryContract,
-            markerPath: retryMarker,
-            taskFile,
-          }),
-        ],
-      },
-    });
-    const childRuntime = configuredRetryRuntime({
-      projectDir,
-      sessionId,
-      stateDir,
-      allowRepoRunners: true,
-    });
-    const ctx = await configuredRetryContext({
-      projectDir,
-      sessionId,
-      config,
-      runtime: childRuntime,
-    });
-    const retryRuntime = await createRetryRuntime(ctx, 'retry-profile');
-    const task = makeTask({ id: 'T001', file: taskFile });
+  ] as const)(
+    'runs the selected %s-to-%s retry runner through a real child without fallback',
+    async (defaultContract, retryContract) => {
+      const { projectDir, sessionId } = setupProject();
+      const markerDir = createTempDir('retry-configured-runner-markers');
+      const stateDir = createTempDir('retry-configured-runner-state');
+      dirs.push(markerDir, stateDir);
+      const taskFile = `src/retry-${retryContract}.ts`;
+      const defaultMarker = join(markerDir, 'default.json');
+      const retryMarker = join(markerDir, 'retry.json');
+      const config = retryConfigWithContracts(defaultContract, retryContract, {
+        outputFormat: 'text',
+        argvById: {
+          'default-id': [
+            '-e',
+            retryChildProgram({
+              id: 'default-id',
+              contract: defaultContract,
+              markerPath: defaultMarker,
+              taskFile,
+            }),
+          ],
+          'retry-id': [
+            '-e',
+            retryChildProgram({
+              id: 'retry-id',
+              contract: retryContract,
+              markerPath: retryMarker,
+              taskFile,
+            }),
+          ],
+        },
+      });
+      const childRuntime = configuredRetryRuntime({
+        projectDir,
+        sessionId,
+        stateDir,
+        allowRepoRunners: true,
+      });
+      const ctx = await configuredRetryContext({
+        projectDir,
+        sessionId,
+        config,
+        runtime: childRuntime,
+      });
+      const retryRuntime = await createRetryRuntime(ctx, 'retry-profile');
+      const task = makeTask({ id: 'T001', file: taskFile });
 
-    if (retryContract === 'direct') {
-      const workspace = await createStagedProject(projectDir, retryRuntime.config);
-      try {
+      if (retryContract === 'direct') {
+        const workspace = await createStagedProject(projectDir, retryRuntime.config);
+        try {
+          const result = await retryRuntime.implementer.retry({
+            task,
+            projectDir: workspace.projectDir,
+            config: retryRuntime.config,
+            context: ctx.context,
+            error: 'first attempt failed',
+            attempt: 1,
+            kind: 'local',
+            onOutput: () => {},
+            sandboxEnv: workspace.sandboxEnv,
+            fileIgnoreProjectDir: projectDir,
+          });
+
+          expect(result.success).toBe(true);
+          expect(readFileSync(join(workspace.projectDir, taskFile), 'utf8')).toContain(
+            runnerRecord('retry-id', retryContract),
+          );
+        } finally {
+          workspace.cleanup();
+        }
+      } else {
         const result = await retryRuntime.implementer.retry({
           task,
-          projectDir: workspace.projectDir,
+          projectDir,
           config: retryRuntime.config,
           context: ctx.context,
           error: 'first attempt failed',
           attempt: 1,
           kind: 'local',
           onOutput: () => {},
-          sandboxEnv: workspace.sandboxEnv,
-          fileIgnoreProjectDir: projectDir,
         });
 
         expect(result.success).toBe(true);
-        expect(readFileSync(join(workspace.projectDir, taskFile), 'utf8')).toContain(
+        expect(readFileSync(join(projectDir, taskFile), 'utf8')).toContain(
           runnerRecord('retry-id', retryContract),
         );
-      } finally {
-        workspace.cleanup();
       }
-    } else {
-      const result = await retryRuntime.implementer.retry({
-        task,
-        projectDir,
-        config: retryRuntime.config,
-        context: ctx.context,
-        error: 'first attempt failed',
-        attempt: 1,
-        kind: 'local',
-        onOutput: () => {},
+
+      expect(retryRuntime.implementer.capabilities).toEqual({
+        writesFiles: retryContract === 'output' ? 'extracted-code' : 'direct',
       });
-
-      expect(result.success).toBe(true);
-      expect(readFileSync(join(projectDir, taskFile), 'utf8')).toContain(
-        runnerRecord('retry-id', retryContract),
-      );
-    }
-
-    expect(retryRuntime.implementer.capabilities).toEqual({
-      writesFiles: retryContract === 'output' ? 'extracted-code' : 'direct',
-    });
-    expect(readFileSync(retryMarker, 'utf8')).toBe(runnerRecord('retry-id', retryContract));
-    expect(existsSync(defaultMarker)).toBe(false);
-  });
+      expect(readFileSync(retryMarker, 'utf8')).toBe(runnerRecord('retry-id', retryContract));
+      expect(existsSync(defaultMarker)).toBe(false);
+    },
+  );
 
   it.each([
     ['output', 'direct'],
     ['direct', 'output'],
-  ] as const)('denies the selected %s-to-%s retry runner before either selected or fallback child starts', async (defaultContract, retryContract) => {
-    const { projectDir, sessionId } = setupProject();
-    const markerDir = createTempDir('retry-denied-runner-markers');
-    const stateDir = createTempDir('retry-denied-runner-state');
-    dirs.push(markerDir, stateDir);
-    const taskFile = `src/retry-denied-${retryContract}.ts`;
-    const defaultMarker = join(markerDir, 'default.json');
-    const retryMarker = join(markerDir, 'retry.json');
-    const config = retryConfigWithContracts(defaultContract, retryContract, {
-      outputFormat: 'text',
-      argvById: {
-        'default-id': [
-          '-e',
-          retryChildProgram({
-            id: 'default-id',
-            contract: defaultContract,
-            markerPath: defaultMarker,
-            taskFile,
-          }),
-        ],
-        'retry-id': [
-          '-e',
-          retryChildProgram({
-            id: 'retry-id',
-            contract: retryContract,
-            markerPath: retryMarker,
-            taskFile,
-          }),
-        ],
-      },
-    });
-    const childRuntime = configuredRetryRuntime({
-      projectDir,
-      sessionId,
-      stateDir,
-      allowRepoRunners: false,
-    });
-    await expect(
-      configuredRetryContext({
+  ] as const)(
+    'denies the selected %s-to-%s retry runner before either selected or fallback child starts',
+    async (defaultContract, retryContract) => {
+      const { projectDir, sessionId } = setupProject();
+      const markerDir = createTempDir('retry-denied-runner-markers');
+      const stateDir = createTempDir('retry-denied-runner-state');
+      dirs.push(markerDir, stateDir);
+      const taskFile = `src/retry-denied-${retryContract}.ts`;
+      const defaultMarker = join(markerDir, 'default.json');
+      const retryMarker = join(markerDir, 'retry.json');
+      const config = retryConfigWithContracts(defaultContract, retryContract, {
+        outputFormat: 'text',
+        argvById: {
+          'default-id': [
+            '-e',
+            retryChildProgram({
+              id: 'default-id',
+              contract: defaultContract,
+              markerPath: defaultMarker,
+              taskFile,
+            }),
+          ],
+          'retry-id': [
+            '-e',
+            retryChildProgram({
+              id: 'retry-id',
+              contract: retryContract,
+              markerPath: retryMarker,
+              taskFile,
+            }),
+          ],
+        },
+      });
+      const childRuntime = configuredRetryRuntime({
         projectDir,
         sessionId,
-        config,
-        runtime: childRuntime,
-      }),
-    ).rejects.toMatchObject({ kind: 'custom-runner-admission-denied' });
-    expect(existsSync(retryMarker)).toBe(false);
-    expect(existsSync(defaultMarker)).toBe(false);
-  });
+        stateDir,
+        allowRepoRunners: false,
+      });
+      await expect(
+        configuredRetryContext({
+          projectDir,
+          sessionId,
+          config,
+          runtime: childRuntime,
+        }),
+      ).rejects.toMatchObject({ kind: 'custom-runner-admission-denied' });
+      expect(existsSync(retryMarker)).toBe(false);
+      expect(existsSync(defaultMarker)).toBe(false);
+    },
+  );
 });

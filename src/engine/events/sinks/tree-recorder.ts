@@ -1,4 +1,5 @@
 import type { EngineEvent, EventSink } from '../types.js';
+import { EngineEventSchema } from '../schema.js';
 import { taskIdToString } from '../../../core/schemas/task.js';
 import { sessionDir } from '../../../core/paths.js';
 import { totalInputTokens, totalOutputTokens } from '../../../core/schemas/tokens.js';
@@ -40,6 +41,8 @@ const BRANCHING_ACTIONS = new Set([
   'planner-split-rebase',
 ]);
 
+const RECOVERY_ENTRY_TYPE = 'recovery-event';
+
 export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
   const dir = sessionDir(opts.projectDir, opts.sessionId);
   const persistTranscript = opts.persistTranscript ?? true;
@@ -48,6 +51,17 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
 
   const taskStartTimes = new Map<string, number>();
   const taskTokens = new Map<string, number>();
+  const recoveryEventIds = new Set<string>();
+
+  function rememberRecoveryEventIds(): void {
+    const currentTree = persistence.getTree();
+    if (!currentTree) return;
+    for (const entry of currentTree.entries.values()) {
+      if (entry.type !== RECOVERY_ENTRY_TYPE || !typeGuards.isRecord(entry.payload)) continue;
+      const eventId = entry.payload.eventId;
+      if (typeof eventId === 'string') recoveryEventIds.add(eventId);
+    }
+  }
 
   return (rawEvent: EngineEvent) => {
     const event = protectEngineEventForConsumer(rawEvent, { context: 'tree', persistTranscript });
@@ -58,6 +72,7 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
     switch (event.type) {
       case 'workflow_started': {
         persistence.setTree(persistence.initializeTree(event.ts));
+        rememberRecoveryEventIds();
         return;
       }
 
@@ -65,6 +80,7 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
         if (!tree()) {
           persistence.setTree(reconstructTree(dir) ?? persistence.initializeTree(event.ts));
         }
+        rememberRecoveryEventIds();
         return;
       }
 
@@ -270,6 +286,36 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
         });
         runnerState.clearRunnerWarnings(event.callId);
         if (!persistence.commitAppendResult(result)) return;
+        return;
+      }
+
+      case 'brief_recovery_quality_reported':
+      case 'brief_recovery_auto_repair_exhausted':
+      case 'brief_recovery_attempt_accepted':
+      case 'brief_recovery_attempt_started':
+      case 'brief_recovery_attempt_settled':
+      case 'brief_recovery_attempt_unresolved':
+      case 'brief_recovery_provider_failed':
+      case 'brief_recovery_input_queued':
+      case 'brief_recovery_input_applied':
+      case 'brief_recovery_stale_ignored':
+      case 'brief_recovery_rejected':
+      case 'brief_recovery_refused':
+      case 'brief_recovery_transition':
+      case 'brief_recovery_accepted':
+      case 'brief_generation_published':
+      case 'brief_execution_permit_issued': {
+        const currentTree = tree();
+        if (!currentTree || recoveryEventIds.has(event.eventId)) return;
+        const recoveryPayload: EngineEvent = event;
+        const result = appendProtectedEntry(currentTree, {
+          type: RECOVERY_ENTRY_TYPE,
+          payload: recoveryPayload,
+          schema: EngineEventSchema,
+          timestamp: event.ts,
+        });
+        if (!persistence.commitAppendResult(result)) return;
+        recoveryEventIds.add(event.eventId);
         return;
       }
 

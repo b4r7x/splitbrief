@@ -8,7 +8,6 @@ import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { requestEnqueue } from './handlers.js';
 import { editorDisplayLabel, resolveEditorArgv } from './editor-command.js';
 import { isLivePhase, isImplementerPhase } from '../../core/phases.js';
-import { briefReviewCommandToApprovalReviewResult } from '../../core/schemas/brief-review-command.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import {
   resumeTerminalAfterEditor,
@@ -19,6 +18,7 @@ import {
   REVIEW_HINT,
   REVIEW_UNKNOWN_COMMAND_MESSAGE,
   parseReviewCommand,
+  reviewCommandToApprovalReviewResult,
   reviewOpeningPromptMessage,
 } from './review-commands.js';
 
@@ -76,7 +76,7 @@ function applyExternalEdit(
     return;
   }
   if (lifecycleStore.get().phase === 'reviewing-briefs') {
-    const result = briefReviewCommandToApprovalReviewResult({ action: 'external_edit_applied' });
+    const result = reviewCommandToApprovalReviewResult({ action: 'external_edit_applied' });
     if (result) {
       feedbackStore.setMessage(`${lead} — applying changes`);
       inputMode.resolve(result);
@@ -246,7 +246,7 @@ export function createReviewInputHandler(inputMode: UseInputModeResult): ReviewI
         return;
       }
       if (parsed.kind === 'brief-review-command') {
-        const result = briefReviewCommandToApprovalReviewResult(parsed.command);
+        const result = reviewCommandToApprovalReviewResult(parsed.command);
         if (result) {
           inputMode.resolve(result);
           return;

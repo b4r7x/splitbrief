@@ -9,9 +9,14 @@ import {
 } from '../../../../core/plan-review/predicates.js';
 import type { Task } from '../../../../core/schemas/task.js';
 import type { PlanTaskReviewMetadata } from '../../../../core/plan-review/types.js';
-import type { BriefQualityIssue } from '../../../../engine/spec/brief-quality.js';
+import type * as BriefRecoverySchemas from '../../../../core/schemas/brief-recovery.js';
+import type * as LegacyBriefQuality from '../../../../engine/spec/brief-quality.js';
 import { sanitizeTaskDisplayText } from '../../brief-review-format.js';
 import { formatTaskIdentityParts } from '../../layout/task-row.js';
+
+export type BriefReviewIssue =
+  | BriefRecoverySchemas.BriefQualityIssue
+  | LegacyBriefQuality.BriefQualityIssue;
 
 interface TaskStateWord {
   text: string;
@@ -20,7 +25,7 @@ interface TaskStateWord {
 }
 
 function getTaskStateWord(
-  issues: BriefQualityIssue[],
+  issues: readonly BriefReviewIssue[],
   metadata: PlanTaskReviewMetadata | undefined,
   theme: Theme,
 ): TaskStateWord | null {
@@ -50,7 +55,7 @@ export function TaskRow({
   hovered,
 }: {
   task: Task;
-  issues: BriefQualityIssue[];
+  issues: readonly BriefReviewIssue[];
   metadata: PlanTaskReviewMetadata | undefined;
   width: number;
   focused: boolean;
@@ -96,6 +101,12 @@ export function TaskRow({
         <Text color={word.color} dimColor={word.dim} wrap="truncate">
           {' '}
           {word.text}
+        </Text>
+      )}
+      {issues.length > 0 && (
+        <Text color={t.textDim} wrap="truncate">
+          {' · '}
+          {sanitizeTaskDisplayText(issues[0]?.message ?? '')}
         </Text>
       )}
     </Box>

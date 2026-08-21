@@ -369,31 +369,29 @@ function expectFrozenInvocation(
 }
 
 describe('v3 custom command preservation', () => {
-  it.each(
-    frozenIdentityDriftCases,
-  )('rejects a one-character $label manifest drift before archive or helper work', async ({
-    field,
-    value,
-  }) => {
-    const manifestRaw = await readFile(manifestPath, 'utf8');
-    const events: BoundaryEvent[] = [];
+  it.each(frozenIdentityDriftCases)(
+    'rejects a one-character $label manifest drift before archive or helper work',
+    async ({ field, value }) => {
+      const manifestRaw = await readFile(manifestPath, 'utf8');
+      const events: BoundaryEvent[] = [];
 
-    await withTempDir('splitbrief-v3-identity-drift', async (sandboxRoot) => {
-      const result = await invokeFrozenWriter(
-        driftManifestValue(manifestRaw, value),
-        sandboxRoot,
-        'rejected-identity',
-        join(sandboxRoot, 'project'),
-        '',
-        [],
-        'load',
-        events,
-      );
+      await withTempDir('splitbrief-v3-identity-drift', async (sandboxRoot) => {
+        const result = await invokeFrozenWriter(
+          driftManifestValue(manifestRaw, value),
+          sandboxRoot,
+          'rejected-identity',
+          join(sandboxRoot, 'project'),
+          '',
+          [],
+          'load',
+          events,
+        );
 
-      expect(result).toEqual({ kind: 'rejected', field });
-      expect(events).toEqual([{ kind: 'identity-rejected', field }]);
-    });
-  });
+        expect(result).toEqual({ kind: 'rejected', field });
+        expect(events).toEqual([{ kind: 'identity-rejected', field }]);
+      });
+    },
+  );
 
   it('preserves the additive block through frozen and current unrelated document saves', async () => {
     const fixture = await readFile(fixturePath, 'utf8');

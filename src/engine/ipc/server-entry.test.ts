@@ -36,6 +36,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import type { PreparedExecution } from '../runners/prepared-execution.js';
 import type { IpcServer } from './server.js';
+import type { StateAuthorityReceipt } from '../../core/state/types.js';
 
 describe('getArgv', () => {
   let tmp: string;
@@ -462,6 +463,18 @@ describe('detached preparation handoff', () => {
         allowHooks: false,
       },
     };
+    const authorityReceipt: StateAuthorityReceipt = {
+      kind: 'usable',
+      sessionId: candidate.sessionId,
+      ownerId: 'detached-owner',
+      pid: process.pid,
+      processStart: '1',
+      runId: 'detached-run',
+      acquisitionId: 'detached-acquisition',
+      fence: 1,
+      stateRevision: 1,
+      stateDigest: '0'.repeat(64),
+    };
     const order: string[] = [];
     const server: IpcServer = {
       sockPath: join(sessionDir(projectDir, candidate.sessionId), 'ipc.sock'),
@@ -494,6 +507,16 @@ describe('detached preparation handoff', () => {
             mkdirSync(sessionDir(projectDir, candidate.sessionId), { recursive: true });
             return { kind: 'prepared', execution: prepared };
           },
+          acquireAuthority: () => {
+            order.push('authority');
+            return { kind: 'fenced', receipt: authorityReceipt, promotedFromVersion: null };
+          },
+          hydrateState: () => {
+            order.push('hydrate');
+            return { kind: 'missing' };
+          },
+          assertAuthority: () => {},
+          releaseAuthority: () => true,
           startServer: async (options) => {
             order.push('socket');
             acceptParent = options.onParentAccept;
@@ -519,7 +542,9 @@ describe('detached preparation handoff', () => {
         },
       });
 
-      await vi.waitFor(() => expect(order).toEqual(['prepare', 'socket', 'publish']));
+      await vi.waitFor(() =>
+        expect(order).toEqual(['prepare', 'authority', 'hydrate', 'socket', 'publish']),
+      );
       expect(order).not.toContain('run');
       expect(
         acceptParent?.({
@@ -536,13 +561,9 @@ describe('detached preparation handoff', () => {
       handedOff = true;
       await mainPromise;
 
-      expect(order.slice(0, 5)).toEqual([
-        'prepare',
-        'socket',
-        'publish',
-        'handoff-accepted',
-        'run',
-      ]);
+      expect(order.slice(0, 5)).toEqual(['prepare', 'authority', 'hydrate', 'socket', 'publish']);
+      expect(order).toContain('handoff-accepted');
+      expect(order).toContain('run');
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
     }
@@ -698,6 +719,61 @@ describe('detached server cleanup ordering', () => {
       'terminalized',
       'telemetry-flushed',
     ]);
+  });
+
+  it('releases the matching authority only after non-crash final state handling', async () => {
+    const stages: string[] = [];
+    const releaseAuthority = vi.fn(() => {
+      stages.push('authority-released');
+      return true;
+    });
+    const cleanup = createServerCleanup({
+      cleanupProcesses: async () => {
+        stages.push('processes');
+      },
+      stopHeartbeat: () => stages.push('heartbeat-stopped'),
+      closeBridge: () => stages.push('bridge-closed'),
+      closeServer: async () => {
+        stages.push('server-closed');
+      },
+      terminalize: async (termination) => {
+        stages.push(`terminalized:${termination.kind}`);
+      },
+      releaseAuthority,
+      flushTelemetry: async () => {
+        stages.push('telemetry-flushed');
+      },
+    });
+
+    await cleanup({ kind: 'exit', exitCode: 0 });
+
+    expect(releaseAuthority).toHaveBeenCalledOnce();
+    expect(stages).toEqual([
+      'heartbeat-stopped',
+      'processes',
+      'bridge-closed',
+      'server-closed',
+      'terminalized:exit',
+      'authority-released',
+      'telemetry-flushed',
+    ]);
+  });
+
+  it('leaves the authority receipt as crash evidence for proven-dead takeover', async () => {
+    const releaseAuthority = vi.fn(() => true);
+    const cleanup = createServerCleanup({
+      cleanupProcesses: async () => {},
+      stopHeartbeat: () => {},
+      closeBridge: () => {},
+      closeServer: async () => {},
+      terminalize: async () => {},
+      releaseAuthority,
+      flushTelemetry: async () => {},
+    });
+
+    await cleanup({ kind: 'crash', cause: 'uncaught' });
+
+    expect(releaseAuthority).not.toHaveBeenCalled();
   });
 
   it('exits non-zero when a runner group cannot be reaped, on every later attempt too', async () => {

@@ -10,7 +10,10 @@ import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { ConfigSchema } from '../../../core/schemas/config.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { SANDBOX_DIR } from '../../../core/paths.js';
-import { DECLARED_PLANNER_ARTIFACT_PATH } from '../../runners/types.js';
+import {
+  createTaskCompilationAttemptId,
+  TaskCompilationSemanticIdSchema,
+} from '../../../core/schemas/task-compilation.js';
 import { composeWorkflowCustomRunnerRuntime, initializeWorkflow } from './init.js';
 import { createRunIsolation } from '../isolation/create.js';
 import type { RunIsolation } from '../isolation/types.js';
@@ -439,12 +442,26 @@ describe('configured custom workflow runtime', () => {
       const stage = await runtime.createStage(projectDir, 'planner');
       let review: Awaited<ReturnType<typeof runtime.beginDeclaredArtifactReview>> | undefined;
       try {
+        const attemptId = createTaskCompilationAttemptId();
+        const relativePath = `.splitbrief-runner/output/${attemptId}/result`;
         review = await runtime.beginDeclaredArtifactReview({
           stagedProjectDir: stage.projectDir,
           callId: 'call-1',
           declaredRedactionValues: [],
+          provenance: {
+            semanticId: TaskCompilationSemanticIdSchema.parse('workflow-runtime-artifact'),
+            programId: null,
+            batchId: null,
+            attemptId,
+            transport: {
+              kind: 'declared-file',
+              lease: { leaseId: attemptId, attemptId, relativePath },
+            },
+            maxBytes: 96 * 1_024,
+            relativePath,
+          },
         });
-        await writeFile(join(stage.projectDir, DECLARED_PLANNER_ARTIFACT_PATH), 'workflow result');
+        await writeFile(join(stage.projectDir, relativePath), 'workflow result');
         await expect(review.reviewAfterChild()).resolves.toBe('workflow result');
       } finally {
         if (review !== undefined) await review.dispose();

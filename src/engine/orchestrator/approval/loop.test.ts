@@ -181,52 +181,50 @@ describe('runApprovalLoop', () => {
       state: preparePlanState,
       current: '# Plan\n\nApproved plan.\n',
     },
-  ])('rejects invalid $type feedback replacement without changing the approved artifact or publishing events', async ({
-    type,
-    filename,
-    state: makeState,
-    current,
-  }) => {
-    const { projectDir, sessionId, specPath } = setupProject();
-    writeSpecFile({ projectDir, sessionId }, filename, current, null);
-    const artifactPath = join(projectDir, '.splitbrief', 'sessions', sessionId, filename);
-    const before = readFileSync(artifactPath);
-    const { callbacks } = makeCallbacks({
-      onApprovalNeeded: vi.fn().mockResolvedValue({
-        approved: false,
-        action: 'revise',
-        comment: 'replace with malformed output',
-      }),
-    });
-    const { bus, events } = makeBusRecorder();
-    const planner = makePlanner({
-      regenerate: async () => ({ text: 'planner prose without a heading', usage: null }),
-    });
+  ])(
+    'rejects invalid $type feedback replacement without changing the approved artifact or publishing events',
+    async ({ type, filename, state: makeState, current }) => {
+      const { projectDir, sessionId, specPath } = setupProject();
+      writeSpecFile({ projectDir, sessionId }, filename, current, null);
+      const artifactPath = join(projectDir, '.splitbrief', 'sessions', sessionId, filename);
+      const before = readFileSync(artifactPath);
+      const { callbacks } = makeCallbacks({
+        onApprovalNeeded: vi.fn().mockResolvedValue({
+          approved: false,
+          action: 'revise',
+          comment: 'replace with malformed output',
+        }),
+      });
+      const { bus, events } = makeBusRecorder();
+      const planner = makePlanner({
+        regenerate: async () => ({ text: 'planner prose without a heading', usage: null }),
+      });
 
-    await expect(
-      runApprovalLoop({
-        type,
-        filePath: specPath,
-        planner,
-        projectDir,
-        sessionId,
-        callbacks,
-        bus,
-        state: makeState(),
-        persistTranscript: false,
-      }),
-    ).rejects.toMatchObject({
-      kind: 'planning-invalid-artifact',
-      data: { phase: type === 'spec' ? 'specifying' : 'planning', filename },
-    });
+      await expect(
+        runApprovalLoop({
+          type,
+          filePath: specPath,
+          planner,
+          projectDir,
+          sessionId,
+          callbacks,
+          bus,
+          state: makeState(),
+          persistTranscript: false,
+        }),
+      ).rejects.toMatchObject({
+        kind: 'planning-invalid-artifact',
+        data: { phase: type === 'spec' ? 'specifying' : 'planning', filename },
+      });
 
-    expect(readFileSync(artifactPath)).toEqual(before);
-    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
-    expect(events.filter((event) => event.type === `${type}_regenerated`)).toHaveLength(0);
-    expect(events.some((event) => event.type === 'planner_status' && event.status === 'done')).toBe(
-      true,
-    );
-  });
+      expect(readFileSync(artifactPath)).toEqual(before);
+      expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
+      expect(events.filter((event) => event.type === `${type}_regenerated`)).toHaveLength(0);
+      expect(
+        events.some((event) => event.type === 'planner_status' && event.status === 'done'),
+      ).toBe(true);
+    },
+  );
 
   it.each([
     {
@@ -243,49 +241,46 @@ describe('runApprovalLoop', () => {
       current: '# Plan\n\nApproved plan.\n',
       replacement: '# Plan\n\nReplacement plan.\n',
     },
-  ])('persists and publishes a valid $type feedback replacement exactly once', async ({
-    type,
-    filename,
-    state: makeState,
-    current,
-    replacement,
-  }) => {
-    const { projectDir, sessionId, specPath } = setupProject();
-    writeSpecFile({ projectDir, sessionId }, filename, current, null);
-    const { callbacks } = makeCallbacks({
-      onApprovalNeeded: vi
-        .fn()
-        .mockResolvedValueOnce({
-          approved: false,
-          action: 'revise',
-          comment: 'make a valid replacement',
-        })
-        .mockResolvedValueOnce({ approved: true }),
-    });
-    const { bus, events } = makeBusRecorder();
-    const planner = makePlanner({
-      regenerate: async () => ({ text: replacement, usage: null }),
-    });
+  ])(
+    'persists and publishes a valid $type feedback replacement exactly once',
+    async ({ type, filename, state: makeState, current, replacement }) => {
+      const { projectDir, sessionId, specPath } = setupProject();
+      writeSpecFile({ projectDir, sessionId }, filename, current, null);
+      const { callbacks } = makeCallbacks({
+        onApprovalNeeded: vi
+          .fn()
+          .mockResolvedValueOnce({
+            approved: false,
+            action: 'revise',
+            comment: 'make a valid replacement',
+          })
+          .mockResolvedValueOnce({ approved: true }),
+      });
+      const { bus, events } = makeBusRecorder();
+      const planner = makePlanner({
+        regenerate: async () => ({ text: replacement, usage: null }),
+      });
 
-    const result = await runApprovalLoop({
-      type,
-      filePath: specPath,
-      planner,
-      projectDir,
-      sessionId,
-      callbacks,
-      bus,
-      state: makeState(),
-      persistTranscript: false,
-    });
+      const result = await runApprovalLoop({
+        type,
+        filePath: specPath,
+        planner,
+        projectDir,
+        sessionId,
+        callbacks,
+        bus,
+        state: makeState(),
+        persistTranscript: false,
+      });
 
-    expect(result.regenerated).toBe(true);
-    expect(
-      readFileSync(join(projectDir, '.splitbrief', 'sessions', sessionId, filename), 'utf8'),
-    ).toBe(replacement);
-    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(1);
-    expect(events.filter((event) => event.type === `${type}_regenerated`)).toHaveLength(1);
-  });
+      expect(result.regenerated).toBe(true);
+      expect(
+        readFileSync(join(projectDir, '.splitbrief', 'sessions', sessionId, filename), 'utf8'),
+      ).toBe(replacement);
+      expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(1);
+      expect(events.filter((event) => event.type === `${type}_regenerated`)).toHaveLength(1);
+    },
+  );
 
   it('applies pending queued planner input before showing the approval prompt', async () => {
     const { projectDir, sessionId, specPath } = setupProject();

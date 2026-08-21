@@ -149,30 +149,29 @@ describe('event row dispatch', () => {
     expect(text).toContain('beforeafter');
   });
 
-  it.each([
-    'researching',
-    'specifying',
-    'escalating',
-  ] as const)('does not promise resume for %s cancellation events', (phase) => {
-    const event: EngineEvent = {
-      type: 'workflow_cancelled',
-      ts: 0,
-      phase,
-    };
+  it.each(['researching', 'specifying', 'escalating'] as const)(
+    'does not promise resume for %s cancellation events',
+    (phase) => {
+      const event: EngineEvent = {
+        type: 'workflow_cancelled',
+        ts: 0,
+        phase,
+      };
 
-    const text = eventRows({
-      event,
-      globalIndex: 0,
-      expanded: false,
-      ctx: { width: 80, viewportRows: 20, streaming },
-    })
-      .map(rowText)
-      .join('\n');
+      const text = eventRows({
+        event,
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width: 80, viewportRows: 20, streaming },
+      })
+        .map(rowText)
+        .join('\n');
 
-    expect(text).toContain('Workflow cancelled');
-    expect(text).not.toContain('Resume');
-    expect(text).not.toContain('splitbrief continue');
-  });
+      expect(text).toContain('Workflow cancelled');
+      expect(text).not.toContain('Resume');
+      expect(text).not.toContain('splitbrief continue');
+    },
+  );
 
   it('renders task_full_fail as a visible failed terminal row', () => {
     const event: EngineEventOf<'task_full_fail'> = {
@@ -581,25 +580,24 @@ describe('event row dispatch', () => {
     event: EngineEvent;
     stateWord: string;
     body: string;
-  }[])('keeps only the state word error-toned and dims the cause for $name', ({
-    event,
-    stateWord,
-    body,
-  }) => {
-    const segments = eventRows({
-      event,
-      globalIndex: 0,
-      expanded: false,
-      ctx: { width: 80, viewportRows: 20, streaming },
-    }).flatMap((rowValue) => rowValue.segments);
+  }[])(
+    'keeps only the state word error-toned and dims the cause for $name',
+    ({ event, stateWord, body }) => {
+      const segments = eventRows({
+        event,
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width: 80, viewportRows: 20, streaming },
+      }).flatMap((rowValue) => rowValue.segments);
 
-    const errorSegments = segments.filter((segment) => segment.tone === 'error');
-    const dimSegments = segments.filter((segment) => segment.tone === 'textDim');
+      const errorSegments = segments.filter((segment) => segment.tone === 'error');
+      const dimSegments = segments.filter((segment) => segment.tone === 'textDim');
 
-    expect(errorSegments.some((segment) => segment.text.includes(stateWord))).toBe(true);
-    expect(errorSegments.every((segment) => !segment.text.includes(body))).toBe(true);
-    expect(dimSegments.some((segment) => segment.text.includes(body))).toBe(true);
-  });
+      expect(errorSegments.some((segment) => segment.text.includes(stateWord))).toBe(true);
+      expect(errorSegments.every((segment) => !segment.text.includes(body))).toBe(true);
+      expect(dimSegments.some((segment) => segment.text.includes(body))).toBe(true);
+    },
+  );
 
   it('renders an implementer failure without inventing an absent model', () => {
     const segments = eventRows({

@@ -1,8 +1,17 @@
 import type { Task } from '../../../core/schemas/task.js';
+import {
+  TASK_BRIEF_COMPILER_POLICY,
+  type TaskCompilationCallEnvelope,
+} from '../../../core/schemas/task-compilation.js';
+import type { TaskManifestBatch } from '../tasks/partition.js';
+import type { TaskManifestItem } from '../tasks/manifest.js';
+import { TASK_COMPILATION_FAILURE_CODE } from '../tasks/task-compilation-codes.js';
+import type { TaskCompilationProgramId } from '../../../core/schemas/task-compilation.js';
 import type { LanguageContext } from './language-context.js';
 import { buildLanguageContext, buildLanguageContextSections } from './language-context.js';
 import { buildPrompt, instructionsSection } from './builder.js';
 import { buildTaskFormatExample } from './task-format-example.js';
+import { error, matches } from '../../../utils/error.js';
 import { formatTasks } from '../formatter.js';
 import { TASK_BRIEF_HEADINGS } from '../headings.js';
 
@@ -87,4 +96,119 @@ ${buildTaskFormatExample(ctx)}`,
     output:
       'Return the complete tasks.md content in your reply, with all Task Briefs in dependency order. Group related briefs into phases with a brief purpose statement for each phase. Do not write tasks.md or any other project file yourself; SPLITBRIEF captures your reply and persists the tasks.md artifact inside the active session.',
   });
+}
+
+export type TaskBatchPromptInputs = Readonly<{
+  programId: TaskCompilationProgramId;
+  batch: TaskManifestBatch;
+  backwardDependencies: readonly TaskManifestItem[];
+}>;
+
+export type TaskBatchPromptOptions = Readonly<{
+  languageContext?: LanguageContext;
+  envelope?: TaskCompilationCallEnvelope;
+}>;
+
+export const taskBatchPromptError = {
+  tooLarge: (actualBytes: number, maxBytes: number) =>
+    error(
+      TASK_COMPILATION_FAILURE_CODE.task_compiler_prompt_too_large,
+      `The Task batch prompt is ${actualBytes} bytes; the bound is ${maxBytes} bytes.`,
+      { actualBytes, maxBytes },
+    ),
+  isTooLarge: matches(TASK_COMPILATION_FAILURE_CODE.task_compiler_prompt_too_large),
+} as const;
+
+function batchSelectionSection(
+  programId: TaskCompilationProgramId,
+  batch: TaskManifestBatch,
+): string {
+  const items = batch.items
+    .map((item) => `- \`${item.id}\` — ${item.action} \`${item.file}\`\n  Purpose: ${item.purpose}`)
+    .join('\n');
+  return `Program: \`${programId}\`
+Batch: \`${batch.batchId}\`
+
+Compile exactly these ${batch.items.length} manifest items — nothing more, nothing less:
+
+${items}`;
+}
+
+function backwardDependenciesSection(dependencies: readonly TaskManifestItem[]): string {
+  if (dependencies.length === 0) {
+    return 'No earlier manifest items exist. Every `depends_on` must be `[]`; there is nothing this batch may depend on.';
+  }
+  const list = dependencies
+    .map((item) => `- \`${item.id}\` — ${item.action} \`${item.file}\``)
+    .join('\n');
+  return `These earlier manifest items are the only dependency targets this batch may reference:
+
+${list}
+
+Every \`depends_on\` value must name an item listed in this prompt — an earlier item above or an earlier item in this batch. Never name an unlisted or later item; use \`[]\` when independent.`;
+}
+
+/**
+ * Deterministic prompt for one frozen four-item manifest slice. The batch identity,
+ * the exact selected items, and the backward-only dependency targets are fixed before
+ * dispatch; the provider may only choose the brief content, never the membership.
+ */
+export function buildTaskBatchPrompt(
+  inputs: TaskBatchPromptInputs,
+  options?: TaskBatchPromptOptions,
+): string {
+  const ctx = options?.languageContext ?? buildLanguageContext(undefined);
+
+  const prompt = buildPrompt({
+    title: 'Compile Product Task Briefs — Batch',
+    intro:
+      'You are compiling exactly one deterministic batch of **Product Task Brief v1** records for a detached SPLITBRIEF compilation. You have no session, no files, and no context beyond this prompt; SPLITBRIEF holds the manifest and captures your final response. Each brief is executed independently by a small implementer model that has NO access to this prompt, sibling briefs, or the manifest — every brief must stand on its own.',
+    sections: [
+      {
+        heading: 'Batch Selection',
+        body: batchSelectionSection(inputs.programId, inputs.batch),
+      },
+      {
+        heading: 'Backward-Only Dependencies',
+        body: backwardDependenciesSection(inputs.backwardDependencies),
+      },
+      {
+        heading: 'Task Brief Format',
+        body: `Each Task Brief MUST be rendered in this exact markdown shape. Frontmatter carries Identity; section headings carry the rest of the contract:
+
+${buildTaskFormatExample(ctx)}`,
+      },
+      {
+        heading: 'Brief Contract (required semantics)',
+        body: briefContract(ctx),
+      },
+      {
+        heading: 'Critical Rules',
+        body: criticalRules(ctx),
+      },
+      instructionsSection(
+        `Emit exactly the ${inputs.batch.items.length} selected complete Product Task Brief v1 blocks — one \`---\` delimited block per manifest item, in the order listed above — as bare markdown, not wrapped in a code fence, with no phase headings, summary, or trailing prose.`,
+      ),
+    ],
+    output:
+      'Return exactly the selected Task Brief blocks in your final response. Do not write, create, or modify any file, and do not read, resume, or reference any session state; SPLITBRIEF captures only your final response as the batch artifact.',
+  });
+  return assertTaskBatchPromptBound(
+    prompt,
+    options?.envelope?.promptBytes ?? TASK_BRIEF_COMPILER_POLICY.maxPromptBytes,
+  );
+}
+
+export function taskBatchPromptByteLength(prompt: string): number {
+  return Buffer.byteLength(prompt, 'utf8');
+}
+
+export function assertTaskBatchPromptBound(
+  prompt: string,
+  maxPromptBytes: number = TASK_BRIEF_COMPILER_POLICY.maxPromptBytes,
+): string {
+  const actualBytes = taskBatchPromptByteLength(prompt);
+  if (actualBytes > maxPromptBytes)
+    throw taskBatchPromptError.tooLarge(actualBytes, maxPromptBytes);
+  return prompt;
 }

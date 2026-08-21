@@ -20,11 +20,84 @@ import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox
 import { withOutputFormat } from '../runners/cli-tools/output-format.js';
 import { lookupCliImplementerAdapter } from '../runners/cli-tools/registry.js';
 import type { CliImplementerAdapter } from '../runners/cli-tools/contract.js';
+import type { RunnerCallResult } from '../calls/types.js';
+import {
+  captureChangeDetectorBaseline,
+  hashFiles,
+  type ChangeDetectorBaseline,
+} from '../change-detection.js';
+import { collectTrackedFiles } from '../snapshots/files.js';
+import { getCurrentChangedFiles } from '../../lib/git/files.js';
+import { isInternalGitStatusPath } from '../../core/paths.js';
 
 const isCliExecutableUnavailable = matches('cli-executable-unavailable');
 
 function cliNotFoundMessage(displayName: string, installUrl: string): string {
   return `${displayName} not found. Install it from ${installUrl}`;
+}
+
+/**
+ * The files the child changed since the baseline. Git-status diffs drop
+ * internal sandbox/state paths, matching the isolation retention scan; the
+ * file-hashes branch re-walks the project so files created or deleted since
+ * the baseline count as changes, mirroring the shared detector.
+ */
+async function changedFilesSince(
+  projectDir: string,
+  baseline: ChangeDetectorBaseline,
+): Promise<string[]> {
+  if (baseline.kind === 'git-status') {
+    const current = (await getCurrentChangedFiles(projectDir)).filter(
+      (file) => !isInternalGitStatusPath(file),
+    );
+    const beforeSet = new Set(baseline.files);
+    return current.filter((file) => !beforeSet.has(file));
+  }
+  const files = await collectTrackedFiles(projectDir, {
+    ignoreProjectDir: baseline.ignoreProjectDir,
+  });
+  const after = await hashFiles(projectDir, files);
+  const candidates = new Set([...Object.keys(baseline.hashes), ...files]);
+  return [...candidates].filter((file) => baseline.hashes[file] !== after[file]);
+}
+
+/**
+ * REQ-048 exact-effect gate: a direct-write CLI implementer succeeds only when
+ * the child changed exactly the task's declared file. Nothing changed is a
+ * no-staged-change failure; anything else — an unrelated file, the declared
+ * file plus extras, or a wrong target — is an exact-effect failure. The
+ * failure keeps the completed call's evidence (text, usage, session) while
+ * carrying the stable effect code.
+ */
+function exactEffectFailure(
+  result: RunnerCallResult,
+  code: 'no-staged-change' | 'implementer-effect-invalid',
+  message: string,
+): RunnerCallResult {
+  return { ...result, status: 'failed', error: { code, message }, partial: true };
+}
+
+function assertExactEffect(input: {
+  result: RunnerCallResult;
+  changed: readonly string[];
+  declaredFile: string;
+  label: string;
+}): RunnerCallResult {
+  if (input.changed.length === 0) {
+    return exactEffectFailure(
+      input.result,
+      'no-staged-change',
+      `${input.label} exited without changing any files`,
+    );
+  }
+  if (input.changed.length !== 1 || input.changed[0] !== input.declaredFile) {
+    return exactEffectFailure(
+      input.result,
+      'implementer-effect-invalid',
+      `${input.label} changed ${input.changed.join(', ')} instead of exactly ${input.declaredFile}`,
+    );
+  }
+  return input.result;
 }
 
 function resolveImplementerAdapter(
@@ -50,6 +123,7 @@ export function createCliImplementer(
     descriptor.compatibility.installUrl,
   );
   const timeout = config.timeout;
+  const changeDetectorLabel = `Tool implementer (${toolName})`;
 
   return createImplementerBase({
     extractsCode: false,
@@ -67,6 +141,7 @@ export function createCliImplementer(
       const env =
         opts.sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, config, 'implementer'));
       const adapter = resolveImplementerAdapter(toolName, config.outputFormat);
+      const effectBaseline = await captureChangeDetectorBaseline(projectDir);
 
       try {
         let executable: CliExecutableIdentity;
@@ -120,6 +195,15 @@ export function createCliImplementer(
             label: `Tool implementer (${toolName})`,
             timeoutMs: timeout,
             output: result.text,
+          });
+        }
+        if (result.status === 'completed') {
+          const changed = await changedFilesSince(projectDir, effectBaseline);
+          return assertExactEffect({
+            result,
+            changed,
+            declaredFile: opts.task.file,
+            label: changeDetectorLabel,
           });
         }
         return result;

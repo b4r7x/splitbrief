@@ -6,7 +6,8 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
-import { saveState, loadState } from '../../../src/core/state/persistence.js';
+import { loadState, saveState } from '../../../src/core/state/persistence.js';
+import { acquireStateAuthority } from '../../../src/core/state/authority.js';
 import { taskId } from '../../../src/core/schemas/task.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import { startIpcServer, type IpcServer } from '../../../src/engine/ipc/server.js';
@@ -14,6 +15,7 @@ import { createIpcWorkflowBridge } from '../../../src/engine/ipc/workflow-bridge
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import type { StateAuthorityReceipt } from '../../../src/core/state/types.js';
 import type { ServerMessage } from '../../../src/engine/ipc/protocol.js';
 import { runWorkflowLoop } from '../../../src/engine/ipc/workflow-loop/run.js';
 import { executableReceipt } from '#testing/helpers/custom-command-based.js';
@@ -121,6 +123,24 @@ function failedPersistedState(): WorkflowState {
   );
 }
 
+function seedOwnerState(
+  ref: { projectDir: string; sessionId: string },
+  state: WorkflowState,
+): StateAuthorityReceipt {
+  saveState(ref, state);
+  const acquired = acquireStateAuthority({
+    ref,
+    purpose: 'resume',
+    ownerId: 'ipc-workflow-test-owner',
+    runId: 'ipc-workflow-test-run',
+    acquisitionId: `ipc-workflow-test-${ref.sessionId}`,
+  });
+  if (acquired.kind !== 'fenced') {
+    throw new Error(`Expected a fenced owner, got ${acquired.kind}.`);
+  }
+  return acquired.receipt;
+}
+
 function preparedExecution(projectDir: string, feature: string): PreparedExecution {
   const config = parsePreparedConfig(makeConfig());
   const preparationId = `ipc-${SESSION_ID}-preparation`;
@@ -164,7 +184,7 @@ function preparedExecution(projectDir: string, feature: string): PreparedExecuti
 }
 
 describe('runWorkflowLoop detached retry', () => {
-  it('retry re-runs only failed work from the freshly saved state, not boot-time undefined', async () => {
+  it('retry re-runs only failed work from the authoritative state head', async () => {
     const projectDir = createTempDir('wl');
     tmpDirs.push(projectDir);
     ensureSessionDir(projectDir, SESSION_ID);
@@ -187,20 +207,20 @@ describe('runWorkflowLoop detached retry', () => {
     await attachRecoveryAnsweringClient(srv.sockPath, 'retry-same-worker');
 
     const ref = { projectDir, sessionId: SESSION_ID };
+    const authority = seedOwnerState(ref, failedPersistedState());
     const observedSavedStates: Array<WorkflowState | undefined> = [];
     let call = 0;
     const fakeRunWorkflow = async (opts: RunWorkflowOptions): Promise<Summary> => {
       call += 1;
       observedSavedStates.push(opts.savedState);
-      if (call === 1) {
-        saveState(ref, failedPersistedState());
-        return failedRunSummary();
-      }
+      if (call === 1) return failedRunSummary();
       return cleanRunSummary();
     };
 
+    const prepared = preparedExecution(projectDir, 'detached retry');
+
     const summary = await runWorkflowLoop(
-      { prepared: preparedExecution(projectDir, 'detached retry') },
+      { prepared, authority },
       srv,
       ipcBridge,
       bus,
@@ -210,7 +230,7 @@ describe('runWorkflowLoop detached retry', () => {
     ipcBridge.close();
 
     expect(call).toBe(2);
-    expect(observedSavedStates[0]).toBeUndefined();
+    expect(observedSavedStates[0]?.tasks.map((task) => task.status)).toEqual(['done', 'failed']);
     const retryState = observedSavedStates[1];
     expect(retryState).toBeDefined();
     expect(retryState?.tasks.map((task) => task.status)).toEqual(['done', 'pending']);
@@ -246,7 +266,7 @@ describe('runWorkflowLoop detached retry', () => {
     servers.push(srv);
 
     const ref = { projectDir, sessionId: SESSION_ID };
-    saveState(
+    const authority = seedOwnerState(
       ref,
       makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
         currentTaskIndex: 0,
@@ -267,7 +287,7 @@ describe('runWorkflowLoop detached retry', () => {
     };
 
     const summary = await runWorkflowLoop(
-      { prepared: preparedExecution(projectDir, 'paused recovery') },
+      { prepared: preparedExecution(projectDir, 'paused recovery'), authority },
       srv,
       ipcBridge,
       bus,

@@ -13,6 +13,7 @@ import {
   DeterminismEnvelopeSchema,
   HyperlinkPolicyMetadataSchema,
   RendererMetadataSchema,
+  TerminalProfileSchema,
   WarningSchema,
 } from './manifest-fields.js';
 import {
@@ -45,6 +46,7 @@ export const ManifestSchema = z
       .strict()
       .readonly(),
     gitRevision: GitRevisionSchema.nullable(),
+    profile: TerminalProfileSchema.default('unicode-color'),
     selection: CaptureSelectionSchema,
     determinism: DeterminismEnvelopeSchema,
     controlPolicy: ControlPolicyMetadataSchema,
@@ -80,6 +82,21 @@ export const ManifestSchema = z
 
     validateManifestAccounting({ manifest, context });
     validateRasterContract({ manifest, context });
+
+    if (manifest.profile !== manifest.selection.profile) {
+      context.addIssue({
+        code: 'custom',
+        message: 'manifest profile must match selection profile',
+        path: ['profile'],
+      });
+    }
+    if (manifest.profile !== manifest.determinism.profile) {
+      context.addIssue({
+        code: 'custom',
+        message: 'manifest profile must match determinism profile',
+        path: ['profile'],
+      });
+    }
 
     addDuplicateIssues({
       values: manifest.artifacts.flatMap((artifact) => [

@@ -10,9 +10,9 @@ import {
   getSidebarTaskWindow,
   getWorkflowContentRect,
   getWorkflowContentWidth,
-  getWorkflowConversationHeight,
   getWorkflowSidebarWidth,
   getWorkflowViewportHeight,
+  SIDEBAR_BREAKPOINT_COLS,
   WORKFLOW_SIDEBAR_GAP,
 } from './rect.js';
 
@@ -23,7 +23,7 @@ describe('workflow viewport layout', () => {
   });
 
   it('splits width between sidebar, gap, and content exactly, only when the sidebar is visible above the breakpoint', () => {
-    const cols = 120;
+    const cols = 121;
 
     expect(getWorkflowSidebarWidth({ cols, sidebarVisible: false })).toBe(0);
     expect(getWorkflowContentWidth({ cols, sidebarVisible: false })).toBe(cols);
@@ -40,10 +40,12 @@ describe('workflow viewport layout', () => {
   });
 
   it('hides the sidebar below the workflow breakpoint and clamps its share between a floor and a ceiling above it', () => {
+    expect(SIDEBAR_BREAKPOINT_COLS).toBe(120);
     expect(getWorkflowSidebarWidth({ cols: 119, sidebarVisible: true })).toBe(0);
-    expect(getWorkflowSidebarWidth({ cols: 120, sidebarVisible: true })).toBeGreaterThan(0);
+    expect(getWorkflowSidebarWidth({ cols: 120, sidebarVisible: true })).toBe(0);
+    expect(getWorkflowSidebarWidth({ cols: 121, sidebarVisible: true })).toBeGreaterThan(0);
 
-    const atBreakpoint = getWorkflowSidebarWidth({ cols: 120, sidebarVisible: true });
+    const atBreakpoint = getWorkflowSidebarWidth({ cols: 121, sidebarVisible: true });
     const atMid = getWorkflowSidebarWidth({ cols: 160, sidebarVisible: true });
     const atCap = getWorkflowSidebarWidth({ cols: 200, sidebarVisible: true });
     const atWide = getWorkflowSidebarWidth({ cols: 400, sidebarVisible: true });
@@ -55,18 +57,20 @@ describe('workflow viewport layout', () => {
     expect(getWorkflowSidebarWidth({ cols: 400, sidebarVisible: false })).toBe(0);
   });
 
-  it('keeps the content pane and review column continuous across the 119/120 breakpoint', () => {
-    const below = getWorkflowContentWidth({ cols: 119, sidebarVisible: true });
-    const at = getWorkflowContentWidth({ cols: 120, sidebarVisible: true });
+  it('hands the review column the whole content pane on both sides of the 120/121 breakpoint', () => {
+    const below = getWorkflowContentWidth({ cols: 120, sidebarVisible: true });
+    const above = getWorkflowContentWidth({ cols: 121, sidebarVisible: true });
+    const sidebar = getWorkflowSidebarWidth({ cols: 121, sidebarVisible: true });
 
-    expect(below).toBe(119);
-    expect(at).toBe(120 - getWorkflowSidebarWidth({ cols: 120, sidebarVisible: true }) - 2);
+    expect(below).toBe(120);
+    expect(above).toBe(121 - sidebar - WORKFLOW_SIDEBAR_GAP);
+    expect(above).toBeLessThan(below);
     expect(getReviewColumnWidth(below)).toBe(below);
-    expect(getReviewColumnWidth(at)).toBe(at);
+    expect(getReviewColumnWidth(above)).toBe(above);
   });
 
   it('keeps sidebar plus gap plus content equal to the terminal width at every viewport', () => {
-    for (const cols of [120, 160, 400]) {
+    for (const cols of [121, 160, 400]) {
       const sidebar = getWorkflowSidebarWidth({ cols, sidebarVisible: true });
       const content = getWorkflowContentWidth({ cols, sidebarVisible: true });
       expect(sidebar + WORKFLOW_SIDEBAR_GAP + content).toBe(cols);
@@ -122,15 +126,36 @@ describe('workflow viewport layout', () => {
     expect(getWorkflowViewportHeight({ rows: 10, inputRows: 3, promptRows: 999 })).toBe(0);
   });
 
-  it('clamps the visible-sidebar bottom inset without inverting tiny body heights', () => {
-    for (const height of [0, 1, 2]) {
-      const withSidebar = getWorkflowConversationHeight({ height, sidebarWidth: 34 });
-      const withoutSidebar = getWorkflowConversationHeight({ height, sidebarWidth: 0 });
+  it('uses one exact breakpoint and one body bottom row across all required widths', () => {
+    const rows = 30;
+    const inputRows = 3;
+    const contentHeight = getWorkflowViewportHeight({ rows, inputRows });
 
-      expect(withSidebar).toBe(Math.max(0, height - 1));
-      expect(withSidebar).toBeLessThanOrEqual(withoutSidebar);
-      expect(withSidebar).toBeGreaterThanOrEqual(0);
+    for (const cols of [121, 120, 119, 80, 50, 40]) {
+      const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible: true });
+      const expectedSidebar = cols > SIDEBAR_BREAKPOINT_COLS;
+
+      expect(sidebarWidth > 0).toBe(expectedSidebar);
+      expect(getWorkflowContentWidth({ cols, sidebarVisible: true })).toBe(
+        expectedSidebar ? cols - sidebarWidth - WORKFLOW_SIDEBAR_GAP : cols,
+      );
+      expect(getWorkflowContentRect({ cols, rows, inputRows, sidebarVisible: true }).bottom).toBe(
+        getContentTopRow() + contentHeight - 1,
+      );
     }
+  });
+
+  it('clamps zero, one, and starved content rows without producing a negative rectangle', () => {
+    const inputRows = 4;
+    const chrome = getChromeHeight(inputRows);
+    const top = getContentTopRow();
+    const rectAt = (rows: number) =>
+      getWorkflowContentRect({ cols: 100, rows, inputRows, sidebarVisible: false });
+
+    expect(rectAt(chrome - 3)).toMatchObject({ height: 0, top, bottom: top });
+    expect(rectAt(chrome)).toMatchObject({ height: 0, top, bottom: top });
+    expect(rectAt(chrome + 1)).toMatchObject({ height: 1, top, bottom: top });
+    expect(rectAt(chrome + 2)).toMatchObject({ height: 2, top, bottom: top + 1 });
   });
 });
 
@@ -143,7 +168,7 @@ describe('review document layout', () => {
 
 describe('getWorkflowContentRect', () => {
   it('produces a geometrically consistent rect that agrees with the width/height helpers', () => {
-    const cols = 120;
+    const cols = 121;
     const rows = 30;
     const inputRows = 4;
     const sidebarVisible = true;
@@ -156,7 +181,8 @@ describe('getWorkflowContentRect', () => {
     });
 
     expect(rect.width).toBe(getWorkflowContentWidth({ cols, sidebarVisible }));
-    expect(rect.height).toBe(getWorkflowViewportHeight({ rows, inputRows, promptRows: 0 }));
+    const contentHeight = getWorkflowViewportHeight({ rows, inputRows, promptRows: 0 });
+    expect(rect.height).toBe(contentHeight);
 
     expect(rect.right).toBe(rect.left + rect.width - 1);
     expect(rect.bottom).toBe(rect.top + rect.height - 1);

@@ -11,13 +11,22 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { SPLITBRIEF_DIR, SPEC_FILE } from '../../core/paths.js';
 import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
-import type { Config } from '../../core/schemas/config.js';
-import type { Planner } from '../../engine/planners/types.js';
 import {
-  DECLARED_PLANNER_ARTIFACT_PATH,
-  type ArtifactApprovalReview,
-  type CustomRunnerRuntimePort,
+  createTaskCompilationAttemptId,
+  OwnedPlannerArtifactSchema,
+  TaskCompilationSemanticIdSchema,
+} from '../../core/schemas/task-compilation.js';
+import type { Config } from '../../core/schemas/config.js';
+import type {
+  PhaseResult,
+  Planner,
+  PlannerArtifactLogicalName,
+} from '../../engine/planners/types.js';
+import type {
+  ArtifactApprovalReview,
+  CustomRunnerRuntimePort,
 } from '../../engine/runners/types.js';
+import { sha256Hex } from '../../utils/sha256.js';
 import { registerSpecCommand } from './spec.js';
 
 const createPlannerMock = vi.fn<(config: Config) => Promise<Planner>>();
@@ -27,6 +36,26 @@ let shimDir: string;
 let restoreCompatibleCliShim: (() => void) | undefined;
 let consoleSpy: ReturnType<typeof vi.spyOn>;
 let originalIsTTY: boolean | undefined;
+
+function phaseResult(logicalName: PlannerArtifactLogicalName, text: string): PhaseResult {
+  const digest = sha256Hex(text);
+  return {
+    artifact: OwnedPlannerArtifactSchema.parse({
+      semanticId: `test-${logicalName}`,
+      programId: null,
+      batchId: null,
+      attemptId: createTaskCompilationAttemptId(),
+      logicalName,
+      transport: 'stdout-final',
+      text,
+      byteLength: Buffer.byteLength(text, 'utf8'),
+      sha256: digest,
+      runtimeReceipt: digest,
+      terminal: { status: 'completed', recordId: `test-${logicalName}`, protocolDigest: digest },
+      sourceReceipt: { kind: 'stdout-final', resultDigest: digest },
+    }),
+  };
+}
 
 function setStdinIsTTY(value: boolean | undefined): void {
   Object.defineProperty(process.stdin, 'isTTY', { value, writable: true, configurable: true });
@@ -57,7 +86,7 @@ beforeEach(() => {
         plan: '# Generated Plan',
         tasks: [],
         usage: null,
-        phases: [{ text: '# Generated Spec', filename: SPEC_FILE }],
+        phases: [phaseResult(SPEC_FILE, '# Generated Spec')],
       }),
     }),
   );
@@ -151,13 +180,27 @@ describe('spec command', () => {
     });
     const stage = await runtime.createStage(tmp, 'planner');
     try {
+      const attemptId = createTaskCompilationAttemptId();
+      const relativePath = `.splitbrief-runner/output/${attemptId}/result`;
       const review = await runtime.beginDeclaredArtifactReview({
         stagedProjectDir: stage.projectDir,
         callId: 'call-1',
         declaredRedactionValues: [],
+        provenance: {
+          semanticId: TaskCompilationSemanticIdSchema.parse('interactive-runtime-artifact'),
+          programId: null,
+          batchId: null,
+          attemptId,
+          transport: {
+            kind: 'declared-file',
+            lease: { leaseId: attemptId, attemptId, relativePath },
+          },
+          maxBytes: 96 * 1_024,
+          relativePath,
+        },
       });
       try {
-        writeFileSync(join(stage.projectDir, DECLARED_PLANNER_ARTIFACT_PATH), 'interactive result');
+        writeFileSync(join(stage.projectDir, relativePath), 'interactive result');
         expect(await review.reviewAfterChild()).toBe('interactive result');
       } finally {
         await review.dispose();
@@ -216,13 +259,27 @@ describe('spec command', () => {
     expect(runtime.admission.onTieredApproval).toBeUndefined();
     const stage = await runtime.createStage(tmp, 'planner');
     try {
+      const attemptId = createTaskCompilationAttemptId();
+      const relativePath = `.splitbrief-runner/output/${attemptId}/result`;
       const review = await runtime.beginDeclaredArtifactReview({
         stagedProjectDir: stage.projectDir,
         callId: 'call-2',
         declaredRedactionValues: [],
+        provenance: {
+          semanticId: TaskCompilationSemanticIdSchema.parse('headless-runtime-artifact'),
+          programId: null,
+          batchId: null,
+          attemptId,
+          transport: {
+            kind: 'declared-file',
+            lease: { leaseId: attemptId, attemptId, relativePath },
+          },
+          maxBytes: 96 * 1_024,
+          relativePath,
+        },
       });
       try {
-        writeFileSync(join(stage.projectDir, DECLARED_PLANNER_ARTIFACT_PATH), 'headless result');
+        writeFileSync(join(stage.projectDir, relativePath), 'headless result');
         await expect(review.reviewAfterChild()).resolves.toBe('headless result');
       } finally {
         await review.dispose();

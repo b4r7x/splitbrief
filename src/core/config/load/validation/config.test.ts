@@ -46,90 +46,93 @@ describe('validateConfig', () => {
       envKey: 'OPENROUTER_API_KEY',
       path: 'implementer.apiKey',
     },
-  ])('requires credentials for $provider $role unless config or env provides them', ({
-    role,
-    provider,
-    envKey,
-    path,
-  }) => {
-    const config =
-      role === 'planner'
-        ? makeConfig({
-            planner: { kind: 'api', provider, model: 'm', apiBase: 'https://api.example.com' },
-          })
-        : makeConfig({
-            implementer: { kind: 'api', provider, model: 'm', apiBase: 'https://api.example.com' },
-          });
+  ])(
+    'requires credentials for $provider $role unless config or env provides them',
+    ({ role, provider, envKey, path }) => {
+      const config =
+        role === 'planner'
+          ? makeConfig({
+              planner: { kind: 'api', provider, model: 'm', apiBase: 'https://api.example.com' },
+            })
+          : makeConfig({
+              implementer: {
+                kind: 'api',
+                provider,
+                model: 'm',
+                apiBase: 'https://api.example.com',
+              },
+            });
 
-    expect(validateConfig(config).errors.find((e) => e.path === path)).toBeTruthy();
+      expect(validateConfig(config).errors.find((e) => e.path === path)).toBeTruthy();
 
-    const withConfigKey =
-      role === 'planner'
-        ? makeConfig({
-            planner: {
-              kind: 'api',
-              provider,
-              model: 'm',
-              apiKey: 'configured-key',
-              apiBase: 'https://api.example.com',
-            },
-          })
-        : makeConfig({
-            implementer: {
-              kind: 'api',
-              provider,
-              model: 'm',
-              apiKey: 'configured-key',
-              apiBase: 'https://api.example.com',
-            },
-          });
-    expect(validateConfig(withConfigKey).errors.find((e) => e.path === path)).toBeUndefined();
+      const withConfigKey =
+        role === 'planner'
+          ? makeConfig({
+              planner: {
+                kind: 'api',
+                provider,
+                model: 'm',
+                apiKey: 'configured-key',
+                apiBase: 'https://api.example.com',
+              },
+            })
+          : makeConfig({
+              implementer: {
+                kind: 'api',
+                provider,
+                model: 'm',
+                apiKey: 'configured-key',
+                apiBase: 'https://api.example.com',
+              },
+            });
+      expect(validateConfig(withConfigKey).errors.find((e) => e.path === path)).toBeUndefined();
 
-    process.env[envKey] = 'env-key';
-    expect(validateConfig(config).errors.find((e) => e.path === path)?.message).toMatch(
-      /exfiltration risk/,
-    );
-  });
+      process.env[envKey] = 'env-key';
+      expect(validateConfig(config).errors.find((e) => e.path === path)?.message).toMatch(
+        /exfiltration risk/,
+      );
+    },
+  );
 
   it.each([
     { role: 'planner', path: 'planner.apiKey' },
     { role: 'implementer', path: 'implementer.apiKey' },
-  ])('requires credentials for agent-sdk $role unless config or env provides them', ({
-    role,
-    path,
-  }) => {
-    const config =
-      role === 'planner'
-        ? makeConfig({ planner: { kind: 'agent-sdk', model: 'claude-3-5-sonnet-20241022' } })
-        : {
-            ...makeConfig(),
-            implementer: { kind: 'agent-sdk', model: 'claude-3-5-sonnet-20241022' },
-          };
+  ])(
+    'requires credentials for agent-sdk $role unless config or env provides them',
+    ({ role, path }) => {
+      const config =
+        role === 'planner'
+          ? makeConfig({ planner: { kind: 'agent-sdk', model: 'claude-3-5-sonnet-20241022' } })
+          : {
+              ...makeConfig(),
+              implementer: { kind: 'agent-sdk', model: 'claude-3-5-sonnet-20241022' },
+            };
 
-    expect(validateConfig(config).errors.find((e) => e.path === path)).toBeTruthy();
+      expect(validateConfig(config).errors.find((e) => e.path === path)).toBeTruthy();
 
-    const withConfigKey =
-      role === 'planner'
-        ? makeConfig({
-            planner: {
-              kind: 'agent-sdk',
-              model: 'claude-3-5-sonnet-20241022',
-              apiKey: 'sk-ant-key',
-            },
-          })
-        : {
-            ...makeConfig(),
-            implementer: {
-              kind: 'agent-sdk',
-              model: 'claude-3-5-sonnet-20241022',
-              apiKey: 'sk-ant-key',
-            },
-          };
-    expect(validateConfig(withConfigKey).errors.find((e) => e.path === path)).toBeUndefined();
+      const withConfigKey =
+        role === 'planner'
+          ? makeConfig({
+              planner: {
+                kind: 'agent-sdk',
+                model: 'claude-3-5-sonnet-20241022',
+                apiKey: 'sk-ant-key',
+              },
+            })
+          : {
+              ...makeConfig(),
+              implementer: {
+                kind: 'agent-sdk',
+                model: 'claude-3-5-sonnet-20241022',
+                apiKey: 'sk-ant-key',
+              },
+            };
+      expect(validateConfig(withConfigKey).errors.find((e) => e.path === path)).toBeUndefined();
 
-    process.env['ANTHROPIC_API_KEY'] = 'sk-ant-env';
-    expect(validateConfig(config).errors.find((e) => e.path === path)).toBeUndefined();
-  });
+      process.env['ANTHROPIC_API_KEY'] = 'sk-ant-env';
+      expect(validateConfig(config).errors.find((e) => e.path === path)).toBeUndefined();
+    },
+  );
 
   it('allows local implementers without API credentials', () => {
     delete process.env.OLLAMA_API_KEY;

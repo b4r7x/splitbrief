@@ -1,10 +1,30 @@
 import { describe, it, expect } from 'vitest';
 import { Socket } from 'node:net';
-import { allowedSettlingBriefReviewCommandsForPrompt } from '../../core/schemas/brief-review-command.js';
+import {
+  allowedSettlingBriefReviewCommandsForPrompt,
+  BriefReviewCommandSchema,
+  type BriefReviewCommand,
+} from '../../core/schemas/brief-review-command.js';
 import { taskId } from '../../core/schemas/task.js';
 import { createEventBus } from '../events/bus.js';
 import { createPromptTracker, ipcPromptError } from './prompt-tracker.js';
 import type { ServerMessage } from './protocol.js';
+
+const BRIEF_HASH = 'a'.repeat(64);
+
+function briefCommand(overrides: Record<string, unknown> = {}): BriefReviewCommand {
+  return BriefReviewCommandSchema.parse({
+    version: 1,
+    sessionId: 'session-1',
+    epochId: 'epoch-1',
+    operationId: 'operation-1',
+    expectedBriefRevision: 2,
+    expectedReportRevision: 2,
+    intentHash: BRIEF_HASH,
+    base: { revision: 2, hash: BRIEF_HASH, path: 'brief/tasks.md' },
+    ...overrides,
+  });
+}
 
 describe('ipcPromptError', () => {
   it('tags the close-cancellation with a domain kind', () => {
@@ -116,6 +136,38 @@ describe('createPromptTracker wait diagnostics', () => {
     socket.destroy();
   });
 
+  it('replays the same pending prompt byte-equivalently after reconnect', async () => {
+    const bus = createEventBus();
+    const sent: ServerMessage[] = [];
+    const firstSocket = new Socket();
+    const reconnectedSocket = new Socket();
+    const tracker = createPromptTracker({
+      bus,
+      noClientPromptBehavior: 'wait',
+      currentSocket: () => firstSocket,
+      writeMessage: (_socket, message) => sent.push(message),
+    });
+
+    const pending = tracker.requestClientPrompt({
+      kind: 'approval_needed',
+      approvalType: 'briefs',
+      filePath: '/tmp/session/tasks.md',
+    });
+    tracker.sendPendingPrompts(reconnectedSocket);
+
+    expect(sent).toHaveLength(2);
+    expect(sent[0]).toEqual(sent[1]);
+    expect(
+      tracker.handleResponse('prompt-1', {
+        kind: 'approval_needed',
+        command: briefCommand({ action: 'reject', userIntentId: 'reject-1' }),
+      }),
+    ).toBe(true);
+    await expect(pending).resolves.toEqual({ kind: 'approval_needed', approved: false });
+    firstSocket.destroy();
+    reconnectedSocket.destroy();
+  });
+
   it('publishes bounded approval artifact metadata while waiting for a client', async () => {
     const bus = createEventBus();
     const warnings: Array<Extract<Parameters<typeof bus.publish>[0], { type: 'warning' }>> = [];
@@ -194,7 +246,7 @@ describe('createPromptTracker response validation', () => {
     });
   });
 
-  it('maps command-form external edit to the existing approval edit response after validation', async () => {
+  it('maps the canonical edit command to the existing approval edit response', async () => {
     const bus = createEventBus();
     const tracker = createPromptTracker({
       bus,
@@ -212,7 +264,11 @@ describe('createPromptTracker response validation', () => {
     expect(
       tracker.handleResponse('prompt-1', {
         kind: 'approval_needed',
-        command: { action: 'external_edit_applied' },
+        command: briefCommand({
+          action: 'edit',
+          briefText: 'updated brief',
+          newInputId: 'input-2',
+        }),
       }),
     ).toBe(true);
     await expect(pending).resolves.toEqual({
@@ -222,7 +278,7 @@ describe('createPromptTracker response validation', () => {
     });
   });
 
-  it('rejects unadvertised command-form save_draft without resolving the prompt', async () => {
+  it('rejects the observation-only status command for a settling prompt', async () => {
     const bus = createEventBus();
     const warnings: string[] = [];
     bus.subscribe((event) => {
@@ -245,7 +301,12 @@ describe('createPromptTracker response validation', () => {
     expect(
       tracker.handleResponse('prompt-1', {
         kind: 'approval_needed',
-        command: { action: 'save_draft' },
+        command: {
+          version: 1,
+          sessionId: 'session-1',
+          epochId: 'epoch-1',
+          action: 'status',
+        },
       }),
     ).toBe(false);
     expect(warnings).toContainEqual(
@@ -255,7 +316,7 @@ describe('createPromptTracker response validation', () => {
     expect(
       tracker.handleResponse('prompt-1', {
         kind: 'approval_needed',
-        command: { action: 'approve' },
+        command: briefCommand({ action: 'approve' }),
       }),
     ).toBe(true);
     await expect(pending).resolves.toEqual({ kind: 'approval_needed', approved: true });
@@ -316,5 +377,63 @@ describe('createPromptTracker response validation', () => {
       kind: 'task_review',
       response: { action: 'continue' },
     });
+  });
+
+  it('does not settle a newer prompt from a stale or duplicate response', async () => {
+    const bus = createEventBus();
+    const tracker = createPromptTracker({
+      bus,
+      noClientPromptBehavior: 'wait',
+      currentSocket: () => null,
+      writeMessage: () => undefined,
+    });
+
+    const stalePrompt = tracker.requestClientPrompt({
+      kind: 'approval_needed',
+      approvalType: 'spec',
+      filePath: '/tmp/spec.md',
+    });
+    const newerPrompt = tracker.requestClientPrompt({
+      kind: 'approval_needed',
+      approvalType: 'plan',
+      filePath: '/tmp/plan.md',
+    });
+
+    expect(tracker.handleResponse('prompt-1', { kind: 'approval_needed', approved: false })).toBe(
+      true,
+    );
+    await expect(stalePrompt).resolves.toEqual({ kind: 'approval_needed', approved: false });
+    expect(tracker.handleResponse('prompt-1', { kind: 'approval_needed', approved: true })).toBe(
+      false,
+    );
+    expect(tracker.handleResponse('prompt-2', { kind: 'approval_needed', approved: true })).toBe(
+      true,
+    );
+    await expect(newerPrompt).resolves.toEqual({ kind: 'approval_needed', approved: true });
+  });
+
+  it('keeps protected recovery diagnostics free of operation payloads without a client', async () => {
+    const bus = createEventBus();
+    const tracker = createPromptTracker({
+      bus,
+      noClientPromptBehavior: 'fail-closed',
+      currentSocket: () => null,
+      writeMessage: () => undefined,
+    });
+    const pending = tracker.requestClientPrompt({
+      kind: 'recovery_needed',
+      issue: {
+        id: 'operation-secret-17',
+        reason: 'retry-exhausted',
+        phase: 'implementing',
+        files: [],
+        affectedTaskIds: [],
+        availableActions: ['retry-same-worker', 'abort-workflow'],
+        recommendedAction: 'retry-same-worker',
+      },
+    });
+
+    const rejected = await pending.catch((error: unknown) => error);
+    expect(JSON.stringify(rejected)).not.toContain('operation-secret-17');
   });
 });

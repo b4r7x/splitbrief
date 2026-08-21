@@ -1,10 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { resolveReviewActionKey } from './review.js';
 import type { KeyLike } from './normalize.js';
+import { parseReviewCommand } from '../../features/workflow/review-commands.js';
 
 const NO_MODIFIERS: KeyLike = {};
 
 describe('resolveReviewActionKey', () => {
+  it.each([
+    ['y', 'approve', { kind: 'brief-review-command', command: { action: 'approve' } }],
+    ['q', 'reject', { kind: 'brief-review-command', command: { action: 'reject' } }],
+    ['e', 'edit-file', { kind: 'open-external-editor' }],
+  ] as const)('keeps the key and typed route aligned for %s', (input, keyAction, typedAction) => {
+    expect(resolveReviewActionKey(input, NO_MODIFIERS)).toBe(keyAction);
+    expect(parseReviewCommand(keyAction)).toEqual(typedAction);
+  });
+
   it('maps each action key to the review command it stands for', () => {
     expect(resolveReviewActionKey('y', NO_MODIFIERS)).toBe('approve');
     expect(resolveReviewActionKey('e', NO_MODIFIERS)).toBe('edit-file');
@@ -33,5 +43,13 @@ describe('resolveReviewActionKey', () => {
     expect(resolveReviewActionKey('', { return: true })).toBeNull();
     expect(resolveReviewActionKey('', { upArrow: true })).toBeNull();
     expect(resolveReviewActionKey('yes please', NO_MODIFIERS)).toBeNull();
+  });
+
+  it('leaves comment text to the composer instead of treating it as a shortcut', () => {
+    expect(resolveReviewActionKey('comment more detail', NO_MODIFIERS)).toBeNull();
+    expect(parseReviewCommand('comment more detail')).toEqual({
+      kind: 'brief-review-command',
+      command: { action: 'revise', comment: 'more detail' },
+    });
   });
 });

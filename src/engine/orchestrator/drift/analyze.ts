@@ -40,9 +40,9 @@ function isInformativeEvidence(evidence: string): boolean {
 }
 
 // Root-level planner phase outputs. The planner writes these into the project
-// during planning (see readCliPhaseOutput), so they are the session's own
-// artifacts: their presence in the diff is orchestration, not implementer
-// drift — unless a Task Brief explicitly targets one of them.
+// during planning, so they are the session's own artifacts: their presence in
+// the diff is orchestration, not implementer drift — unless a Task Brief
+// explicitly targets one of them.
 export const SESSION_ARTIFACT_FILES: ReadonlySet<string> = new Set([
   RESEARCH_FILE,
   SPEC_FILE,

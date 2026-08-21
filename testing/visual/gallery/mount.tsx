@@ -9,10 +9,12 @@ import {
   type ScenarioDefinition,
 } from '../contracts/catalog.js';
 import { ViewportSchema, type Viewport } from '../contracts/geometry.js';
+import type { TerminalProfile } from '../contracts/manifest-fields.js';
 import type { CheckpointPredicate, FixtureFactory, FixtureLifecycle } from '../fixtures/common.js';
 import { overlayFixtureRegistry } from '../fixtures/overlay-fixtures.js';
 import { screenFixtureRegistry } from '../fixtures/screen-fixtures.js';
 import { createWorkflowFixtureAppDeps } from '../fixtures/workflow/setup.js';
+import { briefRecoveryFixtureProjections } from '../fixtures/workflow/brief-recovery-projections.js';
 import { workflowFixtureProjections } from '../fixtures/workflow/projections.js';
 import { workflowFixtureRegistry } from '../fixtures/workflow/registry.js';
 import {
@@ -28,6 +30,7 @@ export interface MountGalleryScenarioOptions {
   readonly scenario: ScenarioDefinition;
   readonly checkpoint: CheckpointDefinition;
   readonly viewport: Viewport;
+  readonly profile?: TerminalProfile | undefined;
 }
 
 export interface GalleryCheckpointWaitOptions {
@@ -56,7 +59,7 @@ export async function mountGalleryScenario(
   assertSupportedViewport(scenario, viewport);
 
   const fixture = resolveFixtureFactory(scenario)();
-  const environment = enterCaptureEnvironment({ viewport });
+  const environment = enterCaptureEnvironment({ viewport, profile: options.profile });
   const rendered = await setupAndRender({
     scenario,
     checkpoint,
@@ -151,7 +154,9 @@ async function setupAndRender(options: {
       rows: options.viewport.rows,
       isSmall: options.viewport.cols < 120,
     });
-    const projection = workflowFixtureProjections.get(options.scenario.id);
+    const projection =
+      workflowFixtureProjections.get(options.scenario.id) ??
+      briefRecoveryFixtureProjections.get(options.scenario.id);
     const renderViewport: RenderViewport = {
       cols: options.viewport.cols,
       rows: options.viewport.rows,

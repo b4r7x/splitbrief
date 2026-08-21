@@ -359,12 +359,15 @@ describe('Agent SDK Anthropic projection', () => {
       credentialDomain({ configGeneration: 'config-2' }),
       credentialDomain(),
     ],
-  ])('%s does not project Anthropic membership', (_name, runnerCredentialDomain, sourceCredentialDomain) => {
-    const cache = agentSdkCache({ runnerCredentialDomain, sourceCredentialDomain });
+  ])(
+    '%s does not project Anthropic membership',
+    (_name, runnerCredentialDomain, sourceCredentialDomain) => {
+      const cache = agentSdkCache({ runnerCredentialDomain, sourceCredentialDomain });
 
-    expect(getRuntimeLookupProvider('agent-sdk', cache)).toBeNull();
-    expect(lookupRuntimeModel('agent-sdk', 'claude-sonnet-4-6', cache)).toBeNull();
-  });
+      expect(getRuntimeLookupProvider('agent-sdk', cache)).toBeNull();
+      expect(lookupRuntimeModel('agent-sdk', 'claude-sonnet-4-6', cache)).toBeNull();
+    },
+  );
 });
 
 describe('NULL_CACHE', () => {

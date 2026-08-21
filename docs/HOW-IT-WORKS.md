@@ -105,7 +105,7 @@ After initialization, `runWorkflow()` installs a queue handler (for messages the
 
 **quick** — `runQuickPlanning()` (`src/engine/orchestrator/planning/quick.ts`). One planner call. Tasks only, no supporting documents.
 
-**standard** — `runFullPlanning()` (`src/engine/orchestrator/planning/full.ts`). Four planner calls: research, spec, plan, tasks. The spec goes through an approval loop — the user can approve, comment (triggers regeneration), or reject. After tasks are generated, they pass through the brief quality gate, then `runBriefsApprovalLoop()` enters `reviewing-briefs` before implementation.
+**standard** — `runFullPlanning()` (`src/engine/orchestrator/planning/full.ts`). Four planner calls: research, spec, plan, tasks. The spec goes through an approval loop — the user can approve, comment (triggers regeneration), or reject. After tasks are generated, they pass through the brief quality gate, then `runBriefsApprovalLoop()` enters `reviewing-briefs` before implementation. The brief review surface is contract-first: it leads with `CONTRACT READY` or `CONTRACT BLOCKED`, the durable cause, and the valid actions. Score and task count are diagnostic only.
 
 **speckit** — `runSpeckitPlanning()` (`src/engine/orchestrator/planning/speckit.ts`). Adds clarification questions, a constitution check, and post-plan analysis on top of the standard flow.
 
@@ -115,11 +115,33 @@ During planning, the planner streams text. `planner_heartbeat` events (`src/engi
 
 Planning artifacts (`research.md`, `spec.md`, `plan.md`, `tasks.md`, plus speckit artifacts when produced) are written to the session folder at the end of each planning phase via `writeSpecFile()` in `src/core/paths-io.ts`.
 
+The Task Brief itself is published in authority order. The compiled candidate
+is evaluated, installed as an immutable Brief generation, and committed by the
+sole fenced owner commit; only after that commit are the fixed `tasks.md` and
+`brief-quality.json` files refreshed as compatibility projections of the
+generation (`publishBriefGeneration`,
+`src/engine/orchestrator/planning/brief-publication.ts`). A fault
+before the commit leaves the previous authoritative Brief and permit unchanged.
+Planning ends in exactly one of three dispositions: `ready-for-tasks`,
+`parked`, or `terminal`. A parked result retains the durable cause and a valid
+action set and makes zero implementer calls; a terminal result never enters
+execution.
+
 ---
 
 ## Task loop
 
 After planning, `runTasksAndReview()` (`src/engine/orchestrator/run/phases.ts`) runs a cost prediction, optionally gates on cost, and enters the task loop via `runTaskLoop()` (`src/engine/orchestrator/task/loop.ts`).
+
+The task boundary is permit-gated. `runTasksAndReview()` requires
+`ready-for-tasks` plus a persisted execution permit matching the current epoch,
+authority revision, and authoritative generation digests. It re-reads the owner
+head and the persisted Brief artifacts before any implementer call
+(`revalidatePersistedExecutionPermit`,
+`src/engine/orchestrator/planning/handoff.ts`) — the planning result is only a
+proposal, and the persisted head and bytes decide whether the implementer may
+run. Only a current execution permit authorizes task execution; a parked or
+terminal result makes zero implementer or task-loop calls.
 
 Before the first task, the loop primes the validation baseline: `primeBaseline()` (`src/engine/orchestrator/validation/run.ts`) probes every enabled stage — typecheck, lint, test — once, on the real project directory, and publishes `validation_baseline` progress events (`running` while a stage is being probed, then `done`). The probe deliberately does not short-circuit: a stage that is red before any task ran is recorded as a pre-existing failure and published in the done event's `failing` set, and the stages themselves are never exempted from being probed. This is the user's proof of life before the first `task_started`, and the record the acceptance gate later consults to tell pre-existing failures apart from failures the task introduced.
 
@@ -194,7 +216,7 @@ React components subscribe to individual store slices via `store.use(selector)`.
 
 Every workflow run produces files on disk under `.splitbrief/sessions/<id>/`:
 
-**`state.json`** — the source of truth for resume. Overwritten on every phase transition via `transitionAndSave()` (`src/engine/orchestrator/state-ops.ts`), which calls `saveState()` (`src/core/state/persistence.ts`). Contains the current phase, task list with statuses, token usage, message queue, and any pending recovery state.
+**`state.json`** — the source of truth for resume. Overwritten on every phase transition via `transitionAndSave()` (`src/engine/orchestrator/state-ops.ts`), which calls `saveState()` (`src/core/state/persistence.ts`). Contains the current phase, task list with statuses, token usage, message queue, any pending recovery state, and the owner authority: `authorityRevision`, the authoritative `generation`, and the current execution `permit`.
 
 **`session.jsonl`** — the full event log, append-only. The JSONL sink writes every `EngineEvent` as it's published (`src/core/sessions/log-writer.ts`). This is the audit trail and the source for context rebuild when resuming with a stateless backend.
 

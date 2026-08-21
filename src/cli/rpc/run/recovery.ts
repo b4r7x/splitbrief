@@ -3,6 +3,7 @@ import { RecoveryActionSchema } from '../../../core/schemas/enums.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { StateAuthorityReceipt } from '../../../core/state/types.js';
 import type { ActiveSessionReceipt } from '../../../core/sessions/lifecycle.js';
 import type { EventBus } from '../../../engine/events/types.js';
 import { applyRecoveryAction } from '../../../engine/orchestrator/recovery/actions.js';
@@ -36,6 +37,7 @@ export type RpcRecoveryHandlersDeps = {
   resolveSessionId: () => string | undefined;
   setActiveSessionId: (id: string) => void;
   readCurrentState: () => WorkflowState | null;
+  getAuthority?: (() => StateAuthorityReceipt | null) | undefined;
   executionConfig: () => Config;
   active: ActiveSessionReceipt;
   bus: EventBus;
@@ -116,6 +118,7 @@ export function createRpcRecoveryHandlers(deps: RpcRecoveryHandlersDeps) {
       const currentIssue = current.pendingRecovery;
       if (!currentIssue) return { shouldRun: true, state: current };
       const effectiveConfig = deps.executionConfig();
+      const authority = deps.getAuthority?.() ?? undefined;
 
       const selectedImplementerProfile = currentIssue.selectedImplementerProfile;
       const retryProfileOverrideTaskId =
@@ -128,6 +131,7 @@ export function createRpcRecoveryHandlers(deps: RpcRecoveryHandlersDeps) {
         bus: deps.bus,
         config: effectiveConfig,
         mode: effectiveConfig.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+        ...(authority === undefined ? {} : { authority }),
       });
       if (!result.ok) {
         deps.writer.error(result.message);

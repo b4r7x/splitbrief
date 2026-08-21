@@ -7,6 +7,11 @@ export function createTempDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), `${prefix}-`));
 }
 
+/** Normalize macOS's /private aliases when comparing temporary paths. */
+export function normalizeMacTmpPath(path: string | null): string | null {
+  return path?.replace(/^\/private(\/(?:tmp|var)\/)/, '$1') ?? null;
+}
+
 export function cleanupTempDir(dir: string): void {
   // maxRetries re-walks the tree when a straggler process (e.g. a fixture's fake command still
   // draining stdin) recreates an entry mid-delete and rmdir reports ENOTEMPTY.

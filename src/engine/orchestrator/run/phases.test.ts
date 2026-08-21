@@ -32,19 +32,56 @@ import { writeSpecFile } from '../../../core/paths-io.js';
 import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../../core/tokens/context-length.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
+import {
+  createTaskCompilationAttemptId,
+  OwnedPlannerArtifactSchema,
+} from '../../../core/schemas/task-compilation.js';
 import { formatTasks } from '../../spec/formatter.js';
 import { parseTasks } from '../../spec/tasks/parse.js';
 import { createValidator } from '../validation/run.js';
+import { readWorkflowStateHead } from '../state-ops.js';
+import { createWorkflowRecoveryBinding } from './recovery-binding.js';
 import type { OrchestratorCallbacks, WorkflowContext, WorkflowSinks } from '../types.js';
 import type { EventBus } from '../../events/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { CostPrediction } from '../../../core/schemas/summary.js';
+import type { PhaseResult, PlannerArtifactLogicalName } from '../../planners/types.js';
+import type { PlanningPhaseResult } from '../planning/types.js';
+import { sha256Hex } from '../../../utils/sha256.js';
+import type {
+  BriefAdmissionInput,
+  BriefRecoveryProjectionV1,
+  RecoveryResultV1,
+  StateAuthorityReceipt,
+} from '../../../core/schemas/brief-recovery.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
-import { runPlanningPhases, runTasksAndReview } from './phases.js';
+import { planningResultForState } from '../planning/handoff.js';
+import { runPlanningPhases, runTasksAndReview, type PhaseRecoveryBinding } from './phases.js';
+import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
 
 const DENY_HOOK_MODULE = 'export default () => ({ kind: "deny", message: "planning blocked" });\n';
+
+function phaseResult(logicalName: PlannerArtifactLogicalName, text: string): PhaseResult {
+  const digest = sha256Hex(text);
+  return {
+    artifact: OwnedPlannerArtifactSchema.parse({
+      semanticId: `test-${logicalName}`,
+      programId: null,
+      batchId: null,
+      attemptId: createTaskCompilationAttemptId(),
+      logicalName,
+      transport: 'stdout-final',
+      text,
+      byteLength: Buffer.byteLength(text, 'utf8'),
+      sha256: digest,
+      runtimeReceipt: digest,
+      terminal: { status: 'completed', recordId: `test-${logicalName}`, protocolDigest: digest },
+      sourceReceipt: { kind: 'stdout-final', resultDigest: digest },
+    }),
+  };
+}
 
 function denyPrePlanningConfig(): Config {
   return makeNoValidationConfig({
@@ -104,81 +141,166 @@ function setupProject(): { projectDir: string; sessionId: string } {
   return { projectDir, sessionId };
 }
 
+function ownerRecoveryFixture(opts: { wctx: WorkflowContext; state: WorkflowState }): {
+  getState: () => WorkflowState;
+  recovery: PhaseRecoveryBinding;
+  setTrackedState: (state: WorkflowState) => void;
+} {
+  const { wctx } = opts;
+  withFixtureAuthority(wctx);
+  const { projectDir, sessionId } = wctx;
+  const ref = { projectDir: wctx.projectDir, sessionId: wctx.sessionId };
+  const keepsExecutionAuthority =
+    opts.state.phase === 'implementing' || opts.state.phase === 'final-review';
+  let trackedState: WorkflowState = keepsExecutionAuthority
+    ? persistReadyExecutionState(projectDir, sessionId, opts.state)
+    : {
+        ...opts.state,
+        authorityRevision: undefined,
+        generation: null,
+        permit: null,
+        briefRecovery: null,
+        stateFence: { token: 1, ownerId: 'phases-test-owner' },
+      };
+  saveState(ref, trackedState);
+  const authorityBase: Omit<StateAuthorityReceipt, 'stateDigest' | 'stateRevision'> = {
+    kind: 'usable',
+    sessionId: wctx.sessionId,
+    ownerId: 'phases-test-owner',
+    pid: process.pid,
+    processStart: 'phases-test-process',
+    runId: 'phases-test-run',
+    acquisitionId: 'phases-test-acquisition',
+    fence: 1,
+  };
+  const getState = (): WorkflowState => readWorkflowStateHead(ref)?.state ?? trackedState;
+  const getAuthority = (): StateAuthorityReceipt => {
+    const head = readWorkflowStateHead(ref);
+    return {
+      ...authorityBase,
+      stateRevision: head?.state.stateRevision ?? trackedState.stateRevision ?? 0,
+      stateDigest: head?.digest ?? '',
+    };
+  };
+  const setTrackedState = (next: WorkflowState): void => {
+    trackedState = next;
+  };
+  const recovery = createWorkflowRecoveryBinding({
+    wctx,
+    getState,
+    setState: setTrackedState,
+    getAuthority,
+  });
+  Object.defineProperty(recovery, 'authority', {
+    configurable: true,
+    enumerable: true,
+    get: getAuthority,
+    set: () => {},
+  });
+  return {
+    getState,
+    recovery,
+    setTrackedState,
+  };
+}
+
+function withFixtureAuthority<T extends WorkflowContext>(wctx: T): T {
+  Object.defineProperty(wctx, 'stateAuthority', {
+    configurable: true,
+    enumerable: true,
+    get: () => {
+      const head = readWorkflowStateHead({
+        projectDir: wctx.projectDir,
+        sessionId: wctx.sessionId,
+      });
+      if (head === null) throw new Error('expected the canonical owner state head');
+      const fence = head.state.stateFence;
+      if (fence === undefined) throw new Error('expected the canonical owner state fence');
+      return {
+        kind: 'usable' as const,
+        sessionId: wctx.sessionId,
+        ownerId: fence.ownerId,
+        pid: process.pid,
+        processStart: 'phases-test-process',
+        runId: 'phases-test-run',
+        acquisitionId: 'phases-test-acquisition',
+        fence: fence.token,
+        stateRevision: head.state.stateRevision ?? 0,
+        stateDigest: head.digest,
+      } satisfies StateAuthorityReceipt;
+    },
+  });
+  return wctx;
+}
+
 describe('runTasksAndReview', { timeout: 90_000 }, () => {
   it.each([
-    { phase: 'reviewing-spec' as const, artifact: SPEC_FILE },
-    { phase: 'reviewing-plan' as const, artifact: PLAN_FILE },
-    { phase: 'reviewing-briefs' as const, artifact: TASKS_FILE },
-  ])('refuses to continue a resumed $phase state without restoring an approval prompt', async ({
-    phase,
-    artifact,
-  }) => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001' });
-    const state: WorkflowState = { ...makeImplState([task]), phase };
-    const planner = makePlanner();
-    const implementer = makeImplementer();
-    const { callbacks } = makeCallbacks();
-    const { bus, events } = makeBusRecorder();
-    const config = makeNoValidationConfig({ workflow: {} });
+    { phase: 'reviewing-spec' as const },
+    { phase: 'reviewing-plan' as const },
+    { phase: 'reviewing-briefs' as const },
+  ])(
+    'short-circuits a resumed $phase approval-parked state without executing',
+    async ({ phase }) => {
+      const { projectDir, sessionId } = setupProject();
+      const task = makeTask({ id: 'T001' });
+      const state: WorkflowState = { ...makeImplState([task]), phase };
+      const planner = makePlanner();
+      const implementer = makeImplementer();
+      const { callbacks } = makeCallbacks();
+      const { bus, events } = makeBusRecorder();
+      const config = makeNoValidationConfig({ workflow: {} });
 
-    const result = await runTasksAndReview({
-      wctx: {
-        projectDir,
-        sessionId,
-        isolation: makeCopyingIsolation({ projectDir, sessionId }),
-        config,
-        callbacks,
-        bus,
-        planner,
-        context: defaultContext,
-        ...profileImplementerRuntime(implementer),
-        metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
-        sinks: TEST_SINKS,
-        validator: createValidator(),
-      },
-      state,
-      summaryBase: {
-        feature: 'feat',
-        startTime: Date.now(),
-        plannerTool: 'claude-code',
-        implementerTool: 'ollama',
-      },
-      phaseTimings: {},
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
+      const result = await runTasksAndReview({
+        wctx: {
+          projectDir,
+          sessionId,
+          isolation: makeCopyingIsolation({ projectDir, sessionId }),
+          config,
+          callbacks,
+          bus,
+          planner,
+          context: defaultContext,
+          ...profileImplementerRuntime(implementer),
+          metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
+          sinks: TEST_SINKS,
+          validator: createValidator(),
+        },
+        state,
+        planning: planningResultForState({ sessionId, state }),
+        summaryBase: {
+          feature: 'feat',
+          startTime: Date.now(),
+          plannerTool: 'claude-code',
+          implementerTool: 'ollama',
+        },
+        phaseTimings: {},
+        setTrackedState: vi.fn(),
+        setCurrentTask: vi.fn(),
+      });
 
-    const warning = events.find(
-      (event) => event.type === 'warning' && event.code === 'approval_prompt_not_restored',
-    );
-    expect(result.completed).toBe(false);
-    expect(result.summary.totalTasks).toBe(1);
-    expect(callbacks.onApprovalNeeded).not.toHaveBeenCalled();
-    expect(implementer.implement).not.toHaveBeenCalled();
-    expect(events.some((event) => event.type === 'cost_prediction')).toBe(false);
-    expect(events.some((event) => event.type === 'task_started')).toBe(false);
-    expect(warning).toMatchObject({
-      type: 'warning',
-      category: 'approval',
-      code: 'approval_prompt_not_restored',
-      transcriptSafe: true,
-      message: expect.stringContaining(join(sessionDir(projectDir, sessionId), artifact)),
-    });
-  });
+      expect(result.completed).toBe(false);
+      expect(result.state.phase).toBe(phase);
+      expect(result.summary.totalTasks).toBe(1);
+      expect(callbacks.onApprovalNeeded).not.toHaveBeenCalled();
+      expect(implementer.implement).not.toHaveBeenCalled();
+      expect(events.some((event) => event.type === 'cost_prediction')).toBe(false);
+      expect(events.some((event) => event.type === 'task_started')).toBe(false);
+    },
+  );
 
-  it('never reaches the approval-parked refusal through runPlanningPhases on resume', async () => {
+  it('returns parked for an approval-parked reviewing-briefs resume through runPlanningPhases', async () => {
     const { projectDir, sessionId } = setupProject();
     const savedState: WorkflowState = {
       ...makeImplState([makeTask({ id: 'T001' })]),
       phase: 'reviewing-briefs',
     };
     const planner = makePlanner();
+    const implementer = makeImplementer();
     const { callbacks } = makeCallbacks();
-    const { bus, events } = makeBusRecorder();
+    const { bus } = makeBusRecorder();
 
-    await runPlanningPhases({
-      wctx: {
+    const result = await runPlanningPhases({
+      wctx: withFixtureAuthority({
         projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
@@ -187,11 +309,11 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         bus,
         planner,
         context: defaultContext,
-        implementer: makeImplementer(),
+        implementer,
         metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
         sinks: TEST_SINKS,
         validator: createValidator(),
-      },
+      }),
       state: savedState,
       savedState,
       selectedSkills: undefined,
@@ -200,17 +322,18 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
       setTrackedState: vi.fn(),
     });
 
-    expect(
-      events.some(
-        (event) => event.type === 'warning' && event.code === 'approval_prompt_not_restored',
-      ),
-    ).toBe(false);
+    expect(result.disposition).toBe('parked');
+    expect(result.state.phase).toBe('reviewing-briefs');
+    expect(planner.plan).not.toHaveBeenCalled();
+    expect(planner.quickPlan).not.toHaveBeenCalled();
+    expect(implementer.implement).not.toHaveBeenCalled();
   });
 
   it('publishes deterministic cost prediction before task execution', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001' });
+    const task = makePassingTask('T001');
     const state = makeImplState([task]);
+    const executionState = persistReadyExecutionState(projectDir, sessionId, state);
     const planner = makePlanner();
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
@@ -251,7 +374,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     };
 
     await runTasksAndReview({
-      wctx: {
+      wctx: withFixtureAuthority({
         projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
@@ -270,8 +393,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         },
         sinks: TEST_SINKS,
         validator: createValidator(),
-      },
-      state,
+      }),
+      state: executionState,
+      planning: planningResultForState({ sessionId, state: executionState }),
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
@@ -313,8 +437,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
 
   it('skips the cost gate and warns when implementer pricing is unknown', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001' });
+    const task = makePassingTask('T001');
     const state = makeImplState([task]);
+    const executionState = persistReadyExecutionState(projectDir, sessionId, state);
     const planner = makePlanner();
     const onCostApprovalNeeded = vi.fn().mockResolvedValue(true);
     const { callbacks } = makeCallbacks({ onCostApprovalNeeded });
@@ -350,7 +475,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     };
 
     await runTasksAndReview({
-      wctx: {
+      wctx: withFixtureAuthority({
         projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
@@ -369,8 +494,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         },
         sinks: TEST_SINKS,
         validator: createValidator(),
-      },
-      state,
+      }),
+      state: executionState,
+      planning: planningResultForState({ sessionId, state: executionState }),
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
@@ -401,13 +527,14 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
   it('runs opt-in planner estimate review before implementation and publishes the result', async () => {
     const { projectDir, sessionId } = setupProject();
     const hugeTaskBody = 'source body that must not be in the estimate review '.repeat(100);
-    const task = makeTask({
-      id: 'T001',
+    const task = {
+      ...makePassingTask('T001'),
       title: 'Large task',
       description: hugeTaskBody,
       currentCode: hugeTaskBody,
-    });
+    } satisfies Task;
     const state = makeImplState([task]);
+    const executionState = persistReadyExecutionState(projectDir, sessionId, state);
     const review = vi
       .fn()
       .mockResolvedValueOnce({
@@ -455,7 +582,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     };
 
     const result = await runTasksAndReview({
-      wctx: {
+      wctx: withFixtureAuthority({
         projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
@@ -474,8 +601,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         },
         sinks: TEST_SINKS,
         validator: createValidator(),
-      },
-      state,
+      }),
+      state: executionState,
+      planning: planningResultForState({ sessionId, state: executionState }),
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
@@ -534,8 +662,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
 
   it('hands the completed estimate review to the cost gate it recommends a decision for', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001' });
+    const task = makePassingTask('T001');
     const state = makeImplState([task]);
+    const executionState = persistReadyExecutionState(projectDir, sessionId, state);
     const review = vi
       .fn()
       .mockResolvedValueOnce({
@@ -588,7 +717,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     };
 
     await runTasksAndReview({
-      wctx: {
+      wctx: withFixtureAuthority({
         projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
@@ -607,8 +736,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         },
         sinks: TEST_SINKS,
         validator: createValidator(),
-      },
-      state,
+      }),
+      state: executionState,
+      planning: planningResultForState({ sessionId, state: executionState }),
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
@@ -645,6 +775,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
       scope: { inBounds: ['src/parser.ts'], outOfBounds: ['src/renderer.ts'] },
       escalation: ['Stop if parser token handling requires changing public API behavior.'],
       evidence: ['Parser tests pass.'],
+      typeDefs: 'type SplitTask = { file: string }',
     });
     const state = makeImplState([task]);
     const planner = makePlanner({
@@ -703,27 +834,32 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
       },
     };
 
-    const result = await runTasksAndReview({
-      wctx: {
-        projectDir,
-        sessionId,
-        isolation: makeCopyingIsolation({ projectDir, sessionId }),
-        config,
-        callbacks,
-        bus,
-        planner,
-        context: defaultContext,
-        ...profileImplementerRuntime(implementer),
-        metadata: {
-          plannerTool: 'claude-code',
-          implementerTool: 'deepseek',
-          implementerModel: 'deepseek-v4-flash',
-          mode: 'standard',
-        },
-        sinks: TEST_SINKS,
-        validator: createValidator(),
+    const wctx = {
+      projectDir,
+      sessionId,
+      isolation: makeCopyingIsolation({ projectDir, sessionId }),
+      config,
+      callbacks,
+      bus,
+      planner,
+      context: defaultContext,
+      ...profileImplementerRuntime(implementer),
+      metadata: {
+        plannerTool: 'claude-code',
+        implementerTool: 'deepseek',
+        implementerModel: 'deepseek-v4-flash',
+        mode: 'standard',
       },
-      state,
+      sinks: TEST_SINKS,
+      validator: createValidator(),
+    } satisfies WorkflowContext;
+    const owner = ownerRecoveryFixture({ wctx, state });
+    const executionState = owner.getState();
+
+    const result = await runTasksAndReview({
+      wctx,
+      state: executionState,
+      planning: planningResultForState({ sessionId, state: executionState }),
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
@@ -732,8 +868,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         implementerModel: 'deepseek-v4-flash',
       },
       phaseTimings: {},
-      setTrackedState: vi.fn(),
+      setTrackedState: owner.setTrackedState,
       setCurrentTask: vi.fn(),
+      recovery: owner.recovery,
     });
 
     const tasksMarkdown = await readFile(
@@ -744,7 +881,6 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
       (event) => event.type === 'warning' && event.message.includes('Auto-split overflow produced'),
     );
     const taskStartIndex = events.findIndex((event) => event.type === 'task_started');
-
     expect(result.summary.totalTasks).toBe(2);
     expect(parseTasks(tasksMarkdown)).toHaveLength(2);
     expect(splitPreviewIndex).toBeGreaterThanOrEqual(0);
@@ -762,7 +898,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
       scope: { inBounds: ['src/parser.ts'] },
       evidence: ['Parser cases stay covered.'],
     });
-    const state = makeImplState([task]);
+    const state = makeImplState([task], {
+      changedFilesBaseline: { head: null, fingerprints: {}, runStartChangedFiles: [] },
+    });
     const planner = makePlanner({
       review: vi
         .fn()
@@ -802,23 +940,26 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         plannerEstimateReview: true,
       }),
     };
-
+    const wctx = {
+      projectDir,
+      sessionId,
+      isolation: makeCopyingIsolation({ projectDir, sessionId }),
+      config,
+      callbacks,
+      bus,
+      planner,
+      context: defaultContext,
+      implementer,
+      metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
+      sinks: TEST_SINKS,
+      validator: createValidator(),
+    } satisfies WorkflowContext;
+    const owner = ownerRecoveryFixture({ wctx, state });
+    const executionState = owner.getState();
     const result = await runTasksAndReview({
-      wctx: {
-        projectDir,
-        sessionId,
-        isolation: makeCopyingIsolation({ projectDir, sessionId }),
-        config,
-        callbacks,
-        bus,
-        planner,
-        context: defaultContext,
-        implementer,
-        metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
-        sinks: TEST_SINKS,
-        validator: createValidator(),
-      },
-      state,
+      wctx,
+      state: executionState,
+      planning: planningResultForState({ sessionId, state: executionState }),
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
@@ -826,8 +967,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         implementerTool: 'ollama',
       },
       phaseTimings: {},
-      setTrackedState: vi.fn(),
+      setTrackedState: owner.setTrackedState,
       setCurrentTask: vi.fn(),
+      recovery: owner.recovery,
     });
 
     const skipWarningIndex = events.findIndex(
@@ -862,6 +1004,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
       scope: { inBounds: ['src/parser.ts'], outOfBounds: ['src/renderer.ts'] },
       escalation: ['Stop if token handling requires changing public API behavior.'],
       evidence: ['Parser tests pass.'],
+      typeDefs: 'type SplitTask = { file: string }',
     });
     const skippedTask = makeTask({
       id: 'T002',
@@ -871,8 +1014,11 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
       implementationSteps: ['Handle case one.', 'Handle case two.', 'Handle case three.'],
       scope: { inBounds: ['src/parser.ts'] },
       evidence: ['Parser cases stay covered.'],
+      typeDefs: 'type SkippedTask = { file: string }',
     });
-    const state = makeImplState([splittableTask, skippedTask]);
+    const state = makeImplState([splittableTask, skippedTask], {
+      changedFilesBaseline: { head: null, fingerprints: {}, runStartChangedFiles: [] },
+    });
     const planner = makePlanner({
       review: vi
         .fn()
@@ -912,23 +1058,27 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         plannerEstimateReview: true,
       }),
     };
+    const wctx = {
+      projectDir,
+      sessionId,
+      isolation: makeCopyingIsolation({ projectDir, sessionId }),
+      config,
+      callbacks,
+      bus,
+      planner,
+      context: defaultContext,
+      implementer,
+      metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
+      sinks: TEST_SINKS,
+      validator: createValidator(),
+    } satisfies WorkflowContext;
+    const owner = ownerRecoveryFixture({ wctx, state });
+    const executionState = owner.getState();
 
     const result = await runTasksAndReview({
-      wctx: {
-        projectDir,
-        sessionId,
-        isolation: makeCopyingIsolation({ projectDir, sessionId }),
-        config,
-        callbacks,
-        bus,
-        planner,
-        context: defaultContext,
-        implementer,
-        metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
-        sinks: TEST_SINKS,
-        validator: createValidator(),
-      },
-      state,
+      wctx,
+      state: executionState,
+      planning: planningResultForState({ sessionId, state: executionState }),
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
@@ -936,8 +1086,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         implementerTool: 'ollama',
       },
       phaseTimings: {},
-      setTrackedState: vi.fn(),
+      setTrackedState: owner.setTrackedState,
       setCurrentTask: vi.fn(),
+      recovery: owner.recovery,
     });
 
     const skipWarningIndex = events.findIndex(
@@ -1022,28 +1173,32 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         },
       },
     };
+    const wctx = {
+      projectDir,
+      sessionId,
+      isolation: makeCopyingIsolation({ projectDir, sessionId }),
+      config,
+      callbacks,
+      bus,
+      planner,
+      context: defaultContext,
+      ...profileImplementerRuntime(),
+      metadata: {
+        plannerTool: 'claude-code',
+        implementerTool: 'deepseek',
+        implementerModel: 'deepseek-v4-flash',
+        mode: 'standard',
+      },
+      sinks: TEST_SINKS,
+      validator: createValidator(),
+    } satisfies WorkflowContext;
+    const owner = ownerRecoveryFixture({ wctx, state });
+    const executionState = owner.getState();
 
     const result = await runTasksAndReview({
-      wctx: {
-        projectDir,
-        sessionId,
-        isolation: makeCopyingIsolation({ projectDir, sessionId }),
-        config,
-        callbacks,
-        bus,
-        planner,
-        context: defaultContext,
-        ...profileImplementerRuntime(),
-        metadata: {
-          plannerTool: 'claude-code',
-          implementerTool: 'deepseek',
-          implementerModel: 'deepseek-v4-flash',
-          mode: 'standard',
-        },
-        sinks: TEST_SINKS,
-        validator: createValidator(),
-      },
-      state,
+      wctx,
+      state: executionState,
+      planning: planningResultForState({ sessionId, state: executionState }),
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
@@ -1052,8 +1207,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         implementerModel: 'deepseek-v4-flash',
       },
       phaseTimings: {},
-      setTrackedState: vi.fn(),
+      setTrackedState: owner.setTrackedState,
       setCurrentTask: vi.fn(),
+      recovery: owner.recovery,
     });
 
     expect(result.completed).toBe(false);
@@ -1069,8 +1225,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
 
   it('falls back to the deterministic estimate when opt-in planner estimate review fails', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001' });
+    const task = makePassingTask('T001');
     const state = makeImplState([task]);
+    const executionState = persistReadyExecutionState(projectDir, sessionId, state);
     const planner = makePlanner({
       review: vi
         .fn()
@@ -1085,7 +1242,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     };
 
     const result = await runTasksAndReview({
-      wctx: {
+      wctx: withFixtureAuthority({
         projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
@@ -1098,8 +1255,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
         sinks: TEST_SINKS,
         validator: createValidator(),
-      },
-      state,
+      }),
+      state: executionState,
+      planning: planningResultForState({ sessionId, state: executionState }),
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
@@ -1140,8 +1298,11 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
 
   it('treats incomplete planner estimate review JSON as unavailable without blocking execution', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001' });
-    const state = makeImplState([task]);
+    const task = makePassingTask('T001');
+    const state = makeImplState([task], {
+      changedFilesBaseline: { head: null, fingerprints: {}, runStartChangedFiles: [] },
+    });
+    const executionState = persistReadyExecutionState(projectDir, sessionId, state);
     const planner = makePlanner({
       review: vi
         .fn()
@@ -1163,7 +1324,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     };
 
     const result = await runTasksAndReview({
-      wctx: {
+      wctx: withFixtureAuthority({
         projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
@@ -1176,8 +1337,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
         sinks: TEST_SINKS,
         validator: createValidator(),
-      },
-      state,
+      }),
+      state: executionState,
+      planning: planningResultForState({ sessionId, state: executionState }),
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
@@ -1213,8 +1375,10 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
 
   it('does not run final review when the task loop stops before completion', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', file: 'src/too-large.ts' });
+    const task = makePassingTask('T001');
+    task.file = 'src/too-large.ts';
     const state = makeImplState([task]);
+    const executionState = persistReadyExecutionState(projectDir, sessionId, state);
     const planner = makePlanner();
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
@@ -1236,7 +1400,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     };
 
     const result = await runTasksAndReview({
-      wctx: {
+      wctx: withFixtureAuthority({
         projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
@@ -1249,8 +1413,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
         sinks: TEST_SINKS,
         validator: createValidator(),
-      },
-      state,
+      }),
+      state: executionState,
+      planning: planningResultForState({ sessionId, state: executionState }),
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
@@ -1282,6 +1447,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     expect(state.phase).toBe('idle');
     expect(state.tasks).toHaveLength(0);
     const planner = makePlanner();
+    const implementer = makeImplementer();
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
     const config = makeNoValidationConfig({ workflow: {} });
@@ -1296,12 +1462,13 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         bus,
         planner,
         context: defaultContext,
-        implementer: makeImplementer(),
+        implementer,
         metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
         sinks: TEST_SINKS,
         validator: createValidator(),
       },
       state,
+      planning: planningResultForState({ sessionId, state }),
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
@@ -1315,6 +1482,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
 
     expect(result.completed).toBe(false);
     expect(planner.review).not.toHaveBeenCalled();
+    expect(implementer.implement).not.toHaveBeenCalled();
     expect(callbacks.onComplete).not.toHaveBeenCalled();
     expect(events.find((event) => event.type === 'all_tasks_done')).toBeUndefined();
     expect(events.find((event) => event.type === 'workflow_complete')).toBeUndefined();
@@ -1324,8 +1492,10 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
 
   it('reports incomplete when final review fails', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', status: 'done' });
+    const task = makePassingTask('T001');
+    task.status = 'done';
     const state = makeImplState([task]);
+    const executionState = persistReadyExecutionState(projectDir, sessionId, state);
     const planner = makePlanner({
       review: vi.fn().mockRejectedValue(new Error('review failed')),
     });
@@ -1333,7 +1503,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const { bus, events } = makeBusRecorder();
 
     const result = await runTasksAndReview({
-      wctx: {
+      wctx: withFixtureAuthority({
         projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
@@ -1346,8 +1516,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
         sinks: TEST_SINKS,
         validator: createValidator(),
-      },
-      state,
+      }),
+      state: executionState,
+      planning: planningResultForState({ sessionId, state: executionState }),
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
@@ -1369,9 +1540,11 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
 
   it('skips the cost gate and predicts only remaining tasks when resuming past the first task', async () => {
     const { projectDir, sessionId } = setupProject();
-    const done = makeTask({ id: 'T001', status: 'done' });
-    const remaining = makeTask({ id: 'T002' });
+    const done = makePassingTask('T001');
+    done.status = 'done';
+    const remaining = makePassingTask('T002');
     const state = makeImplState([done, remaining], { currentTaskIndex: 1 });
+    const executionState = persistReadyExecutionState(projectDir, sessionId, state);
     const planner = makePlanner();
     const onCostApprovalNeeded = vi.fn().mockResolvedValue(true);
     const { callbacks } = makeCallbacks({ onCostApprovalNeeded });
@@ -1407,7 +1580,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     };
 
     const result = await runTasksAndReview({
-      wctx: {
+      wctx: withFixtureAuthority({
         projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
@@ -1434,8 +1607,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         },
         sinks: TEST_SINKS,
         validator: createValidator(),
-      },
-      state,
+      }),
+      state: executionState,
+      planning: planningResultForState({ sessionId, state: executionState }),
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
@@ -1461,7 +1635,8 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
 
   it('aborts without executing any task when the cost gate is declined', async () => {
     const { projectDir, sessionId } = setupProject();
-    const state = makeImplState([makeTask({ id: 'T001' }), makeTask({ id: 'T002' })]);
+    const state = makeImplState([makePassingTask('T001'), makePassingTask('T002')]);
+    const executionState = persistReadyExecutionState(projectDir, sessionId, state);
     const planner = makePlanner();
     const onCostApprovalNeeded = vi.fn().mockResolvedValue(false);
     const { callbacks } = makeCallbacks({ onCostApprovalNeeded });
@@ -1502,7 +1677,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     };
 
     const result = await runTasksAndReview({
-      wctx: {
+      wctx: withFixtureAuthority({
         projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
@@ -1521,8 +1696,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         },
         sinks: TEST_SINKS,
         validator: createValidator(),
-      },
-      state,
+      }),
+      state: executionState,
+      planning: planningResultForState({ sessionId, state: executionState }),
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
@@ -1544,16 +1720,19 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
 
   it('resumes a persisted failed-final-review state and completes when the review passes', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', status: 'done' });
+    const task = makePassingTask('T001');
+    task.status = 'done';
     // Persist a state stuck in 'final-review' (a previously failed gate): all tasks done,
     // currentTaskIndex past the end (as the task loop leaves it before ALL_DONE).
-    const savedState = transition(
+    const executionState = persistReadyExecutionState(
+      projectDir,
+      sessionId,
       makeImplState([task], {
         currentTaskIndex: 1,
         changedFilesBaseline: { head: null, fingerprints: {}, runStartChangedFiles: [] },
       }),
-      { type: 'ALL_DONE' },
     );
+    const savedState = transition(executionState, { type: 'ALL_DONE' });
     expect(savedState.phase).toBe('final-review');
     saveState({ projectDir, sessionId }, savedState);
 
@@ -1562,7 +1741,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const { bus, events } = makeBusRecorder();
 
     const result = await runTasksAndReview({
-      wctx: {
+      wctx: withFixtureAuthority({
         projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
@@ -1575,8 +1754,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
         sinks: TEST_SINKS,
         validator: createValidator(),
-      },
+      }),
       state: savedState,
+      planning: planningResultForState({ sessionId, state: savedState }),
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
@@ -1637,8 +1817,7 @@ describe('runPlanningPhases', () => {
       setTrackedState: vi.fn(),
     });
 
-    expect(result.cancelled).toBe(true);
-    expect(result.failed).toBe(false);
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'cancelled' });
     expect(planner.plan).not.toHaveBeenCalled();
     expect(planner.quickPlan).not.toHaveBeenCalled();
     expect(
@@ -1682,8 +1861,7 @@ describe('runPlanningPhases', () => {
       setTrackedState: vi.fn(),
     });
 
-    expect(result.cancelled).toBe(true);
-    expect(result.failed).toBe(false);
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'cancelled' });
     expect(planner.plan).not.toHaveBeenCalled();
     expect(planner.quickPlan).not.toHaveBeenCalled();
     expect(
@@ -1702,6 +1880,7 @@ describe('runPlanningPhases — reviewing-briefs resume', () => {
     callbacks: OrchestratorCallbacks;
     bus: EventBus;
     planner: ReturnType<typeof makePlanner>;
+    implementer?: ReturnType<typeof makeImplementer>;
   }): WorkflowContext {
     return {
       projectDir: opts.projectDir,
@@ -1715,7 +1894,7 @@ describe('runPlanningPhases — reviewing-briefs resume', () => {
       bus: opts.bus,
       planner: opts.planner,
       context: defaultContext,
-      implementer: makeImplementer(),
+      implementer: opts.implementer ?? makeImplementer(),
       metadata: TEST_METADATA,
       sinks: TEST_SINKS,
       validator: createValidator(),
@@ -1730,23 +1909,38 @@ describe('runPlanningPhases — reviewing-briefs resume', () => {
     const { projectDir, sessionId } = setupProject();
     writeSpecFile({ projectDir, sessionId }, TASKS_FILE, REAL_TASKS_MD, TEST_METADATA);
     const planner = makePlanner();
+    const implementer = makeImplementer();
     const onApprovalNeeded = sequencedApproval([{ approved: false }]);
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus } = makeBusRecorder();
     const state = parkedReviewingBriefsState();
+    const wctx = resumeWctx({ projectDir, sessionId, callbacks, bus, planner, implementer });
+    const owner = ownerRecoveryFixture({ wctx, state: { ...state, phase: 'planning' } });
+    await owner.recovery.controller.enterBriefAdmission(
+      owner.recovery.createAdmissionInput({
+        state: owner.getState(),
+        tasks: parseTasks(REAL_TASKS_MD),
+        projectDir,
+        sessionId,
+      }),
+      owner.recovery.authority,
+    );
 
-    await runPlanningPhases({
-      wctx: resumeWctx({ projectDir, sessionId, callbacks, bus, planner }),
-      state,
-      savedState: state,
+    const result = await runPlanningPhases({
+      wctx,
+      state: owner.getState(),
+      savedState: owner.getState(),
       selectedSkills: undefined,
       phaseTimings: {},
       startTime: Date.now(),
-      setTrackedState: vi.fn(),
+      setTrackedState: owner.setTrackedState,
+      recovery: owner.recovery,
     });
 
     expect(planner.plan).not.toHaveBeenCalled();
     expect(planner.quickPlan).not.toHaveBeenCalled();
+    expect(implementer.implement).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'rejected' });
     expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
     expect(onApprovalNeeded).toHaveBeenCalledWith(
       'briefs',
@@ -1762,18 +1956,30 @@ describe('runPlanningPhases — reviewing-briefs resume', () => {
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus } = makeBusRecorder();
     const state = parkedReviewingBriefsState();
+    const wctx = resumeWctx({ projectDir, sessionId, callbacks, bus, planner });
+    const owner = ownerRecoveryFixture({ wctx, state: { ...state, phase: 'planning' } });
+    await owner.recovery.controller.enterBriefAdmission(
+      owner.recovery.createAdmissionInput({
+        state: owner.getState(),
+        tasks: parseTasks(REAL_TASKS_MD),
+        projectDir,
+        sessionId,
+      }),
+      owner.recovery.authority,
+    );
 
     const result = await runPlanningPhases({
-      wctx: resumeWctx({ projectDir, sessionId, callbacks, bus, planner }),
-      state,
-      savedState: state,
+      wctx,
+      state: owner.getState(),
+      savedState: owner.getState(),
       selectedSkills: undefined,
       phaseTimings: {},
       startTime: Date.now(),
-      setTrackedState: vi.fn(),
+      setTrackedState: owner.setTrackedState,
+      recovery: owner.recovery,
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expect(result.state.tasks[0]?.title).toBe('Add auth');
     expect(result.state.tasks[0]?.file).toBe('src/auth.ts');
@@ -1784,23 +1990,37 @@ describe('runPlanningPhases — reviewing-briefs resume', () => {
     const { projectDir, sessionId } = setupProject();
     writeSpecFile({ projectDir, sessionId }, TASKS_FILE, REAL_TASKS_MD, TEST_METADATA);
     const planner = makePlanner();
+    const implementer = makeImplementer();
     const onApprovalNeeded = sequencedApproval([{ approved: false }]);
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus } = makeBusRecorder();
     const state = parkedReviewingBriefsState();
+    const wctx = resumeWctx({ projectDir, sessionId, callbacks, bus, planner, implementer });
+    const owner = ownerRecoveryFixture({ wctx, state: { ...state, phase: 'planning' } });
+    await owner.recovery.controller.enterBriefAdmission(
+      owner.recovery.createAdmissionInput({
+        state: owner.getState(),
+        tasks: parseTasks(REAL_TASKS_MD),
+        projectDir,
+        sessionId,
+      }),
+      owner.recovery.authority,
+    );
 
     const result = await runPlanningPhases({
-      wctx: resumeWctx({ projectDir, sessionId, callbacks, bus, planner }),
-      state,
-      savedState: state,
+      wctx,
+      state: owner.getState(),
+      savedState: owner.getState(),
       selectedSkills: undefined,
       phaseTimings: {},
       startTime: Date.now(),
-      setTrackedState: vi.fn(),
+      setTrackedState: owner.setTrackedState,
+      recovery: owner.recovery,
     });
 
-    expect(result.cancelled).toBe(true);
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'rejected' });
     expect(result.state.phase).toBe('idle');
+    expect(implementer.implement).not.toHaveBeenCalled();
     expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
   });
 });
@@ -1848,7 +2068,7 @@ describe('runPlanningPhases — reviewing-spec and reviewing-plan resume', () =>
         plan: '# Plan',
         tasks: [makePassingTask()],
         usage: { inputTokens: 100, outputTokens: 50 },
-        phases: [{ filename: SPEC_FILE, text: '# FRESH PLANNER SPEC' }],
+        phases: [phaseResult(SPEC_FILE, '# FRESH PLANNER SPEC')],
       }),
       review: vi
         .fn()
@@ -1863,20 +2083,23 @@ describe('runPlanningPhases — reviewing-spec and reviewing-plan resume', () =>
         return { approved: true };
       });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const { bus, events } = makeBusRecorder();
+    const { bus } = makeBusRecorder();
     const state = parkedState('reviewing-spec');
+    const wctx = resumeWctx({ projectDir, sessionId, callbacks, bus, planner });
+    const owner = ownerRecoveryFixture({ wctx, state });
 
     const result = await runPlanningPhases({
-      wctx: resumeWctx({ projectDir, sessionId, callbacks, bus, planner }),
-      state,
-      savedState: state,
+      wctx,
+      state: owner.getState(),
+      savedState: owner.getState(),
       selectedSkills: undefined,
       phaseTimings: {},
       startTime: Date.now(),
-      setTrackedState: vi.fn(),
+      setTrackedState: owner.setTrackedState,
+      recovery: owner.recovery,
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expect(result.state.tasks.map((task) => task.title)).toEqual(['Add auth']);
     expect(planner.plan).not.toHaveBeenCalled();
@@ -1884,11 +2107,6 @@ describe('runPlanningPhases — reviewing-spec and reviewing-plan resume', () =>
     // a resumed reviewing-spec is gated once, over the persisted artifact
     expect(specGatePrompt).toHaveBeenCalledTimes(1);
     expect(specGatePrompt).toHaveBeenCalledWith(specPath);
-    expect(
-      events.some(
-        (event) => event.type === 'warning' && event.code === 'approval_prompt_not_restored',
-      ),
-    ).toBe(false);
   });
 
   it('approving a resumed reviewing-plan state advances through the briefs gate', async () => {
@@ -1897,27 +2115,30 @@ describe('runPlanningPhases — reviewing-spec and reviewing-plan resume', () =>
     const planner = makePlanner();
     const onApprovalNeeded = sequencedApproval([{ approved: true }, { approved: true }]);
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const { bus, events } = makeBusRecorder();
+    const { bus } = makeBusRecorder();
     const state = { ...parkedState('reviewing-plan'), tasks: parseTasks(REAL_TASKS_MD) };
+    const wctx = resumeWctx({
+      projectDir,
+      sessionId,
+      callbacks,
+      bus,
+      planner,
+      workflow: { approve: 'all' },
+    });
+    const owner = ownerRecoveryFixture({ wctx, state });
 
     const result = await runPlanningPhases({
-      wctx: resumeWctx({
-        projectDir,
-        sessionId,
-        callbacks,
-        bus,
-        planner,
-        workflow: { approve: 'all' },
-      }),
-      state,
-      savedState: state,
+      wctx,
+      state: owner.getState(),
+      savedState: owner.getState(),
       selectedSkills: undefined,
       phaseTimings: {},
       startTime: Date.now(),
-      setTrackedState: vi.fn(),
+      setTrackedState: owner.setTrackedState,
+      recovery: owner.recovery,
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
     expect(onApprovalNeeded).toHaveBeenNthCalledWith(
@@ -1931,11 +2152,6 @@ describe('runPlanningPhases — reviewing-spec and reviewing-plan resume', () =>
       join(sessionDir(projectDir, sessionId), TASKS_FILE),
     );
     expect(planner.plan).not.toHaveBeenCalled();
-    expect(
-      events.some(
-        (event) => event.type === 'warning' && event.code === 'approval_prompt_not_restored',
-      ),
-    ).toBe(false);
   });
 
   it('regenerates the Task Briefs when a resumed plan review revises the plan', async () => {
@@ -1958,25 +2174,28 @@ describe('runPlanningPhases — reviewing-spec and reviewing-plan resume', () =>
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus } = makeBusRecorder();
     const state = { ...parkedState('reviewing-plan'), tasks: parseTasks(REAL_TASKS_MD) };
+    const wctx = resumeWctx({
+      projectDir,
+      sessionId,
+      callbacks,
+      bus,
+      planner,
+      workflow: { approve: 'all' },
+    });
+    const owner = ownerRecoveryFixture({ wctx, state });
 
     const result = await runPlanningPhases({
-      wctx: resumeWctx({
-        projectDir,
-        sessionId,
-        callbacks,
-        bus,
-        planner,
-        workflow: { approve: 'all' },
-      }),
-      state,
-      savedState: state,
+      wctx,
+      state: owner.getState(),
+      savedState: owner.getState(),
       selectedSkills: undefined,
       phaseTimings: {},
       startTime: Date.now(),
-      setTrackedState: vi.fn(),
+      setTrackedState: owner.setTrackedState,
+      recovery: owner.recovery,
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expect(result.state.tasks.map((task) => task.title)).toEqual(['Rebuild auth']);
     expect(onApprovalNeeded).toHaveBeenNthCalledWith(
@@ -1994,6 +2213,339 @@ describe('runPlanningPhases — reviewing-spec and reviewing-plan resume', () =>
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus } = makeBusRecorder();
     const state = parkedState('reviewing-spec');
+    const wctx = resumeWctx({ projectDir, sessionId, callbacks, bus, planner });
+    const owner = ownerRecoveryFixture({ wctx, state });
+
+    const result = await runPlanningPhases({
+      wctx,
+      state: owner.getState(),
+      savedState: owner.getState(),
+      selectedSkills: undefined,
+      phaseTimings: {},
+      startTime: Date.now(),
+      setTrackedState: owner.setTrackedState,
+      recovery: owner.recovery,
+    });
+
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'cancelled' });
+    expect(result.state.phase).toBe('idle');
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
+  });
+
+  type RecoveryOutcome = 'blocked' | 'provider' | 'ready';
+
+  function continuationState(): WorkflowState {
+    let state = createInitialState('feat');
+    state = transition(state, { type: 'START' });
+    state = transition(state, { type: 'RESEARCH_DONE' });
+    state = transition(state, { type: 'SPEC_DONE' });
+    state = transition(state, { type: 'APPROVE_SPEC' });
+    return transition(state, {
+      type: 'PLAN_DONE',
+      tasks: parseTasks(REAL_TASKS_MD),
+    });
+  }
+
+  function recoveryProjection(
+    sessionId: string,
+    outcome: RecoveryOutcome,
+  ): BriefRecoveryProjectionV1 {
+    const activeBrief = { revision: 1, hash: 'b'.repeat(64), path: TASKS_FILE };
+    const report = {
+      revision: 1,
+      hash: 'r'.repeat(64),
+      path: BRIEF_READINESS_FILE,
+    };
+    const issue = {
+      code: 'missing_scope',
+      severity: 'error' as const,
+      taskId: 'T001',
+      message: 'scope is missing',
+    };
+    const ready = outcome === 'ready';
+    return {
+      version: 1,
+      sessionId,
+      stateRevision: 2,
+      recoveryRevision: 1,
+      epochId: 'epoch-regenerated',
+      status: ready ? 'ready' : 'blocked',
+      origin: { mode: 'standard', entry: 'regenerated-plan' },
+      continuation: {
+        version: 1,
+        kind: 'approval',
+        mode: 'standard',
+        entry: 'regenerated-plan',
+      },
+      activeBrief,
+      matchingReport: {
+        briefHash: activeBrief.hash,
+        report,
+        ruleVersion: 'brief-quality-v1',
+        issues: ready ? [] : [issue],
+      },
+      blocker: ready
+        ? null
+        : outcome === 'provider'
+          ? {
+              kind: 'provider',
+              code: 'provider_auth',
+              message: 'provider unavailable',
+            }
+          : { kind: 'quality', issues: [issue] },
+      allowedActions: ready ? ['approve'] : ['retry', 'edit', 'reject'],
+      activeOperation: null,
+      latestAttempt: null,
+      queuedInputs: {
+        ids: [],
+        count: 0,
+        carriedCount: 0,
+        heldCount: 0,
+        releasedCount: 0,
+      },
+    };
+  }
+
+  function admissionInput(sessionId: string): BriefAdmissionInput {
+    const activeBrief = { revision: 1, hash: 'b'.repeat(64), path: TASKS_FILE };
+    return {
+      sessionId,
+      origin: { mode: 'standard', entry: 'regenerated-plan' },
+      continuation: {
+        version: 1,
+        kind: 'approval',
+        mode: 'standard',
+        entry: 'regenerated-plan',
+      },
+      activeBrief,
+      report: {
+        briefHash: activeBrief.hash,
+        report: {
+          revision: 1,
+          hash: 'r'.repeat(64),
+          path: BRIEF_READINESS_FILE,
+        },
+        ruleVersion: 'brief-quality-v1',
+        issues: [],
+        errorCount: 0,
+      },
+      qualityPolicyVersion: 'brief-quality-v1',
+    };
+  }
+
+  function recoveryResult(
+    sessionId: string,
+    projection: BriefRecoveryProjectionV1,
+    outcome: RecoveryOutcome,
+  ): RecoveryResultV1 {
+    if (outcome === 'ready') {
+      return {
+        version: 1,
+        sessionId,
+        epochId: projection.epochId,
+        projection,
+        kind: 'ready',
+        operationId: null,
+      };
+    }
+    return {
+      version: 1,
+      sessionId,
+      epochId: projection.epochId,
+      projection,
+      kind: 'blocked',
+      code: outcome === 'provider' ? 'brief_provider_error' : 'brief_contract_blocked',
+      operationId: null,
+      reason: outcome === 'provider' ? 'provider unavailable' : 'quality remains blocked',
+    };
+  }
+
+  function phaseRecovery(
+    sessionId: string,
+    state: WorkflowState,
+    outcome: RecoveryOutcome,
+  ): {
+    binding: PhaseRecoveryBinding;
+    enter: ReturnType<typeof vi.fn>;
+    dispatch: ReturnType<typeof vi.fn>;
+    setState: (next: WorkflowState) => void;
+    result: RecoveryResultV1;
+  } {
+    const projection = recoveryProjection(sessionId, outcome);
+    const result = recoveryResult(sessionId, projection, outcome);
+    let currentState = state;
+    const enter = vi.fn(async () => result);
+    const dispatch = vi.fn(async () => result);
+    const controller: PhaseRecoveryBinding['controller'] = {
+      inspectBriefRecovery: vi.fn(() => projection),
+      enterBriefAdmission: enter,
+      dispatchBriefAction: dispatch,
+      queueBriefInput: vi.fn(async () => {
+        throw new Error('queue not expected in continuation');
+      }),
+      settlePlannerAttempt: vi.fn(async () => {
+        throw new Error('settlement not expected in continuation');
+      }),
+    };
+    return {
+      binding: {
+        controller,
+        authority: {
+          kind: 'usable',
+          sessionId,
+          ownerId: 'owner-1',
+          pid: 1,
+          processStart: 'start-1',
+          runId: 'run-1',
+          acquisitionId: 'acquisition-1',
+          fence: 1,
+          stateRevision: 0,
+          stateDigest: 'd'.repeat(64),
+        } satisfies StateAuthorityReceipt,
+        admission: result,
+        createAdmissionInput: () => admissionInput(sessionId),
+        projection,
+        readState: () => currentState,
+        writeState: (next) => {
+          currentState = next;
+        },
+      },
+      enter,
+      dispatch,
+      setState: (next) => {
+        currentState = next;
+      },
+      result,
+    };
+  }
+
+  async function runRegeneratedPlanContinuation(opts: {
+    projectDir: string;
+    sessionId: string;
+    state: WorkflowState;
+    callbacks: OrchestratorCallbacks;
+    bus: EventBus;
+    planner: ReturnType<typeof makePlanner>;
+    recovery?: PhaseRecoveryBinding | undefined;
+  }): Promise<PlanningPhaseResult> {
+    const wctx = resumeWctx({
+      projectDir: opts.projectDir,
+      sessionId: opts.sessionId,
+      callbacks: opts.callbacks,
+      bus: opts.bus,
+      planner: opts.planner,
+      workflow: { approve: 'all' },
+    });
+    const owner =
+      opts.recovery === undefined ? ownerRecoveryFixture({ wctx, state: opts.state }) : undefined;
+    const recovery = opts.recovery ?? owner?.recovery;
+    return runPlanningPhases({
+      wctx,
+      state: owner?.getState() ?? opts.state,
+      savedState: owner?.getState() ?? opts.state,
+      selectedSkills: undefined,
+      phaseTimings: {},
+      startTime: Date.now(),
+      setTrackedState: owner?.setTrackedState ?? vi.fn(),
+      ...(recovery === undefined ? {} : { recovery }),
+    });
+  }
+
+  it('keeps a regenerated continuation in review when controller admission is blocked', async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Plan', TEST_METADATA);
+    writeSpecFile({ projectDir, sessionId }, TASKS_FILE, REAL_TASKS_MD, TEST_METADATA);
+    const planner = makePlanner();
+    const onApprovalNeeded = sequencedApproval([{ approved: true }]);
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const { bus } = makeBusRecorder();
+    const state = continuationState();
+    const recovery = phaseRecovery(sessionId, state, 'blocked');
+
+    const result = await runRegeneratedPlanContinuation({
+      projectDir,
+      sessionId,
+      state,
+      callbacks,
+      bus,
+      planner,
+      recovery: recovery.binding,
+    });
+
+    expect(result.disposition).toBe('parked');
+    expect(result.state.phase).toBe('reviewing-plan');
+    expect(recovery.enter).toHaveBeenCalledTimes(1);
+    expect(recovery.dispatch).not.toHaveBeenCalled();
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
+    expect(planner.regenerate).not.toHaveBeenCalled();
+  });
+
+  it('enters implementation only after ready admission and approved briefs', async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Plan', TEST_METADATA);
+    writeSpecFile({ projectDir, sessionId }, TASKS_FILE, REAL_TASKS_MD, TEST_METADATA);
+    const planner = makePlanner();
+    const onApprovalNeeded = sequencedApproval([{ approved: true }, { approved: true }]);
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const { bus } = makeBusRecorder();
+    const state = continuationState();
+    const result = await runRegeneratedPlanContinuation({
+      projectDir,
+      sessionId,
+      state,
+      callbacks,
+      bus,
+      planner,
+    });
+
+    expect(result.disposition).toBe('ready-for-tasks');
+    expect(result.state.phase).toBe('implementing');
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
+    expect(planner.regenerate).not.toHaveBeenCalled();
+  });
+
+  it('keeps provider failure non-terminal and does not dispatch implementation', async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Plan', TEST_METADATA);
+    writeSpecFile({ projectDir, sessionId }, TASKS_FILE, REAL_TASKS_MD, TEST_METADATA);
+    const planner = makePlanner();
+    const onApprovalNeeded = sequencedApproval([{ approved: true }]);
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const { bus } = makeBusRecorder();
+    const state = continuationState();
+    const recovery = phaseRecovery(sessionId, state, 'provider');
+
+    const result = await runRegeneratedPlanContinuation({
+      projectDir,
+      sessionId,
+      state,
+      callbacks,
+      bus,
+      planner,
+      recovery: recovery.binding,
+    });
+
+    expect(result.disposition).toBe('parked');
+    expect(result.state.phase).toBe('reviewing-plan');
+    expect(recovery.enter).toHaveBeenCalledTimes(1);
+    expect(recovery.dispatch).not.toHaveBeenCalled();
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes rewound briefs through authoritative recovery admission', async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Plan', TEST_METADATA);
+    const planner = makePlanner({
+      review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+    const state = {
+      ...continuationState(),
+      phase: 'planning' as const,
+      rewindPending: { target: 'plan' as const },
+    };
+    const recovery = phaseRecovery(sessionId, state, 'blocked');
 
     const result = await runPlanningPhases({
       wctx: resumeWctx({ projectDir, sessionId, callbacks, bus, planner }),
@@ -2003,10 +2555,53 @@ describe('runPlanningPhases — reviewing-spec and reviewing-plan resume', () =>
       phaseTimings: {},
       startTime: Date.now(),
       setTrackedState: vi.fn(),
+      recovery: recovery.binding,
     });
 
-    expect(result.cancelled).toBe(true);
-    expect(result.state.phase).toBe('idle');
+    expect(result.disposition).toBe('parked');
+    expect(result.state.phase).not.toBe('implementing');
+    expect(recovery.enter).toHaveBeenCalledTimes(1);
+    expect(recovery.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('returns the persisted paid state when regenerated briefs fail to parse', async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Plan', TEST_METADATA);
+    writeSpecFile({ projectDir, sessionId }, TASKS_FILE, REAL_TASKS_MD, TEST_METADATA);
+    const planner = makePlanner({
+      review: vi.fn().mockResolvedValue({
+        text: 'not a task brief',
+        usage: { inputTokens: 17, outputTokens: 5 },
+      }),
+    });
+    const onApprovalNeeded = vi
+      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
+      .mockImplementation(async (kind, _filePath) => {
+        if (kind === 'plan') {
+          writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Edited plan', TEST_METADATA);
+        }
+        return { approved: true };
+      });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const { bus } = makeBusRecorder();
+    const state = continuationState();
+
+    const result = await runRegeneratedPlanContinuation({
+      projectDir,
+      sessionId,
+      state,
+      callbacks,
+      bus,
+      planner,
+    });
+
+    expect(result.disposition).toBe('parked');
+    expect(result.state.phase).toBe('reviewing-briefs');
+    expect(result.state.tokenUsage.plannerInput).toBeGreaterThan(state.tokenUsage.plannerInput);
+    expect(loadState({ projectDir, sessionId })?.tokenUsage.plannerInput).toBe(
+      result.state.tokenUsage.plannerInput,
+    );
+    expect(planner.review).toHaveBeenCalledTimes(2);
     expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
   });
 });
@@ -2083,33 +2678,45 @@ describe('runPlanningPhases — routing inputs reaching the readiness gate', () 
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus, events } = makeBusRecorder();
     const state = parkedBriefsState();
+    const wctx = {
+      ...routingWctx({ projectDir, sessionId, callbacks, bus, planner }),
+      modelCache: makeModelCacheAccessor({
+        providerModels: {
+          openrouter: [{ id: 'runtime-wide', contextLength: CACHE_CONTEXT_LENGTH }],
+        },
+      }),
+      detectedContextLength: 4_096,
+    } satisfies WorkflowContext;
+    const owner = ownerRecoveryFixture({ wctx, state: { ...state, phase: 'planning' } });
+    await owner.recovery.controller.enterBriefAdmission(
+      owner.recovery.createAdmissionInput({
+        state: owner.getState(),
+        tasks: parseTasks(OVERSIZED_BRIEFS),
+        projectDir,
+        sessionId,
+      }),
+      owner.recovery.authority,
+    );
 
     const result = await runPlanningPhases({
-      wctx: {
-        ...routingWctx({ projectDir, sessionId, callbacks, bus, planner }),
-        modelCache: makeModelCacheAccessor({
-          providerModels: {
-            openrouter: [{ id: 'runtime-wide', contextLength: CACHE_CONTEXT_LENGTH }],
-          },
-        }),
-        detectedContextLength: 4_096,
-      },
-      state,
-      savedState: state,
+      wctx,
+      state: owner.getState(),
+      savedState: owner.getState(),
       selectedSkills: undefined,
       phaseTimings: {},
       startTime: Date.now(),
-      setTrackedState: vi.fn(),
+      setTrackedState: owner.setTrackedState,
+      recovery: owner.recovery,
     });
 
     const report = await readReadinessReport(projectDir, sessionId);
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
     expect(report.ok).toBe(true);
     expect(report.metadata[0].contextLength).toBe(CACHE_CONTEXT_LENGTH);
     expect(
-      events.some((event) => event.type === 'warning' && event.code === 'brief_readiness_block'),
+      events.some((event) => event.type === 'warning' && event.code === 'brief_readiness_blocked'),
     ).toBe(false);
   });
 
@@ -2121,24 +2728,36 @@ describe('runPlanningPhases — routing inputs reaching the readiness gate', () 
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus, events } = makeBusRecorder();
     const state = parkedBriefsState();
+    const wctx = routingWctx({ projectDir, sessionId, callbacks, bus, planner });
+    const owner = ownerRecoveryFixture({ wctx, state: { ...state, phase: 'planning' } });
+    await owner.recovery.controller.enterBriefAdmission(
+      owner.recovery.createAdmissionInput({
+        state: owner.getState(),
+        tasks: parseTasks(OVERSIZED_BRIEFS),
+        projectDir,
+        sessionId,
+      }),
+      owner.recovery.authority,
+    );
 
     const result = await runPlanningPhases({
-      wctx: routingWctx({ projectDir, sessionId, callbacks, bus, planner }),
-      state,
-      savedState: state,
+      wctx,
+      state: owner.getState(),
+      savedState: owner.getState(),
       selectedSkills: undefined,
       phaseTimings: {},
       startTime: Date.now(),
-      setTrackedState: vi.fn(),
+      setTrackedState: owner.setTrackedState,
+      recovery: owner.recovery,
     });
 
     const report = await readReadinessReport(projectDir, sessionId);
-    expect(result.cancelled).toBe(true);
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'rejected' });
     expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
     expect(report.ok).toBe(false);
     expect(report.metadata[0].contextLength).toBe(DEFAULT_UNKNOWN_CONTEXT_LENGTH);
     expect(
-      events.some((event) => event.type === 'warning' && event.code === 'brief_readiness_block'),
+      events.some((event) => event.type === 'warning' && event.code === 'brief_readiness_blocked'),
     ).toBe(true);
   });
 });

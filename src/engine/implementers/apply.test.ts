@@ -266,20 +266,23 @@ describe('applyCode', () => {
       '<<<<<<< SEARCH\n// line 11\n=======\n// patched 11\n>>>>>> REPLACE',
     ],
     ['a block truncated mid-patch', '<<<<<<< SEARCH\n// line 11\n=======\n// patched 11'],
-  ])('fails a malformed patch with %s instead of overwriting the file', async (_label, patchCode) => {
-    tempDir = createTempDir('impl-test');
-    const filePath = join(tempDir, 'src', 'malformed.ts');
-    const task = makeTask({ action: 'modify', file: 'src/malformed.ts' });
+  ])(
+    'fails a malformed patch with %s instead of overwriting the file',
+    async (_label, patchCode) => {
+      tempDir = createTempDir('impl-test');
+      const filePath = join(tempDir, 'src', 'malformed.ts');
+      const task = makeTask({ action: 'modify', file: 'src/malformed.ts' });
 
-    mkdirSync(join(tempDir, 'src'), { recursive: true });
-    writeFileSync(filePath, baseline40);
+      mkdirSync(join(tempDir, 'src'), { recursive: true });
+      writeFileSync(filePath, baseline40);
 
-    const result = await applyCode(patchCode, task, tempDir);
+      const result = await applyCode(patchCode, task, tempDir);
 
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('Malformed SEARCH/REPLACE block in src/malformed.ts');
-    expect(readFileSync(filePath, 'utf-8')).toBe(baseline40);
-  });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Malformed SEARCH/REPLACE block in src/malformed.ts');
+      expect(readFileSync(filePath, 'utf-8')).toBe(baseline40);
+    },
+  );
 
   it('writes a whole-file rewrite that only mentions the marker token inside a line', async () => {
     tempDir = createTempDir('impl-test');
@@ -355,16 +358,19 @@ describe('applyCode', () => {
     ['.git/config', 'modify'],
     ['.splitbrief/sessions/x/state.json', 'create'],
     ['.splitbrief/sessions/x/state.json', 'modify'],
-  ] as const)('refuses to write model output into the control plane (%s, %s)', async (file, action) => {
-    tempDir = createTempDir('impl-test');
-    const task = makeTask({ action, file });
+  ] as const)(
+    'refuses to write model output into the control plane (%s, %s)',
+    async (file, action) => {
+      tempDir = createTempDir('impl-test');
+      const task = makeTask({ action, file });
 
-    const result = await applyCode('[core]\n  evil = true\n', task, tempDir);
+      const result = await applyCode('[core]\n  evil = true\n', task, tempDir);
 
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('escapes project directory');
-    expect(existsSync(join(tempDir, file))).toBe(false);
-  });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('escapes project directory');
+      expect(existsSync(join(tempDir, file))).toBe(false);
+    },
+  );
 
   itUnix('refuses to modify an existing .git file (does not truncate it in place)', async () => {
     tempDir = createTempDir('impl-test');

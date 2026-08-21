@@ -30,6 +30,10 @@ export function typedEntries<K extends string, V>(obj: Readonly<Record<K, V>>): 
   return Object.entries(obj) as [K, V][];
 }
 
+export function identityRecord<K extends string>(keys: readonly K[]): Readonly<Record<K, K>> {
+  return Object.fromEntries(keys.map((key) => [key, key])) as Record<K, K>;
+}
+
 export function mapRecord<K extends string, Value, Result>(
   record: Readonly<Record<K, Value>>,
   transform: (value: Value, key: K) => Result,

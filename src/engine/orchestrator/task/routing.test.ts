@@ -87,47 +87,50 @@ describe('configForProfile', () => {
   it.each([
     ['output', 'direct', 'direct', 'reviewed-diff-only'],
     ['direct', 'output', 'extracted-code', 'parsed-output-only'],
-  ] as const)('makes the selected %s-to-%s profile the exact active configured identity', (defaultContract, selectedContract, writesFiles, resultPosture) => {
-    const config = configWithProfileContracts(defaultContract, selectedContract);
-    const sourceProfiles = config.implementerProfiles;
-    const sourceImplementer = config.implementer;
-    const selected = resolveImplementerProfiles(config).profiles.find(
-      (candidate) => candidate.name === 'selected-profile',
-    );
-    if (selected === undefined) throw new Error('Expected selected profile fixture');
+  ] as const)(
+    'makes the selected %s-to-%s profile the exact active configured identity',
+    (defaultContract, selectedContract, writesFiles, resultPosture) => {
+      const config = configWithProfileContracts(defaultContract, selectedContract);
+      const sourceProfiles = config.implementerProfiles;
+      const sourceImplementer = config.implementer;
+      const selected = resolveImplementerProfiles(config).profiles.find(
+        (candidate) => candidate.name === 'selected-profile',
+      );
+      if (selected === undefined) throw new Error('Expected selected profile fixture');
 
-    const routed = configForProfile(config, selected);
+      const routed = configForProfile(config, selected);
 
-    expect(config.implementer).toBe(sourceImplementer);
-    expect(config.implementerProfiles).toBe(sourceProfiles);
-    expect(config.implementerProfiles?.default).toBe('default-profile');
-    expect(routed.implementer).toEqual(selected.config);
-    expect(routed.implementerProfiles).not.toBe(sourceProfiles);
-    expect(routed.implementerProfiles?.profiles).toBe(sourceProfiles?.profiles);
-    expect(routed.implementerProfiles?.default).toBe('selected-profile');
+      expect(config.implementer).toBe(sourceImplementer);
+      expect(config.implementerProfiles).toBe(sourceProfiles);
+      expect(config.implementerProfiles?.default).toBe('default-profile');
+      expect(routed.implementer).toEqual(selected.config);
+      expect(routed.implementerProfiles).not.toBe(sourceProfiles);
+      expect(routed.implementerProfiles?.profiles).toBe(sourceProfiles?.profiles);
+      expect(routed.implementerProfiles?.default).toBe('selected-profile');
 
-    const active = resolveImplementerProfiles(routed).defaultProfile;
-    expect(active).toMatchObject({
-      name: 'selected-profile',
-      label: 'selected-id label',
-      costTier: 'frontier',
-      capabilities: { writesFiles },
-      isDefault: true,
-    });
-    const configured = resolveConfiguredCustomRunner(routed, 'implementer');
-    expect(configured).toMatchObject({
-      source: 'configured',
-      command: {
-        id: 'selected-id',
-        contract: selectedContract,
-        executable: process.execPath,
-        argv: ['--selected-id'],
-      },
-    });
-    expect(
-      customRunnerSecurityPosture('implementer', configured?.command.contract ?? 'output').result,
-    ).toBe(resultPosture);
-  });
+      const active = resolveImplementerProfiles(routed).defaultProfile;
+      expect(active).toMatchObject({
+        name: 'selected-profile',
+        label: 'selected-id label',
+        costTier: 'frontier',
+        capabilities: { writesFiles },
+        isDefault: true,
+      });
+      const configured = resolveConfiguredCustomRunner(routed, 'implementer');
+      expect(configured).toMatchObject({
+        source: 'configured',
+        command: {
+          id: 'selected-id',
+          contract: selectedContract,
+          executable: process.execPath,
+          argv: ['--selected-id'],
+        },
+      });
+      expect(
+        customRunnerSecurityPosture('implementer', configured?.command.contract ?? 'output').result,
+      ).toBe(resultPosture);
+    },
+  );
 
   it('carries the routed window into the selected implementer config when the profile declares none', () => {
     const config = configWithProfileContracts('output', 'direct');

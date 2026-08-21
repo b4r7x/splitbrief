@@ -22,8 +22,34 @@ import { runPlannerCallInContinuationLoop } from './call-loop.js';
 import { zeroTaskRetryPrompt } from '../../spec/prompts/zero-task-retry.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import type { Config } from '../../../core/schemas/config.js';
+import {
+  createTaskCompilationAttemptId,
+  OwnedPlannerArtifactSchema,
+} from '../../../core/schemas/task-compilation.js';
+import type { PhaseResult, PlannerArtifactLogicalName } from '../../planners/types.js';
+import { sha256Hex } from '../../../utils/sha256.js';
 
 let dirs: string[] = [];
+
+function phaseResult(logicalName: PlannerArtifactLogicalName, text: string): PhaseResult {
+  const digest = sha256Hex(text);
+  return {
+    artifact: OwnedPlannerArtifactSchema.parse({
+      semanticId: `test-${logicalName}`,
+      programId: null,
+      batchId: null,
+      attemptId: createTaskCompilationAttemptId(),
+      logicalName,
+      transport: 'stdout-final',
+      text,
+      byteLength: Buffer.byteLength(text, 'utf8'),
+      sha256: digest,
+      runtimeReceipt: digest,
+      terminal: { status: 'completed', recordId: `test-${logicalName}`, protocolDigest: digest },
+      sourceReceipt: { kind: 'stdout-final', resultDigest: digest },
+    }),
+  };
+}
 
 afterEach(() => {
   for (const dir of dirs) cleanupTempDir(dir);
@@ -302,7 +328,7 @@ describe('runPlannerCallInContinuationLoop — quick zero-task recovery', () => 
     expect(result.tasks).toHaveLength(1);
   });
 
-  it('returns the tokens of both calls and the union of their phases', async () => {
+  it('returns the tokens of both calls and the phases of the terminal attempt only', async () => {
     const { projectDir, sessionId } = setupSession();
     const quickPlan = vi
       .fn()
@@ -311,17 +337,14 @@ describe('runPlannerCallInContinuationLoop — quick zero-task recovery', () => 
         plan: '',
         tasks: [],
         usage: { inputTokens: 30, outputTokens: 15 },
-        phases: [
-          { text: '# first tasks', filename: 'tasks.md' },
-          { text: '# first spec', filename: 'spec.md' },
-        ],
+        phases: [phaseResult('tasks.md', '# first tasks'), phaseResult('spec.md', '# first spec')],
       })
       .mockResolvedValueOnce({
         spec: '',
         plan: '',
         tasks: [makeTask()],
         usage: { inputTokens: 12, outputTokens: 7 },
-        phases: [{ text: '# retry tasks', filename: 'tasks.md' }],
+        phases: [phaseResult('tasks.md', '# retry tasks')],
       });
     const planner = makePlanner({ quickPlan });
     const wctx = makeWctx(projectDir, sessionId);
@@ -335,10 +358,12 @@ describe('runPlannerCallInContinuationLoop — quick zero-task recovery', () => 
     });
 
     expect(result.usage).toEqual({ inputTokens: 42, outputTokens: 22 });
-    expect(result.phases).toEqual([
-      { text: '# retry tasks', filename: 'tasks.md' },
-      { text: '# first spec', filename: 'spec.md' },
-    ]);
+    expect(
+      result.phases?.map((phase) => ({
+        logicalName: phase.artifact.logicalName,
+        text: phase.artifact.text,
+      })),
+    ).toEqual([{ logicalName: 'tasks.md', text: '# retry tasks' }]);
   });
 
   it('sends a corrective retry prompt carrying the first attempt’s parse diagnostics', async () => {
@@ -385,7 +410,7 @@ describe('runPlannerCallInContinuationLoop — quick zero-task recovery', () => 
       plan: '',
       tasks: [],
       usage: null,
-      phases: [{ text: '# empty', filename: 'tasks.md' }],
+      phases: [phaseResult('tasks.md', '# empty')],
     });
     const planner = makePlanner({ quickPlan });
     const { bus, events } = makeBusRecorder();
@@ -472,43 +497,43 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
     expect(publishedText).toContain('after');
   });
 
-  it.each([
-    { mode: 'quick' as const },
-    { mode: 'speckit' as const },
-  ])('collects questions for mode $mode via planner callback', async ({ mode }) => {
-    const { projectDir, sessionId } = setupSession();
-    const question: ClarificationQuestion = {
-      id: 'q1',
-      type: 'choice',
-      text: 'Pick',
-      options: ['a', 'b'],
-    };
-    const emitQuestions = vi
-      .fn()
-      .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
-        callbacks.onQuestion?.([question]);
-        return { spec: '', plan: '', tasks: [makeTask()], usage: null };
+  it.each([{ mode: 'quick' as const }, { mode: 'speckit' as const }])(
+    'collects questions for mode $mode via planner callback',
+    async ({ mode }) => {
+      const { projectDir, sessionId } = setupSession();
+      const question: ClarificationQuestion = {
+        id: 'q1',
+        type: 'choice',
+        text: 'Pick',
+        options: ['a', 'b'],
+      };
+      const emitQuestions = vi
+        .fn()
+        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+          callbacks.onQuestion?.([question]);
+          return { spec: '', plan: '', tasks: [makeTask()], usage: null };
+        });
+      const planner = makePlanner({
+        plan: emitQuestions,
+        quickPlan: emitQuestions,
       });
-    const planner = makePlanner({
-      plan: emitQuestions,
-      quickPlan: emitQuestions,
-    });
-    const wctx = makeWctx(projectDir, sessionId);
-    const collectedQuestions: ClarificationQuestion[] = [];
+      const wctx = makeWctx(projectDir, sessionId);
+      const collectedQuestions: ClarificationQuestion[] = [];
 
-    await runPlannerCallInContinuationLoop({
-      wctx,
-      state: planningState(),
-      planner,
-      feature: 'test feature',
-      mode,
-      collectedQuestions,
-    });
+      await runPlannerCallInContinuationLoop({
+        wctx,
+        state: planningState(),
+        planner,
+        feature: 'test feature',
+        mode,
+        collectedQuestions,
+      });
 
-    expect(collectedQuestions).toEqual([
-      { id: 'q1', type: 'choice', text: 'Pick', options: ['a', 'b'] },
-    ]);
-  });
+      expect(collectedQuestions).toEqual([
+        { id: 'q1', type: 'choice', text: 'Pick', options: ['a', 'b'] },
+      ]);
+    },
+  );
 
   it('deduplicates IDs across retry callbacks before applying the question cap', async () => {
     const { projectDir, sessionId } = setupSession();

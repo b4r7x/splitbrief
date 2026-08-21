@@ -1,17 +1,24 @@
 import type { EngineEvent, EventBus, EventSink } from './types.js';
+import { projectEngineEventForTranscriptPolicy } from './protection/transcript.js';
 
 export function createEventBus(): EventBus {
   const sinks = new Set<EventSink>();
 
   function publish(event: EngineEvent): void {
-    // Sink failures are isolated: a crashing sink (disk full, render error, hostile hook)
-    // must not tear down the engine mid-task. Errors should re-emerge via the bus itself
-    // (the offending sink can publish a `warning` event before throwing, if it wants).
-    for (const sink of sinks) {
+    // Recovery callers invoke publish only after their evidence/state commit. The bus is
+    // deliberately not a second authority: it does not persist, deduplicate, reinterpret,
+    // or invoke providers. It only applies the canonical recovery projection at this
+    // delivery boundary; consumer sinks may then apply their context-specific limits.
+    const projected = projectRecoveryEvent(event);
+    if (projected === null) return;
+
+    // Snapshotting keeps one publication stable when a sink subscribes or unsubscribes
+    // while handling it, while preserving insertion order and duplicate event IDs.
+    for (const sink of [...sinks]) {
       try {
-        sink(event);
+        sink(projected);
       } catch {
-        /* intentional swallow — see comment above */
+        // A projection failure (disk, stream, renderer, or hook) is non-authoritative.
       }
     }
   }
@@ -24,4 +31,11 @@ export function createEventBus(): EventBus {
   }
 
   return { publish, subscribe };
+}
+
+function projectRecoveryEvent(event: EngineEvent): EngineEvent | null {
+  if (typeof event !== 'object' || event === null) return null;
+  const type = 'type' in event ? event.type : undefined;
+  if (typeof type !== 'string' || !type.startsWith('brief_recovery_')) return event;
+  return projectEngineEventForTranscriptPolicy(event, false);
 }

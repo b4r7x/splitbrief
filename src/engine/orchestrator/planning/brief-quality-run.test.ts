@@ -1,6 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
+import type {
+  BriefAdmissionInput,
+  BriefQualityIssue,
+  BriefRecoveryController,
+  BriefRecoveryControllerDeps,
+  BudgetAccountingKey,
+  BudgetReservation,
+  RecoveryProviderRequest,
+  RecoveryProviderResult,
+  RecoveryResultV1,
+  StateAuthorityReceipt,
+} from '../../../core/schemas/brief-recovery.js';
+import type { BriefQualityRecoveryBinding } from './brief-quality-preparation.js';
+import { makeTestOwnerCommit } from '#testing/helpers/brief-owner.js';
 import { error } from '../../../utils/error.js';
 import { addUsageAndSave } from '../state-ops.js';
 import {
@@ -17,7 +31,11 @@ import {
 } from '#testing/helpers/planning-phase.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { formatTasks } from '../../spec/formatter.js';
+import { createBriefRecoveryController } from './brief-recovery-controller.js';
 import { runBriefQuality } from './brief-quality-run.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery.js';
+import { BriefRecoveryProjectionV1Schema } from '../../../core/schemas/brief-recovery.js';
 
 const dirs: string[] = [];
 
@@ -44,6 +62,146 @@ function makeInput(tasks = [makePassingTask()]) {
   });
 
   return { projectDir, sessionId, state, planner, wctx, events, tasks };
+}
+
+const CONTROLLER_AUTHORITY: StateAuthorityReceipt = {
+  kind: 'usable',
+  sessionId: 'session-1',
+  ownerId: 'owner-1',
+  pid: 1,
+  processStart: 'start-1',
+  runId: 'run-1',
+  acquisitionId: 'acquisition-1',
+  fence: 1,
+  stateRevision: 0,
+  stateDigest: 'state-digest',
+};
+
+function makeAdmission(
+  issues: readonly BriefQualityIssue[],
+  mode: 'standard' | 'quick' = 'standard',
+): BriefAdmissionInput {
+  const activeBrief = { revision: 1, hash: 'b'.repeat(64), path: 'tasks.md' };
+  return {
+    sessionId: CONTROLLER_AUTHORITY.sessionId,
+    origin: mode === 'standard' ? { mode, entry: 'initial' } : { mode, entry: 'initial' },
+    continuation:
+      mode === 'standard'
+        ? { version: 1, kind: 'approval', mode, entry: 'initial' }
+        : { version: 1, kind: 'quick-start', entry: 'initial' },
+    activeBrief,
+    report: {
+      briefHash: activeBrief.hash,
+      report: { revision: 1, hash: 'r'.repeat(64), path: 'brief-quality.json' },
+      ruleVersion: 'brief-quality-v1',
+      issues,
+      errorCount: issues.filter((issue) => issue.severity === 'error').length,
+    },
+    qualityPolicyVersion: 'brief-quality-v1',
+  };
+}
+
+function makeReservation(accountingKey: BudgetAccountingKey): BudgetReservation {
+  return {
+    accountingKey,
+    amount: 0.1,
+    state: 'reserved',
+    usageApplied: false,
+    appliedUsage: null,
+    history: [{ state: 'reserved', at: '2026-01-01T00:00:00.000Z', reason: 'accepted' }],
+  };
+}
+
+function makeController(
+  options: {
+    providerResult?: (input: RecoveryProviderRequest) => RecoveryProviderResult;
+    budgetRefused?: boolean;
+    qualityIssues?: BriefQualityIssue[];
+  } = {},
+): {
+  controller: BriefRecoveryController;
+  providerCalls: RecoveryProviderRequest[];
+  estimateCalls: number;
+} {
+  const providerCalls: RecoveryProviderRequest[] = [];
+  let estimateCalls = 0;
+  let generatedId = 0;
+  const providerResult =
+    options.providerResult ??
+    ((input: RecoveryProviderRequest): RecoveryProviderResult => ({
+      kind: 'completed',
+      requestId: input.requestId,
+      dispatchPossibility: 'possible',
+      remoteObservation: 'confirmed-final',
+      text: 'corrected brief',
+      providerCode: null,
+      usage: null,
+    }));
+  const deps: BriefRecoveryControllerDeps = {
+    provider: {
+      async dispatch(input) {
+        providerCalls.push(input);
+        return providerResult(input);
+      },
+    },
+    budget: {
+      estimate: () => {
+        estimateCalls += 1;
+        return {
+          kind: 'finite',
+          budgetUnit: 'usd',
+          inputTokens: 1,
+          outputTokens: 1,
+          amount: 0.1,
+          pricingIdentity: 'test',
+        };
+      },
+      reserve: ({ accountingKey }) =>
+        options.budgetRefused
+          ? { kind: 'refused', code: 'brief_budget_exhausted', reason: 'budget refused' }
+          : { kind: 'reserved', reservation: makeReservation(accountingKey) },
+      reconcile: ({ reservation, remoteObservation, usage }) => ({
+        reservation: {
+          ...reservation,
+          state:
+            remoteObservation === 'not-dispatched'
+              ? 'released'
+              : remoteObservation === 'unknown'
+                ? 'held'
+                : 'reconciled',
+          usageApplied: usage !== null,
+          appliedUsage: usage,
+        },
+        usageApplied: usage !== null,
+        appliedAmount: 0,
+      }),
+      terminalCharge: ({ reservation }) => ({
+        reservation: { ...reservation, state: 'terminal-charged' },
+        usageApplied: reservation.usageApplied,
+        appliedAmount: reservation.amount,
+      }),
+    },
+    evaluateQuality: () => options.qualityIssues ?? [],
+    readRetryContext: () => ({
+      prompt: 'repair the original Task Briefs',
+      projectDir: '/tmp/original-project',
+      currentKnownSpend: 0,
+      maxBudget: 1,
+    }),
+    commit: makeTestOwnerCommit(),
+    now: () => '2026-01-01T00:00:00.000Z',
+    nextId: () => {
+      generatedId += 1;
+      return `controller-id-${generatedId}`;
+    },
+  };
+  return {
+    controller: createBriefRecoveryController(deps),
+    providerCalls,
+    get estimateCalls() {
+      return estimateCalls;
+    },
+  };
 }
 
 describe('runBriefQuality', () => {
@@ -80,7 +238,11 @@ describe('runBriefQuality', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.result).toMatchObject({ cancelled: true, failed: true, tasks: [] });
+    expect(result.result).toMatchObject({
+      disposition: 'terminal',
+      outcome: 'failed',
+      state: { tasks: [] },
+    });
     expect(result.result.state.phase).toBe('idle');
     expect(input.events.some((event) => event.type === 'error')).toBe(true);
   });
@@ -98,7 +260,11 @@ describe('runBriefQuality', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.result).toMatchObject({ cancelled: true, failed: true, tasks: [] });
+    expect(result.result).toMatchObject({
+      disposition: 'terminal',
+      outcome: 'failed',
+      state: { tasks: [] },
+    });
     const failure = input.events.find((event) => event.type === 'error');
     expect(failure?.type === 'error' && failure.message).toContain('repair failed');
   });
@@ -118,7 +284,7 @@ describe('runBriefQuality', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.result).toMatchObject({ cancelled: true, failed: false });
+    expect(result.result).toMatchObject({ disposition: 'terminal', outcome: 'cancelled' });
     expect(input.events.some((event) => event.type === 'error')).toBe(false);
   });
 
@@ -157,5 +323,237 @@ describe('runBriefQuality', () => {
       plannerInput: 19,
       plannerOutput: 7,
     });
+  });
+});
+
+describe('controller admission call bounds', () => {
+  const warning: BriefQualityIssue = {
+    code: 'missing_scope',
+    severity: 'warning',
+    taskId: 'T001',
+    message: 'scope could be more specific',
+  };
+  const errorIssue: BriefQualityIssue = {
+    code: 'missing_scope',
+    severity: 'error',
+    taskId: 'T001',
+    message: 'scope is missing',
+  };
+
+  it.each([
+    ['clean', []],
+    ['warning-only', [warning]],
+  ] as const)('does not reserve or dispatch for %s admission', async (_label, issues) => {
+    const harness = makeController();
+
+    const result = await harness.controller.enterBriefAdmission(
+      makeAdmission(issues),
+      CONTROLLER_AUTHORITY,
+    );
+
+    expect(result.kind).toBe('ready');
+    expect(harness.providerCalls).toHaveLength(0);
+    expect(harness.estimateCalls).toBe(0);
+  });
+
+  it('permits exactly one automatic repair and binds the provider call to its operation', async () => {
+    const harness = makeController();
+
+    const result = await harness.controller.enterBriefAdmission(
+      makeAdmission([errorIssue]),
+      CONTROLLER_AUTHORITY,
+    );
+
+    expect(result.kind).toBe('ready');
+    expect(harness.providerCalls).toHaveLength(1);
+    expect(harness.estimateCalls).toBe(1);
+    expect(harness.providerCalls[0]).toMatchObject({
+      sessionId: CONTROLLER_AUTHORITY.sessionId,
+      epochId: result.epochId,
+      operationId: expect.any(String),
+      requestId: expect.any(String),
+    });
+  });
+
+  it('allows distinct manual operations one provider call each until quality remains blocked', async () => {
+    const harness = makeController({ qualityIssues: [errorIssue] });
+    const admission = makeAdmission([errorIssue], 'quick');
+    const initial = await harness.controller.enterBriefAdmission(admission, CONTROLLER_AUTHORITY);
+    const epochId = initial.epochId;
+    if (epochId === null) throw new Error('expected a recovery epoch');
+
+    const command = (operationId: string, base = admission.activeBrief) => ({
+      version: 1 as const,
+      sessionId: CONTROLLER_AUTHORITY.sessionId,
+      epochId,
+      operationId,
+      base,
+      intentHash: `intent-${operationId}`,
+      action: 'retry' as const,
+      diagnosticFingerprint: 'd'.repeat(64),
+      frozenInputIds: [],
+    });
+
+    const first = await harness.controller.dispatchBriefAction(command('manual-1'), {
+      ...CONTROLLER_AUTHORITY,
+      stateRevision: initial.projection.stateRevision,
+    });
+    const second = await harness.controller.dispatchBriefAction(
+      command('manual-2', first.projection.activeBrief ?? admission.activeBrief),
+      {
+        ...CONTROLLER_AUTHORITY,
+        stateRevision: first.projection.stateRevision,
+      },
+    );
+
+    expect(initial.kind).toBe('blocked');
+    expect(first.kind).toBe('blocked');
+    expect(second.kind).toBe('blocked');
+    expect(harness.providerCalls).toHaveLength(2);
+    expect(harness.providerCalls.map((call) => call.operationId)).toEqual(['manual-1', 'manual-2']);
+  });
+
+  it('refuses automatic repair at the budget boundary before any provider call', async () => {
+    const harness = makeController({ budgetRefused: true });
+
+    const result = await harness.controller.enterBriefAdmission(
+      makeAdmission([errorIssue]),
+      CONTROLLER_AUTHORITY,
+    );
+
+    expect(result).toMatchObject({ kind: 'blocked', code: 'brief_budget_exhausted' });
+    expect(harness.estimateCalls).toBe(1);
+    expect(harness.providerCalls).toHaveLength(0);
+  });
+});
+
+describe('runBriefQuality — contract readiness, not scalar score', () => {
+  const contractError = {
+    code: 'missing_scope',
+    severity: 'error' as const,
+    taskId: 'T001',
+    message: 'scope is missing',
+  };
+
+  function blockedProjection(): BriefRecoveryProjectionV1 {
+    const activeBrief = { revision: 1, hash: 'a'.repeat(64), path: 'tasks.md' };
+    return BriefRecoveryProjectionV1Schema.parse({
+      version: 1,
+      sessionId: CONTROLLER_AUTHORITY.sessionId,
+      stateRevision: 1,
+      recoveryRevision: 0,
+      epochId: 'epoch-1',
+      status: 'blocked',
+      origin: { mode: 'standard', entry: 'initial' },
+      continuation: { version: 1, kind: 'approval', mode: 'standard', entry: 'initial' },
+      activeBrief,
+      matchingReport: {
+        briefHash: activeBrief.hash,
+        report: { revision: 1, hash: 'b'.repeat(64), path: 'brief-quality.json' },
+        ruleVersion: 'brief-quality-v1',
+        issues: [contractError],
+      },
+      blocker: null,
+      allowedActions: ['approve', 'edit', 'retry', 'reject', 'revise', 'status'],
+      activeOperation: null,
+      latestAttempt: null,
+      queuedInputs: { ids: [], count: 0, carriedCount: 0, heldCount: 0, releasedCount: 0 },
+    });
+  }
+
+  function blockedBinding(projection: BriefRecoveryProjectionV1) {
+    return {
+      controller: {
+        inspectBriefRecovery: (): BriefRecoveryProjectionV1 => projection,
+        enterBriefAdmission: async (): Promise<RecoveryResultV1> => ({
+          version: 1,
+          sessionId: CONTROLLER_AUTHORITY.sessionId,
+          epochId: projection.epochId,
+          kind: 'blocked',
+          code: 'brief_contract_blocked',
+          operationId: null,
+          projection,
+        }),
+        queueBriefInput: vi.fn(),
+        dispatchBriefAction: vi.fn(),
+        settlePlannerAttempt: vi.fn(),
+      } as unknown as Pick<
+        BriefRecoveryController,
+        | 'inspectBriefRecovery'
+        | 'enterBriefAdmission'
+        | 'queueBriefInput'
+        | 'dispatchBriefAction'
+        | 'settlePlannerAttempt'
+      >,
+      authority: CONTROLLER_AUTHORITY,
+      createAdmissionInput: () => makeAdmission([]),
+    } satisfies BriefQualityRecoveryBinding;
+  }
+
+  it('readies a contract-clean brief whose score is below one; score is diagnostic only', async () => {
+    const warningOnly = makeTask({
+      scope: {
+        inBounds: ['Modify only `src/hello.ts`.'],
+        outOfBounds: ['Do not touch anything outside the task file.'],
+      },
+      evidence: ['brief-quality.json confirms the task brief is complete'],
+    });
+    const input = makeInput([warningOnly]);
+
+    const result = await runBriefQuality({
+      tasks: input.tasks,
+      state: input.state,
+      planner: input.planner,
+      wctx: input.wctx,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.report.passed).toBe(true);
+    expect(result.report.issues.filter((issue) => issue.severity === 'error')).toHaveLength(0);
+    expect(result.report.score).toBeLessThan(1);
+  });
+
+  it('never readies a contract with error issues even when the derived score is not zero', async () => {
+    const invalidTask = makeBriefQualityFailureTask();
+    const input = makeInput([invalidTask]);
+    vi.mocked(input.planner.review).mockResolvedValue({
+      text: formatTasks([invalidTask]),
+      usage: null,
+    });
+
+    const result = await runBriefQuality({
+      tasks: input.tasks,
+      state: input.state,
+      planner: input.planner,
+      wctx: input.wctx,
+    });
+
+    expect(result.ok).toBe(false);
+    const failed = input.events.find((event) => event.type === 'brief_quality_failed');
+    expect(failed?.type === 'brief_quality_failed' && failed.score).toBeGreaterThan(0);
+    expect(failed?.type === 'brief_quality_failed' && failed.errorCount).toBeGreaterThan(0);
+  });
+
+  it('parks a blocked owner admission regardless of any derived report score', async () => {
+    const projection = blockedProjection();
+    const input = makeInput();
+
+    const result = await runBriefQuality({
+      tasks: input.tasks,
+      state: input.state,
+      planner: input.planner,
+      wctx: input.wctx,
+      recovery: blockedBinding(projection),
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.result).toMatchObject({ disposition: 'parked' });
+    expect(
+      result.projection.matchingReport?.issues.some((issue) => issue.severity === 'error'),
+    ).toBe(true);
+    expect(result.report.passed).toBe(false);
+    expect(result.report.score).toBeLessThan(1);
   });
 });

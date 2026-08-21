@@ -216,14 +216,15 @@ function buildConformanceAdapterArgs(
 }
 
 describe('existing CLI prompt argv transport contract', () => {
-  it.each(
-    CONFORMANCE_ROWS.filter((row) => row.rawContract.promptTransport === 'argv'),
-  )('$id $role keeps an oversized prompt byte-for-byte in argv for adapter pre-spawn rejection', (row) => {
-    const args = buildConformanceAdapterArgs(row, PROMPT_ARGV_OVERSIZED);
-    expect(args).toContain(PROMPT_ARGV_OVERSIZED);
-    expect(args.find((arg) => arg.includes(PROMPT_ARGV_LONG_HEAD))).toBe(PROMPT_ARGV_OVERSIZED);
-    expect(args.find((arg) => arg.includes(PROMPT_ARGV_LONG_TAIL))).toBe(PROMPT_ARGV_OVERSIZED);
-  });
+  it.each(CONFORMANCE_ROWS.filter((row) => row.rawContract.promptTransport === 'argv'))(
+    '$id $role keeps an oversized prompt byte-for-byte in argv for adapter pre-spawn rejection',
+    (row) => {
+      const args = buildConformanceAdapterArgs(row, PROMPT_ARGV_OVERSIZED);
+      expect(args).toContain(PROMPT_ARGV_OVERSIZED);
+      expect(args.find((arg) => arg.includes(PROMPT_ARGV_LONG_HEAD))).toBe(PROMPT_ARGV_OVERSIZED);
+      expect(args.find((arg) => arg.includes(PROMPT_ARGV_LONG_TAIL))).toBe(PROMPT_ARGV_OVERSIZED);
+    },
+  );
 });
 
 describe('existing CLI common contract', () => {

@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import { chmod, rm, stat, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { CliExecutableReceiptSchema } from '../../core/discovery/detection.js';
 import type { RunnerEvidence } from '../../core/discovery/runner-evidence.js';
 import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
-import { admitFreshCliStart, runnerGateFor } from './start-gate.js';
+import { withTempDir } from '#testing/helpers/temp-dir.js';
+import {
+  admitFreshCliStart,
+  assertCliStartGate,
+  runnerGateFor,
+  type CliStartGate,
+} from './start-gate.js';
 import type { RunnerGate, RunnerGateExpectation } from './prepared-execution.js';
 import type { AdmittedCustomRunnerInvocation } from './trust.js';
 
@@ -269,6 +277,88 @@ describe('fresh CLI start gate', () => {
     expect(admit(evidence)).toEqual({
       kind: 'denied',
       reason: { kind: 'executable', fact: 'unknown' },
+    });
+  });
+});
+
+describe('start-gate receipt recheck against disk', () => {
+  async function receiptFor(path: string): Promise<CliStartGate> {
+    await chmod(path, 0o755);
+    const info = await stat(path);
+    return {
+      tool: 'codex',
+      executable: CliExecutableReceiptSchema.parse({
+        path,
+        fingerprint: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs },
+        executableIdentity: {
+          canonicalPath: path,
+          realPath: path,
+          platformFileId: `${info.dev}:${info.ino}`,
+          fingerprint: `${info.dev}:${info.ino}:${info.size}:${info.mtimeMs}:sha256:${EXECUTABLE_CONTENT_DIGEST}`,
+          resolvedAt: 1,
+        },
+      }),
+    };
+  }
+
+  it('admits the gate while the receipt still matches the executable on disk', async () => {
+    await withTempDir('start-gate-match', async (directory) => {
+      const path = join(directory, 'codex');
+      await writeFile(path, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+      const gate = await receiptFor(path);
+
+      expect(assertCliStartGate('codex', gate)).toEqual(gate.executable);
+    });
+  });
+
+  it('fails closed when the executable is replaced between readiness and the start gate', async () => {
+    await withTempDir('start-gate-replaced', async (directory) => {
+      const path = join(directory, 'codex');
+      await writeFile(path, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+      const gate = await receiptFor(path);
+
+      await writeFile(path, '#!/bin/sh\nexit 1 # replaced during the race\n', { mode: 0o755 });
+      await chmod(path, 0o755);
+
+      expect(() => assertCliStartGate('codex', gate)).toThrow(/identity changed/);
+    });
+  });
+
+  it('fails closed when the executable is removed before the start gate', async () => {
+    await withTempDir('start-gate-removed', async (directory) => {
+      const path = join(directory, 'codex');
+      await writeFile(path, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+      const gate = await receiptFor(path);
+
+      await rm(path);
+
+      expect(() => assertCliStartGate('codex', gate)).toThrow(/identity changed/);
+    });
+  });
+
+  it('refuses a missing gate, a wrong-tool gate, and a null gate before execution', () => {
+    expect(() => assertCliStartGate('codex', null)).toThrow(/no trusted readiness identity/);
+    expect(() => assertCliStartGate('codex', undefined)).toThrow(/no trusted readiness identity/);
+    const wrongTool: CliStartGate = {
+      tool: 'claude-code',
+      executable: {
+        path: '/usr/local/bin/codex',
+        fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
+      },
+    };
+    expect(() => assertCliStartGate('codex', wrongTool)).toThrow(/no trusted readiness identity/);
+  });
+
+  it('passes a legacy metadata-only gate through for resolver revalidation', async () => {
+    await withTempDir('start-gate-legacy', async (directory) => {
+      const path = join(directory, 'codex');
+      await writeFile(path, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+      const gate: CliStartGate = {
+        tool: 'codex',
+        executable: { path, fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 } },
+      };
+
+      expect(assertCliStartGate('codex', gate)).toEqual(gate.executable);
     });
   });
 });

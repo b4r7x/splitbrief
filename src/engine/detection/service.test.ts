@@ -487,33 +487,32 @@ describe('createDetectionService', () => {
     { name: 'v1 failed', version: 1, offline: false, expectedOutcome: 'failed' },
     { name: 'v2 offline', version: 2, offline: true, expectedOutcome: 'not-run' },
     { name: 'v2 failed', version: 2, offline: false, expectedOutcome: 'failed' },
-  ] as const)('scrubs a legacy private cache before the following readiness refresh is $name', async ({
-    version,
-    offline,
-    expectedOutcome,
-  }) => {
-    const cacheDir = join(tempDir, SPLITBRIEF_DIR);
-    const cachePath = join(cacheDir, 'detection-cache.json');
-    await mkdir(cacheDir, { recursive: true });
-    await writeFile(cachePath, legacyPrivateCache(version), 'utf8');
+  ] as const)(
+    'scrubs a legacy private cache before the following readiness refresh is $name',
+    async ({ version, offline, expectedOutcome }) => {
+      const cacheDir = join(tempDir, SPLITBRIEF_DIR);
+      const cachePath = join(cacheDir, 'detection-cache.json');
+      await mkdir(cacheDir, { recursive: true });
+      await writeFile(cachePath, legacyPrivateCache(version), 'utf8');
 
-    const deps = makeDeps({
-      offline,
-      sourceContexts: sourceContexts(),
-      ...(offline
-        ? {}
-        : {
-            detectAll: async () => {
-              throw new Error('Readiness network failure.');
-            },
-          }),
-    });
-    const result = await service.loadDetection({ deps, projectDir: tempDir });
-    await service.getPendingSave();
+      const deps = makeDeps({
+        offline,
+        sourceContexts: sourceContexts(),
+        ...(offline
+          ? {}
+          : {
+              detectAll: async () => {
+                throw new Error('Readiness network failure.');
+              },
+            }),
+      });
+      const result = await service.loadDetection({ deps, projectDir: tempDir });
+      await service.getPendingSave();
 
-    expect(outcomes(result).readiness).toMatchObject({ kind: expectedOutcome });
-    await expect(readFile(cachePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
-  });
+      expect(outcomes(result).readiness).toMatchObject({ kind: expectedOutcome });
+      await expect(readFile(cachePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    },
+  );
 
   it('keeps a prior in-memory success when the disk cache later becomes malformed', async () => {
     const deps = makeDeps();

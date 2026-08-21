@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { createInitialState, transition } from '../../../core/state/machine.js';
+import { transition } from '../../../core/state/machine.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import {
   makeCallbacks,
   makePlanner,
@@ -61,14 +62,7 @@ function setupProject(): { projectDir: string; sessionId: string } {
 
 function makeValidatingState(): WorkflowState {
   const task = makeTask();
-  let state = createInitialState('feat');
-  state = transition(state, { type: 'START' });
-  state = transition(state, { type: 'RESEARCH_DONE' });
-  state = transition(state, { type: 'SPEC_DONE' });
-  state = transition(state, { type: 'APPROVE_SPEC' });
-  state = transition(state, { type: 'PLAN_DONE', tasks: [task] });
-  state = transition(state, { type: 'BRIEFS_READY', tasks: [task] });
-  state = transition(state, { type: 'APPROVE_BRIEFS' });
+  let state = makeImplState([task]);
   state = transition(state, { type: 'TASK_SENT' });
   return state;
 }
@@ -498,15 +492,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
   it('emits ordered tier-1 and tier-2 escalate events and a failed terminal result when all tiers fail', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
-    let state = createInitialState('feat');
-    state = transition(state, { type: 'START' });
-    state = transition(state, { type: 'RESEARCH_DONE' });
-    state = transition(state, { type: 'SPEC_DONE' });
-    state = transition(state, { type: 'APPROVE_SPEC' });
-    state = transition(state, { type: 'PLAN_DONE', tasks: [task] });
-    state = transition(state, { type: 'BRIEFS_READY', tasks: [task] });
-    state = transition(state, { type: 'APPROVE_BRIEFS' });
-    state = transition(state, { type: 'TASK_SENT' });
+    const state = makeValidatingState();
 
     const { callbacks } = makeCallbacks();
     const { bus, events: busEvents } = makeBusRecorder();

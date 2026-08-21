@@ -81,7 +81,7 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 | `timeout` | ms (≤ 600000) | unset → no total-call cap (output silence is guarded separately: the 60s `api` stream-idle guard or `idleWarnMs`/`idleKillMs` below — see Troubleshooting) | Total wall-clock budget for a single planner or implementer call; aborts the call when exceeded. Raise for long planner thinks; lower for cheap probe calls. |
 | `idleWarnMs` | ms (≤ 3600000) | `300000` | Inactivity watchdog warn threshold: after this much output silence on a running call, the byline shows a "still working" warning; any stdout/stderr output clears it and resets the timer. |
 | `idleKillMs` | ms (≤ 3600000) | `1800000` | Inactivity watchdog kill threshold: at this much output silence the runner's process group is terminated (SIGTERM, then SIGKILL after a grace window; the in-process `agent-sdk` stream is aborted instead) and the call is marked failed. For planner calls a retry prompt is offered; a failed implementer call feeds the task's retry/escalation ladder instead, whose retry prompts rebuild the full Task Brief per attempt. |
-| `effort` | `low\|medium\|high\|xhigh` | unset | For the `api` kind (planner and implementer) maps to Anthropic `thinking.budget_tokens` (2k / 8k / 24k / 48k). The `agent-sdk` kind passes it through as the Agent SDK's first-class `effort` option (the levels match SPLITBRIEF's enum); other providers and runner kinds may ignore it. |
+| `effort` | `low\|medium\|high\|xhigh` | unset | For the `api` kind (planner and implementer) maps to Anthropic `thinking.budget_tokens` (2k / 8k / 24k / 48k). The `agent-sdk` kind passes it through as the Agent SDK's first-class `effort` option, and the Claude Code CLI planner passes its own `--effort` flag; the levels match SPLITBRIEF's enum. The `shell`, `agent`, and other `cli` kinds cannot deliver an effort hint and drop it with a stderr warning. |
 
 `idleWarnMs` and `idleKillMs` apply to the `cli`, `shell`, `agent`, and `agent-sdk` kinds only — `api` runners keep the 60s stream-idle guard, and their strict schema rejects both fields. The planner's optional estimate-review call is the one exception to the retry prompt above: an idle-kill there degrades gracefully to an unavailable review instead of parking one.
 
@@ -91,6 +91,30 @@ Pricing is resolved from cached `models.dev` metadata first when available, then
 
 If an API-billed or otherwise paid runner has unknown model pricing and `workflow.maxBudget` is set, runtime budget tracking pauses instead of treating that usage as `$0`. Continue only after acknowledging unknown spend or configuring pricing.
 
+### Compiler capability
+
+Every planner mode crosses one capability boundary. The Task Brief compiler admits a backend only on an exact tuple: runtime identity, effective role vector, declared transport, terminal contract, containment profile, credential channel, envelope version, and a verified conformance proof (`admitCompilerCapability`, `src/engine/runners/compiler-capability.ts`). Standard and speckit run the compiler's detached fresh batches; quick and instant stay single-call but accept only a current-call result. A missing or unverified property returns the typed zero-dispatch refusal `task_compiler_capability_unsupported`, and no combination is downgraded to a weaker mode.
+
+Planner mode does not grant artifact authority, and no CLI flag proves read-only behavior. The production-factory conformance harness (`src/engine/runners/cli-tools/contract-harness.ts`) is what *can* prove the effective role, containment, and final-response contract, but its verdicts do not reach admission on their own: they are recorded by hand into `COMPILER_SUPPORT_TABLE`, and nothing reads a harness record when a claim is admitted. A run's claim carries that row's recorded vector plus two live host observations — the detected runtime version and containment-launcher availability.
+
+The V1 planner rows:
+
+| Planner backend | Tested runtime | V1 state | Transport | Credential channel |
+|---|---|---|---|---|
+| `kind: cli` tool `opencode` | 1.18.15 | required-baseline | current final response | session-copy |
+| `kind: cli` tool `claude-code` | 2.1.232 | conformance-gated | current final response | api-key, session-copy |
+| `kind: cli` tool `codex` | 0.147.0 | conformance-gated | exact declared-file lease | api-key, session-copy |
+| `kind: cli` tool `kilo-code` | 7.0.49 | conformance-gated | current final response | session-copy |
+| `kind: cli` tool `aider` / `copilot` | — | unsupported | — | — |
+| `kind: api` | (versionless) | conformance-gated | current final response | api-key |
+| `kind: agent-sdk` | (versionless) | conformance-gated | current final response | api-key |
+| configured custom command | (versionless) | conformance-gated | staged stdout or exact declared-file lease | api-key |
+| `kind: shell` / `kind: agent` planner | — | unsupported | — | — |
+
+For supported backends, the tested version yields a full capability receipt, while other detected versions are admitted with runtime-drift evidence and a run warning. Versionless rows admit only an empty version claim, and the verified conformance proof carries the identity evidence. Conformance-gated rows stay inactive until their complete row passes; unsupported rows (Copilot, Aider, shell, agent) refuse with typed fail-closed zero dispatches regardless of what a candidate claims. Runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) are the enforcement surface. Authority-bearing options are adapter-owned and cannot be overridden.
+
+The two credential channels are `api-key` (the provider env var) and `session-copy` (exactly the tool's allowlisted credential files bridged into the disposable HOME/XDG roots — except for a keychain-backed channel, the Claude Code `session` channel on macOS, whose child keeps the host `HOME` and `USER` because the login keychain resolves through them, on compiler calls as much as on any other planner call). See [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) for the full support table, terminal contracts, and role vectors.
+
 ### `kind: cli`
 
 Subprocess of a known coding-agent CLI. The wrapper handles auth, model selection, and output parsing.
@@ -99,8 +123,8 @@ Subprocess of a known coding-agent CLI. The wrapper handles auth, model selectio
 |---|---|:---:|---|
 | `tool` | enum | yes | `claude-code` \| `codex` \| `opencode` \| `aider` \| `copilot` \| `kilo-code` |
 | `model` | string | no | A model ID, or `auto`. Omitting `model` and writing `model: auto` are equivalent: SPLITBRIEF passes no `--model` flag, so the tool uses whatever model its own configuration selects. |
-| `args` | string[] | no | Extra argv appended to the tool invocation |
-| `outputFormat` | enum | no | `stream-json` \| `jsonl` \| `text` \| `opencode` (overrides per-tool default) |
+| `args` | string[] | no | Extra argv appended to the tool invocation. Every token is validated against the adapter-owned authority set: a flag that would override role, permissions, sandbox, cwd or added roots, config sources, tools, hooks/plugins/MCP, session selection, prompt transport, output format, terminal protocol, final-output path, updates, or approval behavior is refused before spawn. |
+| `outputFormat` | enum | no | `stream-json` \| `jsonl` \| `text` \| `opencode`. Selects the parser for the configured-command and legacy command paths. An admitted CLI's parser and terminal protocol are adapter-owned: the compiler path keeps the backend's native parser, and an implementer `outputFormat` that would replace a structured terminal contract refuses before spawn. |
 
 YAML — minimal:
 
@@ -118,14 +142,12 @@ planner:
   kind: cli
   tool: claude-code
   model: opus
-  args: ["--mcp-config", ".splitbrief/mcp.json"]
-  outputFormat: stream-json
   contextLength: 1000000
   timeout: 600000
   effort: high
 ```
 
-**When to use:** you already pay for a Claude Code / Codex / Copilot / Aider subscription and want SPLITBRIEF to drive it as a planner without separate API billing.
+**When to use:** you already pay for a Claude Code / Codex / OpenCode license and want SPLITBRIEF to drive it as a planner without separate API billing. Copilot and Aider stay implementer-side in V1: their planner rows are compiler-unsupported and refuse with a typed zero-dispatch error (see [Compiler capability](#compiler-capability)).
 
 ### `kind: api`
 
@@ -200,6 +222,8 @@ Set `supportsSelfSummarisation: true` only for planner wrappers that can summari
 
 **When to use:** wrapping a tool SPLITBRIEF doesn't ship adapters for, or piping through your own pre/post-processing layer.
 
+**Compiler status:** a `shell` planner is compiler-unsupported in V1, because the legacy shell planner lacks compiler containment and final-response conformance. Every planner mode refuses it with `task_compiler_capability_unsupported` and zero dispatches. The implementer role is unaffected.
+
 ### `kind: agent`
 
 Same shape as `shell`, but the contract is different: the subprocess **writes files directly to the working tree** and we don't extract anything from stdout. SPLITBRIEF reads the dirty filesystem after the call returns. It runs as a normal child process too; SPLITBRIEF does not sandbox its shell or network access.
@@ -215,6 +239,8 @@ implementer:
 A `planner` may also be `kind: agent`; only the planner variant accepts `capabilities` (the same planner feature flags as `kind: shell`).
 
 **When to use:** integrating a tool whose contract is "I edit files, you check git diff" rather than "I print a unified diff".
+
+**Compiler status:** a `kind: agent` planner is compiler-unsupported in V1, because its ambient session-file behavior violates exact lease ownership. Every planner mode refuses it with `task_compiler_capability_unsupported` and zero dispatches. The implementer role is unaffected.
 
 ### Runner command trust
 
@@ -654,6 +680,8 @@ escalation:
 
 **When to use:** you run a cheap implementer (Ollama / DeepSeek) and want a "10x cheaper than the planner but smarter than the implementer" stop along the way before paying for an Opus retry. Skip if your implementer is already frontier-class. Setting `intermediateProvider` is enough to turn the tier on; add `enabled: false` only when you want to keep the provider config but bypass the tier.
 
+**Budget knownness.** Escalation and recovery provider calls follow the same knownness rules as every other paid call. Unknown provider cost is not zero. Without `workflow.maxBudget`, a bounded operation with missing pricing is admitted as a provider-dependent reservation: USD stays absent or unknown, never `0`, until the price resolves. With `maxBudget` configured, unknown price or spend refuses before dispatch with `brief_budget_unknown` instead of being guessed at. A pre-acceptance refusal consumes no allowance and makes no provider call.
+
 ---
 
 ## 7. `codebase`
@@ -1074,8 +1102,8 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--planner-command <cmd>` | Custom planner command (kind=shell) | start, resume, continue, last |
 | `--planner-api-base <url>` | Planner API base URL (kind=api only; warns + ignored otherwise) | start, resume, continue, last |
 | `--planner-api-key-env <var>` | Planner API key env var, stored as `env:<var>` (kind=api/agent-sdk only; warns + ignored otherwise) | start, resume, continue, last |
-| `--planner-args <arg>` | Append a planner CLI/shell arg (repeatable; kind=cli/shell/agent) | start, resume, continue, last |
-| `--planner-output-format <format>` | Planner output format (`stream-json` \| `jsonl` \| `text` \| `opencode`) | start, resume, continue, last |
+| `--planner-args <arg>` | Append a planner CLI/shell arg (repeatable; kind=cli/shell/agent); authority-bearing flags are refused before spawn | start, resume, continue, last |
+| `--planner-output-format <format>` | Planner output format (`stream-json` \| `jsonl` \| `text` \| `opencode`); the compiler path keeps the backend's native parser and terminal protocol | start, resume, continue, last |
 | `--planner-context-length <tokens>` | Planner context length in tokens (kind=api only; sizes the request `max_tokens`, ignored by other kinds) | start, resume, continue, last |
 | `--planner-effort <level>` | Planner effort hint (`low` \| `medium` \| `high` \| `xhigh`) | start, resume, continue, last |
 | `--implementer <p>` | Implementer provider override | start, resume, continue, last |
@@ -1275,6 +1303,8 @@ Then:
 splitbrief start --allow-hooks "your feature description"
 ```
 
+In the compiler path, that Claude Code planner yields a full capability receipt on tested version 2.1.232 when its conformance row is verified; other detected versions are admitted with runtime-drift evidence and a run warning. Runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) are the enforcement surface. Implementer rows are unaffected by compiler gating.
+
 ---
 
 ## 20. Admitted API providers
@@ -1315,6 +1345,8 @@ Credential prefix or env presence validates the configured offering but **never 
 `ollama` and `ollama-cloud` are distinct providers. Local `ollama` talks only to a loopback daemon and normally omits `apiKey`; if that daemon requires authentication, the only accepted reference is `apiKey: env:OLLAMA_LOCAL_API_KEY`. `OLLAMA_API_KEY` is never resolved or sent to local Ollama. Remote `ollama-cloud` is the fixed `https://ollama.com` API, uses `OLLAMA_API_KEY`, and gets its live account inventory from `/api/tags`.
 
 **Deferred / not admitted:** researched subscription coding plans, retired consumer CLI entitlements, generic self-hosted OpenAI-compatible shims, and every other candidate without a PASS verdict have **no** first-class provider ID, descriptor, or support row here. Verdict-pending offerings remain absent until a credentialed production gate passes. Per-offering verdicts and dates: [Excluded API offerings](#excluded-api-offerings). Excluded CLI candidates: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#excluded-researched-candidates).
+
+**Compiler-path identity.** As a Task Brief planner, every `kind: api` row is versionless and conformance-gated: admission carries no runtime version, and the verified conformance proof is the identity evidence. The credential channel is `api-key` (the provider env vars above), and no capability receipt records a secret. The compiler support table, terminal contracts, and containment profiles live in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 
 ### Bundled model catalog (T-081 runtime state)
 
@@ -1497,6 +1529,8 @@ These researched offerings have **dated blocked verdicts** — no first-class pr
 ## 21. See also
 
 - [PRINCIPLES.md](./PRINCIPLES.md) — one-page rule index
+- [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) — planner/implementer pipeline, compiler capability and conformance
+- [TESTING.md](./TESTING.md) — testing contract, compiler conformance rows
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — runner contracts, orchestrator loop, event model
 - [WORKFLOW.md](./WORKFLOW.md) — mode + approval semantics in depth
 - [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — hook events, `HookEntry` schema, trust model

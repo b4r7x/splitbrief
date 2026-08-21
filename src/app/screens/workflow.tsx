@@ -183,6 +183,7 @@ export function WorkflowScreen({
         sidebarWidth={sidebarWidth}
         inputMode={model.inputMode}
         reviewFilePath={model.reviewFilePath}
+        recovery={model.recovery}
         phase={model.phase}
         contentHeight={contentHeight}
         contentWidth={contentWidth}

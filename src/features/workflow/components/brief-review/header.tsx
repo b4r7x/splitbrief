@@ -6,9 +6,11 @@ import {
   truncateTerminalDisplayTextMiddle,
 } from '../../../../utils/display-text.js';
 import type { Task } from '../../../../core/schemas/task.js';
+import type { BriefRecoveryProjectionV1 } from '../../../../core/schemas/brief-recovery.js';
 import type { BriefQualityReport } from '../../../../engine/spec/brief-quality.js';
 import type { BriefReadinessGateReport } from '../../../../engine/orchestrator/planning/brief-readiness-gate.js';
 import {
+  formatEvidenceSpineLines,
   formatQualityDisplay,
   formatTaskCount,
   sanitizeTaskDisplayText,
@@ -24,6 +26,8 @@ export function PlanReviewHeader({
   filePath,
   width,
   hasLoadError = false,
+  recovery = null,
+  maxRows,
 }: {
   tasks: Task[];
   quality: BriefQualityReport | null;
@@ -31,8 +35,33 @@ export function PlanReviewHeader({
   filePath: string;
   width: number;
   hasLoadError?: boolean | undefined;
+  recovery?: BriefRecoveryProjectionV1 | null | undefined;
+  maxRows?: number | undefined;
 }) {
   const t = useTheme();
+  if (recovery !== null) {
+    const lines = formatEvidenceSpineLines({
+      projection: recovery,
+      quality,
+      readiness,
+      taskCount: hasLoadError ? undefined : tasks.length,
+      width,
+    }).slice(0, maxRows);
+    return (
+      <Box flexDirection="column" width={width} overflow="hidden" flexShrink={0}>
+        {lines.map((line, index) => (
+          <Text
+            key={`${line}-${index}`}
+            bold={index === 0}
+            color={index === 0 ? t.text : index === 2 ? t.error : t.textDim}
+            wrap="truncate"
+          >
+            {line}
+          </Text>
+        ))}
+      </Box>
+    );
+  }
   const countText = hasLoadError ? '—' : formatTaskCount(tasks.length);
   const qualityDisplay = formatQualityDisplay(quality);
   const qualityColor = quality !== null && !quality.passed ? t.error : t.textDim;
@@ -59,7 +88,7 @@ export function PlanReviewHeader({
     : '';
 
   return (
-    <Box flexDirection="row" width={width} overflow="hidden">
+    <Box flexDirection="row" width={width} overflow="hidden" flexShrink={0}>
       <Text bold color={t.text}>
         task briefs
       </Text>

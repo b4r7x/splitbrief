@@ -6,7 +6,13 @@ import type { SpecMetadata } from '../../../core/paths-io.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import { createInitialState } from '../../../core/state/machine.js';
-import { loadState, saveState } from '../../../core/state/persistence.js';
+import { loadStateForResume } from '../../../core/state/persistence.js';
+import type {
+  StateAuthorityAcquisitionResult,
+  StateAuthorityReceipt,
+  ResumeLoadAuthority,
+} from '../../../core/state/types.js';
+import { acquireStateAuthority, releaseStateAuthority } from '../../../core/state/authority.js';
 import { featureForTranscriptPolicy } from '../../../core/sessions/lifecycle.js';
 import { pruneOrphanSessions } from '../../../core/sessions/orphans.js';
 import { recordRunnerPid, releaseRunnerPid } from '../../../core/sessions/runner-pids.js';
@@ -18,6 +24,7 @@ import {
 } from '../../../lib/process/registry.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { error } from '../../../utils/error.js';
+import { assertNever } from '../../../utils/type-guards.js';
 import { sessionDir } from '../../../core/paths.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { checkServerStatus, writeLockfile, markExited } from '../../ipc/lockfile.js';
@@ -41,22 +48,27 @@ import {
   type WorkflowContext,
 } from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary/build.js';
-import {
-  publishError,
-  publishRunnerCallEvent,
-  publishWarning,
-  publishWarningFromError,
-} from '../events.js';
+import { publishError, publishRunnerCallEvent, publishWarning } from '../events.js';
 import { saveFinalSession, shouldPreserveActiveState } from '../session-lifecycle/finalize.js';
 import { withShutdownHandlers } from '../session-lifecycle/shutdown.js';
 import { installQueueHandler } from '../session-lifecycle/install-queue.js';
 import { createRunIsolation } from '../isolation/create.js';
 
-import { initializeWorkflow, type RunWorkflowOptions } from './init.js';
+import {
+  attachWorkflowAuthority,
+  consumeNewWorkflowCandidate,
+  refreshWorkflowAuthority,
+  type RunWorkflowOptions,
+  type WorkflowAuthorityHolder,
+  initializeWorkflow,
+} from './init.js';
 import { clearBridgedCliState } from '../../runners/sandbox-env.js';
 import { getIsolationStrategy } from '../../../core/config/accessors/values.js';
 import { reapOrphanRunners } from './orphan-reaper.js';
 import { runPlanningPhases, runTasksAndReview } from './phases.js';
+import { createWorkflowRecoveryBinding } from './recovery-binding.js';
+import { readWorkflowStateHead } from '../state-ops.js';
+import { matchesPersistedExecutionPermit, parkedPlanningResult } from '../planning/handoff.js';
 
 export const WORKFLOW_REWIND_ABORT_REASON = 'workflow-rewind';
 
@@ -149,6 +161,7 @@ function withPlannerUserTurnOptions(
 }
 
 function withPlannerCallPublishing(planner: Planner, ctx: PlannerCallPublisherContext): Planner {
+  const review = planner.review.bind(planner);
   const wrapped: Planner = {
     isAvailable: () => planner.isAvailable(),
     getVersion: () => planner.getVersion(),
@@ -179,7 +192,7 @@ function withPlannerCallPublishing(planner: Planner, ctx: PlannerCallPublisherCo
         callbacks: withPlannerOutputCallbacks(opts.callbacks, ctx),
       }),
     review: (prompt, projectDir, callbacks) =>
-      planner.review(prompt, projectDir, withPlannerOutputCallbacks(callbacks, ctx)),
+      review(prompt, projectDir, withPlannerOutputCallbacks(callbacks, ctx)),
     summarize: (messages, opts) =>
       planner.summarize(messages, withPlannerSummaryOptions(opts, ctx)),
   };
@@ -221,10 +234,98 @@ function loadPersistedRewindState(opts: {
   projectDir: string;
   sessionId: string;
   signal: AbortSignal | undefined;
+  authority: StateAuthorityReceipt | undefined;
 }): WorkflowState | null {
-  if (opts.signal?.reason !== WORKFLOW_REWIND_ABORT_REASON) return null;
-  const persisted = loadState({ projectDir: opts.projectDir, sessionId: opts.sessionId });
-  return persisted?.rewindPending !== undefined ? persisted : null;
+  if (opts.signal?.reason !== WORKFLOW_REWIND_ABORT_REASON || opts.authority === undefined)
+    return null;
+  const authority: ResumeLoadAuthority = {
+    kind: 'fenced',
+    receipt: opts.authority,
+    promotedFromVersion: null,
+  };
+  const loaded = loadStateForResume({
+    ref: { projectDir: opts.projectDir, sessionId: opts.sessionId },
+    authority,
+  });
+  if (loaded.kind !== 'loaded') return null;
+  return loaded.state.rewindPending !== undefined ? loaded.state : null;
+}
+
+type AuthoritativeWorkflowState = Readonly<{
+  state: WorkflowState;
+  authority: StateAuthorityReceipt;
+  newWorkflow: boolean;
+}>;
+
+function loadedWorkflowState(result: ReturnType<typeof loadStateForResume>): WorkflowState {
+  switch (result.kind) {
+    case 'loaded':
+      return result.state;
+    case 'missing':
+      throw error('workflow-state-missing', 'No persisted workflow state is available to resume.');
+    case 'invalid':
+      throw error('workflow-state-invalid', result.message);
+    default: {
+      const exhaustive: never = result;
+      throw error('workflow-state-invalid', `Unknown workflow state result: ${String(exhaustive)}`);
+    }
+  }
+}
+
+function acquireAuthoritativeWorkflowState(opts: {
+  projectDir: string;
+  sessionId: string;
+  feature: string;
+  purpose: 'new-workflow' | 'resume';
+}): AuthoritativeWorkflowState {
+  const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
+  const acquired: StateAuthorityAcquisitionResult = acquireStateAuthority({
+    ref,
+    purpose: opts.purpose,
+  });
+  let authority: StateAuthorityReceipt;
+  let promotedFromVersion: 3 | null = null;
+  let newWorkflow = false;
+  switch (acquired.kind) {
+    case 'fenced':
+      authority = acquired.receipt;
+      promotedFromVersion = acquired.promotedFromVersion;
+      break;
+    case 'new-workflow':
+      authority = consumeNewWorkflowCandidate(ref, acquired.candidate, opts.feature);
+      newWorkflow = true;
+      break;
+    case 'read-only': {
+      const result = loadStateForResume({ ref, authority: acquired });
+      switch (result.kind) {
+        case 'missing':
+          throw error(
+            'workflow-state-missing',
+            'A read-only authority cannot initialize a workflow.',
+          );
+        case 'invalid':
+          throw error('workflow-state-invalid', result.message);
+        case 'loaded':
+          throw error('state-authority-invalid', 'A read-only authority cannot load a workflow.');
+        default: {
+          const exhaustive: never = result;
+          throw error(
+            'workflow-state-invalid',
+            `Unknown workflow state result: ${String(exhaustive)}`,
+          );
+        }
+      }
+    }
+    default: {
+      const exhaustive: never = acquired;
+      throw error('state-authority-invalid', `Unknown authority result: ${String(exhaustive)}`);
+    }
+  }
+  const loaded = loadStateForResume({
+    ref,
+    authority: { kind: 'fenced', receipt: authority, promotedFromVersion },
+  });
+  return { authority, state: loadedWorkflowState(loaded), newWorkflow };
 }
 
 // Every run (TUI, headless, RPC) writes a liveness lockfile + heartbeat so checkServerStatus
@@ -291,20 +392,21 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   const feature = runtime.feature;
   const projectDir = session.ref.projectDir;
   const sessionId = session.ref.sessionId;
-  const savedState = opts.savedState ?? runtime.resumeState;
+  const requestedSavedState = opts.savedState ?? runtime.resumeState;
+  let savedState: WorkflowState | undefined;
   const { selectedSkills } = opts;
   // A boundary interrupt raised before this run started (Esc-Esc in a dead zone
   // of a previous run that then ended into recovery without passing a call
   // boundary) is stale: drain it so it cannot park this run's first call
   // boundary on an interrupt nobody requested.
   opts.sinks.consumeBoundaryInterrupt?.();
-  const startTime = resolveSessionStart(savedState);
+  const startTime = resolveSessionStart(requestedSavedState);
   const ident = runPricingIdentity(config);
   const persistTranscript = config.workflow.persistTranscript;
-  const plannerTool = savedState?.plannerTool ?? ident.plannerTool;
-  const plannerModel = savedState?.plannerModel ?? ident.plannerModel;
-  const implementerTool = savedState?.implementerTool ?? ident.implementerTool;
-  const implementerModel = savedState?.implementerModel ?? ident.implementerModel;
+  const plannerTool = requestedSavedState?.plannerTool ?? ident.plannerTool;
+  const plannerModel = requestedSavedState?.plannerModel ?? ident.plannerModel;
+  const implementerTool = requestedSavedState?.implementerTool ?? ident.implementerTool;
+  const implementerModel = requestedSavedState?.implementerModel ?? ident.implementerModel;
   const summaryBase: SummaryBase = {
     feature,
     startTime,
@@ -327,7 +429,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
   };
 
-  let trackedState: WorkflowState | undefined = savedState;
+  let trackedState: WorkflowState | undefined;
   let currentTask: Pick<Task, 'file' | 'action'> | undefined;
   let result: Summary | undefined;
   let sessionStatus: Session['status'] = 'interrupted';
@@ -336,6 +438,26 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   let workflowPhase: WorkflowState['phase'] | undefined;
   let cancellationPublished = false;
   let transientRewindFeedback = opts.rewindFeedback;
+  let stateAuthority: StateAuthorityReceipt | undefined;
+  let authorityHolder: WorkflowAuthorityHolder | undefined;
+
+  const trackState = (state: WorkflowState): void => {
+    trackedState = state;
+    if (
+      stateAuthority === undefined ||
+      authorityHolder === undefined ||
+      (state.stateRevision ?? 0) === authorityHolder.current.stateRevision
+    ) {
+      return;
+    }
+    authorityHolder.current = refreshWorkflowAuthority(
+      { projectDir, sessionId },
+      authorityHolder.current,
+      state,
+    );
+    stateAuthority = authorityHolder.current;
+    if (wctx !== undefined) attachWorkflowAuthority(wctx, stateAuthority);
+  };
 
   const publishWorkflowCancellation = (reason: typeof WORKFLOW_CANCEL_REASON_USER): void => {
     const bus = wctx?.bus ?? workflowBus;
@@ -416,9 +538,20 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
         sessionId,
         getTrackedState: () => trackedState,
         getCurrentTask: () => currentTask,
+        authority: () => authorityHolder?.current,
       },
       async () => {
         try {
+          const authoritative = acquireAuthoritativeWorkflowState({
+            projectDir,
+            sessionId,
+            feature,
+            purpose: opts.prepared.purpose === 'new-workflow' ? 'new-workflow' : 'resume',
+          });
+          stateAuthority = authoritative.authority;
+          authorityHolder = { current: authoritative.authority };
+          savedState = authoritative.newWorkflow ? undefined : authoritative.state;
+          trackedState = authoritative.state;
           const resumeHolder: ResumeContextHolder = { messages: [] };
           const init = await initializeWorkflow({
             opts,
@@ -426,11 +559,13 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             sessionId,
             summaryBase,
             metadata,
-            setTrackedState: (s) => {
-              trackedState = s;
-            },
+            setTrackedState: trackState,
             resumeHolder,
             isolation,
+            authority: authoritative.authority,
+            authorityHolder,
+            savedState: authoritative.state,
+            newWorkflow: authoritative.newWorkflow,
           });
           if (!init.ok) {
             workflowBus = init.bus;
@@ -441,16 +576,19 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
           }
 
           workflowBus = init.wctx.bus;
-          wctx = {
-            ...init.wctx,
-            planner: withPlannerCallPublishing(init.wctx.planner, {
-              bus: init.wctx.bus,
-              getPhase: () => trackedState?.phase ?? createInitialState(feature).phase,
-            }),
-            setRewindFeedback: (feedback) => {
-              transientRewindFeedback = feedback;
+          wctx = attachWorkflowAuthority(
+            {
+              ...init.wctx,
+              planner: withPlannerCallPublishing(init.wctx.planner, {
+                bus: init.wctx.bus,
+                getPhase: () => trackedState?.phase ?? createInitialState(feature).phase,
+              }),
+              setRewindFeedback: (feedback) => {
+                transientRewindFeedback = feedback;
+              },
             },
-          };
+            authorityHolder.current,
+          );
           trackedState = init.state;
           const phaseTimings: Record<string, number> = {};
 
@@ -459,14 +597,32 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             sessionId,
             sinks: wctx.sinks,
             getTrackedState: () => trackedState,
-            setTrackedState: (s) => {
-              trackedState = s;
-            },
+            setTrackedState: trackState,
             bus: wctx.bus,
             config,
             planner: wctx.planner,
             ...(wctx.signal !== undefined && { signal: wctx.signal }),
           });
+
+          const recoveryOwner = authorityHolder;
+          const workflowContext = wctx;
+          const createRecovery = () =>
+            createWorkflowRecoveryBinding({
+              wctx: workflowContext,
+              getState: () => trackedState ?? init.state,
+              setState: (s) => {
+                trackedState = s;
+                recoveryOwner.current = refreshWorkflowAuthority(
+                  { projectDir, sessionId },
+                  recoveryOwner.current,
+                  s,
+                );
+                stateAuthority = recoveryOwner.current;
+                attachWorkflowAuthority(workflowContext, stateAuthority);
+              },
+              getAuthority: () => recoveryOwner.current,
+            });
+          let recovery = createRecovery();
 
           let stateForPlanning = init.state;
           let savedStateForPlanning = savedState;
@@ -480,33 +636,48 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
               selectedSkills,
               phaseTimings,
               startTime,
-              setTrackedState: (s) => {
-                trackedState = s;
-              },
+              setTrackedState: trackState,
+              recovery: recovery,
               ...(feedbackForPlanning !== undefined && { rewindFeedback: feedbackForPlanning }),
             });
-            if (planning.cancelled) {
-              if (planning.failed) sessionStatus = 'failed';
-              result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings });
-              return;
+            const handoff =
+              planning.disposition === 'ready-for-tasks'
+                ? matchesPersistedExecutionPermit(planning, planning.state)
+                  ? planning
+                  : parkedPlanningResult(sessionId, planning.state, recovery.projection)
+                : planning;
+            trackState(handoff.state);
+
+            switch (handoff.disposition) {
+              case 'terminal':
+                if (handoff.outcome === 'failed') sessionStatus = 'failed';
+                result = buildSummary({ ...summaryBase, state: handoff.state, phaseTimings });
+                return;
+              case 'parked':
+                result = buildSummary({ ...summaryBase, state: handoff.state, phaseTimings });
+                return;
+              case 'ready-for-tasks':
+                break;
+              default:
+                return assertNever(handoff);
             }
 
             if (opts.signal?.aborted) {
-              result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings });
+              result = buildSummary({ ...summaryBase, state: handoff.state, phaseTimings });
               return;
             }
 
             const taskRun = await runTasksAndReview({
               wctx,
-              state: planning.state,
+              state: handoff.state,
+              planning: handoff,
               summaryBase,
               phaseTimings,
-              setTrackedState: (s) => {
-                trackedState = s;
-              },
+              setTrackedState: trackState,
               setCurrentTask: (t) => {
                 currentTask = t;
               },
+              recovery: recovery,
             });
             result = taskRun.summary;
             sessionStatus = taskRun.completed ? 'complete' : 'interrupted';
@@ -521,29 +692,61 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             ) {
               stateForPlanning = taskRun.state;
               savedStateForPlanning = taskRun.state;
+              recovery = createRecovery();
               continue;
             }
             return;
           }
         } catch (err) {
           await killAllProcesses();
+          let rewindAuthorityRefreshed = false;
+          if (
+            opts.signal?.reason === WORKFLOW_REWIND_ABORT_REASON &&
+            stateAuthority !== undefined &&
+            authorityHolder !== undefined
+          ) {
+            const persisted = (() => {
+              try {
+                return readWorkflowStateHead({ projectDir, sessionId });
+              } catch {
+                return null;
+              }
+            })();
+            const persistedFence = persisted?.state.stateFence;
+            if (
+              persisted?.state.rewindPending !== undefined &&
+              (persisted.state.stateRevision ?? 0) >= stateAuthority.stateRevision &&
+              persistedFence?.token === stateAuthority.fence &&
+              persistedFence.ownerId === stateAuthority.ownerId
+            ) {
+              authorityHolder.current = refreshWorkflowAuthority(
+                { projectDir, sessionId },
+                authorityHolder.current,
+                persisted.state,
+              );
+              stateAuthority = authorityHolder.current;
+              rewindAuthorityRefreshed = true;
+            }
+          }
           const persistedRewindState = loadPersistedRewindState({
             projectDir,
             sessionId,
             signal: opts.signal,
+            authority: stateAuthority,
           });
           if (persistedRewindState) {
             trackedState = persistedRewindState;
-          } else if (trackedState) {
-            try {
-              saveState({ projectDir, sessionId }, trackedState);
-            } catch (saveErr) {
-              if (wctx)
-                publishWarningFromError(
-                  { bus: wctx.bus, phase: trackedState.phase },
-                  'Failed to save state',
-                  saveErr,
-                );
+            if (
+              !rewindAuthorityRefreshed &&
+              stateAuthority !== undefined &&
+              authorityHolder !== undefined
+            ) {
+              authorityHolder.current = refreshWorkflowAuthority(
+                { projectDir, sessionId },
+                authorityHolder.current,
+                persistedRewindState,
+              );
+              stateAuthority = authorityHolder.current;
             }
           }
           if (opts.signal?.aborted) {
@@ -617,6 +820,14 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     await isolation.dispose().catch((err: unknown) => {
       warnError('run isolation disposal', err);
     });
+    if (stateAuthority !== undefined) {
+      try {
+        if (trackedState !== undefined) trackState(trackedState);
+        releaseStateAuthority({ projectDir, sessionId }, stateAuthority);
+      } catch (err) {
+        warnError('workflow state authority cleanup', err);
+      }
+    }
     await releaseLiveness();
   }
 }

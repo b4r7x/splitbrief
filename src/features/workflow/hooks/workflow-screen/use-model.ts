@@ -1,4 +1,8 @@
+import { useEffect, useState } from 'react';
+import { dirname } from 'node:path';
 import { sessionDir } from '../../../../core/paths.js';
+import type { BriefRecoveryProjectionV1 } from '../../../../core/schemas/brief-recovery.js';
+import type { Phase } from '../../../../core/schemas/enums.js';
 import type { CopyResult, CopyTarget } from '../../../../core/runtime/commands/types.js';
 import type { Focus } from '../../../../stores/ui/focus.js';
 import { useInputMode } from '../use-input-mode.js';
@@ -25,9 +29,11 @@ import { useStores } from '../../../../stores/use-stores.js';
 import { useWorkflowAttachment } from './use-attachment.js';
 import { useWorkflowInlineEdit } from './use-inline-edit.js';
 import { canResumeCancelledWorkflow } from './resume.js';
+import { loadBriefReviewData } from '../../brief-review-loader.js';
 
 export interface WorkflowScreenDeps {
   runWorkflow?: RunWorkflowFn | undefined;
+  recovery?: BriefRecoveryProjectionV1 | null | undefined;
 }
 
 interface UseWorkflowScreenOptions {
@@ -35,6 +41,43 @@ interface UseWorkflowScreenOptions {
   copyTarget?: ((target: CopyTarget) => Promise<CopyResult>) | undefined;
   canCopyFocused?: ((focus: Focus | null) => boolean) | undefined;
   deps?: WorkflowScreenDeps | undefined;
+}
+
+function usePersistedBriefRecovery(
+  filePath: string | null,
+  phase: Phase,
+  ownerToken: number,
+  injectedRecovery?: BriefRecoveryProjectionV1 | null,
+): BriefRecoveryProjectionV1 | null | undefined {
+  const [recovery, setRecovery] = useState<BriefRecoveryProjectionV1 | null | undefined>(undefined);
+
+  useEffect(() => {
+    if (filePath === null || phase !== 'reviewing-briefs') {
+      setRecovery(undefined);
+      return;
+    }
+    if (injectedRecovery !== undefined) {
+      setRecovery(injectedRecovery);
+      return;
+    }
+
+    const controller = new AbortController();
+    loadBriefReviewData({
+      filePath,
+      sessionDirPath: dirname(filePath),
+      signal: controller.signal,
+    })
+      .then((result) => {
+        if (!controller.signal.aborted) setRecovery(result.recovery);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setRecovery(null);
+      });
+
+    return () => controller.abort();
+  }, [filePath, phase, ownerToken, injectedRecovery]);
+
+  return recovery;
 }
 
 export function useWorkflowScreen({
@@ -70,9 +113,13 @@ export function useWorkflowScreen({
   const { isAttachedClient, ipcStatus, handleAttachedInput, handleAttachedRuntimeCommand } =
     attachment;
 
-  const [{ cancelled, phase }, { filePath: reviewFilePath }] = useStores(
-    lifecycleStore,
-    reviewStore,
+  const [{ cancelled, phase }, { filePath: reviewFilePath, ownerToken: reviewOwnerToken }] =
+    useStores(lifecycleStore, reviewStore);
+  const recovery = usePersistedBriefRecovery(
+    reviewFilePath,
+    phase,
+    reviewOwnerToken,
+    deps?.recovery,
   );
 
   const onComplete = ({ summary, sessionId: completedSessionId, status }: WorkflowCompletion) =>
@@ -163,6 +210,7 @@ export function useWorkflowScreen({
     cancelled,
     inputMode,
     reviewFilePath,
+    recovery,
     approvalPromptState,
     costApprovalState,
     approvalPending,

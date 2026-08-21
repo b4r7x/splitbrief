@@ -143,6 +143,14 @@ npm test -- src/features/workflow/user-edit-conflict-prompt.test.ts
 
 Full `npm test` is appropriate only when it is safe for the checkout and the validation owner accepts suites that may create git history in temporary repos.
 
+## Compiler conformance testing
+
+Planner and compiler conformance is deterministic CI, not a live smoke. The production factory path must prove, per backend and exact version: the effective read-only role, filesystem containment, exact current-call output, final-response semantics, detached sessions, the hard call envelope, hostile configuration handling, credential isolation, and zero dispatch on failed preflight. "Planner mode does not grant artifact authority." A mode flag (`--agent plan`, `--permission-mode plan`, `--sandbox read-only`) is what the tool is told; the conformance harness proves what the tool did. Tests may not treat a flag or an argv snapshot as effect proof.
+
+The black-box rows live in `testing/integration/orchestrator/runner-capability-matrix.test.ts` and `testing/integration/orchestrator/planner-effect-matrix.test.ts`, with the effect fixtures in `src/engine/runners/cli-tools/contract-harness-effects.test.ts` and the refusal matrix in `src/engine/runners/compiler-unsupported-backends.test.ts`. They drive the production factory against subprocess shims that speak each tool's real protocol terminal, with sentinel files and nonce edits as the observable effects, and the unsupported rows must prove zero spawns. The doc-parity gate in `testing/docs/planners-and-implementers.test.ts` pins the admitted matrix to the runtime catalog.
+
+Live authenticated checks (`SPLITBRIEF_REAL_CLI_E2E=1`, `testing/e2e/scenarios/real-cli-planner-implementer-smoke.test.ts`) are opt-in drift evidence: they verify reality on a real machine with real credentials and never replace the deterministic matrix as the admission proof. See [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) for the support table and role vectors.
+
 ## How to add an integration test
 
 Integration tests live under `testing/integration/<layer>/`. One file per user-observable flow. Longer files with more assertions beat many short files (TkDodo: fewer, longer tests).

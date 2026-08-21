@@ -1,15 +1,24 @@
-import { existsSync } from 'node:fs';
+import { chmodSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   ANTIGRAVITY_CLI_ADMISSION_VERDICT,
   ANTIGRAVITY_CLI_CANDIDATE_PATHS,
+  CLI_COMPILER_EVIDENCE,
+  CLI_TOOL_IDS,
   CURSOR_CLI_ADMISSION_VERDICT,
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
 } from '../../../core/runners/cli-tool-catalog.js';
 import { resolveRepoPath as productionResolveRepoPath } from '../../../core/runners/candidate-admission.js';
+import { COMPILER_SUPPORT_TABLE } from '../compiler-capability.js';
 import {
+  bindCompilerRuntimeEvidence,
+  type CompilerRuntimeEvidence,
+} from '../compiler-runtime-evidence.js';
+import { resolveCustomExecutable } from '../resolve-cli-executable.js';
+import {
+  admitCliCompilerRuntime,
   CLI_IMPLEMENTER_ADAPTERS,
   CLI_PLANNER_ADAPTERS,
   lookupCliImplementerAdapter,
@@ -18,12 +27,43 @@ import {
 } from './registry.js';
 import { CODEX_NATIVE_MODEL_CATALOG_PROBE, codexPlannerAdapter } from './codex.js';
 import { isDeclaredCliProbeContract } from './contract.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 
 const REPO_ROOT = join(import.meta.dirname, '../../../..');
+
+const itUnix = process.platform === 'win32' ? it.skip : it;
+let dirs: string[] = [];
+
+function makeExecutable(path: string, body = '#!/bin/sh\nexit 0\n'): void {
+  writeFileSync(path, body, { mode: 0o755 });
+  chmodSync(path, 0o755);
+}
+
+async function bindExactOpenCodeRuntime(): Promise<CompilerRuntimeEvidence> {
+  const projectDir = createTempDir('registry-compiler-runtime-project');
+  const binDir = createTempDir('registry-compiler-runtime-bin');
+  dirs.push(projectDir, binDir);
+  const executable = join(binDir, 'vendor-cli');
+  makeExecutable(executable);
+  const resolution = await resolveCustomExecutable({ command: executable, projectDir });
+  if (resolution.kind !== 'resolved') throw new Error('fixture executable did not resolve');
+  const admission = bindCompilerRuntimeEvidence({
+    backend: 'opencode',
+    executable: resolution.executable,
+    version: '1.18.15',
+  });
+  if (admission.kind !== 'bound') throw new Error('fixture runtime did not bind');
+  return admission.evidence;
+}
 
 function resolveRepoPath(relativePath: string): string {
   return join(REPO_ROOT, relativePath);
 }
+
+afterEach(() => {
+  for (const dir of dirs) cleanupTempDir(dir);
+  dirs = [];
+});
 
 describe('CLI role registries', () => {
   it('resolves production repo root to the workspace package.json', () => {
@@ -73,23 +113,19 @@ describe('CLI registry lookup', () => {
     expect(lookupCliImplementerAdapter('aider')).toBe(CLI_IMPLEMENTER_ADAPTERS.aider);
   });
 
-  it.each([
-    'cursor',
-    'antigravity',
-    'kiro',
-    'unknown-cli',
-  ])('rejects unsupported planner lookup for %s before spawn', (toolId) => {
-    expect(() => lookupCliPlannerAdapter(toolId)).toThrow(/has no planner configuration/);
-  });
+  it.each(['cursor', 'antigravity', 'kiro', 'unknown-cli'])(
+    'rejects unsupported planner lookup for %s before spawn',
+    (toolId) => {
+      expect(() => lookupCliPlannerAdapter(toolId)).toThrow(/has no planner configuration/);
+    },
+  );
 
-  it.each([
-    'cursor',
-    'antigravity',
-    'kiro',
-    'unknown-cli',
-  ])('rejects unsupported implementer lookup for %s before spawn', (toolId) => {
-    expect(() => lookupCliImplementerAdapter(toolId)).toThrow(/has no implementer configuration/);
-  });
+  it.each(['cursor', 'antigravity', 'kiro', 'unknown-cli'])(
+    'rejects unsupported implementer lookup for %s before spawn',
+    (toolId) => {
+      expect(() => lookupCliImplementerAdapter(toolId)).toThrow(/has no implementer configuration/);
+    },
+  );
 });
 
 describe('admitted readiness probe contracts', () => {
@@ -344,4 +380,117 @@ describe('admitted readiness probe contracts', () => {
     expect(() => lookupCliPlannerAdapter('cursor')).toThrow(/has no planner configuration/);
     expect(() => lookupCliImplementerAdapter('cursor')).toThrow(/has no implementer configuration/);
   });
+});
+
+describe('CLI compiler support rows', () => {
+  it('covers every catalogued tool and requires a runtime version exactly when supported', () => {
+    expect(Object.keys(CLI_COMPILER_EVIDENCE)).toEqual([...CLI_TOOL_IDS]);
+    for (const id of CLI_TOOL_IDS) {
+      const evidence = CLI_COMPILER_EVIDENCE[id];
+      const row = COMPILER_SUPPORT_TABLE[id];
+      const supported = evidence.state !== 'unsupported';
+      expect({ tool: id, versionRequired: row.versionRequired }).toEqual({
+        tool: id,
+        versionRequired: supported,
+      });
+      expect({ tool: id, containable: row.containmentProfiles.length > 0 }).toEqual({
+        tool: id,
+        containable: supported,
+      });
+      expect({ tool: id, credentialed: row.credentialChannels.length > 0 }).toEqual({
+        tool: id,
+        credentialed: supported,
+      });
+    }
+  });
+});
+
+describe('admitCliCompilerRuntime', () => {
+  itUnix('admits the bound exact runtime through the catalog evidence identity', async () => {
+    const runtime = await bindExactOpenCodeRuntime();
+
+    const admission = admitCliCompilerRuntime({ tool: 'opencode', runtime });
+
+    expect(admission.kind).toBe('admitted');
+    if (admission.kind !== 'admitted') return;
+    expect(admission.evidence).toBe(CLI_COMPILER_EVIDENCE.opencode);
+  });
+
+  itUnix('admits drifted evidence for supported tools', async () => {
+    const runtime = await bindExactOpenCodeRuntime();
+    const driftedRuntime: CompilerRuntimeEvidence = {
+      ...runtime,
+      runtimeVersion: '1.18.16',
+      versionObservation: 'drifted',
+    };
+
+    const admission = admitCliCompilerRuntime({ tool: 'opencode', runtime: driftedRuntime });
+
+    expect(admission.kind).toBe('admitted');
+    if (admission.kind !== 'admitted') return;
+    expect(admission.evidence).toBe(CLI_COMPILER_EVIDENCE.opencode);
+  });
+
+  itUnix('refuses a forward runtime version before readiness', async () => {
+    const runtime = await bindExactOpenCodeRuntime();
+
+    const admission = admitCliCompilerRuntime({
+      tool: 'opencode',
+      runtime: { ...runtime, version: '1.18.16' },
+    });
+
+    expect(admission.kind).toBe('refused');
+    if (admission.kind !== 'refused') return;
+    expect(admission.failure.code).toBe('task_compiler_capability_unsupported');
+    expect(admission.missing).toEqual(['version']);
+  });
+
+  itUnix(
+    'refuses protocol, fixture, transport, and backend drift against the catalog',
+    async () => {
+      const runtime = await bindExactOpenCodeRuntime();
+      const rows: Array<{
+        override: Partial<CompilerRuntimeEvidence>;
+        missing: readonly string[];
+      }> = [
+        {
+          override: { terminalContract: 'opencode-final-message-v2' },
+          missing: ['terminalContract'],
+        },
+        { override: { fixtureDate: '2026-08-14' }, missing: ['fixtureDate'] },
+        { override: { transports: ['declared-file'] }, missing: ['transport'] },
+        { override: { backend: 'codex' }, missing: ['backend'] },
+      ];
+
+      for (const { override, missing } of rows) {
+        const admission = admitCliCompilerRuntime({
+          tool: 'opencode',
+          runtime: { ...runtime, ...override },
+        });
+
+        expect(admission.kind).toBe('refused');
+        if (admission.kind !== 'refused') continue;
+        expect(admission.failure.code).toBe('task_compiler_capability_unsupported');
+        expect(admission.missing).toEqual(missing);
+      }
+    },
+  );
+
+  itUnix.each(['copilot', 'aider'] as const)(
+    'refuses the loader-only %s adapter even with exact claimed evidence',
+    async (tool) => {
+      const runtime = await bindExactOpenCodeRuntime();
+
+      const admission = admitCliCompilerRuntime({
+        tool,
+        runtime: { ...runtime, backend: tool },
+      });
+
+      expect(admission.kind).toBe('refused');
+      if (admission.kind !== 'refused') return;
+      expect(admission.failure.code).toBe('task_compiler_capability_unsupported');
+      expect(admission.missing).toEqual(['backend']);
+      expect(admission.failure.message).toContain(tool);
+    },
+  );
 });

@@ -2,7 +2,7 @@ import { FrameArtifactIdentitySchema, frameArtifactKey } from '../contracts/arti
 import { CellGridSchema } from '../contracts/cells.js';
 import { FailureSchema, type Failure } from '../contracts/failures.js';
 import { safeId, type RelativeArtifactPath } from '../contracts/identifiers.js';
-import type { Warning } from '../contracts/manifest-fields.js';
+import type { TerminalProfile, Warning } from '../contracts/manifest-fields.js';
 import {
   CaptureSelectionSchema,
   captureAccountingKey,
@@ -52,9 +52,10 @@ export async function captureGallery(
   if (firstRequest === undefined) {
     throw new Error('Visual capture selection requires at least one request');
   }
+  const profile = selection.profile;
 
   return withCaptureEnvironment(
-    { viewport: firstRequest.provenance.viewport },
+    { viewport: firstRequest.provenance.viewport, profile },
     async ({ determinism }) => {
       const captures: WriteArtifactBundleOptions['captures'][number][] = [];
       const failures: Failure[] = [...(options.failures ?? [])];
@@ -64,6 +65,7 @@ export async function captureGallery(
         const attempt = await captureTarget({
           target,
           projectRoot: options.projectRoot,
+          profile,
           mountScenario: options.mountScenario ?? mountGalleryScenario,
           parseFrame: options.parseFrame ?? parseTerminalFrame,
         });
@@ -128,6 +130,7 @@ function orderedTargets(targets: readonly CaptureTarget[]): readonly CaptureTarg
 async function captureTarget(options: {
   readonly target: CaptureTarget;
   readonly projectRoot: string;
+  readonly profile: TerminalProfile;
   readonly mountScenario: (options: MountGalleryScenarioOptions) => Promise<GalleryCaptureHandle>;
   readonly parseFrame: typeof parseTerminalFrame;
 }): Promise<CaptureAttempt> {
@@ -155,6 +158,7 @@ async function captureTarget(options: {
       scenario,
       checkpoint,
       viewport: target.provenance.viewport,
+      profile: options.profile,
     });
     phase = 'checkpoint';
     const ansi = await handle.waitForCheckpoint();

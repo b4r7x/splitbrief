@@ -1,4 +1,4 @@
-import { listVisualScenarios, REQUIRED_VIEWPORTS } from '../../testing/visual/catalog.js';
+import { listVisualScenarios } from '../../testing/visual/catalog.js';
 import {
   formatViewport,
   parseViewport,
@@ -8,6 +8,7 @@ import {
   CaptureSelectionSchema,
   type CaptureSelection,
 } from '../../testing/visual/contracts/selection.js';
+import type { TerminalProfile } from '../../testing/visual/contracts/manifest-fields.js';
 
 export interface CaptureRequest {
   readonly outputRoot: string;
@@ -19,6 +20,7 @@ export interface CaptureCliOptions {
   readonly viewport: readonly string[];
   readonly element: readonly string[];
   readonly output: string;
+  readonly profile: TerminalProfile;
 }
 
 export async function createCaptureRequest(
@@ -26,14 +28,13 @@ export async function createCaptureRequest(
   resolveOutput: (value: string) => Promise<string>,
 ): Promise<CaptureRequest> {
   const scenarios = selectScenarios(options.scenario);
-  const viewports = selectViewports(options.viewport);
-  validateSupportedViewports(scenarios, viewports);
+  const requestedViewports = parseRequestedViewports(options.viewport);
   validateElements(scenarios, options.element);
   const outputRoot = await resolveOutput(options.output);
 
   const entries = scenarios.flatMap((scenario) =>
     scenario.checkpoints.flatMap((checkpoint) =>
-      viewports.map((viewport) => ({
+      viewportsForScenario(scenario, requestedViewports).map((viewport) => ({
         provenance: {
           scenarioId: scenario.id,
           scenarioTitle: scenario.title,
@@ -47,7 +48,11 @@ export async function createCaptureRequest(
       })),
     ),
   );
-  const selection = CaptureSelectionSchema.parse({ requests: entries, targets: entries });
+  const selection = CaptureSelectionSchema.parse({
+    profile: options.profile,
+    requests: entries,
+    targets: entries,
+  });
   return { outputRoot, selection };
 }
 
@@ -62,8 +67,7 @@ function selectScenarios(requested: readonly string[]) {
   return requested.length === 0 ? catalog : catalog.filter((scenario) => unique.has(scenario.id));
 }
 
-function selectViewports(requested: readonly string[]): readonly Viewport[] {
-  if (requested.length === 0) return REQUIRED_VIEWPORTS;
+function parseRequestedViewports(requested: readonly string[]): readonly Viewport[] {
   const parsed = new Map<string, Viewport>();
   for (const value of requested) {
     let viewport: Viewport;
@@ -72,36 +76,31 @@ function selectViewports(requested: readonly string[]): readonly Viewport[] {
     } catch {
       throw new Error(`Invalid viewport "${value}". Expected COLSxROWS, for example 80x24.`);
     }
-    if (
-      !REQUIRED_VIEWPORTS.some(
-        (candidate) => formatViewport(candidate) === formatViewport(viewport),
-      )
-    ) {
-      throw new Error(
-        `Unsupported viewport "${value}". Available viewports: ${REQUIRED_VIEWPORTS.map(formatViewport).join(', ')}.`,
-      );
-    }
     parsed.set(formatViewport(viewport), viewport);
   }
-  return REQUIRED_VIEWPORTS.filter((viewport) => parsed.has(formatViewport(viewport)));
+  return [...parsed.values()];
 }
 
-function validateSupportedViewports(
-  scenarios: ReturnType<typeof listVisualScenarios>,
-  viewports: readonly Viewport[],
-): void {
-  for (const scenario of scenarios) {
-    for (const viewport of viewports) {
-      const supported = scenario.viewports.some(
-        (candidate) => candidate.cols === viewport.cols && candidate.rows === viewport.rows,
+function viewportsForScenario(
+  scenario: ReturnType<typeof listVisualScenarios>[number],
+  requested: readonly Viewport[],
+): readonly Viewport[] {
+  if (requested.length === 0) return scenario.viewports;
+
+  for (const viewport of requested) {
+    const supported = scenario.viewports.some(
+      (candidate) => candidate.cols === viewport.cols && candidate.rows === viewport.rows,
+    );
+    if (!supported) {
+      throw new Error(
+        `Unsupported viewport "${formatViewport(viewport)}" for scenario ${scenario.id}. ` +
+          `Available viewports: ${scenario.viewports.map(formatViewport).join(', ')}.`,
       );
-      if (!supported) {
-        throw new Error(
-          `Scenario ${scenario.id} does not support viewport ${formatViewport(viewport)}.`,
-        );
-      }
     }
   }
+
+  const requestedKeys = new Set(requested.map(formatViewport));
+  return scenario.viewports.filter((viewport) => requestedKeys.has(formatViewport(viewport)));
 }
 
 function validateElements(

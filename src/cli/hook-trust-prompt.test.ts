@@ -137,19 +137,19 @@ describe('ensureHooksTrusted', () => {
     expect(prompt.questions).toHaveLength(1);
   });
 
-  it.each([
-    'y',
-    'yes',
-  ])('marks trusted and proceeds when user answers %s on TTY', async (answer) => {
-    setStdinIsTTY(true);
-    const prompt = answeringPrompt(answer);
+  it.each(['y', 'yes'])(
+    'marks trusted and proceeds when user answers %s on TTY',
+    async (answer) => {
+      setStdinIsTTY(true);
+      const prompt = answeringPrompt(answer);
 
-    await expect(
-      ensureHooksTrusted({ projectDir: tmp, hooks, allowHooks: false }, prompt.fn),
-    ).resolves.toBeUndefined();
-    expect(isHooksConfigTrusted(tmp, hooks)).toBe(true);
-    expect(prompt.questions).toHaveLength(1);
-  });
+      await expect(
+        ensureHooksTrusted({ projectDir: tmp, hooks, allowHooks: false }, prompt.fn),
+      ).resolves.toBeUndefined();
+      expect(isHooksConfigTrusted(tmp, hooks)).toBe(true);
+      expect(prompt.questions).toHaveLength(1);
+    },
+  );
 
   it('throws cliError when the prompt returns no answer (EOF / Ctrl+D)', async () => {
     setStdinIsTTY(true);

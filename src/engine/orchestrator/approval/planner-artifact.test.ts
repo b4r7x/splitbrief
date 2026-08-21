@@ -15,9 +15,13 @@ import {
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { sessionDir } from '../../../core/paths.js';
+import {
+  createTaskCompilationAttemptId,
+  TaskCompilationSemanticIdSchema,
+} from '../../../core/schemas/task-compilation.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { DECLARED_PLANNER_ARTIFACT_PATH, PLANNER_ARTIFACT_MAX_BYTES } from '../../runners/types.js';
+import { PLANNER_ARTIFACT_MAX_BYTES } from '../../runners/types.js';
 import { beginDeclaredArtifactReview, cleanupStaleArtifactReviews } from './planner-artifact.js';
 import { createStagedProject } from './staged-project.js';
 import type { IsolatedWorkspace } from '../isolation/types.js';
@@ -25,6 +29,8 @@ import type { IsolatedWorkspace } from '../isolation/types.js';
 const itUnix = process.platform === 'win32' ? it.skip : it;
 const SESSION_ID = 'session-1';
 const CALL_ID = 'call-1';
+const ATTEMPT_ID = createTaskCompilationAttemptId();
+const ARTIFACT_RELATIVE_PATH = `.splitbrief-runner/output/${ATTEMPT_ID}/result`;
 
 type ArtifactFixture = Readonly<{
   projectDir: string;
@@ -58,7 +64,7 @@ function cleanupFixture(fixture: ArtifactFixture): void {
 }
 
 function declaredArtifactPath(fixture: ArtifactFixture): string {
-  return join(fixture.staged.projectDir, DECLARED_PLANNER_ARTIFACT_PATH);
+  return join(fixture.staged.projectDir, ARTIFACT_RELATIVE_PATH);
 }
 
 function sessionRoot(projectDir: string): string {
@@ -95,6 +101,22 @@ async function beginReview(
     sessionId: SESSION_ID,
     callId: CALL_ID,
     declaredRedactionValues: options.declaredRedactionValues ?? [],
+    provenance: {
+      semanticId: TaskCompilationSemanticIdSchema.parse('planner-artifact-test'),
+      programId: null,
+      batchId: null,
+      attemptId: ATTEMPT_ID,
+      transport: {
+        kind: 'declared-file',
+        lease: {
+          leaseId: ATTEMPT_ID,
+          attemptId: ATTEMPT_ID,
+          relativePath: ARTIFACT_RELATIVE_PATH,
+        },
+      },
+      maxBytes: PLANNER_ARTIFACT_MAX_BYTES,
+      relativePath: ARTIFACT_RELATIVE_PATH,
+    },
     onApprovalNeeded: options.onApprovalNeeded ?? (async () => ({ approved: true })),
   });
 }
@@ -392,6 +414,22 @@ describe('declared artifact review lease', () => {
           sessionId: SESSION_ID,
           callId: '../outside',
           declaredRedactionValues: [],
+          provenance: {
+            semanticId: TaskCompilationSemanticIdSchema.parse('planner-artifact-test'),
+            programId: null,
+            batchId: null,
+            attemptId: ATTEMPT_ID,
+            transport: {
+              kind: 'declared-file',
+              lease: {
+                leaseId: 'planner-artifact-attempt',
+                attemptId: ATTEMPT_ID,
+                relativePath: ARTIFACT_RELATIVE_PATH,
+              },
+            },
+            maxBytes: PLANNER_ARTIFACT_MAX_BYTES,
+            relativePath: ARTIFACT_RELATIVE_PATH,
+          },
           onApprovalNeeded: async () => ({ approved: true }),
         }),
       ).rejects.toMatchObject({ kind: 'custom-planner-artifact-call-id' });

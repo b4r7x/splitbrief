@@ -90,7 +90,7 @@ describe('runPlanningPhase — abort + continuation', () => {
       sinks,
     });
 
-    expect(result.cancelled).toBe(false);
+    expect(result.disposition).toBe('parked');
     expect(continuationPrompts).toEqual([partialText]);
     expect(callCount).toBe(2);
   });
@@ -112,7 +112,7 @@ describe('runPlanningPhase — abort + continuation', () => {
       sinks,
     });
 
-    expect(result.cancelled).toBe(true);
+    expect(result.disposition).toBe('terminal');
     expect(planCalls).toBe(1);
   });
 });

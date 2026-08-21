@@ -27,6 +27,9 @@ import {
   publishTaskSkipped,
 } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
+import { readStateAuthority } from '../../../core/state/authority.js';
+import type { StateAuthorityReceipt } from '../../../core/state/types.js';
+import { error } from '../../../utils/error.js';
 
 export type RecoveryActionBlockedCode =
   | 'no-pending-recovery'
@@ -73,6 +76,24 @@ export interface ApplyRecoveryActionOptions {
   bus: EventBus;
   config?: Config | undefined;
   mode?: WorkflowMode | undefined;
+  authority?: StateAuthorityReceipt | undefined;
+}
+
+function recoveryMutationOptions(
+  opts: ApplyRecoveryActionOptions,
+  state: WorkflowState,
+): { expectedRevision: number; authority?: StateAuthorityReceipt } {
+  if (opts.authority !== undefined) {
+    const current = readStateAuthority({ projectDir: opts.projectDir, sessionId: opts.sessionId });
+    if (current === null) {
+      throw error('state-authority-invalid', 'The recovery state authority is unavailable.');
+    }
+    opts.authority = current;
+  }
+  return {
+    expectedRevision: state.stateRevision ?? 0,
+    ...(opts.authority === undefined ? {} : { authority: opts.authority }),
+  };
 }
 
 export function applyRecoveryAction(opts: ApplyRecoveryActionOptions): ApplyRecoveryActionResult {
@@ -160,12 +181,25 @@ function applyContinueRecoveryAction(
   if (issue.reason === 'budget-paused') {
     const acknowledgedAtCost = recoveryFactNumber(issue.facts, 'currentCost');
     if (acknowledgedAtCost !== undefined) {
-      state = { ...state, budgetPauseAcknowledgedAtCost: acknowledgedAtCost };
+      state = transitionAndSave(
+        opts,
+        state,
+        {
+          type: 'ACKNOWLEDGE_BUDGET_PAUSE',
+          cost: acknowledgedAtCost,
+        },
+        recoveryMutationOptions(opts, state),
+      );
     }
   }
-  state = transitionAndSave(opts, state, {
-    type: 'RESOLVE_PENDING_RECOVERY',
-  });
+  state = transitionAndSave(
+    opts,
+    state,
+    {
+      type: 'RESOLVE_PENDING_RECOVERY',
+    },
+    recoveryMutationOptions(opts, state),
+  );
   publishRecoveryResolved(opts.bus, issue, opts.action, 'continued');
 
   return { ok: true, action: opts.action, issue, state, status: 'continued' };
@@ -176,9 +210,14 @@ function applyPauseRecoveryAction(
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
   let state = markRecoveryApplying(opts, issue);
-  state = transitionAndSave(opts, state, {
-    type: 'PAUSE_PENDING_RECOVERY',
-  });
+  state = transitionAndSave(
+    opts,
+    state,
+    {
+      type: 'PAUSE_PENDING_RECOVERY',
+    },
+    recoveryMutationOptions(opts, state),
+  );
   return { ok: true, action: opts.action, issue, state, status: 'paused' };
 }
 
@@ -186,17 +225,13 @@ function applyAbortRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
-  // Preserve the pre-cancel task record: CANCEL guts tasks to idle/0, which would zero
-  // out summary.json and lifetime stats. The aborted session must still reflect the work
-  // done, so we restore the pre-cancel tasks/index onto the resolved state.
-  const { tasks, currentTaskIndex } = opts.state;
   let state = markRecoveryApplying(opts, issue);
-  state = transitionAndSave(opts, state, { type: 'CANCEL' });
-  state = transitionAndSave(opts, state, {
-    type: 'RESOLVE_PENDING_RECOVERY',
-  });
-  state = { ...state, tasks, currentTaskIndex };
-  state = transitionAndSave(opts, state, { type: 'RESOLVE_PENDING_RECOVERY' });
+  state = transitionAndSave(
+    opts,
+    state,
+    { type: 'ABORT_PENDING_RECOVERY' },
+    recoveryMutationOptions(opts, state),
+  );
   publishRecoveryResolved(opts.bus, issue, opts.action, 'aborted');
   return { ok: true, action: opts.action, issue, state, status: 'aborted' };
 }
@@ -238,13 +273,23 @@ function applySkipCurrentTaskRecoveryAction(
   }
 
   let state = markRecoveryApplying(opts, issue);
-  state = transitionAndSave(opts, state, {
-    type: 'SKIP_TASK',
-    taskId: target.task.id,
-  });
-  state = transitionAndSave(opts, state, {
-    type: 'RESOLVE_PENDING_RECOVERY',
-  });
+  state = transitionAndSave(
+    opts,
+    state,
+    {
+      type: 'SKIP_TASK',
+      taskId: target.task.id,
+    },
+    recoveryMutationOptions(opts, state),
+  );
+  state = transitionAndSave(
+    opts,
+    state,
+    {
+      type: 'RESOLVE_PENDING_RECOVERY',
+    },
+    recoveryMutationOptions(opts, state),
+  );
   publishTaskSkipped(
     { bus: opts.bus, phase: issue.phase },
     {
@@ -323,19 +368,29 @@ function applyRetryCurrentTaskRecoveryAction(
   const effectiveProfile = selectedImplementerProfile ?? issue.selectedImplementerProfile;
 
   let state = markRecoveryApplying(opts, issue);
-  state = transitionAndSave(opts, state, {
-    type: 'RESET_TASK',
-    taskId: target.task.id,
-  });
+  state = transitionAndSave(
+    opts,
+    state,
+    {
+      type: 'RESET_TASK',
+      taskId: target.task.id,
+    },
+    recoveryMutationOptions(opts, state),
+  );
   opts.bus.publish({
     type: 'task_reset',
     ts: Date.now(),
     phase: state.phase,
     taskId: target.task.id,
   });
-  state = transitionAndSave(opts, state, {
-    type: 'RESOLVE_PENDING_RECOVERY',
-  });
+  state = transitionAndSave(
+    opts,
+    state,
+    {
+      type: 'RESOLVE_PENDING_RECOVERY',
+    },
+    recoveryMutationOptions(opts, state),
+  );
   publishRecoveryResolved(opts.bus, issue, opts.action, 'retry-current-task', effectiveProfile);
 
   return {
@@ -359,10 +414,15 @@ function markRecoveryApplying(
   issue: RecoveryIssue,
 ): WorkflowState {
   publishRecoveryActionSelected(opts.bus, issue, opts.action);
-  return transitionAndSave(opts, opts.state, {
-    type: 'MARK_RECOVERY_APPLYING',
-    action: opts.action,
-  });
+  return transitionAndSave(
+    opts,
+    opts.state,
+    {
+      type: 'MARK_RECOVERY_APPLYING',
+      action: opts.action,
+    },
+    recoveryMutationOptions(opts, opts.state),
+  );
 }
 
 function blockRecoveryAction(

@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { createInitialState, transition } from '../../../core/state/machine.js';
+import { transition } from '../../../core/state/machine.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { ABORTED_OUTCOME_TEXT } from '../../implementers/pipeline/call-result.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import {
   makeCallbacks,
@@ -35,16 +36,7 @@ function setupProject(): { projectDir: string; sessionId: string } {
 
 function makeValidatingState(): WorkflowState {
   const task = makeTask();
-  let state = createInitialState('feat');
-  state = transition(state, { type: 'START' });
-  state = transition(state, { type: 'RESEARCH_DONE' });
-  state = transition(state, { type: 'SPEC_DONE' });
-  state = transition(state, { type: 'APPROVE_SPEC' });
-  state = transition(state, { type: 'PLAN_DONE', tasks: [task] });
-  state = transition(state, { type: 'BRIEFS_READY', tasks: [task] });
-  state = transition(state, { type: 'APPROVE_BRIEFS' });
-  state = transition(state, { type: 'TASK_SENT' });
-  return state;
+  return transition(makeImplState([task]), { type: 'TASK_SENT' });
 }
 
 const defaultWorkflow = { maxRetries: 3 as const };

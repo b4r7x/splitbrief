@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, chmodSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
-import { SANDBOX_DIR } from '../../core/paths.js';
+import { SANDBOX_DIR, TASKS_FILE } from '../../core/paths.js';
+import { writeSpecFile } from '../../core/paths-io.js';
 import {
   cliAuthChannelHostStateAccess,
   defaultCliAuthChannel,
@@ -321,19 +322,8 @@ Create the Claude mismatch fallback file.
     expect(JSON.stringify(events)).not.toContain('sess-new-unexpected');
   });
 
-  it('recovers a root tasks.md that Claude Code wrote and only described in prose', async () => {
-    // Real planner prose from the 2026-08-06 first run: Claude Code wrote the
-    // briefs to <projectDir>/tasks.md and summarised on stdout with the file
-    // name in backticks — no inline briefs, no markdown link.
-    const realProse = [
-      'Wrote `tasks.md` with two dependency-ordered briefs:',
-      '',
-      '- **T001** — create `src/text.ts` with `export function titleCase(input: string): string`, modeled on the single-pure-function style of `src/slug.ts` (regex replace uppercasing the first letter of each word).',
-      "- **T002** (depends on T001) — create `src/text.test.ts` with vitest tests mirroring `src/slug.test.ts` (ESM `./text.js` import, `describe`/`it`/`expect`), covering `'hello world'` → `'Hello World'`, single word, and empty string.",
-      '',
-      "Each brief is self-contained with the existing code patterns inlined, In/Out-of-bounds scope, escalation triggers (e.g. stop if edge-case behavior becomes load-bearing or if T001's export is missing), and evidence requirements (`npm test` and `npm run typecheck` passing).",
-    ].join('\n');
-    const tasksMarkdown = `# Task Briefs: titleCase function
+  it('reads phase artifacts from the terminal result only and ignores seeded session tasks.md', async () => {
+    const terminalMarkdown = `# Task Briefs: titleCase function
 
 ---
 id: T001
@@ -368,14 +358,11 @@ Create \`src/text.test.ts\` with vitest tests for \`titleCase\`.
       shimPath,
       [
         '#!/bin/bash',
-        `cat > "$PWD/tasks.md" <<'TASKS_EOF'`,
-        tasksMarkdown,
-        'TASKS_EOF',
         `cat <<'JSON_EOF'`,
         JSON.stringify({
           type: 'result',
           session_id: '0a3443ac-432e-40c8-bdf9-29859130257f',
-          result: realProse,
+          result: terminalMarkdown,
           usage: { input_tokens: 6, output_tokens: 3006 },
         }),
         'JSON_EOF',
@@ -387,6 +374,9 @@ Create \`src/text.test.ts\` with vitest tests for \`titleCase\`.
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 
     const warnings: string[] = [];
+    const sessionId = '2026-08-06-add-a-titlecase-function-to-src-text-ts-that-capit';
+    writeSpecFile({ projectDir, sessionId }, TASKS_FILE, terminalMarkdown);
+
     const planner = await createTrustedClaudeCodePlanner({ authChannel: 'session' });
 
     const result = await planner.quickPlan({
@@ -395,14 +385,14 @@ Create \`src/text.test.ts\` with vitest tests for \`titleCase\`.
       callbacks: {
         onOutput: () => {},
         onWarning: (message) => warnings.push(message),
-        sessionId: '2026-08-06-add-a-titlecase-function-to-src-text-ts-that-capit',
+        sessionId,
       },
     });
 
     expect(warnings).toEqual([]);
     expect(result.tasks.map((task) => task.id)).toEqual(['T001', 'T002']);
-    expect(result.phases?.[0]?.text).toContain('id: T001');
-    expect(result.phases?.[0]?.rawOutput).toContain('Wrote `tasks.md`');
+    expect(result.phases?.[0]?.artifact.text).toContain('id: T001');
+    expect(result.phases?.[0]?.rawOutput).toBeUndefined();
   });
 
   it('never re-sends a consumed session id: the second consecutive planner call resumes it', async () => {
@@ -525,30 +515,75 @@ Create the Claude retry file.
     expect(stalled).toMatchObject({ type: 'call_stalled', silentMs: expect.any(Number) });
   });
 
-  it('configured planner.args appear in the claude-code planner argv', async () => {
-    const tasksMarkdown = `---
-id: T001
-title: Claude configured-args task
-action: create
-file: src/claude-configured-args.ts
-depends_on: []
----
+  it('keeps only the terminal result content when the final response diverges from partials', async () => {
+    writeCommandShim({
+      dir: shimDir,
+      command: 'claude',
+      lines: [
+        JSON.stringify({
+          type: 'stream_event',
+          event: {
+            type: 'content_block_delta',
+            delta: { type: 'text_delta', text: 'PARTIAL DIVERGENT CONTENT' },
+          },
+        }),
+        JSON.stringify({
+          type: 'result',
+          result: 'FINAL RESULT ONLY',
+          usage: { input_tokens: 2, output_tokens: 1 },
+        }),
+      ],
+    });
+    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 
-### Description
-Create the Claude configured-args file.
+    const planner = await createTrustedClaudeCodePlanner({ authChannel: 'session' });
+    const result = await planner.review('prompt', projectDir, { onOutput: () => {} });
 
-### Tests
-- the configured argument reaches the CLI
-`;
-    const argvLog = join(shimDir, 'configured-args-argv.txt');
+    // REQ-013: only the authoritative final assistant response is content; the
+    // divergent partial is evidence at most and never joins the Brief.
+    expect(result.text).toBe('FINAL RESULT ONLY');
+    expect(result.text).not.toContain('PARTIAL');
+    expect(result.usage).toMatchObject({ inputTokens: 2, outputTokens: 1 });
+  });
+
+  it('delivers instructions through the admitted stdin prompt, never through argv', async () => {
+    const stdinFile = join(shimDir, 'stdin.txt');
+    const argvFile = join(shimDir, 'argv.txt');
     const shimPath = join(shimDir, 'claude');
     writeFileSync(
       shimPath,
       [
         '#!/bin/bash',
-        `printf '%s ' "$@" >> '${argvLog}'`,
-        `printf '\\n' >> '${argvLog}'`,
-        `printf '%s\\n' '${JSON.stringify({ type: 'result', result: tasksMarkdown, usage: { input_tokens: 1, output_tokens: 1 } }).replace(/'/g, "'\\''")}'`,
+        `cat > '${stdinFile}'`,
+        `printf '%s\\n' "$@" > '${argvFile}'`,
+        `printf '%s\\n' '${JSON.stringify({ type: 'result', result: 'ok' })}'`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+
+    const planner = await createTrustedClaudeCodePlanner({ authChannel: 'session' });
+    await planner.review('REPO-INSTRUCTIONS-MARKER\n\nproceed', projectDir, {
+      onOutput: () => {},
+    });
+
+    // The prompt is the sole instruction channel; the argv stays the admitted
+    // vector and never carries instruction content.
+    expect(readFileSync(stdinFile, 'utf8')).toContain('REPO-INSTRUCTIONS-MARKER');
+    expect(readFileSync(argvFile, 'utf8')).not.toContain('REPO-INSTRUCTIONS-MARKER');
+  });
+
+  it('refuses a configured planner arg that adds a project root outside the invocation', async () => {
+    const spawnedMarker = join(shimDir, 'spawned.txt');
+    const shimPath = join(shimDir, 'claude');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        `touch '${spawnedMarker}'`,
+        `printf '%s\\n' '${JSON.stringify({ type: 'result', result: 'never reached' })}'`,
         '',
       ].join('\n'),
       'utf8',
@@ -562,24 +597,16 @@ Create the Claude configured-args file.
         authChannel: 'session',
         args: ['--add-dir', '/srv/shared-context'],
       });
-      const planned = await planner.quickPlan({
-        feature: 'configured args',
-        projectDir,
-        callbacks: { onOutput: () => {} },
-      });
-      await planner.review('prompt', projectDir, { onOutput: () => {} });
 
-      expect(planned.tasks).toHaveLength(1);
-      const calls = readFileSync(argvLog, 'utf8')
-        .trim()
-        .split('\n')
-        .map((line) => line.trim().split(' '));
-      // The planning stream and the one-shot review are the two ways the
-      // planner reaches the CLI; both must carry the configured tail.
-      expect(calls).toHaveLength(2);
-      for (const argv of calls) {
-        expect(argv.slice(-2)).toEqual(['--add-dir', '/srv/shared-context']);
-      }
+      // REQ-018: added roots are adapter-owned. The configured arg is rejected
+      // before any process spawns, so the shim never runs.
+      await expect(
+        planner.review('prompt', projectDir, { onOutput: () => {} }),
+      ).rejects.toMatchObject({
+        kind: 'cli-argument-conflict',
+        data: { conflicts: ['--add-dir'] },
+      });
+      expect(existsSync(spawnedMarker)).toBe(false);
     } finally {
       restoreHome();
     }

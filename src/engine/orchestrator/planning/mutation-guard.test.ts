@@ -4,25 +4,15 @@ import { join } from 'node:path';
 import {
   capturePlanningMutationBaseline,
   findUnexpectedPlanningMutations,
-  isAllowedPlanningMutation,
 } from './mutation-guard.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 
 describe('planning mutation guard', () => {
-  it('allows only current-session artifact paths', () => {
-    expect(isAllowedPlanningMutation('.splitbrief/sessions/sess-1/spec.md', 'sess-1')).toBe(true);
-    expect(isAllowedPlanningMutation('src/leak.ts', 'sess-1')).toBe(false);
-    expect(isAllowedPlanningMutation('.splitbrief/hook-trust.json', 'sess-1')).toBe(false);
-    expect(isAllowedPlanningMutation('package.json', 'sess-1')).toBe(false);
-  });
-
   it('flags unexpected source mutations after planning baseline', async () => {
     const projectDir = createTempDir('planning-mutation-guard');
-    const sessionId = 'sess-guard';
     createTestGitRepo(projectDir);
-    ensureSessionDir(projectDir, sessionId);
     try {
       const baseline = await capturePlanningMutationBaseline(projectDir);
       mkdirSync(join(projectDir, 'src'), { recursive: true });
@@ -30,7 +20,6 @@ describe('planning mutation guard', () => {
 
       const unexpected = await findUnexpectedPlanningMutations({
         projectDir,
-        sessionId,
         baseline,
       });
       expect(unexpected).toContain('src/leak.ts');
@@ -39,11 +28,9 @@ describe('planning mutation guard', () => {
     }
   });
 
-  it('permits the phase artifact while still flagging other mutations', async () => {
+  it('reports a common-basename artifact as a mutation with no tasks.md allowance', async () => {
     const projectDir = createTempDir('planning-mutation-guard-artifact');
-    const sessionId = 'sess-guard';
     createTestGitRepo(projectDir);
-    ensureSessionDir(projectDir, sessionId);
     try {
       const baseline = await capturePlanningMutationBaseline(projectDir);
       writeFileSync(join(projectDir, 'tasks.md'), '# tasks\n');
@@ -54,11 +41,9 @@ describe('planning mutation guard', () => {
 
       const unexpected = await findUnexpectedPlanningMutations({
         projectDir,
-        sessionId,
         baseline,
-        artifactFile: 'tasks.md',
       });
-      expect(unexpected).toEqual(['src/leak.ts']);
+      expect(unexpected).toEqual(['docs/tasks.md', 'src/leak.ts', 'tasks.md']);
     } finally {
       cleanupTempDir(projectDir);
     }
@@ -66,9 +51,7 @@ describe('planning mutation guard', () => {
 
   it('ignores declared tool-internal state churn while still flagging real mutations', async () => {
     const projectDir = createTempDir('planning-mutation-guard-internal');
-    const sessionId = 'sess-guard';
     createTestGitRepo(projectDir);
-    ensureSessionDir(projectDir, sessionId);
     try {
       mkdirSync(join(projectDir, '.opencode'), { recursive: true });
       writeFileSync(join(projectDir, '.opencode', 'package-lock.json'), '{"version":1}\n');
@@ -87,7 +70,6 @@ describe('planning mutation guard', () => {
 
       const unexpected = await findUnexpectedPlanningMutations({
         projectDir,
-        sessionId,
         baseline,
         internalStatePaths: [
           '.opencode/package-lock.json',
@@ -104,7 +86,6 @@ describe('planning mutation guard', () => {
 
       const undeclared = await findUnexpectedPlanningMutations({
         projectDir,
-        sessionId,
         baseline,
       });
       expect(undeclared).toContain('.opencode/package-lock.json');
@@ -113,7 +94,7 @@ describe('planning mutation guard', () => {
     }
   });
 
-  it('permits session artifact writes under the active session', async () => {
+  it('does not report session-state churn because internal git status paths stay invisible', async () => {
     const projectDir = createTempDir('planning-mutation-guard-session');
     const sessionId = 'sess-guard';
     createTestGitRepo(projectDir);
@@ -124,7 +105,6 @@ describe('planning mutation guard', () => {
 
       const unexpected = await findUnexpectedPlanningMutations({
         projectDir,
-        sessionId,
         baseline,
       });
       expect(unexpected).toEqual([]);

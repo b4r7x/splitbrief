@@ -1,8 +1,15 @@
 import type { Readable, Writable } from 'node:stream';
 import type { Phase } from '../../../core/schemas/enums.js';
 import { defaultApprovalConfig } from '../../../core/schemas/config.js';
+import type {
+  BriefRecoveryProjectionV1,
+  RecoveryResultV1,
+} from '../../../core/schemas/brief-recovery.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { RewindEventSchema } from '../../../core/state/rewind-event.js';
+import { buildRewindAction, type RewindTarget } from '../../../core/state/build-rewind-action.js';
+import { appendProtectedEngineEvent } from '../../../core/sessions/log-writer.js';
 import type { Planner } from '../../../engine/planners/types.js';
 import type { Implementer } from '../../../engine/implementers/types.js';
 import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
@@ -12,7 +19,9 @@ import {
   WORKFLOW_REWIND_ABORT_REASON,
 } from '../../../engine/orchestrator/run/workflow.js';
 import type { RunWorkflowOptions } from '../../../engine/orchestrator/run/init.js';
-import { loadState } from '../../../core/state/persistence.js';
+import { loadStateForResume } from '../../../core/state/persistence.js';
+import { readStateAuthority } from '../../../core/state/authority.js';
+import type { ResumeLoadAuthority, StateAuthorityReceipt } from '../../../core/state/types.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { eventPhase, isInfrastructurePhaseEvent } from '../../../core/event-phase.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
@@ -20,7 +29,7 @@ import { error } from '../../../utils/error.js';
 import { resolveRunConfigWithBase, type ResolvedRunConfig } from '../../build-overrides.js';
 import { installTerminalOutputErrorGuard } from '../../../lib/terminal/control.js';
 import { createApprovalGate, createGate } from '../gates.js';
-import { createCommandReader } from '../reader.js';
+import { createCommandReader, type RpcEnvelopeError } from '../reader.js';
 import { createResponseWriter } from '../writer.js';
 import { createWorkflowCallbacks } from '../callbacks.js';
 import { attachmentsStore } from '../../../stores/workflow/attachments.js';
@@ -29,6 +38,9 @@ import { createCommandHandler } from '../dispatch.js';
 import { createRpcBriefReviewDraftSaver } from './brief-review.js';
 import { createRpcRecoveryHandlers } from './recovery.js';
 import { createRpcStatusProjection, pendingQueueDepth } from './status.js';
+import { projectBriefRecovery } from '../../../engine/orchestrator/planning/brief-recovery-controller.js';
+import { recoveryResultFromProjection } from '../../../engine/orchestrator/planning/brief-review-gate.js';
+import { transitionAndSave } from '../../../engine/orchestrator/state-ops.js';
 
 type RunWorkflowFn = (opts: RunWorkflowOptions) => Promise<unknown>;
 
@@ -97,6 +109,77 @@ function runConfigWithEffectiveConfig(
   };
 }
 
+type OwnedState = Readonly<{
+  state: WorkflowState;
+  receipt: StateAuthorityReceipt;
+}>;
+
+function loadOwnedStateWithAuthority(
+  ref: Readonly<{ projectDir: string; sessionId: string }>,
+): OwnedState | null {
+  let receipt: StateAuthorityReceipt | null;
+  try {
+    receipt = readStateAuthority(ref);
+  } catch {
+    return null;
+  }
+  if (receipt === null) return null;
+
+  const authority: ResumeLoadAuthority = {
+    kind: 'fenced',
+    receipt,
+    promotedFromVersion: null,
+  };
+  try {
+    const loaded = loadStateForResume({ ref, authority });
+    return loaded.kind === 'loaded' ? { state: loaded.state, receipt } : null;
+  } catch {
+    // A concurrently advanced owner receipt is an observational miss. The
+    // next status/recovery read retries against the latest committed receipt.
+    return null;
+  }
+}
+
+function loadOwnedState(
+  ref: Readonly<{ projectDir: string; sessionId: string }>,
+): WorkflowState | null {
+  return loadOwnedStateWithAuthority(ref)?.state ?? null;
+}
+
+type RpcRecoveryRead = Readonly<{
+  projection: BriefRecoveryProjectionV1;
+  result: RecoveryResultV1;
+}>;
+
+function recoveryReadFromState(
+  ref: Readonly<{ projectDir: string; sessionId: string }>,
+  state: WorkflowState | null,
+): RpcRecoveryRead | null {
+  if (state?.briefRecovery === undefined || state.briefRecovery === null) return null;
+  const stateRevision = state.stateRevision;
+  if (stateRevision === undefined) return null;
+
+  try {
+    const projection = projectBriefRecovery({
+      sessionId: ref.sessionId,
+      now: new Date().toISOString(),
+      state: {
+        stateVersion: state.stateVersion,
+        stateRevision,
+        stateFence: state.stateFence ?? { token: 0, ownerId: 'rpc-recovery' },
+        phase: state.phase,
+        briefRecovery: state.briefRecovery,
+      },
+    });
+    return {
+      projection,
+      result: recoveryResultFromProjection(projection),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function runRpc(options: RunRpcOptions): Promise<void> {
   const { prepared, planner, implementer, deps = {} } = options;
   const projectDir = prepared.session.ref.projectDir;
@@ -109,6 +192,23 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
   let rpcClosed = false;
   let activeSessionId = sessionId;
 
+  const readCurrentState = (): WorkflowState | null => {
+    return loadOwnedState({ projectDir, sessionId: activeSessionId });
+  };
+
+  const readRecovery = (): RpcRecoveryRead | null => {
+    const ref = { projectDir, sessionId: activeSessionId };
+    return recoveryReadFromState(ref, loadOwnedState(ref));
+  };
+
+  const readAuthoritativeState = (): Readonly<{
+    stateVersion: 4;
+    projection: BriefRecoveryProjectionV1;
+  }> | null => {
+    const recovery = readRecovery();
+    return recovery === null ? null : { stateVersion: 4, projection: recovery.projection };
+  };
+
   const writer = createResponseWriter({
     stream: deps.output ?? process.stdout,
     onClose: (reason) => shutdownRpc(reason),
@@ -116,7 +216,9 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
   });
 
   const bus = createEventBus();
-  const approvalGate = createApprovalGate();
+  const approvalGate = createApprovalGate({
+    getBriefReviewProjection: () => readRecovery()?.projection ?? null,
+  });
   const messageGate = createGate<string>();
   const recoveryGate = createGate<string>();
   const transportController = new AbortController();
@@ -126,6 +228,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
   let clearQueueHandler: ClearQueueHandler | null = null;
   let abortTurnHandler: (() => void) | null = null;
   let activeTurnController: AbortController | null = null;
+  let rewindFeedback: string | undefined;
 
   const shutdownRpc = (reason: string) => {
     if (rpcClosed) return;
@@ -151,6 +254,33 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     // biome-ignore-end lint/nursery/noFloatingPromises: gate reject returns boolean, not a Promise
   }
 
+  const requestRewind = (request: RewindTarget): boolean => {
+    const ref = { projectDir, sessionId: activeSessionId };
+    const owned = loadOwnedStateWithAuthority(ref);
+    if (owned === null) return false;
+
+    const { action, persistedAction, event } = buildRewindAction({
+      request,
+      ref,
+      state: owned.state,
+      persistEvent: false,
+      persistTranscript: resolvedConfig.config.workflow.persistTranscript,
+    });
+    transitionAndSave(ref, owned.state, persistedAction, {
+      authority: owned.receipt,
+      expectedRevision: owned.state.stateRevision,
+    });
+    appendProtectedEngineEvent(ref, event, RewindEventSchema);
+    bus.publish(event);
+    if (action.type === 'REWIND_TO_SPEC' || action.type === 'REWIND_TO_PLAN') {
+      rewindFeedback = action.comment;
+    }
+    abortActiveTurn(WORKFLOW_REWIND_ABORT_REASON);
+    return true;
+  };
+
+  const requestTaskRedo = (taskId: string): boolean => requestRewind({ target: 'task', taskId });
+
   bus.subscribe((event) => {
     if (!isInfrastructurePhaseEvent(event)) {
       const phase = eventPhase(event);
@@ -158,10 +288,6 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     }
     writer.event(event);
   });
-
-  const readCurrentState = (): WorkflowState | null => {
-    return loadState({ projectDir, sessionId: activeSessionId });
-  };
 
   const resolveSessionId = (): string => activeSessionId;
 
@@ -187,6 +313,8 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     writer,
     isRpcClosed: () => rpcClosed,
     saveBriefDraft,
+    getRecoveryProjection: () => readRecovery()?.projection ?? null,
+    getRecoveryResult: () => readRecovery()?.result ?? null,
   });
 
   const { receiveRecoveryAction, requestRecoveryAction } = createRpcRecoveryHandlers({
@@ -196,6 +324,13 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
       activeSessionId = id;
     },
     readCurrentState,
+    getAuthority: () => {
+      try {
+        return readStateAuthority({ projectDir, sessionId: activeSessionId });
+      } catch {
+        return null;
+      }
+    },
     executionConfig: () => prepared.config,
     active: prepared.session.active,
     bus,
@@ -209,7 +344,6 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     shutdownRpc(reason != null ? String(reason) : 'aborted');
   };
 
-  let rewindFeedback: string | undefined;
   const handleCommand = createCommandHandler({
     projectDir,
     getPreparedExecution: () => prepared,
@@ -249,6 +383,8 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     writeStatus,
     writer,
     pendingQueueDepth,
+    requestRewind,
+    requestTaskRedo,
     setRewindFeedback: (feedback) => {
       rewindFeedback = feedback;
     },
@@ -257,13 +393,23 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
   const reader = createCommandReader({
     stream: deps.input ?? process.stdin,
     onCommand: handleCommand,
-    onError: (message) =>
-      writer.error(message, { transcriptSensitive: true, summary: 'Invalid RPC frame.' }),
+    onError: () => {},
+    onTypedError: (rpcError: RpcEnvelopeError) => {
+      writer.error(rpcError.message, {
+        transcriptSensitive: true,
+        summary: 'Invalid RPC frame.',
+        data: {
+          code: rpcError.code,
+          ...(rpcError.details === undefined ? {} : { details: rpcError.details }),
+        },
+      });
+    },
+    getAuthoritativeState: readAuthoritativeState,
     onClose: () => shutdownRpc('stdin closed unexpectedly'),
   });
 
   try {
-    let stateForRun = prepared.runtime.resumeState;
+    let stateForRun: WorkflowState | undefined = readCurrentState() ?? prepared.runtime.resumeState;
     let retryProfileOverride: string | undefined;
     let retryProfileOverrideTaskId: TaskId | undefined;
     while (!transportController.signal.aborted) {
@@ -279,9 +425,12 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
         waitForApproval,
         waitForMessage,
         reportError: (message) => writer.error(message),
+        getRecoveryProjection: () => readRecovery()?.projection ?? null,
+        getRecoveryResult: () => readRecovery()?.result ?? null,
       });
       const latestState = readCurrentState();
-      if (latestState) stateForRun = latestState;
+      stateForRun = latestState ?? undefined;
+      if (latestState !== null) currentPhase = latestState.phase;
       const turnController = new AbortController();
       activeTurnController = turnController;
       const rewindFeedbackForRun = rewindFeedback;
@@ -317,7 +466,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
       retryProfileOverrideTaskId = undefined;
 
       if (transportController.signal.aborted) return;
-      const state = loadState({ projectDir, sessionId: activeSessionId });
+      const state = readCurrentState();
       if (!state?.pendingRecovery && !state?.rewindPending) return;
       stateForRun = state;
     }

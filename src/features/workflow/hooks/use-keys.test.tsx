@@ -462,48 +462,46 @@ describe('useWorkflowKeys', () => {
     ui.unmount();
   });
 
-  it.each(
-    VIEWPORTS,
-  )('$label keys start from canonical clamped offsets and keep the sibling pane fixed', async ({
-    cols,
-    rows,
-  }) => {
-    terminalSizeStore.__testReset({ cols, rows });
-    inputHeightStore.__testReset({ rows: 3 });
-    seedLongConversation();
+  it.each(VIEWPORTS)(
+    '$label keys start from canonical clamped offsets and keep the sibling pane fixed',
+    async ({ cols, rows }) => {
+      terminalSizeStore.__testReset({ cols, rows });
+      inputHeightStore.__testReset({ rows: 3 });
+      seedLongConversation();
 
-    const initialConversation = readConversationScrollSnapshot();
-    expect(initialConversation.maxOffset).toBeGreaterThan(1);
-    conversationScrollStore.__testReset({
-      scrollOffset: initialConversation.maxOffset + 10,
-    });
-    const visibleConversation = readConversationScrollSnapshot();
-    reviewStore.setScrollOffset(7);
+      const initialConversation = readConversationScrollSnapshot();
+      expect(initialConversation.maxOffset).toBeGreaterThan(1);
+      conversationScrollStore.__testReset({
+        scrollOffset: initialConversation.maxOffset + 10,
+      });
+      const visibleConversation = readConversationScrollSnapshot();
+      reviewStore.setScrollOffset(7);
 
-    const ui = render(<Harness />);
-    await tick(1);
-    await flushEffects();
-    ui.stdin.write(SHIFT_DOWN);
-    await tick(1);
-    await tick(1);
+      const ui = render(<Harness />);
+      await tick(1);
+      await flushEffects();
+      ui.stdin.write(SHIFT_DOWN);
+      await tick(1);
+      await tick(1);
 
-    expect(readConversationScrollSnapshot().scrollOffset).toBe(visibleConversation.maxOffset - 1);
-    expect(reviewStore.get().scrollOffset).toBe(7);
+      expect(readConversationScrollSnapshot().scrollOffset).toBe(visibleConversation.maxOffset - 1);
+      expect(reviewStore.get().scrollOffset).toBe(7);
 
-    const conversationOffset = conversationScrollStore.get().scrollOffset;
-    reviewStore.setReviewFile('/tmp/spec.md', 100);
-    controlsStore.setInputMode('review');
-    const reviewMaxOffset = 100 - readReviewContentHeight();
-    reviewStore.setScrollOffset(reviewMaxOffset + 10);
-    await flushEffects();
-    ui.stdin.write(SHIFT_UP);
-    await tick(1);
-    await tick(1);
+      const conversationOffset = conversationScrollStore.get().scrollOffset;
+      reviewStore.setReviewFile('/tmp/spec.md', 100);
+      controlsStore.setInputMode('review');
+      const reviewMaxOffset = 100 - readReviewContentHeight();
+      reviewStore.setScrollOffset(reviewMaxOffset + 10);
+      await flushEffects();
+      ui.stdin.write(SHIFT_UP);
+      await tick(1);
+      await tick(1);
 
-    expect(reviewStore.get().scrollOffset).toBe(reviewMaxOffset - 1);
-    expect(conversationScrollStore.get().scrollOffset).toBe(conversationOffset);
-    ui.unmount();
-  });
+      expect(reviewStore.get().scrollOffset).toBe(reviewMaxOffset - 1);
+      expect(conversationScrollStore.get().scrollOffset).toBe(conversationOffset);
+      ui.unmount();
+    },
+  );
 
   it('question ownership scrolls through resize and resumes from the visible offset', async () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18 });

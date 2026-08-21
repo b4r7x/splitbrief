@@ -6,6 +6,10 @@ import {
   RUNNER_CALL_OUTPUT_MAX_BYTES,
   RUNNER_CALL_TOOL_PAYLOAD_MAX_BYTES,
 } from './output-limit.js';
+import {
+  TASK_BRIEF_COMPILER_POLICY,
+  type TaskCompilationCallEnvelope,
+} from '../../core/schemas/task-compilation.js';
 import type { RunnerCallContext, RunnerCallEvent } from './types.js';
 
 const context: RunnerCallContext = {
@@ -15,6 +19,25 @@ const context: RunnerCallContext = {
   runnerName: 'openai',
   model: 'gpt-5',
 };
+
+function envelope(
+  overrides: Readonly<Partial<TaskCompilationCallEnvelope>> = {},
+): TaskCompilationCallEnvelope {
+  return {
+    version: 1,
+    promptBytes: 512,
+    inputTokensUpperBound: 512,
+    requestedOutputTokens: TASK_BRIEF_COMPILER_POLICY.requestedOutputTokens,
+    outputTokensUpperBound: TASK_BRIEF_COMPILER_POLICY.maxNormalizedOutputBytes,
+    maxNormalizedOutputBytes: TASK_BRIEF_COMPILER_POLICY.maxNormalizedOutputBytes,
+    maxDeclaredArtifactBytes: TASK_BRIEF_COMPILER_POLICY.maxDeclaredArtifactBytes,
+    maxRawProtocolBytes: TASK_BRIEF_COMPILER_POLICY.maxRawProtocolBytes,
+    maxStderrBytes: TASK_BRIEF_COMPILER_POLICY.maxStderrBytes,
+    deadlineMs: TASK_BRIEF_COMPILER_POLICY.deadlineMs,
+    idleTimeoutMs: TASK_BRIEF_COMPILER_POLICY.idleTimeoutMs,
+    ...overrides,
+  };
+}
 
 describe('createRunnerCallRecorder', () => {
   it('stores events, calculates partial failures, and emits one terminal event', () => {
@@ -338,5 +361,183 @@ describe('createRunnerCallRecorder', () => {
       rawPreview: expect.stringContaining('sk-***REDACTED***'),
     });
     expect(JSON.stringify(events)).not.toContain('abcdefghijklmnopqrstuvwxyz');
+  });
+});
+
+describe('createRunnerCallRecorder with a canonical call envelope', () => {
+  function envelopeContext(
+    overrides: Readonly<Partial<TaskCompilationCallEnvelope>> = {},
+  ): RunnerCallContext {
+    return { ...context, envelope: envelope(overrides) };
+  }
+
+  it('latches the cumulative normalized bound so a shorter final response cannot clear an overflow', () => {
+    const recorder = createRunnerCallRecorder({
+      context: envelopeContext({ maxNormalizedOutputBytes: 100 }),
+      startedAt: 1,
+    });
+
+    recorder.text({ channel: 'assistant', text: 'x'.repeat(101), ts: 100 });
+    recorder.text({ channel: 'result', text: 'ok', semantics: 'final', ts: 101 });
+    const result = recorder.finishCompleted({ endedAt: 200 });
+
+    expect(result.status).toBe('truncated');
+    expect(result.partial).toBe(true);
+    expect(result.error).toMatchObject({ code: 'task_compiler_output_limited' });
+    expect(result.text).toBe('ok');
+  });
+
+  it('accepts an exact cumulative normalized boundary and completes', () => {
+    const recorder = createRunnerCallRecorder({
+      context: envelopeContext({ maxNormalizedOutputBytes: 100 }),
+      startedAt: 1,
+    });
+
+    recorder.text({ channel: 'assistant', text: 'x'.repeat(100), ts: 100 });
+    const result = recorder.finishCompleted({ endedAt: 200 });
+
+    expect(result.status).toBe('completed');
+    expect(result.error).toBeNull();
+    expect(result.text).toBe('x'.repeat(100));
+  });
+
+  it('replaces a draft with the final response only when no cumulative breach occurred', () => {
+    const recorder = createRunnerCallRecorder({
+      context: envelopeContext({ maxNormalizedOutputBytes: 200 }),
+      startedAt: 1,
+    });
+
+    recorder.text({ channel: 'assistant', text: 'x'.repeat(150), ts: 100 });
+    recorder.text({ channel: 'result', text: 'final ok', semantics: 'final', ts: 101 });
+    const result = recorder.finishCompleted({ endedAt: 200 });
+
+    expect(result.status).toBe('completed');
+    expect(result.error).toBeNull();
+    expect(result.text).toBe('final ok');
+  });
+
+  it('keeps the terminal failure status outranking accumulated bytes', () => {
+    const recorder = createRunnerCallRecorder({
+      context: envelopeContext({ maxNormalizedOutputBytes: 100 }),
+      startedAt: 1,
+    });
+
+    recorder.text({ channel: 'assistant', text: 'x'.repeat(101), ts: 100 });
+    const result = recorder.finishFailed({
+      status: 'failed',
+      error: { code: 'provider_failure', message: 'provider failed' },
+      endedAt: 200,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.error).toMatchObject({ code: 'provider_failure' });
+  });
+
+  it('latches the envelope deadline and classifies completion as a truncated timeout', () => {
+    const recorder = createRunnerCallRecorder({
+      context: envelopeContext({ deadlineMs: 100 }),
+      startedAt: Date.now() - 200,
+    });
+
+    recorder.text({ channel: 'assistant', text: 'late' });
+    const result = recorder.finishCompleted({ endedAt: Date.now() });
+
+    expect(result.status).toBe('truncated');
+    expect(result.error).toMatchObject({ code: 'task_compiler_timeout' });
+  });
+
+  it('latches an idle stall beyond the envelope idle bound', () => {
+    const recorder = createRunnerCallRecorder({
+      context: envelopeContext({ idleTimeoutMs: 100 }),
+      startedAt: 1,
+    });
+
+    recorder.stalled({ silentMs: 101 });
+    const result = recorder.finishCompleted({ endedAt: 200 });
+
+    expect(result.status).toBe('truncated');
+    expect(result.error).toMatchObject({ code: 'task_compiler_timeout' });
+  });
+
+  it('latches cumulative stderr overflow', () => {
+    const recorder = createRunnerCallRecorder({
+      context: envelopeContext({ maxStderrBytes: 100 }),
+      startedAt: 1,
+    });
+
+    recorder.stderr({ text: 'e'.repeat(101), ts: 100 });
+    const result = recorder.finishCompleted({ endedAt: 200 });
+
+    expect(result.status).toBe('truncated');
+    expect(result.error).toMatchObject({ code: 'task_compiler_output_limited' });
+  });
+
+  it('counts tool payload bytes toward the envelope raw protocol bound', () => {
+    const recorder = createRunnerCallRecorder({
+      context: envelopeContext({ maxRawProtocolBytes: 100 }),
+      startedAt: 1,
+    });
+
+    recorder.toolUseDone({
+      toolUse: { id: 'tool-1', name: 'Write', input: { content: 'y'.repeat(200) } },
+      ts: 100,
+    });
+    const result = recorder.finishCompleted({ endedAt: 200 });
+
+    expect(result.status).toBe('truncated');
+    expect(result.error).toMatchObject({ code: 'task_compiler_output_limited' });
+  });
+
+  it('counts artifact text bytes toward the envelope raw protocol bound', () => {
+    const recorder = createRunnerCallRecorder({
+      context: envelopeContext({ maxRawProtocolBytes: 100 }),
+      startedAt: 1,
+    });
+
+    recorder.artifact({
+      artifact: {
+        id: 'artifact-1',
+        source: 'stream',
+        name: 'large.txt',
+        path: null,
+        mimeType: 'text/plain',
+        text: 'z'.repeat(200),
+      },
+      ts: 100,
+    });
+    const result = recorder.finishCompleted({ endedAt: 200 });
+
+    expect(result.status).toBe('truncated');
+    expect(result.error).toMatchObject({ code: 'task_compiler_output_limited' });
+  });
+
+  it('counts unknown-upstream preview bytes toward the envelope raw protocol bound', () => {
+    const recorder = createRunnerCallRecorder({
+      context: envelopeContext({ maxRawProtocolBytes: 100 }),
+      startedAt: 1,
+    });
+
+    recorder.unknownUpstream({
+      rawPreview: 'p'.repeat(200),
+      backendMetadata: { backendKind: 'api', source: 'test', parser: 'jsonl' },
+      ts: 100,
+    });
+    const result = recorder.finishCompleted({ endedAt: 200 });
+
+    expect(result.status).toBe('truncated');
+    expect(result.error).toMatchObject({ code: 'task_compiler_output_limited' });
+  });
+
+  it('classifies a latched call without a terminal as truncated rather than incomplete', () => {
+    const recorder = createRunnerCallRecorder({
+      context: envelopeContext({ maxNormalizedOutputBytes: 100 }),
+      startedAt: 1,
+    });
+
+    recorder.text({ channel: 'assistant', text: 'x'.repeat(101), ts: 100 });
+    const result = recorder.finalResult();
+
+    expect(result.status).toBe('truncated');
+    expect(result.error).toMatchObject({ code: 'task_compiler_output_limited' });
   });
 });
