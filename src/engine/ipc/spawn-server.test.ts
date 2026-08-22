@@ -387,6 +387,8 @@ describe('buildServerArgs transport policy', () => {
   it.each([
     ['API-key selectors', { planner: { apiKey: 'env:PLANNER_KEY' } }],
     ['raw runner arguments', { implementer: { args: ['--header', 'secret'] } }],
+    ['reviewer API-key selectors', { reviewer: { apiKey: 'env:REVIEWER_KEY' } }],
+    ['reviewer raw runner arguments', { reviewer: { args: ['--header', 'secret'] } }],
   ])('rejects detached %s instead of silently persisting or dropping them', (_label, overrides) => {
     expect(() => buildServerArgs({ ...base, overrides })).toThrow(/cannot cross/);
   });

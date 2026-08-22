@@ -237,6 +237,8 @@ const createModeSelectorFixture: FixtureFactory = () => createOverlayFixture('mo
 const createPlannerPickerFixture: FixtureFactory = () => createOverlayFixture('planner-picker');
 const createImplementerPickerFixture: FixtureFactory = () =>
   createOverlayFixture('implementer-picker');
+const createReviewerPickerFixture: FixtureFactory = () => createOverlayFixture('reviewer-picker');
+const createCrewFixture: FixtureFactory = () => createOverlayFixture('crew');
 const createSessionsFixture: FixtureFactory = () => createOverlayFixture('sessions', seedSessions);
 const createEditorFixture: FixtureFactory = () =>
   createOverlayFixture('editor', seedEditor, 'workflow');
@@ -251,6 +253,8 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-mode-selector'), createModeSelectorFixture],
   [scenarioId('overlay-planner-picker'), createPlannerPickerFixture],
   [scenarioId('overlay-implementer-picker'), createImplementerPickerFixture],
+  [scenarioId('overlay-reviewer-picker'), createReviewerPickerFixture],
+  [scenarioId('overlay-crew'), createCrewFixture],
   [scenarioId('overlay-sessions'), createSessionsFixture],
   [scenarioId('overlay-editor'), createEditorFixture],
   [scenarioId('overlay-cost-drilldown'), createCostDrilldownFixture],

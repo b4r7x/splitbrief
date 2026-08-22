@@ -45,6 +45,25 @@ describe('makeConfig', () => {
     });
   });
 
+  it('carries a reviewer override into the parsed config, and none when unset', () => {
+    const config = makeConfig({
+      reviewer: {
+        kind: 'api',
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-6',
+        apiBase: 'https://api.anthropic.com/v1',
+      },
+    });
+
+    expect(config.reviewer).toMatchObject({
+      kind: 'api',
+      provider: 'anthropic',
+      service: 'anthropic',
+      offering: 'payg',
+    });
+    expect(makeConfig().reviewer).toBeUndefined();
+  });
+
   it('keeps explicit custom-provider identity', () => {
     const config = makeConfig({
       implementer: {

@@ -23,6 +23,7 @@ import {
   parsePreparedConfig,
   type PreparedExecution,
 } from '../../../src/engine/runners/prepared-execution.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 const AUTH_TOKEN = 'workflow-loop-token';
 const SESSION_ID = 's';
@@ -96,14 +97,7 @@ function failedRunSummary(): Summary {
     skipped: 0,
     failed: 1,
     totalTime: 0,
-    tokenUsage: {
-      plannerInput: 0,
-      plannerOutput: 0,
-      implementerInput: 0,
-      implementerOutput: 0,
-      escalationInput: 0,
-      escalationOutput: 0,
-    },
+    tokenUsage: makeUsage(),
     estimatedCostSavings: '$0.00',
     escalationRate: 0,
   };

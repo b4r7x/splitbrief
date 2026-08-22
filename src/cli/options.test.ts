@@ -123,6 +123,7 @@ describe('--allow-repo-runners', () => {
 describe('runner selection help', () => {
   it.each([
     { label: 'Planner tool', admitted: [...PLANNER_TOOL_IDS] },
+    { label: 'Reviewer tool', admitted: [...PLANNER_TOOL_IDS] },
     {
       label: 'Implementer provider',
       admitted: [
@@ -138,6 +139,62 @@ describe('runner selection help', () => {
   it('offers ollama-cloud for both roles', () => {
     expect(idsListedInHelp('Planner tool')).toContain('ollama-cloud');
     expect(idsListedInHelp('Implementer provider')).toContain('ollama-cloud');
+  });
+});
+
+describe('reviewer seat flags', () => {
+  it('parses every reviewer override the planner set mirrors', () => {
+    const opts = parseWorkflowOptions([
+      '--reviewer',
+      'codex',
+      '--reviewer-model',
+      'gpt-5',
+      '--reviewer-command',
+      'my-reviewer',
+      '--reviewer-api-base',
+      'https://api.example.com/v1',
+      '--reviewer-api-key-env',
+      'MY_KEY',
+      '--reviewer-args',
+      '--flag-a',
+      '--reviewer-args',
+      '--flag-b',
+      '--reviewer-output-format',
+      'jsonl',
+      '--reviewer-context-length',
+      '128000',
+      '--reviewer-effort',
+      'high',
+    ]);
+
+    expect(opts).toMatchObject({
+      reviewer: 'codex',
+      reviewerModel: 'gpt-5',
+      reviewerCommand: 'my-reviewer',
+      reviewerApiBase: 'https://api.example.com/v1',
+      reviewerApiKeyEnv: 'env:MY_KEY',
+      reviewerArgs: ['--flag-a', '--flag-b'],
+      reviewerOutputFormat: 'jsonl',
+      reviewerContextLength: 128000,
+      reviewerEffort: 'high',
+    });
+  });
+
+  it('admits a provider outside the catalog, exactly as --planner does', () => {
+    const opts = parseWorkflowOptions([
+      '--planner',
+      'some-custom-provider',
+      '--reviewer',
+      'some-custom-provider',
+    ]);
+
+    expect(opts.reviewer).toBe(opts.planner);
+  });
+
+  it('leaves an out-of-catalog reviewer for the config layer to admit', async () => {
+    const { stderr } = await runCommand(['start', '--reviewer', 'some-custom-provider', 'x']);
+
+    expect(stderr).not.toContain("option '--reviewer <tool>'");
   });
 });
 

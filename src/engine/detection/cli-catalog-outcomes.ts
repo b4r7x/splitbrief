@@ -1,8 +1,7 @@
-import type { ActiveRunnerRole } from '../../core/config/accessors/active-runner.js';
 import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
 import { CliExecutableReceiptSchema, type DetectedModel } from '../../core/discovery/detection.js';
 import type { ProbeOutcome, ProbeOutcomeKind } from '../../core/discovery/runner-evidence.js';
-import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import type { CliToolId, RunnerRole } from '../../core/runners/cli-tool-catalog.js';
 
 /**
  * A catalog belongs to a single selected runner, not merely to a CLI name.
@@ -10,7 +9,7 @@ import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
  * process-local token table and is never returned, logged, or persisted.
  */
 export interface ScopedCliCatalogConnection {
-  readonly role: ActiveRunnerRole;
+  readonly role: RunnerRole;
   readonly tool: CliToolId;
   readonly contextKey: string;
 }
@@ -59,7 +58,7 @@ function opaqueExecutableToken(executable: unknown): string | null {
  */
 export function scopedCliCatalogConnection(
   input: Readonly<{
-    role: ActiveRunnerRole;
+    role: RunnerRole;
     tool: CliToolId;
     runnerContextKey: string;
     /** Parsed as a rich receipt at this privacy boundary; legacy identities never qualify. */

@@ -68,7 +68,7 @@ async function withPreparationPreflights(
   const argVectorChecks = await collectArgVectorPreflightChecks({
     config,
     projectDir,
-    includeImplementers: true,
+    roles: ['planner', 'implementer', 'reviewer'],
     ...(runHelp !== undefined && { runHelp }),
   });
   const consentChecks = await collectCustomRunnerConsentChecks({

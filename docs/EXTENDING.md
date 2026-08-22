@@ -69,7 +69,7 @@ Factory: `src/stores/create-store.ts` (~45 LOC).
 
 ## 5. New planner/implementer backend
 
-Use an existing runner kind only (`cli`, `api`, `shell`, `agent`, `agent-sdk`). Do not add a sixth kind — see [section 13](#13-cli-and-provider-admission-checklists).
+Use an existing runner kind only (`cli`, `api`, `shell`, `agent`, `agent-sdk`). Do not add a sixth kind — see [section 14](#14-cli-and-provider-admission-checklists).
 
 1. Pick the kind in config (`RunnerKindSchema` in `src/core/schemas/enums.ts`); factory dispatch lives in `src/engine/runners/factory.ts`
 2. Create `src/engine/planners/<name>.ts` implementing the `Planner` interface from `src/engine/planners/types.ts`
@@ -91,7 +91,28 @@ Use an existing runner kind only (`cli`, `api`, `shell`, `agent`, `agent-sdk`). 
 
 ---
 
-## 6. New workflow phase
+## 6. New runner seat
+
+A *seat* is a place in the run where a runner is called. Adding one is not the same as adding a backend — you reuse every existing kind and add a place for one of them to sit. This is the path the review seat took; follow it in this order.
+
+1. **Config schema.** Add the optional top-level block in `src/core/schemas/<seat>-config.ts` and wire it into `ConfigSchema`. Keep it the same discriminated union as an existing seat, `.strict()` on every variant, and do not bump `version`.
+2. **One resolver, and only one.** Add `src/core/config/accessors/<seat>-runner.ts` exporting a `resolve<Seat>Runner(config)` that returns the configured runner or the seat it falls back to, with the source tagged. Everything else in the codebase reads that resolver — it is the only module allowed to branch on `config.<seat>`.
+3. **Role union.** If the seat is user-selectable, add it to `ActiveRunnerRole` in `src/core/runners/cli-tool-catalog.ts`. That is the single role union; do not introduce a second one.
+4. **Slot and admission.** Add the slot variant to `RunnerConfigSlot` (`src/core/config/accessors/runner-config.ts`), then push the seat as a candidate in `prepareExecution()` (`src/engine/runners/prepare-execution.ts`) *only when it is configured*. Add the slot to `RunnerAvailabilitySlot` in `src/core/readiness/checks/availability.ts` — it is an explicit `Extract<…>` and does not widen on its own — and to the readiness checks that report per-seat availability and trust.
+5. **The port.** Define the narrowest interface the seat actually needs in `src/engine/<seat>s/types.ts`. Narrower is better: it lets an existing runner satisfy the seat structurally and hold it unadapted. Do not put tool or model fields on the port — identity for user-facing messages comes from the config accessor that resolved the seat.
+6. **The factory.** Add `create<Seat>()` to `src/engine/runners/factory.ts`, reusing the existing lazy backend loaders. Create the seat in `src/engine/orchestrator/run/init.ts`, reusing an already-built runner when the resolver says the seat falls back.
+7. **The call.** Give the seat its own call module (`src/engine/orchestrator/<seat>-call.ts`) rather than repointing an existing helper. Repointing a shared helper silently moves every other call site with it — count them first.
+8. **Token accounting.** Add the seat's fields to `TokenUsageSchema` (`src/core/schemas/tokens.ts`) with `.default(0)` so older session state still loads, add the category to `categoryFields` and `usageCategoryForRunnerCallRole()` in `src/engine/orchestrator/tokens.ts`, and check `attributePhaseTokenDelta` (`src/core/state/token-attribution.ts`) — moving tokens out of a bucket a phase's delta is computed from silently zeroes that phase in the cost drilldown.
+9. **Pricing and summary.** Price the new bucket at the seat's own rates when configured and fold it into the fallback seat's line when not. `stats.json` aggregates by provider, not by role, so it needs no new bucket.
+10. **CLI flags.** Mirror the existing per-seat flags in `addWorkflowOptions()` (`src/cli/options.ts`), map them in `src/core/config/runtime/overrides/from-options.ts`, and apply them through `applyRunnerOverrides()`.
+11. **UI.** Widen the role-parameterised picker rather than writing a new one, add the overlay to `ACTIVE_OVERLAYS`, add the runtime command, add the settings section to `src/core/settings/catalog.ts`, and add the seat to `deriveCrewSeats()` (`src/core/crew/seats.ts`) so it appears on the Crew page.
+12. **Docs.** [CONFIGURATION.md](./CONFIGURATION.md) for the block, [CLI-REFERENCE.md](./CLI-REFERENCE.md) for the flags, [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) for the command, [WORKFLOW.md](./WORKFLOW.md) for which seat runs which phase, and [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for admission and call-time failure.
+
+The rule that made the review seat cheap: **no automatic fallback at call time.** The seat falls back at *resolve* time, once, visibly. A seat that silently retries somewhere else at call time cannot be reasoned about from the evidence trail.
+
+---
+
+## 7. New workflow phase
 
 1. Add the phase string to the `PHASES` array and `PhaseSchema` in `src/core/schemas/enums.ts`
 2. Add transitions in `src/core/state/machine.ts` — the state reducer
@@ -105,7 +126,7 @@ Use an existing runner kind only (`cli`, `api`, `shell`, `agent`, `agent-sdk`). 
 
 ---
 
-## 7. New UI feature (screen / overlay / picker)
+## 8. New UI feature (screen / overlay / picker)
 
 ### Screen
 
@@ -127,7 +148,7 @@ Use an existing runner kind only (`cli`, `api`, `shell`, `agent`, `agent-sdk`). 
 
 ---
 
-## 8. New provider (for api runner kind)
+## 9. New provider (for api runner kind)
 
 Complete the [provider admission checklist](#provider-admission-checklist) before touching the registry.
 
@@ -140,7 +161,7 @@ Complete the [provider admission checklist](#provider-admission-checklist) befor
 
 ---
 
-## 9. New workflow conversation event renderer
+## 10. New workflow conversation event renderer
 
 1. Open `src/features/workflow/conversation-rows/event-rows/dispatch.ts`
 2. The row renderer is a switch on `event.type` and returns concrete one-terminal-row records.
@@ -152,7 +173,7 @@ The `assertNever(event)` default case ensures the compiler catches missing event
 
 ---
 
-## 10. New readiness check
+## 11. New readiness check
 
 1. Create `src/core/readiness/checks/<name>.ts`
 2. Export a `build<Name>Checks(config: Config): ReadinessCheck[]` function
@@ -166,7 +187,7 @@ Follow the `runners.ts` pattern: return an array of checks, use `metadata` for m
 
 ---
 
-## 11. New config key
+## 12. New config key
 
 1. Add the field to the appropriate schema in `src/core/schemas/config.ts` (or a sub-schema it imports)
 2. If the field needs a runtime accessor, create or extend a file under `src/core/config/accessors/` (existing: `runner-config.ts`, `implementer-profiles.ts`, `values.ts`)
@@ -176,7 +197,7 @@ Follow the `runners.ts` pattern: return an array of checks, use `metadata` for m
 
 ---
 
-## 12. New workflow hook event
+## 13. New workflow hook event
 
 1. Add the event name to `HookEventSchema` in `src/core/schemas/hooks.ts`
    - Names follow the convention: `pre_*`, `post_*`, `on_*`
@@ -190,7 +211,7 @@ Follow the `runners.ts` pattern: return an array of checks, use `metadata` for m
 
 ---
 
-## 13. CLI and provider admission checklists
+## 14. CLI and provider admission checklists
 
 Canonical support matrices live in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [CONFIGURATION.md](./CONFIGURATION.md). Extension work must follow the closed architectural constraints and ordered checklists below — not independent exhaustive lists in secondary guides.
 

@@ -21,10 +21,15 @@ export const TokenUsageSchema = z.object({
   implementerOutput: z.number().int().nonnegative(),
   escalationInput: z.number().int().nonnegative(),
   escalationOutput: z.number().int().nonnegative(),
+  // Defaulted, not required: session state written before reviewer accounting has neither key.
+  reviewerInput: z.number().int().nonnegative().default(0),
+  reviewerOutput: z.number().int().nonnegative().default(0),
   plannerCacheRead: z.number().nonnegative().optional(),
   plannerCacheCreate: z.number().nonnegative().optional(),
   implementerCacheRead: z.number().nonnegative().optional(),
   implementerCacheCreate: z.number().nonnegative().optional(),
+  reviewerCacheRead: z.number().nonnegative().optional(),
+  reviewerCacheCreate: z.number().nonnegative().optional(),
 });
 
 export const TaskTokenUsageSchema = z.object({
@@ -55,10 +60,23 @@ export const TaskTokenUsageSchema = z.object({
 export type TokenUsage = z.infer<typeof TokenUsageSchema>;
 export type TaskTokenUsage = z.infer<typeof TaskTokenUsageSchema>;
 
+// Frozen because every zero state in the process is a spread of this one object,
+// and the token accumulators mutate their totals argument in place.
+export const ZERO_TOKEN_USAGE: Readonly<TokenUsage> = Object.freeze({
+  plannerInput: 0,
+  plannerOutput: 0,
+  implementerInput: 0,
+  implementerOutput: 0,
+  escalationInput: 0,
+  escalationOutput: 0,
+  reviewerInput: 0,
+  reviewerOutput: 0,
+});
+
 export function totalInputTokens(u: TokenUsage): number {
-  return u.plannerInput + u.implementerInput + u.escalationInput;
+  return u.plannerInput + u.implementerInput + u.escalationInput + u.reviewerInput;
 }
 
 export function totalOutputTokens(u: TokenUsage): number {
-  return u.plannerOutput + u.implementerOutput + u.escalationOutput;
+  return u.plannerOutput + u.implementerOutput + u.escalationOutput + u.reviewerOutput;
 }

@@ -106,15 +106,10 @@ describe('ToolModelPicker custom-command input', () => {
   });
 
   it('saves the chosen direct-write contract as an agent command', async () => {
-    let saved: Config | undefined;
-    const ui = renderFeature(
-      <ToolModelPicker
-        role="planner"
-        onConfirm={(updated) => {
-          saved = updated;
-        }}
-      />,
-    );
+    const projectDir = createTempDir('runners-agent-contract');
+    writeConfig(projectDir, makeConfig({ planner: { kind: 'shell', command: 'custom-planner' } }));
+    configStore.load(projectDir);
+    const ui = renderFeature(<ToolModelPicker role="planner" />);
     await tick(20);
     await openContractChoice(ui);
 
@@ -128,9 +123,13 @@ describe('ToolModelPicker custom-command input', () => {
     await flushEffects();
     ui.stdin.write('\r'); // submit the prefilled configured command
     await vi.waitFor(() => {
-      expect(saved?.planner).toMatchObject({ kind: 'agent', command: 'custom-planner' });
+      expect(loadConfig(projectDir).config.planner).toMatchObject({
+        kind: 'agent',
+        command: 'custom-planner',
+      });
     });
     ui.unmount();
+    cleanupTempDir(projectDir);
   });
 
   it('returns to the tool list when the contract choice is dismissed', async () => {

@@ -2,6 +2,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import type { RouteData } from '../../../src/stores/navigation/router.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';
+import { detectionStore } from '../../../src/stores/project/detection.js';
 import { questionPromptStore } from '../../../src/stores/question-prompt/prompt.js';
 import { completionStore } from '../../../src/stores/ui/completion.js';
 import { editorStore } from '../../../src/stores/ui/editor.js';
@@ -10,8 +11,10 @@ import { projectFilesStore } from '../../../src/stores/ui/project-files.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import { operationsStore } from '../../../src/stores/workflow/operations/state.js';
+import type { DetectionServiceResult } from '../../../src/engine/detection/service.js';
 import { scenarioId } from '../contracts/identifiers.js';
 import { makeConfig } from '../../helpers/factories/config.js';
+import { cliDetectionFor } from '../../helpers/factories/detection.js';
 import { makeSummary } from '../../helpers/factories/summary.js';
 import { resetAllStores } from '../../helpers/stores.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
@@ -141,8 +144,32 @@ export const createSummaryFixture: FixtureFactory = () =>
     }),
   }));
 
-export const createSetupFixture: FixtureFactory = () =>
-  createRouteFixture(() => ({ screen: 'setup', onComplete: 'home' }));
+function publishFreshDiscovery(): void {
+  const request = detectionStore.beginRefresh({
+    contexts: {
+      readiness: 'visual-readiness',
+      modelsDev: 'visual-models-dev',
+      cliModels: 'visual-cli-models',
+    },
+  });
+  const result: DetectionServiceResult = {
+    providers: [],
+    cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'codex')],
+    catalog: {},
+    cliModels: [],
+    generation: 1,
+  };
+  detectionStore.publish({ result, request });
+}
+
+export const createSetupFixture: FixtureFactory = () => ({
+  setup: (context) => {
+    setupVisualFixture(context);
+    publishFreshDiscovery();
+    routerStore.init({ screen: 'setup', onComplete: 'home' });
+  },
+  teardown: teardownVisualFixture,
+});
 
 export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-empty'), createHomeFixture],

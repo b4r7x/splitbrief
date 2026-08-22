@@ -10,6 +10,7 @@ import { CompactionFormatSchema } from '../schemas/compaction.js';
 import { getProviderDisplayName } from '../providers/catalog.js';
 import { formatModelName } from '../model-display.js';
 import { getRunnerDisplayName } from '../config/accessors/runner-config.js';
+import { resolveReviewerRunner } from '../config/accessors/reviewer-runner.js';
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import { RUNNER_IDLE_KILL_MS } from '../schemas/runner-fields.js';
 
@@ -17,6 +18,9 @@ const MAX_RETRIES_LIMIT = 10;
 
 const isApiImplementer = (config: Config): boolean =>
   resolveImplementerProfiles(config).defaultProfile.config.kind === 'api';
+
+const markInherited = (config: Config, display: string): string =>
+  resolveReviewerRunner(config).source === 'configured' ? display : `${display} (inherited)`;
 
 export type SettingKind = 'boolean' | 'number' | 'string' | 'enum' | 'picker';
 
@@ -38,6 +42,8 @@ export interface SettingDef {
    * but the picker needs the canonical tool name across all variants).
    */
   readValue?: (config: Config) => unknown;
+  /** Undecorated value the enum toggle advances from, when `readValue` returns a display string. */
+  readRawValue?: (config: Config) => unknown;
   formatValue?: (value: unknown) => string;
 }
 
@@ -68,6 +74,43 @@ export const SETTINGS_DEFS: SettingDef[] = [
     kind: 'enum',
     options: [...EFFORT_LEVELS],
     readValue: (config) => config.planner.effort,
+    unsetLabel: 'auto (tool default)',
+  },
+  {
+    id: 'reviewer.kind',
+    label: 'Tool',
+    section: 'Reviewer',
+    description: 'Reviewer tool or API provider \u2192 /reviewer',
+    kind: 'picker',
+    readValue: (config) =>
+      markInherited(
+        config,
+        getProviderDisplayName(getRunnerDisplayName(resolveReviewerRunner(config).runner)),
+      ),
+  },
+  {
+    id: 'reviewer.model',
+    label: 'Model',
+    section: 'Reviewer',
+    description: 'Reviewer model \u2192 /reviewer',
+    kind: 'picker',
+    readValue: (config) => {
+      const model = resolveReviewerRunner(config).runner.model;
+      return model === undefined ? undefined : markInherited(config, formatModelName(model));
+    },
+  },
+  {
+    id: 'reviewer.effort',
+    label: 'Effort',
+    section: 'Reviewer',
+    description: 'Reviewer reasoning hint \u2192 /reviewer',
+    kind: 'enum',
+    options: [...EFFORT_LEVELS],
+    readValue: (config) => {
+      const effort = resolveReviewerRunner(config).runner.effort;
+      return effort === undefined ? undefined : markInherited(config, effort);
+    },
+    readRawValue: (config) => resolveReviewerRunner(config).runner.effort,
     unsetLabel: 'auto (tool default)',
   },
   {

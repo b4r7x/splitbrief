@@ -12,6 +12,7 @@ export interface Theme {
   info: string;
   planner: string;
   implementer: string;
+  reviewer: string;
   validator: string;
   border: string;
   panelBg: string | undefined;
@@ -70,13 +71,16 @@ const terminalTheme: Theme = {
   warning: 'yellow',
   dimError: 'red', // 16-color named ANSI collapses dim to base error/success; mono separates them.
   dimSuccess: 'green',
-  // Four tokens co-occur in the activity label column — accent, planner, info, implementer — and
-  // the slots that are neither reserved, nor severity, nor structure form two families of two, so
-  // a fourth category hue does not exist here. info drops its hue; SESS/ART are words in a column
-  // of words and the label carries the distinction.
+  // Five tokens co-occur in the activity label column — accent, planner, info, implementer,
+  // reviewer. Of the three brights this palette leaves unspent, blackBright is gray under
+  // another name and cyanBright steps off the link reservation above; yellowBright steps off
+  // warning, and a severity never labels a seat, so the seat cannot be read as one. info drops
+  // the hue instead: its label is a word in a column of words and carries the distinction
+  // itself, as validator does below.
   info: 'gray',
   planner: 'magenta',
   implementer: 'blue',
+  reviewer: 'yellowBright',
   // A role the reader never infers from color: validator output arrives inside a block the word
   // `validate` already names, with per-stage glyphs carrying severity.
   validator: 'white',
@@ -145,6 +149,7 @@ const monoTheme: Theme = {
   info: '#666666',
   planner: '#bb9af7',
   implementer: '#7dcfff',
+  reviewer: '#e57bc4',
   validator: '#c0c0c0',
   border: '#3b3b3b',
   panelBg: '#1a1a1a',

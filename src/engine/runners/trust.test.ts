@@ -229,6 +229,23 @@ describe('checkRunnerTrust', () => {
     });
   });
 
+  it('flags a repo-local reviewer command exactly as it flags the same planner command', () => {
+    const command = './scripts/review.sh';
+    const planner = makeConfig({ planner: { kind: 'shell', command } });
+    const reviewer = makeConfig({ reviewer: { kind: 'shell', command } });
+
+    expect(checkRunnerTrust(planner, '/tmp/project').violations).toEqual([
+      { label: 'planner', command },
+    ]);
+    expect(checkRunnerTrust(reviewer, '/tmp/project').violations).toEqual([
+      { label: 'reviewer', command },
+    ]);
+    expect(() => rejectUntrustedRunners(reviewer, '/tmp/project', false)).toThrow(
+      /untrusted runner/i,
+    );
+    expect(() => rejectUntrustedRunners(reviewer, '/tmp/project', true)).not.toThrow();
+  });
+
   it('flags shell-evaluated prompt placeholders for agent implementers', () => {
     const config = makeConfig({
       implementer: {

@@ -120,6 +120,30 @@ export function addWorkflowOptions(cmd: Command): Command {
       'Implementer context length',
       parsePositiveIntegerOption,
     )
+    .option('--reviewer <tool>', `Reviewer tool (${PLANNER_TOOL_IDS.join(', ')})`)
+    .option('--reviewer-model <model>', 'Reviewer model (for API reviewers)')
+    .option('--reviewer-command <cmd>', 'Custom reviewer command (when --reviewer=shell)')
+    .option('--reviewer-api-base <url>', 'Reviewer API base URL for API providers')
+    .option(
+      '--reviewer-api-key-env <var>',
+      'Reviewer API key environment variable',
+      parseEnvRefOption,
+    )
+    .option(
+      '--reviewer-args <arg>',
+      'Append reviewer CLI/shell argument (repeatable)',
+      collectOption,
+    )
+    .option(
+      '--reviewer-output-format <format>',
+      'Reviewer output format: stream-json, jsonl, text, or opencode',
+      parseOutputFormatOption,
+    )
+    .option(
+      '--reviewer-context-length <tokens>',
+      'Reviewer context length',
+      parsePositiveIntegerOption,
+    )
     .option('--project <dir>', 'Project directory (default: cwd)')
     .option('--no-fullscreen', 'Disable fullscreen alternate screen buffer')
     .option('--no-mouse', 'Disable mouse tracking')
@@ -129,6 +153,10 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option(
       '--planner-effort <level>',
       'Planner effort hint: low, medium, high, xhigh. Dropped on unsupported backends.',
+    )
+    .option(
+      '--reviewer-effort <level>',
+      'Reviewer effort hint: low, medium, high, xhigh. Dropped on unsupported backends.',
     )
     .option('--allow-hooks', 'Trust hook config without prompting (use in CI)', false)
     .option('--allow-repo-runners', ALLOW_REPO_RUNNERS_HELP, false)

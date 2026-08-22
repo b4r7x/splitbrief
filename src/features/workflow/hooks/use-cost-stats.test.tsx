@@ -7,6 +7,7 @@ import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { useCostStats } from './use-cost-stats.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 function Harness() {
   const stats = useCostStats();
@@ -19,14 +20,7 @@ describe('useCostStats', () => {
     tasksStore.__testReset({ totalTasks: 1 });
     tokensStore.__testReset({
       localCount: 1,
-      tokenUsage: {
-        plannerInput: 0,
-        plannerOutput: 0,
-        implementerInput: 1_000_000,
-        implementerOutput: 1_000_000,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      tokenUsage: makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 }),
     });
     configStore.__testReset({
       projectDir: '/tmp/use-cost-stats-test',

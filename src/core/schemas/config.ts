@@ -9,6 +9,7 @@ import {
 } from './enums.js';
 import { PlannerConfigSchema } from './planner-config.js';
 import { ImplementerConfigSchema, ImplementerProfilesConfigSchema } from './implementer-config.js';
+import { ReviewerConfigSchema } from './reviewer-config.js';
 import { CodebaseConfigSchema } from './codebase.js';
 import { HooksConfigSchema } from './hooks.js';
 import { OtelConfigSchema } from './otel.js';
@@ -97,6 +98,7 @@ export const ConfigSchema = z.object({
   planner: PlannerConfigSchema,
   implementer: ImplementerConfigSchema,
   implementerProfiles: ImplementerProfilesConfigSchema.optional(),
+  reviewer: ReviewerConfigSchema.optional(),
   validation: z.object({
     typecheck: z.boolean(),
     lint: z.boolean(),

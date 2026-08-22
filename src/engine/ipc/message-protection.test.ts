@@ -4,6 +4,7 @@ import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { PLANNER_ARTIFACT_MAX_BYTES } from '../runners/types.js';
 import { IPC_MAX_FRAME_BYTES, type ServerMessage } from './protocol.js';
 import { protectServerMessage } from './message-protection.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 describe('protectServerMessage', () => {
   it('preserves immutable artifact text byte-for-byte outside generic consumer protection', () => {
@@ -249,14 +250,14 @@ describe('protectServerMessage', () => {
             observed: ['ipc-observed-secret-79231'],
           },
           cost: {
-            tokenUsage: {
+            tokenUsage: makeUsage({
               plannerInput: 1,
               plannerOutput: 2,
               implementerInput: 3,
               implementerOutput: 4,
               escalationInput: 5,
               escalationOutput: 6,
-            },
+            }),
           },
           recovery: {
             reason: 'retry-exhausted',
@@ -351,14 +352,7 @@ describe('protectServerMessage', () => {
           validation: { passed: true, summary: 'ok', stages: [] },
           evidence: { summary: 'ok', expected, observed: [] },
           cost: {
-            tokenUsage: {
-              plannerInput: 0,
-              plannerOutput: 0,
-              implementerInput: 0,
-              implementerOutput: 0,
-              escalationInput: 0,
-              escalationOutput: 0,
-            },
+            tokenUsage: makeUsage(),
           },
           availableCommands: ['continue'],
         },

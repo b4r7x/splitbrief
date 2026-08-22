@@ -2,13 +2,13 @@
 
 ## What SPLITBRIEF IS
 
-An orchestrator for two coding tools. One plans and reviews, the other executes, and SPLITBRIEF owns everything in between:
+An orchestrator for two coding tools. One plans, the other executes, the review seat reads the result, and SPLITBRIEF owns everything in between:
 
-- **Planner** — the stronger of the two. Researches the repo, compiles Task Briefs, decides when a spec is worth the cost, answers escalations, reviews the finished diff against the spec and the briefs.
+- **Planner** — the stronger of the two. Researches the repo, compiles Task Briefs, decides when a spec is worth the cost, answers escalations, and reviews the finished diff against the spec and the briefs unless the review seat is assigned elsewhere.
 - **Implementer** — the weaker model, reached either as a tool CLI driving a cheaper model or as an API endpoint. Executes one Task Brief at a time in a fresh context. The transport is the user's choice; SPLITBRIEF does not privilege one.
 - **SPLITBRIEF** — owns the contract (the Task Brief), the isolation the implementer works in, the validation pipeline, retry, escalation, and the evidence trail.
 
-The argument for the split is quality, not price. A model reviewing its own output repeats its own blind spots — the assumptions that produced the bug are the same ones reading the diff — so an implementer and a reviewer from **different labs** catch issues a same-lab pair misses, and the gap is widest on logic errors and edge cases ([MindStudio](https://www.mindstudio.ai/blog/cross-vendor-ai-agent-review-claude-codex), [Augment Code](https://www.augmentcode.com/guides/adversarial-code-review) report the effect; SPLITBRIEF has not measured it — see [DIRECTION.md](./DIRECTION.md#what-we-measure)). SPLITBRIEF is built around that pairing: the planner reviews what the implementer wrote, and a deterministic pipeline (typecheck → lint → test) — not the implementer's own opinion — decides whether the change is correct.
+The argument for the split is quality, not price. A model reviewing its own output repeats its own blind spots — the assumptions that produced the bug are the same ones reading the diff — so an implementer and a reviewer from **different labs** catch issues a same-lab pair misses, and the gap is widest on logic errors and edge cases ([MindStudio](https://www.mindstudio.ai/blog/cross-vendor-ai-agent-review-claude-codex), [Augment Code](https://www.augmentcode.com/guides/adversarial-code-review) report the effect; SPLITBRIEF has not measured it — see [DIRECTION.md](./DIRECTION.md#what-we-measure)). SPLITBRIEF is built around that pairing: the review seat reads what the implementer wrote, and a deterministic pipeline (typecheck → lint → test) — not the implementer's own opinion — decides whether the change is correct.
 
 Lower cost follows from putting the mechanical half of the work on the cheaper tool. It is reported after the run; it is not the reason to switch.
 
@@ -16,7 +16,7 @@ Lower cost follows from putting the mechanical half of the work on the cheaper t
 
 - **NOT a universal AI connector** — we don't "connect any AI to any AI"
 - **NOT Claude Squad / Overstory** — we don't manage multiple parallel agent sessions
-- **NOT a multi-agent coordinator** — exactly 2 roles (planner + implementer), clear hierarchy
+- **NOT a multi-agent coordinator** — two roles (planner + implementer) filling three seats (plan, build, review), clear hierarchy
 - **NOT a swarm manager** — no dynamic agent count, agent racing, or same-checkout parallel writing
 - **NOT a generic orchestration framework** — opinionated workflow centered on Task Briefs, with specs only when the work needs more structure
 - **NOT a kanban board or project-management system** — no boards, tickets, or cross-team task tracking
@@ -24,6 +24,10 @@ Lower cost follows from putting the mechanical half of the work on the cheaper t
 - **NOT a cross-plan dependency tracker** — SPLITBRIEF reasons about one workflow at a time, not dependencies across plans
 
 An implementer pool, when enabled, is profile selection inside the single implementer role. It chooses the cheapest capable worker for a Task Brief; it is not dynamic agent count, agent racing, or same-checkout parallel writing.
+
+Two roles, three seats. The third seat is the final review that the planner has always performed, made assignable to a different tool. It runs the same planner/implementer contract: one stateless, read-only call over the run diff. It cannot plan, cannot write files, and holds no session.
+
+So the anti-goals above stay in force exactly as written: assigning an existing seat to a different tool does not add a dynamic agent count (the seat count is fixed at three), does not wrap an agent in an agent (the reviewer is called by SPLITBRIEF, not by the planner), and does not introduce coordination between agents (the reviewer talks to nobody — it reads a diff and returns a verdict). It is the cross-lab argument of the split itself, applied to the review of the diff.
 
 ## USP — Why This Exists
 
@@ -41,7 +45,7 @@ An implementer pool, when enabled, is profile selection inside the single implem
 
 ### 1. Stay a two-tool orchestrator
 
-Don't pivot to "universal connector", and don't pivot to N agents. Exactly two roles, one contract between them, SPLITBRIEF owning the enforcement. Cost is an outcome of that shape, not the thing being optimized for.
+Don't pivot to "universal connector", and don't pivot to N agents. Two roles, one contract between them, three fixed seats — plan, build, review — and SPLITBRIEF owning the enforcement. The review seat may point at a third tool, which buys the cross-lab read on the diff without buying a third role: it is still the planner's review call, with the same prompt and the same output. Cost is an outcome of that shape, not the thing being optimized for.
 
 ### 2. Interactive TUI picker — YES
 
@@ -124,12 +128,12 @@ Sources: [Augment Code — open-source agent orchestrators](https://www.augmentc
 
 See `.specify/memory/constitution.md` for the 6 constitutional principles:
 
-1. **Two-Tool Orchestration** — the stronger tool researches, plans, reviews and absorbs escalations; the weaker one executes briefs. Cost follows from the split
+1. **Two-Tool Orchestration** — two roles fill three seats: the stronger tool researches, plans, absorbs escalations and holds the review seat unless a reviewer is assigned; the weaker one executes briefs. Cost follows from the split
 2. **Spec-Driven Development** — Task Briefs first; specs only for larger or riskier work
 3. **Weaker-Model Implementation** — the implementer is a weaker model, not a weaker transport; a tool CLI and an API endpoint are equally supported and the user picks
 4. **Functional Purity** — zero runtime classes, pure functions, ESM, no unnecessary comments
-5. **Validate Before Checkpoint** — SPLITBRIEF owns the per-task validation pipeline; optional product commits only when configured; final planner review of the run diff
-6. **Identity & Anti-Goals** — two roles, not N agents; visible orchestration is product identity, not scope creep
+5. **Validate Before Checkpoint** — SPLITBRIEF owns the per-task validation pipeline; optional product commits only when configured; final review of the run diff (the planner's seat unless a reviewer is assigned)
+6. **Identity & Anti-Goals** — two roles across three fixed seats, not N agents; visible orchestration is product identity, not scope creep
 
 ## Version History
 

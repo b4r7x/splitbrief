@@ -12,6 +12,7 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { parsePreparedConfig } from '../../engine/runners/prepared-execution.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 let tmp: string;
 
@@ -66,14 +67,7 @@ function writeState(sessDir: string, feature = 'unresponsive feature'): void {
     attempt: 0,
     plannerSessionId: null,
     startedAt: new Date().toISOString(),
-    tokenUsage: {
-      plannerInput: 0,
-      plannerOutput: 0,
-      implementerInput: 0,
-      implementerOutput: 0,
-      escalationInput: 0,
-      escalationOutput: 0,
-    },
+    tokenUsage: makeUsage(),
     tasks: [
       {
         id: 'T001',

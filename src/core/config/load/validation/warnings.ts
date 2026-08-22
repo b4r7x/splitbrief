@@ -4,6 +4,7 @@ import type { Config } from '../../../schemas/config.js';
 import type { ImplementerConfig } from '../../../schemas/implementer-config.js';
 import type { PlannerConfig } from '../../../schemas/planner-config.js';
 import { commandName, isShellEvaluatedPromptArg } from '../../../trust/path-classification.js';
+import { configuredReviewerRunner } from '../../accessors/reviewer-runner.js';
 import { getRunnerDisplayName, getRunnerApiKey } from '../../accessors/runner-config.js';
 import { isInlineApiKey, resolveConfiguredApiKey } from '../../credentials.js';
 
@@ -129,6 +130,10 @@ function promptPlaceholderArgWarnings(config: Config): string[] {
   const warnings: string[] = [];
   warnings.push(...runnerPromptPlaceholderArgWarnings('planner', config.planner));
   warnings.push(...runnerPromptPlaceholderArgWarnings('implementer', config.implementer));
+  const reviewer = configuredReviewerRunner(config);
+  if (reviewer !== undefined) {
+    warnings.push(...runnerPromptPlaceholderArgWarnings('reviewer', reviewer));
+  }
 
   for (const [name, profile] of Object.entries(config.implementerProfiles?.profiles ?? {})) {
     warnings.push(...runnerPromptPlaceholderArgWarnings(`implementer profile ${name}`, profile));
@@ -145,6 +150,11 @@ export function securityWarnings(config: Config): string[] {
     ['implementer', implementerKeyInfo(config.implementer)],
   ] as const) {
     warnings.push(...keyInfoWarnings(role, info));
+  }
+
+  const reviewer = configuredReviewerRunner(config);
+  if (reviewer !== undefined) {
+    warnings.push(...keyInfoWarnings('reviewer', plannerKeyInfo(reviewer)));
   }
 
   for (const [name, profile] of Object.entries(config.implementerProfiles?.profiles ?? {})) {

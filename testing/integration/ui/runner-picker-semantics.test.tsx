@@ -447,7 +447,7 @@ describe('runner picker semantics integration', () => {
         true,
       );
       const rightModels = buildRightModels({
-        isPlanner: false,
+        role: 'implementer',
         customModels: [],
         currentItem: item,
       });
@@ -547,7 +547,7 @@ describe('runner picker semantics integration', () => {
       if (!codex) return;
 
       const mergedModels = buildRightModels({
-        isPlanner: true,
+        role: 'planner',
         customModels: ['gpt-5.4'],
         currentItem: codex,
         cache: {

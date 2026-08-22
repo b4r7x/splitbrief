@@ -41,14 +41,13 @@ export function asReactiveModelCache(
 
 function resolvePricingState(
   costBreakdown: CostBreakdown | null,
-  plannerMode?: PricingMode | undefined,
-  implementerMode?: PricingMode | undefined,
+  seatModes: readonly PricingMode[],
 ): PricingState {
   if (costBreakdown === null) return 'n/a';
   if (costBreakdown.hasPricedUsage && costBreakdown.hasUnpricedUsage) return 'mixed';
   if (costBreakdown.hasPricedUsage) return 'priced';
-  if (plannerMode === 'unpriced-local' && implementerMode === 'unpriced-local') return 'local';
-  if (plannerMode === 'unpriced-unknown' || implementerMode === 'unpriced-unknown') return 'n/a';
+  if (seatModes.every((mode) => mode === 'unpriced-local')) return 'local';
+  if (seatModes.some((mode) => mode === 'unpriced-unknown')) return 'n/a';
   return 'unpriced';
 }
 
@@ -123,7 +122,14 @@ export function computeCostBreakdownStats(inputs: CostBreakdownInputs): CostBrea
   const localRate = routedTasks > 0 ? (localCount / routedTasks) * 100 : 0;
 
   const sessionIdentity = pricingContext ?? runPricingIdentity(config);
-  const { plannerTool, implementerTool, plannerModel, implementerModel } = sessionIdentity;
+  const {
+    plannerTool,
+    implementerTool,
+    plannerModel,
+    implementerModel,
+    reviewerTool,
+    reviewerModel,
+  } = sessionIdentity;
 
   const taskBreakdowns = reconstructTaskBreakdowns(perTask);
   const costBreakdown = tokenUsage
@@ -137,17 +143,23 @@ export function computeCostBreakdownStats(inputs: CostBreakdownInputs): CostBrea
           plannerModel,
           implementerModel,
           ...(taskBreakdowns.length > 0 && { taskBreakdowns }),
+          reviewerTool,
+          reviewerModel,
         },
         inputs.modelCache,
       )
     : null;
   const plannerPricing = resolvePricing(plannerTool, inputs.modelCache, plannerModel);
   const implementerPricing = resolvePricing(implementerTool, inputs.modelCache, implementerModel);
-  const pricingState = resolvePricingState(
-    costBreakdown,
+  const reviewerPricing =
+    reviewerTool === undefined
+      ? null
+      : resolvePricing(reviewerTool, inputs.modelCache, reviewerModel);
+  const pricingState = resolvePricingState(costBreakdown, [
     plannerPricing.pricingMode,
     implementerPricing.pricingMode,
-  );
+    ...(reviewerPricing === null ? [] : [reviewerPricing.pricingMode]),
+  ]);
 
   return { localRate, routedTasks, costBreakdown, pricingState };
 }

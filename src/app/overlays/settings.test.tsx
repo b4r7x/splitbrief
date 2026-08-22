@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
@@ -6,6 +6,7 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { SettingsOverlay } from './settings.js';
 
 const ESC = String.fromCharCode(27);
@@ -64,6 +65,23 @@ describe('SettingsOverlay edit mode', () => {
 
     expect(configStore.get().config?.validation.typecheck).toBe(true);
     ui.unmount();
+  });
+
+  it('advances an inherited reviewer effort from the planner value instead of resetting it', async () => {
+    await withTempDir('settings-reviewer-effort', async (projectDir) => {
+      configStore.__testReset({
+        projectDir,
+        config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code', effort: 'high' } }),
+      });
+      overlayStore.setFocus('reviewer.effort');
+      const ui = renderFeature(<SettingsOverlay />);
+      await flushEffects();
+
+      ui.stdin.write(' ');
+      await vi.waitFor(() => expect(configStore.get().config?.reviewer?.effort).toBe('xhigh'));
+
+      ui.unmount();
+    });
   });
 
   it('frame line count identical when moving between a 1-line and a 2-line description row', async () => {

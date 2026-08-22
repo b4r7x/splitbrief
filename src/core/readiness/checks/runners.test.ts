@@ -458,3 +458,38 @@ describe('buildRunnerChecks availability guidance', () => {
     expect(check?.summary).toMatch(/^Planner /);
   });
 });
+
+describe('buildRunnerChecks reviewer seat', () => {
+  it('reports no reviewer check without a reviewer block', () => {
+    const checks = buildRunnerChecks(makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }));
+
+    expect(checks.filter((check) => check.id.startsWith('runners.reviewer.'))).toEqual([]);
+  });
+
+  it('reports the trust boundary of a configured reviewer', () => {
+    const checks = buildRunnerChecks(
+      makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code' },
+        reviewer: { kind: 'cli', tool: 'codex' },
+      }),
+    );
+
+    expect(checks.find((check) => check.id === 'runners.reviewer.trust-boundary')).toMatchObject({
+      severity: 'warning',
+      metadata: { role: 'reviewer', kind: 'cli', executesLocalCommand: true },
+    });
+  });
+
+  it('warns when a configured reviewer timeout disables the watchdog', () => {
+    const checks = buildRunnerChecks(
+      makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code' },
+        reviewer: { kind: 'cli', tool: 'codex', timeout: 1000 },
+      }),
+    );
+
+    expect(
+      checks.find((check) => check.id === 'runners.reviewer.timeout-disables-watchdog'),
+    ).toMatchObject({ severity: 'warning' });
+  });
+});

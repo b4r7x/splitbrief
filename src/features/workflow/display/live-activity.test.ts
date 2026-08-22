@@ -7,6 +7,7 @@ const base = {
   cancelled: false,
   startedAt: 1000,
   phaseFirstSeenTs: {},
+  reviewerLabel: null,
 };
 
 describe('deriveLiveStatus', () => {
@@ -53,6 +54,20 @@ describe('deriveLiveStatus', () => {
     });
     expect(status?.tone).toBe('implementer');
     expect(status?.stageStart).toBe(5000);
+  });
+
+  it('names the reviewer seat during final review and keeps the seatless wording without one', () => {
+    const configured = deriveLiveStatus({
+      ...base,
+      phase: 'final-review',
+      reviewerLabel: 'Sonnet 4.5',
+    });
+    expect(configured?.verb).toContain('Sonnet 4.5');
+    expect(configured?.tone).toBe('validator');
+
+    const unconfigured = deriveLiveStatus({ ...base, phase: 'final-review' });
+    expect(unconfigured?.verb).toBe('Reviewing…');
+    expect(unconfigured?.tone).toBe('validator');
   });
 
   it('live verbs are Title Case', () => {

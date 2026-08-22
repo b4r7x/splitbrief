@@ -102,7 +102,7 @@ idle
  ├─► implementing      (implementer is working on current task)
  │   └─► validating-task  (typecheck → lint → tests running)
  │       └─► escalating   (validation failed 3× → planner takes over)
- ├─► final-review      (planner reviews whole diff vs Task Brief/supporting spec)
+ ├─► final-review      (review seat reads whole diff vs Task Brief/supporting spec)
  └─► complete
 ```
 

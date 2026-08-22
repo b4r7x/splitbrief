@@ -3,6 +3,7 @@ import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { allowedSettlingBriefReviewCommandsForPrompt } from '../../core/schemas/brief-review-command.js';
 import { TASK_REVIEW_COMMANDS } from '../events/workflow-events.js';
 import { parseServerMessage } from './protocol.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 const BRIEF_HASH = 'a'.repeat(64);
 const REPORT_HASH = 'b'.repeat(64);
@@ -44,14 +45,7 @@ function taskReviewRequest(overrides: Record<string, unknown> = {}): Record<stri
     validation: { passed: false, summary: 'validation failed', stages: [] },
     evidence: { summary: 'needs review', expected: [], observed: [] },
     cost: {
-      tokenUsage: {
-        plannerInput: 0,
-        plannerOutput: 0,
-        implementerInput: 0,
-        implementerOutput: 0,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      tokenUsage: makeUsage(),
     },
     availableCommands: [...TASK_REVIEW_COMMANDS],
     ...overrides,

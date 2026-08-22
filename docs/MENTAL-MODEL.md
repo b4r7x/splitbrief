@@ -51,7 +51,7 @@ A typical run, step by step:
 7. For each task: the implementer writes code in isolation, SPLITBRIEF promotes the approved changes into the project, then validates (typecheck → lint → test)
 8. If validation fails: retry up to 3 times, then escalate to bigger models
 9. If escalation fails: enter recovery — user picks next action (retry same worker, route to a bigger worker, skip, pause, abort)
-10. Planner reviews the final result against the spec
+10. The review seat reviews the final result against the spec — the planner, unless a `reviewer` is configured
 11. Session summary written to disk, workflow done
 
 The user can interrupt live model calls with Ctrl-C, queue messages while the planner is working, rewind to re-plan a spec or plan, or skip individual tasks.

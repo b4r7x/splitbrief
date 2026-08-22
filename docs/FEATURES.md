@@ -142,9 +142,9 @@ escalation:
 
 Outcome events: `task_retry`, `task_escalating`, `hint_failed`, `task_full_fail`. Tokens consumed during escalation are tracked separately (`escalationInput` / `escalationOutput`) so you can see how much "rescue" cost.
 
-### Final review by planner
+### Final review by the review seat
 
-**What it does.** After all tasks reach a terminal state, the planner reviews the entire diff against the Task Brief and any supporting spec. The deterministic drift report (see below) is rendered into the prompt under `## Deterministic Drift Report` so the reviewer sees both signals at once.
+**What it does.** After all tasks reach a terminal state, the review seat — the `reviewer` runner when one is configured, the planner when none is — reviews the entire diff against the Task Brief and any supporting spec. The deterministic drift report (see below) is rendered into the prompt under `## Deterministic Drift Report` so the reviewer sees both signals at once.
 
 **How to use.** Always runs in every mode. Output is written to `.splitbrief/sessions/<id>/review.md`. Fires `workflow_complete` and writes `summary.json`.
 

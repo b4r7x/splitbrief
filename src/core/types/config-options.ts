@@ -26,6 +26,14 @@ export interface WorkflowOpts {
   implementerArgs?: string[];
   implementerOutputFormat?: OutputFormat;
   implementerContextLength?: number;
+  reviewer?: PlannerToolId;
+  reviewerModel?: string;
+  reviewerCommand?: string;
+  reviewerApiBase?: string;
+  reviewerApiKeyEnv?: string;
+  reviewerArgs?: string[];
+  reviewerOutputFormat?: OutputFormat;
+  reviewerContextLength?: number;
   project?: string;
   fullscreen?: boolean;
   mouse?: boolean;
@@ -34,6 +42,7 @@ export interface WorkflowOpts {
   approve?: ApproveLevel;
   budget?: number;
   plannerEffort?: EffortLevel;
+  reviewerEffort?: EffortLevel;
   allowHooks?: boolean;
   allowRepoRunners?: boolean;
   allowUnverifiedAuth?: boolean;

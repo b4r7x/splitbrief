@@ -102,7 +102,7 @@ describe('compiler preflight — fake help, cwd writes, and zero-spawn refusal',
     const checks = await collectArgVectorPreflightChecks({
       config: makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }),
       projectDir: project,
-      includeImplementers: false,
+      roles: ['planner'],
     });
     expect(checks[0]).toMatchObject({
       id: 'runners.cli.opencode.arg-vector.planner',
@@ -151,7 +151,7 @@ describe('compiler preflight — fake help, cwd writes, and zero-spawn refusal',
     const checks = await collectArgVectorPreflightChecks({
       config: makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }),
       projectDir: project,
-      includeImplementers: false,
+      roles: ['planner'],
     });
     expect(checks[0]?.severity).toBe('ok');
 
@@ -178,7 +178,7 @@ describe('compiler preflight — fake help, cwd writes, and zero-spawn refusal',
         },
       }),
       projectDir: project,
-      includeImplementers: false,
+      roles: ['planner'],
     });
     expect(checks[0]).toMatchObject({
       id: 'runners.cli.claude-code.arg-vector.planner',

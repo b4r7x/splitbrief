@@ -81,7 +81,7 @@ describe('PickerView model confirmation', () => {
 
   function explicitModelCatalog(): PickerCatalog {
     const rightModels = buildRightModels({
-      isPlanner: true,
+      role: 'planner',
       customModels: [],
       currentItem: codex,
       cache: modelCacheStore,
@@ -473,5 +473,53 @@ describe('PickerView previews', () => {
     expect(frame).toContain('No models detected');
     expect(frame).toContain('Press ctrl+r to refresh detection');
     ui.unmount();
+  });
+
+  it('renders the reviewer seat on the strong side of the picker', async () => {
+    const tool = pickerItem({
+      id: 'claude-code',
+      displayName: 'Claude Code',
+      kind: 'cli',
+      roles: ['planner', 'implementer'],
+      modelPolicy: 'optional',
+      billing: 'subscription-included',
+      permissions: readyPermissions,
+      status: { state: 'ready', remediation: null },
+      available: true,
+    });
+
+    const catalog: PickerCatalog = {
+      items: [tool],
+      rightModels: [],
+      currentItem: tool,
+      selectedItemId: tool.id,
+      initialLeftIdx: 0,
+      focusModels: false,
+      roleLabel: 'Reviewer',
+      currentModel: undefined,
+      persistedModel: undefined,
+      discoveredModelCount: 0,
+      modelCounts: zeroCounts,
+      catalogDiagnostic: undefined,
+      currentCommand: undefined,
+      currentCommandKind: undefined,
+      customModels: [],
+      discovery: { cold: false, refreshing: false },
+      setCurrentItem: () => {},
+    };
+
+    const ui = renderFeature(
+      <PickerView role="reviewer" catalog={catalog} actions={makeActions()} />,
+    );
+    await flushEffects();
+    expect(ui.lastFrame() ?? '').toContain('Tool & model');
+    ui.unmount();
+
+    const implementerUi = renderFeature(
+      <PickerView role="implementer" catalog={catalog} actions={makeActions()} />,
+    );
+    await flushEffects();
+    expect(implementerUi.lastFrame() ?? '').not.toContain('Tool & model');
+    implementerUi.unmount();
   });
 });

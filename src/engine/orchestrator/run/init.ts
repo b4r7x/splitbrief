@@ -6,6 +6,7 @@ import type { Summary } from '../../../core/schemas/summary.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { Planner } from '../../planners/types.js';
+import type { Reviewer } from '../../reviewers/types.js';
 import type { Implementer, ImplementerFactoryOptions } from '../../implementers/types.js';
 import type { CustomRunnerRuntimePort } from '../../runners/types.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
@@ -13,6 +14,7 @@ import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { StreamingSink } from '../task/streaming-feed.js';
 import type { RunIsolation } from '../isolation/types.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
+import { configuredReviewerSeat } from '../../../core/config/accessors/reviewer-seat.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { recoverInterruptedNativeDeliveries } from '../../../core/queue-state.js';
 import type {
@@ -36,7 +38,7 @@ import {
 } from '../../../core/paths-io.js';
 import { readPackageJson } from '../../../core/project-meta.js';
 import { compilerDriftWarning } from '../../runners/compiler-drift-warning.js';
-import { createPlanner, createImplementer } from '../../runners/factory.js';
+import { createPlanner, createImplementer, createReviewer } from '../../runners/factory.js';
 import { createEventBus } from '../../events/bus.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { createStdoutJsonSink } from '../../events/sinks/stdout-json.js';
@@ -213,6 +215,8 @@ export type RunWorkflowOptions = {
   _planner?: Planner | undefined;
   /** Test-only: inject a pre-built implementer (avoids spawning real subprocesses in tests). */
   _implementer?: Implementer | undefined;
+  /** Test-only: inject a pre-built reviewer (avoids spawning real subprocesses in tests). */
+  _reviewer?: Reviewer | undefined;
   /** One-shot implementer profile override used when recovery retries a task on a selected worker. */
   retryProfileOverride?: string | undefined;
   retryProfileOverrideTaskId?: TaskId | undefined;
@@ -418,6 +422,18 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       slot: { role: 'planner' },
       customRuntime,
     }));
+  const reviewerSeat = configuredReviewerSeat(config);
+  const reviewer: Reviewer =
+    opts._reviewer ??
+    (reviewerSeat === undefined
+      ? planner
+      : await createReviewer(config, {
+          preparedConfig: opts.prepared.config,
+          preparationId,
+          gates,
+          slot: { role: 'reviewer' },
+          customRuntime,
+        }));
   const driftWarning = compilerDriftWarning({ planner, projectDir });
   if (driftWarning !== null) {
     publishWarning({ bus, phase: savedState?.phase ?? 'idle', message: driftWarning });
@@ -511,6 +527,8 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       ...(summaryBase.implementerModel !== undefined && {
         implementerModel: summaryBase.implementerModel,
       }),
+      ...(summaryBase.reviewerTool !== undefined && { reviewerTool: summaryBase.reviewerTool }),
+      ...(summaryBase.reviewerModel !== undefined && { reviewerModel: summaryBase.reviewerModel }),
       ...(opts.selectedSkills && opts.selectedSkills.length > 0
         ? { selectedSkills: opts.selectedSkills.map((s) => s.id) }
         : {}),
@@ -552,6 +570,8 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       plannerModel: summaryBase.plannerModel,
       implementerTool: summaryBase.implementerTool,
       implementerModel: summaryBase.implementerModel,
+      reviewerTool: reviewerSeat?.tool,
+      reviewerModel: reviewerSeat?.model,
     },
   );
 
@@ -571,6 +591,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     callbacks,
     bus,
     planner,
+    reviewer,
     context,
     implementer,
     createImplementer: createPreparedImplementer,

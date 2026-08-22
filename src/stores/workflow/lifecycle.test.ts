@@ -20,6 +20,7 @@ import {
 } from '#testing/helpers/events/runner-call.js';
 import { makeTaskStart } from '#testing/helpers/events/task.js';
 import { taskId } from '../../core/schemas/task.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 describe('lifecycleStore', () => {
   beforeEach(() => resetWorkflow());
@@ -202,14 +203,7 @@ describe('lifecycleStore', () => {
       attempt: 0,
       tasks: [],
       startedAt: new Date().toISOString(),
-      tokenUsage: {
-        plannerInput: 0,
-        plannerOutput: 0,
-        implementerInput: 0,
-        implementerOutput: 0,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      tokenUsage: makeUsage(),
       awaitingContinue: false,
       messageQueue: [],
     });

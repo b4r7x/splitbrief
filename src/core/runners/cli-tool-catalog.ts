@@ -1,11 +1,28 @@
 import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../providers/automatic-model.js';
 import type { PlannerArtifactTransport } from '../schemas/task-compilation.js';
-import { typedEntries } from '../../utils/type-guards.js';
+import { assertNever, typedEntries } from '../../utils/type-guards.js';
 import { assertCandidateFilesAbsent } from './candidate-admission.js';
 import { cliAdmissionError } from './cli-admission-error.js';
 import type { RunnerBillingPosture } from './runner-billing.js';
 
 export type RunnerRole = 'planner' | 'implementer';
+
+/** The reviewer is a planner-tier seat: it shares the planner's admission set and policies. */
+export type PlannerTierRole = 'planner' | 'reviewer';
+
+export type ActiveRunnerRole = PlannerTierRole | 'implementer';
+
+export function runnerRoleForActiveRole(role: ActiveRunnerRole): RunnerRole {
+  switch (role) {
+    case 'planner':
+    case 'reviewer':
+      return 'planner';
+    case 'implementer':
+      return 'implementer';
+    default:
+      return assertNever(role);
+  }
+}
 
 export type RunnerTrustMetadata = Readonly<{
   executesLocalCommand: boolean;

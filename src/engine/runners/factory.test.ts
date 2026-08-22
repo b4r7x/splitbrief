@@ -13,8 +13,10 @@ import {
   customRunnerFactoryError,
   createImplementer as createPreparedImplementer,
   createPlanner as createPreparedPlanner,
+  createReviewer as createPreparedReviewer,
   type RunnerFactoryAuthority,
 } from './factory.js';
+import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import type { CliStartGate } from './start-gate.js';
 import type { CustomRunnerRuntimePort } from './types.js';
 import { executableReceipt } from '#testing/helpers/custom-command-based.js';
@@ -22,7 +24,7 @@ import type { RunnerSlot } from './prepared-execution.js';
 import { resolveConfiguredCustomRunner } from './configured-custom.js';
 import { customRunnerSecurityPosture } from './custom-trust.js';
 import type { AdmittedCustomRunnerInvocation } from './trust.js';
-import type { PlannerFactoryOptions } from '../planners/types.js';
+import type { Planner, PlannerFactoryOptions } from '../planners/types.js';
 import type { ImplementerFactoryOptions } from '../implementers/types.js';
 import { resolveCliExecutableAliases } from './resolve-cli-executable.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
@@ -99,7 +101,7 @@ type PlannerAuthority = RunnerFactoryAuthority & {
   slot: Extract<RunnerSlot, { role: 'planner' }>;
 };
 type ImplementerAuthority = RunnerFactoryAuthority & {
-  slot: Exclude<RunnerSlot, { role: 'planner' }>;
+  slot: Extract<RunnerSlot, { role: 'implementer' | 'intermediate' }>;
 };
 
 function authorityFor(
@@ -170,6 +172,17 @@ function createPlanner(
     initialSessionId,
     ...authorityFor(config, 'planner', options.trustedCli),
   });
+}
+
+function reviewerAuthority(config: Config): RunnerFactoryAuthority {
+  const preparationId = 'factory-reviewer';
+  const slot: RunnerSlot = { role: 'reviewer' };
+  return {
+    preparedConfig: config,
+    preparationId,
+    slot,
+    gates: [makeRunnerGate(resolveReviewerRunner(config).runner, slot, preparationId)],
+  };
 }
 
 function createImplementer(config: Config, options: ImplementerFactoryOptions = {}) {
@@ -716,6 +729,90 @@ describe('prepared generic gate enforcement', () => {
         gates: [makeRunnerGate(runnerB, slot, preparationId)],
       }),
     ).rejects.toMatchObject({ kind: 'runner-gate-mismatch' });
+  });
+
+  it('refuses a prepared reviewer seat through the planner factory', async () => {
+    const config = withPlanner({
+      kind: 'api',
+      provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
+      apiBase: 'http://localhost:11434/v1',
+      model: 'reviewer',
+    });
+    const slot = { role: 'reviewer' as const };
+    const preparationId = 'reviewer-seat';
+
+    await expect(
+      createPreparedPlanner(config, {
+        preparedConfig: config,
+        preparationId,
+        slot,
+        gates: [makeRunnerGate(config.planner, slot, preparationId)],
+      }),
+    ).rejects.toMatchObject({ kind: 'runner-gate-mismatch' });
+  });
+});
+
+describe('createReviewer', () => {
+  function withReviewer(): Config {
+    return makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'openrouter',
+        apiBase: 'https://openrouter.ai/api/v1',
+        apiKey: 'sk-planner',
+        model: 'planner-model',
+      },
+      reviewer: {
+        kind: 'api',
+        provider: 'anthropic',
+        apiBase: 'https://api.anthropic.com/v1',
+        apiKey: 'sk-ant-reviewer',
+        model: 'reviewer-model',
+      },
+    });
+  }
+
+  it('builds the reviewer from the reviewer block, not from the planner', async () => {
+    const config = withReviewer();
+
+    await expect(createPreparedReviewer(config, reviewerAuthority(config))).resolves.toBeDefined();
+
+    const plannerGated: RunnerFactoryAuthority = {
+      preparedConfig: config,
+      preparationId: 'factory-reviewer',
+      slot: { role: 'reviewer' },
+      gates: [makeRunnerGate(config.planner, { role: 'reviewer' }, 'factory-reviewer')],
+    };
+    await expect(createPreparedReviewer(config, plannerGated)).rejects.toMatchObject({
+      kind: 'runner-gate-mismatch',
+    });
+  });
+
+  it('refuses a reviewer whose configured arguments override authority SPLITBRIEF owns', async () => {
+    const config = makeConfig({
+      reviewer: { kind: 'cli', tool: 'claude-code', args: ['--permission-mode', 'acceptEdits'] },
+    });
+
+    await expect(createPreparedReviewer(config, reviewerAuthority(config))).rejects.toMatchObject({
+      kind: 'task_compiler_capability_unsupported',
+    });
+  });
+
+  it('leaves the Task Brief compiler off the review seat', async () => {
+    const config = withReviewer();
+    // The seat is filled by a planner instance, and the compiler attachment is
+    // keyed by that object — so both readers answer for the reviewer too.
+    const reviewer = (await createPreparedReviewer(config, reviewerAuthority(config))) as Planner;
+    const planner = await createPlanner({
+      ...config,
+      planner: resolveReviewerRunner(config).runner,
+    });
+
+    expect(readPlannerCompilerSeam(reviewer)).toBeNull();
+    expect(readPlannerCompilerRefusal(reviewer)).toBeNull();
+    expect(readPlannerCompilerRefusal(planner) ?? readPlannerCompilerSeam(planner)).not.toBeNull();
   });
 });
 

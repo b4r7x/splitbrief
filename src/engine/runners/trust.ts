@@ -13,6 +13,7 @@ import {
   isShellEvaluatedPromptArg,
 } from '../../core/trust/path-classification.js';
 import { stripProfileMetadata } from '../../core/config/accessors/implementer-profiles.js';
+import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { parseShellCommand } from '../../utils/parse-shell-command.js';
 import { error } from '../../utils/error.js';
 import {
@@ -269,11 +270,16 @@ function collectCommandRunnerViolations(
 function commandRunnerViolations(config: Config, projectDir: string): RunnerTrustViolation[] {
   const violations: RunnerTrustViolation[] = [];
 
-  for (const role of ['planner', 'implementer'] as const) {
-    const runner = config[role];
+  const reviewer = resolveReviewerRunner(config);
+  const seats = [
+    ['planner', config.planner],
+    ['implementer', config.implementer],
+    ...(reviewer.source === 'configured' ? [['reviewer', reviewer.runner] as const] : []),
+  ] as const;
+  for (const [label, runner] of seats) {
     if (!isCustomCommandRunner(runner)) continue;
     if (hasConfiguredCustomCommand(runner, config)) continue;
-    violations.push(...collectCommandRunnerViolations(role, runner, projectDir));
+    violations.push(...collectCommandRunnerViolations(label, runner, projectDir));
   }
 
   for (const [name, profile] of Object.entries(config.implementerProfiles?.profiles ?? {})) {

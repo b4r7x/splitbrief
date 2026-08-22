@@ -14,15 +14,9 @@ import { shouldPreserveActiveState } from '../engine/orchestrator/session-lifecy
 import type { TokenUsage } from './schemas/tokens.js';
 import type { WorkflowState } from './schemas/workflow.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
-const EMPTY_USAGE: TokenUsage = {
-  plannerInput: 0,
-  plannerOutput: 0,
-  implementerInput: 0,
-  implementerOutput: 0,
-  escalationInput: 0,
-  escalationOutput: 0,
-};
+const EMPTY_USAGE = makeUsage();
 
 describe('isResumable', () => {
   it('returns true when awaitingContinue is true on a non-terminal phase', () => {

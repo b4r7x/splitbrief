@@ -43,6 +43,7 @@ describe('abort during implementer phase terminates the task loop cleanly', {
     const controller = new AbortController();
     const { callbacks } = makeCallbacks();
     const { bus, events: busEvents } = makeBusRecorder();
+    const planner = makePlanner();
 
     // Abort the engine signal while the implementer is "running".
     const implementer = makeImplementer({
@@ -63,7 +64,8 @@ describe('abort during implementer phase terminates the task loop cleanly', {
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
         config: makeNoValidationConfig({ workflow: { maxRetries: 1 } }),
         callbacks,
-        planner: makePlanner(),
+        planner,
+        reviewer: planner,
         implementer,
         context: defaultContext,
         metadata: META,

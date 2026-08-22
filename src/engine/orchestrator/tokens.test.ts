@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { addUsage, recordTaskUsage } from './tokens.js';
+import { addRunnerCallUsageToTokenUsage, addUsage, recordTaskUsage } from './tokens.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { createEventBus } from '../events/bus.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
-import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
+import type { TaskTokenUsage, TokenUsage } from '../../core/schemas/tokens.js';
+import { ZERO_TOKEN_USAGE } from '../../core/schemas/tokens.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 
 function baseState(): WorkflowState {
@@ -75,6 +76,25 @@ describe('addUsage — escalation cache token routing', () => {
     const state = baseState();
     expect(addUsage(state, 'planner', null)).toBe(state);
     expect(addUsage(state, 'escalation', undefined)).toBe(state);
+  });
+});
+
+describe('addRunnerCallUsageToTokenUsage — reviewer attribution', () => {
+  it('attributes a review call to the reviewer buckets and leaves the planner buckets untouched', () => {
+    const totals: TokenUsage = { ...ZERO_TOKEN_USAGE };
+    addRunnerCallUsageToTokenUsage(totals, 'review', {
+      inputTokens: 120,
+      outputTokens: 40,
+      cacheReadTokens: 300,
+      cacheCreateTokens: 20,
+    });
+    expect(totals.reviewerInput).toBe(120);
+    expect(totals.reviewerOutput).toBe(40);
+    expect(totals.reviewerCacheRead).toBe(300);
+    expect(totals.reviewerCacheCreate).toBe(20);
+    expect(totals.plannerInput).toBe(0);
+    expect(totals.plannerOutput).toBe(0);
+    expect(totals.plannerCacheRead).toBeUndefined();
   });
 });
 

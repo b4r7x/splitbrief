@@ -404,7 +404,7 @@ The full ledger is read directly from disk by UI that needs per-task detail.
 
 ## Deterministic drift report
 
-Before the final planner review runs, the orchestrator computes a deterministic
+Before the final review runs, the orchestrator computes a deterministic
 drift report comparing the Task Brief against the actual git diff and the
 evidence ledger. The report is persisted as `drift-report.json` in the session
 directory and is also injected as a section into the final-review prompt.

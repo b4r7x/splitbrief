@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
+import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { glyph } from '../../lib/glyphs.js';
 import { ContractChoiceOverlay } from './contract-choice-overlay.js';
@@ -85,6 +86,24 @@ describe('ContractChoiceOverlay', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain(`agent ${glyph('check')}`);
     expect(frame).not.toContain(`shell ${glyph('check')}`);
+    ui.unmount();
+  });
+
+  it('names the reviewer seat and takes input while the reviewer picker is open', async () => {
+    overlayStore.open('reviewer-picker');
+    const chosen: string[] = [];
+    const ui = renderFeature(
+      <ContractChoiceOverlay
+        role="reviewer"
+        initialKind={undefined}
+        onChoose={(kind) => chosen.push(kind)}
+      />,
+    );
+    await flushEffects();
+
+    expect(ui.lastFrame() ?? '').toContain('reviewer');
+    ui.stdin.write('\r');
+    await vi.waitFor(() => expect(chosen).toEqual(['shell']));
     ui.unmount();
   });
 });

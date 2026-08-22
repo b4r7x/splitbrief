@@ -10,18 +10,20 @@ import {
   cliModelPolicyViolations,
   getCliModelPolicy,
   defaultCliAuthChannel,
+  runnerRoleForActiveRole,
+  type ActiveRunnerRole,
   type CliAuthChannelId,
+  type PlannerTierRole,
 } from '../../runners/cli-tool-catalog.js';
 import { PlannerConfigSchema } from '../../schemas/planner-config.js';
 import { ImplementerConfigSchema } from '../../schemas/implementer-config.js';
+import { ReviewerConfigSchema } from '../../schemas/reviewer-config.js';
 import { configError } from '../errors.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
 import type { ImplementerConfig } from '../../schemas/implementer-config.js';
 import type { ApiOffering } from '../../providers/api-provider-catalog.js';
 import type { EffortLevel, RunnerKind } from '../../schemas/enums.js';
 import type { OutputFormat } from '../../schemas/enums.js';
-
-export type Role = 'planner' | 'implementer';
 
 export interface BuildRunnerOpts {
   kind?: RunnerKind | undefined;
@@ -48,10 +50,10 @@ export interface BuildRunnerOpts {
 
 type PlannerCapabilities = Extract<PlannerConfig, { kind: 'shell' }>['capabilities'];
 
-export function buildRunnerConfig(role: 'planner', opts: BuildRunnerOpts): PlannerConfig;
+export function buildRunnerConfig(role: PlannerTierRole, opts: BuildRunnerOpts): PlannerConfig;
 export function buildRunnerConfig(role: 'implementer', opts: BuildRunnerOpts): ImplementerConfig;
 export function buildRunnerConfig(
-  role: Role,
+  role: ActiveRunnerRole,
   opts: BuildRunnerOpts,
 ): PlannerConfig | ImplementerConfig {
   const kind = inferKind(role, opts);
@@ -156,7 +158,11 @@ function spreadGenParams(gen: ReturnType<typeof resolveGenerationParams>): Recor
   };
 }
 
-function assertModelPresent(role: Role, kind: RunnerKind, model: string | undefined): void {
+function assertModelPresent(
+  role: ActiveRunnerRole,
+  kind: RunnerKind,
+  model: string | undefined,
+): void {
   if (role === 'implementer' && kind !== 'cli' && !model) {
     throw configError.runnerMissingModel(role);
   }
@@ -202,7 +208,7 @@ export function inferKindFromTool(tool: string): RunnerKind {
   return 'api';
 }
 
-function inferKind(role: Role, opts: BuildRunnerOpts): RunnerKind {
+function inferKind(role: ActiveRunnerRole, opts: BuildRunnerOpts): RunnerKind {
   if (opts.kind) return opts.kind;
   if (opts.tool) return inferKindFromTool(opts.tool);
   if (opts.apiBase) return 'api';
@@ -212,12 +218,19 @@ function inferKind(role: Role, opts: BuildRunnerOpts): RunnerKind {
 }
 
 function parseRunnerConfig(
-  role: Role,
+  role: ActiveRunnerRole,
   config: Record<string, unknown>,
 ): PlannerConfig | ImplementerConfig {
-  return role === 'planner'
-    ? PlannerConfigSchema.parse(config)
-    : ImplementerConfigSchema.parse(config);
+  switch (role) {
+    case 'implementer':
+      return ImplementerConfigSchema.parse(config);
+    case 'reviewer':
+      return ReviewerConfigSchema.parse(config);
+    case 'planner':
+      return PlannerConfigSchema.parse(config);
+    default:
+      return assertNever(role);
+  }
 }
 
 function getExistingApiBase(
@@ -254,7 +267,10 @@ function getExistingApiKey(
   return existing.provider === provider ? existing.apiKey : undefined;
 }
 
-function buildCliConfig(role: Role, opts: BuildRunnerOpts): PlannerConfig | ImplementerConfig {
+function buildCliConfig(
+  role: ActiveRunnerRole,
+  opts: BuildRunnerOpts,
+): PlannerConfig | ImplementerConfig {
   const tool = opts.tool ?? (opts.existing?.kind === 'cli' ? opts.existing.tool : undefined);
   if (!tool) throw configError.runnerMissingField(role, 'cli', 'tool');
   if (!includes(CLI_TOOL_IDS, tool)) {
@@ -264,7 +280,7 @@ function buildCliConfig(role: Role, opts: BuildRunnerOpts): PlannerConfig | Impl
   const target = { kind: 'cli' as const, id: tool };
   const existing = existingAtTarget(opts, target);
   const gen = resolveGenerationParams(opts, target);
-  const modelPolicy = getCliModelPolicy(tool, role);
+  const modelPolicy = getCliModelPolicy(tool, runnerRoleForActiveRole(role));
   const modelViolation = cliModelPolicyViolations(modelPolicy, gen)[0];
   if (modelViolation !== undefined) {
     if (modelPolicy === 'required' && gen.model === undefined) {
@@ -297,7 +313,10 @@ function buildCliConfig(role: Role, opts: BuildRunnerOpts): PlannerConfig | Impl
   return parseRunnerConfig(role, config);
 }
 
-function buildApiConfig(role: Role, opts: BuildRunnerOpts): PlannerConfig | ImplementerConfig {
+function buildApiConfig(
+  role: ActiveRunnerRole,
+  opts: BuildRunnerOpts,
+): PlannerConfig | ImplementerConfig {
   const provider =
     opts.tool ??
     (opts.existing?.kind === 'api'
@@ -353,7 +372,7 @@ function buildApiConfig(role: Role, opts: BuildRunnerOpts): PlannerConfig | Impl
 }
 
 function buildCommandConfig(
-  role: Role,
+  role: ActiveRunnerRole,
   opts: BuildRunnerOpts,
   kind: 'shell' | 'agent',
 ): PlannerConfig | ImplementerConfig {
@@ -389,7 +408,10 @@ function buildCommandConfig(
   return parseRunnerConfig(role, config);
 }
 
-function buildAgentSdkConfig(role: Role, opts: BuildRunnerOpts): PlannerConfig | ImplementerConfig {
+function buildAgentSdkConfig(
+  role: ActiveRunnerRole,
+  opts: BuildRunnerOpts,
+): PlannerConfig | ImplementerConfig {
   const target = { kind: 'agent-sdk' as const };
   const state = targetState(opts, target);
   const sourceApiKey =

@@ -4,10 +4,13 @@ import type {
   ApiProviderId,
 } from '../../core/providers/api-provider-catalog.js';
 import { stripProfileMetadata } from '../../core/config/accessors/implementer-profiles.js';
+import { isInlineApiKey } from '../../core/config/credentials.js';
+import { configuredReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
 import type { PlannerConfig } from '../../core/schemas/planner-config.js';
+import type { ReviewerConfig } from '../../core/schemas/reviewer-config.js';
 import { detectProviderCatalog } from '../../engine/providers/registry.js';
 import type { ProviderCatalogFailureKind } from '../../engine/providers/types.js';
 import { assertNever } from '../../utils/type-guards.js';
@@ -90,16 +93,19 @@ export function redactKey(text: string, apiKey: string): string {
   return text.split(key).join('[redacted]');
 }
 
-function isInlineSecret(apiKey: string | undefined): boolean {
-  return apiKey !== undefined && apiKey !== '' && !apiKey.startsWith('env:');
-}
-
-function runnerHasInlineApiKey(runner: PlannerConfig | ImplementerConfig): boolean {
-  return (runner.kind === 'api' || runner.kind === 'agent-sdk') && isInlineSecret(runner.apiKey);
+function runnerHasInlineApiKey(
+  runner: PlannerConfig | ImplementerConfig | ReviewerConfig,
+): boolean {
+  return (runner.kind === 'api' || runner.kind === 'agent-sdk') && isInlineApiKey(runner.apiKey);
 }
 
 export function configHasInlineApiKey(config: Config): boolean {
-  if (runnerHasInlineApiKey(config.planner) || runnerHasInlineApiKey(config.implementer)) {
+  const reviewer = configuredReviewerRunner(config);
+  if (
+    runnerHasInlineApiKey(config.planner) ||
+    runnerHasInlineApiKey(config.implementer) ||
+    (reviewer !== undefined && runnerHasInlineApiKey(reviewer))
+  ) {
     return true;
   }
   const profiles = config.implementerProfiles?.profiles;

@@ -1,7 +1,6 @@
 import { error } from '../../utils/error.js';
 import { sanitizeTerminalDiagnosticText } from '../../utils/display-text.js';
-
-type Role = 'planner' | 'implementer';
+import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
 
 export const RUNNER_OUTCOME_STATES = [
   'spawn-not-found',
@@ -75,12 +74,9 @@ export const runnerOutcome = {
 } as const;
 
 export const runnerConfigError = {
-  missingToolConfig: (toolName: string, role: Role) =>
-    error(
-      'runner-missing-tool-config',
-      role === 'planner'
-        ? `CLI tool '${toolName}' has no planner configuration`
-        : `CLI tool '${toolName}' has no implementer configuration`,
-      { toolName, role },
-    ),
+  missingToolConfig: (toolName: string, role: ActiveRunnerRole) =>
+    error('runner-missing-tool-config', `CLI tool '${toolName}' has no ${role} configuration`, {
+      toolName,
+      role,
+    }),
 } as const;

@@ -2,7 +2,10 @@ import type { CliToolDetection, ProviderDetection } from '../../../core/discover
 import type { CliReadinessState } from '../../../core/discovery/detection.js';
 import type { ApiProviderDescriptor } from '../../../core/providers/api-provider-catalog.js';
 import { hasApiKey } from '../../../core/providers/catalog.js';
-import type { CliToolDescriptor } from '../../../core/runners/cli-tool-catalog.js';
+import type {
+  ActiveRunnerRole,
+  CliToolDescriptor,
+} from '../../../core/runners/cli-tool-catalog.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
 import type { ConfiguredProviderRuntime } from '../../../engine/detection/provider-outcomes.js';
 
@@ -53,19 +56,20 @@ function findProviderDetection(
   return detections.providers.find((item) => item.provider === provider);
 }
 
+/**
+ * Scoped outcomes are authoritative only for the seat that produced them. A
+ * seat with none of its own was never probed, so it resolves through ambient
+ * provider detection instead of borrowing another seat's credential verdict.
+ */
 function findConfiguredProviderRuntime(
   detections: PickerDetectionSnapshot,
-  input: Readonly<{ role: 'planner' | 'implementer'; provider: string }>,
+  input: Readonly<{ role: ActiveRunnerRole; provider: string }>,
 ): ConfiguredProviderRuntime | null | undefined {
-  if (detections.providerOutcomes === undefined || detections.providerOutcomes.length === 0) {
-    return undefined;
-  }
-  return (
-    detections.providerOutcomes.find(
-      (entry) =>
-        entry.connection.role === input.role && entry.connection.provider === input.provider,
-    ) ?? null
+  const scoped = (detections.providerOutcomes ?? []).filter(
+    (entry) => entry.connection.role === input.role,
   );
+  if (scoped.length === 0) return undefined;
+  return scoped.find((entry) => entry.connection.provider === input.provider) ?? null;
 }
 
 const PROVIDER_SIGN_IN_REMEDIATION =
@@ -148,7 +152,7 @@ function compatibilityStatus(descriptor: ApiProviderDescriptor): PickerOptionSta
 export function deriveApiStatus(
   descriptor: ApiProviderDescriptor,
   detections: PickerDetectionSnapshot,
-  role?: 'planner' | 'implementer',
+  role?: ActiveRunnerRole,
 ): PickerOptionStatus {
   const qualification = compatibilityStatus(descriptor);
   if (qualification) return qualification;
@@ -270,7 +274,7 @@ function configuredProviderStatus(
 export function deriveMetaStatus(
   kind: 'custom-command' | 'agent-sdk',
   detections: PickerDetectionSnapshot,
-  role?: 'planner' | 'implementer',
+  role?: ActiveRunnerRole,
   useConfiguredProviderOutcome = false,
 ): PickerOptionStatus {
   if (kind === 'custom-command') {

@@ -1,5 +1,8 @@
 import type { TokenUsage } from '../../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../../core/schemas/summary.js';
+import type { Config } from '../../../core/schemas/config.js';
+import { configuredReviewerSeat } from '../../../core/config/accessors/reviewer-seat.js';
+import { splitSeatTokenTotals } from '../../../core/providers/seat-totals.js';
 import { calculateCost, calculateUsageCost } from '../../providers/cost-math.js';
 import { resolvePricing } from '../../providers/pricing-resolver.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
@@ -24,21 +27,37 @@ export type PredictCostOptions = {
   implementerModel?: string | undefined;
   tokenUsage?: TokenUsage | undefined;
   cache?: ModelCacheAccessor | undefined;
+  config?: Config | undefined;
 };
+
+function estimateReviewerCost(opts: PredictCostOptions): number {
+  const { tokenUsage } = opts;
+  const seat = configuredReviewerSeat(opts.config);
+  if (seat === undefined || tokenUsage === undefined) return 0;
+  return calculateUsageCost({
+    inputTokens: tokenUsage.reviewerInput,
+    outputTokens: tokenUsage.reviewerOutput,
+    cacheReadTokens: tokenUsage.reviewerCacheRead ?? 0,
+    cacheCreateTokens: tokenUsage.reviewerCacheCreate ?? 0,
+    pricing: resolvePricing(seat.tool, opts.cache, seat.model),
+  });
+}
 
 function estimatePlannerCost(opts: PredictCostOptions): number {
   const { taskCount, plannerTool, plannerModel, tokenUsage } = opts;
   const plannerPricing = resolvePricing(plannerTool, opts.cache, plannerModel);
 
   if (tokenUsage) {
-    const plannerInputTotal = tokenUsage.plannerInput + tokenUsage.escalationInput;
-    const plannerOutputTotal = tokenUsage.plannerOutput + tokenUsage.escalationOutput;
-    if (plannerInputTotal > 0 || plannerOutputTotal > 0) {
+    const planner = splitSeatTokenTotals({
+      tokenUsage,
+      reviewerTool: configuredReviewerSeat(opts.config)?.tool,
+    }).planner;
+    if (planner.input > 0 || planner.output > 0) {
       return calculateUsageCost({
-        inputTokens: plannerInputTotal,
-        outputTokens: plannerOutputTotal,
-        cacheReadTokens: tokenUsage.plannerCacheRead ?? 0,
-        cacheCreateTokens: tokenUsage.plannerCacheCreate ?? 0,
+        inputTokens: planner.input,
+        outputTokens: planner.output,
+        cacheReadTokens: planner.cacheRead,
+        cacheCreateTokens: planner.cacheCreate,
         pricing: plannerPricing,
       });
     }
@@ -103,7 +122,7 @@ export function predictCost(opts: PredictCostOptions): CostPrediction {
     };
   }
 
-  const plannerCost = estimatePlannerCost(opts);
+  const plannerCost = estimatePlannerCost(opts) + estimateReviewerCost(opts);
 
   const lowImpl = estimateImplementerCost(
     {

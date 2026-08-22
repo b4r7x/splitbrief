@@ -3,6 +3,7 @@ import { CONFIRM_PHRASE } from '../../core/approval/types.js';
 import type { TieredApprovalRequest } from '../../core/approval/types.js';
 import { taskId } from '../../core/schemas/task.js';
 import { createWorkflowCallbacks } from './callbacks.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 describe('createWorkflowCallbacks confirm-tier RPC approval', () => {
   const confirmRequest: TieredApprovalRequest = {
@@ -136,14 +137,7 @@ describe('createWorkflowCallbacks confirm-tier RPC approval', () => {
         validation: { passed: true, summary: 'passed', stages: [] },
         evidence: { summary: 'evidence', expected: [], observed: [] },
         cost: {
-          tokenUsage: {
-            plannerInput: 0,
-            plannerOutput: 0,
-            implementerInput: 0,
-            implementerOutput: 0,
-            escalationInput: 0,
-            escalationOutput: 0,
-          },
+          tokenUsage: makeUsage(),
         },
         availableCommands: ['continue'],
       }),
@@ -167,14 +161,7 @@ describe('createWorkflowCallbacks confirm-tier RPC approval', () => {
         validation: { passed: true, summary: 'passed', stages: [] },
         evidence: { summary: 'evidence', expected: [], observed: [] },
         cost: {
-          tokenUsage: {
-            plannerInput: 0,
-            plannerOutput: 0,
-            implementerInput: 0,
-            implementerOutput: 0,
-            escalationInput: 0,
-            escalationOutput: 0,
-          },
+          tokenUsage: makeUsage(),
         },
         availableCommands: ['continue', 'abort'],
       }),
@@ -197,14 +184,7 @@ describe('createWorkflowCallbacks confirm-tier RPC approval', () => {
         validation: { passed: true, summary: 'passed', stages: [] },
         evidence: { summary: 'evidence', expected: [], observed: [] },
         cost: {
-          tokenUsage: {
-            plannerInput: 0,
-            plannerOutput: 0,
-            implementerInput: 0,
-            implementerOutput: 0,
-            escalationInput: 0,
-            escalationOutput: 0,
-          },
+          tokenUsage: makeUsage(),
         },
         availableCommands: ['continue', 'edit-notes'],
       }),

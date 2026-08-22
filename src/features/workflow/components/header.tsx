@@ -12,7 +12,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { CHEVRON_SEP } from '../../../components/separators.js';
 import { getChromeContentWidth, type RailForm } from '../layout/chrome-rows.js';
-import { runnerShortLabel } from './runner-label.js';
+import { reviewerSeatLabel, runnerShortLabel } from './runner-label.js';
 import { measureRailCells, Rail } from './rail.js';
 
 interface HeaderProps {
@@ -30,6 +30,7 @@ export interface HeaderLayout {
   railWidth: number;
   showElapsed: boolean;
   runnerVariant: HeaderRunnerVariant;
+  showReviewer: boolean;
 }
 
 function formatElapsedClock(ms: number): string {
@@ -84,8 +85,12 @@ export function getHeaderLayout(input: {
   railCells: number;
   runnerFullCells?: number | undefined;
   runnerCompactCells?: number | undefined;
+  runnerFullNoReviewerCells?: number | undefined;
+  runnerCompactNoReviewerCells?: number | undefined;
 }): HeaderLayout {
   const { cols, isSmall, railCells, runnerFullCells = 0, runnerCompactCells = 0 } = input;
+  const fullNoReviewer = input.runnerFullNoReviewerCells ?? runnerFullCells;
+  const compactNoReviewer = input.runnerCompactNoReviewerCells ?? runnerCompactCells;
   const contentWidth = getChromeContentWidth(cols);
   const gap = 1;
   const minRail = Math.min(contentWidth, Math.max(0, railCells));
@@ -94,21 +99,33 @@ export function getHeaderLayout(input: {
   const showElapsed = tailRoom >= elapsedTail;
   const elapsedWidth = showElapsed ? elapsedTail : 0;
   const runnerRoom = contentWidth - minRail - gap - elapsedWidth - RUNNER_GAP;
-  let runnerVariant: HeaderRunnerVariant = 'none';
-  if (!isSmall && runnerFullCells > 0 && runnerRoom >= runnerFullCells) {
-    runnerVariant = 'full';
-  } else if (runnerCompactCells > 0 && runnerRoom >= runnerCompactCells) {
-    runnerVariant = 'compact';
-  }
-  const runnerWidth =
-    runnerVariant === 'full'
-      ? runnerFullCells
-      : runnerVariant === 'compact'
-        ? runnerCompactCells
-        : 0;
+  const candidates: {
+    variant: Exclude<HeaderRunnerVariant, 'none'>;
+    reviewer: boolean;
+    cells: number;
+  }[] = [
+    { variant: 'full', reviewer: runnerFullCells > fullNoReviewer, cells: runnerFullCells },
+    { variant: 'full', reviewer: false, cells: fullNoReviewer },
+    {
+      variant: 'compact',
+      reviewer: runnerCompactCells > compactNoReviewer,
+      cells: runnerCompactCells,
+    },
+    { variant: 'compact', reviewer: false, cells: compactNoReviewer },
+  ];
+  const chosen = candidates.find(
+    (c) => c.cells > 0 && !(isSmall && c.variant === 'full') && runnerRoom >= c.cells,
+  );
+  const runnerWidth = chosen?.cells ?? 0;
   const tailWidth = elapsedWidth + (runnerWidth > 0 ? runnerWidth + RUNNER_GAP : 0);
   const railWidth = tailWidth > 0 ? Math.max(0, contentWidth - tailWidth - gap) : contentWidth;
-  return { contentWidth, railWidth, showElapsed, runnerVariant };
+  return {
+    contentWidth,
+    railWidth,
+    showElapsed,
+    runnerVariant: chosen?.variant ?? 'none',
+    showReviewer: chosen?.reviewer ?? false,
+  };
 }
 
 export function Header({ startedAt, railForm }: HeaderProps) {
@@ -134,17 +151,23 @@ export function Header({ startedAt, railForm }: HeaderProps) {
 
   const plannerLabel = config ? runnerShortLabel(config.planner) : '';
   const implLabel = config ? runnerShortLabel(config.implementer) : '';
+  const reviewerLabel = reviewerSeatLabel(config);
   const hasRunner = plannerLabel !== '' && implLabel !== '';
-  const runnerFull = hasRunner
+  const reviewerFull =
+    reviewerLabel === '' ? '' : `${CHEVRON_SEP}${formatRoleLabel('reviewer')} ${reviewerLabel}`;
+  const reviewerCompact = reviewerLabel === '' ? '' : `${CHEVRON_SEP}${reviewerLabel}`;
+  const fullSeats = hasRunner
     ? `${formatRoleLabel('planner')} ${plannerLabel}${CHEVRON_SEP}${formatRoleLabel('implementer')} ${implLabel}`
     : '';
-  const runnerCompact = hasRunner ? `${plannerLabel}${CHEVRON_SEP}${implLabel}` : '';
+  const compactSeats = hasRunner ? `${plannerLabel}${CHEVRON_SEP}${implLabel}` : '';
   const layout = getHeaderLayout({
     cols,
     isSmall,
     railCells,
-    runnerFullCells: getTerminalCellWidth(runnerFull),
-    runnerCompactCells: getTerminalCellWidth(runnerCompact),
+    runnerFullCells: getTerminalCellWidth(`${fullSeats}${reviewerFull}`),
+    runnerCompactCells: getTerminalCellWidth(`${compactSeats}${reviewerCompact}`),
+    runnerFullNoReviewerCells: getTerminalCellWidth(fullSeats),
+    runnerCompactNoReviewerCells: getTerminalCellWidth(compactSeats),
   });
 
   return (
@@ -166,6 +189,15 @@ export function Header({ startedAt, railForm }: HeaderProps) {
                 {`${formatRoleLabel('implementer')} `}
               </Text>
               <Text color={t.implementer}>{implLabel}</Text>
+              {layout.showReviewer && (
+                <>
+                  <Text color={t.textDim}>{CHEVRON_SEP}</Text>
+                  <Text color={t.reviewer} bold>
+                    {`${formatRoleLabel('reviewer')} `}
+                  </Text>
+                  <Text color={t.reviewer}>{reviewerLabel}</Text>
+                </>
+              )}
             </Text>
           ) : (
             <Text>
@@ -176,6 +208,14 @@ export function Header({ startedAt, railForm }: HeaderProps) {
               <Text color={t.implementer} bold>
                 {implLabel}
               </Text>
+              {layout.showReviewer && (
+                <>
+                  <Text color={t.textDim}>{CHEVRON_SEP}</Text>
+                  <Text color={t.reviewer} bold>
+                    {reviewerLabel}
+                  </Text>
+                </>
+              )}
             </Text>
           )}
         </Box>

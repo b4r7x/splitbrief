@@ -226,6 +226,8 @@ export function buildPausedSummary(
   const startTime = Number.isFinite(parsedStart) ? parsedStart : Date.now();
   const plannerModel = state.plannerModel ?? ident.plannerModel;
   const implementerModel = state.implementerModel ?? ident.implementerModel;
+  const reviewerTool = state.reviewerTool ?? ident.reviewerTool;
+  const reviewerModel = state.reviewerModel ?? ident.reviewerModel;
   return buildSummary({
     feature: state.feature,
     state,
@@ -234,6 +236,8 @@ export function buildPausedSummary(
     ...(plannerModel !== undefined ? { plannerModel } : {}),
     implementerTool: state.implementerTool ?? ident.implementerTool,
     ...(implementerModel !== undefined ? { implementerModel } : {}),
+    ...(reviewerTool !== undefined ? { reviewerTool } : {}),
+    ...(reviewerModel !== undefined ? { reviewerModel } : {}),
     mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
     projectDir: ref.projectDir,
     sessionId: ref.sessionId,

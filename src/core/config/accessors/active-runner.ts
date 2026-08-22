@@ -2,11 +2,13 @@ import {
   resolveImplementerProfiles,
   updateDefaultImplementerConfig,
 } from './implementer-profiles.js';
+import { resolveReviewerRunner } from './reviewer-runner.js';
+import type { ActiveRunnerRole } from '../../runners/cli-tool-catalog.js';
 import type { Config } from '../../schemas/config.js';
 import type { ImplementerConfig } from '../../schemas/implementer-config.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
+import type { ReviewerConfig } from '../../schemas/reviewer-config.js';
 
-export type ActiveRunnerRole = 'planner' | 'implementer';
 export type ActiveRunnerConfig = PlannerConfig | ImplementerConfig;
 
 export interface ActiveRunnerLens {
@@ -34,6 +36,11 @@ export type UpdateActiveRunnerInput =
       readonly config: Config;
       readonly role: 'implementer';
       readonly updater: (existing: ImplementerConfig) => ImplementerConfig;
+    }
+  | {
+      readonly config: Config;
+      readonly role: 'reviewer';
+      readonly updater: (existing: ReviewerConfig) => ReviewerConfig;
     };
 
 const sourceNodeIds = new WeakMap<object, string>();
@@ -55,6 +62,11 @@ function resolveActiveRunnerSource(input: ReadActiveRunnerInput): ActiveRunnerSo
       runner: input.config.planner,
       sourceNode: input.config.planner,
     };
+  }
+
+  if (input.role === 'reviewer') {
+    const reviewer = resolveReviewerRunner(input.config).runner;
+    return { runner: reviewer, sourceNode: reviewer };
   }
 
   const resolved = resolveImplementerProfiles(input.config);
@@ -84,5 +96,17 @@ export function updateActiveRunner(input: UpdateActiveRunnerInput): Config {
     return { ...input.config, planner: input.updater(input.config.planner) };
   }
 
+  if (input.role === 'reviewer') {
+    return {
+      ...input.config,
+      reviewer: input.updater(resolveReviewerRunner(input.config).runner),
+    };
+  }
+
   return updateDefaultImplementerConfig(input.config, input.updater);
+}
+
+export function clearReviewerSeat(config: Config): Config {
+  const { reviewer: _reviewer, ...rest } = config;
+  return rest;
 }

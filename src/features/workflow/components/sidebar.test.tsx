@@ -143,6 +143,7 @@ describe('Sidebar — completed count', () => {
     expect(implementerLine).toContain('Implementer');
     expect(implementerLine).toContain('Qwen 2.5 Coder');
     expect(plannerLine).not.toBe(implementerLine);
+    expect(lines.some((line) => line.includes('Reviewer'))).toBe(false);
     for (const line of [plannerLine, implementerLine]) {
       expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(34);
     }
@@ -623,6 +624,23 @@ describe('Sidebar — unbudgeted height', () => {
     expect(frame).toContain('+3 more');
     expect(frame).not.toContain('below');
 
+    ui.unmount();
+  });
+});
+
+describe('Sidebar — reviewer seat', () => {
+  it('names the reviewer seat with its own runner when a reviewer is configured', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({ reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' } }),
+    });
+
+    const ui = renderFeature(<Sidebar width={40} />);
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('Reviewer');
+    expect(frame).toContain('GPT-5 Codex');
     ui.unmount();
   });
 });

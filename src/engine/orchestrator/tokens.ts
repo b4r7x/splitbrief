@@ -8,7 +8,7 @@ import type { RunnerCallContext } from '../calls/types.js';
 import type { RunnerCallUsage } from '../calls/types.js';
 import { publishWarning } from './events.js';
 
-export type UsageCategory = 'planner' | 'implementer' | 'escalation';
+export type UsageCategory = 'planner' | 'implementer' | 'escalation' | 'reviewer';
 
 type RunnerCallRole = RunnerCallContext['role'];
 
@@ -18,12 +18,16 @@ type CoreTokenKey =
   | 'implementerInput'
   | 'implementerOutput'
   | 'escalationInput'
-  | 'escalationOutput';
+  | 'escalationOutput'
+  | 'reviewerInput'
+  | 'reviewerOutput';
 type CacheTokenKey =
   | 'plannerCacheRead'
   | 'plannerCacheCreate'
   | 'implementerCacheRead'
-  | 'implementerCacheCreate';
+  | 'implementerCacheCreate'
+  | 'reviewerCacheRead'
+  | 'reviewerCacheCreate';
 
 // escalation cache tokens are routed into the planner cache buckets because the escalator
 // always uses the planner runner; this preserves cache savings without adding new schema fields.
@@ -54,6 +58,12 @@ const categoryFields: Record<
     cacheRead: 'plannerCacheRead',
     cacheCreate: 'plannerCacheCreate',
   },
+  reviewer: {
+    input: 'reviewerInput',
+    output: 'reviewerOutput',
+    cacheRead: 'reviewerCacheRead',
+    cacheCreate: 'reviewerCacheCreate',
+  },
 };
 
 export function usageCategoryForRunnerCallRole(role: RunnerCallRole): UsageCategory {
@@ -62,8 +72,9 @@ export function usageCategoryForRunnerCallRole(role: RunnerCallRole): UsageCateg
       return 'implementer';
     case 'escalation':
       return 'escalation';
-    case 'planner':
     case 'review':
+      return 'reviewer';
+    case 'planner':
     case 'summary':
     case 'compaction':
       return 'planner';

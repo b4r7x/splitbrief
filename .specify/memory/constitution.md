@@ -1,6 +1,24 @@
 <!--
 Sync Impact Report
-- Version change: 1.3.3 → 2.0.0 (MAJOR: principles I, III and VI redefined)
+- Version change: 2.0.0 → 2.1.0 (MINOR: I, V and VI expanded — two roles,
+  three fixed seats; the review seat is separately assignable)
+- Modified principles (2.1.0):
+  - I. Two-Tool Orchestration (two roles fill three seats — plan, build,
+    review — and the review seat is the stronger tool's existing final
+    review made separately assignable; unassigned, the planner fills it)
+  - V. Validate Before Checkpoint (the final review is named by seat
+    rather than by role, so a configured reviewer performs it)
+  - VI. Identity & Anti-Goals (three fixed seats stated in the identity;
+    new anti-goal boundary condition: pointing the review seat at a third
+    tool is seat assignment, not a third agent)
+- Updated sections (2.1.0): none beyond the principles above
+- Templates requiring updates (2.1.0):
+  - .specify/templates/plan-template.md ✅ compatible
+  - .specify/templates/spec-template.md ✅ compatible
+  - .specify/templates/tasks-template.md ✅ compatible
+- Follow-up TODOs (2.1.0): none
+
+Prior pass — 1.3.3 → 2.0.0 (MAJOR: I, III and VI redefined):
 - Modified principles:
   - I. Cost-Optimal Orchestration → I. Two-Tool Orchestration (ADR-3: the
     identity is orchestrating two coding tools; lower cost is a consequence,
@@ -51,6 +69,14 @@ codebase, compiles Task Briefs, answers escalations, and reviews the
 result; the weaker one executes one brief at a time. SPLITBRIEF holds
 everything between them: the contract, validation, retry, escalation,
 and evidence.
+
+Two roles fill three seats: plan, build, and review. The review seat is
+the final review the stronger tool has always performed, made separately
+assignable — one stateless, read-only call over the run diff, which
+cannot plan, cannot write files, and holds no session. Assigning it to a
+different tool MUST NOT change the seat count, the contract, or the
+review prompt; when it is left unassigned the planner fills it, exactly
+as before.
 
 The stronger tool MUST NOT be spent on mechanical work. Research,
 specification writing, planning, review, and escalation are its jobs;
@@ -122,7 +148,7 @@ are permitted only where the logic is genuinely non-obvious.
 ### V. Validate Before Checkpoint
 
 Correctness is owned by the smarter side of the split: SPLITBRIEF's
-deterministic pipeline and the planner's review. The implementer's
+deterministic pipeline and the review seat. The implementer's
 ability to run anything itself is a bonus that improves first-pass rate,
 never a substitute for either. A task MUST NOT be accepted because the
 implementer reports success.
@@ -146,18 +172,20 @@ Product-level git commit strategies are optional run-safety and review
 features. Agents working in this repository MUST NOT stage or commit;
 the owner reviews and commits manually.
 
-After all tasks complete, a final planner review MUST compare the
-full diff against the original specification before the workflow
-is marked complete.
+After all tasks complete, a final review MUST compare the full diff
+against the original specification before the workflow is marked
+complete. The review seat performs it: the planner unless a reviewer is
+assigned (Principle I).
 
 ### VI. Identity & Anti-Goals
 
 SPLITBRIEF is an **orchestrator of two coding tools** (planner +
-implementer). One plans and reviews, the other executes, and SPLITBRIEF
-holds the contract, validation, retry, escalation, and evidence between
-them. Running the two sides on models from different labs is part of the
-value: a reviewer that did not write the code does not repeat its own
-blind spots. Lower cost follows from the split — it is not the identity.
+implementer) across **three fixed seats** (plan, build, review). One role
+plans and reviews, the other executes, and SPLITBRIEF holds the contract,
+validation, retry, escalation, and evidence between them. Running the
+sides on models from different labs is part of the value: a reviewer that
+did not write the code does not repeat its own blind spots. Lower cost
+follows from the split — it is not the identity.
 
 The collaboration between planner and implementer MUST be **visible,
 understandable, and satisfying to use**. Beautiful visualization of the
@@ -186,6 +214,18 @@ Explicit anti-goals that MUST NOT be implemented:
 2. Rich visualization of the two-role orchestration (structured event
    cards, diff views, pipeline progress, cost tracking) is encouraged
    as product differentiation, not multi-agent coordination.
+3. Pointing the review seat at a third tool is seat assignment, not a
+   third agent. It violates none of the anti-goals above: the seat count
+   stays fixed at three, so there is no dynamic agent count; the reviewer
+   is invoked by SPLITBRIEF and never by the planner, so nothing wraps an
+   agent in an agent; and it exchanges no messages with the other seats —
+   it reads a diff and returns a verdict — so there is no coordination
+   layer. A reviewer that could plan, write files, hold a session, or be
+   given a second review moment in a run — a per-task review, or a review
+   of anything other than the run diff — would cross into the anti-goals
+   and MUST be rejected. Interrupt-and-continue of the single review call
+   is the same continuation mechanism every other seat uses and does not
+   create a second moment.
 
 ## Technical Constraints
 
@@ -239,4 +279,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 2.0.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-08-04
+**Version**: 2.1.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-08-22

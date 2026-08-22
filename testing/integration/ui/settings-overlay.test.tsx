@@ -276,8 +276,8 @@ describe('settings overlay integration', () => {
     ui.stdin.write(PAGE_DOWN);
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(frame).toContain('Validation');
-      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Timeout');
+      expect(lineContaining(frame, '\u2192 /')).toContain('/implementer');
+      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Tool');
     });
     ui.unmount();
   });

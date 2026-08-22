@@ -294,4 +294,49 @@ describe('buildSummary offering presentation', () => {
     if (!parsed) throw new Error('expected cost breakdown');
     expect(unmeteredRunCostLabel(parsed)).toBe('subscription-included');
   });
+
+  it('keeps a configured reviewer cache out of per-task escalation cost', () => {
+    const breakdowns = [
+      {
+        taskId: taskId('T001'),
+        taskTitle: 'task 1',
+        method: 'escalated-full' as const,
+        implementerTokens: 0,
+        escalationTokens: 38_000,
+        retryCount: 0,
+      },
+    ];
+    const buildWith = (
+      reviewerCacheRead: number,
+      reviewerSeat?: { tool: string; model: string },
+    ): number | undefined => {
+      const summary = buildSummary({
+        feature: 'reviewer-cache',
+        state: makeState({
+          tokenUsage: makeUsage({
+            escalationInput: 30_000,
+            escalationOutput: 8_000,
+            plannerCacheRead: 100_000,
+            reviewerCacheRead,
+          }),
+        }),
+        startTime: Date.now(),
+        taskBreakdowns: breakdowns,
+        plannerTool: 'anthropic',
+        plannerModel: 'claude-sonnet-4-6',
+        implementerTool: 'deepseek',
+        implementerModel: 'deepseek-v4-flash',
+        ...(reviewerSeat !== undefined && {
+          reviewerTool: reviewerSeat.tool,
+          reviewerModel: reviewerSeat.model,
+        }),
+      });
+      return summary.taskBreakdown?.[0]?.cost;
+    };
+
+    const configured = { tool: 'deepseek', model: 'deepseek-v4-flash' };
+
+    expect(buildWith(900_000, configured)).toBe(buildWith(0, configured));
+    expect(buildWith(900_000)).not.toBe(buildWith(0));
+  });
 });

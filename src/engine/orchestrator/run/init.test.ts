@@ -19,6 +19,7 @@ import { ensureSessionDir } from '../../../core/paths-io.js';
 import { stateAuthorityDirectory } from '../../../core/paths.js';
 import { reactivateExistingSession } from '../../../core/sessions/lifecycle.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
+import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { StateAuthorityReceipt } from '../../../core/state/types.js';
 import type { EngineEvent } from '../../events/types.js';
@@ -74,11 +75,15 @@ async function preparedTestExecution(
     hooks === undefined ? input.inputConfig : { ...input.inputConfig, hooks },
   );
   const preparationId = `initialize-workflow-${input.sessionId}`;
+  const configuredReviewer = configuredReviewerRunner(config);
   const gates = [
     makeRunnerGate(config.planner, { role: 'planner' }, preparationId),
     ...resolveImplementerProfiles(config).profiles.map((profile) =>
       makeRunnerGate(profile.config, { role: 'implementer', profile: profile.name }, preparationId),
     ),
+    ...(configuredReviewer === undefined
+      ? []
+      : [makeRunnerGate(configuredReviewer, { role: 'reviewer' }, preparationId)]),
   ];
   ensureSessionDir(input.projectDir, input.sessionId);
   const active = reactivateExistingSession({
@@ -123,6 +128,7 @@ async function initializeFencedWorkflow(
     authority: StateAuthorityReceipt;
     savedState: WorkflowState | undefined;
     newWorkflow: boolean;
+    reviewer?: Config['reviewer'];
   }>,
 ): Promise<{
   init: Awaited<ReturnType<typeof initializeWorkflow>>;
@@ -140,6 +146,7 @@ async function initializeFencedWorkflow(
     workflow: { mode: 'quick', persistTranscript: false },
     approval: { enabled: false, feedRejectionsToPlanner: true },
     codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
+    ...(input.reviewer === undefined ? {} : { reviewer: input.reviewer }),
   });
   const prepared = await preparedTestExecution({
     projectDir: input.projectDir,
@@ -208,6 +215,63 @@ afterEach(() => {
 });
 
 describe('initializeWorkflow', () => {
+  it.each([
+    {
+      name: 'seats the planner in the review chair when no reviewer is configured',
+      reviewer: undefined,
+      distinct: false,
+    },
+    {
+      name: 'seats a distinct runner in the review chair when a reviewer is configured',
+      reviewer: {
+        kind: 'api',
+        provider: 'anthropic',
+        service: 'anthropic',
+        offering: 'payg',
+        apiBase: 'https://api.anthropic.com/v1',
+        apiKey: 'sk-ant-reviewer',
+        model: 'reviewer-model',
+      },
+      distinct: true,
+    },
+  ] as const)('$name', async ({ reviewer, distinct }) => {
+    await withTempDir('splitbrief-init-review-seat', async (tempDir) => {
+      const projectDir = realpathSync(tempDir);
+      const feature = 'review seat';
+      const sessionId = 'session-init-review-seat';
+      const ref = { projectDir, sessionId };
+      ensureSessionDir(projectDir, sessionId);
+
+      const acquired = acquireStateAuthority({
+        ref,
+        purpose: 'new-workflow',
+        ownerId: 'seat-owner',
+        runId: 'seat-run',
+        acquisitionId: 'seat-acquisition',
+      });
+      if (acquired.kind !== 'new-workflow') throw new Error('expected a new workflow candidate');
+      const authority = consumeNewWorkflowCandidate(ref, acquired.candidate, feature);
+
+      const result = await initializeFencedWorkflow({
+        projectDir,
+        sessionId,
+        feature,
+        authority,
+        savedState: loadState(ref) ?? undefined,
+        newWorkflow: true,
+        ...(reviewer === undefined ? {} : { reviewer }),
+      });
+
+      expect(result.init.ok).toBe(true);
+      if (!result.init.ok) return;
+      if (distinct) {
+        expect(result.init.wctx.reviewer).not.toBe(result.init.wctx.planner);
+      } else {
+        expect(result.init.wctx.reviewer).toBe(result.init.wctx.planner);
+      }
+    });
+  });
+
   it('initializes a new workflow from the consumed candidate v4 head', async () => {
     await withTempDir('splitbrief-init-authority-new-workflow', async (tempDir) => {
       const projectDir = realpathSync(tempDir);

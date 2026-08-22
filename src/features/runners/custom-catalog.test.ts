@@ -82,6 +82,19 @@ function catalogConfig(): Config {
 }
 
 describe('role custom command catalogs', () => {
+  it('reads the reviewer catalog selection from the reviewer block, not the planner', () => {
+    const config: Config = {
+      ...catalogConfig(),
+      planner: { kind: 'cli', tool: 'claude-code', model: 'auto' },
+    };
+
+    expect(readRoleCustomCommandCatalog(config, 'reviewer').selectedId).toBeUndefined();
+    expect(
+      readRoleCustomCommandCatalog({ ...config, reviewer: catalogConfig().planner }, 'reviewer')
+        .selectedId,
+    ).toBe('review');
+  });
+
   it('lists one shared catalog for both roles and highlights by the full normalized tuple', () => {
     const config = catalogConfig();
     const planner = readRoleCustomCommandCatalog(config, 'planner');
@@ -110,6 +123,23 @@ describe('role custom command catalogs', () => {
     };
 
     expect(isCustomCommandSelected(runner, reviewDefinition)).toBe(false);
+  });
+
+  it('counts the reviewer as a consumer of the command it runs', () => {
+    const config: Config = {
+      ...createDefaultConfig(),
+      customCommands: { review: reviewDefinition },
+      reviewer: catalogConfig().planner,
+    };
+
+    expect(listCustomCommandConsumers(config, reviewDefinition)).toEqual([
+      {
+        id: 'reviewer',
+        role: 'reviewer',
+        label: 'Reviewer',
+        isDefaultProfile: false,
+      },
+    ]);
   });
 
   it('reports every exact planner, default, and dormant consumer but excludes divergence', () => {

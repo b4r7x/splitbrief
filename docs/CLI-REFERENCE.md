@@ -72,8 +72,11 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
   [--implementer <provider>] [--implementer-model <model>] [--implementer-command <cmd>] \
   [--implementer-api-base <url>] [--implementer-api-key-env <var>] [--implementer-args <arg>] \
   [--implementer-output-format <format>] [--implementer-context-length <tokens>] \
+  [--reviewer <tool>] [--reviewer-model <model>] [--reviewer-command <cmd>] \
+  [--reviewer-api-base <url>] [--reviewer-api-key-env <var>] [--reviewer-args <arg>] \
+  [--reviewer-output-format <format>] [--reviewer-context-length <tokens>] \
   [--model <model>] [--provider <provider>] \
-  [--budget <amount>] [--planner-effort <level>] [--yolo] \
+  [--budget <amount>] [--planner-effort <level>] [--reviewer-effort <level>] [--yolo] \
   [--project <dir>] [--worktree [name]] [--detach] \
   [--no-fullscreen] [--no-mouse] [--hover] \
   [--allow-hooks] [--allow-repo-runners] [--allow-unverified-auth] \
@@ -103,6 +106,15 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
 | `--implementer-args <arg>` | string | from config | Append one implementer CLI/shell argument. Repeatable; each use adds another argument. Applies to `cli`, `shell`, and `agent` runners. |
 | `--implementer-output-format <format>` | enum | from config | Implementer output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
 | `--implementer-context-length <tokens>` | number | from config | Implementer context length in tokens. |
+| `--reviewer <tool>` | string | from config | Reviewer tool. Same admitted set as `--planner` — the flag's help text is derived from `PLANNER_TOOL_IDS` too. Without any `--reviewer-*` flag and without a `reviewer` block in config, the planner keeps the review seat. |
+| `--reviewer-model <model>` | string | from config | Reviewer model identifier (for API reviewers). |
+| `--reviewer-command <cmd>` | string | from config | Custom reviewer command (when `--reviewer=shell`). |
+| `--reviewer-api-base <url>` | string | from config | Reviewer API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
+| `--reviewer-api-key-env <var>` | string | from config | Environment variable holding the reviewer API key; stored as an `env:<var>` reference. Applies only to `api` and `agent-sdk` runners; ignored (with a stderr warning) otherwise. |
+| `--reviewer-args <arg>` | string | from config | Append one reviewer CLI/shell argument. Repeatable. Applies to `cli`, `shell`, and `agent` runners. |
+| `--reviewer-output-format <format>` | enum | from config | Reviewer output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
+| `--reviewer-context-length <tokens>` | number | from config | Reviewer context length in tokens. Consumed only by the `api` kind, where it sizes the request's `max_tokens` budget. |
+| `--reviewer-effort <level>` | enum | — | Reviewer effort hint: `low`, `medium`, `high`, `xhigh`. Requires the review seat to have its own runner: with no `reviewer` block in config and no `--reviewer`, the run is refused with a message naming `--reviewer`. On a configured reviewer whose backend has no reasoning control, it is dropped with a stderr warning. |
 | `--model <model>` | string | — | Alias for `--implementer-model`. |
 | `--provider <provider>` | string | — | Alias for `--implementer`. |
 | `--budget <amount>` | float | — | Maximum budget in USD (e.g. `2.00`). Workflow warns/pauses before the cap, stops when exceeded, and pauses when paid usage has unknown pricing. |
@@ -185,7 +197,8 @@ splitbrief start "sensitive customer migration" --worktree
 - `clearStaleSession()` runs before a new session begins. It blocks only a genuinely live active session; if the active session's lockfile has exited or the PID is gone, the stale `.splitbrief/active` pointer is cleared and start continues.
 - When `--worktree` is passed, the source working tree must be clean. The project directory is reassigned to the newly created worktree path before any state is written. With `--detach --worktree`, worktree selection happens before the detached server is spawned. A bare `--worktree` derives its slug from the feature only when transcript persistence is enabled; with `workflow.persistTranscript: false`, it uses an opaque `session-<hex>` slug so `.trees/<slug>` and `splitbrief/<slug>` do not reveal feature text. If worktree creation fails, the command exits `1` with the underlying message.
 - The `setupWorkflow()` step may show an interactive setup screen if config is incomplete; pass `--allow-hooks` in CI to skip the hook-trust prompt.
-- Runner override flags are validated against the resolved runner kind. `--planner-api-base` / `--implementer-api-base` apply only to `api` runners, and `--planner-api-key-env` / `--implementer-api-key-env` apply only to `api` and `agent-sdk` runners. Passing one for an incompatible kind prints a warning to stderr (e.g. `--planner-api-base is ignored: the planner 'cli' runner does not use it.`) and the value is dropped rather than erroring.
+- The `--reviewer-*` flags start from whatever runner currently holds the review seat — the `reviewer` block when config has one, the planner when it does not — and write the result back as the reviewer. If no `--reviewer-*` flag applies to the resolved runner kind, nothing is written and the planner keeps the review seat; a flag that names the planner's own tool still writes an explicit `reviewer` block, so the seat is admitted, priced and displayed on its own. The nine flags are declared once in `addWorkflowOptions()` (`src/cli/options.ts`), so `start`, `resume`, `continue`, `last` and `attach` all accept them — though on `attach` they are inert, since an attached client only views a workflow already running elsewhere.
+- Runner override flags are validated against the resolved runner kind. `--planner-api-base` / `--reviewer-api-base` / `--implementer-api-base` apply only to `api` runners, and `--planner-api-key-env` / `--reviewer-api-key-env` / `--implementer-api-key-env` apply only to `api` and `agent-sdk` runners. Passing one for an incompatible kind prints a warning to stderr (e.g. `--planner-api-base is ignored: the planner 'cli' runner does not use it.`) and the value is dropped rather than erroring.
 
 ---
 
@@ -379,9 +392,9 @@ Other distinguishable runner outcomes (`spawn-not-found`, `protocol-failure`, `i
 
 - Missing config reports `splitbrief init`; legacy config warnings report `splitbrief init --reconfigure`, but `doctor` does not run setup commands.
 - Validation readiness is posture only. It reports disabled checks or missing npm scripts without running validation commands; the exception is `--probe-validation`, which runs the configured commands.
-- Runner availability is probed for the `api` and `agent-sdk` runners a run would call (`runners.availability.planner`, `runners.availability.implementer.<profile>`). Each probe is one model-list round trip against the endpoint the runner already targets, bounded by a 2s budget and run in parallel. An unreachable planner or default implementer is a blocker — the planning phase is paid for before the implementer is first used — while a non-default profile is a warning. A probe that could not run or overran its budget reports `not-probed` (info); it never reports available. When no probe runs at all, readiness says so and makes no claim (`runners.availability`).
+- Runner availability is probed for the `api` and `agent-sdk` runners a run would call (`runners.availability.planner`, `runners.availability.implementer.<profile>`, and `runners.availability.reviewer` when a `reviewer` block is configured). Each probe is one model-list round trip against the endpoint the runner already targets, bounded by a 2s budget and run in parallel. An unreachable planner or default implementer is a blocker — the planning phase is paid for before the implementer is first used — while a non-default profile is a warning. A probe that could not run or overran its budget reports `not-probed` (info); it never reports available. When no probe runs at all, readiness says so and makes no claim (`runners.availability`).
 - The arg-vector preflight runs here too, so a blocker `start` would raise can be inspected without starting a run: a flag the installed binary's help does not advertise is a blocker (`runners.cli.<tool>.arg-vector.<role>`), a flag it marks deprecated is a warning, and a help text that cannot be read reports ok. See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).
-- A `shell` or `agent` runner reaches execution only through an owner-only trust receipt, so `doctor` replays that admission read-only (`runners.consent.planner`, `runners.consent.implementer.<profile>`) instead of only warning that the runner can execute commands. The verdict is reported for a run started the way `doctor` was started: on a TTY it is a warning naming the one-time confirmation `start` would prompt for, and with `--json` or a non-TTY stdin it is the blocker a non-interactive run receives. Nothing is written and no receipt is granted — `doctor` takes no `--allow-repo-runners`, so a run that passes that flag can be admitted where `doctor` reports a blocker, and the check's remediation names the flag.
+- A `shell` or `agent` runner reaches execution only through an owner-only trust receipt, so `doctor` replays that admission read-only (`runners.consent.planner`, `runners.consent.implementer.<profile>`, and `runners.consent.reviewer` when a `reviewer` block is configured) instead of only warning that the runner can execute commands. The verdict is reported for a run started the way `doctor` was started: on a TTY it is a warning naming the one-time confirmation `start` would prompt for, and with `--json` or a non-TTY stdin it is the blocker a non-interactive run receives. Nothing is written and no receipt is granted — `doctor` takes no `--allow-repo-runners`, so a run that passes that flag can be admitted where `doctor` reports a blocker, and the check's remediation names the flag.
 - Headless runner admission is replayed the same way: with `--json` or a non-TTY stdin, `doctor` runs the same `runners.preparation.*` checks `start --json` / `start --rpc` / `start --detach` would fail on when a configured CLI runner lacks a trusted readiness identity or would otherwise be refused headless admission. Each check's remediation names `--allow-unverified-auth` when that flag would admit the run; `doctor` accepts no override flags, so a headless run that passes `--allow-unverified-auth` can proceed where `doctor` reports a blocker. Interactive `doctor` on a TTY does not emit these preparation blockers — interactive `start` discloses and prompts instead.
 - `doctor --json` never prints decorative section banners; checks are serialized semantically for parsers.
 
@@ -598,8 +611,11 @@ splitbrief resume [--mode <mode>] [--approve <level>] \
   [--implementer <provider>] [--implementer-model <model>] [--implementer-command <cmd>] \
   [--implementer-api-base <url>] [--implementer-api-key-env <var>] [--implementer-args <arg>] \
   [--implementer-output-format <format>] [--implementer-context-length <tokens>] \
+  [--reviewer <tool>] [--reviewer-model <model>] [--reviewer-command <cmd>] \
+  [--reviewer-api-base <url>] [--reviewer-api-key-env <var>] [--reviewer-args <arg>] \
+  [--reviewer-output-format <format>] [--reviewer-context-length <tokens>] \
   [--model <model>] [--provider <provider>] \
-  [--budget <amount>] [--planner-effort <level>] [--yolo] \
+  [--budget <amount>] [--planner-effort <level>] [--reviewer-effort <level>] [--yolo] \
   [--project <dir>] \
   [--no-fullscreen] [--no-mouse] [--hover] \
   [--allow-hooks] [--allow-repo-runners] [--json] [--rpc] [--otel-exporter <name>]

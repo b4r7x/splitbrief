@@ -9,6 +9,7 @@ import { taskId } from '../../core/schemas/task.js';
 import { createEventBus } from '../events/bus.js';
 import { createPromptTracker, ipcPromptError } from './prompt-tracker.js';
 import type { ServerMessage } from './protocol.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 const BRIEF_HASH = 'a'.repeat(64);
 
@@ -345,14 +346,7 @@ describe('createPromptTracker response validation', () => {
         validation: { passed: true, summary: 'passed', stages: [] },
         evidence: { summary: 'evidence', expected: [], observed: [] },
         cost: {
-          tokenUsage: {
-            plannerInput: 0,
-            plannerOutput: 0,
-            implementerInput: 0,
-            implementerOutput: 0,
-            escalationInput: 0,
-            escalationOutput: 0,
-          },
+          tokenUsage: makeUsage(),
         },
         availableCommands: ['continue'],
       },

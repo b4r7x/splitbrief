@@ -365,6 +365,41 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ---
 
+## Reviewer issues
+
+### Symptom: the run refuses to start with a blocker naming the Reviewer
+
+**Likely cause:** `.splitbrief/config.yaml` carries a `reviewer` block, and that runner failed the same fresh admission the planner and implementer go through. A configured reviewer is a candidate in `prepareExecution()` under its own slot, so a missing binary, an untrusted command, an unverified login, or an unreachable endpoint stops the run before the first planner call — the seat is not quietly skipped just because it is used last.
+
+**Fix:**
+1. Run `splitbrief doctor` and read the reviewer's own checks: `runners.availability.reviewer`, `runners.reviewer.trust-boundary`, and the CLI readiness check for whatever tool the block names.
+2. Fix it the way you would fix the same condition on the planner — the `stateId` families and remediations in the [readiness index](#readiness-stateid-index) apply unchanged.
+3. A `shell` or `agent` reviewer needs its own trust grant on this machine, exactly like a `shell` planner.
+4. If you do not need a separate reviewer right now, delete the `reviewer` block. The planner takes the seat back and the run behaves as it did before the seat was assignable.
+
+**Prevention:** Run `splitbrief doctor` after changing the reviewer through `/reviewer` or `/crew`. The picker writes config; it does not prove the tool will start.
+
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md).
+
+---
+
+### Symptom: the run finished but the review says it failed, and no review was written
+
+**Likely cause:** The reviewer was admitted at start and then failed during the final-review call — the process died, the endpoint went away, the credential expired mid-run, the call timed out. The phase records `reviewStatus: 'failed'`, publishes an error carrying the reviewer's display name, records the final-review evidence anyway, and still builds the run summary. `finalReviewStatus` in `summary.json` and `finalReview.status` in the review packet both say `failed`.
+
+**There is deliberately no automatic fallback to the planner.** SPLITBRIEF will not quietly re-run the review on a different model and present the result as if you had asked for it — a review's value is which model produced it, so a review nobody can attribute is worse than a missing one. The run's evidence trail says the review failed, and that is the honest answer.
+
+**Fix:**
+1. Read the error on the summary screen or in `session.jsonl` — it names the reviewer seat, so you can tell a reviewer failure apart from a planner failure at a glance.
+2. Fix the underlying runner (see the readiness families above), then re-run the review by resuming: `final-review` is a resumable phase.
+3. To get the review from the planner instead, remove the `reviewer` block (or point `/reviewer` at the planner's tool) and resume. That is a decision you make, not one SPLITBRIEF makes for you.
+
+**Prevention:** Give a metered reviewer a `timeout` that fits a diff-sized read, and prefer a reviewer whose credentials do not expire mid-run.
+
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/HOW-IT-WORKS.md](./HOW-IT-WORKS.md), [docs/CONFIGURATION.md](./CONFIGURATION.md).
+
+---
+
 ## Implementer issues
 
 ### Symptom: Implementer modified files outside the brief's declared scope

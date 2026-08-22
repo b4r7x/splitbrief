@@ -58,6 +58,7 @@ function makeResumeWctx(opts: {
     callbacks: opts.callbacks,
     bus: opts.bus,
     planner: opts.planner,
+    reviewer: opts.planner,
     context: defaultContext,
     implementer: makeImplementer(),
     metadata: TEST_METADATA,

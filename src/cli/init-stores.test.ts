@@ -25,6 +25,7 @@ import { modelCacheStore } from '../stores/discovery/model-cache.js';
 import { detectionContextsForCurrentConfig } from '../engine/detection/store-publication.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 // Bootstrap runs real disk reads + provider-detection probes. HTTP probes return
 // empty responses so this file never contacts a live provider.
@@ -327,14 +328,7 @@ describe('initStores', () => {
         skipped: 0,
         failed: 0,
         totalTime: 0,
-        tokenUsage: {
-          plannerInput: 0,
-          plannerOutput: 0,
-          implementerInput: 0,
-          implementerOutput: 0,
-          escalationInput: 0,
-          escalationOutput: 0,
-        },
+        tokenUsage: makeUsage(),
         estimatedCostSavings: '$0.00',
         escalationRate: 0,
       },

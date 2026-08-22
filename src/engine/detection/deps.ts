@@ -1,8 +1,5 @@
 import type { Config } from '../../core/schemas/config.js';
-import {
-  readActiveRunnerLens,
-  type ActiveRunnerRole,
-} from '../../core/config/accessors/active-runner.js';
+import { readActiveRunnerLens } from '../../core/config/accessors/active-runner.js';
 import {
   isSameCredentialDomain,
   projectRunnerDiscoveryContext,
@@ -16,6 +13,8 @@ import {
   NATIVE_CLI_CATALOG_TOOL_IDS,
   type CliAuthChannelId,
   type CliToolId,
+  type RunnerRole,
+  type ActiveRunnerRole,
 } from '../../core/runners/cli-tool-catalog.js';
 import { includes } from '../../utils/type-guards.js';
 import { error } from '../../utils/error.js';
@@ -114,7 +113,7 @@ function agentSdkProbeForRole(
 function configuredProviderPlans(
   input: Readonly<{ config: Config; contexts: ActiveRunnerContexts }>,
 ): readonly ConfiguredProviderPlan[] {
-  const roles: readonly ActiveRunnerRole[] = ['planner', 'implementer'];
+  const roles: readonly RunnerRole[] = ['planner', 'implementer'];
   const apiProbes = roles
     .map((role) => apiProbeForRole({ config: input.config, role, context: input.contexts[role] }))
     .filter((probe): probe is ConfiguredProviderProbe => probe !== null);

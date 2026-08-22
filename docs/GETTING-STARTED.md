@@ -27,9 +27,9 @@ Today's AI coding workflow has four sharp edges that SPLITBRIEF is designed to f
 
 | Problem | What goes wrong | What SPLITBRIEF does |
 |---|---|---|
-| **Self-review** | A model reviewing its own output repeats its own blind spots. | The tool that wrote the code never signs it off — the planner reviews, a deterministic pipeline decides. |
+| **Self-review** | A model reviewing its own output repeats its own blind spots. | The tool that wrote the code never signs it off — the review seat reviews, a deterministic pipeline decides. |
 | **Token burn** | Frontier models spend expensive tokens on mechanical edits. | The planner writes the brief. A weaker implementer writes the code. |
-| **Plan drift** | The agent forgets the plan halfway and starts inventing. | The brief is on disk, the planner reviews the final diff against it. |
+| **Plan drift** | The agent forgets the plan halfway and starts inventing. | The brief is on disk, the review seat reviews the final diff against it. |
 | **Destructive actions** | A bad rename or migration trashes the working tree, no undo. | Checkpoints, file-level snapshots, hash-guarded restore. |
 | **Vendor lock-in** | Switching from Claude → Codex means re-learning the tool. | Five interchangeable runner kinds (`cli`, `api`, `shell`, `agent`, `agent-sdk`) on both sides. |
 
@@ -78,12 +78,12 @@ The setup screen needs a terminal. In CI, a Dockerfile, or any piped shell, `spl
 
 Here is what happens, step by step:
 
-1. `splitbrief init` walks you through picking a planner (default: Claude Code via your existing subscription) and an implementer (default: a local Ollama model). It writes `.splitbrief/config.yaml`.
+1. `splitbrief init` opens the Crew screen — PLAN, BUILD and REVIEW on one surface, plus ready-made crews when the tools they need are installed and authenticated. Apply a crew, or press Enter on a seat to set it yourself, then Continue. It writes `.splitbrief/config.yaml`.
 2. `splitbrief start` opens a fullscreen TUI. The planner thinks for a few seconds, looks at your repo, and writes a Task Brief to `.splitbrief/sessions/<date>-fix-the-typo/tasks.md`.
 3. The brief is **scored for quality** automatically. Weak briefs (missing scope, missing validation, vague tests) are blocked before any code is written.
 4. The implementer picks up the first task, generates code, and the orchestrator runs the resolved validation pipeline from config, planner discovery, or project heuristics. On failure, it retries up to 3 times, then escalates back to the planner.
 5. Each successful task records evidence and can create a checkpoint. Git commits are optional and only happen when `workflow.git.commitStrategy` is explicitly configured; the default leaves changes unstaged for manual review.
-6. After all tasks complete, the planner does a final review: it diffs the actual changes against the brief and writes `review.md`. A deterministic drift report flags anything the agent touched outside the planned scope.
+6. After all tasks complete, the review seat does a final review — the planner unless you assigned a reviewer: it diffs the actual changes against the brief and writes `review.md`. A deterministic drift report flags anything the agent touched outside the planned scope.
 
 Use `/quit` or `Ctrl-Q` to exit. State is on disk. Resume later with `splitbrief resume`. Press `Ctrl+K` inside the TUI at any time to open the command palette — a searchable list of all slash commands.
 
@@ -250,7 +250,7 @@ The orchestrator records evidence and can create hash-guarded snapshots around r
 Three additional safety nets:
 
 1. **Snapshots.** `splitbrief snapshot create` captures the full working tree (minus `.git/`, `.splitbrief/`, `node_modules/`) into `.splitbrief/sessions/<id>/snapshots/`. Restore with `splitbrief snapshot restore <id-or-name>` — and the restore is **hash-guarded**: it refuses to overwrite files you modified after the snapshot was taken (`--force` to override). Auto-snapshots can fire on `preTask`, `postTask`, and `preFinalReview` (off by default; enable in `snapshots.auto`).
-2. **Drift detection.** Before the final planner review, the orchestrator computes a deterministic drift report comparing the actual diff to the Task Brief. Out-of-scope file edits, missing target files, orphan diffs, and missing observed evidence all show up. The planner reviewer sees this report alongside the diff so it cannot rubber-stamp a runaway agent.
+2. **Drift detection.** Before the final review, the orchestrator computes a deterministic drift report comparing the actual diff to the Task Brief. Out-of-scope file edits, missing target files, orphan diffs, and missing observed evidence all show up. The review seat sees this report alongside the diff so it cannot rubber-stamp a runaway agent.
 3. **Tiered approval.** Declared/promoted file-write requests are classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, or `package_change` and pass through an `auto` / `sticky` / `confirm` gate: `auto` proceeds silently for reads and in-scope writes; `sticky` prompts once per session and persists the grant for out-of-scope writes; `confirm` always requires a typed phrase for destructive writes or package manifest/lockfile changes. `network` is accepted only for config compatibility; it is not shell/network sandboxing. Sticky grants persist in `.splitbrief/approvals.json` and are managed via `splitbrief approval list / clear`.
 
 For isolated parallel work without stepping on yourself, use git worktrees:

@@ -4,11 +4,14 @@ import { resolveApproveLevel, resolveMode } from '../../config/runtime/resolve.j
 import { isAutomaticModel } from '../../providers/automatic-model.js';
 import {
   CLI_TOOL_CATALOG,
+  runnerRoleForActiveRole,
+  type ActiveRunnerRole,
   type CliPlannerTier2FullEscalationTrust,
   type CliToolId,
   type RunnerTrustMetadata,
 } from '../../runners/cli-tool-catalog.js';
 import type { Config } from '../../schemas/config.js';
+import { resolveReviewerRunner } from '../../config/accessors/reviewer-runner.js';
 import {
   cliReadinessCheckId,
   type CliReadinessResult,
@@ -19,6 +22,7 @@ import { getRunnerTrustMeta, RUNNER_IDLE_KILL_MS } from '../../schemas/runner-fi
 import type { ReadinessCheck } from '../types.js';
 import { formatRoleLabel } from '../../phase-display.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
+import { assertNever } from '../../../utils/type-guards.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import {
   DEFAULT_REDACTION_MARKER,
@@ -63,6 +67,11 @@ export function buildRunnerChecks(
   const configuredCliTools = new Set<CliToolId>();
   if (config.planner.kind === 'cli') configuredCliTools.add(config.planner.tool);
   checks.push(runnerCheck('planner', config.planner));
+
+  const reviewer = resolveReviewerRunner(config);
+  if (reviewer.source === 'configured' && reviewer.runner.kind === 'cli') {
+    configuredCliTools.add(reviewer.runner.tool);
+  }
 
   try {
     const resolved = resolveImplementerProfiles(config);
@@ -126,24 +135,35 @@ function buildAvailabilityChecks(
   facts: readonly RunnerAvailabilityFact[],
 ): ReadinessCheck[] {
   return facts.map((fact) => {
-    if (fact.slot.role === 'planner') {
-      return runnerAvailabilityCheck({
-        fact,
-        label: `Planner ${formatRunner(config.planner)}`,
-        isDefaultImplementer: false,
-      });
+    switch (fact.slot.role) {
+      case 'planner':
+        return runnerAvailabilityCheck({
+          fact,
+          label: `Planner ${formatRunner(config.planner)}`,
+          isDefaultImplementer: false,
+        });
+      case 'reviewer':
+        return runnerAvailabilityCheck({
+          fact,
+          label: `Reviewer ${formatRunner(resolveReviewerRunner(config).runner)}`,
+          isDefaultImplementer: false,
+        });
+      case 'implementer': {
+        const profileName = fact.slot.profile;
+        const profile = profiles.find((candidate) => candidate.name === profileName);
+        const isDefault = profile?.isDefault === true;
+        const runner = profile === undefined ? '' : ` ${formatRunner(profile.config)}`;
+        return runnerAvailabilityCheck({
+          fact,
+          label: isDefault
+            ? `Default implementer${runner}`
+            : `Implementer profile ${profileName}${runner}`,
+          isDefaultImplementer: isDefault,
+        });
+      }
+      default:
+        return assertNever(fact.slot);
     }
-    const profileName = fact.slot.profile;
-    const profile = profiles.find((candidate) => candidate.name === profileName);
-    const isDefault = profile?.isDefault === true;
-    const runner = profile === undefined ? '' : ` ${formatRunner(profile.config)}`;
-    return runnerAvailabilityCheck({
-      fact,
-      label: isDefault
-        ? `Default implementer${runner}`
-        : `Implementer profile ${profileName}${runner}`,
-      isDefaultImplementer: isDefault,
-    });
   });
 }
 
@@ -256,6 +276,22 @@ function buildRunnerTrustBoundaryChecks(
     }),
   );
 
+  const reviewer = resolveReviewerRunner(config);
+  if (reviewer.source === 'configured') {
+    checks.push(
+      ...runnerTrustBoundaryCheck({
+        id: 'runners.reviewer.trust-boundary',
+        role: 'reviewer',
+        label: `Reviewer ${formatRunner(reviewer.runner)}`,
+        trust: getRunnerTrustMeta(runnerRoleForActiveRole('reviewer'), reviewer.runner),
+        runner: reviewer.runner,
+        approve,
+        specPlanAutoApproved,
+        fileWriteApprovalDisabled,
+      }),
+    );
+  }
+
   for (const profile of profiles) {
     checks.push(
       ...runnerTrustBoundaryCheck({
@@ -338,7 +374,7 @@ function trustBoundarySummary(
 // setting made the most cautious configuration the quietest report.
 function runnerTrustBoundaryCheck(opts: {
   id: string;
-  role: 'planner' | 'implementer';
+  role: ActiveRunnerRole;
   label: string;
   profile?: string | undefined;
   trust: RunnerTrustMetadata;
@@ -430,6 +466,17 @@ function buildWatchdogTimeoutChecks(
       runner: config.planner,
     }),
   );
+
+  const reviewer = resolveReviewerRunner(config);
+  if (reviewer.source === 'configured') {
+    checks.push(
+      ...watchdogTimeoutCheck({
+        id: 'runners.reviewer.timeout-disables-watchdog',
+        label: `Reviewer ${formatRunner(reviewer.runner)}`,
+        runner: reviewer.runner,
+      }),
+    );
+  }
 
   for (const profile of profiles) {
     checks.push(

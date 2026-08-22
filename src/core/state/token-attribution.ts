@@ -12,6 +12,7 @@ export interface PhaseTokenDelta {
 export interface PhaseTokenAttribution {
   planner: PhaseTokenDelta;
   implementer: PhaseTokenDelta;
+  reviewer: PhaseTokenDelta;
 }
 
 const ZERO_DELTA: PhaseTokenDelta = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
@@ -43,10 +44,17 @@ export function attributePhaseTokenDelta(
       (curr.implementerCacheCreate ?? 0) - (prev.implementerCacheCreate ?? 0),
     ),
   };
+  const reviewerDelta: PhaseTokenDelta = {
+    input: clampDelta(curr.reviewerInput - prev.reviewerInput),
+    output: clampDelta(curr.reviewerOutput - prev.reviewerOutput),
+    cacheRead: clampDelta((curr.reviewerCacheRead ?? 0) - (prev.reviewerCacheRead ?? 0)),
+    cacheCreate: clampDelta((curr.reviewerCacheCreate ?? 0) - (prev.reviewerCacheCreate ?? 0)),
+  };
 
   const role = phaseCostRole(phase);
   return {
     planner: role === null ? ZERO_DELTA : plannerDelta,
     implementer: role === 'implementer' ? implementerDelta : ZERO_DELTA,
+    reviewer: role === null ? ZERO_DELTA : reviewerDelta,
   };
 }

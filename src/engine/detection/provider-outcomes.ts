@@ -1,6 +1,6 @@
 import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
 import type { DetectedModel } from '../../core/discovery/detection.js';
-import type { ActiveRunnerRole } from '../../core/config/accessors/active-runner.js';
+import type { RunnerRole } from '../../core/runners/cli-tool-catalog.js';
 import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
 import type { ProviderCatalogFailureKind, ProviderCatalogOutcome } from '../providers/types.js';
 
@@ -10,7 +10,7 @@ import type { ProviderCatalogFailureKind, ProviderCatalogOutcome } from '../prov
  * credentials, and catalog lifecycles.
  */
 export interface ConfiguredProviderConnection {
-  readonly role: ActiveRunnerRole;
+  readonly role: RunnerRole;
   readonly provider: ApiProviderId;
   /** Sanitized runner-discovery identity; never an endpoint path or credential. */
   readonly contextKey: string;

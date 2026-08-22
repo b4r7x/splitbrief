@@ -494,7 +494,7 @@ snapshot_created · phase=implementing taskIndex=1  (auto preTask)
 …
 ```
 
-`postTask` only fires when the task reached `done` (failed tasks don't take a postTask snapshot). `preFinalReview` snapshots once before the planner reviews the cumulative diff.
+`postTask` only fires when the task reached `done` (failed tasks don't take a postTask snapshot). `preFinalReview` snapshots once before the review seat reviews the cumulative diff.
 
 **Variations:** Set just `preTask: true` for the cheapest safety net. All triggers are off by default. Failures emit a `warning` event and don't abort the run.
 
@@ -1611,6 +1611,8 @@ Press `Ctrl+K` from any screen.
 │   /mode                 Change workflow mode             │
 │   /effort               Change planner effort            │
 │   /planner              Choose planner                   │
+│   /reviewer             Select reviewer tool             │
+│   /crew                 Choose which tool fills each seat│
 │   /revise-spec          Rewind to spec with comment      │
 │   …                                                      │
 └──────────────────────────────────────────────────────────┘
@@ -1621,6 +1623,7 @@ Start typing to fuzzy-filter the list. Press Enter on the highlighted entry to i
 **Notes:**
 - The palette is disabled while another overlay (help, settings, skills) is active.
 - Commands whose `validScreens` excludes your current screen are hidden from the list.
+- `/crew` opens the Crew surface — every seat of the run (`PLAN`, `BUILD`, `REVIEW`) on one screen; `/reviewer` opens the review seat's picker directly.
 - `/planner` and `/effort` select among admitted planner backends in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and API providers in [CONFIGURATION.md](./CONFIGURATION.md).
 - `Ctrl+K` is handled by `src/app/keys.ts:178`.
 

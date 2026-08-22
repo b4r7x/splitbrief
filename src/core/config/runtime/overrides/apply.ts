@@ -11,7 +11,12 @@ import {
 import { configError } from '../../errors.js';
 import type { Config } from '../../../schemas/config.js';
 import { defaultApprovalConfig } from '../../../schemas/config.js';
-import { applyImplementerOverrides, applyPlannerEffort, applyRunnerOverrides } from './runner.js';
+import {
+  applyImplementerOverrides,
+  applyPlannerEffort,
+  applyReviewerEffort,
+  applyRunnerOverrides,
+} from './runner.js';
 import type { CLIOverrides } from './schema.js';
 
 function parseOverrideOrThrow<T>(
@@ -48,6 +53,9 @@ export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Conf
       next,
     );
   }
+  if (overrides.reviewer) {
+    next = applyRunnerOverrides('reviewer', overrides.reviewer, next);
+  }
   if (overrides.approve !== undefined) {
     const level = parseOverrideOrThrow(
       ApproveLevelSchema,
@@ -75,6 +83,15 @@ export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Conf
       EFFORT_LEVELS,
     );
     next = applyPlannerEffort(next, effort);
+  }
+  if (overrides.reviewerEffort !== undefined) {
+    const effort = parseOverrideOrThrow(
+      EffortLevelSchema,
+      overrides.reviewerEffort,
+      '--reviewer-effort',
+      EFFORT_LEVELS,
+    );
+    next = applyReviewerEffort(next, effort);
   }
   if (overrides.yolo) {
     const approval = next.approval ?? defaultApprovalConfig();

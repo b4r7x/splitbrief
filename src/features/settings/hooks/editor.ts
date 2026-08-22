@@ -87,7 +87,10 @@ export function useSettingsEditor({
         await saveValue(def.id, !getValue(def, currentConfig));
       } else if (def.kind === 'enum' && def.options) {
         const firstOption = def.options[0];
-        const current = String(getValue(def, currentConfig) ?? firstOption ?? '');
+        const raw = def.readRawValue
+          ? def.readRawValue(currentConfig)
+          : getValue(def, currentConfig);
+        const current = String(raw ?? firstOption ?? '');
         const idx = def.options.indexOf(current);
         const next = def.options[(idx + 1) % def.options.length];
         if (next !== undefined) await saveValue(def.id, next);

@@ -9,8 +9,13 @@ import { refreshDetectionForCurrentConfig } from '../../engine/detection/store-p
 import { providerOracleCommand } from '../../engine/runners/cli-tools/provider-oracle.js';
 import { configStore } from '../../stores/project/config.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+
 import type { CliProviderAuthFact } from '../../core/discovery/detection.js';
-import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
+import {
+  CLI_TOOL_CATALOG,
+  CLI_TOOL_IDS,
+  type ActiveRunnerRole,
+} from '../../core/runners/cli-tool-catalog.js';
 import { includes } from '../../utils/type-guards.js';
 import {
   compactProviderTag,
@@ -181,9 +186,8 @@ function ModelGuidance({
 }
 
 interface PickerViewProps {
-  role: 'planner' | 'implementer';
+  role: ActiveRunnerRole;
   stepLabel?: string | undefined;
-  onCancel?: (() => void) | undefined;
   catalog: PickerCatalog;
   actions: PickerActions;
 }
@@ -214,12 +218,11 @@ export async function refreshPickerDetection(
   }
 }
 
-export function PickerView({ role, stepLabel, onCancel, catalog, actions }: PickerViewProps) {
+export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProps) {
   const t = useTheme();
   const projectDir = configStore.use((s) => s.projectDir);
   const providers = detectionStore.use((s) => s.providers);
   const cliTools = detectionStore.use((s) => s.cliTools);
-  const roleTitle = role === 'planner' ? 'Planner' : 'Implementer';
   const allowsCustom = catalog.currentItem?.modelCapability.allowsCustom ?? false;
 
   const axisTool =
@@ -296,7 +299,7 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
     const persistedModel = catalog.persistedModel;
     if (!item?.isCurrent || persistedModel === undefined) return undefined;
     const models = buildRightModels({
-      isPlanner: role === 'planner',
+      role,
       customModels: catalog.customModels,
       currentItem: item,
       cache: modelCacheStore,
@@ -353,6 +356,11 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
     }
     const tool = ctx.leftItem ?? catalog.currentItem;
     if (!tool) return undefined;
+    if (tool.kind === 'inherit-planner') {
+      return ['the review seat runs whatever the planner runs', formatToolPostureSummary(tool)]
+        .filter(Boolean)
+        .join(SOFT_SEP);
+    }
     if (ctx.activeColumn === 'right' && catalog.rightModels.length === 0) {
       return modelGuidancePreview(
         tool,
@@ -378,12 +386,12 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
 
   return (
     <TwoColumnPicker<PickerOption, ModelOption>
-      title={roleTitle}
-      subtitle={role === 'planner' ? 'Tool & model' : 'Model'}
+      title={catalog.roleLabel}
+      subtitle={role === 'implementer' ? 'Model' : 'Tool & model'}
       stepLabel={stepLabel}
       initialColumn={catalog.focusModels ? 'right' : 'left'}
       onConfirm={confirmSelection}
-      onCancel={onCancel ?? (() => overlayStore.close())}
+      onCancel={() => overlayStore.close()}
       onRefresh={handleRefresh}
       onDisabledSelect={(item) => {
         if (resolveAuthAction(item) !== null) actions.openProviderAuth(item);

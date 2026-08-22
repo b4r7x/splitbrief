@@ -42,7 +42,7 @@ function cliCache(
     getScopedCliCatalogRuntime: (input) =>
       input.tool === toolId
         ? {
-            connection: { role: input.role, tool: input.tool, contextKey: 'merge-test' },
+            connection: { role: 'planner', tool: input.tool, contextKey: 'merge-test' },
             state,
             models,
             fetchedAt: 1,
@@ -63,7 +63,6 @@ function kiloModels(
   params: { persistedModel?: string; customModels?: string[] } = {},
 ): ModelOption[] {
   return buildRightModels({
-    isPlanner: true,
     role: 'planner',
     customModels: params.customModels ?? [],
     currentItem: tool('kilo-code', { providerDependent: true }),
@@ -119,7 +118,6 @@ describe('provider variant merge', () => {
 
   it('keeps a non-provider-dependent tool flat even when ids share a bare id', () => {
     const models = buildRightModels({
-      isPlanner: true,
       role: 'planner',
       customModels: [],
       currentItem: tool('codex'),
@@ -141,7 +139,6 @@ describe('provider variant merge', () => {
 
   it('folds a matching custom id into the merged row and prefers it as representative', () => {
     const models = buildRightModels({
-      isPlanner: true,
       role: 'planner',
       customModels: ['kilo/openrouter/deepseek-v4-flash'],
       currentItem: tool('kilo-code', { providerDependent: true }),
@@ -160,7 +157,6 @@ describe('provider variant merge', () => {
 
   it('reconciles membership best-wins across variants', () => {
     const staleModels = buildRightModels({
-      isPlanner: true,
       role: 'planner',
       customModels: [],
       currentItem: tool('opencode', { providerDependent: true }),
@@ -171,7 +167,6 @@ describe('provider variant merge', () => {
     expect(countModelOptions(staleModels)).toMatchObject({ confirmed: 0, stale: 1, bundled: 2 });
 
     const freshModels = buildRightModels({
-      isPlanner: true,
       role: 'planner',
       customModels: [],
       currentItem: tool('opencode', { providerDependent: true }),
@@ -195,7 +190,6 @@ describe('provider variant merge', () => {
       { id: 'openrouter/deepseek-v4-flash' },
     ];
     const base = {
-      isPlanner: true,
       role: 'planner',
       customModels: [],
       currentItem: tool('opencode', { providerDependent: true }),
@@ -218,7 +212,6 @@ describe('provider variant merge', () => {
 
   it('passes unprefixed ids and the Auto row through without joining a group', () => {
     const models = buildRightModels({
-      isPlanner: true,
       role: 'planner',
       customModels: [],
       currentItem: tool('kilo-code', { providerDependent: true, automatic: true }),

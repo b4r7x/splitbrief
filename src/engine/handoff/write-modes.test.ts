@@ -6,6 +6,7 @@ import { writeHandoffWriterSessionState } from '#testing/helpers/handoff-writer-
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';
 import { writeHandoffPack } from './write.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 let tmp: string;
 
@@ -296,14 +297,7 @@ describe('writeHandoffPack — mode resolution', () => {
         skipped: 0,
         failed: 0,
         totalTime: 1000,
-        tokenUsage: {
-          plannerInput: 0,
-          plannerOutput: 0,
-          implementerInput: 0,
-          implementerOutput: 0,
-          escalationInput: 0,
-          escalationOutput: 0,
-        },
+        tokenUsage: makeUsage(),
         estimatedCostSavings: '$0.00',
         escalationRate: 0,
         mode: 'speckit',

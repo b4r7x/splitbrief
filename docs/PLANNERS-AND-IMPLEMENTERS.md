@@ -1,17 +1,18 @@
 # Planners and implementers
 
-How the two roles are created, what interfaces they expose, how the five runner kinds work, and how to add a new backend.
+How the two roles and their three seats are created, what interfaces they expose, how the five runner kinds work, and how to add a new backend.
 
 ---
 
-## Two roles, one factory
+## Two roles, three seats, one factory
 
-Both roles are created by `src/engine/runners/factory.ts`:
+Two roles — planner and implementer — fill three seats: plan, build, and review. All three seats are created by `src/engine/runners/factory.ts`:
 
 - `createPlanner(config, { preparedConfig, preparationId, gates, slot, initialSessionId?, ... })` returns a `Planner`
 - `createImplementer(config, { preparedConfig, preparationId, gates, slot, ... })` returns an `Implementer`
+- `createReviewer(config, { preparedConfig, preparationId, gates, slot, ... })` returns a `Reviewer`
 
-Both option objects are required. `config` and `preparedConfig` must be the same object returned by execution preparation; the factory rejects a different configuration even when its runner has the same tool, provider, endpoint, or command identity. The selected slot lets the implementer factory derive named-profile and intermediate configuration from that prepared snapshot.
+Every option object is required. `config` and `preparedConfig` must be the same object returned by execution preparation; the factory rejects a different configuration even when its runner has the same tool, provider, endpoint, or command identity. The selected slot lets the implementer factory derive named-profile and intermediate configuration from that prepared snapshot.
 
 Factory dispatch is async and lazy. Backend modules load via memoized dynamic imports (`lazy()` wrapper), so startup only imports the configured kind. If you set `kind: api` for your planner, the `cli`, `shell`, `agent`, and `agent-sdk` modules never load.
 
@@ -32,6 +33,8 @@ Local execution is admitted by `prepareExecution()` in `src/engine/runners/prepa
 | `agent` | The current configured-command trust/admission result. |
 
 Non-CLI gates reuse the validation or admitted invocation already produced during that preparation; execution does not turn cached discovery into a second authority decision. Every gate is also bound to its exact role: planner, intermediate escalation runner, or named implementer profile. New workflows and resumes prepare the planner, every configured implementer profile, and the configured intermediate runner when enabled. `spec` prepares only the planner.
+
+The reviewer joins that list when — and only when — `.splitbrief/config.yaml` carries a `reviewer` block: `prepareExecution()` adds it as a candidate under slot `{ role: 'reviewer' }`, and a failed admission is a blocker naming the Reviewer. With no block, `resolveReviewerRunner()` hands the seat to the planner and the planner instance is reused unchanged, so there is nothing extra to admit.
 
 Entry points express policy differences while sharing this boundary. Interactive CLI starts, Home, and Setup use disclosure/approval policy. JSON, RPC, and detached starts use headless policy, which denies unverified authentication unless the caller explicitly enables it. Resume reauthorizes the existing session's required runner contexts without creating another session. An attached TUI is only a client for a workflow already running elsewhere, so it uses an explicit attached route and does not perform local runner admission.
 
@@ -74,6 +77,32 @@ interface PlanResult {
 ```
 
 The `tasks[]` array is the durable contract. `spec` and `plan` are supporting documents for human review -- they may be empty in instant/quick modes.
+
+---
+
+## The Reviewer interface
+
+Defined in `src/engine/reviewers/types.ts`. The review seat is one stateless, read-only call:
+
+```typescript
+interface Reviewer {
+  review(prompt, projectDir, callbacks): Promise<{ text: string; usage: TokenDelta | null }>
+  isAvailable(): Promise<boolean>
+  unavailabilityReason?(): string | undefined
+}
+```
+
+It is deliberately narrower than `Planner` — a reviewer cannot plan, regenerate, escalate, summarize, resume a session, or write files. A `Planner` satisfies it structurally, which is what lets the planner hold the seat unadapted when no `reviewer` block is configured.
+
+The port carries no identity fields on purpose. No runner backend knows its own tool or model, so the identity in a failed-review message comes from the config accessor that resolved the seat (`resolveReviewerRunner`), not from the runner object.
+
+`createReviewer()` builds the seat on the planner backends: it resolves the runner, then hands `loadPlanner()` a config whose planner slot holds the reviewer. A configured `effort` or `temperature` a backend cannot deliver is dropped with the same stderr warning the planner gets.
+
+### Which calls the reviewer makes
+
+Exactly one: the final review of the run diff, dispatched from `runFinalReviewPhase()` (`src/engine/orchestrator/final-review.ts`) through `runReviewerCall()` (`src/engine/orchestrator/review-call.ts`). Every other strong-side call stays on the planner — the planning phases, `regenerate`, `escalateHint`, `escalateFull`, the planner estimate review, `summarize` / `summarizeStructured`, `injectUserTurn`, and brief recovery. `runPlannerReview` is still the planner's own review helper and still serves the estimate-review and planning-regeneration call sites; the reviewer has its own call path rather than changing that one.
+
+A reviewer that fails mid-call is reported, not replaced: `reviewStatus: 'failed'`, the reviewer's display name in the error, final-review evidence recorded, summary still produced. There is deliberately no automatic fallback to the planner.
 
 ---
 
@@ -321,6 +350,10 @@ type TokenDelta = {
 ```
 
 Deltas are normalized in `src/engine/calls/usage.ts`, which handles delta, cumulative, and final samples consistently. Accumulated usage is published through `cost_update` events.
+
+Session totals (`TokenUsage`) carry four categories, not three: `planner*`, `implementer*`, `escalation*`, and `reviewer*` (`reviewerInput`, `reviewerOutput`, and the optional `reviewerCacheRead` / `reviewerCacheCreate`). `usageCategoryForRunnerCallRole()` (`src/engine/orchestrator/tokens.ts`) routes the `'review'` call role into the `reviewer` bucket; `'planner'`, `'summary'`, and `'compaction'` stay on the planner. Session state written before the reviewer bucket existed loads with those fields at `0`.
+
+Pricing follows the seat: with a `reviewer` block, the reviewer's tokens are priced at the reviewer runner's rates and shown as their own line in the summary and the cost drilldown; without one, they are priced at the planner's rates and folded into the planner line, exactly as before. `splitbrief stats` is unaffected either way — it aggregates by provider, not by role.
 
 CLI runners report usage through their protocol terminal: codex through its `turn.completed` record, claude-code and opencode through their streamed terminal events. Codex's `input_tokens` counts cached input, so the normalizer excludes `cached_input_tokens` from the reported input total and surfaces it as `cacheReadTokens`; claude-code's terminal `result` line takes precedence over mid-stream deltas. A CLI runner that completes without reporting usage records zero implementer tokens — by design for structurally unpriced runners, and never fabricated.
 

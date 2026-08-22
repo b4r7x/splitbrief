@@ -255,6 +255,9 @@ export function buildCost(summary: Summary, events: PacketEvent[]): ReviewPacket
           hypotheticalCost: summary.costBreakdown.hypotheticalCost,
           actualPlannerCost: summary.costBreakdown.actualPlannerCost,
           actualImplementerCost: summary.costBreakdown.actualImplementerCost,
+          ...(summary.costBreakdown.actualReviewerCost !== undefined && {
+            actualReviewerCost: summary.costBreakdown.actualReviewerCost,
+          }),
           totalActualCost: summary.costBreakdown.totalActualCost,
           savingsAmount: summary.costBreakdown.savingsAmount,
           savingsPercentage: summary.costBreakdown.savingsPercentage,
@@ -267,6 +270,9 @@ export function buildCost(summary: Summary, events: PacketEvent[]): ReviewPacket
           }),
           ...(summary.costBreakdown.hasSavingsEstimate !== undefined && {
             hasSavingsEstimate: summary.costBreakdown.hasSavingsEstimate,
+          }),
+          ...(summary.costBreakdown.isActualReviewerCostKnown !== undefined && {
+            isActualReviewerCostKnown: summary.costBreakdown.isActualReviewerCostKnown,
           }),
           ...(summary.costBreakdown.isTotalActualCostKnown !== undefined && {
             isTotalActualCostKnown: summary.costBreakdown.isTotalActualCostKnown,

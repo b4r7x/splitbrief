@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { applyCLIOverrides } from './apply.js';
 import { buildRunnerConfig } from '../build-runner.js';
-import { existingToOpts } from './runner.js';
+import { applyRunnerOverrides, existingToOpts } from './runner.js';
 import type { Config } from '../../../schemas/config.js';
 import type { PlannerConfig } from '../../../schemas/planner-config.js';
 import type { ImplementerConfig } from '../../../schemas/implementer-config.js';
@@ -419,5 +419,36 @@ describe('applyCLIOverrides — runner commands', () => {
       contextLength: 200_000,
     });
     expect(result.implementer).toEqual(baseConfig.implementer);
+  });
+
+  it('applies reviewer runner fields without changing the planner', () => {
+    const result = applyRunnerOverrides(
+      'reviewer',
+      { tool: 'codex', model: 'gpt-5.4' },
+      baseConfig,
+    );
+
+    expect(result.reviewer).toMatchObject({ kind: 'cli', tool: 'codex', model: 'gpt-5.4' });
+    expect(result.planner).toEqual(baseConfig.planner);
+  });
+
+  it('writes the review seat when --reviewer names the planner tool', () => {
+    const result = applyRunnerOverrides('reviewer', { tool: 'claude-code' }, baseConfig);
+
+    expect(result.reviewer).toMatchObject({ kind: 'cli', tool: 'claude-code' });
+  });
+
+  it('leaves the review seat with the planner when the reviewer override is discarded', () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    const result = applyRunnerOverrides('reviewer', { apiKey: 'env:MY_KEY' }, baseConfig);
+
+    expect(result.reviewer).toBeUndefined();
+    stderr.mockRestore();
+  });
+
+  it('names the reviewer seat when a reviewer override fails validation', () => {
+    expect(() => applyRunnerOverrides('reviewer', { tool: 'shell' }, baseConfig)).toThrow(
+      /reviewer shell kind/,
+    );
   });
 });

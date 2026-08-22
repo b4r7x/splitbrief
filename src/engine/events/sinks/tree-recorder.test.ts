@@ -9,6 +9,7 @@ import { parseEngineEvent } from '../schema.js';
 import { protectEngineEventForConsumer } from '../protection/protect.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { isRecord } from '../../../utils/type-guards.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 function makeSessionDir(projectDir: string, sessionId: string): void {
   mkdirSync(join(projectDir, '.splitbrief', 'sessions', sessionId), { recursive: true });
@@ -446,14 +447,14 @@ describe('createTreeRecorderSink', () => {
       type: 'cost_update',
       ts: 2000,
       phase: 'implementing',
-      tokenUsage: {
+      tokenUsage: makeUsage({
         plannerInput: 100,
         plannerOutput: 50,
         implementerInput: 200,
         implementerOutput: 80,
         escalationInput: 10,
         escalationOutput: 5,
-      },
+      }),
     });
 
     const tree = reconstructTree(join(tmpDir, '.splitbrief', 'sessions', sessionId));
@@ -504,14 +505,12 @@ describe('createTreeRecorderSink', () => {
       type: 'cost_update',
       ts: 7000,
       phase: 'implementing',
-      tokenUsage: {
+      tokenUsage: makeUsage({
         plannerInput: 500,
         plannerOutput: 200,
         implementerInput: 1000,
         implementerOutput: 400,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      }),
     });
     sink({
       type: 'task_completed',

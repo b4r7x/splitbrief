@@ -179,6 +179,17 @@ function makeActivityReadForCall(
   };
 }
 
+function makeReviewActivity(
+  runnerName: string,
+): Extract<EngineEvent, { type: 'runner_call_activity' }> {
+  return makeRunnerCallActivity('planner-read', {
+    phase: 'final-review',
+    role: 'review',
+    runnerName,
+    label: 'reading review.md',
+  });
+}
+
 function frameRowCount(frame: string): number {
   return frame.length === 0 ? 0 : frame.split('\n').length;
 }
@@ -294,6 +305,16 @@ describe('ConversationFlow', () => {
     expect(frame).not.toContain('activity:');
 
     ui.unmount();
+  });
+
+  it('reports the seat that ran the final review, not a borrowed planner identity', () => {
+    const reviewer = renderConversation([makeReviewActivity('codex')], 5, 90);
+    expect(reviewer.lastFrame() ?? '').toContain('OpenAI Codex CLI');
+    reviewer.unmount();
+
+    const planner = renderConversation([makeReviewActivity('claude-code')], 5, 90);
+    expect(planner.lastFrame() ?? '').toContain('Claude Code CLI');
+    planner.unmount();
   });
 
   it('lifts the below scroll label to the chrome divider and keeps the viewport fixed', () => {

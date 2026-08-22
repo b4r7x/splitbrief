@@ -7,10 +7,17 @@ import { API_PROVIDER_CATALOG } from '../../providers/api-provider-catalog.js';
 import { isPlannerToolId, type PlannerToolId } from '../../schemas/enums.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { Config } from '../../schemas/config.js';
-import type { ActiveRunnerConfig, ActiveRunnerRole } from './active-runner.js';
+import type { ActiveRunnerConfig } from './active-runner.js';
 import type { ImplementerConfig } from '../../schemas/implementer-config.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
-import { defaultCliAuthChannel, type CliAuthChannelId } from '../../runners/cli-tool-catalog.js';
+import type { ReviewerConfig } from '../../schemas/reviewer-config.js';
+import {
+  defaultCliAuthChannel,
+  runnerRoleForActiveRole,
+  type ActiveRunnerRole,
+  type CliAuthChannelId,
+  type RunnerRole,
+} from '../../runners/cli-tool-catalog.js';
 
 export type RunnerConfig = ActiveRunnerConfig;
 
@@ -21,7 +28,8 @@ export type DeepReadonly<T> = T extends object
 export type RunnerConfigSlot =
   | Readonly<{ role: 'planner' }>
   | Readonly<{ role: 'implementer'; profile: string }>
-  | Readonly<{ role: 'intermediate' }>;
+  | Readonly<{ role: 'intermediate' }>
+  | Readonly<{ role: 'reviewer' }>;
 
 export type RunnerConfigSource =
   | Readonly<{ role: 'planner'; runner: DeepReadonly<PlannerConfig> }>
@@ -30,7 +38,8 @@ export type RunnerConfigSource =
       profile: string;
       runner: DeepReadonly<ImplementerConfig>;
     }>
-  | Readonly<{ role: 'intermediate'; runner: DeepReadonly<ImplementerConfig> }>;
+  | Readonly<{ role: 'intermediate'; runner: DeepReadonly<ImplementerConfig> }>
+  | Readonly<{ role: 'reviewer'; runner: DeepReadonly<ReviewerConfig> }>;
 
 export type RunnerConfigContext = Readonly<{
   slot: RunnerConfigSlot;
@@ -50,7 +59,7 @@ export interface CredentialDomainIdentity {
 }
 
 export interface RunnerDiscoveryContext {
-  readonly role: ActiveRunnerRole;
+  readonly role: RunnerRole;
   readonly kind: RunnerConfig['kind'];
   readonly id: string;
   readonly model?: string | undefined;
@@ -94,9 +103,15 @@ export function resolveRunnerConfigContext(source: RunnerConfigSource): RunnerCo
       };
     case 'intermediate':
       return { slot: { role: 'intermediate' }, runner: source.runner };
+    case 'reviewer':
+      return { slot: { role: 'reviewer' }, runner: source.runner };
     default:
       return assertNever(source);
   }
+}
+
+export function runnerRoleForSlot(slot: RunnerConfigSlot): RunnerRole {
+  return slot.role === 'intermediate' ? 'implementer' : runnerRoleForActiveRole(slot.role);
 }
 
 function anthropicEndpointOrigin(): string | undefined {
@@ -263,7 +278,7 @@ export function projectRunnerDiscoveryContext(
   const origin = contextEndpointOrigin(runner);
 
   return {
-    role: input.role,
+    role: runnerRoleForActiveRole(input.role),
     kind: runner.kind,
     id: runnerId(runner),
     ...(runner.model !== undefined && { model: runner.model }),

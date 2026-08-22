@@ -21,7 +21,7 @@ When the configured implementer writes files itself (`writesFiles: direct` — t
 
 **Changes are promoted into your project.** Isolation is where the work happens, not where it ends. After each task, the changed set is computed against a baseline captured when that task acquired the workspace — not when the directory was first created — put through the approval gate, and written into your real project directory. Promotion is hash-guarded: if a file changed underneath SPLITBRIEF between the approval read and the write, it is not overwritten — the whole promotion is refused and reported as a conflict. Validation then runs in your project, on the promoted result.
 
-The implementer being able to run checks on its own work improves first-pass rate. It is not what decides correctness: SPLITBRIEF's own validation pipeline and the planner's review are.
+The implementer being able to run checks on its own work improves first-pass rate. It is not what decides correctness: SPLITBRIEF's own validation pipeline and the review seat's are.
 
 ## What worktrees give you
 

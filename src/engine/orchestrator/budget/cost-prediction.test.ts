@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { predictCost, type PredictCostOptions } from './cost-prediction.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 
 describe('predictCost', () => {
   it('returns zero costs for zero tasks', () => {
@@ -55,14 +57,7 @@ describe('predictCost', () => {
   });
 
   it('uses actual planner token usage when provided', () => {
-    const tokenUsage = {
-      plannerInput: 10000,
-      plannerOutput: 5000,
-      implementerInput: 0,
-      implementerOutput: 0,
-      escalationInput: 0,
-      escalationOutput: 0,
-    };
+    const tokenUsage = makeUsage({ plannerInput: 10000, plannerOutput: 5000 });
     const withUsage = predictCost({
       taskCount: 5,
       plannerTool: 'anthropic',
@@ -136,5 +131,79 @@ describe('predictCost', () => {
     expect(result.lowCost).toBe(0);
     expect(result.expectedCost).toBe(0);
     expect(result.highCost).toBe(0);
+  });
+
+  it('prices reviewer usage at the planner rate when no reviewer is configured', () => {
+    const base = {
+      taskCount: 5,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+    } satisfies PredictCostOptions;
+
+    const withReviewerTokens = predictCost({
+      ...base,
+      tokenUsage: makeUsage({
+        plannerInput: 10_000,
+        plannerOutput: 5_000,
+        reviewerInput: 10_000,
+        reviewerOutput: 5_000,
+      }),
+      config: makeConfig(),
+    });
+    const asPlannerTokens = predictCost({
+      ...base,
+      tokenUsage: makeUsage({ plannerInput: 20_000, plannerOutput: 10_000 }),
+    });
+
+    expect(withReviewerTokens.expectedCost).toBeCloseTo(asPlannerTokens.expectedCost, 10);
+  });
+
+  it('prices reviewer usage at the reviewer rate when a reviewer is configured', () => {
+    const base = {
+      taskCount: 5,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+    } satisfies PredictCostOptions;
+    const usage = makeUsage({
+      plannerInput: 10_000,
+      plannerOutput: 5_000,
+      reviewerInput: 10_000,
+      reviewerOutput: 5_000,
+    });
+
+    const withReviewer = predictCost({
+      ...base,
+      tokenUsage: usage,
+      config: makeConfig({
+        reviewer: {
+          kind: 'api',
+          provider: 'deepseek',
+          model: 'deepseek-v4-flash',
+          apiBase: 'https://api.deepseek.com',
+        },
+      }),
+    });
+    const foldedIntoPlanner = predictCost({ ...base, tokenUsage: usage, config: makeConfig() });
+    const plannerOnly = predictCost({
+      ...base,
+      tokenUsage: makeUsage({ plannerInput: 10_000, plannerOutput: 5_000 }),
+    });
+
+    expect(withReviewer.expectedCost).toBeGreaterThan(plannerOnly.expectedCost);
+    expect(withReviewer.expectedCost).toBeLessThan(foldedIntoPlanner.expectedCost);
+  });
+
+  it('leaves the prediction unchanged when no reviewer is configured', () => {
+    const opts = {
+      taskCount: 5,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'deepseek',
+      tokenUsage: makeUsage({ plannerInput: 10_000, plannerOutput: 5_000 }),
+    } satisfies PredictCostOptions;
+
+    expect(predictCost({ ...opts, config: makeConfig() })).toEqual(predictCost(opts));
   });
 });

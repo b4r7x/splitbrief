@@ -1,5 +1,6 @@
 import type { Summary } from '../../../../src/core/schemas/summary.js';
 import { taskId } from '../../../../src/core/schemas/task.js';
+import { makeUsage } from '../../../helpers/factories/summary.js';
 import type { EngineEvent } from '../../../../src/engine/events/types.js';
 import { getWorkflowPromptRows } from '../../../../src/features/workflow/prompt-rows/workflow.js';
 import type { ApprovalPromptState } from '../../../../src/stores/approval-prompt/prompt.js';
@@ -45,14 +46,12 @@ export const WORKFLOW_SUCCESS_SUMMARY: Readonly<Summary> = Object.freeze({
   skipped: 0,
   failed: 0,
   totalTime: 4_200,
-  tokenUsage: {
+  tokenUsage: makeUsage({
     plannerInput: 120,
     plannerOutput: 40,
     implementerInput: 240,
     implementerOutput: 80,
-    escalationInput: 0,
-    escalationOutput: 0,
-  },
+  }),
   estimatedCostSavings: '$0.01',
   escalationRate: 0,
   plannerTool: 'claude-code',

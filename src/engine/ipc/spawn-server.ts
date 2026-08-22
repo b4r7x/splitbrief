@@ -124,8 +124,10 @@ export function assertDetachedOverridesTransportable(
   const flags: string[] = [];
   if ((input.overrides?.planner?.args?.length ?? 0) > 0) flags.push('--planner-args');
   if ((input.overrides?.implementer?.args?.length ?? 0) > 0) flags.push('--implementer-args');
+  if ((input.overrides?.reviewer?.args?.length ?? 0) > 0) flags.push('--reviewer-args');
   if (input.overrides?.planner?.apiKey !== undefined) flags.push('--planner-api-key-env');
   if (input.overrides?.implementer?.apiKey !== undefined) flags.push('--implementer-api-key-env');
+  if (input.overrides?.reviewer?.apiKey !== undefined) flags.push('--reviewer-api-key-env');
   if (flags.length > 0) throw spawnServerError.unsupportedOverrides(flags);
 }
 
@@ -140,10 +142,16 @@ export function buildServerArgs(opts: SpawnServerOptions): IpcServerArgs {
     args: _implementerArgs,
     ...implementer
   } = opts.overrides?.implementer ?? {};
+  const {
+    apiKey: _reviewerApiKey,
+    args: _reviewerArgs,
+    ...reviewer
+  } = opts.overrides?.reviewer ?? {};
   const overrides = {
     ...opts.overrides,
     ...(opts.overrides?.planner !== undefined && { planner }),
     ...(opts.overrides?.implementer !== undefined && { implementer }),
+    ...(opts.overrides?.reviewer !== undefined && { reviewer }),
   };
   return {
     version: 1,

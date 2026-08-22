@@ -30,10 +30,21 @@ export function workflowOptsToCLIOverrides(opts: WorkflowOpts): CLIOverrides {
       outputFormat: opts.implementerOutputFormat,
       contextLength: opts.implementerContextLength,
     },
+    reviewer: {
+      tool: opts.reviewer,
+      model: opts.reviewerModel,
+      command: opts.reviewerCommand,
+      apiBase: opts.reviewerApiBase,
+      apiKey: opts.reviewerApiKeyEnv,
+      args: opts.reviewerArgs,
+      outputFormat: opts.reviewerOutputFormat,
+      contextLength: opts.reviewerContextLength,
+    },
     approve: opts.approve,
     mode: opts.mode,
     budget: opts.budget,
     plannerEffort: opts.plannerEffort,
+    reviewerEffort: opts.reviewerEffort,
     yolo: opts.yolo,
   };
 }

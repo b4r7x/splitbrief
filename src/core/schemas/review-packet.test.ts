@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { REVIEW_PACKET_VERSION, ReviewPacketSchema } from './review-packet.js';
 import { ReviewPacketSummarySchema } from './summary.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 describe('review packet schema verdict fields', () => {
   it('keeps REVIEW_PACKET_VERSION at 1 for the additive verdict fields', () => {
@@ -30,6 +31,40 @@ describe('review packet schema verdict fields', () => {
 
     expect(rollup.finalReviewVerdict).toBeNull();
     expect(rollup.finalReviewFindingCounts).toEqual({ critical: 0, warning: 0, note: 0 });
+  });
+
+  it('keeps the reviewer cost line so the packet costs sum to the packet total', () => {
+    const base = ReviewPacketSchema.parse(packetBeforeVerdictFields());
+    const packet = ReviewPacketSchema.parse({
+      ...base,
+      cost: {
+        tokenUsage: makeUsage(),
+        costBreakdown: {
+          hypotheticalCost: 4,
+          actualPlannerCost: 1,
+          actualImplementerCost: 0.5,
+          actualReviewerCost: 0.25,
+          totalActualCost: 1.75,
+          savingsAmount: 2.25,
+          savingsPercentage: 56,
+          localCompletionRate: 1,
+          isActualReviewerCostKnown: true,
+        },
+        estimatedCostSavings: null,
+        taskRouting: [],
+        routingWarnings: [],
+      },
+    });
+
+    const breakdown = packet.cost.costBreakdown;
+    if (!breakdown) throw new Error('expected a cost breakdown');
+    expect(breakdown.actualReviewerCost).toBe(0.25);
+    expect(breakdown.isActualReviewerCostKnown).toBe(true);
+    expect(
+      breakdown.actualPlannerCost +
+        breakdown.actualImplementerCost +
+        (breakdown.actualReviewerCost ?? 0),
+    ).toBeCloseTo(breakdown.totalActualCost, 10);
   });
 });
 
@@ -163,14 +198,7 @@ function packetBeforeVerdictFields(): unknown {
       warnings: [],
     },
     cost: {
-      tokenUsage: {
-        plannerInput: 0,
-        plannerOutput: 0,
-        implementerInput: 0,
-        implementerOutput: 0,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      tokenUsage: makeUsage(),
       costBreakdown: null,
       estimatedCostSavings: null,
       taskRouting: [],

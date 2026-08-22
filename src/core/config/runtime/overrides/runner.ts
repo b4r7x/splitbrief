@@ -6,12 +6,16 @@ import type { Config } from '../../../schemas/config.js';
 import type { PlannerConfig } from '../../../schemas/planner-config.js';
 import type { ImplementerConfig } from '../../../schemas/implementer-config.js';
 import type { EffortLevel } from '../../../schemas/enums.js';
-import type { CliAuthChannelId } from '../../../runners/cli-tool-catalog.js';
+import type { CliAuthChannelId, ActiveRunnerRole } from '../../../runners/cli-tool-catalog.js';
 import {
   mergeImplementerProfileMetadata,
   pickDefaultProfileName,
   stripProfileMetadata,
 } from '../../accessors/implementer-profiles.js';
+import type { ReviewerConfig } from '../../../schemas/reviewer-config.js';
+import { resolveReviewerRunner } from '../../accessors/reviewer-runner.js';
+import { configError } from '../../errors.js';
+
 import type { RunnerOverrides } from './schema.js';
 
 export function existingToOpts(existing: PlannerConfig | ImplementerConfig): BuildRunnerOpts {
@@ -70,21 +74,31 @@ export function existingToOpts(existing: PlannerConfig | ImplementerConfig): Bui
 }
 
 export function applyRunnerOverrides(
-  role: 'planner' | 'implementer',
+  role: ActiveRunnerRole,
   overrides: RunnerOverrides,
   config: Config,
 ): Config {
-  if (role === 'planner') {
-    const updated = buildRunnerFromOverrides('planner', overrides, config.planner);
-    return updated === undefined ? config : { ...config, planner: updated };
+  switch (role) {
+    case 'planner': {
+      const updated = buildRunnerFromOverrides('planner', overrides, config.planner);
+      return updated === undefined ? config : { ...config, planner: updated };
+    }
+    case 'reviewer': {
+      const seat = resolveReviewerRunner(config);
+      const updated = buildRunnerFromOverrides('reviewer', overrides, seat.runner);
+      return updated === undefined ? config : { ...config, reviewer: updated };
+    }
+    case 'implementer': {
+      const updated = buildRunnerFromOverrides('implementer', overrides, config.implementer);
+      return updated === undefined ? config : { ...config, implementer: updated };
+    }
+    default:
+      return assertNever(role);
   }
-
-  const updated = buildRunnerFromOverrides('implementer', overrides, config.implementer);
-  return updated === undefined ? config : { ...config, implementer: updated };
 }
 
 function warnUnusableProviderOverrides(
-  role: 'planner' | 'implementer',
+  role: ActiveRunnerRole,
   kind: RunnerKind,
   apiBase: string | undefined,
   apiKey: string | undefined,
@@ -110,24 +124,16 @@ function buildRunnerFromOverrides(
   existing: ImplementerConfig,
 ): ImplementerConfig | undefined;
 function buildRunnerFromOverrides(
-  role: 'planner' | 'implementer',
+  role: 'reviewer',
+  overrides: RunnerOverrides,
+  existing: ReviewerConfig,
+): ReviewerConfig | undefined;
+function buildRunnerFromOverrides(
+  role: ActiveRunnerRole,
   overrides: RunnerOverrides,
   existing: PlannerConfig | ImplementerConfig,
 ): PlannerConfig | ImplementerConfig | undefined {
   const { tool, model, command, apiBase, apiKey, args, outputFormat, contextLength } = overrides;
-  if (
-    tool === undefined &&
-    model === undefined &&
-    command === undefined &&
-    apiBase === undefined &&
-    apiKey === undefined &&
-    args === undefined &&
-    outputFormat === undefined &&
-    contextLength === undefined
-  ) {
-    return undefined;
-  }
-
   const baseOpts =
     tool !== undefined
       ? { kind: inferKindFromTool(tool), tool }
@@ -136,7 +142,19 @@ function buildRunnerFromOverrides(
         : apiBase !== undefined && existing.kind !== 'api'
           ? { kind: 'api' as const }
           : existingToOpts(existing);
-  warnUnusableProviderOverrides(role, baseOpts.kind ?? existing.kind, apiBase, apiKey);
+  const kind = baseOpts.kind ?? existing.kind;
+  warnUnusableProviderOverrides(role, kind, apiBase, apiKey);
+  const applies =
+    tool !== undefined ||
+    model !== undefined ||
+    command !== undefined ||
+    apiBase !== undefined ||
+    args !== undefined ||
+    outputFormat !== undefined ||
+    contextLength !== undefined ||
+    (apiKey !== undefined && (kind === 'api' || kind === 'agent-sdk'));
+  if (!applies) return undefined;
+
   const opts: BuildRunnerOpts = {
     ...baseOpts,
     ...(model !== undefined && { model }),
@@ -149,9 +167,16 @@ function buildRunnerFromOverrides(
     existing,
   };
 
-  return role === 'planner'
-    ? buildRunnerConfig('planner', opts)
-    : buildRunnerConfig('implementer', opts);
+  switch (role) {
+    case 'implementer':
+      return buildRunnerConfig('implementer', opts);
+    case 'planner':
+      return buildRunnerConfig('planner', opts);
+    case 'reviewer':
+      return buildRunnerConfig('reviewer', opts);
+    default:
+      return assertNever(role);
+  }
 }
 
 export function applyImplementerOverrides(overrides: RunnerOverrides, config: Config): Config {
@@ -183,4 +208,16 @@ export function applyImplementerOverrides(overrides: RunnerOverrides, config: Co
 
 export function applyPlannerEffort(config: Config, effort: EffortLevel): Config {
   return { ...config, planner: { ...config.planner, effort } };
+}
+
+export function applyReviewerEffort(config: Config, effort: EffortLevel): Config {
+  const seat = resolveReviewerRunner(config);
+  if (seat.source === 'planner') {
+    throw configError.invalidOverride(
+      '--reviewer-effort',
+      effort,
+      'The review seat inherits the planner; pass --reviewer to give it its own runner first.',
+    );
+  }
+  return { ...config, reviewer: { ...seat.runner, effort } };
 }

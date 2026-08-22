@@ -17,12 +17,9 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { seedValidationProject } from '#testing/helpers/validation-project.js';
-import type { Config } from '../../../src/core/schemas/config.js';
 import { executableReceipt } from '#testing/helpers/custom-command-based.js';
-import {
-  parsePreparedConfig,
-  type PreparedExecution,
-} from '../../../src/engine/runners/prepared-execution.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
+import type { RunnerGate } from '../../../src/engine/runners/prepared-execution.js';
 
 const dirs: string[] = [];
 
@@ -43,58 +40,22 @@ function setupProject(expectedMarker = 'from-retry'): string {
   return projectDir;
 }
 
-function preparedExecution(input: {
-  projectDir: string;
-  sessionId: string;
-  feature: string;
-  config: Config;
-}): PreparedExecution {
-  const config = parsePreparedConfig(input.config);
-  const preparationId = `${input.sessionId}-preparation`;
-  const active = {
-    version: 1 as const,
-    sessionId: input.sessionId,
-    generation: '7a777777-7777-4777-8777-777777777777',
-  };
-  return {
-    purpose: 'new-workflow',
-    config,
-    preparationId,
-    report: {
-      generatedAt: '2026-08-04T00:00:00.000Z',
-      projectDir: input.projectDir,
-      status: 'ready',
-      counts: { ok: 2, info: 0, warning: 0, blocker: 0 },
-      nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
-      sections: [],
-      metadata: {},
+function plannerCliGates(preparationId: string): ReadonlyArray<RunnerGate> {
+  return [
+    {
+      kind: 'cli',
+      slot: { role: 'planner' },
+      preparationId,
+      tool: 'claude-code',
+      executable: executableReceipt(),
     },
-    gates: [
-      {
-        kind: 'cli',
-        slot: { role: 'planner' },
-        preparationId,
-        tool: 'claude-code',
-        executable: executableReceipt(),
-      },
-      {
-        kind: 'agent',
-        slot: { role: 'implementer', profile: 'default' },
-        preparationId,
-        command: { kind: 'validated-config' },
-      },
-    ],
-    session: {
-      kind: 'existing',
-      ref: { projectDir: input.projectDir, sessionId: input.sessionId },
-      active,
+    {
+      kind: 'agent',
+      slot: { role: 'implementer', profile: 'default' },
+      preparationId,
+      command: { kind: 'validated-config' },
     },
-    runtime: {
-      feature: input.feature,
-      allowRepoRunners: false,
-      allowHooks: false,
-    },
-  };
+  ];
 }
 
 describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
@@ -183,7 +144,13 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
       },
     });
     const summary = await runWorkflow({
-      prepared: preparedExecution({ projectDir, sessionId, feature, config }),
+      prepared: makePreparedExecution({
+        projectDir,
+        sessionId,
+        feature,
+        config,
+        gates: plannerCliGates,
+      }),
       callbacks: makeCallbacks().callbacks,
       sinks: TEST_WORKFLOW_SINKS,
       _planner: planner,
@@ -316,7 +283,13 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
       },
     });
     const summary = await runWorkflow({
-      prepared: preparedExecution({ projectDir, sessionId, feature, config }),
+      prepared: makePreparedExecution({
+        projectDir,
+        sessionId,
+        feature,
+        config,
+        gates: plannerCliGates,
+      }),
       callbacks: makeCallbacks().callbacks,
       sinks: TEST_WORKFLOW_SINKS,
       _planner: planner,

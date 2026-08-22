@@ -123,4 +123,45 @@ describe('CostDrilldownOverlay', () => {
     expect(frame).toContain('$18.00');
     ui.unmount();
   });
+
+  it('prices the final-review phase at the configured reviewer rates', () => {
+    tokensStore.__testReset({
+      pricingContext: {
+        plannerTool: 'anthropic',
+        plannerModel: 'claude-sonnet-4-6',
+        implementerTool: 'ollama',
+        implementerModel: 'qwen2.5',
+        reviewerTool: 'anthropic',
+        reviewerModel: 'claude-sonnet-4-6',
+      },
+      perPhase: {
+        'final-review': {
+          inputTokens: 1_000_000,
+          outputTokens: 1_000_000,
+          cacheReadTokens: 0,
+          cacheCreateTokens: 0,
+          plannerInputTokens: 0,
+          plannerOutputTokens: 0,
+          plannerCacheReadTokens: 0,
+          plannerCacheCreateTokens: 0,
+          implementerInputTokens: 0,
+          implementerOutputTokens: 0,
+          implementerCacheReadTokens: 0,
+          implementerCacheCreateTokens: 0,
+          reviewerInputTokens: 1_000_000,
+          reviewerOutputTokens: 1_000_000,
+          reviewerCacheReadTokens: 0,
+          reviewerCacheCreateTokens: 0,
+        },
+      },
+    });
+    terminalSizeStore.__testReset({ cols: 100 });
+
+    const ui = render(createElement(CostDrilldownOverlay));
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('final-review');
+    expect(frame).toContain('$18.00');
+    ui.unmount();
+  });
 });

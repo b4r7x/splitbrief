@@ -278,7 +278,7 @@ The `SettingsOverlay` entry is the page `app/overlays/settings.tsx`; it composes
 
 **Dissolved (pure-entry) surfaces** (e.g. `setup`, `help`, `sessions`, `skills`):
 
-A dissolved surface has **no `features/` folder** — the page *is* the whole surface. `src/app/screens/setup.tsx` accepts render-prop callbacks for cross-feature composition: it takes a `renderToolPicker` prop, and `src/app/router.tsx` composes setup + runners together. This is the canonical **callback-composition-at-the-`app/`-shell** pattern for when one surface needs to render UI owned by another. `runners` is the feature boundary; `ToolModelPicker` / `renderToolPicker` are component and callback names, not a `tool-picker` feature. `help`, `sessions`, and `skills` are likewise the page alone (`src/app/overlays/{help,sessions,skills}.tsx`).
+A dissolved surface has **no `features/` folder** — the page *is* the whole surface. It may still compose a context-free feature owned by another domain: `src/app/screens/setup.tsx` renders `src/features/crew/` directly (`useCrew` + `SeatRows` + `PresetRow`) and reaches the runners picker through `crewActivate` in `src/features/crew/rows.ts`, which owns the seat→overlay map and performs the `overlayStore.open`. The cross-surface hop is a **store-mediated overlay transition**, not a render prop. `runners` is the feature boundary; `ToolModelPicker` is a component name, not a `tool-picker` feature. `help`, `sessions`, and `skills` are likewise the page alone (`src/app/overlays/{help,sessions,skills}.tsx`).
 
 Rules:
 - **`components/` subfolder** appears only when the feature has ≥2 component files.
@@ -363,7 +363,7 @@ Why:
 
 If you need shared behavior across features, it belongs in `src/components/`, `src/hooks/`, `src/utils/`, `src/core/`, or `src/stores/`. Composition between features happens at the `app/` shell (`src/app/router.tsx` dispatches the FLAT pages, `src/app/layout.tsx` wraps).
 
-When one surface needs to render UI owned by another (e.g. the `setup` page rendering the `runners` picker), the page accepts a render-prop callback (`renderToolPicker`) and `src/app/router.tsx` supplies the implementation. The canonical example is the `setup` page. Keep the feature folder named for the domain (`runners`); callback names do not create folder names.
+When one surface needs UI owned by another (e.g. the `setup` page reaching the `runners` picker), the page imports the other domain's context-free feature and coordinates the rest through stores: `src/app/screens/setup.tsx` and `src/app/overlays/crew.tsx` both render `src/features/crew/`, and each opens the picker by calling `crewActivate` from `src/features/crew/rows.ts`, which performs the `overlayStore.open` for the selected seat. Keep the feature folder named for the domain (`runners`, `crew`); component names do not create folder names.
 
 The one sanctioned cross-cutting channel between features is **stores**. Feature A can write to `workflowStore`, and feature B can read from it — that is the same engine→UI pattern already described in [`STORES.md`](./STORES.md).
 

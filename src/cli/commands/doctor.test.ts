@@ -957,6 +957,42 @@ describe('custom runner consent preflight', () => {
     expect((captured as { exitCode: number }).exitCode).toBe(1);
   });
 
+  it('blocks on a shell reviewer this machine has not trusted', async () => {
+    initGitRepo(tmp);
+    writeConfig(
+      tmp,
+      [
+        shellPlannerConfigYaml(),
+        'reviewer:',
+        '  kind: shell',
+        '  command: /bin/echo',
+        '  model: reviewer-default',
+      ].join('\n'),
+    );
+    const writes = captureStdout();
+    await expect(runDoctor(['--project', tmp, '--json'])).rejects.toThrow();
+
+    const parsed = JSON.parse(writes.join('').trim()) as {
+      report?: { checks?: DoctorJsonCheck[] };
+    };
+    const consent = parsed.report?.checks?.find((check) => check.id === 'runners.consent.reviewer');
+    expect(consent).toMatchObject({ severity: 'blocker' });
+  });
+
+  it('reports no reviewer consent check when no reviewer is configured', async () => {
+    initGitRepo(tmp);
+    writeConfig(tmp, shellPlannerConfigYaml());
+    const writes = captureStdout();
+    await expect(runDoctor(['--project', tmp, '--json'])).rejects.toThrow();
+
+    const parsed = JSON.parse(writes.join('').trim()) as {
+      report?: { checks?: DoctorJsonCheck[] };
+    };
+    expect(
+      parsed.report?.checks?.find((check) => check.id === 'runners.consent.reviewer'),
+    ).toBeUndefined();
+  });
+
   it('reports the same runner as a warning when a run would be able to prompt', async () => {
     initGitRepo(tmp);
     writeConfig(tmp, shellPlannerConfigYaml());

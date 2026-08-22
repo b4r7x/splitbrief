@@ -2,6 +2,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { SOFT_SEP } from '../../components/separators.js';
 import { useTheme, type Theme } from '../../components/theme.js';
+import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { subPanelWidth } from './panel-width.js';
@@ -67,7 +68,7 @@ export function StepIndicator({ active }: { active: 'contract' | 'command' }) {
 
 interface SubPanelProps {
   title: string;
-  role: 'planner' | 'implementer';
+  role: ActiveRunnerRole;
   stepIndicator?: ReactElement | undefined;
   hint: string;
   children: ReactNode;

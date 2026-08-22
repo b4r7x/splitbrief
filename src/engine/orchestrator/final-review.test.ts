@@ -25,6 +25,7 @@ import { hashTaskBrief } from '../brief-hash.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { loadState } from '../../core/state/persistence.js';
 import { finalReviewError, runFinalReviewPhase } from './final-review.js';
+import { getRunnerCatalogDisplayName } from '../../core/config/accessors/runner-config.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
@@ -32,7 +33,7 @@ import type { Summary } from '../../core/schemas/summary.js';
 import { ReviewPacketSchema } from '../../core/schemas/review-packet.js';
 import { readRunSnapshotLedger } from '../snapshots/run/ledger.js';
 import { createEvidenceLedger, withUpdatedTask } from '../../core/evidence/ledger-state.js';
-import { writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
+import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 
 let dirs: string[] = [];
 
@@ -78,8 +79,20 @@ const SUMMARY_BASE = {
   implementerTool: 'ollama',
 };
 
+const REVIEWER_RUNNER = {
+  kind: 'api',
+  provider: 'deepseek',
+  service: 'deepseek',
+  offering: 'payg',
+  apiBase: 'https://api.deepseek.com/v1',
+  apiKey: 'sk-reviewer',
+  model: 'deepseek-reviewer',
+} as const;
+
+const REVIEWER_IDENTITY = getRunnerCatalogDisplayName(REVIEWER_RUNNER);
+
 describe('runFinalReviewPhase', () => {
-  it('runs the planner review, writes review.md, emits workflow_complete, transitions to complete', async () => {
+  it('runs the reviewer, writes review.md, emits workflow_complete, transitions to complete', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     // A non-trivial spec so the review prompt is well-formed.
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
@@ -96,7 +109,7 @@ describe('runFinalReviewPhase', () => {
     };
     const { callbacks } = makeCallbacks({ onComplete });
     const { bus, events } = makeBusRecorder();
-    const planner = makePlanner({ review });
+    const reviewer = makePlanner({ review });
 
     const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
     const phaseTimings: Record<string, number> = {};
@@ -109,7 +122,7 @@ describe('runFinalReviewPhase', () => {
         callbacks,
         bus,
         state,
-        planner,
+        reviewer,
         metadata: TEST_METADATA,
       },
       SUMMARY_BASE,
@@ -174,7 +187,7 @@ describe('runFinalReviewPhase', () => {
     const reviewPrompts: string[] = [];
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const planner = makePlanner({
+    const reviewer = makePlanner({
       review: async (prompt: string) => {
         reviewPrompts.push(prompt);
         return { text: 'ok', usage: null };
@@ -189,7 +202,7 @@ describe('runFinalReviewPhase', () => {
         callbacks,
         bus,
         state: allTasksDoneState([task], runStartHead),
-        planner,
+        reviewer,
         metadata: TEST_METADATA,
       },
       SUMMARY_BASE,
@@ -210,7 +223,7 @@ describe('runFinalReviewPhase', () => {
 
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const planner = makePlanner({
+    const reviewer = makePlanner({
       review: async () => ({ text: 'ok', usage: { inputTokens: 200, outputTokens: 40 } }),
     });
 
@@ -222,7 +235,7 @@ describe('runFinalReviewPhase', () => {
         callbacks,
         bus,
         state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
-        planner,
+        reviewer,
         metadata: TEST_METADATA,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       },
@@ -230,12 +243,12 @@ describe('runFinalReviewPhase', () => {
       [],
     );
 
-    expect(state.tokenUsage.plannerInput).toBe(200);
-    expect(state.tokenUsage.plannerOutput).toBe(40);
+    expect(state.tokenUsage.reviewerInput).toBe(200);
+    expect(state.tokenUsage.reviewerOutput).toBe(40);
     const persisted = loadState({ projectDir, sessionId });
     expect(persisted?.phase).toBe('complete');
-    expect(persisted?.tokenUsage.plannerInput).toBe(200);
-    expect(persisted?.tokenUsage.plannerOutput).toBe(40);
+    expect(persisted?.tokenUsage.reviewerInput).toBe(200);
+    expect(persisted?.tokenUsage.reviewerOutput).toBe(40);
   });
 
   it('reviews the task brief packet, falling back to current state tasks when tasks.md is missing', async () => {
@@ -255,7 +268,7 @@ describe('runFinalReviewPhase', () => {
     const reviewPrompts: string[] = [];
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const planner = makePlanner({
+    const reviewer = makePlanner({
       review: async (prompt: string) => {
         reviewPrompts.push(prompt);
         return { text: 'ok', usage: null };
@@ -276,7 +289,7 @@ describe('runFinalReviewPhase', () => {
         callbacks,
         bus,
         state: allTasksDoneState([task], runStartHead),
-        planner,
+        reviewer,
         metadata: TEST_METADATA,
       },
       SUMMARY_BASE,
@@ -308,7 +321,7 @@ describe('runFinalReviewPhase', () => {
         callbacks,
         bus,
         state: allTasksDoneState([task], fallbackRunStartHead),
-        planner,
+        reviewer,
         metadata: TEST_METADATA,
       },
       SUMMARY_BASE,
@@ -318,12 +331,12 @@ describe('runFinalReviewPhase', () => {
     expect(reviewPrompts[0]).toContain('State fallback marker: rotate audit log checksum.');
   });
 
-  it('does not complete the workflow when the planner review throws', async () => {
+  it('does not complete the workflow when the reviewer throws', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
 
     const review = async () => {
-      throw new Error('planner crashed');
+      throw new Error('reviewer crashed');
     };
     const completions: Summary[] = [];
     const onComplete = (s: Summary) => {
@@ -331,7 +344,7 @@ describe('runFinalReviewPhase', () => {
     };
     const { callbacks } = makeCallbacks({ onComplete });
     const { bus, events } = makeBusRecorder();
-    const planner = makePlanner({ review });
+    const reviewer = makePlanner({ review });
 
     const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
     const phaseTimings: Record<string, number> = {};
@@ -344,7 +357,7 @@ describe('runFinalReviewPhase', () => {
         callbacks,
         bus,
         state,
-        planner,
+        reviewer,
         metadata: TEST_METADATA,
       },
       SUMMARY_BASE,
@@ -372,6 +385,82 @@ describe('runFinalReviewPhase', () => {
     expect(packet.finalReview.status).toBe('failed');
   });
 
+  it('reports a failing reviewer without falling back to the planner', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
+    const task = makeTask({ id: 'T001', status: 'done' });
+    writeEvidenceLedger(
+      { projectDir, sessionId },
+      createEvidenceLedger({ sessionId, feature: 'feat', tasks: [task] }),
+    );
+
+    const reviewer = makePlanner({
+      review: vi.fn(async () => {
+        throw new Error('reviewer unreachable');
+      }),
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    const { summary } = await runFinalReviewPhase(
+      {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks,
+        bus,
+        state: allTasksDoneState([task], runStartHead),
+        reviewer,
+        metadata: TEST_METADATA,
+      },
+      SUMMARY_BASE,
+      [],
+    );
+
+    expect(reviewer.review).toHaveBeenCalledTimes(1);
+    expect(summary.reviewPacket?.finalReviewStatus).toBe('failed');
+    expect(readEvidenceLedger({ projectDir, sessionId })?.finalReview?.status).toBe('failed');
+    expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+    const failure = events.find((event) => event.type === 'error');
+    expect(failure?.message).not.toContain(REVIEWER_IDENTITY);
+  });
+
+  it('names the configured reviewer seat in the failure it publishes', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
+    const task = makeTask({ id: 'T001', status: 'done' });
+    writeEvidenceLedger(
+      { projectDir, sessionId },
+      createEvidenceLedger({ sessionId, feature: 'feat', tasks: [task] }),
+    );
+
+    const reviewer = makePlanner({
+      review: async () => {
+        throw new Error('reviewer unreachable');
+      },
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    await runFinalReviewPhase(
+      {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ reviewer: REVIEWER_RUNNER }),
+        callbacks,
+        bus,
+        state: allTasksDoneState([task], runStartHead),
+        reviewer,
+        metadata: TEST_METADATA,
+      },
+      SUMMARY_BASE,
+      [],
+    );
+
+    const failure = events.find((event) => event.type === 'error');
+    expect(failure?.message).toContain(REVIEWER_IDENTITY);
+  });
+
   it('does not emit workflow completion when final review is aborted', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
@@ -384,7 +473,7 @@ describe('runFinalReviewPhase', () => {
       },
     });
     const { bus, events } = makeBusRecorder();
-    const planner = makePlanner({
+    const reviewer = makePlanner({
       review: async () => {
         controller.abort(new DOMException('The user aborted a request.', 'AbortError'));
         throw new DOMException('The user aborted a request.', 'AbortError');
@@ -400,7 +489,7 @@ describe('runFinalReviewPhase', () => {
         callbacks,
         bus,
         state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
-        planner,
+        reviewer,
         metadata: TEST_METADATA,
         signal: controller.signal,
       },
@@ -422,13 +511,13 @@ describe('runFinalReviewPhase', () => {
 
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const planner = makePlanner({
+    const reviewer = makePlanner({
       review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }),
     });
     const state = allTasksDoneState([], runStartHead);
 
     const { summary: result } = await runFinalReviewPhase(
-      { projectDir, sessionId, config: makeNoValidationConfig(), callbacks, bus, state, planner },
+      { projectDir, sessionId, config: makeNoValidationConfig(), callbacks, bus, state, reviewer },
       SUMMARY_BASE,
       [],
     );
@@ -442,7 +531,9 @@ describe('runFinalReviewPhase', () => {
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const planner = makePlanner({ review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }) });
+    const reviewer = makePlanner({
+      review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }),
+    });
     const tasks = [makeTask({ id: 'T001', file: 'src/hello.ts', status: 'done' })];
 
     // The completed task's target file is present in the working tree, so the
@@ -458,7 +549,7 @@ describe('runFinalReviewPhase', () => {
         callbacks,
         bus,
         state: allTasksDoneState(tasks, runStartHead),
-        planner,
+        reviewer,
       },
       SUMMARY_BASE,
       [],
@@ -497,7 +588,7 @@ describe('runFinalReviewPhase', () => {
         callbacks,
         bus,
         state,
-        planner: makePlanner({ review }),
+        reviewer: makePlanner({ review }),
       },
       SUMMARY_BASE,
       [],
@@ -547,7 +638,9 @@ describe('runFinalReviewPhase', () => {
     };
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const planner = makePlanner({ review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }) });
+    const reviewer = makePlanner({
+      review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }),
+    });
 
     await runFinalReviewPhase(
       {
@@ -557,7 +650,7 @@ describe('runFinalReviewPhase', () => {
         callbacks,
         bus,
         state,
-        planner,
+        reviewer,
       },
       SUMMARY_BASE,
       [],
@@ -586,7 +679,7 @@ describe('runFinalReviewPhase', () => {
     const reviewPrompts: string[] = [];
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const planner = makePlanner({
+    const reviewer = makePlanner({
       review: async (prompt: string) => {
         reviewPrompts.push(prompt);
         return { text: 'ok', usage: null };
@@ -602,7 +695,7 @@ describe('runFinalReviewPhase', () => {
         callbacks,
         bus,
         state: allTasksDoneState(tasks, runStartHead),
-        planner,
+        reviewer,
         metadata: TEST_METADATA,
       },
       SUMMARY_BASE,
@@ -632,7 +725,7 @@ describe('runFinalReviewPhase', () => {
     const reviewPrompts: string[] = [];
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const planner = makePlanner({
+    const reviewer = makePlanner({
       review: async (prompt: string) => {
         reviewPrompts.push(prompt);
         return { text: 'ok', usage: null };
@@ -648,7 +741,7 @@ describe('runFinalReviewPhase', () => {
         callbacks,
         bus,
         state: allTasksDoneState(tasks, runStartHead),
-        planner,
+        reviewer,
         metadata: TEST_METADATA,
       },
       SUMMARY_BASE,
@@ -698,7 +791,7 @@ describe('runFinalReviewPhase', () => {
     const reviewPrompts: string[] = [];
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const planner = makePlanner({
+    const reviewer = makePlanner({
       review: async (prompt: string) => {
         reviewPrompts.push(prompt);
         return { text: 'ok', usage: null };
@@ -722,7 +815,7 @@ describe('runFinalReviewPhase', () => {
         callbacks,
         bus,
         state,
-        planner,
+        reviewer,
       },
       SUMMARY_BASE,
       [],
@@ -751,7 +844,7 @@ describe('runFinalReviewPhase', () => {
     const reviewPrompts: string[] = [];
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const planner = makePlanner({
+    const reviewer = makePlanner({
       review: async (prompt: string) => {
         reviewPrompts.push(prompt);
         return { text: 'ok', usage: null };
@@ -774,7 +867,7 @@ describe('runFinalReviewPhase', () => {
             runStartChangedFiles: [],
           },
         },
-        planner,
+        reviewer,
       },
       SUMMARY_BASE,
       [],
@@ -787,7 +880,7 @@ describe('runFinalReviewPhase', () => {
     expect(drift.changedFiles).toContain('src/from-unborn.ts');
   });
 
-  it('keeps the complete diff for drift while bounding the planner prompt at 100,000 characters', async () => {
+  it('keeps the complete diff for drift while bounding the review prompt at 100,000 characters', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
     mkdirSync(join(projectDir, 'src'), { recursive: true });
@@ -800,7 +893,7 @@ describe('runFinalReviewPhase', () => {
     const reviewPrompts: string[] = [];
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const planner = makePlanner({
+    const reviewer = makePlanner({
       review: async (prompt: string) => {
         reviewPrompts.push(prompt);
         return { text: 'ok', usage: null };
@@ -821,7 +914,7 @@ describe('runFinalReviewPhase', () => {
         callbacks,
         bus,
         state: allTasksDoneState([task], runStartHead),
-        planner,
+        reviewer,
       },
       SUMMARY_BASE,
       [],
@@ -848,7 +941,9 @@ describe('runFinalReviewPhase', () => {
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
-    const planner = makePlanner({ review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }) });
+    const reviewer = makePlanner({
+      review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }),
+    });
 
     await runFinalReviewPhase(
       {
@@ -858,7 +953,7 @@ describe('runFinalReviewPhase', () => {
         callbacks,
         bus,
         state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
-        planner,
+        reviewer,
       },
       SUMMARY_BASE,
       [],

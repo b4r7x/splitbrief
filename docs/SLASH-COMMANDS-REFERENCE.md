@@ -39,7 +39,7 @@ Commands that stay available either affect local UI only (`/scroll`, `/copy`, `/
 | `/queue clear` | `queue_clear` | `useIpcClient.clearQueue` → `workflow-bridge.onQueueClear` (routed in `src/app/screens/workflow.tsx` before dispatch) |
 | Approval / question prompts | `prompt_response` | `useIpcClient` prompt handler → `workflow-loop/prompts.ts` (`makeCallbacks`) |
 
-Commands outside that allow-list are unavailable while attached. In particular, config-mutating commands such as `/settings`, `/mode`, `/effort`, `/planner`, and `/implementer` are hidden so the attached client cannot claim a detached server setting changed when only local config would have changed.
+Commands outside that allow-list are unavailable while attached. In particular, config-mutating commands such as `/settings`, `/mode`, `/effort`, `/planner`, `/implementer`, `/reviewer`, and `/crew` are hidden so the attached client cannot claim a detached server setting changed when only local config would have changed.
 
 The slash commands — enumerated by [`src/core/runtime/commands/registry.ts`](https://github.com/b4r7x/splitbrief/blob/main/src/core/runtime/commands/registry.ts), the single source of truth — cover overlays, workflow mode/tool selection, clipboard copy, rewind/redo, scroll, activity, and sidebar controls, queue and artifact actions, session export, transcript compaction, attachments, approvals, run accept/reject, and quitting. They are grouped below by purpose.
 
@@ -214,6 +214,26 @@ Commands that open an overlay for interactive selection. None of these mutate st
 - **Behavior**: Opens the `implementer-picker` overlay. Same selection mechanics as the planner picker.
 - **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; opens overlay via `overlayStore.open`.
 - **See also**: `/planner`, `/refresh`, `/settings`.
+
+### `/reviewer`
+
+- **Purpose**: Open the reviewer picker to choose or reconfigure the runner that performs the final review of the run diff.
+- **Screens**: all.
+- **Args**: none.
+- **Example**: `/reviewer`
+- **Behavior**: Opens the `reviewer-picker` overlay — the same two-column tool/model picker as `/planner`, parameterised by role. Confirming writes the `reviewer` block in project config; the review seat only leaves the planner once you confirm a choice here (or set `reviewer:` in `.splitbrief/config.yaml`).
+- **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; opens overlay via `overlayStore.open`.
+- **See also**: `/crew`, `/planner`, `/implementer`, `/settings`.
+
+### `/crew`
+
+- **Purpose**: Open the Crew overlay — every seat of the run on one surface, in workflow order.
+- **Screens**: all.
+- **Args**: none.
+- **Example**: `/crew`
+- **Behavior**: Opens the `crew` overlay. It lists `PLAN`, `BUILD`, and `REVIEW`, each with the tool's display name, the resolved model, and a billing-posture tag (`local`, `subscription`, `metered`, `provider`); a value that cannot be resolved is left out rather than guessed. An indented `escalate` branch hangs under `BUILD` when the escalation tier is on (`escalation.enabled` is not `false`) and `escalation.intermediateProvider` and `intermediateModel` are both set. With no `reviewer` configured, `REVIEW` reads `= same as planner`. When the labs behind `BUILD` and `REVIEW` are both known, a line under `REVIEW` says whether the diff is read from another lab. `↑↓` moves, `⏎` on a seat opens that seat's picker and returns here with the seat updated, `esc` closes without change. Above the seats, ready-made crews are offered when every tool a crew needs is installed and authenticated; `⏎` on one writes all three seats in a single config save.
+- **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; page at `src/app/overlays/crew.tsx`, feature at `src/features/crew/`, seat and preset models at `src/core/crew/`.
+- **See also**: `/planner`, `/implementer`, `/reviewer`, `/settings`.
 
 ### `/skills`
 
@@ -579,6 +599,7 @@ Alphabetical, for fast lookup:
 - [`/compact-transcript`](#compact-transcript) — summarize older persisted transcript turns.
 - [`/config`](#settings-alias-config) — alias for `/settings`.
 - [`/copy`](#copy-messagebriefpathcommandcost) — copy a reviewed value to the system clipboard.
+- [`/crew`](#crew) — open the Crew overlay and change any seat.
 - [`/detach`](#detach-indexid) — remove a pending image attachment.
 - [`/effort`](#effort-lowmediumhighxhigh) — set planner reasoning effort.
 - [`/export`](#export) — export the session as an HTML report.
@@ -598,6 +619,7 @@ Alphabetical, for fast lookup:
 - [`/repomap`](#repomap-rebuild) — manage the repo-map cache.
 - [`/revise-plan`](#revise-plan-comment) — rewind to the plan phase.
 - [`/revise-spec`](#revise-spec-comment) — rewind to the spec phase.
+- [`/reviewer`](#reviewer) — open the reviewer picker.
 - [`/sessions`](#sessions) — browse past sessions.
 - [`/settings`](#settings-alias-config) — open the settings overlay.
 - [`/scroll`](#scroll-topbottompage-uppage-down) — move the workflow conversation by command.

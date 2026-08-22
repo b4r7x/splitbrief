@@ -49,8 +49,19 @@ export function CostDrilldownOverlay() {
         pricingContext.implementerModel,
       )
     : null;
+  const reviewerHasOwnSeat = pricingContext?.reviewerTool !== undefined;
+  const reviewerPricing =
+    pricingContext?.reviewerTool !== undefined
+      ? resolvePricing(pricingContext.reviewerTool, modelCacheStore, pricingContext.reviewerModel)
+      : null;
   const phaseRows = buildPhaseRows(perPhase, (row) =>
-    calculatePhaseRowCost(row, plannerPricing, implementerPricing),
+    calculatePhaseRowCost({
+      row,
+      plannerPricing,
+      implementerPricing,
+      reviewerPricing,
+      reviewerHasOwnSeat,
+    }),
   );
   const taskRows = buildTaskRows(perTask);
   const panelWidth = getResponsivePanelWidth({ cols, size: isSmall ? 'small' : 'large' });
@@ -61,19 +72,30 @@ export function CostDrilldownOverlay() {
         <SectionHeader label="By phase" width={panelWidth} />
         {phaseRows.map((row) => {
           const split = hasRoleSplit(row);
-          const plannerActive = roleHasTokens(row, 'planner');
-          const implementerActive = roleHasTokens(row, 'implementer');
+          const plannerActive = roleHasTokens({ row, role: 'planner', reviewerHasOwnSeat });
+          const implementerActive = roleHasTokens({ row, role: 'implementer', reviewerHasOwnSeat });
           const cacheText = formatCacheHitPct(row.cacheReadTokens, row.inputTokens);
-          const plannerPriced = plannerActive && (plannerPricing?.isPriced ?? false);
-          const implementerPriced = implementerActive && (implementerPricing?.isPriced ?? false);
+          const reviewerActive = roleHasTokens({ row, role: 'reviewer', reviewerHasOwnSeat });
+          const seats = [
+            {
+              priced: plannerActive && (plannerPricing?.isPriced ?? false),
+              mode: plannerPricing?.pricingMode ?? null,
+            },
+            {
+              priced: implementerActive && (implementerPricing?.isPriced ?? false),
+              mode: implementerPricing?.pricingMode ?? null,
+            },
+            ...(reviewerHasOwnSeat && reviewerActive
+              ? [
+                  {
+                    priced: reviewerPricing?.isPriced ?? false,
+                    mode: reviewerPricing?.pricingMode ?? null,
+                  },
+                ]
+              : []),
+          ];
           const costLabel = split
-            ? formatSplitPhaseCost({
-                cost: row.cost,
-                plannerPriced,
-                implementerPriced,
-                plannerMode: plannerPricing?.pricingMode ?? null,
-                implementerMode: implementerPricing?.pricingMode ?? null,
-              })
+            ? formatSplitPhaseCost({ cost: row.cost, seats })
             : formatPhaseCost({
                 cost: row.cost,
                 isPhasePriced:

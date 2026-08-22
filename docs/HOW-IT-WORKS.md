@@ -89,6 +89,8 @@ The callbacks are how the engine asks for human decisions without importing Reac
 
 **Creates the implementer** via `createImplementer()` using the same factory pattern.
 
+**Resolves the reviewer.** `resolveReviewerRunner()` (`src/core/config/accessors/reviewer-runner.ts`) decides who holds the review seat. With no `reviewer` block the planner instance is reused as the reviewer and nothing else happens. With one, `createReviewer()` builds a separate runner from the same factory and the same lazy planner backends (`src/engine/orchestrator/run/init.ts`). A configured reviewer is a candidate in `prepareExecution()` under slot `{ role: 'reviewer' }` and goes through the same fresh admission as the other seats — one that fails admission blocks the run start with a readiness blocker naming the Reviewer.
+
 **Handles resume** — if `savedState` exists and there's no pending recovery, it auto-compacts the JSONL log and rebuilds context for stateless backends (those that don't support session persistence natively).
 
 **Publishes `workflow_started`** (or `workflow_resumed` for a resume) and saves the initial state to disk.
@@ -236,13 +238,17 @@ Every workflow run produces files on disk under `.splitbrief/sessions/<id>/`:
 
 When all tasks complete, `runTasksAndReview()` calls `runFinalReviewPhase()` (`src/engine/orchestrator/final-review.ts`).
 
-The function transitions state to `ALL_DONE`, optionally takes a pre-final-review snapshot, then asks the planner to review the full git diff against the spec. It computes brief drift — comparing what each task brief asked for against what actually changed — and includes that analysis in the review prompt. The planner's response is written to `review.md` in the session folder.
+The function transitions state to `ALL_DONE`, optionally takes a pre-final-review snapshot, then asks the reviewer to read the full git diff against the spec. It computes brief drift — comparing what each task brief asked for against what actually changed — and includes that analysis in the review prompt. The call goes out through `runReviewerCall()` (`src/engine/orchestrator/review-call.ts`), which attributes the usage to the `reviewer` category and writes the response to `review.md` in the session folder.
+
+This is the only call the reviewer makes. Planning, Task Brief compilation, `regenerate`, hint and full escalation, the planner estimate review, summarization, `injectUserTurn` and brief recovery all stay on the planner, whatever the `reviewer` block says. With no `reviewer` configured, the seat is the planner's own runner and the phase behaves exactly as it did before the seat became assignable.
+
+When the reviewer call fails, the review is reported as failed (`reviewStatus: 'failed'`) with the reviewer's display name in the error, the final-review evidence is still recorded, and the summary is still built. SPLITBRIEF never falls back to the planner behind your back.
 
 Evidence recording happens throughout: the evidence ledger tracks approvals, rejections, validation outcomes, and the final review status. After the review, a review packet is written — a structured summary of all evidence for the session, carrying the parsed review verdict, criteria counts and finding counts in its final-review section.
 
 The function transitions to `REVIEW_DONE`, publishes `workflow_complete`, builds the final summary, and calls `callbacks.onComplete(summary)`. Back in `runWorkflow()`, `saveFinalSession()` writes `summary.json`, updates cumulative project stats, and clears `.splitbrief/active`.
 
-In the TUI, `onComplete` causes the router to navigate to the summary screen, where the user sees cost breakdown, task outcomes, and the planner's review.
+In the TUI, `onComplete` causes the router to navigate to the summary screen, where the user sees cost breakdown, task outcomes, and the review. A configured reviewer gets its own priced line in the cost breakdown and its tool and model are recorded in the run summary; with no reviewer configured, review tokens are priced at the planner's rates and folded into the planner line, as before.
 
 ---
 

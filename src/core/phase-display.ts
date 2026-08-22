@@ -1,3 +1,4 @@
+import type { ActiveRunnerRole } from './runners/cli-tool-catalog.js';
 import { capitalize } from '../utils/capitalize.js';
 
 export function formatStageLabel(stage: string): string {
@@ -7,6 +8,6 @@ export function formatStageLabel(stage: string): string {
     .join(' ');
 }
 
-export function formatRoleLabel(role: 'planner' | 'implementer' | 'validator'): string {
+export function formatRoleLabel(role: ActiveRunnerRole | 'validator'): string {
   return capitalize(role);
 }

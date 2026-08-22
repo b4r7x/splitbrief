@@ -5,11 +5,16 @@ import type {
   ProviderDetection,
 } from '../../core/discovery/detection.js';
 import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
-import type { ActiveRunnerRole } from '../../core/config/accessors/active-runner.js';
+
 import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
 import { PROVIDER_IDS, type ProviderId } from '../../core/schemas/enums.js';
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
-import { CLI_TOOL_IDS, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import {
+  CLI_TOOL_IDS,
+  runnerRoleForActiveRole,
+  type CliToolId,
+  type ActiveRunnerRole,
+} from '../../core/runners/cli-tool-catalog.js';
 import type {
   DetectionLanePublication,
   DetectionRefreshOutcomes,
@@ -1322,7 +1327,13 @@ export const modelCacheStore = {
   }): ConfiguredProviderRuntime | null | undefined {
     const current = store.get();
     if (Object.keys(current.configuredProviders).length === 0) return undefined;
-    const match = current.configuredProviders[configuredProviderRoleKey(input)];
+    const match =
+      current.configuredProviders[
+        configuredProviderRoleKey({
+          role: runnerRoleForActiveRole(input.role),
+          provider: input.provider,
+        })
+      ];
     // Mirrors the CLI axis: a demoted row still answers, but until a live
     // readiness lane runs under this context absence stays unknown rather than
     // authoritative, so a role the new context has not probed keeps its
@@ -1338,7 +1349,10 @@ export const modelCacheStore = {
     const current = store.get();
     const match = findScopedCliCatalogRuntimeAtStoreBoundary(
       cliCatalogValues(current.cliCatalogs),
-      input,
+      {
+        role: runnerRoleForActiveRole(input.role),
+        tool: input.tool,
+      },
     );
     // Before a live catalog lane completes, a remembered row still answers but
     // absence stays "unknown", never authoritative.

@@ -6,7 +6,7 @@ import type {
 import type { Planner } from '../planners/types.js';
 import type { EventBus } from '../events/types.js';
 import { writeSpecFile, type SpecMetadata } from '../../core/paths-io.js';
-import { SPEC_FILE, PLAN_FILE, type REVIEW_FILE } from '../../core/paths.js';
+import { SPEC_FILE, PLAN_FILE } from '../../core/paths.js';
 import { createBusTextHandler, publishRunnerCallEvent } from './events.js';
 import { writeAndPublishArtifact } from './artifact-write.js';
 import { addUsageAndSave } from './state-ops.js';
@@ -17,7 +17,7 @@ import {
 
 // Reviewed planning documents reach the transcript as an artifact card once written, never as a
 // body paste. Task Brief candidates never stream either: they return as non-canonical text for
-// validation and owner settlement. review.md has no gate and no review column, so it still streams.
+// validation and owner settlement.
 const CARDED_ARTIFACTS: ReadonlySet<string> = new Set([SPEC_FILE, PLAN_FILE]);
 
 export type RunPlannerReviewOptions = {
@@ -28,7 +28,7 @@ export type RunPlannerReviewOptions = {
   bus: EventBus;
   state: WorkflowState;
   metadata?: SpecMetadata | null | undefined;
-  writeTo?: typeof SPEC_FILE | typeof PLAN_FILE | typeof REVIEW_FILE;
+  writeTo?: typeof SPEC_FILE | typeof PLAN_FILE;
   /** Return the review text as a non-canonical candidate instead of writing any file. */
   returnCandidate?: boolean | undefined;
   signal?: AbortSignal | undefined;

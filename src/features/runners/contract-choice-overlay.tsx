@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { SOFT_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
+import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
 import { glyph } from '../../lib/glyphs.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { ContractChip, StepIndicator, SubPanel, contractTierOf, tierColor } from './sub-panel.js';
+import { overlayAllowsPickerKeys } from '../../core/navigation/types.js';
 
 export type CustomCommandContract = 'shell' | 'agent';
 
@@ -86,7 +88,7 @@ function ContractCardView({
 }
 
 interface ContractChoiceOverlayProps {
-  role: 'planner' | 'implementer';
+  role: ActiveRunnerRole;
   initialKind?: CustomCommandContract | undefined;
   configuredKind?: CustomCommandContract | undefined;
   onChoose: (kind: CustomCommandContract) => void;
@@ -104,10 +106,7 @@ export function ContractChoiceOverlay({
       CONTRACT_CARDS.findIndex((card) => card.kind === initialKind),
     ),
   );
-  const focus = overlayStore.use(
-    (s) =>
-      s.active === 'none' || s.active === 'planner-picker' || s.active === 'implementer-picker',
-  );
+  const focus = overlayStore.use((s) => overlayAllowsPickerKeys(s.active));
 
   useEffect(() => {
     overlayStore.setExclusive(true);

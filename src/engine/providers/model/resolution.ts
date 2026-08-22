@@ -1,5 +1,5 @@
 import type { CredentialDomainIdentity } from '../../../core/config/accessors/runner-config.js';
-import type { ActiveRunnerRole } from '../../../core/config/accessors/active-runner.js';
+
 import { isSameCredentialDomain } from '../../../core/config/accessors/runner-config.js';
 import type { DetectedModel } from '../../../core/discovery/detection.js';
 import { AUTOMATIC_MODEL } from '../../../core/providers/automatic-model.js';
@@ -11,7 +11,11 @@ import type { KnownModel } from '../../../core/providers/known-models.js';
 import { KNOWN_MODELS } from '../../../core/providers/known-models.js';
 import type { ProviderId } from '../../../core/schemas/enums.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
-import { CLI_TOOL_IDS, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import {
+  CLI_TOOL_IDS,
+  type CliToolId,
+  type ActiveRunnerRole,
+} from '../../../core/runners/cli-tool-catalog.js';
 import type { ConfiguredProviderRuntime } from '../../detection/provider-outcomes.js';
 import type { ScopedCliCatalogRuntime } from '../../detection/cli-catalog-outcomes.js';
 import { getModelsForProvider } from '../models-dev.js';

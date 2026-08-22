@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderSessionHtml } from './html-renderer.js';
 import type { ExportData } from './types.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 function makeExportData(overrides: Partial<ExportData> = {}): ExportData {
   return {
@@ -16,14 +17,12 @@ function makeExportData(overrides: Partial<ExportData> = {}): ExportData {
       skipped: 0,
       failed: 0,
       totalTime: 120_000,
-      tokenUsage: {
+      tokenUsage: makeUsage({
         plannerInput: 50_000,
         plannerOutput: 10_000,
         implementerInput: 20_000,
         implementerOutput: 5_000,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      }),
       estimatedCostSavings: '$1.03',
       escalationRate: 0.2,
       costBreakdown: {

@@ -45,6 +45,34 @@ describe('buildSummary', () => {
     expect(summary.failed).toBe(0);
   });
 
+  it('run without a reviewer omits reviewer identity', () => {
+    const summary = buildSummary({
+      feature: 'auth',
+      state: makeState(),
+      startTime: Date.now() - 5000,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    });
+
+    expect(summary).not.toHaveProperty('reviewerTool');
+    expect(summary).not.toHaveProperty('reviewerModel');
+  });
+
+  it('records the reviewer tool and model of the seat the run was pinned to', () => {
+    const summary = buildSummary({
+      feature: 'auth',
+      state: makeState(),
+      startTime: Date.now() - 5000,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+      reviewerTool: 'deepseek',
+      reviewerModel: 'deepseek-v4-flash',
+    });
+
+    expect(summary.reviewerTool).toBe('deepseek');
+    expect(summary.reviewerModel).toBe('deepseek-v4-flash');
+  });
+
   it('mix of local/escalated/skipped/failed → correct counts', () => {
     const state = makeState({
       tasks: [

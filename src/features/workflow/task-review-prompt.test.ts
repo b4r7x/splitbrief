@@ -10,6 +10,7 @@ import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { PromptBody } from './components/prompt-body.js';
 import { formatTaskReviewPrompt, parseTaskReviewAnswer } from './task-review-prompt.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 async function renderPromptBody(prompt: string): Promise<string> {
   const ui = renderFeature(createElement(PromptBody, { prompt, height: 40, width: 120 }));
@@ -36,14 +37,7 @@ const request: TaskReviewRequest = {
     observed: ['task reached done'],
   },
   cost: {
-    tokenUsage: {
-      plannerInput: 0,
-      plannerOutput: 0,
-      implementerInput: 10,
-      implementerOutput: 5,
-      escalationInput: 0,
-      escalationOutput: 0,
-    },
+    tokenUsage: makeUsage({ implementerInput: 10, implementerOutput: 5 }),
     taskTokens: {
       taskId: taskId('T001'),
       taskTitle: 'Add auth',

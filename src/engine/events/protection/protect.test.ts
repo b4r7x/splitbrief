@@ -6,6 +6,7 @@ import { protectEngineEventForConsumer } from './protect.js';
 import type { EngineEvent } from '../types.js';
 import { parseEngineEvent } from '../schema.js';
 import { projectEngineEventForTranscriptPolicy } from './transcript.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 describe('protectEngineEventForConsumer', () => {
   it('drops transcript-only runner payload events when transcript persistence is disabled', () => {
@@ -594,14 +595,12 @@ describe('protectEngineEventForConsumer', () => {
         observed: [`observed ${sentinel}`],
       },
       cost: {
-        tokenUsage: {
+        tokenUsage: makeUsage({
           plannerInput: 1,
           plannerOutput: 2,
           implementerInput: 3,
           implementerOutput: 4,
-          escalationInput: 0,
-          escalationOutput: 0,
-        },
+        }),
         taskTokens: {
           taskId: taskId('T002'),
           taskTitle: `tokens ${sentinel}`,

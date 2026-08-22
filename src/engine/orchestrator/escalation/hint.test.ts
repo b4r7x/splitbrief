@@ -90,6 +90,7 @@ async function makeCtx(
     callbacks: opts.callbacks,
     bus,
     planner: makePlanner({ escalateHint }),
+    reviewer: makePlanner({ escalateHint }),
     context: defaultContext,
     implementer: makeImplementer({
       retry: vi.fn().mockImplementation(async ({ projectDir: runDir }: { projectDir: string }) => {

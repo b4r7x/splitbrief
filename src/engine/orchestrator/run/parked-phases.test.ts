@@ -52,6 +52,7 @@ function makeWctx(opts: {
   planner?: ReturnType<typeof makePlanner>;
   workflow?: Record<string, unknown>;
 }): WorkflowContext {
+  const planner = opts.planner ?? makePlanner();
   return {
     projectDir: opts.projectDir,
     sessionId: opts.sessionId,
@@ -62,7 +63,8 @@ function makeWctx(opts: {
     config: makeNoValidationConfig({ workflow: opts.workflow ?? {} }),
     callbacks: opts.callbacks ?? makeCallbacks().callbacks,
     bus: opts.bus,
-    planner: opts.planner ?? makePlanner(),
+    planner,
+    reviewer: planner,
     context: defaultContext,
     implementer: makeImplementer(),
     metadata: TEST_METADATA,

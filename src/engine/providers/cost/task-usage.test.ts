@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { calculateTaskUsageCost, isTaskUsageCostKnown } from './task-usage.js';
 import { taskId } from '../../../core/schemas/task.js';
+import { ZERO_TOKEN_USAGE } from '../../../core/schemas/tokens.js';
 
 describe('calculateTaskUsageCost', () => {
   it('returns 0 for local implementer with no escalation', () => {
@@ -13,6 +14,7 @@ describe('calculateTaskUsageCost', () => {
       retryCount: 0,
     };
     const globalUsage = {
+      ...ZERO_TOKEN_USAGE,
       implementerInput: 500,
       implementerOutput: 500,
       escalationInput: 0,
@@ -37,6 +39,7 @@ describe('calculateTaskUsageCost', () => {
       retryCount: 0,
     };
     const globalUsage = {
+      ...ZERO_TOKEN_USAGE,
       implementerInput: 200_000,
       implementerOutput: 100_000,
       escalationInput: 0,
@@ -62,6 +65,7 @@ describe('calculateTaskUsageCost', () => {
       retryCount: 2,
     };
     const globalUsage = {
+      ...ZERO_TOKEN_USAGE,
       implementerInput: 500,
       implementerOutput: 500,
       escalationInput: 100_000,
@@ -88,6 +92,7 @@ describe('calculateTaskUsageCost', () => {
       retryCount: 0,
     };
     const globalUsage = {
+      ...ZERO_TOKEN_USAGE,
       implementerInput: 0,
       implementerOutput: 0,
       escalationInput: 100_000,
@@ -119,6 +124,7 @@ describe('calculateTaskUsageCost', () => {
       retryCount: 0,
     };
     const globalUsage = {
+      ...ZERO_TOKEN_USAGE,
       implementerInput: 0,
       implementerOutput: 0,
       escalationInput: 100_000,
@@ -149,6 +155,7 @@ describe('calculateTaskUsageCost', () => {
       retryCount: 1,
     };
     const globalUsage = {
+      ...ZERO_TOKEN_USAGE,
       implementerInput: 0,
       implementerOutput: 0,
       escalationInput: 100_000,
@@ -176,6 +183,7 @@ describe('calculateTaskUsageCost', () => {
 
   it('attributes uneven exact cache fields per task: exact-0 and exact-1M against a shared 1M global', () => {
     const globalUsage = {
+      ...ZERO_TOKEN_USAGE,
       implementerInput: 600_000,
       implementerOutput: 400_000,
       escalationInput: 0,
@@ -234,6 +242,7 @@ describe('calculateTaskUsageCost', () => {
       retryCount: 0,
     };
     const globalUsage = {
+      ...ZERO_TOKEN_USAGE,
       implementerInput: 0,
       implementerOutput: 0,
       escalationInput: 0,
@@ -250,6 +259,7 @@ describe('calculateTaskUsageCost', () => {
 
   it('allocates cost uniformly across tasks regardless of individual token usage', () => {
     const globalUsage = {
+      ...ZERO_TOKEN_USAGE,
       implementerInput: 600_000,
       implementerOutput: 400_000,
       escalationInput: 0,
@@ -303,6 +313,7 @@ describe('isTaskUsageCostKnown — cache alignment with calculateTaskUsageCost',
       retryCount: 0,
     };
     const globalUsage = {
+      ...ZERO_TOKEN_USAGE,
       implementerInput: 600_000,
       implementerOutput: 400_000,
       escalationInput: 0,
@@ -337,6 +348,7 @@ describe('isTaskUsageCostKnown — cache alignment with calculateTaskUsageCost',
       retryCount: 0,
     };
     const globalUsage = {
+      ...ZERO_TOKEN_USAGE,
       implementerInput: 600_000,
       implementerOutput: 400_000,
       escalationInput: 0,
@@ -365,6 +377,7 @@ describe('isTaskUsageCostKnown — cache alignment with calculateTaskUsageCost',
       retryCount: 0,
     };
     const globalUsage = {
+      ...ZERO_TOKEN_USAGE,
       implementerInput: 0,
       implementerOutput: 0,
       escalationInput: 100_000,
@@ -395,6 +408,7 @@ describe('isTaskUsageCostKnown — cache alignment with calculateTaskUsageCost',
       retryCount: 0,
     };
     const globalUsage = {
+      ...ZERO_TOKEN_USAGE,
       implementerInput: 0,
       implementerOutput: 0,
       escalationInput: 100_000,
@@ -411,5 +425,72 @@ describe('isTaskUsageCostKnown — cache alignment with calculateTaskUsageCost',
         plannerModel: 'claude-sonnet-4-6',
       }),
     ).toBe(true);
+  });
+});
+
+describe('reviewer cache fold', () => {
+  const escalatedTask = {
+    taskId: taskId('T001'),
+    taskTitle: 'escalated',
+    method: 'escalated-full' as const,
+    implementerTokens: 0,
+    escalationTokens: 100_000,
+    retryCount: 0,
+  };
+  const args = {
+    task: escalatedTask,
+    implementerTool: 'ollama',
+    plannerTool: 'anthropic',
+    plannerModel: 'claude-sonnet-4-6',
+  };
+  const baseUsage = {
+    ...ZERO_TOKEN_USAGE,
+    implementerInput: 0,
+    implementerOutput: 0,
+    escalationInput: 60_000,
+    escalationOutput: 40_000,
+  };
+
+  it('allocates escalation cache from the same pool as before the reviewer bucket existed', () => {
+    const withReviewerBucket = calculateTaskUsageCost({
+      ...args,
+      tokenUsage: {
+        ...baseUsage,
+        plannerCacheRead: 200_000,
+        plannerCacheCreate: 50_000,
+        reviewerCacheRead: 300_000,
+        reviewerCacheCreate: 25_000,
+      },
+    });
+    const preChange = calculateTaskUsageCost({
+      ...args,
+      tokenUsage: {
+        ...baseUsage,
+        plannerCacheRead: 500_000,
+        plannerCacheCreate: 75_000,
+      },
+    });
+
+    expect(withReviewerBucket).toBe(preChange);
+  });
+
+  it('keeps a configured reviewer cache out of the escalation allocation', () => {
+    const configuredReviewer = calculateTaskUsageCost({
+      ...args,
+      tokenUsage: {
+        ...baseUsage,
+        plannerCacheRead: 200_000,
+        plannerCacheCreate: 50_000,
+        reviewerCacheRead: 300_000,
+        reviewerCacheCreate: 25_000,
+      },
+      reviewerTool: 'deepseek',
+    });
+    const plannerCacheOnly = calculateTaskUsageCost({
+      ...args,
+      tokenUsage: { ...baseUsage, plannerCacheRead: 200_000, plannerCacheCreate: 50_000 },
+    });
+
+    expect(configuredReviewer).toBe(plannerCacheOnly);
   });
 });

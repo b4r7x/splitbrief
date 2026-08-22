@@ -9,6 +9,7 @@ import {
 import type { PickerOption } from './options.js';
 import { deriveModelCatalogCapability } from './posture.js';
 import type { ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
+import { runnerRoleForActiveRole } from '../../../core/runners/cli-tool-catalog.js';
 
 function pickerItem(
   item: Omit<PickerOption, 'modelCapability'> & { modelPolicy: PickerOption['modelPolicy'] },
@@ -82,6 +83,45 @@ describe('right column models', () => {
     });
   });
 
+  it('shows the reviewer the same discovered models as the planner', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => null,
+      getScopedProviderRuntime: ({ role, provider }) =>
+        runnerRoleForActiveRole(role) === 'planner'
+          ? {
+              connection: {
+                role: runnerRoleForActiveRole(role),
+                provider,
+                contextKey: 'planner-context',
+              },
+              state: 'fresh',
+              catalog: 'populated',
+              models: [{ id: 'planner-scoped-model' }],
+              fetchedAt: 1,
+              validatedAt: 2,
+            }
+          : null,
+    };
+    const currentItem = pickerItem({
+      id: 'openai',
+      displayName: 'OpenAI',
+      kind: 'api',
+      roles: ['planner', 'implementer'],
+      modelPolicy: 'per-call',
+      billing: 'api-metered',
+      permissions: READY_CLI_PERMISSIONS,
+      status: { state: 'ready', remediation: null },
+      available: true,
+    });
+
+    const planner = buildRightModels({ role: 'planner', customModels: [], currentItem, cache });
+    const reviewer = buildRightModels({ role: 'reviewer', customModels: [], currentItem, cache });
+
+    expect(reviewer.map((model) => model.id)).toContain('planner-scoped-model');
+    expect(reviewer.map((model) => model.id)).toEqual(planner.map((model) => model.id));
+  });
+
   it('keeps confirmed, stale, suggestion, bundled, and custom counts distinct', () => {
     expect(
       countModelOptions([
@@ -97,7 +137,7 @@ describe('right column models', () => {
 
   it('exposes bundled Agent SDK models for implementers', () => {
     const models = buildRightModels({
-      isPlanner: false,
+      role: 'implementer',
       customModels: [],
       currentItem: pickerItem({
         id: 'agent-sdk',
@@ -145,12 +185,12 @@ describe('right column models', () => {
     };
 
     expect(
-      buildRightModels({ isPlanner: false, customModels: [], currentItem }).map(
+      buildRightModels({ role: 'implementer', customModels: [], currentItem }).map(
         (model) => model.id,
       ),
     ).not.toContain('runtime-only-model');
     expect(
-      buildRightModels({ isPlanner: false, customModels: [], currentItem, cache }).map(
+      buildRightModels({ role: 'implementer', customModels: [], currentItem, cache }).map(
         (model) => model.id,
       ),
     ).toContain('runtime-only-model');
@@ -177,14 +217,14 @@ describe('right column models', () => {
 
     expect(
       buildRightModels({
-        isPlanner: true,
+        role: 'planner',
         customModels: [],
         currentItem: cliItem,
       }).length,
     ).toBeGreaterThan(0);
     expect(
       buildRightModels({
-        isPlanner: false,
+        role: 'implementer',
         customModels: [],
         currentItem: pickerItem({
           id: 'shell',
@@ -207,7 +247,7 @@ describe('right column models', () => {
     ).toEqual([]);
     expect(
       buildRightModels({
-        isPlanner: false,
+        role: 'implementer',
         customModels: [],
         currentItem: pickerItem({
           id: 'agent',
@@ -234,7 +274,7 @@ describe('right column models', () => {
 
   it('suppresses catalog and custom rows for backend-default policy', () => {
     const models = buildRightModels({
-      isPlanner: false,
+      role: 'implementer',
       customModels: ['custom-model'],
       currentItem: pickerItem({
         id: 'cursor',
@@ -285,7 +325,7 @@ describe('duplicate model rows', () => {
     };
 
     const models = buildRightModels({
-      isPlanner: true,
+      role: 'planner',
       customModels: ['gpt-5.4', 'runtime-only-model'],
       currentItem: codexItem,
       cache,
@@ -303,7 +343,7 @@ describe('duplicate model rows', () => {
 
   it('keeps React keys stable when duplicate sources collapse to one row', () => {
     const models = buildRightModels({
-      isPlanner: true,
+      role: 'planner',
       customModels: ['sonnet'],
       currentItem: pickerItem({
         id: 'claude-code',
@@ -332,7 +372,7 @@ describe('duplicate model rows', () => {
 describe('auto is a selection policy, never catalog data', () => {
   it('emits exactly one metadata-free Auto row at the top of an optional CLI column', () => {
     const models = buildRightModels({
-      isPlanner: true,
+      role: 'planner',
       customModels: [],
       currentItem: cliItem('codex', 'optional'),
     });
@@ -345,7 +385,7 @@ describe('auto is a selection policy, never catalog data', () => {
 
   it('offers the Auto row for an API provider that has a catalog default', () => {
     const models = buildRightModels({
-      isPlanner: false,
+      role: 'implementer',
       customModels: [],
       currentItem: pickerItem(
         {
@@ -368,7 +408,7 @@ describe('auto is a selection policy, never catalog data', () => {
 
   it('keeps a single Auto row when the config already lists auto as a custom model', () => {
     const models = buildRightModels({
-      isPlanner: true,
+      role: 'planner',
       customModels: ['auto', 'my-model'],
       currentItem: cliItem('codex', 'optional'),
     });
@@ -382,7 +422,7 @@ describe('auto is a selection policy, never catalog data', () => {
     for (const policy of ['backend-default', 'auto-only'] as const) {
       expect(
         buildRightModels({
-          isPlanner: false,
+          role: 'implementer',
           customModels: [],
           currentItem: cliItem('copilot', policy),
         }),
@@ -393,7 +433,7 @@ describe('auto is a selection policy, never catalog data', () => {
   it('offers no Auto row where automatic selection is not a legal value', () => {
     expect(
       buildRightModels({
-        isPlanner: true,
+        role: 'planner',
         customModels: [],
         currentItem: cliItem('codex', 'required'),
       }).map((model) => model.id),
@@ -401,7 +441,7 @@ describe('auto is a selection policy, never catalog data', () => {
 
     expect(
       buildRightModels({
-        isPlanner: false,
+        role: 'implementer',
         customModels: [],
         currentItem: pickerItem(
           {
@@ -482,7 +522,7 @@ describe('runtime recommendation quality', () => {
   it('projects compatible-only models through buildRightModels', () => {
     for (const { provider, model } of T080_UNEVALUATED_COMPATIBLE_ONLY) {
       const models = buildRightModels({
-        isPlanner: false,
+        role: 'implementer',
         customModels: [],
         currentItem: apiPickerItem(provider),
       });

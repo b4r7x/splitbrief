@@ -276,13 +276,13 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
   setup: [
     defineScenario({
       id: 'setup-initial',
-      title: 'Setup · planner selection',
+      title: 'Setup · crew selection',
       surface: screenSurface('setup'),
       checkpoint: {
         id: 'ready',
-        title: 'Planner setup ready',
+        title: 'Crew setup ready',
         kind: 'ready',
-        marker: 'Initializing your tools…',
+        marker: 'Set up your crew',
       },
       elements: [
         { id: 'header', title: 'Setup header' },
@@ -292,7 +292,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
   ],
 };
 
-const OVERLAY_SCENARIOS: Record<OverlaySurface, ScenarioDefinition> = {
+const OVERLAY_SCENARIOS = {
   help: defineScenario({
     id: 'overlay-help',
     title: 'Overlay · help',
@@ -377,6 +377,30 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, ScenarioDefinition> = {
     },
     elements: [{ id: 'overlay-panel', title: 'Implementer picker panel' }],
   }),
+  'reviewer-picker': defineScenario({
+    id: 'overlay-reviewer-picker',
+    title: 'Overlay · reviewer picker',
+    surface: overlaySurface('reviewer-picker', 'home'),
+    checkpoint: {
+      id: 'ready',
+      title: 'Reviewer picker ready',
+      kind: 'ready',
+      marker: 'Reviewer',
+    },
+    elements: [{ id: 'overlay-panel', title: 'Reviewer picker panel' }],
+  }),
+  crew: defineScenario({
+    id: 'overlay-crew',
+    title: 'Overlay · crew',
+    surface: overlaySurface('crew', 'home'),
+    checkpoint: {
+      id: 'ready',
+      title: 'Crew ready',
+      kind: 'ready',
+      marker: 'Crew',
+    },
+    elements: [{ id: 'overlay-panel', title: 'Crew panel' }],
+  }),
   sessions: defineScenario({
     id: 'overlay-sessions',
     title: 'Overlay · sessions',
@@ -413,7 +437,7 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, ScenarioDefinition> = {
     },
     elements: [{ id: 'overlay-panel', title: 'Cost breakdown panel' }],
   }),
-};
+} satisfies Record<OverlaySurface, ScenarioDefinition>;
 
 function createCatalog(scenarios: readonly ScenarioDefinition[]): readonly ScenarioDefinition[] {
   const ids = new Set<string>();

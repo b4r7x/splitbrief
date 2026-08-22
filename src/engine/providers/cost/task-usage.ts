@@ -1,4 +1,5 @@
 import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js';
+import { splitSeatTokenTotals } from '../../../core/providers/seat-totals.js';
 import { resolvePricing } from '../pricing-resolver.js';
 import type { ModelCacheAccessor } from '../model/resolution.js';
 import {
@@ -9,25 +10,14 @@ import {
   type ProviderUsageSegment,
 } from '../cost-math.js';
 
-export type TaskCostTokenUsage = Pick<
-  TokenUsage,
-  | 'implementerInput'
-  | 'implementerOutput'
-  | 'escalationInput'
-  | 'escalationOutput'
-  | 'implementerCacheRead'
-  | 'implementerCacheCreate'
-  | 'plannerCacheRead'
-  | 'plannerCacheCreate'
->;
-
 export interface CalculateTaskUsageCostOptions {
   task: TaskTokenUsage;
-  tokenUsage: TaskCostTokenUsage;
+  tokenUsage: TokenUsage;
   implementerTool: string;
   plannerTool: string;
   implementerModel?: string | undefined;
   plannerModel?: string | undefined;
+  reviewerTool?: string | undefined;
   cache?: ModelCacheAccessor | undefined;
 }
 
@@ -82,7 +72,8 @@ function buildTaskImplementerSegment(options: CalculateTaskUsageCostOptions): Pr
 }
 
 function buildTaskEscalationSegment(options: CalculateTaskUsageCostOptions): ProviderUsageSegment {
-  const { task, tokenUsage, plannerTool, plannerModel, cache } = options;
+  const { task, tokenUsage, plannerTool, plannerModel, cache, reviewerTool } = options;
+  const plannerSeat = splitSeatTokenTotals({ tokenUsage, reviewerTool }).planner;
   const escalationSplit = splitTokens({
     tokens: task.escalationTokens,
     inputTotal: tokenUsage.escalationInput,
@@ -93,14 +84,14 @@ function buildTaskEscalationSegment(options: CalculateTaskUsageCostOptions): Pro
   const escalationCacheRead =
     task.escalationCacheReadTokens ??
     allocatedCacheTokens({
-      cacheTokens: tokenUsage.plannerCacheRead,
+      cacheTokens: plannerSeat.cacheRead,
       tokens: task.escalationTokens,
       totalTokens: totalEscalationTokens,
     });
   const escalationCacheCreate =
     task.escalationCacheCreateTokens ??
     allocatedCacheTokens({
-      cacheTokens: tokenUsage.plannerCacheCreate,
+      cacheTokens: plannerSeat.cacheCreate,
       tokens: task.escalationTokens,
       totalTokens: totalEscalationTokens,
     });

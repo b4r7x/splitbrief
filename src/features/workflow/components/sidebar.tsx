@@ -27,7 +27,7 @@ import { useCostStats } from '../hooks/use-cost-stats.js';
 import { useSpinnerFrame } from '../hooks/use-spinner-frame.js';
 import { formatCostDisplay } from '../cost-text.js';
 import { Divider } from './divider.js';
-import { runnerShortLabel } from './runner-label.js';
+import { reviewerSeatLabel, runnerShortLabel } from './runner-label.js';
 
 interface SidebarProps {
   width: number;
@@ -232,10 +232,11 @@ export function Sidebar({ width, height }: SidebarProps) {
   const t = useTheme();
   const view = tasksStore.use(selectTaskListView);
   const mode = configStore.use((s) => s.config?.workflow?.mode);
-  const planner = configStore.use((s) => s.config?.planner);
-  const implementer = configStore.use((s) => s.config?.implementer);
-  const plannerLabel = planner ? runnerShortLabel(planner) : '';
-  const implLabel = implementer ? runnerShortLabel(implementer) : '';
+  const plannerLabel = configStore.use((s) => (s.config ? runnerShortLabel(s.config.planner) : ''));
+  const implLabel = configStore.use((s) =>
+    s.config ? runnerShortLabel(s.config.implementer) : '',
+  );
+  const reviewerLabel = configStore.use((s) => reviewerSeatLabel(s.config));
   const advisory = useAdvisory();
   const cost = useCostStats();
   const tasks = view.items;
@@ -244,8 +245,10 @@ export function Sidebar({ width, height }: SidebarProps) {
   const innerWidth = Math.max(0, width - 5);
 
   const costFmt = formatCostDisplay(cost.localRate, cost.costBreakdown, cost.pricingState);
-  // A row per role plus the cost line always render; mode and the done/escalated split do not.
-  const footerRows = 3 + (mode ? 1 : 0) + (escalatedCount > 0 ? 1 : 0);
+  // The planner, implementer and cost rows always render; mode, the done/escalated split and
+  // the reviewer row do not.
+  const footerRows =
+    3 + (mode ? 1 : 0) + (escalatedCount > 0 ? 1 : 0) + (reviewerLabel === '' ? 0 : 1);
   // Without a height the caller is not budgeting rows, so the list never windows.
   const listRows =
     height === undefined ? tasks.length : getSidebarTaskListRows({ height, footerRows });
@@ -347,6 +350,14 @@ export function Sidebar({ width, height }: SidebarProps) {
             </Text>
             {implLabel !== '' && <Text color={t.implementer}>{` ${implLabel}`}</Text>}
           </Text>
+          {reviewerLabel !== '' && (
+            <Text wrap="truncate">
+              <Text color={t.reviewer} bold>
+                {formatRoleLabel('reviewer')}
+              </Text>
+              <Text color={t.reviewer}>{` ${reviewerLabel}`}</Text>
+            </Text>
+          )}
           <Text color={t.textDim}>
             local{' '}
             <Text color={rateColor(cost.localRate, cost.routedTasks, t)}>

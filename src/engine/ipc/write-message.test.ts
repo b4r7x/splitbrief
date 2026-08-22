@@ -7,6 +7,7 @@ import { taskId } from '../../core/schemas/task.js';
 import { PLANNER_ARTIFACT_MAX_BYTES } from '../runners/types.js';
 import { IPC_MAX_FRAME_BYTES, type ServerMessage } from './protocol.js';
 import { writeServerMessage } from './write-message.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 const servers: Server[] = [];
 const sockets: Socket[] = [];
@@ -184,14 +185,7 @@ describe('writeServerMessage', () => {
           validation: { passed: true, summary: 'ok', stages: [] },
           evidence: { summary: 'ok', expected, observed: [] },
           cost: {
-            tokenUsage: {
-              plannerInput: 0,
-              plannerOutput: 0,
-              implementerInput: 0,
-              implementerOutput: 0,
-              escalationInput: 0,
-              escalationOutput: 0,
-            },
+            tokenUsage: makeUsage(),
           },
           availableCommands: ['continue'],
         },

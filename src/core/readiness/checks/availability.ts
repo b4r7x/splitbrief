@@ -1,9 +1,10 @@
 import type { RunnerConfigSlot } from '../../config/accessors/runner-config.js';
 import { getApiProviderDescriptor } from '../../providers/api-provider-catalog.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import type { ActiveRunnerRole } from '../../runners/cli-tool-catalog.js';
 import type { ReadinessCheck } from '../types.js';
 
-export type RunnerAvailabilitySlot = Extract<RunnerConfigSlot, { role: 'planner' | 'implementer' }>;
+export type RunnerAvailabilitySlot = Extract<RunnerConfigSlot, { role: ActiveRunnerRole }>;
 
 /**
  * `not-probed` is the only honest verdict when the probe could not run or could
@@ -43,9 +44,16 @@ function localProviderStartup(provider: string): string | undefined {
 }
 
 function runnerAvailabilityCheckId(slot: RunnerAvailabilitySlot): string {
-  return slot.role === 'planner'
-    ? 'runners.availability.planner'
-    : `runners.availability.implementer.${slot.profile}`;
+  switch (slot.role) {
+    case 'planner':
+      return 'runners.availability.planner';
+    case 'implementer':
+      return `runners.availability.implementer.${slot.profile}`;
+    case 'reviewer':
+      return 'runners.availability.reviewer';
+    default:
+      return assertNever(slot);
+  }
 }
 
 function pickAnother(slot: RunnerAvailabilitySlot): string {
@@ -116,15 +124,19 @@ function availabilitySeverity(
   fact: RunnerAvailabilityFact,
   isDefaultImplementer: boolean,
 ): ReadinessCheck['severity'] {
-  switch (fact.verdict.state) {
-    case 'available':
-      return 'ok';
-    case 'not-probed':
-      return 'info';
-    // A runner the workflow is certain to call cannot be advisory: the planning
-    // phase is paid for before the implementer is first used.
+  if (fact.verdict.state === 'available') return 'ok';
+  if (fact.verdict.state === 'not-probed') return 'info';
+  // A runner the workflow is certain to call cannot be advisory: the planning
+  // phase is paid for before the implementer is first used, and a configured
+  // reviewer always runs the final review.
+  switch (fact.slot.role) {
+    case 'planner':
+    case 'reviewer':
+      return 'blocker';
+    case 'implementer':
+      return isDefaultImplementer ? 'blocker' : 'warning';
     default:
-      return fact.slot.role === 'planner' || isDefaultImplementer ? 'blocker' : 'warning';
+      return assertNever(fact.slot);
   }
 }
 

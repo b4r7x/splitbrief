@@ -24,6 +24,7 @@ import { BRAILLE_SPINNER_FRAMES, glyph } from '../../../lib/glyphs.js';
 import { InputFooter } from './input-footer.js';
 
 import { makeRunnerCallStalled } from '#testing/helpers/events/runner-call.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 function localExecution(
   feature: string,
@@ -322,14 +323,12 @@ describe('InputFooter', () => {
     tokensStore.__testReset({
       localCount: 1,
       escalatedCount: 0,
-      tokenUsage: {
+      tokenUsage: makeUsage({
         plannerInput: 1000,
         plannerOutput: 500,
         implementerInput: 2000,
         implementerOutput: 1000,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      }),
     });
 
     const ui = renderFeature(<InputFooter />);

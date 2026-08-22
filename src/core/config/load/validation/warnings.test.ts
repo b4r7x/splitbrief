@@ -73,6 +73,38 @@ describe('securityWarnings', () => {
     expect(warning).toContain('remove the apiKey entry');
   });
 
+  it('warns about an inline reviewer API key the way it warns about the planner', () => {
+    const config: Config = makeConfig({
+      reviewer: {
+        kind: 'api',
+        provider: 'anthropic',
+        model: 'm',
+        apiKey: 'sk-ant-test',
+        apiBase: 'https://api.anthropic.com',
+      },
+    });
+
+    const warning = securityWarnings(config).find((w) => w.includes('Inline API key'));
+
+    expect(warning).toContain('reviewer config');
+    expect(warning).toContain('export ANTHROPIC_API_KEY');
+    expect(warning).not.toContain('sk-ant-test');
+  });
+
+  it('leaves warnings unchanged when no reviewer block is configured', () => {
+    const config: Config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'anthropic',
+        model: 'm',
+        apiKey: 'sk-ant-test',
+        apiBase: 'https://api.anthropic.com',
+      },
+    });
+
+    expect(securityWarnings(config).filter((w) => w.includes('Inline API key'))).toHaveLength(1);
+  });
+
   it('does not warn when API keys only come from env vars', () => {
     process.env['ANTHROPIC_API_KEY'] = 'sk-ant-env-key';
     const config: Config = makeConfig({
