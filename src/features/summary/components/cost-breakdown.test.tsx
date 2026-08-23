@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { Box } from 'ink';
 import { renderFeature } from '#testing/helpers/ink.js';
+import { formatKnownCost } from '../../../core/formatting.js';
 import type { CostBreakdown } from '../../../core/schemas/summary.js';
-import { useTheme } from '../../../components/theme.js';
+import { getTheme, useTheme } from '../../../components/theme.js';
 import { buildCostBreakdownRows } from './cost-breakdown.js';
 
 function CostBreakdownRows({ costBreakdown }: { costBreakdown: CostBreakdown }) {
@@ -270,5 +271,94 @@ describe('buildCostBreakdownRows', () => {
     expect(frame).not.toContain('Saved');
 
     ui.unmount();
+  });
+
+  it('renders the reviewer as its own row whose amount completes the visible total', () => {
+    const costBreakdown: CostBreakdown = {
+      hypotheticalCost: 6,
+      actualPlannerCost: 1,
+      actualImplementerCost: 0.5,
+      actualReviewerCost: 0.25,
+      totalActualCost: 1.75,
+      savingsAmount: 4.25,
+      savingsPercentage: 71,
+      localCompletionRate: 0.75,
+      hasPricedUsage: true,
+      hasSavingsEstimate: true,
+      isActualPlannerCostKnown: true,
+      isActualImplementerCostKnown: true,
+      isActualReviewerCostKnown: true,
+      isTotalActualCostKnown: true,
+      isAllPlannerBaselineKnown: true,
+    };
+
+    const ui = renderFeature(<CostBreakdownRows costBreakdown={costBreakdown} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('Reviewer cost');
+    expect(frame).toContain(formatKnownCost(costBreakdown.actualPlannerCost, 'known'));
+    expect(frame).toContain(formatKnownCost(costBreakdown.actualImplementerCost, 'known'));
+    expect(frame).toContain(formatKnownCost(0.25, 'known'));
+    expect(frame).toContain(formatKnownCost(1 + 0.5 + 0.25, 'known'));
+
+    ui.unmount();
+  });
+
+  it('marks the reviewer amount partial when the reviewer price is unknown', () => {
+    const costBreakdown: CostBreakdown = {
+      hypotheticalCost: 6,
+      actualPlannerCost: 1,
+      actualImplementerCost: 0.5,
+      actualReviewerCost: 0.25,
+      totalActualCost: 1.75,
+      savingsAmount: 0,
+      savingsPercentage: 0,
+      localCompletionRate: 0.75,
+      hasPricedUsage: true,
+      hasUnpricedUsage: true,
+      hasSavingsEstimate: false,
+      isActualPlannerCostKnown: true,
+      isActualImplementerCostKnown: true,
+      isActualReviewerCostKnown: false,
+      isTotalActualCostKnown: false,
+      isAllPlannerBaselineKnown: true,
+    };
+
+    const ui = renderFeature(<CostBreakdownRows costBreakdown={costBreakdown} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('Reviewer cost');
+    expect(frame).toContain(formatKnownCost(0.25, 'partial'));
+
+    ui.unmount();
+  });
+
+  it('renders the same rows as before the reviewer seat when no reviewer is configured', () => {
+    const costBreakdown: CostBreakdown = {
+      hypotheticalCost: 6,
+      actualPlannerCost: 1,
+      actualImplementerCost: 0.5,
+      totalActualCost: 1.5,
+      savingsAmount: 4.5,
+      savingsPercentage: 75,
+      localCompletionRate: 0.75,
+      hasPricedUsage: true,
+      hasSavingsEstimate: true,
+      isActualPlannerCostKnown: true,
+      isActualImplementerCostKnown: true,
+      isTotalActualCostKnown: true,
+      isAllPlannerBaselineKnown: true,
+    };
+
+    const rows = buildCostBreakdownRows({ costBreakdown, labelWidth: 28, theme: getTheme() });
+
+    expect(rows.map((row) => row.key)).toEqual([
+      'cost-heading',
+      'cost-actual',
+      'cost-planner',
+      'cost-implementer',
+      'cost-baseline',
+      'cost-saved',
+    ]);
   });
 });

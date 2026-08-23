@@ -50,6 +50,7 @@ type CostBreakdownInput = {
   implementerTool: string;
   plannerModel?: string;
   implementerModel?: string;
+  reviewerTool?: string | undefined;
   pricingCache?: ModelCacheAccessor | undefined;
 };
 
@@ -61,6 +62,7 @@ export function applyTaskBreakdownCosts(input: CostBreakdownInput): TaskTokenUsa
     implementerTool,
     plannerModel,
     implementerModel,
+    reviewerTool,
     pricingCache,
   } = input;
   return taskBreakdowns?.map((task) => {
@@ -72,6 +74,7 @@ export function applyTaskBreakdownCosts(input: CostBreakdownInput): TaskTokenUsa
       implementerModel,
       plannerModel,
       cache: pricingCache,
+      ...(reviewerTool !== undefined && { reviewerTool }),
     });
     const { cost: _cost, ...rest } = task;
     return {
@@ -86,6 +89,7 @@ export function applyTaskBreakdownCosts(input: CostBreakdownInput): TaskTokenUsa
               implementerModel: implementerModel,
               plannerModel: plannerModel,
               cache: pricingCache,
+              ...(reviewerTool !== undefined && { reviewerTool }),
             }),
           }
         : { costPosture: task.costPosture ?? 'unknown-price' }),

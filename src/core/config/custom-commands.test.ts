@@ -305,6 +305,21 @@ describe('legacy custom command projection', () => {
     expect(JSON.stringify(config)).toBe(before);
   });
 
+  it('projects a shell reviewer as a legacy source of its own', () => {
+    const config = {
+      ...createDefaultConfig(),
+      reviewer: { kind: 'shell' as const, command: './review-seat', args: ['--json'] },
+    };
+
+    const catalog = readCustomCommandCatalog(config);
+    const safe = catalog.legacy.filter(
+      (entry): entry is Extract<(typeof catalog.legacy)[number], { kind: 'safe' }> =>
+        entry.kind === 'safe',
+    );
+
+    expect(safe.map((entry) => entry.sources)).toEqual([['reviewer']]);
+  });
+
   it('retains unsafe legacy command material only behind a process-local opaque ID', () => {
     const credential = 'ghp_this_must_not_escape_the_legacy_projection';
     const config = {

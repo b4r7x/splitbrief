@@ -5,7 +5,9 @@ import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { Config } from '../../core/schemas/config.js';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../core/paths-io.js';
-import { SPEC_FILE, REVIEW_FILE, TASKS_FILE } from '../../core/paths.js';
+import { SPEC_FILE, TASKS_FILE } from '../../core/paths.js';
+import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
+import { getRunnerCatalogDisplayName } from '../../core/config/accessors/runner-config.js';
 import { error } from '../../utils/error.js';
 import { labelError } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
@@ -18,11 +20,11 @@ import { analyzeBriefDrift } from './drift/analyze.js';
 import { writeDriftReport } from './drift/io.js';
 import { formatDriftReportForPrompt, publishDriftReport } from './drift/format.js';
 
-import type { Planner } from '../planners/types.js';
+import type { Reviewer } from '../reviewers/types.js';
 import { buildSummary, type SummaryBase } from './summary/build.js';
 import { publishError, publishPlannerStatus, publishWarningFromError } from './events.js';
 import { transitionAndSave } from './state-ops.js';
-import { runPlannerReview } from './planner-review.js';
+import { runReviewerCall } from './review-call.js';
 import { createSnapshot } from '../snapshots/create.js';
 import { recordRunSnapshot } from '../snapshots/run/ledger.js';
 import { hashTaskBrief } from '../brief-hash.js';
@@ -52,7 +54,7 @@ export async function runFinalReviewPhase(
     callbacks: OrchestratorCallbacks;
     bus: EventBus;
     state: WorkflowState;
-    planner: Planner;
+    reviewer: Reviewer;
     metadata?: SpecMetadata | null;
     signal?: AbortSignal | undefined;
     sinks?: WorkflowSinks | undefined;
@@ -62,7 +64,7 @@ export async function runFinalReviewPhase(
   phaseTimings?: Record<string, number>,
 ): Promise<FinalReviewResult> {
   let { state } = opts;
-  const { projectDir, sessionId, config, callbacks, bus, planner, metadata } = opts;
+  const { projectDir, sessionId, config, callbacks, bus, reviewer, metadata } = opts;
 
   // On resume the state is already persisted in 'final-review' (a previously failed
   // gate); only dispatch ALL_DONE from 'implementing' on a fresh forward run.
@@ -182,36 +184,43 @@ export async function runFinalReviewPhase(
           state = s;
         },
         body: ({ signal: callSignal, continuationPrompt, steer }) =>
-          runPlannerReview({
-            planner,
+          runReviewerCall({
+            reviewer,
             prompt: composeSteeredPrompt(continuationPrompt ?? fullPrompt, steer),
             projectDir,
             sessionId,
             bus,
             state,
             metadata,
-            writeTo: REVIEW_FILE,
             signal: callSignal,
           }),
       });
       state = loop.value.state;
     } else {
-      const review = await runPlannerReview({
-        planner,
+      const review = await runReviewerCall({
+        reviewer,
         prompt: fullPrompt,
         projectDir,
         sessionId,
         bus,
         state,
         metadata,
-        writeTo: REVIEW_FILE,
         signal: opts.signal,
       });
       state = review.state;
     }
   } catch (err) {
     if (opts.signal?.aborted || isAbortError(err)) return interruptedSummary();
-    publishError({ bus: bus, phase: state.phase, message: labelError('Final review failed', err) });
+    const seat = resolveReviewerRunner(config);
+    const label =
+      seat.source === 'configured'
+        ? `Final review failed (reviewer: ${getRunnerCatalogDisplayName(seat.runner)})`
+        : 'Final review failed';
+    publishError({
+      bus: bus,
+      phase: state.phase,
+      message: labelError(label, err),
+    });
     reviewStatus = 'failed';
   }
   if (opts.signal?.aborted) return interruptedSummary();

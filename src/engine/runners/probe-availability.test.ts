@@ -144,6 +144,41 @@ describe('probeRunnerAvailability', () => {
     expect(facts).toEqual([]);
   });
 
+  it('probes a configured api reviewer and leaves a cli reviewer alone', async () => {
+    const apiReviewer = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code' },
+      implementer: { kind: 'cli', tool: 'claude-code' },
+      reviewer: {
+        kind: 'api',
+        provider: 'openrouter',
+        model: 'some-model',
+        apiBase: 'https://openrouter.ai/api/v1',
+      },
+    });
+    const cliReviewer = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code' },
+      implementer: { kind: 'cli', tool: 'claude-code' },
+      reviewer: { kind: 'cli', tool: 'claude-code' },
+    });
+
+    await expect(probeRunnerAvailability({ config: apiReviewer })).resolves.toMatchObject([
+      {
+        slot: { role: 'reviewer' },
+        provider: 'openrouter',
+        verdict: { state: 'missing-credential' },
+      },
+    ]);
+    await expect(probeRunnerAvailability({ config: cliReviewer })).resolves.toEqual([]);
+  });
+
+  it('leaves the reviewer seat unprobed when no reviewer is configured', async () => {
+    const port = await closedPort();
+
+    const facts = await probeRunnerAvailability({ config: ollamaConfig(port) });
+
+    expect(facts.map((fact) => fact.slot.role)).toEqual(['implementer']);
+  });
+
   it('skips runner kinds that have no endpoint to probe', async () => {
     const config = makeConfig({
       planner: { kind: 'cli', tool: 'claude-code' },

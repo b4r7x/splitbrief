@@ -184,6 +184,19 @@ describe('configHasInlineApiKey', () => {
     expect(configHasInlineApiKey(config)).toBe(true);
   });
 
+  it('detects an inline reviewer key', () => {
+    const config = makeConfig({
+      reviewer: {
+        kind: 'api',
+        provider: 'openai',
+        apiBase: OPENAI_BASE,
+        model: 'gpt-5-mini',
+        apiKey: PASTED_KEY,
+      },
+    });
+    expect(configHasInlineApiKey(config)).toBe(true);
+  });
+
   it('does not count env: references as inline secrets', () => {
     const config = makeConfig({
       implementer: {

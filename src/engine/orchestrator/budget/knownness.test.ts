@@ -3,15 +3,9 @@ import type { TokenUsage } from '../../../core/schemas/tokens.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { getBudgetCostKnownness } from './knownness.js';
 import { taskId } from '../../../core/schemas/task.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
-const zeroUsage: TokenUsage = {
-  plannerInput: 0,
-  plannerOutput: 0,
-  implementerInput: 0,
-  implementerOutput: 0,
-  escalationInput: 0,
-  escalationOutput: 0,
-};
+const zeroUsage = makeUsage();
 
 function currentKnownCost(opts: Parameters<typeof getBudgetCostKnownness>[0]): number {
   return getBudgetCostKnownness(opts).currentKnownCost;
@@ -312,5 +306,65 @@ describe('getBudgetCostKnownness', () => {
 
     expect(below).toBeCloseTo(0.5, 10);
     expect(above).toBeCloseTo(1.5, 10);
+  });
+
+  it('attributes reviewer usage to the planner identity when no reviewer is configured', () => {
+    const knownness = getBudgetCostKnownness({
+      tokenUsage: makeUsage({ reviewerCacheRead: 1_000_000 }),
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    });
+
+    expect(knownness).toMatchObject({
+      isKnown: true,
+      hasUnknownPaidUsage: false,
+      unknownReason: null,
+    });
+  });
+
+  it('attributes reviewer usage to the reviewer identity when a reviewer is configured', () => {
+    const knownness = getBudgetCostKnownness({
+      tokenUsage: makeUsage({ reviewerCacheRead: 1_000_000 }),
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+      reviewerTool: 'deepseek',
+      reviewerModel: 'deepseek-v4-flash',
+    });
+
+    expect(knownness).toMatchObject({
+      isKnown: false,
+      hasUnknownPaidUsage: true,
+      unknownReason: 'pricing unknown for deepseek/deepseek-v4-flash',
+    });
+  });
+
+  it('prices review spend exactly as planner spend when no reviewer is configured', () => {
+    const base = {
+      totalTasks: 2,
+      escalatedCount: 1,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+    };
+
+    expect(
+      getBudgetCostKnownness({
+        ...base,
+        tokenUsage: makeUsage({
+          plannerInput: 900_000,
+          plannerOutput: 100_000,
+          reviewerInput: 100_000,
+        }),
+      }),
+    ).toEqual(
+      getBudgetCostKnownness({
+        ...base,
+        tokenUsage: makeUsage({ plannerInput: 1_000_000, plannerOutput: 100_000 }),
+      }),
+    );
   });
 });

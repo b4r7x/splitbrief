@@ -6,6 +6,7 @@ import { skillsStore } from '../../../stores/project/skills.js';
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import { formatModelName } from '../../../core/model-display.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
+import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { getWorkflowMode } from '../../../core/config/accessors/values.js';
 import { CHEVRON_SEP, SOFT_SEP } from '../../../components/separators.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
@@ -34,6 +35,11 @@ export function HomeConfigSummary() {
   const implModel = config.implementer.model;
   const plannerLabel = runnerLabel(plannerToolName, plannerModel);
   const implLabel = runnerLabel(implToolName, implModel);
+  const reviewer = resolveReviewerRunner(config);
+  const reviewerLabel =
+    reviewer.source === 'configured'
+      ? runnerLabel(getRunnerDisplayName(reviewer.runner), reviewer.runner.model)
+      : null;
   const mode = getWorkflowMode(config);
 
   return (
@@ -42,6 +48,12 @@ export function HomeConfigSummary() {
         <Text color={coldDiscovery ? theme.textDim : theme.planner}>{plannerLabel}</Text>
         <Text color={theme.textDim}>{SOFT_SEP}</Text>
         <Text color={coldDiscovery ? theme.textDim : theme.implementer}>{implLabel}</Text>
+        {reviewerLabel !== null && (
+          <>
+            <Text color={theme.textDim}>{SOFT_SEP}</Text>
+            <Text color={coldDiscovery ? theme.textDim : theme.reviewer}>{reviewerLabel}</Text>
+          </>
+        )}
         <Text color={theme.textDim}>{SOFT_SEP}</Text>
         <Text color={theme.text}>{mode}</Text>
         {selectedSkillCount > 0 && (

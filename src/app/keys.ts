@@ -35,10 +35,15 @@ const noop = () => 'none' as const;
 // the parent (e.g. a runner picker opened from settings would skip settings and close outright).
 const GLOBAL_ESC_OVERLAYS = new Set<OverlayType>(['help', 'cost-drilldown']);
 
-// The runner pickers give Escape a meaning beyond closing: a non-empty filter query clears first
-// and only a second press exits. The global close must stand down for them even on an empty stack,
-// or the query-clearing press would also close the overlay.
-const SELF_ESC_OVERLAYS = new Set<OverlayType>(['planner-picker', 'implementer-picker']);
+// These overlays handle Escape themselves — the runner pickers give it a meaning beyond closing
+// (a non-empty filter query clears first, only a second press exits). The global close must stand
+// down for them even on an empty stack, or one press would fire both handlers.
+const SELF_ESC_OVERLAYS = new Set<OverlayType>([
+  'planner-picker',
+  'implementer-picker',
+  'reviewer-picker',
+  'crew',
+]);
 
 interface UseAppKeysOptions {
   exit: () => void;

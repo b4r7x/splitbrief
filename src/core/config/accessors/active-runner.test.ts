@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readActiveRunner, updateActiveRunner } from './active-runner.js';
+import { clearReviewerSeat, readActiveRunner, updateActiveRunner } from './active-runner.js';
 import { createDefaultConfig } from '../load/io.js';
 import type { Config } from '../../schemas/config.js';
 
@@ -56,6 +56,25 @@ describe('active runner accessors', () => {
     expect(config).toEqual(original);
   });
 
+  it('reads the planner runner for the reviewer seat when no reviewer is configured', () => {
+    const config = createDefaultConfig();
+
+    expect(readActiveRunner({ config, role: 'reviewer' })).toEqual(config.planner);
+  });
+
+  it('writes the reviewer seat into its own config block', () => {
+    const config = createDefaultConfig();
+
+    const updated = updateActiveRunner({
+      config,
+      role: 'reviewer',
+      updater: (existing) => ({ ...existing, model: 'sonnet' }),
+    });
+
+    expect(updated.reviewer).toMatchObject({ kind: 'cli', tool: 'claude-code', model: 'sonnet' });
+    expect(updated.planner).toEqual(config.planner);
+  });
+
   it('updates the resolved default profile while preserving its metadata and dormant profiles', () => {
     const config = configWithProfiles();
     const original = structuredClone(config);
@@ -86,5 +105,20 @@ describe('active runner accessors', () => {
       config.implementerProfiles?.profiles.dormant,
     );
     expect(config).toEqual(original);
+  });
+});
+
+describe('clearReviewerSeat', () => {
+  it('returns the reviewer seat to the planner without a reviewer key', () => {
+    const config: Config = {
+      ...createDefaultConfig(),
+      reviewer: { kind: 'cli', tool: 'codex', effort: 'high' },
+    };
+
+    const cleared = clearReviewerSeat(config);
+
+    expect('reviewer' in cleared).toBe(false);
+    expect(readActiveRunner({ config: cleared, role: 'reviewer' })).toEqual(cleared.planner);
+    expect(config.reviewer).toBeDefined();
   });
 });

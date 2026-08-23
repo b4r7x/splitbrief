@@ -86,6 +86,8 @@ const WorkflowStateFields = {
   plannerModel: z.string().optional(),
   implementerTool: z.string().optional(),
   implementerModel: z.string().optional(),
+  reviewerTool: z.string().optional(),
+  reviewerModel: z.string().optional(),
   mode: WorkflowModeSchema.optional(),
   approve: ApproveLevelSchema.optional(),
   selectedSkills: z.array(z.string()).optional(),

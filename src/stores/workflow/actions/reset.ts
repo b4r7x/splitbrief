@@ -218,6 +218,10 @@ function pricingContextFromResume(resume: WorkflowState): TokensState['pricingCo
     implementerTool: resume.implementerTool,
     plannerModel: resume.plannerModel,
     implementerModel: resume.implementerModel,
+    ...(resume.reviewerTool !== undefined && {
+      reviewerTool: resume.reviewerTool,
+      ...(resume.reviewerModel !== undefined && { reviewerModel: resume.reviewerModel }),
+    }),
   };
 }
 

@@ -440,6 +440,30 @@ describe('prepared runner gates', () => {
     ).toThrow('does not match the prepared planner context');
   });
 
+  it('resolves the reviewer seat gate and refuses one prepared for another seat', () => {
+    const preparationId = 'preparation-reviewer';
+    const reviewerGate: RunnerGate = {
+      kind: 'api',
+      slot: { role: 'reviewer' },
+      preparationId,
+      provider: 'ollama',
+      endpointOrigin: 'http://localhost:11434',
+    };
+    const expected: RunnerGateExpectation = {
+      kind: 'api',
+      slot: { role: 'reviewer' },
+      preparationId,
+      provider: 'ollama',
+      endpointOrigin: 'http://localhost:11434',
+    };
+    const plannerGate: RunnerGate = { ...reviewerGate, slot: { role: 'planner' } };
+
+    expect(runnerGateFor([plannerGate, reviewerGate], expected)).toBe(reviewerGate);
+    expect(() => runnerGateFor([plannerGate], expected)).toThrow(
+      'does not match the prepared reviewer context',
+    );
+  });
+
   it('rejects a same-kind gate from another profile before adapter construction', () => {
     const gates: readonly RunnerGate[] = [
       {

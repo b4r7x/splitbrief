@@ -13,7 +13,7 @@ import {
   commitCustomCommand,
   commitCustomModel,
   commitImplementerSelection,
-  commitPlannerSelection,
+  commitPlannerTierSelection,
   removeCustomModel,
 } from '../../../src/features/runners/config-transforms.js';
 import { optionalSectionsYaml, writeConfigYaml } from '#testing/helpers/config-io.js';
@@ -196,8 +196,11 @@ const crossTargetCases: readonly CrossTargetCase[] = [
  * offers it), plus model omission wherever the option's capability allows it.
  * When discovery is empty but the picker exposes the custom-model flow, the
  * matrix follows that user path with a custom ID instead of inventing a bundled
- * model. Nothing here is hand-written, so a new tool, provider or model row
- * joins the matrix the moment the catalog admits it.
+ * model. Nothing on the tool, provider or model axis is hand-written, so a new
+ * row joins the matrix the moment the catalog admits it. The role axis is fixed
+ * at the two roles the catalog's `RunnerRole` admits; the reviewer seat reuses
+ * the planner's option list and its YAML parity is proven in
+ * `src/core/config/load/io-defaults.test.ts`.
  */
 interface MatrixCell {
   role: RunnerRole;
@@ -223,7 +226,7 @@ function matrixCells(): MatrixCell[] {
       if (option.kind === 'custom-command') continue;
       const credentialEnv = credentialEnvFor(option);
       const models = buildRightModels({
-        isPlanner: role === 'planner',
+        role,
         customModels: [],
         currentItem: option,
       }).map((model) => model.id);
@@ -263,7 +266,7 @@ function commitCell(cell: MatrixCell): Config {
     });
   }
   return cell.role === 'planner'
-    ? commitPlannerSelection(base, selection, model)
+    ? commitPlannerTierSelection({ config: base, role: 'planner', selection, model })
     : commitImplementerSelection(base, selection, model);
 }
 
@@ -619,11 +622,12 @@ codebase:
           writeRunnerConfigYaml(dir, { planner: testCase.existing });
           configStore.load(dir);
           const before = loadConfig(dir).config;
-          const updated = commitPlannerSelection(
-            before,
-            pickerForRunner('planner', testCase.existing),
-            { id: modelOverride },
-          );
+          const updated = commitPlannerTierSelection({
+            config: before,
+            role: 'planner',
+            selection: pickerForRunner('planner', testCase.existing),
+            model: { id: modelOverride },
+          });
           const reloaded = await saveAndReload(dir, updated);
           expect(reloaded.planner).toEqual({ ...testCase.existing, model: modelOverride });
           return;

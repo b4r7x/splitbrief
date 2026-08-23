@@ -1,16 +1,8 @@
-import type { TokenUsage } from '../../../src/core/schemas/tokens.js';
+import { ZERO_TOKEN_USAGE, type TokenUsage } from '../../../src/core/schemas/tokens.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 
 export function makeUsage(overrides?: Partial<TokenUsage>): TokenUsage {
-  return {
-    plannerInput: 0,
-    plannerOutput: 0,
-    implementerInput: 0,
-    implementerOutput: 0,
-    escalationInput: 0,
-    escalationOutput: 0,
-    ...overrides,
-  };
+  return { ...ZERO_TOKEN_USAGE, ...overrides };
 }
 
 export function makeSummary(overrides?: Partial<Summary>): Summary {

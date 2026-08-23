@@ -2,7 +2,10 @@ import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../src/core/paths.js';
+import { resolveImplementerProfiles } from '../../src/core/config/accessors/implementer-profiles.js';
+import { configuredReviewerRunner } from '../../src/core/config/accessors/reviewer-runner.js';
 import { loadConfig } from '../../src/core/config/load/io.js';
 import { configForSessionTranscriptPolicy } from '../../src/core/sessions/io.js';
 import { reactivateExistingSession } from '../../src/core/sessions/lifecycle.js';
@@ -24,10 +27,21 @@ export function preparedHeadlessExecution(input: {
     configForSessionTranscriptPolicy(loadConfig(input.projectDir).config, ref),
   );
   const active = reactivateExistingSession(ref);
+  const preparationId = `headless-test-${input.sessionId}`;
+  const configuredReviewer = configuredReviewerRunner(config);
+  const gates = [
+    makeRunnerGate(config.planner, { role: 'planner' }, preparationId),
+    ...resolveImplementerProfiles(config).profiles.map((profile) =>
+      makeRunnerGate(profile.config, { role: 'implementer', profile: profile.name }, preparationId),
+    ),
+    ...(configuredReviewer === undefined
+      ? []
+      : [makeRunnerGate(configuredReviewer, { role: 'reviewer' }, preparationId)]),
+  ];
   return {
     purpose: input.purpose ?? (input.resumeState === undefined ? 'new-workflow' : 'resume'),
     config,
-    preparationId: `headless-test-${input.sessionId}`,
+    preparationId,
     report: {
       generatedAt: '2026-08-04T00:00:00.000Z',
       projectDir: input.projectDir,
@@ -37,7 +51,7 @@ export function preparedHeadlessExecution(input: {
       sections: [],
       metadata: {},
     },
-    gates: [],
+    gates,
     session: { kind: 'existing', ref, active },
     runtime: {
       feature: input.feature,
@@ -89,12 +103,16 @@ export function writeBudgetHeadlessConfigYaml(projectDir: string, pauseThreshold
   ]);
 }
 
-export function writeMinimalHeadlessConfigYaml(projectDir: string): void {
+export function writeMinimalHeadlessConfigYaml(
+  projectDir: string,
+  opts?: { reviewerTool: string },
+): void {
   writeHeadlessConfigYaml(projectDir, [
     'version: 3',
     'planner:',
     '  kind: cli',
     '  tool: claude-code',
+    ...(opts === undefined ? [] : ['reviewer:', '  kind: cli', `  tool: ${opts.reviewerTool}`]),
     'implementer:',
     '  kind: api',
     '  provider: ollama',
@@ -111,6 +129,7 @@ export function writeMinimalHeadlessConfigYaml(projectDir: string): void {
     'workflow:',
     '  approve: none',
     '  mode: quick',
+    '  task_review: none',
     '  persist_transcript: false',
   ]);
 }

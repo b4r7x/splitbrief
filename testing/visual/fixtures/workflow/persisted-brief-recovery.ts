@@ -1,6 +1,7 @@
 import { createBriefRecoveryState } from '../../../../src/engine/orchestrator/planning/brief-recovery.js';
 import type { BriefQualityReport } from '../../../../src/engine/spec/brief-quality.js';
 import { taskId } from '../../../../src/core/schemas/task.js';
+import { makeUsage } from '../../../helpers/factories/summary.js';
 import type { PersistedWorkflowState } from '../../../../src/core/schemas/workflow.js';
 import { WORKFLOW_STATE_VERSION } from '../../../../src/core/schemas/workflow.js';
 import { scenarioId } from '../../contracts/identifiers.js';
@@ -69,14 +70,7 @@ export function persistedBriefRecoveryFixture(): PersistedBriefRecoveryFixturePr
     attempt: 0,
     tasks: [],
     startedAt: FIXED_TIMESTAMP,
-    tokenUsage: {
-      plannerInput: 0,
-      plannerOutput: 0,
-      implementerInput: 0,
-      implementerOutput: 0,
-      escalationInput: 0,
-      escalationOutput: 0,
-    },
+    tokenUsage: makeUsage(),
     awaitingContinue: false,
     messageQueue: [],
     briefRecovery: recovery,

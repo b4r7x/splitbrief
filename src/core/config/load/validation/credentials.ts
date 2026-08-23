@@ -1,6 +1,7 @@
 import { PROVIDER_CATALOG } from '../../../providers/catalog.js';
 import { isProviderId } from '../../../schemas/enums.js';
 import type { Config } from '../../../schemas/config.js';
+import { configuredReviewerRunner } from '../../accessors/reviewer-runner.js';
 import { missingRunnerCredential } from '../../accessors/runner-credentials.js';
 import {
   customEndpointCredentialSourceError,
@@ -11,9 +12,10 @@ import {
 } from '../../credentials.js';
 import { apiBaseValidationError } from '../../api-base.js';
 import type { ConfigError } from './types.js';
+import type { ActiveRunnerRole } from '../../../runners/cli-tool-catalog.js';
 
 function missingApiKeyError(opts: {
-  role: 'planner' | 'implementer';
+  role: ActiveRunnerRole;
   path: string;
   config: RunnerCredentialConfig;
 }): ConfigError | undefined {
@@ -42,7 +44,7 @@ function missingApiKeyError(opts: {
 }
 
 function runnerBoundaryErrors(opts: {
-  role: 'planner' | 'implementer';
+  role: ActiveRunnerRole;
   path: string;
   config: RunnerCredentialConfig;
 }): ConfigError[] {
@@ -92,6 +94,10 @@ export function apiKeyErrors(config: Config): ConfigError[] {
   errors.push(
     ...runnerBoundaryErrors({ role: 'planner', path: 'planner', config: config.planner }),
   );
+  const reviewer = configuredReviewerRunner(config);
+  if (reviewer !== undefined) {
+    errors.push(...runnerBoundaryErrors({ role: 'reviewer', path: 'reviewer', config: reviewer }));
+  }
   errors.push(...intermediateProviderCredentialErrors(config));
 
   if (!config.implementerProfiles) {

@@ -19,6 +19,7 @@ import {
   formatIpcRecoveryPrompt,
   parseIpcRecoveryAction,
 } from './ipc-prompt-dispatcher.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 const budgetPausedIssue = {
   id: 'rec-budget',
@@ -449,14 +450,7 @@ describe('createIpcPromptDispatcher task_review', () => {
         validation: { passed: true, summary: 'validation passed', stages: [] },
         evidence: { summary: 'evidence recorded', expected: [], observed: [] },
         cost: {
-          tokenUsage: {
-            plannerInput: 0,
-            plannerOutput: 0,
-            implementerInput: 10,
-            implementerOutput: 5,
-            escalationInput: 0,
-            escalationOutput: 0,
-          },
+          tokenUsage: makeUsage({ implementerInput: 10, implementerOutput: 5 }),
         },
         availableCommands: ['continue'],
       },

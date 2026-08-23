@@ -7,6 +7,7 @@ import {
 import type { WorkflowState } from '../../../../src/core/schemas/workflow.js';
 import { WORKFLOW_STATE_VERSION } from '../../../../src/core/schemas/workflow.js';
 import { formatTasks } from '../../../../src/engine/spec/formatter.js';
+import { makeUsage } from '../../../helpers/factories/summary.js';
 import { makeTask } from '../../../helpers/factories/task.js';
 import type { ScenarioId } from '../../contracts/identifiers.js';
 import { scenarioId } from '../../contracts/identifiers.js';
@@ -513,14 +514,7 @@ export function persistedRecoveryWorkflowState(
     attempt: 0,
     tasks: [],
     startedAt: FIXED_TIMESTAMP,
-    tokenUsage: {
-      plannerInput: 0,
-      plannerOutput: 0,
-      implementerInput: 0,
-      implementerOutput: 0,
-      escalationInput: 0,
-      escalationOutput: 0,
-    },
+    tokenUsage: makeUsage(),
     awaitingContinue: false,
     messageQueue: [],
     briefRecovery: projection.persistedRecovery,

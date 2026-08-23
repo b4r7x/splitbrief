@@ -10,6 +10,7 @@ import {
   treeMetaPath,
 } from '../../../../core/sessions/tree/io.js';
 import { taskId } from '../../../../core/schemas/task.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 function makeSessionDir(projectDir: string, sessionId: string): void {
   mkdirSync(join(projectDir, '.splitbrief', 'sessions', sessionId), { recursive: true });
@@ -101,14 +102,14 @@ describe('tree-recorder persistence', () => {
       type: 'cost_update',
       ts: 3000,
       phase: 'planning',
-      tokenUsage: {
+      tokenUsage: makeUsage({
         plannerInput: 1,
         plannerOutput: 2,
         implementerInput: 3,
         implementerOutput: 4,
         escalationInput: 5,
         escalationOutput: 6,
-      },
+      }),
     });
 
     const tree = reconstructTree(sDir);

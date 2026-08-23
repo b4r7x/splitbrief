@@ -89,8 +89,13 @@ export function buildCostBreakdownRows({
   const rows: ScrollableDocumentRow[] = [
     { key: 'cost-heading', node: <Text color={theme.textDim}>Cost</Text> },
   ];
-  const { plannerCostKnown, implementerCostKnown, totalCostKnown, allPlannerBaselineKnown } =
-    costKnownFlags(costBreakdown);
+  const {
+    plannerCostKnown,
+    implementerCostKnown,
+    reviewerCostKnown,
+    totalCostKnown,
+    allPlannerBaselineKnown,
+  } = costKnownFlags(costBreakdown);
   const baseline = knownCostText(costBreakdown.hypotheticalCost, allPlannerBaselineKnown);
 
   const unmetered = unmeteredRunCostLabel(costBreakdown);
@@ -153,6 +158,20 @@ export function buildCostBreakdownRows({
         <Text color={theme.textDim}>{implementer}</Text>,
       ),
     );
+  }
+  const reviewerCost = costBreakdown.actualReviewerCost;
+  if (reviewerCost !== undefined && reviewerCostKnown !== undefined) {
+    const reviewer = knownCostText(reviewerCost, reviewerCostKnown);
+    if (reviewer !== null) {
+      valueRows.push(
+        costRow(
+          'cost-reviewer',
+          'Reviewer cost',
+          labelWidth,
+          <Text color={theme.textDim}>{reviewer}</Text>,
+        ),
+      );
+    }
   }
   if (baseline !== null) {
     valueRows.push(

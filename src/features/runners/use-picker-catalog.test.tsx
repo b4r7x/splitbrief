@@ -13,6 +13,7 @@ import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { TwoColumnPicker } from './two-column-picker/picker.js';
 import { usePickerCatalog } from './use-picker-catalog.js';
+import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
 import type { ConfiguredProviderRuntime } from '../../engine/detection/provider-outcomes.js';
 
@@ -44,7 +45,7 @@ function CatalogProbe({
   role,
   selectedItemId,
 }: {
-  role: 'planner' | 'implementer';
+  role: ActiveRunnerRole;
   selectedItemId?: string | undefined;
 }) {
   const catalog = usePickerCatalog(role, 0, selectedItemId ?? null);
@@ -62,6 +63,17 @@ function ModelListProbe({ toolId }: { toolId: string }) {
   return (
     <Text>
       {catalog.currentItem?.id}:{catalog.rightModels.map((model) => model.id).join(',')}
+    </Text>
+  );
+}
+
+function CurrentSelectionProbe({ role }: { role: ActiveRunnerRole }) {
+  const catalog = usePickerCatalog(role, 0, null);
+  const current = catalog.items.find((item) => item.isCurrent);
+
+  return (
+    <Text>
+      {catalog.roleLabel}|{current?.id ?? 'none'}|{catalog.persistedModel ?? 'none'}
     </Text>
   );
 }
@@ -141,6 +153,37 @@ describe('usePickerCatalog', () => {
       ui.unmount();
     },
   );
+
+  it('shows each planner-tier seat its own selection when the reviewer differs from the planner', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: {
+          kind: 'api',
+          provider: 'anthropic',
+          apiBase: 'https://api.anthropic.example/v1',
+          model: 'planner-model',
+        },
+        reviewer: {
+          kind: 'api',
+          provider: 'openai',
+          apiBase: 'https://api.openai.example/v1',
+          model: 'reviewer-model',
+        },
+      }),
+    });
+    seedDetections();
+
+    const reviewer = renderFeature(<CurrentSelectionProbe role="reviewer" />);
+    await tick(20);
+    expect(reviewer.lastFrame()).toContain('Reviewer|openai|reviewer-model');
+    reviewer.unmount();
+
+    const planner = renderFeature(<CurrentSelectionProbe role="planner" />);
+    await tick(20);
+    expect(planner.lastFrame()).toContain('Planner|anthropic|planner-model');
+    planner.unmount();
+  });
 
   it('keeps the configured model off a tool the user is only browsing', async () => {
     configStore.__testReset({

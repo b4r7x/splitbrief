@@ -1,5 +1,6 @@
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { taskId } from '../../../src/core/schemas/task.js';
+import { makeUsage } from '../factories/summary.js';
 
 type EventOfType<T extends EngineEvent['type']> = Extract<EngineEvent, { type: T }>;
 
@@ -80,14 +81,12 @@ export function makeRetry(
   };
 }
 
-const DEFAULT_TOKEN_USAGE = {
+const DEFAULT_TOKEN_USAGE = makeUsage({
   plannerInput: 100,
   plannerOutput: 50,
   implementerInput: 200,
   implementerOutput: 100,
-  escalationInput: 0,
-  escalationOutput: 0,
-};
+});
 
 export function makeCostUpdate(
   overrides?: Partial<EventOfType<'cost_update'>>,

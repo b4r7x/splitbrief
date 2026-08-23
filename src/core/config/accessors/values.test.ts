@@ -58,6 +58,13 @@ describe('applyEdits', () => {
     expect(updated.implementer.temperature).toBe(0.7);
   });
 
+  it('materializes the inherited reviewer seat when a reviewer field is edited', () => {
+    const updated = applyEdits(mockConfig, { 'reviewer.effort': 'high' });
+    expect(updated.reviewer?.kind).toBe('cli');
+    expect(updated.reviewer?.effort).toBe('high');
+    expect(mockConfig.reviewer).toBeUndefined();
+  });
+
   it('creates intermediate objects for new paths', () => {
     const updated = applyEdits(mockConfig, { 'planner.outputFormat': 'stream-json' });
     expect((updated.planner as Record<string, unknown>).outputFormat).toBe('stream-json');

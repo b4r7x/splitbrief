@@ -782,3 +782,101 @@ describe('cache pricing', () => {
     expect(result.cacheReadTokens).toBe(1_000_000);
   });
 });
+
+describe('reviewer pricing', () => {
+  const anthropicPlanner = {
+    plannerTool: 'anthropic',
+    plannerModel: 'claude-sonnet-4-6',
+    implementerTool: 'deepseek',
+    implementerModel: 'deepseek-v4-flash',
+  } as const;
+
+  it('folds reviewer tokens into the planner line when no reviewer is configured', () => {
+    const withReviewerBucket = calculateCostBreakdown({
+      tokenUsage: makeUsage({
+        plannerInput: 100_000,
+        plannerOutput: 40_000,
+        reviewerInput: 20_000,
+        reviewerOutput: 5_000,
+        implementerInput: 400_000,
+        implementerOutput: 100_000,
+      }),
+      totalTasks: 4,
+      escalatedCount: 0,
+      ...anthropicPlanner,
+    });
+    const preChange = calculateCostBreakdown({
+      tokenUsage: makeUsage({
+        plannerInput: 120_000,
+        plannerOutput: 45_000,
+        implementerInput: 400_000,
+        implementerOutput: 100_000,
+      }),
+      totalTasks: 4,
+      escalatedCount: 0,
+      ...anthropicPlanner,
+    });
+
+    expect(Object.keys(withReviewerBucket.providerCosts ?? {})).toEqual(
+      Object.keys(preChange.providerCosts ?? {}),
+    );
+    expect(withReviewerBucket).toEqual(preChange);
+  });
+
+  it('prices a configured reviewer as its own line at the reviewer rates', () => {
+    const result = calculateCostBreakdown({
+      tokenUsage: makeUsage({
+        plannerInput: 100_000,
+        plannerOutput: 40_000,
+        reviewerInput: 20_000,
+        reviewerOutput: 5_000,
+      }),
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+      reviewerTool: 'deepseek',
+      reviewerModel: 'deepseek-v4-flash',
+    });
+    const reviewerAlone = calculateCostBreakdown({
+      tokenUsage: makeUsage({ plannerInput: 20_000, plannerOutput: 5_000 }),
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'deepseek',
+      plannerModel: 'deepseek-v4-flash',
+      implementerTool: 'ollama',
+    });
+
+    expect(result.providerCosts?.deepseek).toEqual({
+      inputTokens: 20_000,
+      outputTokens: 5_000,
+      cost: reviewerAlone.actualPlannerCost,
+    });
+    expect(result.providerCosts?.anthropic?.inputTokens).toBe(100_000);
+    expect(result.totalActualCost).toBeCloseTo(
+      result.actualPlannerCost + result.actualImplementerCost + reviewerAlone.actualPlannerCost,
+      10,
+    );
+  });
+
+  it('suppresses the savings estimate when the configured reviewer is unpriced', () => {
+    const result = calculateCostBreakdown({
+      tokenUsage: makeUsage({
+        plannerInput: 100_000,
+        plannerOutput: 40_000,
+        reviewerInput: 20_000,
+        reviewerOutput: 5_000,
+        implementerInput: 400_000,
+        implementerOutput: 100_000,
+      }),
+      totalTasks: 4,
+      escalatedCount: 0,
+      ...anthropicPlanner,
+      reviewerTool: 'opencode',
+    });
+
+    expect(result.isTotalActualCostKnown).toBe(false);
+    expect(result.hasSavingsEstimate).toBe(false);
+  });
+});

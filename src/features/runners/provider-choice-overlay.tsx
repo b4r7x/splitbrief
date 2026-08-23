@@ -2,9 +2,14 @@ import { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { SOFT_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
+
 import type { CliProviderAuthFact } from '../../core/discovery/detection.js';
 import { formatModelName } from '../../core/model-display.js';
-import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
+import {
+  CLI_TOOL_CATALOG,
+  CLI_TOOL_IDS,
+  type ActiveRunnerRole,
+} from '../../core/runners/cli-tool-catalog.js';
 import { providerOracleCommand } from '../../engine/runners/cli-tools/provider-oracle.js';
 import { glyph } from '../../lib/glyphs.js';
 import { detectionStore } from '../../stores/project/detection.js';
@@ -23,6 +28,7 @@ import {
   gatewayAccountName,
 } from './picker-format.js';
 import { SubPanel } from './sub-panel.js';
+import { overlayAllowsPickerKeys } from '../../core/navigation/types.js';
 
 interface LoginContext {
   loginCommand: string;
@@ -110,7 +116,7 @@ function VariantRow({
 }
 
 interface ProviderChoiceOverlayProps {
-  role: 'planner' | 'implementer';
+  role: ActiveRunnerRole;
   item: RunnerPickerOption;
   model: ModelOption;
   onChoose: (fullId: string) => void;
@@ -126,10 +132,7 @@ export function ProviderChoiceOverlay({ role, item, model, onChoose }: ProviderC
       ? undefined
       : s.cliTools.find((detection) => detection.tool === toolId)?.providerAuth,
   );
-  const focus = overlayStore.use(
-    (s) =>
-      s.active === 'none' || s.active === 'planner-picker' || s.active === 'implementer-picker',
-  );
+  const focus = overlayStore.use((s) => overlayAllowsPickerKeys(s.active));
 
   useEffect(() => {
     overlayStore.setExclusive(true);

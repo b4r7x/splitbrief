@@ -3,10 +3,13 @@ import {
   CLI_COMPILER_EVIDENCE,
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
+  type PlannerTierRole,
+  type ActiveRunnerRole,
 } from '../../core/runners/cli-tool-catalog.js';
 import { semanticConfiguredArgViolations } from './arg-vector-preflight.js';
 import type { Implementer, ImplementerFactoryOptions } from '../implementers/types.js';
 import type { Planner, PlannerFactoryOptions } from '../planners/types.js';
+import type { Reviewer } from '../reviewers/types.js';
 import { warnStderr } from '../../lib/warn.js';
 import { error } from '../../utils/error.js';
 import { assertNever, includes } from '../../utils/type-guards.js';
@@ -20,9 +23,10 @@ import type {
   RunnerGateExpectation,
   RunnerSlot,
 } from './prepared-execution.js';
-import type { RunnerConfig } from '../../core/config/accessors/runner-config.js';
+import { runnerRoleForSlot, type RunnerConfig } from '../../core/config/accessors/runner-config.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { resolveIntermediateRunner } from '../../core/config/accessors/intermediate-runner.js';
+import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 
 export type RunnerFactoryAuthority = Readonly<{
   preparedConfig: PreparedConfig;
@@ -43,26 +47,31 @@ export type PlannerCreationOptions = PlannerFactoryOptions &
      */
     projectDir?: string | undefined;
   }>;
+type ReviewerCreationOptions = PlannerFactoryOptions & RunnerFactoryAuthority;
 export type ImplementerCreationOptions = ImplementerFactoryOptions &
   RunnerFactoryAuthority &
   Readonly<{ intermediateContextLength?: number | undefined }>;
 
+/**
+ * The implementer factory also fills the escalation seat, so it accepts both
+ * implementer slots. The planner and reviewer seats are exact: a context
+ * admitted for one never constructs the other.
+ */
+function slotServesFactoryRole(slot: RunnerSlot, role: ActiveRunnerRole): boolean {
+  if (role === 'implementer') return runnerRoleForSlot(slot) === 'implementer';
+  return slot.role === role;
+}
+
 function requireFactoryAuthority(
   config: Config,
   options: RunnerFactoryAuthority | undefined,
-  role: 'planner' | 'implementer',
+  role: ActiveRunnerRole,
 ): RunnerFactoryAuthority {
   if (options === undefined) {
     throw error('runner-gate-mismatch', `Runner gate does not match the prepared ${role} context.`);
   }
-  if (role === 'planner' && options.slot.role !== 'planner') {
-    throw error('runner-gate-mismatch', 'Runner gate does not match the prepared planner context.');
-  }
-  if (role === 'implementer' && options.slot.role === 'planner') {
-    throw error(
-      'runner-gate-mismatch',
-      'Runner gate does not match the prepared implementer context.',
-    );
+  if (!slotServesFactoryRole(options.slot, role)) {
+    throw error('runner-gate-mismatch', `Runner gate does not match the prepared ${role} context.`);
   }
   if (config !== options.preparedConfig) {
     throw error(
@@ -179,18 +188,16 @@ const loadAgentSdkImplementer = lazy(() => import('../implementers/agent-sdk.js'
 const loadConfiguredCustomImplementer = lazy(() => import('../implementers/command-invoke.js'));
 
 export const customRunnerFactoryError = {
-  runtimeUnavailable: (role: 'planner' | 'implementer') =>
+  runtimeUnavailable: (role: ActiveRunnerRole) =>
     error(
       'custom-runner-runtime-unavailable',
-      role === 'planner'
-        ? 'Configured custom planner requires a custom runner runtime.'
-        : 'Configured custom implementer requires a custom runner runtime.',
+      `Configured custom ${role} requires a custom runner runtime.`,
     ),
 } as const;
 
-function assertCliPlannerTool(tool: string): void {
+function assertCliPlannerTool(tool: string, seat: PlannerTierRole): void {
   if (!includes(PLANNER_CLI_TOOL_IDS, tool)) {
-    throw runnerConfigError.missingToolConfig(tool, 'planner');
+    throw runnerConfigError.missingToolConfig(tool, seat);
   }
 }
 
@@ -203,23 +210,26 @@ function assertCliImplementerTool(tool: string): void {
 /**
  * One admission path (REQ-016, REQ-018, REQ-047): every planner construction
  * crosses this decision before any adapter exists, so no backend can bypass
- * capability admission. A CLI row the compiler catalog marks unsupported, or a
- * configured argument vector that overrides authority SPLITBRIEF owns, is a
- * typed zero-dispatch refusal; an admitted CLI tool is bound to its prepared
- * start gate, which the adapter revalidates immediately before every spawn.
+ * capability admission. A CLI row the compiler catalog marks unsupported — on
+ * the planner seat only, since a reviewer compiles nothing — or a configured
+ * argument vector that overrides authority SPLITBRIEF owns, is a typed
+ * zero-dispatch refusal; an admitted CLI tool is bound to its prepared start
+ * gate, which the adapter revalidates immediately before every spawn.
  */
 function admitPlannerBackend(
   input: Readonly<{
     config: Config;
     authority: RunnerFactoryAuthority;
+    seat: PlannerTierRole;
   }>,
 ): Readonly<{ trustedCli?: CliStartGate | undefined }> {
   const runner = input.config.planner;
   if (runner.kind === 'cli') {
-    assertCliPlannerTool(runner.tool);
+    assertCliPlannerTool(runner.tool, input.seat);
     const evidence = CLI_COMPILER_EVIDENCE[runner.tool];
-    if (evidence.state === 'unsupported') {
+    if (input.seat === 'planner' && evidence.state === 'unsupported') {
       throw plannerCapabilityRefusal({
+        seat: input.seat,
         backend: runner.tool,
         reason: evidence.unsupportedReason ?? 'no compiler conformance row exists',
         missing: ['backend'],
@@ -228,6 +238,7 @@ function admitPlannerBackend(
     const violations = semanticConfiguredArgViolations(runner.args ?? []);
     if (violations.length > 0) {
       throw plannerCapabilityRefusal({
+        seat: input.seat,
         backend: runner.tool,
         reason: `the configured arguments override authority SPLITBRIEF owns: ${violations.join(', ')}`,
         missing: ['configuration'],
@@ -247,8 +258,14 @@ function admitPlannerBackend(
     : {};
 }
 
+/**
+ * The compilation clause belongs to the planner seat alone: the reviewer holds
+ * a read-only seat that compiles no Task Brief, so its refusal names the seat
+ * and states only the cause.
+ */
 function plannerCapabilityRefusal(
   input: Readonly<{
+    seat: PlannerTierRole;
     backend: string;
     reason: string;
     missing: readonly string[];
@@ -256,7 +273,9 @@ function plannerCapabilityRefusal(
 ): never {
   throw error(
     'task_compiler_capability_unsupported',
-    `The ${input.backend} planner is not admitted for Task Brief compilation in V1: ${input.reason}`,
+    input.seat === 'reviewer'
+      ? `The ${input.backend} reviewer is not admitted: ${input.reason}`
+      : `The ${input.backend} planner is not admitted for Task Brief compilation in V1: ${input.reason}`,
     { backend: input.backend, missing: [...input.missing] },
   );
 }
@@ -337,7 +356,7 @@ export async function createPlanner(
     const mod = await loadConfiguredCustomPlanner();
     planner = mod.createConfiguredCustomPlanner(configured, runtime, gate.command.invocation);
   } else {
-    const admission = admitPlannerBackend({ config, authority });
+    const admission = admitPlannerBackend({ config, authority, seat: 'planner' });
     trustedCli = admission.trustedCli;
     planner = await loadPlanner(config, options.initialSessionId, {
       ...options,
@@ -355,6 +374,55 @@ export async function createPlanner(
     );
   }
   return planner;
+}
+
+/**
+ * The review seat: one read-only call against the reviewer runner, which is the
+ * planner when no `reviewer:` block is configured. It loads through the planner
+ * backends but never carries the Task Brief compiler — a reviewer compiles
+ * nothing.
+ */
+export async function createReviewer(
+  config: Config,
+  options: ReviewerCreationOptions,
+): Promise<Reviewer> {
+  const authority = requireFactoryAuthority(config, options, 'reviewer');
+  const runner = resolveReviewerRunner(config).runner;
+  const configured = resolveConfiguredCustomRunner(config, 'reviewer');
+  let reviewer: Planner;
+
+  if (configured !== null) {
+    const configuredKind = configured.command.contract === 'output' ? 'shell' : 'agent';
+    const gate = configuredCommandGate(authority, configuredKind, configured.command.id);
+    if (gate.command.kind !== 'configured-custom') {
+      throw error('runner-gate-mismatch', 'Configured reviewer gate is invalid.');
+    }
+    const runtime = options.customRuntime;
+    if (runtime === undefined) {
+      throw customRunnerFactoryError.runtimeUnavailable('reviewer');
+    }
+    const mod = await loadConfiguredCustomPlanner();
+    reviewer = mod.createConfiguredCustomPlanner(configured, runtime, gate.command.invocation);
+  } else {
+    // `loadPlanner` reads `config.planner` by contract, so the review seat reaches
+    // the planner backends as a config whose planner slot holds the reviewer.
+    const reviewerConfig: Config = { ...config, planner: runner };
+    const admission = admitPlannerBackend({ config: reviewerConfig, authority, seat: 'reviewer' });
+    reviewer = await loadPlanner(reviewerConfig, null, {
+      ...options,
+      ...(admission.trustedCli !== undefined && { trustedCli: admission.trustedCli }),
+    });
+  }
+
+  if (runner.effort && !reviewer.capabilities.supportsEffort) {
+    warnStderr(`reviewer-effort: dropped (${runner.kind} backend has no reasoning control)`);
+  }
+  if (runner.temperature !== undefined && runner.kind !== 'api') {
+    warnStderr(
+      `reviewer-temperature: dropped (${runner.kind} backend does not accept sampling temperature)`,
+    );
+  }
+  return reviewer;
 }
 
 export async function createImplementer(

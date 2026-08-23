@@ -1,9 +1,10 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import YAML from 'yaml';
 import { createDefaultConfig, writeConfig } from '../../core/config/load/io.js';
+import { apiKeyErrors } from '../../core/config/load/validation/credentials.js';
 import { readCustomCommandCatalog } from '../../core/config/custom-commands.js';
 import { fromYaml } from '../../core/config/load/transform.js';
 import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
@@ -17,9 +18,10 @@ import {
   commitCustomCommand,
   commitCustomModel,
   commitImplementerSelection,
-  commitPlannerSelection,
+  commitPlannerTierSelection,
   deleteCustomCommand,
   editCustomCommand,
+  inheritsPlannerSeat,
   persistSynthesizedCustomCommand,
   previewCustomCommandEdit,
   removeCustomModel,
@@ -159,6 +161,18 @@ describe('commitCustomCommand', () => {
     }
   });
 
+  it('writes a custom command onto the reviewer seat, not the planner', () => {
+    const config = makeBaseConfig();
+    const updated = commitCustomCommand({
+      config,
+      role: 'reviewer',
+      command: 'my-review-tool --flag',
+      kind: 'shell',
+    });
+    expect(updated.reviewer).toMatchObject({ kind: 'shell', command: 'my-review-tool --flag' });
+    expect(updated.planner).toEqual(config.planner);
+  });
+
   it('preserves implementer kind: shell for shell implementer selection', () => {
     const config: Config = {
       ...makeBaseConfig(),
@@ -206,8 +220,11 @@ describe('runner selection commits', () => {
   const agentSdkSelection = realPickerOption('planner', 'agent-sdk');
 
   it('commits planner Agent SDK selections with the explicit kind', () => {
-    const updated = commitPlannerSelection(makeBaseConfig(), agentSdkSelection, {
-      id: 'claude-opus-4-6',
+    const updated = commitPlannerTierSelection({
+      config: makeBaseConfig(),
+      role: 'planner',
+      selection: agentSdkSelection,
+      model: { id: 'claude-opus-4-6' },
     });
 
     expect(updated.planner.kind).toBe('agent-sdk');
@@ -233,8 +250,11 @@ describe('runner selection commits', () => {
       planner: { kind: 'cli', tool: 'claude-code', model: 'sonnet' },
     };
 
-    const updated = commitPlannerSelection(config, realPickerOption('planner', 'claude-code'), {
-      id: 'auto',
+    const updated = commitPlannerTierSelection({
+      config,
+      role: 'planner',
+      selection: realPickerOption('planner', 'claude-code'),
+      model: { id: 'auto' },
     });
 
     expect(updated.planner).toEqual({ kind: 'cli', tool: 'claude-code', model: 'auto' });
@@ -294,11 +314,12 @@ describe('runner selection commits', () => {
   });
 
   it('preserves explicit model IDs when committing a CLI selection', () => {
-    const updated = commitPlannerSelection(
-      makeBaseConfig(),
-      realPickerOption('planner', 'claude-code'),
-      { id: 'sonnet' },
-    );
+    const updated = commitPlannerTierSelection({
+      config: makeBaseConfig(),
+      role: 'planner',
+      selection: realPickerOption('planner', 'claude-code'),
+      model: { id: 'sonnet' },
+    });
 
     expect(updated.planner).toEqual({
       kind: 'cli',
@@ -351,11 +372,12 @@ describe('runner selection commits', () => {
   });
 
   it('switches planners from shell to api when selecting an API provider', () => {
-    const updated = commitPlannerSelection(
-      makeBaseConfig(),
-      realPickerOption('planner', 'anthropic'),
-      { id: 'claude-sonnet-4-6' },
-    );
+    const updated = commitPlannerTierSelection({
+      config: makeBaseConfig(),
+      role: 'planner',
+      selection: realPickerOption('planner', 'anthropic'),
+      model: { id: 'claude-sonnet-4-6' },
+    });
 
     expect(updated.planner.kind).toBe('api');
     if (updated.planner.kind === 'api') {
@@ -366,8 +388,11 @@ describe('runner selection commits', () => {
 
   it('preserves optional top-level config sections when committing picker selections', () => {
     const config = makeConfigWithOptionalSections();
-    const updated = commitPlannerSelection(config, realPickerOption('planner', 'anthropic'), {
-      id: 'claude-sonnet-4-6',
+    const updated = commitPlannerTierSelection({
+      config,
+      role: 'planner',
+      selection: realPickerOption('planner', 'anthropic'),
+      model: { id: 'claude-sonnet-4-6' },
     });
 
     expect(updated.codebase).toEqual(config.codebase);
@@ -456,6 +481,153 @@ describe('runner selection commits', () => {
   });
 });
 
+describe('commitPlannerTierSelection for the reviewer seat', () => {
+  it('writes the reviewer block and leaves the planner untouched', () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } });
+    const plannerBefore = JSON.stringify(config.planner);
+
+    const updated = commitPlannerTierSelection({
+      config,
+      role: 'reviewer',
+      selection: realPickerOption('planner', 'codex'),
+      model: { id: 'auto' },
+    });
+
+    expect(updated.reviewer).toMatchObject({ kind: 'cli', tool: 'codex' });
+    expect(JSON.stringify(updated.planner)).toBe(plannerBefore);
+  });
+
+  it('records an explicit reviewer block even when the choice matches the planner', () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } });
+
+    const updated = commitPlannerTierSelection({
+      config,
+      role: 'reviewer',
+      selection: realPickerOption('planner', 'claude-code'),
+      model: { id: 'auto' },
+    });
+
+    expect(updated.reviewer).toMatchObject({ kind: 'cli', tool: 'claude-code' });
+  });
+
+  it('replaces an already configured reviewer without touching the planner', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code', model: 'auto' },
+      reviewer: { kind: 'cli', tool: 'codex', model: 'auto' },
+    });
+    const plannerBefore = JSON.stringify(config.planner);
+
+    const updated = commitPlannerTierSelection({
+      config,
+      role: 'reviewer',
+      selection: realPickerOption('planner', 'opencode'),
+      model: { id: 'auto' },
+    });
+
+    expect(updated.reviewer).toMatchObject({ kind: 'cli', tool: 'opencode' });
+    expect(JSON.stringify(updated.planner)).toBe(plannerBefore);
+  });
+
+  it('does not carry the planner inline API key onto a reviewer on another provider', () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'openai',
+        service: 'openai',
+        offering: 'payg',
+        apiBase: 'https://api.openai.com/v1',
+        apiKey: 'sk-planner-secret',
+        model: 'gpt-5',
+      },
+    });
+
+    const updated = commitPlannerTierSelection({
+      config,
+      role: 'reviewer',
+      selection: realPickerOption('planner', 'openrouter'),
+      model: { id: 'x-ai/grok-4' },
+    });
+
+    expect(updated.reviewer).toMatchObject({ kind: 'api', provider: 'openrouter' });
+    expect(JSON.stringify(updated.reviewer)).not.toContain('sk-planner-secret');
+    expect(updated.planner).toMatchObject({ apiKey: 'sk-planner-secret' });
+  });
+
+  it('leaves a same-provider reviewer with a usable credential', () => {
+    vi.stubEnv('OPENAI_API_KEY', '');
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'openai',
+        service: 'openai',
+        offering: 'payg',
+        apiBase: 'https://api.openai.com/v1',
+        apiKey: 'sk-planner-secret',
+        model: 'gpt-5',
+      },
+    });
+
+    const updated = commitPlannerTierSelection({
+      config,
+      role: 'reviewer',
+      selection: realPickerOption('planner', 'openai'),
+      model: { id: 'gpt-5' },
+    });
+
+    expect(apiKeyErrors(updated).filter((error) => error.path.startsWith('reviewer'))).toEqual([]);
+    vi.unstubAllEnvs();
+  });
+
+  it('carries the planner env API key reference into a reviewer seeded from the planner', () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'openrouter',
+        service: 'openrouter',
+        offering: 'payg',
+        apiBase: 'https://openrouter.ai/api/v1',
+        apiKey: 'env:MY_OPENROUTER_KEY',
+        model: 'x-ai/grok-4',
+      },
+    });
+
+    const updated = commitPlannerTierSelection({
+      config,
+      role: 'reviewer',
+      selection: realPickerOption('planner', 'openrouter'),
+      model: { id: 'x-ai/grok-4' },
+    });
+
+    expect(updated.reviewer).toMatchObject({ apiKey: 'env:MY_OPENROUTER_KEY' });
+  });
+
+  it('seeds the reviewer with a custom model without touching the planner', () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'openai',
+        service: 'openai',
+        offering: 'payg',
+        apiBase: 'https://api.openai.com/v1',
+        apiKey: 'sk-planner-secret',
+        model: 'gpt-5',
+      },
+    });
+    const plannerBefore = JSON.stringify(config.planner);
+
+    const updated = commitCustomModel({
+      config,
+      role: 'reviewer',
+      selection: realPickerOption('planner', 'openai'),
+      modelName: 'my-model',
+      customModels: ['gpt-5'],
+    });
+
+    expect(updated.reviewer).toMatchObject({ model: 'my-model' });
+    expect(JSON.stringify(updated.planner)).toBe(plannerBefore);
+  });
+});
+
 describe('removeCustomModel', () => {
   function makeConfigWithCustomModels(): Config {
     return {
@@ -492,6 +664,28 @@ describe('removeCustomModel', () => {
     expect(updatedActive.planner.customModels).toEqual(['other-planner-model']);
     expect(updatedActive.planner.model).toBeUndefined();
     expect('model' in updatedActive.planner).toBe(false);
+  });
+
+  it('reports that the reviewer inherits the planner seat until it has its own block', () => {
+    const config = makeConfigWithCustomModels();
+    expect(inheritsPlannerSeat(config, 'reviewer')).toBe(true);
+    expect(inheritsPlannerSeat(config, 'planner')).toBe(false);
+    expect(
+      inheritsPlannerSeat(
+        { ...config, reviewer: { kind: 'cli', tool: 'codex' } as const },
+        'reviewer',
+      ),
+    ).toBe(false);
+  });
+
+  it('removes a custom model from the reviewer block without touching the planner', () => {
+    const config: Config = {
+      ...makeConfigWithCustomModels(),
+      reviewer: { kind: 'cli', tool: 'codex', customModels: ['my-custom-reviewer'] },
+    };
+    const updated = removeCustomModel(config, 'reviewer', 'my-custom-reviewer');
+    expect(updated.reviewer?.customModels).toEqual([]);
+    expect(updated.planner.customModels).toEqual(['my-custom-planner', 'other-planner-model']);
   });
 
   it('does not clear planner.model when it points to a different model', () => {
@@ -751,6 +945,22 @@ describe('custom command catalog transforms', () => {
     );
   });
 
+  it('refuses deletion of a command only the reviewer runs', () => {
+    const added = addCustomCommand({
+      config: createDefaultConfig(),
+      role: 'reviewer',
+      id: 'review',
+      definition: catalogDefinition,
+    });
+    expect(added.kind).toBe('added');
+    if (added.kind !== 'added') return;
+
+    expect(deleteCustomCommand(added.config, 'review')).toMatchObject({
+      kind: 'blocked',
+      consumers: [expect.objectContaining({ id: 'reviewer' })],
+    });
+  });
+
   it('refuses active deletion and removes the top-level block after deleting the final unused row', () => {
     const added = addCustomCommand({
       config: createDefaultConfig(),
@@ -774,6 +984,34 @@ describe('custom command catalog transforms', () => {
     expect(deleted.kind).toBe('deleted');
     if (deleted.kind !== 'deleted') return;
     expect('customCommands' in deleted.config).toBe(false);
+  });
+
+  it('blocks deletion of a reviewer-bound command and re-points the reviewer on edit', () => {
+    const definition = {
+      label: 'Review',
+      contract: 'output' as const,
+      executable: './tools/review',
+    };
+    const config: Config = {
+      ...createDefaultConfig(),
+      customCommands: { review: definition },
+      reviewer: { kind: 'shell', command: './tools/review', model: 'reviewer-model' },
+    };
+
+    expect(deleteCustomCommand(config, 'review')).toMatchObject({
+      kind: 'blocked',
+      consumers: [expect.objectContaining({ id: 'reviewer' })],
+    });
+
+    const edited = editCustomCommand({
+      config,
+      id: 'review',
+      definition: { ...definition, executable: './tools/review-v2' },
+    });
+    expect(edited.kind).toBe('edited');
+    if (edited.kind !== 'edited') return;
+    expect(edited.config.reviewer).toMatchObject({ kind: 'shell', command: './tools/review-v2' });
+    expect(edited.config.planner).toEqual(config.planner);
   });
 
   it('persists a safe synthesized row only through the explicit transform and never persists unsafe material', () => {

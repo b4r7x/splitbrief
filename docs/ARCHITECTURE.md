@@ -173,9 +173,12 @@ Both are configured by the same five runner kinds. The factories dispatch identi
 
 ```
 src/engine/runners/factory.ts
-  createPlanner(config)      → Promise<Planner>
-  createImplementer(config)  → Promise<Implementer>
+  createPlanner(config)        → Promise<Planner>
+  createReviewer(config, opts) → Promise<Reviewer>
+  createImplementer(config)    → Promise<Implementer>
 ```
+
+The `reviewer:` block is optional; with none configured the planner holds the review seat.
 
 Factory dispatch is async and lazy: backend modules are loaded with memoized dynamic imports, so startup only imports the factory and the configured runner kind. Each backend for a given kind lives in a matched pair of files:
 
@@ -634,7 +637,8 @@ src/
 │   │                              cost-math, pricing-resolver, registry,
 │   │                              together, types
 │   ├── runners/                   command-based, errors, factory
-│   │                              (createPlanner, createImplementer), types,
+│   │                              (createPlanner, createReviewer,
+│   │                              createImplementer), types,
 │   │                              agent-sdk/ (Anthropic Agent SDK
 │   │                              wrapper), claude/ (Claude-Code CLI
 │   │                              subprocess: invoke, stream), cli-tools (CLI-tool
@@ -976,7 +980,7 @@ Path encoding: snapshots URL-encode each path segment then join with `__` to fla
 
 ## 7. Runner abstraction (5 kinds)
 
-The `kind` discriminant is required in every planner / implementer config. Factory: `src/engine/runners/factory.ts` — `createPlanner(config)` / `createImplementer(config)` are async and dispatch on `kind` through memoized dynamic imports. Pairs of files match by role:
+The `kind` discriminant is required in every planner / reviewer / implementer config. Factory: `src/engine/runners/factory.ts` — `createPlanner(config)` / `createReviewer(config, options)` / `createImplementer(config)` are async and dispatch on `kind` through memoized dynamic imports. The `reviewer:` block is optional; with none configured the planner holds the review seat. Pairs of files match by role:
 
 | `kind` | Planner file | Implementer file | Implementer write mode | Examples |
 |---|---|---|---|---|

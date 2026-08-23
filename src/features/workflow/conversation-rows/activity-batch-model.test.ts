@@ -179,6 +179,13 @@ describe('activity batch tone resolution', () => {
     }
   });
 
+  it('paints a review call with the review-stage hue in every phase', () => {
+    for (const phase of ['final-review', 'analyzing'] as const) {
+      const tone = activityBatchTone([activity({ role: 'review', phase })]);
+      expect(colorForTone(tone, theme)).toBe(theme.validator);
+    }
+  });
+
   it('resolves a role-less batch to the neutral dim tone', () => {
     const tone = activityBatchTone([]);
     expect(tone).toBe('textDim');

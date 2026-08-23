@@ -1,8 +1,7 @@
 import { existsSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Text } from 'ink';
-import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
@@ -21,7 +20,6 @@ import type {
   PreparationOutcome,
   PreparedExecution,
 } from '../../engine/runners/prepared-execution.js';
-import { ToolModelPicker } from '../overlays/runners.js';
 import { approvalPromptStore, openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { configStore } from '../../stores/project/config.js';
@@ -34,10 +32,17 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { glyph } from '../../lib/glyphs.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { SetupScreen, type SetupToolPickerArgs } from './setup.js';
+import { SetupScreen } from './setup.js';
 
 const ENTER = '\r';
+const ESC = '\u001B';
+const DOWN = '\u001B[B';
+const UP = '\u001B[A';
+const OSC_LEAD = '\u001B]';
+const HOSTILE_ERROR = 'Failed to save config: \u001B]0;pwned\u0007oops';
+const CREW_TITLE = 'Set up your crew';
 const DISCOVERY_CONTEXTS: DiscoverySourceContexts = {
   readiness: 'setup-readiness',
   modelsDev: 'setup-models-dev',
@@ -166,16 +171,35 @@ function preparedOutcome(input: PrepareExecutionInput): PreparationOutcome {
   return { kind: 'prepared', execution: preparedExecution(input) };
 }
 
-async function chooseRunner(
-  ui: ReturnType<typeof renderFeature>,
-  runnerId: 'claude-code' | 'codex',
-): Promise<void> {
-  await flushEffects();
-  ui.stdin.write(runnerId);
-  await flushEffects();
+// Cursor movement clamps at both ends of the crew surface, so pressing one direction more times
+// than the surface can ever have rows parks focus on that end whatever the offered preset count is.
+const CREW_ROW_LIMIT = 12;
+
+async function walk(ui: ReturnType<typeof renderFeature>, key: string): Promise<void> {
+  for (let step = 0; step < CREW_ROW_LIMIT; step += 1) {
+    ui.stdin.write(key);
+    await tick(20);
+  }
+}
+
+async function focusContinue(ui: ReturnType<typeof renderFeature>): Promise<void> {
+  await walk(ui, DOWN);
+}
+
+async function focusFirstPreset(ui: ReturnType<typeof renderFeature>): Promise<void> {
+  await walk(ui, UP);
+}
+
+function markedRows(ui: ReturnType<typeof renderFeature>): string[] {
+  return stripAnsiStyles(ui.lastFrame() ?? '')
+    .split('\n')
+    .filter((line) => line.includes(`${glyph('promptMarker')} `));
+}
+
+async function continueSetup(ui: ReturnType<typeof renderFeature>): Promise<void> {
+  await focusContinue(ui);
   ui.stdin.write(ENTER);
-  await flushEffects();
-  ui.stdin.write(ENTER);
+  await tick(50);
   await flushEffects();
 }
 
@@ -195,14 +219,9 @@ describe('SetupScreen', () => {
     approvalPromptStore.__testReset();
   });
 
-  it('shows generic cold initialization and advances when discovery becomes actionable', async () => {
+  it('shows generic cold initialization and reaches the crew surface once discovery is actionable', async () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 30 });
-    const ui = renderFeature(
-      <SetupScreen
-        renderToolPicker={({ stepLabel }) => <Text>{stepLabel}</Text>}
-        prepare={async (input) => preparedOutcome(input)}
-      />,
-    );
+    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />);
     await flushEffects();
 
     const cold = ui.lastFrame() ?? '';
@@ -215,7 +234,12 @@ describe('SetupScreen', () => {
     freshDiscovery(request, 1);
 
     await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('Choose planner · 1 of 2');
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain(CREW_TITLE);
+      const plan = frame.indexOf('PLAN');
+      expect(plan).toBeGreaterThanOrEqual(0);
+      expect(frame.indexOf('BUILD')).toBeGreaterThan(plan);
+      expect(frame.indexOf('REVIEW')).toBeGreaterThan(frame.indexOf('BUILD'));
     });
     ui.unmount();
   });
@@ -234,29 +258,17 @@ describe('SetupScreen', () => {
     ).toBe(true);
     const successRequest = beginDiscovery();
 
-    const ui = renderFeature(
-      <SetupScreen
-        renderToolPicker={({ role, stepLabel, onConfirm, onCancel }) => (
-          <ToolModelPicker
-            role={role}
-            stepLabel={stepLabel}
-            onConfirm={onConfirm}
-            onCancel={onCancel}
-          />
-        )}
-        prepare={async (input) => preparedOutcome(input)}
-      />,
-    );
+    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />);
     await flushEffects();
 
-    expect(ui.lastFrame() ?? '').toContain('Claude Code');
+    expect(ui.lastFrame() ?? '').toContain(CREW_TITLE);
     expect(ui.lastFrame() ?? '').toContain('Refreshing your tools…');
     expect(ui.lastFrame() ?? '').toContain('remembered results');
     expect((ui.lastFrame() ?? '').split('\n').length).toBeLessThanOrEqual(24);
 
     freshDiscovery(successRequest, 2);
     await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('Claude Code');
+      expect(ui.lastFrame() ?? '').toContain(CREW_TITLE);
       expect(ui.lastFrame() ?? '').not.toContain('Refreshing your tools…');
     });
 
@@ -267,10 +279,120 @@ describe('SetupScreen', () => {
 
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('Claude Code');
+      expect(frame).toContain(CREW_TITLE);
       expect(frame).toContain('Refresh failed · remembered results');
       expect(frame.split('\n').length).toBeLessThanOrEqual(24);
       expect(frame.split('\n').every((line) => getTerminalCellWidth(line) <= 80)).toBe(true);
+    });
+    ui.unmount();
+  });
+
+  it('fits the crew surface into the smallest supported viewport', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18 });
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        escalation: { intermediateProvider: 'deepseek', intermediateModel: 'deepseek-chat' },
+      }),
+    });
+    const request = beginDiscovery();
+    freshDiscovery(request, 1, {
+      cliTools: [
+        cliDetectionFor('ready', 'claude-code'),
+        cliDetectionFor('ready', 'codex'),
+        cliDetectionFor('ready', 'opencode'),
+      ],
+      providers: [],
+    });
+
+    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />, {
+      cols: 60,
+      rows: 18,
+    });
+    await flushEffects();
+
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '')
+      .split('\n')
+      .filter((line) => line.trim() !== '');
+    expect(lines.join('\n')).toContain(CREW_TITLE);
+    expect(lines.every((line) => getTerminalCellWidth(line) <= 60)).toBe(true);
+    // A row that wraps at 60 columns pushes the panel past 18 rows, clipping its unbroken top and
+    // bottom frame lines off the render, so an intact frame is the fit check.
+    const unbroken = (line: string | undefined) => line !== undefined && !/\s/.test(line.trim());
+    expect(unbroken(lines.at(0))).toBe(true);
+    expect(unbroken(lines.at(-1))).toBe(true);
+    ui.unmount();
+  });
+
+  it('keeps a save error to one line at the smallest supported viewport', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18 });
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        implementer: { kind: 'cli', tool: 'claude-code' },
+        reviewer: { kind: 'cli', tool: 'codex' },
+        escalation: { intermediateProvider: 'deepseek', intermediateModel: 'deepseek-chat' },
+      }),
+    });
+    const request = beginDiscovery();
+    freshDiscovery(request, 1);
+    feedbackStore.setError(
+      'Failed to save config: EACCES permission denied while writing splitbrief.yaml in this project',
+    );
+
+    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />, {
+      cols: 60,
+      rows: 18,
+    });
+    await flushEffects();
+
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '')
+      .split('\n')
+      .filter((line) => line.trim() !== '');
+    ui.unmount();
+
+    const unbroken = (line: string | undefined) => line !== undefined && !/\s/.test(line.trim());
+    expect(unbroken(lines.at(0))).toBe(true);
+    expect(unbroken(lines.at(-1))).toBe(true);
+    expect(lines.filter((line) => line.includes('Failed to save config'))).toHaveLength(1);
+    expect(lines.join('\n')).not.toContain('splitbrief.yaml');
+    expect(lines.join('\n')).toContain('Continue');
+  });
+
+  it('strips terminal control sequences from a save error', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+    const request = beginDiscovery();
+    freshDiscovery(request, 1);
+    feedbackStore.setError(HOSTILE_ERROR);
+
+    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />);
+    await flushEffects();
+    const frame = ui.lastFrame() ?? '';
+    ui.unmount();
+
+    expect(frame).not.toContain(OSC_LEAD);
+    expect(frame).not.toContain('pwned');
+    expect(frame).toContain('Failed to save config');
+  });
+
+  it('keeps the focus marker on the seat it is on when discovery publishes presets', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+    const cold = beginDiscovery();
+    freshDiscovery(cold, 1, {
+      cliTools: [cliDetectionFor('unauthenticated', 'claude-code')],
+      providers: [],
+    });
+
+    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />);
+    await flushEffects();
+    expect(markedRows(ui)).toEqual([expect.stringContaining('PLAN')]);
+
+    const warm = beginDiscovery();
+    freshDiscovery(warm, 2);
+
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Claude crew');
+      expect(markedRows(ui)).toEqual([expect.stringContaining('PLAN')]);
     });
     ui.unmount();
   });
@@ -279,12 +401,7 @@ describe('SetupScreen', () => {
     const request = beginDiscovery();
     failedDiscovery(request, 1);
 
-    const ui = renderFeature(
-      <SetupScreen
-        renderToolPicker={() => null}
-        prepare={async (input) => preparedOutcome(input)}
-      />,
-    );
+    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />);
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
@@ -300,7 +417,23 @@ describe('SetupScreen', () => {
     ui.unmount();
   });
 
-  it('keeps planner confirmation reachable after a real config save rejection', async () => {
+  it('opens the picker of the seat under the cursor', async () => {
+    const request = beginDiscovery();
+    freshDiscovery(request, 1);
+
+    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />);
+    await flushEffects();
+    // The review seat is the row above the continue row.
+    await focusContinue(ui);
+    ui.stdin.write(UP);
+    await tick(20);
+    ui.stdin.write(ENTER);
+
+    await vi.waitFor(() => expect(overlayStore.get().active).toBe('reviewer-picker'));
+    ui.unmount();
+  });
+
+  it('keeps the crew surface reachable after a real config save rejection', async () => {
     await withTempDir('setup-invalid', async (projectDir) => {
       configStore.load(projectDir);
       writeFileSync(join(projectDir, SPLITBRIEF_DIR), 'blocks the canonical config directory');
@@ -308,32 +441,24 @@ describe('SetupScreen', () => {
       freshDiscovery(request, 1);
       routerStore.init({ screen: 'setup', onComplete: 'home' });
 
-      let picker: SetupToolPickerArgs | undefined;
-      const ui = renderFeature(
-        <SetupScreen
-          renderToolPicker={(args) => {
-            picker = args;
-            return <Text>{args.stepLabel}</Text>;
-          }}
-          prepare={async (input) => preparedOutcome(input)}
-        />,
-      );
+      const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />);
       await flushEffects();
-      expect(picker?.role).toBe('planner');
-      await picker?.onConfirm(makeConfig());
-      await flushEffects();
+      await continueSetup(ui);
 
-      expect(feedbackStore.get()).toMatchObject({
-        isError: true,
-        message: expect.stringContaining('Failed to save config'),
-      });
-      expect(ui.lastFrame() ?? '').toContain('Choose planner · 1 of 2');
+      await vi.waitFor(() =>
+        expect(feedbackStore.get()).toMatchObject({
+          isError: true,
+          message: expect.stringContaining('Failed to save config'),
+        }),
+      );
+      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Failed to save config'));
+      expect(ui.lastFrame() ?? '').toContain(CREW_TITLE);
       expect(routerStore.get().screen).toBe('setup');
       ui.unmount();
     });
   });
 
-  it('resets the real picker between roles and completes to workflow with canonical config', async () => {
+  it('applies a crew preset and completes to workflow with the canonical config', async () => {
     await withTempDir('setup-complete', async (projectDir) => {
       configStore.load(projectDir);
       const request = beginDiscovery();
@@ -348,38 +473,26 @@ describe('SetupScreen', () => {
       terminalSizeStore.__testReset({ cols: 80, rows: 24 });
       const prepare = vi.fn(async (input: PrepareExecutionInput) => preparedOutcome(input));
 
-      const ui = renderFeature(
-        <SetupScreen
-          renderToolPicker={({ role, stepLabel, onConfirm, onCancel }) => (
-            <ToolModelPicker
-              role={role}
-              stepLabel={stepLabel}
-              onConfirm={onConfirm}
-              onCancel={onCancel}
-            />
-          )}
-          prepare={prepare}
-        />,
-      );
+      const ui = renderFeature(<SetupScreen prepare={prepare} />);
       await flushEffects();
-      await chooseRunner(ui, 'claude-code');
-
-      await vi.waitFor(() => {
-        expect(ui.lastFrame() ?? '').toContain('Choose model · 2 of 2');
-      });
 
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(frame).toContain('Implementer');
-      expect(frame).toContain('Ollama · api');
       expect(frame.split('\n').length).toBeLessThanOrEqual(24);
       expect(frame.split('\n').every((line) => getTerminalCellWidth(line) <= 80)).toBe(true);
 
-      ui.stdin.write('\u001b');
+      await focusFirstPreset(ui);
+      ui.stdin.write(UP);
       await flushEffects();
-      expect(ui.lastFrame() ?? '').toContain('Choose planner · 1 of 2');
-
-      await chooseRunner(ui, 'claude-code');
-      await chooseRunner(ui, 'codex');
+      ui.stdin.write(UP);
+      await flushEffects();
+      ui.stdin.write(ENTER);
+      await vi.waitFor(() => {
+        expect(loadConfig(projectDir).config.reviewer).toMatchObject({
+          kind: 'cli',
+          tool: 'codex',
+        });
+      });
+      await continueSetup(ui);
 
       let routedExecution: PreparedExecution | undefined;
       await vi.waitFor(() => {
@@ -405,7 +518,7 @@ describe('SetupScreen', () => {
         unverifiedAuth: 'disclosed',
         onTieredApproval: openApprovalPrompt,
       });
-      if (!routedExecution || routedExecution.session.kind !== 'new') {
+      if (routedExecution?.session.kind !== 'new') {
         throw new Error('Expected a routed new-session execution.');
       }
       const routedSessionDir = sessionDir(
@@ -425,8 +538,29 @@ describe('SetupScreen', () => {
       expect(persisted).toMatchObject({
         version: 3,
         planner: { kind: 'cli', tool: 'claude-code' },
-        implementer: { kind: 'cli', tool: 'codex' },
+        reviewer: { kind: 'cli', tool: 'codex' },
       });
+      ui.unmount();
+    });
+  });
+
+  it('completes to home for the init entry point, which carries no pending feature', async () => {
+    await withTempDir('setup-init', async (projectDir) => {
+      configStore.load(projectDir);
+      const request = beginDiscovery();
+      freshDiscovery(request, 1);
+      // What `splitbrief init` routes to before rendering the app.
+      routerStore.init({ screen: 'setup', onComplete: 'home' });
+
+      const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />);
+      await flushEffects();
+      expect(routerStore.get().screen).toBe('setup');
+      expect(ui.lastFrame() ?? '').toContain(CREW_TITLE);
+
+      await continueSetup(ui);
+
+      await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
+      expect(existsSync(configPath(projectDir))).toBe(true);
       ui.unmount();
     });
   });
@@ -444,26 +578,12 @@ describe('SetupScreen', () => {
           report: blocked,
         }),
       );
-      let picker: SetupToolPickerArgs | undefined;
-      const ui = renderFeature(
-        <SetupScreen
-          renderToolPicker={(args) => {
-            picker = args;
-            return <Text>{args.stepLabel}</Text>;
-          }}
-          prepare={prepare}
-        />,
-      );
+      const ui = renderFeature(<SetupScreen prepare={prepare} />);
       await flushEffects();
+      await continueSetup(ui);
 
-      await picker?.onConfirm(makeConfig());
-      await flushEffects();
-      expect(picker?.role).toBe('implementer');
-      await picker?.onConfirm(makeConfig());
-      await flushEffects();
-
+      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Start is blocked'));
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('Start is blocked');
       expect(frame).toContain('2 checks hidden');
       expect(frame.indexOf('blocker.first')).toBeLessThan(frame.indexOf('warning.first'));
       expect(frame).toContain('r retry');
@@ -483,9 +603,8 @@ describe('SetupScreen', () => {
       ui.stdin.write('r');
       await vi.waitFor(() => expect(prepare).toHaveBeenCalledTimes(2));
       expect(prepare.mock.calls[1]?.[0].effectiveConfig).toEqual(settingsConfig);
-      ui.stdin.write('\u001b');
-      await flushEffects();
-      expect(ui.lastFrame() ?? '').toContain('Choose model · 2 of 2');
+      ui.stdin.write(ESC);
+      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain(CREW_TITLE));
       expect(routerStore.get().screen).toBe('setup');
       ui.unmount();
     });
@@ -505,28 +624,16 @@ describe('SetupScreen', () => {
           signal = input.signal;
           return pending.promise;
         });
-        let picker: SetupToolPickerArgs | undefined;
-        const ui = renderFeature(
-          <SetupScreen
-            renderToolPicker={(args) => {
-              picker = args;
-              return <Text>{args.stepLabel}</Text>;
-            }}
-            prepare={prepare}
-          />,
-        );
+        const ui = renderFeature(<SetupScreen prepare={prepare} />);
         await flushEffects();
 
-        await picker?.onConfirm(makeConfig());
-        await flushEffects();
-        await picker?.onConfirm(makeConfig());
+        await continueSetup(ui);
         await vi.waitFor(() => expect(prepare).toHaveBeenCalledOnce());
         await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Preparing your tools'));
 
         if (exitMode === 'Escape') {
-          ui.stdin.write('\u001b');
-          await flushEffects();
-          expect(ui.lastFrame() ?? '').toContain('Choose model · 2 of 2');
+          ui.stdin.write(ESC);
+          await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain(CREW_TITLE));
         } else {
           ui.unmount();
         }
@@ -572,25 +679,12 @@ describe('SetupScreen', () => {
           error: new Error('The runner check did not complete.'),
         }),
       );
-      let picker: SetupToolPickerArgs | undefined;
-      const ui = renderFeature(
-        <SetupScreen
-          renderToolPicker={(args) => {
-            picker = args;
-            return <Text>{args.stepLabel}</Text>;
-          }}
-          prepare={prepare}
-        />,
-      );
+      const ui = renderFeature(<SetupScreen prepare={prepare} />);
       await flushEffects();
+      await continueSetup(ui);
 
-      await picker?.onConfirm(makeConfig());
-      await flushEffects();
-      await picker?.onConfirm(makeConfig());
-      await flushEffects();
-
+      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Preparation failed'));
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('Preparation failed');
       expect(frame).toContain('The runner check did not complete.');
       expect(frame.indexOf('blocker.first')).toBeLessThan(frame.indexOf('warning.first'));
       expect(frame).toContain('r retry');

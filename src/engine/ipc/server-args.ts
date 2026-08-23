@@ -45,6 +45,7 @@ const DetachedRunnerOverrideSchema = RunnerOverrideSchema.pick({
 const DetachedOverridesSchema = CLIOverridesSchema.extend({
   planner: DetachedRunnerOverrideSchema.optional(),
   implementer: DetachedRunnerOverrideSchema.optional(),
+  reviewer: DetachedRunnerOverrideSchema.optional(),
 });
 
 export type IpcServerAttachment = z.infer<typeof IpcServerAttachmentSchema>;

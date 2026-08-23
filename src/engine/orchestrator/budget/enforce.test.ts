@@ -1,18 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import type { TokenUsage } from '../../../core/schemas/tokens.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
-import { enforceBudget } from './enforce.js';
+import { checkBudgetAfterTask, enforceBudget } from './enforce.js';
 import { getBudgetCostKnownness } from './knownness.js';
-import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
-
-const zeroUsage: TokenUsage = {
-  plannerInput: 0,
-  plannerOutput: 0,
-  implementerInput: 0,
-  implementerOutput: 0,
-  escalationInput: 0,
-  escalationOutput: 0,
-};
+import { makeBusRecorder, makeWctx } from '#testing/helpers/orchestrator-factories.js';
+import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { createInitialState } from '../../../core/state/machine.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 const emptyPricingCache: ModelCacheAccessor = {
   getModelsDevCatalog: () => null,
@@ -35,7 +28,7 @@ describe('enforceBudget', () => {
     const { bus } = makeBusRecorder();
     const result = await enforceBudget({
       ...baseOpts,
-      tokenUsage: zeroUsage,
+      tokenUsage: makeUsage(),
       maxBudget: 1.0,
       bus,
       warningEmitted: false,
@@ -47,11 +40,7 @@ describe('enforceBudget', () => {
 
   it('emits warning at 80% and sets warningEmitted', async () => {
     const { bus, events } = makeBusRecorder();
-    const usage: TokenUsage = {
-      ...zeroUsage,
-      plannerInput: 200_000,
-      plannerOutput: 20_000,
-    };
+    const usage = makeUsage({ plannerInput: 200_000, plannerOutput: 20_000 });
     const cost = currentKnownCost({
       ...baseOpts,
       tokenUsage: usage,
@@ -84,11 +73,7 @@ describe('enforceBudget', () => {
 
   it('does not re-emit warning if already emitted', async () => {
     const { bus, events } = makeBusRecorder();
-    const usage: TokenUsage = {
-      ...zeroUsage,
-      plannerInput: 200_000,
-      plannerOutput: 20_000,
-    };
+    const usage = makeUsage({ plannerInput: 200_000, plannerOutput: 20_000 });
     const cost = currentKnownCost({
       ...baseOpts,
       tokenUsage: usage,
@@ -111,11 +96,7 @@ describe('enforceBudget', () => {
   });
 
   it('stops with a budget-exceeded recovery boundary and emits budget_exceeded', async () => {
-    const usage: TokenUsage = {
-      ...zeroUsage,
-      plannerInput: 1_000_000,
-      plannerOutput: 100_000,
-    };
+    const usage = makeUsage({ plannerInput: 1_000_000, plannerOutput: 100_000 });
     const cost = currentKnownCost({
       ...baseOpts,
       tokenUsage: usage,
@@ -144,11 +125,7 @@ describe('enforceBudget', () => {
   });
 
   it('stops with a budget-paused recovery boundary and emits budget_paused', async () => {
-    const usage: TokenUsage = {
-      ...zeroUsage,
-      plannerInput: 200_000,
-      plannerOutput: 20_000,
-    };
+    const usage = makeUsage({ plannerInput: 200_000, plannerOutput: 20_000 });
     const cost = currentKnownCost({
       ...baseOpts,
       tokenUsage: usage,
@@ -176,11 +153,7 @@ describe('enforceBudget', () => {
 
   it('does not re-pause when pauseEmitted is true', async () => {
     const { bus, events } = makeBusRecorder();
-    const usage: TokenUsage = {
-      ...zeroUsage,
-      plannerInput: 200_000,
-      plannerOutput: 20_000,
-    };
+    const usage = makeUsage({ plannerInput: 200_000, plannerOutput: 20_000 });
     const cost = currentKnownCost({
       ...baseOpts,
       tokenUsage: usage,
@@ -204,11 +177,7 @@ describe('enforceBudget', () => {
 
   it('emits budget_warning before budget_paused when crossing past 80% straight into pause zone', async () => {
     const { bus, events } = makeBusRecorder();
-    const usage: TokenUsage = {
-      ...zeroUsage,
-      plannerInput: 200_000,
-      plannerOutput: 20_000,
-    };
+    const usage = makeUsage({ plannerInput: 200_000, plannerOutput: 20_000 });
     const cost = currentKnownCost({ ...baseOpts, tokenUsage: usage, plannerTool: 'anthropic' });
     const budget = cost / 0.9;
 
@@ -231,11 +200,7 @@ describe('enforceBudget', () => {
 
   it('emits budget_warning before budget_exceeded when crossing past 80% straight into exceeded zone', async () => {
     const { bus, events } = makeBusRecorder();
-    const usage: TokenUsage = {
-      ...zeroUsage,
-      plannerInput: 1_000_000,
-      plannerOutput: 100_000,
-    };
+    const usage = makeUsage({ plannerInput: 1_000_000, plannerOutput: 100_000 });
     const cost = currentKnownCost({ ...baseOpts, tokenUsage: usage, plannerTool: 'anthropic' });
     const budget = cost * 0.5;
 
@@ -259,11 +224,7 @@ describe('enforceBudget', () => {
   it('uses plannerModel pricing in cost calculation and pauses when paid model pricing is unknown', async () => {
     const { bus: busSonnet, events: eSonnet } = makeBusRecorder();
     const { bus: busHaiku, events: eHaiku } = makeBusRecorder();
-    const usage: TokenUsage = {
-      ...zeroUsage,
-      plannerInput: 200_000,
-      plannerOutput: 20_000,
-    };
+    const usage = makeUsage({ plannerInput: 200_000, plannerOutput: 20_000 });
     const sonnetCost = currentKnownCost({
       ...baseOpts,
       tokenUsage: usage,
@@ -318,11 +279,7 @@ describe('enforceBudget', () => {
     const { bus, events } = makeBusRecorder();
     const result = await enforceBudget({
       ...baseOpts,
-      tokenUsage: {
-        ...zeroUsage,
-        plannerInput: 100_000,
-        implementerInput: 1_000_000,
-      },
+      tokenUsage: makeUsage({ plannerInput: 100_000, implementerInput: 1_000_000 }),
       maxBudget: 1,
       bus,
       warningEmitted: false,
@@ -349,11 +306,7 @@ describe('enforceBudget', () => {
             ]
           : null,
     };
-    const usage: TokenUsage = {
-      ...zeroUsage,
-      plannerInput: 1_000_000,
-      plannerOutput: 1_000_000,
-    };
+    const usage = makeUsage({ plannerInput: 1_000_000, plannerOutput: 1_000_000 });
 
     const result = await enforceBudget({
       ...baseOpts,
@@ -372,5 +325,44 @@ describe('enforceBudget', () => {
     expect(events.map((e) => e.type)).toEqual(
       expect.arrayContaining(['budget_warning', 'budget_paused']),
     );
+  });
+});
+
+describe('checkBudgetAfterTask', () => {
+  it('prices already-spent reviewer tokens with the identity pinned at run start, not the live config', async () => {
+    const tokenUsage = makeUsage({ reviewerInput: 200_000, reviewerOutput: 20_000 });
+    const pinned = {
+      plannerTool: 'ollama',
+      implementerTool: 'ollama',
+      reviewerTool: 'anthropic',
+      reviewerModel: 'claude-sonnet-4-6',
+    };
+    const spent = currentKnownCost({ ...pinned, tokenUsage, totalTasks: 1, escalatedCount: 0 });
+    expect(spent).toBeGreaterThan(0);
+
+    const { bus, events } = makeBusRecorder();
+    const state = { ...createInitialState('feat'), ...pinned, tokenUsage };
+    const wctx = makeWctx({
+      projectDir: '/tmp/budget-reviewer-identity',
+      sessionId: 'session',
+      bus,
+      config: makeNoValidationConfig({
+        planner: { kind: 'cli', tool: 'opencode' },
+        workflow: { maxBudget: spent / 0.82 },
+      }),
+    });
+
+    const result = await checkBudgetAfterTask({
+      wctx,
+      state,
+      taskBreakdowns: [],
+      totalTasks: 1,
+      budgetWarningEmitted: false,
+      budgetPauseEmitted: false,
+    });
+
+    expect(result.warningEmitted).toBe(true);
+    const warning = events.find((event) => event.type === 'budget_warning');
+    expect(warning).toMatchObject({ currentCost: spent });
   });
 });

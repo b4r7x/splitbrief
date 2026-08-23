@@ -11,7 +11,7 @@ import {
   PLANNER_CLI_TOOL_IDS,
 } from '../../../core/runners/cli-tool-catalog.js';
 import { isCurrentConfig } from './catalog.js';
-import { assemblePickerDescriptors, buildPickerOptions } from './options.js';
+import { assemblePickerDescriptors, buildPickerOptions, type PickerOption } from './options.js';
 import { deriveModelCatalogCapability } from './posture.js';
 import type { ConfiguredProviderRuntime } from '../../../engine/detection/provider-outcomes.js';
 
@@ -467,5 +467,65 @@ describe('current config visibility', () => {
     expect(claude?.isCurrent).toBe(true);
     expect(claude?.status.state).toBe('incompatible');
     expect(claude?.available).toBe(false);
+  });
+});
+
+describe('reviewer seat', () => {
+  const descriptors = assemblePickerDescriptors();
+  const detections = { cliTools: [], providers: [] };
+
+  function reviewerRow(id: string): PickerOption {
+    const row = buildPickerOptions('reviewer', descriptors, detections, undefined).find(
+      (item) => item.id === id,
+    );
+    if (row === undefined) throw new Error(`no reviewer picker row for ${id}`);
+    return row;
+  }
+
+  it('offers the reviewer the same catalog as the planner', () => {
+    expect(
+      buildPickerOptions('reviewer', descriptors, detections, undefined).map((item) => item.id),
+    ).toEqual(
+      buildPickerOptions('planner', descriptors, detections, undefined).map((item) => item.id),
+    );
+  });
+
+  it('marks the current reviewer row from the reviewer config, not the planner config', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code' },
+      reviewer: { kind: 'cli', tool: 'codex' },
+    });
+
+    expect(isCurrentConfig(reviewerRow('codex'), config, 'reviewer')).toBe(true);
+    expect(isCurrentConfig(reviewerRow('claude-code'), config, 'reviewer')).toBe(false);
+  });
+
+  it('does not report the planner probe verdict on the review seat', () => {
+    const scoped = {
+      cliTools: [],
+      providers: [makeImplementerDetection('openrouter', { available: true, hasKey: true })],
+      providerOutcomes: [
+        scopedRuntime({
+          role: 'planner',
+          provider: 'openrouter',
+          state: 'failed',
+          failure: 'guardrail-filtered',
+        }),
+      ],
+    };
+    const rowFor = (role: 'planner' | 'reviewer') =>
+      buildPickerOptions(role, descriptors, scoped, undefined).find(
+        (item) => item.id === 'openrouter',
+      );
+
+    expect(rowFor('planner')?.status.state).toBe('unavailable');
+    expect(rowFor('reviewer')?.status).not.toEqual(rowFor('planner')?.status);
+    expect(rowFor('reviewer')?.status).toEqual({ state: 'ready', remediation: null });
+  });
+
+  it('marks the planner row current when no reviewer is configured', () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
+
+    expect(isCurrentConfig(reviewerRow('claude-code'), config, 'reviewer')).toBe(true);
   });
 });

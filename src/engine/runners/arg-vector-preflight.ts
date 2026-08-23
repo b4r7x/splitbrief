@@ -8,8 +8,14 @@ import {
   resolveImplementerProfiles,
   type ResolvedImplementerProfile,
 } from '../../core/config/accessors/implementer-profiles.js';
-import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
+import {
+  CLI_TOOL_CATALOG,
+  type ActiveRunnerRole,
+  type CliToolId,
+} from '../../core/runners/cli-tool-catalog.js';
 import { createSanitizedChildEnv } from '../../lib/process/spawn/lifecycle.js';
+import { assertNever } from '../../utils/type-guards.js';
 import { spawnWithTimeout } from '../../lib/process/spawn/progress.js';
 import { CLI_PROMPT_SENTINEL } from './cli-tools/candidate-contract.js';
 import { lookupCliImplementerAdapter, lookupCliPlannerAdapter } from './cli-tools/registry.js';
@@ -21,8 +27,6 @@ const OPTION_ENTRY_PATTERN = /^\s*--?[a-z0-9]/i;
 const OPTION_TOKEN_PATTERN = /^[-<[]/;
 const SUBCOMMAND_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
 const PREFLIGHT_SESSION_ID = '00000000-0000-4000-8000-000000000000';
-
-export type ArgVectorPreflightRole = 'planner' | 'implementer';
 
 export type ArgVectorPreflightOutcome =
   | Readonly<{ ok: true }>
@@ -211,7 +215,8 @@ function opensNewEntry(line: string): boolean {
 export interface ArgVectorPreflightCheckInput {
   config: Config;
   projectDir: string;
-  includeImplementers: boolean;
+  /** The seats this run reaches; a seat the run never calls is not preflighted. */
+  roles: readonly ActiveRunnerRole[];
   runHelp?: (tool: CliToolId, argv: readonly string[]) => Promise<string | null>;
 }
 
@@ -220,7 +225,7 @@ export async function collectArgVectorPreflightChecks(
 ): Promise<ReadinessCheck[]> {
   const runHelp = input.runHelp ?? defaultRunHelp(input.projectDir);
   const runners: PreflightRunner[] = [];
-  if (input.config.planner.kind === 'cli') {
+  if (input.roles.includes('planner') && input.config.planner.kind === 'cli') {
     runners.push({
       tool: input.config.planner.tool,
       role: 'planner',
@@ -229,7 +234,19 @@ export async function collectArgVectorPreflightChecks(
       effort: input.config.planner.effort,
     });
   }
-  if (input.includeImplementers) {
+  if (input.roles.includes('reviewer')) {
+    const reviewer = resolveReviewerRunner(input.config);
+    if (reviewer.source === 'configured' && reviewer.runner.kind === 'cli') {
+      runners.push({
+        tool: reviewer.runner.tool,
+        role: 'reviewer',
+        model: reviewer.runner.model,
+        args: reviewer.runner.args,
+        effort: reviewer.runner.effort,
+      });
+    }
+  }
+  if (input.roles.includes('implementer')) {
     let profiles: ResolvedImplementerProfile[] = [];
     try {
       profiles = resolveImplementerProfiles(input.config).profiles;
@@ -257,7 +274,7 @@ export async function collectArgVectorPreflightChecks(
 
 type PreflightRunner = Readonly<{
   tool: CliToolId;
-  role: ArgVectorPreflightRole;
+  role: ActiveRunnerRole;
   model: string | undefined;
   args: readonly string[] | undefined;
   effort: EffortLevel | undefined;
@@ -337,44 +354,66 @@ async function buildPreflightCheck(
  * One arg vector per branch the adapter can take for this role, so a flag that
  * only appears on resume or on an escalated planner call is compared too. The
  * planner's `effort` is configuration rather than a branch, so it rides on every
- * variant whenever the adapter supports it.
+ * variant whenever the adapter supports it. The review seat takes exactly one
+ * branch — a read-only call, which the CLI planner maps to plan mode, with no
+ * session to resume — so escalate-mode and resume argv are not its to compare.
  */
 function emittedArgVectors(runner: PreflightRunner): readonly (readonly string[])[] {
-  if (runner.role === 'implementer') {
-    return [
-      lookupCliImplementerAdapter(runner.tool).buildArgs({
-        prompt: CLI_PROMPT_SENTINEL,
-        model: runner.model,
-        projectDir: '.',
-        configuredArgs: runner.args ?? [],
-      }),
-    ];
+  switch (runner.role) {
+    case 'implementer':
+      return [
+        lookupCliImplementerAdapter(runner.tool).buildArgs({
+          prompt: CLI_PROMPT_SENTINEL,
+          model: runner.model,
+          projectDir: '.',
+          configuredArgs: runner.args ?? [],
+        }),
+      ];
+    case 'reviewer': {
+      const adapter = lookupCliPlannerAdapter(runner.tool);
+      return [
+        adapter.buildArgs({ ...plannerCommonArgs(runner, adapter), mode: 'plan', sessionId: null }),
+      ];
+    }
+    case 'planner': {
+      const adapter = lookupCliPlannerAdapter(runner.tool);
+      const common = plannerCommonArgs(runner, adapter);
+      const variants = [
+        adapter.buildArgs({ ...common, mode: 'plan', sessionId: null }),
+        adapter.buildArgs({ ...common, mode: 'escalate', sessionId: null }),
+      ];
+      if (adapter.supportsSessionResume) {
+        variants.push(
+          adapter.buildArgs({ ...common, mode: 'plan', sessionId: PREFLIGHT_SESSION_ID }),
+        );
+      }
+      const seen = new Set<string>();
+      return variants.filter((argv) => {
+        const key = argv.join(' ');
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+    default:
+      return assertNever(runner.role);
   }
-  const adapter = lookupCliPlannerAdapter(runner.tool);
-  const common = {
+}
+
+function plannerCommonArgs(
+  runner: PreflightRunner,
+  adapter: Readonly<{ supportsEffort: boolean }>,
+) {
+  return {
     prompt: CLI_PROMPT_SENTINEL,
     model: runner.model,
     projectDir: '.',
     configuredArgs: runner.args ?? [],
     effort: adapter.supportsEffort ? runner.effort : undefined,
   };
-  const variants = [
-    adapter.buildArgs({ ...common, mode: 'plan', sessionId: null }),
-    adapter.buildArgs({ ...common, mode: 'escalate', sessionId: null }),
-  ];
-  if (adapter.supportsSessionResume) {
-    variants.push(adapter.buildArgs({ ...common, mode: 'plan', sessionId: PREFLIGHT_SESSION_ID }));
-  }
-  const seen = new Set<string>();
-  return variants.filter((argv) => {
-    const key = argv.join(' ');
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 }
 
-function argVectorCheckId(tool: CliToolId, role: ArgVectorPreflightRole): string {
+function argVectorCheckId(tool: CliToolId, role: ActiveRunnerRole): string {
   return `runners.cli.${tool}.arg-vector.${role}`;
 }
 

@@ -249,9 +249,9 @@ const gates: readonly Gate[] = [
   },
   {
     id: '31',
-    description: 'No vendor-ID JSX branches in runner picker surfaces',
+    description: 'No vendor-ID JSX branches in seat-selection surfaces',
     command:
-      "{ rg -i \"\\\\b(cursor|antigravity|mimo-token-plan|mistral|gemini|cerebras|zai|minimax|moonshot|dashscope|llama-cpp)\\\\b\" src/features/runners src/app/overlays/runners.tsx --glob '*.tsx' --glob '!**/*.test.tsx' || true; } | wc -l",
+      "{ rg -i \"\\\\b(cursor|antigravity|mimo-token-plan|mistral|gemini|cerebras|zai|minimax|moonshot|dashscope|llama-cpp)\\\\b\" src/features/runners src/app/overlays/runners.tsx src/features/crew src/app/overlays/crew.tsx src/app/screens/setup.tsx --glob '*.tsx' --glob '!**/*.test.tsx' || true; } | wc -l",
     expected: 0,
   },
   {

@@ -1,5 +1,9 @@
 import { createStore, storeBase } from '../create-store.js';
-import type { TaskTokenUsage, TokenUsage } from '../../core/schemas/tokens.js';
+import {
+  ZERO_TOKEN_USAGE,
+  type TaskTokenUsage,
+  type TokenUsage,
+} from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
@@ -20,6 +24,10 @@ export interface PhaseTokens {
   implementerOutputTokens?: number | undefined;
   implementerCacheReadTokens?: number | undefined;
   implementerCacheCreateTokens?: number | undefined;
+  reviewerInputTokens?: number | undefined;
+  reviewerOutputTokens?: number | undefined;
+  reviewerCacheReadTokens?: number | undefined;
+  reviewerCacheCreateTokens?: number | undefined;
 }
 
 export type TaskAttemptTokens = Pick<
@@ -67,6 +75,8 @@ interface PricingContext {
   implementerTool: string;
   plannerModel?: string | undefined;
   implementerModel?: string | undefined;
+  reviewerTool?: string | undefined;
+  reviewerModel?: string | undefined;
 }
 
 const initial: TokensState = {
@@ -93,15 +103,6 @@ export const _tokensInternal = { set: store.set };
 export const tokensStore = {
   ...storeBase(store),
   __testReset,
-};
-
-const EMPTY_USAGE: TokenUsage = {
-  plannerInput: 0,
-  plannerOutput: 0,
-  implementerInput: 0,
-  implementerOutput: 0,
-  escalationInput: 0,
-  escalationOutput: 0,
 };
 
 function makeEmptyPhaseTokens(): PhaseTokens {
@@ -176,27 +177,38 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
           implementerTool: event.implementerTool,
           plannerModel: event.plannerModel,
           implementerModel: event.implementerModel,
+          reviewerTool: event.reviewerTool,
+          reviewerModel: event.reviewerModel,
         },
       };
 
     case 'cost_update': {
-      const prev = state.tokenUsage ?? EMPTY_USAGE;
+      const prev = state.tokenUsage ?? ZERO_TOKEN_USAGE;
       const curr = event.tokenUsage;
       const phase = event.phase;
 
       const existingPhase = state.perPhase[phase] ?? makeEmptyPhaseTokens();
 
-      const { planner: pd, implementer: id } = attributePhaseTokenDelta(prev, curr, phase);
+      const {
+        planner: pd,
+        implementer: id,
+        reviewer: rd,
+      } = attributePhaseTokenDelta(prev, curr, phase);
 
       const updatedPhase: PhaseTokens = {
-        inputTokens: existingPhase.inputTokens + pd.input + id.input,
-        outputTokens: existingPhase.outputTokens + pd.output + id.output,
-        cacheReadTokens: existingPhase.cacheReadTokens + pd.cacheRead + id.cacheRead,
-        cacheCreateTokens: existingPhase.cacheCreateTokens + pd.cacheCreate + id.cacheCreate,
+        inputTokens: existingPhase.inputTokens + pd.input + id.input + rd.input,
+        outputTokens: existingPhase.outputTokens + pd.output + id.output + rd.output,
+        cacheReadTokens: existingPhase.cacheReadTokens + pd.cacheRead + id.cacheRead + rd.cacheRead,
+        cacheCreateTokens:
+          existingPhase.cacheCreateTokens + pd.cacheCreate + id.cacheCreate + rd.cacheCreate,
         plannerInputTokens: (existingPhase.plannerInputTokens ?? 0) + pd.input,
         plannerOutputTokens: (existingPhase.plannerOutputTokens ?? 0) + pd.output,
         plannerCacheReadTokens: (existingPhase.plannerCacheReadTokens ?? 0) + pd.cacheRead,
         plannerCacheCreateTokens: (existingPhase.plannerCacheCreateTokens ?? 0) + pd.cacheCreate,
+        reviewerInputTokens: (existingPhase.reviewerInputTokens ?? 0) + rd.input,
+        reviewerOutputTokens: (existingPhase.reviewerOutputTokens ?? 0) + rd.output,
+        reviewerCacheReadTokens: (existingPhase.reviewerCacheReadTokens ?? 0) + rd.cacheRead,
+        reviewerCacheCreateTokens: (existingPhase.reviewerCacheCreateTokens ?? 0) + rd.cacheCreate,
         implementerInputTokens: (existingPhase.implementerInputTokens ?? 0) + id.input,
         implementerOutputTokens: (existingPhase.implementerOutputTokens ?? 0) + id.output,
         implementerCacheReadTokens: (existingPhase.implementerCacheReadTokens ?? 0) + id.cacheRead,

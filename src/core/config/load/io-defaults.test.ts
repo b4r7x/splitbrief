@@ -34,6 +34,25 @@ describe('config defaults', () => {
       expect(config.workflow.taskReview).toBe('none');
     });
 
+    it('leaves the reviewer seat unset when the config has no reviewer block', () => {
+      const dir = join(TMP, 'no-reviewer');
+      writeConfigYaml(dir, { planner: { kind: 'cli', tool: 'claude-code' } });
+
+      const { config, warnings } = loadConfig(dir);
+      expect(config.reviewer).toBeUndefined();
+      expect(warnings).toEqual([]);
+    });
+
+    it('keeps a configured reviewer block unchanged through the merge', () => {
+      const dir = join(TMP, 'with-reviewer');
+      writeConfigYaml(dir, {
+        reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5-mini' },
+      });
+
+      const { config } = loadConfig(dir);
+      expect(config.reviewer).toEqual({ kind: 'cli', tool: 'codex', model: 'gpt-5-mini' });
+    });
+
     it('leaves validation.testCommand undefined when the user did not set it', () => {
       const dir = join(TMP, 'no-test-command');
       writeConfigYaml(dir, {

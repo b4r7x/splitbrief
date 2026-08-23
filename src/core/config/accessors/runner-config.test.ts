@@ -152,6 +152,15 @@ describe('getRunnerDisplayName still returns raw lowercase ids', () => {
 });
 
 describe('projectRunnerDiscoveryContext', () => {
+  it('keys the reviewer seat as the planner so detection evidence is shared', () => {
+    const config: Config = {
+      ...createDefaultConfig(),
+      planner: { kind: 'cli', tool: 'claude-code' },
+    };
+
+    expect(projectRunnerDiscoveryContext({ config, role: 'reviewer' }).role).toBe('planner');
+  });
+
   it('projects the effective CLI channel without changing legacy or explicit selections', () => {
     const legacyConfig: Config = {
       ...createDefaultConfig(),

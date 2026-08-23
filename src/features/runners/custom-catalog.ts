@@ -6,10 +6,10 @@ import {
   type CustomCommandCatalog,
   type CustomCommandDefinition,
 } from '../../core/config/custom-commands.js';
-import {
-  pickDefaultProfileName,
-  resolveImplementerProfiles,
-} from '../../core/config/accessors/implementer-profiles.js';
+import { pickDefaultProfileName } from '../../core/config/accessors/implementer-profiles.js';
+import { configuredReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
+import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
+import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 import type { Config } from '../../core/schemas/config.js';
 import type {
   ImplementerConfig,
@@ -17,11 +17,9 @@ import type {
 } from '../../core/schemas/implementer-config.js';
 import type { PlannerConfig } from '../../core/schemas/planner-config.js';
 
-export type CustomCommandRole = 'planner' | 'implementer';
-
 export type CustomCommandConsumer = Readonly<{
   id: string;
-  role: CustomCommandRole;
+  role: ActiveRunnerRole;
   label: string;
   profileName?: string | undefined;
   isDefaultProfile: boolean;
@@ -29,7 +27,7 @@ export type CustomCommandConsumer = Readonly<{
 
 export type RoleCustomCommandCatalog = CustomCommandCatalog &
   Readonly<{
-    role: CustomCommandRole;
+    role: ActiveRunnerRole;
     selectedId: string | undefined;
   }>;
 
@@ -49,11 +47,10 @@ export function isCustomCommandSelected(
 
 export function readRoleCustomCommandCatalog(
   config: Config,
-  role: CustomCommandRole,
+  role: ActiveRunnerRole,
 ): RoleCustomCommandCatalog {
   const catalog = readCustomCommandCatalog(config);
-  const runner =
-    role === 'planner' ? config.planner : resolveImplementerProfiles(config).defaultProfile.config;
+  const runner = readActiveRunner({ config, role });
   const safeLegacy = catalog.legacy.flatMap((entry) =>
     entry.kind === 'safe' ? [entry.command] : [],
   );
@@ -73,6 +70,15 @@ export function listCustomCommandConsumers(
       id: 'planner',
       role: 'planner',
       label: 'Planner',
+      isDefaultProfile: false,
+    });
+  }
+  const reviewer = configuredReviewerRunner(config);
+  if (reviewer !== undefined && runnerMatches(reviewer, command)) {
+    consumers.push({
+      id: 'reviewer',
+      role: 'reviewer',
+      label: 'Reviewer',
       isDefaultProfile: false,
     });
   }

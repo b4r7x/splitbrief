@@ -3,13 +3,16 @@ import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { useStores } from '../../stores/use-stores.js';
-import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
+import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 import {
   getRunnerCommand,
   getRunnerDisplayName,
 } from '../../core/config/accessors/runner-config.js';
 import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../../core/providers/automatic-model.js';
-import { NATIVE_CLI_CATALOG_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
+import {
+  NATIVE_CLI_CATALOG_TOOL_IDS,
+  type ActiveRunnerRole,
+} from '../../core/runners/cli-tool-catalog.js';
 import { includes } from '../../utils/type-guards.js';
 import type { ModelCatalogDiagnostic } from './picker-format.js';
 import {
@@ -21,8 +24,10 @@ import {
 import {
   assemblePickerDescriptors,
   buildPickerOptions,
+  inheritPlannerOption,
   type PickerOption,
 } from './model-catalog/options.js';
+import { inheritsPlannerSeat } from './config-transforms.js';
 import type { ModelOption } from './model-catalog/recency.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 
@@ -50,8 +55,14 @@ export interface PickerCatalog {
   setCurrentItem: (item: PickerOption) => void;
 }
 
+const ROLE_LABELS: Record<ActiveRunnerRole, string> = {
+  planner: 'Planner',
+  implementer: 'Implementer',
+  reviewer: 'Reviewer',
+};
+
 function deriveCatalogDiagnostic(
-  role: 'planner' | 'implementer',
+  role: ActiveRunnerRole,
   item: PickerOption | undefined,
 ): ModelCatalogDiagnostic | undefined {
   if (item === undefined || !includes(NATIVE_CLI_CATALOG_TOOL_IDS, item.id)) return undefined;
@@ -62,11 +73,10 @@ function deriveCatalogDiagnostic(
 }
 
 export function usePickerCatalog(
-  role: 'planner' | 'implementer',
+  role: ActiveRunnerRole,
   preservedLeftIndex: number,
   selectedItemId?: string | null,
 ): PickerCatalog {
-  const isPlanner = role === 'planner';
   const config = configStore.useConfig();
   const focusModels = overlayStore.use((s) => s.focus) === 'models';
 
@@ -75,9 +85,7 @@ export function usePickerCatalog(
 
   const [uncontrolledItemId, setUncontrolledItemId] = useState<string | null>(null);
 
-  const runnerConfig = isPlanner
-    ? config.planner
-    : resolveImplementerProfiles(config).defaultProfile.config;
+  const runnerConfig = readActiveRunner({ config, role });
 
   const rawItems = buildPickerOptions(
     role,
@@ -86,10 +94,23 @@ export function usePickerCatalog(
     undefined,
     { activeRunnerId: getRunnerDisplayName(runnerConfig) },
   );
-  const items: PickerOption[] = rawItems.map((item) => ({
+  // An inherited review seat has no tool of its own: flagging the planner's row
+  // as current would make Enter on the pre-selected row fork the seat silently.
+  // The inherit row stands in for it, and stays offered once the seat is forked
+  // so the fork is reversible.
+  const inherited = inheritsPlannerSeat(config, role);
+  const configuredItems: PickerOption[] = rawItems.map((item) => ({
     ...item,
-    isCurrent: isCurrentConfig(item, config, role),
+    isCurrent: !inherited && isCurrentConfig(item, config, role),
   }));
+  const plannerItem =
+    role === 'reviewer'
+      ? rawItems.find((item) => isCurrentConfig(item, config, 'planner'))
+      : undefined;
+  const items: PickerOption[] =
+    plannerItem === undefined
+      ? configuredItems
+      : [inheritPlannerOption({ planner: plannerItem, isCurrent: inherited }), ...configuredItems];
 
   const configItemIndex = items.findIndex((item) => item.isCurrent);
   const configuredItem = configItemIndex >= 0 ? items[configItemIndex] : undefined;
@@ -117,7 +138,6 @@ export function usePickerCatalog(
       : undefined;
 
   const rightModels = buildRightModels({
-    isPlanner,
     role,
     customModels,
     currentItem,
@@ -138,7 +158,7 @@ export function usePickerCatalog(
       refresh.readiness.refreshing || refresh.modelsDev.refreshing || refresh.cliModels.refreshing,
   };
 
-  const roleLabel = isPlanner ? 'Planner' : 'Implementer';
+  const roleLabel = ROLE_LABELS[role];
   const isCurrentTool = currentItem?.isCurrent ?? false;
   const currentModel = isCurrentTool ? persistedModel : undefined;
   const currentCommand = getRunnerCommand(runnerConfig);

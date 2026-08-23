@@ -1,5 +1,5 @@
 import type { DetectedModel } from '../../../core/discovery/detection.js';
-import type { ActiveRunnerRole } from '../../../core/config/accessors/active-runner.js';
+import type { ActiveRunnerRole } from '../../../core/runners/cli-tool-catalog.js';
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import type { KnownModel } from '../../../core/providers/known-models.js';
 import { isProviderId, type ProviderId } from '../../../core/schemas/enums.js';

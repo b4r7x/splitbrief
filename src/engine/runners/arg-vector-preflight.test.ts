@@ -187,7 +187,7 @@ describe('collectArgVectorPreflightChecks', () => {
     const checks = await collectArgVectorPreflightChecks({
       config,
       projectDir: '/project',
-      includeImplementers: true,
+      roles: ['planner', 'implementer', 'reviewer'],
       runHelp: runHelp('Usage: codex exec [OPTIONS]\n  --model <MODEL>  Model to use'),
     });
 
@@ -213,7 +213,7 @@ describe('collectArgVectorPreflightChecks', () => {
     const checks = await collectArgVectorPreflightChecks({
       config,
       projectDir: '/project',
-      includeImplementers: true,
+      roles: ['planner', 'implementer', 'reviewer'],
       runHelp: runHelp(
         [
           'Usage: codex exec [OPTIONS]',
@@ -246,7 +246,7 @@ describe('collectArgVectorPreflightChecks', () => {
     const checks = await collectArgVectorPreflightChecks({
       config,
       projectDir: '/project',
-      includeImplementers: true,
+      roles: ['planner', 'implementer', 'reviewer'],
       runHelp: runHelp(
         [
           'Usage: codex exec [OPTIONS]',
@@ -278,7 +278,7 @@ describe('collectArgVectorPreflightChecks', () => {
     const checks = await collectArgVectorPreflightChecks({
       config,
       projectDir: '/project',
-      includeImplementers: true,
+      roles: ['planner', 'implementer', 'reviewer'],
       runHelp: unavailableHelp,
     });
 
@@ -306,11 +306,44 @@ describe('collectArgVectorPreflightChecks', () => {
     const checks = await collectArgVectorPreflightChecks({
       config,
       projectDir: '/project',
-      includeImplementers: false,
+      roles: ['planner'],
       runHelp: runHelp('Usage: codex exec [OPTIONS]'),
     });
 
     expect(checks).toEqual([]);
+  });
+
+  it('preflights a configured cli reviewer only when the reviewer seat is in the role set', async () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'openrouter',
+        service: 'openrouter',
+        offering: 'payg',
+        apiBase: 'https://openrouter.ai/api/v1',
+        model: 'qwen2.5-coder:7b',
+      },
+      reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5' },
+    });
+    const help = vi.fn(async () => 'Usage: codex exec [OPTIONS]');
+
+    const included = await collectArgVectorPreflightChecks({
+      config,
+      projectDir: '/project',
+      roles: ['planner', 'implementer', 'reviewer'],
+      runHelp: help,
+    });
+    expect(included.map((check) => check.id)).toEqual(['runners.cli.codex.arg-vector.reviewer']);
+
+    help.mockClear();
+    const excluded = await collectArgVectorPreflightChecks({
+      config,
+      projectDir: '/project',
+      roles: ['planner'],
+      runHelp: help,
+    });
+    expect(excluded).toEqual([]);
+    expect(help).not.toHaveBeenCalled();
   });
 });
 
@@ -333,7 +366,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
         planner: { kind: 'cli', tool: 'claude-code', model: 'sonnet', effort: 'high' },
       }),
       projectDir: '/project',
-      includeImplementers: false,
+      roles: ['planner'],
       runHelp: async () => helpText,
     });
 
@@ -366,6 +399,37 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     );
   });
 
+  it('emits one plan-mode argv for the review seat, with no escalate or resume variant', async () => {
+    const checks = await collectArgVectorPreflightChecks({
+      config: makeConfig({
+        planner: {
+          kind: 'api',
+          provider: 'openrouter',
+          service: 'openrouter',
+          offering: 'payg',
+          apiBase: 'https://openrouter.ai/api/v1',
+          model: 'qwen2.5-coder:7b',
+        },
+        reviewer: { kind: 'cli', tool: 'claude-code', model: 'sonnet', effort: 'high' },
+      }),
+      projectDir: '/project',
+      roles: ['planner', 'implementer', 'reviewer'],
+      runHelp: async () =>
+        claudeHelp(
+          '  --effort <level>               Effort level for the session',
+          '  -r, --resume [sessionId]       Resume a conversation by session ID',
+        ),
+    });
+
+    expect(checks[0]).toMatchObject({
+      id: 'runners.cli.claude-code.arg-vector.reviewer',
+      severity: 'ok',
+    });
+    expect(checks[0]?.details).toEqual([
+      'Emitted argv: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode plan',
+    ]);
+  });
+
   it('refuses a configured added-roots override before any help probe (REQ-018)', async () => {
     const configuredArgs = ['--add-dir', '/srv/shared-context'];
     let helpSpawns = 0;
@@ -380,7 +444,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
         },
       }),
       projectDir: '/project',
-      includeImplementers: false,
+      roles: ['planner'],
       runHelp: async () => {
         helpSpawns += 1;
         return claudeHelp(
@@ -464,7 +528,7 @@ describe('collectArgVectorPreflightChecks — default help invocation', () => {
     return collectArgVectorPreflightChecks({
       config: makeConfig({ planner: { kind: 'cli', tool } }),
       projectDir,
-      includeImplementers: false,
+      roles: ['planner'],
     });
   }
 

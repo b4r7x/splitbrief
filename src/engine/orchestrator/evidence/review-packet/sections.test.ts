@@ -9,6 +9,7 @@ import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
 import { ReviewPacketSchema } from '../../../../core/schemas/review-packet.js';
 import { buildValidation } from './sections.js';
 import { renderReviewPacketMarkdown } from './render.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 function stateWith(...tasks: ReturnType<typeof makeTask>[]): WorkflowState {
   return { ...createInitialState('feat'), tasks };
@@ -139,14 +140,7 @@ function packetWithValidation(validation: ReviewPacket['validation']): ReviewPac
       warnings: [],
     },
     cost: {
-      tokenUsage: {
-        plannerInput: 0,
-        plannerOutput: 0,
-        implementerInput: 0,
-        implementerOutput: 0,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      tokenUsage: makeUsage(),
       costBreakdown: null,
       estimatedCostSavings: null,
       taskRouting: [],

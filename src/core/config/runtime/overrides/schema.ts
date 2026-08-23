@@ -15,11 +15,13 @@ export const RunnerOverrideSchema = z.object({
 export const CLIOverridesSchema = z.object({
   planner: RunnerOverrideSchema.optional(),
   implementer: RunnerOverrideSchema.optional(),
+  reviewer: RunnerOverrideSchema.optional(),
   approve: z.string().optional(),
   mode: WorkflowModeSchema.optional(),
   budget: z.number().optional(),
   contextLength: z.number().optional(),
   plannerEffort: z.string().optional(),
+  reviewerEffort: z.string().optional(),
   yolo: z.boolean().optional(),
 });
 

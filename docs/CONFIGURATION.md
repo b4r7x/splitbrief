@@ -1,6 +1,6 @@
 # SPLITBRIEF Configuration Reference
 
-Complete reference for `.splitbrief/config.yaml` — the single declarative file that wires SPLITBRIEF to your planner, implementer, validation tools, workflow gates, hooks, snapshots, and observability.
+Complete reference for `.splitbrief/config.yaml` — the single declarative file that wires SPLITBRIEF to your planner, reviewer, implementer, validation tools, workflow gates, hooks, snapshots, and observability.
 
 This document is a field-by-field reference. For end-user mode semantics see [WORKFLOW.md](./WORKFLOW.md); for hook plumbing see [HOOKS-CONFIG.md](./HOOKS-CONFIG.md); for repo-map tuning see [REPOMAP.md](./REPOMAP.md); for OpenTelemetry export see [OTEL.md](./OTEL.md).
 
@@ -25,6 +25,7 @@ Top-level shape:
 version: 3
 planner:        { kind: cli|api|shell|agent|agent-sdk, ... }
 implementer:    { kind: cli|api|shell|agent|agent-sdk, ... }
+reviewer:       { kind: cli|api|shell|agent|agent-sdk, ... }   # optional; planner reviews when absent
 implementerProfiles:
   default: local-qwen
   profiles: { local-qwen: { kind: api, ... }, cheap-cloud: { kind: api, ... } }
@@ -77,11 +78,11 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 | `model` | string | — | Model identifier, or `auto`. Planner: optional. Implementer: required for `api`, `shell`, `agent`, and `agent-sdk`; optional for `cli`, where omitting `model` and writing `model: auto` are equivalent — both delegate to the tool's own default. |
 | `customModels` | string[] | — | Extra model IDs merged into the provider catalog so they appear in pickers. Pricing remains unknown unless models.dev, runtime provider metadata, or the bundled catalog supplies rates. |
 | `contextLength` | int > 0 | detected, else `32768` | Override the detected context window. Useful for self-hosted Ollama/LM Studio whose `/api/show` reports the wrong number. When neither configured nor detected, SPLITBRIEF assumes the single documented default `DEFAULT_UNKNOWN_CONTEXT_LENGTH` (32768, `src/core/tokens/context-length.ts`) for routing and budget sizing alike. |
-| `temperature` | 0..2 | provider default | Sampling temperature. Honored only by the `api` kind (planner and implementer); the `cli`, `shell`, `agent`, and `agent-sdk` kinds cannot pass it to their backend and drop it with a stderr warning. Implementers usually want `0.2`-`0.4`; planners can run hotter. |
-| `timeout` | ms (≤ 600000) | unset → no total-call cap (output silence is guarded separately: the 60s `api` stream-idle guard or `idleWarnMs`/`idleKillMs` below — see Troubleshooting) | Total wall-clock budget for a single planner or implementer call; aborts the call when exceeded. Raise for long planner thinks; lower for cheap probe calls. |
+| `temperature` | 0..2 | provider default | Sampling temperature. Honored only by the `api` kind (planner, reviewer, and implementer); the `cli`, `shell`, `agent`, and `agent-sdk` kinds cannot pass it to their backend and drop it with a stderr warning. Implementers usually want `0.2`-`0.4`; planners can run hotter. |
+| `timeout` | ms (≤ 600000) | unset → no total-call cap (output silence is guarded separately: the 60s `api` stream-idle guard or `idleWarnMs`/`idleKillMs` below — see Troubleshooting) | Total wall-clock budget for a single planner, reviewer, or implementer call; aborts the call when exceeded. Raise for long planner thinks; lower for cheap probe calls. |
 | `idleWarnMs` | ms (≤ 3600000) | `300000` | Inactivity watchdog warn threshold: after this much output silence on a running call, the byline shows a "still working" warning; any stdout/stderr output clears it and resets the timer. |
 | `idleKillMs` | ms (≤ 3600000) | `1800000` | Inactivity watchdog kill threshold: at this much output silence the runner's process group is terminated (SIGTERM, then SIGKILL after a grace window; the in-process `agent-sdk` stream is aborted instead) and the call is marked failed. For planner calls a retry prompt is offered; a failed implementer call feeds the task's retry/escalation ladder instead, whose retry prompts rebuild the full Task Brief per attempt. |
-| `effort` | `low\|medium\|high\|xhigh` | unset | For the `api` kind (planner and implementer) maps to Anthropic `thinking.budget_tokens` (2k / 8k / 24k / 48k). The `agent-sdk` kind passes it through as the Agent SDK's first-class `effort` option, and the Claude Code CLI planner passes its own `--effort` flag; the levels match SPLITBRIEF's enum. The `shell`, `agent`, and other `cli` kinds cannot deliver an effort hint and drop it with a stderr warning. |
+| `effort` | `low\|medium\|high\|xhigh` | unset | For the `api` kind (planner, reviewer, and implementer) maps to Anthropic `thinking.budget_tokens` (2k / 8k / 24k / 48k). The `agent-sdk` kind passes it through as the Agent SDK's first-class `effort` option, and the Claude Code CLI planner passes its own `--effort` flag; the levels match SPLITBRIEF's enum. The `shell`, `agent`, and other `cli` kinds cannot deliver an effort hint and drop it with a stderr warning. |
 
 `idleWarnMs` and `idleKillMs` apply to the `cli`, `shell`, `agent`, and `agent-sdk` kinds only — `api` runners keep the 60s stream-idle guard, and their strict schema rejects both fields. The planner's optional estimate-review call is the one exception to the retry prompt above: an idle-kill there degrades gracefully to an unavailable review instead of parking one.
 
@@ -204,7 +205,7 @@ Arbitrary `stdin → stdout` command. SPLITBRIEF writes the prompt to stdin and 
 | `command` | non-empty string | yes | Executable path (relative to project or absolute). Availability is an existence/executability check (`fs.access` with `X_OK`, or a `$PATH` lookup for bare names) — SPLITBRIEF never runs your command with `--version`, so the script is not invoked until planning starts. |
 | `args` | string[] | no | Argv |
 | `outputFormat` | enum | no | Same values as `cli` |
-| `capabilities` | partial object | no | **Planner only.** Declares optional planner features such as `supportsConversationalPlanning`, `supportsHintEscalation`, `supportsSessionResume`, and `supportsSelfSummarisation` so the orchestrator skips features the wrapper cannot provide. `supportsEffort: true` and `supportsImages: true` are rejected on `shell`/`agent` planners — the command-based adapter has no channel to deliver an effort hint or image attachments to the subprocess (use a `cli`/`api`/`agent-sdk` planner instead). Ignored (and rejected) on `implementer` — implementer write behavior is set via profile `capabilities.writesFiles`. |
+| `capabilities` | partial object | no | **Planner and reviewer only.** Declares optional planner features such as `supportsConversationalPlanning`, `supportsHintEscalation`, `supportsSessionResume`, and `supportsSelfSummarisation` so the orchestrator skips features the wrapper cannot provide. `supportsEffort: true` and `supportsImages: true` are rejected on `shell`/`agent` planners and reviewers — the command-based adapter has no channel to deliver an effort hint or image attachments to the subprocess (use a `cli`/`api`/`agent-sdk` planner or reviewer instead). Ignored (and rejected) on `implementer` — implementer write behavior is set via profile `capabilities.writesFiles`. |
 
 ```yaml
 planner:
@@ -236,7 +237,7 @@ implementer:
   model: auto
 ```
 
-A `planner` may also be `kind: agent`; only the planner variant accepts `capabilities` (the same planner feature flags as `kind: shell`).
+A `planner` or `reviewer` may also be `kind: agent`; both accept `capabilities` (the same planner feature flags as `kind: shell`), the `implementer` variant does not.
 
 **When to use:** integrating a tool whose contract is "I edit files, you check git diff" rather than "I print a unified diff".
 
@@ -244,14 +245,14 @@ A `planner` may also be `kind: agent`; only the planner variant accepts `capabil
 
 ### Runner command trust
 
-Every `shell` and `agent` runner named in `.splitbrief/config.yaml` — planner, implementer, or implementer profile — needs an explicit grant on the machine that runs it, before the first planner call.
+Every `shell` and `agent` runner named in `.splitbrief/config.yaml` — planner, reviewer, implementer, or implementer profile — needs an explicit grant on the machine that runs it, before the first planner call.
 
 - **Interactive:** SPLITBRIEF prints the resolved executable path, the argv, the working directory, and the fact that the child inherits this process's environment, then asks you to type the confirmation phrase and a reason. Confirming writes an owner-only receipt to `~/.splitbrief/trust/custom-runners.json` (mode `0600`).
 - **Headless** (`--json`, `--rpc`, `--detach`): there is no prompt. The run is blocked unless a receipt already exists or you pass `--allow-repo-runners`, which grants that run only and persists nothing.
 
 The receipt is keyed to the canonical path of *this* checkout and to a digest of the command tuple, so it never travels inside a clone, never applies to a second checkout of the same repository, and stops applying the moment the command, its argv, its declared environment references, or its watchdog thresholds change. Replacing the executable on disk invalidates it too: the receipt stores the executable's content digest.
 
-`runners.planner.trust-boundary` and `runners.implementer.trust-boundary` in `splitbrief doctor` print the configured `command` and `args` (control-stripped and credential-redacted) so you can read them before starting anything. Only the prompt resolves the command to an absolute executable path, because readiness never touches the filesystem for this. Both checks are emitted whenever the runner can execute a local command, at every approval level.
+`runners.planner.trust-boundary`, `runners.reviewer.trust-boundary` (only when a `reviewer` block is configured) and `runners.implementer.trust-boundary` in `splitbrief doctor` print the configured `command` and `args` (control-stripped and credential-redacted) so you can read them before starting anything. Only the prompt resolves the command to an absolute executable path, because readiness never touches the filesystem for this. Each check is emitted whenever its runner can execute a local command, at every approval level.
 
 ### `kind: agent-sdk`
 
@@ -290,6 +291,61 @@ Source: `src/core/providers/catalog.ts`.
 **See also:** §3 `implementer`, §11 environment variables, [API-KEYS.md](./API-KEYS.md).
 
 Custom OpenAI-compatible API providers are allowed when `service`, `offering`, and `apiBase` are all set — the same three fields every admitted provider ID also has to spell out, because nothing is back-filled at load. Because SPLITBRIEF cannot infer a safe environment variable name for unknown providers, custom providers must set `apiKey` explicitly and inline: an `apiKey: env:VAR` reference is refused for a provider the catalog does not know, so a config cannot point an unrecognized endpoint at one of your environment credentials.
+
+---
+
+## 2a. `reviewer`
+
+Optional. `reviewer` names the runner that performs the final review of the run diff. Leave it out and the planner holds that seat, exactly as it did before the seat became assignable (`resolveReviewerRunner`, `src/core/config/accessors/reviewer-runner.ts`). Set it when you want the diff read by a model other than the one that planned it.
+
+The reviewer only reviews. Planning, Task Brief compilation, escalation, the planner estimate review, summarization and brief recovery stay on the planner whatever this block says.
+
+### Schema
+
+Same discriminated union as `planner` — the five kinds, the same [common generation fields](#common-generation-fields), an optional `model`, and `.strict()` on every variant, so an unknown field fails the load with a `ConfigError` (`ReviewerConfigSchema`, `src/core/schemas/reviewer-config.ts`).
+
+| `kind` | Write the same fields as | Notes |
+|---|---|---|
+| `cli` | [`kind: cli`](#kind-cli) | `tool` must be a planner-side CLI: `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`. |
+| `api` | [`kind: api`](#kind-api) | `provider` must be admitted for the planner role (`ollama-cloud`, `anthropic`, `openrouter`, `deepseek`, `openai`, `groq`, `together`, or a custom provider). The identity triple `service` / `offering` / `apiBase` is required here too. |
+| `shell` | [`kind: shell`](#kind-shell) | Needs the same [runner command trust](#runner-command-trust) grant as a `shell` planner. |
+| `agent` | [`kind: agent`](#kind-agent) | Same trust grant. |
+| `agent-sdk` | [`kind: agent-sdk`](#kind-agent-sdk) | Same planner-side defaults. |
+
+The reviewer is a planner-tier seat and shares the planner's admission set, so a provider or tool that the planner may not use is rejected in this block too. The seat is built on the planner backends (`createReviewer`, `src/engine/runners/factory.ts`), so a configured `effort` or `temperature` a backend cannot deliver is dropped with a stderr warning, the same as on the planner.
+
+### Falling back to the planner
+
+- **No `reviewer` block:** the planner runner performs the review. Review tokens are priced at the planner's rates and folded into the planner line in the summary and the cost drilldown.
+- **A `reviewer` block:** the reviewer performs the review and gets its own priced line in both.
+- **Either way, `splitbrief stats` is unchanged:** it aggregates by provider, not by role, so a reviewer on its own provider simply shows up under that provider.
+- **A configured reviewer that fails admission** blocks the run before it starts, with a readiness blocker naming the reviewer seat. **A configured reviewer that fails mid-call** is reported as a failed review (`finalReviewStatus: "failed"` in the run summary, `finalReview.status` in the review packet), with the reviewer's identity in the error and the final-review evidence still recorded. SPLITBRIEF never silently hands the review back to the planner.
+
+### YAML — cross-lab review
+
+Planning and building on Anthropic, reviewing on OpenAI, so the diff is read by a model from a different lab than the one that wrote it:
+
+```yaml
+planner:
+  kind: cli
+  tool: claude-code
+  model: opus
+
+implementer:
+  kind: api
+  provider: anthropic
+  service: anthropic
+  offering: payg
+  apiBase: https://api.anthropic.com/v1
+  model: claude-sonnet-4-6
+
+reviewer:
+  kind: cli
+  tool: codex
+  model: auto
+```
+
+**See also:** `/reviewer` and `/crew` in [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), and the `--reviewer-*` flags in [CLI-REFERENCE.md](./CLI-REFERENCE.md).
 
 ---
 
@@ -863,7 +919,7 @@ snapshots: {
 |---|---|---|---|
 | `auto.preTask` | boolean | `false` | Snapshot immediately before each task starts |
 | `auto.postTask` | boolean | `false` | Snapshot immediately after each task completes successfully |
-| `auto.preFinalReview` | boolean | `false` | Snapshot before the final planner review runs |
+| `auto.preFinalReview` | boolean | `false` | Snapshot before the final review runs |
 
 YAML:
 
@@ -1114,6 +1170,15 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--implementer-args <arg>` | Append an implementer CLI/shell arg (repeatable; kind=cli/shell/agent) | start, resume, continue, last |
 | `--implementer-output-format <format>` | Implementer output format (`stream-json` \| `jsonl` \| `text` \| `opencode`) | start, resume, continue, last |
 | `--implementer-context-length <tokens>` | Implementer context length (tokens) | start, resume, continue, last |
+| `--reviewer <tool>` | Reviewer tool override | start, resume, continue, last |
+| `--reviewer-model <m>` | Reviewer model override | start, resume, continue, last |
+| `--reviewer-command <cmd>` | Custom reviewer command (kind=shell) | start, resume, continue, last |
+| `--reviewer-api-base <url>` | Reviewer API base URL (kind=api only; warns + ignored otherwise) | start, resume, continue, last |
+| `--reviewer-api-key-env <var>` | Reviewer API key env var, stored as `env:<var>` (kind=api/agent-sdk only; warns + ignored otherwise) | start, resume, continue, last |
+| `--reviewer-args <arg>` | Append a reviewer CLI/shell arg (repeatable; kind=cli/shell/agent); authority-bearing flags are refused before spawn | start, resume, continue, last |
+| `--reviewer-output-format <format>` | Reviewer output format (`stream-json` \| `jsonl` \| `text` \| `opencode`) | start, resume, continue, last |
+| `--reviewer-context-length <tokens>` | Reviewer context length in tokens (kind=api only; sizes the request `max_tokens`, ignored by other kinds) | start, resume, continue, last |
+| `--reviewer-effort <level>` | Reviewer effort hint (`low` \| `medium` \| `high` \| `xhigh`) | start, resume, continue, last |
 | `--project <dir>` | Project directory (default cwd) | most commands |
 | `--no-fullscreen` | Disable alt-screen buffer | start, resume, continue, last, attach |
 | `--no-mouse` | Disable mouse tracking | start, resume, continue, last, attach |

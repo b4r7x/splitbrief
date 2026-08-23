@@ -124,9 +124,12 @@ describe('spawnWithStdin', () => {
     const lines: string[] = [];
     let outcome: unknown;
     try {
+      // 8 KiB fits a single pipe read, so the child is fully drained in the
+      // chunk that trips the budget. A payload past the 64 KiB pipe buffer
+      // would leave the tail's arrival racing the teardown.
       await spawnWithStdin({
         command: 'node',
-        args: ['-e', 'process.stdout.write("x".repeat(100_000)); setInterval(() => {}, 60_000)'],
+        args: ['-e', 'process.stdout.write("x".repeat(8192)); setInterval(() => {}, 60_000)'],
         cwd: '.',
         notFoundMessage: 'node not found',
         outputMaxBytes: 1024,
@@ -141,7 +144,8 @@ describe('spawnWithStdin', () => {
     expect(outcome).toMatchObject({
       state: 'output-budget-breach',
       stdoutMetadata: {
-        bytesSeen: 100_000,
+        bytesSeen: 8192,
+        bytesStored: 1024,
         maxBytes: 1024,
         truncated: true,
       },

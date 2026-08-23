@@ -171,30 +171,59 @@ describe('buildPaletteSources attached-client boundary', () => {
   });
 });
 
+function buildHomeSources() {
+  return buildPaletteSources({
+    commands: [],
+    screen: 'home',
+    config: makeConfig(),
+    phase: 'idle',
+    tasks: [],
+    sessions: [],
+    projectDir: '/tmp/splitbrief-test',
+    onRuntimeCommand: noop,
+    onWorkflowMode: savedMode,
+    onSessionSelect: noopSessionSelect,
+  });
+}
+
 describe('buildPaletteSources display descriptions', () => {
-  it('uses sentence-cased descriptions for modes and pickers', () => {
-    const sources = buildPaletteSources({
-      commands: [],
-      screen: 'home',
-      config: makeConfig(),
-      phase: 'idle',
-      tasks: [],
-      sessions: [],
-      projectDir: '/tmp/splitbrief-test',
-      onRuntimeCommand: noop,
-      onWorkflowMode: savedMode,
-      onSessionSelect: noopSessionSelect,
-    });
+  it('describes every mode and picker entry', () => {
+    const sources = buildHomeSources();
 
     expect(sources.modeItems.find((item) => item.label === 'instant')?.description).toBe(
       'Switch to instant mode',
     );
-    expect(sources.pickerItems.map((item) => item.description)).toEqual([
-      'Select planner tool',
-      'Select implementer',
-      'Browse past sessions',
-      'Planner, model & settings',
+    expect(sources.pickerItems.map((item) => item.label)).toEqual([
+      'planner',
+      'implementer',
+      'reviewer',
+      'crew',
+      'sessions',
+      'settings',
     ]);
+    for (const item of sources.pickerItems) {
+      expect(item.description).not.toBe('');
+    }
+  });
+});
+
+describe('buildPaletteSources picker items', () => {
+  beforeEach(() => {
+    overlayStore.reset();
+  });
+
+  afterEach(() => {
+    overlayStore.reset();
+  });
+
+  it('opens the reviewer picker and the crew surface from their picker entries', async () => {
+    const pickerItems = buildHomeSources().pickerItems;
+
+    await pickerItems.find((item) => item.label === 'reviewer')?.action();
+    expect(overlayStore.get().active).toBe('reviewer-picker');
+
+    await pickerItems.find((item) => item.label === 'crew')?.action();
+    expect(overlayStore.get().active).toBe('crew');
   });
 });
 

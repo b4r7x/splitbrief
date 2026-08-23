@@ -379,6 +379,24 @@ describe('validateConfig', () => {
     expect(validateConfig(config).errors.find((e) => e.path === 'planner.apiKey')).toBeUndefined();
   });
 
+  it('keeps userinfo credentials out of the custom-endpoint exfiltration error', () => {
+    process.env.OPENAI_API_KEY = 'sk-test-env';
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'openai',
+        model: 'gpt-5.1',
+        apiBase: 'https://alice:secret@proxy.example.com/v1',
+      },
+    });
+
+    const message = validateConfig(config).errors.find((e) => e.path === 'planner.apiKey')?.message;
+
+    expect(message).toMatch(/exfiltration risk/);
+    expect(message).not.toContain('alice');
+    expect(message).not.toContain('secret');
+  });
+
   it('rejects planner apiBase URLs with embedded credentials without leaking them in errors', () => {
     const config = makeConfig({
       planner: {
@@ -401,6 +419,55 @@ describe('validateConfig', () => {
     ]);
     expect(JSON.stringify(errors)).not.toContain('alice');
     expect(JSON.stringify(errors)).not.toContain('secret');
+  });
+
+  it('rejects reviewer apiBase URLs with embedded credentials without leaking them in errors', () => {
+    const config = makeConfig({
+      reviewer: {
+        kind: 'api',
+        provider: 'openrouter',
+        model: 'm',
+        apiKey: 'configured-key',
+        apiBase: 'https://alice:secret@example.com/v1',
+      },
+    });
+
+    const { errors } = validateConfig(config);
+
+    expect(errors).toEqual([
+      {
+        path: 'reviewer.apiBase',
+        message: 'Invalid apiBase: must not include credentials',
+        diagnosticState: 'endpoint-invalid',
+      },
+    ]);
+    expect(JSON.stringify(errors)).not.toContain('alice');
+    expect(JSON.stringify(errors)).not.toContain('secret');
+  });
+
+  it('names the reviewer seat in its credential error instead of the planner', () => {
+    const config = makeConfig({
+      reviewer: {
+        kind: 'api',
+        provider: 'openrouter',
+        model: 'm',
+        apiBase: 'https://api.example.com',
+      },
+    });
+
+    const { errors } = validateConfig(config);
+
+    const reviewerError = errors.find((error) => error.path === 'reviewer.apiKey');
+    expect(reviewerError?.message).toContain('reviewer');
+    expect(reviewerError?.message).not.toContain('planner');
+  });
+
+  it('reports nothing extra for a config without a reviewer block', () => {
+    expect(validateConfig(makeConfig())).toEqual({
+      errors: [],
+      warnings: [],
+      data: expect.anything(),
+    });
   });
 
   it.each([

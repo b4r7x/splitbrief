@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import {
   resolveRunnerConfigContext,
+  runnerRoleForSlot,
   type RunnerConfig,
   type RunnerConfigSlot,
 } from '../../core/config/accessors/runner-config.js';
 import { resolveIntermediateRunner } from '../../core/config/accessors/intermediate-runner.js';
+import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import {
   findConfiguredCustomCommand,
@@ -167,6 +169,8 @@ function slotId(slot: RunnerConfigSlot): string {
       return `implementer.${slot.profile}`;
     case 'intermediate':
       return 'intermediate';
+    case 'reviewer':
+      return 'reviewer';
     default:
       return assertNever(slot);
   }
@@ -180,6 +184,8 @@ function slotLabel(slot: RunnerConfigSlot): string {
       return `Implementer profile ${slot.profile}`;
     case 'intermediate':
       return 'Intermediate runner';
+    case 'reviewer':
+      return 'Reviewer';
     default:
       return assertNever(slot);
   }
@@ -261,6 +267,12 @@ function runnerCandidates(
     candidates.push({ slot: context.slot, runner: resolved.runner, trustLabel: 'intermediate' });
   }
 
+  const reviewer = resolveReviewerRunner(config);
+  if (reviewer.source === 'configured') {
+    const context = resolveRunnerConfigContext({ role: 'reviewer', runner: reviewer.runner });
+    candidates.push({ slot: context.slot, runner: reviewer.runner, trustLabel: 'reviewer' });
+  }
+
   return { candidates, checks: [] };
 }
 
@@ -287,7 +299,7 @@ async function evaluateCli(
 ): Promise<SlotEvaluation> {
   const authChannel = resolveCliRunnerAuth(candidate.runner).id;
   const discoveryContext = {
-    role: candidate.slot.role === 'planner' ? ('planner' as const) : ('implementer' as const),
+    role: runnerRoleForSlot(candidate.slot),
     kind: 'cli' as const,
     id: candidate.runner.tool,
     ...(candidate.runner.model !== undefined && { model: candidate.runner.model }),
@@ -476,7 +488,7 @@ async function evaluateCommand(
     Readonly<{ runner: Extract<RunnerConfig, { kind: 'shell' | 'agent' }> }>,
   context: PreparationContext,
 ): Promise<SlotEvaluation> {
-  const role = candidate.slot.role === 'planner' ? ('planner' as const) : ('implementer' as const);
+  const role = runnerRoleForSlot(candidate.slot);
   const configured = findConfiguredCustomCommand(context.config, candidate.runner);
   if (
     configured === undefined &&
@@ -599,11 +611,11 @@ async function revalidateCliGates(
   return blockers;
 }
 
-/** A spec run never calls the implementer, so its reachability cannot gate one. */
+/** A spec run never calls the implementer or the reviewer, so their reachability cannot gate one. */
 function availabilityRoles(
   purpose: PreparationPolicy['purpose'],
 ): readonly RunnerAvailabilityRole[] {
-  return purpose === 'spec' ? ['planner'] : ['planner', 'implementer'];
+  return purpose === 'spec' ? ['planner'] : ['planner', 'implementer', 'reviewer'];
 }
 
 export async function prepareExecution(input: PrepareExecutionInput): Promise<PreparationOutcome> {
@@ -703,7 +715,7 @@ export async function prepareExecution(input: PrepareExecutionInput): Promise<Pr
     const argVectorChecks = await deps.collectArgVectorPreflightChecks({
       config,
       projectDir,
-      includeImplementers: input.policy.purpose !== 'spec',
+      roles: availabilityRoles(input.policy.purpose),
     });
     throwIfPreparationAborted(input.signal, trustPersisted);
     report = applyRunnerPreparationChecks(report, argVectorChecks);

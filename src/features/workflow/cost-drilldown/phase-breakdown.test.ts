@@ -6,6 +6,7 @@ import {
   formatPhaseCost,
   formatSplitPhaseCost,
   calculatePhaseRowCost,
+  roleHasTokens,
 } from './phase-breakdown.js';
 import { resolvePricing } from '../../../engine/providers/pricing-resolver.js';
 
@@ -31,7 +32,14 @@ describe('buildPhaseRows', () => {
           cacheCreateTokens: 0,
         },
       },
-      (row) => calculatePhaseRowCost(row, pricing, null),
+      (row) =>
+        calculatePhaseRowCost({
+          row,
+          plannerPricing: pricing,
+          implementerPricing: null,
+          reviewerPricing: null,
+          reviewerHasOwnSeat: false,
+        }),
     );
 
     expect(rows.map((r) => r.phase)).toEqual(['reviewing-plan', 'planning']);
@@ -58,28 +66,41 @@ describe('formatCacheCreateTokens', () => {
 });
 
 describe('formatSplitPhaseCost', () => {
-  it('shows partial label when only one split role is priced', () => {
+  it('shows partial label when only one split seat is priced', () => {
     expect(
       formatSplitPhaseCost({
         cost: 18,
-        plannerPriced: true,
-        implementerPriced: false,
-        plannerMode: 'priced',
-        implementerMode: 'unpriced-local',
+        seats: [
+          { priced: true, mode: 'priced' },
+          { priced: false, mode: 'unpriced-local' },
+        ],
       }),
     ).toBe('$18.00 + partial');
   });
 
-  it('shows full cost when both split roles are priced', () => {
+  it('shows full cost when every split seat is priced', () => {
     expect(
       formatSplitPhaseCost({
         cost: 18,
-        plannerPriced: true,
-        implementerPriced: true,
-        plannerMode: 'priced',
-        implementerMode: 'priced',
+        seats: [
+          { priced: true, mode: 'priced' },
+          { priced: true, mode: 'priced' },
+        ],
       }),
     ).toBe('$18.00');
+  });
+
+  it('shows the cost of a phase billed only to the reviewer seat', () => {
+    expect(
+      formatSplitPhaseCost({
+        cost: 18,
+        seats: [
+          { priced: false, mode: 'priced' },
+          { priced: false, mode: 'priced' },
+          { priced: true, mode: 'priced' },
+        ],
+      }),
+    ).toBe('$18.00 + partial');
   });
 });
 
@@ -92,5 +113,83 @@ describe('formatPhaseCost', () => {
     [0, false, null, 'n/a'],
   ] as const)('formatPhaseCost(%i, %s, %s) → %s', (cost, isPhasePriced, pricingMode, expected) => {
     expect(formatPhaseCost({ cost, isPhasePriced, pricingMode })).toBe(expected);
+  });
+});
+
+describe('calculatePhaseRowCost — reviewer fold', () => {
+  const plannerPricing = resolvePricing('anthropic', undefined, 'claude-sonnet-4-6');
+  const reviewerPricing = resolvePricing('deepseek', undefined, 'deepseek-v4-flash');
+  const row = {
+    phase: 'final-review',
+    inputTokens: 20_000,
+    outputTokens: 5_000,
+    cacheReadTokens: 0,
+    cacheCreateTokens: 0,
+    plannerInputTokens: 0,
+    plannerOutputTokens: 0,
+    plannerCacheReadTokens: 0,
+    plannerCacheCreateTokens: 0,
+    reviewerInputTokens: 20_000,
+    reviewerOutputTokens: 5_000,
+    reviewerCacheReadTokens: 0,
+    reviewerCacheCreateTokens: 0,
+    implementerInputTokens: 0,
+    implementerOutputTokens: 0,
+    implementerCacheReadTokens: 0,
+    implementerCacheCreateTokens: 0,
+  } as const;
+
+  it('prices review tokens at the planner rate when no reviewer is configured', () => {
+    const folded = calculatePhaseRowCost({
+      row,
+      plannerPricing,
+      implementerPricing: null,
+      reviewerPricing: null,
+      reviewerHasOwnSeat: false,
+    });
+    const plannerBilled = calculatePhaseRowCost({
+      row: {
+        ...row,
+        plannerInputTokens: 20_000,
+        plannerOutputTokens: 5_000,
+        reviewerInputTokens: 0,
+        reviewerOutputTokens: 0,
+      },
+      plannerPricing,
+      implementerPricing: null,
+      reviewerPricing: null,
+      reviewerHasOwnSeat: false,
+    });
+
+    expect(folded).toBeGreaterThan(0);
+    expect(folded).toBe(plannerBilled);
+    expect(roleHasTokens({ row, role: 'reviewer', reviewerHasOwnSeat: false })).toBe(false);
+  });
+
+  it('prices review tokens at the reviewer rate as their own figure when one is configured', () => {
+    const split = calculatePhaseRowCost({
+      row,
+      plannerPricing,
+      implementerPricing: null,
+      reviewerPricing,
+      reviewerHasOwnSeat: true,
+    });
+    const folded = calculatePhaseRowCost({
+      row,
+      plannerPricing,
+      implementerPricing: null,
+      reviewerPricing: null,
+      reviewerHasOwnSeat: false,
+    });
+
+    expect(split).toBeGreaterThan(0);
+    expect(split).not.toBe(folded);
+    expect(roleHasTokens({ row, role: 'reviewer', reviewerHasOwnSeat: true })).toBe(true);
+    expect(roleHasTokens({ row, role: 'planner', reviewerHasOwnSeat: true })).toBe(false);
+  });
+
+  it('never folds review tokens into the implementer seat', () => {
+    expect(roleHasTokens({ row, role: 'implementer', reviewerHasOwnSeat: false })).toBe(false);
+    expect(roleHasTokens({ row, role: 'implementer', reviewerHasOwnSeat: true })).toBe(false);
   });
 });

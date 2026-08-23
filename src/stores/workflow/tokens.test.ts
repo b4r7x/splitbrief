@@ -8,6 +8,7 @@ import { taskId } from '../../core/schemas/task.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import { parseEngineEvent } from '../../engine/events/schema.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 type TaskTokensEvent = Extract<EngineEvent, { type: 'task_tokens' }> & Partial<TaskTokenUsage>;
 
@@ -243,14 +244,7 @@ describe('tokensStore — cost-update', () => {
     addEvent(first);
     expect(tokensStore.get().tokenUsage).toEqual(first.tokenUsage);
 
-    const updated = {
-      plannerInput: 999,
-      plannerOutput: 999,
-      implementerInput: 0,
-      implementerOutput: 0,
-      escalationInput: 0,
-      escalationOutput: 0,
-    };
+    const updated = makeUsage({ plannerInput: 999, plannerOutput: 999 });
     addEvent(makeCostUpdate({ tokenUsage: updated }));
     expect(tokensStore.get().tokenUsage).toEqual(updated);
   });
@@ -261,25 +255,77 @@ describe('tokensStore — cost-update', () => {
     addEvent(
       makeCostUpdate({
         ts: 1_100,
-        tokenUsage: {
+        tokenUsage: makeUsage({
           plannerInput: 300,
           plannerOutput: 120,
           implementerInput: 40,
           implementerOutput: 20,
-          escalationInput: 0,
-          escalationOutput: 0,
-        },
+        }),
       }),
     );
 
-    expect(tokensStore.get().tokenUsage).toEqual({
-      plannerInput: 300,
-      plannerOutput: 120,
-      implementerInput: 40,
-      implementerOutput: 20,
-      escalationInput: 0,
-      escalationOutput: 0,
-    });
+    expect(tokensStore.get().tokenUsage).toEqual(
+      makeUsage({
+        plannerInput: 300,
+        plannerOutput: 120,
+        implementerInput: 40,
+        implementerOutput: 20,
+      }),
+    );
+  });
+});
+
+describe('tokensStore — final-review phase attribution', () => {
+  beforeEach(() => resetWorkflow());
+
+  it('reports the review cost of the final-review phase when review tokens are billed separately', () => {
+    addEvent(
+      makeCostUpdate({
+        phase: 'implementing',
+        tokenUsage: makeUsage({ plannerInput: 200, plannerOutput: 50 }),
+      }),
+    );
+    addEvent(
+      makeCostUpdate({
+        phase: 'final-review',
+        tokenUsage: makeUsage({
+          plannerInput: 200,
+          plannerOutput: 50,
+          reviewerInput: 900,
+          reviewerOutput: 300,
+        }),
+      }),
+    );
+
+    const phase = tokensStore.get().perPhase['final-review'];
+    expect(phase?.inputTokens).toBe(900);
+    expect(phase?.outputTokens).toBe(300);
+  });
+
+  it('keeps the final-review phase totals identical whether the review is billed as planner or as reviewer tokens, and keeps the two buckets apart', () => {
+    addEvent(
+      makeCostUpdate({
+        phase: 'final-review',
+        tokenUsage: makeUsage({ reviewerInput: 900, reviewerOutput: 300 }),
+      }),
+    );
+    const viaReviewerBucket = tokensStore.get().perPhase['final-review'];
+
+    resetWorkflow();
+    addEvent(
+      makeCostUpdate({
+        phase: 'final-review',
+        tokenUsage: makeUsage({ plannerInput: 900, plannerOutput: 300 }),
+      }),
+    );
+    const viaPlannerBucket = tokensStore.get().perPhase['final-review'];
+
+    expect(viaReviewerBucket?.inputTokens).toBe(viaPlannerBucket?.inputTokens);
+    expect(viaReviewerBucket?.outputTokens).toBe(viaPlannerBucket?.outputTokens);
+    expect(viaReviewerBucket?.reviewerInputTokens).toBe(900);
+    expect(viaReviewerBucket?.plannerInputTokens).toBe(0);
+    expect(viaPlannerBucket?.plannerInputTokens).toBe(900);
+    expect(viaPlannerBucket?.reviewerInputTokens).toBe(0);
   });
 });
 

@@ -58,7 +58,6 @@ function AuthHarness({
   } satisfies ViewState);
   const actions = usePickerActions({
     role: 'planner',
-    onConfirm: undefined,
     catalog: minimalCatalog(item),
     viewState,
     dispatchView,

@@ -1,4 +1,5 @@
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
+import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import type { RunnerConfig } from '../../core/config/accessors/runner-config.js';
 import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
 import type {
@@ -13,6 +14,7 @@ import { getProvider } from '../providers/registry.js';
 import type { ProviderDef } from '../providers/types.js';
 import { isAgentSdkAvailable } from './agent-sdk/availability.js';
 import { composeAbortSignal } from '../../utils/abort.js';
+import { assertNever } from '../../utils/type-guards.js';
 
 /**
  * Readiness runs before every start, so the budget is what a person will wait
@@ -24,7 +26,11 @@ export const RUNNER_AVAILABILITY_PROBE_TIMEOUT_MS = 2_000;
 
 export type RunnerAvailabilityRole = RunnerAvailabilitySlot['role'];
 
-const ALL_AVAILABILITY_ROLES: readonly RunnerAvailabilityRole[] = ['planner', 'implementer'];
+const ALL_AVAILABILITY_ROLES = [
+  'planner',
+  'implementer',
+  'reviewer',
+] as const satisfies readonly RunnerAvailabilityRole[];
 
 type ProbeableRunner = Extract<RunnerConfig, { kind: 'api' | 'agent-sdk' }>;
 
@@ -36,21 +42,33 @@ function isProbeableRunner(runner: RunnerConfig): runner is ProbeableRunner {
   return runner.kind === 'api' || runner.kind === 'agent-sdk';
 }
 
-function probeTargets(config: Config, roles: readonly RunnerAvailabilityRole[]): ProbeTarget[] {
-  const targets: ProbeTarget[] = [];
-  if (roles.includes('planner') && isProbeableRunner(config.planner)) {
-    targets.push({ slot: { role: 'planner' }, runner: config.planner });
-  }
-  if (!roles.includes('implementer')) return targets;
-  for (const profile of resolveImplementerProfiles(config).profiles) {
-    if (isProbeableRunner(profile.config)) {
-      targets.push({
-        slot: { role: 'implementer', profile: profile.name },
-        runner: profile.config,
-      });
+function targetsForRole(config: Config, role: RunnerAvailabilityRole): ProbeTarget[] {
+  switch (role) {
+    case 'planner':
+      return isProbeableRunner(config.planner)
+        ? [{ slot: { role: 'planner' }, runner: config.planner }]
+        : [];
+    case 'implementer':
+      return resolveImplementerProfiles(config).profiles.flatMap((profile) =>
+        isProbeableRunner(profile.config)
+          ? [{ slot: { role: 'implementer', profile: profile.name }, runner: profile.config }]
+          : [],
+      );
+    case 'reviewer': {
+      const reviewer = resolveReviewerRunner(config);
+      return reviewer.source === 'configured' && isProbeableRunner(reviewer.runner)
+        ? [{ slot: { role: 'reviewer' }, runner: reviewer.runner }]
+        : [];
     }
+    default:
+      return assertNever(role);
   }
-  return targets;
+}
+
+function probeTargets(config: Config, roles: readonly RunnerAvailabilityRole[]): ProbeTarget[] {
+  return ALL_AVAILABILITY_ROLES.filter((role) => roles.includes(role)).flatMap((role) =>
+    targetsForRole(config, role),
+  );
 }
 
 function hasCredential(provider: ProviderDef): boolean {

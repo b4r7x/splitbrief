@@ -11,6 +11,7 @@ import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import { createResolver } from './resolver.js';
 import { SPLITBRIEF_DIR, SESSIONS_DIR } from '../../core/paths.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -41,14 +42,7 @@ function makeCompleteSession(id: string) {
       skipped: 0,
       failed: 0,
       totalTime: 5000,
-      tokenUsage: {
-        plannerInput: 0,
-        plannerOutput: 0,
-        implementerInput: 0,
-        implementerOutput: 0,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      tokenUsage: makeUsage(),
       estimatedCostSavings: '$0.00',
       escalationRate: 0,
       mode: 'speckit' as const,

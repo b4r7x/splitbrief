@@ -12,6 +12,7 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { markInterruptResumed } from '../../stores/workflow/actions/resume.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { reviewStore } from '../../stores/workflow/review.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 function makeInputMode(answers: string | string[]): UseInputModeResult {
   const queue = Array.isArray(answers) ? [...answers] : [answers];
@@ -58,14 +59,7 @@ function makeReviewRequest(): TaskReviewRequest {
     validation: { passed: true, summary: 'all green', stages: [] },
     evidence: { summary: 'evidence', expected: [], observed: [] },
     cost: {
-      tokenUsage: {
-        plannerInput: 0,
-        plannerOutput: 0,
-        implementerInput: 10,
-        implementerOutput: 5,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      tokenUsage: makeUsage({ implementerInput: 10, implementerOutput: 5 }),
     },
     availableCommands: [...TASK_REVIEW_COMMANDS],
   };

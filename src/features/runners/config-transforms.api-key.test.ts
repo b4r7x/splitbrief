@@ -1,18 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { realPickerOption } from '#testing/helpers/runner-picker.js';
-import { commitImplementerSelection, commitPlannerSelection } from './config-transforms.js';
+import { commitImplementerSelection, commitPlannerTierSelection } from './config-transforms.js';
 
 const KEY = 'sk-test-commit-key-1234';
 
 describe('runner selection commits with an inline apiKey', () => {
   it('stores the key and selects the provider in one planner config', () => {
-    const updated = commitPlannerSelection(
-      makeConfig(),
-      realPickerOption('planner', 'openai'),
-      { id: 'gpt-5-mini' },
-      KEY,
-    );
+    const updated = commitPlannerTierSelection({
+      config: makeConfig(),
+      role: 'planner',
+      selection: realPickerOption('planner', 'openai'),
+      model: { id: 'gpt-5-mini' },
+      apiKey: KEY,
+    });
 
     expect(updated.planner).toMatchObject({
       kind: 'api',
@@ -49,8 +50,11 @@ describe('runner selection commits with an inline apiKey', () => {
       },
     });
 
-    const updated = commitPlannerSelection(config, realPickerOption('planner', 'openai'), {
-      id: 'gpt-5-mini',
+    const updated = commitPlannerTierSelection({
+      config,
+      role: 'planner',
+      selection: realPickerOption('planner', 'openai'),
+      model: { id: 'gpt-5-mini' },
     });
 
     expect(updated.planner).toMatchObject({ kind: 'api', provider: 'openai', apiKey: KEY });

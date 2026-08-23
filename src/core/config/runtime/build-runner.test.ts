@@ -620,6 +620,22 @@ describe('buildRunnerConfig', () => {
         }),
       ).toThrow(/model/);
     });
+
+    it('validates a reviewer against the reviewer schema, naming the reviewer seat', () => {
+      let message = '';
+      try {
+        buildRunnerConfig('reviewer', {
+          kind: 'api',
+          tool: 'ollama',
+          apiBase: 'http://127.0.0.1:11434/v1',
+          model: 'qwen3',
+        });
+      } catch (thrown) {
+        message = thrown instanceof Error ? thrown.message : String(thrown);
+      }
+      expect(message).toContain('reviewer');
+      expect(message).not.toContain('planner');
+    });
   });
 });
 

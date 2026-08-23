@@ -4,6 +4,7 @@ import type { Phase, UserEditConflictAction } from '../../core/schemas/enums.js'
 import type { TaskId } from '../../core/schemas/task.js';
 import type { ProjectContext, StateAuthorityReceipt } from '../../core/state/types.js';
 import type { Planner, PriorMessage } from '../planners/types.js';
+import type { Reviewer } from '../reviewers/types.js';
 import type { Implementer, ImplementerFactoryOptions } from '../implementers/types.js';
 import type { SpecMetadata } from '../../core/paths-io.js';
 import type { CostPrediction, Summary } from '../../core/schemas/summary.js';
@@ -102,6 +103,7 @@ export interface WorkflowContext {
   callbacks: OrchestratorCallbacks;
   bus: EventBus;
   planner: Planner;
+  reviewer: Reviewer;
   context: ProjectContext;
   implementer: Implementer;
   createImplementer?:

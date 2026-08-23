@@ -113,6 +113,20 @@ function buildPickerItems(opts: { isAttached: boolean }): PaletteSources['picker
         overlayStore.open('implementer-picker');
       },
     },
+    {
+      label: 'reviewer',
+      description: 'Select reviewer tool',
+      action: () => {
+        overlayStore.open('reviewer-picker');
+      },
+    },
+    {
+      label: 'crew',
+      description: 'Choose which tool fills each seat',
+      action: () => {
+        overlayStore.open('crew');
+      },
+    },
     ...shared,
     {
       label: 'settings',

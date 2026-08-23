@@ -319,3 +319,21 @@ describe('/planner command', () => {
     expect(openedOverlay).toBe('planner-picker');
   });
 });
+
+describe('/reviewer and /crew commands', () => {
+  it('open the reviewer-picker and crew overlays', () => {
+    const opened: string[] = [];
+    const commands = createRuntimeCommands(
+      makeCtx({
+        openOverlay: (type) => {
+          opened.push(type);
+        },
+      }),
+    );
+
+    executeRuntimeCommand(commands, '/reviewer', 'home', noop);
+    executeRuntimeCommand(commands, '/crew', 'home', noop);
+
+    expect(opened).toEqual(['reviewer-picker', 'crew']);
+  });
+});

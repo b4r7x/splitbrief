@@ -549,6 +549,8 @@ export type EnforceBudgetOptions = {
   implementerTool: string;
   plannerModel?: string | undefined;
   implementerModel?: string | undefined;
+  reviewerTool?: string | undefined;
+  reviewerModel?: string | undefined;
   taskBreakdowns?: TaskTokenUsage[] | undefined;
   pricingCache?: ModelCacheAccessor | undefined;
   bus: EventBus;
@@ -700,6 +702,8 @@ export async function checkBudgetAfterTask(opts: {
   const plannerModel = state.plannerModel ?? ident.plannerModel;
   const implementerTool = state.implementerTool ?? ident.implementerTool;
   const implementerModel = state.implementerModel ?? ident.implementerModel;
+  const reviewerTool = state.reviewerTool ?? ident.reviewerTool;
+  const reviewerModel = state.reviewerModel ?? ident.reviewerModel;
 
   const budgetResult = await enforceBudget({
     tokenUsage: state.tokenUsage,
@@ -710,6 +714,8 @@ export async function checkBudgetAfterTask(opts: {
     implementerTool,
     ...(plannerModel !== undefined && { plannerModel }),
     ...(implementerModel !== undefined && { implementerModel }),
+    ...(reviewerTool !== undefined && { reviewerTool }),
+    ...(reviewerModel !== undefined && { reviewerModel }),
     taskBreakdowns,
     pricingCache: wctx.modelCache,
     bus,

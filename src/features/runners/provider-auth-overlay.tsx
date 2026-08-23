@@ -1,6 +1,7 @@
 import { Box, Text } from 'ink';
 import { SOFT_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
+import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
 import {
   getApiProviderDescriptor,
@@ -34,7 +35,7 @@ function KeyRecap({ descriptor }: { descriptor: ApiProviderDescriptor }) {
 }
 
 interface ProviderAuthOverlayProps {
-  role: 'planner' | 'implementer';
+  role: ActiveRunnerRole;
   item: RunnerPickerOption;
   onSubmit: (value: string) => void;
 }

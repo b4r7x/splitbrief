@@ -95,6 +95,8 @@ export function retryBudgetContext(
   const identity = runPricingIdentity(wctx.config);
   const plannerModel = state.plannerModel ?? identity.plannerModel;
   const implementerModel = state.implementerModel ?? identity.implementerModel;
+  const reviewerTool = state.reviewerTool ?? identity.reviewerTool;
+  const reviewerModel = state.reviewerModel ?? identity.reviewerModel;
   const knownness = getBudgetCostKnownness({
     tokenUsage: state.tokenUsage,
     totalTasks: state.tasks.length,
@@ -103,6 +105,8 @@ export function retryBudgetContext(
     implementerTool: state.implementerTool ?? identity.implementerTool,
     ...(plannerModel === undefined ? {} : { plannerModel }),
     ...(implementerModel === undefined ? {} : { implementerModel }),
+    ...(reviewerTool === undefined ? {} : { reviewerTool }),
+    ...(reviewerModel === undefined ? {} : { reviewerModel }),
     ...(state.taskBreakdowns === undefined ? {} : { taskBreakdowns: state.taskBreakdowns }),
     ...(wctx.modelCache === undefined ? {} : { pricingCache: wctx.modelCache }),
   });

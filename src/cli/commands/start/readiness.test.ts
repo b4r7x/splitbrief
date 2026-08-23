@@ -13,7 +13,11 @@ import { readActive } from '../../../core/sessions/lifecycle.js';
 import { prepareNewSession } from '../../../core/sessions/prepare.js';
 import { runnerDiscoveryContextKey } from '../../../engine/detection/detect.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution.js';
-import { cliPreparationPolicy, prepareStartExecution } from './readiness.js';
+import {
+  cliPreparationPolicy,
+  detectConfiguredCliReadiness,
+  prepareStartExecution,
+} from './readiness.js';
 
 const executable = CliExecutableReceiptSchema.parse({
   path: '/usr/local/bin/codex',
@@ -244,5 +248,30 @@ describe('start preparation', () => {
     expect(
       cliPreparationPolicy({ purpose: 'spec', interaction: 'headless', opts: {} }),
     ).toMatchObject({ purpose: 'spec', interaction: 'headless', unverifiedAuth: 'denied' });
+  });
+});
+
+describe('detectConfiguredCliReadiness', () => {
+  it('probes the CLI reviewer even when no other seat is a CLI runner', async () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'openrouter',
+        service: 'openrouter',
+        offering: 'payg',
+        apiBase: 'https://openrouter.ai/api/v1',
+        apiKey: `\${OPENROUTER_API_KEY}`,
+        model: 'some-model',
+      },
+      reviewer: { kind: 'cli', tool: 'aider' },
+    });
+
+    const results = await detectConfiguredCliReadiness({
+      projectDir: process.cwd(),
+      config,
+      opts: {},
+    });
+
+    expect(results.map((result) => result.tool)).toEqual(['aider']);
   });
 });

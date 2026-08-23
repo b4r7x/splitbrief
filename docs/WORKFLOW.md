@@ -301,6 +301,8 @@ From `src/core/phases.ts`. Each phase has four properties derived from the sourc
 
 **Live** — streaming output is happening. Phases where the planner or implementer is actively generating: `researching`, `specifying`, `planning`, `implementing`, `escalating`, `final-review`.
 
+**Who runs `final-review`** — the review seat, which is the `reviewer` runner from `.splitbrief/config.yaml` when one is configured and the planner's own runner when none is (`resolveReviewerRunner`, `src/core/config/accessors/reviewer-runner.ts`). It is the only call the reviewer makes; every other model call in this state machine, escalation included, stays on the planner. The phase's `phaseRole()` is still `planner` and `phaseCostRole()` is still `implementer` — those classifications did not move, so per-phase cost attribution is unchanged. During the phase the transcript and the composer live status name the seat actually running — the reviewer's tool and model when one is configured, today's wording when none is — and the sidebar carries a reviewer row whenever one is configured. A reviewer that fails does not hand the review back to the planner — the phase records a failed review, stays in `final-review` instead of transitioning `REVIEW_DONE`, and still builds the run summary.
+
 **Planner markdown headers** — `planner_text` events with `content: 'markdown'` prepend a phase label before the rendered markdown body. During `researching`, the label is the literal `RESEARCH` (codebase research output, not the later Task Brief). `specifying` uses `SPEC`, `planning` uses `PLAN`, and `escalating` uses `ESCALATION`. Task Brief markdown is produced later in `planning` and at the `reviewing-briefs` gate, not during the research phase.
 
 **Override:** `awaitingContinue: true` makes any phase resumable regardless of the table above. The user explicitly aborted and is expected to return.
@@ -585,7 +587,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
           HINT_SUCCESS / HINT_FAIL / FULL_SUCCESS → implementing
 
 15. implementing (last task) → ALL_DONE → final-review
-    Drift report computed. Planner reviews diff against Task Brief and spec.
+    Drift report computed. The review seat reads the diff against Task Brief and spec.
 
 16. final-review → REVIEW_DONE → complete
     summary.json written. .splitbrief/active cleared. Session done.

@@ -11,8 +11,19 @@ export const ACTIVE_OVERLAYS = [
   'mode-selector',
   'planner-picker',
   'implementer-picker',
+  'reviewer-picker',
+  'crew',
   'sessions',
   'editor',
   'cost-drilldown',
 ] as const;
 export type OverlayType = 'none' | (typeof ACTIVE_OVERLAYS)[number];
+
+export function overlayAllowsPickerKeys(active: OverlayType): boolean {
+  return (
+    active === 'none' ||
+    active === 'planner-picker' ||
+    active === 'implementer-picker' ||
+    active === 'reviewer-picker'
+  );
+}

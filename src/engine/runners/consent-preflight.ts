@@ -1,4 +1,5 @@
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
+import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import {
   findConfiguredCustomCommand,
   inlineRunnerCommand,
@@ -7,6 +8,7 @@ import type { ReadinessCheck } from '../../core/readiness/types.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
 import type { PlannerConfig } from '../../core/schemas/planner-config.js';
+import type { ActiveRunnerRole, RunnerRole } from '../../core/runners/cli-tool-catalog.js';
 import {
   customRunnerSecurityPosture,
   inlineRunnerSecurityPosture,
@@ -20,7 +22,10 @@ type CommandRunner = Extract<PlannerConfig | ImplementerConfig, { kind: 'shell' 
 type Candidate = Readonly<{
   checkId: string;
   label: string;
-  role: 'planner' | 'implementer';
+  /** The admission axis: posture and inline command policy are planner-tier or implementer-tier. */
+  trustRole: RunnerRole;
+  /** The seat the check is about, which is what the report publishes. */
+  seat: ActiveRunnerRole;
   trustLabel: string;
   runner: CommandRunner;
 }>;
@@ -43,9 +48,21 @@ function candidates(config: Config): Candidate[] {
     found.push({
       checkId: 'runners.consent.planner',
       label: 'Planner',
-      role: 'planner',
+      trustRole: 'planner',
+      seat: 'planner',
       trustLabel: 'planner',
       runner: config.planner,
+    });
+  }
+  const reviewer = resolveReviewerRunner(config);
+  if (reviewer.source === 'configured' && isCommandRunner(reviewer.runner)) {
+    found.push({
+      checkId: 'runners.consent.reviewer',
+      label: 'Reviewer',
+      trustRole: 'planner',
+      seat: 'reviewer',
+      trustLabel: 'reviewer',
+      runner: reviewer.runner,
     });
   }
   let profiles: ReturnType<typeof resolveImplementerProfiles>['profiles'];
@@ -60,7 +77,8 @@ function candidates(config: Config): Candidate[] {
     found.push({
       checkId: `runners.consent.implementer.${profile.name}`,
       label: `Implementer profile ${profile.name}`,
-      role: 'implementer',
+      trustRole: 'implementer',
+      seat: 'implementer',
       trustLabel:
         config.implementerProfiles?.profiles[profile.name] === undefined
           ? 'implementer'
@@ -76,7 +94,7 @@ function configuredRunner(config: Config, candidate: Candidate): ConfiguredCusto
   return configured === undefined
     ? {
         source: 'inline',
-        command: inlineRunnerCommand({ runner: candidate.runner, role: candidate.role }),
+        command: inlineRunnerCommand({ runner: candidate.runner, role: candidate.trustRole }),
       }
     : { source: 'configured', command: configured };
 }
@@ -101,7 +119,7 @@ function refusedCheck(
     ],
     fix: refusal.fix,
     nextAction: 'fix-config',
-    metadata: { role: candidate.role, kind: candidate.runner.kind },
+    metadata: { role: candidate.seat, kind: candidate.runner.kind },
   };
 }
 
@@ -142,8 +160,8 @@ export async function collectCustomRunnerConsentChecks(
       runner,
       posture:
         runner.source === 'configured'
-          ? customRunnerSecurityPosture(candidate.role, runner.command.contract)
-          : inlineRunnerSecurityPosture(candidate.role, runner.command.contract),
+          ? customRunnerSecurityPosture(candidate.trustRole, runner.command.contract)
+          : inlineRunnerSecurityPosture(candidate.trustRole, runner.command.contract),
       interaction: 'headless',
       grant: false,
       pathEnv: runner.source === 'inline' ? (process.env.PATH ?? '') : '',
@@ -155,7 +173,7 @@ export async function collectCustomRunnerConsentChecks(
         id: candidate.checkId,
         severity: 'ok',
         summary: `${candidate.label} is authorized to run on this machine.`,
-        metadata: { role: candidate.role, kind: candidate.runner.kind },
+        metadata: { role: candidate.seat, kind: candidate.runner.kind },
       });
       continue;
     }

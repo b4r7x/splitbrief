@@ -565,6 +565,8 @@ export function publishWorkflowConfig(
     plannerModel?: string | undefined;
     implementerTool: string;
     implementerModel?: string | undefined;
+    reviewerTool?: string | undefined;
+    reviewerModel?: string | undefined;
   },
 ): void {
   ctx.bus.publish({
@@ -576,6 +578,8 @@ export function publishWorkflowConfig(
     ...(opts.plannerModel !== undefined && { plannerModel: opts.plannerModel }),
     implementerTool: opts.implementerTool,
     ...(opts.implementerModel !== undefined && { implementerModel: opts.implementerModel }),
+    ...(opts.reviewerTool !== undefined && { reviewerTool: opts.reviewerTool }),
+    ...(opts.reviewerModel !== undefined && { reviewerModel: opts.reviewerModel }),
   });
 }
 

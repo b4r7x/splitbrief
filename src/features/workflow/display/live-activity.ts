@@ -21,7 +21,7 @@ const RAIL_GATE_PHASES: ReadonlySet<Phase> = new Set([
   'reviewing-briefs',
 ]);
 
-function activeVerb(phase: Phase): string {
+function activeVerb(phase: Phase, reviewerLabel: string | null): string {
   switch (phase) {
     case 'researching':
       return 'Researching…';
@@ -48,7 +48,7 @@ function activeVerb(phase: Phase): string {
     case 'escalating':
       return 'Escalating…';
     case 'final-review':
-      return 'Reviewing…';
+      return reviewerLabel === null ? 'Reviewing…' : `Reviewing… ${reviewerLabel}`;
     case 'idle':
     case 'complete':
       return '';
@@ -100,6 +100,7 @@ export function deriveLiveStatus(input: {
   cancelled: boolean;
   startedAt: number | null;
   phaseFirstSeenTs: Readonly<Partial<Record<Phase, number>>>;
+  reviewerLabel: string | null;
 }): LiveStatus | null {
   if (input.status !== 'running') return null;
   if (input.cancelled) return null;
@@ -111,7 +112,7 @@ export function deriveLiveStatus(input: {
   const stageStart =
     activeIndex > 0 ? (completionTimes[activeIndex - 1] ?? 0) : (input.startedAt ?? 0);
   return {
-    verb: activeVerb(input.phase),
+    verb: activeVerb(input.phase, input.reviewerLabel),
     stageStart,
     tone: railRoleTone(railStageRole(activeStage.stage)),
   };

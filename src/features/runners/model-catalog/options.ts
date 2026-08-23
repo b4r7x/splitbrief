@@ -11,8 +11,10 @@ import { hasAutomaticModelDefault } from '../../../core/providers/model-selectio
 import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
+  runnerRoleForActiveRole,
   type CliToolDescriptor,
   type RunnerRole,
+  type ActiveRunnerRole,
 } from '../../../core/runners/cli-tool-catalog.js';
 import type { RunnerBillingPosture } from '../../../core/runners/runner-billing.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
@@ -73,7 +75,37 @@ export interface CustomCommandLauncherOption extends PickerOptionBase {
   kind: 'custom-command';
 }
 
-export type PickerOption = RunnerPickerOption | CustomCommandLauncherOption;
+/** The review seat's inherit row: confirming it clears `reviewer` instead of writing one. */
+export interface InheritPlannerOption extends PickerOptionBase {
+  kind: 'inherit-planner';
+}
+
+export type PickerOption = RunnerPickerOption | CustomCommandLauncherOption | InheritPlannerOption;
+
+export const INHERIT_PLANNER_OPTION_ID = 'inherit-planner';
+
+/**
+ * The inherit row borrows the planner's posture because that is what the seat
+ * will actually run, but never its model axis or its readiness: clearing the
+ * `reviewer` block is an edit that always succeeds.
+ */
+export function inheritPlannerOption(
+  input: Readonly<{ planner: PickerOption; isCurrent: boolean }>,
+): InheritPlannerOption {
+  return {
+    id: INHERIT_PLANNER_OPTION_ID,
+    displayName: 'Same as planner',
+    kind: 'inherit-planner',
+    roles: input.planner.roles,
+    modelPolicy: 'none',
+    modelCapability: deriveModelCatalogCapability('none'),
+    billing: input.planner.billing,
+    permissions: input.planner.permissions,
+    status: { state: 'ready', remediation: null },
+    available: true,
+    ...(input.isCurrent ? { isCurrent: true } : {}),
+  };
+}
 
 /**
  * The active runner identity needed to derive availability. This intentionally
@@ -95,16 +127,17 @@ function descriptorRoles(entry: RunnerPickerDescriptor): readonly RunnerRole[] {
   return ['planner', 'implementer'];
 }
 
-function descriptorSupportsRole(entry: RunnerPickerDescriptor, role: RunnerRole): boolean {
-  return descriptorRoles(entry).includes(role);
+function descriptorSupportsRole(entry: RunnerPickerDescriptor, role: ActiveRunnerRole): boolean {
+  return descriptorRoles(entry).includes(runnerRoleForActiveRole(role));
 }
 
 function projectCliOption(
   descriptor: CliToolDescriptor,
-  role: RunnerRole,
+  role: ActiveRunnerRole,
   detections: PickerDetectionSnapshot,
   isCurrent: boolean,
 ): PickerOption {
+  const policyRole = runnerRoleForActiveRole(role);
   const status = deriveCliStatus(descriptor, detections);
   const version = resolveCliVersion(descriptor.id, detections);
   // Provider-dependent auth plus a native model listing is exactly the pair
@@ -117,10 +150,10 @@ function projectCliOption(
     displayName: descriptor.displayName,
     kind: 'cli',
     roles: descriptor.roles,
-    modelPolicy: descriptor.modelPolicy[role],
-    modelCapability: deriveModelCatalogCapability(descriptor.modelPolicy[role], true),
+    modelPolicy: descriptor.modelPolicy[policyRole],
+    modelCapability: deriveModelCatalogCapability(descriptor.modelPolicy[policyRole], true),
     billing: descriptor.billing,
-    permissions: cliPermissions(descriptor, role),
+    permissions: cliPermissions(descriptor, policyRole),
     status,
     available: isSelectable(status, 'cli'),
     ...(version ? { version } : {}),
@@ -131,7 +164,7 @@ function projectCliOption(
 
 function projectApiOption(
   descriptor: ApiProviderDescriptor,
-  role: RunnerRole,
+  role: ActiveRunnerRole,
   detections: PickerDetectionSnapshot,
   isCurrent: boolean,
 ): PickerOption {
@@ -149,7 +182,7 @@ function projectApiOption(
     ),
     billing: descriptor.billing,
     dataUse: descriptor.dataUse,
-    permissions: trustPermissions('api', role),
+    permissions: trustPermissions('api', runnerRoleForActiveRole(role)),
     status,
     available: isSelectable(status, 'api'),
     ...(isCurrent ? { isCurrent: true } : {}),
@@ -158,7 +191,7 @@ function projectApiOption(
 
 function projectMetaOption(
   kind: 'custom-command' | 'agent-sdk',
-  role: RunnerRole,
+  role: ActiveRunnerRole,
   detections: PickerDetectionSnapshot,
   isCurrent: boolean,
   useConfiguredProviderOutcome: boolean,
@@ -172,7 +205,10 @@ function projectMetaOption(
     modelPolicy: metaModelPolicy(kind),
     modelCapability: deriveModelCatalogCapability(metaModelPolicy(kind), kind === 'agent-sdk'),
     billing: metaBilling(kind),
-    permissions: trustPermissions(kind === 'custom-command' ? 'shell' : kind, role),
+    permissions: trustPermissions(
+      kind === 'custom-command' ? 'shell' : kind,
+      runnerRoleForActiveRole(role),
+    ),
     status,
     available: isSelectable(status, kind),
     ...(isCurrent ? { isCurrent: true } : {}),
@@ -290,7 +326,7 @@ export function assemblePickerDescriptors(): readonly RunnerPickerDescriptor[] {
 }
 
 export function buildPickerOptions(
-  role: RunnerRole,
+  role: ActiveRunnerRole,
   descriptors: readonly RunnerPickerDescriptor[],
   detections: PickerDetectionSnapshot,
   currentConfig: PlannerConfig | ImplementerConfig | undefined,

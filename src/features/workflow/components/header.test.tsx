@@ -87,6 +87,36 @@ describe('Header — layout', () => {
     ).toBe('full');
   });
 
+  it('reports no reviewer cell when the reviewer widths match the reviewer-less widths', () => {
+    const layout = getHeaderLayout({
+      cols: 160,
+      isSmall: false,
+      railCells: 40,
+      runnerFullCells: 44,
+      runnerCompactCells: 31,
+      runnerFullNoReviewerCells: 44,
+      runnerCompactNoReviewerCells: 31,
+    });
+
+    expect(layout.runnerVariant).toBe('full');
+    expect(layout.showReviewer).toBe(false);
+  });
+
+  it('reports the reviewer cell when the reviewer widths are wider and still fit', () => {
+    const layout = getHeaderLayout({
+      cols: 200,
+      isSmall: false,
+      railCells: 40,
+      runnerFullCells: 60,
+      runnerCompactCells: 40,
+      runnerFullNoReviewerCells: 44,
+      runnerCompactNoReviewerCells: 31,
+    });
+
+    expect(layout.runnerVariant).toBe('full');
+    expect(layout.showReviewer).toBe(true);
+  });
+
   it('drops to the compact runner summary on small terminals even when full would fit', () => {
     expect(
       getHeaderLayout({
@@ -146,6 +176,7 @@ describe('Header — runner summary', () => {
     expect(frame).toContain('Implementer');
     expect(frame).toContain('Qwen 2.5 Coder 7B');
     expect(frame).toContain(glyph('connectorSame'));
+    expect(frame).not.toContain('Reviewer');
     instance.unmount();
   });
 
@@ -386,6 +417,59 @@ describe('Header — rail and elapsed', () => {
       vi.advanceTimersByTime(2_000);
     });
     expect(instance.lastFrame() ?? '').toContain('0:32');
+    instance.unmount();
+  });
+});
+
+describe('Header — reviewer seat', () => {
+  const REVIEWER = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' } as const;
+
+  async function seatNames(cols: number, reviewer: boolean): Promise<string> {
+    resetStores();
+    terminalSizeStore.__testReset({ cols, rows: 24, isSmall: false });
+    configStore.__testReset({
+      projectDir: '/tmp/p',
+      config: reviewer ? makeConfig({ reviewer: REVIEWER }) : makeConfig(),
+    });
+    const instance = render(<Header startedAt={STARTED_AT} />);
+    await tick();
+    const frame = stripAnsiStyles(instance.lastFrame() ?? '');
+    instance.unmount();
+    return frame;
+  }
+
+  it.each([100, 120])(
+    'keeps the planner and implementer seats at %i columns when a reviewer is configured',
+    async (cols) => {
+      const withoutReviewer = await seatNames(cols, false);
+      const withReviewer = await seatNames(cols, true);
+
+      expect(withoutReviewer).toContain('Claude Code');
+      expect(withReviewer).toContain('Claude Code');
+      expect(withReviewer).toContain('Qwen 2.5 Coder 7B');
+    },
+  );
+
+  it('keeps the role words at 120 columns rather than dropping them to fit a third seat', async () => {
+    const frame = await seatNames(120, true);
+
+    expect(frame).toContain('Planner');
+    expect(frame).toContain('Implementer');
+  });
+
+  it('names the reviewer seat with its own runner when a reviewer is configured', async () => {
+    terminalSizeStore.__testReset({ cols: 200, rows: 24, isSmall: false });
+    configStore.__testReset({
+      projectDir: '/tmp/p',
+      config: makeConfig({ reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' } }),
+    });
+
+    const instance = render(<Header startedAt={STARTED_AT} />);
+    await tick();
+    const frame = stripAnsiStyles(instance.lastFrame() ?? '');
+
+    expect(frame).toContain('Reviewer');
+    expect(frame).toContain('GPT-5 Codex');
     instance.unmount();
   });
 });

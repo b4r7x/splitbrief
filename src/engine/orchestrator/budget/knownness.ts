@@ -1,4 +1,5 @@
 import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js';
+import { splitSeatTokenTotals } from '../../../core/providers/seat-totals.js';
 import { calculateCostBreakdown } from '../../providers/cost/breakdown.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import {
@@ -27,6 +28,8 @@ export type BudgetCheckOptions = {
   implementerTool: string;
   plannerModel?: string | undefined;
   implementerModel?: string | undefined;
+  reviewerTool?: string | undefined;
+  reviewerModel?: string | undefined;
   taskBreakdowns?: TaskTokenUsage[] | undefined;
   pricingCache?: ModelCacheAccessor | undefined;
 };
@@ -43,20 +46,37 @@ function collectBudgetUsageIdentities(
   const addIdentity = (identity: ProviderUsageSegment) => {
     if (identity.usageTokens > 0) identities.push(identity);
   };
-  const plannerInput = opts.tokenUsage.plannerInput + opts.tokenUsage.escalationInput;
-  const plannerOutput = opts.tokenUsage.plannerOutput + opts.tokenUsage.escalationOutput;
+  const seats = splitSeatTokenTotals({
+    tokenUsage: opts.tokenUsage,
+    reviewerTool: opts.reviewerTool,
+  });
+
   const plannerPricing = resolvePricing(opts.plannerTool, opts.pricingCache, opts.plannerModel);
   addIdentity(
     buildProviderUsageSegment({
       tool: opts.plannerTool,
       model: opts.plannerModel,
       pricing: plannerPricing,
-      inputTokens: plannerInput,
-      outputTokens: plannerOutput,
-      cacheReadTokens: opts.tokenUsage.plannerCacheRead ?? 0,
-      cacheCreateTokens: opts.tokenUsage.plannerCacheCreate ?? 0,
+      inputTokens: seats.planner.input,
+      outputTokens: seats.planner.output,
+      cacheReadTokens: seats.planner.cacheRead,
+      cacheCreateTokens: seats.planner.cacheCreate,
     }),
   );
+
+  if (opts.reviewerTool !== undefined && seats.reviewer !== undefined) {
+    addIdentity(
+      buildProviderUsageSegment({
+        tool: opts.reviewerTool,
+        model: opts.reviewerModel,
+        pricing: resolvePricing(opts.reviewerTool, opts.pricingCache, opts.reviewerModel),
+        inputTokens: seats.reviewer.input,
+        outputTokens: seats.reviewer.output,
+        cacheReadTokens: seats.reviewer.cacheRead,
+        cacheCreateTokens: seats.reviewer.cacheCreate,
+      }),
+    );
+  }
 
   const totalImplementerTokens =
     opts.tokenUsage.implementerInput + opts.tokenUsage.implementerOutput;
@@ -173,6 +193,10 @@ export function getBudgetCostKnownness(
       ...(opts.plannerModel !== undefined && { plannerModel: opts.plannerModel }),
       ...(opts.implementerModel !== undefined && { implementerModel: opts.implementerModel }),
       ...(opts.taskBreakdowns !== undefined && { taskBreakdowns: opts.taskBreakdowns }),
+      ...(opts.reviewerTool !== undefined && {
+        reviewerTool: opts.reviewerTool,
+        ...(opts.reviewerModel !== undefined && { reviewerModel: opts.reviewerModel }),
+      }),
     },
     opts.pricingCache,
   );

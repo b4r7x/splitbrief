@@ -8,6 +8,7 @@ import { saveSummary } from '../../core/sessions/io.js';
 import type { CostBreakdown } from '../../core/schemas/summary.js';
 import type { Session } from '../../core/schemas/session.js';
 import { registerStatsCommand } from './stats.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 let projectDir: string;
 
@@ -74,14 +75,7 @@ function completeSession(id: string, breakdown: CostBreakdown): Session {
       skipped: 0,
       failed: 0,
       totalTime: 10,
-      tokenUsage: {
-        plannerInput: 0,
-        plannerOutput: 0,
-        implementerInput: 0,
-        implementerOutput: 0,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      tokenUsage: makeUsage(),
       estimatedCostSavings: '$0.75',
       escalationRate: 1 / 3,
       costBreakdown: breakdown,

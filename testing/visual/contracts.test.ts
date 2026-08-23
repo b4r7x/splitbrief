@@ -164,6 +164,8 @@ describe('visual contract boundaries', () => {
       'mode-selector',
       'planner-picker',
       'implementer-picker',
+      'reviewer-picker',
+      'crew',
       'sessions',
       'editor',
       'cost-drilldown',

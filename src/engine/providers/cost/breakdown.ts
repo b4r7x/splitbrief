@@ -11,6 +11,7 @@ import {
 import { CLI_TOOL_CATALOG, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import type { RunnerBillingPosture } from '../../../core/runners/runner-billing.js';
 import { normalizeProviderEndpoint } from '../../../core/providers/endpoint-policy.js';
+import { splitSeatTokenTotals } from '../../../core/providers/seat-totals.js';
 import { formatCost, formatCostFact } from '../../../core/formatting.js';
 import { resolvePricing, type ResolvedPricing } from '../pricing-resolver.js';
 import type { ModelCacheAccessor } from '../model/resolution.js';
@@ -129,6 +130,7 @@ export function formatOfferingAwareExtraCost(
 
 function collectRunMetadataTools(opts: CostBreakdownOptions): string[] {
   const tools = new Set<string>([opts.plannerTool, opts.implementerTool]);
+  if (opts.reviewerTool !== undefined) tools.add(opts.reviewerTool);
   for (const task of opts.taskBreakdowns ?? []) {
     if (task.tool !== undefined) tools.add(task.tool);
   }
@@ -173,6 +175,8 @@ type CostBreakdownOptions = {
   implementerTool: string;
   plannerModel?: string | undefined;
   implementerModel?: string | undefined;
+  reviewerTool?: string | undefined;
+  reviewerModel?: string | undefined;
   taskBreakdowns?: TaskTokenUsage[] | undefined;
 };
 
@@ -360,32 +364,46 @@ export function calculateCostBreakdown(
     opts;
   const plannerPricing = resolvePricing(plannerTool, cache, plannerModel);
   const implementerPricing = resolvePricing(opts.implementerTool, cache, opts.implementerModel);
-
-  const plannerInputTotal = tokenUsage.plannerInput + tokenUsage.escalationInput;
-  const plannerOutputTotal = tokenUsage.plannerOutput + tokenUsage.escalationOutput;
+  const reviewerTool = opts.reviewerTool;
+  const seats = splitSeatTokenTotals({ tokenUsage, reviewerTool });
+  const plannerTotals = seats.planner;
 
   const plannerSegment = buildProviderUsageSegment({
     tool: plannerTool,
     model: plannerModel,
-    inputTokens: plannerInputTotal,
-    outputTokens: plannerOutputTotal,
-    cacheReadTokens: tokenUsage.plannerCacheRead ?? 0,
-    cacheCreateTokens: tokenUsage.plannerCacheCreate ?? 0,
+    inputTokens: plannerTotals.input,
+    outputTokens: plannerTotals.output,
+    cacheReadTokens: plannerTotals.cacheRead,
+    cacheCreateTokens: plannerTotals.cacheCreate,
     pricing: plannerPricing,
   });
   const actualPlannerCost = plannerSegment.cost;
+
+  const reviewerSegment =
+    reviewerTool === undefined || seats.reviewer === undefined
+      ? undefined
+      : buildProviderUsageSegment({
+          tool: reviewerTool,
+          model: opts.reviewerModel,
+          inputTokens: seats.reviewer.input,
+          outputTokens: seats.reviewer.output,
+          cacheReadTokens: seats.reviewer.cacheRead,
+          cacheCreateTokens: seats.reviewer.cacheCreate,
+          pricing: resolvePricing(reviewerTool, cache, opts.reviewerModel),
+        });
+  const actualReviewerCost = reviewerSegment?.cost ?? 0;
 
   const implementerAccounting =
     calculateTaskAwareImplementerCost(opts, cache) ??
     calculateAggregateImplementerCost(opts, implementerPricing);
   const actualImplementerCost = implementerAccounting.actualImplementerCost;
 
-  const totalActualCost = actualPlannerCost + actualImplementerCost;
+  const totalActualCost = actualPlannerCost + actualImplementerCost + actualReviewerCost;
   const plannerUsageTokens =
-    plannerInputTotal +
-    plannerOutputTotal +
-    (tokenUsage.plannerCacheRead ?? 0) +
-    (tokenUsage.plannerCacheCreate ?? 0);
+    plannerTotals.input +
+    plannerTotals.output +
+    plannerTotals.cacheRead +
+    plannerTotals.cacheCreate;
   const implementerUsageTokens =
     tokenUsage.implementerInput +
     tokenUsage.implementerOutput +
@@ -394,7 +412,10 @@ export function calculateCostBreakdown(
   const isActualPlannerCostKnown = plannerUsageTokens <= 0 || plannerSegment.costKnown;
   const isActualImplementerCostKnown =
     implementerUsageTokens <= 0 || !implementerAccounting.hasUnpricedUsage;
-  const isTotalActualCostKnown = isActualPlannerCostKnown && isActualImplementerCostKnown;
+  const isActualReviewerCostKnown =
+    reviewerSegment === undefined || reviewerSegment.usageTokens <= 0 || reviewerSegment.costKnown;
+  const isTotalActualCostKnown =
+    isActualPlannerCostKnown && isActualImplementerCostKnown && isActualReviewerCostKnown;
   const hypotheticalImplementerSegment = buildProviderUsageSegment({
     tool: plannerTool,
     model: plannerModel,
@@ -407,9 +428,28 @@ export function calculateCostBreakdown(
   const hypotheticalImplementerCost = hypotheticalImplementerSegment.cost;
   const isHypotheticalImplementerCostKnown =
     implementerUsageTokens <= 0 || hypotheticalImplementerSegment.costKnown;
-  const isAllPlannerBaselineKnown = isActualPlannerCostKnown && isHypotheticalImplementerCostKnown;
+  const hypotheticalReviewerSegment =
+    reviewerSegment === undefined
+      ? undefined
+      : buildProviderUsageSegment({
+          tool: plannerTool,
+          model: plannerModel,
+          inputTokens: reviewerSegment.inputTokens,
+          outputTokens: reviewerSegment.outputTokens,
+          cacheReadTokens: reviewerSegment.cacheReadTokens,
+          cacheCreateTokens: reviewerSegment.cacheCreateTokens,
+          pricing: plannerPricing,
+        });
+  const isHypotheticalReviewerCostKnown =
+    hypotheticalReviewerSegment === undefined ||
+    hypotheticalReviewerSegment.usageTokens <= 0 ||
+    hypotheticalReviewerSegment.costKnown;
+  const isAllPlannerBaselineKnown =
+    isActualPlannerCostKnown &&
+    isHypotheticalImplementerCostKnown &&
+    isHypotheticalReviewerCostKnown;
   const hypotheticalCost = isAllPlannerBaselineKnown
-    ? actualPlannerCost + hypotheticalImplementerCost
+    ? actualPlannerCost + hypotheticalImplementerCost + (hypotheticalReviewerSegment?.cost ?? 0)
     : 0;
   const hasSavingsEstimate = isAllPlannerBaselineKnown && isTotalActualCostKnown;
   const savingsAmount = hasSavingsEstimate ? hypotheticalCost - totalActualCost : 0;
@@ -419,13 +459,20 @@ export function calculateCostBreakdown(
   const localCompletionRate = totalTasks > 0 ? localSuccesses / totalTasks : 0;
   const hasPricedUsage =
     (plannerSegment.usageTokens > 0 && plannerPricing.isPriced) ||
-    implementerAccounting.hasPricedUsage;
+    implementerAccounting.hasPricedUsage ||
+    (reviewerSegment !== undefined &&
+      reviewerSegment.usageTokens > 0 &&
+      reviewerSegment.pricing.isPriced);
   const hasUnpricedUsage =
     (plannerSegment.usageTokens > 0 && !plannerSegment.costKnown) ||
-    implementerAccounting.hasUnpricedUsage;
+    implementerAccounting.hasUnpricedUsage ||
+    (reviewerSegment !== undefined &&
+      reviewerSegment.usageTokens > 0 &&
+      !reviewerSegment.costKnown);
 
   const providerCosts: Record<string, ProviderCostEntry> = {};
   recordPricedUsage(providerCosts, plannerSegment);
+  if (reviewerSegment !== undefined) recordPricedUsage(providerCosts, reviewerSegment);
   for (const [tool, entry] of Object.entries(implementerAccounting.providerCosts)) {
     recordProviderCost(providerCosts, {
       tool,
@@ -438,18 +485,29 @@ export function calculateCostBreakdown(
   }
 
   const cacheReadTokens =
-    (tokenUsage.plannerCacheRead ?? 0) + (tokenUsage.implementerCacheRead ?? 0);
+    plannerTotals.cacheRead +
+    (tokenUsage.implementerCacheRead ?? 0) +
+    (reviewerSegment?.cacheReadTokens ?? 0);
   const cacheWriteTokens =
-    (tokenUsage.plannerCacheCreate ?? 0) + (tokenUsage.implementerCacheCreate ?? 0);
+    plannerTotals.cacheCreate +
+    (tokenUsage.implementerCacheCreate ?? 0) +
+    (reviewerSegment?.cacheCreateTokens ?? 0);
 
   let cacheReadSavings = 0;
   if (cacheReadTokens > 0) {
     cacheReadSavings += calculateCacheReadSavings(
-      tokenUsage.plannerCacheRead ?? 0,
+      plannerTotals.cacheRead,
       plannerPricing,
       plannerSegment.contextTokens,
     );
     cacheReadSavings += implementerAccounting.cacheReadSavings;
+    if (reviewerSegment !== undefined) {
+      cacheReadSavings += calculateCacheReadSavings(
+        reviewerSegment.cacheReadTokens,
+        reviewerSegment.pricing,
+        reviewerSegment.contextTokens,
+      );
+    }
   }
 
   const { providerRunMetadata, offeringPresentations } = buildProviderRunMetadataRecord(
@@ -470,6 +528,7 @@ export function calculateCostBreakdown(
     hasSavingsEstimate,
     isActualPlannerCostKnown,
     isActualImplementerCostKnown,
+    ...(reviewerSegment !== undefined && { actualReviewerCost, isActualReviewerCostKnown }),
     isTotalActualCostKnown,
     isAllPlannerBaselineKnown,
     providerCosts: Object.keys(providerCosts).length > 0 ? providerCosts : undefined,

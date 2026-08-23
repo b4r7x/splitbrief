@@ -674,35 +674,38 @@ describe('TwoColumnPicker', () => {
     empty.unmount();
   });
 
-  it('handles keys while its own picker overlay is the active overlay', async () => {
-    overlayStore.open('planner-picker');
-    let cancelled = 0;
-    const ui = renderFeature(
-      <TwoColumnPicker<Tool, Model>
-        title="Picker"
-        leftProps={{
-          items: [],
-          getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
-        }}
-        rightProps={{
-          items: [],
-          getKey: (m) => m.id,
-          renderRow: (m) => <Text>{m.displayName}</Text>,
-        }}
-        onConfirm={() => {}}
-        onCancel={() => {
-          cancelled++;
-        }}
-      />,
-    );
-    await flushEffects();
+  it.each(['planner-picker', 'implementer-picker', 'reviewer-picker'] as const)(
+    'handles keys while the %s overlay is the active overlay',
+    async (overlay) => {
+      overlayStore.open(overlay);
+      let cancelled = 0;
+      const ui = renderFeature(
+        <TwoColumnPicker<Tool, Model>
+          title="Picker"
+          leftProps={{
+            items: [],
+            getKey: (t) => t.id,
+            renderRow: (t) => <Text>{t.displayName}</Text>,
+          }}
+          rightProps={{
+            items: [],
+            getKey: (m) => m.id,
+            renderRow: (m) => <Text>{m.displayName}</Text>,
+          }}
+          onConfirm={() => {}}
+          onCancel={() => {
+            cancelled++;
+          }}
+        />,
+      );
+      await flushEffects();
 
-    ui.stdin.write('\u001B'); // Escape - active because the picker's own overlay is topmost
-    await tick(20);
-    expect(cancelled).toBe(1);
-    ui.unmount();
-  });
+      ui.stdin.write('\u001B'); // Escape - active because the picker's own overlay is topmost
+      await tick(20);
+      expect(cancelled).toBe(1);
+      ui.unmount();
+    },
+  );
 
   it('does not confirm a hidden tool on Enter when no list rows are visible', async () => {
     const { terminalSizeStore } = await import('../../../stores/ui/terminal-size.js');

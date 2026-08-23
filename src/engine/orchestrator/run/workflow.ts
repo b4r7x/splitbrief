@@ -32,6 +32,7 @@ import { startHeartbeat } from '../../ipc/heartbeat.js';
 import { warnError } from '../../../lib/warn.js';
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 
+import type { Reviewer } from '../../reviewers/types.js';
 import type {
   Planner,
   PlannerCallbacks,
@@ -221,6 +222,17 @@ function withPlannerCallPublishing(planner: Planner, ctx: PlannerCallPublisherCo
   return wrapped;
 }
 
+function withReviewerCallPublishing(
+  reviewer: Reviewer,
+  ctx: PlannerCallPublisherContext,
+): Reviewer {
+  const review = reviewer.review.bind(reviewer);
+  return {
+    review: (prompt, projectDir, callbacks) =>
+      review(prompt, projectDir, withPlannerOutputCallbacks(callbacks, ctx)),
+  };
+}
+
 function shouldPreserveActiveSession(
   state: WorkflowState | undefined,
   signal: AbortSignal | undefined,
@@ -407,6 +419,8 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   const plannerModel = requestedSavedState?.plannerModel ?? ident.plannerModel;
   const implementerTool = requestedSavedState?.implementerTool ?? ident.implementerTool;
   const implementerModel = requestedSavedState?.implementerModel ?? ident.implementerModel;
+  const reviewerTool = requestedSavedState?.reviewerTool ?? ident.reviewerTool;
+  const reviewerModel = requestedSavedState?.reviewerModel ?? ident.reviewerModel;
   const summaryBase: SummaryBase = {
     feature,
     startTime,
@@ -414,6 +428,8 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     ...(plannerModel !== undefined && { plannerModel }),
     implementerTool,
     ...(implementerModel !== undefined && { implementerModel }),
+    ...(reviewerTool !== undefined && { reviewerTool }),
+    ...(reviewerModel !== undefined && { reviewerModel }),
     mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
     projectDir,
     sessionId,
@@ -576,13 +592,19 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
           }
 
           workflowBus = init.wctx.bus;
+          const callPublisher: PlannerCallPublisherContext = {
+            bus: init.wctx.bus,
+            getPhase: () => trackedState?.phase ?? createInitialState(feature).phase,
+          };
+          const publishingPlanner = withPlannerCallPublishing(init.wctx.planner, callPublisher);
           wctx = attachWorkflowAuthority(
             {
               ...init.wctx,
-              planner: withPlannerCallPublishing(init.wctx.planner, {
-                bus: init.wctx.bus,
-                getPhase: () => trackedState?.phase ?? createInitialState(feature).phase,
-              }),
+              planner: publishingPlanner,
+              reviewer:
+                init.wctx.reviewer === init.wctx.planner
+                  ? publishingPlanner
+                  : withReviewerCallPublishing(init.wctx.reviewer, callPublisher),
               setRewindFeedback: (feedback) => {
                 transientRewindFeedback = feedback;
               },

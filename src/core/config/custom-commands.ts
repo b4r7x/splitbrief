@@ -11,6 +11,7 @@ import {
 import type { Config } from '../schemas/config.js';
 import type { ImplementerConfig, ImplementerProfileConfig } from '../schemas/implementer-config.js';
 import type { PlannerConfig } from '../schemas/planner-config.js';
+import { configuredReviewerRunner } from './accessors/reviewer-runner.js';
 
 const PROMPT_PLACEHOLDER = '{prompt}';
 const MAX_LITERAL_LENGTH = 4_096;
@@ -538,6 +539,10 @@ function legacyCandidates(config: Config): readonly LegacyCommandCandidate[] {
   const candidates: LegacyCommandCandidate[] = [];
   if (isCustomCommandRunner(config.planner)) {
     candidates.push({ source: 'planner', runner: config.planner });
+  }
+  const reviewer = configuredReviewerRunner(config);
+  if (reviewer !== undefined && isCustomCommandRunner(reviewer)) {
+    candidates.push({ source: 'reviewer', runner: reviewer });
   }
   if (isCustomCommandRunner(config.implementer)) {
     candidates.push({ source: 'implementer', runner: config.implementer });

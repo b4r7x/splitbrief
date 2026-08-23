@@ -178,6 +178,22 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
     },
     {
       kind: 'noarg',
+      name: '/reviewer',
+      label: 'reviewer',
+      description: 'Select reviewer tool',
+      validScreens: ALL_SCREENS,
+      handler: () => ctx.openOverlay('reviewer-picker'),
+    },
+    {
+      kind: 'noarg',
+      name: '/crew',
+      label: 'crew',
+      description: 'Choose which tool fills each seat',
+      validScreens: ALL_SCREENS,
+      handler: () => ctx.openOverlay('crew'),
+    },
+    {
+      kind: 'noarg',
       name: '/home',
       label: 'home',
       description: 'Return to home screen',

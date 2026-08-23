@@ -18,7 +18,7 @@ import type { ReadinessReport } from '../../../core/readiness/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { RunnerCallContext } from '../../../engine/calls/types.js';
-import type { PlanOptions } from '../../../engine/planners/types.js';
+import type { PlanOptions, PlannerOutputCallbacks } from '../../../engine/planners/types.js';
 import type { PreparedExecution } from '../../runners/prepared-execution.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
@@ -86,6 +86,41 @@ afterEach(() => {
   dirs = [];
   trustHome.restore();
 });
+
+function emitReviewCall(callbacks: PlannerOutputCallbacks, runnerName: string): void {
+  const call: RunnerCallContext = {
+    callId: `${runnerName}-review-call`,
+    role: 'review',
+    backendKind: 'shell',
+    runnerName,
+  };
+  const startedAt = Date.now();
+  callbacks.onCallEvent?.({ type: 'call_started', ts: startedAt, ...call });
+  callbacks.onCallEvent?.({
+    type: 'call_completed',
+    ts: startedAt + 1,
+    ...call,
+    status: 'completed',
+    error: null,
+    partial: false,
+    startedAt,
+    endedAt: startedAt + 1,
+    durationMs: 1,
+    usage: null,
+    nativeSessionId: null,
+  });
+}
+
+function reviewCallEvents(
+  events: EngineEvent[],
+): Array<{ type: string; runnerName: string | undefined }> {
+  return events
+    .filter(
+      (event) => event.type === 'runner_call_started' || event.type === 'runner_call_completed',
+    )
+    .filter((event) => event.role === 'review')
+    .map((event) => ({ type: event.type, runnerName: event.runnerName }));
+}
 
 function setupProject(): string {
   const projectDir = createTempDir('run-workflow-test');
@@ -1188,7 +1223,7 @@ describe('runWorkflow — smoke', () => {
       'T001',
       'T002',
     ]);
-  });
+  }, 20_000);
 
   it('task review abort publishes workflow_cancelled and skips final review', async () => {
     const projectDir = setupProject();
@@ -1327,6 +1362,101 @@ describe('runWorkflow — smoke', () => {
       stage: 'completed',
       kind: 'text',
     });
+  });
+
+  it('publishes the final review runner_call events when no reviewer is configured', async () => {
+    const projectDir = setupProject();
+    const { callbacks } = makeCallbacks();
+    const events: EngineEvent[] = [];
+
+    await runWorkflow({
+      feature: 'inherited review seat call events',
+      projectDir,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { approve: 'none', mode: 'quick', persistTranscript: false },
+      }),
+      callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _eventSink: (event) => events.push(event),
+      _planner: makePlanner({
+        quickPlan: vi.fn().mockResolvedValue({
+          spec: '',
+          plan: '# Plan',
+          tasks: [
+            makeTask({
+              id: 'T001',
+              title: 'Reviewable task',
+              file: 'src/reviewable.ts',
+              scope: { inBounds: ['src/reviewable.ts'], outOfBounds: ['other files'] },
+              evidence: ['task_completed event shows the task ran'],
+              typeDefs: 'type ReviewableTask = { file: string }',
+            }),
+          ],
+          usage: null,
+        }),
+        review: vi.fn().mockImplementation(async (_prompt, _dir, cbs: PlannerOutputCallbacks) => {
+          emitReviewCall(cbs, 'test-planner');
+          return { text: '# Review', usage: null };
+        }),
+      }),
+      _implementer: makeImplementer(),
+    });
+
+    expect(reviewCallEvents(events)).toEqual([
+      { type: 'runner_call_started', runnerName: 'test-planner' },
+      { type: 'runner_call_completed', runnerName: 'test-planner' },
+    ]);
+  });
+
+  it('publishes the final review runner_call events naming the configured reviewer', async () => {
+    const projectDir = setupProject();
+    const { callbacks } = makeCallbacks();
+    const events: EngineEvent[] = [];
+    const planner = makePlanner({
+      quickPlan: vi.fn().mockResolvedValue({
+        spec: '',
+        plan: '# Plan',
+        tasks: [
+          makeTask({
+            id: 'T001',
+            title: 'Reviewable task',
+            file: 'src/reviewable.ts',
+            scope: { inBounds: ['src/reviewable.ts'], outOfBounds: ['other files'] },
+            evidence: ['task_completed event shows the task ran'],
+            typeDefs: 'type ReviewableTask = { file: string }',
+          }),
+        ],
+        usage: null,
+      }),
+    });
+
+    await runWorkflow({
+      feature: 'configured review seat call events',
+      projectDir,
+      config: makeConfig({
+        reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5' },
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { approve: 'none', mode: 'quick', persistTranscript: false },
+      }),
+      callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _eventSink: (event) => events.push(event),
+      _planner: planner,
+      _implementer: makeImplementer(),
+      _reviewer: {
+        review: vi.fn().mockImplementation(async (_prompt, _dir, cbs: PlannerOutputCallbacks) => {
+          emitReviewCall(cbs, 'test-reviewer');
+          return { text: '# Review', usage: null };
+        }),
+      },
+    });
+
+    expect(reviewCallEvents(events)).toEqual([
+      { type: 'runner_call_started', runnerName: 'test-reviewer' },
+      { type: 'runner_call_completed', runnerName: 'test-reviewer' },
+    ]);
+    expect(planner.review).not.toHaveBeenCalled();
   });
 
   it('runs auto-discovered pre_task module hooks without hooks config', async () => {

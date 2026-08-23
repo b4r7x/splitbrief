@@ -25,6 +25,8 @@ export type SummaryBase = {
   plannerModel?: string;
   implementerTool: string;
   implementerModel?: string;
+  reviewerTool?: string;
+  reviewerModel?: string;
   mode?: WorkflowMode;
   projectDir?: string;
   sessionId?: string;
@@ -49,6 +51,8 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     plannerModel,
     implementerTool,
     implementerModel,
+    reviewerTool,
+    reviewerModel,
     phaseTimings,
     mode,
     projectDir,
@@ -67,7 +71,10 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
   const escalationRate = totalTasks > 0 ? escalatedToPlanner / totalTasks : 0;
   const tokenUsage =
     projectDir && sessionId
-      ? reconcileTokenUsageWithSessionLog({ projectDir, sessionId }, state.tokenUsage)
+      ? reconcileTokenUsageWithSessionLog({
+          ref: { projectDir, sessionId },
+          booked: state.tokenUsage,
+        })
       : state.tokenUsage;
 
   const costBreakdown = calculateCostBreakdown(
@@ -80,6 +87,8 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
       implementerTool,
       plannerModel,
       implementerModel,
+      ...(reviewerTool !== undefined && { reviewerTool }),
+      ...(reviewerModel !== undefined && { reviewerModel }),
       taskBreakdowns,
     },
     pricingCache,
@@ -95,6 +104,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     implementerTool,
     ...(plannerModel !== undefined && { plannerModel }),
     ...(implementerModel !== undefined && { implementerModel }),
+    ...(reviewerTool !== undefined && { reviewerTool }),
     pricingCache,
   });
 
@@ -135,6 +145,8 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     plannerModel,
     implementerTool,
     implementerModel,
+    ...(reviewerTool !== undefined && { reviewerTool }),
+    ...(reviewerModel !== undefined && { reviewerModel }),
     phaseTimings,
     ...(mode !== undefined && { mode }),
     ...(evidenceSummary && { evidenceSummary }),

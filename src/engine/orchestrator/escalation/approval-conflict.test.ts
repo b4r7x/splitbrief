@@ -42,13 +42,15 @@ describe('handleApprovalTimeUserEditConflict', () => {
     const task = makeTask({ id: 'T001', file: 'src/test.ts' });
     const { callbacks } = makeCallbacks();
     const trackedStates: (typeof state)[] = [];
+    const planner = makePlanner();
     const ctx: WorkflowContext = {
       projectDir,
       sessionId,
       config,
       callbacks,
       bus,
-      planner: makePlanner(),
+      planner,
+      reviewer: planner,
       context: { name: 'test', dir: projectDir },
       implementer: makeImplementer(),
       metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },

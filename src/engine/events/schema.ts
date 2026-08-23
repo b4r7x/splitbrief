@@ -540,6 +540,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     plannerModel: z.string().optional(),
     implementerTool: z.string(),
     implementerModel: z.string().optional(),
+    reviewerTool: z.string().optional(),
+    reviewerModel: z.string().optional(),
   }),
   phaseEvent('paused_external_changes').extend({
     conflict: userEditConflictSchema.optional(),

@@ -37,6 +37,7 @@ export function makeTaskWorkflowContext(overrides?: Partial<WorkflowContext>): W
     ? { projectDir: overrides.projectDir, sessionId: overrides.sessionId ?? 'sess-task-step' }
     : setupTaskProject();
   const callbacks = overrides?.callbacks ?? makeCallbacks().callbacks;
+  const planner = overrides?.planner ?? makePlanner();
   const base: WorkflowContext = {
     projectDir: proj.projectDir,
     sessionId: proj.sessionId,
@@ -47,7 +48,8 @@ export function makeTaskWorkflowContext(overrides?: Partial<WorkflowContext>): W
     callbacks,
     bus: makeBusRecorder().bus,
     isolation: makeCopyingIsolation({ projectDir: proj.projectDir, sessionId: proj.sessionId }),
-    planner: makePlanner(),
+    planner,
+    reviewer: planner,
     implementer: makeImplementer(),
     context: { ...defaultContext, dir: proj.projectDir },
     metadata: makeWorkflowMetadata('standard'),

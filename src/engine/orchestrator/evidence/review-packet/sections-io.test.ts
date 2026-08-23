@@ -10,6 +10,7 @@ import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
 import { ReviewPacketSchema } from '../../../../core/schemas/review-packet.js';
 import { buildFinalReview, resolveChangedFiles } from './sections-io.js';
 import { renderReviewPacketMarkdown } from './render.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 let dirs: string[] = [];
 
@@ -377,14 +378,7 @@ function packetWithFinalReview(finalReview: ReviewPacket['finalReview']): Review
       warnings: [],
     },
     cost: {
-      tokenUsage: {
-        plannerInput: 0,
-        plannerOutput: 0,
-        implementerInput: 0,
-        implementerOutput: 0,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      tokenUsage: makeUsage(),
       costBreakdown: null,
       estimatedCostSavings: null,
       taskRouting: [],

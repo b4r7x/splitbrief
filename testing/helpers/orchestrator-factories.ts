@@ -58,6 +58,7 @@ export function makeWorktreeIsolation(opts: {
 export function makeWctx(
   overrides: Partial<WorkflowContext> & { projectDir: string; sessionId: string },
 ): WorkflowContext {
+  const planner = overrides.planner ?? makePlanner();
   return {
     config: makeNoValidationConfig(),
     callbacks: makeCallbacks().callbacks,
@@ -67,7 +68,8 @@ export function makeWctx(
       projectDir: overrides.projectDir,
       sessionId: overrides.sessionId,
     }),
-    planner: makePlanner(),
+    planner,
+    reviewer: planner,
     implementer: makeImplementer(),
     metadata: TEST_METADATA,
     sinks: TEST_SINKS,

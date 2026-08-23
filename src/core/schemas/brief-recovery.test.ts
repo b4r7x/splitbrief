@@ -28,6 +28,7 @@ import {
   createTaskCompilationProgramId,
 } from './task-compilation.js';
 import { WorkflowStateSchema } from './workflow.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 const briefHash = 'brief-hash';
 const ref = (file: string) => ({ revision: 1, hash: briefHash, path: file });
@@ -653,14 +654,7 @@ describe('brief recovery schemas', () => {
       attempt: 0,
       tasks: [],
       startedAt: '2026-08-13T00:00:00.000Z',
-      tokenUsage: {
-        plannerInput: 0,
-        plannerOutput: 0,
-        implementerInput: 0,
-        implementerOutput: 0,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      tokenUsage: makeUsage(),
     };
     const parsed = WorkflowStateSchema.safeParse(legacyV4);
     expect(parsed.success).toBe(true);

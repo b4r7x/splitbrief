@@ -1,4 +1,5 @@
-import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
+import type { ActiveRunnerRole } from '../../../core/runners/cli-tool-catalog.js';
+import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
 import { AUTOMATIC_MODEL, isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import type { CliProviderAuthFact } from '../../../core/discovery/detection.js';
@@ -256,7 +257,7 @@ function toModelOption(entry: ReturnType<typeof resolveModelCatalog>[number]): M
 function resolveAndSort(
   providerId: string,
   cache: ModelCacheAccessor = NULL_CACHE,
-  role?: 'planner' | 'implementer',
+  role?: ActiveRunnerRole,
 ): ModelOption[] {
   const seen = new Set<string>();
   const models: ModelOption[] = [];
@@ -285,8 +286,7 @@ export function modelsForImplementerProvider(
 }
 
 export function buildRightModels(params: {
-  isPlanner: boolean;
-  role?: 'planner' | 'implementer';
+  role: ActiveRunnerRole;
   customModels: readonly string[];
   currentItem: PickerOption | undefined;
   cache?: ModelCacheAccessor;
@@ -306,9 +306,7 @@ export function buildRightModels(params: {
 
   const cache = params.cache ?? NULL_CACHE;
   const knownModels = capability.showsDiscovered
-    ? params.isPlanner
-      ? resolveAndSort(params.currentItem.id, cache, params.role ?? 'planner')
-      : resolveAndSort(params.currentItem.id, cache, params.role ?? 'implementer')
+    ? resolveAndSort(params.currentItem.id, cache, params.role)
     : [];
   const customOptions: ModelOption[] = capability.allowsCustom
     ? params.customModels
@@ -331,10 +329,9 @@ export function buildRightModels(params: {
 export function isCurrentConfig(
   item: PickerOption,
   config: Config,
-  role: 'planner' | 'implementer',
+  role: ActiveRunnerRole,
 ): boolean {
-  const runnerConfig =
-    role === 'planner' ? config.planner : resolveImplementerProfiles(config).defaultProfile.config;
+  const runnerConfig = readActiveRunner({ config, role });
   if (item.kind === 'custom-command') {
     return runnerConfig.kind === 'shell' || runnerConfig.kind === 'agent';
   }

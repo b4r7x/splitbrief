@@ -5,7 +5,10 @@ import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_TRUST,
   cliModelPolicyViolations,
+  runnerRoleForActiveRole,
+  type ActiveRunnerRole,
   type CliModelPolicy,
+  type PlannerTierRole,
   type RunnerRole,
   type RunnerRoleTrustMetadata,
   type RunnerTrustMetadata,
@@ -112,7 +115,9 @@ function descriptorsForProviderIdentity(provider: string) {
   );
 }
 
-function apiProviderSchemaForRole(role: RunnerRole) {
+// The seat label only names the config block the reader is editing; admission follows its role.
+function apiProviderSchemaForSeat(seat: ActiveRunnerRole) {
+  const role = runnerRoleForActiveRole(seat);
   const roleProviderIds =
     role === 'planner' ? PlannerApiProviderIdSchema : ImplementerApiProviderIdSchema;
 
@@ -131,21 +136,16 @@ function apiProviderSchemaForRole(role: RunnerRole) {
         );
       },
       {
-        message: `API provider is not admitted for the ${role} role`,
+        message: `API provider is not admitted for the ${seat} role`,
       },
     );
 
   return z.union([roleProviderIds, customProvider]);
 }
 
-const PlannerApiRunnerFields = {
-  ...ApiRunnerFields,
-  provider: apiProviderSchemaForRole('planner'),
-};
-
 const ImplementerApiRunnerFields = {
   ...ApiRunnerFields,
-  provider: apiProviderSchemaForRole('implementer'),
+  provider: apiProviderSchemaForSeat('implementer'),
 };
 
 function validateAutomaticModelResolvable(input: unknown, ctx: z.RefinementCtx): void {
@@ -290,8 +290,10 @@ export function createCliModelPolicySchema(policy: CliModelPolicy) {
     });
 }
 
+const PlannerCapabilitiesPartialSchema = PlannerCapabilitiesSchema.partial();
+
 const PlannerCapabilitiesField = {
-  capabilities: PlannerCapabilitiesSchema.partial().optional(),
+  capabilities: PlannerCapabilitiesPartialSchema.optional(),
 };
 
 const ShellRunnerFields = {
@@ -455,7 +457,10 @@ export function createRunnerConfigSchema<C extends z.ZodRawShape>(commonFields: 
     .refine(idleThresholdsOrdered, IDLE_THRESHOLD_ORDER);
 }
 
-export function createPlannerConfigSchema<C extends z.ZodRawShape>(commonFields: C) {
+export function createPlannerConfigSchema<C extends z.ZodRawShape>(
+  commonFields: C,
+  seat: PlannerTierRole = 'planner',
+) {
   const { model: _configuredModel, ...cliCommonFields } = commonFields;
   return z
     .discriminatedUnion('kind', [
@@ -464,7 +469,11 @@ export function createPlannerConfigSchema<C extends z.ZodRawShape>(commonFields:
         ...PlannerCliRunnerFields,
         model: z.string().min(1).optional(),
       }),
-      z.strictObject({ ...commonFields, ...PlannerApiRunnerFields }),
+      z.strictObject({
+        ...commonFields,
+        ...ApiRunnerFields,
+        provider: apiProviderSchemaForSeat(seat),
+      }),
       z.strictObject({
         ...commonFields,
         ...RUNNER_DESCRIPTORS.shell.fields,
@@ -485,4 +494,29 @@ export function createPlannerConfigSchema<C extends z.ZodRawShape>(commonFields:
       validateCliAuthChannel(input, ctx);
     })
     .refine(idleThresholdsOrdered, IDLE_THRESHOLD_ORDER);
+}
+
+const COMMAND_KIND_UNSUPPORTED_CAPABILITIES = [
+  ['supportsSessionResume', 'has no documented command session-handle contract'],
+  ['supportsEffort', 'has no channel to deliver an effort hint to the command'],
+  ['supportsImages', 'has no channel to deliver image attachments to the command'],
+] as const;
+
+type CommandSeatRunner = Readonly<{
+  kind: RunnerKind;
+  capabilities?: z.infer<typeof PlannerCapabilitiesPartialSchema> | undefined;
+}>;
+
+export function commandKindCapabilityGuard(seatLabel: PlannerTierRole) {
+  return (cfg: CommandSeatRunner, ctx: z.RefinementCtx): void => {
+    if (cfg.kind !== 'shell' && cfg.kind !== 'agent') return;
+    for (const [capability, reason] of COMMAND_KIND_UNSUPPORTED_CAPABILITIES) {
+      if (cfg.capabilities?.[capability] !== true) continue;
+      ctx.addIssue({
+        code: 'custom',
+        path: ['capabilities', capability],
+        message: `Runner kind "${cfg.kind}" ${reason}; remove ${capability} or use a cli/api/agent-sdk ${seatLabel}`,
+      });
+    }
+  };
 }

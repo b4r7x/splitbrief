@@ -2,7 +2,7 @@ import type { BriefAdmissionStateAction, StateAction } from './types.js';
 import type { WorkflowState } from '../schemas/workflow.js';
 import type { TaskId } from '../schemas/task.js';
 import type { Phase, TaskStatus } from '../schemas/enums.js';
-import type { TokenUsage } from '../schemas/tokens.js';
+import { ZERO_TOKEN_USAGE } from '../schemas/tokens.js';
 import type {
   BriefReadinessDecision,
   BriefRecoveryV1,
@@ -61,15 +61,6 @@ function isRejectedStorageBriefRecovery(
     recovery.status === 'rejected' && 'storageEvidence' in recovery && recovery.activeBrief === null
   );
 }
-
-const zeroTokenUsage: TokenUsage = {
-  plannerInput: 0,
-  plannerOutput: 0,
-  implementerInput: 0,
-  implementerOutput: 0,
-  escalationInput: 0,
-  escalationOutput: 0,
-};
 
 const anytimeActions = [
   'CANCEL',
@@ -348,7 +339,7 @@ export function createInitialState(feature: string, now: Date = new Date()): Wor
     tasks: [],
     plannerSessionId: null,
     startedAt: now.toISOString(),
-    tokenUsage: { ...zeroTokenUsage },
+    tokenUsage: { ...ZERO_TOKEN_USAGE },
     awaitingContinue: false,
     messageQueue: [],
     briefRecovery: null,

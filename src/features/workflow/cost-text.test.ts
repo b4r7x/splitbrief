@@ -13,6 +13,7 @@ import {
   formatSpentText,
   readCostText,
 } from './cost-text.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 describe('formatCostDisplay', () => {
   it('hides zero-dollar savings estimates', () => {
@@ -132,14 +133,7 @@ describe('readCostText', () => {
     tasksStore.__testReset({ totalTasks: 1 });
     tokensStore.__testReset({
       localCount: 1,
-      tokenUsage: {
-        plannerInput: 0,
-        plannerOutput: 0,
-        implementerInput: 1_000_000,
-        implementerOutput: 1_000_000,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      tokenUsage: makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 }),
     });
     configStore.__testReset({
       projectDir: '/tmp/read-cost-text-test',
@@ -179,14 +173,12 @@ describe('computeCostBreakdownStats offering presentation', () => {
       config,
       pricingContext: null,
       perTask: {},
-      tokenUsage: {
+      tokenUsage: makeUsage({
         plannerInput: 100_000,
         plannerOutput: 50_000,
         implementerInput: 200_000,
         implementerOutput: 100_000,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      }),
       localCount: 1,
       escalatedCount: 0,
       totalTasks: 1,
@@ -199,6 +191,96 @@ describe('computeCostBreakdownStats offering presentation', () => {
     const display = formatCostDisplay(100, costBreakdown, pricingState);
     expect(display.showSpend).toBe(true);
     expect(display.spentText).toBe('subscription-included');
+  });
+});
+
+describe('computeCostBreakdownStats reviewer pricing', () => {
+  it('prices reviewer tokens from the recorded session identity, not the live config', () => {
+    const modelCache = asReactiveModelCache(modelCacheStore.get());
+    const inputs = {
+      config: makeConfig({
+        reviewer: {
+          kind: 'api' as const,
+          provider: 'deepseek' as const,
+          model: 'deepseek-v4-flash',
+          apiBase: 'https://api.deepseek.com/v1',
+        },
+      }),
+      perTask: {},
+      tokenUsage: makeUsage({
+        plannerInput: 100_000,
+        plannerOutput: 40_000,
+        reviewerInput: 20_000,
+        reviewerOutput: 5_000,
+      }),
+      localCount: 0,
+      escalatedCount: 0,
+      totalTasks: 0,
+      modelCache,
+    };
+
+    const recordedWithoutReviewer = computeCostBreakdownStats({
+      ...inputs,
+      pricingContext: {
+        plannerTool: 'anthropic',
+        plannerModel: 'claude-sonnet-4-6',
+        implementerTool: 'ollama',
+      },
+    });
+    const recordedWithReviewer = computeCostBreakdownStats({
+      ...inputs,
+      pricingContext: {
+        plannerTool: 'anthropic',
+        plannerModel: 'claude-sonnet-4-6',
+        implementerTool: 'ollama',
+        reviewerTool: 'deepseek',
+        reviewerModel: 'deepseek-v4-flash',
+      },
+    });
+
+    expect(recordedWithoutReviewer.costBreakdown?.providerCosts?.deepseek).toBeUndefined();
+    expect(recordedWithoutReviewer.costBreakdown?.providerCosts?.anthropic?.inputTokens).toBe(
+      120_000,
+    );
+    expect(recordedWithReviewer.costBreakdown?.providerCosts?.deepseek?.inputTokens).toBe(20_000);
+  });
+});
+
+describe('computeCostBreakdownStats pricing state', () => {
+  it('reports an all-unpriced run as n/a when only the reviewer seat is non-local', () => {
+    const modelCache = asReactiveModelCache(modelCacheStore.get());
+    const inputs = {
+      config: makeConfig(),
+      perTask: {},
+      tokenUsage: makeUsage({
+        plannerInput: 100_000,
+        plannerOutput: 40_000,
+        implementerInput: 200_000,
+        implementerOutput: 80_000,
+        reviewerInput: 20_000,
+        reviewerOutput: 5_000,
+      }),
+      localCount: 0,
+      escalatedCount: 0,
+      totalTasks: 0,
+      modelCache,
+    };
+
+    const localOnly = computeCostBreakdownStats({
+      ...inputs,
+      pricingContext: { plannerTool: 'ollama', implementerTool: 'ollama' },
+    });
+    const withUnknownReviewer = computeCostBreakdownStats({
+      ...inputs,
+      pricingContext: {
+        plannerTool: 'ollama',
+        implementerTool: 'ollama',
+        reviewerTool: 'some-unknown-endpoint',
+      },
+    });
+
+    expect(localOnly.pricingState).toBe('local');
+    expect(withUnknownReviewer.pricingState).toBe('n/a');
   });
 });
 
@@ -249,15 +331,7 @@ describe('computeCostBreakdownStats task reconstruction', () => {
           ],
         },
       },
-      tokenUsage: {
-        plannerInput: 0,
-        plannerOutput: 0,
-        implementerInput: 1_000_000,
-        implementerOutput: 0,
-        implementerCacheRead: 1_000_000,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      tokenUsage: makeUsage({ implementerInput: 1_000_000, implementerCacheRead: 1_000_000 }),
       localCount: 1,
       escalatedCount: 0,
       totalTasks: 1,
@@ -303,15 +377,7 @@ describe('computeCostBreakdownStats task reconstruction', () => {
           ],
         },
       },
-      tokenUsage: {
-        plannerInput: 0,
-        plannerOutput: 0,
-        implementerInput: 0,
-        implementerOutput: 0,
-        implementerCacheRead: 1_000_000,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      tokenUsage: makeUsage({ implementerCacheRead: 1_000_000 }),
       localCount: 1,
       escalatedCount: 0,
       totalTasks: 1,

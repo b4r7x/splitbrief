@@ -3,6 +3,7 @@ import { isProviderId } from '../schemas/enums.js';
 import type { ImplementerConfig } from '../schemas/implementer-config.js';
 import type { PlannerConfig } from '../schemas/planner-config.js';
 import { redactSecrets } from '../../utils/redact.js';
+import type { ActiveRunnerRole } from '../runners/cli-tool-catalog.js';
 
 export const API_KEY_ENV_PREFIX = 'env:';
 
@@ -36,7 +37,7 @@ export function missingEnvRefError(
 }
 
 export function customEndpointCredentialSourceError(opts: {
-  role: 'planner' | 'implementer';
+  role: ActiveRunnerRole;
   path: string;
   config: RunnerCredentialConfig;
 }): { path: string; message: string } | undefined {
@@ -55,12 +56,12 @@ export function customEndpointCredentialSourceError(opts: {
 
   return {
     path: `${path}.apiKey`,
-    message: `${info.displayName} ${role} with custom endpoint ${config.apiBase} cannot use ${envVar} without an inline apiKey (API key exfiltration risk).`,
+    message: `${info.displayName} ${role} with custom endpoint ${redactSecrets(config.apiBase)} cannot use ${envVar} without an inline apiKey (API key exfiltration risk).`,
   };
 }
 
 export function customProviderEnvApiKeyReferenceError(opts: {
-  role: 'planner' | 'implementer';
+  role: ActiveRunnerRole;
   path: string;
   config: RunnerCredentialConfig;
 }): { path: string; message: string } | undefined {

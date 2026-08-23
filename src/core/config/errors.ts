@@ -4,8 +4,7 @@ import {
   READINESS_DIAGNOSTIC_STATE_IDS,
   type ReadinessDiagnosticStateId,
 } from '../schemas/readiness.js';
-
-type Role = 'planner' | 'implementer';
+import type { ActiveRunnerRole } from '../runners/cli-tool-catalog.js';
 
 const SENSITIVE_KEY_PATTERN = /(?:api[-_]?key|token|secret|password|credential)/i;
 const REDACTED = '[REDACTED]';
@@ -71,19 +70,19 @@ export const configError = {
       `Unsupported config version: ${String(version)}. Supported: 3. Run \`splitbrief init --reconfigure\` to write a current config.`,
       { version },
     ),
-  runnerKindIndeterminate: (role: Role, opts: unknown) =>
+  runnerKindIndeterminate: (role: ActiveRunnerRole, opts: unknown) =>
     error(
       'config-runner-kind-indeterminate',
       `Cannot infer runner kind for ${role}: need one of 'kind', 'tool', 'apiBase', 'command', or 'existing' to be provided. Got: ${stringifyRedacted(opts)}`,
       { role, opts: redactSensitiveKeys(opts) },
     ),
-  runnerMissingField: (role: Role, kind: string, field: string) =>
+  runnerMissingField: (role: ActiveRunnerRole, kind: string, field: string) =>
     error('config-runner-missing-field', `${role} ${kind} kind requires '${field}' field`, {
       role,
       kind,
       field,
     }),
-  runnerMissingModel: (role: Role) =>
+  runnerMissingModel: (role: ActiveRunnerRole) =>
     error('config-runner-missing-model', `${role}: 'model' is required but was not provided.`, {
       role,
     }),
@@ -93,7 +92,7 @@ export const configError = {
       `Unknown CLI tool: ${tool}. Valid tools: ${allowed.join(', ')}`,
       { tool, allowed },
     ),
-  unknownProvider: (provider: string, allowed: readonly string[], role?: Role) =>
+  unknownProvider: (provider: string, allowed: readonly string[], role?: ActiveRunnerRole) =>
     error(
       'config-unknown-provider',
       `${role ? `${role}: ` : ''}Unknown provider '${provider}' requires explicit apiBase. Known providers: ${allowed.join(', ')}`,
@@ -105,7 +104,7 @@ export const configError = {
       value,
       reason,
     }),
-  kindMismatch: (role: Role, expectedKind: string) =>
+  kindMismatch: (role: ActiveRunnerRole, expectedKind: string) =>
     error('config-kind-mismatch', `Expected ${expectedKind} ${role} config`, {
       role,
       expectedKind,

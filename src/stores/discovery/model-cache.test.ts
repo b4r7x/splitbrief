@@ -378,6 +378,27 @@ describe('modelCacheStore', () => {
     expect(fresh?.models).toHaveLength(1);
   });
 
+  it('reads the reviewer seat off the planner-scoped CLI catalog row', () => {
+    expect(
+      modelCacheStore.hydrateDetection({
+        providers: [],
+        cliTools: [],
+        fetchedAt: 50,
+        validatedAt: 60,
+        generation: 1,
+        requestId: 1,
+        contexts: scopedContexts,
+        cliCatalogs: [
+          { role: 'planner', tool: 'codex', models: [{ id: 'gpt-5.2-codex' }], probedAt: 40 },
+        ],
+      }),
+    ).toBe(true);
+
+    expect(
+      modelCacheStore.getScopedCliCatalogRuntime({ role: 'reviewer', tool: 'codex' }),
+    ).toMatchObject({ state: 'stale', models: [{ id: 'gpt-5.2-codex' }], fetchedAt: 40 });
+  });
+
   it('never overwrites live CLI catalogs with a disk snapshot that hydrates late', () => {
     expect(
       publishCliCatalogs(
@@ -717,6 +738,17 @@ describe('modelCacheStore', () => {
       models: [{ id: 'implementer-model' }],
     });
     expect(modelCacheStore.getProviderModels('openai')).toBeNull();
+  });
+
+  it('answers the reviewer seat from the planner-tier inventory it shares', () => {
+    publishConfigured(
+      [configuredOutcome({ role: 'planner', contextKey: 'planner-a', models: ['planner-model'] })],
+      1,
+    );
+
+    expect(
+      modelCacheStore.getScopedProviderRuntime({ role: 'reviewer', provider: 'openai' }),
+    ).toMatchObject({ state: 'fresh', models: [{ id: 'planner-model' }] });
   });
 
   it('keeps CLI catalog failures and authoritative empty results isolated by exact role/tool/context', () => {

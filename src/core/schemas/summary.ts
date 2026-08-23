@@ -78,6 +78,7 @@ export const CostBreakdownSchema = z.object({
   hypotheticalCost: z.number().nonnegative(),
   actualPlannerCost: z.number().nonnegative(),
   actualImplementerCost: z.number().nonnegative(),
+  actualReviewerCost: z.number().nonnegative().optional(),
   totalActualCost: z.number().nonnegative(),
   savingsAmount: z.number(),
   savingsPercentage: z.number(),
@@ -87,6 +88,7 @@ export const CostBreakdownSchema = z.object({
   hasSavingsEstimate: z.boolean().optional(),
   isActualPlannerCostKnown: z.boolean().optional(),
   isActualImplementerCostKnown: z.boolean().optional(),
+  isActualReviewerCostKnown: z.boolean().optional(),
   isTotalActualCostKnown: z.boolean().optional(),
   isAllPlannerBaselineKnown: z.boolean().optional(),
   providerCosts: z.record(z.string(), ProviderCostSchema).optional(),
@@ -225,6 +227,8 @@ export const SummarySchema = z.object({
   plannerModel: z.string().optional(),
   implementerTool: z.string().optional(),
   implementerModel: z.string().optional(),
+  reviewerTool: z.string().optional(),
+  reviewerModel: z.string().optional(),
   phaseTimings: z.record(z.string(), z.number()).optional(),
   mode: WorkflowModeSchema.optional(),
   evidenceSummary: z
@@ -258,6 +262,7 @@ export type ReviewPacketSummary = z.infer<typeof ReviewPacketSummarySchema>;
 export interface CostKnownFlags {
   plannerCostKnown: boolean;
   implementerCostKnown: boolean;
+  reviewerCostKnown?: boolean;
   totalCostKnown: boolean;
   allPlannerBaselineKnown: boolean;
 }
@@ -272,7 +277,15 @@ export function costKnownFlags(breakdown: CostBreakdown): CostKnownFlags {
     breakdown.isTotalActualCostKnown ?? (plannerCostKnown && implementerCostKnown);
   const allPlannerBaselineKnown =
     breakdown.isAllPlannerBaselineKnown ?? breakdown.hasSavingsEstimate ?? true;
-  return { plannerCostKnown, implementerCostKnown, totalCostKnown, allPlannerBaselineKnown };
+  return {
+    plannerCostKnown,
+    implementerCostKnown,
+    ...(breakdown.isActualReviewerCostKnown !== undefined && {
+      reviewerCostKnown: breakdown.isActualReviewerCostKnown,
+    }),
+    totalCostKnown,
+    allPlannerBaselineKnown,
+  };
 }
 
 const UNMETERED_OFFERINGS = new Set<ApiOffering>(['coding-subscription', 'local']);

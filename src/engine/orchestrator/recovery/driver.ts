@@ -10,6 +10,7 @@ import {
   getRunnerDisplayName,
   getRunnerModelName,
 } from '../../../core/config/accessors/runner-config.js';
+import { configuredReviewerSeat } from '../../../core/config/accessors/reviewer-seat.js';
 import { resolveAutoModel } from '../../../core/providers/model-selection.js';
 import { createEventBus } from '../../events/bus.js';
 import type { EventBus, EventSink } from '../../events/types.js';
@@ -136,6 +137,9 @@ export function saveAbortedRecoverySession(opts: {
   const implementerModel =
     opts.state.implementerModel ??
     resolveAutoModel(opts.config.implementer.model, getRunnerDisplayName(opts.config.implementer));
+  const configuredReviewer = configuredReviewerSeat(opts.config);
+  const reviewerTool = opts.state.reviewerTool ?? configuredReviewer?.tool;
+  const reviewerModel = opts.state.reviewerModel ?? configuredReviewer?.model;
   const summary = buildSummary({
     feature: opts.state.feature,
     state: opts.state,
@@ -144,6 +148,8 @@ export function saveAbortedRecoverySession(opts: {
     ...(plannerModel !== undefined && { plannerModel }),
     implementerTool,
     ...(implementerModel !== undefined && { implementerModel }),
+    ...(reviewerTool !== undefined && { reviewerTool }),
+    ...(reviewerModel !== undefined && { reviewerModel }),
     mode: opts.config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
     projectDir: opts.projectDir,
     sessionId: opts.sessionId,

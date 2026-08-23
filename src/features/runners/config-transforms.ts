@@ -6,6 +6,8 @@ import {
   type ImplementerConfig,
 } from '../../core/schemas/implementer-config.js';
 import { buildRunnerConfig } from '../../core/config/runtime/build-runner.js';
+import { updateActiveRunner } from '../../core/config/accessors/active-runner.js';
+import type { PlannerTierRole, ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
 import {
   mergeImplementerProfileMetadata,
   stripProfileMetadata,
@@ -20,29 +22,42 @@ import {
 } from '../../core/config/custom-commands.js';
 import type { RunnerPickerOption } from './model-catalog/options.js';
 import {
-  listCustomCommandConsumers,
-  type CustomCommandConsumer,
-  type CustomCommandRole,
-} from './custom-catalog.js';
+  configuredReviewerRunner,
+  resolveReviewerRunner,
+} from '../../core/config/accessors/reviewer-runner.js';
+import { listCustomCommandConsumers, type CustomCommandConsumer } from './custom-catalog.js';
 
-function setPlanner(config: Config, planner: PlannerConfig): Config {
-  return { ...config, planner };
+/** The planner-tier seats share the planner's runner shape; only the config node differs. */
+function updatePlannerTier(
+  config: Config,
+  role: PlannerTierRole,
+  updater: (existing: PlannerConfig) => PlannerConfig,
+): Config {
+  return updateActiveRunner({ config, role, updater });
 }
 
-export function commitPlannerSelection(
-  config: Config,
-  selection: RunnerPickerOption,
-  model: { id: string } | null,
-  apiKey?: string,
-): Config {
-  const opts = {
-    kind: selection.kind,
-    tool: selection.id,
-    ...(model !== null && { model: model.id }),
-    ...(apiKey !== undefined && { apiKey }),
-    existing: config.planner,
-  };
-  return setPlanner(config, buildRunnerConfig('planner', opts));
+export function inheritsPlannerSeat(config: Config, role: ActiveRunnerRole): boolean {
+  return role === 'reviewer' && resolveReviewerRunner(config).source === 'planner';
+}
+
+export interface PlannerTierSelectionInput {
+  config: Config;
+  role: PlannerTierRole;
+  selection: RunnerPickerOption;
+  model: { id: string } | null;
+  apiKey?: string | undefined;
+}
+
+export function commitPlannerTierSelection(input: PlannerTierSelectionInput): Config {
+  return updatePlannerTier(input.config, input.role, (existing) =>
+    buildRunnerConfig(input.role, {
+      kind: input.selection.kind,
+      tool: input.selection.id,
+      ...(input.model !== null && { model: input.model.id }),
+      ...(input.apiKey !== undefined && { apiKey: input.apiKey }),
+      existing,
+    }),
+  );
 }
 
 export function commitImplementerSelection(
@@ -64,21 +79,20 @@ export function commitImplementerSelection(
 
 export interface CommitCustomCommandInput {
   config: Config;
-  role: 'planner' | 'implementer';
+  role: ActiveRunnerRole;
   command: string;
   kind: 'shell' | 'agent';
 }
 
 export function commitCustomCommand(input: CommitCustomCommandInput): Config {
   const { config, role, command, kind } = input;
-  if (role === 'planner') {
-    return setPlanner(
-      config,
-      buildRunnerConfig('planner', { kind, command, existing: config.planner }),
+  if (role === 'implementer') {
+    return updateDefaultImplementerConfig(config, (existing) =>
+      buildRunnerConfig('implementer', { kind, command, existing, model: existing.model }),
     );
   }
-  return updateDefaultImplementerConfig(config, (existing) =>
-    buildRunnerConfig('implementer', { kind, command, existing, model: existing.model }),
+  return updatePlannerTier(config, role, (existing) =>
+    buildRunnerConfig(role, { kind, command, existing }),
   );
 }
 
@@ -177,20 +191,20 @@ function replaceImplementerTuple(
 
 function selectRole(
   config: Config,
-  role: CustomCommandRole,
+  role: ActiveRunnerRole,
   definition: CustomCommandDefinition,
 ): Config {
-  if (role === 'planner') {
-    return { ...config, planner: selectPlannerCommand(config.planner, definition) };
+  if (role === 'implementer') {
+    return updateDefaultImplementerConfig(config, (existing) =>
+      selectImplementerCommand(existing, definition),
+    );
   }
-  return updateDefaultImplementerConfig(config, (existing) =>
-    selectImplementerCommand(existing, definition),
-  );
+  return updatePlannerTier(config, role, (existing) => selectPlannerCommand(existing, definition));
 }
 
 export interface AddCustomCommandInput {
   config: Config;
-  role: CustomCommandRole;
+  role: ActiveRunnerRole;
   id: string;
   definition: CommandDefinitionInput;
 }
@@ -214,7 +228,7 @@ export function addCustomCommand(input: AddCustomCommandInput): AddCustomCommand
 
 export interface SelectCustomCommandInput {
   config: Config;
-  role: CustomCommandRole;
+  role: ActiveRunnerRole;
   id: string;
 }
 
@@ -269,9 +283,15 @@ export function editCustomCommand(input: EditCustomCommandInput): EditCustomComm
   const consumers = listCustomCommandConsumers(input.config, previous);
   let planner = input.config.planner;
   let implementer = input.config.implementer;
+  let reviewer = configuredReviewerRunner(input.config);
   if (consumers.some((consumer) => consumer.id === 'planner')) {
     if (planner.kind === 'shell' || planner.kind === 'agent') {
       planner = replacePlannerTuple(planner, definition);
+    }
+  }
+  if (consumers.some((consumer) => consumer.id === 'reviewer')) {
+    if (reviewer?.kind === 'shell' || reviewer?.kind === 'agent') {
+      reviewer = replacePlannerTuple(reviewer, definition);
     }
   }
   if (consumers.some((consumer) => consumer.id === 'implementer')) {
@@ -311,6 +331,7 @@ export function editCustomCommand(input: EditCustomCommandInput): EditCustomComm
       ...input.config,
       planner,
       implementer,
+      ...(reviewer !== undefined && { reviewer }),
       ...(nextProfiles !== undefined && { implementerProfiles: nextProfiles }),
       customCommands: {
         ...input.config.customCommands,
@@ -346,7 +367,7 @@ export function deleteCustomCommand(config: Config, id: string): DeleteCustomCom
 
 export interface PersistSynthesizedCustomCommandInput {
   config: Config;
-  role: CustomCommandRole;
+  role: ActiveRunnerRole;
   id: string;
   entry: SafeLegacyCustomCommand;
 }
@@ -364,7 +385,7 @@ export function persistSynthesizedCustomCommand(
 
 export interface CommitCustomModelInput {
   config: Config;
-  role: 'planner' | 'implementer';
+  role: ActiveRunnerRole;
   selection: RunnerPickerOption;
   modelName: string;
   customModels: string[];
@@ -383,27 +404,24 @@ export function commitCustomModel(input: CommitCustomModelInput): Config {
     customModels: newCustomModels,
   };
 
-  if (role === 'planner') {
-    return setPlanner(config, buildRunnerConfig('planner', { ...opts, existing: config.planner }));
+  if (role === 'implementer') {
+    return updateDefaultImplementerConfig(config, (existing) =>
+      buildRunnerConfig('implementer', { ...opts, existing }),
+    );
   }
-  return updateDefaultImplementerConfig(config, (existing) =>
-    buildRunnerConfig('implementer', { ...opts, existing }),
+  return updatePlannerTier(config, role, (existing) =>
+    buildRunnerConfig(role, { ...opts, existing }),
   );
 }
 
-export function removeCustomModel(
-  config: Config,
-  role: 'planner' | 'implementer',
-  modelId: string,
-): Config {
-  if (role === 'planner') {
-    const current = config.planner.customModels ?? [];
-    const filtered = current.filter((m) => m !== modelId);
-    if (config.planner.model !== modelId) {
-      return setPlanner(config, { ...config.planner, customModels: filtered });
-    }
-    // exactOptionalPropertyTypes forbids { model: undefined } — destructure to omit.
-    return setPlanner(config, omitModel(config.planner, filtered));
+export function removeCustomModel(config: Config, role: ActiveRunnerRole, modelId: string): Config {
+  if (role !== 'implementer') {
+    return updatePlannerTier(config, role, (existing) => {
+      const filtered = (existing.customModels ?? []).filter((m) => m !== modelId);
+      if (existing.model !== modelId) return { ...existing, customModels: filtered };
+      // exactOptionalPropertyTypes forbids { model: undefined } — destructure to omit.
+      return omitModel(existing, filtered);
+    });
   }
   return updateDefaultImplementerConfig(config, (existing) => {
     const current = existing.customModels ?? [];

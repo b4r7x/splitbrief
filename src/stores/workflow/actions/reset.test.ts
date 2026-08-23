@@ -6,6 +6,7 @@ import { tasksStore } from '../tasks.js';
 import { tokensStore } from '../tokens.js';
 import { lifecycleStore } from '../lifecycle.js';
 import { abortStore } from '../abort.js';
+import { configStore } from '../../project/config.js';
 import { approvalPromptStore, openApprovalPrompt } from '../../approval-prompt/prompt.js';
 import { costApprovalStore, openCostApprovalPrompt } from '../../cost-approval/prompt.js';
 import { taskId } from '../../../core/schemas/task.js';
@@ -13,6 +14,8 @@ import type { CostPrediction } from '../../../core/schemas/summary.js';
 import { makePlannerStatus } from '#testing/helpers/events/planner.js';
 import { makeTaskStart, makeTaskComplete, makeCostUpdate } from '#testing/helpers/events/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 
 describe('resetWorkflow', () => {
   beforeEach(() => resetWorkflow());
@@ -99,14 +102,7 @@ describe('resetWorkflow', () => {
       ],
       plannerSessionId: null,
       startedAt: new Date().toISOString(),
-      tokenUsage: {
-        plannerInput: 0,
-        plannerOutput: 0,
-        implementerInput: 0,
-        implementerOutput: 0,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      tokenUsage: makeUsage(),
       plannerTool: 'anthropic',
       plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'deepseek',
@@ -136,14 +132,7 @@ describe('resetWorkflow', () => {
     expect(tasksStore.get().taskMap.get('T002')?.file).toBe('src/resumed.ts');
     expect(tasksStore.get().taskMap.get('T002')?.action).toBe('modify');
     expect(tasksStore.get().taskMap.get('T002')?.route).toBeUndefined();
-    expect(tokensStore.get().tokenUsage).toEqual({
-      plannerInput: 0,
-      plannerOutput: 0,
-      implementerInput: 0,
-      implementerOutput: 0,
-      escalationInput: 0,
-      escalationOutput: 0,
-    });
+    expect(tokensStore.get().tokenUsage).toEqual(makeUsage());
     expect(tokensStore.get().localCount).toBe(2);
     expect(tokensStore.get().escalatedCount).toBe(0);
     expect(tokensStore.get().completedTaskCount).toBe(2);
@@ -152,6 +141,82 @@ describe('resetWorkflow', () => {
       plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'deepseek',
       implementerModel: 'deepseek-chat',
+    });
+  });
+
+  it('prices resumed reviewer tokens with the identity the run started on', () => {
+    configStore.__testReset({
+      projectDir: '/tmp/reset-reviewer-pricing-test',
+      config: makeConfig({
+        reviewer: {
+          kind: 'api',
+          provider: 'openrouter',
+          model: 'swapped-after-the-run',
+          apiBase: 'https://openrouter.ai/api/v1',
+        },
+      }),
+    });
+
+    resetWorkflow({
+      stateVersion: 1,
+      phase: 'implementing',
+      feature: 'f',
+      currentTaskIndex: 0,
+      attempt: 0,
+      tasks: [makeTask({ id: 'T001', status: 'done' })],
+      plannerSessionId: null,
+      startedAt: new Date().toISOString(),
+      tokenUsage: makeUsage({ reviewerInput: 20_000, reviewerOutput: 5_000 }),
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+      reviewerTool: 'deepseek',
+      reviewerModel: 'deepseek-v4-flash',
+      awaitingContinue: false,
+      messageQueue: [],
+    });
+
+    expect(tokensStore.get().pricingContext).toMatchObject({
+      reviewerTool: 'deepseek',
+      reviewerModel: 'deepseek-v4-flash',
+    });
+  });
+
+  it('leaves the reviewer out of the resumed pricing context when the run pinned none', () => {
+    configStore.__testReset({
+      projectDir: '/tmp/reset-reviewer-pricing-test',
+      config: makeConfig({
+        reviewer: {
+          kind: 'api',
+          provider: 'deepseek',
+          model: 'deepseek-v4-flash',
+          apiBase: 'https://api.deepseek.com/v1',
+        },
+      }),
+    });
+
+    resetWorkflow({
+      stateVersion: 1,
+      phase: 'implementing',
+      feature: 'f',
+      currentTaskIndex: 0,
+      attempt: 0,
+      tasks: [makeTask({ id: 'T001', status: 'done' })],
+      plannerSessionId: null,
+      startedAt: new Date().toISOString(),
+      tokenUsage: makeUsage(),
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+      awaitingContinue: false,
+      messageQueue: [],
+    });
+
+    expect(tokensStore.get().pricingContext).toEqual({
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+      implementerModel: undefined,
     });
   });
 
@@ -165,15 +230,7 @@ describe('resetWorkflow', () => {
       tasks: [makeTask({ id: 'T001', status: 'done' })],
       plannerSessionId: null,
       startedAt: new Date().toISOString(),
-      tokenUsage: {
-        plannerInput: 0,
-        plannerOutput: 0,
-        implementerInput: 0,
-        implementerOutput: 0,
-        implementerCacheRead: 1_000_000,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      tokenUsage: makeUsage({ implementerCacheRead: 1_000_000 }),
       plannerTool: 'anthropic',
       plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'openai',
@@ -236,14 +293,7 @@ describe('resetWorkflow', () => {
       tasks: [makeTask({ id: 'T001', status: 'done' })],
       plannerSessionId: null,
       startedAt: new Date().toISOString(),
-      tokenUsage: {
-        plannerInput: 0,
-        plannerOutput: 0,
-        implementerInput: 100,
-        implementerOutput: 50,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      tokenUsage: makeUsage({ implementerInput: 100, implementerOutput: 50 }),
       awaitingContinue: false,
       messageQueue: [],
       taskBreakdowns: [
@@ -274,14 +324,7 @@ describe('resetWorkflow', () => {
       tasks: [],
       plannerSessionId: null,
       startedAt: queuedAt,
-      tokenUsage: {
-        plannerInput: 0,
-        plannerOutput: 0,
-        implementerInput: 0,
-        implementerOutput: 0,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      tokenUsage: makeUsage(),
       awaitingContinue: false,
       messageQueue: [
         {
@@ -335,14 +378,7 @@ describe('resetWorkflow', () => {
       tasks: [makeTask({ id: 'T001', status: 'pending' })],
       plannerSessionId: null,
       startedAt: new Date().toISOString(),
-      tokenUsage: {
-        plannerInput: 100,
-        plannerOutput: 50,
-        implementerInput: 0,
-        implementerOutput: 0,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      tokenUsage: makeUsage({ plannerInput: 100, plannerOutput: 50 }),
       awaitingContinue: false,
       messageQueue: [],
     });
@@ -350,14 +386,7 @@ describe('resetWorkflow', () => {
     addEvent(
       makeCostUpdate({
         phase: 'planning',
-        tokenUsage: {
-          plannerInput: 150,
-          plannerOutput: 75,
-          implementerInput: 0,
-          implementerOutput: 0,
-          escalationInput: 0,
-          escalationOutput: 0,
-        },
+        tokenUsage: makeUsage({ plannerInput: 150, plannerOutput: 75 }),
       }),
     );
 

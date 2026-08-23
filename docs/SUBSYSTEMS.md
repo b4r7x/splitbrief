@@ -133,7 +133,7 @@ Store initialization publishes a matching snapshot as stale presentation data be
 
 Detection memory is presentation-only, never execution authority. Workflow start, resume, and `spec` independently call the runner preparation boundary against the exact current configuration; cached or stale success cannot produce execution `gates`, authorize offline execution, create a session, or start a process.
 
-The `/refresh` slash command invalidates the cache and re-runs detection. Detection results feed the planner picker and implementer picker overlays in the TUI.
+The `/refresh` slash command invalidates the cache and re-runs detection. Detection results feed the planner, implementer, and reviewer picker overlays and the Crew page in the TUI.
 
 ---
 

@@ -2,10 +2,12 @@ import { closeSync, existsSync, lstatSync, openSync, readSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
+import { PhaseSchema, type Phase } from '../../../core/schemas/enums.js';
 import { SESSION_LOG_MAX_ENTRY_BYTES } from '../../../core/schemas/session-log.js';
-import type { TokenUsage } from '../../../core/schemas/tokens.js';
+import { ZERO_TOKEN_USAGE, type TokenUsage } from '../../../core/schemas/tokens.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { parseJsonlLine } from '../../../lib/fs.js';
+import { isReviewSeatCall } from '../../calls/review-seat.js';
 import { RunnerCallRoleSchema } from '../../calls/schema.js';
 import type { RunnerCallContext, RunnerCallUsage } from '../../calls/types.js';
 import { applyRunnerCallUsageSample, normalizeRunnerCallUsageSample } from '../../calls/usage.js';
@@ -13,43 +15,93 @@ import { addRunnerCallUsageToTokenUsage } from '../tokens.js';
 
 type RunnerCallRole = RunnerCallContext['role'];
 
+const IMPLEMENTER_CACHE_FIELDS = [
+  'implementerCacheRead',
+  'implementerCacheCreate',
+] as const satisfies readonly (keyof TokenUsage)[];
+
+const POOLED_CACHE_FIELDS = [
+  ['plannerCacheRead', 'reviewerCacheRead'],
+  ['plannerCacheCreate', 'reviewerCacheCreate'],
+] as const satisfies readonly (readonly [keyof TokenUsage, keyof TokenUsage])[];
+
+type ReconcileTokenUsageOptions = {
+  ref: SessionRef;
+  booked: TokenUsage;
+};
+
 // The workflow ledger (state.tokenUsage) is credited only on the success path of each
 // phase flow, so a run that fails after a call completed loses that call's tokens.
 // The session log keeps every runner_call usage record, so the summary reconciles the
-// ledger against it: per field, the larger of booked and observed wins — observed tops
-// up bookings a failure discarded, and bookings without log records are never reduced.
-export function reconcileTokenUsageWithSessionLog(ref: SessionRef, booked: TokenUsage): TokenUsage {
+// ledger against it: booked figures are never reduced, and observed usage the ledger
+// never booked is added on top.
+export function reconcileTokenUsageWithSessionLog(opts: ReconcileTokenUsageOptions): TokenUsage {
+  const { ref, booked } = opts;
   const observed = observedTokenUsageFromSessionLog(ref);
   if (observed === null) return booked;
 
-  const plannerCacheRead = maxOptional(booked.plannerCacheRead, observed.plannerCacheRead);
-  const plannerCacheCreate = maxOptional(booked.plannerCacheCreate, observed.plannerCacheCreate);
-  const implementerCacheRead = maxOptional(
-    booked.implementerCacheRead,
-    observed.implementerCacheRead,
-  );
-  const implementerCacheCreate = maxOptional(
-    booked.implementerCacheCreate,
-    observed.implementerCacheCreate,
-  );
+  // A session written before the review seat existed books its final review onto the planner,
+  // so planner and reviewer reconcile as one pool; each seat is then credited only the part of
+  // the shortfall the log shows that seat spending beyond the ledger.
+  const input = splitShortfall({
+    booked: { planner: booked.plannerInput, reviewer: booked.reviewerInput },
+    observed: { planner: observed.plannerInput, reviewer: observed.reviewerInput },
+  });
+  const output = splitShortfall({
+    booked: { planner: booked.plannerOutput, reviewer: booked.reviewerOutput },
+    observed: { planner: observed.plannerOutput, reviewer: observed.reviewerOutput },
+  });
 
-  return {
-    plannerInput: Math.max(booked.plannerInput, observed.plannerInput),
-    plannerOutput: Math.max(booked.plannerOutput, observed.plannerOutput),
+  const reconciled: TokenUsage = {
+    plannerInput: booked.plannerInput + input.planner,
+    plannerOutput: booked.plannerOutput + output.planner,
     implementerInput: Math.max(booked.implementerInput, observed.implementerInput),
     implementerOutput: Math.max(booked.implementerOutput, observed.implementerOutput),
     escalationInput: Math.max(booked.escalationInput, observed.escalationInput),
     escalationOutput: Math.max(booked.escalationOutput, observed.escalationOutput),
-    ...(plannerCacheRead !== undefined && { plannerCacheRead }),
-    ...(plannerCacheCreate !== undefined && { plannerCacheCreate }),
-    ...(implementerCacheRead !== undefined && { implementerCacheRead }),
-    ...(implementerCacheCreate !== undefined && { implementerCacheCreate }),
+    reviewerInput: booked.reviewerInput + input.reviewer,
+    reviewerOutput: booked.reviewerOutput + output.reviewer,
   };
+  for (const key of IMPLEMENTER_CACHE_FIELDS) {
+    const value = maxOptional(booked[key], observed[key]);
+    if (value !== undefined) reconciled[key] = value;
+  }
+  for (const [plannerKey, reviewerKey] of POOLED_CACHE_FIELDS) {
+    const credit = splitShortfall({
+      booked: { planner: booked[plannerKey] ?? 0, reviewer: booked[reviewerKey] ?? 0 },
+      observed: { planner: observed[plannerKey] ?? 0, reviewer: observed[reviewerKey] ?? 0 },
+    });
+    for (const [key, seatCredit] of [
+      [plannerKey, credit.planner],
+      [reviewerKey, credit.reviewer],
+    ] as const) {
+      const bookedValue = booked[key];
+      if (bookedValue === undefined && seatCredit === 0) continue;
+      reconciled[key] = (bookedValue ?? 0) + seatCredit;
+    }
+  }
+  return reconciled;
+}
+
+type PooledSeats = Readonly<{ planner: number; reviewer: number }>;
+
+function splitShortfall(input: Readonly<{ booked: PooledSeats; observed: PooledSeats }>): {
+  planner: number;
+  reviewer: number;
+} {
+  const { booked, observed } = input;
+  const shortfall = Math.max(
+    0,
+    observed.planner + observed.reviewer - (booked.planner + booked.reviewer),
+  );
+  const reviewer = Math.min(shortfall, Math.max(0, observed.reviewer - booked.reviewer));
+  return { planner: shortfall - reviewer, reviewer };
 }
 
 const UsageLogEntrySchema = z.looseObject({
   kind: z.literal('event'),
   type: z.enum(['runner_call_usage', 'runner_call_completed', 'runner_call_error']),
+  phase: PhaseSchema.optional(),
   data: z.looseObject({
     callId: z.string().min(1),
     role: RunnerCallRoleSchema,
@@ -63,6 +115,14 @@ type CallUsageFold = {
   usage: RunnerCallUsage | null;
   terminal: boolean;
 };
+
+// The ledger books planning-time review calls onto the planner.
+function seatRoleForCall(
+  input: Readonly<{ role: RunnerCallRole; phase: Phase | undefined }>,
+): RunnerCallRole {
+  if (input.role !== 'review') return input.role;
+  return isReviewSeatCall(input) ? 'review' : 'planner';
+}
 
 function observedTokenUsageFromSessionLog(ref: SessionRef): TokenUsage | null {
   const filePath = join(sessionDir(ref.projectDir, ref.sessionId), SESSION_LOG_FILE);
@@ -85,7 +145,11 @@ function observedTokenUsageFromSessionLog(ref: SessionRef): TokenUsage | null {
       const { callId, role } = entry.data.data;
       let call = calls.get(callId);
       if (call === undefined) {
-        call = { role, usage: null, terminal: false };
+        call = {
+          role: seatRoleForCall({ role, phase: entry.data.phase }),
+          usage: null,
+          terminal: false,
+        };
         calls.set(callId, call);
       }
       // Mirror the collector: samples after a terminal record are ignored, and a
@@ -105,14 +169,7 @@ function observedTokenUsageFromSessionLog(ref: SessionRef): TokenUsage | null {
   }
   if (calls.size === 0) return null;
 
-  const observed: TokenUsage = {
-    plannerInput: 0,
-    plannerOutput: 0,
-    implementerInput: 0,
-    implementerOutput: 0,
-    escalationInput: 0,
-    escalationOutput: 0,
-  };
+  const observed: TokenUsage = { ...ZERO_TOKEN_USAGE };
   for (const call of calls.values()) {
     if (call.usage !== null) addRunnerCallUsageToTokenUsage(observed, call.role, call.usage);
   }

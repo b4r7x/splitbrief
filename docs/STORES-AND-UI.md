@@ -300,9 +300,25 @@ zero-height and prompt-clamped bodies cannot introduce a second breakpoint or hi
 
 `overlayStore` manages a stack. Opening an overlay pushes the current one onto the stack. `Esc` pops. When an overlay is active, `Layout` (`src/app/layout.tsx`) hides the screen and renders the overlay in its place.
 
-Overlay types: `help`, `command-palette`, `skills`, `settings`, `mode-selector`, `planner-picker`, `implementer-picker`, `sessions`, `cost-drilldown`.
+Overlay types: `help`, `command-palette`, `skills`, `settings`, `mode-selector`, `planner-picker`, `implementer-picker`, `reviewer-picker`, `crew`, `sessions`, `editor`, `cost-drilldown` — the `ACTIVE_OVERLAYS` tuple in `src/core/navigation/types.ts`.
 
-Each type maps to a component in `renderOverlay()` in `src/app/router.tsx`.
+Each type maps to a component in `renderOverlay()` in `src/app/router.tsx`. The three picker overlays all render the same component parameterised by role: `<ToolModelPicker role="planner" | "implementer" | "reviewer" />` (`src/app/overlays/runners.tsx`). `role` is `ActiveRunnerRole` (`src/core/runners/cli-tool-catalog.ts`) — the one role union the UI uses; confirming a `reviewer` selection writes the `reviewer` block in project config.
+
+### The Crew page
+
+`crew` is the page `src/app/overlays/crew.tsx`, backed by the feature `src/features/crew/`:
+
+| File | Owns |
+|---|---|
+| `use-crew.ts` | Reads `configStore` and `detectionStore` and returns `{ seats, presets }` — seats from `deriveCrewSeats()`, presets from `computeCrewPresets()` over the tools detection reports as `ready`. |
+| `rows.ts` | The focus model. Rows are identified by key (`preset:<id>`, `seat:<id>`, `continue`), not index, so discovery adding a preset while the page is open never shifts focus, and dropping the focused preset hands focus to the first seat rather than to whatever slid into its index. `CREW_SEAT_PICKER` maps each seat to the picker overlay it opens. |
+| `format.ts` | Pure row layout — label, identity (`display name · model`), and the posture tag, with the tag yielding its column before a model id gets truncated past legibility. An unresolved posture earns no tag rather than a guess. |
+| `seat-rows.tsx` | Renders the seat spine, the indented `escalate` branch under `BUILD`, and the cross-lab line under `REVIEW`. |
+| `preset-row.tsx` | Renders the ready-made crews and applies one — all three seats in a single config save. |
+
+The seat and lab models live in core, not in the feature: `src/core/crew/seats.ts` (`deriveCrewSeats`, the `plan` / `build` / `review` seats), `src/core/crew/presets.ts` (`computeCrewPresets`, which offers only crews whose every tool is installed and authenticated), and `src/core/crew/labs.ts` (`resolveLab` / `crossLabVerdict` — a verdict is rendered only when the labs behind `BUILD` and `REVIEW` are both determined).
+
+The first-run setup screen (`src/app/screens/setup.tsx`) is built on the same feature: its second step is the crew surface with a continue row appended, so first run and `/crew` show the same seats through the same code.
 
 ---
 

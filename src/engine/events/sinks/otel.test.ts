@@ -9,6 +9,7 @@ import { createOtelSink } from './otel.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { parseEngineEvent } from '../schema.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 describe('createOtelSink', () => {
   let exporter: InMemorySpanExporter;
@@ -319,14 +320,14 @@ describe('createOtelSink', () => {
       type: 'cost_update',
       ts: 20,
       phase: 'implementing',
-      tokenUsage: {
+      tokenUsage: makeUsage({
         plannerInput: 100,
         plannerOutput: 50,
         implementerInput: 200,
         implementerOutput: 80,
         escalationInput: 10,
         escalationOutput: 5,
-      },
+      }),
     });
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
@@ -413,14 +414,12 @@ describe('createOtelSink', () => {
       type: 'cost_update',
       ts: 1,
       phase: 'idle',
-      tokenUsage: {
+      tokenUsage: makeUsage({
         plannerInput: 1,
         plannerOutput: 1,
         implementerInput: 1,
         implementerOutput: 1,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      }),
     });
     expect(exporter.getFinishedSpans()).toHaveLength(0);
   });

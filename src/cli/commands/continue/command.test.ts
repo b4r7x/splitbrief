@@ -17,6 +17,7 @@ import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { activeFile, CONFIG_FILE, sessionsRoot, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 type RpcRun = {
   feature: string;
@@ -70,14 +71,7 @@ function writeState(sessDir: string, phase: string, extra: Record<string, unknow
     attempt: 0,
     plannerSessionId: null,
     startedAt: new Date().toISOString(),
-    tokenUsage: {
-      plannerInput: 0,
-      plannerOutput: 0,
-      implementerInput: 0,
-      implementerOutput: 0,
-      escalationInput: 0,
-      escalationOutput: 0,
-    },
+    tokenUsage: makeUsage(),
     tasks: [
       {
         id: 'T001',

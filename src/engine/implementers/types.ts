@@ -48,7 +48,7 @@ export interface ImplementerFactoryOptions {
   /** Canonical CLI identity admitted by the start-readiness gate. */
   trustedCli?: CliStartGate | undefined;
   customRuntime?: CustomRunnerRuntimePort | undefined;
-  slot?: Exclude<RunnerSlot, Readonly<{ role: 'planner' }>> | undefined;
+  slot?: Extract<RunnerSlot, { role: 'implementer' | 'intermediate' }> | undefined;
 }
 
 export interface ImplementerOptions {

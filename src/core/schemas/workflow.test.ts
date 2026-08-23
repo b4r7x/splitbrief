@@ -3,6 +3,7 @@ import { BriefRecoveryV1Schema } from './brief-recovery.js';
 import type { RejectedStorageBriefRecoveryV1 } from './brief-recovery.js';
 import { BriefGenerationRefSchema, TaskExecutionPermitSchema } from './brief-owner.js';
 import { ChangedFilesSnapshotSchema, WorkflowStateSchema } from './workflow.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 const hash = 'a'.repeat(64);
 
@@ -28,14 +29,7 @@ const permit = {
   issuedAt: '2026-08-13T00:00:00.000Z',
 } as const;
 
-const tokenUsage = {
-  plannerInput: 0,
-  plannerOutput: 0,
-  implementerInput: 0,
-  implementerOutput: 0,
-  escalationInput: 0,
-  escalationOutput: 0,
-};
+const tokenUsage = makeUsage();
 
 const task = {
   id: 'T001',

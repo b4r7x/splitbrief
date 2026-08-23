@@ -17,6 +17,7 @@ import { readStats } from '../../../core/stats/persistence.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { buildContextOverflowRecoveryIssue } from './builders/task.js';
 import { finalizeRecoveryResult, loadPendingRecoveryState } from './driver.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 let dirs: string[] = [];
 
@@ -90,14 +91,12 @@ describe('finalizeRecoveryResult — detached abort', () => {
         makeTask({ id: 'T003', status: 'pending' }),
       ]),
       feature: 'aborted-feature',
-      tokenUsage: {
+      tokenUsage: makeUsage({
         plannerInput: 1000,
         plannerOutput: 500,
         implementerInput: 2000,
         implementerOutput: 800,
-        escalationInput: 0,
-        escalationOutput: 0,
-      },
+      }),
     };
 
     finalizeRecoveryResult({
@@ -123,6 +122,38 @@ describe('finalizeRecoveryResult — detached abort', () => {
     expect(session?.summary?.tokenUsage.implementerInput).toBe(2000);
     // The active pointer is cleared once the aborted session is finalized.
     expect(readActive(projectDir)).toBeNull();
+  });
+
+  it('finalizes the abort summary with the reviewer seat the run was pinned to', () => {
+    const projectDir = createTempDir('recovery-driver-test');
+    dirs.push(projectDir);
+    const sessionId = 'sess-aborted-reviewer';
+    ensureSessionDir(projectDir, sessionId);
+
+    finalizeRecoveryResult({
+      projectDir,
+      sessionId,
+      active: receipt(sessionId),
+      state: {
+        ...makeImplState([makeTask({ id: 'T001', status: 'done' })]),
+        feature: 'aborted-reviewer-feature',
+        reviewerTool: 'deepseek',
+        reviewerModel: 'deepseek-v4-flash',
+      },
+      config: makeConfig({
+        reviewer: {
+          kind: 'api',
+          provider: 'openrouter',
+          model: 'swapped-after-the-run',
+          apiBase: 'https://openrouter.ai/api/v1',
+        },
+      }),
+      status: 'aborted',
+    });
+
+    const session = listSessions(projectDir).find((s) => s.id === sessionId);
+    expect(session?.summary?.reviewerTool).toBe('deepseek');
+    expect(session?.summary?.reviewerModel).toBe('deepseek-v4-flash');
   });
 
   it('redacts feature text from the finalized abort summary when persistTranscript is false', () => {

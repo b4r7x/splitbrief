@@ -63,6 +63,7 @@ export function SettingsOverlay() {
     const focus = def.id.endsWith('.model') ? 'models' : undefined;
     if (def.id.startsWith('planner.')) overlayStore.open('planner-picker', focus);
     else if (def.id.startsWith('implementer.')) overlayStore.open('implementer-picker', focus);
+    else if (def.id.startsWith('reviewer.')) overlayStore.open('reviewer-picker', focus);
   };
 
   const {

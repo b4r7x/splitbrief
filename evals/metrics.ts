@@ -5,6 +5,8 @@ import {
   type ReviewVerdictSchema,
   type Summary,
 } from '../src/core/schemas/summary.js';
+import { totalInputTokens, totalOutputTokens } from '../src/core/schemas/tokens.js';
+import { splitSeatTokenTotals } from '../src/core/providers/seat-totals.js';
 import { classifyTaskCompletionMethod } from '../src/core/task-completion.js';
 import type { EngineEvent } from '../src/engine/events/types.js';
 import type { QualityCheckResult } from './scenarios/types.js';
@@ -50,6 +52,8 @@ export type CostMetrics = {
   implementerOutputTokens: number;
   escalationInputTokens: number;
   escalationOutputTokens: number;
+  reviewerInputTokens: number;
+  reviewerOutputTokens: number;
   totalInputTokens: number;
   totalOutputTokens: number;
   estimatedCostUSD: number;
@@ -121,15 +125,18 @@ export type EvalReport = {
 export function collectCostMetrics(summary: Summary): CostMetrics {
   const usage = summary.tokenUsage;
   const costBreakdown = summary.costBreakdown ?? null;
+  const seats = splitSeatTokenTotals({ tokenUsage: usage, reviewerTool: summary.reviewerTool });
   return {
-    plannerInputTokens: usage.plannerInput,
-    plannerOutputTokens: usage.plannerOutput,
+    plannerInputTokens: seats.planner.input,
+    plannerOutputTokens: seats.planner.output,
     implementerInputTokens: usage.implementerInput,
     implementerOutputTokens: usage.implementerOutput,
     escalationInputTokens: usage.escalationInput,
     escalationOutputTokens: usage.escalationOutput,
-    totalInputTokens: usage.plannerInput + usage.implementerInput + usage.escalationInput,
-    totalOutputTokens: usage.plannerOutput + usage.implementerOutput + usage.escalationOutput,
+    reviewerInputTokens: seats.reviewer?.input ?? 0,
+    reviewerOutputTokens: seats.reviewer?.output ?? 0,
+    totalInputTokens: totalInputTokens(usage),
+    totalOutputTokens: totalOutputTokens(usage),
     estimatedCostUSD: costBreakdown?.totalActualCost ?? 0,
     costBreakdown,
     pricingAvailable:

@@ -45,10 +45,12 @@ type ImplementerProfilesFixture = Omit<NonNullable<Config['implementerProfiles']
 
 type ConfigOverrides = Omit<
   Partial<Config>,
-  'implementer' | 'implementerProfiles' | 'planner' | 'validation' | 'workflow'
+  'implementer' | 'implementerProfiles' | 'planner' | 'reviewer' | 'validation' | 'workflow'
 > & {
   implementer?: PartialUnion<ImplementerFixture>;
   planner?: PlannerFixture;
+  // The reviewer schema is the planner's shape, down to the api identity backfill.
+  reviewer?: PlannerFixture;
   validation?: Partial<Config['validation']>;
   workflow?: Partial<Config['workflow']>;
   implementerProfiles?: ImplementerProfilesFixture;
@@ -58,6 +60,7 @@ type ConfigInput = {
   version: Config['version'];
   planner: unknown;
   implementer: unknown;
+  reviewer?: unknown;
   validation: Config['validation'];
   workflow: Config['workflow'];
   theme?: Config['theme'];
@@ -131,6 +134,7 @@ export function makeConfig(overrides?: ConfigOverrides): Config {
       compactionFormat: overrides?.workflow?.compactionFormat ?? 'auto',
     },
   };
+  if (overrides?.reviewer !== undefined) base.reviewer = makePlannerConfig(overrides.reviewer);
   if (overrides?.theme !== undefined) base.theme = overrides.theme;
   if (overrides?.sessions !== undefined) base.sessions = overrides.sessions;
   if (overrides?.escalation !== undefined) base.escalation = overrides.escalation;

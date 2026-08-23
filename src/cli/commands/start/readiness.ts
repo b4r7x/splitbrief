@@ -3,6 +3,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { CliReadinessResult } from '../../../core/schemas/readiness.js';
 import type { ImplementerConfig } from '../../../core/schemas/implementer-config.js';
 import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
+import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import {
   CLI_TOOL_IDS,
   type CliAuthChannelId,
@@ -54,6 +55,8 @@ function configuredCliAuthChannels(
   };
 
   if (config.planner.kind === 'cli') add(config.planner);
+  const reviewer = resolveReviewerRunner(config);
+  if (reviewer.source === 'configured' && reviewer.runner.kind === 'cli') add(reviewer.runner);
   try {
     for (const profile of resolveImplementerProfiles(config).profiles) {
       if (profile.config.kind === 'cli') add(profile.config);

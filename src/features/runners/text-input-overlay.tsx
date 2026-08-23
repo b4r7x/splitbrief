@@ -4,13 +4,15 @@ import { Box, Text } from 'ink';
 import { MultilineInput } from '../../components/input/multiline-input.js';
 import { SOFT_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
+import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { SubPanel } from './sub-panel.js';
+import { overlayAllowsPickerKeys } from '../../core/navigation/types.js';
 
 interface TextInputOverlayProps {
   title: string;
-  role: 'planner' | 'implementer';
+  role: ActiveRunnerRole;
   stepIndicator?: ReactElement | undefined;
   recap?: ReactElement | undefined;
   label: ReactNode;
@@ -46,10 +48,7 @@ export function TextInputOverlay({
   const t = useTheme();
   const [value, setValue] = useState(initialValue);
   const [visibleRows, setVisibleRows] = useState(rows);
-  const focus = overlayStore.use(
-    (s) =>
-      s.active === 'none' || s.active === 'planner-picker' || s.active === 'implementer-picker',
-  );
+  const focus = overlayStore.use((s) => overlayAllowsPickerKeys(s.active));
 
   useEffect(() => {
     overlayStore.setExclusive(true);

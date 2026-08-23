@@ -178,6 +178,37 @@ describe('runner availability checks', () => {
     });
   });
 
+  it('blocks the run when the reviewer seat is unreachable, and names the reviewer runner', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code' },
+      reviewer: {
+        kind: 'api',
+        provider: 'openrouter',
+        model: 'some-model',
+        apiBase: 'https://openrouter.ai/api/v1',
+      },
+    });
+
+    const checks = availabilityChecks(config, [
+      {
+        slot: { role: 'reviewer' },
+        provider: 'openrouter',
+        endpoint: 'https://openrouter.ai/api/v1',
+        verdict: { state: 'unavailable', diagnostic: 'fetch failed' },
+      },
+    ]);
+
+    expect(checks[0]).toMatchObject({
+      id: 'runners.availability.reviewer',
+      severity: 'blocker',
+      nextAction: 'prepare-runner',
+      summary: 'Reviewer openrouter (some-model) is not reachable at https://openrouter.ai/api/v1.',
+      metadata: { role: 'reviewer' },
+    });
+    // The reviewer seat names its own runner and never borrows the planner's.
+    expect(checks[0]?.summary).not.toContain('claude-code');
+  });
+
   it('reports an agent-sdk runner without an endpoint', () => {
     const config = makeConfig({ implementer: { kind: 'agent-sdk', model: 'claude-opus-4' } });
 

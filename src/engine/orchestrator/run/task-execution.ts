@@ -57,6 +57,7 @@ function predictTasksCost(opts: {
       implementerModel: opts.summaryBase.implementerModel,
       tokenUsage: opts.state.tokenUsage,
       cache: opts.wctx.modelCache,
+      config: opts.wctx.config,
     }),
     deterministic: estimateDeterministicCost({
       tasks: opts.tasks,
@@ -333,7 +334,7 @@ export async function runTasksAndReview(
       callbacks,
       bus: wctx.bus,
       state,
-      planner: wctx.planner,
+      reviewer: wctx.reviewer,
       metadata: wctx.metadata,
       signal: wctx.signal,
       sinks: wctx.sinks,

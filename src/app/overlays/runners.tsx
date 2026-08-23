@@ -1,6 +1,6 @@
 import { useReducer } from 'react';
 import { Text, useInput } from 'ink';
-import type { Config } from '../../core/schemas/config.js';
+import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { ARROW_SEP, SOFT_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
@@ -19,31 +19,26 @@ import { ContractChoiceOverlay } from '../../features/runners/contract-choice-ov
 import { ProviderAuthOverlay } from '../../features/runners/provider-auth-overlay.js';
 import { ProviderChoiceOverlay } from '../../features/runners/provider-choice-overlay.js';
 import { ContractRecap, StepIndicator, contractTierOf } from '../../features/runners/sub-panel.js';
+import { overlayAllowsPickerKeys } from '../../core/navigation/types.js';
 
 interface ToolModelPickerProps {
-  role: 'planner' | 'implementer';
-  stepLabel?: string | undefined;
-  onConfirm?: ((updated: Config) => void) | undefined;
-  onCancel?: (() => void) | undefined;
+  role: ActiveRunnerRole;
 }
 
-export function ToolModelPicker({ role, stepLabel, onConfirm, onCancel }: ToolModelPickerProps) {
+export function ToolModelPicker({ role }: ToolModelPickerProps) {
   const t = useTheme();
   const [viewState, dispatchView] = useReducer(viewReducer, initialViewState);
   const catalog = usePickerCatalog(role, viewState.preservedLeftIndex);
-  const actions = usePickerActions({ role, onConfirm, catalog, viewState, dispatchView });
+  const actions = usePickerActions({ role, catalog, viewState, dispatchView });
   const isSubView = viewState.view.kind !== 'picker';
-  const overlayAllowsKeys = overlayStore.use(
-    (s) =>
-      s.active === 'none' || s.active === 'planner-picker' || s.active === 'implementer-picker',
-  );
+  const overlayAllowsKeys = overlayStore.use((s) => overlayAllowsPickerKeys(s.active));
   const coldDiscovery = catalog.discovery.cold && catalog.discovery.refreshing;
 
   useInput(
     (_input, key) => {
       if (!key.escape) return;
       if (coldDiscovery) {
-        (onCancel ?? overlayStore.close)();
+        overlayStore.close();
         return;
       }
       if (viewState.view.kind === 'custom-command') {
@@ -142,8 +137,7 @@ export function ToolModelPicker({ role, stepLabel, onConfirm, onCancel }: ToolMo
   return (
     <PickerView
       role={role}
-      stepLabel={stepLabel ?? (catalog.discovery.refreshing ? REFRESHING_TOOLS_TITLE : undefined)}
-      onCancel={onCancel}
+      stepLabel={catalog.discovery.refreshing ? REFRESHING_TOOLS_TITLE : undefined}
       catalog={catalog}
       actions={actions}
     />

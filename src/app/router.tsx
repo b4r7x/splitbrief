@@ -4,6 +4,7 @@ import { HomeScreen } from './screens/home.js';
 import { WorkflowScreen } from './screens/workflow.js';
 import { SummaryScreen } from './screens/summary.js';
 import { SetupScreen } from './screens/setup.js';
+import { CrewOverlay } from './overlays/crew.js';
 import { HelpOverlay } from './overlays/help.js';
 import { CommandPaletteOverlay, type CommandPaletteOverlayProps } from './overlays/palette.js';
 import { SkillsPicker } from './overlays/skills.js';
@@ -91,18 +92,7 @@ function renderScreen({
         <SummaryScreen commands={commands} onRuntimeCommand={(raw) => onRuntime(raw, 'summary')} />
       );
     case 'setup':
-      return (
-        <SetupScreen
-          renderToolPicker={({ role, stepLabel, onConfirm, onCancel }) => (
-            <ToolModelPicker
-              role={role}
-              stepLabel={stepLabel}
-              onConfirm={onConfirm}
-              onCancel={onCancel}
-            />
-          )}
-        />
-      );
+      return <SetupScreen />;
     default:
       return assertNever(screen);
   }
@@ -144,6 +134,10 @@ function renderOverlay({
       return <ToolModelPicker role="planner" />;
     case 'implementer-picker':
       return <ToolModelPicker role="implementer" />;
+    case 'reviewer-picker':
+      return <ToolModelPicker role="reviewer" />;
+    case 'crew':
+      return <CrewOverlay />;
     case 'sessions':
       return <SessionsPicker />;
     case 'editor':

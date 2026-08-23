@@ -235,6 +235,7 @@ async function configuredRetryContext(
     callbacks,
     bus,
     planner: makePlanner(),
+    reviewer: makePlanner(),
     context: { name: 'retry configured runner', dir: input.projectDir },
     implementer: makeImplementer(),
     createImplementer: (runnerConfig, factoryOptions) =>
@@ -324,6 +325,7 @@ describe('createRetryRuntime', () => {
       callbacks,
       bus,
       planner: makePlanner(),
+      reviewer: makePlanner(),
       context: { name: 'test', dir: projectDir },
       implementer,
       metadata: TEST_METADATA,
@@ -355,6 +357,7 @@ describe('createRetryRuntime', () => {
       callbacks,
       bus,
       planner: makePlanner(),
+      reviewer: makePlanner(),
       context: { name: 'test', dir: projectDir },
       implementer,
       metadata: TEST_METADATA,

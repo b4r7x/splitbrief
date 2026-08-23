@@ -42,7 +42,7 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Understand how it works end-to-end | [docs/HOW-IT-WORKS.md](./docs/HOW-IT-WORKS.md) — data flow with file paths |
 | Understand the workflow state machine | [docs/WORKFLOW.md](./docs/WORKFLOW.md) — phases, transitions, modes |
 | Understand the orchestrator and EventBus | [docs/ENGINE.md](./docs/ENGINE.md) — orchestrator, sinks, callbacks vs events |
-| Understand planner/implementer pipeline | [docs/PLANNERS-AND-IMPLEMENTERS.md](./docs/PLANNERS-AND-IMPLEMENTERS.md) — runner kinds, Task Brief, token accounting |
+| Understand planner/implementer/reviewer pipeline | [docs/PLANNERS-AND-IMPLEMENTERS.md](./docs/PLANNERS-AND-IMPLEMENTERS.md) — runner kinds, the three seats, Task Brief, token accounting |
 | Understand stores and UI | [docs/STORES-AND-UI.md](./docs/STORES-AND-UI.md) — store factory, screens, overlays |
 | Understand approval gates and recovery | [docs/APPROVAL-AND-RECOVERY.md](./docs/APPROVAL-AND-RECOVERY.md) — tiered approval, escalation, drift |
 | Understand supporting subsystems | [docs/SUBSYSTEMS.md](./docs/SUBSYSTEMS.md) — hooks, snapshots, IPC, repo-map, handoff, MCP |
@@ -98,15 +98,16 @@ These are the rules that apply everywhere; deeper specifications live in the lin
 - **Composer** lives in `src/components/composer/`. Do not recreate `input-bar` modules or compatibility shims.
 - **Runtime commands** live in `src/core/runtime/commands/`. They use slash names, but the registry backs composer `/` input, the command palette, and RPC dispatch.
 - **App shell** lives in `src/app/`: composition root `root.tsx` (mounts `<AppProvider><Router/>`), `router.tsx` (`renderScreen` + `renderOverlay` switches → `<Layout>`), `provider.tsx` (`AppProvider`; today only `ThemeProvider`), `layout.tsx` (header + body + footer), plus app-wide keys in `keys.ts` and runtime-command context in `command-context.ts`. The shell lives entirely under `src/app/`; there is no monolithic root component or layout file at the `src/` root.
-- **Screens and overlays are FLAT pages** under `src/app/screens/` (`home`, `workflow`, `summary`, `setup`) and `src/app/overlays/` (`help`, `palette`, `skills`, `sessions`, `settings`, `runners`). Each page composes its feature; feature components/hooks/helpers stay in `src/features/<x>/` and are imported via `../../features/<x>/…`. `help`, `sessions`, `setup`, and `skills` are dissolved (pure-entry) — the page is the whole surface, no `features/<x>/` folder. Pages must not import each other (they coordinate via stores) or the shell modules; see [docs/INVARIANTS.md](./docs/INVARIANTS.md) gate 9.
+- **Screens and overlays are FLAT pages** under `src/app/screens/` (`home`, `workflow`, `summary`, `setup`) and `src/app/overlays/` (`help`, `palette`, `skills`, `sessions`, `settings`, `runners`, `crew`). Each page composes its feature; feature components/hooks/helpers stay in `src/features/<x>/` and are imported via `../../features/<x>/…`. `help`, `sessions`, `setup`, and `skills` are dissolved (pure-entry) — the page is the whole surface, no `features/<x>/` folder. Pages must not import each other (they coordinate via stores) or the shell modules; see [docs/INVARIANTS.md](./docs/INVARIANTS.md) gate 9.
 - **Command palette** lives in `src/features/palette/`; source assembly is `sources.ts`, ranking is `results.ts`, and the overlay entry is the page `src/app/overlays/palette.tsx`.
 - **Settings** overlay entry is the page `src/app/overlays/settings.tsx`; `ModeSelector` stays at `src/features/settings/mode-selector.tsx` and is imported directly by `src/app/router.tsx` (a router-imported feature component, not a page).
-- **Runner selection** is the `src/features/runners/` feature; its picker entry is the page `src/app/overlays/runners.tsx`. `ToolModelPicker` / `renderToolPicker` are component/callback names, not a `tool-picker` folder boundary.
+- **Runner selection** is the `src/features/runners/` feature; its picker entry is the page `src/app/overlays/runners.tsx`. One `ToolModelPicker` serves all three seats, parameterised by `ActiveRunnerRole` (`planner` | `implementer` | `reviewer`) — do not fork a per-role picker. `ToolModelPicker` is a component name, not a `tool-picker` folder boundary.
+- **Crew** is the `src/features/crew/` feature (`use-crew.ts`, `rows.ts`, `format.ts`, `seat-rows.tsx`, `preset-row.tsx`); its entry is the page `src/app/overlays/crew.tsx`, and the first-run setup screen is built on the same feature. Seat, preset and lab models live in `src/core/crew/` — the UI derives from core, never the reverse.
 - **Workflow live status** renders in the composer byline (`InputFooter` + `deriveLiveStatus`), not as a transcript row — do not recreate `live-status-row`; status derives from `lifecycle.phaseFirstSeenTs`, not a scan of the events array. The transcript has no max-width cap; the sidebar (a clamped 25% share — floor 34, cap 48, only above the 120-column workflow breakpoint — plus a 2-col gap) is the only width constraint. Transcript and review overlay share the pure markdown core (`src/utils/markdown/`), which covers links, leading-pipe GFM tables, headings h1–h6, strikethrough, and lowlight-highlighted fenced code; markdown HTML comments — including planner `<!-- Q:… -->` clarification markers — never render. File-path links display project-relative and emit OSC 8 hyperlinks when the terminal supports them (in-house env sniff in `src/lib/terminal/hyperlinks.ts`, overridable via `FORCE_HYPERLINK`). Clarification questions fire in every workflow mode through the same bordered `QuestionPrompt` panel.
 
 ## Runner kinds
 
-Both planner and implementer accept five runner kinds. The `kind` field is the discriminant and is always required. Configs declare `version: 3` — the only accepted version; any other value fails the load.
+Planner, reviewer, and implementer all accept five runner kinds. The reviewer is optional — with no `reviewer:` block the planner holds the review seat (`resolveReviewerRunner`, the only module that branches on `config.reviewer`). The `kind` field is the discriminant and is always required. Configs declare `version: 3` — the only accepted version; any other value fails the load.
 
 | `kind` | What it is | Example |
 |---|---|---|
@@ -116,9 +117,9 @@ Both planner and implementer accept five runner kinds. The `kind` field is the d
 | `agent` | Subprocess that writes files directly (no stdout extraction; no shell/network sandbox) | Custom file-writing tools |
 | `agent-sdk` | Anthropic Agent SDK library call | Via `@anthropic-ai/claude-agent-sdk` |
 
-Factory: `src/engine/runners/factory.ts` — `createPlanner(config)` / `createImplementer(config)` dispatch by `kind`.
+Factory: `src/engine/runners/factory.ts` — `createPlanner(config)` / `createReviewer(config)` / `createImplementer(config)` dispatch by `kind`.
 
-Full config schemas and YAML examples: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
+Full config schemas and YAML examples: [docs/CONFIGURATION.md](./docs/CONFIGURATION.md).
 
 ## Workflow modes
 

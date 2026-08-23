@@ -17,6 +17,7 @@ import type { Summary, CostBreakdown } from '../../../core/schemas/summary.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { readStats } from '../../../core/stats/persistence.js';
 import { saveFinalSession, shouldPreserveActiveState } from './finalize.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 let dirs: string[] = [];
 
@@ -40,14 +41,7 @@ function makeSummary(): Summary {
     skipped: 0,
     failed: 0,
     totalTime: 10,
-    tokenUsage: {
-      plannerInput: 0,
-      plannerOutput: 0,
-      implementerInput: 0,
-      implementerOutput: 0,
-      escalationInput: 0,
-      escalationOutput: 0,
-    },
+    tokenUsage: makeUsage(),
     estimatedCostSavings: '$0.00',
     escalationRate: 0,
   };

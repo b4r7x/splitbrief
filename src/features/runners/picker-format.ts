@@ -1,5 +1,6 @@
 import { SOFT_SEP } from '../../components/separators.js';
 import { countNoun } from '../../utils/pluralize.js';
+import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
 import type { CliProviderAuthFact } from '../../core/discovery/detection.js';
 import type { ProbeOutcomeKind } from '../../core/discovery/runner-evidence.js';
 import type { DataUsePosture } from '../../core/providers/api-provider-catalog.js';
@@ -198,7 +199,7 @@ function readyModelGuidance(
 }
 
 export function formatCustomCommandPreview(
-  role: 'planner' | 'implementer',
+  role: ActiveRunnerRole,
   configured?: { command: string; kind: 'shell' | 'agent' } | undefined,
 ): string {
   if (configured) {

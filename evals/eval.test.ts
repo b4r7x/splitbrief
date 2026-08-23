@@ -29,6 +29,7 @@ import {
   type ModelEvaluationScenarioMetrics,
 } from './implementer-provider.js';
 import {
+  collectCostMetrics,
   collectGreenRunAggregates,
   collectRunMetrics,
   compareScenario,
@@ -57,6 +58,7 @@ import { ReviewVerdictSchema, type Summary } from '../src/core/schemas/summary.j
 import type { EngineEvent } from '../src/engine/events/types.js';
 import { taskId } from '../src/core/schemas/task.js';
 import type { TaskTokenUsage } from '../src/core/schemas/tokens.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const MODEL_EVALUATION_EVIDENCE_PATH = join(
@@ -169,14 +171,7 @@ describe('eval harness', () => {
   });
 
   it('reports pricing unavailable for a zero-token run even though its total cost is knowable', () => {
-    const tokenUsage = {
-      plannerInput: 0,
-      plannerOutput: 0,
-      implementerInput: 0,
-      implementerOutput: 0,
-      escalationInput: 0,
-      escalationOutput: 0,
-    };
+    const tokenUsage = makeUsage();
     const costBreakdown = calculateCostBreakdown({
       tokenUsage,
       totalTasks: 0,
@@ -200,6 +195,27 @@ describe('eval harness', () => {
     expect(costBreakdown.isTotalActualCostKnown).toBe(true);
     expect(metrics.cost.estimatedCostUSD).toBe(0);
     expect(metrics.cost.pricingAvailable).toBe(false);
+  });
+
+  it('folds reviewer tokens into the planner seat only when no reviewer ran', () => {
+    const tokenUsage = makeUsage({
+      plannerInput: 100,
+      plannerOutput: 50,
+      reviewerInput: 30,
+      reviewerOutput: 10,
+    });
+
+    const folded = collectCostMetrics(makeSummary(0, { tokenUsage }));
+    expect(folded.plannerInputTokens).toBe(130);
+    expect(folded.plannerOutputTokens).toBe(60);
+    expect(folded.reviewerInputTokens).toBe(0);
+    expect(folded.reviewerOutputTokens).toBe(0);
+
+    const separate = collectCostMetrics(makeSummary(0, { tokenUsage, reviewerTool: 'codex' }));
+    expect(separate.plannerInputTokens).toBe(100);
+    expect(separate.plannerOutputTokens).toBe(50);
+    expect(separate.reviewerInputTokens).toBe(30);
+    expect(separate.reviewerOutputTokens).toBe(10);
   });
 
   it('prints unpriced on the per-run progress line instead of a fabricated dollar figure', () => {
@@ -1300,14 +1316,12 @@ function makeSummary(totalActualCost: number, overrides: Partial<Summary> = {}):
     skipped: 0,
     failed: 0,
     totalTime: 100,
-    tokenUsage: {
+    tokenUsage: makeUsage({
       plannerInput: 100,
       plannerOutput: 50,
       implementerInput: 80,
       implementerOutput: 40,
-      escalationInput: 0,
-      escalationOutput: 0,
-    },
+    }),
     estimatedCostSavings: '60%',
     escalationRate: 0,
     costBreakdown: {

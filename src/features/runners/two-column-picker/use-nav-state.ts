@@ -11,6 +11,7 @@ import {
   isVirtualCustomItem,
   type RightItemOrVirtual,
 } from './virtual-items.js';
+import { overlayAllowsPickerKeys } from '../../../core/navigation/types.js';
 
 const noop = () => {};
 
@@ -197,10 +198,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
     if (leftItem) onConfirm(leftItem, item);
   };
 
-  const isActive = overlayStore.use(
-    (s) =>
-      s.active === 'none' || s.active === 'planner-picker' || s.active === 'implementer-picker',
-  );
+  const isActive = overlayStore.use((s) => overlayAllowsPickerKeys(s.active));
 
   useInput(
     (input, key) => {

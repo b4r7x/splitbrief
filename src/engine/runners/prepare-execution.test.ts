@@ -188,6 +188,14 @@ function configuredApprovalConfig(processSentinel: string) {
   });
 }
 
+function reviewerChecks(report: ReadinessReport): ReadinessReport['sections'][number]['checks'] {
+  return (
+    report.sections
+      .find((section) => section.id === 'runners')
+      ?.checks.filter((check) => check.id === 'runners.preparation.reviewer') ?? []
+  );
+}
+
 describe('prepareExecution', () => {
   it('checks planner and every configured profile and derives report and gates from each result', async () => {
     const project = projectDir();
@@ -926,6 +934,130 @@ describe('prepareExecution', () => {
     );
   });
 
+  it('admits a configured reviewer as its own seat and blocks the start when it fails', async () => {
+    const project = projectDir();
+    const withReviewer = (apiKey: string | undefined) =>
+      makeConfig({
+        planner: {
+          kind: 'api',
+          provider: 'anthropic',
+          apiBase: 'https://api.anthropic.com/v1',
+          apiKey: 'sk-ant-test',
+          model: 'claude-opus-4-6',
+        },
+        implementer: {
+          kind: 'api',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'qwen2.5-coder:7b',
+        },
+        reviewer: {
+          kind: 'api',
+          provider: 'openrouter',
+          apiBase: 'https://openrouter.ai/api/v1',
+          model: 'some-model',
+          ...(apiKey !== undefined && { apiKey }),
+        },
+      });
+    const run = (config: ReturnType<typeof withReviewer>, sessionId: string) =>
+      prepareExecution({
+        projectDir: project,
+        feature: 'prepare the reviewer seat',
+        effectiveConfig: config,
+        signal: new AbortController().signal,
+        policy: policy('new-workflow'),
+        deps: {
+          collectArgVectorPreflightChecks: async () => [],
+          collectReadiness: async () => ({ report: readyReport(project), config }),
+          prepareNewSession: () => preparedSession(project, sessionId),
+        },
+      });
+
+    const admitted = await run(withReviewer('sk-or-test'), 'reviewer-session');
+    expect(admitted.kind).toBe('prepared');
+    if (admitted.kind !== 'prepared') return;
+    expect(admitted.execution.gates).toContainEqual(
+      expect.objectContaining({ kind: 'api', slot: { role: 'reviewer' } }),
+    );
+    expect(reviewerChecks(admitted.execution.report)).toEqual([
+      expect.objectContaining({ severity: 'ok' }),
+    ]);
+
+    const blocked = await run(withReviewer(undefined), 'reviewer-blocked-session');
+    expect(blocked.kind).toBe('blocked');
+    if (blocked.kind !== 'blocked') return;
+    expect(reviewerChecks(blocked.report)).toEqual([
+      expect.objectContaining({
+        severity: 'blocker',
+        summary: expect.stringContaining('Reviewer'),
+      }),
+    ]);
+  });
+
+  it('admits a shell reviewer through the configured custom command path', async () => {
+    const project = projectDir();
+    const config = ConfigSchema.parse({
+      ...makeConfig({
+        planner: {
+          kind: 'api',
+          provider: 'anthropic',
+          service: 'anthropic',
+          offering: 'payg',
+          apiBase: 'https://api.anthropic.com/v1',
+          apiKey: 'sk-ant-test',
+          model: 'claude-opus-4-6',
+        },
+        implementer: {
+          kind: 'api',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'qwen2.5-coder:7b',
+        },
+        reviewer: { kind: 'shell', command: 'node', model: 'custom-reviewer' },
+      }),
+      customCommands: {
+        review: { label: 'Review changes', contract: 'output', executable: 'node' },
+      },
+    });
+    const prepareAdmission = vi.fn(async (options) => ({
+      kind: 'admitted' as const,
+      trustPersisted: false,
+      invocation: {
+        kind: 'custom-runner-invocation' as const,
+        runner: options.runner,
+        posture: options.posture,
+        executable,
+        authorization: 'explicit-grant' as const,
+        scope: {
+          projectIdentity: `sha256:${'b'.repeat(64)}`,
+          definitionId: options.runner.command.id,
+          definitionDigest: `sha256:${'c'.repeat(64)}`,
+        },
+      },
+    }));
+
+    const outcome = await prepareExecution({
+      projectDir: project,
+      feature: 'prepare a configured shell reviewer',
+      effectiveConfig: config,
+      signal: new AbortController().signal,
+      policy: policy('new-workflow'),
+      deps: {
+        collectArgVectorPreflightChecks: async () => [],
+        collectReadiness: async () => ({ report: readyReport(project), config }),
+        prepareCustomRunnerAdmission: prepareAdmission,
+        prepareNewSession: () => preparedSession(project, 'shell-reviewer-session'),
+      },
+    });
+
+    expect(outcome.kind).toBe('prepared');
+    if (outcome.kind !== 'prepared') return;
+    expect(prepareAdmission.mock.calls[0]?.[0]?.posture).toMatchObject({ role: 'planner' });
+    expect(outcome.execution.gates).toContainEqual(
+      expect.objectContaining({ kind: 'shell', slot: { role: 'reviewer' } }),
+    );
+  });
+
   it('blocked preparation leaves no session readiness active liveness or process artifact', async () => {
     const project = projectDir();
     const config = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });
@@ -1225,8 +1357,8 @@ describe('prepareExecution availability probe scope', () => {
     return probe.mock.calls[0]?.[0]?.roles;
   }
 
-  it('probes planner and implementer for a workflow start', async () => {
-    expect(await probedRoles('new-workflow')).toEqual(['planner', 'implementer']);
+  it('probes planner, implementer and reviewer for a workflow start', async () => {
+    expect(await probedRoles('new-workflow')).toEqual(['planner', 'implementer', 'reviewer']);
   });
 
   it('probes only the planner for a spec preparation, which never calls the implementer', async () => {
