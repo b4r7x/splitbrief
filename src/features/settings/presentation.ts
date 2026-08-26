@@ -1,14 +1,10 @@
 import type { SettingDef } from '../../core/settings/catalog.js';
 import { formatContextLength } from '../../core/formatting.js';
 import { glyph } from '../../lib/glyphs.js';
+import { settingsItemFilterText, type SettingsItem } from './items.js';
 
-export function matchesFilter(def: SettingDef, query: string): boolean {
-  const q = query.toLowerCase();
-  return (
-    def.label.toLowerCase().includes(q) ||
-    def.description.toLowerCase().includes(q) ||
-    def.section.toLowerCase().includes(q)
-  );
+export function matchesFilter(item: SettingsItem, query: string): boolean {
+  return settingsItemFilterText(item).includes(query.toLowerCase());
 }
 
 export function validateNumber(value: string, def: SettingDef): number | null {

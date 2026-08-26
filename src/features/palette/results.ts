@@ -1,61 +1,47 @@
 import { fuzzyMatchExtended } from './fuzzy-match.js';
-import type {
-  CommandPaletteItem,
-  RuntimeConfigSaveResult,
-} from '../../core/runtime/commands/types.js';
+import { COMMAND_CATEGORIES } from '../../core/runtime/commands/types.js';
+import type { CommandCategory } from '../../core/runtime/commands/types.js';
 
-export type PaletteSource = 'command' | 'mode' | 'picker' | 'task' | 'session' | 'custom';
+export type PaletteSource = 'command' | 'task' | 'session' | 'custom';
 
-interface PaletteResultBase {
+export type PaletteAction =
+  | { kind: 'run'; run: () => void | Promise<void> }
+  | { kind: 'prefill'; text: string };
+
+export interface PaletteCommandItem {
+  label: string;
+  description: string;
+  shortcut: string | null;
+  category: CommandCategory;
+  action: PaletteAction;
+}
+
+interface PaletteCandidateBase {
   id: string;
   label: string;
   description: string;
   shortcut: string | null;
-  score: number;
-  mruRank: number;
+  action: PaletteAction;
 }
 
-type ModePaletteResult = PaletteResultBase & {
-  source: 'mode';
-  action: () => Promise<RuntimeConfigSaveResult>;
-};
+// Only command rows carry a category; the discriminant lets a `category === null` check narrow a
+// row to the sources that need a source-name header.
+type PaletteCandidate = PaletteCandidateBase &
+  (
+    | { source: 'command'; category: CommandCategory }
+    | { source: Exclude<PaletteSource, 'command'>; category: null }
+  );
 
-type NonModePaletteResult = PaletteResultBase & {
-  source: Exclude<PaletteSource, 'mode'>;
-  action: () => void | Promise<void>;
-};
+export type PaletteResult = PaletteCandidate & { score: number; mruRank: number };
 
-export type PaletteResult = ModePaletteResult | NonModePaletteResult;
-
-type PaletteCandidateBase = Omit<PaletteResultBase, 'score' | 'mruRank'>;
-type ModePaletteCandidate = PaletteCandidateBase & {
-  source: 'mode';
-  action: () => Promise<RuntimeConfigSaveResult>;
-};
-type NonModePaletteCandidate = PaletteCandidateBase & {
-  source: Exclude<PaletteSource, 'mode'>;
-  action: () => void | Promise<void>;
-};
-type PaletteCandidate = ModePaletteCandidate | NonModePaletteCandidate;
-
-type ModePaletteItem = {
-  label: string;
-  description: string;
-  action: () => Promise<RuntimeConfigSaveResult>;
-};
-
-type NonModePaletteItem = {
-  action: () => void | Promise<void>;
-};
+type PaletteItemAction = { action: () => void | Promise<void> };
 
 export type PaletteInputs = {
   query: string;
-  commandItems: CommandPaletteItem[];
-  modeItems: ModePaletteItem[];
-  pickerItems: Array<{ label: string; description: string } & NonModePaletteItem>;
-  taskItems: Array<{ id: string; title: string } & NonModePaletteItem>;
-  sessionItems: Array<{ id: string; feature: string; status: string } & NonModePaletteItem>;
-  customItems: Array<{ id: string; label: string; description: string } & NonModePaletteItem>;
+  commandItems: PaletteCommandItem[];
+  taskItems: Array<{ id: string; title: string } & PaletteItemAction>;
+  sessionItems: Array<{ id: string; feature: string; status: string } & PaletteItemAction>;
+  customItems: Array<{ id: string; label: string; description: string } & PaletteItemAction>;
   mruIds: string[];
 };
 
@@ -73,29 +59,8 @@ function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
       label: item.label,
       description: item.description,
       source: 'command',
-      shortcut: item.shortcut ?? null,
-      action: item.action,
-    });
-  }
-
-  for (const item of inputs.modeItems) {
-    candidates.push({
-      id: 'mode:' + item.label,
-      label: item.label,
-      description: item.description,
-      source: 'mode',
-      shortcut: null,
-      action: item.action,
-    });
-  }
-
-  for (const item of inputs.pickerItems) {
-    candidates.push({
-      id: 'picker:' + item.label,
-      label: item.label,
-      description: item.description,
-      source: 'picker',
-      shortcut: null,
+      category: item.category,
+      shortcut: item.shortcut,
       action: item.action,
     });
   }
@@ -106,8 +71,9 @@ function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
       label: item.title,
       description: 'task ' + item.id,
       source: 'task',
+      category: null,
       shortcut: null,
-      action: item.action,
+      action: { kind: 'run', run: item.action },
     });
   }
 
@@ -117,8 +83,9 @@ function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
       label: item.feature,
       description: item.status,
       source: 'session',
+      category: null,
       shortcut: null,
-      action: item.action,
+      action: { kind: 'run', run: item.action },
     });
   }
 
@@ -128,17 +95,13 @@ function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
       label: item.label,
       description: item.description,
       source: 'custom',
+      category: null,
       shortcut: null,
-      action: item.action,
+      action: { kind: 'run', run: item.action },
     });
   }
 
   return candidates;
-}
-
-function rankCandidate(candidate: PaletteCandidate, score: number, mruRank: number): PaletteResult {
-  if (candidate.source === 'mode') return { ...candidate, score, mruRank };
-  return { ...candidate, score, mruRank };
 }
 
 function getMruRank(mruIds: string[], id: string): number {
@@ -146,31 +109,44 @@ function getMruRank(mruIds: string[], id: string): number {
   return index >= 0 ? index + 1 : 0;
 }
 
-function compareRankedPaletteResults(a: RankedPaletteResult, b: RankedPaletteResult): number {
+function categoryOrder(result: PaletteResult): number {
+  if (result.category === null) return COMMAND_CATEGORIES.length;
+  return COMMAND_CATEGORIES.indexOf(result.category);
+}
+
+function compareByMru(a: RankedPaletteResult, b: RankedPaletteResult): number | null {
   const aMru = a.result.mruRank > 0;
   const bMru = b.result.mruRank > 0;
 
-  if (aMru && !bMru) return -1;
-  if (!aMru && bMru) return 1;
+  if (aMru !== bMru) return aMru ? -1 : 1;
+  if (!aMru) return null;
 
-  if (aMru && bMru) {
-    if (a.result.mruRank !== b.result.mruRank) return a.result.mruRank - b.result.mruRank;
-    const labelCompare = a.result.label.localeCompare(b.result.label);
-    return labelCompare !== 0 ? labelCompare : a.candidateOrder - b.candidateOrder;
-  }
-
-  if (b.result.score !== a.result.score) return b.result.score - a.result.score;
-
-  if (a.result.score === 0 && b.result.score === 0) {
-    return a.candidateOrder - b.candidateOrder;
-  }
-
+  if (a.result.mruRank !== b.result.mruRank) return a.result.mruRank - b.result.mruRank;
   const labelCompare = a.result.label.localeCompare(b.result.label);
   return labelCompare !== 0 ? labelCompare : a.candidateOrder - b.candidateOrder;
 }
 
-function sortPaletteResults(results: RankedPaletteResult[]): PaletteResult[] {
-  return [...results].sort(compareRankedPaletteResults).map((ranked) => ranked.result);
+// An empty query is a browse view of the whole registry, so category order alone decides it:
+// floating an MRU row out of its category would emit that category's header a second time.
+function compareByCategory(a: RankedPaletteResult, b: RankedPaletteResult): number {
+  const categoryCompare = categoryOrder(a.result) - categoryOrder(b.result);
+  return categoryCompare !== 0 ? categoryCompare : a.candidateOrder - b.candidateOrder;
+}
+
+function compareByScore(a: RankedPaletteResult, b: RankedPaletteResult): number {
+  const mru = compareByMru(a, b);
+  if (mru !== null) return mru;
+
+  if (b.result.score !== a.result.score) return b.result.score - a.result.score;
+  const labelCompare = a.result.label.localeCompare(b.result.label);
+  return labelCompare !== 0 ? labelCompare : a.candidateOrder - b.candidateOrder;
+}
+
+function sortPaletteResults(
+  results: RankedPaletteResult[],
+  compare: (a: RankedPaletteResult, b: RankedPaletteResult) => number,
+): PaletteResult[] {
+  return [...results].sort(compare).map((ranked) => ranked.result);
 }
 
 export function buildPaletteResults(inputs: PaletteInputs): PaletteResult[] {
@@ -179,24 +155,38 @@ export function buildPaletteResults(inputs: PaletteInputs): PaletteResult[] {
 
   if (terms === '') {
     return sortPaletteResults(
-      candidates.map((c, candidateOrder) => ({
-        result: rankCandidate(c, 0, getMruRank(inputs.mruIds, c.id)),
+      candidates.map((candidate, candidateOrder) => ({
+        result: { ...candidate, score: 0, mruRank: getMruRank(inputs.mruIds, candidate.id) },
         candidateOrder,
       })),
+      compareByCategory,
     );
   }
 
   const scored: RankedPaletteResult[] = [];
 
-  for (const [candidateOrder, c] of candidates.entries()) {
-    const target = [c.label, c.description, c.source].join(' ');
-    const result = fuzzyMatchExtended(terms, target);
-    if (result === null) continue;
+  for (const [candidateOrder, candidate] of candidates.entries()) {
+    const target = [candidate.label, candidate.description, candidate.source].join(' ');
+    const match = fuzzyMatchExtended(terms, target);
+    if (match === null) continue;
     scored.push({
-      result: rankCandidate(c, result.score, getMruRank(inputs.mruIds, c.id)),
+      result: {
+        ...candidate,
+        score: match.score,
+        mruRank: getMruRank(inputs.mruIds, candidate.id),
+      },
       candidateOrder,
     });
   }
 
-  return sortPaletteResults(scored);
+  // A section header marks a transition, not a group, so equal sections have to stay contiguous or
+  // the same header is drawn several times. Sections lead with their best match; rows follow score.
+  const sections = new Map<string, PaletteResult[]>();
+  for (const result of sortPaletteResults(scored, compareByScore)) {
+    const key = result.category ?? result.source;
+    const section = sections.get(key);
+    if (section === undefined) sections.set(key, [result]);
+    else section.push(result);
+  }
+  return [...sections.values()].flat();
 }

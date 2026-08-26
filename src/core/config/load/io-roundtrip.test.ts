@@ -278,7 +278,7 @@ describe('config roundtrip', () => {
       let current = loadConfig(dir).config;
       const together = realPickerOption('implementer', 'together');
 
-      current = commitImplementerSelection(current, together, { id: 'selected-model' });
+      current = commitImplementerSelection(current, together, { id: 'selected-model' }).config;
       expect((await configStore.save(current)).ok).toBe(true);
       expect(loadConfig(dir).config.implementerProfiles?.profiles['active-cloud']).toMatchObject({
         apiBase: 'https://api.together.ai/v1',
@@ -337,7 +337,7 @@ describe('config roundtrip', () => {
 
       current = commitImplementerSelection(current, realPickerOption('implementer', 'codex'), {
         id: 'gpt-5.4-mini',
-      });
+      }).config;
       expect((await configStore.save(current)).ok).toBe(true);
       const reloaded = loadConfig(dir).config;
       expect(reloaded.implementerProfiles?.profiles['active-cloud']).toMatchObject({

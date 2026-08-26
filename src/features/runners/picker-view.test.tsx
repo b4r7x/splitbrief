@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
+import { pickerCatalog } from '#testing/helpers/runner-picker.js';
 import { SOFT_SEP } from '../../components/separators.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
@@ -88,7 +89,7 @@ describe('PickerView model confirmation', () => {
     });
     const modelCounts = countModelOptions(rightModels);
 
-    return {
+    return pickerCatalog({
       items: [codex, claudeCode],
       rightModels,
       currentItem: codex,
@@ -98,7 +99,6 @@ describe('PickerView model confirmation', () => {
       roleLabel: 'Planner',
       currentModel: 'gpt-5.4',
       persistedModel: 'gpt-5.4',
-      discoveredModelCount: modelCounts.confirmed,
       modelCounts,
       catalogDiagnostic: undefined,
       currentCommand: undefined,
@@ -106,7 +106,7 @@ describe('PickerView model confirmation', () => {
       customModels: [],
       discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
-    };
+    });
   }
 
   beforeEach(() => {
@@ -161,7 +161,7 @@ describe('PickerView previews', () => {
     });
     const model: ModelOption = { id: 'gpt-4o', contextLength: 128_000 };
 
-    const catalog: PickerCatalog = {
+    const catalog: PickerCatalog = pickerCatalog({
       items: [tool],
       rightModels: [model],
       currentItem: tool,
@@ -171,7 +171,6 @@ describe('PickerView previews', () => {
       roleLabel: 'Planner',
       currentModel: undefined,
       persistedModel: undefined,
-      discoveredModelCount: 1,
       modelCounts: { ...zeroCounts, confirmed: 1 },
       catalogDiagnostic: undefined,
       currentCommand: undefined,
@@ -179,7 +178,7 @@ describe('PickerView previews', () => {
       customModels: [],
       discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
-    };
+    });
 
     const ui = renderFeature(
       <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
@@ -190,21 +189,24 @@ describe('PickerView previews', () => {
     expect(initialFrame).toContain('Tool & model');
     expect(initialFrame).toContain('Tools');
     expect(initialFrame).toContain('Models');
-    expect(initialFrame).toContain(`OpenCode${SOFT_SEP}cli`);
+    expect(initialFrame).toContain(`OpenCode${SOFT_SEP}1.0.0`);
     expect(initialFrame).toContain('Direct write');
     expect(initialFrame).toContain('Subscription included');
-    expect(initialFrame).toContain('1.0.0');
-    expect(initialFrame).toContain('1 model detected');
+    expect(initialFrame).toContain('1 detected');
 
     await flushEffects();
     ui.stdin.write('\u001B[C');
     await flushEffects();
-    expect(ui.lastFrame() ?? '').toContain('GPT-4o · 128K context · via OpenCode');
+    // The model row carries its own facts now; the byline stays on the tool.
+    const modelFrame = ui.lastFrame() ?? '';
+    expect(modelFrame).toContain('GPT-4o');
+    expect(modelFrame).toContain('128K');
 
     await flushEffects();
     ui.stdin.write('\u001B[A');
     await flushEffects();
-    expect(ui.lastFrame() ?? '').toContain("add a model id OpenCode can't auto-detect");
+    // On the custom row the hint promises the action that row performs.
+    expect(ui.lastFrame() ?? '').toContain('⏎ add custom');
 
     ui.unmount();
   });
@@ -229,7 +231,7 @@ describe('PickerView previews', () => {
       membership: 'catalog-suggestion',
     }));
 
-    const catalog: PickerCatalog = {
+    const catalog: PickerCatalog = pickerCatalog({
       items: [tool],
       rightModels: suggestions,
       currentItem: tool,
@@ -239,7 +241,6 @@ describe('PickerView previews', () => {
       roleLabel: 'Planner',
       currentModel: undefined,
       persistedModel: undefined,
-      discoveredModelCount: 0,
       modelCounts: { ...zeroCounts, suggestions: 3 },
       catalogDiagnostic: { kind: 'probe-failed', failure: 'missing-credential' },
       currentCommand: undefined,
@@ -247,18 +248,17 @@ describe('PickerView previews', () => {
       customModels: [],
       discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
-    };
+    });
 
     const ui = renderFeature(
       <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
     );
     await flushEffects();
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain(`No models confirmed${SOFT_SEP}3 suggested from catalog`);
-    // Exact diagnostic copy is pinned in picker-format.test.ts; the preview row
-    // truncates right, so assert the leading fragment that always survives.
-    expect(frame).toContain('Sign in to Codex');
-    expect(frame).not.toContain('No models detected');
+    // The byline counts what the rows actually are; the suggestions are named
+    // as suggestions instead of being passed off as a detected catalog.
+    expect(frame).toContain('3 from models.dev');
+    expect(frame).not.toContain('detected');
     ui.unmount();
   });
 
@@ -278,7 +278,7 @@ describe('PickerView previews', () => {
       },
       available: false,
     });
-    const catalog: PickerCatalog = {
+    const catalog: PickerCatalog = pickerCatalog({
       items: [tool],
       rightModels: [
         {
@@ -295,7 +295,6 @@ describe('PickerView previews', () => {
       roleLabel: 'Planner',
       currentModel: undefined,
       persistedModel: undefined,
-      discoveredModelCount: 0,
       modelCounts: { ...zeroCounts, stale: 1 },
       catalogDiagnostic: undefined,
       currentCommand: undefined,
@@ -303,7 +302,7 @@ describe('PickerView previews', () => {
       customModels: [],
       discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
-    };
+    });
 
     const ui = renderFeature(
       <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
@@ -315,18 +314,11 @@ describe('PickerView previews', () => {
     expect(frame).toContain('1 stale model retained. Refresh detection.');
     expect(frame).not.toContain('1 model detected');
 
-    const manyStaleRows: ModelOption[] = Array.from({ length: 100 }, (_, index) => ({
-      id: `retained-model-${index}`,
-      membership: 'stale',
-      isStale: true,
-      isDetected: false,
-    }));
     ui.rerender(
       <PickerView
         role="planner"
         catalog={{
           ...catalog,
-          rightModels: manyStaleRows,
           modelCounts: { ...zeroCounts, stale: 100 },
         }}
         actions={makeActions()}
@@ -356,7 +348,7 @@ describe('PickerView previews', () => {
       available: false,
     });
 
-    const catalog: PickerCatalog = {
+    const catalog: PickerCatalog = pickerCatalog({
       items: [tool],
       rightModels: [],
       currentItem: tool,
@@ -366,7 +358,6 @@ describe('PickerView previews', () => {
       roleLabel: 'Implementer',
       currentModel: undefined,
       persistedModel: undefined,
-      discoveredModelCount: 0,
       modelCounts: zeroCounts,
       catalogDiagnostic: undefined,
       currentCommand: undefined,
@@ -374,7 +365,7 @@ describe('PickerView previews', () => {
       customModels: [],
       discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
-    };
+    });
 
     const ui = renderFeature(
       <PickerView role="implementer" catalog={catalog} actions={makeActions()} />,
@@ -384,7 +375,6 @@ describe('PickerView previews', () => {
     expect(frame).toContain('Auth required');
     expect(frame).toContain('Set ANTHROPIC_API_KEY');
     expect(frame).toContain('API metered');
-    expect(frame).toContain('No training');
     ui.unmount();
   });
 
@@ -401,7 +391,7 @@ describe('PickerView previews', () => {
       available: true,
     });
 
-    const catalog: PickerCatalog = {
+    const catalog: PickerCatalog = pickerCatalog({
       items: [tool],
       rightModels: [],
       currentItem: tool,
@@ -411,7 +401,6 @@ describe('PickerView previews', () => {
       roleLabel: 'Implementer',
       currentModel: undefined,
       persistedModel: undefined,
-      discoveredModelCount: 0,
       modelCounts: zeroCounts,
       catalogDiagnostic: undefined,
       currentCommand: undefined,
@@ -419,7 +408,7 @@ describe('PickerView previews', () => {
       customModels: [],
       discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
-    };
+    });
 
     const ui = renderFeature(
       <PickerView role="implementer" catalog={catalog} actions={makeActions()} />,
@@ -444,7 +433,7 @@ describe('PickerView previews', () => {
       available: true,
     });
 
-    const catalog: PickerCatalog = {
+    const catalog: PickerCatalog = pickerCatalog({
       items: [tool],
       rightModels: [],
       currentItem: tool,
@@ -454,7 +443,6 @@ describe('PickerView previews', () => {
       roleLabel: 'Planner',
       currentModel: undefined,
       persistedModel: undefined,
-      discoveredModelCount: 0,
       modelCounts: zeroCounts,
       catalogDiagnostic: undefined,
       currentCommand: undefined,
@@ -462,7 +450,7 @@ describe('PickerView previews', () => {
       customModels: [],
       discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
-    };
+    });
 
     const ui = renderFeature(
       <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
@@ -488,7 +476,7 @@ describe('PickerView previews', () => {
       available: true,
     });
 
-    const catalog: PickerCatalog = {
+    const catalog: PickerCatalog = pickerCatalog({
       items: [tool],
       rightModels: [],
       currentItem: tool,
@@ -498,7 +486,6 @@ describe('PickerView previews', () => {
       roleLabel: 'Reviewer',
       currentModel: undefined,
       persistedModel: undefined,
-      discoveredModelCount: 0,
       modelCounts: zeroCounts,
       catalogDiagnostic: undefined,
       currentCommand: undefined,
@@ -506,7 +493,7 @@ describe('PickerView previews', () => {
       customModels: [],
       discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
-    };
+    });
 
     const ui = renderFeature(
       <PickerView role="reviewer" catalog={catalog} actions={makeActions()} />,

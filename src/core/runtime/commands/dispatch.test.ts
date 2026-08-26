@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { RuntimeCommandDef } from './types.js';
+import { executeRuntimeCommand as dispatchRuntimeCommand } from './dispatch.js';
 import { noop, executeRuntimeCommand } from '#testing/helpers/runtime-commands.js';
 
 describe('executeRuntimeCommand', () => {
@@ -10,6 +11,7 @@ describe('executeRuntimeCommand', () => {
         kind: 'noarg',
         name: '/test',
         description: 'test',
+        category: 'view',
         validScreens: ['home'],
         handler: () => {
           called = true;
@@ -28,6 +30,38 @@ describe('executeRuntimeCommand', () => {
     expect(errorMsg).toContain('Unknown command');
   });
 
+  it('points a removed command at its replacement instead of reporting it unknown', async () => {
+    let errorMsg = '';
+    await executeRuntimeCommand([], '/effort high', 'home', (msg) => {
+      errorMsg = msg;
+    });
+    expect(errorMsg).toContain('/crew plan');
+    expect(errorMsg).not.toContain('Unknown command');
+  });
+
+  it('runs an alias with the arguments it carries, ahead of the typed ones', async () => {
+    const received: string[] = [];
+    const cmds: RuntimeCommandDef[] = [
+      {
+        kind: 'arg',
+        name: '/run',
+        aliases: [{ name: '/accept-run', args: 'accept' }],
+        description: 'run',
+        category: 'workflow',
+        args: { kind: 'closed', options: ['accept', 'reject'] },
+        validScreens: ['home'],
+        handler: (args) => {
+          received.push(args ?? '');
+        },
+      },
+    ];
+
+    await executeRuntimeCommand(cmds, '/accept-run', 'home', noop);
+    await executeRuntimeCommand(cmds, '/run reject', 'home', noop);
+
+    expect(received).toEqual(['accept', 'reject']);
+  });
+
   it('does not execute a fuzzy command match and suggests the nearest command', async () => {
     const calls: string[] = [];
     let errorMsg = '';
@@ -36,6 +70,7 @@ describe('executeRuntimeCommand', () => {
         kind: 'noarg',
         name: '/mode',
         description: 'mode',
+        category: 'crew',
         validScreens: ['home'],
         handler: () => {
           calls.push('mode');
@@ -45,6 +80,8 @@ describe('executeRuntimeCommand', () => {
         kind: 'arg',
         name: '/reject-run',
         description: 'reject run',
+        category: 'workflow',
+        args: { kind: 'free', hint: '<confirm>' },
         validScreens: ['home'],
         handler: (args) => {
           calls.push(`reject:${args ?? ''}`);
@@ -72,6 +109,7 @@ describe('executeRuntimeCommand', () => {
         kind: 'noarg',
         name: '/test-home-only',
         description: 'test',
+        category: 'view',
         validScreens: ['home'],
         handler: noop,
       },
@@ -89,6 +127,8 @@ describe('executeRuntimeCommand', () => {
         kind: 'arg',
         name: '/test',
         description: 'test',
+        category: 'view',
+        args: { kind: 'free', hint: '<text>' },
         validScreens: ['home'],
         handler: (args) => {
           receivedArgs = args;
@@ -106,6 +146,8 @@ describe('executeRuntimeCommand', () => {
         kind: 'arg',
         name: '/test',
         description: 'test',
+        category: 'view',
+        args: { kind: 'free', hint: '<text>' },
         validScreens: ['home'],
         handler: (args) => {
           receivedArgs = args;
@@ -116,7 +158,7 @@ describe('executeRuntimeCommand', () => {
     expect(receivedArgs).toBeUndefined();
   });
 
-  it('does not execute a command blocked by its phase guard', async () => {
+  it('reports the guard reason and skips the handler when a guard blocks the command', async () => {
     let called = false;
     let errorMsg = '';
     const cmds: RuntimeCommandDef[] = [
@@ -124,24 +166,25 @@ describe('executeRuntimeCommand', () => {
         kind: 'noarg',
         name: '/guarded',
         description: 'test',
+        category: 'workflow',
         validScreens: ['workflow'],
-        phaseGuard: (phase) => phase === 'implementing',
+        guard: (c) => (c.plannerSupportsImages ? undefined : 'PLAN seat cannot see images'),
         handler: () => {
           called = true;
         },
       },
     ];
-    await executeRuntimeCommand(
-      cmds,
-      '/guarded',
-      'workflow',
-      (msg) => {
+    await dispatchRuntimeCommand(cmds, '/guarded', {
+      screen: 'workflow',
+      phase: 'planning',
+      attached: false,
+      plannerSupportsImages: false,
+      onError: (msg) => {
         errorMsg = msg;
       },
-      'planning',
-    );
+    });
     expect(called).toBe(false);
-    expect(errorMsg).toContain('planning');
+    expect(errorMsg).toBe('PLAN seat cannot see images');
   });
 
   it('parses argument-bearing slash lines forwarded from the composer', async () => {
@@ -151,6 +194,8 @@ describe('executeRuntimeCommand', () => {
         kind: 'arg',
         name: '/copy',
         description: 'copy',
+        category: 'io',
+        args: { kind: 'closed', options: ['path'], optional: true },
         validScreens: ['workflow'],
         handler: (args) => {
           received.push(`copy:${args ?? ''}`);
@@ -160,6 +205,8 @@ describe('executeRuntimeCommand', () => {
         kind: 'arg',
         name: '/queue',
         description: 'queue',
+        category: 'workflow',
+        args: { kind: 'closed', options: ['show', 'clear'], optional: true },
         validScreens: ['workflow'],
         handler: (args) => {
           received.push(`queue:${args ?? ''}`);
@@ -180,6 +227,7 @@ describe('executeRuntimeCommand', () => {
         kind: 'noarg',
         name: '/help',
         description: 'help',
+        category: 'navigate',
         validScreens: ['home'],
         handler: noop,
       },
@@ -199,6 +247,7 @@ describe('executeRuntimeCommand', () => {
         kind: 'noarg',
         name: '/async',
         description: 'test',
+        category: 'view',
         validScreens: ['home'],
         handler: async () => {
           called = true;

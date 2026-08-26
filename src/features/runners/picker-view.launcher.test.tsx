@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { pickerCatalog } from '#testing/helpers/runner-picker.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -63,7 +64,7 @@ describe('PickerView launcher filtering', () => {
   it('typing while the cursor is on the launcher row filters the tools and keeps the launcher', async () => {
     const codexTool = cliTool('codex', 'OpenAI Codex CLI');
     const claudeTool = cliTool('claude-code', 'Claude Code');
-    const catalog: PickerCatalog = {
+    const catalog: PickerCatalog = pickerCatalog({
       items: [codexTool, claudeTool, launcher],
       rightModels: [],
       currentItem: codexTool,
@@ -73,7 +74,6 @@ describe('PickerView launcher filtering', () => {
       roleLabel: 'Planner',
       currentModel: undefined,
       persistedModel: undefined,
-      discoveredModelCount: 0,
       modelCounts: zeroCounts,
       catalogDiagnostic: undefined,
       currentCommand: undefined,
@@ -81,7 +81,7 @@ describe('PickerView launcher filtering', () => {
       customModels: [],
       discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
-    };
+    });
 
     const ui = renderFeature(
       <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
@@ -102,9 +102,9 @@ describe('PickerView launcher filtering', () => {
     ui.unmount();
   });
 
-  it('restates the configured contract truth in the launcher preview line', async () => {
+  it('states both contracts on the launcher card while the row keeps the command', async () => {
     const codexTool = cliTool('codex', 'OpenAI Codex CLI');
-    const catalog: PickerCatalog = {
+    const catalog: PickerCatalog = pickerCatalog({
       items: [codexTool, launcher],
       rightModels: [],
       currentItem: codexTool,
@@ -114,7 +114,6 @@ describe('PickerView launcher filtering', () => {
       roleLabel: 'Planner',
       currentModel: undefined,
       persistedModel: undefined,
-      discoveredModelCount: 0,
       modelCounts: zeroCounts,
       catalogDiagnostic: undefined,
       currentCommand: 'my-tool --json',
@@ -122,7 +121,7 @@ describe('PickerView launcher filtering', () => {
       customModels: [],
       discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
-    };
+    });
 
     const ui = renderFeature(
       <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
@@ -131,16 +130,17 @@ describe('PickerView launcher filtering', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('output · my-tool --json'); // launcher row: contract word first
-    // Preview leads with the same tier word and the permission truth; the
-    // unbounded command comes last so truncation can never cut the truth.
-    expect(frame).toContain('output · reads stdout, never writes · my-tool --json · ⏎ edit');
+    // The launcher is a terminal row now: the card states what each contract
+    // does, so the truth is never competing with the command for one line.
+    expect(frame).toContain('OUTPUT · reads stdout');
+    expect(frame).toContain('DIRECT · writes files');
     ui.unmount();
   });
 
-  it('keeps the permission truth visible at 60 cols when the configured command is long', async () => {
+  it('keeps the contract truth visible at 60 cols when the configured command is long', async () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 40, isSmall: true });
     const codexTool = cliTool('codex', 'OpenAI Codex CLI');
-    const catalog: PickerCatalog = {
+    const catalog: PickerCatalog = pickerCatalog({
       items: [codexTool, launcher],
       rightModels: [],
       currentItem: codexTool,
@@ -150,7 +150,6 @@ describe('PickerView launcher filtering', () => {
       roleLabel: 'Planner',
       currentModel: undefined,
       persistedModel: undefined,
-      discoveredModelCount: 0,
       modelCounts: zeroCounts,
       catalogDiagnostic: undefined,
       currentCommand: 'my-ai-tool --format stream-json',
@@ -158,7 +157,7 @@ describe('PickerView launcher filtering', () => {
       customModels: [],
       discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
-    };
+    });
 
     const ui = renderFeature(
       <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
@@ -166,7 +165,7 @@ describe('PickerView launcher filtering', () => {
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('direct · writes files into your tree');
+    expect(frame).toContain('DIRECT · writes files');
     ui.unmount();
   });
 });

@@ -20,6 +20,8 @@ export interface BuildSegmentsParams {
   cursorIndex: number;
   placeholder: string;
   focus: boolean;
+  /** Entry boxes whose placeholder IS the example keep it under the cursor; a chat input does not. */
+  keepPlaceholderWhileFocused?: boolean | undefined;
   showCursor: boolean;
   mask?: string | undefined;
   tabSize: number;
@@ -89,7 +91,17 @@ function buildSegmentsWithHighlight(args: HighlightSegmentArgs): SegmentResult {
 }
 
 export function buildSegments(params: BuildSegmentsParams): SegmentResult {
-  const { value, cursorIndex, placeholder, focus, showCursor, mask, tabSize, highlight } = params;
+  const {
+    value,
+    cursorIndex,
+    placeholder,
+    focus,
+    keepPlaceholderWhileFocused,
+    showCursor,
+    mask,
+    tabSize,
+    highlight,
+  } = params;
 
   const formatText: FormatText = (text, isPlaceholder = false) => {
     const normalized = normalizeLineEndings(text);
@@ -100,7 +112,7 @@ export function buildSegments(params: BuildSegmentsParams): SegmentResult {
   };
 
   if (!value) {
-    if (placeholder && !focus) {
+    if (placeholder && (!focus || keepPlaceholderWhileFocused === true)) {
       return {
         preCursor: [{ value: formatText(placeholder, true), type: 'placeholder' }],
         postCursor: [],

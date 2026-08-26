@@ -1606,26 +1606,40 @@ Press `Ctrl+K` from any screen.
 **You'll see:**
 
 ```
-┌─ Commands ──────────────────────────────────────────────┐
-│ > _                                                      │
-│   /mode                 Change workflow mode             │
-│   /effort               Change planner effort            │
-│   /planner              Choose planner                   │
-│   /reviewer             Select reviewer tool             │
-│   /crew                 Choose which tool fills each seat│
-│   /revise-spec          Rewind to spec with comment      │
-│   …                                                      │
-└──────────────────────────────────────────────────────────┘
+╭──────────────────────────────────────────────────────────────────────────╮
+│                                                                          │
+│  › Type a command…                                                       │
+│                                                                          │
+│  Navigate                                                                │
+│  ▌ /help               Show help overlay                         ctrl+/  │
+│    /sessions           Browse past sessions                              │
+│    /settings           Crew, validation, workflow                ctrl+,  │
+│    /config             Alias for /settings                               │
+│    /home               Return to home screen                             │
+│    /quit               Exit application                          ctrl+q  │
+│  Crew                                                                    │
+│    /crew               Who fills each seat          [plan|build|review]  │
+│    /planner            Alias for /crew plan                              │
+│    /implementer        Alias for /crew build                             │
+│    /reviewer           Alias for /crew review                            │
+│    /mode               Workflow mode   [instant|quick|standard|speckit]  │
+│    /refresh            Re-detect available tools                         │
+│   ↓ 21 more                                                              │
+│                                                                          │
+│  ↑↓ navigate · ⏎ run or fill in · esc close                              │
+│                                                                          │
+╰──────────────────────────────────────────────────────────────────────────╯
 ```
 
-Start typing to fuzzy-filter the list. Press Enter on the highlighted entry to invoke. Press Escape to dismiss without invoking.
+Captured on the workflow screen. Start typing to fuzzy-filter the list. Enter on a no-argument command runs it; Enter on a command that takes an argument prefills `/name ` in the composer so you can complete it. Press Escape to dismiss without invoking.
 
 **Notes:**
 - The palette is disabled while another overlay (help, settings, skills) is active.
 - Commands whose `validScreens` excludes your current screen are hidden from the list.
-- `/crew` opens the Crew surface — every seat of the run (`PLAN`, `BUILD`, `REVIEW`) on one screen; `/reviewer` opens the review seat's picker directly.
-- `/planner` and `/effort` select among admitted planner backends in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and API providers in [CONFIGURATION.md](./CONFIGURATION.md).
-- `Ctrl+K` is handled by `src/app/keys.ts:178`.
+- With an empty query the rows are grouped under the five command categories — `Navigate`, `Crew`, `Workflow`, `View`, `Input & output`. The headers collapse when the panel has fewer than 12 list slots (60x18), and the panel itself grows with the terminal instead of sitting at a fixed width.
+- `/crew [plan|build|review]` opens Settings on the Crew section with that seat focused (no argument means `plan`); the seat's tool, model and effort are all changed from there. The old per-seat names survive one release as alias rows: `/planner` → `/crew plan`, `/implementer` → `/crew build`, `/reviewer` → `/crew review`.
+- Effort is no longer its own command — it is a row on the seat inside Crew, and it appears only for a seat whose tool and model can deliver it. Which backends those are: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [CONFIGURATION.md](./CONFIGURATION.md).
+- `Ctrl+K` is handled by `src/app/keys.ts`.
 
 **See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 

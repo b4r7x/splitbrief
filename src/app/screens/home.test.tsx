@@ -21,6 +21,7 @@ import { prepareNewSession } from '../../core/sessions/prepare.js';
 import { saveState } from '../../core/state/persistence.js';
 import { loadState } from '../../core/state/persistence.js';
 import { createInitialState } from '../../core/state/machine.js';
+import { PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
@@ -59,8 +60,8 @@ const ARROW_DOWN = '\u001b[B';
 const ARROW_UP = '\u001b[A';
 const ESC = '\u001b';
 const ENTER = '\r';
-const DEFAULT_HOME_HINT = '/help · /settings · /skills · ctrl+k commands';
-const HOME_HINT = '/help · /settings · /skills · ctrl+r recent · ctrl+k commands';
+const DEFAULT_HOME_HINT = '/help · /crew · /settings · /skills · ctrl+k commands';
+const HOME_HINT = '/help · /crew · /settings · /skills · ctrl+r recent · ctrl+k commands';
 const RECENT_SESSIONS_HINT = '↑↓ navigate · ⏎ open · y copy · esc back';
 const FOCUS_BAR = '▌';
 // Real session-file I/O (saveSummary + load/loadAll) can outlive vi.waitFor's 1s default
@@ -78,6 +79,7 @@ const COMMANDS: RuntimeCommandDef[] = [
     name: '/help',
     label: 'Help',
     description: 'Show help',
+    category: 'navigate',
     validScreens: ['home'],
     handler: () => {},
   },
@@ -86,6 +88,8 @@ const COMMANDS: RuntimeCommandDef[] = [
     name: '/mode',
     label: 'Mode',
     description: 'Workflow mode',
+    category: 'navigate',
+    args: { kind: 'free', hint: '<text>' },
     validScreens: ['home'],
     handler: () => {},
   },
@@ -189,8 +193,20 @@ const HOME_DEPS: HomeScreenDeps = {
   },
 };
 
+// Ink lays out at stdout.columns, so a mount that ignores the seeded viewport
+// renders the body at a width the screen never asked for: at 120 the wide body
+// (108) overflows the helper's 100-column default and the frame loses its left
+// edge — the outdent cursor first.
+function seededViewport() {
+  const { cols, rows } = terminalSizeStore.get();
+  return { cols, rows };
+}
+
 function renderHome(deps: HomeScreenDeps = HOME_DEPS) {
-  return renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} deps={deps} />);
+  return renderFeature(
+    <HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} deps={deps} />,
+    seededViewport(),
+  );
 }
 
 function HomeWithSessionPreparation({ deps }: { deps: HomeScreenDeps }) {
@@ -206,7 +222,7 @@ function HomeWithSessionPreparation({ deps }: { deps: HomeScreenDeps }) {
 }
 
 function renderHomeWithSessionPreparation(deps: HomeScreenDeps) {
-  return renderFeature(<HomeWithSessionPreparation deps={deps} />);
+  return renderFeature(<HomeWithSessionPreparation deps={deps} />, seededViewport());
 }
 
 beforeEach(() => {
@@ -397,7 +413,7 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
-  it('keeps the canonical runner prefix and a truncated config summary on one bounded row', async () => {
+  it('gives every seat its own bounded row above the composer', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 30, isSmall: false });
     const longModel = 'provider-family-long';
     configStore.__testReset({
@@ -413,9 +429,9 @@ describe('HomeScreen', () => {
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
-    const summaryLine = lineContaining(frame, 'OpenAI Codex CLI');
-    expect(summaryLine).toContain('Ollama');
-    expect(summaryLine).toContain('…');
+    expect(lineContaining(frame, 'OpenAI Codex CLI')).not.toContain('Ollama');
+    expect(lineContaining(frame, 'Ollama')).toContain('BUILD');
+    expect(lineContaining(frame, 'REVIEW')).toContain(PLANNER_INHERITANCE.sentence);
     expect(frame.split('\n').length).toBeLessThanOrEqual(30);
     expect(frame.split('\n').every((line) => getTerminalCellWidth(line) <= 100)).toBe(true);
     ui.unmount();

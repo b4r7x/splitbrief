@@ -1,30 +1,30 @@
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { useReducer } from 'react';
 import { Text, useInput } from 'ink';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { realPickerOption } from '#testing/helpers/runner-picker.js';
+import { pickerCatalog, realPickerOption } from '#testing/helpers/runner-picker.js';
 import { createDefaultConfig, writeConfig } from '../../core/config/load/io.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { API_PROVIDER_CATALOG } from '../../core/providers/api-provider-catalog.js';
 import { glyph } from '../../lib/glyphs.js';
 import { configStore } from '../../stores/project/config.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+import { pickerViewStore } from '../../stores/ui/picker-view.js';
+import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import type { RunnerPickerOption } from './model-catalog/options.js';
 import { ProviderAuthOverlay } from './provider-auth-overlay.js';
 import { failureCopy, type ProviderKeyValidation } from './provider-auth.js';
 import { usePickerActions, type PickerActionDeps } from './use-picker-actions.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
-import { viewReducer, type ViewState } from './view-state.js';
 
 const KEY = 'sk-test-秘密のキー-ключ-🔑-0123456789abcdef';
 
 function minimalCatalog(item: RunnerPickerOption): PickerCatalog {
-  return {
+  return pickerCatalog({
     items: [item],
     rightModels: [],
     currentItem: item,
@@ -34,7 +34,6 @@ function minimalCatalog(item: RunnerPickerOption): PickerCatalog {
     roleLabel: 'Planner',
     currentModel: undefined,
     persistedModel: undefined,
-    discoveredModelCount: 0,
     modelCounts: { confirmed: 0, stale: 0, suggestions: 0, bundled: 0, custom: 0 },
     catalogDiagnostic: undefined,
     currentCommand: undefined,
@@ -42,7 +41,7 @@ function minimalCatalog(item: RunnerPickerOption): PickerCatalog {
     customModels: [],
     discovery: { cold: false, refreshing: false },
     setCurrentItem: () => {},
-  };
+  });
 }
 
 function AuthHarness({
@@ -52,28 +51,19 @@ function AuthHarness({
   item: RunnerPickerOption;
   deps: Partial<PickerActionDeps>;
 }) {
-  const [viewState, dispatchView] = useReducer(viewReducer, {
-    view: { kind: 'provider-auth', item },
-    preservedLeftIndex: 0,
-  } satisfies ViewState);
-  const actions = usePickerActions({
-    role: 'planner',
-    catalog: minimalCatalog(item),
-    viewState,
-    dispatchView,
-    deps,
-  });
+  const view = pickerViewStore.use((s) => s.view);
+  const actions = usePickerActions({ role: 'planner', catalog: minimalCatalog(item), deps });
   useInput(
     (_input, key) => {
       if (key.escape) actions.closeOverlay();
     },
-    { isActive: viewState.view.kind === 'provider-auth' },
+    { isActive: view.kind === 'provider-auth' },
   );
-  if (viewState.view.kind !== 'provider-auth') return <Text>picker-view</Text>;
+  if (view.kind !== 'provider-auth') return <Text>picker-view</Text>;
   return (
     <ProviderAuthOverlay
       role="planner"
-      item={viewState.view.item}
+      item={item}
       onSubmit={(value) => void actions.submitProviderKey(value)}
     />
   );
@@ -98,6 +88,7 @@ describe('ProviderAuthOverlay', () => {
     projectDir = createTempDir('provider-auth-overlay');
     writeConfig(projectDir, createDefaultConfig());
     configStore.load(projectDir);
+    pickerViewStore.open({ kind: 'provider-auth' }, 0);
   });
 
   afterEach(() => {
@@ -121,6 +112,26 @@ describe('ProviderAuthOverlay', () => {
       expect(frame).not.toContain('秘密のキー');
     }
     expect(ui.lastFrame()).toContain('OpenAI API key');
+    ui.unmount();
+  });
+
+  it('leads the hint with its keys at the 60-column floor', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+    const ui = renderFeature(
+      <ProviderAuthOverlay role="planner" item={item} onSubmit={() => {}} />,
+      {
+        cols: 60,
+        rows: 18,
+      },
+    );
+    await flushEffects();
+
+    const hintRow = ui
+      .lastFrame()
+      .split('\n')
+      .find((row) => row.includes('validate & save'));
+    expect(hintRow?.replace(/^[│\s]+/, '').startsWith('⏎')).toBe(true);
+    expect(hintRow).toContain('esc');
     ui.unmount();
   });
 

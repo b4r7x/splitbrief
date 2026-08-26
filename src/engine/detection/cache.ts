@@ -10,11 +10,11 @@ import {
   CliExecutableFingerprintSchema,
   CliAuthStateSchema,
   CliCompatibilityStateSchema,
-  CliProviderAuthFactSchema,
   CliReadinessStateSchema,
   CliTrustStateSchema,
   CliToolDetectionSchema,
   ProviderDetectionSchema,
+  normalizeProviderAuth,
   type CliExecutableFingerprint,
   type CliToolDetection,
   type ProviderDetection,
@@ -140,8 +140,8 @@ const CachedCliToolDetectionSchema = z
     testedVersion: CacheVersionStringSchema,
     compatibility: CliCompatibilityStateSchema,
     auth: CliAuthStateSchema,
-    /** Absent on rows cached before per-provider oracle facts existed. */
-    providerAuth: z.array(CliProviderAuthFactSchema).max(64).readonly().optional(),
+    /** Raw as persisted — vintages differ, so `normalizeProviderAuth` decides the shape on load. */
+    providerAuth: z.unknown().optional(),
     diagnosticState: CliReadinessStateSchema,
     probedAt: z.number().int().nonnegative(),
     fingerprint: CliExecutableFingerprintSchema.nullable(),
@@ -218,6 +218,10 @@ function cacheDiagnostic(
 }
 
 function restoreCliTool(cached: CachedCliToolDetection): CliToolDetection | null {
+  const providerAuth = normalizeProviderAuth({
+    tool: cached.tool,
+    providerAuth: cached.providerAuth,
+  });
   const result = CliToolDetectionSchema.safeParse({
     tool: cached.tool,
     executable: null,
@@ -226,7 +230,7 @@ function restoreCliTool(cached: CachedCliToolDetection): CliToolDetection | null
     testedVersion: cached.testedVersion,
     compatibility: cached.compatibility,
     auth: cached.auth,
-    ...(cached.providerAuth === undefined ? {} : { providerAuth: cached.providerAuth }),
+    ...(providerAuth === undefined ? {} : { providerAuth }),
     diagnostic: cacheDiagnostic(cached.diagnosticState),
     probedAt: cached.probedAt,
   });

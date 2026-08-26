@@ -5,7 +5,7 @@ import { delimiter, dirname, join } from 'node:path';
 import type {
   CliAuthState,
   CliExecutableIdentity,
-  CliProviderAuthFact,
+  CliProviderAuth,
 } from '../../../core/discovery/detection.js';
 import type { AuthFact, ProbeOutcome } from '../../../core/discovery/runner-evidence.js';
 import {
@@ -40,7 +40,11 @@ import {
   type CliProbeOutput,
   type CliVersionProbe,
 } from './contract.js';
-import { isProviderOracleProbe, parseProviderOracleOutput } from './provider-oracle.js';
+import {
+  isProviderOracleProbe,
+  parseProviderOracleOutput,
+  providerOracleCommand,
+} from './provider-oracle.js';
 import { revalidateCliExecutableIdentity } from '../resolve-cli-executable.js';
 
 const PROBE_TIMEOUT_CEILING_MS = DISCOVERY_SUBPROCESS_TIMEOUT_MS;
@@ -86,8 +90,8 @@ export interface ProbeCliReadinessOptions {
 export type CliReadinessProbeEvidence = Readonly<{
   version: ProbeOutcome<string>;
   auth: AuthFact;
-  /** Per-provider facts; present only when a credential oracle ran cleanly and verified. */
-  providerAuth?: readonly CliProviderAuthFact[] | undefined;
+  /** What the credential oracle said; absent when no oracle ran. */
+  providerAuth?: CliProviderAuth | undefined;
 }>;
 
 export type ProbeDeclaredCliReadinessEvidenceOptions = Readonly<{
@@ -385,8 +389,9 @@ function authFactFromDeclaredProbe({
  * ran and always wins: at least one entry verifies with per-provider facts,
  * and a clean zero is a truthful negative, never a presence fallback. Output
  * the oracle could not produce (nonzero exit, timeout, budget breach) or that
- * cannot be parsed falls back to bridged-state presence, so detection is
- * never worse than presence alone.
+ * cannot be parsed falls back to bridged-state presence for the auth fact, so
+ * detection is never worse than presence alone, and names why the listing was
+ * unreadable rather than dropping the question.
  */
 function oracleAuthEvidence({
   output,
@@ -395,12 +400,19 @@ function oracleAuthEvidence({
   CliReadinessProbeEvidence,
   'auth' | 'providerAuth'
 > {
-  const fallback = { auth: presenceAvailable ? ('verified' as const) : ('missing' as const) };
-  if (output.timedOut || output.outputExceeded || output.exitCode !== 0) return fallback;
+  const fallbackAuth = presenceAvailable ? ('verified' as const) : ('missing' as const);
+  if (output.timedOut || output.outputExceeded || output.exitCode !== 0) {
+    return {
+      auth: fallbackAuth,
+      providerAuth: { kind: 'unreadable', reason: output.timedOut ? 'timeout' : 'exit-failure' },
+    };
+  }
   const parsed = parseProviderOracleOutput(output.stdout);
-  if (parsed.kind !== 'success') return fallback;
-  if (parsed.entries.length === 0) return { auth: 'missing' };
-  return { auth: 'verified', providerAuth: parsed.entries };
+  if (parsed.kind !== 'success') {
+    return { auth: fallbackAuth, providerAuth: { kind: 'unreadable', reason: 'parse-failure' } };
+  }
+  if (parsed.entries.length === 0) return { auth: 'missing', providerAuth: { kind: 'empty' } };
+  return { auth: 'verified', providerAuth: { kind: 'read', facts: parsed.entries } };
 }
 
 function legacyAuthState(auth: AuthFact): CliAuthState {
@@ -623,7 +635,7 @@ export async function probeCliReadiness(
 
   let installedVersion: string | null;
   let auth: CliAuthState;
-  let providerAuth: readonly CliProviderAuthFact[] | undefined;
+  let providerAuth: CliProviderAuth | undefined;
   if (isDeclaredCliProbeContract(options.probe)) {
     const evidence = await probeDeclaredCliReadinessEvidence({
       tool: options.tool,
@@ -665,7 +677,14 @@ export async function probeCliReadiness(
       installedVersion,
     });
   }
+  // An oracle tool whose listing did not run carries the same fact live as it
+  // does after a cache reload (`normalizeProviderAuth`): it was not probed. An
+  // incompatible version is the one case where the version itself is the reason.
+  const oracleTool = providerOracleCommand(options.tool) !== undefined;
   if (installedVersion === null) {
+    const unversionedProviderAuth =
+      providerAuth ??
+      (oracleTool ? ({ kind: 'unreadable', reason: 'not-probed' } as const) : undefined);
     return deriveCliReadiness({
       ...base,
       installation: 'installed',
@@ -674,7 +693,7 @@ export async function probeCliReadiness(
       installedVersion,
       compatibility: 'unverified',
       auth,
-      ...(providerAuth === undefined ? {} : { providerAuth }),
+      ...(unversionedProviderAuth === undefined ? {} : { providerAuth: unversionedProviderAuth }),
     });
   }
   const compatibility = options.classifyVersion
@@ -682,6 +701,14 @@ export async function probeCliReadiness(
     : installedVersion === base.testedVersion
       ? 'compatible'
       : 'unverified';
+  const resolvedProviderAuth =
+    providerAuth ??
+    (oracleTool
+      ? ({
+          kind: 'unreadable',
+          reason: compatibility === 'incompatible' ? 'version-mismatch' : 'not-probed',
+        } as const)
+      : undefined);
   return deriveCliReadiness({
     ...base,
     installation: 'installed',
@@ -690,7 +717,7 @@ export async function probeCliReadiness(
     installedVersion,
     compatibility,
     auth: compatibility === 'compatible' ? auth : 'not-checked',
-    ...(compatibility === 'compatible' && providerAuth !== undefined ? { providerAuth } : {}),
+    ...(resolvedProviderAuth === undefined ? {} : { providerAuth: resolvedProviderAuth }),
   });
 }
 

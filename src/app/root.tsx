@@ -23,7 +23,7 @@ export function App({ workflowDeps }: AppProps = {}) {
     lifecycleStore,
   );
   const { exit } = useApp();
-  const { commands, copyTarget, setWorkflowMode, handleRuntimeCommand } = useRuntimeCommands({
+  const { commands, copyTarget, handleRuntimeCommand } = useRuntimeCommands({
     exit,
     phase,
   });
@@ -41,7 +41,6 @@ export function App({ workflowDeps }: AppProps = {}) {
         commands={commands}
         onRuntime={handleRuntimeCommand}
         copyTarget={copyTarget}
-        onWorkflowMode={setWorkflowMode}
         workflowDeps={workflowDeps}
       />
     </AppProvider>

@@ -9,6 +9,8 @@ import type { EventBus } from '../../engine/events/types.js';
 import type { ClearQueueHandler, QueueHandler } from '../../engine/orchestrator/types.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 import { createRuntimeCommands } from '../../core/runtime/commands/registry.js';
+import { detectedModelFact, seatSupportsImages } from '../../core/runners/capabilities.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 import { executeRuntimeCommand } from '../../core/runtime/commands/dispatch.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { createRpcCommandContext } from './command-context.js';
@@ -95,9 +97,17 @@ export function createCommandHandler(deps: {
       errors,
       pendingQueueDepth: deps.pendingQueueDepth,
     });
+    const planner = deps.getRunConfig()?.config.planner;
     await executeRuntimeCommand(createRuntimeCommands(context), raw, {
       screen: 'workflow',
       phase: deps.getPhase(),
+      attached: false,
+      plannerSupportsImages:
+        planner !== undefined &&
+        seatSupportsImages({
+          runner: planner,
+          detected: detectedModelFact(modelCacheStore.getDetection().providers, planner),
+        }),
       onError: (message) => errors.push(message),
     });
     if (errors.length > 0) {

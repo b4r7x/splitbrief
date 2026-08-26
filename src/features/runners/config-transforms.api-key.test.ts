@@ -7,7 +7,7 @@ const KEY = 'sk-test-commit-key-1234';
 
 describe('runner selection commits with an inline apiKey', () => {
   it('stores the key and selects the provider in one planner config', () => {
-    const updated = commitPlannerTierSelection({
+    const { config: updated } = commitPlannerTierSelection({
       config: makeConfig(),
       role: 'planner',
       selection: realPickerOption('planner', 'openai'),
@@ -24,7 +24,7 @@ describe('runner selection commits with an inline apiKey', () => {
   });
 
   it('stores the key and selects the provider in one implementer config', () => {
-    const updated = commitImplementerSelection(
+    const { config: updated } = commitImplementerSelection(
       makeConfig(),
       realPickerOption('implementer', 'groq'),
       { id: 'llama-3.3-70b-versatile' },
@@ -50,7 +50,7 @@ describe('runner selection commits with an inline apiKey', () => {
       },
     });
 
-    const updated = commitPlannerTierSelection({
+    const { config: updated } = commitPlannerTierSelection({
       config,
       role: 'planner',
       selection: realPickerOption('planner', 'openai'),

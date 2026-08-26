@@ -38,6 +38,7 @@ describe('FilterableList row activation', () => {
         onConfirm={(item) => confirmed.push(item)}
         onActivate={(item) => activated.push(item)}
         chromeRows={12}
+        density="wide"
         renderItem={(item) => <Text>{item}</Text>}
       />,
     );
@@ -70,6 +71,7 @@ describe('FilterableList row activation', () => {
         getKey={(item) => item}
         onConfirm={(item) => confirmed.push(item)}
         chromeRows={12}
+        density="wide"
         renderItem={(item) => <Text>{item}</Text>}
       />,
     );
@@ -93,6 +95,7 @@ describe('FilterableList row activation', () => {
         onConfirm={(item) => confirmed.push(item)}
         chromeRows={0}
         maxVisible={2}
+        density="wide"
         renderItem={(item) => <Text>{item}</Text>}
       />,
     );

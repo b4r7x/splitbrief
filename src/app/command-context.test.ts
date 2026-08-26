@@ -1,5 +1,3 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import {
@@ -27,6 +25,7 @@ import {
   findLatestExpandableActivityBatchKey,
 } from '../features/workflow/conversation-rows/activity-batch-key.js';
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
+import { findLatestRenderableDiffKey } from '../core/sections/event-sections.js';
 import { configStore } from '../stores/project/config.js';
 import { addEvent } from '../stores/workflow/actions/event.js';
 import { getSections } from '../stores/workflow/actions/sections.js';
@@ -52,6 +51,7 @@ const workflowPorts: WorkflowCommandPorts = {
   requestRewind,
   requestClearQueue,
   findLatestActivityBatchKey: () => findLatestExpandableActivityBatchKey(getSections()),
+  findLatestDiffKey: () => findLatestRenderableDiffKey(getSections()),
   readScrollMetrics: readConversationScrollSnapshot,
   resolveCopyValue: (target) => (target === 'message' ? 'port-value' : null),
 };
@@ -90,23 +90,6 @@ function seedExpandableActivityBatch(): string {
 }
 
 describe('buildCommandContext', () => {
-  it('rebuilds the repo-map cache from the configured cacheDir', async () => {
-    projectDir = createTempDir('app-command-context');
-    const config = makeConfig({
-      codebase: { enabled: true, tokenBudget: 4000, cacheDir: '.custom-cache' },
-    });
-    configStore.__testReset({ projectDir, config, diskConfig: config });
-    const cacheDir = join(projectDir, '.custom-cache');
-    mkdirSync(cacheDir, { recursive: true });
-    const cacheFile = join(cacheDir, 'repomap.sqlite');
-    writeFileSync(cacheFile, 'cache');
-
-    const result = await build().rebuildRepomap();
-
-    expect(result).toEqual({ deleted: true, files: [cacheFile] });
-    expect(existsSync(cacheFile)).toBe(false);
-  });
-
   it('delegates queue clearing to the live workflow handler', () => {
     setClearQueueHandler(() => ({ status: 'cleared', count: 2 }));
 

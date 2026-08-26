@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   nativeCliCatalogToDetectedModels,
@@ -114,7 +116,35 @@ describe('native CLI model catalogs', () => {
         { selectionId: 'kilo/custom/model', nativeOrder: 1 },
       ],
     });
-    expect(parseKiloNativeModelCatalog('anthropic/claude-sonnet-4-6')).toBeNull();
+    expect(parseKiloNativeModelCatalog('anthropic/claude-sonnet-4-6')).toEqual({
+      tool: 'kilo-code',
+      models: [{ selectionId: 'anthropic/claude-sonnet-4-6', nativeOrder: 0 }],
+    });
+  });
+
+  it('keeps every provider-qualified row of a real kilo listing, not only the kilo-routed ones', () => {
+    const stdout = readFileSync(
+      join(import.meta.dirname, '../../../testing/fixtures/kilo-models-7.0.49.txt'),
+      'utf-8',
+    );
+
+    const catalog = parseKiloNativeModelCatalog(stdout);
+    if (catalog === null) throw new Error('Expected the real kilo listing to parse');
+
+    expect(catalog.models).toHaveLength(126);
+    expect(catalog.models.map((model) => model.selectionId)).toContain(
+      'alibaba-coding-plan/glm-4.7',
+    );
+    expect(new Set(catalog.models.map((model) => model.selectionId.split('/')[0]))).toEqual(
+      new Set([
+        'kilo',
+        'alibaba-coding-plan',
+        'github-copilot',
+        'kimi-for-coding',
+        'ollama-cloud',
+        'openai',
+      ]),
+    );
   });
 
   it('parses only canonical dashed Aider rows and ignores catalog headings', () => {

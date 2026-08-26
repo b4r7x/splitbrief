@@ -866,22 +866,6 @@ describe('useAppKeys: keystroke binding', () => {
     expect(overlayStore.get().active).toBe('planner-picker');
     ui.unmount();
   });
-
-  it('Escape leaves an unstacked crew overlay to its own handler', async () => {
-    const exit = vi.fn();
-    overlayStore.open('crew');
-    await tick(20);
-    expect(overlayStore.get().stack.length).toBe(0);
-
-    const ui = renderFeature(<Harness exit={exit} />);
-    await tick(20);
-
-    await writeKey(ui, '\x1b');
-    await tick(20);
-
-    expect(overlayStore.get().active).toBe('crew');
-    ui.unmount();
-  });
 });
 
 describe('useAppKeys: suppressed while the inline briefs field editor owns input', () => {

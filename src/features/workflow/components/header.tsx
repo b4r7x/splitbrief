@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
-import { formatRoleLabel } from '../../../core/phase-display.js';
 import { useTheme } from '../../../components/theme.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
@@ -10,9 +9,10 @@ import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { configStore } from '../../../stores/project/config.js';
 import { useStores } from '../../../stores/use-stores.js';
-import { CHEVRON_SEP } from '../../../components/separators.js';
+import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
+import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
+import { formatCollapsedSeatLine } from '../../../core/crew/identity.js';
 import { getChromeContentWidth, type RailForm } from '../layout/chrome-rows.js';
-import { reviewerSeatLabel, runnerShortLabel } from './runner-label.js';
 import { measureRailCells, Rail } from './rail.js';
 
 interface HeaderProps {
@@ -21,16 +21,13 @@ interface HeaderProps {
 }
 
 const TIMER_WIDTH = 8;
-const RUNNER_GAP = 2;
-
-export type HeaderRunnerVariant = 'full' | 'compact' | 'none';
+const SEAT_GAP = 2;
 
 export interface HeaderLayout {
   contentWidth: number;
   railWidth: number;
   showElapsed: boolean;
-  runnerVariant: HeaderRunnerVariant;
-  showReviewer: boolean;
+  showSeats: boolean;
 }
 
 function formatElapsedClock(ms: number): string {
@@ -81,55 +78,24 @@ function ElapsedClock({
 
 export function getHeaderLayout(input: {
   cols: number;
-  isSmall: boolean;
   railCells: number;
-  runnerFullCells?: number | undefined;
-  runnerCompactCells?: number | undefined;
-  runnerFullNoReviewerCells?: number | undefined;
-  runnerCompactNoReviewerCells?: number | undefined;
+  seatCells?: number | undefined;
 }): HeaderLayout {
-  const { cols, isSmall, railCells, runnerFullCells = 0, runnerCompactCells = 0 } = input;
-  const fullNoReviewer = input.runnerFullNoReviewerCells ?? runnerFullCells;
-  const compactNoReviewer = input.runnerCompactNoReviewerCells ?? runnerCompactCells;
+  const { cols, railCells, seatCells = 0 } = input;
   const contentWidth = getChromeContentWidth(cols);
   const gap = 1;
   const minRail = Math.min(contentWidth, Math.max(0, railCells));
-  const elapsedTail = TIMER_WIDTH;
-  const tailRoom = contentWidth - minRail - gap;
-  const showElapsed = tailRoom >= elapsedTail;
-  const elapsedWidth = showElapsed ? elapsedTail : 0;
-  const runnerRoom = contentWidth - minRail - gap - elapsedWidth - RUNNER_GAP;
-  const candidates: {
-    variant: Exclude<HeaderRunnerVariant, 'none'>;
-    reviewer: boolean;
-    cells: number;
-  }[] = [
-    { variant: 'full', reviewer: runnerFullCells > fullNoReviewer, cells: runnerFullCells },
-    { variant: 'full', reviewer: false, cells: fullNoReviewer },
-    {
-      variant: 'compact',
-      reviewer: runnerCompactCells > compactNoReviewer,
-      cells: runnerCompactCells,
-    },
-    { variant: 'compact', reviewer: false, cells: compactNoReviewer },
-  ];
-  const chosen = candidates.find(
-    (c) => c.cells > 0 && !(isSmall && c.variant === 'full') && runnerRoom >= c.cells,
-  );
-  const runnerWidth = chosen?.cells ?? 0;
-  const tailWidth = elapsedWidth + (runnerWidth > 0 ? runnerWidth + RUNNER_GAP : 0);
+  const showElapsed = contentWidth - minRail - gap >= TIMER_WIDTH;
+  const elapsedWidth = showElapsed ? TIMER_WIDTH : 0;
+  const seatRoom = contentWidth - minRail - gap - elapsedWidth - SEAT_GAP;
+  const showSeats = seatCells > 0 && seatRoom >= seatCells;
+  const tailWidth = elapsedWidth + (showSeats ? seatCells + SEAT_GAP : 0);
   const railWidth = tailWidth > 0 ? Math.max(0, contentWidth - tailWidth - gap) : contentWidth;
-  return {
-    contentWidth,
-    railWidth,
-    showElapsed,
-    runnerVariant: chosen?.variant ?? 'none',
-    showReviewer: chosen?.reviewer ?? false,
-  };
+  return { contentWidth, railWidth, showElapsed, showSeats };
 }
 
 export function Header({ startedAt, railForm }: HeaderProps) {
-  const [{ cols, isSmall }, lifecycle, tasks, tokens, eventsState] = useStores(
+  const [{ cols }, lifecycle, tasks, tokens, eventsState] = useStores(
     terminalSizeStore,
     lifecycleStore,
     tasksStore,
@@ -149,25 +115,17 @@ export function Header({ startedAt, railForm }: HeaderProps) {
     events: eventsState.events,
   });
 
-  const plannerLabel = config ? runnerShortLabel(config.planner) : '';
-  const implLabel = config ? runnerShortLabel(config.implementer) : '';
-  const reviewerLabel = reviewerSeatLabel(config);
-  const hasRunner = plannerLabel !== '' && implLabel !== '';
-  const reviewerFull =
-    reviewerLabel === '' ? '' : `${CHEVRON_SEP}${formatRoleLabel('reviewer')} ${reviewerLabel}`;
-  const reviewerCompact = reviewerLabel === '' ? '' : `${CHEVRON_SEP}${reviewerLabel}`;
-  const fullSeats = hasRunner
-    ? `${formatRoleLabel('planner')} ${plannerLabel}${CHEVRON_SEP}${formatRoleLabel('implementer')} ${implLabel}`
+  const seatLine = config
+    ? formatCollapsedSeatLine({
+        planner: config.planner,
+        build: resolveImplementerProfiles(config).defaultProfile.config,
+        reviewer: configuredReviewerRunner(config),
+      })
     : '';
-  const compactSeats = hasRunner ? `${plannerLabel}${CHEVRON_SEP}${implLabel}` : '';
   const layout = getHeaderLayout({
     cols,
-    isSmall,
     railCells,
-    runnerFullCells: getTerminalCellWidth(`${fullSeats}${reviewerFull}`),
-    runnerCompactCells: getTerminalCellWidth(`${compactSeats}${reviewerCompact}`),
-    runnerFullNoReviewerCells: getTerminalCellWidth(fullSeats),
-    runnerCompactNoReviewerCells: getTerminalCellWidth(compactSeats),
+    seatCells: getTerminalCellWidth(seatLine),
   });
 
   return (
@@ -176,48 +134,9 @@ export function Header({ startedAt, railForm }: HeaderProps) {
         <Rail form={railForm} />
       </Box>
       <Box flexGrow={1} />
-      {layout.runnerVariant !== 'none' && (
-        <Box flexShrink={0} marginRight={layout.showElapsed ? 2 : 0}>
-          {layout.runnerVariant === 'full' ? (
-            <Text>
-              <Text color={t.planner} bold>
-                {`${formatRoleLabel('planner')} `}
-              </Text>
-              <Text color={t.planner}>{plannerLabel}</Text>
-              <Text color={t.textDim}>{CHEVRON_SEP}</Text>
-              <Text color={t.implementer} bold>
-                {`${formatRoleLabel('implementer')} `}
-              </Text>
-              <Text color={t.implementer}>{implLabel}</Text>
-              {layout.showReviewer && (
-                <>
-                  <Text color={t.textDim}>{CHEVRON_SEP}</Text>
-                  <Text color={t.reviewer} bold>
-                    {`${formatRoleLabel('reviewer')} `}
-                  </Text>
-                  <Text color={t.reviewer}>{reviewerLabel}</Text>
-                </>
-              )}
-            </Text>
-          ) : (
-            <Text>
-              <Text color={t.planner} bold>
-                {plannerLabel}
-              </Text>
-              <Text color={t.textDim}>{CHEVRON_SEP}</Text>
-              <Text color={t.implementer} bold>
-                {implLabel}
-              </Text>
-              {layout.showReviewer && (
-                <>
-                  <Text color={t.textDim}>{CHEVRON_SEP}</Text>
-                  <Text color={t.reviewer} bold>
-                    {reviewerLabel}
-                  </Text>
-                </>
-              )}
-            </Text>
-          )}
+      {layout.showSeats && (
+        <Box flexShrink={0} marginRight={layout.showElapsed ? SEAT_GAP : 0}>
+          <Text color={t.textDim}>{seatLine}</Text>
         </Box>
       )}
       {layout.showElapsed && (

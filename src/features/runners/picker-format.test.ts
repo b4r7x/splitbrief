@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  formatAuthFactsUnavailableNotice,
   formatCatalogDiagnostic,
+  formatPickerByline,
+  formatRouteAuth,
+  formatRouteRemedy,
   formatModelCatalogGuidance,
-  formatProviderConfiguredClause,
-  formatProviderSignInClause,
-  formatStoredCredentialNote,
-  formatToolPreview,
   type ModelCatalogDiagnostic,
 } from './picker-format.js';
+import { SOFT_SEP } from '../../components/separators.js';
 import type { PickerOption } from './model-catalog/options.js';
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
 
@@ -47,17 +46,15 @@ describe('formatModelCatalogGuidance', () => {
     ).toContain('1 model detected');
   });
 
-  it('states suggested-catalog truth when nothing is confirmed but suggestions render', () => {
+  it('never sums provenances into one suggestion count when nothing is confirmed', () => {
     const guidance = formatModelCatalogGuidance(readyCliTool(), {
       ...zeroCounts,
       suggestions: 2,
       bundled: 1,
     });
 
-    expect(guidance).toEqual({
-      headline: 'No models confirmed · 3 suggested from catalog',
-      detail: undefined,
-    });
+    expect(guidance.headline).not.toMatch(/\b3\b/);
+    expect(guidance.headline).not.toContain('detected');
   });
 
   it('reports detection in progress instead of an empty catalog while discovery refreshes', () => {
@@ -67,7 +64,7 @@ describe('formatModelCatalogGuidance', () => {
     });
     expect(
       formatModelCatalogGuidance(readyCliTool(), { ...zeroCounts, suggestions: 2 }, undefined, true)
-        .detail,
+        .headline,
     ).toBe('Detecting models…');
     expect(
       formatModelCatalogGuidance(readyCliTool(), { ...zeroCounts, confirmed: 1 }, undefined, true)
@@ -75,17 +72,32 @@ describe('formatModelCatalogGuidance', () => {
     ).toContain('1 model detected');
   });
 
-  it('attaches the diagnostic detail to the suggested-catalog headline', () => {
-    const diagnostic: ModelCatalogDiagnostic = { kind: 'not-probed' };
+  it('states the real diagnostic when nothing is confirmed', () => {
+    const guidance = formatModelCatalogGuidance(readyCliTool(), { ...zeroCounts, bundled: 5 }, {
+      kind: 'not-probed',
+    } satisfies ModelCatalogDiagnostic);
 
-    const guidance = formatModelCatalogGuidance(
-      readyCliTool(),
-      { ...zeroCounts, bundled: 5 },
-      diagnostic,
-    );
+    expect(guidance.detail).toBe(formatCatalogDiagnostic({ kind: 'not-probed' }, 'Codex'));
+  });
 
-    expect(guidance.headline).toBe('No models confirmed · 5 suggested from catalog');
-    expect(guidance.detail).toBe('Select this tool to detect its models');
+  it('leads with the no-listing sentence for a tool that cannot list models', () => {
+    const guidance = formatModelCatalogGuidance(readyCliTool(), { ...zeroCounts, bundled: 3 }, {
+      kind: 'unsupported',
+    } satisfies ModelCatalogDiagnostic);
+
+    expect(guidance.headline).toContain('does not support model listing');
+    expect(guidance.detail).not.toContain('ctrl+r');
+  });
+
+  it('does not promise a different result after a malformed listing', () => {
+    const guidance = formatModelCatalogGuidance(readyCliTool(), zeroCounts, {
+      kind: 'probe-failed',
+      failure: 'malformed',
+    } satisfies ModelCatalogDiagnostic);
+
+    const detail = guidance.detail ?? '';
+    expect(detail).toContain('will not help');
+    expect(detail).not.toContain('retry');
   });
 
   it('keeps the refresh remediation for a truly empty catalog', () => {
@@ -152,31 +164,6 @@ describe('formatModelCatalogGuidance', () => {
   });
 });
 
-describe('formatToolPreview with configured providers', () => {
-  it('ends the preview strip with the provider names so truncation cuts them first', () => {
-    const tool: PickerOption = {
-      ...readyCliTool(),
-      status: {
-        state: 'ready',
-        remediation: null,
-        configuredProviders: ['GitHub Copilot', 'Alibaba Coding Plan'],
-      },
-    };
-
-    const preview = formatToolPreview(tool, { ...zeroCounts, confirmed: 3 });
-
-    expect(preview).toContain('2 providers configured');
-    expect(preview.endsWith('GitHub Copilot, Alibaba Coding Plan')).toBe(true);
-  });
-
-  it('adds no provider copy when readiness is presence-derived', () => {
-    const preview = formatToolPreview(readyCliTool(), { ...zeroCounts, confirmed: 3 });
-
-    expect(preview).not.toContain('provider configured');
-    expect(preview).not.toContain('providers configured');
-  });
-});
-
 describe('formatCatalogDiagnostic', () => {
   it.each([
     [{ kind: 'not-probed' }, 'Select this tool to detect its models'],
@@ -198,7 +185,6 @@ describe('formatCatalogDiagnostic', () => {
       { kind: 'probe-failed', failure: 'timeout' },
       'Model detection timed out. Press ctrl+r to retry',
     ],
-    [{ kind: 'probe-failed', failure: 'malformed' }, 'Model catalog output was malformed'],
     [
       { kind: 'probe-failed', failure: 'cancelled' },
       'Model detection was cancelled. Press ctrl+r to retry',
@@ -215,62 +201,166 @@ describe('formatCatalogDiagnostic', () => {
   );
 });
 
-describe('provider axis copy', () => {
-  it('names every backing credential source, spelling env vars out in full', () => {
-    expect(
-      formatProviderConfiguredClause('copilot', [{ provider: 'GitHub Copilot', source: 'oauth' }]),
-    ).toBe('copilot signed in (oauth)');
-    expect(
-      formatProviderConfiguredClause('openai', [
-        { provider: 'OpenAI', source: 'oauth' },
-        { provider: 'OpenAI', source: 'env', envVar: 'OPENAI_API_KEY' },
-      ]),
-    ).toBe('openai signed in (oauth, env OPENAI_API_KEY)');
+describe('formatRouteAuth', () => {
+  it('claims nothing when the tool cannot report sign-in state', () => {
+    expect(formatRouteAuth({ auth: { kind: 'unchecked' }, floor: false })).toEqual({
+      word: undefined,
+      glyph: undefined,
+    });
   });
 
-  it('remediates sign-in with the provider argument, or account vocabulary for gateways', () => {
-    expect(
-      formatProviderSignInClause({
-        tag: 'openrouter',
-        authKey: 'openrouter',
-        loginCommand: 'kilo auth login',
-      }),
-    ).toBe('openrouter needs sign-in · kilo auth login openrouter');
-    expect(
-      formatProviderSignInClause({
-        tag: 'kilo',
-        authKey: 'kilo',
-        loginCommand: 'kilo auth login',
-        gatewayAccount: 'Kilo',
-      }),
-    ).toBe('requires a Kilo account: kilo auth login');
+  it('keeps the word and drops the glyph at the viewport floor', () => {
+    const auth = { kind: 'configured', source: 'oauth' } as const;
+
+    const roomy = formatRouteAuth({ auth, floor: false });
+    const floor = formatRouteAuth({ auth, floor: true });
+
+    expect(roomy.glyph).toBe('configured');
+    expect(floor.glyph).toBeUndefined();
+    expect(floor.word).toBe(roomy.word);
   });
 
-  it('keeps the bounded credential note ahead of the unbounded provider strip', () => {
-    const tool: PickerOption = {
-      ...readyCliTool(),
-      status: {
-        state: 'ready',
-        remediation: null,
-        configuredProviders: ['GitHub Copilot', 'Alibaba Coding Plan'],
-      },
-    };
-    const preview = formatToolPreview(
-      tool,
-      { ...zeroCounts, confirmed: 2 },
-      null,
+  it('distinguishes a configured route, a missing one and an unreadable one', () => {
+    const configured = formatRouteAuth({
+      auth: { kind: 'configured', source: 'oauth' },
+      floor: false,
+    });
+    const missing = formatRouteAuth({ auth: { kind: 'needs-sign-in' }, floor: false });
+    const unknown = formatRouteAuth({
+      auth: { kind: 'unknown', reason: 'timeout' },
+      floor: false,
+    });
+
+    expect(new Set([configured.glyph, missing.glyph, unknown.glyph]).size).toBe(3);
+    expect(new Set([configured.word, missing.word, unknown.word]).size).toBe(3);
+  });
+
+  it('reads a listing that named no provider as needing sign-in, not as unknown', () => {
+    const empty = formatRouteAuth({ auth: { kind: 'unknown', reason: 'empty' }, floor: false });
+    const missing = formatRouteAuth({ auth: { kind: 'needs-sign-in' }, floor: false });
+    const timeout = formatRouteAuth({ auth: { kind: 'unknown', reason: 'timeout' }, floor: false });
+
+    expect(empty.word).toBe(missing.word);
+    expect(empty.word).not.toBe(timeout.word);
+  });
+
+  it('names the environment variable a configured route reads', () => {
+    expect(
+      formatRouteAuth({
+        auth: { kind: 'configured', source: 'env', envVar: 'OPENAI_API_KEY' },
+        floor: false,
+      }).word,
+    ).toContain('OPENAI_API_KEY');
+  });
+});
+
+describe('formatRouteRemedy', () => {
+  const route = {
+    toolName: 'OpenCode CLI',
+    oracleCommand: 'opencode providers list',
+    provider: 'opencode-go',
+    versions: { observed: '0.3.0', required: '0.40.0' },
+  };
+
+  it('has nothing to remedy for a configured route', () => {
+    expect(formatRouteRemedy({ auth: { kind: 'configured', source: 'oauth' }, ...route })).toBe(
       undefined,
-      formatStoredCredentialNote(2),
-    );
-    expect(preview.indexOf('2 credentials stored')).toBeGreaterThan(-1);
-    expect(preview.indexOf('2 credentials stored')).toBeLessThan(
-      preview.indexOf('GitHub Copilot, Alibaba Coding Plan'),
     );
   });
 
-  it('reports an unreadable oracle as unknown, never as unauthenticated', () => {
-    const notice = formatAuthFactsUnavailableNotice('kilo auth list');
-    expect(notice).toBe('auth state unknown — could not read kilo auth list · ctrl+r retry');
-    expect(notice).not.toContain('Auth required');
+  it('leads with the sign-in command for a route the tool has no credential for', () => {
+    const remedy = formatRouteRemedy({ auth: { kind: 'needs-sign-in' }, ...route }) ?? '';
+
+    expect(remedy).toContain('opencode auth login opencode-go');
+    expect(remedy.indexOf('opencode auth login opencode-go')).toBeLessThan(
+      remedy.indexOf('ctrl+r'),
+    );
+  });
+
+  it.each([
+    'empty',
+    'timeout',
+    'exit-failure',
+    'parse-failure',
+    'version-mismatch',
+    'not-probed',
+  ] as const)('puts the action ahead of the explanation for %s', (reason) => {
+    const remedy = formatRouteRemedy({ auth: { kind: 'unknown', reason }, ...route }) ?? '';
+    const [head = ''] = remedy.split(SOFT_SEP);
+
+    expect(remedy).not.toBe('');
+    expect(head).toMatch(/ctrl\+r|upgrade|auth login/);
+  });
+
+  it('names the version gap the upgrade has to close', () => {
+    const remedy =
+      formatRouteRemedy({ auth: { kind: 'unknown', reason: 'version-mismatch' }, ...route }) ?? '';
+
+    expect(remedy).toContain('0.3.0');
+    expect(remedy).toContain('0.40.0');
+  });
+
+  it('never dangles a retry promise in front of the parse failure it cannot fix', () => {
+    const remedy =
+      formatRouteRemedy({ auth: { kind: 'unknown', reason: 'parse-failure' }, ...route }) ?? '';
+
+    expect(remedy).toContain('will not help');
+    expect(remedy.indexOf('ctrl+r')).toBe(remedy.indexOf('ctrl+r will not help'));
+  });
+
+  it('says the state is unreadable, not that the route needs sign-in, without an oracle', () => {
+    const remedy = formatRouteRemedy({ auth: { kind: 'unchecked' }, ...route }) ?? '';
+
+    expect(remedy).toContain('OpenCode CLI');
+    expect(remedy).not.toContain('ctrl+r');
+    expect(remedy).not.toContain('needs sign-in');
+  });
+});
+
+describe('formatPickerByline', () => {
+  const byline = (over: Partial<Parameters<typeof formatPickerByline>[0]> = {}): string =>
+    formatPickerByline({
+      toolName: 'Claude Code CLI',
+      version: '2.4.0',
+      counts: { ...zeroCounts, bundled: 3, suggestions: 10 },
+      lane: 'ready',
+      diagnostic: { kind: 'unsupported' },
+      capabilities: ['Network', 'Shell', 'Subscription included'],
+      ...over,
+    });
+
+  it('keeps every count ahead of the capability strip that truncation cuts', () => {
+    const line = byline();
+
+    expect(line.indexOf('3 known aliases')).toBeGreaterThan(-1);
+    expect(line.indexOf('10 from models.dev')).toBeGreaterThan(-1);
+    expect(line.indexOf('10 from models.dev')).toBeLessThan(line.indexOf('Network'));
+    expect(line.indexOf('3 known aliases')).toBeLessThan(line.indexOf('10 from models.dev'));
+  });
+
+  it('separates counts by provenance instead of summing them', () => {
+    const line = byline({ counts: { ...zeroCounts, bundled: 3, suggestions: 10, confirmed: 126 } });
+
+    expect(line).toContain('126 detected');
+    expect(line).not.toContain('13 ');
+  });
+
+  it('states the missing listing command only for a tool that has none', () => {
+    expect(byline()).toContain('no listing command');
+    expect(byline({ diagnostic: undefined })).not.toContain('no listing command');
+  });
+
+  it('reports the models.dev lane with its retry key, ahead of the capabilities', () => {
+    const pending = byline({ lane: 'pending' });
+    const failed = byline({ lane: 'failed' });
+
+    expect(pending).toContain('models.dev catalog loading');
+    expect(failed).toContain('ctrl+r');
+    expect(failed.indexOf('ctrl+r')).toBeLessThan(failed.indexOf('Network'));
+    expect(byline()).not.toContain('models.dev catalog loading');
+  });
+
+  it('omits the version when the tool did not report one', () => {
+    expect(byline({ version: undefined })).not.toContain('2.4.0');
   });
 });

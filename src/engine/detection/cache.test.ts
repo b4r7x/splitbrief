@@ -464,10 +464,13 @@ describe('detection cache', () => {
         testedVersion: '0.1.0',
         compatibility: 'compatible',
         auth: 'authenticated',
-        providerAuth: [
-          { provider: 'GitHub Copilot', source: 'oauth' },
-          { provider: 'OpenAI', source: 'env', envVar: 'OPENAI_API_KEY' },
-        ],
+        providerAuth: {
+          kind: 'read',
+          facts: [
+            { provider: 'GitHub Copilot', source: 'oauth' },
+            { provider: 'OpenAI', source: 'env', envVar: 'OPENAI_API_KEY' },
+          ],
+        },
         diagnostic: { state: 'ready', remediation: null },
         probedAt: 1_786_000_000_000,
       },
@@ -479,13 +482,16 @@ describe('detection cache', () => {
       projectDir: tempDir,
       contextKey: CACHE_CONTEXT,
     });
-    expect(loaded?.cliTools[0]?.providerAuth).toEqual([
-      { provider: 'GitHub Copilot', source: 'oauth' },
-      { provider: 'OpenAI', source: 'env', envVar: 'OPENAI_API_KEY' },
-    ]);
+    expect(loaded?.cliTools[0]?.providerAuth).toEqual({
+      kind: 'read',
+      facts: [
+        { provider: 'GitHub Copilot', source: 'oauth' },
+        { provider: 'OpenAI', source: 'env', envVar: 'OPENAI_API_KEY' },
+      ],
+    });
   });
 
-  it('hydrates cache rows that predate providerAuth with the field undefined', async () => {
+  it('hydrates a cache row with no recorded listing for an oracle tool as not probed', async () => {
     const dir = join(tempDir, SPLITBRIEF_DIR);
     await mkdir(dir, { recursive: true });
     await writeFile(
@@ -520,7 +526,51 @@ describe('detection cache', () => {
       contextKey: CACHE_CONTEXT,
     });
     expect(loaded?.cliTools[0]).toMatchObject({ tool: 'opencode', auth: 'authenticated' });
-    expect(loaded?.cliTools[0]?.providerAuth).toBeUndefined();
+    expect(loaded?.cliTools[0]?.providerAuth).toEqual({
+      kind: 'unreadable',
+      reason: 'not-probed',
+    });
+  });
+
+  it('hydrates a cache row whose listing predates the provider-auth union', async () => {
+    const dir = join(tempDir, SPLITBRIEF_DIR);
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, 'detection-cache.json'),
+      JSON.stringify({
+        version: 3,
+        contextKey: CACHE_CONTEXT,
+        fetchedAt: 1_786_000_000_000,
+        validatedAt: 1_786_000_001_000,
+        generation: 12,
+        requestId: 27,
+        providers: [],
+        cliTools: [
+          {
+            tool: 'opencode',
+            trust: 'trusted',
+            installedVersion: '0.5.0',
+            testedVersion: '0.5.0',
+            compatibility: 'compatible',
+            auth: 'authenticated',
+            providerAuth: [{ provider: 'OpenAI', source: 'oauth' }],
+            diagnosticState: 'ready',
+            probedAt: 1_786_000_000_000,
+            fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
+          },
+        ],
+      }),
+      'utf8',
+    );
+
+    const loaded = await loadDetectionCacheSnapshot({
+      projectDir: tempDir,
+      contextKey: CACHE_CONTEXT,
+    });
+    expect(loaded?.cliTools[0]?.providerAuth).toEqual({
+      kind: 'read',
+      facts: [{ provider: 'OpenAI', source: 'oauth' }],
+    });
   });
 
   it('does not reuse a cache record for a different context', async () => {

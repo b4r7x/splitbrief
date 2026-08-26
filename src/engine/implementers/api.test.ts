@@ -244,6 +244,46 @@ describe('api implementer — OpenAI-compatible path', () => {
     expect(body.temperature).toBe(DEFAULT_IMPLEMENTER_TEMPERATURE);
   });
 
+  async function reasoningEffortSent(
+    seat: Readonly<{ provider: string; apiBase: string; apiKey: string; model: string }>,
+  ): Promise<string | undefined> {
+    fetchMock.mockResolvedValue(
+      makeOpenAiSseResponse([{ content: '```ts\nexport const x = 1;\n```' }]),
+    );
+    const cfg = makeConfig({ implementer: { ...seat, effort: 'high' } });
+    await createApiImplementer(cfg).implement({
+      task: makeTask({ id: 'T017', file: 'src/effort.ts', action: 'create' }),
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+    const init = fetchMock.mock.calls.at(-1)?.[1] as { body?: string } | undefined;
+    return (JSON.parse(String(init?.body)) as { reasoning_effort?: string }).reasoning_effort;
+  }
+
+  const deepseekSeat = (model: string) => ({ ...temperatureCapableImplementer, model });
+
+  it('sends the configured effort only when the implementer model reasons', async () => {
+    expect(await reasoningEffortSent(deepseekSeat('deepseek-chat'))).toBeUndefined();
+    expect(await reasoningEffortSent(deepseekSeat('deepseek-reasoner'))).toBe('high');
+  });
+
+  it('withholds effort from a model the seat has no effort channel for, even where the provider would forward it', async () => {
+    // OpenRouter's request policy forwards reasoning_effort for any deepseek-r*
+    // id, so only the seat capability check in the implementer keeps it off the
+    // wire for a model that does not claim the channel.
+    const openRouterSeat = (model: string) => ({
+      provider: 'openrouter',
+      apiBase: 'https://openrouter.ai/api/v1',
+      apiKey: 'sk-or-v1-test-key',
+      model,
+    });
+
+    expect(await reasoningEffortSent(openRouterSeat('deepseek/deepseek-r2'))).toBeUndefined();
+    expect(await reasoningEffortSent(openRouterSeat('deepseek/deepseek-r1'))).toBe('high');
+  });
+
   it('retry() adjusts temperature by retry kind (local bumps, hint unchanged)', async () => {
     const code = '```ts\nexport const x = 1;\n```';
     fetchMock.mockResolvedValue(

@@ -1,18 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import type { CliProviderAuthFact } from '../../core/discovery/detection.js';
+import { realPickerOption } from '#testing/helpers/runner-picker.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
+import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
-import { feedbackStore } from '../../stores/ui/feedback.js';
+import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import type { PickerOption } from './model-catalog/options.js';
+import {
+  escalationOffOption,
+  inheritPlannerOption,
+  type PickerOption,
+} from './model-catalog/options.js';
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
-import type { ModelOption } from './model-catalog/recency.js';
+import type { ModelVariant } from './model-catalog/recency.js';
+import type { RightRow } from './model-catalog/rows.js';
 import { PickerView } from './picker-view.js';
+import { usePickerActions } from './use-picker-actions.js';
+import { usePickerCatalog } from './use-picker-catalog.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import type { PickerActions } from './use-picker-actions.js';
 
@@ -20,14 +29,9 @@ vi.mock('../../engine/detection/store-publication.js', () => ({
   refreshDetectionForCurrentConfig: vi.fn(async () => ({})),
 }));
 
-const ENTER = '\r';
-const DOWN = '\u001B[B';
 const RIGHT = '\u001B[C';
 
-const KILO_FACTS: readonly CliProviderAuthFact[] = [
-  { provider: 'GitHub Copilot', source: 'oauth' },
-  { provider: 'Alibaba Coding Plan', source: 'api' },
-];
+const zeroCounts = { confirmed: 0, stale: 0, suggestions: 0, bundled: 0, custom: 0 };
 
 const readyPermissions = {
   directWrite: false,
@@ -37,9 +41,7 @@ const readyPermissions = {
   sandbox: 'none' as const,
 };
 
-const zeroCounts = { confirmed: 0, stale: 0, suggestions: 0, bundled: 0, custom: 0 };
-
-function cliTool(id: string, displayName: string, providerDependent: boolean): PickerOption {
+function cliTool(id: string, displayName: string): PickerOption {
   return {
     id,
     displayName,
@@ -47,35 +49,39 @@ function cliTool(id: string, displayName: string, providerDependent: boolean): P
     roles: ['planner', 'implementer'],
     modelPolicy: 'optional',
     modelCapability: deriveModelCatalogCapability('optional', false),
-    billing: 'provider-dependent',
+    billing: 'subscription-included',
     permissions: readyPermissions,
     status: { state: 'ready', remediation: null },
     available: true,
-    ...(providerDependent ? { providerDependent: true } : {}),
+    providerDependent: true,
   };
 }
 
-const KILO_MODELS: ModelOption[] = [
-  { id: 'github-copilot/gpt-5.6', contextLength: 128_000, membership: 'confirmed' },
-  { id: 'github-copilot/claude-opus-4.5', contextLength: 128_000, membership: 'confirmed' },
-  { id: 'openrouter/gemini-3-flash', membership: 'confirmed' },
-  { id: 'kilo/openrouter/free', membership: 'confirmed' },
-];
-
-function makeCatalog(tool: PickerOption, models: ModelOption[]): PickerCatalog {
+function makeCatalog(input: {
+  items: PickerOption[];
+  currentItem: PickerOption;
+  rightRows?: RightRow[];
+  roleLabel?: string;
+  hasOracle?: boolean;
+}): PickerCatalog {
   return {
-    items: [tool],
-    rightModels: models,
-    currentItem: tool,
-    selectedItemId: tool.id,
+    items: input.items,
+    rightRows: input.rightRows ?? [],
+    currentItem: input.currentItem,
+    selectedItemId: input.currentItem.id,
     initialLeftIdx: 0,
+    initialRightIndex: 0,
+    resolveRightIndex: () => 0,
     focusModels: false,
-    roleLabel: 'Planner',
+    roleLabel: input.roleLabel ?? 'Reviewer',
+    plannerIdentity: 'Claude Code CLI · Claude Sonnet 4',
     currentModel: undefined,
     persistedModel: undefined,
-    discoveredModelCount: models.length,
-    modelCounts: { ...zeroCounts, confirmed: models.length },
+    modelCounts: zeroCounts,
     catalogDiagnostic: undefined,
+    catalogLane: 'ready',
+    providerAuth: { kind: 'read', facts: [] },
+    hasOracle: input.hasOracle ?? false,
     currentCommand: undefined,
     currentCommandKind: undefined,
     customModels: [],
@@ -100,140 +106,218 @@ function makeActions(): PickerActions {
   };
 }
 
-function setKiloDetection(providerAuth?: readonly CliProviderAuthFact[]) {
-  detectionStore.setDetection({
-    providers: [],
-    cliTools: [
-      providerAuth === undefined
-        ? cliDetectionFor('ready', 'kilo-code')
-        : cliDetectionFor('ready', 'kilo-code', { providerAuth }),
-    ],
-  });
-}
-
 function frameText(ui: ReturnType<typeof renderFeature>): string {
   return stripAnsiStyles(ui.lastFrame() ?? '');
 }
 
-describe('PickerView provider axis', () => {
+describe('PickerView terminal panes', () => {
   beforeEach(() => {
     forceUnicodeGlyphs();
     resetAllStores();
     _resetMouseZones();
     terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } }),
+    });
+    detectionStore.setDetection({
+      providers: [],
+      cliTools: [cliDetectionFor('ready', 'claude-code')],
+    });
   });
 
-  it('keeps rows bare of per-provider tags and glyphs but surfaces stored credentials', async () => {
-    setKiloDetection(KILO_FACTS);
-    // The short display name keeps the bounded credential note inside the
-    // preview's width budget; ordering itself is pinned in picker-format tests.
-    const catalog = makeCatalog(cliTool('kilo-code', 'Kilo', true), KILO_MODELS);
+  it('answers the inherit row with the planner it will actually run', async () => {
+    // The card's posture line is a frame row, so the planner it borrows from is
+    // the real catalog option, not a fixture that could disagree with it.
+    const planner = realPickerOption('planner', 'claude-code');
+    const inherit = inheritPlannerOption({ planner, isCurrent: true });
     const ui = renderFeature(
-      <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
+      <PickerView
+        role="reviewer"
+        catalog={makeCatalog({ items: [inherit, planner], currentItem: inherit })}
+        actions={makeActions()}
+      />,
     );
     await flushEffects();
-
     const frame = frameText(ui);
-    const lines = frame.split('\n');
-    const copilotLine = lines.find((line) => line.includes('GPT-5.6')) ?? '';
-    expect(copilotLine).not.toContain('copilot');
-    expect(frame).not.toContain('●');
-    expect(frame).not.toContain('○');
-    // The Alibaba credential backs no enumerated model, so stored auth stays
-    // visible as a count on the tool preview instead of vanishing.
-    expect(frame).toContain('2 credentials stored');
+
+    expect(frame).toContain("Planner's setup");
+    expect(frame).toContain('Claude Code CLI · Claude Sonnet 4');
+    expect(frame).toContain('subscription · Network · Shell');
+    expect(frame).toContain("↑↓ select · ⏎ use planner's setup · esc cancel · ctrl+r refresh");
     ui.unmount();
   });
 
-  it('keeps a needs-signin model selectable and posts the remediation at confirm time', async () => {
-    setKiloDetection(KILO_FACTS);
-    const confirmed: Array<string | null> = [];
+  it('answers the escalation None row with the planner a stuck task falls back to', async () => {
+    const off = escalationOffOption({ isCurrent: true });
+    const ui = renderFeature(
+      <PickerView
+        role="escalation"
+        catalog={makeCatalog({ items: [off], currentItem: off, roleLabel: 'Escalate' })}
+        actions={makeActions()}
+      />,
+    );
+    await flushEffects();
+    const frame = frameText(ui);
+
+    expect(frame).toContain('Escalate');
+    expect(frame).toContain('Provider & model');
+    expect(frame).toContain('Escalation off');
+    expect(frame).toContain('Claude Code CLI · Claude Sonnet 4');
+    expect(frame).toContain('disable escalation');
+    ui.unmount();
+  });
+
+  it('confirms the sole configured route of a two-route model without expanding', async () => {
+    const kilo = cliTool('kilo-code', 'Kilo Code CLI');
+    const variants: ModelVariant[] = [
+      { fullId: 'openai/gpt-5.6', providerPrefix: 'openai', tag: 'openai' },
+      { fullId: 'opencode-go/gpt-5.6', providerPrefix: 'opencode-go', tag: 'opencode-go' },
+    ];
+    const model = { id: 'gpt-5.6', variants };
+    const confirmed: string[] = [];
     const actions = makeActions();
-    actions.confirm = (_selection, model) => {
-      confirmed.push(model?.id ?? null);
+    actions.confirmProviderVariant = async (fullId: string) => {
+      confirmed.push(fullId);
     };
-    const catalog = makeCatalog(cliTool('kilo-code', 'Kilo Code CLI', true), KILO_MODELS);
+    const catalog = makeCatalog({
+      items: [kilo],
+      currentItem: kilo,
+      rightRows: [{ kind: 'model', model, provenance: 'Detected', section: '', expanded: false }],
+      roleLabel: 'Planner',
+      hasOracle: true,
+    });
+    // Only `openai` has a credential, so exactly one of the two routes is usable.
+    catalog.providerAuth = { kind: 'read', facts: [{ provider: 'openai', source: 'oauth' }] };
     const ui = renderFeature(<PickerView role="planner" catalog={catalog} actions={actions} />);
     await flushEffects();
-
     ui.stdin.write(RIGHT);
     await flushEffects();
-    for (const key of [DOWN, DOWN]) {
-      await flushEffects();
-      ui.stdin.write(key);
-      await flushEffects();
-    }
-    expect(frameText(ui)).toContain('openrouter needs sign-in · kilo auth login openrouter');
+    ui.stdin.write('\r');
+    await flushEffects();
 
+    expect(confirmed).toEqual(['openai/gpt-5.6']);
+    expect(pickerViewStore.get().expandedModelId).toBeNull();
+    ui.unmount();
+  });
+
+  it('expands a two-route model when no route is configured', async () => {
+    const kilo = cliTool('kilo-code', 'Kilo Code CLI');
+    const variants: ModelVariant[] = [
+      { fullId: 'openai/gpt-5.6', providerPrefix: 'openai', tag: 'openai' },
+      { fullId: 'opencode-go/gpt-5.6', providerPrefix: 'opencode-go', tag: 'opencode-go' },
+    ];
+    const model = { id: 'gpt-5.6', variants };
+    const confirmed: string[] = [];
+    const actions = makeActions();
+    actions.confirmProviderVariant = async (fullId: string) => {
+      confirmed.push(fullId);
+    };
+    const ui = renderFeature(
+      <PickerView
+        role="planner"
+        catalog={makeCatalog({
+          items: [kilo],
+          currentItem: kilo,
+          rightRows: [
+            { kind: 'model', model, provenance: 'Detected', section: '', expanded: false },
+          ],
+          roleLabel: 'Planner',
+          hasOracle: true,
+        })}
+        actions={actions}
+      />,
+    );
     await flushEffects();
-    ui.stdin.write(ENTER);
+    ui.stdin.write(RIGHT);
     await flushEffects();
-    expect(confirmed).toEqual(['openrouter/gemini-3-flash']);
-    await vi.waitFor(() => {
-      expect(feedbackStore.get().message).toBe(
-        'Saved openrouter/gemini-3-flash · openrouter not signed in — run kilo auth login openrouter before start',
-      );
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(pickerViewStore.get().expandedModelId).toBe('gpt-5.6');
+    expect(confirmed).toEqual([]);
+    ui.unmount();
+  });
+
+  it('leads the preview with the command that unblocks an unsigned route', async () => {
+    const kilo = cliTool('kilo-code', 'Kilo Code CLI');
+    const variant: ModelVariant = {
+      fullId: 'openrouter/gemini-3-flash',
+      providerPrefix: 'openrouter',
+      tag: 'openrouter',
+    };
+    const model = { id: 'openrouter/gemini-3-flash', variants: [variant] };
+    const rows: RightRow[] = [
+      { kind: 'model', model, provenance: 'Detected', section: '', expanded: true },
+      { kind: 'route', model, variant, tagWidth: 10, auth: { kind: 'needs-sign-in' } },
+    ];
+    const ui = renderFeature(
+      <PickerView
+        role="planner"
+        catalog={makeCatalog({
+          items: [kilo],
+          currentItem: kilo,
+          rightRows: rows,
+          roleLabel: 'Planner',
+          hasOracle: true,
+        })}
+        actions={makeActions()}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write(RIGHT);
+    await flushEffects();
+
+    expect(frameText(ui)).toContain('sign in: kilo auth login openrouter');
+    ui.unmount();
+  });
+});
+
+/** The escalate seat's left column comes from the real catalog, not a fixture. */
+function EscalationPicker() {
+  const catalog = usePickerCatalog('escalation', 0);
+  const actions = usePickerActions({ role: 'escalation', catalog });
+  return <PickerView role="escalation" catalog={catalog} actions={actions} />;
+}
+
+describe('PickerView escalation role', () => {
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+    resetAllStores();
+    _resetMouseZones();
+    terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } }),
     });
-    ui.unmount();
+    detectionStore.setDetection({
+      providers: [],
+      cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'codex')],
+    });
   });
 
-  it('speaks the gateway account vocabulary for the tool-gated free family', async () => {
-    setKiloDetection(KILO_FACTS);
-    const catalog = makeCatalog(cliTool('kilo-code', 'Kilo Code CLI', true), KILO_MODELS);
-    const ui = renderFeature(
-      <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
-    );
-    await flushEffects();
-
-    ui.stdin.write(RIGHT);
-    await flushEffects();
-    for (const key of [DOWN, DOWN, DOWN]) {
-      await flushEffects();
-      ui.stdin.write(key);
-      await flushEffects();
-    }
-    expect(frameText(ui)).toContain('requires a Kilo account: kilo auth login');
-    ui.unmount();
-  });
-
-  it('claims nothing when the oracle could not be read and says how to retry', async () => {
-    setKiloDetection(undefined);
-    const catalog = makeCatalog(cliTool('kilo-code', 'Kilo Code CLI', true), KILO_MODELS);
-    const ui = renderFeature(
-      <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
-    );
-    await flushEffects();
-
-    ui.stdin.write(RIGHT);
+  it('offers API providers and the off row, never a CLI tool', async () => {
+    const ui = renderFeature(<EscalationPicker />);
     await flushEffects();
     const frame = frameText(ui);
-    expect(frame).not.toContain('●');
-    expect(frame).not.toContain('○');
-    expect(frame).not.toContain('Auth required');
-    expect(frame).toContain('auth state unknown — could not read kilo auth list · ctrl+r retry');
+
+    expect(frame).toContain('disable escalation');
+    // The card names the planner; the tool column must not offer one.
+    expect(frame).not.toContain('· Claude Code CLI');
+    expect(frame).not.toContain('· OpenAI Codex CLI');
     ui.unmount();
   });
 
-  it('renders every other tool byte-identical to today: no tags, no glyphs', async () => {
-    setKiloDetection(KILO_FACTS);
-    const catalog = makeCatalog(cliTool('codex', 'OpenAI Codex CLI', false), [
-      { id: 'gpt-5.4', contextLength: 1_050_000, membership: 'confirmed' },
-      { id: 'openai/gpt-5-codex', contextLength: 1_050_000, membership: 'confirmed' },
-    ]);
-    const ui = renderFeature(
-      <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
-    );
+  it('offers no custom-model row on a provider, which has no list to add one to', async () => {
+    const ui = renderFeature(<EscalationPicker />);
     await flushEffects();
-
-    ui.stdin.write(RIGHT);
+    ui.stdin.write('\u001B[B'); // off the terminal row, onto the first provider
     await flushEffects();
 
     const frame = frameText(ui);
-    expect(frame).not.toContain('●');
-    expect(frame).not.toContain('○');
-    expect(frame).not.toContain('@openai');
-    expect(frame).not.toContain('⇥ pin provider');
-    expect(frame).toContain('GPT-5.4');
+    // Off the terminal row: the card is gone and the model column is live.
+    expect(frame).not.toContain('Escalation off');
+    expect(frame).not.toContain('Add custom model');
     ui.unmount();
   });
 });

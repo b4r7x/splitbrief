@@ -178,14 +178,12 @@ function parseProviderQualifiedLines(
   input: Readonly<{
     tool: 'opencode' | 'kilo-code';
     stdout: string;
-    requiresKiloPrefix: boolean;
   }>,
 ): NativeCliModelCatalog | null {
   const entries: Omit<NativeCliModelCatalogEntry, 'nativeOrder'>[] = [];
   for (const line of cleanCatalogLines(input.stdout)) {
     if (isCatalogHeading(line)) continue;
     if (!isProviderQualifiedSelectionId(line)) return null;
-    if (input.requiresKiloPrefix && !line.startsWith('kilo/')) return null;
     entries.push({ selectionId: line });
   }
   return catalogFromEntries({ tool: input.tool, entries });
@@ -232,19 +230,11 @@ export function parseCodexNativeModelCatalog(stdout: string): NativeCliModelCata
 }
 
 export function parseOpenCodeNativeModelCatalog(stdout: string): NativeCliModelCatalog | null {
-  return parseProviderQualifiedLines({
-    tool: 'opencode',
-    stdout,
-    requiresKiloPrefix: false,
-  });
+  return parseProviderQualifiedLines({ tool: 'opencode', stdout });
 }
 
 export function parseKiloNativeModelCatalog(stdout: string): NativeCliModelCatalog | null {
-  return parseProviderQualifiedLines({
-    tool: 'kilo-code',
-    stdout,
-    requiresKiloPrefix: true,
-  });
+  return parseProviderQualifiedLines({ tool: 'kilo-code', stdout });
 }
 
 export function parseAiderNativeModelCatalog(stdout: string): NativeCliModelCatalog | null {

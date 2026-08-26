@@ -56,7 +56,7 @@ Token-budgeted codebase summary fed to every planner call. `src/engine/codebase/
 
 The pipeline: discover source files -> parse them with tree-sitter (`src/engine/codebase/parse.ts`, grammars for TypeScript, JavaScript, Python, Go, Rust via `src/engine/codebase/languages.ts`) -> build an import graph from symbols and references (`src/engine/codebase/graph.ts`) -> score with PageRank (`src/engine/codebase/pagerank.ts`, files imported by many others rank higher, explicit focus files get a rank boost) -> trim to fit the token budget (`src/engine/codebase/budget.ts`). Feature text is scanned for mentioned filenames (`src/engine/codebase/extract-mentioned-filenames.ts`) which get added to focus files.
 
-Parse results are cached in SQLite at `.splitbrief/repomap.sqlite` via `src/engine/codebase/cache.ts`. The `/repomap rebuild` slash command clears the cache. Default budget is 4000 tokens. Deep-dive: `docs/REPOMAP.md`.
+Parse results are cached in SQLite at `.splitbrief/repomap.sqlite` via `src/engine/codebase/cache.ts`; stale rows are re-parsed on each planning run, so there is no manual rebuild step. Default budget is 4000 tokens. Deep-dive: `docs/REPOMAP.md`.
 
 ---
 
@@ -105,7 +105,7 @@ A worktree shares refs, git config, and hooks with the real repository. It isola
 
 User-facing commands typed as `/name args` in the composer. Registered in `src/core/runtime/commands/registry.ts` via `createRuntimeCommands(ctx)`, which takes a `RuntimeCommandContext` providing access to navigation, overlays, detection, rewind, handoff, snapshots, and other capabilities.
 
-Each command declares: `name`, optional `aliases`, a `kind` discriminant (`noarg` or `arg`), `handler`, `validScreens` (which screens the command can run on), optional `phaseGuard` (function that checks whether the current workflow phase allows execution), and optional `label` and `shortcut`. Commands with a `label` appear in the command palette (Ctrl-K).
+Each command declares: `name`, a `kind` discriminant (`noarg` or `arg`), `handler`, `validScreens` (which screens the command can run on), a one-line `description`, and a `category` from `COMMAND_CATEGORIES` (`navigate` | `crew` | `workflow` | `view` | `io`). `'arg'` commands also declare `args` -- either a closed option set or a free-form hint. Optional: `aliases` (`{ name, args? }` pairs, so an alias can pin an argument), `label` (display override), `shortcut`, `hidden`, and `guard: (ctx) => string | undefined` -- a returned string is the reason the command is unavailable. The command palette (Ctrl-K) lists every command that is not `hidden`, is valid on the current screen, and whose `guard` returns `undefined`; a blocked command is hidden rather than shown and errored. Recipe: `docs/EXTENDING.md` section 2 is canonical.
 
 Dispatch (`src/core/runtime/commands/dispatch.ts`): parse the raw input, split name from args, look up the command via fuzzy matching (`src/core/runtime/commands/lookup.ts`), validate screen and phase guards, then execute the handler. Errors are surfaced through the `onError` callback. Full reference: `docs/SLASH-COMMANDS-REFERENCE.md`.
 
@@ -133,7 +133,7 @@ Store initialization publishes a matching snapshot as stale presentation data be
 
 Detection memory is presentation-only, never execution authority. Workflow start, resume, and `spec` independently call the runner preparation boundary against the exact current configuration; cached or stale success cannot produce execution `gates`, authorize offline execution, create a session, or start a process.
 
-The `/refresh` slash command invalidates the cache and re-runs detection. Detection results feed the planner, implementer, and reviewer picker overlays and the Crew page in the TUI.
+The `/refresh` slash command invalidates the cache and re-runs detection. Detection results feed the planner, implementer, reviewer, and escalation seat pickers and the Crew section of the Settings overlay.
 
 ---
 

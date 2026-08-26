@@ -132,7 +132,7 @@ describe('SessionPreparation', () => {
     const selection = handleSessionSelect(session, projectDir, deps);
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('Preparing your tools…');
-    expect(ui.lastFrame() ?? '').toContain('before continuing');
+    expect(ui.lastFrame() ?? '').toContain('Checking your configured runners');
     expect(overlayStore.get().active).toBe('none');
 
     ui.stdin.write(ESC);

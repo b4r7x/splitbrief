@@ -23,6 +23,7 @@ export interface ControlledMultilineInputProps {
   highlightStyle?: TextStyle | undefined;
   textStyle?: TextStyle | undefined;
   placeholder?: string | undefined;
+  keepPlaceholderWhileFocused?: boolean | undefined;
   mask?: string | undefined;
   showCursor?: boolean | undefined;
   focus?: boolean | undefined;
@@ -40,6 +41,7 @@ export function ControlledMultilineInput({
   highlightStyle,
   textStyle,
   placeholder = '',
+  keepPlaceholderWhileFocused,
   mask,
   showCursor = true,
   focus = true,
@@ -59,6 +61,7 @@ export function ControlledMultilineInput({
     cursorIndex,
     placeholder,
     focus,
+    keepPlaceholderWhileFocused,
     showCursor,
     mask,
     tabSize,
@@ -74,6 +77,7 @@ export function ControlledMultilineInput({
     focus ? 1 : 0,
     showCursor ? 1 : 0,
     placeholder,
+    keepPlaceholderWhileFocused === true ? 1 : 0,
     mask ?? '',
     highlight?.start ?? -1,
     highlight?.end ?? -1,

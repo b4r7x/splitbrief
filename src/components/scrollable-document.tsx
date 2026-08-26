@@ -23,7 +23,6 @@ interface ScrollableDocumentProps {
   rows: readonly ScrollableDocumentRow[];
   height: number;
   isActive?: boolean | undefined;
-  keyboardMode?: 'paging' | 'line-and-page' | undefined;
   scrollOffset?: number | undefined;
   onScrollOffsetChange?: ((offset: number) => void) | undefined;
   placeholder?: ReactNode;
@@ -139,7 +138,6 @@ export function ScrollableDocument({
   rows,
   height,
   isActive = true,
-  keyboardMode = 'paging',
   scrollOffset: controlledScrollOffset,
   onScrollOffsetChange,
   placeholder,
@@ -175,7 +173,7 @@ export function ScrollableDocument({
       const scrollKey = resolveScrollKey({
         input,
         key,
-        lineKeys: keyboardMode === 'line-and-page' ? 'plain' : 'none',
+        lineKeys: 'none',
       });
       if (scrollKey === null) return;
       setRequestedOffset(

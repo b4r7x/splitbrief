@@ -46,7 +46,10 @@ function launcherPicker(opts: {
         items: [...TOOLS, LAUNCHER],
         getKey: (t) => t.id,
         isDisabled: (t) => !!t.disabled,
-        isSpecial: (t) => t.id === LAUNCHER.id,
+        terminalPane: (t) =>
+          t.id === LAUNCHER.id
+            ? { label: 'Custom command', verb: 'add custom', lines: ['run a custom command'] }
+            : undefined,
         filterBy: (t, query) =>
           t.id === LAUNCHER.id || filterByFields(t, query, ['id', 'displayName']),
         initialIndex: opts.initialIndex,

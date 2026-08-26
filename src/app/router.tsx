@@ -4,9 +4,8 @@ import { HomeScreen } from './screens/home.js';
 import { WorkflowScreen } from './screens/workflow.js';
 import { SummaryScreen } from './screens/summary.js';
 import { SetupScreen } from './screens/setup.js';
-import { CrewOverlay } from './overlays/crew.js';
 import { HelpOverlay } from './overlays/help.js';
-import { CommandPaletteOverlay, type CommandPaletteOverlayProps } from './overlays/palette.js';
+import { CommandPaletteOverlay } from './overlays/palette.js';
 import { SkillsPicker } from './overlays/skills.js';
 import { SessionsPicker } from './overlays/sessions.js';
 import { EditorOverlay } from './overlays/editor.js';
@@ -28,7 +27,6 @@ interface RouterProps {
   commands: RuntimeCommandDef[];
   onRuntime: (raw: string, from: Screen) => void;
   copyTarget: (target: CopyTarget) => Promise<CopyResult>;
-  onWorkflowMode: CommandPaletteOverlayProps['onWorkflowMode'];
   workflowDeps?: WorkflowScreenDeps | undefined;
 }
 
@@ -38,7 +36,6 @@ export function Router({
   commands,
   onRuntime,
   copyTarget,
-  onWorkflowMode,
   workflowDeps,
 }: RouterProps) {
   const sessionPreparationActive = sessionSelectStore.use(
@@ -55,7 +52,6 @@ export function Router({
         screen,
         commands,
         onRuntime: (raw) => onRuntime(raw, screen),
-        onWorkflowMode,
       })}
     />
   );
@@ -103,13 +99,11 @@ function renderOverlay({
   screen,
   commands,
   onRuntime,
-  onWorkflowMode,
 }: {
   active: OverlayType;
   screen: Screen;
   commands: RuntimeCommandDef[];
   onRuntime: (raw: string) => void;
-  onWorkflowMode: CommandPaletteOverlayProps['onWorkflowMode'];
 }): ReactNode | null {
   switch (active) {
     case 'none':
@@ -117,13 +111,7 @@ function renderOverlay({
     case 'help':
       return <HelpOverlay currentScreen={screen} commands={commands} />;
     case 'command-palette':
-      return (
-        <CommandPaletteOverlay
-          commands={commands}
-          onRuntimeCommand={onRuntime}
-          onWorkflowMode={onWorkflowMode}
-        />
-      );
+      return <CommandPaletteOverlay commands={commands} onRuntimeCommand={onRuntime} />;
     case 'skills':
       return <SkillsPicker />;
     case 'settings':
@@ -136,8 +124,8 @@ function renderOverlay({
       return <ToolModelPicker role="implementer" />;
     case 'reviewer-picker':
       return <ToolModelPicker role="reviewer" />;
-    case 'crew':
-      return <CrewOverlay />;
+    case 'escalation-picker':
+      return <ToolModelPicker role="escalation" />;
     case 'sessions':
       return <SessionsPicker />;
     case 'editor':

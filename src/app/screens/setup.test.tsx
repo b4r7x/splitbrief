@@ -9,6 +9,7 @@ import type { CliToolDetection, ProviderDetection } from '../../core/discovery/d
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
 import { configPath, loadConfig } from '../../core/config/load/io.js';
 import { CONFIG_FILE, sessionDir, SPLITBRIEF_DIR } from '../../core/paths.js';
+import { computeCrewPresets } from '../../core/crew/presets.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
 import { prepareNewSession } from '../../core/sessions/prepare.js';
 import type {
@@ -34,12 +35,13 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { glyph } from '../../lib/glyphs.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { SetupScreen } from './setup.js';
+import { PRESET_SECTION, SetupScreen } from './setup.js';
 
 const ENTER = '\r';
 const ESC = '\u001B';
 const DOWN = '\u001B[B';
 const UP = '\u001B[A';
+const BACKSPACE = '\u0008';
 const OSC_LEAD = '\u001B]';
 const HOSTILE_ERROR = 'Failed to save config: \u001B]0;pwned\u0007oops';
 const CREW_TITLE = 'Set up your crew';
@@ -171,33 +173,39 @@ function preparedOutcome(input: PrepareExecutionInput): PreparationOutcome {
   return { kind: 'prepared', execution: preparedExecution(input) };
 }
 
-// Cursor movement clamps at both ends of the crew surface, so pressing one direction more times
-// than the surface can ever have rows parks focus on that end whatever the offered preset count is.
+// Upper bound on the rows the crew surface can ever offer; focusRow gives up past it.
 const CREW_ROW_LIMIT = 12;
+const CURSOR = `${glyph('liveBar')} `;
+/** The panel border plus its two padding cells: what sits left of every content column. */
+const PANEL_LEAD = 3;
 
-async function walk(ui: ReturnType<typeof renderFeature>, key: string): Promise<void> {
-  for (let step = 0; step < CREW_ROW_LIMIT; step += 1) {
-    ui.stdin.write(key);
-    await tick(20);
-  }
-}
-
-async function focusContinue(ui: ReturnType<typeof renderFeature>): Promise<void> {
-  await walk(ui, DOWN);
-}
-
-async function focusFirstPreset(ui: ReturnType<typeof renderFeature>): Promise<void> {
-  await walk(ui, UP);
+/** Every row as the panel renders it, with the frame and the centring indent taken off. */
+function contentRows(ui: ReturnType<typeof renderFeature>): string[] {
+  const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+  const border = lines.find((line) => line.trim() !== '') ?? '';
+  const edge = border.length - border.trimStart().length;
+  return lines.map((line) => line.slice(edge + PANEL_LEAD));
 }
 
 function markedRows(ui: ReturnType<typeof renderFeature>): string[] {
-  return stripAnsiStyles(ui.lastFrame() ?? '')
-    .split('\n')
-    .filter((line) => line.includes(`${glyph('promptMarker')} `));
+  return contentRows(ui).filter((row) => row.startsWith(CURSOR));
+}
+
+async function focusRow(
+  ui: ReturnType<typeof renderFeature>,
+  key: string,
+  label: string,
+): Promise<void> {
+  for (let step = 0; step < CREW_ROW_LIMIT; step += 1) {
+    if (markedRows(ui).some((row) => row.includes(label))) return;
+    ui.stdin.write(key);
+    await tick(20);
+  }
+  throw new Error(`never reached the ${label} row`);
 }
 
 async function continueSetup(ui: ReturnType<typeof renderFeature>): Promise<void> {
-  await focusContinue(ui);
+  await focusRow(ui, DOWN, 'Continue');
   ui.stdin.write(ENTER);
   await tick(50);
   await flushEffects();
@@ -289,6 +297,8 @@ describe('SetupScreen', () => {
 
   it('fits the crew surface into the smallest supported viewport', async () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18 });
+    // Three ready CLI tools plus an escalation row: the widest ladder the floor viewport can be
+    // handed, so the fit runs against the maximum preset and crew row count.
     configStore.__testReset({
       projectDir: '/tmp/project',
       config: makeConfig({
@@ -311,20 +321,104 @@ describe('SetupScreen', () => {
     });
     await flushEffects();
 
-    const lines = stripAnsiStyles(ui.lastFrame() ?? '')
-      .split('\n')
-      .filter((line) => line.trim() !== '');
-    expect(lines.join('\n')).toContain(CREW_TITLE);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const lines = frame.split('\n').filter((line) => line.trim() !== '');
+    ui.unmount();
+
+    // The panel never spills: a row that wraps at 60 columns pushes its unbroken top or bottom
+    // frame line off the render, so an intact frame inside the 18 rows is the fit check.
+    expect(lines.length).toBeLessThanOrEqual(18);
     expect(lines.every((line) => getTerminalCellWidth(line) <= 60)).toBe(true);
-    // A row that wraps at 60 columns pushes the panel past 18 rows, clipping its unbroken top and
-    // bottom frame lines off the render, so an intact frame is the fit check.
     const unbroken = (line: string | undefined) => line !== undefined && !/\s/.test(line.trim());
     expect(unbroken(lines.at(0))).toBe(true);
     expect(unbroken(lines.at(-1))).toBe(true);
+    expect(frame).toContain(CREW_TITLE);
+    for (const seat of ['PLAN', 'BUILD', 'REVIEW']) expect(frame).toContain(seat);
+    expect(frame).toContain('Continue');
+  });
+
+  it('spends the whole floor viewport on the default crew', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18 });
+    const request = beginDiscovery();
+    freshDiscovery(request, 1);
+
+    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />, {
+      cols: 60,
+      rows: 18,
+    });
+    await flushEffects();
+
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '')
+      .split('\n')
+      .filter((line) => line.trim() !== '');
+    ui.unmount();
+
+    // Two ready tools and no escalation: the panel is the whole 18-row viewport, frame included.
+    expect(lines).toHaveLength(18);
+  });
+
+  it('says what escape does and does it', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+    const request = beginDiscovery();
+    freshDiscovery(request, 1);
+
+    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />);
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('esc quit');
+
+    const before = markedRows(ui);
+    ui.stdin.write(ESC);
+    await tick(20);
+    await flushEffects();
+    // The app is gone: its key handlers went with it, so the next arrow moves nothing.
+    ui.stdin.write(DOWN);
+    await tick(20);
+    await flushEffects();
+    expect(markedRows(ui)).toEqual(before);
     ui.unmount();
   });
 
-  it('keeps a save error to one line at the smallest supported viewport', async () => {
+  it('keeps the cursor where it is when backspace arrives on the unfilterable list', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+    const request = beginDiscovery();
+    freshDiscovery(request, 1);
+
+    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />);
+    await flushEffects();
+    await focusRow(ui, DOWN, 'REVIEW');
+
+    ui.stdin.write(BACKSPACE);
+    await tick(20);
+    await flushEffects();
+    expect(markedRows(ui).join('\n')).toContain('REVIEW');
+    ui.unmount();
+  });
+
+  it('spends the widest viewport on the untruncated preset descriptions', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    const request = beginDiscovery();
+    freshDiscovery(request, 1);
+
+    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />, {
+      cols: 120,
+      rows: 40,
+    });
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    ui.unmount();
+
+    const [preset] = computeCrewPresets({
+      config: makeConfig(),
+      readyTools: ['claude-code', 'codex'],
+    });
+    if (preset === undefined)
+      throw new Error('Expected a ready-made crew for the installed tools.');
+    expect(preset.description.length).toBeGreaterThanOrEqual(70);
+    expect(frame).toContain(preset.description);
+    expect(frame).toContain(PRESET_SECTION);
+  });
+
+  it('yields the ready-made crews, never a seat, and keeps a save error to one line at the smallest supported viewport', async () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18 });
     configStore.__testReset({
       projectDir: '/tmp/project',
@@ -334,8 +428,17 @@ describe('SetupScreen', () => {
         escalation: { intermediateProvider: 'deepseek', intermediateModel: 'deepseek-chat' },
       }),
     });
-    const request = beginDiscovery();
-    freshDiscovery(request, 1);
+    expect(
+      detectionStore.hydrate({
+        ...INSTALLED_RUNNERS,
+        fetchedAt: 10,
+        validatedAt: 10,
+        generation: 1,
+        requestId: 1,
+        contexts: DISCOVERY_CONTEXTS,
+      }),
+    ).toBe(true);
+    beginDiscovery();
     feedbackStore.setError(
       'Failed to save config: EACCES permission denied while writing splitbrief.yaml in this project',
     );
@@ -357,6 +460,9 @@ describe('SetupScreen', () => {
     expect(lines.filter((line) => line.includes('Failed to save config'))).toHaveLength(1);
     expect(lines.join('\n')).not.toContain('splitbrief.yaml');
     expect(lines.join('\n')).toContain('Continue');
+    // The ready-made crews are the last block to yield; the three seats never do.
+    expect(lines.join('\n')).not.toContain('Claude crew, Codex review');
+    for (const seat of ['PLAN', 'BUILD', 'REVIEW']) expect(lines.join('\n')).toContain(seat);
   });
 
   it('strips terminal control sequences from a save error', async () => {
@@ -407,7 +513,7 @@ describe('SetupScreen', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Tool check failed');
     expect(frame).toContain('r retry');
-    expect(frame).toContain('esc back');
+    expect(frame).toContain('esc quit');
     expect(frame).toContain('s settings');
     expect(frame).not.toMatch(/no (planner|tool)/i);
 
@@ -423,10 +529,7 @@ describe('SetupScreen', () => {
 
     const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />);
     await flushEffects();
-    // The review seat is the row above the continue row.
-    await focusContinue(ui);
-    ui.stdin.write(UP);
-    await tick(20);
+    await focusRow(ui, DOWN, 'REVIEW');
     ui.stdin.write(ENTER);
 
     await vi.waitFor(() => expect(overlayStore.get().active).toBe('reviewer-picker'));
@@ -480,11 +583,7 @@ describe('SetupScreen', () => {
       expect(frame.split('\n').length).toBeLessThanOrEqual(24);
       expect(frame.split('\n').every((line) => getTerminalCellWidth(line) <= 80)).toBe(true);
 
-      await focusFirstPreset(ui);
-      ui.stdin.write(UP);
-      await flushEffects();
-      ui.stdin.write(UP);
-      await flushEffects();
+      await focusRow(ui, UP, 'Claude crew, Codex review');
       ui.stdin.write(ENTER);
       await vi.waitFor(() => {
         expect(loadConfig(projectDir).config.reviewer).toMatchObject({

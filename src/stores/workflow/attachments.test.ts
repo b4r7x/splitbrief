@@ -95,7 +95,7 @@ describe('attachmentsStore', () => {
 describe('attachment actions', () => {
   it('attaches resolved images and exposes list entries', () => {
     const path = writeImage('pic.png');
-    const result = attachImage(path, projectDir);
+    const result = attachImage({ path, projectDir, supportsImages: true });
 
     expect(result).toEqual({ ok: true, path: real(path) });
     expect(listAttachments()).toEqual([
@@ -107,8 +107,20 @@ describe('attachment actions', () => {
     expect(attachmentsStore.peek()[0]).not.toHaveProperty('addedAt');
   });
 
+  it('rejects a seat without vision before reading the file', () => {
+    const missing = join(projectDir, 'never-written.png');
+    const result = attachImage({ path: missing, projectDir, supportsImages: false });
+
+    expect(result).toEqual({ ok: false, reason: 'no-vision' });
+    expect(listAttachments()).toEqual([]);
+  });
+
   it('returns resolver errors without mutating pending attachments', () => {
-    const result = attachImage(join(projectDir, 'notes.txt'), projectDir);
+    const result = attachImage({
+      path: join(projectDir, 'notes.txt'),
+      projectDir,
+      supportsImages: true,
+    });
 
     expect(result).toEqual({ ok: false, reason: 'not-image' });
     expect(listAttachments()).toEqual([]);
@@ -118,9 +130,9 @@ describe('attachment actions', () => {
     const firstPath = writeImage('first.png');
     const secondPath = writeImage('second.png');
     const thirdPath = writeImage('third.png');
-    attachImage(firstPath, projectDir);
-    attachImage(secondPath, projectDir);
-    attachImage(thirdPath, projectDir);
+    attachImage({ path: firstPath, projectDir, supportsImages: true });
+    attachImage({ path: secondPath, projectDir, supportsImages: true });
+    attachImage({ path: thirdPath, projectDir, supportsImages: true });
     const [first] = listAttachments();
     if (!first) throw new Error('expected first attachment');
 
@@ -130,7 +142,7 @@ describe('attachment actions', () => {
     expect(detachImage(first.id)).toBe(true);
     expect(listAttachments().map((a) => a.path)).toEqual([real(thirdPath)]);
 
-    attachImage(secondPath, projectDir);
+    attachImage({ path: secondPath, projectDir, supportsImages: true });
     expect(detachImage('second.png')).toBe(true);
     expect(listAttachments().map((a) => a.path)).toEqual([real(thirdPath)]);
 
@@ -141,8 +153,8 @@ describe('attachment actions', () => {
   it('treats partial numeric strings as ids or path suffixes, not indexes', () => {
     const firstPath = writeImage('1-first.png');
     const secondPath = writeImage('2-second.png');
-    attachImage(firstPath, projectDir);
-    attachImage(secondPath, projectDir);
+    attachImage({ path: firstPath, projectDir, supportsImages: true });
+    attachImage({ path: secondPath, projectDir, supportsImages: true });
 
     expect(detachImage('1-first.png')).toBe(true);
 

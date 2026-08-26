@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { pickerCatalog } from '#testing/helpers/runner-picker.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -123,7 +124,7 @@ function catalogForItem(
   rightModels: ModelOption[] = [],
   focusModels = false,
 ): PickerCatalog {
-  return {
+  return pickerCatalog({
     items,
     rightModels,
     currentItem: item,
@@ -133,7 +134,6 @@ function catalogForItem(
     roleLabel: role === 'planner' ? 'Planner' : 'Implementer',
     currentModel: item.isCurrent ? rightModels[0]?.id : undefined,
     persistedModel: rightModels[0]?.id,
-    discoveredModelCount: rightModels.filter((model) => model.id !== 'auto').length,
     modelCounts: countModelOptions(rightModels),
     catalogDiagnostic: undefined,
     currentCommand: undefined,
@@ -141,7 +141,7 @@ function catalogForItem(
     customModels: [],
     discovery: { cold: false, refreshing: false },
     setCurrentItem: () => {},
-  };
+  });
 }
 
 async function renderPicker(role: 'planner' | 'implementer') {
@@ -344,7 +344,7 @@ describe('runner picker semantics integration', () => {
   });
 
   describe('model policy semantics', () => {
-    it('reflects auto-only, backend-default, and none policies in reachable guidance', async () => {
+    it('reflects auto-only and backend-default guidance, and pins policy:none falling through to the detection-fallback copy', async () => {
       const readyPermissions = {
         directWrite: false,
         network: true,
@@ -356,6 +356,7 @@ describe('runner picker semantics integration', () => {
       const policies: Array<{
         item: PickerOption;
         headline: string;
+        detail?: string;
         allowsCustom: boolean;
       }> = [
         {
@@ -388,24 +389,9 @@ describe('runner picker semantics integration', () => {
           headline: 'Model chosen by the tool',
           allowsCustom: false,
         },
-        {
-          item: pickerItem({
-            id: 'shell',
-            displayName: 'Shell',
-            kind: 'shell',
-            roles: ['planner', 'implementer'],
-            modelPolicy: 'none',
-            billing: 'unknown',
-            permissions: readyPermissions,
-            status: { state: 'ready', remediation: null },
-            available: true,
-          }),
-          headline: 'No model selection',
-          allowsCustom: false,
-        },
       ];
 
-      for (const { item, headline, allowsCustom } of policies) {
+      for (const { item, headline, detail, allowsCustom } of policies) {
         const ui = renderFeature(
           <PickerView
             role="implementer"
@@ -416,6 +402,7 @@ describe('runner picker semantics integration', () => {
         await flushEffects();
         const frame = frameText(ui);
         expect(frame).toContain(headline);
+        if (detail) expect(frame).toContain(detail);
         if (allowsCustom) {
           expect(frame).toContain('Add custom model');
         } else {
@@ -467,7 +454,8 @@ describe('runner picker semantics integration', () => {
       expect(frame).not.toContain('Add custom model');
       ui.unmount();
 
-      // The tool-chooses-the-model guidance stays reachable from the tool column.
+      // With the tool column focused the Auto row still says who picks the
+      // model: it is the only row, and it carries the default word.
       const guidanceUi = renderFeature(
         <PickerView
           role="implementer"
@@ -476,7 +464,9 @@ describe('runner picker semantics integration', () => {
         />,
       );
       await flushEffects();
-      expect(frameText(guidanceUi)).toContain('Model chosen by the tool');
+      const guidanceFrame = frameText(guidanceUi);
+      expect(guidanceFrame).toContain('Auto');
+      expect(guidanceFrame).toContain('Default');
       guidanceUi.unmount();
     });
 
@@ -529,7 +519,7 @@ describe('runner picker semantics integration', () => {
       );
       await flushEffects();
       const discoveredFrame = frameText(discoveredUi);
-      expect(discoveredFrame).toContain('1 model detected');
+      expect(discoveredFrame).toContain('1 detected');
       expect(discoveredFrame).toContain('GPT-4o');
       discoveredUi.unmount();
     });

@@ -760,9 +760,7 @@ async function detectCliToolReadiness(
         compatibility: result.compatibility,
         auth: selectedChannel === undefined ? 'unknown' : result.auth,
         ...(selectedChannel === undefined ? {} : { authChannel: selectedChannel.id }),
-        ...(selectedChannel === undefined || result.providerAuth === undefined
-          ? {}
-          : { providerAuth: result.providerAuth }),
+        ...(result.providerAuth === undefined ? {} : { providerAuth: result.providerAuth }),
         probedAt: result.probedAt,
       }),
     };

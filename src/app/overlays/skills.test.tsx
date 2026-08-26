@@ -228,6 +228,26 @@ describe('SkillsPicker', () => {
     ui.unmount();
   });
 
+  it('keeps the selected marker visible when a description fills the row at cols 120', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 28, isSmall: false });
+    const long = { ...skill('bravo'), description: 'b'.repeat(300) };
+    skillsStore.setAvailable([skill('alpha'), long]);
+
+    const ui = renderFeature(<SkillsPicker />);
+    await flushEffects();
+    ui.stdin.write(ARROW_DOWN);
+    await flushEffects();
+    ui.stdin.write(SPACE);
+    await tick(20);
+
+    const selectedLine = stripAnsiStyles(ui.lastFrame() ?? '')
+      .split('\n')
+      .find((line) => line.includes('bravo'));
+    expect(selectedLine).toBeDefined();
+    expect((selectedLine ?? '').replace(/[\s|│]+$/u, '').endsWith(glyph('check'))).toBe(true);
+    ui.unmount();
+  });
+
   it('appends Space to the query instead of toggling while typing', async () => {
     skillsStore.setAvailable([skill('alpha'), skill('bravo')]);
 

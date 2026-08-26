@@ -10,7 +10,6 @@ import type {
 } from '../../core/runtime/commands/types.js';
 import { createCommandContext } from '../../core/runtime/commands/context-factory.js';
 import { sessionDir } from '../../core/paths.js';
-import { rebuildRepomap } from '../../engine/codebase/rebuild.js';
 import { writeHandoffPack } from '../../engine/handoff/write.js';
 import { acceptRunSnapshot, rejectRunSnapshot } from '../../engine/snapshots/run/lifecycle.js';
 import { performManualCompaction } from '../../engine/orchestrator/transcript/compaction.js';
@@ -21,6 +20,8 @@ import {
   clearGrantsByScope,
 } from '../../core/approval/store.js';
 import { attachImage, detachImage, listAttachments } from '../../stores/workflow/attachments.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache.js';
+import { detectedModelFact, seatSupportsImages } from '../../core/runners/capabilities.js';
 import {
   configRevisionsMatch,
   renderConfigDocumentEdits,
@@ -189,7 +190,6 @@ export function createRpcCommandContext(opts: {
       }
       return opts.requestTaskRedo(taskId);
     },
-    requestWorkflowResume: () => false,
     getQueueDepth: () => opts.pendingQueueDepth(opts.getState()),
     clearQueue: async () => {
       const clearLiveQueue = opts.clearQueueHandler();
@@ -199,9 +199,15 @@ export function createRpcCommandContext(opts: {
         message: 'Cannot clear queue: workflow queue is not ready.',
       };
     },
-    rebuildRepomap: async (projectDir, cacheDir) =>
-      rebuildRepomap(projectDir, cacheDir === undefined ? {} : { cacheDir }),
     attachImage,
+    plannerSupportsImages: () => {
+      const planner = opts.getRunConfig()?.config.planner;
+      if (planner === undefined) return false;
+      return seatSupportsImages({
+        runner: planner,
+        detected: detectedModelFact(modelCacheStore.getDetection().providers, planner),
+      });
+    },
     detachImage,
     listAttachments,
     writeHandoff: ({ projectDir, sessionId, target, taskId }) =>
@@ -245,6 +251,10 @@ export function createRpcCommandContext(opts: {
     toggleLatestActivityBatch: () => ({
       status: 'unavailable',
       message: 'Activity expansion is not available in RPC mode.',
+    }),
+    toggleLatestDiff: () => ({
+      status: 'unavailable',
+      message: 'Diff expansion is not available in RPC mode.',
     }),
     toggleSidebar: () => ({
       status: 'unavailable',

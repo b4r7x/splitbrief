@@ -16,7 +16,9 @@ function snapshot(detection: CliToolDetection): PickerDetectionSnapshot {
 
 describe('deriveCliStatus with per-provider facts', () => {
   it('resolves ready with the configured provider names when the listing has entries', () => {
-    const detection = cliDetectionFor('ready', 'kilo-code', { providerAuth: KILO_FACTS });
+    const detection = cliDetectionFor('ready', 'kilo-code', {
+      providerAuth: { kind: 'read', facts: KILO_FACTS },
+    });
 
     const status = deriveCliStatus(CLI_TOOL_CATALOG['kilo-code'], snapshot(detection));
 
@@ -29,13 +31,16 @@ describe('deriveCliStatus with per-provider facts', () => {
 
   it('lists a provider once when it is stored and also recognized via an env var', () => {
     const detection = cliDetectionFor('ready', 'opencode', {
-      providerAuth: [
-        { provider: 'OpenAI', source: 'oauth' },
-        { provider: 'OpenCode Go', source: 'api' },
-        { provider: 'Kimi For Coding', source: 'env', envVar: 'KIMI_API_KEY' },
-        { provider: 'Ollama Cloud', source: 'env', envVar: 'OLLAMA_API_KEY' },
-        { provider: 'OpenAI', source: 'env', envVar: 'OPENAI_API_KEY' },
-      ],
+      providerAuth: {
+        kind: 'read',
+        facts: [
+          { provider: 'OpenAI', source: 'oauth' },
+          { provider: 'OpenCode Go', source: 'api' },
+          { provider: 'Kimi For Coding', source: 'env', envVar: 'KIMI_API_KEY' },
+          { provider: 'Ollama Cloud', source: 'env', envVar: 'OLLAMA_API_KEY' },
+          { provider: 'OpenAI', source: 'env', envVar: 'OPENAI_API_KEY' },
+        ],
+      },
     });
 
     const status = deriveCliStatus(CLI_TOOL_CATALOG.opencode, snapshot(detection));
@@ -49,7 +54,7 @@ describe('deriveCliStatus with per-provider facts', () => {
 
   it('lets a non-empty listing outrank a stale presence-derived auth diagnostic', () => {
     const detection = cliDetectionFor('unauthenticated', 'kilo-code', {
-      providerAuth: [{ provider: 'GitHub Copilot', source: 'oauth' }],
+      providerAuth: { kind: 'read', facts: [{ provider: 'GitHub Copilot', source: 'oauth' }] },
     });
 
     const status = deriveCliStatus(CLI_TOOL_CATALOG['kilo-code'], snapshot(detection));
@@ -62,7 +67,9 @@ describe('deriveCliStatus with per-provider facts', () => {
   });
 
   it('resolves a truthful zero-provider listing as unauthenticated with sign-in remediation', () => {
-    const detection = cliDetectionFor('unauthenticated', 'kilo-code', { providerAuth: [] });
+    const detection = cliDetectionFor('unauthenticated', 'kilo-code', {
+      providerAuth: { kind: 'empty' },
+    });
 
     const status = deriveCliStatus(CLI_TOOL_CATALOG['kilo-code'], snapshot(detection));
 
@@ -93,7 +100,7 @@ describe('deriveCliStatus with per-provider facts', () => {
 
   it('never upgrades a non-auth blocker, even with a non-empty listing', () => {
     const detection = cliDetectionFor('incompatible', 'kilo-code', {
-      providerAuth: [{ provider: 'GitHub Copilot', source: 'oauth' }],
+      providerAuth: { kind: 'read', facts: [{ provider: 'GitHub Copilot', source: 'oauth' }] },
     });
 
     const status = deriveCliStatus(CLI_TOOL_CATALOG['kilo-code'], snapshot(detection));

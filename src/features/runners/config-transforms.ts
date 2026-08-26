@@ -7,7 +7,15 @@ import {
 } from '../../core/schemas/implementer-config.js';
 import { buildRunnerConfig } from '../../core/config/runtime/build-runner.js';
 import { updateActiveRunner } from '../../core/config/accessors/active-runner.js';
-import type { PlannerTierRole, ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
+import {
+  seatPickerLane,
+  type ActiveRunnerRole,
+  type PlannerTierRole,
+  type SeatPickerRole,
+} from '../../core/runners/cli-tool-catalog.js';
+import { seatSupportsEffort } from '../../core/runners/capabilities.js';
+import { getRunnerCatalogDisplayName } from '../../core/config/accessors/runner-config.js';
+import type { EffortLevel } from '../../core/schemas/enums.js';
 import {
   mergeImplementerProfileMetadata,
   stripProfileMetadata,
@@ -36,8 +44,36 @@ function updatePlannerTier(
   return updateActiveRunner({ config, role, updater });
 }
 
-export function inheritsPlannerSeat(config: Config, role: ActiveRunnerRole): boolean {
-  return role === 'reviewer' && resolveReviewerRunner(config).source === 'planner';
+export function inheritsPlannerSeat(config: Config, role: SeatPickerRole): boolean {
+  return seatPickerLane(role) === 'reviewer' && resolveReviewerRunner(config).source === 'planner';
+}
+
+/** A seat commit reports the effort level it had to drop, because nothing else can. */
+export type SeatCommitResult = Readonly<{ config: Config; notice?: string }>;
+
+function effortClearedNotice(
+  effort: EffortLevel,
+  runner: PlannerConfig | ImplementerConfig,
+): string {
+  return `Effort ${effort} cleared: ${getRunnerCatalogDisplayName(runner)} has no effort channel`;
+}
+
+function decideEffort<T extends PlannerConfig | ImplementerConfig>(
+  input: Readonly<{
+    next: T;
+    carried: EffortLevel | undefined;
+    role: ActiveRunnerRole;
+    parse: (value: unknown) => T;
+  }>,
+): Readonly<{ runner: T; notice?: string }> {
+  const { next, role, parse } = input;
+  const effort = next.effort ?? input.carried;
+  if (effort === undefined) return { runner: next };
+  if (seatSupportsEffort({ runner: next, role })) {
+    return { runner: parse({ ...next, effort }) };
+  }
+  const { effort: _effort, ...rest } = next;
+  return { runner: parse(rest), notice: effortClearedNotice(effort, next) };
 }
 
 export interface PlannerTierSelectionInput {
@@ -48,16 +84,25 @@ export interface PlannerTierSelectionInput {
   apiKey?: string | undefined;
 }
 
-export function commitPlannerTierSelection(input: PlannerTierSelectionInput): Config {
-  return updatePlannerTier(input.config, input.role, (existing) =>
-    buildRunnerConfig(input.role, {
-      kind: input.selection.kind,
-      tool: input.selection.id,
-      ...(input.model !== null && { model: input.model.id }),
-      ...(input.apiKey !== undefined && { apiKey: input.apiKey }),
-      existing,
-    }),
-  );
+export function commitPlannerTierSelection(input: PlannerTierSelectionInput): SeatCommitResult {
+  let notice: string | undefined;
+  const config = updatePlannerTier(input.config, input.role, (existing) => {
+    const decided = decideEffort({
+      next: buildRunnerConfig(input.role, {
+        kind: input.selection.kind,
+        tool: input.selection.id,
+        ...(input.model !== null && { model: input.model.id }),
+        ...(input.apiKey !== undefined && { apiKey: input.apiKey }),
+        existing,
+      }),
+      carried: existing.effort,
+      role: input.role,
+      parse: (value) => PlannerConfigSchema.parse(value),
+    });
+    notice = decided.notice;
+    return decided.runner;
+  });
+  return { config, ...(notice !== undefined && { notice }) };
 }
 
 export function commitImplementerSelection(
@@ -65,34 +110,44 @@ export function commitImplementerSelection(
   selection: RunnerPickerOption,
   model: { id: string } | null,
   apiKey?: string,
-): Config {
-  return updateDefaultImplementerConfig(config, (existing) =>
-    buildRunnerConfig('implementer', {
-      kind: selection.kind,
-      tool: selection.id,
-      ...(model !== null && { model: model.id }),
-      ...(apiKey !== undefined && { apiKey }),
-      existing,
-    }),
-  );
+): SeatCommitResult {
+  let notice: string | undefined;
+  const next = updateDefaultImplementerConfig(config, (existing) => {
+    const decided = decideEffort({
+      next: buildRunnerConfig('implementer', {
+        kind: selection.kind,
+        tool: selection.id,
+        ...(model !== null && { model: model.id }),
+        ...(apiKey !== undefined && { apiKey }),
+        existing,
+      }),
+      carried: existing.effort,
+      role: 'implementer',
+      parse: (value) => ImplementerConfigSchema.parse(value),
+    });
+    notice = decided.notice;
+    return decided.runner;
+  });
+  return { config: next, ...(notice !== undefined && { notice }) };
 }
 
 export interface CommitCustomCommandInput {
   config: Config;
-  role: ActiveRunnerRole;
+  role: SeatPickerRole;
   command: string;
   kind: 'shell' | 'agent';
 }
 
 export function commitCustomCommand(input: CommitCustomCommandInput): Config {
-  const { config, role, command, kind } = input;
-  if (role === 'implementer') {
+  const { config, command, kind } = input;
+  const lane = seatPickerLane(input.role);
+  if (lane === 'implementer') {
     return updateDefaultImplementerConfig(config, (existing) =>
       buildRunnerConfig('implementer', { kind, command, existing, model: existing.model }),
     );
   }
-  return updatePlannerTier(config, role, (existing) =>
-    buildRunnerConfig(role, { kind, command, existing }),
+  return updatePlannerTier(config, lane, (existing) =>
+    buildRunnerConfig(lane, { kind, command, existing }),
   );
 }
 
@@ -191,20 +246,21 @@ function replaceImplementerTuple(
 
 function selectRole(
   config: Config,
-  role: ActiveRunnerRole,
+  role: SeatPickerRole,
   definition: CustomCommandDefinition,
 ): Config {
-  if (role === 'implementer') {
+  const lane = seatPickerLane(role);
+  if (lane === 'implementer') {
     return updateDefaultImplementerConfig(config, (existing) =>
       selectImplementerCommand(existing, definition),
     );
   }
-  return updatePlannerTier(config, role, (existing) => selectPlannerCommand(existing, definition));
+  return updatePlannerTier(config, lane, (existing) => selectPlannerCommand(existing, definition));
 }
 
 export interface AddCustomCommandInput {
   config: Config;
-  role: ActiveRunnerRole;
+  role: SeatPickerRole;
   id: string;
   definition: CommandDefinitionInput;
 }
@@ -228,7 +284,7 @@ export function addCustomCommand(input: AddCustomCommandInput): AddCustomCommand
 
 export interface SelectCustomCommandInput {
   config: Config;
-  role: ActiveRunnerRole;
+  role: SeatPickerRole;
   id: string;
 }
 
@@ -367,7 +423,7 @@ export function deleteCustomCommand(config: Config, id: string): DeleteCustomCom
 
 export interface PersistSynthesizedCustomCommandInput {
   config: Config;
-  role: ActiveRunnerRole;
+  role: SeatPickerRole;
   id: string;
   entry: SafeLegacyCustomCommand;
 }
@@ -385,14 +441,15 @@ export function persistSynthesizedCustomCommand(
 
 export interface CommitCustomModelInput {
   config: Config;
-  role: ActiveRunnerRole;
+  role: SeatPickerRole;
   selection: RunnerPickerOption;
   modelName: string;
   customModels: string[];
 }
 
 export function commitCustomModel(input: CommitCustomModelInput): Config {
-  const { config, role, selection, modelName, customModels } = input;
+  const { config, selection, modelName, customModels } = input;
+  const lane = seatPickerLane(input.role);
   const newCustomModels = customModels.includes(modelName)
     ? customModels
     : [...customModels, modelName];
@@ -404,19 +461,20 @@ export function commitCustomModel(input: CommitCustomModelInput): Config {
     customModels: newCustomModels,
   };
 
-  if (role === 'implementer') {
+  if (lane === 'implementer') {
     return updateDefaultImplementerConfig(config, (existing) =>
       buildRunnerConfig('implementer', { ...opts, existing }),
     );
   }
-  return updatePlannerTier(config, role, (existing) =>
-    buildRunnerConfig(role, { ...opts, existing }),
+  return updatePlannerTier(config, lane, (existing) =>
+    buildRunnerConfig(lane, { ...opts, existing }),
   );
 }
 
-export function removeCustomModel(config: Config, role: ActiveRunnerRole, modelId: string): Config {
-  if (role !== 'implementer') {
-    return updatePlannerTier(config, role, (existing) => {
+export function removeCustomModel(config: Config, role: SeatPickerRole, modelId: string): Config {
+  const lane = seatPickerLane(role);
+  if (lane !== 'implementer') {
+    return updatePlannerTier(config, lane, (existing) => {
       const filtered = (existing.customModels ?? []).filter((m) => m !== modelId);
       if (existing.model !== modelId) return { ...existing, customModels: filtered };
       // exactOptionalPropertyTypes forbids { model: undefined } — destructure to omit.

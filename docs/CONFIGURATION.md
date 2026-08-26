@@ -82,7 +82,7 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 | `timeout` | ms (≤ 600000) | unset → no total-call cap (output silence is guarded separately: the 60s `api` stream-idle guard or `idleWarnMs`/`idleKillMs` below — see Troubleshooting) | Total wall-clock budget for a single planner, reviewer, or implementer call; aborts the call when exceeded. Raise for long planner thinks; lower for cheap probe calls. |
 | `idleWarnMs` | ms (≤ 3600000) | `300000` | Inactivity watchdog warn threshold: after this much output silence on a running call, the byline shows a "still working" warning; any stdout/stderr output clears it and resets the timer. |
 | `idleKillMs` | ms (≤ 3600000) | `1800000` | Inactivity watchdog kill threshold: at this much output silence the runner's process group is terminated (SIGTERM, then SIGKILL after a grace window; the in-process `agent-sdk` stream is aborted instead) and the call is marked failed. For planner calls a retry prompt is offered; a failed implementer call feeds the task's retry/escalation ladder instead, whose retry prompts rebuild the full Task Brief per attempt. |
-| `effort` | `low\|medium\|high\|xhigh` | unset | For the `api` kind (planner, reviewer, and implementer) maps to Anthropic `thinking.budget_tokens` (2k / 8k / 24k / 48k). The `agent-sdk` kind passes it through as the Agent SDK's first-class `effort` option, and the Claude Code CLI planner passes its own `--effort` flag; the levels match SPLITBRIEF's enum. The `shell`, `agent`, and other `cli` kinds cannot deliver an effort hint and drop it with a stderr warning. |
+| `effort` | `low\|medium\|high\|xhigh` | unset | Reasoning-effort hint, delivered only where the backend has a channel for it. `cli` `claude-code`: delivered on the planner and reviewer seats (its own `--effort` flag), never on the implementer seat (`src/engine/runners/cli-tools/claude-code.ts` builds implementer args with `effort: undefined`); `cli` `codex`, `opencode`, `aider`, `copilot`, `kilo-code`: never. `api`: per model, via `modelSupportsEffort` (`src/core/runners/capabilities.ts`) — anthropic `claude-(opus\|sonnet)-[4-9]` (mapped to `thinking.budget_tokens`, 2k / 8k / 24k / 48k), openai and openrouter models matching `^(o[1345]\|gpt-[5-9])` or carrying `r1`/`reasoner`, deepseek `r1`/`reasoner`/`deepseek-v4`; every other provider false. `agent-sdk`: on the planner and review seats (the Agent SDK's first-class `effort` option); the implementer backend (`src/engine/implementers/agent-sdk.ts`) does not forward it today. `shell` and `agent`: never. An undeliverable value is not sent: changing a seat in the TUI clears it and says so (`Effort <level> cleared: <tool> has no effort channel`) on every seat `seatSupportsEffort` rejects — an `agent-sdk` implementer seat is the one case where the value is kept and simply not forwarded — and a headless run drops it, with a `planner-effort`/`reviewer-effort: dropped` stderr warning on the planner and review seats, silently on the implementer seat. |
 
 `idleWarnMs` and `idleKillMs` apply to the `cli`, `shell`, `agent`, and `agent-sdk` kinds only — `api` runners keep the 60s stream-idle guard, and their strict schema rejects both fields. The planner's optional estimate-review call is the one exception to the retry prompt above: an idle-kill there degrades gracefully to an unavailable review instead of parking one.
 
@@ -312,7 +312,7 @@ Same discriminated union as `planner` — the five kinds, the same [common gener
 | `agent` | [`kind: agent`](#kind-agent) | Same trust grant. |
 | `agent-sdk` | [`kind: agent-sdk`](#kind-agent-sdk) | Same planner-side defaults. |
 
-The reviewer is a planner-tier seat and shares the planner's admission set, so a provider or tool that the planner may not use is rejected in this block too. The seat is built on the planner backends (`createReviewer`, `src/engine/runners/factory.ts`), so a configured `effort` or `temperature` a backend cannot deliver is dropped with a stderr warning, the same as on the planner.
+The reviewer is a planner-tier seat and shares the planner's admission set, so a provider or tool that the planner may not use is rejected in this block too. The seat is built on the planner backends (`createReviewer`, `src/engine/runners/factory.ts`), so `effort` follows the same delivery matrix as on the planner: `cli` `claude-code` and `agent-sdk` deliver it, an `api` seat delivers it only when its model passes `modelSupportsEffort`, and the other `cli` tools, `shell` and `agent` never do. A value the backend cannot deliver is cleared with a toast when the seat is changed in the TUI and dropped with a stderr warning headless; a `temperature` outside the `api` kind is likewise dropped with a stderr warning headless, but is carried forward untouched in the TUI. With no `reviewer` block the review seat inherits the planner's effort and shows it read-only; make the seat independent before changing it.
 
 ### Falling back to the planner
 
@@ -702,7 +702,7 @@ workflow:
 - `persistTranscript: true` — keep this enabled if you want stateless resume reconstruction and manual transcript compaction. `/compact-transcript` appends a summary entry and keeps recent turns verbatim; it does not delete old log lines.
 - `persistTranscript: false` — use when logs, machine-readable output, attach/RPC replay, summaries, telemetry, SPLITBRIEF input history, session names, generated commit messages, and raw runner expansion targets must not expose prompt or answer text. Pending queue state is still stored in `state.json`, but queued-message text is stripped from protected consumers and stateless resume cannot rebuild transcript context if native session resume is unavailable.
 
-**See also:** [WORKFLOW.md](./WORKFLOW.md), [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) (`/mode`, `/effort` runtime overrides). Workflow approval level is set with `--approve` or `workflow.approve`.
+**See also:** [WORKFLOW.md](./WORKFLOW.md), [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) (`/mode` runtime override). Workflow approval level is set with `--approve` or `workflow.approve`.
 
 ---
 
@@ -733,6 +733,8 @@ escalation:
   intermediateProvider: openrouter
   intermediateModel: z-ai/glm-4.6
 ```
+
+**Editing from the TUI.** The intermediate tier is editable live: `/crew` (the Crew section of Settings) puts an escalate row under the BUILD seat, and it opens the same provider/model picker as the seats. Committing a choice writes `intermediateProvider` and `intermediateModel` together, plus `enabled: true` (`writeEscalationRunner`, `src/core/config/accessors/escalation.ts`); choosing `none` removes both (`clearEscalation`). Half a pair cannot be persisted from the TUI.
 
 **When to use:** you run a cheap implementer (Ollama / DeepSeek) and want a "10x cheaper than the planner but smarter than the implementer" stop along the way before paying for an Opus retry. Skip if your implementer is already frontier-class. Setting `intermediateProvider` is enough to turn the tier on; add `enabled: false` only when you want to keep the provider config but bypass the tier.
 

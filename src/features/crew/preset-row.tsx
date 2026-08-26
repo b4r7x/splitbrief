@@ -2,38 +2,36 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../components/theme.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
 import { glyph } from '../../lib/glyphs.js';
+import { getTerminalCellWidth, padTerminalDisplayTextEnd } from '../../utils/display-text.js';
 import { truncateWithEllipsis } from '../../utils/truncate.js';
-import { CREW_COLUMN_GAP, CREW_MARKER_GUTTER } from './format.js';
+import { CREW_COLUMN_GAP, CREW_MARKER_GUTTER, CREW_RAIL_WIDTH } from './format.js';
 
-export type PresetRowProps = Readonly<{
-  presets: readonly CrewPreset[];
-  selected: string | undefined;
+/** Preset labels sit on the seat label edge: the marker gutter plus the rail column. */
+const LABEL_COLUMN = CREW_MARKER_GUTTER + CREW_RAIL_WIDTH;
+
+export type PresetRowViewProps = Readonly<{
+  preset: CrewPreset;
+  isCursor: boolean;
   width: number;
+  labelWidth: number;
 }>;
 
-export function PresetRow({ presets, selected, width }: PresetRowProps) {
+export function PresetRowView({ preset, isCursor, width, labelWidth }: PresetRowViewProps) {
   const t = useTheme();
-  const labelWidth = Math.max(0, ...presets.map((preset) => preset.label.length));
-  const descriptionWidth = width - CREW_MARKER_GUTTER - labelWidth - CREW_COLUMN_GAP.length;
+  const gutter = isCursor ? `${glyph('liveBar')} ` : ' '.repeat(CREW_MARKER_GUTTER);
+
+  const description = truncateWithEllipsis(
+    preset.description,
+    width - LABEL_COLUMN - labelWidth - getTerminalCellWidth(CREW_COLUMN_GAP),
+  );
 
   return (
-    <Box flexDirection="column">
-      {presets.map((preset) => {
-        const isSelected = preset.id === selected;
-        return (
-          <Box key={preset.id}>
-            <Text color={t.accent}>
-              {isSelected ? `${glyph('promptMarker')} ` : ' '.repeat(CREW_MARKER_GUTTER)}
-            </Text>
-            <Text color={t.accent} bold={isSelected}>
-              {preset.label.padEnd(labelWidth)}
-            </Text>
-            <Text color={t.textDim}>
-              {`${CREW_COLUMN_GAP}${truncateWithEllipsis(preset.description, descriptionWidth)}`}
-            </Text>
-          </Box>
-        );
-      })}
+    <Box>
+      <Text color={t.accent}>{`${gutter}${' '.repeat(CREW_RAIL_WIDTH)}`}</Text>
+      <Text color={t.accent} bold={isCursor}>
+        {padTerminalDisplayTextEnd(preset.label, labelWidth)}
+      </Text>
+      <Text color={t.textDim}>{`${CREW_COLUMN_GAP}${description}`}</Text>
     </Box>
   );
 }

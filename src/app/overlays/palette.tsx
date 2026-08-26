@@ -1,22 +1,18 @@
 import { useState, useEffect } from 'react';
-import type { ReactNode } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { FilterInput } from '../../components/filter-input.js';
 import { useTheme } from '../../components/theme.js';
 import { SOFT_SEP } from '../../components/separators.js';
-import {
-  OverlayPanel,
-  computeOverlayInnerRowCapacity,
-} from '../../components/overlays/overlay-panel.js';
-import { ListGroupHeader, ListRow } from '../../components/list-row.js';
-import { ScrollIndicator } from '../../components/scroll-indicator.js';
-import { windowSlice } from '../../components/pickers/scroll-window.js';
-import { RowZone, ROW_ZONE_Z_OVERLAY } from '../../components/pickers/row-zone.js';
+import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/overlay-panel.js';
+import { ListRow } from '../../components/list-row.js';
+import { ListViewport } from '../../components/pickers/list-viewport.js';
+import { isItemIndexVisible } from '../../components/pickers/scroll-window.js';
 import { dropLastGrapheme } from '../../components/input/text-editing.js';
 import { buildPaletteResults } from '../../features/palette/results.js';
 import type { PaletteResult, PaletteSource } from '../../features/palette/results.js';
 import { buildPaletteSources } from '../../features/palette/sources.js';
 import { commandPaletteMruStore } from '../../stores/ui/command-palette-mru.js';
+import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
@@ -25,97 +21,86 @@ import { configStore } from '../../stores/project/config.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
-import type {
-  RuntimeCommandDef,
-  RuntimeConfigSaveResult,
-} from '../../core/runtime/commands/types.js';
-import type { WorkflowMode } from '../../core/schemas/enums.js';
+import { COMMAND_CATEGORY_LABELS } from '../../core/runtime/commands/types.js';
+import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
+import { overlayRect, type OverlayDensity } from '../../core/navigation/overlay-rect.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import {
+  getTerminalCellWidth,
+  padTerminalDisplayTextEnd,
+  truncateTerminalDisplayText,
+} from '../../utils/display-text.js';
 import { handleSessionSelect } from '../../stores/navigation/session-select.js';
 import { sessionSelectDeps } from '../prepare-resume.js';
 
-const PALETTE_MAX_WIDTH = 86;
-const MAX_LABEL_WIDTH = 24;
-const LABEL_COLUMN_GAP = 2;
+const PANEL_DENSITY: OverlayDensity = 'roomy';
 const PROMPT_ROWS = 2;
 const HINT_ROWS = 2;
+// Below this budget a header costs more rows than it organises, so the 60x18 palette
+// keeps the category order but drops the labels (§Target frames, palette-60x18).
+const SECTION_HEADER_MIN_ROWS = 12;
+// ListRow's own chrome around the description column: the cursor gutter it prepends, the single
+// space before the description, and the single space before the shortcut.
+const LEAD_COLS = 2;
+const LABEL_GAP = 1;
+const TRAILING_GAP = 1;
+// §Target frames: two cells separate a description from a right-aligned shortcut.
+const SHORTCUT_GAP = 2;
+// A pathological command name must not swallow the row: past half the panel the label column is
+// truncated instead, so the description column always survives (exercised by the row-truncation
+// test at 50 columns).
+const LABEL_COLUMN_SHARE = 0.5;
 
-const SOURCE_HEADERS: Record<PaletteSource, string> = {
-  command: 'Commands',
-  mode: 'Modes',
-  picker: 'Pickers',
+// Command rows always carry a category and are sectioned by it, so they never reach this map.
+const SOURCE_HEADERS: Record<Exclude<PaletteSource, 'command'>, string> = {
   task: 'Tasks',
   session: 'Sessions',
   custom: 'Actions',
 };
 
-function countSourceHeaders(items: PaletteResult[]): number {
-  let headers = 0;
-  let last: PaletteSource | null = null;
-  for (const item of items) {
-    if (item.source !== last) {
-      headers += 1;
-      last = item.source;
-    }
-  }
-  return headers;
+function sectionLabel(result: PaletteResult): string {
+  return result.category === null
+    ? SOURCE_HEADERS[result.source]
+    : COMMAND_CATEGORY_LABELS[result.category];
 }
 
-function fitPaletteWindow(
-  results: PaletteResult[],
-  cursor: number,
-  listBudget: number,
-): {
-  scrollOffset: number;
-  visible: PaletteResult[];
-  showUp: boolean;
-  showDown: boolean;
-} {
-  if (listBudget <= 0 || results.length === 0) {
-    return { scrollOffset: 0, visible: [], showUp: false, showDown: false };
-  }
-  for (let size = Math.min(listBudget, results.length); size >= 1; size--) {
-    const { scrollOffset, visibleSlice } = windowSlice({
-      items: results,
-      selectedIndex: cursor,
-      windowSize: size,
-    });
-    const showUp = scrollOffset > 0;
-    const showDown = scrollOffset + size < results.length;
-    const listRows =
-      visibleSlice.length +
-      countSourceHeaders(visibleSlice) +
-      (showUp ? 1 : 0) +
-      (showDown ? 1 : 0);
-    if (listRows <= listBudget) {
-      return { scrollOffset, visible: visibleSlice, showUp, showDown };
+// One label column for every row on every screen: the registry's widest name, not the widest
+// row that happens to be on screen, so the description column does not jump between screens.
+function commandLabelWidth(commands: RuntimeCommandDef[]): number {
+  let width = 0;
+  for (const command of commands) {
+    width = Math.max(width, getTerminalCellWidth(command.name));
+    for (const alias of command.aliases ?? []) {
+      width = Math.max(width, getTerminalCellWidth(alias.name));
     }
   }
-  return { scrollOffset: 0, visible: [], showUp: false, showDown: false };
+  return width;
 }
 
-function isPaletteResultVisible(
-  results: PaletteResult[],
-  cursor: number,
-  listBudget: number,
-  index: number,
-): boolean {
-  const { scrollOffset, visible } = fitPaletteWindow(results, cursor, listBudget);
-  return visible.some((_, i) => scrollOffset + i === index);
+// The description column is padded to the exact remaining width so the shortcut lands on the
+// panel's right edge; ListRow cannot right-align a trailing next to a fixed label column.
+function descriptionColumn(input: {
+  description: string;
+  shortcut: string | null;
+  innerWidth: number;
+  labelWidth: number;
+}): string {
+  const trailingCols =
+    input.shortcut === null ? 0 : TRAILING_GAP + getTerminalCellWidth(input.shortcut);
+  const field = Math.max(
+    0,
+    input.innerWidth - LEAD_COLS - input.labelWidth - LABEL_GAP - trailingCols,
+  );
+  const budget = input.shortcut === null ? field : Math.max(0, field - SHORTCUT_GAP + TRAILING_GAP);
+  return padTerminalDisplayTextEnd(truncateTerminalDisplayText(input.description, budget), field);
 }
 
 export interface CommandPaletteOverlayProps {
   commands: RuntimeCommandDef[];
   onRuntimeCommand: (raw: string) => unknown;
-  onWorkflowMode: (mode: WorkflowMode) => Promise<RuntimeConfigSaveResult>;
 }
 
-export function CommandPaletteOverlay({
-  commands,
-  onRuntimeCommand,
-  onWorkflowMode,
-}: CommandPaletteOverlayProps) {
+export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPaletteOverlayProps) {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
 
@@ -128,6 +113,7 @@ export function CommandPaletteOverlay({
   const tasks = tasksStore.use((s) => s.tasks);
   const sessions = sessionsStore.use((s) => s.sessions);
   const projectDir = configStore.use((s) => s.projectDir);
+  const cols = terminalSizeStore.use((s) => s.cols);
   const rows = terminalSizeStore.use((s) => s.rows);
 
   useEffect(() => {
@@ -143,7 +129,6 @@ export function CommandPaletteOverlay({
     sessions,
     projectDir,
     onRuntimeCommand,
-    onWorkflowMode,
     onSessionSelect: (session, dir) => handleSessionSelect(session, dir, sessionSelectDeps),
     isAttached,
   });
@@ -154,45 +139,29 @@ export function CommandPaletteOverlay({
     ...sources,
   });
 
-  const listBudget = computeOverlayInnerRowCapacity({
-    terminalRows: rows,
+  const listBudget = overlayInnerRowCapacity({
+    rows,
     outerChromeRows: PROMPT_ROWS + HINT_ROWS,
   });
+  const section = {
+    by: sectionLabel,
+    headerFor: () => listBudget >= SECTION_HEADER_MIN_ROWS,
+  };
+  const canActOnIndex = (index: number) =>
+    isItemIndexVisible({ items: results, selectedIndex: index, rowBudget: listBudget, section });
 
   const runResult = async (index: number) => {
     const item = results[index];
     if (!item) return;
-    if (!isPaletteResultVisible(results, cursor, listBudget, index)) return;
-    if (item.source !== 'mode') {
-      commandPaletteMruStore.record(item.id);
-      overlayStore.close();
-      try {
-        await item.action();
-      } catch (err) {
-        feedbackStore.setError(toErrorMessage(err));
-      }
+    if (!canActOnIndex(index)) return;
+    commandPaletteMruStore.record(item.id);
+    overlayStore.close();
+    if (item.action.kind === 'prefill') {
+      composerDraftStore.request(item.action.text);
       return;
     }
     try {
-      const result = await item.action();
-      if (result.kind === 'saved') {
-        commandPaletteMruStore.record(item.id);
-        overlayStore.close();
-        return;
-      }
-      if (result.errorMessage) {
-        feedbackStore.setError(result.errorMessage);
-        return;
-      }
-      if (result.kind === 'conflict') {
-        feedbackStore.setError('Config changed on disk. Reload before saving again.');
-        return;
-      }
-      if (result.kind === 'durability-uncertain') {
-        feedbackStore.setError('Config save could not be confirmed.');
-        return;
-      }
-      feedbackStore.setError('Failed to save config.');
+      await item.action.run();
     } catch (err) {
       feedbackStore.setError(toErrorMessage(err));
     }
@@ -230,67 +199,51 @@ export function CommandPaletteOverlay({
   );
 
   const t = useTheme();
-  const { scrollOffset, visible, showUp, showDown } = fitPaletteWindow(results, cursor, listBudget);
-  const labelWidth =
-    Math.min(
-      MAX_LABEL_WIDTH,
-      Math.max(0, ...visible.map((result) => getTerminalCellWidth(result.label))),
-    ) + LABEL_COLUMN_GAP;
-  const hasResults = visible.length > 0;
-  const hint = hasResults
-    ? ['↑↓ navigate', '⏎ select', 'esc close'].join(SOFT_SEP)
+  const { innerWidth } = overlayRect({ cols, rows, density: PANEL_DENSITY });
+  const labelWidth = Math.min(
+    commandLabelWidth(commands),
+    Math.floor(innerWidth * LABEL_COLUMN_SHARE),
+  );
+  const hint = canActOnIndex(cursor)
+    ? ['↑↓ navigate', '⏎ run or fill in', 'esc close'].join(SOFT_SEP)
     : ['↑↓ navigate', 'esc close'].join(SOFT_SEP);
 
-  const listNodes: ReactNode[] = [];
-  let lastSource: PaletteSource | null = null;
-  visible.forEach((result, i) => {
-    if (result.source !== lastSource) {
-      listNodes.push(
-        <ListGroupHeader
-          key={`header:${result.source}:${i}`}
-          label={SOURCE_HEADERS[result.source]}
-        />,
-      );
-      lastSource = result.source;
-    }
-    const globalIndex = scrollOffset + i;
-    const isCursor = globalIndex === cursor;
-    listNodes.push(
-      <RowZone
-        key={result.id}
-        zoneId={`palette:${result.id}`}
-        z={ROW_ZONE_Z_OVERLAY}
-        onActivate={() => {
-          void runResult(globalIndex);
-        }}
-      >
-        <ListRow
-          label={result.label}
-          state={isCursor ? 'active' : 'default'}
-          metadata={result.description}
-          {...(result.shortcut ? { trailing: result.shortcut } : {})}
-          labelWidth={labelWidth}
-        />
-      </RowZone>,
-    );
-  });
-
   return (
-    <OverlayPanel hint={hint} maxWidth={PALETTE_MAX_WIDTH}>
+    <OverlayPanel hint={hint} density={PANEL_DENSITY}>
       <Box marginBottom={1}>
-        <FilterInput filter={query} />
+        <FilterInput filter={query} placeholder="Type a command…" />
       </Box>
 
-      <Box flexDirection="column">
-        {!hasResults && query.length > 0 && <Text color={t.textDim}>No matching commands</Text>}
-        <ScrollIndicator show={showUp} direction="up" />
-        {listNodes}
-        <ScrollIndicator
-          show={showDown}
-          direction="down"
-          count={results.length - scrollOffset - visible.length}
-        />
-      </Box>
+      <ListViewport
+        items={results}
+        selectedIndex={cursor}
+        getKey={(result) => result.id}
+        rowBudget={listBudget}
+        rowZonePrefix="palette"
+        showRemainingCount
+        onRowActivate={(index) => {
+          void runResult(index);
+        }}
+        section={{
+          ...section,
+          renderHeader: (label) => <Text color={t.textDim}>{label}</Text>,
+        }}
+        placeholder={<Text color={t.textDim}>No matching commands</Text>}
+        renderItem={(result, ctx) => (
+          <ListRow
+            label={result.label}
+            state={ctx.isCursor ? 'active' : 'default'}
+            metadata={descriptionColumn({
+              description: result.description,
+              shortcut: result.shortcut,
+              innerWidth,
+              labelWidth,
+            })}
+            {...(result.shortcut ? { trailing: result.shortcut } : {})}
+            labelWidth={labelWidth}
+          />
+        )}
+      />
     </OverlayPanel>
   );
 }

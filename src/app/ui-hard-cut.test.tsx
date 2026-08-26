@@ -69,7 +69,7 @@ it('UI hard-cut preservation matrix has exactly 4 labeled cases', async () => {
         await flushEffects();
 
         const frame = ui.lastFrame() ?? '';
-        const layout = getHomeLayout({ cols: 80, rows: 24, isSmall: false });
+        const layout = getHomeLayout({ cols: 80, rows: 24 });
         for (const line of getLogo(layout.logoTier).split('\n')) {
           expect(frame).toContain(line.trim());
         }
@@ -92,6 +92,7 @@ it('UI hard-cut preservation matrix has exactly 4 labeled cases', async () => {
                   name: '/help',
                   label: 'Help',
                   description: 'Show help',
+                  category: 'navigate',
                   validScreens: ['home'],
                   handler: () => {},
                 },

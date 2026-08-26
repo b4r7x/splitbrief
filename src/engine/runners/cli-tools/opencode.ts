@@ -153,7 +153,7 @@ function createPlannerAdapter(): CliPlannerAdapter<'opencode'> {
     descriptor: CLI_TOOL_CATALOG.opencode,
     role: 'planner',
     supportsSessionResume: false,
-    supportsEffort: false,
+    supportsEffort: CLI_TOOL_CATALOG.opencode.supportsEffort,
     promptTransport: OPENCODE_PROMPT_TRANSPORT,
     baseArgs: plannerBaseArgs,
     buildArgs: (input) => [...plannerBaseArgs(input), ...input.configuredArgs],

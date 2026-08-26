@@ -23,11 +23,15 @@ Existing example to follow: `src/cli/commands/start/register.ts`.
 3. Each entry needs:
    - `kind` — `'noarg'` or `'arg'`
    - `name` — the `/command` string
-   - `handler` — sync or async function
+   - `description` — one line; the palette and `/help` both render it
+   - `category` — one of `COMMAND_CATEGORIES` (`navigate` | `crew` | `workflow` | `view` | `io`, `src/core/runtime/commands/types.ts`). It groups the row in the palette and in `/help`; there is no free-form group string
    - `validScreens` — array of screens where the command is available (use `ALL_SCREENS` from `src/core/navigation/types.ts` for global)
-   - Optional: `label` (for command palette), `shortcut`, `description`, `aliases`
-4. Phase guards: add a `phaseGuard` function if the command should only run in certain phases (see `canReviseSpec` / `canRevisePlan` in `src/core/phases.ts`)
-5. Document in `docs/SLASH-COMMANDS-REFERENCE.md`
+   - `handler` — sync or async; an `'arg'` command receives the raw argument string
+   - `args` — `'arg'` commands only: `{ kind: 'closed', options, optional? }` when the argument set is fixed (the completion menu offers exactly those — `/crew` closes over `CREW_COMMAND_SEATS`), or `{ kind: 'free', hint }`
+   - Optional: `label` (for the command palette), `shortcut`, `hidden`, `aliases`
+4. Guards: add `guard: (ctx) => string | undefined` when the command is only valid in some phases or states. A returned string is the reason — it blocks the command *and* hides its row, so no listed command errors on Enter. The context is `{ phase, attached, plannerSupportsImages }`; phase predicates live in `src/core/phases.ts` (`canReviseSpec`, `canRevisePlan`, `canRedoTask`)
+5. Aliases are `{ name, args? }` pairs, not bare strings — an alias may pin an argument, which is how `/planner` lives on as `{ name: '/planner', args: 'plan' }` on `/crew`. A name that is gone for good belongs in `REMOVED_COMMANDS` (`src/core/runtime/commands/types.ts`) with the sentence that tells the user where it went, never as a row that errors
+6. Document in `docs/SLASH-COMMANDS-REFERENCE.md`
 
 ---
 
@@ -105,7 +109,7 @@ A *seat* is a place in the run where a runner is called. Adding one is not the s
 8. **Token accounting.** Add the seat's fields to `TokenUsageSchema` (`src/core/schemas/tokens.ts`) with `.default(0)` so older session state still loads, add the category to `categoryFields` and `usageCategoryForRunnerCallRole()` in `src/engine/orchestrator/tokens.ts`, and check `attributePhaseTokenDelta` (`src/core/state/token-attribution.ts`) — moving tokens out of a bucket a phase's delta is computed from silently zeroes that phase in the cost drilldown.
 9. **Pricing and summary.** Price the new bucket at the seat's own rates when configured and fold it into the fallback seat's line when not. `stats.json` aggregates by provider, not by role, so it needs no new bucket.
 10. **CLI flags.** Mirror the existing per-seat flags in `addWorkflowOptions()` (`src/cli/options.ts`), map them in `src/core/config/runtime/overrides/from-options.ts`, and apply them through `applyRunnerOverrides()`.
-11. **UI.** Widen the role-parameterised picker rather than writing a new one, add the overlay to `ACTIVE_OVERLAYS`, add the runtime command, add the settings section to `src/core/settings/catalog.ts`, and add the seat to `deriveCrewSeats()` (`src/core/crew/seats.ts`) so it appears on the Crew page.
+11. **UI.** Widen the role-parameterised picker rather than writing a new one, add the overlay to `SEAT_PICKER_OVERLAYS` (`src/core/navigation/types.ts`), add the seat to `CREW_SEAT_IDS` / `CREW_SEAT_LABELS` (`src/core/crew/identity.ts`) and to `deriveCrewSeats()` (`src/core/crew/seats.ts`), which `deriveCrewRows()` (`src/core/crew/rows.ts`) turns into rows — Settings, Setup, home and the workflow header all derive from those rows; there is no settings section to add.
 12. **Docs.** [CONFIGURATION.md](./CONFIGURATION.md) for the block, [CLI-REFERENCE.md](./CLI-REFERENCE.md) for the flags, [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) for the command, [WORKFLOW.md](./WORKFLOW.md) for which seat runs which phase, and [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for admission and call-time failure.
 
 The rule that made the review seat cheap: **no automatic fallback at call time.** The seat falls back at *resolve* time, once, visibly. A seat that silently retries somewhere else at call time cannot be reasoned about from the evidence trail.
@@ -145,6 +149,7 @@ The rule that made the review seat cheap: **no automatic fallback at call time.*
 - Feature-local components stay in `src/features/<name>/components/` and feature-local hooks in `src/features/<name>/hooks/`; the page imports them via `../../features/<name>/…`.
 - Page↔page imports are forbidden — pages coordinate via stores.
 - Features never import from other features. Shared code goes to `src/components/`, `src/hooks/`, `src/utils/`.
+- Every panel passes a `density` (`compact` | `roomy` | `wide`) to `overlayRect()` (`src/core/navigation/overlay-rect.ts`) or `OverlayPanel` (`src/components/overlays/overlay-panel.tsx`) and sizes itself from the returned rect. Pinned column constants are not an option.
 
 ---
 

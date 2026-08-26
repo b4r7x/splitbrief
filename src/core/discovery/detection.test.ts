@@ -10,6 +10,8 @@ import {
   DetectedPricingTierSchema,
   PROVIDER_DETECTION_FAILURE_KINDS,
   ProviderDetectionSchema,
+  cliProviderAuthFacts,
+  normalizeProviderAuth,
   formatDigestBoundExecutableFingerprint,
   parseDigestBoundExecutableFingerprint,
   type CliCompatibilityState,
@@ -89,31 +91,78 @@ describe('detection schemas', () => {
     );
   });
 
-  it('accepts per-provider oracle facts as an additive, legacy-tolerant field', () => {
-    const legacy = detectionFor('ready');
-    expect(CliToolDetectionSchema.parse(legacy).providerAuth).toBeUndefined();
+  it('carries each provider-auth arm and rejects a credential value inside one', () => {
+    const base = detectionFor('ready');
+    expect(CliToolDetectionSchema.parse(base).providerAuth).toBeUndefined();
 
-    const withFacts = {
-      ...legacy,
-      providerAuth: [
-        { provider: 'GitHub Copilot', source: 'oauth' },
-        { provider: 'Alibaba Coding Plan', source: 'api' },
-        { provider: 'OpenAI', source: 'env', envVar: 'OPENAI_API_KEY' },
-      ],
-    };
-    expect(CliToolDetectionSchema.parse(withFacts)).toEqual(withFacts);
+    const facts = [
+      { provider: 'GitHub Copilot', source: 'oauth' },
+      { provider: 'Alibaba Coding Plan', source: 'api' },
+      { provider: 'OpenAI', source: 'env', envVar: 'OPENAI_API_KEY' },
+    ];
+    for (const providerAuth of [
+      { kind: 'read', facts },
+      { kind: 'empty' },
+      { kind: 'unreadable', reason: 'parse-failure' },
+    ]) {
+      expect(CliToolDetectionSchema.parse({ ...base, providerAuth })).toEqual({
+        ...base,
+        providerAuth,
+      });
+    }
+
     expect(
       CliToolDetectionSchema.safeParse({
-        ...legacy,
-        providerAuth: [{ provider: 'OpenAI', source: 'oauth', apiKey: 'sk-secret' }],
+        ...base,
+        providerAuth: {
+          kind: 'read',
+          facts: [{ provider: 'OpenAI', source: 'oauth', apiKey: 'sk-secret' }],
+        },
       }).success,
     ).toBe(false);
     expect(
       CliToolDetectionSchema.safeParse({
-        ...legacy,
-        providerAuth: [{ provider: '', source: 'oauth' }],
+        ...base,
+        providerAuth: { kind: 'unreadable', reason: 'ran-out-of-patience' },
       }).success,
     ).toBe(false);
+    expect(
+      CliToolDetectionSchema.safeParse({
+        ...base,
+        providerAuth: { kind: 'read', facts: [{ provider: '', source: 'oauth' }] },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('normalizes a stored provider-auth payload of any vintage', () => {
+    const facts = [{ provider: 'OpenAI', source: 'oauth' as const }];
+
+    expect(normalizeProviderAuth({ tool: 'opencode', providerAuth: facts })).toEqual({
+      kind: 'read',
+      facts,
+    });
+    expect(normalizeProviderAuth({ tool: 'opencode', providerAuth: [] })).toEqual({
+      kind: 'empty',
+    });
+    expect(normalizeProviderAuth({ tool: 'opencode', providerAuth: { kind: 'empty' } })).toEqual({
+      kind: 'empty',
+    });
+    for (const tool of ['opencode', 'kilo-code'] as const) {
+      expect(normalizeProviderAuth({ tool, providerAuth: undefined })).toEqual({
+        kind: 'unreadable',
+        reason: 'not-probed',
+      });
+    }
+    expect(normalizeProviderAuth({ tool: 'codex', providerAuth: undefined })).toBeUndefined();
+  });
+
+  it('counts an empty listing as zero facts and an unreadable one as nothing', () => {
+    const facts = [{ provider: 'OpenAI', source: 'oauth' as const }];
+
+    expect(cliProviderAuthFacts({ kind: 'read', facts })).toEqual(facts);
+    expect(cliProviderAuthFacts({ kind: 'empty' })).toEqual([]);
+    expect(cliProviderAuthFacts({ kind: 'unreadable', reason: 'timeout' })).toBeUndefined();
+    expect(cliProviderAuthFacts(undefined)).toBeUndefined();
   });
 
   it('round-trips provider model metadata, pricing tiers, and pricing provenance', () => {

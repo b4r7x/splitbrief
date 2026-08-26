@@ -3,7 +3,7 @@ import {
   CliAuthStateSchema,
   CliCompatibilityStateSchema,
   CliExecutableIdentitySchema,
-  CliProviderAuthFactSchema,
+  CliProviderAuthSchema,
   type CliReadinessStateSchema,
   CliTrustStateSchema,
   NON_READY_CLI_READINESS_STATES,
@@ -109,8 +109,8 @@ export const CliReadinessFactsSchema = z
      * the runner needs.
      */
     authChannel: z.enum(CLI_AUTH_CHANNEL_IDS).optional(),
-    /** Per-provider oracle facts; present only when a credential oracle ran cleanly. */
-    providerAuth: z.array(CliProviderAuthFactSchema).max(64).readonly().optional(),
+    /** What the tool's credential oracle said; absent when it has none. */
+    providerAuth: CliProviderAuthSchema.optional(),
     probedAt: z.number().int().nonnegative(),
   })
   .strict();

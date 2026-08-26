@@ -215,6 +215,34 @@ describe('runner-owned catalog resolution', () => {
     ]);
   });
 
+  it('keeps a native CLI catalog confirmed-only while taking metadata from the public catalog', () => {
+    const models = Object.fromEntries(
+      Array.from({ length: 367 }, (_, index) => {
+        const id = `kilo/model-${index}`;
+        return [id, { id, limit: { context: 100_000 + index }, release_date: '2026-02-02' }];
+      }),
+    );
+    const cache = makeModelCacheAccessor({
+      catalog: { kilo: { id: 'kilo', models } },
+      providerModels: {
+        'kilo-code': [
+          { id: 'kilo/model-1' },
+          { id: 'alibaba-coding-plan/glm-4.7' },
+          { id: 'openai/gpt-5.6' },
+        ],
+      },
+    });
+
+    const rows = resolveModelCatalog('kilo-code', cache);
+
+    expect(rows.map((row) => [row.selectionId, row.membership])).toEqual([
+      ['kilo/model-1', 'confirmed'],
+      ['alibaba-coding-plan/glm-4.7', 'confirmed'],
+      ['openai/gpt-5.6', 'confirmed'],
+    ]);
+    expect(rows[0]).toMatchObject({ contextLength: 100_001, releaseDate: '2026-02-02' });
+  });
+
   it('labels a public catalog row as a suggestion instead of detected membership', () => {
     const cache = makeModelCacheAccessor({
       catalog: {

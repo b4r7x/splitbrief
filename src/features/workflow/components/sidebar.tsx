@@ -13,7 +13,13 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { selectTaskListView, taskTargetLabel, tasksStore } from '../../../stores/workflow/tasks.js';
 import { configStore } from '../../../stores/project/config.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { formatRoleLabel, formatStageLabel } from '../../../core/phase-display.js';
+import {
+  CREW_LABEL_WIDTH,
+  fitSeatIdentity,
+  PLANNER_INHERITANCE,
+} from '../../../core/crew/identity.js';
+import { CREW_SEAT_ROLES, deriveCrewSeats, type CrewSeat } from '../../../core/crew/seats.js';
+import { formatStageLabel } from '../../../core/phase-display.js';
 import { formatStageElapsed } from '../display/live-activity.js';
 import { getActiveRailStage } from '../layout/chrome-rows.js';
 import {
@@ -27,7 +33,6 @@ import { useCostStats } from '../hooks/use-cost-stats.js';
 import { useSpinnerFrame } from '../hooks/use-spinner-frame.js';
 import { formatCostDisplay } from '../cost-text.js';
 import { Divider } from './divider.js';
-import { reviewerSeatLabel, runnerShortLabel } from './runner-label.js';
 
 interface SidebarProps {
   width: number;
@@ -223,6 +228,13 @@ function combinedOverflowLabel(above: string, below: string, width: number): str
   return `${above.replace(' above', '')}${SOFT_SEP}${below.replace(' below', '')}`;
 }
 
+// The seat row spends its whole budget on the full identity; an inherited review seat says so
+// instead of repeating the planner's words a row above it.
+function seatIdentity(seat: CrewSeat, budget: number): string {
+  if (seat.id === 'review' && seat.source === 'planner') return PLANNER_INHERITANCE.mark;
+  return fitSeatIdentity({ runner: seat.runner, budget });
+}
+
 function taskHasStatusTail(task: WorkflowTask): boolean {
   return task.status === 'escalated' || task.status === 'failed' || task.status === 'skipped';
 }
@@ -231,12 +243,9 @@ export function Sidebar({ width, height }: SidebarProps) {
   const tooShortForBorder = height !== undefined && height < 2;
   const t = useTheme();
   const view = tasksStore.use(selectTaskListView);
-  const mode = configStore.use((s) => s.config?.workflow?.mode);
-  const plannerLabel = configStore.use((s) => (s.config ? runnerShortLabel(s.config.planner) : ''));
-  const implLabel = configStore.use((s) =>
-    s.config ? runnerShortLabel(s.config.implementer) : '',
-  );
-  const reviewerLabel = configStore.use((s) => reviewerSeatLabel(s.config));
+  const config = configStore.use((s) => s.config);
+  const mode = config?.workflow?.mode;
+  const seats = config ? deriveCrewSeats({ config }) : [];
   const advisory = useAdvisory();
   const cost = useCostStats();
   const tasks = view.items;
@@ -245,10 +254,8 @@ export function Sidebar({ width, height }: SidebarProps) {
   const innerWidth = Math.max(0, width - 5);
 
   const costFmt = formatCostDisplay(cost.localRate, cost.costBreakdown, cost.pricingState);
-  // The planner, implementer and cost rows always render; mode, the done/escalated split and
-  // the reviewer row do not.
-  const footerRows =
-    3 + (mode ? 1 : 0) + (escalatedCount > 0 ? 1 : 0) + (reviewerLabel === '' ? 0 : 1);
+  // The three seat rows and the cost row always render; mode and the done/escalated split do not.
+  const footerRows = seats.length + 1 + (mode ? 1 : 0) + (escalatedCount > 0 ? 1 : 0);
   // Without a height the caller is not budgeting rows, so the list never windows.
   const listRows =
     height === undefined ? tasks.length : getSidebarTaskListRows({ height, footerRows });
@@ -336,28 +343,16 @@ export function Sidebar({ width, height }: SidebarProps) {
               {escalatedCount} escalated
             </Text>
           )}
-          {/* A row each, because one shared row spends its whole width on the planner and cuts the
-              implementer away entirely — the pair is the point. */}
-          <Text wrap="truncate">
-            <Text color={t.planner} bold>
-              {formatRoleLabel('planner')}
-            </Text>
-            {plannerLabel !== '' && <Text color={t.planner}>{` ${plannerLabel}`}</Text>}
-          </Text>
-          <Text wrap="truncate">
-            <Text color={t.implementer} bold>
-              {formatRoleLabel('implementer')}
-            </Text>
-            {implLabel !== '' && <Text color={t.implementer}>{` ${implLabel}`}</Text>}
-          </Text>
-          {reviewerLabel !== '' && (
-            <Text wrap="truncate">
-              <Text color={t.reviewer} bold>
-                {formatRoleLabel('reviewer')}
+          {seats.map((seat) => (
+            <Text key={seat.id} wrap="truncate">
+              <Text color={t[CREW_SEAT_ROLES[seat.id]]} bold>
+                {seat.label.padEnd(CREW_LABEL_WIDTH)}
               </Text>
-              <Text color={t.reviewer}>{` ${reviewerLabel}`}</Text>
+              <Text color={t[CREW_SEAT_ROLES[seat.id]]}>
+                {seatIdentity(seat, innerWidth - CREW_LABEL_WIDTH)}
+              </Text>
             </Text>
-          )}
+          ))}
           <Text color={t.textDim}>
             local{' '}
             <Text color={rateColor(cost.localRate, cost.routedTasks, t)}>

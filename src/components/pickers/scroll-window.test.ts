@@ -141,3 +141,218 @@ describe('isItemIndexVisible', () => {
     ).toBe(false);
   });
 });
+
+describe('decoration slots', () => {
+  it('renders before and after slots around their item and counts them in the budget', () => {
+    const window = computeListDisplayWindow({
+      items: ['alpha', 'beta', 'gamma'],
+      selectedIndex: 0,
+      rowBudget: 4,
+      decorations: {
+        before: (item) => item === 'alpha',
+        after: (item) => item === 'beta',
+      },
+    });
+
+    expect(window.visibleSlots.map((slot) => slot.kind)).toEqual([
+      'before',
+      'item',
+      'item',
+      'indicator',
+    ]);
+    expect(window.visibleSlots[0]).toEqual({ kind: 'before', itemIndex: 0 });
+  });
+
+  it('keeps the selected item visible when decorations crowd the window', () => {
+    expect(
+      isItemIndexVisible({
+        items,
+        selectedIndex: 20,
+        rowBudget: 6,
+        decorations: { before: () => true, after: () => true },
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('section headers', () => {
+  it('renders a section boundary as a gap only when headerFor is false', () => {
+    const window = computeListDisplayWindow({
+      items: [
+        { id: 'p1', scope: 'project' },
+        { id: 'g1', scope: 'global' },
+      ],
+      selectedIndex: 0,
+      rowBudget: 6,
+      section: {
+        by: (item) => item.scope,
+        gapBetweenSections: true,
+        headerFor: (scope) => scope === 'project',
+      },
+    });
+
+    expect(window.visibleSlots.map((slot) => slot.kind)).toEqual(['header', 'item', 'gap', 'item']);
+  });
+});
+
+describe('pinnedHead', () => {
+  it('keeps the head of the list on screen where an unpinned list would already have scrolled', () => {
+    const unpinned = computeListDisplayWindow({ items, selectedIndex: 5, rowBudget: 8 });
+    expect(unpinned.scrollOffset).toBeGreaterThan(0);
+
+    const window = computeListDisplayWindow({
+      items,
+      selectedIndex: 5,
+      rowBudget: 8,
+      pinnedHead: 8,
+    });
+
+    expect(window.scrollOffset).toBe(0);
+    expect(window.showScrollUp).toBe(false);
+    expect(
+      window.visibleSlots.filter((slot) => slot.kind === 'item').map((slot) => slot.itemIndex),
+    ).toEqual(expect.arrayContaining([0, 1, 2, 3, 4, 5]));
+  });
+
+  it('keeps the selection on screen when the pinned head is taller than the window', () => {
+    const window = computeListDisplayWindow({
+      items,
+      selectedIndex: 7,
+      rowBudget: 5,
+      pinnedHead: 8,
+    });
+
+    expect(
+      window.visibleSlots.filter((slot) => slot.kind === 'item').map((slot) => slot.itemIndex),
+    ).toContain(7);
+  });
+
+  it('scrolls normally once the selection leaves the pinned head', () => {
+    const window = computeListDisplayWindow({
+      items,
+      selectedIndex: 20,
+      rowBudget: 10,
+      pinnedHead: 3,
+    });
+
+    expect(window.scrollOffset).toBeGreaterThan(0);
+  });
+});
+
+describe('decorations', () => {
+  it('never renders a decoration for an item that scrolled out of the window', () => {
+    for (const selectedIndex of [8, 9]) {
+      const window = computeListDisplayWindow({
+        items,
+        selectedIndex,
+        rowBudget: 7,
+        decorations: {
+          before: (_item, index) => index % 3 === 0,
+          after: (_item, index) => index % 4 === 0,
+        },
+      });
+      const visible = window.visibleSlots
+        .filter((slot) => slot.kind === 'item')
+        .map((slot) => slot.itemIndex);
+
+      for (const slot of window.visibleSlots) {
+        if (slot.kind === 'before' || slot.kind === 'after') {
+          expect(visible).toContain(slot.itemIndex);
+        }
+      }
+    }
+  });
+});
+
+function seededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+describe('computeListDisplayWindow properties', () => {
+  it('keeps every item reachable and visible across 200 random configurations', () => {
+    const random = seededRandom(20260823);
+    const pick = (max: number) => Math.floor(random() * max);
+    let pinnedAssertions = 0;
+
+    for (let iteration = 0; iteration < 200; iteration++) {
+      const itemCount = 1 + pick(40);
+      const sectionCount = 1 + pick(3);
+      const list = Array.from({ length: itemCount }, (_, index) => ({
+        index,
+        scope: `s${Math.floor((index * sectionCount) / itemCount)}`,
+      }));
+      const rowBudget = 5 + pick(8);
+      const pinnedHead = pick(9);
+      const decorateBefore = random() < 0.5;
+      const decorateAfter = random() < 0.5;
+      const withSections = random() < 0.5;
+      const config = {
+        items: list,
+        rowBudget,
+        pinnedHead,
+        decorations: {
+          before: (_item: { index: number }, index: number) => decorateBefore && index % 3 === 0,
+          after: (_item: { index: number }, index: number) => decorateAfter && index % 4 === 0,
+        },
+        ...(withSections
+          ? {
+              section: {
+                by: (item: { scope: string }) => item.scope,
+                gapBetweenSections: true,
+                headerFor: (scope: string) => scope !== 's1',
+              },
+            }
+          : {}),
+      };
+
+      const seen = new Set<number>();
+      let selectedIndex = 0;
+      for (let step = 0; step <= itemCount; step++) {
+        const window = computeListDisplayWindow({ ...config, selectedIndex });
+        const visible = window.visibleSlots
+          .filter((slot) => slot.kind === 'item')
+          .map((slot) => slot.itemIndex);
+
+        expect(visible).toContain(selectedIndex);
+        for (const index of visible) seen.add(index);
+
+        for (const slot of window.visibleSlots) {
+          if (slot.kind === 'before' || slot.kind === 'after') {
+            expect(visible).toContain(slot.itemIndex);
+          }
+        }
+
+        if (selectedIndex < pinnedHead) {
+          const unpinned = computeListDisplayWindow({ ...config, selectedIndex, pinnedHead: 0 });
+          expect(window.scrollOffset).toBeLessThanOrEqual(unpinned.scrollOffset);
+          const untrimmed = computeListDisplayWindow({ ...config, selectedIndex, rowBudget: 200 });
+          const selectedSlot = untrimmed.visibleSlots.findIndex(
+            (slot) => slot.kind === 'item' && slot.itemIndex === selectedIndex,
+          );
+          if (selectedSlot < rowBudget - 1) expect(window.scrollOffset).toBe(0);
+          if (window.scrollOffset === 0) {
+            const head = visible.slice(0, Math.min(pinnedHead, visible.length));
+            expect(head).toEqual([...Array(head.length).keys()]);
+          }
+          if (unpinned.scrollOffset > 0 && window.scrollOffset === 0) pinnedAssertions++;
+        }
+
+        if (selectedIndex === itemCount - 1) break;
+        const lastVisible = visible.at(-1) ?? selectedIndex;
+        selectedIndex = Math.min(itemCount - 1, Math.max(lastVisible, selectedIndex + 1));
+      }
+
+      expect(seen.size).toBe(itemCount);
+      expect(selectedIndex).toBe(itemCount - 1);
+    }
+
+    expect(pinnedAssertions).toBeGreaterThan(0);
+  });
+});

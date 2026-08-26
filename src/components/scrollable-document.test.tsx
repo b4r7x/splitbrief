@@ -10,8 +10,6 @@ const PAGE_UP = '\u001b[5~';
 const PAGE_DOWN = '\u001b[6~';
 const CTRL_B = '\x02';
 const CTRL_F = '\x06';
-const ARROW_UP = '\u001b[A';
-const ARROW_DOWN = '\u001b[B';
 
 function makeRows(count: number) {
   return Array.from({ length: count }, (_, i) => ({
@@ -142,25 +140,6 @@ describe('ScrollableDocument', () => {
     expect(ui.lastFrame() ?? '').toContain('line-3');
 
     ui.rerender(<ScrollableDocument rows={makeRows(8)} height={3} />);
-    await tick(20);
-    expect(ui.lastFrame() ?? '').toContain('line-0');
-
-    ui.unmount();
-  });
-
-  it('scrolls one line at a time in line-and-page mode', async () => {
-    const ui = renderFeature(
-      <ScrollableDocument rows={makeRows(6)} height={3} keyboardMode="line-and-page" />,
-    );
-    await flushEffects();
-
-    ui.stdin.write(ARROW_DOWN);
-    await tick(20);
-    expect(ui.lastFrame() ?? '').toContain('line-1');
-    expect(ui.lastFrame() ?? '').not.toContain('line-0');
-
-    await flushEffects();
-    ui.stdin.write(ARROW_UP);
     await tick(20);
     expect(ui.lastFrame() ?? '').toContain('line-0');
 

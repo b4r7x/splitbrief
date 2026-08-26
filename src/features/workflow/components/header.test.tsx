@@ -14,6 +14,7 @@ import { eventsStore } from '../../../stores/workflow/events.js';
 import { configStore } from '../../../stores/project/config.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { glyph } from '../../../lib/glyphs.js';
+import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
 import { getHeaderLayout, Header } from './header.js';
 
 const STARTED_AT = new Date(0).toISOString();
@@ -36,117 +37,90 @@ afterEach(() => {
 
 describe('Header — layout', () => {
   it('shows the elapsed tail when there is ample width', () => {
-    const layout = getHeaderLayout({ cols: 100, isSmall: false, railCells: 40 });
+    const layout = getHeaderLayout({ cols: 100, railCells: 40 });
 
     expect(layout.showElapsed).toBe(true);
     expect(layout.railWidth).toBeLessThanOrEqual(layout.contentWidth);
   });
 
-  it('shrinks the rail cell to leave room for the runner + elapsed tail', () => {
-    const withTail = getHeaderLayout({
-      cols: 160,
-      isSmall: false,
-      railCells: 40,
-      runnerFullCells: 44,
-      runnerCompactCells: 31,
-    });
-    const withoutTail = getHeaderLayout({ cols: 160, isSmall: false, railCells: 40 });
+  it('shrinks the rail cell to leave room for the seat + elapsed tail', () => {
+    const withTail = getHeaderLayout({ cols: 160, railCells: 40, seatCells: 44 });
+    const withoutTail = getHeaderLayout({ cols: 160, railCells: 40 });
 
     expect(withTail.railWidth).toBeLessThan(withoutTail.railWidth);
   });
 
   it('keeps the elapsed clock at narrow widths where the status word would still fit', () => {
-    const layout = getHeaderLayout({ cols: 40, isSmall: true, railCells: 20 });
+    const layout = getHeaderLayout({ cols: 40, railCells: 20 });
 
     expect(layout.showElapsed).toBe(true);
     expect(layout.railWidth).toBeGreaterThan(0);
   });
 
   it('keeps the rail alone at the narrowest widths, dropping the elapsed tail', () => {
-    const layout = getHeaderLayout({ cols: 22, isSmall: true, railCells: 18 });
+    const layout = getHeaderLayout({ cols: 22, railCells: 18 });
 
     expect(layout.showElapsed).toBe(false);
     expect(layout.railWidth).toBeGreaterThan(0);
   });
 
-  it('omits the runner summary by default when no runner widths are supplied', () => {
-    expect(getHeaderLayout({ cols: 120, isSmall: false, railCells: 40 }).runnerVariant).toBe(
-      'none',
-    );
+  it('omits the seat line when no seat width is supplied', () => {
+    expect(getHeaderLayout({ cols: 120, railCells: 40 }).showSeats).toBe(false);
   });
 
-  it('shows the full role-labeled runner summary when the terminal is wide', () => {
-    expect(
-      getHeaderLayout({
-        cols: 160,
-        isSmall: false,
-        railCells: 40,
-        runnerFullCells: 44,
-        runnerCompactCells: 31,
-      }).runnerVariant,
-    ).toBe('full');
+  it('shows the seat line when the terminal is wide', () => {
+    expect(getHeaderLayout({ cols: 160, railCells: 40, seatCells: 44 }).showSeats).toBe(true);
   });
 
-  it('reports no reviewer cell when the reviewer widths match the reviewer-less widths', () => {
-    const layout = getHeaderLayout({
-      cols: 160,
-      isSmall: false,
-      railCells: 40,
-      runnerFullCells: 44,
-      runnerCompactCells: 31,
-      runnerFullNoReviewerCells: 44,
-      runnerCompactNoReviewerCells: 31,
-    });
-
-    expect(layout.runnerVariant).toBe('full');
-    expect(layout.showReviewer).toBe(false);
-  });
-
-  it('reports the reviewer cell when the reviewer widths are wider and still fit', () => {
-    const layout = getHeaderLayout({
-      cols: 200,
-      isSmall: false,
-      railCells: 40,
-      runnerFullCells: 60,
-      runnerCompactCells: 40,
-      runnerFullNoReviewerCells: 44,
-      runnerCompactNoReviewerCells: 31,
-    });
-
-    expect(layout.runnerVariant).toBe('full');
-    expect(layout.showReviewer).toBe(true);
-  });
-
-  it('drops to the compact runner summary on small terminals even when full would fit', () => {
-    expect(
-      getHeaderLayout({
-        cols: 110,
-        isSmall: true,
-        railCells: 40,
-        runnerFullCells: 44,
-        runnerCompactCells: 31,
-      }).runnerVariant,
-    ).toBe('compact');
-  });
-
-  it('omits the runner summary entirely when a wide rail leaves no room', () => {
-    expect(
-      getHeaderLayout({
-        cols: 60,
-        isSmall: true,
-        railCells: 50,
-        runnerFullCells: 44,
-        runnerCompactCells: 31,
-      }).runnerVariant,
-    ).toBe('none');
+  it('omits the seat line entirely when a wide rail leaves no room', () => {
+    expect(getHeaderLayout({ cols: 60, railCells: 50, seatCells: 44 }).showSeats).toBe(false);
   });
 });
 
-describe('Header — runner summary', () => {
+describe('Header — seat line', () => {
   const ESC = String.fromCharCode(27);
   const hostileSequence = `${ESC}[2J`;
 
-  it('sanitizes hostile model ids in the visible runner label', async () => {
+  async function seatFrame(cols: number, config = makeConfig()): Promise<string> {
+    resetStores();
+    terminalSizeStore.__testReset({ cols, rows: 24, isSmall: cols < 120 });
+    configStore.__testReset({ projectDir: '/tmp/p', config });
+    const instance = render(<Header startedAt={STARTED_AT} />);
+    await tick();
+    const frame = stripAnsiStyles(instance.lastFrame() ?? '');
+    instance.unmount();
+    return frame;
+  }
+
+  it('names all three seats in one collapsed line without a chevron', async () => {
+    const frame = await seatFrame(160);
+
+    expect(frame).toContain('PLAN');
+    expect(frame).toContain('BUILD');
+    expect(frame).toContain('REVIEW');
+    expect(frame).toContain('Qwen 7B');
+    expect(frame.slice(frame.indexOf('PLAN'))).not.toContain(glyph('connectorSame'));
+  });
+
+  it('says the review seat borrows the planner when no reviewer is configured', async () => {
+    const frame = await seatFrame(160);
+
+    expect(frame).toContain(PLANNER_INHERITANCE.short);
+  });
+
+  it('names the reviewer seat with its own runner when a reviewer is configured', async () => {
+    const frame = await seatFrame(
+      200,
+      makeConfig({ reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' } }),
+    );
+
+    expect(frame).toContain('REVIEW');
+    expect(frame).toContain('Codex');
+    expect(frame).not.toContain(PLANNER_INHERITANCE.short);
+  });
+
+  it('sanitizes hostile model ids in the visible seat line', async () => {
+    resetStores();
     terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
     configStore.__testReset({
       projectDir: '/tmp/p',
@@ -156,46 +130,13 @@ describe('Header — runner summary', () => {
     const instance = render(<Header startedAt={STARTED_AT} />);
     await tick();
     const rawFrame = instance.lastFrame() ?? '';
-    const frame = stripAnsiStyles(rawFrame);
 
-    expect(frame).toContain('Qwen Coder');
+    expect(stripAnsiStyles(rawFrame)).toContain('Qwen Coder');
     expect(rawFrame).not.toContain(hostileSequence);
     instance.unmount();
   });
 
-  it('labels both roles and names both models when the terminal is wide', async () => {
-    terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
-    configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
-
-    const instance = render(<Header startedAt={STARTED_AT} />);
-    await tick();
-    const frame = stripAnsiStyles(instance.lastFrame() ?? '');
-
-    expect(frame).toContain('Planner');
-    expect(frame).toContain('Claude Code');
-    expect(frame).toContain('Implementer');
-    expect(frame).toContain('Qwen 2.5 Coder 7B');
-    expect(frame).toContain(glyph('connectorSame'));
-    expect(frame).not.toContain('Reviewer');
-    instance.unmount();
-  });
-
-  it('drops the role words but keeps the model names on a small terminal', async () => {
-    terminalSizeStore.__testReset({ cols: 110, rows: 24, isSmall: true });
-    configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
-
-    const instance = render(<Header startedAt={STARTED_AT} />);
-    await tick();
-    const frame = stripAnsiStyles(instance.lastFrame() ?? '');
-
-    expect(frame).toContain('Claude Code');
-    expect(frame).toContain('Qwen 2.5 Coder 7B');
-    expect(frame).toContain(glyph('connectorSame'));
-    expect(frame).not.toContain('Planner');
-    instance.unmount();
-  });
-
-  it('omits the runner models but keeps the elapsed clock when the rail crowds the bar', async () => {
+  it('drops the seat line but keeps the elapsed clock when the rail crowds the bar', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(5_000);
     lifecycleStore.__testReset({ phase: 'planning', status: 'running', startedAt: 0 });
@@ -205,35 +146,8 @@ describe('Header — runner summary', () => {
     const instance = render(<Header startedAt={STARTED_AT} />);
     const frame = stripAnsiStyles(instance.lastFrame() ?? '');
 
-    expect(frame).not.toContain('Claude Code');
-    expect(frame).not.toContain('Qwen');
+    expect(frame).not.toContain('BUILD');
     expect(frame).toContain('0:05');
-    instance.unmount();
-  });
-
-  it('keeps the compact runner and elapsed clock when Form C is selected', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(5_000);
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
-    tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
-    terminalSizeStore.__testReset({ cols: 35, rows: 24, isSmall: true });
-    configStore.__testReset({
-      projectDir: '/tmp/p',
-      config: makeConfig({
-        planner: { kind: 'shell', command: 'planner', model: 'aa' },
-        implementer: { model: 'bb' },
-      }),
-    });
-
-    const instance = render(<Header startedAt={STARTED_AT} railForm="C" />);
-    const frame = stripAnsiStyles(instance.lastFrame() ?? '');
-
-    expect(frame).toContain('task 3/7');
-    expect(frame).toContain('Aa');
-    expect(frame).toContain('Bb');
-    expect(frame).toContain(glyph('connectorSame'));
-    expect(frame).toContain('0:05');
-    expect(frame).not.toContain('Planner');
     instance.unmount();
   });
 });
@@ -417,59 +331,6 @@ describe('Header — rail and elapsed', () => {
       vi.advanceTimersByTime(2_000);
     });
     expect(instance.lastFrame() ?? '').toContain('0:32');
-    instance.unmount();
-  });
-});
-
-describe('Header — reviewer seat', () => {
-  const REVIEWER = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' } as const;
-
-  async function seatNames(cols: number, reviewer: boolean): Promise<string> {
-    resetStores();
-    terminalSizeStore.__testReset({ cols, rows: 24, isSmall: false });
-    configStore.__testReset({
-      projectDir: '/tmp/p',
-      config: reviewer ? makeConfig({ reviewer: REVIEWER }) : makeConfig(),
-    });
-    const instance = render(<Header startedAt={STARTED_AT} />);
-    await tick();
-    const frame = stripAnsiStyles(instance.lastFrame() ?? '');
-    instance.unmount();
-    return frame;
-  }
-
-  it.each([100, 120])(
-    'keeps the planner and implementer seats at %i columns when a reviewer is configured',
-    async (cols) => {
-      const withoutReviewer = await seatNames(cols, false);
-      const withReviewer = await seatNames(cols, true);
-
-      expect(withoutReviewer).toContain('Claude Code');
-      expect(withReviewer).toContain('Claude Code');
-      expect(withReviewer).toContain('Qwen 2.5 Coder 7B');
-    },
-  );
-
-  it('keeps the role words at 120 columns rather than dropping them to fit a third seat', async () => {
-    const frame = await seatNames(120, true);
-
-    expect(frame).toContain('Planner');
-    expect(frame).toContain('Implementer');
-  });
-
-  it('names the reviewer seat with its own runner when a reviewer is configured', async () => {
-    terminalSizeStore.__testReset({ cols: 200, rows: 24, isSmall: false });
-    configStore.__testReset({
-      projectDir: '/tmp/p',
-      config: makeConfig({ reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' } }),
-    });
-
-    const instance = render(<Header startedAt={STARTED_AT} />);
-    await tick();
-    const frame = stripAnsiStyles(instance.lastFrame() ?? '');
-
-    expect(frame).toContain('Reviewer');
-    expect(frame).toContain('GPT-5 Codex');
     instance.unmount();
   });
 });

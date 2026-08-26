@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderFeature, type RenderFeatureResult, tick } from '#testing/helpers/ink.js';
 import { App } from '../../src/app/root.js';
 import { ACTIVE_OVERLAYS } from '../../src/core/navigation/types.js';
+import { ConfigSchema } from '../../src/core/schemas/config.js';
+import { detectionStore } from '../../src/stores/project/detection.js';
 import { findVisualScenario } from './catalog.js';
 import { viewport } from './contracts/geometry.js';
 import { scenarioId } from './contracts/identifiers.js';
-import type { FixtureFactory } from './fixtures/common.js';
+import type { FixtureContext, FixtureFactory } from './fixtures/common.js';
 import { overlayFixtureRegistry } from './fixtures/overlay-fixtures.js';
 import {
   createHomeFixture,
@@ -14,6 +17,7 @@ import {
   createSummaryFixture,
   createWorkflowBaseFixture,
   teardownVisualFixture,
+  visualConfig,
 } from './fixtures/screen-fixtures.js';
 import { createWorkflowFixtureAppDeps } from './fixtures/workflow/setup.js';
 
@@ -29,8 +33,14 @@ const SCREEN_CASES: readonly FixtureCase[] = [
   { scenarioId: 'setup-initial', factory: createSetupFixture },
 ];
 
+// REQ-062 retired the bare `overlay-reviewer-picker` id: the inherit row is the
+// state the fixture reaches, so the scenario is named for it.
+const OVERLAY_SCENARIO_IDS: Partial<Record<(typeof ACTIVE_OVERLAYS)[number], string>> = {
+  'reviewer-picker': 'overlay-reviewer-picker-inherited',
+};
+
 const OVERLAY_CASES: readonly FixtureCase[] = ACTIVE_OVERLAYS.map((overlay) => {
-  const id = `overlay-${overlay}`;
+  const id = OVERLAY_SCENARIO_IDS[overlay] ?? `overlay-${overlay}`;
   const factory = overlayFixtureRegistry.get(scenarioId(id));
   if (!factory) throw new Error(`Missing visual fixture for ${id}`);
   return { scenarioId: id, factory };
@@ -40,20 +50,24 @@ const FIXTURE_CASES = [...SCREEN_CASES, ...OVERLAY_CASES];
 const VIEWPORT = viewport({ cols: 80, rows: 24 });
 const WORKFLOW_DEPS = createWorkflowFixtureAppDeps();
 
-async function renderFixture(fixtureCase: FixtureCase): Promise<string> {
-  const scenario = findVisualScenario(fixtureCase.scenarioId);
-  if (!scenario) throw new Error(`Missing visual scenario ${fixtureCase.scenarioId}`);
+function fixtureContext(id: string): FixtureContext {
+  const scenario = findVisualScenario(id);
+  if (!scenario) throw new Error(`Missing visual scenario ${id}`);
   const checkpoint = scenario.checkpoints[0];
-  if (!checkpoint) throw new Error(`Missing checkpoint for ${fixtureCase.scenarioId}`);
+  if (!checkpoint) throw new Error(`Missing checkpoint for ${id}`);
+  return { scenario, checkpoint, viewport: VIEWPORT };
+}
 
+async function renderFixture(fixtureCase: FixtureCase): Promise<string> {
+  const context = fixtureContext(fixtureCase.scenarioId);
   const lifecycle = fixtureCase.factory();
   let ui: RenderFeatureResult | null = null;
   try {
-    await lifecycle.setup({ scenario, checkpoint, viewport: VIEWPORT });
+    await lifecycle.setup(context);
     ui = renderFeature(<App workflowDeps={WORKFLOW_DEPS} />);
     await tick(20);
     const frame = ui.lastFrame() ?? '';
-    expect(frame, fixtureCase.scenarioId).toContain(checkpoint.marker);
+    expect(frame, fixtureCase.scenarioId).toContain(context.checkpoint.marker);
     return frame;
   } finally {
     ui?.unmount();
@@ -95,6 +109,66 @@ describe('visual screen and overlay fixtures', () => {
       );
     }
   });
+});
+
+describe('visual fixture seeds', () => {
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+  });
+
+  afterEach(() => {
+    teardownVisualFixture();
+  });
+
+  it('applies a config override without disturbing the rest of the visual config', () => {
+    const base = visualConfig();
+    const withReviewer = visualConfig({
+      reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' },
+    });
+
+    expect(base).toEqual(CONFIG_BEFORE_THE_OVERRIDE_PARAMETER);
+    expect(base.reviewer).toBeUndefined();
+    expect(withReviewer.reviewer).toBeDefined();
+    expect(ConfigSchema.parse(withReviewer)).toEqual(withReviewer);
+    expect({ ...withReviewer, reviewer: undefined }).toEqual({ ...base, reviewer: undefined });
+  });
+
+  it('seeds an unfetched readiness state only for the cold home fixture', async () => {
+    const context = fixtureContext('home-empty');
+
+    const cold = createHomeFixture({ cold: true });
+    await cold.setup(context);
+    expect(detectionStore.get().refresh.readiness.fetchedAt).toBeNull();
+    await cold.teardown();
+
+    const warm = createHomeFixture();
+    await warm.setup(context);
+    expect(detectionStore.get().refresh.readiness.fetchedAt).not.toBeNull();
+    await warm.teardown();
+  });
+});
+
+// The literal `visualConfig` built before it took overrides: the default call
+// must still produce exactly this config, or every re-baselined frame moves.
+const CONFIG_BEFORE_THE_OVERRIDE_PARAMETER = makeConfig({
+  planner: {
+    kind: 'cli',
+    tool: 'claude-code',
+    model: 'claude-sonnet-4',
+  },
+  implementer: {
+    kind: 'api',
+    provider: 'ollama',
+    model: 'qwen2.5-coder:7b',
+    apiBase: 'http://127.0.0.1:11434/v1',
+    contextLength: 32_768,
+    temperature: 0.2,
+  },
+  workflow: {
+    mode: 'standard',
+    persistTranscript: false,
+    maxRetries: 2,
+  },
 });
 
 const ALL_CASE_COUNT = SCREEN_CASES.length + OVERLAY_CASES.length;

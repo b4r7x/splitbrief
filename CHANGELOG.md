@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Crew is no longer a surface of its own: it is the first section of Settings, one labelled row per seat (`PLAN`, `BUILD` with its `escalate` branch, `REVIEW`), and the same rows build the first-run Setup screen. The Settings seat sections that showed the same three facts in a second vocabulary are gone; ready-made crews are offered in Setup only, where choosing one is still a single save.
+- Every overlay panel, the home body and the composer take their width from one rule (`overlayRect`, `src/core/navigation/overlay-rect.ts`) with three density classes — `compact`, `roomy`, `wide` — instead of a pinned constant per surface. An 80-column terminal and a 120-column terminal no longer render byte-identical panels, and `OverlayPanel` has no `maxWidth`. The workflow composer, the transcript and the full-bleed `editor` overlay stay full-width.
+- Seat identity is produced by one formatter (`src/core/crew/identity.ts`): `Claude Code CLI · Claude Sonnet 4`, ` · ` as the only separator, sanitized before it is measured. Home, Settings, Setup, the picker mirror and the workflow header and sidebar all read it, so role is carried by a label rather than by hue and the home line fits its budget.
+- Reasoning effort is a property of the seat, edited on the seat's row, and it no longer rewires an inherited reviewer as a side effect.
+- The tool/model picker routes providers inline instead of opening a 64-column modal, and each route states its auth as a tri-state — authenticated, not authenticated, unknown — with the action that resolves it.
+- Model lists are honest. A CLI tool that cannot enumerate its models says so instead of showing an empty column, and Kilo Code's model list is parsed from the tool's own output.
+- The home screen shows the seat block (`src/features/home/components/seat-block.tsx`): one labelled row per seat, replacing the single-line byline.
+- The runtime command registry is 27 commands in five categories (Navigate, Crew, Workflow, View, Input & output), each with its aliases and, where a command takes an argument, prefill. `/crew [seat]` opens Crew focused on that seat's row (PLAN when no seat is given). No row in the palette errors on Enter.
+- New commands in that registry: `/diff` shows the run diff, `/cost` the cost breakdown — which gains a `By seat` section — `/run accept|reject` answers the run approval gate, and `/image` attaches and removes images, offered only when the seat's runner can accept them.
+- The stderr effort-drop warning (`src/engine/runners/factory.ts`) is kept for headless runs; in the TUI the picker now clears an unsupported effort at save time and says so in the feedback row.
+
+### Removed
+
+- The commands `/effort`, `/repomap`, `/resume`, `/planner`, `/implementer`, `/reviewer`, `/accept-run`, `/reject-run`, `/attach`, and `/detach`. The last seven live on for one release as alias rows for `/crew <seat>`, `/run accept|reject`, and `/image`; `/effort`, `/repomap`, and `/resume` are gone outright — effort is edited on the seat's row in Crew.
+- The standalone Crew overlay, `SubPanel`, the per-seat Settings sections, and the pinned overlay widths.
+
 ## [0.1.0] - 2026-08-07
 
 Initial release — source install; not yet published to npm. SPLITBRIEF was developed in

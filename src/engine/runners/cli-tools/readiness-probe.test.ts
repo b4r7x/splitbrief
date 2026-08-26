@@ -3,10 +3,12 @@ import { chmod, mkdir, realpath, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
+import type { CliReadinessResult } from '../../../core/schemas/readiness.js';
 import {
   capabilityTuple,
   unverifiedConformanceProof,
 } from '#testing/helpers/factories/compiler-capability.js';
+import { itUnix } from '#testing/helpers/planner-command-invoke.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { AuthFact } from '../../../core/discovery/runner-evidence.js';
 import {
@@ -14,6 +16,7 @@ import {
   type CliProbeContract,
   type CliProbeOutput,
 } from './contract.js';
+import { providerOracleAuthFact } from './provider-oracle.js';
 import { probeCliReadiness, probeDeclaredCliReadinessEvidence } from './readiness-probe.js';
 import { resolveCliExecutable } from '../resolve-cli-executable.js';
 import { admitCompilerCapability } from '../compiler-capability.js';
@@ -122,6 +125,98 @@ function declaredProbe(
       },
     },
   };
+}
+
+const ORACLE_READ_OUTPUT = 'Credentials\nanthropic  oauth\n1 credential\n';
+const ORACLE_EMPTY_OUTPUT = 'Credentials\n0 credentials\n';
+
+async function fakeOpencode(dir: string, oracleBody: string): Promise<CliExecutableIdentity> {
+  const path = join(await realpath(dir), 'opencode');
+  await writeFile(
+    path,
+    [
+      '#!/usr/bin/env node',
+      'const args = process.argv.slice(2);',
+      "if (args[0] === '--version') { process.stdout.write('opencode 0.5.0'); process.exit(0); }",
+      oracleBody,
+    ].join('\n'),
+  );
+  await chmod(path, 0o755);
+  const info = await stat(path);
+  return {
+    path,
+    fingerprint: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs },
+  };
+}
+
+function opencodeProbe(
+  options: { authTimeoutMs?: number; authNotRun?: boolean } = {},
+): CliProbeContract {
+  const version = {
+    command: ['opencode', '--version'] as const,
+    cwd: 'neutral' as const,
+    timeoutMs: 2_000,
+    maxOutputBytes: 1_024,
+  };
+  const auth = {
+    command: ['opencode', 'providers', 'list'] as const,
+    cwd: 'neutral' as const,
+    timeoutMs: options.authTimeoutMs ?? 2_000,
+    maxOutputBytes: 1_024,
+  };
+  return {
+    version,
+    auth,
+    declared: {
+      kind: 'declared',
+      version: {
+        ...version,
+        kind: 'version',
+        parse: ({ stdout }) =>
+          stdout.includes('0.5.0') ? { kind: 'success', value: '0.5.0' } : { kind: 'malformed' },
+      },
+      auth: options.authNotRun
+        ? { kind: 'not-run' }
+        : { ...auth, kind: 'auth-status', parse: providerOracleAuthFact },
+      catalog: {
+        command: ['opencode', 'models'] as const,
+        cwd: 'neutral' as const,
+        timeoutMs: 2_000,
+        maxOutputBytes: 1_024,
+        kind: 'catalog',
+        parse: () => ({ kind: 'success', value: [] }),
+      },
+    },
+  };
+}
+
+async function probeOpencode(
+  options: Readonly<{
+    oracleBody?: string;
+    authTimeoutMs?: number;
+    authNotRun?: boolean;
+    classifyVersion?: () => 'compatible' | 'incompatible' | 'unverified';
+  }>,
+): Promise<CliReadinessResult> {
+  return withTempDir('readiness-oracle', async (dir) => {
+    const home = join(dir, 'home');
+    await mkdir(join(home, '.config', 'opencode'), { recursive: true });
+    await writeFile(join(home, '.config', 'opencode', 'auth.json'), '{}');
+    vi.stubEnv('HOME', home);
+    const executable = await fakeOpencode(dir, options.oracleBody ?? 'process.exit(0);');
+    return probeCliReadiness({
+      tool: 'opencode',
+      executable,
+      authChannel: 'provider-dependent',
+      probe: opencodeProbe({
+        ...(options.authTimeoutMs === undefined ? {} : { authTimeoutMs: options.authTimeoutMs }),
+        ...(options.authNotRun === undefined ? {} : { authNotRun: options.authNotRun }),
+      }),
+      ...(options.classifyVersion === undefined
+        ? {}
+        : { classifyVersion: options.classifyVersion }),
+    });
+  });
 }
 
 describe('CLI readiness probe', () => {
@@ -613,5 +708,88 @@ describe('CLI readiness probe', () => {
     );
     expect(admission.kind).toBe('refused');
     if (admission.kind === 'refused') expect(admission.missing).toContain('conformance');
+  });
+  describe('provider credential oracle', () => {
+    itUnix('reads the listed provider credentials', async () => {
+      const result = await probeOpencode({
+        oracleBody: `process.stdout.write(${JSON.stringify(ORACLE_READ_OUTPUT)}); process.exit(0);`,
+      });
+
+      expect(result.providerAuth).toEqual({
+        kind: 'read',
+        facts: [{ provider: 'anthropic', source: 'oauth' }],
+      });
+    });
+
+    itUnix('reports a clean zero listing as signed in to nothing', async () => {
+      const result = await probeOpencode({
+        oracleBody: `process.stdout.write(${JSON.stringify(ORACLE_EMPTY_OUTPUT)}); process.exit(0);`,
+      });
+
+      expect(result.providerAuth).toEqual({ kind: 'empty' });
+    });
+
+    itUnix('names an unreadable listing a parse failure', async () => {
+      const result = await probeOpencode({
+        oracleBody: "process.stdout.write('surprise new format'); process.exit(0);",
+      });
+
+      expect(result.providerAuth).toEqual({ kind: 'unreadable', reason: 'parse-failure' });
+    });
+
+    itUnix('names a failed oracle command an exit failure', async () => {
+      const result = await probeOpencode({ oracleBody: 'process.exit(1);' });
+
+      expect(result.providerAuth).toEqual({ kind: 'unreadable', reason: 'exit-failure' });
+    });
+
+    itUnix('names a hanging oracle command a timeout', async () => {
+      const result = await probeOpencode({
+        oracleBody: 'setTimeout(() => process.exit(0), 5_000);',
+        authTimeoutMs: 200,
+      });
+
+      expect(result.providerAuth).toEqual({ kind: 'unreadable', reason: 'timeout' });
+    });
+
+    itUnix('keeps the facts read under an unverified version', async () => {
+      const result = await probeOpencode({
+        oracleBody: `process.stdout.write(${JSON.stringify(ORACLE_READ_OUTPUT)}); process.exit(0);`,
+        classifyVersion: () => 'unverified',
+      });
+
+      expect(result.status).toBe('unverified');
+      expect(result.providerAuth).toEqual({
+        kind: 'read',
+        facts: [{ provider: 'anthropic', source: 'oauth' }],
+      });
+    });
+
+    itUnix('reports a listing that never ran as not probed', async () => {
+      const result = await probeOpencode({ authNotRun: true });
+
+      expect(result.providerAuth).toEqual({ kind: 'unreadable', reason: 'not-probed' });
+    });
+
+    itUnix(
+      'blames the version for a listing that never ran on an incompatible version',
+      async () => {
+        const result = await probeOpencode({
+          authNotRun: true,
+          classifyVersion: () => 'incompatible',
+        });
+
+        expect(result.providerAuth).toEqual({ kind: 'unreadable', reason: 'version-mismatch' });
+      },
+    );
+
+    itUnix('reports a listing that never ran as not probed on a compatible version', async () => {
+      const result = await probeOpencode({
+        authNotRun: true,
+        classifyVersion: () => 'compatible',
+      });
+
+      expect(result.providerAuth).toEqual({ kind: 'unreadable', reason: 'not-probed' });
+    });
   });
 });

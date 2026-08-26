@@ -22,10 +22,10 @@ describe('findImportBoundaryViolations', () => {
   });
 
   it('flags src/components importing from src/features (regression for old terminal-width import)', () => {
-    write('features/workflow/layout/terminal-width.ts', 'export const x = 1;');
+    write('features/workflow/layout/sizing.ts', 'export const x = 1;');
     write(
       'components/overlays/overlay-panel.tsx',
-      "import { x } from '../../features/workflow/layout/terminal-width.js';\nexport const y = x;",
+      "import { x } from '../../features/workflow/layout/sizing.js';\nexport const y = x;",
     );
 
     const violations = findImportBoundaryViolations(root);
@@ -126,11 +126,11 @@ describe('findImportBoundaryViolations', () => {
   });
 
   it('allows features and components importing shared utils/core', () => {
-    write('utils/terminal-width.ts', 'export const w = 1;');
+    write('utils/sizing.ts', 'export const w = 1;');
     write('core/task-status-glyph.ts', 'export const g = 1;');
     write(
       'components/overlays/overlay-panel.tsx',
-      "import { w } from '../../utils/terminal-width.js';\nexport const y = w;",
+      "import { w } from '../../utils/sizing.js';\nexport const y = w;",
     );
     write(
       'features/summary/components/evidence.tsx',

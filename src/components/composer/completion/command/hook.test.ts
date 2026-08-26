@@ -17,6 +17,7 @@ const COMMANDS: RuntimeCommandDef[] = [
     name: '/help',
     label: 'Help',
     description: 'Show help',
+    category: 'navigate',
     validScreens: ['home'],
     handler: () => {},
   },
@@ -25,6 +26,8 @@ const COMMANDS: RuntimeCommandDef[] = [
     name: '/copy',
     label: 'Copy',
     description: 'Copy a value',
+    category: 'navigate',
+    args: { kind: 'free', hint: '<text>' },
     validScreens: ['home'],
     handler: () => {},
   },
@@ -33,6 +36,8 @@ const COMMANDS: RuntimeCommandDef[] = [
     name: '/queue',
     label: 'Queue',
     description: 'Manage the queue',
+    category: 'navigate',
+    args: { kind: 'free', hint: '<text>' },
     validScreens: ['home'],
     handler: () => {},
   },
@@ -41,6 +46,59 @@ const COMMANDS: RuntimeCommandDef[] = [
     name: '/sidebar',
     label: 'Sidebar',
     description: 'Toggle the sidebar',
+    category: 'navigate',
+    validScreens: ['home'],
+    handler: () => {},
+  },
+  {
+    kind: 'arg',
+    name: '/mode',
+    label: 'Mode',
+    description: 'Workflow mode',
+    category: 'crew',
+    aliases: [{ name: '/m' }],
+    args: { kind: 'closed', options: ['instant', 'quick', 'standard', 'speckit'], optional: true },
+    validScreens: ['home'],
+    handler: () => {},
+  },
+  {
+    kind: 'arg',
+    name: '/crew',
+    label: 'Crew',
+    description: 'Who fills each seat',
+    category: 'crew',
+    aliases: [{ name: '/planner', args: 'plan' }],
+    args: { kind: 'closed', options: ['plan', 'build', 'review'], optional: true },
+    validScreens: ['home'],
+    handler: () => {},
+  },
+  {
+    kind: 'arg',
+    name: '/scroll',
+    label: 'Scroll',
+    description: 'Scroll the transcript',
+    category: 'view',
+    args: { kind: 'closed', options: ['top', 'bottom', 'page-up', 'page-down'] },
+    validScreens: ['home'],
+    handler: () => {},
+  },
+  {
+    kind: 'arg',
+    name: '/revise-spec',
+    label: 'Revise spec',
+    description: 'Revise the spec',
+    category: 'workflow',
+    args: { kind: 'free', hint: '<instruction>' },
+    validScreens: ['home'],
+    handler: () => {},
+  },
+  {
+    kind: 'noarg',
+    name: '/settings',
+    label: 'Settings',
+    description: 'Crew, validation, workflow',
+    category: 'navigate',
+    aliases: [{ name: '/config' }],
     validScreens: ['home'],
     handler: () => {},
   },
@@ -220,6 +278,157 @@ describe('useCommandCompletion suppression', () => {
     await vi.waitFor(
       () => {
         expect(ui.lastFrame()).toContain('older-a');
+      },
+      { timeout: 5000 },
+    );
+    ui.unmount();
+  });
+});
+
+describe('useCommandCompletion closed arguments', () => {
+  beforeEach(() => {
+    resetAllStores();
+  });
+
+  it('lists the closed option set after the space and runs the picked option on Enter', async () => {
+    const { ui, commandCalls } = renderComposer();
+
+    await flushEffects();
+    ui.stdin.write('/mode ');
+    await tick(20);
+    await vi.waitFor(
+      () => {
+        const frame = ui.lastFrame();
+        expect(frame).toContain('instant');
+        expect(frame).toContain('quick');
+        expect(frame).toContain('standard');
+        expect(frame).toContain('speckit');
+      },
+      { timeout: 5000 },
+    );
+
+    await flushEffects();
+    ui.stdin.write('sp');
+    await tick(20);
+    await vi.waitFor(
+      () => {
+        const frame = ui.lastFrame();
+        expect(frame).toContain('speckit');
+        expect(frame).not.toContain('instant');
+      },
+      { timeout: 5000 },
+    );
+
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await vi.waitFor(
+      () => {
+        expect(commandCalls).toEqual(['/mode speckit']);
+      },
+      { timeout: 5000 },
+    );
+    ui.unmount();
+  });
+
+  it('runs the highlighted option on Enter when the closed argument is optional', async () => {
+    const { ui, commandCalls } = renderComposer();
+
+    await flushEffects();
+    ui.stdin.write('/mode ');
+    await tick(20);
+    await vi.waitFor(
+      () => {
+        expect(ui.lastFrame()).toContain('instant');
+      },
+      { timeout: 5000 },
+    );
+
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await vi.waitFor(
+      () => {
+        expect(commandCalls).toEqual(['/mode instant']);
+      },
+      { timeout: 5000 },
+    );
+    ui.unmount();
+  });
+
+  it('lists the closed option set for an alias of the command', async () => {
+    const shown = renderFeature(createElement(ShowSuggestionsHarness, { value: '/m ' }));
+    await tick(20);
+    expect(shown.lastFrame()).toContain('true');
+    shown.unmount();
+  });
+
+  it('runs the highlighted option on Enter when the closed argument is required', async () => {
+    const { ui, commandCalls } = renderComposer();
+
+    await flushEffects();
+    ui.stdin.write('/scroll ');
+    await tick(20);
+    await vi.waitFor(
+      () => {
+        expect(ui.lastFrame()).toContain('top');
+      },
+      { timeout: 5000 },
+    );
+
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await vi.waitFor(
+      () => {
+        expect(commandCalls).toEqual(['/scroll top']);
+      },
+      { timeout: 5000 },
+    );
+    ui.unmount();
+  });
+
+  it('shows no suggestions after the space of an alias that pre-fills the argument', async () => {
+    const hidden = renderFeature(createElement(ShowSuggestionsHarness, { value: '/planner ' }));
+    await tick(20);
+    expect(hidden.lastFrame()).toContain('false');
+    hidden.unmount();
+  });
+
+  it('shows no suggestions when no closed option matches the typed prefix', async () => {
+    const hidden = renderFeature(createElement(ShowSuggestionsHarness, { value: '/mode zz' }));
+    await tick(20);
+    expect(hidden.lastFrame()).toContain('false');
+    hidden.unmount();
+  });
+
+  it('shows no suggestions once a free-argument command has its space', async () => {
+    const shown = renderFeature(createElement(ShowSuggestionsHarness, { value: '/revise-spec' }));
+    await tick(20);
+    expect(shown.lastFrame()).toContain('true');
+    shown.unmount();
+
+    const hidden = renderFeature(createElement(ShowSuggestionsHarness, { value: '/revise-spec ' }));
+    await tick(20);
+    expect(hidden.lastFrame()).toContain('false');
+    hidden.unmount();
+  });
+
+  it('offers an alias under its own name', async () => {
+    const { ui, commandCalls } = renderComposer();
+
+    await flushEffects();
+    ui.stdin.write('/conf');
+    await tick(20);
+    await vi.waitFor(
+      () => {
+        expect(ui.lastFrame()).toContain('/config');
+      },
+      { timeout: 5000 },
+    );
+
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await vi.waitFor(
+      () => {
+        expect(commandCalls).toEqual(['/config']);
       },
       { timeout: 5000 },
     );

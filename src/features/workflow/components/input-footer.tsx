@@ -25,7 +25,8 @@ import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { formatStageLabel } from '../../../core/phase-display.js';
 import { buildInputFooterByline } from '../input-footer-byline.js';
-import { reviewerSeatLabel } from './runner-label.js';
+import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
+import { formatSeatIdentity } from '../../../core/crew/identity.js';
 
 function joinBylineParts(parts: readonly (string | null | undefined)[]): string {
   return parts
@@ -52,7 +53,8 @@ export function InputFooter({
   const advisory = useAdvisory();
   const config = configStore.useConfig();
   const workflow = config.workflow;
-  const reviewerSeat = reviewerSeatLabel(config);
+  const reviewer = configuredReviewerRunner(config);
+  const reviewerSeat = reviewer ? formatSeatIdentity(reviewer) : '';
   const commitStrategy = workflow.git?.commitStrategy ?? 'none';
   const createBranchEnabled = workflow.git?.createBranch ?? false;
   const gitLabel = createBranchEnabled ? `git:branch+${commitStrategy}` : `git:${commitStrategy}`;

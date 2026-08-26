@@ -1,6 +1,8 @@
 import { isAbsolute } from 'node:path';
 import { z } from 'zod';
+import { assertNever } from '../../utils/type-guards.js';
 import { KNOWN_API_PROVIDER_IDS } from '../providers/api-provider-catalog.js';
+import { PROVIDER_ORACLE_TOOL_IDS, type CliToolId } from '../runners/cli-tool-catalog.js';
 import { CliToolIdSchema } from '../schemas/enums.js';
 
 const OptionalPriceSchema = z.number().finite().nonnegative().optional();
@@ -279,6 +281,72 @@ export const CliProviderAuthFactSchema = z
   .strict();
 export type CliProviderAuthFact = z.infer<typeof CliProviderAuthFactSchema>;
 
+const CliProviderAuthFactsSchema = z.array(CliProviderAuthFactSchema).max(64).readonly();
+
+export const CLI_PROVIDER_AUTH_UNREADABLE_REASONS = [
+  'timeout',
+  'exit-failure',
+  'parse-failure',
+  'version-mismatch',
+  'not-probed',
+] as const;
+export type CliProviderAuthUnreadableReason = (typeof CLI_PROVIDER_AUTH_UNREADABLE_REASONS)[number];
+
+/**
+ * What a CLI's own credential listing said. `empty` is the truthful negative —
+ * signed in to nothing — and is never the same fact as `unreadable`, which
+ * names why the listing could not be read.
+ */
+export const CliProviderAuthSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('read'), facts: CliProviderAuthFactsSchema }).strict(),
+  z.object({ kind: z.literal('empty') }).strict(),
+  z
+    .object({ kind: z.literal('unreadable'), reason: z.enum(CLI_PROVIDER_AUTH_UNREADABLE_REASONS) })
+    .strict(),
+]);
+export type CliProviderAuth = z.infer<typeof CliProviderAuthSchema>;
+
+const NO_PROVIDER_AUTH_FACTS: readonly CliProviderAuthFact[] = [];
+
+/**
+ * Reads a persisted `providerAuth` payload of any vintage: the union itself,
+ * the legacy bare fact array, or nothing at all. An oracle tool with nothing
+ * recorded was never probed; a tool without an oracle has no fact to record.
+ */
+export function normalizeProviderAuth(
+  input: Readonly<{ tool: CliToolId; providerAuth: unknown }>,
+): CliProviderAuth | undefined {
+  const union = CliProviderAuthSchema.safeParse(input.providerAuth);
+  if (union.success) return union.data;
+  const legacy = CliProviderAuthFactsSchema.safeParse(input.providerAuth);
+  if (legacy.success) {
+    return legacy.data.length === 0 ? { kind: 'empty' } : { kind: 'read', facts: legacy.data };
+  }
+  return PROVIDER_ORACLE_TOOL_IDS.some((id) => id === input.tool)
+    ? { kind: 'unreadable', reason: 'not-probed' }
+    : undefined;
+}
+
+/**
+ * The facts a reader may count, or `undefined` when the listing said nothing
+ * countable. `empty` counts as zero facts; an unreadable listing counts nothing.
+ */
+export function cliProviderAuthFacts(
+  providerAuth: CliProviderAuth | undefined,
+): readonly CliProviderAuthFact[] | undefined {
+  if (providerAuth === undefined) return undefined;
+  switch (providerAuth.kind) {
+    case 'read':
+      return providerAuth.facts;
+    case 'empty':
+      return NO_PROVIDER_AUTH_FACTS;
+    case 'unreadable':
+      return undefined;
+    default:
+      return assertNever(providerAuth);
+  }
+}
+
 const CliReadyDiagnosticSchema = z
   .object({
     state: z.literal('ready'),
@@ -310,8 +378,8 @@ export const CliToolDetectionSchema = z
     testedVersion: z.string().min(1),
     compatibility: CliCompatibilityStateSchema,
     auth: CliAuthStateSchema,
-    /** Absent on payloads cached before it existed and whenever no oracle ran. */
-    providerAuth: z.array(CliProviderAuthFactSchema).max(64).readonly().optional(),
+    /** Absent only for a tool with no credential oracle to read. */
+    providerAuth: CliProviderAuthSchema.optional(),
     diagnostic: CliDiagnosticSchema,
     probedAt: z.number().int().nonnegative(),
   })

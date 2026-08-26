@@ -2,15 +2,10 @@ import type { Config } from '../schemas/config.js';
 import {
   APPROVE_LEVELS,
   COMMIT_STRATEGIES,
-  EFFORT_LEVELS,
   THEME_MODES,
   WORKFLOW_MODES,
 } from '../schemas/enums.js';
 import { CompactionFormatSchema } from '../schemas/compaction.js';
-import { getProviderDisplayName } from '../providers/catalog.js';
-import { formatModelName } from '../model-display.js';
-import { getRunnerDisplayName } from '../config/accessors/runner-config.js';
-import { resolveReviewerRunner } from '../config/accessors/reviewer-runner.js';
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import { RUNNER_IDLE_KILL_MS } from '../schemas/runner-fields.js';
 
@@ -19,15 +14,22 @@ const MAX_RETRIES_LIMIT = 10;
 const isApiImplementer = (config: Config): boolean =>
   resolveImplementerProfiles(config).defaultProfile.config.kind === 'api';
 
-const markInherited = (config: Config, display: string): string =>
-  resolveReviewerRunner(config).source === 'configured' ? display : `${display} (inherited)`;
+export const SETTINGS_SECTIONS = [
+  'Crew',
+  'Tuning',
+  'Validation',
+  'Workflow',
+  'Appearance',
+] as const;
+
+export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 export type SettingKind = 'boolean' | 'number' | 'string' | 'enum' | 'picker';
 
 export interface SettingDef {
   id: string;
   label: string;
-  section: string;
+  section: SettingsSection;
   description: string;
   kind: SettingKind;
   options?: string[];
@@ -36,6 +38,8 @@ export interface SettingDef {
   integer?: boolean;
   appliesTo?: (config: Config) => boolean;
   unsetLabel?: string;
+  /** Override for reading the label when it depends on the resolved config. */
+  readLabel?: (config: Config) => string;
   /**
    * Override for reading the display value. Used when the DU makes a direct
    * dot-path read impossible (e.g. `planner.tool` only exists on cli variant,
@@ -49,91 +53,9 @@ export interface SettingDef {
 
 export const SETTINGS_DEFS: SettingDef[] = [
   {
-    id: 'planner.kind',
-    label: 'Tool',
-    section: 'Planner',
-    description: 'Planner tool or API provider \u2192 /planner',
-    kind: 'picker',
-    readValue: (config) => getRunnerDisplayName(config.planner),
-    formatValue: (v) => getProviderDisplayName(String(v ?? '')),
-  },
-  {
-    id: 'planner.model',
-    label: 'Model',
-    section: 'Planner',
-    description: 'Planner model \u2192 /planner',
-    kind: 'picker',
-    readValue: (config) => config.planner.model,
-    formatValue: (v) => formatModelName(String(v ?? '')),
-  },
-  {
-    id: 'planner.effort',
-    label: 'Effort',
-    section: 'Planner',
-    description: 'Reasoning hint: low | medium | high | xhigh (dropped on unsupported backends)',
-    kind: 'enum',
-    options: [...EFFORT_LEVELS],
-    readValue: (config) => config.planner.effort,
-    unsetLabel: 'auto (tool default)',
-  },
-  {
-    id: 'reviewer.kind',
-    label: 'Tool',
-    section: 'Reviewer',
-    description: 'Reviewer tool or API provider \u2192 /reviewer',
-    kind: 'picker',
-    readValue: (config) =>
-      markInherited(
-        config,
-        getProviderDisplayName(getRunnerDisplayName(resolveReviewerRunner(config).runner)),
-      ),
-  },
-  {
-    id: 'reviewer.model',
-    label: 'Model',
-    section: 'Reviewer',
-    description: 'Reviewer model \u2192 /reviewer',
-    kind: 'picker',
-    readValue: (config) => {
-      const model = resolveReviewerRunner(config).runner.model;
-      return model === undefined ? undefined : markInherited(config, formatModelName(model));
-    },
-  },
-  {
-    id: 'reviewer.effort',
-    label: 'Effort',
-    section: 'Reviewer',
-    description: 'Reviewer reasoning hint \u2192 /reviewer',
-    kind: 'enum',
-    options: [...EFFORT_LEVELS],
-    readValue: (config) => {
-      const effort = resolveReviewerRunner(config).runner.effort;
-      return effort === undefined ? undefined : markInherited(config, effort);
-    },
-    readRawValue: (config) => resolveReviewerRunner(config).runner.effort,
-    unsetLabel: 'auto (tool default)',
-  },
-  {
-    id: 'implementer.tool',
-    label: 'Tool',
-    section: 'Implementer',
-    description: 'Implementer tool or API provider \u2192 /implementer',
-    kind: 'picker',
-    readValue: (config) => getRunnerDisplayName(config.implementer),
-    formatValue: (v) => getProviderDisplayName(String(v ?? '')),
-  },
-  {
-    id: 'implementer.model',
-    label: 'Model',
-    section: 'Implementer',
-    description: 'Implementer model \u2192 /implementer',
-    kind: 'picker',
-    formatValue: (v) => formatModelName(String(v ?? '')),
-  },
-  {
     id: 'implementer.temperature',
     label: 'Temperature',
-    section: 'Implementer',
+    section: 'Tuning',
     description: '0=precise  0.3=balanced  1+=creative (dropped on non-api backends)',
     kind: 'number',
     min: 0,
@@ -143,29 +65,18 @@ export const SETTINGS_DEFS: SettingDef[] = [
   {
     id: 'implementer.contextLength',
     label: 'Context length',
-    section: 'Implementer',
-    description: 'Token context window (auto = detected from the model)',
+    section: 'Tuning',
+    description: 'Prompt budget for the build seat (auto = detected from the model)',
     kind: 'number',
     min: 1024,
     integer: true,
-    appliesTo: isApiImplementer,
     unsetLabel: 'auto',
-  },
-  {
-    id: 'implementer.contextLength',
-    label: 'Prompt budget',
-    section: 'Implementer',
-    description: 'Token budget for prompt code-context truncation',
-    kind: 'number',
-    min: 1024,
-    integer: true,
-    appliesTo: (config) => !isApiImplementer(config),
-    unsetLabel: 'auto',
+    readLabel: (config) => (isApiImplementer(config) ? 'Context length' : 'Prompt budget'),
   },
   {
     id: 'implementer.timeout',
     label: 'Timeout',
-    section: 'Implementer',
+    section: 'Tuning',
     description: 'Request timeout (ms)',
     kind: 'number',
     min: 1,

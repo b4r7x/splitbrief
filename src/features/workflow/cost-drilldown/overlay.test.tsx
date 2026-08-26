@@ -1,14 +1,21 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
+import { glyph } from '../../../lib/glyphs.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { CostDrilldownOverlay } from './overlay.js';
 
+function unwrap(frame: string): string {
+  return frame.replace(/[│|]/g, ' ').replace(/\s+/g, ' ');
+}
+
 describe('CostDrilldownOverlay task metadata', () => {
   beforeEach(() => {
     tokensStore.__testReset();
-    terminalSizeStore.__testReset({ cols: 120 });
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
   });
 
   it('renders profile, context fit, routing reason, and cost interpretation for task attempts', () => {
@@ -42,8 +49,7 @@ describe('CostDrilldownOverlay task metadata', () => {
     expect(frame).toContain('profile cheap-local');
     expect(frame).toContain('fit tight');
     expect(frame).toContain('price unknown');
-    expect(frame).toContain('why rerouted after context estimate exceeded');
-    expect(frame.replace(/\s+/g, ' ')).toContain('cheap profile');
+    expect(unwrap(frame)).toContain('why rerouted after context estimate exceeded cheap profile');
     ui.unmount();
   });
 
@@ -273,6 +279,93 @@ describe('CostDrilldownOverlay task metadata', () => {
     expect(frame).toContain('fit tight');
     expect(frame).toContain('price unknown');
     expect(frame).toContain('why rerouted after context estimate exceeded');
+    ui.unmount();
+  });
+});
+
+describe('CostDrilldownOverlay seat breakdown', () => {
+  const pricedSeats = {
+    plannerTool: 'anthropic',
+    plannerModel: 'claude-sonnet-4-6',
+    implementerTool: 'anthropic',
+    implementerModel: 'claude-sonnet-4-6',
+  };
+
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+    tokensStore.__testReset();
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+  });
+
+  it('shows the seat section once two seats have tokens', () => {
+    tokensStore.__testReset({
+      pricingContext: pricedSeats,
+      tokenUsage: makeUsage({
+        plannerInput: 20_000,
+        plannerOutput: 4_000,
+        implementerInput: 60_000,
+        implementerOutput: 12_000,
+      }),
+    });
+
+    const ui = renderFeature(<CostDrilldownOverlay />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('By seat');
+    expect(frame).toContain('PLAN');
+    expect(frame).toContain('BUILD');
+    ui.unmount();
+  });
+
+  it('hides the seat section when only one seat has tokens', () => {
+    tokensStore.__testReset({
+      pricingContext: pricedSeats,
+      tokenUsage: makeUsage({ plannerInput: 20_000, plannerOutput: 4_000 }),
+    });
+
+    const ui = renderFeature(<CostDrilldownOverlay />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).not.toContain('By seat');
+    ui.unmount();
+  });
+
+  const seedTwoSeats = () => {
+    tokensStore.__testReset({
+      pricingContext: pricedSeats,
+      tokenUsage: makeUsage({
+        plannerInput: 20_000,
+        plannerOutput: 4_000,
+        implementerInput: 60_000,
+        implementerOutput: 12_000,
+      }),
+    });
+  };
+
+  const seatLine = (frame: string): string =>
+    frame.split('\n').find((line) => line.includes('PLAN')) ?? '';
+
+  it('drops the bar but keeps the share below sixty inner cells', () => {
+    seedTwoSeats();
+    terminalSizeStore.__testReset({ cols: 60, rows: 18 });
+
+    const ui = renderFeature(<CostDrilldownOverlay />);
+    const line = seatLine(stripAnsiStyles(ui.lastFrame() ?? ''));
+
+    expect(line).toContain('%');
+    expect(line).not.toContain(glyph('barFilled', 'unicode'));
+    ui.unmount();
+  });
+
+  it('draws the bar once the inner width allows it', () => {
+    seedTwoSeats();
+    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+
+    const ui = renderFeature(<CostDrilldownOverlay />);
+    const line = seatLine(stripAnsiStyles(ui.lastFrame() ?? ''));
+
+    expect(line).toContain('%');
+    expect(line).toContain(glyph('barFilled', 'unicode'));
     ui.unmount();
   });
 });

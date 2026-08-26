@@ -1,14 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { createRuntimeCommands } from './registry.js';
+import { ATTACHED_AVAILABLE_COMMANDS, createRuntimeCommands } from './registry.js';
 import { makeCtx } from '#testing/helpers/runtime-commands.js';
 
 const ATTACHED_LOCAL_ONLY = [
   '/skills',
   '/settings',
   '/mode',
-  '/effort',
-  '/planner',
-  '/implementer',
+  '/crew',
   '/refresh',
   '/revise-spec',
   '/revise-plan',
@@ -16,13 +14,12 @@ const ATTACHED_LOCAL_ONLY = [
   '/handoff',
   '/export',
   '/compact-transcript',
-  '/repomap',
-  '/attach',
-  '/detach',
+  '/image',
   '/approval',
-  '/accept-run',
-  '/reject-run',
+  '/run',
   '/yolo',
+  '/diff',
+  '/cost',
 ] as const;
 
 const ATTACHED_AVAILABLE = [
@@ -60,5 +57,45 @@ describe('createRuntimeCommands attached-client gating', () => {
   it('keeps server-safe commands available for attached clients', () => {
     const exposed = names({ isAttached: true });
     expect(exposed).toEqual([...ATTACHED_AVAILABLE]);
+  });
+});
+
+describe('createRuntimeCommands registry shape', () => {
+  const commands = createRuntimeCommands(makeCtx({}));
+
+  it('registers the commands the reference documents, once each', () => {
+    const registered = commands.map((cmd) => cmd.name);
+    expect(registered).toHaveLength(27);
+    expect(new Set(registered).size).toBe(27);
+  });
+
+  it('files every command under a category and gives every argument command its argument set', () => {
+    for (const cmd of commands) {
+      expect(cmd.category).toBeDefined();
+      if (cmd.kind === 'arg') expect(cmd.args).toBeDefined();
+    }
+  });
+
+  it('keeps the palette typeable but out of its own list', () => {
+    const palette = commands.find((cmd) => cmd.name === '/palette');
+    expect(palette?.hidden).toBe(true);
+  });
+
+  it('offers images only while the PLAN seat can receive them', () => {
+    const image = commands.find((cmd) => cmd.name === '/image');
+
+    expect(
+      image?.guard?.({ phase: 'idle', attached: false, plannerSupportsImages: false }),
+    ).toBeTypeOf('string');
+    expect(
+      image?.guard?.({ phase: 'idle', attached: false, plannerSupportsImages: true }),
+    ).toBeUndefined();
+  });
+
+  it('offers attached clients only names the registry still knows', () => {
+    const registered = new Set(commands.map((cmd) => cmd.name));
+    for (const name of ATTACHED_AVAILABLE_COMMANDS) {
+      expect(registered).toContain(name);
+    }
   });
 });

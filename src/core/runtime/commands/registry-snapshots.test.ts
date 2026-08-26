@@ -157,7 +157,7 @@ describe('run snapshot runtime commands', () => {
         },
       }),
     );
-    await executeRuntimeCommand(commands, '/accept-run', 'workflow', noop);
+    await executeRuntimeCommand(commands, '/run accept', 'workflow', noop);
     expect(message).toContain('snap-1');
   });
 
@@ -180,7 +180,7 @@ describe('run snapshot runtime commands', () => {
     expect(error).toMatch(/confirm/i);
   });
 
-  it('rejects the current run after confirmation and reports changed files', async () => {
+  it('rejects the current run and reports changed files', async () => {
     let message: string | undefined;
     const commands = createRuntimeCommands(
       makeCtx({
@@ -197,7 +197,7 @@ describe('run snapshot runtime commands', () => {
         },
       }),
     );
-    await executeRuntimeCommand(commands, '/reject-run confirm', 'workflow', noop);
+    await executeRuntimeCommand(commands, '/run reject confirm', 'workflow', noop);
     expect(message).toContain('2 file(s)');
     expect(message).toContain('snap-2');
   });
@@ -218,7 +218,7 @@ describe('run snapshot runtime commands', () => {
       }),
     );
 
-    await executeRuntimeCommand(commands, '/reject-run confirm', 'workflow', noop, 'implementing');
+    await executeRuntimeCommand(commands, '/run reject confirm', 'workflow', noop, 'implementing');
 
     expect(called).toBe(false);
     expect(error).toMatch(/unavailable while work is active/i);
@@ -241,7 +241,7 @@ describe('run snapshot runtime commands', () => {
         },
       }),
     );
-    await executeRuntimeCommand(commands, '/reject-run confirm', 'workflow', noop);
+    await executeRuntimeCommand(commands, '/run reject confirm', 'workflow', noop);
     expect(error).toMatch(/conflict/i);
   });
 });

@@ -2,8 +2,6 @@ import { useState } from 'react';
 import { Text } from 'ink';
 import { useTheme } from '../../components/theme.js';
 import type { SkillMeta } from '../../core/skills/types.js';
-import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { getResponsivePanelWidth } from '../../utils/terminal-width.js';
 import { filterByFields } from '../../components/pickers/filtering.js';
 import { ListRow } from '../../components/list-row.js';
 import { SOFT_SEP } from '../../components/separators.js';
@@ -61,10 +59,7 @@ function SkillRow({
 
 export function SkillsPicker() {
   const t = useTheme();
-  const [{ cols, isSmall }, { available: skills, selected: initial }] = useStores(
-    terminalSizeStore,
-    skillsStore,
-  );
+  const [{ available: skills, selected: initial }] = useStores(skillsStore);
   const [checked, setChecked] = useState<Set<string>>(new Set(initial));
   const [navigating, setNavigating] = useState(false);
 
@@ -91,10 +86,6 @@ export function SkillsPicker() {
     ? `space toggle${SOFT_SEP}ctrl+a all${SOFT_SEP}⏎ confirm${SOFT_SEP}esc close`
     : `↑↓ navigate${SOFT_SEP}ctrl+a all${SOFT_SEP}⏎ confirm${SOFT_SEP}esc close`;
 
-  const panelWidth = getResponsivePanelWidth({ cols, size: isSmall ? 'small' : 'large' });
-  const nameColWidth = Math.max(8, Math.min(isSmall ? 20 : 26, Math.max(1, panelWidth - 10)));
-  const descMaxWidth = Math.max(1, panelWidth - 8 - nameColWidth);
-
   return (
     <FilterableList
       items={sortedSkills}
@@ -105,7 +96,7 @@ export function SkillsPicker() {
       title={`Skills${SOFT_SEP}${checked.size} selected`}
       hint={hintText}
       chromeRows={12}
-      width={panelWidth}
+      density="wide"
       customKeys={(
         input,
         key,
@@ -165,17 +156,20 @@ export function SkillsPicker() {
           </Text>
         ),
       }}
-      renderItem={(skill, { isCursor }) => (
-        <SkillRow
-          skill={skill}
-          isCursor={isCursor}
-          isChecked={checked.has(skill.id)}
-          nameColWidth={nameColWidth}
-          descMaxWidth={descMaxWidth}
-          width={panelWidth}
-          showDesc={!isSmall}
-        />
-      )}
+      renderItem={(skill, { isCursor, innerWidth }) => {
+        const nameColWidth = Math.max(8, Math.min(26, Math.floor(innerWidth / 4)));
+        return (
+          <SkillRow
+            skill={skill}
+            isCursor={isCursor}
+            isChecked={checked.has(skill.id)}
+            nameColWidth={nameColWidth}
+            descMaxWidth={Math.max(1, innerWidth - 5 - nameColWidth)}
+            width={innerWidth}
+            showDesc={innerWidth >= 76}
+          />
+        );
+      }}
     />
   );
 }

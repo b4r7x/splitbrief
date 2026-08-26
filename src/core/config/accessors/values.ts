@@ -1,4 +1,5 @@
 import { resolveReviewerRunner } from './reviewer-runner.js';
+import { configError } from '../errors.js';
 import type { Config } from '../../schemas/config.js';
 import { ConfigSchema } from '../../schemas/config.js';
 import type { WorkflowMode, IsolationStrategy } from '../../schemas/enums.js';
@@ -23,13 +24,11 @@ export function getConfigValue(config: Config | Record<string, unknown>, dotPath
 }
 
 export function applyEdits(config: Config, edits: Record<string, unknown>): Config {
-  // An absent `reviewer:` block means the seat inherits the planner. Editing one
-  // of its fields has to materialize the inherited runner, or the edit lands on
-  // a block with no `kind` and fails the discriminated union.
-  const seeded = Object.keys(edits).some((dotPath) => dotPath.startsWith('reviewer.'))
-    ? { ...config, reviewer: resolveReviewerRunner(config).runner }
-    : config;
-  const clone = structuredClone(seeded);
+  const reviewerPath = Object.keys(edits).find((dotPath) => dotPath.startsWith('reviewer.'));
+  if (reviewerPath !== undefined && resolveReviewerRunner(config).source === 'planner') {
+    throw configError.reviewerInherited(reviewerPath);
+  }
+  const clone = structuredClone(config);
   const root = narrowRecord(clone);
   if (!root) return config;
   for (const [dotPath, value] of Object.entries(edits)) {

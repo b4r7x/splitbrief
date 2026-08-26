@@ -176,6 +176,7 @@ describe('composer input history screens', () => {
         name: '/resume',
         label: 'Resume',
         description: 'Resume workflow',
+        category: 'navigate',
         validScreens: ['home', 'workflow', 'summary'],
         handler: () => {},
       },

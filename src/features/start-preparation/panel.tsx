@@ -66,7 +66,7 @@ export function StartPreparationPanel({
   // so they need a quiet preparing surface here (not a blank frame).
   if (state.kind === 'preparing') {
     return (
-      <OverlayPanel title="Preparing your tools…" maxWidth={72} hint="esc back">
+      <OverlayPanel title="Preparing your tools…" density="compact" hint="esc back">
         <Text color={t.textDim}>Checking your configured runners before continuing.</Text>
       </OverlayPanel>
     );
@@ -81,7 +81,7 @@ export function StartPreparationPanel({
   return (
     <OverlayPanel
       title={`Tool preparation${SOFT_SEP}${failed ? 'Failed' : 'Blocked'}`}
-      maxWidth={72}
+      density="compact"
       hint={`r retry${SOFT_SEP}esc back${SOFT_SEP}s settings`}
     >
       {report ? (

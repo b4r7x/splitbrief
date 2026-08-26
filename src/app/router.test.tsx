@@ -16,7 +16,6 @@ function renderRouter() {
       commands={[]}
       onRuntime={() => {}}
       copyTarget={async () => 'empty'}
-      onWorkflowMode={async () => ({ kind: 'saved', ok: true })}
     />,
   );
 }
@@ -29,19 +28,6 @@ describe('Router overlays', () => {
 
   afterEach(() => {
     resetAllStores();
-  });
-
-  it('renders the crew surface for the crew overlay', async () => {
-    overlayStore.open('crew');
-    const ui = renderRouter();
-    await flushEffects();
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    ui.unmount();
-
-    const plan = frame.indexOf('PLAN');
-    expect(plan).toBeGreaterThanOrEqual(0);
-    expect(frame.indexOf('BUILD')).toBeGreaterThan(plan);
-    expect(frame.indexOf('REVIEW')).toBeGreaterThan(frame.indexOf('BUILD'));
   });
 
   it('renders the reviewer picker for the reviewer-picker overlay', async () => {

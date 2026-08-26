@@ -2,38 +2,45 @@ import type { MarkdownLayoutGlyphs } from '../utils/markdown/types.js';
 
 export type GlyphTier = 'unicode' | 'ascii';
 
-export type GlyphName =
-  | 'stagePending'
-  | 'stageActive'
-  | 'stageDone'
-  | 'statusDone'
-  | 'statusFailed'
-  | 'statusEscalated'
-  | 'statusInProgress'
-  | 'statusPending'
-  | 'statusCancelled'
-  | 'statusSkipped'
-  | 'statusWarning'
-  | 'connectorSame'
-  | 'connectorHandoff'
-  | 'wrapContinuation'
-  | 'cursor'
-  | 'editCursor'
-  | 'codeRail'
-  | 'listBullet'
-  | 'listBulletNested'
-  | 'tableColumn'
-  | 'liveBar'
-  | 'prompt'
-  | 'scrollThumb'
-  | 'scrollTrack'
-  | 'treeMid'
-  | 'treeBranch'
-  | 'treeLast'
-  | 'elbow'
-  | 'divider'
-  | 'check'
-  | 'promptMarker';
+export const GLYPH_NAMES = [
+  'stagePending',
+  'stageActive',
+  'stageDone',
+  'statusDone',
+  'statusFailed',
+  'statusEscalated',
+  'statusInProgress',
+  'statusPending',
+  'statusCancelled',
+  'statusSkipped',
+  'statusWarning',
+  'connectorSame',
+  'connectorHandoff',
+  'wrapContinuation',
+  'cursor',
+  'editCursor',
+  'codeRail',
+  'listBullet',
+  'listBulletNested',
+  'tableColumn',
+  'liveBar',
+  'prompt',
+  'scrollThumb',
+  'scrollTrack',
+  'treeMid',
+  'treeBranch',
+  'treeLast',
+  'elbow',
+  'divider',
+  'check',
+  'promptMarker',
+  'disclosureClosed',
+  'disclosureOpen',
+  'barFilled',
+  'foldMarker',
+] as const;
+
+export type GlyphName = (typeof GLYPH_NAMES)[number];
 
 export type CardKind = 'round' | 'single' | 'bold';
 export type CardBorderStyle = 'round' | 'single' | 'bold' | 'classic';
@@ -70,6 +77,10 @@ const UNICODE_GLYPHS: Record<GlyphName, string> = {
   divider: '─',
   check: '✓',
   promptMarker: '❯',
+  disclosureClosed: '▾',
+  disclosureOpen: '▴',
+  barFilled: '▇',
+  foldMarker: '↑',
 };
 
 const ASCII_GLYPHS: Record<GlyphName, string> = {
@@ -104,6 +115,10 @@ const ASCII_GLYPHS: Record<GlyphName, string> = {
   divider: '-',
   check: '+',
   promptMarker: '>',
+  disclosureClosed: 'v',
+  disclosureOpen: '^',
+  barFilled: '#',
+  foldMarker: '^',
 };
 
 export const LINE_SPINNER_FRAMES = ['|', '/', '-', '\\'] as const;

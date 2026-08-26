@@ -1,10 +1,12 @@
 import type { Phase } from '../../schemas/enums.js';
-import type { EffortLevel, WorkflowMode } from '../../schemas/enums.js';
+import type { WorkflowMode } from '../../schemas/enums.js';
+import { CREW_SEAT_IDS } from '../../crew/identity.js';
 import type { OverlayType, Screen } from '../../navigation/types.js';
 import type { HandoffTarget } from '../../handoff/targets.js';
 import type { ApprovalGrant } from '../../schemas/approval-store.js';
 import type { StructuredSummary } from '../../schemas/compaction.js';
 import type { CopyOutcome } from '../../../lib/clipboard/clipboard.js';
+import type { ResolveAttachmentReason } from '../../attachments/resolve.js';
 
 type CommandHandlerResult = void | Promise<void>;
 
@@ -67,6 +69,10 @@ export type ScrollConversationResult =
   | { status: 'unavailable'; message: string };
 
 export type ToggleLatestActivityBatchResult =
+  | { status: 'toggled'; expanded: boolean }
+  | { status: 'unavailable'; message: string };
+
+export type ToggleLatestDiffResult =
   | { status: 'toggled'; expanded: boolean }
   | { status: 'unavailable'; message: string };
 
@@ -135,20 +141,67 @@ export function formatDiscoveryRefreshFeedback(
   }
 }
 
+export const COMMAND_CATEGORIES = ['navigate', 'crew', 'workflow', 'view', 'io'] as const;
+
+export type CommandCategory = (typeof COMMAND_CATEGORIES)[number];
+
+export const COMMAND_CATEGORY_LABELS: Readonly<Record<CommandCategory, string>> = {
+  navigate: 'Navigate',
+  crew: 'Crew',
+  workflow: 'Workflow',
+  view: 'View',
+  io: 'Input & output',
+};
+
+export const RUN_ACTIONS = ['accept', 'reject'] as const;
+
+export const QUEUE_ACTIONS = ['show', 'clear'] as const;
+
+export const APPROVAL_ACTIONS = ['list', 'clear'] as const;
+
+export const IMAGE_ACTIONS = ['list', 'remove'] as const;
+
+export const CREW_COMMAND_SEATS = CREW_SEAT_IDS;
+
+/** Deleted names keep pointing at their replacement for one release. */
+export const REMOVED_COMMANDS: Readonly<Record<string, string>> = {
+  '/effort': 'effort lives on the seat: /crew plan',
+  '/repomap': 'the repo map rebuilds itself on each planning run, with no manual step',
+  '/resume': 'a paused workflow resumes from its approval prompt',
+};
+
+export type AttachImageResult =
+  | { ok: true; path: string }
+  | { ok: false; reason: ResolveAttachmentReason | 'no-vision' };
+
+export interface CommandGuardContext {
+  phase: Phase;
+  attached: boolean;
+  plannerSupportsImages: boolean;
+}
+
+type CommandArgSpec =
+  | { kind: 'closed'; options: readonly string[]; optional?: true }
+  | { kind: 'free'; hint: string };
+
 interface RuntimeCommandBase {
   name: string;
-  aliases?: string[];
+  aliases?: readonly { name: string; args?: string }[];
   label?: string;
   description: string;
   shortcut?: string | null;
   validScreens: readonly Screen[];
-  phaseGuard?: ((phase: Phase) => boolean) | undefined;
+  category: CommandCategory;
+  hidden?: true;
+  /** A returned string is the reason: it blocks the command and hides its row. */
+  guard?: (ctx: CommandGuardContext) => string | undefined;
 }
 
 export type RuntimeCommandDef =
   | (RuntimeCommandBase & { kind: 'noarg'; handler: () => CommandHandlerResult })
   | (RuntimeCommandBase & {
       kind: 'arg';
+      args: CommandArgSpec;
       handler: (args: string | undefined) => CommandHandlerResult;
     });
 
@@ -158,7 +211,6 @@ export interface RuntimeCommandContext {
   navigate: (to: 'home') => void;
   quit: () => void;
   setWorkflowMode: (mode: WorkflowMode) => Promise<RuntimeConfigSaveResult>;
-  setPlannerEffort: (effort: EffortLevel) => Promise<RuntimeConfigSaveResult>;
   setFeedbackMessage: (msg: string) => void;
   setFeedbackError: (msg: string) => void;
   refreshDetection: () => Promise<DiscoveryRefreshSummary>;
@@ -166,11 +218,9 @@ export interface RuntimeCommandContext {
   getCurrentPhase: () => Phase;
   requestRewind: (target: 'spec' | 'plan', comment?: string) => boolean;
   requestTaskRedo: (taskId: string) => boolean;
-  requestWorkflowResume: () => boolean;
   getQueueDepth: () => number;
   clearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
-  rebuildRepomap: () => Promise<{ deleted: boolean; files: string[] }>;
-  attachImage: (input: string) => { ok: true; path: string } | { ok: false; reason: string };
+  attachImage: (input: string) => AttachImageResult;
   detachImage: (idOrIndex: string) => boolean;
   listAttachments: () => Array<{ id: string; path: string }>;
   writeHandoff: (target: HandoffTarget, taskId?: string) => Promise<{ outputDir: string }>;
@@ -184,14 +234,7 @@ export interface RuntimeCommandContext {
   exportSession: () => Promise<ExportSessionResult>;
   scrollConversation: (target: ScrollCommandTarget) => ScrollConversationResult;
   toggleLatestActivityBatch: () => ToggleLatestActivityBatchResult;
+  toggleLatestDiff: () => ToggleLatestDiffResult;
   toggleSidebar: () => ToggleSidebarResult;
   copyTarget: (target: CopyTarget) => Promise<CopyResult>;
-}
-
-export interface CommandPaletteItem {
-  label: string;
-  description: string;
-  shortcut: string | null;
-  action: () => CommandHandlerResult;
-  availableOn: readonly Screen[];
 }

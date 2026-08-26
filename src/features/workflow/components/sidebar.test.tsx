@@ -6,6 +6,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { glyph, spinnerFrames } from '../../../lib/glyphs.js';
+import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { configStore } from '../../../stores/project/config.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
@@ -129,24 +130,45 @@ describe('Sidebar — completed count', () => {
     ui.unmount();
   });
 
-  it('keeps both runners named at the narrow floor instead of spending the row on one', async () => {
+  it('gives every seat its own row at the narrow floor, cut by cells', async () => {
     tasksStore.__testReset({ tasks: [task('1', 'done')] });
 
     const ui = renderFeature(<Sidebar width={34} />);
     await tick();
     const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
-    const plannerLine = lines.find((line) => line.includes('Planner')) ?? '';
-    const implementerLine = lines.find((line) => line.includes('Implementer')) ?? '';
+    const seatLines = ['PLAN', 'BUILD', 'REVIEW'].map(
+      (label) => lines.find((line) => line.includes(label)) ?? '',
+    );
 
-    // A single shared row spent its whole width on the planner and cut the implementer away.
-    expect(plannerLine).toContain('Planner Claude Code CLI');
-    expect(implementerLine).toContain('Implementer');
-    expect(implementerLine).toContain('Qwen 2.5 Coder');
-    expect(plannerLine).not.toBe(implementerLine);
-    expect(lines.some((line) => line.includes('Reviewer'))).toBe(false);
-    for (const line of [plannerLine, implementerLine]) {
+    expect(seatLines[0]).toContain('Claude Code CLI');
+    expect(seatLines[1]).toContain('Ollama');
+    // No reviewer is configured, so the seat says whose runner it borrows.
+    expect(seatLines[2]).toContain(PLANNER_INHERITANCE.mark);
+    expect(new Set(seatLines).size).toBe(3);
+    for (const line of seatLines) {
       expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(34);
     }
+
+    ui.unmount();
+  });
+
+  it('cuts an over-long identity by cells and still leads with the tool name', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: { kind: 'shell', command: 'plan', model: 'a-model-name-that-runs-past-the-panel' },
+      }),
+    });
+    tasksStore.__testReset({ tasks: [task('1', 'done')] });
+
+    const ui = renderFeature(<Sidebar width={34} />);
+    await tick();
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const planLine = lines.find((line) => line.includes('PLAN')) ?? '';
+
+    expect(planLine).toContain('Shell');
+    expect(planLine).not.toContain('past the panel');
+    expect(getTerminalCellWidth(planLine)).toBeLessThanOrEqual(34);
 
     ui.unmount();
   });
@@ -463,7 +485,7 @@ describe('Sidebar — persistent task list', () => {
       );
 
     tasksStore.__testReset({ tasks: makeTasks(4), totalTasks: 12 });
-    const first = renderFeature(<Sidebar width={40} height={16} />);
+    const first = renderFeature(<Sidebar width={40} height={17} />);
     await tick();
     const firstRow =
       stripAnsiStyles(first.lastFrame() ?? '')
@@ -472,7 +494,7 @@ describe('Sidebar — persistent task list', () => {
     first.unmount();
 
     tasksStore.__testReset({ tasks: makeTasks(10), totalTasks: 12 });
-    const second = renderFeature(<Sidebar width={40} height={16} />);
+    const second = renderFeature(<Sidebar width={40} height={17} />);
     await tick();
     const secondRow =
       stripAnsiStyles(second.lastFrame() ?? '')
@@ -635,12 +657,13 @@ describe('Sidebar — reviewer seat', () => {
       config: makeConfig({ reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' } }),
     });
 
-    const ui = renderFeature(<Sidebar width={40} />);
+    const ui = renderFeature(<Sidebar width={50} />);
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('Reviewer');
+    expect(frame).toContain('REVIEW');
     expect(frame).toContain('GPT-5 Codex');
+    expect(frame).not.toContain(PLANNER_INHERITANCE.mark);
     ui.unmount();
   });
 });

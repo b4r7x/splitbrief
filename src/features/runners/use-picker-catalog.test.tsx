@@ -15,7 +15,14 @@ import { TwoColumnPicker } from './two-column-picker/picker.js';
 import { usePickerCatalog } from './use-picker-catalog.js';
 import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
+import type { RightRow } from './model-catalog/rows.js';
+import type { ModelOption } from './model-catalog/recency.js';
 import type { ConfiguredProviderRuntime } from '../../engine/detection/provider-outcomes.js';
+
+/** The models behind the rows the picker actually renders. */
+function rowModels(rows: readonly RightRow[]) {
+  return rows.filter((row) => row.kind === 'model').map((row) => row.model);
+}
 
 function seedDetections() {
   detectionStore.setDetection({
@@ -62,7 +69,10 @@ function ModelListProbe({ toolId }: { toolId: string }) {
 
   return (
     <Text>
-      {catalog.currentItem?.id}:{catalog.rightModels.map((model) => model.id).join(',')}
+      {catalog.currentItem?.id}:
+      {rowModels(catalog.rightRows)
+        .map((model) => model.id)
+        .join(',')}
     </Text>
   );
 }
@@ -83,7 +93,7 @@ function ControlledCatalogPicker({ role }: { role: 'planner' | 'implementer' }) 
   const catalog = usePickerCatalog(role, 0, selectedItemId);
 
   return (
-    <TwoColumnPicker<PickerOption, (typeof catalog.rightModels)[number]>
+    <TwoColumnPicker<PickerOption, ModelOption>
       title="Picker"
       leftProps={{
         items: catalog.items,
@@ -93,7 +103,7 @@ function ControlledCatalogPicker({ role }: { role: 'planner' | 'implementer' }) 
         renderRow: (item) => <Text>{item.displayName}</Text>,
       }}
       rightProps={{
-        items: catalog.rightModels,
+        items: rowModels(catalog.rightRows),
         getKey: (model) => model.id,
         renderRow: (model) => <Text>{model.id}</Text>,
         onLeftChange: (item) => setSelectedItemId(item.id),
@@ -121,7 +131,9 @@ function KeyboardCatalogProbe({ role }: { role: 'planner' | 'implementer' }) {
   return (
     <Text>
       {catalog.currentItem?.id ?? 'none'}:
-      {catalog.rightModels.map((model) => model.id).join(',') || 'none'}
+      {rowModels(catalog.rightRows)
+        .map((model) => model.id)
+        .join(',') || 'none'}
     </Text>
   );
 }
@@ -210,8 +222,8 @@ describe('usePickerCatalog', () => {
       const catalog = usePickerCatalog('planner', 0, toolId);
       return (
         <Text>
-          {catalog.persistedModel ?? 'none'}|{catalog.discoveredModelCount}|
-          {catalog.rightModels.length}
+          {catalog.persistedModel ?? 'none'}|{catalog.modelCounts.confirmed}|
+          {rowModels(catalog.rightRows).length}
         </Text>
       );
     }
@@ -263,7 +275,7 @@ describe('usePickerCatalog', () => {
     });
     let projection:
       | Readonly<{
-          model: ReturnType<typeof usePickerCatalog>['rightModels'][number] | undefined;
+          model: ModelOption | undefined;
           detected: number;
           counts: ReturnType<typeof usePickerCatalog>['modelCounts'];
         }>
@@ -272,8 +284,10 @@ describe('usePickerCatalog', () => {
     function Probe() {
       const catalog = usePickerCatalog('planner', 0, 'openai');
       projection = {
-        model: catalog.rightModels.find((model) => model.id === 'planner-last-confirmed-model'),
-        detected: catalog.discoveredModelCount,
+        model: rowModels(catalog.rightRows).find(
+          (model) => model.id === 'planner-last-confirmed-model',
+        ),
+        detected: catalog.modelCounts.confirmed,
         counts: catalog.modelCounts,
       };
       return <Text>projection</Text>;
@@ -391,7 +405,11 @@ describe('usePickerCatalog', () => {
     const frames: string[] = [];
     function Probe({ toolId }: { toolId: string }) {
       const catalog = usePickerCatalog('implementer', 0, toolId);
-      frames.push(catalog.rightModels.map((model) => model.id).join(','));
+      frames.push(
+        rowModels(catalog.rightRows)
+          .map((model) => model.id)
+          .join(','),
+      );
       return <ModelListProbe toolId={toolId} />;
     }
 
@@ -410,7 +428,11 @@ describe('usePickerCatalog', () => {
     const frames: string[] = [];
     function Probe({ toolId }: { toolId: string }) {
       const catalog = usePickerCatalog('implementer', 0, toolId);
-      frames.push(catalog.rightModels.map((model) => model.id).join('|') || 'empty');
+      frames.push(
+        rowModels(catalog.rightRows)
+          .map((model) => model.id)
+          .join('|') || 'empty',
+      );
       return <Text>{catalog.currentItem?.id}</Text>;
     }
 
@@ -437,7 +459,9 @@ describe('usePickerCatalog', () => {
     function Probe({ toolId }: { toolId: string }) {
       const catalog = usePickerCatalog('implementer', 0, toolId);
       frames.push(
-        `${catalog.currentItem?.id}:${catalog.rightModels.map((model) => model.id).join(',')}`,
+        `${catalog.currentItem?.id}:${rowModels(catalog.rightRows)
+          .map((model) => model.id)
+          .join(',')}`,
       );
       return <Text>{frames.at(-1)}</Text>;
     }
@@ -492,6 +516,137 @@ describe('usePickerCatalog', () => {
       expect(next).not.toContain('anthropic-only-model');
     }
     expect(next).not.toBe(initial);
+    ui.unmount();
+  });
+});
+
+describe('usePickerCatalog right-column entry point', () => {
+  let seen: {
+    lane: string;
+    leftId: string | undefined;
+    rightId: string | undefined;
+    rightIndex: number;
+    rowIds: string[];
+  } | null = null;
+
+  function EntryProbe() {
+    const catalog = usePickerCatalog('planner', 0, null);
+    const row = catalog.rightRows[catalog.initialRightIndex];
+    seen = {
+      lane: catalog.catalogLane,
+      leftId: catalog.items[catalog.initialLeftIdx]?.id,
+      rightId: row?.kind === 'model' ? row.model.id : undefined,
+      rightIndex: catalog.initialRightIndex,
+      rowIds: catalog.rightRows.map((r) => (r.kind === 'model' ? r.model.id : `#${r.kind}`)),
+    };
+    return <Text>probe</Text>;
+  }
+
+  beforeEach(() => {
+    seen = null;
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: {
+          kind: 'api',
+          provider: 'anthropic',
+          apiBase: 'https://api.anthropic.com',
+          model: 'anthropic-only-model',
+        },
+      }),
+    });
+    detectionStore.reset();
+    modelCacheStore.reset();
+    overlayStore.reset();
+    seedDetections();
+  });
+
+  it('reports the models.dev lane as pending until a catalog lands', () => {
+    const ui = renderFeature(<EntryProbe />);
+
+    expect(seen?.lane).toBe('pending');
+    ui.unmount();
+  });
+
+  it('opens on the persisted model rather than the first row', () => {
+    const ui = renderFeature(<EntryProbe />);
+
+    // The Auto row is pinned at 0 and the bundled aliases follow it, so a
+    // persisted model can only be reached by an index the hook computed.
+    expect(seen?.rowIds[0]).toBe('auto');
+    expect(seen?.rightIndex).toBeGreaterThan(0);
+    expect(seen?.rowIds[seen.rightIndex]).toBe('anthropic-only-model');
+    expect(seen?.rightId).toBe('anthropic-only-model');
+    ui.unmount();
+  });
+
+  it('falls back to the first row when the persisted model is not in the catalog', () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: {
+          kind: 'api',
+          provider: 'anthropic',
+          apiBase: 'https://api.anthropic.com',
+          model: 'a-model-no-catalog-lists',
+        },
+      }),
+    });
+    const ui = renderFeature(<EntryProbe />);
+
+    expect(seen?.rightIndex).toBe(0);
+    ui.unmount();
+  });
+
+  // A 126-row CLI catalog is the case the pinned Auto row and the section
+  // headers make hard: the configured model sits deep in the list.
+  const PERSISTED_KILO_MODEL = 'kilo/model-100';
+  const KILO_MODELS = Array.from(
+    { length: 126 },
+    (_, index) => `kilo/model-${String(index).padStart(3, '0')}`,
+  );
+
+  it('opens on the persisted model inside a 126-row CLI catalog', () => {
+    detectionStore.reset();
+    modelCacheStore.reset();
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'kilo-code', model: PERSISTED_KILO_MODEL },
+      }),
+    });
+    const request = detectionStore.beginRefresh({
+      contexts: { readiness: 'r', modelsDev: 'm', cliModels: 'c' },
+    });
+    detectionStore.publish({
+      request,
+      result: {
+        providers: [],
+        cliTools: [cliDetectionFor('ready', 'kilo-code')],
+        catalog: {},
+        cliModels: [
+          {
+            connection: { role: 'planner', tool: 'kilo-code', contextKey: 'c' },
+            outcome: { kind: 'success', value: KILO_MODELS.map((id) => ({ id })) },
+          },
+        ],
+        generation: 1,
+      },
+    });
+
+    const ui = renderFeature(<EntryProbe />);
+
+    expect(seen?.rowIds).toContain(PERSISTED_KILO_MODEL);
+    expect(seen?.rightIndex).toBeGreaterThan(0);
+    expect(seen?.rowIds[seen.rightIndex]).toBe(PERSISTED_KILO_MODEL);
+    ui.unmount();
+  });
+
+  it('opens on the tool the overlay focus names', () => {
+    overlayStore.setFocus('tool:codex');
+    const ui = renderFeature(<EntryProbe />);
+
+    expect(seen?.leftId).toBe('codex');
     ui.unmount();
   });
 });

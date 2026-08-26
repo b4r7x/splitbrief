@@ -1,21 +1,27 @@
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../config/accessors/reviewer-runner.js';
-import {
-  getRunnerCatalogDisplayName,
-  getRunnerModelName,
-  type RunnerConfig,
-} from '../config/accessors/runner-config.js';
+import type { RunnerConfig } from '../config/accessors/runner-config.js';
 import { getApiProviderDescriptor } from '../providers/api-provider-catalog.js';
+import { seatSupportsEffort } from '../runners/capabilities.js';
+import type { ActiveRunnerRole } from '../runners/cli-tool-catalog.js';
 import { runnerBillingPosture, type RunnerBillingPosture } from '../runners/runner-billing.js';
 import type { Config } from '../schemas/config.js';
+import type { EffortLevel } from '../schemas/enums.js';
+import { CREW_SEAT_LABELS, formatSeatIdentity, type CrewSeatId } from './identity.js';
 
-export type CrewSeatId = 'plan' | 'build' | 'review';
+export const CREW_SEAT_ROLES: Readonly<Record<CrewSeatId, ActiveRunnerRole>> = {
+  plan: 'planner',
+  build: 'implementer',
+  review: 'reviewer',
+};
 
 export type CrewSeatRunner = Readonly<{
   runner: RunnerConfig;
-  displayName: string;
-  model?: string | undefined;
+  /** The composed seat identity, sanitized and ready to measure. */
+  model: string;
   posture: RunnerBillingPosture;
+  effort?: EffortLevel | undefined;
+  supportsEffort: boolean;
 }>;
 
 export type CrewEscalateEntry = Readonly<{
@@ -31,13 +37,14 @@ export type CrewSeat =
       Readonly<{ id: 'build'; label: string; escalate?: CrewEscalateEntry | undefined }>)
   | (CrewSeatRunner & Readonly<{ id: 'review'; label: string; source: 'configured' | 'planner' }>);
 
-function seatRunner(runner: RunnerConfig): CrewSeatRunner {
-  const model = getRunnerModelName(runner);
+function seatRunner(runner: RunnerConfig, id: CrewSeatId): CrewSeatRunner {
+  const effort = 'effort' in runner ? runner.effort : undefined;
   return {
     runner,
-    displayName: getRunnerCatalogDisplayName(runner),
-    ...(model !== undefined && { model }),
+    model: formatSeatIdentity(runner),
     posture: runnerBillingPosture(runner),
+    ...(effort !== undefined && { effort }),
+    supportsEffort: seatSupportsEffort({ runner, role: CREW_SEAT_ROLES[id] }),
   };
 }
 
@@ -65,13 +72,18 @@ export function deriveCrewSeats(input: Readonly<{ config: Config }>): readonly C
   const escalate = escalateEntry(config);
 
   return [
-    { id: 'plan', label: 'PLAN', ...seatRunner(config.planner) },
+    { id: 'plan', label: CREW_SEAT_LABELS.plan, ...seatRunner(config.planner, 'plan') },
     {
       id: 'build',
-      label: 'BUILD',
-      ...seatRunner(implementer),
+      label: CREW_SEAT_LABELS.build,
+      ...seatRunner(implementer, 'build'),
       ...(escalate !== undefined && { escalate }),
     },
-    { id: 'review', label: 'REVIEW', source: reviewer.source, ...seatRunner(reviewer.runner) },
+    {
+      id: 'review',
+      label: CREW_SEAT_LABELS.review,
+      source: reviewer.source,
+      ...seatRunner(reviewer.runner, 'review'),
+    },
   ];
 }

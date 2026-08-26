@@ -104,7 +104,10 @@ describe('all-admitted-tools auth detection', () => {
           auth: 'authenticated',
           diagnostic: { state: 'ready' },
         });
-        expect(result?.providerAuth).toEqual([{ provider: 'GitHub Copilot', source: 'oauth' }]);
+        expect(result?.providerAuth).toEqual({
+          kind: 'read',
+          facts: [{ provider: 'GitHub Copilot', source: 'oauth' }],
+        });
       } finally {
         for (const [name, value] of saved) {
           if (value === undefined) delete process.env[name];

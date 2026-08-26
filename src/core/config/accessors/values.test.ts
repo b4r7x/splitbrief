@@ -58,11 +58,16 @@ describe('applyEdits', () => {
     expect(updated.implementer.temperature).toBe(0.7);
   });
 
-  it('materializes the inherited reviewer seat when a reviewer field is edited', () => {
-    const updated = applyEdits(mockConfig, { 'reviewer.effort': 'high' });
-    expect(updated.reviewer?.kind).toBe('cli');
-    expect(updated.reviewer?.effort).toBe('high');
+  it('refuses to edit a reviewer field while the seat inherits the planner', () => {
+    expect(() => applyEdits(mockConfig, { 'reviewer.effort': 'high' })).toThrow(/review seat/i);
     expect(mockConfig.reviewer).toBeUndefined();
+  });
+
+  it('edits a reviewer field once the seat has its own runner', () => {
+    const config = makeConfig({
+      reviewer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
+    });
+    expect(applyEdits(config, { 'reviewer.effort': 'high' }).reviewer?.effort).toBe('high');
   });
 
   it('creates intermediate objects for new paths', () => {

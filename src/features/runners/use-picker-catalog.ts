@@ -2,51 +2,74 @@ import { useState } from 'react';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { detectionStore } from '../../stores/project/detection.js';
+import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { useStores } from '../../stores/use-stores.js';
 import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
+import { formatSeatIdentity } from '../../core/crew/identity.js';
+import { readEscalationRunner } from '../../core/config/accessors/escalation.js';
 import {
   getRunnerCommand,
   getRunnerDisplayName,
 } from '../../core/config/accessors/runner-config.js';
 import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../../core/providers/automatic-model.js';
 import {
-  NATIVE_CLI_CATALOG_TOOL_IDS,
-  type ActiveRunnerRole,
+  CLI_TOOL_IDS,
+  hasNativeCliCatalog,
+  seatPickerLane,
+  type SeatPickerRole,
 } from '../../core/runners/cli-tool-catalog.js';
+import type { CliProviderAuth } from '../../core/discovery/detection.js';
+import { providerOracleCommand } from '../../engine/runners/cli-tools/provider-oracle.js';
 import { includes } from '../../utils/type-guards.js';
 import type { ModelCatalogDiagnostic } from './picker-format.js';
 import {
   buildRightModels,
   countModelOptions,
   isCurrentConfig,
+  modelRowMatchesId,
   type PickerModelCounts,
 } from './model-catalog/catalog.js';
 import {
   assemblePickerDescriptors,
   buildPickerOptions,
+  escalationOffOption,
   inheritPlannerOption,
   type PickerOption,
 } from './model-catalog/options.js';
+import { buildRightRows, type CatalogLane, type RightRow } from './model-catalog/rows.js';
 import { inheritsPlannerSeat } from './config-transforms.js';
-import type { ModelOption } from './model-catalog/recency.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache.js';
+import type { Config } from '../../core/schemas/config.js';
+import {
+  modelCacheStore,
+  type DiscoverySourceRefresh,
+} from '../../stores/discovery/model-cache.js';
 
 export interface PickerCatalog {
   items: PickerOption[];
-  rightModels: ModelOption[];
+  rightRows: RightRow[];
   currentItem: PickerOption | undefined;
   selectedItemId: string | undefined;
   initialLeftIdx: number;
+  /** Index into `rightRows` of the persisted route, or the first `Configured` row. */
+  initialRightIndex: number;
+  /** The same entry row for a left item the cursor is moving onto. */
+  resolveRightIndex: (item: PickerOption | undefined) => number | undefined;
   focusModels: boolean;
   roleLabel: string;
+  /** What the planner actually runs; the terminal panes name it. */
+  plannerIdentity: string;
   currentModel: string | undefined;
   persistedModel: string | undefined;
-  /** Confirmed runtime models only; stale/suggested rows are excluded. */
-  discoveredModelCount: number;
   /** Membership buckets for picker rendering and diagnostics. */
   modelCounts: PickerModelCounts;
   /** Why the native CLI catalog holds no confirmed models; undefined when confirmed or inapplicable. */
   catalogDiagnostic: ModelCatalogDiagnostic | undefined;
+  /** Whether the models.dev catalog behind the suggestion rows has landed. */
+  catalogLane: CatalogLane;
+  /** The highlighted tool's own credential listing, tri-state at the source. */
+  providerAuth: CliProviderAuth | undefined;
+  /** The tool can enumerate its provider sign-ins, so route rows may claim one. */
+  hasOracle: boolean;
   currentCommand: string | undefined;
   currentCommandKind: 'shell' | 'agent' | undefined;
   customModels: string[];
@@ -55,37 +78,105 @@ export interface PickerCatalog {
   setCurrentItem: (item: PickerOption) => void;
 }
 
-const ROLE_LABELS: Record<ActiveRunnerRole, string> = {
+const ROLE_LABELS: Record<SeatPickerRole, string> = {
   planner: 'Planner',
   implementer: 'Implementer',
   reviewer: 'Reviewer',
+  escalation: 'Escalate',
 };
 
+const FOCUS_TOOL_PREFIX = 'tool:';
+
+function laneOf(source: DiscoverySourceRefresh): CatalogLane {
+  if (source.refreshing || source.outcome === 'uninitialized') return 'pending';
+  if (source.outcome === 'failed') return 'failed';
+  return 'ready';
+}
+
+/**
+ * A `cli` tool outside the native-catalog set has no listing command at all, so
+ * the honest answer is "unsupported" rather than silence.
+ */
 function deriveCatalogDiagnostic(
-  role: ActiveRunnerRole,
+  role: SeatPickerRole,
   item: PickerOption | undefined,
 ): ModelCatalogDiagnostic | undefined {
-  if (item === undefined || !includes(NATIVE_CLI_CATALOG_TOOL_IDS, item.id)) return undefined;
-  const runtime = modelCacheStore.getScopedCliCatalogRuntime({ role, tool: item.id });
+  if (item === undefined || item.kind !== 'cli' || !includes(CLI_TOOL_IDS, item.id)) {
+    return undefined;
+  }
+  const tool = item.id;
+  if (!hasNativeCliCatalog(tool)) return { kind: 'unsupported' };
+  const runtime = modelCacheStore.getScopedCliCatalogRuntime({ role: seatPickerLane(role), tool });
   if (runtime === null || runtime === undefined) return { kind: 'not-probed' };
   if (runtime.failure === undefined) return undefined;
   return { kind: 'probe-failed', failure: runtime.failure };
 }
 
+function rowIndexForModel(rows: readonly RightRow[], persistedModel: string | undefined): number {
+  if (persistedModel !== undefined) {
+    const exact = rows.findIndex(
+      (row) => row.kind === 'model' && modelRowMatchesId(row.model, persistedModel),
+    );
+    if (exact >= 0) return exact;
+  }
+  const configured = rows.findIndex((row) => row.kind === 'model' && row.section === 'Configured');
+  return configured >= 0 ? configured : 0;
+}
+
+/**
+ * The escalation seat has no tool axis: it is an API model that sits between
+ * the implementer and the planner, so its left column is providers plus the
+ * row that turns it off.
+ */
+function buildLeftItems(input: {
+  role: SeatPickerRole;
+  rawItems: PickerOption[];
+  config: Config;
+  escalationProvider: string | undefined;
+}): PickerOption[] {
+  const { role, rawItems, config } = input;
+  if (role === 'escalation') {
+    const providers = rawItems.flatMap((item) =>
+      item.kind === 'api' ? [{ ...item, isCurrent: item.id === input.escalationProvider }] : [],
+    );
+    return [
+      escalationOffOption({ isCurrent: input.escalationProvider === undefined }),
+      ...providers,
+    ];
+  }
+  const lane = seatPickerLane(role);
+  // An inherited review seat has no tool of its own: flagging the planner's row
+  // as current would make Enter on the pre-selected row fork the seat silently.
+  // The inherit row stands in for it, and stays offered once the seat is forked
+  // so the fork is reversible.
+  const inherited = inheritsPlannerSeat(config, lane);
+  const configuredItems: PickerOption[] = rawItems.map((item) => ({
+    ...item,
+    isCurrent: !inherited && isCurrentConfig(item, config, lane),
+  }));
+  if (role !== 'reviewer') return configuredItems;
+  const plannerItem = rawItems.find((item) => isCurrentConfig(item, config, 'planner'));
+  if (plannerItem === undefined) return configuredItems;
+  return [inheritPlannerOption({ planner: plannerItem, isCurrent: inherited }), ...configuredItems];
+}
+
 export function usePickerCatalog(
-  role: ActiveRunnerRole,
+  role: SeatPickerRole,
   preservedLeftIndex: number,
   selectedItemId?: string | null,
 ): PickerCatalog {
   const config = configStore.useConfig();
-  const focusModels = overlayStore.use((s) => s.focus) === 'models';
+  const lane = seatPickerLane(role);
+  const focus = overlayStore.use((s) => s.focus);
+  const expandedModelId = pickerViewStore.use((s) => s.expandedModelId);
 
   const [{ cliTools, providers, providerOutcomes, cliCatalogOutcomes, refresh }] =
     useStores(detectionStore);
 
   const [uncontrolledItemId, setUncontrolledItemId] = useState<string | null>(null);
 
-  const runnerConfig = readActiveRunner({ config, role });
+  const runnerConfig = readActiveRunner({ config, role: lane });
+  const escalation = readEscalationRunner(config);
 
   const rawItems = buildPickerOptions(
     role,
@@ -94,30 +185,25 @@ export function usePickerCatalog(
     undefined,
     { activeRunnerId: getRunnerDisplayName(runnerConfig) },
   );
-  // An inherited review seat has no tool of its own: flagging the planner's row
-  // as current would make Enter on the pre-selected row fork the seat silently.
-  // The inherit row stands in for it, and stays offered once the seat is forked
-  // so the fork is reversible.
-  const inherited = inheritsPlannerSeat(config, role);
-  const configuredItems: PickerOption[] = rawItems.map((item) => ({
-    ...item,
-    isCurrent: !inherited && isCurrentConfig(item, config, role),
-  }));
-  const plannerItem =
-    role === 'reviewer'
-      ? rawItems.find((item) => isCurrentConfig(item, config, 'planner'))
-      : undefined;
-  const items: PickerOption[] =
-    plannerItem === undefined
-      ? configuredItems
-      : [inheritPlannerOption({ planner: plannerItem, isCurrent: inherited }), ...configuredItems];
+  const items = buildLeftItems({
+    role,
+    rawItems,
+    config,
+    escalationProvider: escalation?.provider,
+  });
 
   const configItemIndex = items.findIndex((item) => item.isCurrent);
   const configuredItem = configItemIndex >= 0 ? items[configItemIndex] : undefined;
   const preservedIndex = Math.min(preservedLeftIndex, Math.max(0, items.length - 1));
-  const initialLeftIdx = configItemIndex >= 0 ? configItemIndex : preservedIndex;
+  const focusedTool = focus?.startsWith(FOCUS_TOOL_PREFIX)
+    ? focus.slice(FOCUS_TOOL_PREFIX.length)
+    : undefined;
+  const focusedIndex =
+    focusedTool === undefined ? -1 : items.findIndex((item) => item.id === focusedTool);
+  const initialLeftIdx =
+    focusedIndex >= 0 ? focusedIndex : configItemIndex >= 0 ? configItemIndex : preservedIndex;
 
-  const customModels = runnerConfig.customModels ?? [];
+  const customModels = role === 'escalation' ? [] : (runnerConfig.customModels ?? []);
 
   const defaultItemId = items[initialLeftIdx]?.id ?? items[0]?.id;
   const ownedItemId =
@@ -128,22 +214,28 @@ export function usePickerCatalog(
 
   // Both spellings of automatic selection — `auto` and model absence — collapse
   // onto the single synthesized Auto row, so there is one highlighted identity.
-  const configuredModel = normalizeConfiguredModel(runnerConfig.model);
+  const configuredModel =
+    role === 'escalation' ? escalation?.model : normalizeConfiguredModel(runnerConfig.model);
   const persistedModel =
     configuredModel ??
     (configuredItem?.modelCapability.allowsAutomatic ? AUTOMATIC_MODEL : undefined);
-  const providerAuthFacts =
-    currentItem?.providerDependent === true
-      ? cliTools.find((detection) => detection.tool === currentItem.id)?.providerAuth
+  const toolId =
+    currentItem !== undefined && includes(CLI_TOOL_IDS, currentItem.id)
+      ? currentItem.id
       : undefined;
+  const providerAuth =
+    currentItem?.providerDependent === true && toolId !== undefined
+      ? cliTools.find((detection) => detection.tool === toolId)?.providerAuth
+      : undefined;
+  const hasOracle = toolId !== undefined && providerOracleCommand(toolId) !== undefined;
 
   const rightModels = buildRightModels({
-    role,
+    role: lane,
     customModels,
     currentItem,
     cache: modelCacheStore,
     persistedModel,
-    providerAuthFacts,
+    providerAuth,
   });
   // Read the scoped catalog lane so a catalog-only publication rerenders this
   // picker; actual role-aware lookup remains inside modelCacheStore.
@@ -151,6 +243,46 @@ export function usePickerCatalog(
   const modelCounts = countModelOptions(rightModels);
   const catalogDiagnostic =
     modelCounts.confirmed > 0 ? undefined : deriveCatalogDiagnostic(role, currentItem);
+  const catalogLane = laneOf(refresh.modelsDev);
+
+  const rightRows = buildRightRows({
+    models: rightModels,
+    expandedModelId,
+    providerAuth,
+    hasOracle,
+    catalogLane,
+    persistedModel,
+    customModels,
+  });
+
+  // Every reset of the model column must land on the configured model, or
+  // moving the tool cursor and confirming silently rewrites it with the pinned
+  // Auto row that sits at index 0.
+  const resolveRightIndex = (item: PickerOption | undefined): number | undefined => {
+    if (item === undefined || item.isCurrent !== true || persistedModel === undefined) {
+      return undefined;
+    }
+    if (item.id === currentItem?.id) return rowIndexForModel(rightRows, persistedModel);
+    return rowIndexForModel(
+      buildRightRows({
+        models: buildRightModels({
+          role: lane,
+          customModels,
+          currentItem: item,
+          cache: modelCacheStore,
+          persistedModel,
+          providerAuth,
+        }),
+        expandedModelId,
+        providerAuth,
+        hasOracle,
+        catalogLane,
+        persistedModel,
+        customModels,
+      }),
+      persistedModel,
+    );
+  };
 
   const discovery = {
     cold: refresh.readiness.fetchedAt === null,
@@ -158,26 +290,32 @@ export function usePickerCatalog(
       refresh.readiness.refreshing || refresh.modelsDev.refreshing || refresh.cliModels.refreshing,
   };
 
-  const roleLabel = ROLE_LABELS[role];
   const isCurrentTool = currentItem?.isCurrent ?? false;
   const currentModel = isCurrentTool ? persistedModel : undefined;
-  const currentCommand = getRunnerCommand(runnerConfig);
+  const currentCommand = role === 'escalation' ? undefined : getRunnerCommand(runnerConfig);
   const currentCommandKind =
-    runnerConfig.kind === 'shell' || runnerConfig.kind === 'agent' ? runnerConfig.kind : undefined;
+    role !== 'escalation' && (runnerConfig.kind === 'shell' || runnerConfig.kind === 'agent')
+      ? runnerConfig.kind
+      : undefined;
 
   return {
     items,
-    rightModels,
+    rightRows,
     currentItem,
     selectedItemId: ownedItemId,
     initialLeftIdx,
-    focusModels,
-    roleLabel,
+    initialRightIndex: rowIndexForModel(rightRows, currentModel),
+    resolveRightIndex,
+    focusModels: focusedIndex >= 0,
+    roleLabel: ROLE_LABELS[role],
+    plannerIdentity: formatSeatIdentity(readActiveRunner({ config, role: 'planner' })),
     currentModel,
     persistedModel,
-    discoveredModelCount: modelCounts.confirmed,
     modelCounts,
     catalogDiagnostic,
+    catalogLane,
+    providerAuth,
+    hasOracle,
     currentCommand,
     currentCommandKind,
     customModels,

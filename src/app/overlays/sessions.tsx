@@ -1,8 +1,6 @@
 import { useEffect } from 'react';
 import { Text } from 'ink';
 import { useTheme } from '../../components/theme.js';
-import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { getResponsivePanelWidth } from '../../utils/terminal-width.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { configStore } from '../../stores/project/config.js';
 import { useStores } from '../../stores/use-stores.js';
@@ -22,11 +20,7 @@ const SESSION_PICKER_HINT = `\u2191\u2193 navigate${SOFT_SEP}type filter${SOFT_S
 export function SessionsPicker({ deps = sessionSelectDeps }: { deps?: SessionSelectDeps } = {}) {
   const t = useTheme();
   const selectionError = sessionSelectStore.use((s) => s.error);
-  const [{ cols, isSmall }, { projectDir }, { allSessions: sessions }] = useStores(
-    terminalSizeStore,
-    configStore,
-    sessionsStore,
-  );
+  const [{ projectDir }, { allSessions: sessions }] = useStores(configStore, sessionsStore);
 
   useEffect(() => {
     sessionsStore.loadAll(projectDir);
@@ -37,7 +31,6 @@ export function SessionsPicker({ deps = sessionSelectDeps }: { deps?: SessionSel
     return () => sessionSelectStore.clearError();
   }, []);
 
-  const panelWidth = getResponsivePanelWidth({ cols, size: isSmall ? 'small' : 'large' });
   const hint = selectionError ? selectionError : SESSION_PICKER_HINT;
 
   return (
@@ -50,7 +43,7 @@ export function SessionsPicker({ deps = sessionSelectDeps }: { deps?: SessionSel
       hint={hint}
       chromeRows={12}
       listFloor={0}
-      width={panelWidth}
+      density="wide"
       placeholder={
         <Text color={t.textDim}>
           {sessions.length === 0

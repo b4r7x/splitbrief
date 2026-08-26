@@ -8,7 +8,11 @@ import {
 } from '../../core/config/custom-commands.js';
 import { pickDefaultProfileName } from '../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
-import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
+import {
+  seatPickerLane,
+  type ActiveRunnerRole,
+  type SeatPickerRole,
+} from '../../core/runners/cli-tool-catalog.js';
 import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 import type { Config } from '../../core/schemas/config.js';
 import type {
@@ -47,17 +51,18 @@ export function isCustomCommandSelected(
 
 export function readRoleCustomCommandCatalog(
   config: Config,
-  role: ActiveRunnerRole,
+  role: SeatPickerRole,
 ): RoleCustomCommandCatalog {
+  const lane = seatPickerLane(role);
   const catalog = readCustomCommandCatalog(config);
-  const runner = readActiveRunner({ config, role });
+  const runner = readActiveRunner({ config, role: lane });
   const safeLegacy = catalog.legacy.flatMap((entry) =>
     entry.kind === 'safe' ? [entry.command] : [],
   );
   const selected = [...catalog.configured, ...safeLegacy].find((command) =>
     runnerMatches(runner, command),
   );
-  return { ...catalog, role, selectedId: selected?.id };
+  return { ...catalog, role: lane, selectedId: selected?.id };
 }
 
 export function listCustomCommandConsumers(

@@ -1,7 +1,5 @@
 import { SOFT_SEP } from '../../components/separators.js';
 import { countNoun } from '../../utils/pluralize.js';
-import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
-import type { CliProviderAuthFact } from '../../core/discovery/detection.js';
 import type { ProbeOutcomeKind } from '../../core/discovery/runner-evidence.js';
 import type { DataUsePosture } from '../../core/providers/api-provider-catalog.js';
 import type { RunnerBillingPosture } from '../../core/runners/runner-billing.js';
@@ -9,6 +7,7 @@ import type { PickerModelCounts } from './model-catalog/catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
 import type { RunnerPermissionPosture } from './model-catalog/posture.js';
 import type { PickerOptionStatus } from './model-catalog/status.js';
+import { MODELS_DEV_FETCH_FAILED, type RouteAuthState } from './model-catalog/rows.js';
 import type { ProviderAuthAction } from './provider-auth.js';
 import { assertNever } from '../../utils/type-guards.js';
 
@@ -17,6 +16,7 @@ const DETECTING_MODELS_COPY = 'Detecting models…';
 /** Why a native CLI catalog probe produced no confirmed models. */
 export type ModelCatalogDiagnostic =
   | Readonly<{ kind: 'not-probed' }>
+  | Readonly<{ kind: 'unsupported' }>
   | Readonly<{ kind: 'probe-failed'; failure: Exclude<ProbeOutcomeKind, 'success'> }>;
 
 export function isPickerItemDisabled(item: PickerOption): boolean {
@@ -92,11 +92,8 @@ export function formatPermissionLabels(permissions: RunnerPermissionPosture): st
   return labels;
 }
 
-export function formatToolPostureSummary(item: PickerOption): string {
-  const parts = [...formatPermissionLabels(item.permissions), formatBillingLabel(item.billing)];
-  if (item.dataUse) parts.push(formatDataUseLabel(item.dataUse));
-  if (item.version) parts.push(item.version);
-  return parts.filter(Boolean).join(SOFT_SEP);
+function noListingSentence(toolName: string): string {
+  return `${toolName} does not support model listing`;
 }
 
 export function formatCatalogDiagnostic(
@@ -104,9 +101,10 @@ export function formatCatalogDiagnostic(
   toolName: string,
 ): string {
   if (diagnostic.kind === 'not-probed') return 'Select this tool to detect its models';
+  if (diagnostic.kind === 'unsupported') return noListingSentence(toolName);
   switch (diagnostic.failure) {
     case 'unsupported':
-      return `${toolName} does not support model listing`;
+      return noListingSentence(toolName);
     case 'missing-credential':
       return `Sign in to ${toolName} to detect its models`;
     case 'invalid-credential':
@@ -118,7 +116,7 @@ export function formatCatalogDiagnostic(
     case 'timeout':
       return 'Model detection timed out. Press ctrl+r to retry';
     case 'malformed':
-      return 'Model catalog output was malformed';
+      return `${toolName} printed output SplitBrief could not read — the format changed${SOFT_SEP}ctrl+r will not help, add a custom model or report the output`;
     case 'cancelled':
       return 'Model detection was cancelled. Press ctrl+r to retry';
     case 'not-run':
@@ -160,13 +158,12 @@ function readyModelGuidance(
   refreshing = false,
 ): { headline: string; detail: string | undefined } {
   const { modelCapability } = item;
-  if (!modelCapability.showsDiscovered && !modelCapability.allowsCustom) {
-    if (modelCapability.policy === 'auto-only' || modelCapability.policy === 'backend-default') {
-      return { headline: 'Model chosen by the tool', detail: undefined };
-    }
-    if (modelCapability.policy === 'none') {
-      return { headline: 'No model selection', detail: undefined };
-    }
+  if (
+    !modelCapability.showsDiscovered &&
+    !modelCapability.allowsCustom &&
+    (modelCapability.policy === 'auto-only' || modelCapability.policy === 'backend-default')
+  ) {
+    return { headline: 'Model chosen by the tool', detail: undefined };
   }
 
   if (counts.confirmed > 0) {
@@ -176,43 +173,38 @@ function readyModelGuidance(
     return { headline: headlineParts.join(SOFT_SEP), detail: undefined };
   }
 
-  const suggested = counts.suggestions + counts.bundled;
-  if (suggested > 0) {
-    return {
-      headline: `No models confirmed${SOFT_SEP}${suggested} suggested from catalog`,
-      detail: refreshing
-        ? DETECTING_MODELS_COPY
-        : diagnostic === undefined
-          ? undefined
-          : formatCatalogDiagnostic(diagnostic, item.displayName),
-    };
-  }
-
   if (refreshing) {
     return { headline: DETECTING_MODELS_COPY, detail: undefined };
   }
 
-  return {
-    headline: 'No models detected',
-    detail: 'Press ctrl+r to refresh detection',
-  };
+  return zeroConfirmedGuidance({
+    diagnostic,
+    toolName: item.displayName,
+    offersRows: counts.suggestions + counts.bundled + counts.custom > 0,
+  });
 }
 
-export function formatCustomCommandPreview(
-  role: ActiveRunnerRole,
-  configured?: { command: string; kind: 'shell' | 'agent' } | undefined,
-): string {
-  if (configured) {
-    // Truth first, unbounded command last: the preview truncates right, so the
-    // permission digest must never be the part that gets cut.
-    const tier = configured.kind === 'shell' ? 'output' : 'direct';
-    const digest =
-      configured.kind === 'shell' ? 'reads stdout, never writes' : 'writes files into your tree';
-    return [tier, digest, configured.command, '⏎ edit'].join(SOFT_SEP);
+/** No confirmed model: the real diagnostic leads, and its remedy never over-promises. */
+function zeroConfirmedGuidance(input: {
+  diagnostic: ModelCatalogDiagnostic | undefined;
+  toolName: string;
+  offersRows: boolean;
+}): { headline: string; detail: string | undefined } {
+  if (input.diagnostic === undefined) {
+    return input.offersRows
+      ? { headline: 'No models confirmed', detail: undefined }
+      : { headline: 'No models detected', detail: 'Press ctrl+r to refresh detection' };
   }
-  return [`custom ${role} command`, 'OUTPUT reads stdout', 'DIRECT writes your files'].join(
-    SOFT_SEP,
-  );
+  if (input.diagnostic.kind === 'unsupported') {
+    return {
+      headline: noListingSentence(input.toolName),
+      detail: input.offersRows ? 'aliases and models.dev ids are offered' : undefined,
+    };
+  }
+  return {
+    headline: 'No models listed',
+    detail: formatCatalogDiagnostic(input.diagnostic, input.toolName),
+  };
 }
 
 export function formatAuthActionAffordance(action: ProviderAuthAction): string {
@@ -232,36 +224,105 @@ export function gatewayAccountName(toolId: string): string | undefined {
   return GATEWAY_ACCOUNT_NAMES[toolId];
 }
 
-/** One glyph per provider, but the preview lists every backing source. */
-export function formatProviderConfiguredClause(
-  tag: string,
-  facts: readonly CliProviderAuthFact[],
-): string {
-  const sources = facts.map((fact) =>
-    fact.source === 'env' ? `env ${fact.envVar ?? ''}`.trimEnd() : fact.source,
-  );
-  return `${tag} signed in (${[...new Set(sources)].join(', ')})`;
-}
-
-export function formatProviderSignInClause(input: {
-  tag: string;
-  authKey: string;
-  loginCommand: string;
-  gatewayAccount?: string | undefined;
-}): string {
-  if (input.gatewayAccount !== undefined) {
-    return `requires a ${input.gatewayAccount} account: ${input.loginCommand}`;
+/** The route's own sign-in fact: a word every reader can act on, glyph optional. */
+export function formatRouteAuth(input: { auth: RouteAuthState; floor: boolean }): {
+  word: string | undefined;
+  glyph: 'configured' | 'missing' | 'unknown' | undefined;
+} {
+  const { auth } = input;
+  switch (auth.kind) {
+    case 'unchecked':
+      return { word: undefined, glyph: undefined };
+    case 'configured':
+      return {
+        word: `signed in${SOFT_SEP}${credentialSourceWord(auth)}`,
+        glyph: input.floor ? undefined : 'configured',
+      };
+    case 'needs-sign-in':
+      return { word: 'needs sign-in', glyph: input.floor ? undefined : 'missing' };
+    case 'unknown':
+      return auth.reason === 'empty'
+        ? { word: 'needs sign-in', glyph: input.floor ? undefined : 'missing' }
+        : { word: 'state unknown', glyph: input.floor ? undefined : 'unknown' };
+    default:
+      return assertNever(auth);
   }
-  return `${input.tag} needs sign-in${SOFT_SEP}${input.loginCommand} ${input.authKey}`;
 }
 
-/** Absence of claim, never a false "Auth required": the oracle could not be read. */
-export function formatAuthFactsUnavailableNotice(oracleCommand: string): string {
-  return `auth state unknown — could not read ${oracleCommand}${SOFT_SEP}ctrl+r retry`;
+function credentialSourceWord(auth: Extract<RouteAuthState, { kind: 'configured' }>): string {
+  switch (auth.source) {
+    case 'oauth':
+      return 'oauth';
+    case 'api':
+      return 'api key';
+    case 'env':
+      return auth.envVar === undefined ? 'env' : `$${auth.envVar}`;
+    default:
+      return assertNever(auth.source);
+  }
 }
 
-export function formatStoredCredentialNote(count: number): string {
-  return `${countNoun(count, 'credential')} stored`;
+/**
+ * The preview truncates right, so the command that fixes the route leads —
+ * except a parse failure, where no command helps and saying so is the remedy.
+ */
+export function formatRouteRemedy(input: {
+  auth: RouteAuthState;
+  toolName: string;
+  oracleCommand: string;
+  provider: string;
+  versions: { observed: string; required: string } | undefined;
+}): string | undefined {
+  const { auth } = input;
+  if (auth.kind === 'configured') return undefined;
+  if (auth.kind === 'unchecked') {
+    return `sign-in state is not readable for ${input.toolName}${SOFT_SEP}pick the route you have set up`;
+  }
+  const [binary = input.oracleCommand] = input.oracleCommand.split(' ');
+  const signIn = `${binary} auth login ${input.provider}`;
+  if (auth.kind === 'needs-sign-in') return `sign in: ${signIn}${SOFT_SEP}then ctrl+r`;
+  switch (auth.reason) {
+    case 'empty':
+      return `signed in to no providers yet: ${signIn}${SOFT_SEP}then ctrl+r`;
+    case 'timeout':
+      return `ctrl+r to re-check${SOFT_SEP}${binary} took too long listing providers`;
+    case 'exit-failure':
+      return `ctrl+r to re-check${SOFT_SEP}${input.oracleCommand} exited with an error`;
+    case 'parse-failure':
+      return `SplitBrief could not read ${binary}'s provider list (format changed) — ctrl+r will not help; report the output`;
+    case 'version-mismatch': {
+      const { versions } = input;
+      const gap = versions === undefined ? '' : ` (${versions.observed} < ${versions.required})`;
+      return `upgrade ${binary}${gap}${SOFT_SEP}sign-in state not read`;
+    }
+    case 'not-probed':
+      return 'ctrl+r to check provider sign-in';
+    default:
+      return assertNever(auth.reason);
+  }
+}
+
+/** Counts by provenance lead; the capability strip is the part truncation may cut. */
+export function formatPickerByline(input: {
+  toolName: string;
+  version: string | undefined;
+  counts: PickerModelCounts;
+  lane: 'ready' | 'pending' | 'failed';
+  diagnostic?: ModelCatalogDiagnostic | undefined;
+  capabilities: readonly string[];
+}): string {
+  const parts = [input.toolName];
+  if (input.version !== undefined) parts.push(input.version);
+  if (input.diagnostic?.kind === 'unsupported') parts.push('no listing command');
+  if (input.counts.bundled > 0) {
+    parts.push(countNoun(input.counts.bundled, 'known alias', 'known aliases'));
+  }
+  if (input.counts.suggestions > 0) parts.push(`${input.counts.suggestions} from models.dev`);
+  if (input.counts.confirmed > 0) parts.push(`${input.counts.confirmed} detected`);
+  if (input.lane === 'pending') parts.push('models.dev catalog loading');
+  if (input.lane === 'failed') parts.push(`${MODELS_DEV_FETCH_FAILED}${SOFT_SEP}ctrl+r`);
+  parts.push(...input.capabilities);
+  return parts.join(SOFT_SEP);
 }
 
 export function formatNeedsSignInSaveFeedback(input: {
@@ -275,34 +336,4 @@ export function formatNeedsSignInSaveFeedback(input: {
     return `Saved ${input.modelId}${SOFT_SEP}requires a ${input.gatewayAccount} account — run ${input.loginCommand} before start`;
   }
   return `Saved ${input.modelId}${SOFT_SEP}${input.tag} not signed in — run ${input.loginCommand} ${input.authKey} before start`;
-}
-
-export function formatToolPreview(
-  item: PickerOption,
-  counts: PickerModelCounts,
-  authAction?: ProviderAuthAction | null,
-  diagnostic?: ModelCatalogDiagnostic,
-  credentialNote?: string,
-  refreshing = false,
-): string {
-  if (item.kind === 'custom-command') {
-    return [item.displayName, 'OUTPUT reads stdout', 'DIRECT writes your files'].join(SOFT_SEP);
-  }
-
-  const guidance = formatModelCatalogGuidance(item, counts, diagnostic, refreshing);
-  const parts = [item.displayName, item.kind, formatToolPostureSummary(item), guidance.headline];
-  // The actionable key hint precedes the unbounded remediation: the preview
-  // truncates right, so the affordance must never be the part that gets cut.
-  if (authAction !== undefined && authAction !== null) {
-    parts.push(formatAuthActionAffordance(authAction));
-  }
-  if (guidance.detail) parts.push(guidance.detail);
-  // Bounded credential truth (stored-count or oracle-unavailable notice) must
-  // survive ahead of the unbounded provider-name strip below.
-  if (credentialNote !== undefined) parts.push(credentialNote);
-  // The provider-name strip is unbounded, so it truncates before anything else.
-  if (item.status.state === 'ready' && item.status.configuredProviders !== undefined) {
-    parts.push(item.status.configuredProviders.join(', '));
-  }
-  return parts.filter(Boolean).join(SOFT_SEP);
 }

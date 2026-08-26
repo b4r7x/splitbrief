@@ -236,6 +236,42 @@ describe('legacy CLI detection presentation', () => {
     });
   });
 
+  it('keeps the credential oracle listing when no auth channel is selected', async () => {
+    const [result] = await detectAvailableCliTools({
+      tools: ['opencode'],
+      resolveExecutable: async () => executable,
+      probeReadiness: async (options) => ({
+        ...deriveProbe(options),
+        providerAuth: { kind: 'read', facts: [{ provider: 'Anthropic', source: 'oauth' }] },
+      }),
+      now: () => 9,
+    });
+
+    expect(result).toMatchObject({
+      tool: 'opencode',
+      auth: 'unknown',
+      providerAuth: { kind: 'read', facts: [{ provider: 'Anthropic', source: 'oauth' }] },
+    });
+  });
+
+  it('keeps an unreadable credential oracle listing when no auth channel is selected', async () => {
+    const [result] = await detectAvailableCliTools({
+      tools: ['opencode'],
+      resolveExecutable: async () => executable,
+      probeReadiness: async (options) => ({
+        ...deriveProbe(options),
+        providerAuth: { kind: 'unreadable', reason: 'not-probed' },
+      }),
+      now: () => 10,
+    });
+
+    expect(result).toMatchObject({
+      tool: 'opencode',
+      auth: 'unknown',
+      providerAuth: { kind: 'unreadable', reason: 'not-probed' },
+    });
+  });
+
   it('retains unavailable and untrusted resolver facts separately', async () => {
     const unavailable = await detectAvailableCliTools({
       tools: ['codex'],

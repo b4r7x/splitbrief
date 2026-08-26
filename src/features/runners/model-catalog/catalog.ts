@@ -2,7 +2,7 @@ import type { ActiveRunnerRole } from '../../../core/runners/cli-tool-catalog.js
 import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
 import { AUTOMATIC_MODEL, isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
-import type { CliProviderAuthFact } from '../../../core/discovery/detection.js';
+import type { CliProviderAuth } from '../../../core/discovery/detection.js';
 import type { Config } from '../../../core/schemas/config.js';
 import {
   resolveModelCatalog,
@@ -95,7 +95,7 @@ interface ProviderVariantSource {
 interface ProviderMergeContext {
   readonly persistedModel: string | undefined;
   readonly customModels: readonly string[];
-  readonly authFacts: readonly CliProviderAuthFact[] | undefined;
+  readonly providerAuth: CliProviderAuth | undefined;
 }
 
 function toVariant(source: ProviderVariantSource): ModelVariant {
@@ -110,11 +110,12 @@ function toVariant(source: ProviderVariantSource): ModelVariant {
 
 function sortVariantsConfiguredFirst(
   variants: readonly ModelVariant[],
-  facts: readonly CliProviderAuthFact[] | undefined,
+  providerAuth: CliProviderAuth | undefined,
 ): readonly ModelVariant[] {
-  // Absent facts mean the credential oracle was unreadable; the recency order
-  // stands because nothing may claim an auth state.
-  if (facts === undefined) return variants;
+  // Only a read listing names configured providers; an empty or unreadable one
+  // claims no auth state, so the recency order stands.
+  if (providerAuth?.kind !== 'read') return variants;
+  const facts = providerAuth.facts;
   const needsSignIn = (variant: ModelVariant): number => {
     const authKey = modelProviderAuthKey(variant.fullId);
     if (authKey === undefined) return 1;
@@ -140,7 +141,7 @@ function mergeGroupRows(
   ctx: ProviderMergeContext,
 ): ModelOption {
   const sources = [first, ...rest];
-  const variants = sortVariantsConfiguredFirst(sources.map(toVariant), ctx.authFacts);
+  const variants = sortVariantsConfiguredFirst(sources.map(toVariant), ctx.providerAuth);
   if (rest.length === 0) return { ...first.row, variants };
 
   const rows = sources.map((source) => source.row);
@@ -291,7 +292,7 @@ export function buildRightModels(params: {
   currentItem: PickerOption | undefined;
   cache?: ModelCacheAccessor;
   persistedModel?: string | undefined;
-  providerAuthFacts?: readonly CliProviderAuthFact[] | undefined;
+  providerAuth?: CliProviderAuth | undefined;
 }): ModelOption[] {
   if (!params.currentItem) {
     return params.customModels.map(
@@ -320,7 +321,7 @@ export function buildRightModels(params: {
       ? mergeProviderVariants(merged, {
           persistedModel: params.persistedModel,
           customModels: params.customModels,
-          authFacts: params.providerAuthFacts,
+          providerAuth: params.providerAuth,
         })
       : merged;
   return capability.allowsAutomatic ? [AUTOMATIC_MODEL_OPTION, ...rows] : rows;

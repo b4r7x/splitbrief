@@ -164,7 +164,7 @@ function createPlannerAdapter(): CliPlannerAdapter<'aider'> {
     descriptor: CLI_TOOL_CATALOG.aider,
     role: 'planner',
     supportsSessionResume: false,
-    supportsEffort: false,
+    supportsEffort: CLI_TOOL_CATALOG.aider.supportsEffort,
     promptTransport: AIDER_PROMPT_TRANSPORT,
     baseArgs: plannerBaseArgs,
     buildArgs: (input) => [...plannerBaseArgs(input), ...input.configuredArgs],

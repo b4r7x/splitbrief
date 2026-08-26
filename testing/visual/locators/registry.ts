@@ -2,12 +2,13 @@ import {
   getWorkflowSidebarWidth,
   WORKFLOW_SIDEBAR_GAP,
 } from '../../../src/features/workflow/layout/rect.js';
-import { getHomeLayout } from '../../../src/features/home/layout.js';
+import { getHomeLayout, homeConfigBlockRows } from '../../../src/features/home/layout.js';
 import { getLogoHeight } from '../../../src/features/home/logo.js';
-import { getResponsivePanelWidth } from '../../../src/utils/terminal-width.js';
+import { overlayWidth } from '../../../src/core/navigation/overlay-rect.js';
 import { listVisualScenarios } from '../catalog.js';
 import { briefRecoveryFixtureProjections } from '../fixtures/workflow/brief-recovery-projections.js';
 import { workflowFixtureProjections } from '../fixtures/workflow/projections.js';
+import type { Cell, CellGrid } from '../contracts/cells.js';
 import { CellRectSchema, type CellRect } from '../contracts/geometry.js';
 import { resolveMarkerRect } from './markers.js';
 import type { LocatorContext, LocatorDefinition } from './types.js';
@@ -51,6 +52,11 @@ const BASE_LOCATOR_REGISTRY: Record<string, LocatorDefinition> = {
     kind: 'layout',
     description: 'Workflow composer layout bounds',
     resolve: resolveWorkflowComposer,
+  },
+  'workflow:completion': {
+    kind: 'layout',
+    description: 'Completion menu opened above the workflow composer',
+    resolve: resolveCompletionMenu,
   },
   'workflow:approval-panel': {
     kind: 'marker',
@@ -167,18 +173,18 @@ export const LOCATOR_REGISTRY: Readonly<Record<string, LocatorDefinition>> =
 
 function resolveHomeHeader(context: LocatorContext): CellRect {
   const { cols, rows } = context.grid.identity.provenance.viewport;
-  const layout = getHomeLayout({ cols, rows, isSmall: cols < 120 });
+  const layout = getHomeLayout({ cols, rows });
   return CellRectSchema.parse({
     x: Math.floor((cols - layout.bodyWidth) / 2),
     y: 0,
     width: layout.bodyWidth,
-    height: getLogoHeight(layout.logoTier) + 2,
+    height: getLogoHeight(layout.logoTier) + 1 + homeConfigBlockRows(rows),
   });
 }
 
 function resolveHomeComposer(context: LocatorContext): CellRect {
   const { cols, rows } = context.grid.identity.provenance.viewport;
-  const layout = getHomeLayout({ cols, rows, isSmall: cols < 120 });
+  const layout = getHomeLayout({ cols, rows });
   const height = DEFAULT_INPUT_ROWS + 1;
   return CellRectSchema.parse({
     x: Math.floor((cols - layout.inputWidth) / 2),
@@ -237,20 +243,39 @@ function resolveWorkflowComposer(context: LocatorContext): CellRect {
   });
 }
 
+// The completion menu opens upward out of the composer, so its height follows the suggestion count
+// and cannot be stated as a constant. It is a bordered card flush with the composer's top edge, and
+// the only thing painted there that carries a cell in both the frame's first and last column, so
+// walking that run upward measures the card the frame actually holds.
+function resolveCompletionMenu(context: LocatorContext): CellRect {
+  const { cols } = context.grid.identity.provenance.viewport;
+  const bottom = resolveWorkflowComposer(context).y;
+  let y = bottom;
+  while (y > context.grid.rect.y && isCardRow(context.grid, y - 1)) y -= 1;
+  if (y === bottom) {
+    throw new Error('No completion menu is painted above the workflow composer');
+  }
+  return CellRectSchema.parse({ x: 0, y, width: cols, height: bottom - y });
+}
+
+function isCardRow(grid: CellGrid, y: number): boolean {
+  const row = grid.cells[y - grid.rect.y];
+  if (row === undefined) return false;
+  return isPaintedCell(row[0]) && isPaintedCell(row[row.length - 1]);
+}
+
+function isPaintedCell(cell: Cell | undefined): boolean {
+  return cell !== undefined && cell.grapheme.trim() !== '';
+}
+
 function resolveSummaryHeader(context: LocatorContext): CellRect {
   const { cols } = context.grid.identity.provenance.viewport;
-  const isSmall = cols < 120;
-  const width = getResponsivePanelWidth({
-    cols,
-    size: isSmall ? 'small' : 'large',
-    widths: { small: 64, large: 96 },
-    gutter: 2,
-  });
+  const width = overlayWidth({ cols, density: 'roomy' });
   return CellRectSchema.parse({
     x: Math.floor((cols - width) / 2),
     y: 1,
     width,
-    height: isSmall ? 1 : 2,
+    height: cols < 120 ? 1 : 2,
   });
 }
 

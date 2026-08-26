@@ -1,5 +1,9 @@
 import type { DetectedModel } from '../../../core/discovery/detection.js';
-import type { ActiveRunnerRole } from '../../../core/runners/cli-tool-catalog.js';
+import {
+  CLI_TOOL_CATALOG,
+  isCliToolId,
+  type ActiveRunnerRole,
+} from '../../../core/runners/cli-tool-catalog.js';
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import type { KnownModel } from '../../../core/providers/known-models.js';
 import { isProviderId, type ProviderId } from '../../../core/schemas/enums.js';
@@ -76,7 +80,7 @@ function metadataForSelection(
   input: Readonly<{
     runnerId: ProviderId;
     selectionId: string;
-    sourceProviderId: string;
+    sourceProviderId: string | undefined;
     modelsDevEntries: readonly DetectedModel[];
   }>,
 ): DetectedModel | null {
@@ -144,13 +148,17 @@ function runtimeEntry(
     nativeOrder: number;
     isStale: boolean;
     modelsDevEntries: readonly DetectedModel[];
+    matchMetadataAcrossOwners: boolean;
   }>,
 ): ResolvedModelCatalogEntry {
   const sourceProviderId = ownerFor(input.model, input.runtimeProviderId);
   const metadata = metadataForSelection({
     runnerId: input.runnerId,
     selectionId: input.model.id,
-    sourceProviderId,
+    sourceProviderId:
+      input.matchMetadataAcrossOwners && input.model.id.includes('/')
+        ? undefined
+        : sourceProviderId,
     modelsDevEntries: input.modelsDevEntries,
   });
   const merged = mergeRuntimeMetadata(input.model, metadata);
@@ -305,6 +313,12 @@ function configuredSelectionId(
   return input.selectionId;
 }
 
+function usesNativeCliModelDiscovery(providerId: ProviderId): boolean {
+  return (
+    isCliToolId(providerId) && CLI_TOOL_CATALOG[providerId].modelDiscoveryMode === 'native-cli'
+  );
+}
+
 function hasExactSelection(
   entries: readonly ResolvedModelCatalogEntry[],
   selectionId: string,
@@ -328,6 +342,10 @@ function resolveCatalogEntries(
   const runtime = runtimeSnapshot?.entries ?? [];
   const runtimeRows: ResolvedModelCatalogEntry[] = [];
   const runtimeKeys = new Set<string>();
+  const nativeCliConfirmed =
+    usesNativeCliModelDiscovery(providerId) &&
+    runtime.length > 0 &&
+    runtimeSnapshot?.isStale !== true;
 
   runtime.forEach((model, nativeOrder) => {
     const owner = ownerFor(model, runtimeSnapshot?.providerId ?? providerId);
@@ -342,17 +360,20 @@ function resolveCatalogEntries(
         nativeOrder,
         isStale: runtimeSnapshot?.isStale ?? false,
         modelsDevEntries,
+        matchMetadataAcrossOwners: nativeCliConfirmed,
       }),
     );
   });
 
   const modelsDevRows: ResolvedModelCatalogEntry[] = [];
   const modelsDevKeys = new Set<string>();
-  for (const model of modelsDevEntries) {
-    const key = entryKey({ owner: ownerFor(model, providerId), selectionId: model.id });
-    if (runtimeKeys.has(key) || modelsDevKeys.has(key)) continue;
-    modelsDevKeys.add(key);
-    modelsDevRows.push(modelsDevSuggestion({ runnerId: providerId, model }));
+  if (!nativeCliConfirmed) {
+    for (const model of modelsDevEntries) {
+      const key = entryKey({ owner: ownerFor(model, providerId), selectionId: model.id });
+      if (runtimeKeys.has(key) || modelsDevKeys.has(key)) continue;
+      modelsDevKeys.add(key);
+      modelsDevRows.push(modelsDevSuggestion({ runnerId: providerId, model }));
+    }
   }
 
   const bundledRows: ResolvedModelCatalogEntry[] = [];

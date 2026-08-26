@@ -1,8 +1,13 @@
 import { ALL_SCREENS } from '../../navigation/types.js';
 import { glyph } from '../../../lib/glyphs.js';
-import { EFFORT_LEVELS, WORKFLOW_MODES } from '../../schemas/enums.js';
+import { WORKFLOW_MODES } from '../../schemas/enums.js';
 import {
+  APPROVAL_ACTIONS,
   COPY_TARGETS,
+  CREW_COMMAND_SEATS,
+  IMAGE_ACTIONS,
+  QUEUE_ACTIONS,
+  RUN_ACTIONS,
   SCROLL_COMMAND_TARGETS,
   formatDiscoveryRefreshFeedback,
   formatCopyResult,
@@ -61,8 +66,9 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'noarg',
       name: '/help',
       label: 'help',
-      description: 'Show help overlay',
+      description: 'Show help',
       shortcut: getShortcutKey('help'),
+      category: 'navigate',
       validScreens: ALL_SCREENS,
       handler: () => ctx.openOverlay('help'),
     },
@@ -71,6 +77,8 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       name: '/palette',
       label: 'palette',
       description: 'Open command palette',
+      category: 'navigate',
+      hidden: true,
       validScreens: ALL_SCREENS,
       handler: () => ctx.openOverlay('command-palette'),
     },
@@ -80,6 +88,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       label: 'skills',
       description: 'Select planner skills',
       shortcut: getShortcutKey('skills'),
+      category: 'navigate',
       validScreens: ['home'],
       handler: () => ctx.openOverlay('skills'),
     },
@@ -88,24 +97,50 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       name: '/sessions',
       label: 'sessions',
       description: 'Browse past sessions',
+      category: 'navigate',
       validScreens: ALL_SCREENS,
       handler: () => ctx.openOverlay('sessions'),
     },
     {
       kind: 'noarg',
       name: '/settings',
-      aliases: ['/config'],
+      aliases: [{ name: '/config' }],
       label: 'settings',
-      description: 'Planner, model & settings',
+      description: 'Crew, validation, workflow',
       shortcut: getShortcutKey('settings'),
+      category: 'navigate',
       validScreens: ALL_SCREENS,
       handler: () => ctx.openOverlay('settings'),
     },
     {
       kind: 'arg',
+      name: '/crew',
+      aliases: [
+        { name: '/planner', args: 'plan' },
+        { name: '/implementer', args: 'build' },
+        { name: '/reviewer', args: 'review' },
+      ],
+      label: 'crew',
+      description: 'Who fills each seat',
+      category: 'crew',
+      args: { kind: 'closed', options: CREW_COMMAND_SEATS, optional: true },
+      validScreens: ALL_SCREENS,
+      handler: (args) => {
+        const seat = args?.trim().toLowerCase();
+        if (seat && !includes(CREW_COMMAND_SEATS, seat)) {
+          ctx.setFeedbackError(`Unknown seat: ${seat}. Valid: ${CREW_COMMAND_SEATS.join(', ')}`);
+          return;
+        }
+        ctx.openOverlay('settings', `seat:${seat ?? 'plan'}`);
+      },
+    },
+    {
+      kind: 'arg',
       name: '/mode',
       label: 'mode',
-      description: `Select workflow mode ${glyph('connectorHandoff')}`,
+      description: 'Workflow mode',
+      category: 'crew',
+      args: { kind: 'closed', options: WORKFLOW_MODES, optional: true },
       validScreens: ALL_SCREENS,
       handler: async (args) => {
         if (!args) {
@@ -127,6 +162,8 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       name: '/copy',
       label: 'copy',
       description: `Copy to clipboard: ${COPY_TARGETS.join(' | ')}`,
+      category: 'io',
+      args: { kind: 'closed', options: COPY_TARGETS, optional: true },
       validScreens: ['workflow'],
       handler: async (args) => {
         const target = parseCopyTarget(args);
@@ -140,63 +177,11 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       },
     },
     {
-      kind: 'arg',
-      name: '/effort',
-      label: 'effort',
-      description: `Set planner effort: ${EFFORT_LEVELS.join(' | ')}`,
-      validScreens: ALL_SCREENS,
-      handler: async (args) => {
-        const value = args?.trim().toLowerCase();
-        if (!value) {
-          ctx.setFeedbackError(`Usage: /effort <${EFFORT_LEVELS.join('|')}>`);
-          return;
-        }
-        if (!includes(EFFORT_LEVELS, value)) {
-          ctx.setFeedbackError(`Invalid effort: ${value}. Valid: ${EFFORT_LEVELS.join(', ')}`);
-          return;
-        }
-        if ((await ctx.setPlannerEffort(value)).kind === 'saved') {
-          ctx.setFeedbackMessage(`Planner effort set to: ${value}`);
-        }
-      },
-    },
-    {
-      kind: 'noarg',
-      name: '/planner',
-      label: 'planner',
-      description: 'Select planner tool',
-      validScreens: ALL_SCREENS,
-      handler: () => ctx.openOverlay('planner-picker'),
-    },
-    {
-      kind: 'noarg',
-      name: '/implementer',
-      label: 'implementer',
-      description: 'Select implementer',
-      validScreens: ALL_SCREENS,
-      handler: () => ctx.openOverlay('implementer-picker'),
-    },
-    {
-      kind: 'noarg',
-      name: '/reviewer',
-      label: 'reviewer',
-      description: 'Select reviewer tool',
-      validScreens: ALL_SCREENS,
-      handler: () => ctx.openOverlay('reviewer-picker'),
-    },
-    {
-      kind: 'noarg',
-      name: '/crew',
-      label: 'crew',
-      description: 'Choose which tool fills each seat',
-      validScreens: ALL_SCREENS,
-      handler: () => ctx.openOverlay('crew'),
-    },
-    {
       kind: 'noarg',
       name: '/home',
       label: 'home',
       description: 'Return to home screen',
+      category: 'navigate',
       validScreens: ['workflow', 'summary'],
       handler: () => ctx.navigate('home'),
     },
@@ -205,6 +190,8 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       name: '/scroll',
       label: 'scroll',
       description: `Scroll conversation: ${SCROLL_COMMAND_TARGETS.join(' | ')}`,
+      category: 'view',
+      args: { kind: 'closed', options: SCROLL_COMMAND_TARGETS },
       validScreens: ['workflow'],
       handler: (args) => {
         const target = parseScrollCommandTarget(args);
@@ -228,6 +215,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       label: 'activity',
       description: 'Expand or collapse the latest activity batch',
       shortcut: getShortcutKey('activity'),
+      category: 'view',
       validScreens: ['workflow'],
       handler: () => {
         const result = ctx.toggleLatestActivityBatch();
@@ -245,6 +233,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       name: '/sidebar',
       label: 'sidebar',
       description: 'Show or hide workflow sidebar',
+      category: 'view',
       validScreens: ['workflow'],
       handler: () => {
         const result = ctx.toggleSidebar();
@@ -260,6 +249,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       name: '/refresh',
       label: 'refresh',
       description: 'Re-detect available tools',
+      category: 'crew',
       validScreens: ALL_SCREENS,
       handler: async () => {
         ctx.setFeedbackMessage('Refreshing tool detection…');
@@ -282,8 +272,10 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       name: '/revise-spec',
       label: 'revise spec',
       description: 'Rewind to spec phase with optional feedback',
+      category: 'workflow',
+      args: { kind: 'free', hint: '[feedback]' },
       validScreens: ['workflow'],
-      phaseGuard: canReviseSpec,
+      guard: (c) => (canReviseSpec(c.phase) ? undefined : 'No spec to revise in this phase'),
       handler: (args) => {
         const comment = args?.trim() || undefined;
         if (!ctx.requestRewind('spec', comment)) {
@@ -296,8 +288,10 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       name: '/revise-plan',
       label: 'revise plan',
       description: 'Rewind to plan phase with optional feedback',
+      category: 'workflow',
+      args: { kind: 'free', hint: '[feedback]' },
       validScreens: ['workflow'],
-      phaseGuard: canRevisePlan,
+      guard: (c) => (canRevisePlan(c.phase) ? undefined : 'No plan to revise in this phase'),
       handler: (args) => {
         const comment = args?.trim() || undefined;
         if (!ctx.requestRewind('plan', comment)) {
@@ -310,14 +304,12 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       name: '/redo-task',
       label: 'redo task',
       description: 'Reset a task to pending and re-run it',
+      category: 'workflow',
+      args: { kind: 'free', hint: '<task-id>' },
       validScreens: ['workflow'],
-      phaseGuard: canRedoTask,
+      guard: (c) =>
+        canRedoTask(c.phase) ? undefined : 'Tasks can only be redone while implementing',
       handler: (args) => {
-        const phase = ctx.getCurrentPhase();
-        if (!canRedoTask(phase)) {
-          ctx.setFeedbackError('/redo-task is only available during implementation.');
-          return;
-        }
         const id = args?.trim();
         if (!id) {
           ctx.setFeedbackError('/redo-task requires a task ID. Usage: /redo-task T001');
@@ -329,22 +321,12 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       },
     },
     {
-      kind: 'noarg',
-      name: '/resume',
-      label: 'resume',
-      description: 'Resume a paused workflow',
-      validScreens: ['workflow'],
-      handler: () => {
-        if (!ctx.requestWorkflowResume()) {
-          ctx.setFeedbackError('Cannot resume: workflow is not paused.');
-        }
-      },
-    },
-    {
       kind: 'arg',
       name: '/queue',
       label: 'queue',
       description: 'Show or clear the message queue',
+      category: 'workflow',
+      args: { kind: 'closed', options: QUEUE_ACTIONS, optional: true },
       validScreens: ['workflow'],
       handler: async (args) => {
         const sub = args?.trim().toLowerCase();
@@ -380,6 +362,8 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       name: '/handoff',
       label: 'handoff',
       description: `Export handoff pack for an external agent ${glyph('connectorHandoff')}`,
+      category: 'workflow',
+      args: { kind: 'closed', options: HANDOFF_TARGETS },
       validScreens: ['workflow', 'summary'],
       handler: async (args) => {
         if (!args) {
@@ -405,6 +389,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       name: '/export',
       label: 'export',
       description: 'Export session as HTML report',
+      category: 'io',
       validScreens: ['workflow', 'summary'],
       handler: async () => {
         const result = await ctx.exportSession();
@@ -420,6 +405,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       name: '/compact-transcript',
       label: 'compact transcript',
       description: 'Summarize older transcript turns',
+      category: 'io',
       validScreens: ['workflow', 'summary'],
       handler: async () => {
         try {
@@ -441,80 +427,11 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
     },
     {
       kind: 'arg',
-      name: '/repomap',
-      label: 'repomap',
-      description: 'Manage the repo-map cache',
-      validScreens: ALL_SCREENS,
-      handler: async (args) => {
-        const sub = args?.trim().toLowerCase();
-        if (sub === 'rebuild') {
-          try {
-            const result = await ctx.rebuildRepomap();
-            if (result.deleted) {
-              ctx.setFeedbackMessage(
-                'Repomap cache cleared. Next planner phase will parse from scratch.',
-              );
-            } else {
-              ctx.setFeedbackMessage('Repomap cache was not present.');
-            }
-          } catch (err) {
-            ctx.setFeedbackError(toErrorMessage(err));
-          }
-          return;
-        }
-        ctx.setFeedbackError(`Unknown repomap command: ${sub ?? ''}. Use: /repomap rebuild`);
-      },
-    },
-    {
-      kind: 'arg',
-      name: '/attach',
-      label: 'attach',
-      description: 'Attach an image for the next planner call',
-      validScreens: ['home', 'workflow'],
-      handler: (args) => {
-        const value = args?.trim();
-        if (!value) {
-          const pending = ctx.listAttachments();
-          if (pending.length === 0) {
-            ctx.setFeedbackMessage('No image attachments pending. Usage: /attach <path>');
-          } else {
-            const summary = pending.map((a, i) => `${i + 1}: ${a.path}`).join(', ');
-            ctx.setFeedbackMessage(`Pending attachments: ${summary}`);
-          }
-          return;
-        }
-        const result = ctx.attachImage(value);
-        if (!result.ok) {
-          ctx.setFeedbackError(`Cannot attach: ${result.reason}`);
-          return;
-        }
-        ctx.setFeedbackMessage(`Attached: ${result.path}`);
-      },
-    },
-    {
-      kind: 'arg',
-      name: '/detach',
-      label: 'detach',
-      description: 'Remove a pending image attachment by index or id',
-      validScreens: ['home', 'workflow'],
-      handler: (args) => {
-        const value = args?.trim();
-        if (!value) {
-          ctx.setFeedbackError('Usage: /detach <index|id>');
-          return;
-        }
-        if (ctx.detachImage(value)) {
-          ctx.setFeedbackMessage(`Detached: ${value}`);
-        } else {
-          ctx.setFeedbackError(`No attachment matched: ${value}`);
-        }
-      },
-    },
-    {
-      kind: 'arg',
       name: '/approval',
       label: 'approval',
       description: 'List or clear sticky approval grants',
+      category: 'workflow',
+      args: { kind: 'closed', options: APPROVAL_ACTIONS, optional: true },
       validScreens: ['workflow', 'summary'],
       handler: (args) => {
         const sub = args?.trim().toLowerCase();
@@ -539,29 +456,38 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       },
     },
     {
-      kind: 'noarg',
-      name: '/accept-run',
-      label: 'accept run',
-      description: 'Accept current run changes and prevent run rejection',
-      validScreens: ['workflow', 'summary'],
-      handler: async () => {
-        try {
-          const result = await ctx.acceptRunSnapshot();
-          ctx.setFeedbackMessage(`Run accepted at snapshot ${result.snapshotId}`);
-        } catch (err) {
-          ctx.setFeedbackError(toErrorMessage(err));
-        }
-      },
-    },
-    {
       kind: 'arg',
-      name: '/reject-run',
-      label: 'reject run',
-      description: 'Restore files written by SPLITBRIEF from the run baseline',
+      name: '/run',
+      aliases: [
+        { name: '/accept-run', args: 'accept' },
+        { name: '/reject-run', args: 'reject' },
+      ],
+      label: 'run',
+      description: 'Accept or reject what this run wrote',
+      category: 'workflow',
+      args: { kind: 'closed', options: RUN_ACTIONS },
       validScreens: ['workflow', 'summary'],
       handler: async (args) => {
-        if (args?.trim().toLowerCase() !== 'confirm') {
-          ctx.setFeedbackError('Usage: /reject-run confirm');
+        const [action = '', confirmation] = (args ?? '')
+          .trim()
+          .toLowerCase()
+          .split(/\s+/)
+          .filter(Boolean);
+        if (!includes(RUN_ACTIONS, action)) {
+          ctx.setFeedbackError(`Usage: /run <${RUN_ACTIONS.join('|')}>`);
+          return;
+        }
+        if (action === 'accept') {
+          try {
+            const result = await ctx.acceptRunSnapshot();
+            ctx.setFeedbackMessage(`Run accepted at snapshot ${result.snapshotId}`);
+          } catch (err) {
+            ctx.setFeedbackError(toErrorMessage(err));
+          }
+          return;
+        }
+        if (confirmation !== 'confirm') {
+          ctx.setFeedbackError('Usage: /run reject confirm');
           return;
         }
         if (isLivePhase(ctx.getCurrentPhase())) {
@@ -590,10 +516,86 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       },
     },
     {
+      kind: 'arg',
+      name: '/image',
+      aliases: [{ name: '/attach' }, { name: '/detach', args: 'remove' }],
+      label: 'image',
+      description: 'Attach, list or remove images for the next planner call',
+      category: 'io',
+      args: { kind: 'free', hint: `<path> | ${IMAGE_ACTIONS.join(' | ')} <index|id>` },
+      validScreens: ['home', 'workflow'],
+      guard: (c) =>
+        c.plannerSupportsImages
+          ? undefined
+          : 'PLAN seat cannot see images — pick a vision model with /crew plan',
+      handler: (args) => {
+        const value = args?.trim() ?? '';
+        const [first = '', ...rest] = value.split(/\s+/).filter(Boolean);
+        const action = first.toLowerCase();
+        if (value === '' || action === 'list') {
+          const pending = ctx.listAttachments();
+          if (pending.length === 0) {
+            ctx.setFeedbackMessage('No image attachments pending. Usage: /image <path>');
+            return;
+          }
+          const summary = pending.map((a, i) => `${i + 1}: ${a.path}`).join(', ');
+          ctx.setFeedbackMessage(`Pending attachments: ${summary}`);
+          return;
+        }
+        if (action === 'remove') {
+          const target = rest.join(' ');
+          if (!target) {
+            ctx.setFeedbackError('Usage: /image remove <index|id>');
+            return;
+          }
+          if (ctx.detachImage(target)) {
+            ctx.setFeedbackMessage(`Removed: ${target}`);
+          } else {
+            ctx.setFeedbackError(`No attachment matched: ${target}`);
+          }
+          return;
+        }
+        const result = ctx.attachImage(value);
+        if (!result.ok) {
+          ctx.setFeedbackError(`Cannot attach: ${result.reason}`);
+          return;
+        }
+        ctx.setFeedbackMessage(`Attached: ${result.path}`);
+      },
+    },
+    {
+      kind: 'noarg',
+      name: '/diff',
+      label: 'diff',
+      description: 'Expand or collapse the latest diff',
+      shortcut: getShortcutKey('toggle-diff'),
+      category: 'view',
+      validScreens: ['workflow'],
+      handler: () => {
+        const result = ctx.toggleLatestDiff();
+        if (result.status === 'unavailable') {
+          ctx.setFeedbackError(result.message);
+          return;
+        }
+        ctx.setFeedbackMessage(result.expanded ? 'Expanded latest diff' : 'Collapsed latest diff');
+      },
+    },
+    {
+      kind: 'noarg',
+      name: '/cost',
+      label: 'cost',
+      description: 'Show the cost breakdown',
+      shortcut: getShortcutKey('cost-drilldown'),
+      category: 'view',
+      validScreens: ['workflow'],
+      handler: () => ctx.openOverlay('cost-drilldown'),
+    },
+    {
       kind: 'noarg',
       name: '/yolo',
       label: 'yolo',
       description: 'Toggle file-write tiered approvals off/on',
+      category: 'workflow',
       validScreens: ALL_SCREENS,
       handler: () => {
         const current = ctx.getApprovalEnabled();
@@ -612,6 +614,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       label: 'quit',
       description: 'Exit application',
       shortcut: getShortcutKey('quit'),
+      category: 'navigate',
       validScreens: ALL_SCREENS,
       handler: () => ctx.quit(),
     },

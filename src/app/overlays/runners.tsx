@@ -1,8 +1,8 @@
-import { useReducer } from 'react';
+import { useEffect } from 'react';
 import { Text, useInput } from 'ink';
-import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
+import { seatPickerLane, type SeatPickerRole } from '../../core/runners/cli-tool-catalog.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
-import { ARROW_SEP, SOFT_SEP } from '../../components/separators.js';
+import { arrowSep, SOFT_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
 import {
   INITIALIZING_TOOLS_BODY,
@@ -10,29 +10,48 @@ import {
   REFRESHING_TOOLS_TITLE,
 } from '../../core/discovery/copy.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
+import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { usePickerCatalog } from '../../features/runners/use-picker-catalog.js';
 import { usePickerActions } from '../../features/runners/use-picker-actions.js';
-import { viewReducer, initialViewState } from '../../features/runners/view-state.js';
 import { PickerView } from '../../features/runners/picker-view.js';
 import { TextInputOverlay } from '../../features/runners/text-input-overlay.js';
 import { ContractChoiceOverlay } from '../../features/runners/contract-choice-overlay.js';
 import { ProviderAuthOverlay } from '../../features/runners/provider-auth-overlay.js';
-import { ProviderChoiceOverlay } from '../../features/runners/provider-choice-overlay.js';
-import { ContractRecap, StepIndicator, contractTierOf } from '../../features/runners/sub-panel.js';
+import {
+  ContractRecap,
+  StepIndicator,
+  contractTierOf,
+} from '../../features/runners/contract-chip.js';
 import { overlayAllowsPickerKeys } from '../../core/navigation/types.js';
 
 interface ToolModelPickerProps {
-  role: ActiveRunnerRole;
+  role: SeatPickerRole;
 }
 
 export function ToolModelPicker({ role }: ToolModelPickerProps) {
   const t = useTheme();
-  const [viewState, dispatchView] = useReducer(viewReducer, initialViewState);
-  const catalog = usePickerCatalog(role, viewState.preservedLeftIndex);
-  const actions = usePickerActions({ role, catalog, viewState, dispatchView });
-  const isSubView = viewState.view.kind !== 'picker';
+  const lane = seatPickerLane(role);
+  const view = pickerViewStore.use((s) => s.view);
+  const preservedLeftIndex = pickerViewStore.use((s) => s.preservedLeftIndex);
+  const draft = pickerViewStore.use((s) => s.draft);
+  const catalog = usePickerCatalog(role, preservedLeftIndex);
+  const actions = usePickerActions({ role, catalog });
+  const isSubView = view.kind !== 'picker';
   const overlayAllowsKeys = overlayStore.use((s) => overlayAllowsPickerKeys(s.active));
   const coldDiscovery = catalog.discovery.cold && catalog.discovery.refreshing;
+  const item = catalog.currentItem;
+  // Both sub-views below derive their subject from the live catalog, which a
+  // background detection publication can rewrite. Close the view rather than
+  // leave the store claiming a sub-view the picker no longer renders.
+  const subjectGone =
+    (view.kind === 'provider-auth' && item?.kind !== 'api') ||
+    (view.kind === 'custom-model' && item === undefined);
+
+  useEffect(() => () => pickerViewStore.reset(), []);
+
+  useEffect(() => {
+    if (subjectGone) pickerViewStore.close();
+  }, [subjectGone]);
 
   useInput(
     (_input, key) => {
@@ -41,8 +60,8 @@ export function ToolModelPicker({ role }: ToolModelPickerProps) {
         overlayStore.close();
         return;
       }
-      if (viewState.view.kind === 'custom-command') {
-        dispatchView({ type: 'back-to-contract' });
+      if (view.kind === 'custom-command') {
+        pickerViewStore.open({ kind: 'custom-command-contract', refocusKind: view.intendedKind });
         return;
       }
       actions.closeOverlay();
@@ -52,25 +71,25 @@ export function ToolModelPicker({ role }: ToolModelPickerProps) {
 
   if (coldDiscovery) {
     return (
-      <OverlayPanel title={INITIALIZING_TOOLS_TITLE} maxWidth={72} hint="esc close">
+      <OverlayPanel title={INITIALIZING_TOOLS_TITLE} density="compact" hint="esc close">
         <Text color={t.textDim}>{INITIALIZING_TOOLS_BODY}</Text>
       </OverlayPanel>
     );
   }
 
-  if (viewState.view.kind === 'custom-command-contract') {
+  if (view.kind === 'custom-command-contract') {
     return (
       <ContractChoiceOverlay
-        role={role}
-        initialKind={viewState.view.refocusKind ?? catalog.currentCommandKind}
+        role={lane}
+        initialKind={view.refocusKind ?? catalog.currentCommandKind}
         configuredKind={catalog.currentCommandKind}
         onChoose={actions.chooseContract}
       />
     );
   }
 
-  if (viewState.view.kind === 'custom-command') {
-    const tier = contractTierOf(viewState.view.intendedKind);
+  if (view.kind === 'custom-command') {
+    const tier = contractTierOf(view.intendedKind);
     return (
       <TextInputOverlay
         title="Custom command"
@@ -79,45 +98,33 @@ export function ToolModelPicker({ role }: ToolModelPickerProps) {
         recap={<ContractRecap tier={tier} />}
         label="Command to run"
         placeholder="e.g. my-ai-tool --format stream-json"
-        initialValue={viewState.view.draft ?? catalog.currentCommand ?? ''}
+        initialValue={draft ?? catalog.currentCommand ?? ''}
         helper={
           tier === 'output'
-            ? `prompt on stdin${ARROW_SEP}result on stdout`
+            ? `prompt on stdin${arrowSep()}result on stdout`
             : `writes into the working tree${SOFT_SEP}no stdout extraction`
         }
         examples={[tier === 'output' ? 'my-planner --json' : 'aider --message-file BRIEF.md']}
         hint={`⏎ save${SOFT_SEP}esc back to contract`}
         rows={1}
         maxRows={3}
-        onChange={(draft) => dispatchView({ type: 'set-custom-command-draft', draft })}
+        onChange={pickerViewStore.setDraft}
         onSubmit={actions.customCommand}
       />
     );
   }
 
-  if (viewState.view.kind === 'provider-auth') {
+  if (view.kind === 'provider-auth' && item?.kind === 'api') {
     return (
       <ProviderAuthOverlay
         role={role}
-        item={viewState.view.item}
+        item={item}
         onSubmit={(value) => void actions.submitProviderKey(value)}
       />
     );
   }
 
-  if (viewState.view.kind === 'provider-choice') {
-    return (
-      <ProviderChoiceOverlay
-        role={role}
-        item={viewState.view.item}
-        model={viewState.view.model}
-        onChoose={(fullId) => void actions.confirmProviderVariant(fullId)}
-      />
-    );
-  }
-
-  if (viewState.view.kind === 'custom-model') {
-    const item = viewState.view.item;
+  if (view.kind === 'custom-model' && item !== undefined) {
     return (
       <TextInputOverlay
         title="Custom model"

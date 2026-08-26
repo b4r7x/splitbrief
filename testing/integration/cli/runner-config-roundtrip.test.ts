@@ -48,11 +48,12 @@ const commonGeneration = {
 const watchdogs = { idleWarnMs: 90_000, idleKillMs: 600_000 };
 
 const sameTargetCases: readonly (
-  | { role: 'planner'; existing: PlannerConfig }
-  | { role: 'implementer'; existing: ImplementerConfig }
+  | { role: 'planner'; keepsEffort: boolean; existing: PlannerConfig }
+  | { role: 'implementer'; keepsEffort: boolean; existing: ImplementerConfig }
 )[] = [
   {
     role: 'planner',
+    keepsEffort: true,
     existing: {
       kind: 'cli',
       tool: 'claude-code',
@@ -66,6 +67,7 @@ const sameTargetCases: readonly (
   },
   {
     role: 'planner',
+    keepsEffort: false,
     existing: {
       kind: 'api',
       provider: 'openrouter',
@@ -79,6 +81,7 @@ const sameTargetCases: readonly (
   },
   {
     role: 'planner',
+    keepsEffort: true,
     existing: {
       kind: 'agent-sdk',
       apiKey: 'env:PATH',
@@ -89,6 +92,7 @@ const sameTargetCases: readonly (
   },
   {
     role: 'implementer',
+    keepsEffort: false,
     existing: {
       kind: 'cli',
       tool: 'codex',
@@ -101,6 +105,7 @@ const sameTargetCases: readonly (
   },
   {
     role: 'implementer',
+    keepsEffort: false,
     existing: {
       kind: 'api',
       provider: 'openrouter',
@@ -114,6 +119,7 @@ const sameTargetCases: readonly (
   },
   {
     role: 'implementer',
+    keepsEffort: true,
     existing: {
       kind: 'agent-sdk',
       apiKey: 'env:PATH',
@@ -123,6 +129,20 @@ const sameTargetCases: readonly (
     },
   },
 ];
+
+/**
+ * A same-target commit carries every generation field over untouched, except
+ * `effort`: the destination seat keeps it only where it has an effort channel.
+ */
+function expectedSameTarget(
+  testCase: (typeof sameTargetCases)[number],
+  model: string,
+): PlannerConfig | ImplementerConfig {
+  const next = { ...testCase.existing, model };
+  if (testCase.keepsEffort) return next;
+  const { effort: _effort, ...withoutEffort } = next;
+  return withoutEffort;
+}
 
 const crossTargetSource: ImplementerConfig = {
   kind: 'api',
@@ -155,6 +175,7 @@ const crossTargetCases: readonly CrossTargetCase[] = [
       offering: 'payg',
       apiBase: 'https://api.anthropic.com/v1',
       model: 'claude-sonnet-4-6',
+      effort: 'high',
     },
   },
   {
@@ -266,8 +287,8 @@ function commitCell(cell: MatrixCell): Config {
     });
   }
   return cell.role === 'planner'
-    ? commitPlannerTierSelection({ config: base, role: 'planner', selection, model })
-    : commitImplementerSelection(base, selection, model);
+    ? commitPlannerTierSelection({ config: base, role: 'planner', selection, model }).config
+    : commitImplementerSelection(base, selection, model).config;
 }
 
 function clearRunnerCredentials(): void {
@@ -385,7 +406,7 @@ describe('runner config roundtrip integration', () => {
 
       current = await saveAndReload(
         dir,
-        commitImplementerSelection(current, together, { id: 'selected-model' }),
+        commitImplementerSelection(current, together, { id: 'selected-model' }).config,
       );
       expect(resolvedDefaultProfile(current)).toMatchObject({
         apiBase: 'https://api.together.ai/v1',
@@ -433,7 +454,7 @@ describe('runner config roundtrip integration', () => {
         dir,
         commitImplementerSelection(current, realPickerOption('implementer', 'codex'), {
           id: 'gpt-5.4-mini',
-        }),
+        }).config,
       );
       expect(resolvedDefaultProfile(current)).toMatchObject({
         kind: 'cli',
@@ -612,7 +633,7 @@ codebase:
 
   describe('same-target matrix', () => {
     it.each(sameTargetCases)(
-      'changes only the model for $role $existing.kind through save/reload',
+      'changes only the model, dropping effort the seat cannot carry, for $role $existing.kind through save/reload',
       async (testCase) => {
         const dir = createTempDir(`same-target-${testCase.role}-${testCase.existing.kind}`);
         dirs.push(dir);
@@ -627,9 +648,9 @@ codebase:
             role: 'planner',
             selection: pickerForRunner('planner', testCase.existing),
             model: { id: modelOverride },
-          });
+          }).config;
           const reloaded = await saveAndReload(dir, updated);
-          expect(reloaded.planner).toEqual({ ...testCase.existing, model: modelOverride });
+          expect(reloaded.planner).toEqual(expectedSameTarget(testCase, modelOverride));
           return;
         }
 
@@ -640,12 +661,11 @@ codebase:
           before,
           pickerForRunner('implementer', testCase.existing),
           { id: modelOverride },
-        );
+        ).config;
         const reloaded = await saveAndReload(dir, updated);
-        expect(resolvedDefaultProfile(reloaded)).toEqual({
-          ...testCase.existing,
-          model: modelOverride,
-        });
+        expect(resolvedDefaultProfile(reloaded)).toEqual(
+          expectedSameTarget(testCase, modelOverride),
+        );
         expect(reloaded.implementerProfiles?.profiles['dormant-local']).toEqual(
           before.implementerProfiles?.profiles['dormant-local'],
         );
@@ -667,8 +687,10 @@ codebase:
       configStore.load(dir);
       const before = loadConfig(dir).config;
 
-      const updated = commitImplementerSelection(before, selection, testCase.model);
+      const updated = commitImplementerSelection(before, selection, testCase.model).config;
       const reloaded = await saveAndReload(dir, updated);
+      // The destination inherits the source's effort only where it has an effort
+      // channel; each case's `expected` spells out which side of that it lands on.
       expect(resolvedDefaultProfile(reloaded)).toEqual(testCase.expected);
       expect(reloaded.implementerProfiles?.profiles['dormant-local']).toEqual(
         before.implementerProfiles?.profiles['dormant-local'],
