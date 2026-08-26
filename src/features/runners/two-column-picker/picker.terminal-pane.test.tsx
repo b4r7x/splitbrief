@@ -94,7 +94,7 @@ describe('TwoColumnPicker terminal rows', () => {
     );
   }
 
-  it('renders a content-hugging card instead of a filterable model column', async () => {
+  it('renders a fixed-height card matching columnHeight instead of hugging content', async () => {
     const ui = renderTerminal({});
     await flushEffects();
     const frame = ui.lastFrame() ?? '';
@@ -107,16 +107,15 @@ describe('TwoColumnPicker terminal rows', () => {
     expect(frame).toContain(TERMINAL_PANE.label);
     expect(frame).toContain(`⏎ ${TERMINAL_PANE.verb}`);
 
-    // Card rows at 120 cols: top border + label + blank + 7 rendered rows (the
-    // closing instruction wraps onto a second row) + bottom border = 11.
-    const CARD_ROWS = 11;
+    // Both columns match columnHeight (maxVisible: 18 + inner chrome: 4 = 22 rows at 40 terminal rows).
+    const COLUMN_HEIGHT = 22;
     const lines = frame.split('\n');
     const opens = lines.findIndex((line) => line.includes('╭'));
     const cardClose = lines.findIndex((line) => line.includes('╯'));
     const lastClose = lines.map((line) => line.includes('╯')).lastIndexOf(true);
-    expect(cardClose - opens + 1).toBe(CARD_ROWS);
-    // Content-hugging: the tool column is still open when the card closes.
-    expect(cardClose).toBeLessThan(lastClose);
+    expect(cardClose - opens + 1).toBe(COLUMN_HEIGHT);
+    // Both columns close on the same line (no content-hugging collapse).
+    expect(cardClose).toBe(lastClose);
     // The card never ragged-edges: its interior rows all close at one column.
     const closingColumns = new Set(
       lines.slice(opens + 1, cardClose).map((line) => [...line].lastIndexOf('│')),
