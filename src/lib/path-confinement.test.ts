@@ -21,16 +21,8 @@ afterEach(() => {
 });
 
 describe('assertPathConfined', () => {
-  it('does not throw for a safe relative path', () => {
-    expect(() => assertPathConfined('tasks/T001.md', ROOT)).not.toThrow();
-  });
-
-  it('does not throw for a nested safe relative path', () => {
-    expect(() => assertPathConfined('a/b/c.md', ROOT)).not.toThrow();
-  });
-
-  it('does not throw for a top-level filename', () => {
-    expect(() => assertPathConfined('README.md', ROOT)).not.toThrow();
+  it.each(['tasks/T001.md', 'a/b/c.md', 'README.md'])('does not throw for %s', (path) => {
+    expect(() => assertPathConfined(path, ROOT)).not.toThrow();
   });
 
   it.each([

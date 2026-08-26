@@ -4,17 +4,15 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { TASKS_FILE, sessionDir } from '../../../core/paths.js';
 import type { Planner } from '../../planners/types.js';
 import type { PlannerCallbacksContext } from '../types.js';
-import { publishError, publishWarning } from '../events.js';
+import { publishError, publishWarning, publishWarningFromError } from '../events.js';
 import {
   runBriefsApprovalLoop,
   type BriefsApprovalRecoveryBinding,
 } from './briefs-approval-loop.js';
 import { readPersistedTasks } from './io.js';
-import type {
-  BriefRecoveryController,
-  BriefRecoveryProjectionV1,
-  PlannerAttemptSettlement,
-} from '../../../core/schemas/brief-recovery.js';
+import type { PlannerAttemptSettlement } from '../../../core/schemas/brief-recovery/attempt.js';
+import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
+import type { BriefRecoveryController } from '../../../core/schemas/brief-recovery.js';
 import type { PlanningPhaseResult } from './types.js';
 import { parkedPlanningResult, planningResultForState } from './handoff.js';
 
@@ -85,7 +83,12 @@ export async function resumeBriefsApproval(opts: {
         recovery.settle,
         recovery.authority,
       );
-    } catch {
+    } catch (err) {
+      publishWarningFromError(
+        { bus, phase: state.phase },
+        'Settling the planner attempt failed',
+        err,
+      );
       return parkedPlanningResult(sessionId, state, recovery.projection);
     }
     recoveryBinding = {
@@ -129,7 +132,8 @@ export async function resumeBriefsApproval(opts: {
       }),
       recovery: recoveryBinding,
     });
-  } catch {
+  } catch (err) {
+    publishWarningFromError({ bus, phase: state.phase }, 'Brief review resume failed', err);
     return parkedPlanningResult(sessionId, state, recoveryBinding.projection);
   }
 

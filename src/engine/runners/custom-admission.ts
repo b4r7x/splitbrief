@@ -6,8 +6,8 @@ import { canonicalJSON } from '../../utils/canonical-json.js';
 import { isAbortError, throwIfAborted } from '../../utils/abort.js';
 import { error } from '../../utils/error.js';
 import { assertNever } from '../../utils/type-guards.js';
+import { formatCustomRunnerDisclosure } from './custom-runner-disclosure.js';
 import {
-  formatCustomRunnerDisclosure,
   markCustomRunnerTrusted,
   parseConfiguredCustomRunner,
   parseCustomRunnerSecurityPosture,
@@ -19,7 +19,7 @@ import {
   resolveCustomRunnerLaunchability,
   type CustomRunnerAdmission,
   type AdmitCustomRunnerOptions,
-} from './trust.js';
+} from './custom-launchability.js';
 import { resolveCustomExecutable } from './resolve-cli-executable.js';
 import type { CustomRunnerAdmissionPolicy } from './types.js';
 

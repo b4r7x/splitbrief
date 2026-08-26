@@ -210,7 +210,7 @@ describe('SkillsPicker', () => {
     ui.unmount();
   });
 
-  it('marks a selected skill with a trailing selected marker and reserves the checkbox column', async () => {
+  it('reserves the checkbox column instead of rendering legacy [x]/[ ] markers', async () => {
     skillsStore.setAvailable([skill('alpha'), skill('bravo')]);
 
     const ui = renderFeature(<SkillsPicker />);
@@ -222,7 +222,6 @@ describe('SkillsPicker', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain(glyph('check'));
     expect(frame).not.toContain('[x]');
     expect(frame).not.toContain('[ ]');
     ui.unmount();

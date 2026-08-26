@@ -18,7 +18,8 @@ import {
   type ReadinessDiagnosticStateId,
   type ReadinessModelSelection,
 } from '../../schemas/readiness.js';
-import { getRunnerTrustMeta, RUNNER_IDLE_KILL_MS } from '../../schemas/runner-fields.js';
+import { getRunnerTrustMeta } from '../../runners/trust.js';
+import { RUNNER_IDLE_KILL_MS } from '../../schemas/runner-fields.js';
 import type { ReadinessCheck } from '../types.js';
 import { formatRoleLabel } from '../../phase-display.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
@@ -66,15 +67,27 @@ export function buildRunnerChecks(
   const checks: ReadinessCheck[] = [];
   const configuredCliTools = new Set<CliToolId>();
   if (config.planner.kind === 'cli') configuredCliTools.add(config.planner.tool);
-  checks.push(runnerCheck('planner', config.planner));
+  checks.push(plannerCheck(config.planner));
 
   const reviewer = resolveReviewerRunner(config);
   if (reviewer.source === 'configured' && reviewer.runner.kind === 'cli') {
     configuredCliTools.add(reviewer.runner.tool);
   }
 
+  let resolved: ReturnType<typeof resolveImplementerProfiles> | null = null;
   try {
-    const resolved = resolveImplementerProfiles(config);
+    resolved = resolveImplementerProfiles(config);
+  } catch (err) {
+    checks.push({
+      id: 'runners.implementer.profiles-invalid',
+      severity: 'blocker',
+      summary: toErrorMessage(err),
+      fix: 'Fix implementerProfiles.default or remove the broken profile setting.',
+      nextAction: 'fix-config',
+    });
+  }
+
+  if (resolved !== null) {
     const defaultProfile = resolved.defaultProfile;
     checks.push({
       id: 'runners.implementer.default',
@@ -101,14 +114,6 @@ export function buildRunnerChecks(
     for (const profile of resolved.profiles) {
       if (profile.config.kind === 'cli') configuredCliTools.add(profile.config.tool);
     }
-  } catch (err) {
-    checks.push({
-      id: 'runners.implementer.profiles-invalid',
-      severity: 'blocker',
-      summary: toErrorMessage(err),
-      fix: 'Fix implementerProfiles.default or remove the broken profile setting.',
-      nextAction: 'fix-config',
-    });
   }
 
   if (availability === undefined) checks.push(availabilityCheck());
@@ -212,8 +217,11 @@ function cliReadinessDiagnosticState(
       return 'unauthenticated';
     case 'unverified':
       return result.auth === 'unknown' ? 'auth-unknown' : undefined;
-    default:
+    case 'ready':
+    case 'disabled':
       return undefined;
+    default:
+      return assertNever(result);
   }
 }
 
@@ -559,16 +567,13 @@ function buildImplementerProfileMetadataChecks(
   });
 }
 
-function runnerCheck(
-  role: 'planner' | 'implementer',
-  runner: Config['planner'] | Config['implementer'],
-): ReadinessCheck {
+function plannerCheck(runner: Config['planner']): ReadinessCheck {
   return {
-    id: `runners.${role}.configured`,
+    id: 'runners.planner.configured',
     severity: 'ok',
-    summary: `${formatRoleLabel(role)} ${formatRunner(runner)} configured.`,
+    summary: `${formatRoleLabel('planner')} ${formatRunner(runner)} configured.`,
     metadata: {
-      role,
+      role: 'planner',
       kind: runner.kind,
       name: getRunnerDisplayName(runner),
       model: getRunnerModelName(runner) ?? null,

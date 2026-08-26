@@ -6,7 +6,7 @@ import { BriefReviewView } from './brief-review/view.js';
 import { ReviewView } from './review-view.js';
 import type { UseInputModeResult } from '../hooks/use-input-mode.js';
 import type { Phase } from '../../../core/schemas/enums.js';
-import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery.js';
+import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
 import {
   getReviewColumnWidth,
   WORKFLOW_CONTENT_PADDING_X,

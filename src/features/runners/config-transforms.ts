@@ -24,10 +24,11 @@ import {
 import {
   CustomCommandDefinitionSchema,
   CustomCommandIdSchema,
+  runnerKindForContract,
   type CustomCommand,
   type CustomCommandDefinition,
-  type SafeLegacyCustomCommand,
 } from '../../core/config/custom-commands.js';
+import type { SafeLegacyCustomCommand } from '../../core/config/custom-command-catalog.js';
 import type { RunnerPickerOption } from './model-catalog/options.js';
 import {
   configuredReviewerRunner,
@@ -105,20 +106,22 @@ export function commitPlannerTierSelection(input: PlannerTierSelectionInput): Se
   return { config, ...(notice !== undefined && { notice }) };
 }
 
-export function commitImplementerSelection(
-  config: Config,
-  selection: RunnerPickerOption,
-  model: { id: string } | null,
-  apiKey?: string,
-): SeatCommitResult {
+export interface ImplementerSelectionInput {
+  config: Config;
+  selection: RunnerPickerOption;
+  model: { id: string } | null;
+  apiKey?: string | undefined;
+}
+
+export function commitImplementerSelection(input: ImplementerSelectionInput): SeatCommitResult {
   let notice: string | undefined;
-  const next = updateDefaultImplementerConfig(config, (existing) => {
+  const next = updateDefaultImplementerConfig(input.config, (existing) => {
     const decided = decideEffort({
       next: buildRunnerConfig('implementer', {
-        kind: selection.kind,
-        tool: selection.id,
-        ...(model !== null && { model: model.id }),
-        ...(apiKey !== undefined && { apiKey }),
+        kind: input.selection.kind,
+        tool: input.selection.id,
+        ...(input.model !== null && { model: input.model.id }),
+        ...(input.apiKey !== undefined && { apiKey: input.apiKey }),
         existing,
       }),
       carried: existing.effort,
@@ -167,7 +170,7 @@ function storedDefinition(command: CommandDefinitionInput): CustomCommandDefinit
 }
 
 function materializedTuple(definition: CustomCommandDefinition) {
-  const kind = definition.contract === 'output' ? 'shell' : 'agent';
+  const kind = runnerKindForContract(definition.contract);
   return {
     kind,
     command: definition.executable,

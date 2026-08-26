@@ -8,7 +8,7 @@ import type { EngineEvent } from './types.js';
 import {
   drainRecoveryOutbox,
   persistRecoveryTransition,
-} from '../orchestrator/evidence/persistence.js';
+} from '../orchestrator/evidence/recovery-journal.js';
 import { createBriefRecoveryState } from '../orchestrator/planning/brief-recovery.js';
 import { createInitialState } from '../../core/state/machine.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';

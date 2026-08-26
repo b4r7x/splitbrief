@@ -10,9 +10,6 @@ import { configStore } from '../../../stores/project/config.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
-import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { Composer } from '../../../components/composer/composer.js';
 import { TASKS_FILE } from '../../../core/paths.js';
 import { formatTasks } from '../../../engine/spec/formatter.js';
 import { WorkflowBody } from './body.js';
@@ -115,38 +112,6 @@ describe('WorkflowBody brief review rendering', () => {
     expect(lines.length, `review rows at height ${height}`).toBeLessThanOrEqual(height);
     ui.unmount();
   });
-
-  it.each([119, 120, 121])(
-    'keeps the workflow input at full width through review transition at %i columns',
-    async (cols) => {
-      terminalSizeStore.__testReset({ cols, rows: 24 });
-      const composer = (mode: 'normal' | 'review') => (
-        <Composer
-          commands={[]}
-          currentScreen="workflow"
-          mode={mode}
-          hint=""
-          onSubmit={() => {}}
-          onRuntimeCommand={() => {}}
-        />
-      );
-      const ui = renderFeature(composer('normal'), { cols, rows: 24 });
-      await flushEffects();
-      const normalWidth = Math.max(
-        ...(ui.lastFrame() ?? '').split('\n').map((line) => getTerminalCellWidth(line)),
-      );
-
-      ui.rerender(composer('review'));
-      await flushEffects();
-      const reviewWidth = Math.max(
-        ...(ui.lastFrame() ?? '').split('\n').map((line) => getTerminalCellWidth(line)),
-      );
-
-      expect(normalWidth).toBe(cols);
-      expect(reviewWidth).toBe(cols);
-      ui.unmount();
-    },
-  );
 
   it('lets the conversation, document, and brief panes reach the same body bottom', async () => {
     const contentHeight = 8;

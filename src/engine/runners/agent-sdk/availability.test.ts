@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { isModuleNotFoundError, loadSdk, isAgentSdkAvailable } from './availability.js';
 
 describe('isModuleNotFoundError', () => {
@@ -36,27 +36,76 @@ describe('isModuleNotFoundError', () => {
   });
 });
 
+const SDK_MODULE = '@anthropic-ai/claude-agent-sdk';
+
+function mockMissingSdk(): void {
+  vi.doMock(SDK_MODULE, () => {
+    throw Object.assign(new Error('Cannot find package'), { code: 'ERR_MODULE_NOT_FOUND' });
+  });
+}
+
+function withApiKey(value: string | undefined, run: () => Promise<void>): Promise<void> {
+  const originalKey = process.env.ANTHROPIC_API_KEY;
+  if (value === undefined) delete process.env.ANTHROPIC_API_KEY;
+  else process.env.ANTHROPIC_API_KEY = value;
+  return run().finally(() => {
+    if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = originalKey;
+  });
+}
+
 describe('loadSdk', () => {
-  it('throws install message when SDK is not installed', async () => {
-    await expect(loadSdk()).rejects.toThrow(
-      'Agent SDK not installed. Run: npm install @anthropic-ai/claude-agent-sdk',
-    );
+  it('rejects when the SDK module fails to load', async () => {
+    mockMissingSdk();
+    try {
+      await expect(loadSdk()).rejects.toThrow();
+    } finally {
+      vi.doUnmock(SDK_MODULE);
+    }
+  });
+
+  it('resolves the module when it is installed', async () => {
+    vi.doMock(SDK_MODULE, () => ({ query: () => {} }));
+    try {
+      await expect(loadSdk()).resolves.toHaveProperty('query');
+    } finally {
+      vi.doUnmock(SDK_MODULE);
+    }
   });
 });
 
 describe('isAgentSdkAvailable', () => {
-  it('returns false when SDK is not installed regardless of API key', async () => {
-    const originalKey = process.env.ANTHROPIC_API_KEY;
-    try {
-      process.env.ANTHROPIC_API_KEY = 'test-key';
+  it('returns false without any credential', async () => {
+    await withApiKey(undefined, async () => {
       expect(await isAgentSdkAvailable()).toBe(false);
+    });
+  });
 
-      delete process.env.ANTHROPIC_API_KEY;
-      expect(await isAgentSdkAvailable()).toBe(false);
-      expect(await isAgentSdkAvailable('sk-ant-configured-key')).toBe(false);
+  it('returns false when the SDK module is missing regardless of credential', async () => {
+    mockMissingSdk();
+    try {
+      await withApiKey('test-key', async () => {
+        expect(await isAgentSdkAvailable()).toBe(false);
+      });
+      await withApiKey(undefined, async () => {
+        expect(await isAgentSdkAvailable('sk-ant-configured-key')).toBe(false);
+      });
     } finally {
-      if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY;
-      else process.env.ANTHROPIC_API_KEY = originalKey;
+      vi.doUnmock(SDK_MODULE);
+    }
+  });
+
+  it('returns true when the SDK loads and a credential is present', async () => {
+    vi.doMock(SDK_MODULE, () => ({ query: () => {} }));
+    try {
+      await withApiKey(undefined, async () => {
+        expect(await isAgentSdkAvailable('sk-ant-configured-key')).toBe(true);
+      });
+      await withApiKey('test-key', async () => {
+        expect(await isAgentSdkAvailable()).toBe(true);
+      });
+    } finally {
+      vi.doUnmock(SDK_MODULE);
     }
   });
 });

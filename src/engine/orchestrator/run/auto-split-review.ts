@@ -17,10 +17,6 @@ import {
 } from '../planning/handoff.js';
 import { commitWorkflowState, readWorkflowStateHead } from '../state-ops.js';
 
-function currentState(initial: WorkflowState, recovery: PhaseRecoveryBinding): WorkflowState {
-  return recovery.readState?.() ?? initial;
-}
-
 export async function reviewAutoSplitOutput(opts: {
   wctx: WorkflowContext;
   state: WorkflowState;
@@ -44,7 +40,7 @@ export async function reviewAutoSplitOutput(opts: {
 
   const recovery = opts.recovery;
   const ref = { projectDir: opts.wctx.projectDir, sessionId: opts.wctx.sessionId };
-  const current = currentState(opts.state, recovery);
+  const current = recovery.readState();
   const resetForAdmission: WorkflowState = {
     ...current,
     phase: 'reviewing-briefs',
@@ -66,7 +62,7 @@ export async function reviewAutoSplitOutput(opts: {
     }
     admissionState = committed.state;
   }
-  recovery.writeState?.(admissionState);
+  recovery.writeState(admissionState);
   opts.setTrackedState(admissionState);
 
   let admission: RecoveryResultV1;
@@ -81,13 +77,13 @@ export async function reviewAutoSplitOutput(opts: {
       recovery.authority,
     );
   } catch {
-    const state = currentState(opts.state, recovery);
+    const state = recovery.readState();
     opts.setTrackedState(state);
     return parkedPlanningResult(opts.wctx.sessionId, state, recovery.projection);
   }
 
   if (admission.kind === 'rejected') {
-    const state = currentState(opts.state, recovery);
+    const state = recovery.readState();
     opts.setTrackedState(state);
     return terminalPlanningResult(state, 'rejected');
   }
@@ -100,7 +96,7 @@ export async function reviewAutoSplitOutput(opts: {
     sessionId: opts.wctx.sessionId,
     callbacks: opts.wctx.callbacks,
     bus: opts.wctx.bus,
-    state: currentState(opts.state, recovery),
+    state: recovery.readState(),
     config: opts.wctx.config,
     metadata: opts.wctx.metadata,
     ...(opts.wctx.signal !== undefined ? { signal: opts.wctx.signal } : {}),
@@ -114,12 +110,12 @@ export async function reviewAutoSplitOutput(opts: {
       authority: recovery.authority,
       projection: admission.projection,
       admission,
-      ...(recovery.readState === undefined ? {} : { readState: recovery.readState }),
-      ...(recovery.writeState === undefined ? {} : { writeState: recovery.writeState }),
+      readState: recovery.readState,
+      writeState: recovery.writeState,
     },
   });
 
-  const state = currentState(loop.state, recovery);
+  const state = recovery.readState();
   opts.setTrackedState(state);
   if (loop.outcome === 'rejected') {
     publishError({

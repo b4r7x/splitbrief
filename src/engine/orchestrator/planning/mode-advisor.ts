@@ -111,7 +111,6 @@ function classifyRisk(
       factors.push(`matched: ${re.source}`);
     }
   }
-  // hook is high-risk unless it's webhook
   if (HOOK_RE.test(lower) && !WEBHOOK_RE.test(lower)) {
     factors.push('matched: hook');
   }

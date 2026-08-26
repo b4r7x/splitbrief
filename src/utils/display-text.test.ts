@@ -199,6 +199,19 @@ describe('truncateTerminalDisplayText', () => {
   it('truncates emoji-presentation graphemes by their displayed cell width', () => {
     expect(truncateTerminalDisplayText('ab❤️cd', 5)).toBe('ab❤️…');
   });
+
+  it('returns the original string when it fits the cell budget', () => {
+    expect(truncateTerminalDisplayText('hello', 5)).toBe('hello');
+  });
+
+  it('keeps the result within the budget when glyphs are double width', () => {
+    expect(truncateTerminalDisplayText('漢字語', 5)).toBe('漢字…');
+  });
+
+  it('returns an empty string when the budget is zero or negative', () => {
+    expect(truncateTerminalDisplayText('abc', 0)).toBe('');
+    expect(truncateTerminalDisplayText('abc', -2)).toBe('');
+  });
 });
 
 describe('truncateTerminalDisplayTextStart', () => {

@@ -9,7 +9,17 @@ import { initStores } from '../init-stores.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../core/paths.js';
 
-export function registerInitCommand(program: Command): void {
+export interface InitDeps {
+  initStores: typeof initStores;
+  renderApp: typeof renderApp;
+}
+
+export const defaultInitDeps: InitDeps = {
+  initStores,
+  renderApp,
+};
+
+export function registerInitCommand(program: Command, deps: InitDeps = defaultInitDeps): void {
   program
     .command('init')
     .description(`Create ${SPLITBRIEF_DIR}/${CONFIG_FILE} with detected models`)
@@ -37,8 +47,8 @@ export function registerInitCommand(program: Command): void {
 
       assertInteractiveTty('use --yes to write the default config without the picker');
 
-      await initStores(projectDir);
+      await deps.initStores(projectDir);
       routerStore.init({ screen: 'setup', onComplete: 'home' });
-      await renderApp(createElement(App), { fullscreen: true });
+      await deps.renderApp(createElement(App), { fullscreen: true });
     });
 }

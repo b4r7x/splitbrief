@@ -29,7 +29,7 @@ export function runningImplementerRowBlock(
     }),
     ...streamLines.map((line, index) =>
       wrappedTextBlock({
-        keyPrefix: `${keyPrefix}-stream-${index}-${index + 1}`,
+        keyPrefix: `${keyPrefix}-stream-${index}`,
         text: line,
         width: ctx.width,
         tone: 'textDim',

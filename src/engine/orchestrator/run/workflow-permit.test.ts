@@ -14,11 +14,13 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../events/types.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir, readSpecFile } from '../../../core/paths-io.js';
+import { TASKS_FILE } from '../../../core/paths.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { saveState } from '../../../core/state/persistence.js';
-import { generateSessionId, reactivateExistingSession } from '../../../core/sessions/lifecycle.js';
+import { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
+import { generateSessionId } from '../../../core/sessions/session-id.js';
 import { parsePreparedConfig, type RunnerGate } from '../../runners/prepared-execution.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { resolveHooksConfig } from '../../hooks/discover.js';
@@ -81,7 +83,9 @@ async function runWorkflow(input: WorkflowTestOptions) {
   const config = parsePreparedConfig(hooks === undefined ? inputConfig : { ...inputConfig, hooks });
   const sessionId =
     explicitSessionId ??
-    generateSessionId(projectDir, feature, new Date(), {
+    generateSessionId({
+      projectDir,
+      feature,
       persistTranscript: config.workflow.persistTranscript,
     });
   ensureSessionDir(projectDir, sessionId);
@@ -139,8 +143,7 @@ describe('runWorkflow — disposition and persisted permit switch', () => {
     const sessionId = 'sess-permit-ready';
     const task = makePassingTaskFixture('T001');
     const persisted = persistReadyExecutionState(
-      projectDir,
-      sessionId,
+      { projectDir, sessionId },
       makeImplState([task], { stateFence: { token: 1, ownerId: 'permit-test-owner' } }),
     );
     const implement = vi.fn().mockResolvedValue({
@@ -311,17 +314,33 @@ describe('runWorkflow — approved brief byte binding', () => {
     const task = makePassingTaskFixture('T001');
     const text = formatTasks([task]);
     const persisted = persistReadyExecutionState(
-      projectDir,
-      sessionId,
+      { projectDir, sessionId },
       makeImplState([task], { stateFence: { token: 1, ownerId: 'permit-test-owner' } }),
     );
-    expect(persisted.phase).toBe('implementing');
-    expect(persisted.permit).not.toBeNull();
-    const { readSpecFile } = await import('../../../core/paths-io.js');
-    const { TASKS_FILE } = await import('../../../core/paths.js');
+    const approvedHash = persisted.briefRecovery?.activeBrief?.hash;
+    const implement = vi.fn().mockResolvedValue({
+      success: true,
+      output: 'code',
+      usage: { inputTokens: 50, outputTokens: 25 },
+    });
+    const { callbacks } = makeCallbacks();
+
+    await runWorkflow({
+      feature: 'approved brief bytes',
+      projectDir,
+      config: quickConfig(),
+      sessionId,
+      savedState: persisted,
+      callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _planner: makePlanner(),
+      _implementer: makeImplementer({ implement }),
+    });
+
+    expect(implement).toHaveBeenCalledTimes(1);
     const onDisk = readSpecFile({ projectDir, sessionId }, TASKS_FILE);
     expect(onDisk).not.toBeNull();
     expect(sha256Hex(onDisk ?? '')).toBe(sha256Hex(text));
-    expect(sha256Hex(onDisk ?? '')).toBe(persisted.briefRecovery?.activeBrief?.hash);
-  });
+    expect(sha256Hex(onDisk ?? '')).toBe(approvedHash);
+  }, 30_000);
 });

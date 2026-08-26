@@ -97,7 +97,11 @@ describe('configError factories', () => {
   });
 
   test('runnerMissingField records role, kind, field', () => {
-    const err = configError.runnerMissingField('implementer', 'api', 'apiBase');
+    const err = configError.runnerMissingField({
+      role: 'implementer',
+      kind: 'api',
+      field: 'apiBase',
+    });
     expect(err.kind).toBe('config-runner-missing-field');
     expect(err.data).toEqual({ role: 'implementer', kind: 'api', field: 'apiBase' });
   });

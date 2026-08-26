@@ -351,16 +351,15 @@ describe('code block framing', () => {
     return prefix;
   }
 
-  it('draws the gutter on code lines and leaves prose unprefixed', async () => {
+  it('frames a fence with no info string, leaving the rail label empty', async () => {
     const { stripped, unmount } = await renderMarkdown({
-      source: codeSource,
+      source: ['intro prose', '', '```', "const x = 'y';", '```'].join('\n'),
       width: 40,
       theme: getTheme(),
     });
     const lines = stripped.split('\n').map((line) => line.trimEnd());
 
-    expect(lines).toContain('intro prose');
-    expect(lines).toContain(`${RAIL} const x = 'y';`);
+    expect(lines).toEqual(['intro prose', RAIL, `${RAIL} const x = 'y';`, RAIL]);
     unmount();
   });
 
@@ -398,15 +397,18 @@ describe('code block framing', () => {
     unmount();
   });
 
-  it('paints the code background when the theme defines one', async () => {
-    const theme = getTheme('mono');
-    const codeBg = theme.markdown.codeBg;
-    if (codeBg === undefined) throw new Error('the mono theme must define markdown.codeBg');
-    const { raw, unmount } = await renderMarkdown({ source: codeSource, width: 40, theme });
+  it.each(['mono' as const, 'terminal' as const])(
+    'paints the code background for the %s preset',
+    async (preset) => {
+      const theme = getTheme(preset);
+      const codeBg = theme.markdown.codeBg;
+      if (codeBg === undefined) throw new Error(`the ${preset} theme must define markdown.codeBg`);
+      const { raw, unmount } = await renderMarkdown({ source: codeSource, width: 40, theme });
 
-    expect(raw).toContain(backgroundOpen(codeBg));
-    unmount();
-  });
+      expect(raw).toContain(backgroundOpen(codeBg));
+      unmount();
+    },
+  );
 
   it('paints the code background across the full layout width, not just the text', async () => {
     const theme = getTheme('mono');
@@ -420,21 +422,6 @@ describe('code block framing', () => {
 
     expect(codeLines.length).toBeGreaterThan(0);
     expect(codeLines.map(getTerminalCellWidth)).toEqual(codeLines.map(() => width));
-    unmount();
-  });
-
-  it('paints the code background in the terminal preset too', async () => {
-    const theme = getTheme();
-    const codeBg = theme.markdown.codeBg;
-    if (codeBg === undefined) throw new Error('the terminal theme must define markdown.codeBg');
-    const { raw, stripped, unmount } = await renderMarkdown({
-      source: codeSource,
-      width: 40,
-      theme,
-    });
-
-    expect(stripped).toContain("const x = 'y';");
-    expect(raw).toContain(backgroundOpen(codeBg));
     unmount();
   });
 });

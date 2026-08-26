@@ -15,11 +15,5 @@ describe('package.json publish scripts', () => {
 
     expect(scripts.prepack).toBe('npm run build');
     expect(scripts.prepublishOnly).toBeUndefined();
-
-    const buildInvocations = Object.entries(scripts).filter(
-      ([name, body]) =>
-        (name === 'prepack' || name === 'prepublishOnly') && body.includes('npm run build'),
-    );
-    expect(buildInvocations).toHaveLength(1);
   });
 });

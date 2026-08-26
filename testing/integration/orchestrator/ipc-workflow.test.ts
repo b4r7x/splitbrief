@@ -10,6 +10,7 @@ import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import { acquireStateAuthority } from '../../../src/core/state/authority.js';
 import { taskId } from '../../../src/core/schemas/task.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
+import type { EventBus } from '../../../src/engine/events/types.js';
 import { startIpcServer, type IpcServer } from '../../../src/engine/ipc/server.js';
 import { createIpcWorkflowBridge } from '../../../src/engine/ipc/workflow-bridge.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
@@ -177,30 +178,48 @@ function preparedExecution(projectDir: string, feature: string): PreparedExecuti
   };
 }
 
+interface LoopHarness {
+  projectDir: string;
+  ref: { projectDir: string; sessionId: string };
+  srv: IpcServer;
+  bus: EventBus;
+  ipcBridge: ReturnType<typeof createIpcWorkflowBridge>;
+}
+
+async function startLoopHarness(opts: {
+  feature: string;
+  recoveryAction?: string;
+}): Promise<LoopHarness> {
+  const projectDir = createTempDir('wl');
+  tmpDirs.push(projectDir);
+  ensureSessionDir(projectDir, SESSION_ID);
+
+  const bus = createEventBus();
+  const ipcBridge = createIpcWorkflowBridge(bus);
+  const srv = await startIpcServer({
+    sessionId: SESSION_ID,
+    sessionDir: `${projectDir}/.splitbrief/sessions/${SESSION_ID}`,
+    startedAt: Date.now(),
+    mode: 'standard',
+    feature: opts.feature,
+    authToken: AUTH_TOKEN,
+    bus,
+    onUserInput: () => undefined,
+  });
+  servers.push(srv);
+  if (opts.recoveryAction !== undefined) {
+    await attachRecoveryAnsweringClient(srv.sockPath, opts.recoveryAction);
+  }
+
+  return { projectDir, ref: { projectDir, sessionId: SESSION_ID }, srv, bus, ipcBridge };
+}
+
 describe('runWorkflowLoop detached retry', () => {
   it('retry re-runs only failed work from the authoritative state head', async () => {
-    const projectDir = createTempDir('wl');
-    tmpDirs.push(projectDir);
-    ensureSessionDir(projectDir, SESSION_ID);
-
-    const sessionDir = `${projectDir}/.splitbrief/sessions/${SESSION_ID}`;
-    const bus = createEventBus();
-    const ipcBridge = createIpcWorkflowBridge(bus);
-    const srv = await startIpcServer({
-      sessionId: SESSION_ID,
-      sessionDir,
-      startedAt: Date.now(),
-      mode: 'standard',
+    const { projectDir, ref, srv, bus, ipcBridge } = await startLoopHarness({
       feature: 'detached retry',
-      authToken: AUTH_TOKEN,
-      bus,
-      onUserInput: () => undefined,
+      recoveryAction: 'retry-same-worker',
     });
-    servers.push(srv);
-
-    await attachRecoveryAnsweringClient(srv.sockPath, 'retry-same-worker');
-
-    const ref = { projectDir, sessionId: SESSION_ID };
     const authority = seedOwnerState(ref, failedPersistedState());
     const observedSavedStates: Array<WorkflowState | undefined> = [];
     let call = 0;
@@ -240,26 +259,10 @@ describe('runWorkflowLoop detached retry', () => {
   });
 
   it('reopens paused pending recovery and applies the client action before running', async () => {
-    const projectDir = createTempDir('wl');
-    tmpDirs.push(projectDir);
-    ensureSessionDir(projectDir, SESSION_ID);
-
-    const sessionDir = `${projectDir}/.splitbrief/sessions/${SESSION_ID}`;
-    const bus = createEventBus();
-    const ipcBridge = createIpcWorkflowBridge(bus);
-    const srv = await startIpcServer({
-      sessionId: SESSION_ID,
-      sessionDir,
-      startedAt: Date.now(),
-      mode: 'standard',
+    const { projectDir, ref, srv, bus, ipcBridge } = await startLoopHarness({
       feature: 'paused recovery',
-      authToken: AUTH_TOKEN,
-      bus,
-      onUserInput: () => undefined,
+      recoveryAction: 'retry-same-worker',
     });
-    servers.push(srv);
-
-    const ref = { projectDir, sessionId: SESSION_ID };
     const authority = seedOwnerState(
       ref,
       makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
@@ -271,8 +274,6 @@ describe('runWorkflowLoop detached retry', () => {
         }),
       }),
     );
-
-    await attachRecoveryAnsweringClient(srv.sockPath, 'retry-same-worker');
 
     const observedSavedStates: Array<WorkflowState | undefined> = [];
     const fakeRunWorkflow = async (opts: RunWorkflowOptions): Promise<Summary> => {
@@ -297,24 +298,7 @@ describe('runWorkflowLoop detached retry', () => {
   });
 
   it('does not request the stdout NDJSON sink — the detached server writes stdout to /dev/null', async () => {
-    const projectDir = createTempDir('wl');
-    tmpDirs.push(projectDir);
-    ensureSessionDir(projectDir, SESSION_ID);
-
-    const sessionDir = `${projectDir}/.splitbrief/sessions/${SESSION_ID}`;
-    const bus = createEventBus();
-    const ipcBridge = createIpcWorkflowBridge(bus);
-    const srv = await startIpcServer({
-      sessionId: SESSION_ID,
-      sessionDir,
-      startedAt: Date.now(),
-      mode: 'standard',
-      feature: 'detached run',
-      authToken: AUTH_TOKEN,
-      bus,
-      onUserInput: () => undefined,
-    });
-    servers.push(srv);
+    const { projectDir, srv, bus, ipcBridge } = await startLoopHarness({ feature: 'detached run' });
 
     const observedHeadless: Array<boolean | undefined> = [];
     const fakeRunWorkflow = async (opts: RunWorkflowOptions): Promise<Summary> => {
@@ -336,28 +320,10 @@ describe('runWorkflowLoop detached retry', () => {
   });
 
   it('abort at the failure prompt returns the failed summary without re-running', async () => {
-    const projectDir = createTempDir('wl');
-    tmpDirs.push(projectDir);
-    ensureSessionDir(projectDir, SESSION_ID);
-
-    const sessionDir = `${projectDir}/.splitbrief/sessions/${SESSION_ID}`;
-    const bus = createEventBus();
-    const ipcBridge = createIpcWorkflowBridge(bus);
-    const srv = await startIpcServer({
-      sessionId: SESSION_ID,
-      sessionDir,
-      startedAt: Date.now(),
-      mode: 'standard',
+    const { projectDir, ref, srv, bus, ipcBridge } = await startLoopHarness({
       feature: 'detached retry',
-      authToken: AUTH_TOKEN,
-      bus,
-      onUserInput: () => undefined,
+      recoveryAction: 'abort-workflow',
     });
-    servers.push(srv);
-
-    await attachRecoveryAnsweringClient(srv.sockPath, 'abort-workflow');
-
-    const ref = { projectDir, sessionId: SESSION_ID };
     let call = 0;
     const fakeRunWorkflow = async (): Promise<Summary> => {
       call += 1;

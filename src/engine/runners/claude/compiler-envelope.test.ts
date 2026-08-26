@@ -251,7 +251,7 @@ describe('Claude compiler envelope transport', () => {
           onCallEvent: (event) => events.push(event),
         }),
       ).rejects.toMatchObject({
-        kind: 'process-output',
+        kind: 'runner-call-failed',
         message: expect.stringContaining('normalized output exceeded'),
       });
 

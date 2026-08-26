@@ -1,13 +1,13 @@
+import type { RecoveryUsage } from '../../../core/schemas/brief-recovery/budget.js';
 import type {
   RecoveryProviderAggregateRequest,
   RecoveryProviderAggregateResult,
   RecoveryProviderCallResult,
-  RecoveryUsage,
-} from '../../../core/schemas/brief-recovery.js';
+} from '../../../core/schemas/brief-recovery/provider-call.js';
 import {
-  createRecoveryProviderAggregateResultSchema,
   RecoveryProviderAggregateRequestSchema,
-} from '../../../core/schemas/brief-recovery.js';
+  createRecoveryProviderAggregateResultSchema,
+} from '../../../core/schemas/brief-recovery/provider-call.js';
 import {
   OwnedPlannerArtifactSchema,
   TASK_BRIEF_COMPILER_POLICY,
@@ -18,14 +18,14 @@ import {
   type TaskCompilationFailureCode,
   type TaskCompilationFailureStatus,
   type TaskCompilationProgram,
-  type TaskCompilationSessionScope,
+  type PlannerSessionScope,
 } from '../../../core/schemas/task-compilation.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { formatTaskId } from '../../../core/schemas/task.js';
 import type { TaskDispatchLedger } from '../../calls/dispatch-ledger.js';
 import type { PlannerInvokeResult } from '../../planners/types.js';
 import type { PreparedPlannerInvocation } from '../../runners/types.js';
-import { admitTaskBatch } from '../../spec/tasks/blocks.js';
+import { admitTaskBatch } from '../../spec/tasks/batch-admission.js';
 import { taskMergeError } from '../../spec/tasks/merge.js';
 import { tasksArtifactSemanticId } from '../../spec/tasks/compiler.js';
 import { formatTasks } from '../../spec/formatter.js';
@@ -64,7 +64,7 @@ export type RecoveryAggregateBatchDispatch = (
   input: Readonly<{
     attemptId: TaskCompilationAttemptId;
     batch: TaskCompilationProgram['batches'][number];
-    sessionScope: TaskCompilationSessionScope;
+    sessionScope: PlannerSessionScope;
     projectDir: string;
   }>,
 ) => Promise<PlannerInvokeResult>;
@@ -199,7 +199,7 @@ async function dispatchOneCall(
   stop: TaskCompilationFailure | null;
 }> {
   const { frozen, call, batch, options } = input;
-  const sessionScope: TaskCompilationSessionScope = {
+  const sessionScope: PlannerSessionScope = {
     kind: 'detached-fresh',
     operationId: frozen.operationId,
     programId: frozen.program.programId,
@@ -241,8 +241,7 @@ async function dispatchOneCall(
       stop: null,
     };
   }
-  const code =
-    result.failureCode ?? TERMINAL_FAILURE_CODES[result.status] ?? 'task_compiler_provider_failed';
+  const code = result.failureCode ?? TERMINAL_FAILURE_CODES[result.status];
   const failure = failureFor(
     code,
     `batch ${batch.batchId} ended with terminal status ${result.status}`,

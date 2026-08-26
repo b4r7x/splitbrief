@@ -5,24 +5,21 @@ import {
   symlinkSync,
   readFileSync,
   existsSync,
-  realpathSync,
-  statSync,
   unlinkSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createCliPlanner as createCliPlannerImpl } from './cli.js';
 import { makeConfig as makeBaseConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { prependPath, writeCommandShim } from '#testing/helpers/command-shim.js';
+import { prependPath, trustedShimGate, writeCommandShim } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { processError } from '../../lib/process/errors.js';
 import { SANDBOX_DIR, TASKS_FILE } from '../../core/paths.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { CLI_RAW_OUTPUT_MAX_BYTES } from '../runners/cli-tools/process-invoke.js';
-import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import type { PlannerFactoryOptions, PlanResult } from './types.js';
-import type { CliStartGate } from '../runners/start-gate.js';
 import { writeSpecFile } from '../../core/paths-io.js';
 
 function makeConfig(overrides: Parameters<typeof makeBaseConfig>[0] = {}) {
@@ -42,8 +39,6 @@ function makeConfig(overrides: Parameters<typeof makeBaseConfig>[0] = {}) {
  * JSONL / JSON lines the planner's parser expects. This exercises the real
  * spawn pipeline from top to bottom: createCliPlanner → spawnAndCollect →
  * spawnWithStdin → child_process → parseLine → accumulated text/usage.
- *
- * Same technique as `src/engine/claude-runner.test.ts`.
  */
 
 let projectDir: string;
@@ -51,38 +46,18 @@ let shimDir: string;
 let restorePath: () => void;
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
-/**
- * Planner execution accepts only a canonical identity produced by readiness.
- * Test shims are real executable files; derive their path and fingerprint just
- * as the production readiness/start gate does.
- */
-function trustedGate(tool: CliToolId): CliStartGate {
-  const commandPath = join(shimDir, CLI_TOOL_CATALOG[tool].command);
-  if (!existsSync(commandPath)) {
-    writeFileSync(commandPath, '#!/bin/sh\nexit 0\n', 'utf8');
-    chmodSync(commandPath, 0o755);
-  }
-  const path = realpathSync(commandPath);
-  const info = statSync(path);
-  return {
-    tool,
-    executable: {
-      path,
-      fingerprint: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs },
-    },
-  };
-}
-
 function createCliPlanner(
-  config: Parameters<typeof createCliPlannerImpl>[0],
+  config: Parameters<typeof createCliPlannerImpl>[0]['config'],
   initialSessionId?: string | null,
   options?: PlannerFactoryOptions,
 ): ReturnType<typeof createCliPlannerImpl> {
   const tool = config.planner.kind === 'cli' ? config.planner.tool : null;
   if (tool === null) throw new Error('test helper requires a CLI planner config');
-  return createCliPlannerImpl(config, initialSessionId, {
+  return createCliPlannerImpl({
+    config,
+    initialSessionId,
     ...options,
-    trustedCli: options?.trustedCli ?? trustedGate(tool),
+    trustedCli: options?.trustedCli ?? trustedShimGate({ dir: shimDir, tool }),
   });
 }
 

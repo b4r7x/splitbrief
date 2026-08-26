@@ -1,6 +1,7 @@
 import { configStore } from '../../../stores/project/config.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { reportConfigSaveFailure } from '../../../stores/project/save-feedback.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 import type { SettingDef } from '../../../core/settings/catalog.js';
 import { matchesFilter } from '../presentation.js';
 import { settingsItemDescription, type SettingsItem } from '../items.js';
@@ -119,7 +120,9 @@ function cyclesInPlace(item: SettingsItem): boolean {
 let saveQueue: Promise<void> = Promise.resolve();
 
 function enqueueSave(task: () => Promise<void>): void {
-  saveQueue = saveQueue.then(task).catch(() => undefined);
+  saveQueue = saveQueue.then(task).catch((err: unknown) => {
+    feedbackStore.setError(toErrorMessage(err));
+  });
 }
 
 async function persist(updated: Config): Promise<void> {
@@ -158,10 +161,7 @@ export function useSettingsEditor({
         await saveValue(def.id, !getValue(def, currentConfig));
       } else if (def.kind === 'enum' && def.options) {
         const firstOption = def.options[0];
-        const raw = def.readRawValue
-          ? def.readRawValue(currentConfig)
-          : getValue(def, currentConfig);
-        const current = String(raw ?? firstOption ?? '');
+        const current = String(getValue(def, currentConfig) ?? firstOption ?? '');
         const idx = def.options.indexOf(current);
         const next = def.options[(idx + 1) % def.options.length];
         if (next !== undefined) await saveValue(def.id, next);

@@ -50,15 +50,16 @@ import type { CostPrediction } from '../../../core/schemas/summary.js';
 import type { PhaseResult, PlannerArtifactLogicalName } from '../../planners/types.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
 import { sha256Hex } from '../../../utils/sha256.js';
+import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
 import type {
   BriefAdmissionInput,
-  BriefRecoveryProjectionV1,
   RecoveryResultV1,
   StateAuthorityReceipt,
 } from '../../../core/schemas/brief-recovery.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { planningResultForState } from '../planning/handoff.js';
-import { runPlanningPhases, runTasksAndReview, type PhaseRecoveryBinding } from './phases.js';
+import { runPlanningPhases, type PhaseRecoveryBinding } from './phases.js';
+import { runTasksAndReview } from './task-execution.js';
 import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
 
 const DENY_HOOK_MODULE = 'export default () => ({ kind: "deny", message: "planning blocked" });\n';
@@ -153,7 +154,7 @@ function ownerRecoveryFixture(opts: { wctx: WorkflowContext; state: WorkflowStat
   const keepsExecutionAuthority =
     opts.state.phase === 'implementing' || opts.state.phase === 'final-review';
   let trackedState: WorkflowState = keepsExecutionAuthority
-    ? persistReadyExecutionState(projectDir, sessionId, opts.state)
+    ? persistReadyExecutionState({ projectDir, sessionId }, opts.state)
     : {
         ...opts.state,
         authorityRevision: undefined,
@@ -289,60 +290,19 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     },
   );
 
-  it('returns parked for an approval-parked reviewing-briefs resume through runPlanningPhases', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const savedState: WorkflowState = {
-      ...makeImplState([makeTask({ id: 'T001' })]),
-      phase: 'reviewing-briefs',
-    };
-    const planner = makePlanner();
-    const implementer = makeImplementer();
-    const { callbacks } = makeCallbacks();
-    const { bus } = makeBusRecorder();
-
-    const result = await runPlanningPhases({
-      wctx: withFixtureAuthority({
-        projectDir,
-        sessionId,
-        isolation: makeCopyingIsolation({ projectDir, sessionId }),
-        config: makeNoValidationConfig({ workflow: {} }),
-        callbacks,
-        bus,
-        planner,
-        reviewer: planner,
-        context: defaultContext,
-        implementer,
-        metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
-        sinks: TEST_SINKS,
-        validator: createValidator(),
-      }),
-      state: savedState,
-      savedState,
-      selectedSkills: undefined,
-      phaseTimings: {},
-      startTime: Date.now(),
-      setTrackedState: vi.fn(),
-    });
-
-    expect(result.disposition).toBe('parked');
-    expect(result.state.phase).toBe('reviewing-briefs');
-    expect(planner.plan).not.toHaveBeenCalled();
-    expect(planner.quickPlan).not.toHaveBeenCalled();
-    expect(implementer.implement).not.toHaveBeenCalled();
-  });
-
   it('publishes deterministic cost prediction before task execution', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makePassingTask('T001');
     const state = makeImplState([task]);
-    const executionState = persistReadyExecutionState(projectDir, sessionId, state);
+    const executionState = persistReadyExecutionState({ projectDir, sessionId }, state);
     const planner = makePlanner();
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
     const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async () => {
-        expect(events.some((event) => event.type === 'cost_prediction')).toBe(true);
-        return { success: true, output: 'code', usage: { inputTokens: 50, outputTokens: 25 } };
+      implement: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'code',
+        usage: { inputTokens: 50, outputTokens: 25 },
       }),
     });
     const config = {
@@ -442,7 +402,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const { projectDir, sessionId } = setupProject();
     const task = makePassingTask('T001');
     const state = makeImplState([task]);
-    const executionState = persistReadyExecutionState(projectDir, sessionId, state);
+    const executionState = persistReadyExecutionState({ projectDir, sessionId }, state);
     const planner = makePlanner();
     const onCostApprovalNeeded = vi.fn().mockResolvedValue(true);
     const { callbacks } = makeCallbacks({ onCostApprovalNeeded });
@@ -515,9 +475,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     });
 
     const prediction = events.find((event) => event.type === 'cost_prediction');
-    if (prediction?.type === 'cost_prediction') {
-      expect(prediction.prediction.deterministic?.totals.knownActualEstimate).toBeNull();
-    }
+    expect(prediction).toMatchObject({
+      prediction: { deterministic: { totals: { knownActualEstimate: null } } },
+    });
     expect(onCostApprovalNeeded).not.toHaveBeenCalled();
     expect(
       events.some(
@@ -538,7 +498,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
       currentCode: hugeTaskBody,
     } satisfies Task;
     const state = makeImplState([task]);
-    const executionState = persistReadyExecutionState(projectDir, sessionId, state);
+    const executionState = persistReadyExecutionState({ projectDir, sessionId }, state);
     const review = vi
       .fn()
       .mockResolvedValueOnce({
@@ -669,7 +629,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const { projectDir, sessionId } = setupProject();
     const task = makePassingTask('T001');
     const state = makeImplState([task]);
-    const executionState = persistReadyExecutionState(projectDir, sessionId, state);
+    const executionState = persistReadyExecutionState({ projectDir, sessionId }, state);
     const review = vi
       .fn()
       .mockResolvedValueOnce({
@@ -1237,7 +1197,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const { projectDir, sessionId } = setupProject();
     const task = makePassingTask('T001');
     const state = makeImplState([task]);
-    const executionState = persistReadyExecutionState(projectDir, sessionId, state);
+    const executionState = persistReadyExecutionState({ projectDir, sessionId }, state);
     const planner = makePlanner({
       review: vi
         .fn()
@@ -1313,7 +1273,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const state = makeImplState([task], {
       changedFilesBaseline: { head: null, fingerprints: {}, runStartChangedFiles: [] },
     });
-    const executionState = persistReadyExecutionState(projectDir, sessionId, state);
+    const executionState = persistReadyExecutionState({ projectDir, sessionId }, state);
     const planner = makePlanner({
       review: vi
         .fn()
@@ -1390,7 +1350,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const task = makePassingTask('T001');
     task.file = 'src/too-large.ts';
     const state = makeImplState([task]);
-    const executionState = persistReadyExecutionState(projectDir, sessionId, state);
+    const executionState = persistReadyExecutionState({ projectDir, sessionId }, state);
     const planner = makePlanner();
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
@@ -1509,7 +1469,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const task = makePassingTask('T001');
     task.status = 'done';
     const state = makeImplState([task]);
-    const executionState = persistReadyExecutionState(projectDir, sessionId, state);
+    const executionState = persistReadyExecutionState({ projectDir, sessionId }, state);
     const planner = makePlanner({
       review: vi.fn().mockRejectedValue(new Error('review failed')),
     });
@@ -1559,7 +1519,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     done.status = 'done';
     const remaining = makePassingTask('T002');
     const state = makeImplState([done, remaining], { currentTaskIndex: 1 });
-    const executionState = persistReadyExecutionState(projectDir, sessionId, state);
+    const executionState = persistReadyExecutionState({ projectDir, sessionId }, state);
     const planner = makePlanner();
     const onCostApprovalNeeded = vi.fn().mockResolvedValue(true);
     const { callbacks } = makeCallbacks({ onCostApprovalNeeded });
@@ -1643,16 +1603,18 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const taskStarts = events.filter((event) => event.type === 'task_started');
     expect(taskStarts.map((event) => event.taskId)).toEqual(['T002']);
     const prediction = events.find((event) => event.type === 'cost_prediction');
-    if (prediction?.type === 'cost_prediction') {
-      expect(prediction.prediction.deterministic?.taskCount).toBe(1);
-    }
+    expect(prediction).toBeDefined();
+    expect(prediction).toMatchObject({
+      type: 'cost_prediction',
+      prediction: { deterministic: { taskCount: 1 } },
+    });
     expect(result.summary.totalTasks).toBe(2);
   }, 90_000);
 
   it('aborts without executing any task when the cost gate is declined', async () => {
     const { projectDir, sessionId } = setupProject();
     const state = makeImplState([makePassingTask('T001'), makePassingTask('T002')]);
-    const executionState = persistReadyExecutionState(projectDir, sessionId, state);
+    const executionState = persistReadyExecutionState({ projectDir, sessionId }, state);
     const planner = makePlanner();
     const onCostApprovalNeeded = vi.fn().mockResolvedValue(false);
     const { callbacks } = makeCallbacks({ onCostApprovalNeeded });
@@ -1742,8 +1704,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     // Persist a state stuck in 'final-review' (a previously failed gate): all tasks done,
     // currentTaskIndex past the end (as the task loop leaves it before ALL_DONE).
     const executionState = persistReadyExecutionState(
-      projectDir,
-      sessionId,
+      { projectDir, sessionId },
       makeImplState([task], {
         currentTaskIndex: 1,
         changedFilesBaseline: { head: null, fingerprints: {}, runStartChangedFiles: [] },
@@ -1890,6 +1851,48 @@ describe('runPlanningPhases', () => {
           event.type === 'warning' && event.message === 'pre_planning blocked: planning blocked',
       ),
     ).toBe(true);
+  });
+
+  it('returns parked for an approval-parked reviewing-briefs resume through runPlanningPhases', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const savedState: WorkflowState = {
+      ...makeImplState([makeTask({ id: 'T001' })]),
+      phase: 'reviewing-briefs',
+    };
+    const planner = makePlanner();
+    const implementer = makeImplementer();
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+
+    const result = await runPlanningPhases({
+      wctx: withFixtureAuthority({
+        projectDir,
+        sessionId,
+        isolation: makeCopyingIsolation({ projectDir, sessionId }),
+        config: makeNoValidationConfig({ workflow: {} }),
+        callbacks,
+        bus,
+        planner,
+        reviewer: planner,
+        context: defaultContext,
+        implementer,
+        metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      }),
+      state: savedState,
+      savedState,
+      selectedSkills: undefined,
+      phaseTimings: {},
+      startTime: Date.now(),
+      setTrackedState: vi.fn(),
+    });
+
+    expect(result.disposition).toBe('parked');
+    expect(result.state.phase).toBe('reviewing-briefs');
+    expect(planner.plan).not.toHaveBeenCalled();
+    expect(planner.quickPlan).not.toHaveBeenCalled();
+    expect(implementer.implement).not.toHaveBeenCalled();
   });
 });
 

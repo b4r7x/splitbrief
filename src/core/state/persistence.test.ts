@@ -5,16 +5,13 @@ import { join } from 'node:path';
 import {
   commitStateAuthorityFence,
   loadStateForResume,
-  mapV3StateToV4,
-  parseLegacyWorkflowState,
   saveState,
   loadState,
 } from './persistence.js';
 import { createInitialState } from './machine.js';
 import { taskId } from '../schemas/task.js';
-import type { NormalBriefRecoveryV1 } from '../schemas/brief-recovery.js';
-import type { QueuedMessage } from '../schemas/workflow.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { makeLegacyV3State } from '#testing/helpers/factories/workflow-state.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { SPLITBRIEF_DIR, SESSIONS_DIR } from '../paths.js';
 
@@ -43,19 +40,6 @@ function digest(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-function legacyState(feature = 'legacy-feature') {
-  const current = createInitialState(feature);
-  return {
-    ...current,
-    stateVersion: 3,
-    phase: 'reviewing-briefs' as const,
-    currentTaskIndex: 0,
-    tasks: [],
-    mode: 'standard' as const,
-    messageQueue: [],
-  };
-}
-
 function fencedAuthority(ref: { sessionId: string }, stateBytes: string, revision = 1) {
   return {
     kind: 'fenced' as const,
@@ -73,46 +57,6 @@ function fencedAuthority(ref: { sessionId: string }, stateBytes: string, revisio
       stateDigest: digest(stateBytes),
     },
   };
-}
-
-function legacyMessage(id: string, overrides: Partial<QueuedMessage> = {}): QueuedMessage {
-  return {
-    id,
-    text: `${id} text`,
-    queuedAt: '2026-08-13T10:00:00.000Z',
-    phase: 'reviewing-briefs',
-    deliveredViaNative: false,
-    nativeDeliveryState: 'pending',
-    origin: 'user-input',
-    ...overrides,
-  };
-}
-
-function migrateLegacyQueue(messageQueue: QueuedMessage[]): {
-  state: ReturnType<typeof mapV3StateToV4>;
-  recovery: NormalBriefRecoveryV1;
-} {
-  const state = parseLegacyWorkflowState({ ...legacyState('legacy-queue'), messageQueue });
-  if (state === null) throw new Error('expected a valid v3 queue fixture');
-  const migrated = mapV3StateToV4({
-    ref: { projectDir: '/tmp/project', sessionId: SESSION_ID },
-    state,
-    briefBytes: Buffer.from('# Task Briefs\n'),
-    reportBytes: Buffer.from(JSON.stringify({ version: 1, passed: true, score: 1, issues: [] })),
-    ownerId: 'migration-owner',
-    fence: 1,
-    stateRevision: 1,
-  });
-  const recovery = migrated.briefRecovery;
-  if (
-    recovery === undefined ||
-    recovery === null ||
-    recovery.status === 'storage-blocked' ||
-    recovery.status === 'rejected'
-  ) {
-    throw new Error('expected a normal migrated Brief recovery');
-  }
-  return { state: migrated, recovery };
 }
 
 afterEach(() => {
@@ -268,31 +212,22 @@ describe('loadState', () => {
     expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
   });
 
-  it('returns null when state is malformed (missing phase)', () => {
+  it.each([
+    [
+      'missing phase',
+      () => {
+        const malformed = { ...createInitialState('missing-phase') };
+        Reflect.deleteProperty(malformed, 'phase');
+        return malformed;
+      },
+    ],
+    ['tasks not an array', () => ({ ...createInitialState('invalid-tasks'), tasks: 'not-array' })],
+    ['unknown phase', () => ({ ...createInitialState('broken'), phase: 'not-a-real-phase' })],
+  ])('returns null and warns that schema validation failed for %s', (_name, build) => {
     const dir = makeTmp();
     const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
     mkdirSync(stateDir, { recursive: true });
-    const malformed = { ...createInitialState('missing-phase') };
-    Reflect.deleteProperty(malformed, 'phase');
-    writeFileSync(join(stateDir, 'state.json'), JSON.stringify(malformed));
-
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    try {
-      expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
-      const output = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
-      expect(output).toContain('failed schema validation');
-      expect(output).not.toContain('is incompatible');
-    } finally {
-      stderrSpy.mockRestore();
-    }
-  });
-
-  it('returns null when state is malformed (tasks not an array)', () => {
-    const dir = makeTmp();
-    const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
-    mkdirSync(stateDir, { recursive: true });
-    const malformed = { ...createInitialState('invalid-tasks'), tasks: 'not-array' };
-    writeFileSync(join(stateDir, 'state.json'), JSON.stringify(malformed));
+    writeFileSync(join(stateDir, 'state.json'), JSON.stringify(build()));
 
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
@@ -330,23 +265,6 @@ describe('loadState', () => {
     }
   });
 
-  it('warns that schema validation failed for a current-version but malformed state', () => {
-    const dir = makeTmp();
-    const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
-    mkdirSync(stateDir, { recursive: true });
-    const malformed = { ...createInitialState('broken'), phase: 'not-a-real-phase' };
-    writeFileSync(join(stateDir, 'state.json'), JSON.stringify(malformed));
-
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    try {
-      expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
-      const output = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
-      expect(output).toContain('failed schema validation');
-    } finally {
-      stderrSpy.mockRestore();
-    }
-  });
-
   it('returns null without throwing when the file disappears after the existence check', () => {
     const dir = makeTmp();
     saveState({ projectDir: dir, sessionId: SESSION_ID }, createInitialState('vanishing'));
@@ -368,7 +286,7 @@ describe('authority-bearing resume persistence', () => {
   it('keeps loadState strict while the resume seam migrates v3', () => {
     const dir = makeTmp();
     const ref = { projectDir: dir, sessionId: SESSION_ID };
-    saveState(ref, legacyState());
+    saveState(ref, makeLegacyV3State());
     const statePath = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'state.json');
     const stateBytes = readFileSync(statePath, 'utf8');
 
@@ -386,7 +304,7 @@ describe('authority-bearing resume persistence', () => {
   it('maps a valid legacy Brief/report pair to Contract Ready or Blocked', () => {
     const dir = makeTmp();
     const ref = { projectDir: dir, sessionId: SESSION_ID };
-    const state = legacyState('legacy-artifacts');
+    const state = makeLegacyV3State('legacy-artifacts');
     saveState(ref, state);
     const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
     const brief = '# Task Briefs\n';
@@ -417,7 +335,7 @@ describe('authority-bearing resume persistence', () => {
   it('returns a digest-bound read-only error without rewriting future bytes', () => {
     const dir = makeTmp();
     const ref = { projectDir: dir, sessionId: SESSION_ID };
-    const state = { ...legacyState('future-state'), stateVersion: 5 };
+    const state = { ...makeLegacyV3State('future-state'), stateVersion: 5 };
     const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
     mkdirSync(stateDir, { recursive: true });
     const statePath = join(stateDir, 'state.json');
@@ -443,7 +361,7 @@ describe('authority-bearing resume persistence', () => {
   it('commits v3 promotion and the first fence through one synchronous CAS', () => {
     const dir = makeTmp();
     const ref = { projectDir: dir, sessionId: SESSION_ID };
-    saveState(ref, legacyState('fenced-promotion'));
+    saveState(ref, makeLegacyV3State('fenced-promotion'));
     const result = commitStateAuthorityFence({
       ref,
       candidate: {
@@ -466,92 +384,5 @@ describe('authority-bearing resume persistence', () => {
     expect(result.promotedFromVersion).toBe(3);
     expect(result.receipt.fence).toBe(1);
     expect(loadState(ref)?.stateVersion).toBe(4);
-  });
-});
-
-describe('v3 queue migration', () => {
-  it('keeps an empty legacy queue empty', () => {
-    const migrated = migrateLegacyQueue([]);
-
-    expect(migrated.recovery.inputs).toEqual([]);
-    expect(migrated.recovery.nextInputSequence).toBe(1);
-    expect(migrated.state.messageQueue).toEqual([]);
-  });
-
-  it('migrates pending user input as queued typed feedback', () => {
-    const migrated = migrateLegacyQueue([legacyMessage('pending')]);
-
-    expect(migrated.recovery.inputs).toEqual([
-      expect.objectContaining({
-        inputId: 'pending',
-        kind: 'feedback',
-        source: 'typed',
-        state: 'queued',
-        appliedRevision: null,
-        history: [expect.objectContaining({ state: 'queued' })],
-      }),
-    ]);
-    expect(migrated.state.messageQueue).toEqual([]);
-  });
-
-  it('preserves a native-delivered message as applied history instead of replaying it', () => {
-    const migrated = migrateLegacyQueue([
-      legacyMessage('delivered', {
-        deliveredViaNative: true,
-        nativeDeliveryState: 'delivered',
-      }),
-    ]);
-
-    expect(migrated.recovery.inputs).toEqual([
-      expect.objectContaining({
-        inputId: 'delivered',
-        kind: 'native-injection',
-        source: 'native-injection',
-        state: 'applied',
-        appliedRevision: 1,
-        history: [
-          expect.objectContaining({ state: 'queued' }),
-          expect.objectContaining({ state: 'applied' }),
-        ],
-      }),
-    ]);
-    expect(migrated.state.messageQueue).toEqual([]);
-  });
-
-  it('keeps only explicitly pending entries queued in a mixed legacy history', () => {
-    const migrated = migrateLegacyQueue([
-      legacyMessage('pending'),
-      legacyMessage('drained-clarification', {
-        origin: 'clarification',
-        question: 'Which database?',
-        drainedAt: '2026-08-13T10:01:00.000Z',
-      }),
-      legacyMessage('delivered', {
-        deliveredViaNative: true,
-        nativeDeliveryState: 'delivered',
-      }),
-      legacyMessage('injecting', { nativeDeliveryState: 'injecting' }),
-    ]);
-
-    expect(migrated.recovery.inputs).toEqual([
-      expect.objectContaining({ inputId: 'pending', source: 'typed', state: 'queued' }),
-      expect.objectContaining({
-        inputId: 'drained-clarification',
-        source: 'interactive',
-        state: 'applied',
-      }),
-      expect.objectContaining({
-        inputId: 'delivered',
-        source: 'native-injection',
-        state: 'applied',
-      }),
-      expect.objectContaining({
-        inputId: 'injecting',
-        source: 'native-injection',
-        state: 'held',
-      }),
-    ]);
-    expect(migrated.recovery.inputs.filter((input) => input.state === 'queued')).toHaveLength(1);
-    expect(migrated.state.messageQueue).toEqual([]);
   });
 });

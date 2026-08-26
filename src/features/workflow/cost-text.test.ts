@@ -341,7 +341,6 @@ describe('computeCostBreakdownStats task reconstruction', () => {
     expect(costBreakdown?.totalActualCost).toBeCloseTo(1.2);
     expect(costBreakdown?.providerCosts?.anthropic?.cost).toBeCloseTo(1.0);
     expect(costBreakdown?.providerCosts?.openai?.cost).toBeCloseTo(0.2);
-    expect(costBreakdown?.totalActualCost).not.toBeCloseTo(2.2);
   });
 
   it('prices cache-only task attempts with the task model cache rate', () => {
@@ -386,6 +385,5 @@ describe('computeCostBreakdownStats task reconstruction', () => {
 
     expect(costBreakdown?.providerCosts?.anthropic?.cost).toBeCloseTo(0.1);
     expect(costBreakdown?.providerCosts?.openai?.cost ?? 0).toBe(0);
-    expect(costBreakdown?.totalActualCost).not.toBeCloseTo(0.2);
   });
 });

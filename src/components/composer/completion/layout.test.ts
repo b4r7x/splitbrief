@@ -17,12 +17,6 @@ describe('computeCompletionCap', () => {
   it('shrinks below hard cap on medium terminals with multi-line input', () => {
     expect(computeCompletionCap(18, 4)).toBe(3);
   });
-
-  it('returns different caps as terminal rows change', () => {
-    const tiny = computeCompletionCap(14, 1);
-    const standard = computeCompletionCap(24, 1);
-    expect(standard).toBeGreaterThanOrEqual(tiny);
-  });
 });
 
 describe('computeCompletionOverlayRows', () => {
@@ -33,6 +27,10 @@ describe('computeCompletionOverlayRows', () => {
         maxVisible: 8,
       }),
     ).toBe(12);
+  });
+
+  it('stays closed when there is nothing to show', () => {
+    expect(computeCompletionOverlayRows({ itemCount: 0, maxVisible: 8 })).toBe(0);
   });
 
   it('uses one content row for a fuzzy-only command suggestion', () => {

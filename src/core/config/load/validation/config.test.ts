@@ -528,26 +528,8 @@ describe('validateConfig', () => {
     expect(warnings).toContainEqual(expect.stringContaining('implementer.args contains {prompt}'));
   });
 
-  it('uses a stronger warning when bash -c args contain {prompt}', () => {
-    const config = makeConfig({
-      implementer: {
-        kind: 'agent',
-        command: 'bash',
-        args: ['-c', 'printf "%s" "{prompt}"'],
-        model: 'agent-default',
-      },
-    });
-
-    const { errors, warnings } = validateConfig(config);
-
-    expect(errors).toEqual([]);
-    expect(warnings).toContainEqual(
-      expect.stringContaining('implementer.args passes {prompt} through bash -c'),
-    );
-    expect(warnings).toContainEqual(expect.stringContaining('shell-evaluate prompt text'));
-  });
-
   it.each([
+    ['plain bash -c', 'bash', ['-c', 'printf "%s" "{prompt}"']],
     ['bash with options before -c', 'bash', ['--noprofile', '-c', 'printf "%s" "{prompt}"']],
     ['bash combined flags', 'bash', ['-lc', 'printf "%s" "{prompt}"']],
     ['sh combined flags', 'sh', ['-ec', 'printf "%s" "{prompt}"']],

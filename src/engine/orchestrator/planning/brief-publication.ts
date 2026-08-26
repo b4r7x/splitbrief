@@ -22,13 +22,13 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
-import { writeRecoveryArtifact } from '../../../core/evidence/ledger-storage.js';
+import { writeRecoveryArtifact } from '../../../core/evidence/recovery-journal.js';
 import { canonicalJSON } from '../../../utils/canonical-json.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import type { EventBus } from '../../events/types.js';
 import { writeAndPublishArtifacts } from '../artifact-write.js';
-import { persistBriefOwnerTransition } from '../evidence/persistence.js';
+import { persistBriefOwnerTransition } from '../evidence/recovery-journal.js';
 import { commitWorkflowState, readWorkflowStateHead, transitionAndSave } from '../state-ops.js';
 import {
   installBriefGeneration,
@@ -282,22 +282,17 @@ function producerGenerationCandidate(planResult: ProducerPlanResult): BriefGener
 function producerOwnerCommitPort(ref: SessionRef, base: WorkflowState): BriefOwnerCommitPort {
   return (input) => {
     const head = readWorkflowStateHead(ref);
-    let patch: BriefOwnerStatePatch;
-    try {
-      patch = BriefOwnerStatePatchSchema.parse(
-        input.projectNext({
-          current: recoveryViewOf(head?.state ?? base),
-          evidenceRef: writeRecoveryArtifact(ref, {
-            epochId: input.evidence.epochId,
-            eventId: input.event.eventId,
-            payload: input.evidence.payload,
-          }),
+    const patch: BriefOwnerStatePatch = BriefOwnerStatePatchSchema.parse(
+      input.projectNext({
+        current: recoveryViewOf(head?.state ?? base),
+        evidenceRef: writeRecoveryArtifact(ref, {
+          epochId: input.evidence.epochId,
           eventId: input.event.eventId,
+          payload: input.evidence.payload,
         }),
-      );
-    } catch {
-      return ownerConflictResult();
-    }
+        eventId: input.event.eventId,
+      }),
+    );
     const next = projectOwnerCommittedState(head?.state ?? base, patch);
     const committed = commitWorkflowState({ ref, expected: head?.state ?? null, next });
     if (committed.kind === 'conflict') return ownerConflictResult();

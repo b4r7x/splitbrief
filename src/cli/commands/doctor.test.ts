@@ -25,7 +25,7 @@ import { isCliError } from '../errors.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { CliExecutableReceiptSchema } from '../../core/discovery/detection.js';
 import type { RunnerEvidence } from '../../core/discovery/runner-evidence.js';
-import { runnerDiscoveryContextKey } from '../../engine/detection/detect.js';
+import { runnerDiscoveryContextKey } from '../../engine/detection/runner-evidence.js';
 import { collectRunnerAdmissionChecks } from '../../engine/runners/prepare-execution.js';
 import { registerDoctorCommand } from './doctor.js';
 
@@ -756,7 +756,9 @@ describe('doctor command', () => {
     expect(human).not.toContain('start can continue');
     expect(human).toContain('No trusted readiness identity for claude-code');
     expect(human).toContain('--allow-unverified-auth');
-    expect(human).toContain(unverified.remediation ?? '');
+    const remediation = unverified.remediation;
+    expect(remediation).toBeTruthy();
+    expect(human).toContain(remediation);
   });
 
   it('blocks on an emitted flag the installed binary does not advertise', async () => {

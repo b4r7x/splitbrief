@@ -9,7 +9,6 @@ import {
 import { delimiter, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { normalizeCustomCommand } from '../../core/config/custom-commands.js';
-import { matches } from '../../utils/error.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -19,7 +18,7 @@ import {
   type ConfiguredCustomRunner,
 } from '../runners/custom-trust.js';
 import { resolveCustomExecutable } from '../runners/resolve-cli-executable.js';
-import { customRunnerAdmissionError } from '../runners/trust.js';
+import { customRunnerAdmissionError } from '../runners/custom-launchability.js';
 import type { CustomRunnerRuntimePort } from '../runners/types.js';
 import {
   createConfiguredCustomImplementer as createPreparedConfiguredCustomImplementer,
@@ -220,7 +219,6 @@ describe('createConfiguredCustomImplementer', () => {
     const harness = runtimeHarness(projectDir, {
       admission: { interaction: 'headless', allowRepoRunners: false },
     });
-    const denied = customRunnerAdmissionError.denied('implementer');
 
     await expect(
       createConfiguredCustomImplementer({
@@ -237,12 +235,6 @@ describe('createConfiguredCustomImplementer', () => {
       message: 'Configured custom runner admission was denied.',
     });
 
-    expect(matches('custom-runner-admission-denied')(denied)).toBe(true);
-    expect(denied).toMatchObject({
-      kind: 'custom-runner-admission-denied',
-      message: 'Configured custom runner admission was denied.',
-    });
-    expect(denied.data).toBeUndefined();
     expect(existsSync(childStarted)).toBe(false);
     expect(harness.stages).toEqual([]);
   });

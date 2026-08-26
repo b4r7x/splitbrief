@@ -205,23 +205,23 @@ describe('useBriefReviewKeys: y yank', () => {
     ui.unmount();
   });
 
-  it('keeps the brief selection on arrow keys and leaves printable text to the composer', async () => {
+  it('clamps the brief selection at the first and last row instead of wrapping', async () => {
     const copyTarget = vi.fn(async (_target: CopyTarget): Promise<CopyResult> => 'native');
     seedVisibleBriefReview(['first brief', 'second brief', 'third brief']);
-    controlsStore.setInputMode('review');
     focusStore.set('brief', 0);
 
     const ui = renderFeature(<Harness copyTarget={copyTarget} />);
     await flushEffects();
 
+    ui.stdin.write('\x1b[A');
+    await tick();
+    expect(focusStore.get()).toEqual({ region: 'brief', index: 0 });
+
+    focusStore.set('brief', 2);
+    await flushEffects();
     ui.stdin.write('\x1b[B');
     await tick();
-    expect(focusStore.get()).toEqual({ region: 'brief', index: 1 });
-
-    await flushEffects();
-    ui.stdin.write('x');
-    await tick();
-    expect(focusStore.get()).toEqual({ region: 'brief', index: 1 });
+    expect(focusStore.get()).toEqual({ region: 'brief', index: 2 });
     ui.unmount();
   });
 

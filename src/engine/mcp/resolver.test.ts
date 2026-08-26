@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { writeFileSync, symlinkSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -107,6 +107,11 @@ Modify the other thing.
 `;
 
 let dirs: string[] = [];
+let projectDir: string;
+beforeEach(() => {
+  projectDir = createTempDir('resolver-test');
+  dirs.push(projectDir);
+});
 afterEach(() => {
   for (const d of dirs) cleanupTempDir(d);
   dirs = [];
@@ -127,8 +132,6 @@ function sessionPath(projectDir: string, sessionId: string): string {
 
 describe('listResources', () => {
   it('includes /sessions and available /manifest.json URIs', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-1';
     ensureSessionDir(projectDir, id);
     writeCanonicalArtifacts(projectDir, id);
@@ -141,8 +144,6 @@ describe('listResources', () => {
   });
 
   it('does not advertise manifest.json when canonical summary/state artifacts are unavailable', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-without-state';
     ensureSessionDir(projectDir, id);
     saveSummary({ projectDir: projectDir, sessionId: id }, makeCompleteSession(id));
@@ -155,8 +156,6 @@ describe('listResources', () => {
   });
 
   it('always includes /tasks URI', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-2';
     ensureSessionDir(projectDir, id);
     saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
@@ -168,8 +167,6 @@ describe('listResources', () => {
   });
 
   it('omits plan.md URI when no plan.md exists', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-3';
     ensureSessionDir(projectDir, id);
     saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
@@ -181,8 +178,6 @@ describe('listResources', () => {
   });
 
   it('includes spec.md URI when file exists', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-4';
     ensureSessionDir(projectDir, id);
     saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
@@ -195,8 +190,6 @@ describe('listResources', () => {
   });
 
   it('includes task URIs for tasks found in tasks.md', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-5';
     ensureSessionDir(projectDir, id);
     saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
@@ -210,8 +203,6 @@ describe('listResources', () => {
   });
 
   it('excludes sessions not in sessionIds', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-allowed';
     const otherId = 'sess-other';
     ensureSessionDir(projectDir, id);
@@ -253,8 +244,6 @@ describe('listResources', () => {
 
 describe('readResource - /sessions', () => {
   it('returns valid JSON array of session descriptors', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-a';
     ensureSessionDir(projectDir, id);
     saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
@@ -296,8 +285,6 @@ describe('readResource - /sessions', () => {
 
 describe('readResource - /manifest.json', () => {
   it('returns synthesized manifest from canonical summary.json and state.json', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-b';
     ensureSessionDir(projectDir, id);
     writeCanonicalArtifacts(projectDir, id);
@@ -323,8 +310,6 @@ describe('readResource - /manifest.json', () => {
   });
 
   it('reads every manifest task artifact URI through resources/read', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-manifest-parity';
     ensureSessionDir(projectDir, id);
     writeCanonicalArtifacts(projectDir, id);
@@ -344,8 +329,6 @@ describe('readResource - /manifest.json', () => {
   });
 
   it('reads legacy tasks/<id>.md manifest artifact aliases', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-manifest-alias';
     ensureSessionDir(projectDir, id);
     writeCanonicalArtifacts(projectDir, id);
@@ -358,8 +341,6 @@ describe('readResource - /manifest.json', () => {
   });
 
   it('returns null when summary.json is missing', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-missing-summary';
     ensureSessionDir(projectDir, id);
     saveState(
@@ -378,8 +359,6 @@ describe('readResource - /manifest.json', () => {
   });
 
   it('returns null when state.json is missing', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-missing-state';
     ensureSessionDir(projectDir, id);
     saveSummary({ projectDir: projectDir, sessionId: id }, makeCompleteSession(id));
@@ -391,8 +370,6 @@ describe('readResource - /manifest.json', () => {
   });
 
   it('computes briefHash from live state tasks', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-c';
     ensureSessionDir(projectDir, id);
     writeCanonicalArtifacts(projectDir, id);
@@ -407,8 +384,6 @@ describe('readResource - /manifest.json', () => {
 
 describe('readResource - file resources', () => {
   it('returns text/markdown and file text for spec.md', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-e';
     ensureSessionDir(projectDir, id);
     saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
@@ -422,8 +397,6 @@ describe('readResource - file resources', () => {
   });
 
   it('returns null for evidence.json when file does not exist', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-f';
     ensureSessionDir(projectDir, id);
     saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
@@ -435,8 +408,6 @@ describe('readResource - file resources', () => {
   });
 
   it('returns concrete summary.json and state.json when present', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-concrete';
     ensureSessionDir(projectDir, id);
     writeCanonicalArtifacts(projectDir, id);
@@ -455,8 +426,6 @@ describe('readResource - file resources', () => {
   });
 
   it('serves transcript-protected state.json when transcript persistence is disabled', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-protected-state';
     ensureSessionDir(projectDir, id);
     saveState(
@@ -516,8 +485,6 @@ describe('readResource - file resources', () => {
   });
 
   it('keeps opaque sessions transcript-protected when current config allows transcripts', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = '2026-04-18-session-abcdef123456';
     ensureSessionDir(projectDir, id);
     saveState(
@@ -549,8 +516,6 @@ describe('readResource - file resources', () => {
   });
 
   it('returns null for missing concrete summary.json and state.json', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-missing-concrete';
     ensureSessionDir(projectDir, id);
 
@@ -563,8 +528,6 @@ describe('readResource - file resources', () => {
 
 describe('readResource - tasks', () => {
   it('returns markdown for a known task ID', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-g';
     ensureSessionDir(projectDir, id);
     saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
@@ -579,8 +542,6 @@ describe('readResource - tasks', () => {
   });
 
   it('returns null for a task ID not found', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-h';
     ensureSessionDir(projectDir, id);
     saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
@@ -595,8 +556,6 @@ describe('readResource - tasks', () => {
 
 describe('readResource - edge cases', () => {
   it('returns null for an unknown URI', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-i';
     ensureSessionDir(projectDir, id);
     saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
@@ -607,9 +566,7 @@ describe('readResource - edge cases', () => {
     expect(result).toBeNull();
   });
 
-  it('does not throw on disk errors — returns null', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
+  it('returns null when the session directory does not exist', async () => {
     const id = 'sess-j';
 
     const resolver = createResolver({ projectDir, sessionIds: [id], splitbriefVersion: '1.0.0' });
@@ -619,8 +576,6 @@ describe('readResource - edge cases', () => {
   });
 
   it('returns null for a session not in sessionIds', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-allowed';
     const otherId = 'sess-other';
     ensureSessionDir(projectDir, otherId);
@@ -632,8 +587,6 @@ describe('readResource - edge cases', () => {
   });
 
   it('returns empty array for /tasks when tasks.md does not exist', async () => {
-    const projectDir = createTempDir('resolver-test');
-    dirs.push(projectDir);
     const id = 'sess-k';
     ensureSessionDir(projectDir, id);
     saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });

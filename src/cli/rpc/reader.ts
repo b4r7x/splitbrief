@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BriefRecoveryProjectionV1Schema } from '../../core/schemas/brief-recovery.js';
+import { BriefRecoveryProjectionV1Schema } from '../../core/schemas/brief-recovery/document.js';
 import { isBriefReviewCommandCurrent } from '../../core/schemas/brief-review-command.js';
 import { parseJsonLine } from '../json-line.js';
 import { createLineBuffer } from '../../lib/process/line-buffer.js';
@@ -222,7 +222,7 @@ export interface CommandReaderOptions {
   onTypedError?: ((error: RpcEnvelopeError) => void) | undefined;
   onReplay?: ((cmd: RpcCommand) => void) | undefined;
   onClose?: (() => void) | undefined;
-  getAuthoritativeState?: (() => unknown | null) | undefined;
+  getAuthoritativeState?: (() => unknown) | undefined;
   requireCurrentV4?: boolean | undefined;
   operationDedupe?: RpcOperationDeduper | undefined;
 }
@@ -268,7 +268,7 @@ function stableValue(value: unknown): unknown {
 
 function validateAgainstAuthority(
   command: RpcCommand,
-  getAuthoritativeState: (() => unknown | null) | undefined,
+  getAuthoritativeState: (() => unknown) | undefined,
   requireCurrentV4: boolean,
 ): RpcEnvelopeError | null {
   if (command.type !== 'brief_review') return null;

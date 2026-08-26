@@ -137,42 +137,23 @@ describe('TUI cleanup', () => {
 });
 
 describe('termination handler', () => {
-  it('cleans up then exits with the conventional code for SIGINT', async () => {
+  it.each([
+    ['SIGINT', 130],
+    ['SIGTERM', 143],
+    ['SIGHUP', 129],
+  ] as const)('cleans up then exits with the conventional code for %s', async (signal, code) => {
     const calls: string[] = [];
     const cleanup = vi.fn(async () => {
       calls.push('cleanup');
     });
-    const exit = vi.fn((code: number) => calls.push(`exit:${code}`));
+    const exit = vi.fn((exitCode: number) => calls.push(`exit:${exitCode}`));
     const reportCleanupFailure = vi.fn();
 
     const handle = createTerminationHandler({ cleanup, reportCleanupFailure, exit });
-    await handle('SIGINT');
+    await handle(signal);
 
-    expect(calls).toEqual(['cleanup', 'exit:130']);
+    expect(calls).toEqual(['cleanup', `exit:${code}`]);
     expect(reportCleanupFailure).not.toHaveBeenCalled();
-  });
-
-  it('exits with 143 for SIGTERM', async () => {
-    const cleanup = vi.fn(async () => {});
-    const exit = vi.fn();
-
-    const handle = createTerminationHandler({ cleanup, reportCleanupFailure: vi.fn(), exit });
-    await handle('SIGTERM');
-
-    expect(exit).toHaveBeenCalledWith(143);
-  });
-
-  it('cleans up then exits with 129 for SIGHUP', async () => {
-    const calls: string[] = [];
-    const cleanup = vi.fn(async () => {
-      calls.push('cleanup');
-    });
-    const exit = vi.fn((code: number) => calls.push(`exit:${code}`));
-
-    const handle = createTerminationHandler({ cleanup, reportCleanupFailure: vi.fn(), exit });
-    await handle('SIGHUP');
-
-    expect(calls).toEqual(['cleanup', 'exit:129']);
   });
 
   it('returns one promise when signals fire repeatedly', async () => {
@@ -365,9 +346,15 @@ describe('createSuspendListenerToggle', () => {
 
 describe('restoreTerminal', () => {
   let originalWrite: typeof process.stdout.write;
+  let written: string[];
 
   beforeEach(() => {
     originalWrite = process.stdout.write.bind(process.stdout);
+    written = [];
+    process.stdout.write = ((chunk: string) => {
+      written.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
   });
 
   afterEach(() => {
@@ -375,24 +362,12 @@ describe('restoreTerminal', () => {
   });
 
   it('exits the alternate buffer and unhides the cursor in fullscreen mode', () => {
-    const written: string[] = [];
-    process.stdout.write = ((chunk: string) => {
-      written.push(chunk);
-      return true;
-    }) as typeof process.stdout.write;
-
     restoreTerminal({ fullscreen: true });
 
     expect(written).toEqual([terminalSequences.exitAltBuffer, terminalSequences.showCursor]);
   });
 
   it('disables mouse and paste modes when requested', () => {
-    const written: string[] = [];
-    process.stdout.write = ((chunk: string) => {
-      written.push(chunk);
-      return true;
-    }) as typeof process.stdout.write;
-
     restoreTerminal({ fullscreen: true, mouse: true });
 
     expect(written).toEqual([
@@ -407,12 +382,6 @@ describe('restoreTerminal', () => {
   });
 
   it('can disable paste mode without disabling mouse tracking', () => {
-    const written: string[] = [];
-    process.stdout.write = ((chunk: string) => {
-      written.push(chunk);
-      return true;
-    }) as typeof process.stdout.write;
-
     restoreTerminal({ fullscreen: true, mouse: false, paste: true });
 
     expect(written).toEqual([
@@ -423,23 +392,12 @@ describe('restoreTerminal', () => {
   });
 
   it('writes nothing in non-fullscreen mode', () => {
-    const written: string[] = [];
-    process.stdout.write = ((chunk: string) => {
-      written.push(chunk);
-      return true;
-    }) as typeof process.stdout.write;
-
     restoreTerminal({ fullscreen: false });
 
     expect(written).toEqual([]);
   });
 
   it('skips terminal-restore writes when stdout is gone', () => {
-    const written: string[] = [];
-    process.stdout.write = ((chunk: string) => {
-      written.push(chunk);
-      return true;
-    }) as typeof process.stdout.write;
     const destroyed = Object.getOwnPropertyDescriptor(process.stdout, 'destroyed');
     Object.defineProperty(process.stdout, 'destroyed', { value: true, configurable: true });
 

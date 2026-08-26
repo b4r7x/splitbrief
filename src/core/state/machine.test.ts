@@ -9,11 +9,11 @@ import {
 } from './selectors.js';
 import type { QueuedMessage, WorkflowState } from '../schemas/workflow.js';
 import type { BriefGenerationRef, TaskExecutionPermit } from '../schemas/brief-owner.js';
+import type { RecoveryReceipt } from '../schemas/brief-recovery/attempt.js';
 import type {
   NormalBriefRecoveryV1,
-  RecoveryReceipt,
   StorageBlockedBriefRecoveryV1,
-} from '../schemas/brief-recovery.js';
+} from '../schemas/brief-recovery/document.js';
 import { taskId } from '../schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
@@ -632,7 +632,10 @@ describe('transition', () => {
     expect(s.currentTaskIndex).toBe(2);
   });
 
-  it('REWIND_TO_SPEC -> specifying with tasks cleared and counters reset', () => {
+  it.each([
+    ['REWIND_TO_SPEC', 'specifying'],
+    ['REWIND_TO_PLAN', 'planning'],
+  ] as const)('%s -> %s with tasks cleared and counters reset', (type, phase) => {
     const tasks = [makeTask({ id: 'T001', status: 'done' }), makeTask({ id: 'T002' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
@@ -644,30 +647,8 @@ describe('transition', () => {
       plannerSessionId: 'old-session',
       discoveredValidation: { testCommand: 'npm test' },
     };
-    const next = transition(state, { type: 'REWIND_TO_SPEC' });
-    expect(next.phase).toBe('specifying');
-    expect(next.tasks).toEqual([]);
-    expect(next.currentTaskIndex).toBe(0);
-    expect(next.attempt).toBe(0);
-    expect(next.awaitingContinue).toBe(false);
-    expect(next.plannerSessionId).toBeUndefined();
-    expect(next.discoveredValidation).toBeUndefined();
-  });
-
-  it('REWIND_TO_PLAN -> planning with tasks cleared and counters reset', () => {
-    const tasks = [makeTask({ id: 'T001', status: 'done' }), makeTask({ id: 'T002' })];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'implementing',
-      tasks,
-      currentTaskIndex: 1,
-      attempt: 2,
-      awaitingContinue: true,
-      plannerSessionId: 'old-session',
-      discoveredValidation: { testCommand: 'npm test' },
-    };
-    const next = transition(state, { type: 'REWIND_TO_PLAN' });
-    expect(next.phase).toBe('planning');
+    const next = transition(state, { type });
+    expect(next.phase).toBe(phase);
     expect(next.tasks).toEqual([]);
     expect(next.currentTaskIndex).toBe(0);
     expect(next.attempt).toBe(0);
@@ -709,11 +690,14 @@ describe('transition', () => {
     expect(next).toBe(state);
   });
 
-  it('REWIND_TO_SPEC with comment sets rewindPending', () => {
+  it.each([
+    ['REWIND_TO_SPEC', 'specifying', 'spec', 'use refresh tokens'],
+    ['REWIND_TO_PLAN', 'planning', 'plan', 'add caching layer'],
+  ] as const)('%s with comment sets rewindPending', (type, phase, target, comment) => {
     const state: WorkflowState = { ...createInitialState('feat'), phase: 'implementing' };
-    const next = transition(state, { type: 'REWIND_TO_SPEC', comment: 'use refresh tokens' });
-    expect(next.phase).toBe('specifying');
-    expect(next.rewindPending).toEqual({ target: 'spec', comment: 'use refresh tokens' });
+    const next = transition(state, { type, comment });
+    expect(next.phase).toBe(phase);
+    expect(next.rewindPending).toEqual({ target, comment });
   });
 
   it('REWIND_TO_SPEC without comment sets rewindPending with no comment field', () => {
@@ -722,13 +706,6 @@ describe('transition', () => {
     expect(next.phase).toBe('specifying');
     expect(next.rewindPending).toEqual({ target: 'spec' });
     expect(next.rewindPending?.comment).toBeUndefined();
-  });
-
-  it('REWIND_TO_PLAN with comment sets rewindPending', () => {
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'implementing' };
-    const next = transition(state, { type: 'REWIND_TO_PLAN', comment: 'add caching layer' });
-    expect(next.phase).toBe('planning');
-    expect(next.rewindPending).toEqual({ target: 'plan', comment: 'add caching layer' });
   });
 
   it('RESET_TASK does NOT set rewindPending', () => {
@@ -849,24 +826,20 @@ describe('transition', () => {
     });
     expectPersistedState(state);
 
-    for (const action of [
-      {
-        type: 'BEGIN_IMPLEMENTATION' as const,
+    let caught: unknown;
+    try {
+      transition(state, {
+        type: 'BEGIN_IMPLEMENTATION',
         generation: TEST_GENERATION,
         permit: makeExecutionPermit('epoch-1'),
-      },
-    ]) {
-      let caught: unknown;
-      try {
-        transition(state, action);
-      } catch (error) {
-        caught = error;
-      }
-      expect(caught).toMatchObject({
-        kind: 'brief_readiness_blocked',
-        data: { epochId: 'epoch-1' },
       });
+    } catch (error) {
+      caught = error;
     }
+    expect(caught).toMatchObject({
+      kind: 'brief_readiness_blocked',
+      data: { epochId: 'epoch-1' },
+    });
 
     const overridden = transition(state, {
       type: 'RECORD_BRIEF_READINESS',
@@ -1025,6 +998,7 @@ describe('transition', () => {
       });
       expect(next.phase).toBe('reviewing-briefs');
       expect(next.briefRecovery).toEqual(recovery);
+      expectPersistedState(next);
     }
   });
 
@@ -1257,24 +1231,7 @@ describe('transition', () => {
     expect(next.briefRecovery?.status).toBe('ready');
   });
 
-  it('BRIEF_ADMISSION_OPENED round-trips every non-terminal recovery status', () => {
-    const statuses = [
-      'checking',
-      'auto-repairing',
-      'blocked',
-      'retrying',
-      'unresolved',
-      'ready',
-      'readiness-blocked',
-    ] as const;
-
-    for (const status of statuses) {
-      const next = transition(
-        { ...createInitialState('feat'), phase: 'reviewing-plan' },
-        { type: 'BRIEF_ADMISSION_OPENED', briefRecovery: makeBriefRecovery(status) },
-      );
-      expectPersistedState(next);
-    }
+  it('BRIEF_ADMISSION_OPENED round-trips a storage-blocked recovery', () => {
     const storage = transition(
       { ...createInitialState('feat'), phase: 'reviewing-plan' },
       { type: 'BRIEF_ADMISSION_OPENED', briefRecovery: makeStorageBlockedRecovery() },

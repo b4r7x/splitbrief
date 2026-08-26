@@ -31,7 +31,7 @@ export const AgentInvocationPayloadSchema = z.object({
   callId: z.string().optional(),
   role: z.enum(RUNNER_CALL_ROLES),
   backendKind: z.enum(RUNNER_CALL_BACKEND_KINDS).optional(),
-  tool: z.string(),
+  tool: z.string().optional(),
   model: z.string().optional(),
   attempt: z.number().int().nonnegative().optional(),
   phase: PhaseSchema,

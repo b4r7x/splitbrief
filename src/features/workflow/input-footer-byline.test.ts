@@ -133,7 +133,10 @@ describe('buildInputFooterByline', () => {
     );
   });
 
-  it('omits the worktree marker when no worktree name is set', () => {
+  it.each([
+    { label: 'empty', worktreeLabel: '' },
+    { label: 'unset', worktreeLabel: null },
+  ])('omits the worktree marker when the worktree name is $label', ({ worktreeLabel }) => {
     const byline = buildInputFooterByline({
       cols: 120,
       lead: stageLead,
@@ -141,9 +144,10 @@ describe('buildInputFooterByline', () => {
       etaText: null,
       gitLabel: 'git:none',
       advisoryText: null,
+      worktreeLabel,
     });
 
-    expect(fullByline(byline)).not.toContain(glyph('cursor'));
+    expect(fullByline(byline)).toBe(`${stageLead} · git:none`);
   });
 
   it('drops the worktree name rather than crowding the core when width is tight', () => {

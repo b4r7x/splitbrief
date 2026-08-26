@@ -10,8 +10,8 @@ import {
   type TaskCompilationFailureCode,
   type TaskCompilationFailureStatus,
   type TaskCompilationProgram,
-  type TaskCompilationSessionScope,
-  type TaskCompilationTransport,
+  type PlannerSessionScope,
+  type PlannerArtifactTransport,
 } from '../../../core/schemas/task-compilation.js';
 import {
   createTaskDispatchClaimPort,
@@ -24,7 +24,6 @@ import { parseTaskManifest, type TaskManifest } from './manifest.js';
 import { partitionManifest, type TaskManifestPartition } from './partition.js';
 import {
   compileTaskBriefs,
-  compilerError,
   materializeTaskCompilationProgram,
   tasksArtifactSemanticId,
   type TaskCompilationCandidate,
@@ -66,7 +65,7 @@ function envelope(
 }
 
 function invocationFixture(
-  transport: TaskCompilationTransport = { kind: 'stdout-final' },
+  transport: PlannerArtifactTransport = { kind: 'stdout-final' },
 ): PreparedPlannerInvocation {
   return {
     runtime: {
@@ -94,7 +93,7 @@ type Harness = Readonly<{
 
 function harness(
   count: number,
-  transport: TaskCompilationTransport = { kind: 'stdout-final' },
+  transport: PlannerArtifactTransport = { kind: 'stdout-final' },
 ): Harness {
   const input = inputs(count);
   const manifest = parseTaskManifest(input.plan);
@@ -206,7 +205,7 @@ type DispatchCall = Readonly<{
   index: number;
   attemptId: string;
   batch: TaskCompilationProgram['batches'][number];
-  sessionScope: TaskCompilationSessionScope;
+  sessionScope: PlannerSessionScope;
 }>;
 
 function stubDispatch(
@@ -267,15 +266,6 @@ function compileWith(
   });
 }
 
-function expectErrorKind(run: () => unknown, kind: string): void {
-  try {
-    run();
-    throw new Error('expected the operation to throw');
-  } catch (err) {
-    expect(err).toMatchObject({ kind });
-  }
-}
-
 describe('materializeTaskCompilationProgram', () => {
   it('materializes a fully bounded deterministic program before any dispatch', () => {
     const { program } = harness(8);
@@ -326,35 +316,30 @@ describe('materializeTaskCompilationProgram', () => {
   });
 
   it('rejects manifest capacity and empty manifests with stable codes before dispatch', () => {
-    expectErrorKind(
-      () => materializeTaskCompilationProgram(inputs(257), { envelope: envelope() }),
-      'task_compiler_capacity_exceeded',
+    expect(() => materializeTaskCompilationProgram(inputs(257), { envelope: envelope() })).toThrow(
+      expect.objectContaining({ kind: 'task_compiler_capacity_exceeded' }),
     );
-    expectErrorKind(
-      () =>
-        materializeTaskCompilationProgram(
-          {
-            ...inputs(1),
-            plan: '# Plan\n\n## File Structure\n### New Files\n\n### Modified Files',
-          },
-          { envelope: envelope() },
-        ),
-      'task_compiler_manifest_empty',
-    );
+    expect(() =>
+      materializeTaskCompilationProgram(
+        {
+          ...inputs(1),
+          plan: '# Plan\n\n## File Structure\n### New Files\n\n### Modified Files',
+        },
+        { envelope: envelope() },
+      ),
+    ).toThrow(expect.objectContaining({ kind: 'task_compiler_manifest_empty' }));
   });
 
   it('rejects a batch prompt beyond the declared envelope bound before dispatch', () => {
-    expectErrorKind(
-      () => materializeTaskCompilationProgram(inputs(4), { envelope: envelope(200) }),
-      'task_compiler_prompt_too_large',
+    expect(() => materializeTaskCompilationProgram(inputs(4), { envelope: envelope(200) })).toThrow(
+      expect.objectContaining({ kind: 'task_compiler_prompt_too_large' }),
     );
   });
 
   it('rejects a call envelope outside the compiler policy as protocol invalid', () => {
     const badEnvelope = { ...envelope(), inputTokensUpperBound: 10_000_000 };
-    expectErrorKind(
-      () => materializeTaskCompilationProgram(inputs(4), { envelope: badEnvelope }),
-      'task_compiler_protocol_invalid',
+    expect(() => materializeTaskCompilationProgram(inputs(4), { envelope: badEnvelope })).toThrow(
+      expect.objectContaining({ kind: 'task_compiler_protocol_invalid' }),
     );
   });
 });
@@ -780,12 +765,6 @@ describe('compileTaskBriefs', () => {
     });
     expect(calls).toHaveLength(1);
     expect(h.ledger.snapshot().dispatchCount).toBe(1);
-  });
-
-  it('exposes stable predicate helpers for the compiler failure codes', () => {
-    expect(compilerError.isDispatchLimit).toBeTypeOf('function');
-    expect(compilerError.isProtocolInvalid).toBeTypeOf('function');
-    expect(compilerError.isArtifactInvalid).toBeTypeOf('function');
   });
 
   it('returns a bounded failure that never resolves with a partial candidate', async () => {

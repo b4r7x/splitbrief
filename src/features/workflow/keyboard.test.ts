@@ -343,6 +343,30 @@ describe('handleWorkflowCtrlChords', () => {
     ).toEqual({ type: 'none' });
   });
 
+  it('maps Ctrl+D to the latest diff', () => {
+    expect(
+      handleWorkflowCtrlChords({
+        input: 'd',
+        key: key({ ctrl: true }),
+        sections,
+        findLatestDiff: () => 'implementer_generate_done:1',
+        findLatestActivityBatch: () => null,
+      }),
+    ).toEqual({ type: 'toggle-diff', key: 'implementer_generate_done:1' });
+  });
+
+  it('maps Ctrl+G to the cost drilldown', () => {
+    expect(
+      handleWorkflowCtrlChords({
+        input: 'g',
+        key: key({ ctrl: true }),
+        sections,
+        findLatestDiff: () => null,
+        findLatestActivityBatch: () => null,
+      }),
+    ).toEqual({ type: 'open-cost-drilldown' });
+  });
+
   it('reserves attached Ctrl+D for the attach client instead of toggling diff', () => {
     expect(
       handleWorkflowCtrlChords({

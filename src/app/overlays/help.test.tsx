@@ -139,9 +139,7 @@ describe('HelpOverlay', () => {
     expect(frame).toContain('/scroll top|bottom');
     expect(frame).toContain('/activity, ctrl+a');
     expect(frame).toContain('Expand activity rows');
-    expect(frame).not.toContain('Alt+A');
-    expect(frame).not.toContain('Ctrl+B/F');
-    expect(frame).not.toContain('Ctrl+E');
+    expect(frame).not.toContain('ctrl+e');
 
     ui.unmount();
   });

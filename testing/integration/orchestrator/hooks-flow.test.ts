@@ -81,23 +81,26 @@ function preparedExecution(
     sessionId,
     generation: '4a444444-4444-4444-8444-444444444444',
   };
-  const resumeState = persistReadyExecutionState(projectDir, sessionId, {
-    ...createInitialState(feature),
-    phase: 'implementing',
-    mode: 'quick',
-    plannerTool: 'shell',
-    implementerTool: 'shell',
-    tasks: [
-      makeTask({
-        scope: {
-          inBounds: ['Modify only `src/hello.ts`.'],
-          outOfBounds: ['Do not touch anything outside the task file.'],
-        },
-        evidence: ['brief-quality.json confirms the task brief is complete'],
-        typeDefs: 'type HelloModule = { greeting: string }',
-      }),
-    ],
-  });
+  const resumeState = persistReadyExecutionState(
+    { projectDir, sessionId },
+    {
+      ...createInitialState(feature),
+      phase: 'implementing',
+      mode: 'quick',
+      plannerTool: 'shell',
+      implementerTool: 'shell',
+      tasks: [
+        makeTask({
+          scope: {
+            inBounds: ['Modify only `src/hello.ts`.'],
+            outOfBounds: ['Do not touch anything outside the task file.'],
+          },
+          evidence: ['brief-quality.json confirms the task brief is complete'],
+          typeDefs: 'type HelloModule = { greeting: string }',
+        }),
+      ],
+    },
+  );
   return {
     purpose: 'new-workflow',
     config,

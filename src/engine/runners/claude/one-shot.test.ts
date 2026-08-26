@@ -191,7 +191,7 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'unexpected' }) + 
         onOutput: () => {},
       }),
     ).rejects.toMatchObject({
-      kind: 'process-output',
+      kind: 'runner-call-failed',
       message: expect.stringContaining('Credit balance is too low'),
     });
   });
@@ -211,7 +211,7 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'unexpected' }) + 
         onCallEvent: (event) => events.push(event),
       }),
     ).rejects.toMatchObject({
-      kind: 'process-output',
+      kind: 'runner-call-failed',
       message: expect.stringContaining('without a terminal event'),
     });
     expect(chunks.join('')).toContain('partial');
@@ -262,6 +262,5 @@ process.stdout.write(JSON.stringify({ type: "result", result }) + "\\n");
       status: 'truncated',
       error: { code: 'stdout_line_overflow' },
     });
-    expect(errors[0]?.error.code).not.toBe('missing_terminal_event');
   });
 });

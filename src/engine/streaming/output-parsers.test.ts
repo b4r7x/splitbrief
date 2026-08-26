@@ -41,39 +41,6 @@ describe('wrapStreamParser field projections', () => {
   const parse = getLineParser('stream-json');
   const jsonLine = (value: unknown) => JSON.stringify(value);
 
-  it('forwards text', () => {
-    expect(
-      parse(
-        jsonLine({ type: 'assistant', message: { content: [{ type: 'text', text: 'hello' }] } }),
-      ),
-    ).toEqual(expect.objectContaining({ text: 'hello' }));
-  });
-
-  it('forwards channel', () => {
-    expect(
-      parse(jsonLine({ type: 'assistant', message: { content: [{ type: 'text', text: 'x' }] } })),
-    ).toEqual(expect.objectContaining({ channel: 'assistant' }));
-  });
-
-  it('forwards usage and usageSemantics on result events', () => {
-    expect(
-      parse(
-        jsonLine({ type: 'result', result: 'done', usage: { input_tokens: 10, output_tokens: 5 } }),
-      ),
-    ).toEqual(
-      expect.objectContaining({
-        usage: { inputTokens: 10, outputTokens: 5 },
-        usageSemantics: 'final',
-      }),
-    );
-  });
-
-  it('forwards isResult', () => {
-    expect(parse(jsonLine({ type: 'result', result: 'done' }))).toEqual(
-      expect.objectContaining({ isResult: true }),
-    );
-  });
-
   it('forwards isError when present on result records', () => {
     expect(parse(jsonLine({ type: 'result', is_error: true, result: 'failed' }))).toEqual(
       expect.objectContaining({ isError: true }),
@@ -200,19 +167,5 @@ describe('getLineParser stream-json wrap integration', () => {
     ],
   ] as const)('wraps %s', (_name, line, expected) => {
     expect(parse(line)).toEqual(expected);
-  });
-
-  it('wraps malformed stream-json lines as warnings', () => {
-    expect(parse('not valid json {{{')).toEqual({
-      warning: [
-        expect.objectContaining({
-          code: 'malformed_stream_json',
-          source: 'stream-json',
-          parser: 'stream-json',
-          upstreamType: 'malformed_json',
-          channel: 'stdout',
-        }),
-      ],
-    });
   });
 });

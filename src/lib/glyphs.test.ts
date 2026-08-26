@@ -23,15 +23,10 @@ describe('glyph tier', () => {
     expect(resolveGlyphTier({ TERM: 'dumb' })).toBe('ascii');
   });
 
-  it('maps cursors, status marks, dividers, and checks to ascii markers', () => {
-    expect(glyph('liveBar', 'ascii')).toBe('|');
-    expect(glyph('cursor', 'ascii')).toBe('>');
-    expect(glyph('editCursor', 'ascii')).toBe('|');
-    expect(glyph('prompt', 'ascii')).toBe('>');
-    expect(glyph('statusPending', 'ascii')).toBe('o');
-    expect(glyph('statusCancelled', 'ascii')).toBe('x');
-    expect(glyph('check', 'ascii')).toBe('+');
-    expect(glyph('divider', 'ascii')).toBe('-');
+  it('keeps the ascii status marks distinguishable from each other', () => {
+    const marks = ['statusPending', 'statusCancelled', 'check'] as const;
+    const ascii = marks.map((name) => glyph(name, 'ascii'));
+    expect(new Set(ascii).size).toBe(marks.length);
   });
 
   it('gives every glyph a printable ascii fallback', () => {

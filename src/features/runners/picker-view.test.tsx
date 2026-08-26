@@ -35,13 +35,13 @@ const zeroCounts = { confirmed: 0, stale: 0, suggestions: 0, bundled: 0, custom:
 
 function makeActions(): PickerActions {
   return {
-    confirm: () => {},
+    confirm: async () => {},
     confirmProviderVariant: async () => {},
     leftChange: () => {},
-    deleteRight: () => {},
+    deleteRight: async () => {},
     chooseContract: () => {},
-    customCommand: () => {},
-    customModel: () => {},
+    customCommand: async () => {},
+    customModel: async () => {},
     openCustomModel: () => {},
     openProviderAuth: () => {},
     submitProviderKey: async () => {},
@@ -94,18 +94,10 @@ describe('PickerView model confirmation', () => {
       rightModels,
       currentItem: codex,
       selectedItemId: codex.id,
-      initialLeftIdx: 0,
-      focusModels: false,
       roleLabel: 'Planner',
       currentModel: 'gpt-5.4',
       persistedModel: 'gpt-5.4',
       modelCounts,
-      catalogDiagnostic: undefined,
-      currentCommand: undefined,
-      currentCommandKind: undefined,
-      customModels: [],
-      discovery: { cold: false, refreshing: false },
-      setCurrentItem: () => {},
     });
   }
 
@@ -123,7 +115,9 @@ describe('PickerView model confirmation', () => {
   ])('re-confirms the configured model after %s', async (_name, keys) => {
     const confirmed: Array<string | null> = [];
     const actions = makeActions();
-    actions.confirm = (_selection, model) => confirmed.push(model?.id ?? null);
+    actions.confirm = async (_selection, model) => {
+      confirmed.push(model?.id ?? null);
+    };
 
     const ui = renderFeature(
       <PickerView role="planner" catalog={explicitModelCatalog()} actions={actions} />,
@@ -166,18 +160,8 @@ describe('PickerView previews', () => {
       rightModels: [model],
       currentItem: tool,
       selectedItemId: tool.id,
-      initialLeftIdx: 0,
-      focusModels: false,
       roleLabel: 'Planner',
-      currentModel: undefined,
-      persistedModel: undefined,
       modelCounts: { ...zeroCounts, confirmed: 1 },
-      catalogDiagnostic: undefined,
-      currentCommand: undefined,
-      currentCommandKind: undefined,
-      customModels: [],
-      discovery: { cold: false, refreshing: false },
-      setCurrentItem: () => {},
     });
 
     const ui = renderFeature(
@@ -197,7 +181,6 @@ describe('PickerView previews', () => {
     await flushEffects();
     ui.stdin.write('\u001B[C');
     await flushEffects();
-    // The model row carries its own facts now; the byline stays on the tool.
     const modelFrame = ui.lastFrame() ?? '';
     expect(modelFrame).toContain('GPT-4o');
     expect(modelFrame).toContain('128K');
@@ -236,18 +219,9 @@ describe('PickerView previews', () => {
       rightModels: suggestions,
       currentItem: tool,
       selectedItemId: tool.id,
-      initialLeftIdx: 0,
-      focusModels: false,
       roleLabel: 'Planner',
-      currentModel: undefined,
-      persistedModel: undefined,
       modelCounts: { ...zeroCounts, suggestions: 3 },
       catalogDiagnostic: { kind: 'probe-failed', failure: 'missing-credential' },
-      currentCommand: undefined,
-      currentCommandKind: undefined,
-      customModels: [],
-      discovery: { cold: false, refreshing: false },
-      setCurrentItem: () => {},
     });
 
     const ui = renderFeature(
@@ -290,18 +264,9 @@ describe('PickerView previews', () => {
       ],
       currentItem: tool,
       selectedItemId: tool.id,
-      initialLeftIdx: 0,
       focusModels: true,
       roleLabel: 'Planner',
-      currentModel: undefined,
-      persistedModel: undefined,
       modelCounts: { ...zeroCounts, stale: 1 },
-      catalogDiagnostic: undefined,
-      currentCommand: undefined,
-      currentCommandKind: undefined,
-      customModels: [],
-      discovery: { cold: false, refreshing: false },
-      setCurrentItem: () => {},
     });
 
     const ui = renderFeature(
@@ -353,18 +318,9 @@ describe('PickerView previews', () => {
       rightModels: [],
       currentItem: tool,
       selectedItemId: tool.id,
-      initialLeftIdx: 0,
       focusModels: true,
       roleLabel: 'Implementer',
-      currentModel: undefined,
-      persistedModel: undefined,
       modelCounts: zeroCounts,
-      catalogDiagnostic: undefined,
-      currentCommand: undefined,
-      currentCommandKind: undefined,
-      customModels: [],
-      discovery: { cold: false, refreshing: false },
-      setCurrentItem: () => {},
     });
 
     const ui = renderFeature(
@@ -396,18 +352,9 @@ describe('PickerView previews', () => {
       rightModels: [],
       currentItem: tool,
       selectedItemId: tool.id,
-      initialLeftIdx: 0,
       focusModels: true,
       roleLabel: 'Implementer',
-      currentModel: undefined,
-      persistedModel: undefined,
       modelCounts: zeroCounts,
-      catalogDiagnostic: undefined,
-      currentCommand: undefined,
-      currentCommandKind: undefined,
-      customModels: [],
-      discovery: { cold: false, refreshing: false },
-      setCurrentItem: () => {},
     });
 
     const ui = renderFeature(
@@ -438,18 +385,9 @@ describe('PickerView previews', () => {
       rightModels: [],
       currentItem: tool,
       selectedItemId: tool.id,
-      initialLeftIdx: 0,
       focusModels: true,
       roleLabel: 'Planner',
-      currentModel: undefined,
-      persistedModel: undefined,
       modelCounts: zeroCounts,
-      catalogDiagnostic: undefined,
-      currentCommand: undefined,
-      currentCommandKind: undefined,
-      customModels: [],
-      discovery: { cold: false, refreshing: false },
-      setCurrentItem: () => {},
     });
 
     const ui = renderFeature(
@@ -481,18 +419,8 @@ describe('PickerView previews', () => {
       rightModels: [],
       currentItem: tool,
       selectedItemId: tool.id,
-      initialLeftIdx: 0,
-      focusModels: false,
       roleLabel: 'Reviewer',
-      currentModel: undefined,
-      persistedModel: undefined,
       modelCounts: zeroCounts,
-      catalogDiagnostic: undefined,
-      currentCommand: undefined,
-      currentCommandKind: undefined,
-      customModels: [],
-      discovery: { cold: false, refreshing: false },
-      setCurrentItem: () => {},
     });
 
     const ui = renderFeature(

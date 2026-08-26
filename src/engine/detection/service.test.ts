@@ -263,7 +263,7 @@ describe('createDetectionService', () => {
     expect(first.cliTools[0]?.installedVersion).toBe('observation-1');
     expect(second.cliTools[0]?.installedVersion).toBe('observation-2');
     expect(observations).toBe(2);
-    expect(JSON.stringify(second)).not.toContain('sk-test-private-credential');
+    expect(JSON.stringify(second)).not.toContain('ALPHA_API_KEY');
   });
 
   it('revalidates the real public cache manually and retains its stale HTTP failure unchanged', async () => {

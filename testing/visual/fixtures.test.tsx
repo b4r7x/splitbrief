@@ -33,8 +33,7 @@ const SCREEN_CASES: readonly FixtureCase[] = [
   { scenarioId: 'setup-initial', factory: createSetupFixture },
 ];
 
-// REQ-062 retired the bare `overlay-reviewer-picker` id: the inherit row is the
-// state the fixture reaches, so the scenario is named for it.
+// The reviewer picker opens on the inherit row, so its scenario is named for that state.
 const OVERLAY_SCENARIO_IDS: Partial<Record<(typeof ACTIVE_OVERLAYS)[number], string>> = {
   'reviewer-picker': 'overlay-reviewer-picker-inherited',
 };

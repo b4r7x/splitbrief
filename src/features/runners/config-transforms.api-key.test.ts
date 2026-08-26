@@ -24,12 +24,12 @@ describe('runner selection commits with an inline apiKey', () => {
   });
 
   it('stores the key and selects the provider in one implementer config', () => {
-    const { config: updated } = commitImplementerSelection(
-      makeConfig(),
-      realPickerOption('implementer', 'groq'),
-      { id: 'llama-3.3-70b-versatile' },
-      KEY,
-    );
+    const { config: updated } = commitImplementerSelection({
+      config: makeConfig(),
+      selection: realPickerOption('implementer', 'groq'),
+      model: { id: 'llama-3.3-70b-versatile' },
+      apiKey: KEY,
+    });
 
     expect(updated.implementer).toMatchObject({
       kind: 'api',

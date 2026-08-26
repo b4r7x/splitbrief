@@ -95,39 +95,31 @@ describe('writeHandoffPack — readback correctness', () => {
     const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf-8'));
     const expectedHash = hashTaskBrief(handoffWriterTasks);
 
-    // Manifest briefHash is a 64-char hex string matching the expected hash
     expect(manifest.briefHash).toMatch(/^[0-9a-f]{64}$/);
     expect(manifest.briefHash).toBe(expectedHash);
 
-    // Read back each task file and verify content
     for (const tid of ['T001', 'T002', 'T003']) {
       const content = readFileSync(join(outDir, 'tasks', `${tid}.md`), 'utf-8');
 
-      // No <placeholder> anywhere in the file
       expect(content).not.toContain('<placeholder>');
 
-      // Frontmatter briefHash matches manifest
       const hashMatch = content.match(/^briefHash:\s*(.+)$/m);
       expect(hashMatch).not.toBeNull();
       expect(hashMatch![1]!.trim()).toBe(manifest.briefHash);
 
-      // Frontmatter taskId matches expected
       const taskIdMatch = content.match(/^taskId:\s*(.+)$/m);
       expect(taskIdMatch).not.toBeNull();
       expect(taskIdMatch![1]!.trim()).toBe(tid);
       expect(manifest.taskIds).toContain(tid);
 
-      // Structural markers exist
       expect(content).toContain(`# ${tid} —`);
       expect(content).toContain('## Intent');
       expect(content).toContain('## Implementation Steps');
 
-      // Intent section has actual content
       const intentMatch = content.match(/## Intent\n+(.+)/);
       expect(intentMatch).not.toBeNull();
       expect(intentMatch![1]!.trim().length).toBeGreaterThan(0);
 
-      // Implementation Steps section has actual content
       const stepsMatch = content.match(/## Implementation Steps\n+(.+)/);
       expect(stepsMatch).not.toBeNull();
       expect(stepsMatch![1]!.trim().length).toBeGreaterThan(0);

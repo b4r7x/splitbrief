@@ -14,7 +14,7 @@ import {
   parseAdmittedCustomRunnerInvocation,
   revalidateCustomRunnerInvocation,
   type AdmittedCustomRunnerInvocation,
-} from './trust.js';
+} from './custom-launchability.js';
 
 const PROMPT_PLACEHOLDER = '{prompt}';
 const CUSTOM_RUNNER_PROMPT_MAX_BYTES = 1024 * 1024;
@@ -91,15 +91,18 @@ function rejectPromptPlaceholderCommand(command: string): void {
   throw commandBasedInvocationError.promptPlaceholderInCommand(command);
 }
 
-function rejectShellEvaluatedPrompt(
-  command: string,
-  args: readonly string[],
-  allowShellEvaluatedPrompt: boolean | undefined,
-): void {
-  if (allowShellEvaluatedPrompt) return;
-  if (!isShellEvaluatedPromptArg(command, args)) return;
+function rejectShellEvaluatedPrompt(opts: {
+  command: string;
+  args: readonly string[];
+  allowShellEvaluatedPrompt: boolean | undefined;
+}): void {
+  if (opts.allowShellEvaluatedPrompt) return;
+  if (!isShellEvaluatedPromptArg(opts.command, opts.args)) return;
 
-  throw commandBasedInvocationError.shellEvaluatedPrompt({ command, args });
+  throw commandBasedInvocationError.shellEvaluatedPrompt({
+    command: opts.command,
+    args: opts.args,
+  });
 }
 
 function createCommandCallContext(opts: {
@@ -117,18 +120,16 @@ function createCommandCallContext(opts: {
 }
 
 function substitutePromptPlaceholder(
-  command: string,
   args: string[],
   prompt: string,
-): { command: string; args: string[]; useStdin: boolean } {
+): { args: string[]; useStdin: boolean } {
   const argsHavePlaceholder = args.some((a) => a.includes(PROMPT_PLACEHOLDER));
 
   if (!argsHavePlaceholder) {
-    return { command, args, useStdin: true };
+    return { args, useStdin: true };
   }
 
   return {
-    command,
     args: args.map((a) => a.replaceAll(PROMPT_PLACEHOLDER, () => prompt)),
     useStdin: false,
   };
@@ -217,15 +218,18 @@ export async function invokeCommandBasedRunner(
   const idleKillMs = opts.idleKillMs ?? RUNNER_IDLE_KILL_MS;
 
   rejectPromptPlaceholderCommand(opts.command);
-  rejectShellEvaluatedPrompt(opts.command, rawArgs, opts.allowShellEvaluatedPrompt);
+  rejectShellEvaluatedPrompt({
+    command: opts.command,
+    args: rawArgs,
+    allowShellEvaluatedPrompt: opts.allowShellEvaluatedPrompt,
+  });
 
-  let finalCommand = opts.command;
+  const finalCommand = opts.command;
   let finalArgs = rawArgs;
   let useStdin = true;
 
   if (opts.supportPromptPlaceholder) {
-    const substituted = substitutePromptPlaceholder(opts.command, rawArgs, prompt);
-    finalCommand = substituted.command;
+    const substituted = substitutePromptPlaceholder(rawArgs, prompt);
     finalArgs = substituted.args;
     useStdin = substituted.useStdin;
   }

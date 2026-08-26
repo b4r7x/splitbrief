@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { batchAdmissionError, admitTaskBatch } from './blocks.js';
-import { createTaskManifest } from './manifest.js';
+import { admitTaskBatch } from './batch-admission.js';
+import { parseTaskManifest } from './manifest.js';
 import { partitionManifest, type TaskManifestBatch } from './partition.js';
 
 function planWithFiles(count: number): string {
@@ -14,7 +14,7 @@ function planWithFiles(count: number): string {
 
 function batchFixture(count = 4, batchOrdinal = 0): TaskManifestBatch {
   const plan = planWithFiles(count);
-  const manifest = createTaskManifest(plan);
+  const manifest = parseTaskManifest(plan);
   const partition = partitionManifest(manifest, {
     spec: 'spec',
     plan,
@@ -45,15 +45,6 @@ Implement ${file}.
 `;
 }
 
-function expectErrorKind(run: () => unknown, kind: string): void {
-  try {
-    run();
-    throw new Error('expected the operation to throw');
-  } catch (err) {
-    expect(err).toMatchObject({ kind });
-  }
-}
-
 describe('admitTaskBatch', () => {
   it('admits exactly the expected items once each with stable file and action', () => {
     const batch = batchFixture();
@@ -68,10 +59,9 @@ describe('admitTaskBatch', () => {
 
   it('refuses refusal prose with the stable refusal code', () => {
     const batch = batchFixture();
-    expectErrorKind(
-      () => admitTaskBatch('I cannot compile these briefs without more context.', { batch }),
-      'task_compiler_provider_refused',
-    );
+    expect(() =>
+      admitTaskBatch('I cannot compile these briefs without more context.', { batch }),
+    ).toThrow(expect.objectContaining({ kind: 'task_compiler_provider_refused' }));
   });
 
   it('refuses a code-fenced reply that carries no bare brief blocks', () => {
@@ -79,12 +69,16 @@ describe('admitTaskBatch', () => {
     const fenced = `\`\`\`markdown\n${batch.items
       .map((item) => briefBlock(String(item.id), item.file))
       .join('\n')}\n\`\`\``;
-    expectErrorKind(() => admitTaskBatch(fenced, { batch }), 'task_compiler_provider_refused');
+    expect(() => admitTaskBatch(fenced, { batch })).toThrow(
+      expect.objectContaining({ kind: 'task_compiler_provider_refused' }),
+    );
   });
 
   it.each([[''], ['   \n  ']])('fails an empty artifact with the final-response code', (text) => {
     const batch = batchFixture();
-    expectErrorKind(() => admitTaskBatch(text, { batch }), 'task_compiler_final_response_missing');
+    expect(() => admitTaskBatch(text, { batch })).toThrow(
+      expect.objectContaining({ kind: 'task_compiler_final_response_missing' }),
+    );
   });
 
   it('fails a truncated artifact with an unterminated trailing block as partial output', () => {
@@ -100,9 +94,8 @@ action: create
 file: src/cut-off.ts
 depends_on: []
 `;
-    expectErrorKind(
-      () => admitTaskBatch(`${valid}\n${unterminated}`, { batch }),
-      'task_compiler_output_limited',
+    expect(() => admitTaskBatch(`${valid}\n${unterminated}`, { batch })).toThrow(
+      expect.objectContaining({ kind: 'task_compiler_output_limited' }),
     );
   });
 
@@ -119,7 +112,9 @@ depends_on: []
 ### Description
 Empty title fails the block schema.
 `;
-    expectErrorKind(() => admitTaskBatch(malformed, { batch }), 'task_compiler_invalid_markdown');
+    expect(() => admitTaskBatch(malformed, { batch })).toThrow(
+      expect.objectContaining({ kind: 'task_compiler_invalid_markdown' }),
+    );
   });
 
   it('fails an incomplete batch as missing manifest members', () => {
@@ -128,7 +123,9 @@ Empty title fails the block schema.
       .slice(0, 3)
       .map((item) => briefBlock(String(item.id), item.file))
       .join('\n');
-    expectErrorKind(() => admitTaskBatch(text, { batch }), 'task_compiler_manifest_mismatch');
+    expect(() => admitTaskBatch(text, { batch })).toThrow(
+      expect.objectContaining({ kind: 'task_compiler_manifest_mismatch' }),
+    );
   });
 
   it('fails a duplicate member with the duplicate Task ID code', () => {
@@ -139,7 +136,9 @@ Empty title fails the block schema.
       briefBlock('T002', 'src/generated/file-2.ts'),
       briefBlock('T003', 'src/generated/file-3.ts'),
     ].join('\n');
-    expectErrorKind(() => admitTaskBatch(text, { batch }), 'task_compiler_duplicate_id');
+    expect(() => admitTaskBatch(text, { batch })).toThrow(
+      expect.objectContaining({ kind: 'task_compiler_duplicate_id' }),
+    );
   });
 
   it('fails an unexpected member with the manifest-mismatch code', () => {
@@ -150,7 +149,9 @@ Empty title fails the block schema.
       briefBlock('T003', 'src/generated/file-3.ts'),
       briefBlock('T999', 'src/generated/extra.ts'),
     ].join('\n');
-    expectErrorKind(() => admitTaskBatch(text, { batch }), 'task_compiler_manifest_mismatch');
+    expect(() => admitTaskBatch(text, { batch })).toThrow(
+      expect.objectContaining({ kind: 'task_compiler_manifest_mismatch' }),
+    );
   });
 
   it('fails a member that targets a different file or action than its manifest item', () => {
@@ -161,7 +162,9 @@ Empty title fails the block schema.
       briefBlock('T003', 'src/generated/file-3.ts'),
       briefBlock('T004', 'src/generated/file-4.ts'),
     ].join('\n');
-    expectErrorKind(() => admitTaskBatch(text, { batch }), 'task_compiler_manifest_mismatch');
+    expect(() => admitTaskBatch(text, { batch })).toThrow(
+      expect.objectContaining({ kind: 'task_compiler_manifest_mismatch' }),
+    );
   });
 
   it('enforces id membership alone when only expected ids are supplied', () => {
@@ -181,7 +184,9 @@ Empty title fails the block schema.
       .slice(0, 3)
       .map((item) => briefBlock(String(item.id), item.file))
       .join('\n');
-    expectErrorKind(() => admitTaskBatch(text, { expectedIds }), 'task_compiler_manifest_mismatch');
+    expect(() => admitTaskBatch(text, { expectedIds })).toThrow(
+      expect.objectContaining({ kind: 'task_compiler_manifest_mismatch' }),
+    );
   });
 
   it('fails an unexpected task id with the manifest-mismatch code when only expected ids are supplied', () => {
@@ -193,16 +198,8 @@ Empty title fails the block schema.
       briefBlock('T003', 'src/generated/file-3.ts'),
       briefBlock('T099', 'src/generated/extra.ts'),
     ].join('\n');
-    expectErrorKind(() => admitTaskBatch(text, { expectedIds }), 'task_compiler_manifest_mismatch');
-  });
-
-  it('exposes stable predicate helpers for every admission failure code', () => {
-    expect(batchAdmissionError.isRefused).toBeTypeOf('function');
-    expect(batchAdmissionError.isEmpty).toBeTypeOf('function');
-    expect(batchAdmissionError.isPartial).toBeTypeOf('function');
-    expect(batchAdmissionError.isMalformed).toBeTypeOf('function');
-    expect(batchAdmissionError.isMissingMember).toBeTypeOf('function');
-    expect(batchAdmissionError.isDuplicateMember).toBeTypeOf('function');
-    expect(batchAdmissionError.isUnexpectedMember).toBeTypeOf('function');
+    expect(() => admitTaskBatch(text, { expectedIds })).toThrow(
+      expect.objectContaining({ kind: 'task_compiler_manifest_mismatch' }),
+    );
   });
 });

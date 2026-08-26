@@ -13,8 +13,8 @@ describe('parseTextLine', () => {
   });
 
   it('extracts token usage with plain numbers', () => {
-    const result = parseTextLine('Tokens: 150 sent, 80 received');
-    expect(result.usage).toEqual({ inputTokens: 150, outputTokens: 80 });
+    const result = parseTextLine('Tokens: 128000 sent, 4096 received');
+    expect(result.usage).toEqual({ inputTokens: 128000, outputTokens: 4096 });
   });
 
   it('is case-insensitive for token matching', () => {
@@ -23,8 +23,8 @@ describe('parseTextLine', () => {
   });
 
   it('handles fractional k values with rounding', () => {
-    const result = parseTextLine('Tokens: 0.1k sent, 0.05k received');
-    expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
+    const result = parseTextLine('Tokens: 0.0155k sent, 0.0104k received');
+    expect(result.usage).toEqual({ inputTokens: 16, outputTokens: 10 });
   });
 
   it('does not match partial token lines (missing received)', () => {
@@ -37,10 +37,5 @@ describe('parseTextLine', () => {
   it('handles token line with surrounding whitespace', () => {
     const result = parseTextLine('  Tokens:  500  sent,  200  received  ');
     expect(result.usage).toEqual({ inputTokens: 500, outputTokens: 200 });
-  });
-
-  it('handles large plain token numbers', () => {
-    const result = parseTextLine('Tokens: 128000 sent, 4096 received');
-    expect(result.usage).toEqual({ inputTokens: 128000, outputTokens: 4096 });
   });
 });

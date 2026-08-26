@@ -10,7 +10,7 @@ import {
   readActive,
   reactivateExistingSession,
   type ActiveSessionReceipt,
-} from '../../../core/sessions/lifecycle.js';
+} from '../../../core/sessions/active-pointer.js';
 import { randomUUID } from 'node:crypto';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { readStats } from '../../../core/stats/persistence.js';
@@ -116,11 +116,9 @@ describe('finalizeRecoveryResult — detached abort', () => {
     expect(session?.feature).toBe('aborted-feature');
     // totalTasks reflects the pre-CANCEL task set — not a gutted idle state with zero tasks.
     expect(session?.summary?.totalTasks).toBe(3);
-    // The per-task record survives: the two done tasks still count as completed-by-local.
     expect(session?.summary?.completedByLocal).toBe(2);
     // The surviving token usage is carried into the finalized summary, not zeroed.
     expect(session?.summary?.tokenUsage.implementerInput).toBe(2000);
-    // The active pointer is cleared once the aborted session is finalized.
     expect(readActive(projectDir)).toBeNull();
   });
 

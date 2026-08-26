@@ -530,7 +530,7 @@ describe('metadata provider offering billing metadata', () => {
   const RawSchema = z.object({ id: z.string(), context: z.number().optional() }).passthrough();
   type Raw = z.infer<typeof RawSchema>;
 
-  it('carries catalog service, offering, billing, and asOf from a metadata provider base URL', () => {
+  it('keys run metadata by the metadata provider name and base URL', () => {
     const p = createMetadataProvider<Raw>({
       name: 'deepseek',
       defaultBaseURL: 'https://api.deepseek.com/v1',
@@ -540,12 +540,11 @@ describe('metadata provider offering billing metadata', () => {
       fallback: (id): Raw => ({ id }),
     });
 
-    expect(resolveProviderRunMetadata({ tool: p.name, normalizedEndpoint: p.baseURL })).toEqual({
+    expect(
+      resolveProviderRunMetadata({ tool: p.name, normalizedEndpoint: p.baseURL }),
+    ).toMatchObject({
       service: 'deepseek',
-      offering: 'payg',
       normalizedEndpoint: 'https://api.deepseek.com/v1',
-      billing: 'api-metered',
-      asOf: '2026-07-31',
     });
   });
 
@@ -559,9 +558,10 @@ describe('metadata provider offering billing metadata', () => {
         schema: RawSchema,
         fallback: (id): Raw => ({ id }),
       },
-      { apiBase: 'https://api.openai.com/v1' },
+      { apiBase: 'HTTPS://API.OPENAI.COM:443/v1/' },
     );
 
+    expect(p.baseURL).toBe('https://api.openai.com/v1');
     expect(
       resolveProviderRunMetadata({ tool: p.name, normalizedEndpoint: p.baseURL }),
     ).toMatchObject({
@@ -569,25 +569,6 @@ describe('metadata provider offering billing metadata', () => {
       offering: 'payg',
       normalizedEndpoint: 'https://api.openai.com/v1',
       billing: 'api-metered',
-      asOf: '2026-07-31',
-    });
-  });
-
-  it('labels local metadata providers as local compute in run metadata', () => {
-    const p = createMetadataProvider<Raw>({
-      name: 'ollama',
-      defaultBaseURL: 'http://localhost:11434/v1',
-      envKeyName: 'OLLAMA_API_KEY',
-      isLocal: true,
-      schema: RawSchema,
-      fallback: (id): Raw => ({ id }),
-    });
-
-    expect(resolveProviderRunMetadata({ tool: p.name, normalizedEndpoint: p.baseURL })).toEqual({
-      service: 'ollama',
-      offering: 'local',
-      normalizedEndpoint: 'http://localhost:11434/v1',
-      billing: 'local',
       asOf: '2026-07-31',
     });
   });

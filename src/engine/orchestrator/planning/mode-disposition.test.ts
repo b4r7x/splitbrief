@@ -12,7 +12,7 @@ import {
   setupProject,
 } from '#testing/helpers/planning-phase.js';
 import { readWorkflowStateHead } from '../state-ops.js';
-import { persistBriefOwnerTransition } from '../evidence/persistence.js';
+import { persistBriefOwnerTransition } from '../evidence/recovery-journal.js';
 import { createBriefRecoveryState } from './brief-recovery.js';
 import { planningResultForState, matchesPersistedExecutionPermit } from './handoff.js';
 import { resolveOwnerReadiness } from './io.js';

@@ -56,9 +56,7 @@ export function createRpcCommandContext(opts: {
   queueHandler: () => QueueHandler | null;
   clearQueueHandler: () => ClearQueueHandler | null;
   abort: (reason?: unknown) => void;
-  abortTurn?: ((reason?: unknown) => void) | undefined;
   bus: EventBus;
-  setRewindFeedback?: ((feedback: string | undefined) => void) | undefined;
   requestRewind?: ((request: { target: 'spec' | 'plan'; comment?: string }) => boolean) | undefined;
   requestTaskRedo?: ((taskId: string) => boolean) | undefined;
   messages: string[];

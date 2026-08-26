@@ -57,9 +57,7 @@ export type PersistedTasksResult =
   | { ok: true; tasks: Task[] }
   | { ok: false; reason: 'missing' | 'unreadable' | 'parse' | 'empty'; message: string };
 
-type ConfinedReadResult =
-  | { ok: true; text: string }
-  | { ok: false; reason: 'missing' | 'unreadable' };
+type ConfinedReadResult = { ok: true; text: string } | { ok: false; reason: 'missing' };
 
 async function readConfinedSessionText(filePath: string): Promise<ConfinedReadResult> {
   const sessionDirPath = dirname(filePath);
@@ -81,18 +79,11 @@ export async function readPersistedTasks(
       message: labelError('Failed to read Task Brief file', err),
     };
   }
-  if (!result.ok && result.reason === 'missing') {
+  if (!result.ok) {
     return {
       ok: false,
       reason: 'missing',
       message: `Task Brief file is missing: ${tasksFilePath}`,
-    };
-  }
-  if (!result.ok) {
-    return {
-      ok: false,
-      reason: 'unreadable',
-      message: `Failed to read Task Brief file: ${tasksFilePath}`,
     };
   }
 

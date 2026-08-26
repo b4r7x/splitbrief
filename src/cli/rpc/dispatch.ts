@@ -1,10 +1,7 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import {
-  BriefReviewCommandSchema,
-  type BriefReviewCommand,
-} from '../../core/schemas/brief-review-command.js';
+import { BriefReviewCommandSchema } from '../../core/schemas/brief-review-command.js';
 import type { EventBus } from '../../engine/events/types.js';
 import type { ClearQueueHandler, QueueHandler } from '../../engine/orchestrator/types.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
@@ -34,23 +31,11 @@ export function createCommandHandler(deps: {
   getQueueHandler: () => QueueHandler | null;
   getClearQueueHandler: () => ClearQueueHandler | null;
   abort: (reason?: unknown) => void;
-  abortTurn?: ((reason?: unknown) => void) | undefined;
   bus: EventBus;
   approvalGate: {
     handle: (cmd: RpcCommand) => boolean;
     handleBriefReview: (
       command: Extract<RpcCommand, { type: 'brief_review' }>['command'],
-      promptId?: string | undefined,
-    ) => Promise<BriefReviewGateResult>;
-  };
-  /**
-   * The live host may provide the authoritative controller route.  The gate
-   * remains the compatibility fallback for generic approval prompts; no RPC
-   * adapter is allowed to invent a local recovery reducer.
-   */
-  briefReviewController?: {
-    dispatch: (
-      command: BriefReviewCommand,
       promptId?: string | undefined,
     ) => Promise<BriefReviewGateResult>;
   };
@@ -65,7 +50,6 @@ export function createCommandHandler(deps: {
   pendingQueueDepth: (state: WorkflowState | null) => number;
   requestRewind?: ((request: { target: 'spec' | 'plan'; comment?: string }) => boolean) | undefined;
   requestTaskRedo?: ((taskId: string) => boolean) | undefined;
-  setRewindFeedback?: ((feedback: string | undefined) => void) | undefined;
 }): (cmd: RpcCommand) => void {
   let runtimeChain: Promise<void> = Promise.resolve();
   let briefReviewChain: Promise<void> = Promise.resolve();
@@ -88,9 +72,7 @@ export function createCommandHandler(deps: {
       queueHandler: deps.getQueueHandler,
       clearQueueHandler: deps.getClearQueueHandler,
       abort: deps.abort,
-      abortTurn: deps.abortTurn,
       bus: deps.bus,
-      setRewindFeedback: deps.setRewindFeedback,
       requestRewind: deps.requestRewind,
       requestTaskRedo: deps.requestTaskRedo,
       messages,
@@ -207,9 +189,8 @@ export function createCommandHandler(deps: {
         });
         return;
       }
-      const route = deps.briefReviewController?.dispatch ?? deps.approvalGate.handleBriefReview;
       briefReviewChain = briefReviewChain
-        .then(() => route(parsedCommand.data, cmd.promptId))
+        .then(() => deps.approvalGate.handleBriefReview(parsedCommand.data, cmd.promptId))
         .then((result) => writeBriefReviewResult(cmd, result))
         .catch((err) => {
           deps.writer.error(toErrorMessage(err), {

@@ -8,6 +8,7 @@ import type { Config } from '../../schemas/config.js';
 import type { ImplementerConfig } from '../../schemas/implementer-config.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
 import type { ReviewerConfig } from '../../schemas/reviewer-config.js';
+import { createOpaqueIdFactory } from '../../../utils/opaque-id.js';
 
 export type ActiveRunnerConfig = PlannerConfig | ImplementerConfig;
 
@@ -43,18 +44,7 @@ export type UpdateActiveRunnerInput =
       readonly updater: (existing: ReviewerConfig) => ReviewerConfig;
     };
 
-const sourceNodeIds = new WeakMap<object, string>();
-let nextSourceNodeId = 1;
-
-function sourceNodeId(sourceNode: object): string {
-  const existing = sourceNodeIds.get(sourceNode);
-  if (existing !== undefined) return existing;
-
-  const id = `active-runner-source-${nextSourceNodeId}`;
-  nextSourceNodeId += 1;
-  sourceNodeIds.set(sourceNode, id);
-  return id;
-}
+const sourceNodeId = createOpaqueIdFactory('active-runner-source');
 
 function resolveActiveRunnerSource(input: ReadActiveRunnerInput): ActiveRunnerSource {
   if (input.role === 'planner') {

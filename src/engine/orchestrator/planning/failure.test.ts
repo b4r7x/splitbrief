@@ -9,7 +9,7 @@ import { loadState, saveState } from '../../../core/state/persistence.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { error } from '../../../utils/error.js';
 import { addUsageAndSave, readWorkflowStateHead } from '../state-ops.js';
-import { attachWorkflowAuthority } from '../run/init.js';
+import { attachWorkflowAuthority } from '../run/authority.js';
 import type { StateAuthorityReceipt } from '../../../core/state/types.js';
 import { handlePlanningFailure } from './failure.js';
 

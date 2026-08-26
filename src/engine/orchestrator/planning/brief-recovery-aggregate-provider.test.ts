@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { RecoveryProviderAggregateRequest } from '../../../core/schemas/brief-recovery.js';
+import type { RecoveryProviderAggregateRequest } from '../../../core/schemas/brief-recovery/provider-call.js';
 import {
   createTaskCompilationAttemptId,
   TASK_BRIEF_COMPILER_POLICY,
@@ -8,7 +8,7 @@ import {
   type TaskCompilationCallEnvelope,
   type TaskCompilationFailureStatus,
   type TaskCompilationProgram,
-  type TaskCompilationTransport,
+  type PlannerArtifactTransport,
 } from '../../../core/schemas/task-compilation.js';
 import {
   createTaskDispatchClaimPort,
@@ -55,7 +55,7 @@ describe('createBriefRecoveryAggregateProvider', () => {
   }
 
   function invocationFixture(
-    transport: TaskCompilationTransport = { kind: 'stdout-final' },
+    transport: PlannerArtifactTransport = { kind: 'stdout-final' },
   ): PreparedPlannerInvocation {
     return {
       runtime: {

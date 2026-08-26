@@ -15,6 +15,7 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { handleSessionSelect, sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
+import { makeResumeAuthorityDeps } from '#testing/helpers/factories/state-authority.js';
 import { buildPaletteSources } from './sources.js';
 
 const noop = () => {};
@@ -295,7 +296,7 @@ describe('buildPaletteSources session items', () => {
       onRuntimeCommand: noop,
       onSessionSelect: (selected, projectDir) =>
         handleSessionSelect(selected, projectDir, {
-          loadState,
+          ...makeResumeAuthorityDeps((ref) => loadState(ref)),
           prepareResume: async ({ ref, state }) => ({
             kind: 'prepared',
             execution: prepareWorkflowExecution({
@@ -338,7 +339,7 @@ describe('buildPaletteSources session items', () => {
       onRuntimeCommand: noop,
       onSessionSelect: (selected, projectDir) =>
         handleSessionSelect(selected, projectDir, {
-          loadState,
+          ...makeResumeAuthorityDeps((ref) => loadState(ref)),
           prepareResume: async () => {
             throw new Error('Preparation should not run without saved state');
           },

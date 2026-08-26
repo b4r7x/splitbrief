@@ -8,7 +8,7 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { ARTIFACT_REVIEW_HINT, CONTINUATION_PROMPT } from './prompt-callbacks.js';
-import { REVIEW_HINT } from './review-parser.js';
+import { REVIEW_HINT } from './review-commands.js';
 import {
   formatUserEditConflictPrompt,
   parseUserEditConflictAnswer,

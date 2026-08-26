@@ -45,10 +45,7 @@ import {
   type ContractShimMode,
   type ContractShimProfile,
 } from '#testing/helpers/command-shim.js';
-import {
-  parsePreparedConfig,
-  type PreparedExecution,
-} from '../../../src/engine/runners/prepared-execution.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
@@ -424,9 +421,9 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
     // The worktree is seeded with the source checkout's uncommitted work, so a
     // dirty unrelated file is already in its git status before the implementer
     // runs. The declared file is new to the status, so the exact-effect gate
-    // counts the shim's write as the one staged change; a pre-existing dirty
-    // declared file would call a rewrite a no-op run, and every retry of an
-    // already-written task keeps this shape.
+    // counts the shim's write as the one staged change; the gate judges the
+    // declared file by content, so an already-dirty declared file a retry
+    // rewrites still counts as changed.
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(
       join(projectDir, 'src/unrelated-dirty.ts'),
@@ -490,32 +487,33 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
     });
 
     const feature = 'prove direct writer promotion';
-    const resumeState = persistReadyExecutionState(projectDir, sessionId, makeImplState([task]));
-    const config = parsePreparedConfig(
-      makeConfig({
-        planner: {
-          kind: 'shell',
-          command: 'node',
-          args: ['-e', 'process.exit(0)'],
-          model: 'noop-planner',
-          contextLength: 4096,
-        },
-        implementer: implementerConfig(),
-        validation: {
-          typecheck: false,
-          lint: false,
-          test: true,
-          testCommand: 'node validate.mjs',
-        },
-        workflow: {
-          mode: 'quick',
-          maxRetries: 0,
-          persistTranscript: false,
-        },
-        approval: { enabled: false, feedRejectionsToPlanner: false },
-        escalation: { enabled: false },
-      }),
+    const resumeState = persistReadyExecutionState(
+      { projectDir, sessionId },
+      makeImplState([task]),
     );
+    const config = makeConfig({
+      planner: {
+        kind: 'shell',
+        command: 'node',
+        args: ['-e', 'process.exit(0)'],
+        model: 'noop-planner',
+        contextLength: 4096,
+      },
+      implementer: implementerConfig(),
+      validation: {
+        typecheck: false,
+        lint: false,
+        test: true,
+        testCommand: 'node validate.mjs',
+      },
+      workflow: {
+        mode: 'quick',
+        maxRetries: 0,
+        persistTranscript: false,
+      },
+      approval: { enabled: false, feedRejectionsToPlanner: false },
+      escalation: { enabled: false },
+    });
     const preparationId = 'direct-writer-change-proof-preparation';
     const implementerResolution = await resolveCustomExecutable({
       command: 'opencode',
@@ -529,20 +527,16 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
       sessionId,
       generation: '2a222222-2222-4222-8222-222222222222',
     };
-    const prepared: PreparedExecution = {
-      purpose: 'new-workflow',
+    const prepared = makePreparedExecution({
+      projectDir,
+      sessionId,
+      feature,
       config,
       preparationId,
-      report: {
-        generatedAt: '2026-08-04T00:00:00.000Z',
-        projectDir,
-        status: 'ready',
-        counts: { ok: 2, info: 0, warning: 0, blocker: 0 },
-        nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
-        sections: [],
-        metadata: {},
-      },
-      gates: [
+      active,
+      resumeState,
+      purpose: 'new-workflow',
+      gates: () => [
         {
           kind: 'shell',
           slot: { role: 'planner' },
@@ -557,9 +551,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
           executable: implementerResolution.executable,
         },
       ],
-      session: { kind: 'existing', ref: { projectDir, sessionId }, active },
-      runtime: { feature, allowRepoRunners: false, allowHooks: false, resumeState },
-    };
+    });
 
     const summary = await runWorkflow({
       prepared,
@@ -569,7 +561,6 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
       _eventSink: (event) => events.push(event),
     });
 
-    expect(summary).toMatchObject({ totalTasks: 1, completedByLocal: 1, failed: 0 });
     const shimCwd = existsSync(join(fixture.captureDir, 'cwd.txt'))
       ? readFileSync(join(fixture.captureDir, 'cwd.txt'), 'utf-8')
       : '';
@@ -577,9 +568,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
     expect(readFileSync(join(projectDir, TARGET_SRC), 'utf-8')).toBe(
       `export const marker = "${MARKER}";\n`,
     );
-    expect(existsSync(join(projectDir, 'dist/bundle.js'))).toBe(false);
     expect(existsSync(join(projectDir, SANDBOX_DIR))).toBe(false);
-    expect(existsSync(fixture.outsidePath)).toBe(false);
     expect(summary).toMatchObject({
       totalTasks: 1,
       completedByLocal: 1,

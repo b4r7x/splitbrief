@@ -67,7 +67,7 @@ export function cardRowsWindow(input: CardRowsWindowInput): ConversationRow[] {
       ...segmentedRow(
         `${keyPrefix}-${index}`,
         [
-          { text: labelText, tone: labelTone },
+          { text: line.slice(0, labelText.length), tone: labelTone },
           { text: line.slice(labelText.length), tone: valueTone },
         ],
         kind,

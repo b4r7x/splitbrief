@@ -85,7 +85,6 @@ src/cli/
 │   ├── run/
 │   │   ├── host.ts        # runRpc, transport lifetime, turn/restart loop
 │   │   ├── status.ts      # queue/gate/approval/status projection
-│   │   ├── brief-review.ts # Task Brief draft read/validate/quality/persist
 │   │   └── recovery.ts    # recovery command validation and prompt loop
 │   ├── dispatch.ts
 │   ├── gates.ts
@@ -201,7 +200,11 @@ These are runtime commands, not a slash-only subsystem: the same registry backs 
 src/core/sessions/
 ├── analytics.ts       # session analytics (cost, duration, tasks)
 ├── io.ts              # read/write session state + log files
-├── lifecycle.ts       # active-session pointer (readActive, writeActive, clearActive)
+├── active-pointer.ts  # active-session pointer (readActive, writeActive, clearActive)
+├── liveness.ts        # inspectSessionLiveness / isSessionLive
+├── session-id.ts      # session id minting + transcript-policy slugs
+├── ownership-marker.ts # prepare/handoff ownership proof machinery
+├── detached-handoff.ts # detached handoff transfer/accept/settle/rollback
 ├── log-reader.ts      # JSONL session log reader
 ├── guards.ts          # clearStaleSession and related session-state predicates
 ├── compaction.ts      # session-log compaction
@@ -454,7 +457,7 @@ The three `testing/integration/` subfolders align with the three stable seams: c
 - **Static is a tier.** TS strict + Zod schemas are first-class correctness — no runtime shape tests for Zod schemas, no `expectType<>` games.
 - **Do not test implementation.** No `vi.mock()` on `./` / `../` siblings, no spies on internal module functions, no `toHaveBeenCalledTimes` unless call-count IS the contract. See [TESTING.md](./TESTING.md).
 
-Test discovery is configured in `vitest.config.ts` via `include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.{ts,tsx}', 'testing/integration/**/*.test.{ts,tsx}', 'testing/helpers/**/*.test.{ts,tsx}', 'testing/visual/**/*.test.{ts,tsx}', 'evals/eval.test.ts']`. All trees are picked up by a single `npm test`.
+Test discovery is configured in `vitest.config.ts` via `include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.{ts,tsx}', 'testing/integration/**/*.test.{ts,tsx}', 'testing/helpers/**/*.test.{ts,tsx}', 'testing/visual/**/*.test.{ts,tsx}', 'evals/*.test.ts']`. All trees are picked up by a single `npm test`.
 
 ## Design decisions
 

@@ -55,12 +55,10 @@ describe('runLegacyQualityGate', () => {
     expect(persisted.version).toBe(1);
     expect(persisted.passed).toBe(true);
 
-    const ev = events.find((e) => e.type === 'brief_quality_passed');
-    expect(ev).toBeDefined();
-    if (ev && 'score' in ev) {
-      expect(ev.score).toBe(1);
-      expect(ev.warningCount).toBe(0);
-    }
+    expect(events.find((e) => e.type === 'brief_quality_passed')).toMatchObject({
+      score: 1,
+      warningCount: 0,
+    });
   });
 
   it('writes brief-quality.json and publishes brief_quality_failed event on failure', () => {
@@ -82,10 +80,6 @@ describe('runLegacyQualityGate', () => {
     const reportPath = join(sessionDir(projectDir, sessionId), BRIEF_QUALITY_FILE);
     expect(existsSync(reportPath)).toBe(true);
 
-    const ev = events.find((e) => e.type === 'brief_quality_failed');
-    expect(ev).toBeDefined();
-    if (ev && 'errorCount' in ev) {
-      expect(ev.errorCount).toBeGreaterThan(0);
-    }
+    expect(events.find((e) => e.type === 'brief_quality_failed')?.errorCount).toBeGreaterThan(0);
   });
 });

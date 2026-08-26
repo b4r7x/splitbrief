@@ -1,19 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { TASK_BRIEF_COMPILER_POLICY } from '../../../core/schemas/task-compilation.js';
 import type { TaskCompilationCallEnvelope } from '../../../core/schemas/task-compilation.js';
-import { createTaskManifest } from '../tasks/manifest.js';
+import { parseTaskManifest } from '../tasks/manifest.js';
 import { partitionManifest } from '../tasks/partition.js';
 import { buildLanguageContext } from './language-context.js';
-import {
-  buildTasksPrompt,
-  buildTaskBatchPrompt,
-  taskBatchPromptByteLength,
-  taskBatchPromptError,
-} from './tasks.js';
+import { buildTasksPrompt, buildTaskBatchPrompt, taskBatchPromptByteLength } from './tasks.js';
 
 describe('buildTasksPrompt', () => {
   it('TypeScript project prompt keeps TypeScript conventions', () => {
-    const prompt = buildTasksPrompt('spec', 'plan', buildLanguageContext('typescript'));
+    const prompt = buildTasksPrompt({
+      spec: 'spec',
+      plan: 'plan',
+      languageContext: buildLanguageContext('typescript'),
+    });
     expect(prompt).toContain('typescript');
     expect(prompt).toContain('.js');
     expect(prompt).toContain('file: src/path/to/file.ts');
@@ -21,7 +20,11 @@ describe('buildTasksPrompt', () => {
   });
 
   it('Python project prompt has no TypeScript references', () => {
-    const prompt = buildTasksPrompt('spec', 'plan', buildLanguageContext('python'));
+    const prompt = buildTasksPrompt({
+      spec: 'spec',
+      plan: 'plan',
+      languageContext: buildLanguageContext('python'),
+    });
     expect(prompt).toContain('Python');
     expect(prompt).toContain('PEP 484');
     expect(prompt).toContain('file: src/path/to/file.py');
@@ -30,12 +33,12 @@ describe('buildTasksPrompt', () => {
   });
 
   it('generic prompt has no language-specific references', () => {
-    const prompt = buildTasksPrompt('spec', 'plan');
+    const prompt = buildTasksPrompt({ spec: 'spec', plan: 'plan' });
     expect(prompt).not.toMatch(/TypeScript|typescript|\.js extensions|file\.ts|PEP 484/);
   });
 
   it('returns task content for session persistence without requesting project writes', () => {
-    const prompt = buildTasksPrompt('spec', 'plan');
+    const prompt = buildTasksPrompt({ spec: 'spec', plan: 'plan' });
     expect(prompt).toContain('SPLITBRIEF captures your reply');
     expect(prompt).toContain('persists the tasks.md artifact inside the active session');
     expect(prompt).toContain('Do not write tasks.md or any other project file yourself');
@@ -43,7 +46,7 @@ describe('buildTasksPrompt', () => {
   });
 
   it('reserves bare separators for Task Brief frontmatter', () => {
-    const prompt = buildTasksPrompt('spec', 'plan');
+    const prompt = buildTasksPrompt({ spec: 'spec', plan: 'plan' });
     expect(prompt).toContain(
       'Outside fenced code blocks, lines containing only `---` are reserved',
     );
@@ -64,7 +67,7 @@ function planWithFiles(count: number): string {
 
 function batchFixture(count: number): ReturnType<typeof partitionManifest> {
   const plan = planWithFiles(count);
-  const manifest = createTaskManifest(plan);
+  const manifest = parseTaskManifest(plan);
   return partitionManifest(manifest, { spec: 'spec', plan, languageContext: 'TypeScript/ESM' });
 }
 
@@ -224,6 +227,5 @@ describe('buildTaskBatchPrompt', () => {
       thrown = err;
     }
     expect(thrown).toMatchObject({ kind: 'task_compiler_prompt_too_large' });
-    expect(taskBatchPromptError.isTooLarge).toBeTypeOf('function');
   });
 });

@@ -83,7 +83,7 @@ describe('CompletionPanel', () => {
     const ui = render(
       <Box width={24}>
         <CompletionPanel
-          items={ITEMS.slice(0, 1)}
+          items={ITEMS}
           selectedIndex={0}
           maxVisible={1}
           footer="select · esc close"
@@ -95,6 +95,9 @@ describe('CompletionPanel', () => {
 
     const lines = panelLines(ui.lastFrame() ?? '');
     expect(lines.filter((line) => line.includes('alpha'))).toHaveLength(1);
+    for (const hidden of ITEMS.slice(1)) {
+      expect(lines.some((line) => line.includes(hidden))).toBe(false);
+    }
     expect(lines.some((line) => line.includes('select'))).toBe(true);
     ui.unmount();
   });

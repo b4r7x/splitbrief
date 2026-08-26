@@ -1,9 +1,9 @@
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
 import type { BriefReviewCommandAction } from '../../core/schemas/brief-review-command.js';
 import { SOFT_SEP } from '../../components/separators.js';
+import { assertNever } from '../../utils/type-guards.js';
 
-// Both review phases take the same four keys and the same typed commands; the phase split only
-// ever named `e` twice, and `e` opened the same external-editor handoff either way.
+// Both review phases take the same four keys and the same typed commands.
 export const REVIEW_HINT = `y approve${SOFT_SEP}c comment${SOFT_SEP}q reject${SOFT_SEP}e edit`;
 // Named with the same words the legend just taught. Every one of them parses, so the recovery
 // message cannot send a user who read `q reject` off to type a word the legend never showed.
@@ -43,7 +43,7 @@ export function parseReviewCommand(text: string): ReviewAction {
     return legacyReviewAction({ action: 'save_draft' });
   }
   if (cmd === 'status') return briefReviewAction('status');
-  if (cmd === 'edit-file' || raw === 'E' || cmd === 'edit' || cmd === 'e') {
+  if (cmd === 'edit-file' || cmd === 'edit' || cmd === 'e') {
     return { kind: 'open-external-editor' };
   }
   if (cmd.startsWith('comment ') || cmd.startsWith('revise ')) {
@@ -71,10 +71,8 @@ export function reviewCommandToApprovalReviewResult(
     case 'save_draft':
     case 'status':
       return null;
-    default: {
-      const exhaustive: never = command;
-      return exhaustive;
-    }
+    default:
+      return assertNever(command);
   }
 }
 

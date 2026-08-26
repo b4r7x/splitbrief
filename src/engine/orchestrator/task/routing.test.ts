@@ -19,6 +19,7 @@ import type { RunnerSlot } from '../../runners/prepared-execution.js';
 import { runnerGateFor } from '../../runners/start-gate.js';
 import type { ImplementerFactoryOptions } from '../../implementers/types.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { taskId } from '../../../core/schemas/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
@@ -272,27 +273,34 @@ describe('createTaskImplementer configured profile admission', () => {
   });
 });
 
+function routingDecision(overrides: Partial<RoutingDecision>): RoutingDecision {
+  return {
+    taskId: taskId('T001'),
+    requiredWriteMode: 'extracted-code',
+    fit: 'overflow',
+    estimatedTokens: 5000,
+    untruncatedEstimatedTokens: 5000,
+    contextLength: undefined,
+    currentCodeTruncated: false,
+    currentCodeContextMode: 'whole-file',
+    costPosture: 'cheapest',
+    reason: 'too large',
+    rejected: [],
+    ...overrides,
+  };
+}
+
 describe('routingBlockMessage', () => {
   it('formats message with estimated tokens', () => {
-    const decision = {
-      taskId: 'T001',
-      estimatedTokens: 5000,
-      contextLength: undefined,
-      reason: 'too large',
-    } as RoutingDecision;
-    const message = routingBlockMessage(decision);
+    const message = routingBlockMessage(routingDecision({}));
     expect(message).toContain('T001');
     expect(message).toContain('5000 estimated tokens');
   });
 
   it('formats message with context length ratio', () => {
-    const decision = {
-      taskId: 'T001',
-      estimatedTokens: 5000,
-      contextLength: 4000,
-      reason: 'overflow',
-    } as RoutingDecision;
-    const message = routingBlockMessage(decision);
+    const message = routingBlockMessage(
+      routingDecision({ contextLength: 4000, reason: 'overflow' }),
+    );
     expect(message).toContain('5000/4000 estimated tokens');
   });
 });

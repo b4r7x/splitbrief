@@ -92,7 +92,7 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
           const payload: AgentInvocationPayload = {
             taskId: event.taskId,
             role: 'implementer',
-            tool: event.tool ?? 'unknown',
+            tool: event.tool,
             ...(event.model !== undefined && { model: event.model }),
             phase: event.phase,
             status: 'started',
@@ -142,7 +142,7 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
         const payload: AgentInvocationPayload = {
           taskId: event.taskId,
           role: 'implementer',
-          tool: event.tool ?? 'unknown',
+          tool: event.tool,
           model: event.model,
           phase: event.phase,
           status: 'completed',
@@ -168,7 +168,6 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
         const payload: AgentInvocationPayload = {
           taskId: event.taskId,
           role: 'implementer',
-          tool: 'unknown',
           phase: event.phase,
           status: 'failed',
           durationMs: startTime !== undefined ? event.ts - startTime : undefined,

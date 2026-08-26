@@ -62,31 +62,14 @@ const CodexNativeCatalogSchema = z
 
 type CodexNativeModel = z.infer<typeof CodexNativeModelSchema>;
 
-function distinctValue(values: readonly (string | undefined)[]): string | null | undefined {
-  let selected: string | undefined;
+function distinct<T>(
+  values: readonly (T | undefined)[],
+  equals: (a: T, b: T) => boolean = (a, b) => a === b,
+): T | null | undefined {
+  let selected: T | undefined;
   for (const value of values) {
     if (value === undefined) continue;
-    if (selected !== undefined && selected !== value) return null;
-    selected = value;
-  }
-  return selected;
-}
-
-function distinctBoolean(values: readonly (boolean | undefined)[]): boolean | null | undefined {
-  let selected: boolean | undefined;
-  for (const value of values) {
-    if (value === undefined) continue;
-    if (selected !== undefined && selected !== value) return null;
-    selected = value;
-  }
-  return selected;
-}
-
-function distinctNumber(values: readonly (number | undefined)[]): number | null | undefined {
-  let selected: number | undefined;
-  for (const value of values) {
-    if (value === undefined) continue;
-    if (selected !== undefined && selected !== value) return null;
+    if (selected !== undefined && !equals(selected, value)) return null;
     selected = value;
   }
   return selected;
@@ -94,18 +77,6 @@ function distinctNumber(values: readonly (number | undefined)[]): number | null 
 
 function equalStringLists(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
-}
-
-function distinctReasoningEfforts(
-  values: readonly (readonly string[] | undefined)[],
-): readonly string[] | null | undefined {
-  let selected: readonly string[] | undefined;
-  for (const value of values) {
-    if (value === undefined) continue;
-    if (selected !== undefined && !equalStringLists(selected, value)) return null;
-    selected = value;
-  }
-  return selected;
 }
 
 function catalogFromEntries(
@@ -123,19 +94,19 @@ function catalogFromEntries(
 function codexNativeEntry(
   input: Readonly<{ model: CodexNativeModel }>,
 ): Omit<NativeCliModelCatalogEntry, 'nativeOrder'> | null {
-  const selectionId = distinctValue([input.model.id, input.model.slug, input.model.model]);
-  const displayName = distinctValue([
+  const selectionId = distinct([input.model.id, input.model.slug, input.model.model]);
+  const displayName = distinct([
     input.model.display_name,
     input.model.displayName,
     input.model.name,
   ]);
-  const nativeDefault = distinctBoolean([input.model.is_default, input.model.isDefault]);
-  const nativeHidden = distinctBoolean([input.model.hidden, input.model.is_hidden]);
-  const contextWindow = distinctNumber([input.model.context_window, input.model.contextWindow]);
-  const nativeReasoningEfforts = distinctReasoningEfforts([
-    input.model.reasoning_efforts,
-    input.model.supported_reasoning_efforts,
-  ]);
+  const nativeDefault = distinct([input.model.is_default, input.model.isDefault]);
+  const nativeHidden = distinct([input.model.hidden, input.model.is_hidden]);
+  const contextWindow = distinct([input.model.context_window, input.model.contextWindow]);
+  const nativeReasoningEfforts = distinct(
+    [input.model.reasoning_efforts, input.model.supported_reasoning_efforts],
+    equalStringLists,
+  );
   if (
     selectionId === undefined ||
     selectionId === null ||

@@ -21,8 +21,8 @@ import { TaskTokenUsageSchema, TokenUsageSchema } from './tokens.js';
 import { RunSnapshotKindSchema } from './snapshot.js';
 import {
   ReadinessNextActionKindSchema,
-  ReadinessSeveritySchema,
   ReadinessStatusSchema,
+  StartReadinessCheckSchema,
 } from './readiness.js';
 
 export const REVIEW_PACKET_VERSION = 1;
@@ -61,13 +61,7 @@ const ReviewPacketReadinessSchema = z.object({
   nextAction: ReadinessNextActionKindSchema.nullable(),
   blockerCount: z.number().int().nonnegative().nullable(),
   warningCount: z.number().int().nonnegative().nullable(),
-  checks: z.array(
-    z.object({
-      id: z.string(),
-      severity: ReadinessSeveritySchema,
-      summary: z.string(),
-    }),
-  ),
+  checks: z.array(StartReadinessCheckSchema),
 });
 
 const ReviewPacketTaskFileSchema = z.object({
@@ -164,6 +158,15 @@ const ReviewPacketValidationSchema = z.object({
   missingEvidenceWarnings: z.array(z.string()),
 });
 
+const ReviewPacketApprovalEntrySchema = z.object({
+  ts: z.string(),
+  tier: z.string(),
+  actionClass: z.string(),
+  actionDescription: z.string(),
+  taskId: TaskIdSchema.optional(),
+  reason: z.string(),
+});
+
 const ReviewPacketEvidenceSchema = z.object({
   path: z.string().nullable(),
   present: z.boolean(),
@@ -174,26 +177,8 @@ const ReviewPacketEvidenceSchema = z.object({
       status: EvidenceFinalReviewStatusSchema,
     })
     .nullable(),
-  approvals: z.array(
-    z.object({
-      ts: z.string(),
-      tier: z.string(),
-      actionClass: z.string(),
-      actionDescription: z.string(),
-      taskId: TaskIdSchema.optional(),
-      reason: z.string(),
-    }),
-  ),
-  rejections: z.array(
-    z.object({
-      ts: z.string(),
-      tier: z.string(),
-      actionClass: z.string(),
-      actionDescription: z.string(),
-      taskId: TaskIdSchema.optional(),
-      reason: z.string(),
-    }),
-  ),
+  approvals: z.array(ReviewPacketApprovalEntrySchema),
+  rejections: z.array(ReviewPacketApprovalEntrySchema),
 });
 
 const ReviewPacketDriftFindingSchema = z.object({

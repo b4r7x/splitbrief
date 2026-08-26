@@ -29,7 +29,7 @@ export async function resolveValidatedBlobPath(opts: {
   if (!VALID_ENCODED_NAME.test(entry.encodedName)) return null;
   if (entry.encodedName !== encodeSnapshotPath(path)) return null;
 
-  const blobPath = join(snapshotFilesDir(projectDir, sessionId, snapshotId), entry.encodedName);
+  const blobPath = join(snapshotFilesDir({ projectDir, sessionId }, snapshotId), entry.encodedName);
   const blobHash = await hashFile(blobPath);
   if (blobHash === null || blobHash !== entry.hash) return null;
   return blobPath;

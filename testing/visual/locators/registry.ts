@@ -175,9 +175,9 @@ function resolveHomeHeader(context: LocatorContext): CellRect {
   const { cols, rows } = context.grid.identity.provenance.viewport;
   const layout = getHomeLayout({ cols, rows });
   return CellRectSchema.parse({
-    x: Math.floor((cols - layout.bodyWidth) / 2),
+    x: Math.floor((cols - layout.width) / 2),
     y: 0,
-    width: layout.bodyWidth,
+    width: layout.width,
     height: getLogoHeight(layout.logoTier) + 1 + homeConfigBlockRows(rows),
   });
 }
@@ -187,9 +187,9 @@ function resolveHomeComposer(context: LocatorContext): CellRect {
   const layout = getHomeLayout({ cols, rows });
   const height = DEFAULT_INPUT_ROWS + 1;
   return CellRectSchema.parse({
-    x: Math.floor((cols - layout.inputWidth) / 2),
+    x: Math.floor((cols - layout.width) / 2),
     y: rows - layout.inputBottomMargin - height,
-    width: layout.inputWidth,
+    width: layout.width,
     height,
   });
 }

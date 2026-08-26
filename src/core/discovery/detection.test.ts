@@ -3,8 +3,10 @@ import { API_PROVIDER_CATALOG, KNOWN_API_PROVIDER_IDS } from '../providers/api-p
 import { CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
 import {
   CLI_READINESS_STATES,
+  CliCompatibilityStateSchema,
   CliExecutableFingerprintSchema,
   CliToolDetectionSchema,
+  CliTrustStateSchema,
   DetectedModelSchema,
   DetectedPricingProvenanceSchema,
   DetectedPricingTierSchema,
@@ -284,13 +286,8 @@ describe('detection schemas', () => {
 
   it('round-trips every picker readiness state without collapsing readiness facts', () => {
     expect(CLI_READINESS_STATES).toHaveLength(7);
-    expect(TRUST_STATES).toEqual(['trusted', 'untrusted', 'not-checked']);
-    expect(COMPATIBILITY_STATES).toEqual([
-      'compatible',
-      'incompatible',
-      'unverified',
-      'not-checked',
-    ]);
+    expect(CliTrustStateSchema.options).toEqual(TRUST_STATES);
+    expect(CliCompatibilityStateSchema.options).toEqual(COMPATIBILITY_STATES);
 
     for (const state of CLI_READINESS_STATES) {
       const detection = detectionFor(state);

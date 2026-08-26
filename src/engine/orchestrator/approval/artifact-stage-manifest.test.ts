@@ -26,6 +26,7 @@ import {
 } from './artifact-stage-manifest.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
+const itWindows = process.platform === 'win32' ? it : it.skip;
 
 type Fixture = Readonly<{
   root: string;
@@ -390,12 +391,7 @@ describe('prepareArtifactStageLease', () => {
     await expectInvalid(() => fixture.lease.readAfterChild({ declaredRedactionValues: [] }));
   });
 
-  it('has an explicit Windows junction confinement contract', async () => {
-    if (process.platform !== 'win32') {
-      expect(process.platform).not.toBe('win32');
-      return;
-    }
-
+  itWindows('has an explicit Windows junction confinement contract', async () => {
     const fixture = await createFixture();
     const outside = trackedTempDir('artifact-stage-junction-outside');
     const output = join(fixture.root, '.splitbrief-runner', 'output');

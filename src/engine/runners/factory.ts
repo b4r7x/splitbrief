@@ -14,6 +14,9 @@ import { warnStderr } from '../../lib/warn.js';
 import { error } from '../../utils/error.js';
 import { assertNever, includes } from '../../utils/type-guards.js';
 import { resolveConfiguredCustomRunner } from './configured-custom.js';
+import type { ConfiguredCustomRunner } from './custom-trust.js';
+import type { AdmittedCustomRunnerInvocation } from './custom-launchability.js';
+import type { CustomRunnerRuntimePort } from './types.js';
 import { runnerConfigError } from './errors.js';
 import { runnerGateFor, type CliStartGate } from './start-gate.js';
 import { installRunCompiler } from './compiler-seam.js';
@@ -162,7 +165,7 @@ function configuredCommandGate(
     authority.gates,
     kind === 'shell' ? { ...expected, kind: 'shell' } : { ...expected, kind: 'agent' },
   );
-  if ((gate.kind !== 'shell' && gate.kind !== 'agent') || gate.kind !== kind) {
+  if (gate.kind !== kind) {
     throw error('runner-gate-mismatch', 'Configured runner gate is invalid.');
   }
   return gate;
@@ -194,6 +197,26 @@ export const customRunnerFactoryError = {
       `Configured custom ${role} requires a custom runner runtime.`,
     ),
 } as const;
+
+function resolveConfiguredCustomGate(
+  options: Readonly<{
+    authority: RunnerFactoryAuthority;
+    configured: ConfiguredCustomRunner;
+    customRuntime: CustomRunnerRuntimePort | undefined;
+    role: ActiveRunnerRole;
+  }>,
+): Readonly<{ runtime: CustomRunnerRuntimePort; invocation: AdmittedCustomRunnerInvocation }> {
+  const { authority, configured, customRuntime, role } = options;
+  const kind = configured.command.contract === 'output' ? 'shell' : 'agent';
+  const gate = configuredCommandGate(authority, kind, configured.command.id);
+  if (gate.command.kind !== 'configured-custom') {
+    throw error('runner-gate-mismatch', `Configured ${role} gate is invalid.`);
+  }
+  if (customRuntime === undefined) {
+    throw customRunnerFactoryError.runtimeUnavailable(role);
+  }
+  return { runtime: customRuntime, invocation: gate.command.invocation };
+}
 
 function assertCliPlannerTool(tool: string, seat: PlannerTierRole): void {
   if (!includes(PLANNER_CLI_TOOL_IDS, tool)) {
@@ -303,7 +326,7 @@ async function loadPlanner(
         });
       }
       const mod = await loadCliPlanner();
-      return mod.createCliPlanner(config, initialSessionId, options);
+      return mod.createCliPlanner({ config, initialSessionId, ...options });
     }
     case 'api': {
       const mod = await loadApiPlanner();
@@ -344,17 +367,14 @@ export async function createPlanner(
   let trustedCli: CliStartGate | undefined;
 
   if (configured !== null) {
-    const configuredKind = configured.command.contract === 'output' ? 'shell' : 'agent';
-    const gate = configuredCommandGate(authority, configuredKind, configured.command.id);
-    if (gate.command.kind !== 'configured-custom') {
-      throw error('runner-gate-mismatch', 'Configured planner gate is invalid.');
-    }
-    const runtime = options.customRuntime;
-    if (runtime === undefined) {
-      throw customRunnerFactoryError.runtimeUnavailable('planner');
-    }
+    const { runtime, invocation } = resolveConfiguredCustomGate({
+      authority,
+      configured,
+      customRuntime: options.customRuntime,
+      role: 'planner',
+    });
     const mod = await loadConfiguredCustomPlanner();
-    planner = mod.createConfiguredCustomPlanner(configured, runtime, gate.command.invocation);
+    planner = mod.createConfiguredCustomPlanner(configured, runtime, invocation);
   } else {
     const admission = admitPlannerBackend({ config, authority, seat: 'planner' });
     trustedCli = admission.trustedCli;
@@ -392,17 +412,14 @@ export async function createReviewer(
   let reviewer: Planner;
 
   if (configured !== null) {
-    const configuredKind = configured.command.contract === 'output' ? 'shell' : 'agent';
-    const gate = configuredCommandGate(authority, configuredKind, configured.command.id);
-    if (gate.command.kind !== 'configured-custom') {
-      throw error('runner-gate-mismatch', 'Configured reviewer gate is invalid.');
-    }
-    const runtime = options.customRuntime;
-    if (runtime === undefined) {
-      throw customRunnerFactoryError.runtimeUnavailable('reviewer');
-    }
+    const { runtime, invocation } = resolveConfiguredCustomGate({
+      authority,
+      configured,
+      customRuntime: options.customRuntime,
+      role: 'reviewer',
+    });
     const mod = await loadConfiguredCustomPlanner();
-    reviewer = mod.createConfiguredCustomPlanner(configured, runtime, gate.command.invocation);
+    reviewer = mod.createConfiguredCustomPlanner(configured, runtime, invocation);
   } else {
     // `loadPlanner` reads `config.planner` by contract, so the review seat reaches
     // the planner backends as a config whose planner slot holds the reviewer.
@@ -433,19 +450,16 @@ export async function createImplementer(
   const effectiveConfig = implementerConfigForAuthority(options);
   const configured = resolveConfiguredCustomRunner(effectiveConfig, 'implementer');
   if (configured !== null) {
-    const configuredKind = configured.command.contract === 'output' ? 'shell' : 'agent';
-    const gate = configuredCommandGate(authority, configuredKind, configured.command.id);
-    if (gate.command.kind !== 'configured-custom') {
-      throw error('runner-gate-mismatch', 'Configured implementer gate is invalid.');
-    }
-    const runtime = options.customRuntime;
-    if (runtime === undefined) {
-      throw customRunnerFactoryError.runtimeUnavailable('implementer');
-    }
+    const { runtime, invocation } = resolveConfiguredCustomGate({
+      authority,
+      configured,
+      customRuntime: options.customRuntime,
+      role: 'implementer',
+    });
     const mod = await loadConfiguredCustomImplementer();
     return mod.createConfiguredCustomImplementer({
       runtime,
-      admission: gate.command.invocation,
+      admission: invocation,
       factoryOptions: options,
     });
   }

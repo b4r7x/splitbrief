@@ -5,7 +5,7 @@ import {
   isBriefReviewCommandCurrent,
   type BriefReviewCommand,
 } from '../../core/schemas/brief-review-command.js';
-import { BriefRecoveryProjectionV1Schema } from '../../core/schemas/brief-recovery.js';
+import { BriefRecoveryProjectionV1Schema } from '../../core/schemas/brief-recovery/document.js';
 import { createApprovalGate, createGate, validateConfirmApprovalFields } from './gates.js';
 
 const commandIdentity = {

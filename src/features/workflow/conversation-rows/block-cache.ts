@@ -31,9 +31,8 @@ export function getCachedEventRowBlock(
   event: EngineEvent,
   key: EventBlockCacheKey,
 ): ConversationRowBlock | null | undefined {
-  // implementer_generate_running blocks read per-pass streaming context that no key field
-  // captures (ctx.streaming, event-rows/execution.ts:15-18), so they are never cached; task_started
-  // keeps its bypass per spec decision D-13.
+  // implementer_generate_running blocks read per-pass streaming context (ctx.streaming) that no
+  // key field captures, so a cached block would freeze a stale stream.
   if (event.type === 'task_started' || event.type === 'implementer_generate_running') {
     return undefined;
   }

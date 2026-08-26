@@ -1,8 +1,6 @@
 import type { Phase } from '../../../core/schemas/enums.js';
-import type {
-  BriefRecoveryProjectionV1,
-  RecoveryResultV1,
-} from '../../../core/schemas/brief-recovery.js';
+import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
+import type { RecoveryResultV1 } from '../../../core/schemas/brief-recovery.js';
 import {
   BriefReviewPromptKindSchema,
   type BriefReviewPromptKind,
@@ -16,7 +14,6 @@ import {
   isArtifactApprovalStatus,
   type ApprovalGatePrompt,
   type ArtifactApprovalStatus,
-  type BriefReviewDraftSaveResult,
 } from '../gates.js';
 import type { createApprovalGate, createGate } from '../gates.js';
 import { rpcError } from '../errors.js';
@@ -47,11 +44,6 @@ export function approvalTypeFromStatus(data: unknown): BriefReviewPromptKind | u
   if (!isRecord(data)) return undefined;
   const parsed = BriefReviewPromptKindSchema.safeParse(data.approvalType);
   return parsed.success ? parsed.data : undefined;
-}
-
-export function approvalFilePathFromStatus(data: unknown): string | undefined {
-  if (!isRecord(data)) return undefined;
-  return typeof data.filePath === 'string' ? data.filePath : undefined;
 }
 
 function artifactApprovalStatusFromStatus(data: unknown): ArtifactApprovalStatus | undefined {
@@ -99,14 +91,14 @@ export function withApprovalPromptStatus(
   };
 }
 
-export function pendingGateType(
-  approval: { isPending(): boolean },
-  message: { isPending(): boolean },
-  recovery: { isPending(): boolean },
-): 'approval' | 'message' | 'recovery' | null {
-  if (approval.isPending()) return 'approval';
-  if (message.isPending()) return 'message';
-  if (recovery.isPending()) return 'recovery';
+export function pendingGateType(gates: {
+  approval: { isPending(): boolean };
+  message: { isPending(): boolean };
+  recovery: { isPending(): boolean };
+}): 'approval' | 'message' | 'recovery' | null {
+  if (gates.approval.isPending()) return 'approval';
+  if (gates.message.isPending()) return 'message';
+  if (gates.recovery.isPending()) return 'recovery';
   return null;
 }
 
@@ -134,7 +126,6 @@ export type RpcStatusProjectionDeps = {
   transportAborted: () => boolean;
   writer: ResponseWriter;
   isRpcClosed: () => boolean;
-  saveBriefDraft: (tasksFilePath: string) => Promise<BriefReviewDraftSaveResult>;
   getRecoveryProjection?: () => BriefRecoveryProjectionV1 | null;
   getRecoveryResult?: () => RecoveryResultV1 | null;
 };
@@ -170,7 +161,11 @@ export function createRpcStatusProjection(deps: RpcStatusProjectionDeps) {
       state,
       queueDepth: pendingQueueDepth(state),
       queueReady: deps.getQueueHandler() !== null,
-      pending: pendingGateType(deps.approvalGate, deps.messageGate, deps.recoveryGate),
+      pending: pendingGateType({
+        approval: deps.approvalGate,
+        message: deps.messageGate,
+        recovery: deps.recoveryGate,
+      }),
       approvalPrompt: approvalPromptStatus(approvalPrompt),
       aborted: deps.transportAborted(),
       ...(recovery !== null && {
@@ -191,13 +186,9 @@ export function createRpcStatusProjection(deps: RpcStatusProjectionDeps) {
     if (approvalType === 'artifact' && artifactStatus === undefined) {
       throw rpcStatusError.invalidArtifactApproval();
     }
-    const filePath = approvalFilePathFromStatus(data);
     const pending = deps.approvalGate.wait({
       approvalType,
       ...(artifactStatus !== undefined && { artifactReview: artifactStatus.review }),
-      ...(approvalType === 'briefs' && filePath !== undefined
-        ? { onSaveDraft: () => deps.saveBriefDraft(filePath) }
-        : {}),
     });
     const recovery = recoveryStatusFromDeps(deps);
     const delivered = deps.writer.status(

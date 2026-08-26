@@ -12,7 +12,7 @@ function getDef(id: string) {
 }
 
 describe('displayValue', () => {
-  it('shows raw value for defs without formatValue', () => {
+  it('shows the raw value for string defs', () => {
     const def = getDef('validation.testCommand');
     expect(displayValue(def, 'npm test')).toBe('npm test');
   });

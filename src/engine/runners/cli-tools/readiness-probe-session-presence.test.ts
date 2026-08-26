@@ -504,10 +504,13 @@ describe.runIf(process.platform !== 'win32')('provider oracle three-way readines
 
       expect(result).toMatchObject({ auth: 'authenticated', status: 'ready' });
       const admission = admitCompilerCapability(
-        capabilityTuple('opencode', { conformance: unverifiedConformanceProof() }),
+        capabilityTuple('opencode', {
+          version: result.installedVersion ?? '',
+          conformance: unverifiedConformanceProof(),
+        }),
       );
       expect(admission.kind).toBe('refused');
-      if (admission.kind === 'refused') expect(admission.missing).toContain('conformance');
+      if (admission.kind === 'refused') expect(admission.missing).toEqual(['conformance']);
     });
   });
 });

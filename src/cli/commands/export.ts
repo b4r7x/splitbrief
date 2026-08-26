@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
 import { sessionDir } from '../../core/paths.js';
-import { readActive } from '../../core/sessions/lifecycle.js';
+import { readActive } from '../../core/sessions/active-pointer.js';
 import { listAllSessions } from '../../core/sessions/io.js';
 import { writeSessionHtmlReport } from '../../engine/export/collect.js';
 import { cliError, withCliErrors } from '../errors.js';

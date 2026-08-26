@@ -8,7 +8,7 @@ import {
 } from '../../../core/schemas/task-compilation.js';
 import { RUNNER_IDLE_KILL_MS, RUNNER_IDLE_WARN_MS } from '../../../core/schemas/runner-fields.js';
 import { spawnWithStdin } from '../../../lib/process/spawn/line-stream.js';
-import { createSanitizedChildEnv } from '../../../lib/process/spawn/lifecycle.js';
+import { createSanitizedChildEnv } from '../../../lib/process/spawn/child-env.js';
 import { processError } from '../../../lib/process/errors.js';
 import type { CliAuthChannelId } from '../../../core/runners/cli-tool-catalog.js';
 import { resolveCliExecutable, sanitizedRuntimePath } from '../resolve-cli-executable.js';
@@ -268,7 +268,7 @@ async function resolveTrustedClaudeExecutable(
       { tool: 'claude-code' },
     );
   }
-  return resolveCliExecutable('claude', projectDir, executable);
+  return resolveCliExecutable({ command: 'claude', projectDir, trust: executable });
 }
 
 function applyImageRefs(prompt: string, images: Attachment[] | undefined): string {
@@ -297,7 +297,10 @@ export function buildClaudeArgs(opts: BuildArgsOpts): string[] {
     }),
   ];
   const args = [...baseArgs, ...configuredArgs];
-  const validation = claudeCodePlannerAdapter.validateArgs(args, baseArgs);
+  const validation = claudeCodePlannerAdapter.validateArgs({
+    invocationArgs: args,
+    baseArgs: baseArgs,
+  });
   if (!validation.valid) {
     throw error(
       'cli-argument-conflict',
@@ -306,6 +309,113 @@ export function buildClaudeArgs(opts: BuildArgsOpts): string[] {
     );
   }
   return args;
+}
+
+interface ClaudeCallRunOptions extends ClaudeEnvelopeCallOptions {
+  args: string[];
+  stdin: string;
+  projectDir: string;
+  spawnEnv: NodeJS.ProcessEnv;
+  sessionId: string | null;
+  onOutput: (text: string) => void;
+  onSessionId?: ((id: string) => void) | undefined;
+  onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
+  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
+  model?: string | undefined;
+  authChannel?: CliAuthChannelId | undefined;
+  executable?: CliExecutableIdentity | null | undefined;
+  signal?: AbortSignal | undefined;
+  callContext?: RunnerCallContext | undefined;
+  idleWarnMs?: number | undefined;
+  idleKillMs?: number | undefined;
+}
+
+async function runClaudeCall(
+  opts: ClaudeCallRunOptions,
+): Promise<{ result: RunnerCallResult; sessionId: string | null }> {
+  const { context, attemptId, guard } = prepareClaudeEnvelopeCall({
+    callContext: opts.callContext,
+    model: opts.model,
+    role: 'planner',
+    signal: opts.signal,
+    idleWarnMs: opts.idleWarnMs,
+    idleKillMs: opts.idleKillMs,
+    ledger: opts.ledger,
+    attemptId: opts.attemptId,
+    envelope: opts.envelope,
+  });
+  const { state, handleLine } = createStreamHandler({
+    onOutput: opts.onOutput,
+    onSessionId: opts.onSessionId,
+    onQuestion: opts.onQuestion,
+    onCallEvent: (event) => {
+      guard.onEvent(event);
+      opts.onCallEvent?.(event);
+    },
+    credentialValues: claudeCredentialValues(opts.authChannel, opts.spawnEnv),
+    context,
+  });
+  state.sessionId = opts.sessionId;
+
+  let trustedExecutablePath: string | undefined;
+  try {
+    trustedExecutablePath = (await resolveTrustedClaudeExecutable(opts.projectDir, opts.executable))
+      .path;
+    if (opts.ledger !== undefined) {
+      claimClaudeDispatch(state, opts.ledger, attemptId);
+    }
+    await spawnWithStdin({
+      command: trustedExecutablePath,
+      args: opts.args,
+      cwd: opts.projectDir,
+      env: opts.spawnEnv,
+      stdin: opts.stdin,
+      notFoundMessage: CLAUDE_NOT_FOUND,
+      onLine: handleLine,
+      onStdoutLineOverflow: (overflow) => {
+        finishClaudeOutputLimit(
+          state,
+          runnerCallLineOutputLimit({
+            code: 'stdout_line_overflow',
+            label: 'stdout line',
+            lineBytes: overflow.lineBytes,
+            maxLineBytes: overflow.maxLineBytes,
+          }),
+        );
+      },
+      errorDetail: () => state.resultText ?? undefined,
+      signal: guard.signal,
+      idle: buildClaudeIdleOptions(state, {
+        idleWarnMs: guard.idleWarnMs,
+        idleKillMs: guard.idleKillMs,
+      }),
+      outputBudgetBytes: guard.outputBudgetBytes,
+      outputMaxBytes: guard.outputMaxBytes,
+    });
+  } catch (err) {
+    const safeError = normalizeClaudeProcessOutputError(
+      err,
+      trustedExecutablePath ?? opts.executable?.path,
+      state.redactCredential,
+    );
+    const limit = guard.limit();
+    if (limit !== null) {
+      finishRunnerCallOutputLimit(state.recorder, limit, {
+        usage: state.usage,
+        nativeSessionId: state.sessionId,
+      });
+      throwForClaudeCallFailure(state.recorder.finalResult());
+    }
+    markInterruptedClaudeStream(state, guard.signal);
+    if (!guard.signal?.aborted) markFailedClaudeStream(state, safeError);
+    throw interruptedError(opts.signal, safeError, state.redactCredential);
+  } finally {
+    guard.cleanup();
+  }
+
+  const result = finishClaudeStream(state);
+
+  return { result: { ...result, text: state.text }, sessionId: state.sessionId };
 }
 
 type ClaudePlannerStreamResult = RunnerCallResult & { sessionId?: string | null };
@@ -334,116 +444,39 @@ export interface ClaudePlannerStreamOpts extends ClaudeEnvelopeCallOptions {
 export async function runClaudePlannerStream(
   opts: ClaudePlannerStreamOpts,
 ): Promise<ClaudePlannerStreamResult> {
-  const {
-    prompt,
-    projectDir,
-    sessionId,
-    onOutput,
-    onSessionId,
-    onQuestion,
-    onCallEvent,
-    model,
-    authChannel,
-    env,
-    executable,
-    effort,
-    configuredArgs,
-    images,
-    signal,
-    callContext,
-  } = opts;
   const args = buildClaudeArgs({
-    projectDir,
+    projectDir: opts.projectDir,
     mode: 'plan',
-    sessionId,
-    model,
-    effort,
-    configuredArgs,
+    sessionId: opts.sessionId,
+    model: opts.model,
+    effort: opts.effort,
+    configuredArgs: opts.configuredArgs,
   });
-  const spawnEnv = env ?? (await defaultClaudeEnv(projectDir, authChannel));
+  const spawnEnv = opts.env ?? (await defaultClaudeEnv(opts.projectDir, opts.authChannel));
 
-  const { context, attemptId, guard } = prepareClaudeEnvelopeCall({
-    callContext,
-    model,
-    role: 'planner',
-    signal,
+  const { result, sessionId } = await runClaudeCall({
+    args,
+    stdin: applyImageRefs(opts.prompt, opts.images),
+    projectDir: opts.projectDir,
+    spawnEnv,
+    sessionId: opts.sessionId,
+    onOutput: opts.onOutput,
+    onSessionId: opts.onSessionId,
+    onQuestion: opts.onQuestion,
+    onCallEvent: opts.onCallEvent,
+    model: opts.model,
+    authChannel: opts.authChannel,
+    executable: opts.executable,
+    signal: opts.signal,
+    callContext: opts.callContext,
     idleWarnMs: opts.idleWarnMs,
     idleKillMs: opts.idleKillMs,
     ledger: opts.ledger,
     attemptId: opts.attemptId,
     envelope: opts.envelope,
   });
-  const { state, handleLine } = createStreamHandler({
-    onOutput,
-    onSessionId,
-    onQuestion,
-    onCallEvent: (event) => {
-      guard.onEvent(event);
-      onCallEvent?.(event);
-    },
-    credentialValues: claudeCredentialValues(authChannel, spawnEnv),
-    context,
-  });
-  state.sessionId = sessionId;
 
-  let trustedExecutablePath: string | undefined;
-  try {
-    trustedExecutablePath = (await resolveTrustedClaudeExecutable(projectDir, executable)).path;
-    if (opts.ledger !== undefined) {
-      claimClaudeDispatch(state, opts.ledger, attemptId);
-    }
-    await spawnWithStdin({
-      command: trustedExecutablePath,
-      args,
-      cwd: projectDir,
-      env: spawnEnv,
-      stdin: applyImageRefs(prompt, images),
-      notFoundMessage: CLAUDE_NOT_FOUND,
-      onLine: handleLine,
-      onStdoutLineOverflow: (overflow) => {
-        finishClaudeOutputLimit(
-          state,
-          runnerCallLineOutputLimit({
-            code: 'stdout_line_overflow',
-            label: 'stdout line',
-            lineBytes: overflow.lineBytes,
-            maxLineBytes: overflow.maxLineBytes,
-          }),
-        );
-      },
-      errorDetail: () => state.resultText ?? undefined,
-      signal: guard.signal,
-      idle: buildClaudeIdleOptions(state, {
-        idleWarnMs: guard.idleWarnMs,
-        idleKillMs: guard.idleKillMs,
-      }),
-      outputBudgetBytes: guard.outputBudgetBytes,
-      outputMaxBytes: guard.outputMaxBytes,
-    });
-  } catch (err) {
-    const safeError = normalizeClaudeProcessOutputError(
-      err,
-      trustedExecutablePath ?? executable?.path,
-      state.redactCredential,
-    );
-    const limit = guard.limit();
-    if (limit !== null) {
-      finishRunnerCallOutputLimit(state.recorder, limit, {
-        usage: state.usage,
-        nativeSessionId: state.sessionId,
-      });
-      throwForClaudeCallFailure(state.recorder.finalResult());
-    }
-    markInterruptedClaudeStream(state, guard.signal);
-    if (!guard.signal?.aborted) markFailedClaudeStream(state, safeError);
-    throw interruptedError(signal, safeError, state.redactCredential);
-  } finally {
-    guard.cleanup();
-  }
-
-  const result = finishClaudeStream(state);
-
-  return { ...result, text: state.text, sessionId: state.sessionId };
+  return { ...result, sessionId };
 }
 
 export interface ClaudeOneShotOpts extends ClaudeEnvelopeCallOptions {
@@ -465,107 +498,35 @@ export interface ClaudeOneShotOpts extends ClaudeEnvelopeCallOptions {
 }
 
 export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<RunnerCallResult> {
-  const {
-    prompt,
-    projectDir,
-    onOutput,
-    onSessionId,
-    onCallEvent,
-    model,
-    authChannel,
-    executable,
-    effort,
-    configuredArgs,
-    signal,
-    callContext,
-    env,
-  } = opts;
-  const spawnEnv = env ?? (await defaultClaudeEnv(projectDir, authChannel));
-  const { context, attemptId, guard } = prepareClaudeEnvelopeCall({
-    callContext,
-    model,
-    role: 'planner',
-    signal,
+  const args = buildClaudeArgs({
+    projectDir: opts.projectDir,
+    mode: 'escalate',
+    model: opts.model,
+    effort: opts.effort,
+    configuredArgs: opts.configuredArgs,
+  });
+  const spawnEnv = opts.env ?? (await defaultClaudeEnv(opts.projectDir, opts.authChannel));
+
+  const { result } = await runClaudeCall({
+    args,
+    stdin: opts.prompt,
+    projectDir: opts.projectDir,
+    spawnEnv,
+    sessionId: null,
+    onOutput: opts.onOutput,
+    onSessionId: opts.onSessionId,
+    onCallEvent: opts.onCallEvent,
+    model: opts.model,
+    authChannel: opts.authChannel,
+    executable: opts.executable,
+    signal: opts.signal,
+    callContext: opts.callContext,
     idleWarnMs: opts.idleWarnMs,
     idleKillMs: opts.idleKillMs,
     ledger: opts.ledger,
     attemptId: opts.attemptId,
     envelope: opts.envelope,
   });
-  const { state, handleLine } = createStreamHandler({
-    onOutput,
-    onSessionId,
-    onCallEvent: (event) => {
-      guard.onEvent(event);
-      onCallEvent?.(event);
-    },
-    credentialValues: claudeCredentialValues(authChannel, spawnEnv),
-    context,
-  });
-  const args = buildClaudeArgs({
-    projectDir,
-    mode: 'escalate',
-    model,
-    effort,
-    configuredArgs,
-  });
 
-  let trustedExecutablePath: string | undefined;
-  try {
-    trustedExecutablePath = (await resolveTrustedClaudeExecutable(projectDir, executable)).path;
-    if (opts.ledger !== undefined) {
-      claimClaudeDispatch(state, opts.ledger, attemptId);
-    }
-    await spawnWithStdin({
-      command: trustedExecutablePath,
-      args,
-      cwd: projectDir,
-      env: spawnEnv,
-      stdin: prompt,
-      notFoundMessage: CLAUDE_NOT_FOUND,
-      onLine: handleLine,
-      onStdoutLineOverflow: (overflow) => {
-        finishClaudeOutputLimit(
-          state,
-          runnerCallLineOutputLimit({
-            code: 'stdout_line_overflow',
-            label: 'stdout line',
-            lineBytes: overflow.lineBytes,
-            maxLineBytes: overflow.maxLineBytes,
-          }),
-        );
-      },
-      errorDetail: () => state.resultText ?? undefined,
-      signal: guard.signal,
-      idle: buildClaudeIdleOptions(state, {
-        idleWarnMs: guard.idleWarnMs,
-        idleKillMs: guard.idleKillMs,
-      }),
-      outputBudgetBytes: guard.outputBudgetBytes,
-      outputMaxBytes: guard.outputMaxBytes,
-    });
-  } catch (err) {
-    const safeError = normalizeClaudeProcessOutputError(
-      err,
-      trustedExecutablePath ?? executable?.path,
-      state.redactCredential,
-    );
-    const limit = guard.limit();
-    if (limit !== null) {
-      finishRunnerCallOutputLimit(state.recorder, limit, {
-        usage: state.usage,
-        nativeSessionId: state.sessionId,
-      });
-      throwForClaudeCallFailure(state.recorder.finalResult());
-    }
-    markInterruptedClaudeStream(state, guard.signal);
-    if (!guard.signal?.aborted) markFailedClaudeStream(state, safeError);
-    throw interruptedError(signal, safeError, state.redactCredential);
-  } finally {
-    guard.cleanup();
-  }
-
-  const result = finishClaudeStream(state);
-
-  return { ...result, text: state.text };
+  return result;
 }

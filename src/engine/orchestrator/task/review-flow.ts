@@ -2,6 +2,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
+import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { RoutingDecision } from '../context-routing/types.js';
 import { publishTaskReviewNeeded } from '../events.js';
 import { buildTaskReviewRequest, shouldReviewTask } from './review.js';
@@ -12,27 +13,25 @@ import { transitionAndSave } from '../state-ops.js';
 
 export type ReviewTaskDecision = 'continue' | 'stop' | 'redo-task' | 'abort';
 
-function applyTaskReviewRewind(
-  projectDir: string,
-  sessionId: string,
-  state: WorkflowState,
-  request: TaskReviewRequest,
-  response: { action: 'redo-task' | 'revise-plan'; notes?: string | undefined },
-  persistTranscript: boolean,
-  setRewindFeedback: WorkflowContext['setRewindFeedback'],
-): WorkflowState {
+function applyTaskReviewRewind(opts: {
+  ref: SessionRef;
+  state: WorkflowState;
+  request: TaskReviewRequest;
+  response: { action: 'redo-task' | 'revise-plan'; notes?: string | undefined };
+  persistTranscript: boolean;
+  setRewindFeedback: WorkflowContext['setRewindFeedback'];
+}): WorkflowState {
+  const { ref, state, request, response, persistTranscript } = opts;
   if (response.action === 'redo-task') {
     const { persistedAction } = buildRewindAction({
       request: { target: 'task', taskId: request.taskId },
-      ref: { projectDir, sessionId },
+      ref,
       state,
       persistTranscript,
     });
-    let next = transitionAndSave({ projectDir, sessionId }, state, persistedAction);
+    let next = transitionAndSave(ref, state, persistedAction);
     if (next.pendingRecovery?.taskId === request.taskId) {
-      next = transitionAndSave({ projectDir, sessionId }, next, {
-        type: 'RESOLVE_PENDING_RECOVERY',
-      });
+      next = transitionAndSave(ref, next, { type: 'RESOLVE_PENDING_RECOVERY' });
     }
     return next;
   }
@@ -42,14 +41,14 @@ function applyTaskReviewRewind(
       target: 'plan',
       ...(response.notes ? { comment: response.notes } : {}),
     },
-    ref: { projectDir, sessionId },
+    ref,
     state,
     persistTranscript,
   });
   if (action.type === 'REWIND_TO_PLAN') {
-    setRewindFeedback?.(action.comment);
+    opts.setRewindFeedback?.(action.comment);
   }
-  return transitionAndSave({ projectDir, sessionId }, state, persistedAction);
+  return transitionAndSave(ref, state, persistedAction);
 }
 
 export async function reviewTaskIfNeeded(opts: {
@@ -90,37 +89,20 @@ export async function reviewTaskIfNeeded(opts: {
   const response = opts.wctx.callbacks.onTaskReviewNeeded
     ? await opts.wctx.callbacks.onTaskReviewNeeded(request)
     : { action: 'abort' as const };
-  if (response.action === 'redo-task') {
-    const next = applyTaskReviewRewind(
-      opts.wctx.projectDir,
-      opts.wctx.sessionId,
-      opts.state,
+  if (response.action === 'redo-task' || response.action === 'revise-plan') {
+    const next = applyTaskReviewRewind({
+      ref: { projectDir: opts.wctx.projectDir, sessionId: opts.wctx.sessionId },
+      state: opts.state,
       request,
-      {
-        action: 'redo-task',
+      response: {
+        action: response.action,
         ...(response.notes !== undefined ? { notes: response.notes } : {}),
       },
-      opts.wctx.config.workflow.persistTranscript,
-      opts.wctx.setRewindFeedback,
-    );
+      persistTranscript: opts.wctx.config.workflow.persistTranscript,
+      setRewindFeedback: opts.wctx.setRewindFeedback,
+    });
     opts.setTrackedState(next);
-    return { state: next, decision: 'redo-task' };
-  }
-  if (response.action === 'revise-plan') {
-    const next = applyTaskReviewRewind(
-      opts.wctx.projectDir,
-      opts.wctx.sessionId,
-      opts.state,
-      request,
-      {
-        action: 'revise-plan',
-        ...(response.notes !== undefined ? { notes: response.notes } : {}),
-      },
-      opts.wctx.config.workflow.persistTranscript,
-      opts.wctx.setRewindFeedback,
-    );
-    opts.setTrackedState(next);
-    return { state: next, decision: 'stop' };
+    return { state: next, decision: response.action === 'redo-task' ? 'redo-task' : 'stop' };
   }
   if (response.action === 'abort') return { state: opts.state, decision: 'abort' };
 

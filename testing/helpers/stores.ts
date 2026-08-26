@@ -27,6 +27,13 @@ import { costApprovalStore } from '../../src/stores/cost-approval/prompt.js';
 import { commandPaletteMruStore } from '../../src/stores/ui/command-palette-mru.js';
 import { reviewKeysStore } from '../../src/stores/ui/review-keys.js';
 import { composerDraftStore } from '../../src/stores/ui/composer-draft.js';
+import { completionStore } from '../../src/stores/ui/completion.js';
+import { editorStore } from '../../src/stores/ui/editor.js';
+import { externalEditRequestStore } from '../../src/stores/ui/external-edit-request.js';
+import { pickerViewStore } from '../../src/stores/ui/picker-view.js';
+import { projectFilesStore } from '../../src/stores/ui/project-files.js';
+import { questionPromptStore } from '../../src/stores/question-prompt/prompt.js';
+import { operationsStore } from '../../src/stores/workflow/operations/state.js';
 
 export function resetAllStores(): void {
   eventsStore.reset();
@@ -58,4 +65,11 @@ export function resetAllStores(): void {
   commandPaletteMruStore.reset();
   reviewKeysStore.reset();
   composerDraftStore.reset();
+  completionStore.reset();
+  editorStore.reset();
+  externalEditRequestStore.reset();
+  pickerViewStore.reset();
+  projectFilesStore.reset();
+  questionPromptStore.reset();
+  operationsStore.reset();
 }

@@ -35,7 +35,9 @@ describe('check-invariants', () => {
     );
 
     expect(failed).toBe(1);
-    expect(lines).toEqual(['  ✗ [broken] Broken gate: command failed (expected 0) FAIL']);
+    expect(lines).toEqual([
+      '  ✗ [broken] Broken gate: command failed: missing-tool (expected 0) FAIL',
+    ]);
   });
 
   it('fails closed when a pipeline hides a broken command behind wc', () => {
@@ -54,7 +56,10 @@ describe('check-invariants', () => {
       }).trim(),
     ).toBe('0');
     expect(runInvariantGates([gate], undefined, log)).toBe(1);
-    expect(lines).toEqual(['  ✗ [pipeline] Broken pipeline: command failed (expected 0) FAIL']);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(
+      /^ {2}✗ \[pipeline\] Broken pipeline: command failed: .+ \(expected 0\) FAIL$/u,
+    );
   });
 
   it('fails closed when a silent pipeline stage exits nonzero before wc', () => {
@@ -73,9 +78,10 @@ describe('check-invariants', () => {
       }).trim(),
     ).toBe('0');
     expect(runInvariantGates([gate], undefined, log)).toBe(1);
-    expect(lines).toEqual([
-      '  ✗ [silent-pipeline] Silent broken pipeline: command failed (expected 0) FAIL',
-    ]);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(
+      /^ {2}✗ \[silent-pipeline\] Silent broken pipeline: command failed: .+ \(expected 0\) FAIL$/u,
+    );
   });
 
   it('gate 18/19 pipeline shape fails closed when the wrapped tool crashes to stderr', () => {
@@ -90,7 +96,7 @@ describe('check-invariants', () => {
 
     expect(runInvariantGates([gate], undefined, log)).toBe(1);
     expect(lines).toEqual([
-      '  ✗ [tool-crash] Tool crash via gate 18/19 shape: command failed (expected 0) FAIL',
+      '  ✗ [tool-crash] Tool crash via gate 18/19 shape: command failed: boom: tool crashed (expected 0) FAIL',
     ]);
   });
 
@@ -149,7 +155,7 @@ describe('check-invariants', () => {
     expect(runInvariantGates(brandGates, execCommand, log)).toBe(1);
     expect(commands).toEqual(brandGates.map((gate) => gate.command));
     expect(lines).toEqual([
-      '  ✗ [27] Maintained tree uses only canonical SPLITBRIEF identity: command failed (expected 0) FAIL',
+      '  ✗ [27] Maintained tree uses only canonical SPLITBRIEF identity: command failed: brand scan failed (expected 0) FAIL',
     ]);
   });
 
@@ -181,7 +187,7 @@ describe('check-invariants', () => {
     expect(runInvariantGates(legacyGates, execCommand, log)).toBe(1);
     expect(commands).toEqual(legacyGates.map((gate) => gate.command));
     expect(lines).toEqual([
-      '  ✗ [28] Zero legacy CLI_TOOLS / cli-tools.ts / clampPromptForArgv: command failed (expected 0) FAIL',
+      '  ✗ [28] Zero legacy CLI_TOOLS / cli-tools.ts / clampPromptForArgv: command failed: rg failed (expected 0) FAIL',
     ]);
   });
 

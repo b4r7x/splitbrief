@@ -18,10 +18,10 @@ import {
 import { HeadlessJsonRecordSchema } from '../engine/events/public-json.js';
 import type { HeadlessJsonRecord } from '../engine/events/public-json.js';
 import {
-  RejectedStorageBriefRecoveryV1Schema,
   type BriefRecoveryV1,
-} from '../core/schemas/brief-recovery.js';
-import { writeActive } from '../core/sessions/lifecycle.js';
+  RejectedStorageBriefRecoveryV1Schema,
+} from '../core/schemas/brief-recovery/document.js';
+import { writeActive } from '../core/sessions/active-pointer.js';
 import { buildContextOverflowRecoveryIssue } from '../engine/orchestrator/recovery/builders/task.js';
 import { headlessRecoveryOutcome, headlessRecoveryStatus, runHeadless } from './headless.js';
 import type { Implementer } from '../engine/implementers/types.js';
@@ -175,7 +175,7 @@ describe('runHeadless — v4 Brief recovery outcomes', () => {
   async function runRecovery(
     recovery: BriefRecoveryV1,
     phase: 'idle' | 'reviewing-briefs',
-  ): Promise<{ planner: Planner; lines: HeadlessJsonRecord[] }> {
+  ): Promise<{ planner: Planner; lines: HeadlessJsonRecord[]; error: unknown }> {
     const projectDir = createHeadlessGitProject(`headless-v4-${recovery.status}`);
     dirs.push(projectDir);
     writeMinimalHeadlessConfigYaml(projectDir);
@@ -190,27 +190,26 @@ describe('runHeadless — v4 Brief recovery outcomes', () => {
     saveState({ projectDir, sessionId }, state);
     const planner = makePlanner();
     const implementer = makeImplementer();
-    try {
-      await runHeadless({
-        prepared: preparedHeadlessExecution({
-          projectDir,
-          sessionId,
-          feature: 'v4 recovery',
-          resumeState: state,
-        }),
-        _planner: planner,
-        _implementer: implementer,
-      });
-    } catch (error) {
-      expect(error).toMatchObject({ exitCode: recovery.status === 'ready' ? undefined : 1 });
-    }
+    const error = await runHeadless({
+      prepared: preparedHeadlessExecution({
+        projectDir,
+        sessionId,
+        feature: 'v4 recovery',
+        resumeState: state,
+      }),
+      _planner: planner,
+      _implementer: implementer,
+    }).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
     const lines = stdoutChunks
       .join('')
       .trim()
       .split('\n')
       .filter((line) => line.trim().startsWith('{'))
       .map((line) => HeadlessJsonRecordSchema.parse(JSON.parse(line)));
-    return { planner, lines };
+    return { planner, lines, error };
   }
 
   it.each([
@@ -225,7 +224,12 @@ describe('runHeadless — v4 Brief recovery outcomes', () => {
       status === 'readiness-blocked'
         ? ({ ...admitted, status } satisfies BriefRecoveryV1)
         : admitted;
-    const { planner, lines } = await runRecovery(recovery, phase);
+    const { planner, lines, error } = await runRecovery(recovery, phase);
+    if (status === 'ready') {
+      expect(error).toBeUndefined();
+    } else {
+      expect(error).toMatchObject({ exitCode: 1 });
+    }
     expect(planner.quickPlan).not.toHaveBeenCalled();
     expect(planner.plan).not.toHaveBeenCalled();
     expect(planner.review).not.toHaveBeenCalled();
@@ -242,7 +246,9 @@ describe('runHeadless — v4 Brief recovery outcomes', () => {
       ...createBriefRecoveryState(recoveryInput('readiness-blocked', false)),
       status: 'readiness-blocked',
     } satisfies BriefRecoveryV1;
-    const { lines } = await runRecovery(recovery, 'reviewing-briefs');
+    const { lines, error } = await runRecovery(recovery, 'reviewing-briefs');
+
+    expect(error).toMatchObject({ exitCode: 1 });
     const projectionRecord = lines.find(
       (line): line is Extract<HeadlessJsonRecord, { type: 'brief_recovery' }> =>
         line.type === 'brief_recovery',
@@ -278,9 +284,8 @@ describe('runHeadless — v4 Brief recovery outcomes', () => {
       (line): line is Extract<HeadlessJsonRecord, { type: 'brief_recovery' }> =>
         line.type === 'brief_recovery',
     );
-    if (storageRecord?.type === 'brief_recovery') {
-      expect(headlessRecoveryStatus(storageRecord.projection)).toBe('storage-blocked');
-    }
+    expect(storageRecord?.projection.status).toBe('storage-blocked');
+    expect(storageRun.error).toMatchObject({ exitCode: 1 });
 
     const rejected = RejectedStorageBriefRecoveryV1Schema.parse({
       ...storage,
@@ -292,9 +297,8 @@ describe('runHeadless — v4 Brief recovery outcomes', () => {
       (line): line is Extract<HeadlessJsonRecord, { type: 'brief_recovery' }> =>
         line.type === 'brief_recovery',
     );
-    if (rejectedRecord?.type === 'brief_recovery') {
-      expect(headlessRecoveryStatus(rejectedRecord.projection)).toBe('rejected');
-    }
+    expect(rejectedRecord?.projection.status).toBe('rejected');
+    expect(rejectedRun.error).toMatchObject({ exitCode: 1 });
   });
 });
 

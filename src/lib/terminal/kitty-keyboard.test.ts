@@ -64,6 +64,6 @@ describe('detectKittyKeyboardFlags', () => {
 
 describe('resolveKittyFlagBits', () => {
   it('maps disambiguateEscapeCodes to bit 1', () => {
-    expect(resolveKittyFlagBits(detectKittyKeyboardFlags().flags)).toBe(1);
+    expect(resolveKittyFlagBits(['disambiguateEscapeCodes'])).toBe(1);
   });
 });

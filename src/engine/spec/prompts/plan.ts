@@ -2,15 +2,25 @@ import type { LanguageContext } from './language-context.js';
 import { buildLanguageContext, buildLanguageContextSections } from './language-context.js';
 import { buildPrompt, instructionsSection, requiredSectionsSection } from './builder.js';
 import { TASK_BRIEF_COMPILER_POLICY } from '../../../core/schemas/task-compilation.js';
-import { error, matches } from '../../../utils/error.js';
+import { error } from '../../../utils/error.js';
 
 export type PlanPromptSpec = {
   content: string;
   hasClarifications: boolean;
 };
 
-export type PlanPromptOptions = Readonly<{
-  maxPromptBytes?: number;
+export type PlanPromptInput = Readonly<{
+  spec: PlanPromptSpec;
+  projectContext: string;
+  skillsContext?: string | undefined;
+  languageContext?: LanguageContext | undefined;
+  maxPromptBytes?: number | undefined;
+}>;
+
+export type RegeneratePromptInput = Readonly<{
+  artifactType: 'spec' | 'plan';
+  currentContent: string;
+  feedback: string;
 }>;
 
 export const planPromptError = {
@@ -20,7 +30,6 @@ export const planPromptError = {
       `The plan prompt is ${actualBytes} bytes; the bound is ${maxBytes} bytes.`,
       { actualBytes, maxBytes },
     ),
-  isTooLarge: matches('task_compiler_prompt_too_large'),
 } as const;
 
 function outputInstruction(ctx: LanguageContext, opts: { hasClarifications: boolean }): string {
@@ -85,24 +94,18 @@ For each major component:
 - Key test scenarios with expected inputs/outputs`;
 }
 
-export function buildPlanPrompt(
-  spec: PlanPromptSpec,
-  projectContext: string,
-  skillsContext?: string,
-  languageContext?: LanguageContext,
-  options?: PlanPromptOptions,
-): string {
-  const ctx = languageContext ?? buildLanguageContext(undefined);
+export function buildPlanPrompt(input: PlanPromptInput): string {
+  const ctx = input.languageContext ?? buildLanguageContext(undefined);
 
   const prompt = buildPrompt({
     title: 'Write Implementation Plan',
     intro:
       'You are writing a detailed implementation plan based on the specification below. The plan defines **how** to build the feature, and feeds the next phase: compiling Product Task Briefs the implementer model will execute against. Be concrete enough that brief compilation does not need to invent decisions.',
     sections: [
-      { heading: 'Specification', body: spec.content },
+      { heading: 'Specification', body: input.spec.content },
       {
         heading: 'Project Context',
-        body: `${projectContext}${skillsContext ? `\n${skillsContext}` : ''}`,
+        body: `${input.projectContext}${input.skillsContext ? `\n${input.skillsContext}` : ''}`,
       },
       instructionsSection(
         'Write a complete `plan.md` document that provides a concrete implementation blueprint. Another developer (or AI) should be able to follow this plan without needing to make architectural decisions.',
@@ -110,9 +113,9 @@ export function buildPlanPrompt(
       ...buildLanguageContextSections(ctx),
       requiredSectionsSection(requiredSections(ctx)),
     ],
-    output: outputInstruction(ctx, { hasClarifications: spec.hasClarifications }),
+    output: outputInstruction(ctx, { hasClarifications: input.spec.hasClarifications }),
   });
-  return assertPlanPromptBound(prompt, options?.maxPromptBytes);
+  return assertPlanPromptBound(prompt, input.maxPromptBytes);
 }
 
 export function planPromptByteLength(prompt: string): number {
@@ -128,20 +131,16 @@ export function assertPlanPromptBound(
   return prompt;
 }
 
-export function buildRegeneratePrompt(
-  artifactType: 'spec' | 'plan',
-  currentContent: string,
-  feedback: string,
-): string {
-  const label = artifactType === 'spec' ? 'Specification' : 'Implementation Plan';
+export function buildRegeneratePrompt(input: RegeneratePromptInput): string {
+  const label = input.artifactType === 'spec' ? 'Specification' : 'Implementation Plan';
   return buildPrompt({
     title: `Regenerate ${label}`,
-    intro: `The user reviewed the ${artifactType} and has feedback:`,
+    intro: `The user reviewed the ${input.artifactType} and has feedback:`,
     sections: [
-      { heading: `Current ${label}`, body: currentContent },
-      { heading: 'User Feedback', body: feedback },
+      { heading: `Current ${label}`, body: input.currentContent },
+      { heading: 'User Feedback', body: input.feedback },
       instructionsSection(
-        `Regenerate the complete ${artifactType}.md incorporating the user's feedback. Output the full updated document, not just the changes.`,
+        `Regenerate the complete ${input.artifactType}.md incorporating the user's feedback. Output the full updated document, not just the changes.`,
       ),
     ],
   });

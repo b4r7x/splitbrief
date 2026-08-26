@@ -50,7 +50,9 @@ import { ToolModelPicker } from '../../../src/app/overlays/runners.js';
 const ENTER = '\r';
 const BACKSPACE = '\u007f';
 const ARROW_DOWN = '\u001b[B';
-const VIEWPORT = { cols: 140, rows: 40 } as const;
+type Viewport = Readonly<{ cols: number; rows: number }>;
+const VIEWPORT: Viewport = { cols: 140, rows: 40 };
+const WIDE_VIEWPORT: Viewport = { cols: 200, rows: 40 };
 
 function pickerItem(
   item: Omit<PickerOption, 'modelCapability'> & { modelPolicy: PickerOption['modelPolicy'] },
@@ -64,13 +66,13 @@ function pickerItem(
 
 function makeActions(overrides: Partial<PickerActions> = {}): PickerActions {
   return {
-    confirm: () => {},
+    confirm: async () => {},
     confirmProviderVariant: async () => {},
     leftChange: () => {},
-    deleteRight: () => {},
+    deleteRight: async () => {},
     chooseContract: () => {},
-    customCommand: () => {},
-    customModel: () => {},
+    customCommand: async () => {},
+    customModel: async () => {},
     openCustomModel: () => {},
     openProviderAuth: () => {},
     submitProviderKey: async () => {},
@@ -105,13 +107,13 @@ function seedReadyDetection(): void {
   }
 }
 
-function leftToolZoneIds(viewport = VIEWPORT): string[] {
+function leftToolZoneIds(viewport: Viewport = VIEWPORT): string[] {
   return [...collectClickableZones(viewport).keys()]
     .filter((id) => id.startsWith('runner-left:'))
     .map((id) => id.slice('runner-left:'.length));
 }
 
-function rightModelZoneIds(viewport = VIEWPORT): string[] {
+function rightModelZoneIds(viewport: Viewport = VIEWPORT): string[] {
   return [...collectClickableZones(viewport).keys()]
     .filter((id) => id.startsWith('runner-right:'))
     .map((id) => id.slice('runner-right:'.length));
@@ -144,9 +146,9 @@ function catalogForItem(
   });
 }
 
-async function renderPicker(role: 'planner' | 'implementer') {
+async function renderPicker(role: 'planner' | 'implementer', viewport: Viewport = VIEWPORT) {
   overlayStore.open(role === 'planner' ? 'planner-picker' : 'implementer-picker');
-  const ui = renderFeature(<ToolModelPicker role={role} />);
+  const ui = renderFeature(<ToolModelPicker role={role} />, viewport);
   await flushEffects();
   return ui;
 }
@@ -280,20 +282,30 @@ describe('runner picker semantics integration', () => {
       });
 
       const ui = await renderPicker('implementer');
-      const zones = collectClickableZones(VIEWPORT);
-      zones.get('runner-left:groq')?.();
-      await flushEffects();
-      const frame = frameText(ui);
-      expect(frame).toContain('Auth required');
-      expect(frame).toContain('GROQ_API_KEY');
-      zones.get('runner-left:deepseek')?.();
-      await flushEffects();
-      expect(frameText(ui)).toContain('Unverified');
-      expect(frameText(ui)).toContain('has no passing provider');
-      zones.get('runner-left:ollama')?.();
-      await flushEffects();
-      expect(frameText(ui)).toContain('Unavailable');
-      expect(frameText(ui)).toContain('Ollama is not running');
+      // The cursor is driven by the filter, not by activating the row:
+      // activating a row this picker cannot run is the key-entry affordance,
+      // and it replaces the frame whose semantics this case is about.
+      let query = '';
+      const cursorOnto = async (next: string): Promise<string> => {
+        for (let index = 0; index < query.length; index++) {
+          ui.stdin.write(BACKSPACE);
+          await flushEffects();
+        }
+        ui.stdin.write(next);
+        await flushEffects();
+        query = next;
+        return frameText(ui);
+      };
+
+      const groqFrame = await cursorOnto('groq');
+      expect(groqFrame).toContain('Auth required');
+      expect(groqFrame).toContain('GROQ_API_KEY');
+      const deepseekFrame = await cursorOnto('deepseek');
+      expect(deepseekFrame).toContain('Unverified');
+      expect(deepseekFrame).toContain('has no passing provider');
+      const ollamaFrame = await cursorOnto('ollama');
+      expect(ollamaFrame).toContain('Unavailable');
+      expect(ollamaFrame).toContain('Ollama is not running');
       ui.unmount();
     });
   });
@@ -388,6 +400,38 @@ describe('runner picker semantics integration', () => {
           }),
           headline: 'Model chosen by the tool',
           allowsCustom: false,
+        },
+        {
+          item: pickerItem({
+            id: 'aider',
+            displayName: 'Aider CLI',
+            kind: 'cli',
+            roles: ['planner', 'implementer'],
+            modelPolicy: 'none',
+            billing: 'provider-dependent',
+            permissions: readyPermissions,
+            status: { state: 'ready', remediation: null },
+            available: true,
+          }),
+          headline: 'No models detected',
+          detail: 'Press ctrl+r to refresh detection',
+          allowsCustom: false,
+        },
+        {
+          item: pickerItem({
+            id: 'opencode',
+            displayName: 'OpenCode CLI',
+            kind: 'cli',
+            roles: ['planner', 'implementer'],
+            modelPolicy: 'per-call',
+            billing: 'provider-dependent',
+            permissions: readyPermissions,
+            status: { state: 'ready', remediation: null },
+            available: true,
+          }),
+          headline: 'No models detected',
+          detail: 'Press ctrl+r to refresh detection',
+          allowsCustom: true,
         },
       ];
 
@@ -557,14 +601,36 @@ describe('runner picker semantics integration', () => {
         cliTools: [cliDetectionFor('ready', 'codex')],
         providers: [],
       });
-      modelCacheStore.setProviderModels('codex', [{ id: 'gpt-5.4' }, { id: 'runtime-only-model' }]);
+      expect(
+        detectionStore.hydrate({
+          providers: [],
+          cliTools: [cliDetectionFor('ready', 'codex')],
+          fetchedAt: 40,
+          validatedAt: 50,
+          generation: 1,
+          requestId: 1,
+          contexts: {
+            readiness: 'picker-readiness',
+            modelsDev: 'picker-models-dev',
+            cliModels: 'picker-cli-models',
+          },
+          cliCatalogs: [
+            {
+              role: 'planner',
+              tool: 'codex',
+              models: [{ id: 'gpt-5.4' }, { id: 'runtime-only-model' }],
+              probedAt: 40,
+            },
+          ],
+        }),
+      ).toBe(true);
 
       const ui = await renderPicker('planner');
       collectClickableZones(VIEWPORT).get('runner-left:codex')?.();
       await vi.waitFor(() => {
         const modelZones = rightModelZoneIds();
-        expect(modelZones.filter((id) => id === 'gpt-5.4')).toHaveLength(1);
-        expect(modelZones).toContain('runtime-only-model');
+        expect(modelZones.filter((id) => id === 'model:gpt-5.4')).toHaveLength(1);
+        expect(modelZones).toContain('model:runtime-only-model');
       });
       ui.unmount();
     });
@@ -599,23 +665,16 @@ describe('runner picker semantics integration', () => {
 
       const ui = await renderPicker('implementer');
       const zones = collectClickableZones(VIEWPORT);
-      const frames: string[] = [];
 
       for (const provider of ['anthropic', 'ollama', 'anthropic', 'ollama'] as const) {
+        const other = provider === 'anthropic' ? 'ollama' : 'anthropic';
         zones.get(`runner-left:${provider}`)?.();
         await flushEffects();
-        frames.push(frameText(ui));
-      }
-
-      for (let index = 1; index < frames.length; index++) {
-        const frame = frames[index] ?? '';
-        const previous = frames[index - 1] ?? '';
-        if (previous.includes('anthropic-only-model') && frame.includes('ollama')) {
-          expect(frame).not.toContain('anthropic-only-model');
-        }
-        if (previous.includes('ollama-only-model') && frame.includes('anthropic')) {
-          expect(frame).not.toContain('ollama-only-model');
-        }
+        await vi.waitFor(() => {
+          const ids = rightModelZoneIds();
+          expect(ids).toContain(`model:${provider}-only-model`);
+          expect(ids).not.toContain(`model:${other}-only-model`);
+        });
       }
 
       await flushEffects();
@@ -623,10 +682,9 @@ describe('runner picker semantics integration', () => {
       await flushEffects();
       ui.stdin.write(ARROW_DOWN);
       await flushEffects();
-      const afterKeys = frameText(ui);
-      if (afterKeys.includes('ollama-only-model')) {
-        expect(afterKeys).not.toContain('anthropic-only-model');
-      }
+      const afterKeys = rightModelZoneIds();
+      expect(afterKeys).toContain('model:ollama-only-model');
+      expect(afterKeys).not.toContain('model:anthropic-only-model');
       ui.unmount();
     });
   });
@@ -730,7 +788,13 @@ describe('runner picker semantics integration', () => {
   describe('generic admitted descriptor rendering', () => {
     it('renders every admitted CLI and API descriptor through shared semantic fields', async () => {
       seedReadyDetection();
-      const ui = await renderPicker('implementer');
+      // The capability strip is the part of the byline truncation cuts first,
+      // so the billing posture is only on screen when the byline fits: a
+      // terminal at the widest overlay density, and a models.dev lane that has
+      // settled instead of spending that width on its own progress note.
+      modelCacheStore.hydrateModelsDevCatalog({ catalog: {}, fetchedAt: 1, validatedAt: 1 });
+      terminalSizeStore.__testReset({ ...WIDE_VIEWPORT, isSmall: false });
+      const ui = await renderPicker('implementer', WIDE_VIEWPORT);
       const frame = frameText(ui);
 
       const admitted = assemblePickerDescriptors().filter(
@@ -746,11 +810,11 @@ describe('runner picker semantics integration', () => {
         expect(frame).toContain(getProviderDisplayName(entry.descriptor.id));
       }
 
-      collectClickableZones(VIEWPORT).get('runner-left:claude-code')?.();
+      collectClickableZones(WIDE_VIEWPORT).get('runner-left:claude-code')?.();
       await flushEffects();
       expect(frameText(ui)).toContain(formatBillingLabel('subscription-included'));
 
-      expect(leftToolZoneIds()).toHaveLength(
+      expect(leftToolZoneIds(WIDE_VIEWPORT)).toHaveLength(
         buildPickerOptions(
           'implementer',
           assemblePickerDescriptors(),

@@ -77,17 +77,6 @@ type ValidationPhase =
     }
   | { phase: 'result'; results: ValidationResult[]; startTime: number };
 
-type BaselineProbePhase =
-  | { phase: 'start'; commands?: ValidationStageCommands | undefined }
-  | {
-      phase: 'progress';
-      stages: ValidationStages;
-      startTime: number;
-      activeStage?: ValidationResult['stage'] | undefined;
-      commands?: ValidationStageCommands | undefined;
-    }
-  | { phase: 'result'; results: ValidationResult[]; startTime: number };
-
 export function createBusTextHandler(
   ctx: BusContext,
   options: PlannerTextOptions = {},
@@ -261,7 +250,7 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
   });
 }
 
-export function publishValidationBaseline(ctx: BusContext, opts: BaselineProbePhase): void {
+export function publishValidationBaseline(ctx: BusContext, opts: ValidationPhase): void {
   if (opts.phase === 'start') {
     ctx.bus.publish({
       type: 'validation_baseline',
@@ -427,9 +416,11 @@ export function publishError(options: PublishOperationalMessageOptions): void {
     ts: Date.now(),
     phase,
     message,
-    ...(safety?.category !== undefined && { category: safety.category }),
-    ...(safety?.code !== undefined && { code: safety.code }),
-    ...(safety?.transcriptSafe !== undefined && { transcriptSafe: safety.transcriptSafe }),
+    ...(safety !== undefined && {
+      category: safety.category,
+      code: safety.code,
+      transcriptSafe: safety.transcriptSafe,
+    }),
   });
 }
 
@@ -441,9 +432,11 @@ export function publishWarning(options: PublishOperationalMessageOptions): void 
     phase,
     message,
     ...(taskId !== undefined && { taskId }),
-    ...(safety?.category !== undefined && { category: safety.category }),
-    ...(safety?.code !== undefined && { code: safety.code }),
-    ...(safety?.transcriptSafe !== undefined && { transcriptSafe: safety.transcriptSafe }),
+    ...(safety !== undefined && {
+      category: safety.category,
+      code: safety.code,
+      transcriptSafe: safety.transcriptSafe,
+    }),
   });
 }
 
@@ -488,19 +481,25 @@ export function publishTaskReviewNeeded(ctx: BusContext, request: TaskReviewRequ
   ctx.bus.publish({ type: 'task_review_needed', ts: Date.now(), phase: ctx.phase, ...request });
 }
 
+type RecoveryOutcome = EngineEventOf<'recovery_resolved'>['outcome'];
+
 type RecoveryEventSpec =
   | { kind: 'selected' }
   | { kind: 'failed'; message: string }
   | {
       kind: 'resolved';
-      outcome: 'continued' | 'retry-current-task' | 'skipped-current-task' | 'aborted';
+      outcome: RecoveryOutcome;
       implementerProfile?: string | undefined;
     };
 
+type RecoveryEventOpts = {
+  bus: EventBus;
+  issue: RecoveryIssue;
+  action: RecoveryAction;
+};
+
 function publishRecoveryEvent(
-  bus: EventBus,
-  issue: RecoveryIssue,
-  action: RecoveryAction,
+  { bus, issue, action }: RecoveryEventOpts,
   spec: RecoveryEventSpec,
 ): void {
   const base = {
@@ -526,34 +525,24 @@ function publishRecoveryEvent(
   });
 }
 
-export function publishRecoveryActionSelected(
-  bus: EventBus,
-  issue: RecoveryIssue,
-  action: RecoveryAction,
-): void {
-  publishRecoveryEvent(bus, issue, action, { kind: 'selected' });
+export function publishRecoveryActionSelected(opts: RecoveryEventOpts): void {
+  publishRecoveryEvent(opts, { kind: 'selected' });
 }
 
-export function publishRecoveryActionFailed(
-  bus: EventBus,
-  issue: RecoveryIssue,
-  action: RecoveryAction,
-  message: string,
-): void {
-  publishRecoveryEvent(bus, issue, action, { kind: 'failed', message });
+export function publishRecoveryActionFailed(opts: RecoveryEventOpts & { message: string }): void {
+  publishRecoveryEvent(opts, { kind: 'failed', message: opts.message });
 }
 
 export function publishRecoveryResolved(
-  bus: EventBus,
-  issue: RecoveryIssue,
-  action: RecoveryAction,
-  outcome: 'continued' | 'retry-current-task' | 'skipped-current-task' | 'aborted',
-  implementerProfile?: string | undefined,
+  opts: RecoveryEventOpts & {
+    outcome: RecoveryOutcome;
+    implementerProfile?: string | undefined;
+  },
 ): void {
-  publishRecoveryEvent(bus, issue, action, {
+  publishRecoveryEvent(opts, {
     kind: 'resolved',
-    outcome,
-    ...(implementerProfile !== undefined && { implementerProfile }),
+    outcome: opts.outcome,
+    ...(opts.implementerProfile !== undefined && { implementerProfile: opts.implementerProfile }),
   });
 }
 

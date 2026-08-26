@@ -411,17 +411,7 @@ const CandidateEvidenceCaptureSchema = z.strictObject({
 });
 
 function hasUnsanitizedCandidateOutput(value: string): boolean {
-  const sanitizedMarkersRemoved = value.replaceAll('[REDACTED]', '');
-  const patterns = [
-    ANSI_ESCAPE_PATTERN,
-    BEARER_PATTERN,
-    SECRET_ASSIGNMENT_PATTERN,
-    ABSOLUTE_USER_PATH_PATTERN,
-  ];
-  return patterns.some((pattern) => {
-    pattern.lastIndex = 0;
-    return pattern.test(sanitizedMarkersRemoved);
-  });
+  return sanitizeCandidateOutput(value) !== value;
 }
 
 export const CandidateEvidence = z

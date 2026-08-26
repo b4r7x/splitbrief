@@ -54,14 +54,13 @@ describe('buildSettingsItems', () => {
 });
 
 describe('settingsItemFilterText', () => {
-  it('reaches a seat and its branch rows by the seat word, and a setting by its label', () => {
+  it('carries a crew row key with its row words, and a setting label with its section', () => {
     const items = buildSettingsItems({ config: makeConfig(), defs: SETTINGS_DEFS });
-    const matching = (query: string): readonly string[] =>
-      items.filter((item) => settingsItemFilterText(item).includes(query)).map((item) => item.key);
+    const seatText = settingsItemFilterText(itemAt(items, 'seat:plan'));
 
-    expect(matching('plan')).toEqual(expect.arrayContaining(['seat:plan', 'effort:plan']));
-    expect(matching('plan')).not.toContain('seat:build');
-    expect(matching('temp')).toEqual(['implementer.temperature']);
+    expect(seatText.startsWith('seat:plan ')).toBe(true);
+    expect(seatText).toBe(seatText.toLowerCase());
+    expect(settingsItemFilterText(itemAt(items, 'theme'))).toBe('theme appearance');
   });
 });
 

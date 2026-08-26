@@ -353,11 +353,11 @@ function processIsAbsent(pid: number): boolean {
 
 async function resolveFixtureExecutable(fixture: Fixture) {
   refreshTrustedGate(fixture);
-  return resolveCliExecutable(
-    CLI_TOOL_CATALOG[fixture.toolId].command,
-    fixture.projectDir,
-    fixture.trustedGate.executable,
-  );
+  return resolveCliExecutable({
+    command: CLI_TOOL_CATALOG[fixture.toolId].command,
+    projectDir: fixture.projectDir,
+    trust: fixture.trustedGate.executable,
+  });
 }
 
 function readCapturedPrompt(fixture: Fixture): string {
@@ -398,10 +398,6 @@ function callResult(
   return { ...common, status, error: { code, message }, partial: true };
 }
 
-function outcomeFromResult(result: RunnerCallResult) {
-  return runnerCallOutcome(result);
-}
-
 beforeEach(() => {
   originalPath = process.env['PATH'];
 });
@@ -432,7 +428,7 @@ describe('Cursor and Antigravity admission', () => {
 });
 
 describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract', (toolId) => {
-  it('satisfies the full staged CLI contract', async () => {
+  it('writes the declared file and round-trips the whole prompt through its transport', async () => {
     const fixture = createFixture(toolId);
     const targetPath = join(fixture.projectDir, 'src/contract.ts');
 
@@ -443,78 +439,47 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
     expect(readCapturedPrompt(fixture)).toContain(PROMPT_HEAD);
     expect(readCapturedPrompt(fixture)).toContain(PROMPT_TAIL);
 
+    installShim(fixture, 'success-direct');
+    resetCapture(fixture);
+    const adapter = CLI_IMPLEMENTER_ADAPTERS[toolId];
+    await invokeCliAdapter({
+      adapter,
+      invocation: {
+        executable: fixture.trustedGate.executable,
+        args: adapter.buildArgs({
+          prompt: CLI_PROMPT_SENTINEL,
+          model: undefined,
+          projectDir: fixture.projectDir,
+          configuredArgs: [],
+        }),
+        promptTransport: adapter.promptTransport,
+        environment: shimEnvironment(),
+        cwd: fixture.projectDir,
+        timeoutMs: 5_000,
+        signal: undefined,
+      },
+      prompt: LARGE_ARGV_PROMPT,
+      callContext: {
+        callId: `oversized-${toolId}`,
+        role: 'implementer',
+        backendKind: 'cli',
+        runnerName: toolId,
+      },
+    });
+    expect(readCapturedPrompt(fixture)).toContain('x'.repeat(100_000));
     if (SHIM_PROFILES[toolId].transport === 'argv') {
-      installShim(fixture, 'success-direct');
-      resetCapture(fixture);
-      const adapter = CLI_IMPLEMENTER_ADAPTERS[toolId];
-      await invokeCliAdapter({
-        adapter,
-        invocation: {
-          executable: fixture.trustedGate.executable,
-          args: adapter.buildArgs({
-            prompt: CLI_PROMPT_SENTINEL,
-            model: undefined,
-            projectDir: fixture.projectDir,
-            configuredArgs: [],
-          }),
-          promptTransport: adapter.promptTransport,
-          environment: shimEnvironment(),
-          cwd: fixture.projectDir,
-          timeoutMs: 5_000,
-          signal: undefined,
-        },
-        prompt: LARGE_ARGV_PROMPT,
-        callContext: {
-          callId: `oversized-${toolId}`,
-          role: 'implementer',
-          backendKind: 'cli',
-          runnerName: toolId,
-        },
-      });
       expect(readCapturedPrompt(fixture)).toContain(PROMPT_HEAD);
       expect(readCapturedPrompt(fixture)).toContain(PROMPT_TAIL);
-      expect(readCapturedPrompt(fixture)).toContain('x'.repeat(100_000));
     }
+  }, 60_000);
 
-    if (SHIM_PROFILES[toolId].transport === 'stdin') {
-      installShim(fixture, 'success-direct');
-      resetCapture(fixture);
-      const adapter = CLI_IMPLEMENTER_ADAPTERS[toolId];
-      await invokeCliAdapter({
-        adapter,
-        invocation: {
-          executable: fixture.trustedGate.executable,
-          args: adapter.buildArgs({
-            prompt: CLI_PROMPT_SENTINEL,
-            model: undefined,
-            projectDir: fixture.projectDir,
-            configuredArgs: [],
-          }),
-          promptTransport: adapter.promptTransport,
-          environment: shimEnvironment(),
-          cwd: fixture.projectDir,
-          timeoutMs: 5_000,
-          signal: undefined,
-        },
-        prompt: LARGE_ARGV_PROMPT,
-        callContext: {
-          callId: `oversized-stdin-${toolId}`,
-          role: 'implementer',
-          backendKind: 'cli',
-          runnerName: toolId,
-        },
-      });
-      expect(readCapturedPrompt(fixture)).toContain('x'.repeat(100_000));
-    }
+  it('reports no-staged-change for no-op, outside-project and provider-state-only runs', async () => {
+    const fixture = createFixture(toolId);
 
     installShim(fixture, 'no-op');
     const noChange = await runImplement(fixture);
     expect(noChange.success).toBe(false);
     expect(noChange.error).toContain('without changing any files');
-    expect(outcomeFromResult(callResult('failed', 'no-staged-change')).state).toBe(
-      'no-staged-change',
-    );
-
     installShim(fixture, 'outside-write', {
       outsidePath: join(fixture.shimDir, 'outside-write.txt'),
     });
@@ -528,6 +493,10 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
     expect(providerOnly.success).toBe(false);
     expect(providerOnly.error).toContain('without changing any files');
     expect(existsSync(join(fixture.projectDir, '.splitbrief/provider-state.json'))).toBe(true);
+  }, 60_000);
+
+  it('fails a non-zero exit and a violated terminal protocol', async () => {
+    const fixture = createFixture(toolId);
 
     installShim(fixture, 'non-zero-exit', { exitCode: 17 });
     const nonzero = await runImplement(fixture);
@@ -542,6 +511,10 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
       const partial = await runImplement(fixture);
       expect(partial.success).toBe(false);
     }
+  }, 60_000);
+
+  it('classifies a missing executable, an incompatible version, an auth failure and an untrusted gate', async () => {
+    const fixture = createFixture(toolId);
 
     const missingExecutable = join(fixture.shimDir, 'missing-executable');
     const missing = await invokeCliAdapter({
@@ -583,7 +556,6 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
       probe: CLI_IMPLEMENTER_ADAPTERS[toolId].probe,
       authChannel: AUTH_CHANNELS[toolId],
       classifyVersion: () => 'incompatible',
-      classifyAuth: () => 'authenticated',
     });
     expect(incompatible.compatibility).toBe('incompatible');
 
@@ -612,7 +584,10 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
     });
     expect(untrusted.success).toBe(false);
     expect(untrusted.error).toContain('trusted readiness identity');
+  }, 60_000);
 
+  it('refuses conflicting configured args without spawning the tool', async () => {
+    const fixture = createFixture(toolId);
     const conflictMarker = join(fixture.captureDir, 'conflict-spawned.txt');
     writeConflictProbeShim({
       dir: fixture.shimDir,
@@ -625,7 +600,10 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
     });
     expect(conflict.success).toBe(false);
     expect(existsSync(conflictMarker)).toBe(false);
+  }, 60_000);
 
+  it('times out a run that outlives its configured budget', async () => {
+    const fixture = createFixture(toolId);
     installShim(fixture, 'timeout', { sleepMs: 5_000 });
     const timeoutImplementer = createCliImplementer(implementerConfig(toolId, { timeout: 50 }), {
       trustedCli: fixture.trustedGate,
@@ -643,14 +621,20 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
       timeoutThrown = err;
     }
     expect(processError.isTimeout(timeoutThrown)).toBe(true);
+  }, 60_000);
 
-    if (existsSync(targetPath)) rmSync(targetPath);
+  it('stages the declared file inside a conflicted repository', async () => {
+    const fixture = createFixture(toolId);
+    const targetPath = join(fixture.projectDir, 'src/contract.ts');
     startConflictingMerge(fixture.projectDir);
     installShim(fixture, 'success-direct');
     const conflictRepo = await runImplement(fixture);
     expect(conflictRepo.success).toBe(true);
     expect(readFileSync(targetPath, 'utf8')).toBe('generated\n');
+  }, 60_000);
 
+  it('classifies signal exit, output flood and consumer callback failures', async () => {
+    const fixture = createFixture(toolId);
     const adapter = CLI_IMPLEMENTER_ADAPTERS[toolId];
     const env = CREDENTIAL_ENV[toolId] ?? {};
     const previousEnv = Object.fromEntries(
@@ -754,7 +738,7 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
         else process.env[name] = value;
       }
     }
-  }, 120_000);
+  }, 60_000);
 
   it.skipIf(process.platform === 'win32')(
     'aborts and reaps descendant processes',
@@ -832,6 +816,12 @@ describe('T-017 stable CLI outcome taxonomy', () => {
       'platform-limitation',
     ]);
     expect([...RUNNER_OUTCOME_STATES].sort()).toEqual([...covered].sort());
+  });
+
+  it('maps no-staged-change to no-staged-change', () => {
+    expect(runnerCallOutcome(callResult('failed', 'no-staged-change')).state).toBe(
+      'no-staged-change',
+    );
   });
 
   it('maps unsupported_tool to platform-limitation', () => {

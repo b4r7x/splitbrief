@@ -21,7 +21,8 @@ export function findRuntimeCommand(
 }
 
 export function removedCommandPointer(name: string): string | undefined {
-  return REMOVED_COMMANDS[name.toLowerCase()];
+  const key = name.toLowerCase();
+  return Object.hasOwn(REMOVED_COMMANDS, key) ? REMOVED_COMMANDS[key] : undefined;
 }
 
 export function suggestRuntimeCommand(

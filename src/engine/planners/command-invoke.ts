@@ -22,7 +22,7 @@ import {
   type CustomRunnerRuntimePort,
   type PreparedDeclaredArtifactReview,
 } from '../runners/types.js';
-import type { AdmittedCustomRunnerInvocation } from '../runners/trust.js';
+import type { AdmittedCustomRunnerInvocation } from '../runners/custom-launchability.js';
 import type { ConfiguredCustomRunner } from '../runners/custom-trust.js';
 import { resolveCustomRunnerEnvironment } from '../runners/redaction.js';
 import {
@@ -216,18 +216,6 @@ function declaredArtifactProvenance(
   };
 }
 
-function assertReceiptCapableReview(prepared: PreparedDeclaredArtifactReview): void {
-  if (
-    typeof prepared.readWithReceiptAfterChild !== 'function' ||
-    typeof prepared.getReceipt !== 'function'
-  ) {
-    throw error(
-      'custom-planner-artifact-invalid',
-      'Configured custom planner runtime does not support receipt-bound artifact review.',
-    );
-  }
-}
-
 /**
  * Runs a configured custom planner with preparation-time admission.
  * Output-contract calls discard a child stage; direct normal calls return one
@@ -309,7 +297,6 @@ export function createConfiguredCustomPlanner(
             declaredRedactionValues: environment.redactionValues,
             provenance,
           });
-          assertReceiptCapableReview(prepared);
           const result = await invokeAdmittedRunner({
             cwd: staged.projectDir,
             childPrompt: declaredArtifactPrompt(prompt, provenance),

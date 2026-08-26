@@ -23,3 +23,17 @@ export function makeTask(overrides?: TaskOverrides): Task {
     ...rest,
   };
 }
+
+export function dependencyTaskBlock(id: string): string {
+  return `---
+id: ${id}
+title: "Dependency ${id}"
+action: create
+file: src/${id.toLowerCase()}.ts
+depends_on: []
+---
+
+### Description
+Dependency task.
+`;
+}

@@ -36,7 +36,7 @@ function readReviewPacketRollups(
   projectDir: string,
   sessionId: string,
 ): { checkpointSummary?: Summary['checkpointSummary']; reviewPacket?: Summary['reviewPacket'] } {
-  const raw = readJsonSafe(reviewPacketJsonPath(projectDir, sessionId));
+  const raw = readJsonSafe(reviewPacketJsonPath({ projectDir, sessionId }));
   if (raw === null) return {};
   const parsed = ReviewPacketSchema.safeParse(raw);
   if (!parsed.success) return {};

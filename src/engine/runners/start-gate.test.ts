@@ -12,7 +12,7 @@ import {
   type CliStartGate,
 } from './start-gate.js';
 import type { RunnerGate, RunnerGateExpectation } from './prepared-execution.js';
-import type { AdmittedCustomRunnerInvocation } from './trust.js';
+import type { AdmittedCustomRunnerInvocation } from './custom-launchability.js';
 
 const EXECUTABLE_CONTENT_DIGEST = 'a'.repeat(64);
 
@@ -474,19 +474,15 @@ describe('prepared runner gates', () => {
         endpointOrigin: 'https://openrouter.ai',
       },
     ];
-    let adapterConstructed = false;
-
-    expect(() => {
+    expect(() =>
       runnerGateFor(gates, {
         kind: 'api',
         slot: { role: 'implementer', profile: 'cheap' },
         preparationId: 'preparation-1',
         provider: 'openrouter',
         endpointOrigin: 'https://openrouter.ai',
-      });
-      adapterConstructed = true;
-    }).toThrow('does not match the prepared implementer context');
-    expect(adapterConstructed).toBe(false);
+      }),
+    ).toThrow('does not match the prepared implementer context');
   });
 
   it('rejects a configured custom definition mismatch before adapter construction', () => {
@@ -498,17 +494,13 @@ describe('prepared runner gates', () => {
         command: { kind: 'configured-custom', invocation: customInvocation },
       },
     ];
-    let adapterConstructed = false;
-
-    expect(() => {
+    expect(() =>
       runnerGateFor(gates, {
         kind: 'shell',
         slot: { role: 'implementer', profile: 'reviewer' },
         preparationId: 'preparation-1',
         command: { kind: 'configured-custom', definitionId: 'publish' },
-      });
-      adapterConstructed = true;
-    }).toThrow('does not match the prepared implementer context');
-    expect(adapterConstructed).toBe(false);
+      }),
+    ).toThrow('does not match the prepared implementer context');
   });
 });

@@ -82,9 +82,7 @@ describe('formatValidationError', () => {
     expect(error).toContain('Your previous code had an error');
     expect(error).not.toContain('pre-existing');
   });
-});
 
-describe('formatValidationError edge cases', () => {
   it('falls back to output when error is undefined', () => {
     const results: ValidationResult[] = [
       { passed: false, stage: 'lint', error: undefined, output: 'some lint output' },

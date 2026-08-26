@@ -3,7 +3,7 @@ import { chmod, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
-import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-config.js';
+import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import type {
   CliAuthState,
   CliExecutableIdentity,
@@ -28,12 +28,8 @@ import type {
   ProbeCliReadinessOptions,
 } from '../runners/cli-tools/readiness-probe.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
-import {
-  detectAll,
-  detectAvailableCliReadiness,
-  detectAvailableCliTools,
-  detectRunnerEvidence,
-} from './detect.js';
+import { detectAll, detectAvailableCliReadiness, detectAvailableCliTools } from './detect.js';
+import { detectRunnerEvidence } from './runner-evidence.js';
 import * as readinessProbeModule from '../runners/cli-tools/readiness-probe.js';
 
 const executable: CliExecutableIdentity = {
@@ -152,7 +148,7 @@ async function installCodexShim(directory: string, script: string): Promise<CliE
   const shim = join(directory, 'codex');
   await writeFile(shim, script);
   await chmod(shim, 0o755);
-  return resolveCliExecutable(shim, '/neutral/project');
+  return resolveCliExecutable({ command: shim, projectDir: '/neutral/project' });
 }
 
 function catalogShim(marker: string, argvLog?: string): string {
@@ -482,8 +478,6 @@ describe('context-bound runner evidence', () => {
         expect(first.context.key).not.toBe(second.context.key);
         expect(readFileSync(marker, 'utf8').trim().split('\n')).toHaveLength(2);
 
-        const missingRole = { ...exact };
-        Reflect.deleteProperty(missingRole, 'role');
         const sourceDomain = {
           providerId: 'openai',
           endpointOrigin: 'https://api.openai.example',
@@ -492,7 +486,6 @@ describe('context-bound runner evidence', () => {
           configGeneration: exact.configGeneration,
         };
         const invalidContexts: readonly RunnerDiscoveryContext[] = [
-          missingRole,
           { ...exact, configGeneration: '' },
           { ...exact, credentialPresent: true, credentialDomain: sourceDomain },
           {
@@ -880,8 +873,6 @@ describe('detectAll', () => {
     });
 
     expect(result).toEqual({ providers, cliTools });
-    expect(result).not.toHaveProperty('planners');
-    expect(result).not.toHaveProperty('implementers');
   });
 
   it('uses configured provider outcomes without constructing the legacy all-provider scan', async () => {

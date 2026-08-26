@@ -103,7 +103,7 @@ export function tryControlDetach(opts: ControlDetachOptions): void {
             });
             attached.destroy();
           } catch {
-            /* ignore */
+            // the displaced client may already be gone; the takeover must proceed either way
           }
         }
         socket.destroy();

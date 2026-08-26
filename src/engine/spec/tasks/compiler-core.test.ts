@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { TASK_BRIEF_COMPILER_POLICY } from '../../../core/schemas/task-compilation.js';
 import { createTaskManifest, parseTaskManifest } from './manifest.js';
-import { partitionError, partitionManifest } from './partition.js';
+import { partitionManifest } from './partition.js';
 
 function planWithFiles(count: number): string {
   const newFiles = Array.from(
@@ -10,15 +9,6 @@ function planWithFiles(count: number): string {
       `- \`src/generated/file-${index + 1}.ts\`\n  Purpose: implement file ${index + 1}.`,
   ).join('\n');
   return `# Plan\n\n## File Structure\n### New Files\n${newFiles}\n\n### Modified Files\n\n## Dependencies\nNone.`;
-}
-
-function expectErrorKind(run: () => unknown, kind: string): void {
-  try {
-    run();
-    throw new Error('expected the operation to throw');
-  } catch (err) {
-    expect(err).toMatchObject({ kind });
-  }
 }
 
 describe('task manifest and partition', () => {
@@ -55,44 +45,38 @@ describe('task manifest and partition', () => {
       file: `src/generated/file-${index + 1}.ts`,
       purpose: `implement file ${index + 1}`,
     }));
-    expectErrorKind(() => createTaskManifest(manifestEntries), 'task_compiler_capacity_exceeded');
-    expect(partitionError.isCapacity).toBeTypeOf('function');
-    expect(TASK_BRIEF_COMPILER_POLICY.maxDispatches).toBe(64);
+    expect(() => createTaskManifest(manifestEntries)).toThrow(
+      expect.objectContaining({ kind: 'task_compiler_capacity_exceeded' }),
+    );
   });
 
   it('rejects empty, ambiguous, unsafe, and duplicate File Structure entries', () => {
-    expectErrorKind(() => parseTaskManifest(planWithFiles(0)), 'task_compiler_manifest_empty');
-    expectErrorKind(
-      () =>
-        parseTaskManifest(
-          '# Plan\n\n## File Structure\n### New Files\n- `src/new.ts` — maybe\n### Modified Files',
-        ),
-      'task_compiler_manifest_invalid',
+    expect(() => parseTaskManifest(planWithFiles(0))).toThrow(
+      expect.objectContaining({ kind: 'task_compiler_manifest_empty' }),
     );
-    expectErrorKind(
-      () =>
-        parseTaskManifest(
-          '# Plan\n\n## File Structure\n### New Files\n- `../escape.ts`\n  Purpose: escape\n### Modified Files',
-        ),
-      'task_compiler_manifest_invalid',
-    );
-    expectErrorKind(
-      () =>
-        parseTaskManifest(
-          '# Plan\n\n## File Structure\n### New Files\n- `src/same.ts`\n  Purpose: first\n### Modified Files\n- `src/same.ts`\n  Purpose: second',
-        ),
-      'task_compiler_manifest_invalid',
-    );
+    expect(() =>
+      parseTaskManifest(
+        '# Plan\n\n## File Structure\n### New Files\n- `src/new.ts` — maybe\n### Modified Files',
+      ),
+    ).toThrow(expect.objectContaining({ kind: 'task_compiler_manifest_invalid' }));
+    expect(() =>
+      parseTaskManifest(
+        '# Plan\n\n## File Structure\n### New Files\n- `../escape.ts`\n  Purpose: escape\n### Modified Files',
+      ),
+    ).toThrow(expect.objectContaining({ kind: 'task_compiler_manifest_invalid' }));
+    expect(() =>
+      parseTaskManifest(
+        '# Plan\n\n## File Structure\n### New Files\n- `src/same.ts`\n  Purpose: first\n### Modified Files\n- `src/same.ts`\n  Purpose: second',
+      ),
+    ).toThrow(expect.objectContaining({ kind: 'task_compiler_manifest_invalid' }));
   });
 
   it('rejects an indented bullet in purpose position', () => {
-    expectErrorKind(
-      () =>
-        parseTaskManifest(
-          '# Plan\n\n## File Structure\n### New Files\n- `src/a.ts`\n  - src/b.ts\n### Modified Files',
-        ),
-      'task_compiler_manifest_invalid',
-    );
+    expect(() =>
+      parseTaskManifest(
+        '# Plan\n\n## File Structure\n### New Files\n- `src/a.ts`\n  - src/b.ts\n### Modified Files',
+      ),
+    ).toThrow(expect.objectContaining({ kind: 'task_compiler_manifest_invalid' }));
   });
 
   it('uses stable encounter-order IDs and digest independent of object reuse', () => {

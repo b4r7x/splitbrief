@@ -7,28 +7,15 @@ import type { WorkflowContext } from '../types.js';
 import { recordTaskUsage } from '../tokens.js';
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
-import { publishError, publishWarning, publishTaskSkipped } from '../events.js';
-import { runPreHooks } from '../../hooks/run-pre.js';
-import {
-  refreshAndPersistCode,
-  addUsageAndSave,
-  transitionAndSave,
-  raisePendingRecovery,
-} from '../state-ops.js';
-import { nowIso } from '../../../utils/format-time.js';
-import {
-  buildRunnerUnauthenticatedRecoveryIssue,
-  buildRunnerUsageLimitRecoveryIssue,
-  routeBiggerProfileFromDecision,
-} from '../recovery/builders/task.js';
+import { publishError } from '../events.js';
+import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
+import { refreshAndPersistCode } from './refresh-code.js';
 import { validateCommitAndAdvance } from './commit.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { gateAction } from '../approval/tiered-approval.js';
 import type { GateDecision } from '../approval/types.js';
 import { detectValidationFailureUserEdit } from '../user-edit/detection.js';
-import type { EngineEvent } from '../../events/types.js';
-import { WORKFLOW_CANCEL_REASON_USER } from '../types.js';
-import { isExtractedCodeApprovalRaceError } from '../../implementers/pipeline/extracted-code.js';
+import { WORKFLOW_CANCEL_REASON_USER } from '../../events/workflow-cancel.js';
 import { handleApprovalTimeUserEditConflict } from '../escalation/approval-conflict.js';
 import {
   persistTaskEvidence,
@@ -41,7 +28,9 @@ import { runImplementation } from './run-implementation.js';
 import { applyChangedFiles } from './apply-changed-files.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { runChainAnalysisSafe } from './analyze-drift.js';
-import { restoreDeniedPreValidationFiles, restoreExhaustedTaskFiles } from './rollback.js';
+import { restoreExhaustedTaskFiles } from './rollback.js';
+import { handleFailedImplementation } from './implementation-failure.js';
+import { runPreValidationGate } from './pre-validation-gate.js';
 
 function recordApprovalDenial(opts: {
   wctx: WorkflowContext;
@@ -208,89 +197,17 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   setTrackedState(state);
 
   if (!implState.implResult.success) {
-    implState.workspace?.cleanup();
-    if (implState.preApplyApprovalDenied) {
-      return state;
-    }
-    // A signed-out implementer never recovers by retrying, and escalating
-    // would silently turn the run into planner-priced work — halt loudly
-    // with the login command instead.
-    if (implState.implResult.outcome === 'unauthenticated') {
-      const toolMessage =
-        implState.implResult.error ?? 'The runner rejected its stored credentials';
-      const issue = buildRunnerUnauthenticatedRecoveryIssue({
-        task,
-        phase: state.phase,
-        runner: wctx.config.implementer,
-        toolMessage,
-        attempts: 1,
-        maxAttempts: wctx.config.workflow.maxRetries,
-        ...(wctx.implementerProfile !== undefined && {
-          selectedImplementerProfile: wctx.implementerProfile,
-        }),
-        createdAt: nowIso(),
-      });
-      publishError({
-        bus: wctx.bus,
-        phase: state.phase,
-        message: `${issue.message} (runner reported: ${toolMessage})`,
-      });
-      return raisePendingRecovery(wctx, state, issue, setTrackedState);
-    }
-    // An implementer that ran out of quota halts the same way: retrying
-    // before the reset cannot succeed, and escalating would silently bill
-    // every task at planner prices.
-    if (implState.implResult.outcome === 'usage-limit') {
-      const toolMessage = implState.implResult.error ?? 'The runner reported a usage limit';
-      const routeBiggerProfile = routeBiggerProfileFromDecision(wctx.routingDecision);
-      const issue = buildRunnerUsageLimitRecoveryIssue({
-        task,
-        phase: state.phase,
-        runner: wctx.config.implementer,
-        toolMessage,
-        attempts: 1,
-        maxAttempts: wctx.config.workflow.maxRetries,
-        ...(wctx.implementerProfile !== undefined && {
-          selectedImplementerProfile: wctx.implementerProfile,
-        }),
-        ...(routeBiggerProfile !== undefined && { routeBiggerProfile }),
-        createdAt: nowIso(),
-      });
-      publishError({
-        bus: wctx.bus,
-        phase: state.phase,
-        message: `${issue.message} (runner reported: ${toolMessage})`,
-      });
-      return raisePendingRecovery(wctx, state, issue, setTrackedState);
-    }
-    if (isExtractedCodeApprovalRaceError(task.file, implState.implResult.error)) {
-      state = await handleApprovalTimeUserEditConflict({
-        ctx: wctx,
-        state,
-        task,
-        files: [task.file],
-        setTrackedState,
-      });
-      return state;
-    }
-    const retry = await retryAndRecord({
+    return await handleFailedImplementation({
       wctx,
       task,
-      initialError: implState.implResult.error ?? 'Implementation failed to produce valid code',
       state,
+      implState,
       taskStartTime,
       taskStartSnapshot,
       tokensBefore,
       taskBreakdowns,
       setTrackedState,
     });
-    await runChainAnalysisSafe({
-      wctx,
-      task,
-      state: retry.state,
-      taskStartSnapshot,
-    });
-    return retry.state;
   }
 
   const applyResult = await applyChangedFiles({
@@ -315,52 +232,16 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
 
   if (wctx.signal?.aborted) return state;
 
-  if (wctx.config.hooks) {
-    const preValidationPayload: EngineEvent = {
-      type: 'validate',
-      ts: Date.now(),
-      phase: state.phase,
-      taskId: task.id,
-      status: 'running',
-      passed: false,
-      stages: { typecheck: false, lint: false, test: false },
-    };
-    const preVal = await runPreHooks(wctx.config.hooks, 'pre_validation', preValidationPayload, {
-      projectDir,
-      sessionId,
-    });
-    if (!preVal.allow) {
-      const reason = preVal.reason ?? 'pre_validation hook denied';
-      await restoreDeniedPreValidationFiles({
-        wctx,
-        phase: state.phase,
-        taskChangedFiles,
-        taskStartSnapshot,
-      });
-      publishWarning({
-        bus: wctx.bus,
-        phase: state.phase,
-        message: `pre_validation blocked: ${preVal.reason ?? 'hook denied'}`,
-      });
-      publishTaskSkipped(
-        { bus: wctx.bus, phase: state.phase },
-        { taskId: task.id, title: task.title, reason },
-      );
-      state = transitionAndSave({ projectDir, sessionId }, state, {
-        type: 'SKIP_TASK',
-        taskId: task.id,
-      });
-      setTrackedState(state);
-      persistTaskEvidence({
-        wctx,
-        state,
-        task,
-        recordKind: 'skipped',
-        details: { status: 'skipped', reason },
-      });
-      return state;
-    }
-  }
+  const preValidation = await runPreValidationGate({
+    wctx,
+    task,
+    state,
+    taskChangedFiles,
+    taskStartSnapshot,
+    setTrackedState,
+  });
+  if (!preValidation.proceed) return preValidation.state;
+  state = preValidation.state;
 
   if (wctx.signal?.aborted) return state;
 

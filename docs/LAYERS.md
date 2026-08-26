@@ -35,7 +35,7 @@ Import direction is one-way, top to bottom. For the cross-check table and blocke
 - `type-guards.ts` — `assertNever`, `isRecord`, `typedEntries`
 - `error.ts` / `format-errors.ts` — `error(kind, msg, …)` factory + `toErrorMessage(unknown)` → string
 - `redact.ts` — strip API keys from strings
-- `truncate.ts` — `truncateByChars`, `truncateByLines`, `truncateWithEllipsis`
+- `truncate.ts` — `truncateByChars`, `truncateByLines`, `truncateByTailLines`
 - `format-time.ts` — `formatDuration`, `formatTime`, `formatTimeHHMMSS`, `formatEta`
 - `with-timeout.ts` — wrap a promise with a timeout
 - `frontmatter.ts` — generic YAML frontmatter parser

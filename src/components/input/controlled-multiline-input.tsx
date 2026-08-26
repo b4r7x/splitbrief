@@ -142,12 +142,12 @@ export function ControlledMultilineInput({
           <Box marginTop={-scrollOffset} flexDirection="column">
             <MeasureBox onHeightChange={setContentHeight} measureKey={contentMeasureKey}>
               <Text>
-                {preCursor?.map((segment, idx) => (
+                {preCursor.map((segment, idx) => (
                   <Text key={`pre-${idx}`} {...getStyle(segment.type)}>
                     {segment.value}
                   </Text>
                 ))}
-                {postCursor?.map((segment, idx) => (
+                {postCursor.map((segment, idx) => (
                   <Text key={`post-${idx}`} {...getStyle(segment.type)}>
                     {segment.value}
                   </Text>
@@ -159,7 +159,7 @@ export function ControlledMultilineInput({
         </Box>
         <MeasureBox onHeightChange={setMarkerHeight} measureKey={markerMeasureKey}>
           <Text>
-            {preCursor?.map((segment, idx) => (
+            {preCursor.map((segment, idx) => (
               <Text key={`marker-${idx}`} {...getStyle(segment.type)}>
                 {segment.value}
               </Text>

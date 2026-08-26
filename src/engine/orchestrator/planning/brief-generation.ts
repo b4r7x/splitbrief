@@ -181,35 +181,33 @@ export type StoredSupportSnapshot = Readonly<{
 export const briefGenerationStorageError = {
   oversized: (byteLength: number, limit: number) =>
     error(
-      'brief_generation_oversized',
+      'brief-generation-oversized',
       `candidate generation is ${byteLength} bytes; the storage ceiling is ${limit} bytes`,
       { byteLength, limit },
     ),
   mismatch: (detail: string) =>
-    error('brief_generation_mismatch', `stored generation diverges from its manifest: ${detail}`, {
+    error('brief-generation-mismatch', `stored generation diverges from its manifest: ${detail}`, {
       detail,
     }),
   quota: (totalBytes: number, limit: number) =>
     error(
-      'brief_generation_quota',
+      'brief-generation-quota',
       `candidate storage cannot reserve the generation allowance (${totalBytes} bytes used of ${limit})`,
       { totalBytes, limit },
     ),
   lockTimeout: (path: string) =>
     error(
-      'brief_generation_lock_timeout',
+      'brief-generation-lock-timeout',
       `another generation install holds the storage lock: ${path}`,
       {
         path,
       },
     ),
   invalid: (detail: string) =>
-    error('brief_generation_invalid', `invalid generation storage content: ${detail}`, { detail }),
-  isOversized: matches('brief_generation_oversized'),
-  isMismatch: matches('brief_generation_mismatch'),
-  isQuota: matches('brief_generation_quota'),
-  isLockTimeout: matches('brief_generation_lock_timeout'),
-  isInvalid: matches('brief_generation_invalid'),
+    error('brief-generation-invalid', `invalid generation storage content: ${detail}`, { detail }),
+  isOversized: matches('brief-generation-oversized'),
+  isMismatch: matches('brief-generation-mismatch'),
+  isQuota: matches('brief-generation-quota'),
 } as const;
 
 const GENERATION_ARTIFACT_ORDER: readonly BriefGenerationArtifact['name'][] = [

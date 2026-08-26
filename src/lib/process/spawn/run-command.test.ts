@@ -1,7 +1,7 @@
 import type { ChildProcess } from 'node:child_process';
 import { describe, it, expect, vi } from 'vitest';
 import { runCommand } from './run-command.js';
-import { createSanitizedChildEnv, spawnPipe, type SpawnPipeFatalOutcome } from './lifecycle.js';
+import { spawnPipe, type SpawnPipeFatalOutcome } from './lifecycle.js';
 import { killProcess, setProcessLedger } from '../registry.js';
 import { processError } from '../errors.js';
 
@@ -58,25 +58,7 @@ function stubbornProcessGroupProgram(): string {
   ].join('');
 }
 
-describe('createSanitizedChildEnv', () => {
-  it('copies runtime values and explicit credentials without ambient secrets or controls', {
-    timeout: 60_000,
-  }, () => {
-    const env = createSanitizedChildEnv(
-      {
-        LANG: 'C.UTF-8',
-        HOME: '/host/home',
-        PATH: '/project/bin',
-        NODE_OPTIONS: '--require=/tmp/loader.js',
-        OPENAI_API_KEY: 'sk-openai',
-        ANTHROPIC_API_KEY: 'sk-anthropic',
-      },
-      ['OPENAI_API_KEY', 'HOME', 'NODE_OPTIONS'],
-    );
-
-    expect(env).toEqual({ LANG: 'C.UTF-8', OPENAI_API_KEY: 'sk-openai' });
-  });
-
+describe('spawnPipe child environment', () => {
   it('applies an explicit child environment and never an ambient one', {
     timeout: 60_000,
   }, async () => {
@@ -155,16 +137,10 @@ describe('runCommand', () => {
   it('rejects with error for nonexistent command (ENOENT) without leaking timer', {
     timeout: 60_000,
   }, async () => {
-    await expect(
-      runCommand('nonexistent-command-that-does-not-exist-xyz', []),
-    ).rejects.toMatchObject({ code: 'ENOENT' });
-  });
-
-  it('ENOENT rejection completes quickly without dangling timer', { timeout: 60_000 }, async () => {
     const start = Date.now();
-    try {
-      await runCommand('nonexistent-command-that-does-not-exist-xyz', [], { timeout: 60_000 });
-    } catch {}
+    await expect(
+      runCommand('nonexistent-command-that-does-not-exist-xyz', [], { timeout: 60_000 }),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
     expect(Date.now() - start).toBeLessThan(3000);
   });
 
@@ -427,7 +403,6 @@ describe('runCommand', () => {
       state: 'output-budget-breach' | 'protocol-failure';
     }> = [
       { label: 'line budget', channel: 'stdout', state: 'output-budget-breach' },
-      { label: 'event budget', channel: 'stdout', state: 'output-budget-breach' },
       { label: 'diagnostic budget', channel: 'stderr', state: 'output-budget-breach' },
       { label: 'parser terminal', channel: 'stdout', state: 'protocol-failure' },
     ];

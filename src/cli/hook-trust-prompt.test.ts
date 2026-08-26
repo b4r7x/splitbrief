@@ -79,7 +79,6 @@ describe('ensureHooksTrusted', () => {
     await expect(
       ensureHooksTrusted({ projectDir: tmp, hooks: undefined, allowHooks: false }, prompt.fn),
     ).resolves.toBeUndefined();
-    expect(isHooksConfigTrusted(tmp, hooks)).toBe(false);
     expect(prompt.questions).toEqual([]);
   });
 

@@ -408,39 +408,11 @@ function resolveCatalogEntries(
   return [configuredRecovery({ runnerId: providerId, selectionId: configured }), ...catalogRows];
 }
 
-function isModelCacheAccessor(
-  input: ResolveModelCatalogOptions | ModelCacheAccessor | undefined,
-): input is ModelCacheAccessor {
-  return (
-    input !== undefined &&
-    'getModelsDevCatalog' in input &&
-    typeof input.getModelsDevCatalog === 'function' &&
-    'getProviderModels' in input &&
-    typeof input.getProviderModels === 'function'
-  );
-}
-
-function resolveCatalogOptions(
-  input: ResolveModelCatalogOptions | ModelCacheAccessor | undefined,
-): ResolveModelCatalogOptions {
-  if (isModelCacheAccessor(input)) return { cache: input };
-  return input ?? {};
-}
-
 export function resolveModelCatalog(
   providerId: string,
-  options?: ResolveModelCatalogOptions,
-): ResolvedModelCatalogEntry[];
-export function resolveModelCatalog(
-  providerId: string,
-  cache?: ModelCacheAccessor,
-): ResolvedModelCatalogEntry[];
-export function resolveModelCatalog(
-  providerId: string,
-  optionsOrCache?: ResolveModelCatalogOptions | ModelCacheAccessor,
+  options: ResolveModelCatalogOptions = {},
 ): ResolvedModelCatalogEntry[] {
   if (!isProviderId(providerId)) return [];
-  const options = resolveCatalogOptions(optionsOrCache);
   return resolveCatalogEntries({
     providerId,
     cache: options.cache ?? NULL_CACHE,

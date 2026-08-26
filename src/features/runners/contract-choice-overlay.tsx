@@ -6,13 +6,15 @@ import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
 import { glyph } from '../../lib/glyphs.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
-import { ContractChip, StepIndicator, contractTierOf, tierColor } from './contract-chip.js';
+import { ContractChip, StepIndicator, tierColor } from './contract-chip.js';
+import {
+  contractForRunnerKind,
+  type CustomCommandRunnerKind,
+} from '../../core/config/custom-commands.js';
 import { overlayAllowsPickerKeys } from '../../core/navigation/types.js';
 
-export type CustomCommandContract = 'shell' | 'agent';
-
 interface ContractCard {
-  kind: CustomCommandContract;
+  kind: CustomCommandRunnerKind;
   title: string;
   resultClause: string;
   filesClause: string;
@@ -45,7 +47,7 @@ function ContractCardView({
   configured: boolean;
 }) {
   const t = useTheme();
-  const tier = contractTierOf(card.kind);
+  const tier = contractForRunnerKind(card.kind);
   const color = tierColor(t, tier);
   /** The bar marks one row, so only the card's first row carries it. */
   const lead = (first: boolean) => {
@@ -99,9 +101,9 @@ function ContractCardView({
 
 interface ContractChoiceOverlayProps {
   role: ActiveRunnerRole;
-  initialKind?: CustomCommandContract | undefined;
-  configuredKind?: CustomCommandContract | undefined;
-  onChoose: (kind: CustomCommandContract) => void;
+  initialKind?: CustomCommandRunnerKind | undefined;
+  configuredKind?: CustomCommandRunnerKind | undefined;
+  onChoose: (kind: CustomCommandRunnerKind) => void;
 }
 
 export function ContractChoiceOverlay({

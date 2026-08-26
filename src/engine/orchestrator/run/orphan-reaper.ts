@@ -6,7 +6,7 @@ import {
   releaseRunnerPids,
   type RunnerPidEntry,
 } from '../../../core/sessions/runner-pids.js';
-import { isNodeError } from '../../../lib/process/errors.js';
+import { canSignalProcess } from '../../../lib/process/liveness.js';
 import { readProcessStartTimeMs as defaultReadProcessStartTimeMs } from '../../../lib/process/start-time.js';
 import { warnError } from '../../../lib/warn.js';
 
@@ -23,15 +23,6 @@ const defaultDeps: OrphanReaperDeps = {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function canSignalProcess(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return isNodeError(err) && err.code === 'EPERM';
-  }
 }
 
 function canSignalGroup(pid: number): boolean {

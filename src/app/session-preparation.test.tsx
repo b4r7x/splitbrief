@@ -3,12 +3,13 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { makeResumeAuthorityDeps } from '#testing/helpers/factories/state-authority.js';
 import type { ReadinessReport } from '../core/readiness/types.js';
 import {
   readActive,
   reactivateExistingSession,
   type ActiveSessionReceipt,
-} from '../core/sessions/lifecycle.js';
+} from '../core/sessions/active-pointer.js';
 import { createInitialState } from '../core/state/machine.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import {
@@ -120,7 +121,7 @@ describe('SessionPreparation', () => {
     const pending = Promise.withResolvers<PreparationOutcome>();
     let signal: AbortSignal | undefined;
     const deps: SessionSelectDeps = {
-      loadState: () => state,
+      ...makeResumeAuthorityDeps(() => state),
       prepareResume: (_input, attemptSignal) => {
         signal = attemptSignal;
         return pending.promise;
@@ -156,7 +157,7 @@ describe('SessionPreparation', () => {
     const state = { ...createInitialState(session.feature), phase: 'implementing' as const };
     let approvalSettled = false;
     const deps: SessionSelectDeps = {
-      loadState: () => state,
+      ...makeResumeAuthorityDeps(() => state),
       prepareResume: async () => {
         await openApprovalPrompt({
           tier: 'confirm',
@@ -199,7 +200,7 @@ describe('SessionPreparation', () => {
     let signal: AbortSignal | undefined;
     const ui = renderFeature(<SessionPreparation />);
     const selection = handleSessionSelect(session, projectDir, {
-      loadState: () => state,
+      ...makeResumeAuthorityDeps(() => state),
       prepareResume: (_input, attemptSignal) => {
         signal = attemptSignal;
         return pending.promise;
@@ -242,7 +243,7 @@ describe('SessionPreparation', () => {
     const ui = renderFeature(<SessionPreparation />);
 
     await handleSessionSelect(session, projectDir, {
-      loadState: () => state,
+      ...makeResumeAuthorityDeps(() => state),
       prepareResume,
     });
     await flushEffects();
@@ -252,9 +253,11 @@ describe('SessionPreparation', () => {
     await vi.waitFor(() => expect(routerStore.get().screen).toBe('workflow'));
     expect(prepareResume).toHaveBeenCalledTimes(2);
     const route = routerStore.get();
-    if (route.screen === 'workflow' && route.execution.kind === 'local') {
-      expect(route.execution.prepared.preparationId).toBe(`resume-${session.id}`);
-    }
+    expect(route.screen).toBe('workflow');
+    if (route.screen !== 'workflow') throw new Error('expected the workflow route');
+    expect(route.execution.kind).toBe('local');
+    if (route.execution.kind !== 'local') throw new Error('expected a local execution');
+    expect(route.execution.prepared.preparationId).toBe(`resume-${session.id}`);
     ui.unmount();
   });
 });

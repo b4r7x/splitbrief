@@ -14,7 +14,7 @@ import {
   type ActiveRunnerRole,
   type CliToolId,
 } from '../../core/runners/cli-tool-catalog.js';
-import { createSanitizedChildEnv } from '../../lib/process/spawn/lifecycle.js';
+import { createSanitizedChildEnv } from '../../lib/process/spawn/child-env.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { spawnWithTimeout } from '../../lib/process/spawn/progress.js';
 import { CLI_PROMPT_SENTINEL } from './cli-tools/candidate-contract.js';
@@ -185,11 +185,12 @@ function advertisedLongFlags(helpText: string): Set<string> {
 function deprecatedLongFlags(helpText: string, flags: readonly string[]): string[] {
   const lines = helpText.split(/\r?\n/);
   return flags.filter((flag) =>
-    lines.some((line, index) => declaresFlag(line, flag) && entryIsDeprecated(lines, index)),
+    lines.some((line, index) => declaresFlag({ line, flag }) && entryIsDeprecated(lines, index)),
   );
 }
 
-function declaresFlag(line: string, flag: string): boolean {
+function declaresFlag(input: Readonly<{ line: string; flag: string }>): boolean {
+  const { line, flag } = input;
   if (!OPTION_ENTRY_PATTERN.test(line)) return false;
   for (const token of line.trim().split(/\s+/)) {
     if (!OPTION_TOKEN_PATTERN.test(token)) return false;
@@ -497,7 +498,11 @@ function defaultRunHelp(projectDir: string) {
   return async (tool: CliToolId, argv: readonly string[]): Promise<string | null> => {
     const topLevel = await helpFor(tool);
     if (topLevel === null) return null;
-    const subcommand = subcommandCandidate(argv, topLevel, CLI_TOOL_CATALOG[tool].command);
+    const subcommand = subcommandCandidate({
+      argv,
+      topLevelHelp: topLevel,
+      command: CLI_TOOL_CATALOG[tool].command,
+    });
     if (subcommand === null) return topLevel;
     const subcommandHelp = await helpFor(tool, subcommand);
     if (subcommandHelp === null) return topLevel;
@@ -547,11 +552,10 @@ async function runHelpCommand(
 }
 
 function subcommandCandidate(
-  argv: readonly string[],
-  topLevelHelp: string,
-  command: string,
+  input: Readonly<{ argv: readonly string[]; topLevelHelp: string; command: string }>,
 ): string | null {
-  const commands = commandNames(topLevelHelp, command);
+  const { argv, topLevelHelp, command } = input;
+  const commands = commandNames({ helpText: topLevelHelp, command });
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === undefined || token.startsWith('-') || token === CLI_PROMPT_SENTINEL) continue;
@@ -569,7 +573,8 @@ function subcommandCandidate(
  * so the name is the token after it — and only when that token is a plain word
  * rather than a `[positional]` placeholder.
  */
-function commandNames(helpText: string, command: string): Set<string> {
+function commandNames(input: Readonly<{ helpText: string; command: string }>): Set<string> {
+  const { helpText, command } = input;
   const names = new Set<string>();
   let inCommands = false;
   for (const line of helpText.split(/\r?\n/)) {

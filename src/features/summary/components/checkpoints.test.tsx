@@ -18,8 +18,8 @@ const checkpointSummary: CheckpointSummaryRollup = {
   preFinalReviewId: 'snap-pre-final',
   accepted: true,
   rejected: false,
-  diffCommand: 'splitbrief snapshot diff snap-post-2',
-  restoreCommand: 'splitbrief snapshot restore snap-post-2',
+  diffCommand: 'splitbrief snapshot diff snap-post-2 --from-rollup',
+  restoreCommand: 'splitbrief snapshot restore snap-post-2 --from-rollup',
 };
 
 function CheckpointRows({
@@ -59,8 +59,8 @@ describe('buildCheckpointDetailRows', () => {
     expect(frame).toContain('pre-final-review');
     expect(frame).toContain('snap-pre-final');
     expect(frame).toContain('run status: accepted');
-    expect(frame).toContain('splitbrief snapshot diff snap-post-2');
-    expect(frame).toContain('splitbrief snapshot restore snap-post-2');
+    expect(frame).toContain('splitbrief snapshot diff snap-post-2 --from-rollup');
+    expect(frame).toContain('splitbrief snapshot restore snap-post-2 --from-rollup');
     expect(frame).toContain('hash-guarded');
     expect(frame).toContain('conflicts skipped');
     expect(frame).toContain('--force');
@@ -103,6 +103,7 @@ describe('buildCheckpointDetailRows', () => {
 
     expect(frame).toContain('splitbrief snapshot diff snap-post-2');
     expect(frame).toContain('splitbrief snapshot restore snap-post-2');
+    expect(frame).not.toContain('--from-rollup');
 
     ui.unmount();
   });

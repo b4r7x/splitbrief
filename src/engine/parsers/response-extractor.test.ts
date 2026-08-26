@@ -82,18 +82,12 @@ describe('extractCode', () => {
 });
 
 describe('stripMarkdownFences', () => {
-  it('removes ```typescript fence', () => {
-    const input = '```typescript\nconst x = 1;\n```';
-    expect(stripMarkdownFences(input)).toBe('const x = 1;');
-  });
-
-  it('removes ```ts fence', () => {
-    const input = '```ts\nconst x = 1;\n```';
-    expect(stripMarkdownFences(input)).toBe('const x = 1;');
-  });
-
-  it('removes bare ``` fence', () => {
-    const input = '```\nconst x = 1;\n```';
+  it.each([
+    ['typescript', 'typescript'],
+    ['ts', 'ts'],
+    ['(bare)', ''],
+  ])('removes a %s fence', (_label, tag) => {
+    const input = `\`\`\`${tag}\nconst x = 1;\n\`\`\``;
     expect(stripMarkdownFences(input)).toBe('const x = 1;');
   });
 });

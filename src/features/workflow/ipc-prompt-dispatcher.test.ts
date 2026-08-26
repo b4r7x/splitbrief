@@ -171,13 +171,6 @@ describe('parseIpcRecoveryAction', () => {
   it('preserves IPC recovery constraints at the adapter boundary', () => {
     expect(parseIpcRecoveryAction('', budgetPausedIssue)).toBe('continue');
     expect(parseIpcRecoveryAction('r', budgetPausedIssue)).toBeNull();
-    expect(budgetPausedIssue.recommendedAction).toBe('continue');
-    expect(budgetPausedIssue.availableActions).toEqual([
-      'continue',
-      'skip-current-task',
-      'pause-run',
-      'abort-workflow',
-    ]);
   });
 });
 

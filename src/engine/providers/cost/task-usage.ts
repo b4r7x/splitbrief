@@ -30,16 +30,13 @@ function buildTaskImplementerSegment(options: CalculateTaskUsageCostOptions): Pr
     outputTotal: tokenUsage.implementerOutput,
   });
   const taskTool = task.tool ?? implementerTool;
-  const implementerPricing = resolvePricing(
+  const pricingModel = resolveTaskPricingModel({
     taskTool,
-    cache,
-    resolveTaskPricingModel({
-      taskTool,
-      fallbackTool: implementerTool,
-      taskModel: task.model,
-      fallbackModel: implementerModel,
-    }),
-  );
+    fallbackTool: implementerTool,
+    taskModel: task.model,
+    fallbackModel: implementerModel,
+  });
+  const implementerPricing = resolvePricing(taskTool, cache, pricingModel);
   const implementerCacheRead =
     task.implementerCacheReadTokens ??
     allocatedCacheTokens({
@@ -56,12 +53,7 @@ function buildTaskImplementerSegment(options: CalculateTaskUsageCostOptions): Pr
     });
   return buildProviderUsageSegment({
     tool: taskTool,
-    model: resolveTaskPricingModel({
-      taskTool,
-      fallbackTool: implementerTool,
-      taskModel: task.model,
-      fallbackModel: implementerModel,
-    }),
+    model: pricingModel,
     inputTokens: implementerSplit.inputTokens,
     outputTokens: implementerSplit.outputTokens,
     primaryTokens: task.implementerTokens,
@@ -79,21 +71,21 @@ function buildTaskEscalationSegment(options: CalculateTaskUsageCostOptions): Pro
     inputTotal: tokenUsage.escalationInput,
     outputTotal: tokenUsage.escalationOutput,
   });
-  const totalEscalationTokens = tokenUsage.escalationInput + tokenUsage.escalationOutput;
+  const plannerSeatTokens = plannerSeat.input + plannerSeat.output;
   const plannerPricing = resolvePricing(plannerTool, cache, plannerModel);
   const escalationCacheRead =
     task.escalationCacheReadTokens ??
     allocatedCacheTokens({
       cacheTokens: plannerSeat.cacheRead,
       tokens: task.escalationTokens,
-      totalTokens: totalEscalationTokens,
+      totalTokens: plannerSeatTokens,
     });
   const escalationCacheCreate =
     task.escalationCacheCreateTokens ??
     allocatedCacheTokens({
       cacheTokens: plannerSeat.cacheCreate,
       tokens: task.escalationTokens,
-      totalTokens: totalEscalationTokens,
+      totalTokens: plannerSeatTokens,
     });
   return buildProviderUsageSegment({
     tool: plannerTool,

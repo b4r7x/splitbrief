@@ -121,6 +121,25 @@ describe('evaluateBriefReadiness', () => {
     expect(report.ok).toBe(true);
     expect(report.blocks).toHaveLength(0);
   });
+
+  it('still blocks a genuine user-edit conflict', () => {
+    const task = readyTask();
+    const report = evaluateBriefReadiness(
+      [task],
+      [
+        {
+          taskId: task.id,
+          contextFit: 'fits',
+          workerProfile: 'local',
+          estimatedTokens: 500,
+          conflict: { kind: 'current-task-conflict', files: ['src/hello.ts'] },
+        },
+      ],
+    );
+
+    expect(report.ok).toBe(false);
+    expect(report.blocks[0]).toMatchObject({ taskId: 'T001', kind: 'stale-conflict' });
+  });
 });
 
 describe('formatBriefReadinessBlocks', () => {
@@ -358,25 +377,5 @@ describe('runBriefReadinessGate', () => {
     expect(unrouted.ok).toBe(false);
     expect(unrouted.blocks[0]).toMatchObject({ taskId: 'T001', kind: 'overflow' });
     expect(unrouted.metadata[0]?.contextLength).toBe(DEFAULT_UNKNOWN_CONTEXT_LENGTH);
-  });
-
-  it('still blocks a genuine user-edit conflict', async () => {
-    projectDir = createTempDir('readiness-gate');
-    const task = readyTask();
-    const report = evaluateBriefReadiness(
-      [task],
-      [
-        {
-          taskId: task.id,
-          contextFit: 'fits' as const,
-          workerProfile: 'local',
-          estimatedTokens: 500,
-          conflict: { kind: 'current-task-conflict' as const, files: ['src/hello.ts'] },
-        },
-      ],
-    );
-
-    expect(report.ok).toBe(false);
-    expect(report.blocks[0]).toMatchObject({ taskId: 'T001', kind: 'stale-conflict' });
   });
 });

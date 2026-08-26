@@ -422,34 +422,15 @@ describe('current config visibility', () => {
     );
 
     const ollama = options.find((item) => item.id === 'ollama');
-    expect(ollama?.isCurrent).toBe(true);
-    expect(ollama?.status.state).toBe('unavailable');
-    expect(ollama?.status.remediation).toBe('Ollama is not running');
+    if (ollama === undefined) throw new Error('no implementer picker row for ollama');
+    const deepseek = options.find((item) => item.id === 'deepseek');
+    if (deepseek === undefined) throw new Error('no implementer picker row for deepseek');
+    expect(ollama.isCurrent).toBe(true);
+    expect(ollama.status.state).toBe('unavailable');
+    expect(ollama.status.remediation).toBe('Ollama is not running');
 
-    expect(
-      isCurrentConfig(
-        {
-          id: 'ollama',
-          displayName: 'Ollama',
-          kind: 'api',
-          available: false,
-        } as never,
-        config,
-        'implementer',
-      ),
-    ).toBe(true);
-    expect(
-      isCurrentConfig(
-        {
-          id: 'deepseek',
-          displayName: 'DeepSeek',
-          kind: 'api',
-          available: true,
-        } as never,
-        config,
-        'implementer',
-      ),
-    ).toBe(false);
+    expect(isCurrentConfig(ollama, config, 'implementer')).toBe(true);
+    expect(isCurrentConfig(deepseek, config, 'implementer')).toBe(false);
   });
 
   it('keeps an incompatible current CLI visible with remediation', () => {

@@ -6,11 +6,8 @@ import { useTheme } from '../../components/theme.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { detectionStore } from '../../stores/project/detection.js';
-import { getDefaultDetectionService } from '../../engine/detection/service.js';
-import { refreshDetectionForCurrentConfig } from '../../engine/detection/store-publication.js';
 import { providerOracleCommand } from '../../engine/runners/cli-tools/provider-oracle.js';
 import { configStore } from '../../stores/project/config.js';
-import { feedbackStore } from '../../stores/ui/feedback.js';
 
 import {
   CLI_TOOL_CATALOG,
@@ -45,11 +42,7 @@ import type { PickerCatalog } from './use-picker-catalog.js';
 import type { PickerActions } from './use-picker-actions.js';
 import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
 import type { PickerModelCounts } from './model-catalog/catalog.js';
-import {
-  formatDiscoveryRefreshFeedback,
-  type DiscoveryRefreshSummary,
-} from '../../core/runtime/commands/types.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { refreshPickerDetection } from './refresh-detection.js';
 
 /**
  * The seat cards say how the seat is paid for in one lower-case word; the
@@ -113,32 +106,6 @@ interface PickerViewProps {
   stepLabel?: string | undefined;
   catalog: PickerCatalog;
   actions: PickerActions;
-}
-
-const defaultRefresh = (projectDir: string | undefined): Promise<DiscoveryRefreshSummary> =>
-  refreshDetectionForCurrentConfig({
-    service: getDefaultDetectionService(),
-    publication: detectionStore,
-    getCurrent: () => {
-      const config = configStore.get().config;
-      if (config === null || projectDir === undefined) return null;
-      return { config, projectDir };
-    },
-  });
-
-export async function refreshPickerDetection(
-  projectDir: string,
-  refresh: (projectDir: string | undefined) => Promise<DiscoveryRefreshSummary> = defaultRefresh,
-): Promise<void> {
-  feedbackStore.setMessage('Refreshing models…');
-  try {
-    const summary = await refresh(projectDir);
-    const feedback = formatDiscoveryRefreshFeedback({ subject: 'Models', summary });
-    if (feedback.isError) feedbackStore.setError(feedback.message);
-    else feedbackStore.setMessage(feedback.message);
-  } catch (err) {
-    feedbackStore.setError(`Failed to refresh models: ${toErrorMessage(err)}`);
-  }
 }
 
 function subtitleFor(role: SeatPickerRole): string {
@@ -261,7 +228,7 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
 
   const confirmRow = (left: PickerOption, row: RightRow | null) => {
     if (row === null) {
-      actions.confirm(left, null);
+      void actions.confirm(left, null);
       return;
     }
     if (row.kind === 'route') {
@@ -274,7 +241,7 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
       void actions.confirmProviderVariant(sole.fullId);
       return;
     }
-    actions.confirm(left, row.model);
+    void actions.confirm(left, row.model);
   };
 
   const resolvePreview = (ctx: PreviewContext<PickerOption, KeyedRightRow>): string | undefined => {
@@ -321,14 +288,16 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
     const trail = stale === undefined ? byline : `${byline}${SOFT_SEP}${stale}`;
     // A provider whose key this picker can take has its remedy in a keystroke.
     // Like a route's sign-in command it leads, so right truncation cuts the
-    // byline before it ever reaches the actionable part.
+    // byline before it ever reaches the actionable part. A status remediation
+    // leads for the same reason: a runner the picker cannot run says how to fix
+    // it before it recites what it is. The retained-stale line is already a
+    // refresh instruction, so a remediation ahead of it would only push it off
+    // the end.
+    const reason = stale === undefined ? tool.status.remediation : null;
+    const remedied = reason === null ? trail : `${reason}${SOFT_SEP}${trail}`;
     const authAction = resolveAuthAction(tool);
-    if (authAction === null) return trail;
-    const affordance = formatAuthActionAffordance(authAction);
-    const reason = tool.status.remediation;
-    return reason === null
-      ? `${affordance}${SOFT_SEP}${trail}`
-      : `${affordance}${SOFT_SEP}${reason}${SOFT_SEP}${trail}`;
+    if (authAction === null) return remedied;
+    return `${formatAuthActionAffordance(authAction)}${SOFT_SEP}${remedied}`;
   };
 
   return (
@@ -415,7 +384,7 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
               customRow: {
                 onSelect: actions.openCustomModel,
                 onDelete: (row: KeyedRightRow) => {
-                  if (row.kind === 'model') actions.deleteRight(row.model);
+                  if (row.kind === 'model') void actions.deleteRight(row.model);
                 },
                 isCustom: (row: KeyedRightRow) => row.kind === 'model' && isCustomModel(row.model),
               },

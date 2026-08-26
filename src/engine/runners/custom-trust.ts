@@ -6,7 +6,6 @@ import {
   type CustomCommandContract,
 } from '../../core/config/custom-commands.js';
 import { CliExecutableReceiptSchema } from '../../core/discovery/detection.js';
-import { escapeTrustLiteral } from '../../core/trust/literal.js';
 import {
   TRUST_STORE_MAX_RECEIPTS,
   readTrustStore,
@@ -16,7 +15,6 @@ import {
 import { writeSecureFileAsync } from '../../lib/fs.js';
 import { canonicalJSON } from '../../utils/canonical-json.js';
 import { sha256Hex } from '../../utils/sha256.js';
-import { assertNever } from '../../utils/type-guards.js';
 import { throwIfAborted } from '../../utils/abort.js';
 
 const CUSTOM_RUNNER_TRUST_VERSION = 1;
@@ -102,26 +100,6 @@ export type MarkCustomRunnerTrustedResult =
     }>
   | Readonly<{ kind: 'invalid' }>;
 
-export type CustomRunnerDisclosure = Readonly<{
-  executable: string;
-  argv: readonly string[];
-  contract: CustomCommandContract;
-  cwd: 'Disposable staged project' | 'Project directory';
-  stage: 'Filtered disposable stage' | 'None';
-  environment: readonly string[];
-  environmentAccess:
-    | 'Declared environment references only'
-    | 'Inherits the full SPLITBRIEF process environment, including credentials';
-  filesystem: 'Not an OS sandbox; the process can access files available to the current user';
-  network: 'Network access is not restricted';
-  result:
-    | 'Parsed output only; stage-local writes are discarded'
-    | 'Reviewed declared artifact for normal planner calls; reviewed workspace diff for full escalation only'
-    | 'Reviewed diff only'
-    | 'Parsed stdout only; anything it writes in the project is neither staged nor reviewed'
-    | 'Reviewed workspace diff; it writes directly into the project directory';
-}>;
-
 type TrustScope = CustomRunnerAdmissionScope &
   Readonly<{
     runner: ConfiguredCustomRunner;
@@ -148,25 +126,6 @@ const INLINE_RESULT_BY_CONTRACT = {
   output: 'inline-parsed-output-only',
   direct: 'inline-workspace-writes',
 } as const;
-
-function disclosureResult(
-  result: CustomRunnerSecurityPosture['result'],
-): CustomRunnerDisclosure['result'] {
-  switch (result) {
-    case 'parsed-output-only':
-      return 'Parsed output only; stage-local writes are discarded';
-    case 'reviewed-declared-artifact-or-workspace-diff-only':
-      return 'Reviewed declared artifact for normal planner calls; reviewed workspace diff for full escalation only';
-    case 'reviewed-diff-only':
-      return 'Reviewed diff only';
-    case 'inline-parsed-output-only':
-      return 'Parsed stdout only; anything it writes in the project is neither staged nor reviewed';
-    case 'inline-workspace-writes':
-      return 'Reviewed workspace diff; it writes directly into the project directory';
-    default:
-      return assertNever(result);
-  }
-}
 
 function canonicalPosture(
   input: Readonly<{
@@ -224,7 +183,7 @@ export function inlineRunnerSecurityPosture(
  * canonical description of how this runner is executed — not merely a posture
  * whose result field happens to line up.
  */
-function postureDescribesRunner(
+export function postureDescribesRunner(
   posture: CustomRunnerSecurityPosture,
   runner: ConfiguredCustomRunner,
 ): boolean {
@@ -394,52 +353,4 @@ export async function markCustomRunnerTrusted(
     receipt,
     abortedAfterPublication: input.signal?.aborted === true,
   };
-}
-
-export function buildCustomRunnerDisclosure(
-  input: Readonly<{
-    runner: unknown;
-    posture: unknown;
-    executable: unknown;
-  }>,
-): CustomRunnerDisclosure | null {
-  const runner = ConfiguredCustomRunnerSchema.safeParse(input.runner);
-  const posture = CustomRunnerSecurityPostureSchema.safeParse(input.posture);
-  const executable = CliExecutableReceiptSchema.safeParse(input.executable);
-  if (!runner.success || !posture.success || !executable.success) return null;
-  if (!postureDescribesRunner(posture.data, runner.data)) return null;
-  return {
-    executable: escapeTrustLiteral(executable.data.path),
-    argv: runner.data.command.argv.map(escapeTrustLiteral),
-    contract: runner.data.command.contract,
-    cwd:
-      posture.data.cwd === 'disposable-stage' ? 'Disposable staged project' : 'Project directory',
-    stage:
-      posture.data.stage === 'filtered-disposable-stage' ? 'Filtered disposable stage' : 'None',
-    environment: runner.data.command.env.map(escapeTrustLiteral),
-    environmentAccess:
-      posture.data.environmentAccess === 'declared-references-only'
-        ? 'Declared environment references only'
-        : 'Inherits the full SPLITBRIEF process environment, including credentials',
-    filesystem: 'Not an OS sandbox; the process can access files available to the current user',
-    network: 'Network access is not restricted',
-    result: disclosureResult(posture.data.result),
-  };
-}
-
-export function formatCustomRunnerDisclosure(disclosure: CustomRunnerDisclosure): string {
-  return [
-    `Executable: ${disclosure.executable}`,
-    `Arguments: ${disclosure.argv.length === 0 ? '(none)' : disclosure.argv.join(' ')}`,
-    `Contract: ${disclosure.contract}`,
-    `Working directory: ${disclosure.cwd}`,
-    `Staging: ${disclosure.stage}`,
-    `Environment names: ${
-      disclosure.environment.length === 0 ? '(none)' : disclosure.environment.join(', ')
-    }`,
-    `Environment access: ${disclosure.environmentAccess}`,
-    `Filesystem: ${disclosure.filesystem}`,
-    `Network: ${disclosure.network}`,
-    `Result: ${disclosure.result}`,
-  ].join('\n');
 }

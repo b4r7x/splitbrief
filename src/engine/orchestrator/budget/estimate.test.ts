@@ -514,7 +514,7 @@ describe('estimateDeterministicCost', () => {
     expect(estimate.contextConfidenceCounts.profileUnavailable).toBe(0);
   });
 
-  it('does not crash when configured profiles cannot be resolved', () => {
+  it('propagates an unresolvable profile config instead of estimating around it', () => {
     const config = withProfiles(makeConfig(), {
       default: 'missing-worker',
       profiles: {
@@ -528,20 +528,15 @@ describe('estimateDeterministicCost', () => {
           contextLength: 20_000,
         },
       },
-    }) as Config;
-
-    const estimate = estimateDeterministicCost({
-      tasks: [makeTask()],
-      context,
-      config,
-      pricingCache: nullCache,
     });
 
-    expect(estimate.tasks[0]).toMatchObject({
-      selectedProfileId: null,
-      contextFit: 'unknown',
-      contextConfidence: 'profile-unavailable',
-      priceConfidence: 'profile-unavailable',
-    });
+    expect(() =>
+      estimateDeterministicCost({
+        tasks: [makeTask()],
+        context,
+        config,
+        pricingCache: nullCache,
+      }),
+    ).toThrow(/missing-worker/);
   });
 });

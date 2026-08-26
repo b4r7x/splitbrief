@@ -1,4 +1,4 @@
-import type { RecoveryUsage } from '../../../core/schemas/brief-recovery.js';
+import type { RecoveryUsage } from '../../../core/schemas/brief-recovery/budget.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { RunnerCallUsage } from '../../calls/types.js';
 import { isRecord } from '../../../utils/type-guards.js';
@@ -8,7 +8,6 @@ export function stringValue(value: unknown): string | null {
 }
 
 export function toRecoveryUsage(usage: unknown): RecoveryUsage | null {
-  if (usage === null) return null;
   if (!isSafeTokenUsage(usage)) return null;
   const inputTokens = usage.inputTokens;
   const outputTokens = usage.outputTokens;

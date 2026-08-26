@@ -114,7 +114,6 @@ describe('createPromptTracker artifact review', () => {
       { kind: 'prompt_request', request },
       { kind: 'prompt_request', request },
     ]);
-    expect(sent.at(-1)).toEqual({ kind: 'prompt_request', request });
     expect(tracker.handleResponse('prompt-1', { kind: 'artifact_review', approved: true })).toBe(
       true,
     );

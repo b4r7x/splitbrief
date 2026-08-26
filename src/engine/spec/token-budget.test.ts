@@ -36,10 +36,10 @@ describe('truncateMiddle', () => {
     expect(result.endsWith('END!!')).toBeTruthy();
   });
 
-  it('returns no more characters than the input when the budget is tiny', () => {
-    const text = 'some content here';
-    const result = truncateMiddle(text, 1);
-    expect(result.length).toBeLessThanOrEqual(text.length);
+  it('hard-slices without a truncation marker when the budget is tiny', () => {
+    const result = truncateMiddle('some content here', 1);
+    expect(result).toBe('some');
+    expect(result).not.toContain('truncated to fit context window');
   });
 });
 

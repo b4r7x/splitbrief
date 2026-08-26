@@ -34,8 +34,6 @@ export function createEventBus(): EventBus {
 }
 
 function projectRecoveryEvent(event: EngineEvent): EngineEvent | null {
-  if (typeof event !== 'object' || event === null) return null;
-  const type = 'type' in event ? event.type : undefined;
-  if (typeof type !== 'string' || !type.startsWith('brief_recovery_')) return event;
+  if (!event.type.startsWith('brief_recovery_')) return event;
   return projectEngineEventForTranscriptPolicy(event, false);
 }

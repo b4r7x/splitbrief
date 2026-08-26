@@ -169,29 +169,34 @@ describe('throwMappedError', () => {
       status: 500,
       headers: new Headers({ 'retry-after': '60' }),
     });
+    let serverThrown: unknown;
     try {
       throwMappedError(serverError, { provider: 'groq' });
-      throw new Error('expected throw');
     } catch (err) {
-      if (matches('stream-http-status')(err)) {
-        expect(err.data).not.toMatchObject({
-          detail: expect.stringContaining('retry-after'),
-        });
-      }
+      serverThrown = err;
     }
+    expect(matches('stream-http-status')(serverThrown)).toBe(true);
+    if (matches('stream-http-status')(serverThrown)) {
+      expect(serverThrown.data).not.toMatchObject({
+        detail: expect.stringContaining('retry-after'),
+      });
+    }
+
     const dateHeader = Object.assign(new Error('Too Many Requests'), {
       status: 429,
       headers: new Headers({ 'retry-after': 'Fri, 07 Aug 2026 17:00:00 GMT' }),
     });
+    let dateThrown: unknown;
     try {
       throwMappedError(dateHeader, { provider: 'groq' });
-      throw new Error('expected throw');
     } catch (err) {
-      if (matches('stream-http-status')(err)) {
-        expect(err.data).not.toMatchObject({
-          detail: expect.stringContaining('retry-after'),
-        });
-      }
+      dateThrown = err;
+    }
+    expect(matches('stream-http-status')(dateThrown)).toBe(true);
+    if (matches('stream-http-status')(dateThrown)) {
+      expect(dateThrown.data).not.toMatchObject({
+        detail: expect.stringContaining('retry-after'),
+      });
     }
   });
 

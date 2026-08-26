@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createRuntimeCommands } from './registry.js';
-import { makeCtx, noop, executeRuntimeCommand } from '#testing/helpers/runtime-commands.js';
+import { makeCtx, noop, runCommandInTest } from '#testing/helpers/runtime-commands.js';
 
 describe('/handoff command', () => {
   it('appears in catalog with validScreens including workflow and summary', () => {
@@ -20,7 +20,7 @@ describe('/handoff command', () => {
         },
       }),
     );
-    executeRuntimeCommand(commands, '/handoff', 'workflow', noop);
+    runCommandInTest({ commands: commands, raw: '/handoff', screen: 'workflow', onError: noop });
     expect(error).toMatch(/usage/i);
   });
 
@@ -33,7 +33,12 @@ describe('/handoff command', () => {
         },
       }),
     );
-    executeRuntimeCommand(commands, '/handoff unknown-target', 'workflow', noop);
+    runCommandInTest({
+      commands: commands,
+      raw: '/handoff unknown-target',
+      screen: 'workflow',
+      onError: noop,
+    });
     expect(error).toMatch(/valid/i);
     expect(error).toContain('spec-kit');
   });
@@ -48,7 +53,12 @@ describe('/handoff command', () => {
         },
       }),
     );
-    await executeRuntimeCommand(commands, '/handoff spec-kit', 'workflow', noop);
+    await runCommandInTest({
+      commands: commands,
+      raw: '/handoff spec-kit',
+      screen: 'workflow',
+      onError: noop,
+    });
     expect(calls).toEqual([{ target: 'spec-kit', taskId: undefined }]);
   });
 
@@ -62,7 +72,12 @@ describe('/handoff command', () => {
         },
       }),
     );
-    await executeRuntimeCommand(commands, '/handoff claude-code T003', 'workflow', noop);
+    await runCommandInTest({
+      commands: commands,
+      raw: '/handoff claude-code T003',
+      screen: 'workflow',
+      onError: noop,
+    });
     expect(calls).toEqual([{ target: 'claude-code', taskId: 'T003' }]);
   });
 
@@ -78,7 +93,12 @@ describe('/handoff command', () => {
         },
       }),
     );
-    await executeRuntimeCommand(commands, '/handoff spec-kit', 'workflow', noop);
+    await runCommandInTest({
+      commands: commands,
+      raw: '/handoff spec-kit',
+      screen: 'workflow',
+      onError: noop,
+    });
     expect(message).toContain('/proj/.splitbrief/sessions/s1/handoffs/spec-kit');
   });
 
@@ -94,7 +114,12 @@ describe('/handoff command', () => {
         },
       }),
     );
-    await executeRuntimeCommand(commands, '/handoff spec-kit', 'workflow', noop);
+    await runCommandInTest({
+      commands: commands,
+      raw: '/handoff spec-kit',
+      screen: 'workflow',
+      onError: noop,
+    });
     expect(error).toContain('No active session for handoff');
   });
 });
@@ -121,7 +146,12 @@ describe('/export command', () => {
       }),
     );
 
-    await executeRuntimeCommand(commands, '/export', 'workflow', noop);
+    await runCommandInTest({
+      commands: commands,
+      raw: '/export',
+      screen: 'workflow',
+      onError: noop,
+    });
 
     expect(message).toContain('/proj/.splitbrief/sessions/s1/report.html');
   });
@@ -140,7 +170,12 @@ describe('/export command', () => {
       }),
     );
 
-    await executeRuntimeCommand(commands, '/export', 'summary', noop);
+    await runCommandInTest({
+      commands: commands,
+      raw: '/export',
+      screen: 'summary',
+      onError: noop,
+    });
 
     expect(error).toContain('No summary.json found for session');
   });
@@ -157,7 +192,12 @@ describe('run snapshot runtime commands', () => {
         },
       }),
     );
-    await executeRuntimeCommand(commands, '/run accept', 'workflow', noop);
+    await runCommandInTest({
+      commands: commands,
+      raw: '/run accept',
+      screen: 'workflow',
+      onError: noop,
+    });
     expect(message).toContain('snap-1');
   });
 
@@ -175,7 +215,7 @@ describe('run snapshot runtime commands', () => {
         },
       }),
     );
-    executeRuntimeCommand(commands, '/reject-run', 'workflow', noop);
+    runCommandInTest({ commands: commands, raw: '/reject-run', screen: 'workflow', onError: noop });
     expect(called).toBe(false);
     expect(error).toMatch(/confirm/i);
   });
@@ -197,7 +237,12 @@ describe('run snapshot runtime commands', () => {
         },
       }),
     );
-    await executeRuntimeCommand(commands, '/run reject confirm', 'workflow', noop);
+    await runCommandInTest({
+      commands: commands,
+      raw: '/run reject confirm',
+      screen: 'workflow',
+      onError: noop,
+    });
     expect(message).toContain('2 file(s)');
     expect(message).toContain('snap-2');
   });
@@ -218,7 +263,13 @@ describe('run snapshot runtime commands', () => {
       }),
     );
 
-    await executeRuntimeCommand(commands, '/run reject confirm', 'workflow', noop, 'implementing');
+    await runCommandInTest({
+      commands: commands,
+      raw: '/run reject confirm',
+      screen: 'workflow',
+      phase: 'implementing',
+      onError: noop,
+    });
 
     expect(called).toBe(false);
     expect(error).toMatch(/unavailable while work is active/i);
@@ -241,7 +292,12 @@ describe('run snapshot runtime commands', () => {
         },
       }),
     );
-    await executeRuntimeCommand(commands, '/run reject confirm', 'workflow', noop);
+    await runCommandInTest({
+      commands: commands,
+      raw: '/run reject confirm',
+      screen: 'workflow',
+      onError: noop,
+    });
     expect(error).toMatch(/conflict/i);
   });
 });

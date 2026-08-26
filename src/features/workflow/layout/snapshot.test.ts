@@ -73,15 +73,20 @@ function makeLongTaskStarted(): Extract<EngineEvent, { type: 'task_started' }> {
 }
 
 describe('readConversationScrollSnapshot', () => {
-  it('returns sensible defaults with empty stores', () => {
+  it('derives the default viewport from the reset stores and pins the empty transcript at zero', () => {
     const snap = readConversationScrollSnapshot();
-    expect(snap.maxOffset).toBeGreaterThanOrEqual(0);
-    expect(snap.renderableCount).toBeGreaterThanOrEqual(0);
-    expect(snap.scrollOffset).toBeGreaterThanOrEqual(0);
-    expect(snap.totalHeight).toBeGreaterThanOrEqual(0);
-    expect(snap.viewportHeight).toBeGreaterThanOrEqual(0);
-    expect(snap.contentRect).toBeDefined();
-    expect(snap.contentRect.width).toBeGreaterThan(0);
+    expect(snap.viewportHeight).toBe(
+      getWorkflowViewportHeight({
+        rows: terminalSizeStore.get().rows,
+        inputRows: inputHeightStore.get().rows,
+        promptRows: 0,
+      }),
+    );
+    expect(snap.contentRect.height).toBe(snap.viewportHeight);
+    expect(snap.renderableCount).toBe(0);
+    expect(snap.totalHeight).toBe(0);
+    expect(snap.maxOffset).toBe(0);
+    expect(snap.scrollOffset).toBe(0);
   });
 
   it('reflects seeded terminal size in contentRect and viewportHeight', () => {

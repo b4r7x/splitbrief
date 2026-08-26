@@ -1,4 +1,4 @@
-import { executeRuntimeCommand as runRuntimeCommand } from '../../src/core/runtime/commands/dispatch.js';
+import { executeRuntimeCommand } from '../../src/core/runtime/commands/dispatch.js';
 import type {
   RuntimeCommandDef,
   RuntimeConfigSaveResult,
@@ -61,18 +61,18 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
   };
 }
 
-export function executeRuntimeCommand(
-  commands: RuntimeCommandDef[],
-  raw: string,
-  screen: 'home' | 'workflow' | 'summary' | 'setup',
-  onError: (msg: string) => void,
-  phase: Phase = 'idle',
-): Promise<void> {
-  return runRuntimeCommand(commands, raw, {
-    screen,
-    phase,
+export function runCommandInTest(args: {
+  commands: RuntimeCommandDef[];
+  raw: string;
+  screen: 'home' | 'workflow' | 'summary' | 'setup';
+  phase?: Phase;
+  onError: (msg: string) => void;
+}): Promise<void> {
+  return executeRuntimeCommand(args.commands, args.raw, {
+    screen: args.screen,
+    phase: args.phase ?? 'idle',
     attached: false,
     plannerSupportsImages: true,
-    onError,
+    onError: args.onError,
   });
 }

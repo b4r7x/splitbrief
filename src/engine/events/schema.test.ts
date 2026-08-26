@@ -35,7 +35,7 @@ describe('EngineEvent alias colocation with EngineEventSchema', () => {
 });
 
 describe('parseEngineEvent', () => {
-  it('keeps operational warning safety metadata type-safe', () => {
+  it('pins the type-level contract for operational warning safety metadata', () => {
     const complete = {
       type: 'warning',
       ts: 1,
@@ -56,9 +56,8 @@ describe('parseEngineEvent', () => {
     // @ts-expect-error operational message safety metadata is all-or-nothing
     const invalid: EngineEvent = partial;
 
-    expect(complete.transcriptSafe).toBe(true);
-    expect(invalid).toBeDefined();
-    expect(partial.category).toBe('queue');
+    expect(parseEngineEvent(complete)).toMatchObject({ transcriptSafe: true });
+    expect(parseEngineEvent(invalid)).toBeNull();
   });
 
   it('accepts known events with required variant fields', () => {
@@ -855,7 +854,7 @@ describe('versioned Brief recovery events', () => {
     }
   });
 
-  it('keeps the deterministic outcome authoritative over the diagnostic score', () => {
+  it('accepts a perfect score alongside a failed outcome', () => {
     const event = events[0];
     expect(parseEngineEvent({ ...event, outcome: 'failed', errorCount: 1, score: 1 })).toEqual(
       expect.objectContaining({ outcome: 'failed', score: 1 }),
@@ -978,13 +977,6 @@ describe('durable owner publication events', () => {
     for (const event of [refused, accepted, published, permitIssued]) {
       expect(parseEngineEvent(event)).toEqual(expect.objectContaining(event));
     }
-    expect(parseEngineEvent(published)).toEqual(
-      expect.objectContaining({
-        type: 'brief_generation_published',
-        generation: expect.objectContaining({ programId: 'program-1' }),
-        provenanceDigest: otherHash,
-      }),
-    );
   });
 
   it('keeps unknown and malformed owner event types rejected', () => {

@@ -77,11 +77,7 @@ describe('createTranscriptBuffer', () => {
     buf.append('still no persistence');
     buf.flush();
 
-    const sessionsPath = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR);
-    if (existsSync(sessionsPath)) {
-      const empty = join(sessionsPath, '', SESSION_LOG_FILE);
-      expect(existsSync(empty)).toBe(false);
-    }
+    expect(existsSync(join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR))).toBe(false);
   });
 
   it('flushInterrupted() marks the entry as interrupted', () => {

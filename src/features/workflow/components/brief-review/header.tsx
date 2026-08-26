@@ -6,7 +6,7 @@ import {
   truncateTerminalDisplayTextMiddle,
 } from '../../../../utils/display-text.js';
 import type { Task } from '../../../../core/schemas/task.js';
-import type { BriefRecoveryProjectionV1 } from '../../../../core/schemas/brief-recovery.js';
+import type { BriefRecoveryProjectionV1 } from '../../../../core/schemas/brief-recovery/document.js';
 import type { BriefQualityReport } from '../../../../engine/spec/brief-quality.js';
 import type { BriefReadinessGateReport } from '../../../../engine/orchestrator/planning/brief-readiness-gate.js';
 import {

@@ -10,6 +10,7 @@ import {
 import { randomBytes } from 'node:crypto';
 import { dirname } from 'node:path';
 import { ensureSecureDir } from './fs.js';
+import { canSignalProcess } from './process/liveness.js';
 
 const LOCK_SUFFIX = '.lock';
 const LOCK_MAX_ATTEMPTS = 100;
@@ -22,16 +23,6 @@ function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-function isPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err: unknown) {
-    const code = err && typeof err === 'object' && 'code' in err ? err.code : undefined;
-    return code === 'EPERM';
-  }
-}
-
 function contentsAreStale(raw: string): boolean {
   let parsed: unknown;
   try {
@@ -42,7 +33,7 @@ function contentsAreStale(raw: string): boolean {
   if (parsed === null || typeof parsed !== 'object') return true;
   const { pid, acquiredAt } = parsed as { pid?: unknown; acquiredAt?: unknown };
   if (typeof pid !== 'number' || typeof acquiredAt !== 'number') return true;
-  if (!isPidAlive(pid)) return true;
+  if (!canSignalProcess(pid)) return true;
   return Date.now() - acquiredAt > LOCK_STALE_MS;
 }
 

@@ -757,7 +757,6 @@ describe('cache pricing', () => {
   });
 
   it('calculateCostBreakdown accumulates cache savings across both planner and implementer', () => {
-    // Both planner and implementer are anthropic/sonnet
     const usage = makeUsage({
       plannerInput: 100_000,
       plannerOutput: 50_000,
@@ -817,9 +816,6 @@ describe('reviewer pricing', () => {
       ...anthropicPlanner,
     });
 
-    expect(Object.keys(withReviewerBucket.providerCosts ?? {})).toEqual(
-      Object.keys(preChange.providerCosts ?? {}),
-    );
     expect(withReviewerBucket).toEqual(preChange);
   });
 

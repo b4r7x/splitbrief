@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.js';
@@ -15,10 +15,10 @@ import { makeUsage } from '#testing/helpers/factories/summary.js';
 import {
   transitionAndSave,
   raisePendingRecovery,
-  refreshAndPersistCode,
   rebaseOnPersistedWorkflowState,
   addUsageAndSave,
 } from './state-ops.js';
+import { refreshAndPersistCode } from './task/refresh-code.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -58,15 +58,6 @@ function makeQueuedMessage(): QueuedMessage {
 }
 
 describe('addUsageAndSave', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2025-01-01T00:00:00Z'));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
   it('accumulates token usage into the new state and emits a cost-update event', () => {
     const { projectDir, sessionId } = setupProject();
     try {

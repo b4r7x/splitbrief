@@ -16,70 +16,36 @@ function displayWidth(text: string): number {
   return getTerminalCellWidth(text);
 }
 
-interface WrappedDisplayLine {
-  offset: number;
-  text: string;
-}
-
-interface WrappedDisplayLineWindow {
-  lines: WrappedDisplayLine[];
-  totalRows: number;
-  exhausted: boolean;
-}
-
 function hardWrappedDisplayLines(text: string, width: number): string[] {
-  return wrappedDisplayLineWindow(text, width, 0, Number.POSITIVE_INFINITY).lines.map(
-    (line) => line.text,
-  );
-}
-
-function wrappedDisplayLineWindow(
-  text: string,
-  width: number,
-  windowStart: number,
-  windowEnd: number,
-): WrappedDisplayLineWindow {
   const maxWidth = Math.max(1, width);
-  const start = Math.max(0, windowStart);
-  const end = Math.max(start, windowEnd);
-  const lines: WrappedDisplayLine[] = [];
-  let offset = 0;
+  const lines: string[] = [];
   let line = '';
   let lineWidth = 0;
 
-  const emitLine = (): boolean => {
-    if (offset >= start && offset < end) {
-      lines.push({ offset, text: line });
-    }
-    offset += 1;
+  const emitLine = (): void => {
+    lines.push(line);
     line = '';
     lineWidth = 0;
-    return offset >= end;
   };
 
-  let stopped = false;
   for (const sourceLine of text.split('\n')) {
-    if (stopped) break;
     wrapTerminalGraphemes({
       graphemes: iterateTerminalGraphemes(sourceLine),
       maxWidth,
       initialWidth: lineWidth,
       flush: () => {
-        if (!stopped) stopped = emitLine();
+        emitLine();
         return lineWidth;
       },
       append: (grapheme) => {
-        if (stopped) return;
         line += grapheme;
         lineWidth += displayWidth(grapheme);
       },
     });
-    if (stopped) break;
-    stopped = emitLine();
+    emitLine();
   }
 
-  if (stopped) return { lines, totalRows: offset, exhausted: false };
-  return { lines, totalRows: offset, exhausted: true };
+  return lines;
 }
 
 export interface CardBodyLineInput {

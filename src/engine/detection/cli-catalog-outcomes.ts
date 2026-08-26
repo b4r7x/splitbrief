@@ -118,37 +118,43 @@ export function cloneScopedCliCatalogRuntime(
   };
 }
 
+function freshRuntime(
+  connection: ScopedCliCatalogConnection,
+  outcome: Extract<ProbeOutcome<readonly DetectedModel[]>, { kind: 'success' }>,
+  observedAt: number,
+): ScopedCliCatalogRuntime {
+  return {
+    connection: cloneConnection(connection),
+    state: 'fresh',
+    models: outcome.value.map(cloneDetectedModel),
+    fetchedAt: observedAt,
+    validatedAt: observedAt,
+  };
+}
+
 function failedRuntime(
-  attempt: ScopedCliCatalogAttempt,
+  connection: ScopedCliCatalogConnection,
+  outcome: Exclude<ProbeOutcome<readonly DetectedModel[]>, { kind: 'success' }>,
   previous: ScopedCliCatalogRuntime | undefined,
   observedAt: number,
 ): ScopedCliCatalogRuntime {
-  if (attempt.outcome.kind === 'success') {
-    return {
-      connection: cloneConnection(attempt.connection),
-      state: 'fresh',
-      models: attempt.outcome.value.map(cloneDetectedModel),
-      fetchedAt: observedAt,
-      validatedAt: observedAt,
-    };
-  }
   if (previous !== undefined && previous.state !== 'failed') {
     return {
-      connection: cloneConnection(attempt.connection),
+      connection: cloneConnection(connection),
       state: 'stale',
       models: previous.models === null ? null : previous.models.map(cloneDetectedModel),
       fetchedAt: previous.fetchedAt,
       validatedAt: observedAt,
-      failure: attempt.outcome.kind,
+      failure: outcome.kind,
     };
   }
   return {
-    connection: cloneConnection(attempt.connection),
+    connection: cloneConnection(connection),
     state: 'failed',
     models: null,
     fetchedAt: null,
     validatedAt: observedAt,
-    failure: attempt.outcome.kind,
+    failure: outcome.kind,
   };
 }
 
@@ -190,7 +196,17 @@ export function reconcileScopedCliCatalogAttempts(
 
   for (const attempt of input.attempts) {
     const key = scopedCliCatalogConnectionKey(attempt.connection);
-    next.set(key, failedRuntime(attempt, previousByConnection.get(key), input.observedAt));
+    next.set(
+      key,
+      attempt.outcome.kind === 'success'
+        ? freshRuntime(attempt.connection, attempt.outcome, input.observedAt)
+        : failedRuntime(
+            attempt.connection,
+            attempt.outcome,
+            previousByConnection.get(key),
+            input.observedAt,
+          ),
+    );
   }
   return [...next.values()].map(cloneScopedCliCatalogRuntime);
 }

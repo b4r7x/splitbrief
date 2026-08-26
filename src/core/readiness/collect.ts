@@ -5,7 +5,8 @@ import { configErrorDiagnosticState } from '../config/errors.js';
 import { configPath, loadConfig } from '../config/load/io.js';
 import { workflowOptsToCLIOverrides } from '../config/runtime/overrides/from-options.js';
 import { resolveEffectiveConfig } from '../config/runtime/effective-config.js';
-import { readActive, isSessionLive } from '../sessions/lifecycle.js';
+import { readActive } from '../sessions/active-pointer.js';
+import { isSessionLive } from '../sessions/liveness.js';
 import { isInternalGitStatusPath } from '../paths.js';
 import {
   isGitRepo,

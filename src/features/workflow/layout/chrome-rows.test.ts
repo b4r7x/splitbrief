@@ -7,9 +7,7 @@ import {
   RAIL_MARKER_SLOT_WIDTH,
   RAIL_SHORT_LABEL,
   RAIL_STAGES,
-  BOTTOM_FIXED_CHROME_ROWS,
   FIXED_CHROME_ROWS,
-  TOP_FIXED_CHROME_ROWS,
   WORKFLOW_CHROME_ORDER,
   WORKFLOW_CHROME_ROWS,
   chooseFormBVariant,
@@ -65,16 +63,7 @@ describe('getChromeHeight', () => {
     expect(getChromeHeight(4) - base).toBe(3);
   });
 
-  it('uses the named fixed rows and clamps malformed composer heights', () => {
-    expect(TOP_FIXED_CHROME_ROWS).toBe(
-      WORKFLOW_CHROME_ROWS.header + WORKFLOW_CHROME_ROWS.headerDivider,
-    );
-    expect(BOTTOM_FIXED_CHROME_ROWS).toBe(
-      WORKFLOW_CHROME_ROWS.footerDivider +
-        WORKFLOW_CHROME_ROWS.feedback +
-        WORKFLOW_CHROME_ROWS.inputFooter,
-    );
-    expect(FIXED_CHROME_ROWS).toBe(TOP_FIXED_CHROME_ROWS + BOTTOM_FIXED_CHROME_ROWS);
+  it('clamps malformed composer heights to the fixed chrome rows', () => {
     expect(getChromeHeight(-4)).toBe(FIXED_CHROME_ROWS);
     expect(getChromeHeight(Number.NaN)).toBe(FIXED_CHROME_ROWS);
   });
@@ -191,12 +180,12 @@ describe('rail Form-B width primitives', () => {
   it('opens every stage with a two-cell marker slot plus its label width', () => {
     const [spec] = getRailStages('idle');
     if (!spec) throw new Error('no spec stage');
-    expect(railFormBSegmentWidth(spec, false)).toBe(RAIL_MARKER_SLOT_WIDTH + 'spec'.length);
-    expect(railFormBSegmentWidth(spec, true)).toBe(
+    expect(railFormBSegmentWidth(spec, { short: false })).toBe(
+      RAIL_MARKER_SLOT_WIDTH + 'spec'.length,
+    );
+    expect(railFormBSegmentWidth(spec, { short: true })).toBe(
       RAIL_MARKER_SLOT_WIDTH + RAIL_SHORT_LABEL.spec.length,
     );
-    expect(railFormBLabel(spec, { short: false })).toBe('Spec');
-    expect(railFormBLabel(spec, { short: true })).toBe('Spc');
   });
 
   it('rail stage labels render in Title Case across every stage', () => {
@@ -215,27 +204,27 @@ describe('rail Form-B width primitives', () => {
   });
 
   it('measures the same-role chevron at 3 cells and the handoff arrow per tier', () => {
-    expect(railConnectorWidth(false, 'unicode')).toBe(3);
-    expect(railConnectorWidth(true, 'unicode')).toBe(3);
-    expect(railConnectorWidth(false, 'ascii')).toBe(3);
+    expect(railConnectorWidth({ handoff: false }, 'unicode')).toBe(3);
+    expect(railConnectorWidth({ handoff: true }, 'unicode')).toBe(3);
+    expect(railConnectorWidth({ handoff: false }, 'ascii')).toBe(3);
     // The ascii handoff renders ` -> ` (4 cells); geometry must track it so clicks stay aligned.
-    expect(railConnectorWidth(true, 'ascii')).toBe(4);
+    expect(railConnectorWidth({ handoff: true }, 'ascii')).toBe(4);
   });
 
   it('sums the full and short five-stage lines from the shared primitives', () => {
     const stages = getRailStages('implementing');
     // markers 5×2=10, labels spec/plan/briefs/build/verify=25, connectors ›››→→? -> two chevrons +
     // two arrows = 3+3+3+3 (unicode) = 12.
-    expect(measureFormB(stages, false, 'unicode')).toBe(10 + 25 + 12);
-    expect(measureFormB(stages, true, 'unicode')).toBe(10 + 15 + 12);
+    expect(measureFormB(stages, { short: false }, 'unicode')).toBe(10 + 25 + 12);
+    expect(measureFormB(stages, { short: true }, 'unicode')).toBe(10 + 15 + 12);
     // ascii widens the two handoff arrows to ` -> ` (4 each).
-    expect(measureFormB(stages, false, 'ascii')).toBe(10 + 25 + 14);
-    expect(measureFormB(stages, true, 'ascii')).toBe(10 + 15 + 14);
+    expect(measureFormB(stages, { short: false }, 'ascii')).toBe(10 + 25 + 14);
+    expect(measureFormB(stages, { short: true }, 'ascii')).toBe(10 + 15 + 14);
   });
 
   it('keeps full labels while they fit and collapses to short labels under pressure', () => {
     const stages = getRailStages('implementing');
-    const full = measureFormB(stages, false, 'unicode');
+    const full = measureFormB(stages, { short: false }, 'unicode');
     expect(chooseFormBVariant(stages, full, 'unicode')).toEqual({ short: false });
     expect(chooseFormBVariant(stages, full - 1, 'unicode')).toEqual({ short: true });
   });
@@ -245,7 +234,7 @@ describe('selectRailForm', () => {
   it('drops to Form C one cell before the thinnest five-stage line would overflow', () => {
     forceUnicodeGlyphs();
     const stages = getRailStages('implementing');
-    const min = measureFormB(stages, true, 'unicode');
+    const min = measureFormB(stages, { short: true }, 'unicode');
     // contentWidth = cols; at exactly `min` it fits (B), one cell under it does not (C).
     expect(selectRailForm({ phase: 'implementing', cols: min })).toBe('B');
     expect(selectRailForm({ phase: 'implementing', cols: min - 1 })).toBe('C');

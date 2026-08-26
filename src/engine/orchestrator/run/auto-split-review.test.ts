@@ -4,8 +4,8 @@ import { formatTasks } from '../../spec/formatter.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import type {
   BriefAdmissionInput,
-  BriefRecoveryController,
   BriefRecoveryCommand,
+  BriefRecoveryController,
   QueueBriefInput,
   QueueResultV1,
   RecoveryResultV1,
@@ -87,12 +87,11 @@ function makeRecovery(
   initialState: WorkflowState,
   projectDir: string,
   admissionFailure = false,
-): { binding: PhaseRecoveryBinding; commands: BriefRecoveryCommand[]; providerCalls: number } {
+): { binding: PhaseRecoveryBinding; commands: BriefRecoveryCommand[] } {
   const initialInput = admission(projectDir, sessionId, formatTasks(initialState.tasks));
   let recoveryState = createBriefRecoveryState(initialInput, { status: initialStatus });
   let state = initialState;
   const commands: BriefRecoveryCommand[] = [];
-  let providerCalls = 0;
   const currentProjection = () =>
     inspectBriefRecovery({
       sessionId,
@@ -156,7 +155,6 @@ function makeRecovery(
         return resultFor('rejected', command.operationId);
       }
       if (command.action === 'retry') {
-        providerCalls += 1;
         return resultFor('blocked', command.operationId);
       }
       if (command.action !== 'edit') return resultFor('blocked', command.operationId);
@@ -222,7 +220,6 @@ function makeRecovery(
       },
     },
     commands,
-    providerCalls,
   };
 }
 
@@ -263,7 +260,6 @@ describe('reviewAutoSplitOutput', () => {
     expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expect(recovery.commands.map((command) => command.action)).toEqual(['approve']);
-    expect(recovery.providerCalls).toBe(0);
   });
 
   it('enters blocked recovery without an automatic retry and allows conscious rejection', async () => {
@@ -288,7 +284,6 @@ describe('reviewAutoSplitOutput', () => {
     expect(result).toMatchObject({ disposition: 'terminal', outcome: 'rejected' });
     expect(onApprovalNeeded).toHaveBeenCalledOnce();
     expect(recovery.commands.map((command) => command.action)).toEqual(['reject']);
-    expect(recovery.providerCalls).toBe(0);
   });
 
   it('routes an explicit edit back through blocked recovery before approval', async () => {
@@ -325,7 +320,6 @@ describe('reviewAutoSplitOutput', () => {
       expect(result.tasks.map((candidate) => candidate.id)).toEqual(['T002']);
     }
     expect(recovery.commands.map((command) => command.action)).toEqual(['edit', 'approve']);
-    expect(recovery.providerCalls).toBe(0);
   });
 
   it('parks without entering the task loop when brief admission fails', async () => {
@@ -352,7 +346,6 @@ describe('reviewAutoSplitOutput', () => {
     expect(result.disposition).toBe('parked');
     expect(result.state.phase).toBe('reviewing-briefs');
     expect(recovery.commands).toEqual([]);
-    expect(recovery.providerCalls).toBe(0);
     expect(onApprovalNeeded).not.toHaveBeenCalled();
     expect(planner.plan).not.toHaveBeenCalled();
     expect(implementer.implement).not.toHaveBeenCalled();

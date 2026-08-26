@@ -1,7 +1,13 @@
 import { assertNever } from '../../utils/type-guards.js';
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import type { TokenUsage, TokenDelta, TaskTokenUsage } from '../../core/schemas/tokens.js';
+import {
+  definedTaskUsageFields,
+  TASK_USAGE_ATTEMPT_KEYS,
+  type TokenUsage,
+  type TokenDelta,
+  type TaskTokenUsage,
+} from '../../core/schemas/tokens.js';
 import type { EventBus } from '../events/types.js';
 import type { RoutingDecision } from './context-routing/types.js';
 import type { RunnerCallContext } from '../calls/types.js';
@@ -12,22 +18,11 @@ export type UsageCategory = 'planner' | 'implementer' | 'escalation' | 'reviewer
 
 type RunnerCallRole = RunnerCallContext['role'];
 
-type CoreTokenKey =
-  | 'plannerInput'
-  | 'plannerOutput'
-  | 'implementerInput'
-  | 'implementerOutput'
-  | 'escalationInput'
-  | 'escalationOutput'
-  | 'reviewerInput'
-  | 'reviewerOutput';
-type CacheTokenKey =
-  | 'plannerCacheRead'
-  | 'plannerCacheCreate'
-  | 'implementerCacheRead'
-  | 'implementerCacheCreate'
-  | 'reviewerCacheRead'
-  | 'reviewerCacheCreate';
+type CoreTokenKey = Extract<keyof TokenUsage, `${UsageCategory}${'Input' | 'Output'}`>;
+type CacheTokenKey = Extract<
+  keyof TokenUsage,
+  `${'planner' | 'implementer' | 'reviewer'}${'CacheRead' | 'CacheCreate'}`
+>;
 
 // escalation cache tokens are routed into the planner cache buckets because the escalator
 // always uses the planner runner; this preserves cache savings without adding new schema fields.
@@ -177,36 +172,8 @@ function emitTaskTokens(
     method: usage.method,
     implementerTokens: usage.implementerTokens,
     escalationTokens: usage.escalationTokens,
-    ...(usage.implementerCacheReadTokens !== undefined && {
-      implementerCacheReadTokens: usage.implementerCacheReadTokens,
-    }),
-    ...(usage.implementerCacheCreateTokens !== undefined && {
-      implementerCacheCreateTokens: usage.implementerCacheCreateTokens,
-    }),
-    ...(usage.escalationCacheReadTokens !== undefined && {
-      escalationCacheReadTokens: usage.escalationCacheReadTokens,
-    }),
-    ...(usage.escalationCacheCreateTokens !== undefined && {
-      escalationCacheCreateTokens: usage.escalationCacheCreateTokens,
-    }),
     retryCount: usage.retryCount,
-    ...(usage.tool !== undefined && { tool: usage.tool }),
-    ...(usage.model !== undefined && { model: usage.model }),
-    ...(usage.implementerProfile !== undefined && { implementerProfile: usage.implementerProfile }),
-    ...(usage.contextFit !== undefined && { contextFit: usage.contextFit }),
-    ...(usage.estimatedTokens !== undefined && { estimatedTokens: usage.estimatedTokens }),
-    ...(usage.untruncatedEstimatedTokens !== undefined && {
-      untruncatedEstimatedTokens: usage.untruncatedEstimatedTokens,
-    }),
-    ...(usage.contextLength !== undefined && { contextLength: usage.contextLength }),
-    ...(usage.currentCodeTruncated !== undefined && {
-      currentCodeTruncated: usage.currentCodeTruncated,
-    }),
-    ...(usage.currentCodeContextMode !== undefined && {
-      currentCodeContextMode: usage.currentCodeContextMode,
-    }),
-    ...(usage.costPosture !== undefined && { costPosture: usage.costPosture }),
-    ...(usage.routingReason !== undefined && { routingReason: usage.routingReason }),
+    ...definedTaskUsageFields(usage, TASK_USAGE_ATTEMPT_KEYS),
   });
 }
 

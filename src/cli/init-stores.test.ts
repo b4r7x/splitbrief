@@ -421,35 +421,28 @@ Skill body for bootstrap proof.
   }, 30_000);
 
   it('preserves an explicitly configured implementer contextLength through boot', async () => {
-    const savedEnv = process.env.SPLITBRIEF_CONTEXT_LENGTH;
-    delete process.env.SPLITBRIEF_CONTEXT_LENGTH;
-    try {
-      const dir = makeProjectDir();
-      writeConfigYaml(
-        dir,
-        toYaml({
-          ...createDefaultConfig(),
-          planner: { kind: 'cli', tool: 'claude-code' },
-          implementer: {
-            kind: 'api',
-            provider: 'ollama',
-            apiBase: 'http://localhost:11434/v1',
-            model: 'qwen:7b',
-            contextLength: 16384,
-          },
-        }),
-      );
+    const dir = makeProjectDir();
+    writeConfigYaml(
+      dir,
+      toYaml({
+        ...createDefaultConfig(),
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: {
+          kind: 'api',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'qwen:7b',
+          contextLength: 16384,
+        },
+      }),
+    );
 
-      await initStores(dir);
+    await initStores(dir);
 
-      // Provider detection during boot must not overwrite an explicitly configured value.
-      expect(requireConfig().implementer.contextLength).toBe(16384);
-      // An explicit value is not boot-detected, so context routing must not label it 'detected'.
-      expect(configStore.getDetectedContextLength()).toBeUndefined();
-    } finally {
-      if (savedEnv === undefined) delete process.env.SPLITBRIEF_CONTEXT_LENGTH;
-      else process.env.SPLITBRIEF_CONTEXT_LENGTH = savedEnv;
-    }
+    // Provider detection during boot must not overwrite an explicitly configured value.
+    expect(requireConfig().implementer.contextLength).toBe(16384);
+    // An explicit value is not boot-detected, so context routing must not label it 'detected'.
+    expect(configStore.getDetectedContextLength()).toBeUndefined();
   }, 30_000);
 
   it('does not push a fallback-origin context length into the store', async () => {
@@ -528,7 +521,7 @@ Skill body for bootstrap proof.
     expect(configStore.getDetectedContextLength()).toBeUndefined();
   }, 30_000);
 
-  it('throws a CLI error when config loading yields no config state', async () => {
+  it('rejects with a config validation error when the config is structurally invalid', async () => {
     const dir = makeProjectDir();
     // Write a config that is valid YAML but structurally malformed enough
     // that loadConfig raises. An unknown planner tool triggers schema error.
@@ -542,7 +535,10 @@ Skill body for bootstrap proof.
       'utf-8',
     );
 
-    await expect(initStores(dir)).rejects.toThrow();
+    await expect(initStores(dir)).rejects.toMatchObject({
+      kind: 'config-validation-failed',
+      message: expect.stringContaining('planner.tool'),
+    });
   }, 30_000);
 
   it('restores persisted sidebar visibility on startup', async () => {

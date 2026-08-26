@@ -40,7 +40,17 @@ type DerivedCatalogField =
   | 'plannerIdentity'
   | 'catalogLane'
   | 'providerAuth'
-  | 'hasOracle';
+  | 'hasOracle'
+  | 'initialLeftIdx'
+  | 'focusModels'
+  | 'currentModel'
+  | 'persistedModel'
+  | 'catalogDiagnostic'
+  | 'currentCommand'
+  | 'currentCommandKind'
+  | 'customModels'
+  | 'discovery'
+  | 'setCurrentItem';
 
 type CatalogFixture = Omit<PickerCatalog, DerivedCatalogField> &
   Partial<Pick<PickerCatalog, DerivedCatalogField>> & {
@@ -65,7 +75,7 @@ export function pickerCatalog(fixture: CatalogFixture): PickerCatalog {
       hasOracle: base.hasOracle ?? false,
       catalogLane: base.catalogLane ?? 'ready',
       persistedModel: base.persistedModel,
-      customModels: base.customModels,
+      customModels: base.customModels ?? [],
     });
   const persisted = base.persistedModel;
   const initialRightIndex =
@@ -85,5 +95,15 @@ export function pickerCatalog(fixture: CatalogFixture): PickerCatalog {
     catalogLane: base.catalogLane ?? 'ready',
     providerAuth: base.providerAuth,
     hasOracle: base.hasOracle ?? false,
+    initialLeftIdx: base.initialLeftIdx ?? 0,
+    focusModels: base.focusModels ?? false,
+    currentModel: base.currentModel,
+    persistedModel: base.persistedModel,
+    catalogDiagnostic: base.catalogDiagnostic,
+    currentCommand: base.currentCommand,
+    currentCommandKind: base.currentCommandKind,
+    customModels: base.customModels ?? [],
+    discovery: base.discovery ?? { cold: false, refreshing: false },
+    setCurrentItem: base.setCurrentItem ?? (() => {}),
   };
 }

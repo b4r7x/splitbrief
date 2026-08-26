@@ -19,59 +19,26 @@ afterEach(() => {
 });
 
 describe('writeHandoffPack — overwrite confinement', () => {
-  it('rejects overwrite of src directory', async () => {
-    const sessionId = 'test-session';
-    writeHandoffWriterSessionState(tmp, sessionId);
+  it.each(['src', '.git', '..'])(
+    'rejects overwrite of %s, which is not a recognized handoff output',
+    async (segment) => {
+      const sessionId = 'test-session';
+      writeHandoffWriterSessionState(tmp, sessionId);
 
-    const outDir = join(tmp, 'src');
-    mkdirSync(outDir, { recursive: true });
+      const outDir = join(tmp, segment);
+      mkdirSync(outDir, { recursive: true });
 
-    await expect(
-      writeHandoffPack({
-        projectDir: tmp,
-        sessionId,
-        target: 'spec-kit',
-        outDir,
-        mode: 'overwrite',
-      }),
-    ).rejects.toThrow(/refusing to overwrite/);
-  });
-
-  it('rejects overwrite of .git directory', async () => {
-    const sessionId = 'test-session';
-    writeHandoffWriterSessionState(tmp, sessionId);
-
-    const outDir = join(tmp, '.git');
-    mkdirSync(outDir, { recursive: true });
-
-    await expect(
-      writeHandoffPack({
-        projectDir: tmp,
-        sessionId,
-        target: 'spec-kit',
-        outDir,
-        mode: 'overwrite',
-      }),
-    ).rejects.toThrow(/refusing to overwrite/);
-  });
-
-  it('rejects overwrite of parent directory via ..', async () => {
-    const sessionId = 'test-session';
-    writeHandoffWriterSessionState(tmp, sessionId);
-
-    const outDir = join(tmp, '..');
-    mkdirSync(outDir, { recursive: true });
-
-    await expect(
-      writeHandoffPack({
-        projectDir: tmp,
-        sessionId,
-        target: 'spec-kit',
-        outDir,
-        mode: 'overwrite',
-      }),
-    ).rejects.toThrow(/refusing to overwrite/);
-  });
+      await expect(
+        writeHandoffPack({
+          projectDir: tmp,
+          sessionId,
+          target: 'spec-kit',
+          outDir,
+          mode: 'overwrite',
+        }),
+      ).rejects.toThrow(/refusing to overwrite/);
+    },
+  );
 
   it('allows overwrite inside .splitbrief/', async () => {
     const sessionId = 'test-session';

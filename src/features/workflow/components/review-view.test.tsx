@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -9,14 +9,12 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { formatTasks } from '../../../engine/spec/formatter.js';
-import { TASKS_FILE } from '../../../core/paths.js';
-import {
-  BriefRecoveryProjectionV1Schema,
-  type BriefRecoveryProjectionV1,
-} from '../../../core/schemas/brief-recovery.js';
+import { STATE_FILE, TASKS_FILE } from '../../../core/paths.js';
+import { createInitialState } from '../../../core/state/machine.js';
+import { createBriefRecoveryState } from '../../../engine/orchestrator/planning/brief-recovery.js';
+import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { glyph } from '../../../lib/glyphs.js';
-import * as briefReviewLoader from '../brief-review-loader.js';
 import type { UseInputModeResult } from '../hooks/use-input-mode.js';
 import { getWorkflowContentWidth, getWorkflowSidebarWidth } from '../layout/rect.js';
 import { WorkflowBody } from './body.js';
@@ -39,13 +37,6 @@ const wholeScreenReport = {
   path: 'brief-quality.json',
 };
 
-const wholeScreenIssue = {
-  code: 'missing_validation',
-  severity: 'error' as const,
-  taskId: null,
-  message: 'Planner returned an invalid Task Brief contract',
-};
-
 const WHOLE_SCREEN_OUTCOME: Record<WholeScreenRecoveryStatus, string> = {
   checking: 'CHECKING CONTRACT',
   blocked: 'CONTRACT BLOCKED',
@@ -55,53 +46,73 @@ const WHOLE_SCREEN_OUTCOME: Record<WholeScreenRecoveryStatus, string> = {
   'readiness-blocked': 'READINESS BLOCKED',
 };
 
-function wholeScreenRecovery(status: WholeScreenRecoveryStatus): BriefRecoveryProjectionV1 {
-  const blocked = status === 'blocked';
-  const unresolved = status === 'unresolved';
-  const retrying = status === 'retrying';
-  const matchingReport = {
-    briefHash: wholeScreenBrief.hash,
-    report: wholeScreenReport,
-    ruleVersion: 'brief-quality-v1',
-    // Keep the diagnostic in the projection blocker so the whole-screen fixture exercises the
-    // recovery header without entering the task-row general-issue branch.
-    issues: [],
-  };
-  return BriefRecoveryProjectionV1Schema.parse({
-    version: 1,
-    sessionId: 'whole-screen-session',
-    stateRevision: 1,
-    recoveryRevision: 1,
-    epochId: 'epoch-1',
-    status,
-    origin: { mode: 'standard', entry: 'initial' },
-    continuation: { version: 1, kind: 'approval', mode: 'standard', entry: 'initial' },
-    activeBrief: wholeScreenBrief,
-    matchingReport,
-    blocker: blocked
-      ? { kind: 'quality', issues: [wholeScreenIssue] }
-      : unresolved
-        ? { kind: 'unresolved', code: 'brief_unresolved', operationId: 'operation-1' }
-        : null,
-    allowedActions: blocked
-      ? ['retry', 'edit', 'reject', 'status']
-      : retrying
-        ? ['edit', 'reject', 'status']
-        : unresolved
-          ? ['resolve-unresolved', 'edit', 'reject', 'status']
-          : status === 'ready'
-            ? ['approve', 'edit', 'reject', 'status']
-            : ['edit', 'reject', 'status'],
-    activeOperation: null,
-    latestAttempt: null,
-    queuedInputs: {
-      ids: retrying ? ['input-1'] : [],
-      count: retrying ? 1 : 0,
-      carriedCount: 0,
-      heldCount: 0,
-      releasedCount: 0,
+const WHOLE_SCREEN_EPOCH = 'epoch-1';
+const WHOLE_SCREEN_OPERATION = 'operation-1';
+
+function wholeScreenAttempt(sessionId: string) {
+  return {
+    epochId: WHOLE_SCREEN_EPOCH,
+    operationId: WHOLE_SCREEN_OPERATION,
+    intentHash: wholeScreenBrief.hash,
+    kind: 'manual-retry' as const,
+    acceptedAt: '2026-01-01T00:00:00.000Z',
+    baseBrief: wholeScreenBrief,
+    baseReport: null,
+    frozenInputIds: [],
+    reservation: {
+      accountingKey: {
+        sessionId,
+        epochId: WHOLE_SCREEN_EPOCH,
+        operationId: WHOLE_SCREEN_OPERATION,
+        generation: 0,
+      },
+      amount: 0,
+      state: 'reserved' as const,
+      usageApplied: false,
+      appliedUsage: null,
+      history: [],
     },
-  });
+    status: 'accepted' as const,
+    dispatchPossibility: 'none' as const,
+    automaticAllowanceConsumed: false,
+  };
+}
+
+function writeWholeScreenState(sessionDir: string, status: WholeScreenRecoveryStatus): void {
+  const sessionId = basename(sessionDir);
+  const recovery = createBriefRecoveryState(
+    {
+      sessionId,
+      origin: { mode: 'standard', entry: 'initial' },
+      continuation: { version: 1, kind: 'approval', mode: 'standard', entry: 'initial' },
+      activeBrief: wholeScreenBrief,
+      report: {
+        briefHash: wholeScreenBrief.hash,
+        report: wholeScreenReport,
+        ruleVersion: 'brief-quality-v1',
+        issues: [],
+        errorCount: 0,
+      },
+      qualityPolicyVersion: 'brief-quality-v1',
+    },
+    { epochId: WHOLE_SCREEN_EPOCH, recoveryRevision: 1 },
+  );
+  const state = {
+    ...createInitialState('whole-screen fixture'),
+    stateRevision: 1,
+    stateFence: { token: 1, ownerId: 'review-view-test' },
+    phase: 'reviewing-briefs' as const,
+    briefRecovery:
+      status === 'retrying'
+        ? {
+            ...recovery,
+            status,
+            attempts: { [WHOLE_SCREEN_OPERATION]: wholeScreenAttempt(sessionId) },
+            activeOperationId: WHOLE_SCREEN_OPERATION,
+          }
+        : { ...recovery, status },
+  };
+  writeFileSync(join(sessionDir, STATE_FILE), JSON.stringify(state), 'utf8');
 }
 
 function reviewInputMode(): UseInputModeResult {
@@ -340,14 +351,7 @@ describe('ReviewView', () => {
         'utf8',
       );
 
-      const projection = wholeScreenRecovery(status);
-      const loadBriefData = briefReviewLoader.loadBriefReviewData;
-      const loaderSpy = vi
-        .spyOn(briefReviewLoader, 'loadBriefReviewData')
-        .mockImplementation(async (options) => ({
-          ...(await loadBriefData(options)),
-          recovery: projection,
-        }));
+      writeWholeScreenState(tmp, status);
 
       try {
         for (const cols of WHOLE_SCREEN_WIDTHS) {
@@ -389,7 +393,6 @@ describe('ReviewView', () => {
           rendered.unmount();
         }
       } finally {
-        loaderSpy.mockRestore();
         configStore.__testReset();
       }
     },

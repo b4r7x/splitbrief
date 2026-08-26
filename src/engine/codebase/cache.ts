@@ -69,7 +69,7 @@ export async function createParseCache(
     if (repomapCacheError.isDbPathEscapes(err)) {
       throw err;
     }
-    // File doesn't exist yet — check the parent is real
+    // realpathSync throws when the db file does not exist yet; the cache dir was already proven non-symlink above.
   }
 
   function openDb(): Database {

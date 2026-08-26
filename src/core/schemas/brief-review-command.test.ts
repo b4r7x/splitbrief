@@ -1,16 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import {
-  BriefRecoveryProjectionV1Schema,
-  BriefRecoveryStatusSchema,
-  RecoveryResultV1Schema,
-} from './brief-recovery.js';
+import { BriefRecoveryProjectionV1Schema } from './brief-recovery/document.js';
+import { RecoveryResultV1Schema } from './brief-recovery.js';
+import { BriefContractStatusSchema } from './brief-recovery/primitives.js';
 import {
   BRIEF_REVIEW_COMMAND_ACTIONS,
   BriefReviewActionIdSchema,
   BriefReviewCommandSchema,
   BriefReviewProjectionSchema,
   BriefReviewResultSchema,
-  BriefReviewStatusSchema,
   allowedBriefReviewCommandsForPrompt,
   isBriefReviewCommandCurrent,
 } from './brief-review-command.js';
@@ -85,8 +82,7 @@ describe('Brief Review command contract', () => {
   it('reuses the canonical status and projection schemas', () => {
     expect(BriefReviewProjectionSchema).toBe(BriefRecoveryProjectionV1Schema);
     expect(BriefReviewResultSchema).toBe(RecoveryResultV1Schema);
-    expect(BriefReviewStatusSchema).toBe(BriefRecoveryStatusSchema);
-    expect(BriefReviewStatusSchema.parse('unresolved')).toBe('unresolved');
+    expect(BriefContractStatusSchema.parse('unresolved')).toBe('unresolved');
     expect(BriefReviewActionIdSchema.parse('resolve-unresolved')).toBe('resolve-unresolved');
   });
 
@@ -95,10 +91,7 @@ describe('Brief Review command contract', () => {
     expect(allowedBriefReviewCommandsForPrompt('artifact')).toEqual([]);
   });
 
-  it('rejects duplicate IDs and preserves equal duplicate command bytes', () => {
-    const first = BriefReviewCommandSchema.parse(commands[0]);
-    const second = BriefReviewCommandSchema.parse({ ...commands[0] });
-    expect(second).toEqual(first);
+  it('rejects duplicate input IDs', () => {
     expect(
       BriefReviewCommandSchema.safeParse({
         ...commands[0],

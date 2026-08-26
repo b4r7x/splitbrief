@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createRuntimeCommands } from './registry.js';
-import { makeCtx, noop, executeRuntimeCommand } from '#testing/helpers/runtime-commands.js';
+import { makeCtx, noop, runCommandInTest } from '#testing/helpers/runtime-commands.js';
 
 describe('/compact-transcript command', () => {
   it('appears in catalog for workflow and summary screens', () => {
@@ -25,7 +25,12 @@ describe('/compact-transcript command', () => {
       }),
     );
 
-    await executeRuntimeCommand(commands, '/compact-transcript', 'workflow', noop);
+    await runCommandInTest({
+      commands: commands,
+      raw: '/compact-transcript',
+      screen: 'workflow',
+      onError: noop,
+    });
 
     expect(message).toMatch(/12 older messages summarized/i);
   });
@@ -45,7 +50,12 @@ describe('/compact-transcript command', () => {
       }),
     );
 
-    await executeRuntimeCommand(commands, '/compact-transcript', 'workflow', noop);
+    await runCommandInTest({
+      commands: commands,
+      raw: '/compact-transcript',
+      screen: 'workflow',
+      onError: noop,
+    });
 
     expect(message).toMatch(/shell.*does not support transcript compaction/i);
     expect(error).toBeUndefined();
@@ -64,7 +74,12 @@ describe('/compact-transcript command', () => {
       }),
     );
 
-    await executeRuntimeCommand(commands, '/compact-transcript', 'summary', noop);
+    await runCommandInTest({
+      commands: commands,
+      raw: '/compact-transcript',
+      screen: 'summary',
+      onError: noop,
+    });
 
     expect(error).toContain('No active session for /compact-transcript');
   });

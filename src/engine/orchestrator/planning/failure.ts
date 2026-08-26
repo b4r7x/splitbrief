@@ -20,7 +20,7 @@ import {
 import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
-import { workflowAuthority } from '../run/init.js';
+import { workflowAuthority } from '../run/authority.js';
 
 function loadPersistedRewindState(opts: {
   projectDir: string;

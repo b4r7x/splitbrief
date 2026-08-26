@@ -2,7 +2,7 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type {
   BriefRecoveryProviderPort,
   RecoveryProviderResult,
-} from '../../core/schemas/brief-recovery.js';
+} from '../../core/schemas/brief-recovery/provider-call.js';
 import type { Planner } from '../planners/types.js';
 import type { EventBus } from '../events/types.js';
 import { writeSpecFile, type SpecMetadata } from '../../core/paths-io.js';

@@ -18,7 +18,6 @@ if (RECOVERY_SCENARIO_IDS.length === 0) {
   throw new Error('No workflow-brief-recovery scenarios in the visual catalog');
 }
 
-/** The recovery viewports that straddle the production sidebar breakpoint. */
 export const RECOVERY_BOUNDARY_VIEWPORTS: readonly Viewport[] = BRIEF_RECOVERY_VIEWPORTS.filter(
   (candidate) => Math.abs(candidate.cols - SIDEBAR_BREAKPOINT_COLS) <= 1,
 );

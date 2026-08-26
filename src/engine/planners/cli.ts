@@ -29,7 +29,7 @@ import {
 import { composeAbortSignal } from '../../utils/abort.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import { resolveCliExecutableAliases } from '../runners/resolve-cli-executable.js';
-import { assertCliStartGate, type CliStartGate } from '../runners/start-gate.js';
+import { assertCliStartGate } from '../runners/start-gate.js';
 import { processError } from '../../lib/process/errors.js';
 import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
 import { createQuestionAccumulator } from '../parsers/question.js';
@@ -51,13 +51,11 @@ function isRecoverableResumeNoise(event: RunnerCallEvent, resumeId: string): boo
 }
 
 export function createCliPlanner(
-  config: Config,
-  initialSessionId?: string | null,
-  options?: PlannerFactoryOptions,
+  opts: PlannerFactoryOptions & { config: Config; initialSessionId?: string | null | undefined },
 ): Planner {
+  const { config, initialSessionId, trustedCli } = opts;
   const plannerCfg = assertPlannerKind(config, 'cli');
   resolveCliRunnerAuth(plannerCfg);
-  const trustedCli: CliStartGate | undefined = options?.trustedCli;
   const resolvedModel = resolveCliModel(plannerCfg.model, plannerCfg.tool);
   const adapter = lookupCliPlannerAdapter(plannerCfg.tool);
   const command = adapter.descriptor.command;
@@ -164,12 +162,11 @@ export function createCliPlanner(
       throw sessionResumeMismatchError(resumeId, returnedSessionId);
     }
 
-    if (result.status !== 'completed') {
+    if (result.status !== 'completed' && resumeId) {
       const failureText = `${result.error?.message ?? result.text}\n${stderrOutput}`;
-      if (resumeId && isSessionExpiredError(failureText)) {
+      if (isSessionExpiredError(failureText)) {
         throw sessionResumeExpiredError(resumeId, failureText);
       }
-      return result;
     }
     return result;
   }

@@ -43,7 +43,6 @@ export type PreparedDeclaredArtifactReview = RunnerTypes.PreparedDeclaredArtifac
     readWithReceiptAfterChild: (
       input?: Readonly<{ declaredRedactionValues?: readonly string[] }>,
     ) => Promise<ArtifactStageRead>;
-    readonly receipt: ArtifactLeaseReceipt | undefined;
     getReceipt: () => ArtifactLeaseReceipt | undefined;
   }>;
 
@@ -132,9 +131,6 @@ export async function beginDeclaredArtifactReview(
       if (disposed) return Promise.reject(plannerArtifactError.disposed());
       if (approvalCompleted && reviewedRead !== undefined) return Promise.resolve(reviewedRead);
       return lease.readWithReceiptAfterChild({ declaredRedactionValues });
-    },
-    get receipt() {
-      return lease.receipt;
     },
     getReceipt: lease.getReceipt,
     dispose: async () => {

@@ -6,7 +6,7 @@ import { createDefaultConfig } from '../../core/config/load/io.js';
 import { resolveRunnerConfigContext } from '../../core/config/accessors/runner-config.js';
 import { sessionDir } from '../../core/paths.js';
 import type { Config } from '../../core/schemas/config.js';
-import { readActive } from '../../core/sessions/lifecycle.js';
+import { readActive } from '../../core/sessions/active-pointer.js';
 import {
   createSessionPreparationCandidate,
   prepareNewSession,
@@ -82,23 +82,19 @@ function prepareNewExecution(sessionId: string): PreparedExecution {
 
 describe('prepared execution', () => {
   it('keeps ownership only on new sessions and active receipts on both variants', () => {
-    const active = {
-      version: 1 as const,
-      sessionId: 'prepared-session',
-      generation: '88888888-8888-4888-8888-888888888888',
-    };
-    const ref = { projectDir: '/project', sessionId: active.sessionId };
-    const newSession: PreparedExecution['session'] = {
-      kind: 'new',
-      ref,
-      ownership: active,
-      active,
-    };
-    const existingSession: PreparedExecution['session'] = { kind: 'existing', ref, active };
+    const newExecution = prepareNewExecution('prepared-session');
+    const { ref, active } = newExecution.session;
+    const existingExecution = executionWithSession({ kind: 'existing', ref, active });
+    const marker = join(sessionDir(ref.projectDir, ref.sessionId), OWNERSHIP_FILE);
 
-    expect(newSession).toHaveProperty('ownership');
-    expect(existingSession).not.toHaveProperty('ownership');
-    expect(existingSession.active).toBe(active);
+    expect(newExecution.session).toHaveProperty('ownership');
+    expect(existsSync(marker)).toBe(true);
+    expect(existingExecution.session).not.toHaveProperty('ownership');
+    expect(existingExecution.session.active).toEqual(active);
+
+    releasePreparedExecutionOwnership(existingExecution);
+
+    expect(existsSync(marker)).toBe(true);
   });
 
   it('deep freezes the parsed config snapshot without serializing secrets', () => {

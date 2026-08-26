@@ -1,10 +1,10 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type { NormalBriefRecoveryV1 } from '../../../core/schemas/brief-recovery.js';
+import type { NormalBriefRecoveryV1 } from '../../../core/schemas/brief-recovery/document.js';
 import type { Planner } from '../../planners/types.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import { readQueueForPrompt, releaseQueueMessagesForPrompt } from '../queue/drain.js';
-import type { QueueBriefInput, QueueResultV1 } from '../../../core/approval/types.js';
+import type { QueueBriefInput, QueueResultV1 } from '../../../core/schemas/brief-recovery.js';
 import type { RecoveryQueueBinding } from '../queue/native-injection.js';
 import type { BriefsApprovalLoopResult } from './types.js';
 import type {
@@ -35,20 +35,17 @@ export type QueuedBriefPreparationResult =
   | { kind: 'prepared'; state: WorkflowState; tasks: Task[] }
   | { kind: 'failed'; result: BriefsApprovalLoopResult };
 
-function failedResult(
-  state: WorkflowState,
-  tasks: Task[],
-  aborted = false,
-): QueuedBriefPreparationResult {
+function failedResult(state: WorkflowState, tasks: Task[]): QueuedBriefPreparationResult {
   return {
     kind: 'failed',
-    result: {
-      state,
-      tasks,
-      rejected: false,
-      outcome: aborted ? 'aborted' : 'failed',
-      ...(aborted && { aborted: true }),
-    },
+    result: { state, tasks, rejected: false, outcome: 'failed' },
+  };
+}
+
+function abortedResult(state: WorkflowState, tasks: Task[]): QueuedBriefPreparationResult {
+  return {
+    kind: 'failed',
+    result: { state, tasks, rejected: false, outcome: 'aborted', aborted: true },
   };
 }
 
@@ -94,10 +91,6 @@ export async function prepareQueuedBriefs(
     sessionId: opts.wctx.sessionId,
     state: opts.state,
   });
-  if (queued.messages.length === 0 && opts.qualityValidatedTasks !== undefined) {
-    return { kind: 'none', state: queued.state, tasks: opts.tasks };
-  }
-
   if (queued.messages.length === 0) {
     return { kind: 'none', state: queued.state, tasks: opts.tasks };
   }
@@ -112,13 +105,15 @@ export async function prepareQueuedBriefs(
       { projectDir: opts.wctx.projectDir, sessionId: opts.wctx.sessionId },
       queued.messages,
     );
-    return failedResult(queued.state, opts.tasks, opts.wctx.signal?.aborted === true);
+    return opts.wctx.signal?.aborted === true
+      ? abortedResult(queued.state, opts.tasks)
+      : failedResult(queued.state, opts.tasks);
   }
 
   try {
     let sequence = recovery.nextInputSequence;
     for (const message of queued.messages) {
-      if (opts.wctx.signal?.aborted) return failedResult(queued.state, opts.tasks, true);
+      if (opts.wctx.signal?.aborted) return abortedResult(queued.state, opts.tasks);
       const result = await opts.recovery.controller.queueBriefInput(
         queueInputForMessage(opts, message, recovery, sequence),
         opts.recovery.authority,
@@ -127,10 +122,12 @@ export async function prepareQueuedBriefs(
       sequence += 1;
     }
 
-    if (opts.wctx.signal?.aborted) return failedResult(queued.state, opts.tasks, true);
+    if (opts.wctx.signal?.aborted) return abortedResult(queued.state, opts.tasks);
     return { kind: 'prepared', state: queued.state, tasks: opts.tasks };
   } catch {
-    return failedResult(queued.state, opts.tasks, opts.wctx.signal?.aborted === true);
+    return opts.wctx.signal?.aborted === true
+      ? abortedResult(queued.state, opts.tasks)
+      : failedResult(queued.state, opts.tasks);
   } finally {
     releaseQueueMessagesForPrompt(
       { projectDir: opts.wctx.projectDir, sessionId: opts.wctx.sessionId },

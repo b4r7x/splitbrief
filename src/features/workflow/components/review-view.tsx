@@ -45,7 +45,11 @@ export function ReviewView({ height, width }: ReviewViewProps) {
   });
   const renderedLineCount = getScrollableDocumentLineCount(rows);
   const { contentHeight, showFooter } = getReviewContentLayout(innerHeight, renderedLineCount);
-  const clampedOffset = clampScrollableDocumentOffset(offset, renderedLineCount, contentHeight);
+  const clampedOffset = clampScrollableDocumentOffset({
+    offset,
+    lineCount: renderedLineCount,
+    height: contentHeight,
+  });
 
   useEffect(() => {
     reviewStore.setRenderedLineCount(source ? renderedLineCount : 0);
@@ -56,11 +60,12 @@ export function ReviewView({ height, width }: ReviewViewProps) {
   const reviewLabel = source.kind === 'file' ? source.filePath : 'Custom planner artifact';
 
   const remaining = Math.max(0, renderedLineCount - clampedOffset - contentHeight);
-  const footerLabel = remaining > 0 ? `↓ ${remaining} more` : 'End of file';
+  const scrollIndicatorText = ` ↓ ${remaining} more`;
   const scrollHint = `↑↓ scroll${SOFT_SEP}g/G ends`;
   const showScrollHint =
     remaining > 0 &&
-    getTerminalCellWidth(footerLabel) + getTerminalCellWidth(scrollHint) + 2 <= frameInnerWidth;
+    getTerminalCellWidth(scrollIndicatorText) + getTerminalCellWidth(scrollHint) + 2 <=
+      frameInnerWidth;
 
   return (
     <Box flexDirection="column" height={containerHeight} width={width} overflow="hidden">
@@ -82,9 +87,9 @@ export function ReviewView({ height, width }: ReviewViewProps) {
             <Divider width={frameInnerWidth} />
             <Box height={1} width={frameInnerWidth} overflow="hidden">
               {remaining > 0 ? (
-                <ScrollIndicator show={remaining > 0} direction="down" count={remaining} />
+                <ScrollIndicator show direction="down" count={remaining} />
               ) : (
-                <Text color={t.textDim}>{footerLabel}</Text>
+                <Text color={t.textDim}>End of file</Text>
               )}
               <Box flexGrow={1} />
               {showScrollHint && <Text color={t.textDim}>{scrollHint}</Text>}

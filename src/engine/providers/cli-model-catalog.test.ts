@@ -8,7 +8,6 @@ import {
   parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
 } from './cli-model-catalog.js';
-import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../core/tokens/context-length.js';
 
 describe('native CLI model catalogs', () => {
   it('preserves native Codex catalog facts while leaving version admission to canonical detection', () => {
@@ -184,9 +183,5 @@ describe('native CLI model catalogs', () => {
     if (detected === undefined) throw new Error('Expected one detected model');
 
     expect(detected.contextLength).toBe(contextWindow);
-
-    const routedContextLength = detected.contextLength ?? DEFAULT_UNKNOWN_CONTEXT_LENGTH;
-    expect(routedContextLength).toBe(contextWindow);
-    expect(routedContextLength).not.toBe(DEFAULT_UNKNOWN_CONTEXT_LENGTH);
   });
 });

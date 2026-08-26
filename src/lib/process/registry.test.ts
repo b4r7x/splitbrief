@@ -582,6 +582,8 @@ describe('killProcess', () => {
     });
     expect(proc.exitCode).toBe(null);
     await killProcess(proc);
-    expect(proc.killed).toBeTruthy();
+    expect(() => process.kill(proc.pid ?? 0, 0)).toThrow(
+      expect.objectContaining({ code: 'ESRCH' }),
+    );
   });
 });

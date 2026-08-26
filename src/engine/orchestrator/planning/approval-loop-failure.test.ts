@@ -9,7 +9,7 @@ import {
   makePassingPlanner,
   setupProject,
 } from '#testing/helpers/planning-phase.js';
-import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery.js';
+import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
 
 let dirs: string[] = [];
 

@@ -1,10 +1,10 @@
-import type { Task, TaskId } from '../../core/schemas/task.js';
-import { taskId } from '../../core/schemas/task.js';
+import { z } from 'zod';
+import type { Task } from '../../core/schemas/task.js';
+import { taskId, TaskIdSchema } from '../../core/schemas/task.js';
+import { BriefQualityIssueSchema } from '../../core/schemas/brief-recovery/primitives.js';
 import { CONCRETE_FILE_PATH_PATTERN } from '../../utils/path-patterns.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { clamp01 } from '../../utils/math.js';
-
-export type BriefQualitySeverity = 'error' | 'warning';
 
 const BRIEF_QUALITY_CODES = [
   'missing_scope',
@@ -21,31 +21,26 @@ const BRIEF_QUALITY_CODES = [
 
 export type BriefQualityCode = (typeof BRIEF_QUALITY_CODES)[number];
 
-export type BriefQualityIssue = {
-  taskId: TaskId;
-  severity: BriefQualitySeverity;
-  code: BriefQualityCode;
-  message: string;
-};
+const briefQualityIssueSchema = BriefQualityIssueSchema.extend({
+  code: z.enum(BRIEF_QUALITY_CODES),
+  taskId: TaskIdSchema,
+});
 
-export type BriefQualityReport = {
-  version: 1;
-  passed: boolean;
-  score: number;
-  issues: BriefQualityIssue[];
-};
+const briefQualityReportSchema = z.object({
+  version: z.literal(1),
+  passed: z.boolean(),
+  score: z.number().min(0).max(1),
+  issues: z.array(briefQualityIssueSchema),
+});
+
+export type BriefQualityIssue = z.infer<typeof briefQualityIssueSchema>;
+
+export type BriefQualityReport = z.infer<typeof briefQualityReportSchema>;
 
 const BRIEF_QUALITY_ISSUE_CODES: ReadonlySet<string> = new Set(BRIEF_QUALITY_CODES);
 
-function isBriefQualityIssue(value: unknown): value is BriefQualityIssue {
-  if (!isRecord(value)) return false;
-  return (
-    typeof value.taskId === 'string' &&
-    (value.severity === 'error' || value.severity === 'warning') &&
-    typeof value.code === 'string' &&
-    BRIEF_QUALITY_ISSUE_CODES.has(value.code) &&
-    typeof value.message === 'string'
-  );
+export function isBriefQualityCode(value: string): value is BriefQualityCode {
+  return BRIEF_QUALITY_ISSUE_CODES.has(value);
 }
 
 export function firstBriefError(report: BriefQualityReport): BriefQualityIssue | undefined {
@@ -57,17 +52,7 @@ export function briefErrorMessages(report: BriefQualityReport): string[] {
 }
 
 export function isBriefQualityReport(value: unknown): value is BriefQualityReport {
-  if (!isRecord(value)) return false;
-  return (
-    value.version === 1 &&
-    typeof value.passed === 'boolean' &&
-    typeof value.score === 'number' &&
-    Number.isFinite(value.score) &&
-    value.score >= 0 &&
-    value.score <= 1 &&
-    Array.isArray(value.issues) &&
-    value.issues.every(isBriefQualityIssue)
-  );
+  return briefQualityReportSchema.safeParse(value).success;
 }
 
 const VAGUE_PATTERNS = [

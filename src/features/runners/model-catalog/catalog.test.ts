@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { KNOWN_MODELS } from '../../../core/providers/known-models.js';
-import {
-  buildRightModels,
-  countModelOptions,
-  modelsForImplementerProvider,
-  modelsForPlannerTool,
-} from './catalog.js';
+import { buildRightModels, countModelOptions, resolveAndSort } from './catalog.js';
 import type { PickerOption } from './options.js';
 import { deriveModelCatalogCapability } from './posture.js';
 import type { ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
@@ -69,7 +64,7 @@ describe('right column models', () => {
       }),
     };
 
-    const models = modelsForPlannerTool('openai', cache);
+    const models = resolveAndSort('openai', 'planner', cache);
 
     expect(models.find((model) => model.id === 'last-confirmed-model')).toMatchObject({
       membership: 'stale',
@@ -197,29 +192,11 @@ describe('right column models', () => {
   });
 
   it('buildRightModels returns models for claude-code and empty catalogs for shell/agent', () => {
-    const cliItem = pickerItem({
-      id: 'claude-code',
-      displayName: 'Claude Code',
-      kind: 'cli' as const,
-      roles: ['planner', 'implementer'] as const,
-      modelPolicy: 'optional' as const,
-      billing: 'subscription-included' as const,
-      permissions: {
-        directWrite: false,
-        network: true,
-        shell: true,
-        automaticApproval: true,
-        sandbox: 'none' as const,
-      },
-      status: { state: 'ready' as const, remediation: null },
-      available: true,
-    });
-
     expect(
       buildRightModels({
         role: 'planner',
         customModels: [],
-        currentItem: cliItem,
+        currentItem: cliItem('claude-code', 'optional'),
       }).length,
     ).toBeGreaterThan(0);
     expect(
@@ -268,8 +245,6 @@ describe('right column models', () => {
         }),
       }),
     ).toEqual([]);
-    expect(modelsForImplementerProvider('shell', 'shell')).toEqual([]);
-    expect(modelsForImplementerProvider('agent', 'agent')).toEqual([]);
   });
 
   it('suppresses catalog and custom rows for backend-default policy', () => {
@@ -462,10 +437,8 @@ describe('auto is a selection policy, never catalog data', () => {
   });
 
   it('never lets an auto row back into the resolved model catalog', () => {
-    expect(modelsForImplementerProvider('copilot', 'cli').map((model) => model.id)).not.toContain(
-      'auto',
-    );
-    expect(modelsForPlannerTool('codex').map((model) => model.id)).not.toContain('auto');
+    expect(resolveAndSort('copilot', 'implementer').map((model) => model.id)).not.toContain('auto');
+    expect(resolveAndSort('codex', 'planner').map((model) => model.id)).not.toContain('auto');
   });
 });
 
@@ -513,9 +486,7 @@ describe('runtime recommendation quality', () => {
     for (const { provider, model } of T080_UNEVALUATED_COMPATIBLE_ONLY) {
       const bundled = KNOWN_MODELS[provider]?.find((entry) => entry.name === model);
       expect(bundled?.recommendation).toBe('compatible-only');
-      expect(modelsForImplementerProvider(provider, 'api').map((entry) => entry.id)).toContain(
-        model,
-      );
+      expect(resolveAndSort(provider, 'implementer').map((entry) => entry.id)).toContain(model);
     }
   });
 

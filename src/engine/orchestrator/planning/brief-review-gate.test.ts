@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import type { BriefReadinessDecision } from '../../../core/schemas/brief-recovery/attempt.js';
+import { BriefRecoveryProjectionV1Schema } from '../../../core/schemas/brief-recovery/document.js';
 import {
-  BriefRecoveryProjectionV1Schema,
-  RecoveryResultV1Schema,
-  type BriefReadinessDecision,
   type BriefRecoveryCommand,
-  type EvidenceRef,
   type RecoveryResultV1,
+  RecoveryResultV1Schema,
   type StateAuthorityReceipt,
 } from '../../../core/schemas/brief-recovery.js';
+import type { EvidenceRef } from '../../../core/schemas/brief-recovery/primitives.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import type { BriefReadinessGateReport } from './brief-readiness-gate.js';
 import { buildBriefReviewProof, runBriefReviewExit } from './brief-review-gate.js';
@@ -29,6 +29,10 @@ const report = {
   hash: sha256Hex(reportBytes),
   path: 'brief-quality.json',
 } satisfies EvidenceRef;
+function restagedReport(bytes: string) {
+  return { reportBytes: bytes, report: { ...report, hash: sha256Hex(bytes) } };
+}
+
 const task = makeTask({ id: 'T001', evidence: ['proof'] });
 const authority: StateAuthorityReceipt = {
   kind: 'usable',
@@ -125,8 +129,30 @@ describe('buildBriefReviewProof', () => {
     ['mismatched report', { reportBytes: '{}' }, 'report-hash-mismatch'],
     [
       'mismatched rule',
-      { reportBytes: JSON.stringify({ ruleVersion: 'old' }) },
-      'report-hash-mismatch',
+      restagedReport(
+        JSON.stringify({
+          version: 1,
+          briefHash: brief.hash,
+          ruleVersion: 'old',
+          issues: [],
+          errorCount: 0,
+        }),
+      ),
+      'quality-policy-version-mismatch',
+    ],
+    ['malformed report', restagedReport('{'), 'malformed-report-bytes'],
+    [
+      'report for another brief',
+      restagedReport(
+        JSON.stringify({
+          version: 1,
+          briefHash: sha256Hex('# Other Task Briefs\n'),
+          ruleVersion: 'brief-quality-v1',
+          issues: [],
+          errorCount: 0,
+        }),
+      ),
+      'report-brief-hash-mismatch',
     ],
   ])('%s is fail-closed', (_label, change, code) => {
     const proof = buildBriefReviewProof({ ...proofInput(), ...change });

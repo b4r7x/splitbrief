@@ -8,24 +8,30 @@ import { ensureSessionDir } from '../../../../src/core/paths-io.js';
 import { sessionDir } from '../../../../src/core/paths.js';
 import { createInitialState } from '../../../../src/core/state/machine.js';
 import type { WorkflowState } from '../../../../src/core/schemas/workflow.js';
+import type { BriefRecoveryControllerDeps } from '../../../../src/core/schemas/brief-owner.js';
+import type {
+  BudgetReservation,
+  RecoveryCallEstimate,
+} from '../../../../src/core/schemas/brief-recovery/budget.js';
 import {
-  BriefRecoveryCommandSchema,
+  type BriefRecoveryProjectionV1,
   BriefRecoveryProjectionV1Schema,
+  type BriefRecoveryStateView,
   BriefRecoveryStateViewSchema,
+} from '../../../../src/core/schemas/brief-recovery/document.js';
+import {
   type BriefAdmissionInput,
   type BriefRecoveryCommand,
+  BriefRecoveryCommandSchema,
   type BriefRecoveryController,
-  type BriefRecoveryControllerDeps,
-  type BriefRecoveryProjectionV1,
-  type BriefRecoveryStateView,
-  type BudgetReservation,
-  type EvidenceRef,
-  type RecoveryCallEstimate,
-  type RecoveryProviderRequest,
-  type RecoveryProviderResult,
   type RecoveryResultV1,
   type StateAuthorityReceipt,
 } from '../../../../src/core/schemas/brief-recovery.js';
+import type { EvidenceRef } from '../../../../src/core/schemas/brief-recovery/primitives.js';
+import type {
+  RecoveryProviderRequest,
+  RecoveryProviderResult,
+} from '../../../../src/core/schemas/brief-recovery/provider-call.js';
 import {
   BriefReviewCommandSchema,
   type BriefReviewCommandAction,
@@ -62,6 +68,8 @@ type Scenario = {
   readonly admission: RecoveryResultV1;
   readonly providerCalls: () => number;
   readonly implementationCalls: () => number;
+  readonly holdProvider: () => void;
+  readonly releaseProvider: () => void;
   readonly currentAuthority: () => StateAuthorityReceipt;
   readonly currentState: () => WorkflowState;
   readonly attach: (label: string, controller?: BriefRecoveryController) => RpcClient;
@@ -272,11 +280,14 @@ async function createScenario(
   let providerCalls = 0;
   let implementationCalls = 0;
   let nextEvidenceRevision = 1;
-  const implementedOperations = new Set<string>();
+
+  let providerHold: Promise<void> | null = null;
+  let releaseProviderHold = (): void => {};
 
   const provider = {
     async dispatch(input: RecoveryProviderRequest): Promise<RecoveryProviderResult> {
       providerCalls += 1;
+      if (providerHold !== null) await providerHold;
       if (options.provider === 'ambiguous') {
         return {
           kind: 'ambiguous-failure',
@@ -397,6 +408,9 @@ async function createScenario(
         permit: patch.permit,
       };
       saveState(refForSession, persistedState);
+      if (next.briefRecovery?.status === 'ready' && current.briefRecovery?.status !== 'ready') {
+        implementationCalls += 1;
+      }
       currentAuthority = {
         ...currentAuthority,
         stateRevision: next.stateRevision,
@@ -422,10 +436,8 @@ async function createScenario(
     currentAuthority,
   );
 
-  let commandTail: Promise<void> = Promise.resolve();
-  const resultCache = new Map<string, RecoveryResultV1>();
-
   const attach = (label: string, observerController = controller): RpcClient => {
+    let commandTail: Promise<void> = Promise.resolve();
     const input = new PassThrough();
     const chunks: string[] = [];
     const output = new Writable({
@@ -473,24 +485,16 @@ async function createScenario(
               writer.error('The RPC command is not a recovery action.');
               return;
             }
-            const cached = resultCache.get(recoveryCommand.operationId);
-            const result =
-              cached ??
-              (await observerController.dispatchBriefAction(recoveryCommand, currentAuthority));
-            if (cached === undefined) resultCache.set(recoveryCommand.operationId, result);
+            const result = await observerController.dispatchBriefAction(
+              recoveryCommand,
+              currentAuthority,
+            );
             writer.ack('brief_review', {
               id: command.id ?? null,
               operationId: command.operationId ?? recoveryCommand.operationId,
               action: command.command.action,
               result,
             });
-            if (
-              result.kind === 'ready' &&
-              !implementedOperations.has(recoveryCommand.operationId)
-            ) {
-              implementedOperations.add(recoveryCommand.operationId);
-              implementationCalls += 1;
-            }
           },
           async () => undefined,
         );
@@ -517,6 +521,12 @@ async function createScenario(
     controller,
     admission,
     providerCalls: () => providerCalls,
+    holdProvider: () => {
+      providerHold = new Promise<void>((resolve) => {
+        releaseProviderHold = () => resolve();
+      });
+    },
+    releaseProvider: () => releaseProviderHold(),
     implementationCalls: () => implementationCalls,
     currentAuthority: () => currentAuthority,
     currentState: () => persistedState,
@@ -577,6 +587,7 @@ describe('RPC Brief recovery', () => {
 
   it('deduplicates concurrent TUI/RPC retry intents to one receipt, result, and planner call', async () => {
     const scenario = await createScenario();
+    scenario.holdProvider();
     const tui = scenario.attach('tui');
     const rpc = scenario.attach('rpc');
     const projection = scenario.controller.inspectBriefRecovery({
@@ -596,21 +607,28 @@ describe('RPC Brief recovery', () => {
     };
     const rpcRequest = { ...tuiRequest, id: 'rpc-retry' };
     tui.send(tuiRequest);
+    await vi.waitFor(() => {
+      expect(scenario.providerCalls()).toBe(1);
+    });
     rpc.send(rpcRequest);
-
-    const tuiResult = await waitForLine(
-      tui,
-      (line) => line.type === 'ack' && line.command === 'brief_review',
-    );
     const rpcResult = await waitForLine(
       rpc,
+      (line) => line.type === 'ack' && line.command === 'brief_review',
+    );
+    scenario.releaseProvider();
+    const tuiResult = await waitForLine(
+      tui,
       (line) => line.type === 'ack' && line.command === 'brief_review',
     );
     const tuiData = tuiResult.data;
     const rpcData = rpcResult.data;
     expect(tuiData?.operationId).toBe('retry-shared');
     expect(rpcData?.operationId).toBe('retry-shared');
-    expect(tuiData?.result).toEqual(rpcData?.result);
+    expect(rpcData?.result).toMatchObject({
+      kind: 'in-flight',
+      operationId: 'retry-shared',
+      receipt: { operationId: 'retry-shared' },
+    });
     expect(tuiData?.result).toMatchObject({
       kind: 'ready',
       projection: { status: 'ready' },

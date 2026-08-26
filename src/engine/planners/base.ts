@@ -25,7 +25,7 @@ import type { TaskDispatchLedger } from '../calls/dispatch-ledger.js';
 import type {
   TaskCompilationAttemptId,
   TaskCompilationCallEnvelope,
-  TaskCompilationSessionScope,
+  PlannerSessionScope,
 } from '../../core/schemas/task-compilation.js';
 import type { CompilerCapabilityReceipt } from '../runners/compiler-capability.js';
 import type { PreparedPlannerInvocation } from '../runners/types.js';
@@ -62,11 +62,11 @@ type InternalInvokeOptions = {
 type InternalPlanInvokeFn = (
   opts: InternalInvokeOptions & { artifactFile?: string | undefined },
 ) => Promise<PlannerInvokeResult>;
+// invokeEscalate exists separately: Claude Code uses session-chaining for plan phases but one-shot for escalations.
 type InternalEscalateInvokeFn = (
   opts: InternalInvokeOptions & { accessMode: 'read-only' | 'write-files' },
 ) => Promise<RunnerCallResult>;
 
-// invokeEscalate exists separately: Claude Code uses session-chaining for plan phases but one-shot for escalations.
 export type CompilerBatchDispatch = (
   input: Readonly<{
     attemptId: TaskCompilationAttemptId;
@@ -75,7 +75,7 @@ export type CompilerBatchDispatch = (
       prompt: string;
       envelope: TaskCompilationCallEnvelope;
     }>;
-    sessionScope: TaskCompilationSessionScope;
+    sessionScope: PlannerSessionScope;
     projectDir: string;
   }>,
 ) => Promise<PlannerInvokeResult>;
@@ -187,26 +187,10 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       return runMultiPhasePlanning({ ...config, ...(seam !== null && { compiler: seam }) }, opts);
     },
     async quickPlan(opts: PlanOptions): Promise<PlanResult> {
-      return runSinglePhasePlanning(
-        config,
-        (promptFeature, projectContext, languageContext) =>
-          buildQuickPlanPrompt(promptFeature, projectContext, languageContext),
-        opts.feature,
-        opts.projectDir,
-        opts.callbacks,
-        opts.codebaseContext,
-      );
+      return runSinglePhasePlanning(config, buildQuickPlanPrompt, opts);
     },
     async instantPlan(opts: PlanOptions): Promise<PlanResult> {
-      return runSinglePhasePlanning(
-        config,
-        (promptFeature, projectContext, languageContext) =>
-          buildInstantPrompt(promptFeature, projectContext, languageContext),
-        opts.feature,
-        opts.projectDir,
-        opts.callbacks,
-        opts.codebaseContext,
-      );
+      return runSinglePhasePlanning(config, buildInstantPrompt, opts);
     },
 
     async regenerate(opts: RegenerateOptions): Promise<RegenerateResult> {

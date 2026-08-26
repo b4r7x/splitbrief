@@ -43,10 +43,9 @@ const AIDER_PROTECTED_SHORT_VALUE_FLAGS = new Set(['-m']);
 type AiderPlannerBuildInput = Parameters<CliPlannerAdapter<'aider'>['buildArgs']>[0];
 type AiderImplementerBuildInput = Parameters<CliImplementerAdapter<'aider'>['buildArgs']>[0];
 
-function validateArgs(invocationArgs: readonly string[], baseArgs: readonly string[]) {
+function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: readonly string[] }) {
   return validateCliArgs({
-    invocationArgs,
-    baseArgs,
+    ...input,
     protectedFlags: AIDER_PROTECTED_FLAGS,
     protectedShortValueFlags: AIDER_PROTECTED_SHORT_VALUE_FLAGS,
     promptTransport: 'argv',
@@ -266,30 +265,3 @@ export const CLI_CONFORMANCE_CANDIDATES: readonly AiderCliConformanceCandidate[]
     adapter: aiderImplementerAdapter,
   }),
 ]);
-
-export function aiderPromptArgs(opts: {
-  role: 'planner' | 'implementer';
-  model?: string | undefined;
-  projectDir?: string | undefined;
-  mode?: 'plan' | 'escalate' | undefined;
-  configuredArgs?: readonly string[] | undefined;
-}): readonly string[] {
-  const configuredArgs = opts.configuredArgs ?? [];
-  if (opts.role === 'planner') {
-    return aiderPlannerAdapter.buildArgs({
-      prompt: CLI_PROMPT_SENTINEL,
-      model: opts.model,
-      projectDir: opts.projectDir ?? '',
-      configuredArgs,
-      mode: opts.mode ?? 'plan',
-      sessionId: null,
-      effort: undefined,
-    });
-  }
-  return aiderImplementerAdapter.buildArgs({
-    prompt: CLI_PROMPT_SENTINEL,
-    model: opts.model,
-    projectDir: opts.projectDir ?? '',
-    configuredArgs,
-  });
-}

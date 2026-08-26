@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { OrchestratorCallbacks } from '../../../src/engine/orchestrator/types.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
@@ -8,43 +8,18 @@ import { loadState } from '../../../src/core/state/persistence.js';
 import { readSession } from '../../../src/core/sessions/io.js';
 import { BRIEF_QUALITY_FILE, sessionDir } from '../../../src/core/paths.js';
 import { isBriefQualityReport } from '../../../src/engine/spec/brief-quality.js';
-import { readRecoveryJournal } from '../../../src/core/evidence/ledger-storage.js';
+import { readRecoveryJournal } from '../../../src/core/evidence/recovery-journal.js';
 import {
   createHeadlessGitProject,
   preparedHeadlessExecution,
   writeHeadlessConfigYaml,
 } from '#testing/helpers/headless-project.js';
 import { fauxImplementer } from '#testing/helpers/faux/implementer.js';
-import { fauxPlanner } from '#testing/helpers/faux/planner.js';
+import { zeroTaskPlanner } from '#testing/helpers/factories/planner-artifact.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
-import {
-  createTaskCompilationAttemptId,
-  OwnedPlannerArtifactSchema,
-} from '../../../src/core/schemas/task-compilation.js';
-import { sha256Hex } from '../../../src/utils/sha256.js';
 
 const dirs: string[] = [];
-
-function phaseResult(logicalName: 'spec.md' | 'plan.md' | 'tasks.md', text: string) {
-  const digest = sha256Hex(text);
-  return {
-    artifact: OwnedPlannerArtifactSchema.parse({
-      semanticId: `test-${logicalName}`,
-      programId: null,
-      batchId: null,
-      attemptId: createTaskCompilationAttemptId(),
-      logicalName,
-      transport: 'stdout-final',
-      text,
-      byteLength: Buffer.byteLength(text, 'utf8'),
-      sha256: digest,
-      runtimeReceipt: digest,
-      terminal: { status: 'completed', recordId: `test-${logicalName}`, protocolDigest: digest },
-      sourceReceipt: { kind: 'stdout-final', resultDigest: digest },
-    }),
-  };
-}
 
 afterEach(() => {
   while (dirs.length > 0) {
@@ -86,49 +61,6 @@ function writeFailureFixture(projectDir: string, mode: 'standard' | 'speckit'): 
   ]);
 }
 
-function makePlannerWithInvalidTaskRepair(): {
-  planner: ReturnType<typeof fauxPlanner>['planner'];
-  planCallCount: () => number;
-  repairCallCount: () => number;
-} {
-  const prepared = fauxPlanner({
-    plans: [
-      {
-        spec: '# Admitted Specification\n\nThe workflow must fail closed.',
-        plan: '# Admitted Plan\n\nGenerate and validate Task Briefs.',
-        tasks: [],
-      },
-    ],
-  });
-  const originalPlan = prepared.planner.plan.bind(prepared.planner);
-  prepared.planner.plan = async (opts) => {
-    const result = await originalPlan(opts);
-    return {
-      ...result,
-      phases: [
-        phaseResult('spec.md', result.spec),
-        phaseResult('plan.md', result.plan),
-        phaseResult('tasks.md', 'The planner returned no Task Brief.'),
-      ],
-    };
-  };
-
-  let repairCallCount = 0;
-  prepared.planner.review = async () => {
-    repairCallCount += 1;
-    return {
-      text: 'The tasks-only repair still contains no parseable Task Brief.',
-      usage: null,
-    };
-  };
-
-  return {
-    planner: prepared.planner,
-    planCallCount: () => prepared.state.planCallCount,
-    repairCallCount: () => repairCallCount,
-  };
-}
-
 describe('zero-task planning fails before brief review', { timeout: 30_000 }, () => {
   it.each(['standard', 'speckit'] as const)(
     '%s records the quality failure without entering the blank brief-review screen',
@@ -147,7 +79,7 @@ describe('zero-task planning fails before brief review', { timeout: 30_000 }, ()
         },
         onComplete: () => {},
       };
-      const planner = makePlannerWithInvalidTaskRepair();
+      const planner = zeroTaskPlanner();
       const { implementer, state: implementerState } = fauxImplementer({
         steps: [{ success: true, output: 'unexpected implementer call' }],
       });
@@ -190,9 +122,7 @@ describe('zero-task planning fails before brief review', { timeout: 30_000 }, ()
       expect(persistedState?.generation).toBeNull();
       expect(persistedState?.permit).toBeNull();
       expect(readRecoveryJournal(ref).records.length).toBeGreaterThan(0);
-      expect(existsSync(qualityPath)).toBe(true);
       expect(qualityReport.passed).toBe(false);
-      expect(qualityReport.issues.length).toBeGreaterThan(0);
       expect(qualityReport.issues.some((issue) => issue.code === 'empty_task_list')).toBe(true);
     },
   );

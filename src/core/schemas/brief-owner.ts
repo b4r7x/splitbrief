@@ -1,20 +1,19 @@
 import { z } from 'zod';
-import type { ConfigRevision } from '../../lib/confined-fs.js';
-import type { RecoveryEvidenceRef } from '../evidence/ledger-storage.js';
+import type { ConfigRevision } from '../../lib/confined-fs-atomic.js';
+import type { RecoveryEvidenceRef } from '../evidence/recovery-journal.js';
 import { PhaseSchema } from './enums.js';
+import {
+  BriefRecoveryStateViewSchema,
+  NormalBriefRecoveryV1Schema,
+} from './brief-recovery/document.js';
 import {
   BriefContractStatusSchema,
   BriefRecoveryActionSchema,
-  BriefRecoveryStateViewSchema,
-  NormalBriefRecoveryV1Schema,
-} from './brief-recovery.js';
-import type {
-  BriefRecoveryBudgetPort,
-  BriefRecoveryProviderPort,
-  BriefQualityIssue,
-  BriefRecoveryStateView,
-  NormalBriefRecoveryV1,
-} from './brief-recovery.js';
+} from './brief-recovery/primitives.js';
+import type { BriefRecoveryBudgetPort } from './brief-recovery/budget.js';
+import type { BriefRecoveryStateView, NormalBriefRecoveryV1 } from './brief-recovery/document.js';
+import type { BriefQualityIssue } from './brief-recovery/primitives.js';
+import type { BriefRecoveryProviderPort } from './brief-recovery/provider-call.js';
 
 const nonnegativeInteger = z.number().int().nonnegative();
 const boundedId = z.string().min(1).max(256);

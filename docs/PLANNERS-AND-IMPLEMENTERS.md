@@ -704,9 +704,9 @@ Each planning phase has a dedicated prompt builder. All builders produce a singl
 
 **`buildSpecPrompt(feature, researchOutput, languageContext?)`** -- receives the research output and writes `spec.md`. Defines what to build (not how). Language context sections are injected for non-JS/TS projects.
 
-**`buildPlanPrompt(spec, projectContext, skillsContext?, languageContext?)`** -- receives the approved spec (as a `PlanPromptSpec` with content and a `hasClarifications` flag) and writes `plan.md`. Defines how to build it. If the spec includes user clarifications, the output instruction tells the planner to reference those decisions.
+**`buildPlanPrompt({ spec, projectContext, skillsContext?, languageContext?, maxPromptBytes? })`** -- receives the approved spec (as a `PlanPromptSpec` with content and a `hasClarifications` flag) and writes `plan.md`. Defines how to build it. If the spec includes user clarifications, the output instruction tells the planner to reference those decisions.
 
-**`buildTasksPrompt(spec, plan, languageContext?)`** -- receives spec and plan, produces `tasks.md` markdown. The prompt includes the full Task Brief v1 contract (nine semantic sections), critical rules for self-containment, and a format example. Output is parsed into `Task[]` by the task parser.
+**`buildTasksPrompt({ spec, plan, languageContext?, currentTasks? })`** -- receives spec and plan, produces `tasks.md` markdown. The prompt includes the full Task Brief v1 contract (nine semantic sections), critical rules for self-containment, and a format example. Output is parsed into `Task[]` by the task parser.
 
 **`buildQuickPlanPrompt(feature, projectContext, languageContext?)`** -- collapses all phases into one call. Receives the feature and project context directly, emits `tasks.md` with no spec or plan document.
 

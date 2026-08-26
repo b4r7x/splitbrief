@@ -94,11 +94,7 @@ describe('retryAndRecord — retry budget', () => {
 
     const retryEvents = busEvents.filter((e) => e.type === 'task_retry');
     expect(retryEvents.length).toBeGreaterThanOrEqual(1);
-    const firstRetry = retryEvents[0];
-    if (firstRetry?.type === 'task_retry') {
-      expect(firstRetry.taskId).toBe('T001');
-      expect(firstRetry.attempt).toBe(1);
-    }
+    expect(retryEvents[0]).toMatchObject({ taskId: 'T001', attempt: 1 });
 
     expect(taskBreakdowns[0]?.method).toBe('local');
   });

@@ -131,9 +131,8 @@ describe('adviseMode — confidence and factors', () => {
 
   it('confidence is >= 0.65 when upgrade or downgrade fires', () => {
     const result = adviseMode('fix typo', 'standard');
-    if (result.kind === 'upgrade' || result.kind === 'downgrade') {
-      expect(result.confidence).toBeGreaterThanOrEqual(0.65);
-    }
+    expect(result.kind).toBe('downgrade');
+    expect(result.confidence).toBeGreaterThanOrEqual(0.65);
   });
 });
 
@@ -158,7 +157,6 @@ describe('formatAdvisoryText', () => {
     expect(text).toContain('likely');
     expect(text).toContain('instant');
     expect(text).not.toContain('\n');
-    // Should be short — no paragraphs
     expect(text.length).toBeLessThan(80);
   });
 

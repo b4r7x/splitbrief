@@ -33,7 +33,7 @@ import {
   type ConfigRevision,
   type ConfinedAtomicWriteTestOperations,
   type ConfinedAtomicWriteSyncTestOperations,
-} from './confined-fs.js';
+} from './confined-fs-atomic.js';
 import { readProcessStartTimeMs } from './process/start-time.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -308,7 +308,7 @@ function startCasChild(options: {
         SPLITBRIEF_CAS_READY: options.readyPath,
         SPLITBRIEF_CAS_RELEASE: options.releasePath,
         SPLITBRIEF_CAS_CONTENT: options.content,
-        SPLITBRIEF_CAS_SOURCE: join(process.cwd(), 'src/lib/confined-fs.ts'),
+        SPLITBRIEF_CAS_SOURCE: join(process.cwd(), 'src/lib/confined-fs-atomic.ts'),
         SPLITBRIEF_CAS_CRASH_PUBLISH: options.crashPublish === true ? '1' : '0',
       },
       stdio: ['ignore', 'ignore', 'pipe'],
@@ -774,7 +774,7 @@ describe('confinedAtomicWriteFile', () => {
     expect(temporaryFiles(dir)).toEqual([]);
   });
 
-  it.each(['open', 'write', 'fsync', 'chmod', 'read', 'stat', 'rename'] as const)(
+  it.each(['open', 'write', 'fsync', 'chmod', 'read', 'stat', 'compare', 'rename'] as const)(
     'preserves the original bytes when %s fails before rename',
     async (operation) => {
       const { dir, path, revision } = makeFile();
@@ -792,22 +792,6 @@ describe('confinedAtomicWriteFile', () => {
       expect(temporaryFiles(dir)).toEqual([]);
     },
   );
-
-  it('preserves the original bytes when compare fails before rename', async () => {
-    const { dir, path, revision } = makeFile();
-
-    await expect(
-      confinedAtomicWriteFileForTest(
-        path,
-        Buffer.from('replacement'),
-        { expectedRevision: revision, mode: 0o600 },
-        faultingOperations('compare'),
-      ),
-    ).rejects.toThrow('compare failed');
-
-    expect(readFileSync(path, 'utf8')).toBe('original bytes');
-    expect(temporaryFiles(dir)).toEqual([]);
-  });
 
   it('preserves absence when a first-save link fails', async () => {
     const dir = createAtomicTempDir('confined-atomic-link-failure');
@@ -1034,7 +1018,7 @@ describe('confinedAtomicWriteFileSync', () => {
         expectedRevision: revision,
         mode: 0o600,
       }),
-    ).toThrow(/symlink/);
+    ).toThrow(expect.objectContaining({ kind: 'fs-symlink-write' }));
     expect(readFileSync(externalLock, 'utf8')).toBe('external sync lock');
     expect(readFileSync(path, 'utf8')).toBe('original bytes');
   });
@@ -1048,7 +1032,7 @@ describe('confinedAtomicWriteFileSync', () => {
         expectedRevision: revision,
         mode: 0o600,
       }),
-    ).toThrow(/Invalid atomic lock/);
+    ).toThrow(expect.objectContaining({ kind: 'fs-invalid-id' }));
     expect(readFileSync(path, 'utf8')).toBe('original bytes');
   });
 
@@ -1131,7 +1115,7 @@ describe('confinedAtomicWriteFileSync', () => {
         expectedRevision: revision,
         mode: 0o600,
       }),
-    ).toThrow(/symlink/);
+    ).toThrow(expect.objectContaining({ kind: 'fs-symlink-write' }));
     expect(readFileSync(linkedTarget, 'utf8')).toBe('linked original');
     expect(readFileSync(path, 'utf8')).toBe('original bytes');
   });
@@ -1149,33 +1133,13 @@ describe('confinedAtomicWriteFileSync', () => {
         expectedRevision: revisionFor(externalTarget),
         mode: 0o600,
       }),
-    ).toThrow(/symlink/);
+    ).toThrow(expect.objectContaining({ kind: 'fs-symlink-write' }));
     expect(readFileSync(externalTarget, 'utf8')).toBe('outside original');
     expect(temporaryFiles(project)).toEqual([]);
     expect(temporaryFiles(outside)).toEqual([]);
   });
 
-  it('keeps the original bytes when a pre-publish operation fails', () => {
-    const { dir, path, revision } = makeFile();
-    const operations: ConfinedAtomicWriteSyncTestOperations = {
-      compare: () => {
-        throw fault('compare failed');
-      },
-    };
-
-    expect(() =>
-      confinedAtomicWriteFileSyncForTest(
-        path,
-        Buffer.from('replacement'),
-        { expectedRevision: revision, mode: 0o600 },
-        operations,
-      ),
-    ).toThrow('compare failed');
-    expect(readFileSync(path, 'utf8')).toBe('original bytes');
-    expect(temporaryFiles(dir)).toEqual([]);
-  });
-
-  it.each(['open', 'write', 'fsync', 'read', 'stat', 'rename'] as const)(
+  it.each(['open', 'write', 'fsync', 'read', 'stat', 'compare', 'rename'] as const)(
     'preserves the original bytes when %s fails before publish',
     (operation) => {
       const { dir, path, revision } = makeFile();
@@ -1306,7 +1270,9 @@ describe('confinedAtomicWriteFileSync', () => {
         { expectedRevision: revision, mode: 0o600 },
         operations,
       ),
-    ).toThrow(/symlink|changed during replacement/);
+    ).toThrow(
+      expect.objectContaining({ kind: expect.stringMatching(/^fs-(symlink-write|invalid-id)$/) }),
+    );
     expect(readFileSync(join(moved, 'config.yaml'), 'utf8')).toBe('original bytes');
     expect(readFileSync(join(outside, basename(temporaryPath ?? 'missing')), 'utf8')).toBe(
       'outside sentinel',

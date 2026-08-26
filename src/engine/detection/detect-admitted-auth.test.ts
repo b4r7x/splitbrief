@@ -84,7 +84,10 @@ describe('all-admitted-tools auth detection', () => {
           ].join('\n'),
         );
         await chmod(shim, 0o755);
-        const executable = await resolveCliExecutable(shim, '/neutral/project');
+        const executable = await resolveCliExecutable({
+          command: shim,
+          projectDir: '/neutral/project',
+        });
         await mkdir(join(stateHome, '.local', 'share', 'kilo'), { recursive: true });
         await writeFile(
           join(stateHome, '.local', 'share', 'kilo', 'auth.json'),
@@ -147,7 +150,10 @@ describe('all-admitted-tools auth detection', () => {
           ].join('\n'),
         );
         await chmod(shim, 0o755);
-        const executable = await resolveCliExecutable(shim, '/neutral/project');
+        const executable = await resolveCliExecutable({
+          command: shim,
+          projectDir: '/neutral/project',
+        });
         for (const name of HOST_STATE_ENV) delete process.env[name];
         process.env.HOME = emptyHome;
 

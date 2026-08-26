@@ -60,6 +60,36 @@ export const TaskTokenUsageSchema = z.object({
 export type TokenUsage = z.infer<typeof TokenUsageSchema>;
 export type TaskTokenUsage = z.infer<typeof TaskTokenUsageSchema>;
 
+export const TASK_USAGE_METADATA_KEYS = [
+  'implementerCacheReadTokens',
+  'implementerCacheCreateTokens',
+  'escalationCacheReadTokens',
+  'escalationCacheCreateTokens',
+  'implementerProfile',
+  'contextFit',
+  'estimatedTokens',
+  'untruncatedEstimatedTokens',
+  'contextLength',
+  'currentCodeTruncated',
+  'currentCodeContextMode',
+  'costPosture',
+  'routingReason',
+] as const;
+
+export const TASK_USAGE_ATTEMPT_KEYS = ['tool', 'model', ...TASK_USAGE_METADATA_KEYS] as const;
+
+export function definedTaskUsageFields<K extends keyof TaskTokenUsage>(
+  source: { readonly [P in K]?: TaskTokenUsage[P] },
+  keys: readonly K[],
+): { [P in K]?: TaskTokenUsage[P] } {
+  const fields: { [P in K]?: TaskTokenUsage[P] } = {};
+  for (const key of keys) {
+    const value = source[key];
+    if (value !== undefined) fields[key] = value;
+  }
+  return fields;
+}
+
 // Frozen because every zero state in the process is a spread of this one object,
 // and the token accumulators mutate their totals argument in place.
 export const ZERO_TOKEN_USAGE: Readonly<TokenUsage> = Object.freeze({

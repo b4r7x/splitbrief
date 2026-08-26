@@ -70,11 +70,16 @@ describe('Claude Code role adapters', () => {
       'fixture',
     ]);
     const plannerBase = plannerArgs.slice(0, -2);
-    expect(claudeCodePlannerAdapter.validateArgs(plannerArgs, plannerBase)).toEqual({
+    expect(
+      claudeCodePlannerAdapter.validateArgs({ invocationArgs: plannerArgs, baseArgs: plannerBase }),
+    ).toEqual({
       valid: true,
     });
     expect(
-      claudeCodePlannerAdapter.validateArgs([...plannerArgs, '--model', 'other'], plannerBase),
+      claudeCodePlannerAdapter.validateArgs({
+        invocationArgs: [...plannerArgs, '--model', 'other'],
+        baseArgs: plannerBase,
+      }),
     ).toEqual({ valid: false, conflicts: ['--model'] });
 
     const implementerArgs = claudeCodeImplementerAdapter.buildArgs({
@@ -95,14 +100,19 @@ describe('Claude Code role adapters', () => {
       'fixture',
     ]);
     const implementerBase = implementerArgs.slice(0, -2);
-    expect(claudeCodeImplementerAdapter.validateArgs(implementerArgs, implementerBase)).toEqual({
+    expect(
+      claudeCodeImplementerAdapter.validateArgs({
+        invocationArgs: implementerArgs,
+        baseArgs: implementerBase,
+      }),
+    ).toEqual({
       valid: true,
     });
     expect(
-      claudeCodeImplementerAdapter.validateArgs(
-        [...implementerArgs, '--permission-mode', 'skip'],
-        implementerBase,
-      ),
+      claudeCodeImplementerAdapter.validateArgs({
+        invocationArgs: [...implementerArgs, '--permission-mode', 'skip'],
+        baseArgs: implementerBase,
+      }),
     ).toEqual({ valid: false, conflicts: ['--permission-mode'] });
   });
 
@@ -145,7 +155,9 @@ describe('Claude Code role adapters', () => {
       '--permission-mode',
       'plan',
     ]);
-    expect(claudeCodePlannerAdapter.validateArgs(init, init)).toEqual({ valid: true });
+    expect(claudeCodePlannerAdapter.validateArgs({ invocationArgs: init, baseArgs: init })).toEqual(
+      { valid: true },
+    );
   });
 
   it('rejects hostile configuration that could widen the planner plan vector', () => {
@@ -172,7 +184,12 @@ describe('Claude Code role adapters', () => {
       ['--session-id', 'other-session'],
     ] as const;
     for (const tail of hostile) {
-      expect(claudeCodePlannerAdapter.validateArgs([...init, ...tail], init)).toEqual({
+      expect(
+        claudeCodePlannerAdapter.validateArgs({
+          invocationArgs: [...init, ...tail],
+          baseArgs: init,
+        }),
+      ).toEqual({
         valid: false,
         conflicts: expect.arrayContaining([tail[0] ?? '']),
       });
@@ -188,16 +205,16 @@ describe('Claude Code role adapters', () => {
     });
     const implementerBase = implementerArgs.slice(0, -2);
     expect(
-      claudeCodeImplementerAdapter.validateArgs(
-        [...implementerBase, '--permission-mode', 'bypassPermissions'],
-        implementerBase,
-      ),
+      claudeCodeImplementerAdapter.validateArgs({
+        invocationArgs: [...implementerBase, '--permission-mode', 'bypassPermissions'],
+        baseArgs: implementerBase,
+      }),
     ).toEqual({ valid: false, conflicts: ['--permission-mode'] });
     expect(
-      claudeCodeImplementerAdapter.validateArgs(
-        [...implementerBase, '--allowedTools', 'Write'],
-        implementerBase,
-      ),
+      claudeCodeImplementerAdapter.validateArgs({
+        invocationArgs: [...implementerBase, '--allowedTools', 'Write'],
+        baseArgs: implementerBase,
+      }),
     ).toEqual({ valid: false, conflicts: ['--allowedTools'] });
   });
 });

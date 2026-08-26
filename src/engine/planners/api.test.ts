@@ -369,15 +369,12 @@ describe('createApiPlanner', () => {
 
     expect(receivedBodies.length).toBeGreaterThan(0);
     const firstCall = receivedBodies[0]!;
-    // First two messages = prior history; the current prompt is appended last.
     expect(firstCall.messages[0]).toEqual({ role: 'user', content: 'start: add auth' });
     expect(firstCall.messages[1]).toEqual({ role: 'assistant', content: 'we should use JWT' });
     expect(firstCall.messages[firstCall.messages.length - 1]!.role).toBe('user');
 
-    // Subsequent phases do NOT repeat priorMessages.
     const secondCall = receivedBodies[1]!;
     expect(secondCall.messages[0]!.role).toBe('user');
-    // Prior assistant turn should not be present in phase 2+
     const hasAssistantPrior = secondCall.messages.some(
       (m: { role: string; content: string }) =>
         m.role === 'assistant' && m.content === 'we should use JWT',
@@ -390,11 +387,15 @@ describe('createApiPlanner', () => {
     async (provider) => {
       const planner = createApiPlanner(makeApiPlannerConfig(provider));
       expect(await planner.isAvailable()).toBe(true);
-      if (provider === 'anthropic') {
-        expect(receivedCatalogRequests).toContainEqual({ pathname: '/v1/models', limit: '1000' });
-      }
     },
   );
+
+  it('probes the anthropic model catalog with limit=1000 during isAvailable', async () => {
+    const planner = createApiPlanner(makeApiPlannerConfig('anthropic'));
+
+    expect(await planner.isAvailable()).toBe(true);
+    expect(receivedCatalogRequests).toContainEqual({ pathname: '/v1/models', limit: '1000' });
+  });
 
   it('isAvailable returns false when endpoint is unreachable', async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -463,6 +464,6 @@ describe('createApiPlanner', () => {
 
     expect(await planner.isAvailable()).toBe(false);
     const reason = planner.unavailabilityReason?.();
-    expect(reason).toBeTruthy();
+    expect(reason).toBe('fetch failed');
   });
 });

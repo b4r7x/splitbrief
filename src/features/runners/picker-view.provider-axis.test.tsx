@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -24,10 +24,6 @@ import { usePickerActions } from './use-picker-actions.js';
 import { usePickerCatalog } from './use-picker-catalog.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import type { PickerActions } from './use-picker-actions.js';
-
-vi.mock('../../engine/detection/store-publication.js', () => ({
-  refreshDetectionForCurrentConfig: vi.fn(async () => ({})),
-}));
 
 const RIGHT = '\u001B[C';
 
@@ -92,13 +88,13 @@ function makeCatalog(input: {
 
 function makeActions(): PickerActions {
   return {
-    confirm: () => {},
+    confirm: async () => {},
     confirmProviderVariant: async () => {},
     leftChange: () => {},
-    deleteRight: () => {},
+    deleteRight: async () => {},
     chooseContract: () => {},
-    customCommand: () => {},
-    customModel: () => {},
+    customCommand: async () => {},
+    customModel: async () => {},
     openCustomModel: () => {},
     openProviderAuth: () => {},
     submitProviderKey: async () => {},
@@ -144,7 +140,9 @@ describe('PickerView terminal panes', () => {
     expect(frame).toContain("Planner's setup");
     expect(frame).toContain('Claude Code CLI · Claude Sonnet 4');
     expect(frame).toContain('subscription · Network · Shell');
-    expect(frame).toContain("↑↓ select · ⏎ use planner's setup · esc cancel · ctrl+r refresh");
+    const hintRow = frame.split('\n').find((row) => row.includes('↑↓ select')) ?? '';
+    expect(hintRow.trim().startsWith('↑↓ select')).toBe(true);
+    expect(hintRow).toContain("use planner's setup");
     ui.unmount();
   });
 
@@ -276,7 +274,11 @@ describe('PickerView terminal panes', () => {
 /** The escalate seat's left column comes from the real catalog, not a fixture. */
 function EscalationPicker() {
   const catalog = usePickerCatalog('escalation', 0);
-  const actions = usePickerActions({ role: 'escalation', catalog });
+  const actions = usePickerActions({
+    role: 'escalation',
+    catalog,
+    deps: { refreshDetection: async () => {} },
+  });
   return <PickerView role="escalation" catalog={catalog} actions={actions} />;
 }
 

@@ -56,10 +56,10 @@ describe('rejectRunSnapshot', () => {
     await recordRunSnapshot(tmp, 'sess-aaa', runSnapshot.manifest);
 
     // Plant session A's ledger (sessionId: 'sess-aaa') under session B's storage.
-    const bSnapshotsDir = snapshotsDir(tmp, 'sess-bbb');
+    const bSnapshotsDir = snapshotsDir({ projectDir: tmp, sessionId: 'sess-bbb' });
     await mkdir(bSnapshotsDir, { recursive: true });
     await copyFile(
-      join(snapshotsDir(tmp, 'sess-aaa'), 'run-ledger.json'),
+      join(snapshotsDir({ projectDir: tmp, sessionId: 'sess-aaa' }), 'run-ledger.json'),
       join(bSnapshotsDir, 'run-ledger.json'),
     );
 
@@ -109,7 +109,6 @@ describe('rejectRunSnapshot', () => {
     });
     await recordRunSnapshot(tmp, 'sess-01', runSnapshot.manifest);
 
-    // Conflict on first attempt.
     await writeFile(join(tmp, 'feature.ts'), 'user edit');
     const first = await rejectRunSnapshot(tmp, 'sess-01');
     expect(first.status).toBe('rejected');
@@ -126,7 +125,6 @@ describe('rejectRunSnapshot', () => {
     // User resolves the conflict by reverting the file to what the run wrote.
     await writeFile(join(tmp, 'feature.ts'), 'after splitbrief');
 
-    // Second attempt completes successfully.
     const second = await rejectRunSnapshot(tmp, 'sess-01');
     expect(second.status).toBe('rejected');
     if (second.status === 'rejected') {
@@ -210,7 +208,10 @@ describe('rejectRunSnapshot', () => {
 
     // Tamper with the persisted run-snapshot manifest to smuggle in a path that
     // escapes the project root. rejectRunSnapshot must fail closed.
-    const manifestFile = snapshotManifestPath(tmp, 'sess-01', runSnapshot.manifest.id);
+    const manifestFile = snapshotManifestPath(
+      { projectDir: tmp, sessionId: 'sess-01' },
+      runSnapshot.manifest.id,
+    );
     const tampered: SnapshotManifest = {
       ...runSnapshot.manifest,
       fileHashes: { ...runSnapshot.manifest.fileHashes, '../escape.txt': 'deadbeef' },
@@ -307,7 +308,10 @@ describe('rejectRunSnapshot', () => {
     const outsideBlob = resolve(tmp, '..', 'evil-blob');
     await writeFile(outsideBlob, 'evil');
 
-    const baselineManifestFile = snapshotManifestPath(tmp, 'sess-01', 'baseline');
+    const baselineManifestFile = snapshotManifestPath(
+      { projectDir: tmp, sessionId: 'sess-01' },
+      'baseline',
+    );
     const baselineRaw = JSON.parse(await readFile(baselineManifestFile, 'utf-8'));
     const traversalEncoded = encodeSnapshotPath(`../../../../../../..${outsideBlob}`);
     baselineRaw.fileEntries = baselineRaw.fileEntries.map(
@@ -368,7 +372,10 @@ describe('rejectRunSnapshot', () => {
     await recordRunSnapshot(tmp, 'sess-01', runSnapshot.manifest);
 
     const raw = JSON.parse(
-      await readFile(join(snapshotsDir(tmp, 'sess-01'), 'run-ledger.json'), 'utf-8'),
+      await readFile(
+        join(snapshotsDir({ projectDir: tmp, sessionId: 'sess-01' }), 'run-ledger.json'),
+        'utf-8',
+      ),
     );
     expect(raw).not.toHaveProperty('taskIndex');
     // The per-snapshot taskIndex still lives on the manifest it was captured at.

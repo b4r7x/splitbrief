@@ -24,7 +24,7 @@ export const SETTINGS_SECTIONS = [
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
-export type SettingKind = 'boolean' | 'number' | 'string' | 'enum' | 'picker';
+export type SettingKind = 'boolean' | 'number' | 'string' | 'enum';
 
 export interface SettingDef {
   id: string;
@@ -46,9 +46,6 @@ export interface SettingDef {
    * but the picker needs the canonical tool name across all variants).
    */
   readValue?: (config: Config) => unknown;
-  /** Undecorated value the enum toggle advances from, when `readValue` returns a display string. */
-  readRawValue?: (config: Config) => unknown;
-  formatValue?: (value: unknown) => string;
 }
 
 export const SETTINGS_DEFS: SettingDef[] = [

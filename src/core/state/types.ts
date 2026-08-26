@@ -2,7 +2,8 @@ import type { Task, TaskId } from '../schemas/task.js';
 import type { QueuedMessage, WorkflowState } from '../schemas/workflow.js';
 import type { RecoveryAction } from '../schemas/enums.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
-import type { BriefReadinessDecision, BriefRecoveryV1 } from '../schemas/brief-recovery.js';
+import type { BriefReadinessDecision } from '../schemas/brief-recovery/attempt.js';
+import type { BriefRecoveryV1 } from '../schemas/brief-recovery/document.js';
 import type { BriefGenerationRef, TaskExecutionPermit } from '../schemas/brief-owner.js';
 import type { SessionRef } from '../types/session-ref.js';
 

@@ -2,16 +2,15 @@ import {
   closeSync,
   fsyncSync,
   mkdirSync,
-  mkdtempSync,
   openSync,
   readFileSync,
   readdirSync,
   writeFileSync,
   writeSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { BriefQualityReport } from '../../spec/brief-quality.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import {
@@ -116,8 +115,16 @@ function listOrEmpty(dirPath: string): string[] {
   }
 }
 
+let dirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of dirs) cleanupTempDir(dir);
+  dirs = [];
+});
+
 function makeRef(): SessionRef {
-  const projectDir = mkdtempSync(join(tmpdir(), 'brief-generation-test-'));
+  const projectDir = createTempDir('brief-generation-test');
+  dirs.push(projectDir);
   return { projectDir, sessionId: 'session-1' };
 }
 

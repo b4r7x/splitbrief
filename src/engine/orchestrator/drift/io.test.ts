@@ -14,7 +14,7 @@ describe('readDriftReport — backward compat', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('does not throw on legacy JSON without briefHash and normalizes to null', () => {
+  it('normalizes legacy JSON without briefHash to null', () => {
     const report = analyzeBriefDrift({
       tasks: [],
       changedFiles: [],
@@ -26,7 +26,6 @@ describe('readDriftReport — backward compat', () => {
     mkdirSync(sessionPath, { recursive: true });
     const path = driftReportPath({ projectDir: dir, sessionId: 's1' });
     writeFileSync(path, `${JSON.stringify(legacy)}\n`);
-    expect(() => readDriftReport({ projectDir: dir, sessionId: 's1' })).not.toThrow();
     const result = readDriftReport({ projectDir: dir, sessionId: 's1' });
     expect(result).not.toBeNull();
     expect(result?.briefHash).toBeNull();

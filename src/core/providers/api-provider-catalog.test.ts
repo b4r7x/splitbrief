@@ -5,19 +5,21 @@ import {
   ADMITTED_API_PROVIDER_IDS,
   API_PROVIDER_CATALOG,
   API_PROVIDER_DECLARATIONS,
-  API_PROVIDER_VERDICT_CANDIDATE_PATHS,
-  FORBIDDEN_API_PROVIDER_IDS,
   IMPLEMENTER_API_PROVIDER_IDS,
   KNOWN_API_PROVIDER_IDS,
   LOCAL_API_PROVIDER_IDS,
   OLLAMA_CLOUD_API_PROVIDER_CANDIDATE,
-  PASS_API_PROVIDER_IDS,
   PENDING_API_PROVIDER_CANDIDATE_IDS,
   PLANNER_API_PROVIDER_IDS,
   REMOTE_API_PROVIDER_IDS,
   getApiProviderDescriptor,
   isApiProviderId,
 } from './api-provider-catalog.js';
+import {
+  API_PROVIDER_VERDICT_CANDIDATE_PATHS,
+  FORBIDDEN_API_PROVIDER_IDS,
+  PASS_API_PROVIDER_IDS,
+} from './api-provider-verdicts.js';
 import {
   getKnownProviderBaseURL,
   KNOWN_PROVIDER_BASE_URLS,
@@ -66,9 +68,6 @@ describe('API provider catalog', () => {
       (descriptor) => descriptor.admission.state === 'active',
     );
 
-    expect(Object.keys(API_PROVIDER_CATALOG).toSorted()).toEqual(
-      activeDeclarations.map(({ id }) => id).toSorted(),
-    );
     expect(Object.keys(KNOWN_PROVIDER_BASE_URLS).toSorted()).toEqual(
       activeDeclarations.map(({ id }) => id).toSorted(),
     );
@@ -252,18 +251,27 @@ describe('API provider catalog', () => {
   });
 
   it('never selects an offering from credential presence or prefix', () => {
-    const offerings = Object.values(API_PROVIDER_CATALOG).map(({ id, offering }) => ({
-      id,
-      offering,
-    }));
+    const declared = {
+      ollama: 'local',
+      'ollama-cloud': 'payg',
+      'lm-studio': 'local',
+      anthropic: 'payg',
+      openrouter: 'payg',
+      deepseek: 'payg',
+      openai: 'payg',
+      groq: 'payg',
+      together: 'payg',
+    };
 
     vi.stubEnv('OPENROUTER_API_KEY', 'tp-present');
     vi.stubEnv('DEEPSEEK_API_KEY', 'sk-cp-present');
     vi.stubEnv('OLLAMA_API_KEY', 'present');
 
     expect(
-      Object.values(API_PROVIDER_CATALOG).map(({ id, offering }) => ({ id, offering })),
-    ).toEqual(offerings);
+      Object.fromEntries(
+        Object.values(API_PROVIDER_CATALOG).map(({ id, offering }) => [id, offering]),
+      ),
+    ).toEqual(declared);
   });
 
   it('cannot be mutated through exported nested references', () => {

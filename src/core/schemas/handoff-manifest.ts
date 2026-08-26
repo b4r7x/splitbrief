@@ -6,7 +6,7 @@ import { WorkflowModeSchema } from './enums.js';
  * detect staleness, and discover artifacts without parsing markdown.
  *
  * Built-in target values: 'spec-kit' | 'agents-md' | 'claude-code' | 'copilot-issue'
- * The field is intentionally OPEN (z.string()) per ADR-005/ADR-010 to allow
+ * The field is intentionally OPEN (z.string()) to allow
  * custom renderer basenames without requiring a schema bump.
  */
 export const HandoffManifestSchema = z.object({

@@ -18,9 +18,8 @@ describe('transcript-off session artifact privacy', () => {
       const { runWorkflow, WORKFLOW_REWIND_ABORT_REASON } = await import(
         '../../../src/engine/orchestrator/run/workflow.js'
       );
-      const { generateSessionId, readActive } = await import(
-        '../../../src/core/sessions/lifecycle.js'
-      );
+      const { generateSessionId } = await import('../../../src/core/sessions/session-id.js');
+      const { readActive } = await import('../../../src/core/sessions/active-pointer.js');
       const { parsePreparedConfig } = await import(
         '../../../src/engine/runners/prepared-execution.js'
       );
@@ -42,7 +41,9 @@ describe('transcript-off session artifact privacy', () => {
           },
         }),
       );
-      const sessionId = generateSessionId(projectDir, uniquePrompt, new Date(), {
+      const sessionId = generateSessionId({
+        projectDir,
+        feature: uniquePrompt,
         persistTranscript: false,
       });
       const preparationId = 'transcript-off-preparation';

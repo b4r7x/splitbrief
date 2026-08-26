@@ -57,6 +57,7 @@ describe('startPlannerHeartbeat', () => {
     vi.advanceTimersByTime(HEARTBEAT_THRESHOLD_MS);
     expect(bus.published).toHaveLength(1);
     const event = bus.published[0]!;
+    expect(event.type).toBe('planner_heartbeat');
     if (event.type === 'planner_heartbeat') {
       expect(event.callId).toBe('planner-call-1');
       expect(event.accumulatedTokens).toBe(750);
@@ -67,6 +68,7 @@ describe('startPlannerHeartbeat', () => {
     vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS);
 
     const second = bus.published[1]!;
+    expect(second.type).toBe('planner_heartbeat');
     if (second.type === 'planner_heartbeat') {
       expect(second.accumulatedTokens).toBe(1200);
       expect(second.phaseHint).toBe('analyzing repo map');

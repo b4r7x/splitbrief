@@ -16,6 +16,7 @@ import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
 import { recordFinalReviewEvidence } from './evidence/reporting.js';
 import { formatValidationEvidenceForPrompt } from './evidence/format-validation.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
+import type { EvidenceLedger } from '../../core/schemas/evidence.js';
 import { analyzeBriefDrift } from './drift/analyze.js';
 import { writeDriftReport } from './drift/io.js';
 import { formatDriftReportForPrompt, publishDriftReport } from './drift/format.js';
@@ -33,7 +34,7 @@ import { formatTasks } from '../spec/formatter.js';
 import { drainQueue } from './queue/drain.js';
 import { formatDrainedMessages } from './queue/prompt.js';
 import { withContinuationLoop } from './continuation.js';
-import { composeSteeredPrompt } from '../implementers/types.js';
+import { composeSteeredPrompt } from '../spec/prompts/steered-prompt.js';
 import { resolveRunUniverse } from './evidence/review-packet/sections-io.js';
 
 export type FinalReviewResult = { summary: Summary; state: WorkflowState };
@@ -46,25 +47,34 @@ export const finalReviewError = {
     ),
 } as const;
 
-export async function runFinalReviewPhase(
-  opts: {
-    projectDir: string;
-    sessionId: string;
-    config: Config;
-    callbacks: OrchestratorCallbacks;
-    bus: EventBus;
-    state: WorkflowState;
-    reviewer: Reviewer;
-    metadata?: SpecMetadata | null;
-    signal?: AbortSignal | undefined;
-    sinks?: WorkflowSinks | undefined;
-  },
-  summaryBase: SummaryBase,
-  taskBreakdowns: TaskTokenUsage[],
-  phaseTimings?: Record<string, number>,
-): Promise<FinalReviewResult> {
+export async function runFinalReviewPhase(opts: {
+  projectDir: string;
+  sessionId: string;
+  config: Config;
+  callbacks: OrchestratorCallbacks;
+  bus: EventBus;
+  state: WorkflowState;
+  reviewer: Reviewer;
+  metadata?: SpecMetadata | null;
+  signal?: AbortSignal | undefined;
+  sinks?: WorkflowSinks | undefined;
+  summaryBase: SummaryBase;
+  taskBreakdowns: TaskTokenUsage[];
+  phaseTimings?: Record<string, number>;
+}): Promise<FinalReviewResult> {
   let { state } = opts;
-  const { projectDir, sessionId, config, callbacks, bus, reviewer, metadata } = opts;
+  const {
+    projectDir,
+    sessionId,
+    config,
+    callbacks,
+    bus,
+    reviewer,
+    metadata,
+    summaryBase,
+    taskBreakdowns,
+    phaseTimings,
+  } = opts;
 
   // On resume the state is already persisted in 'final-review' (a previously failed
   // gate); only dispatch ALL_DONE from 'implementing' on a fresh forward run.
@@ -136,11 +146,17 @@ export async function runFinalReviewPhase(
 
     let driftPromptSection: string | undefined;
     let validationPromptSection: string | undefined;
+    let ledger: EvidenceLedger | null = null;
     try {
-      const ledger = readEvidenceLedger({ projectDir, sessionId });
+      ledger = readEvidenceLedger({ projectDir, sessionId });
       // The review's validation claims must quote this recorded output; a
       // review left to re-derive test results invents counts.
       validationPromptSection = formatValidationEvidenceForPrompt(ledger);
+    } catch (err) {
+      warnError('Failed to read validation evidence', err);
+    }
+
+    try {
       const driftReport = analyzeBriefDrift({
         tasks: state.tasks,
         changedFiles: universe.changedFiles,

@@ -77,7 +77,6 @@ type PreparedPrompt = Readonly<{
 type ProcessClose = Readonly<{
   exitCode: number | null;
   signal: string | null;
-  stdout: string;
   stderr: string;
 }>;
 
@@ -90,14 +89,13 @@ export async function invokeProcessCli(
     credentialValues = selectedCredentialValues(adapter, context.invocation.environment);
   } catch {
     const recorder = createRunnerCallRecorder({ context: context.callContext });
-    return finishFailureSafely(
+    return finishFailureSafely({
       recorder,
-      context.callContext,
-      [],
-      'failed',
-      'callback-failure',
-      'Runner adapter setup failed',
-    );
+      context: context.callContext,
+      credentialValues: [],
+      status: 'failed',
+      error: { code: 'callback-failure', message: 'Runner adapter setup failed' },
+    });
   }
   let callbackFailed = false;
   let envelopeLimit: RunnerCallOutputLimit | null = null;
@@ -128,81 +126,74 @@ export async function invokeProcessCli(
     });
   } catch {
     recorder = createRunnerCallRecorder({ context: context.callContext, credentialValues });
-    return fail(recorder, 'failed', 'callback-failure', 'Runner event callback failed');
+    return fail({
+      recorder,
+      status: 'failed',
+      error: { code: 'callback-failure', message: 'Runner event callback failed' },
+    });
   }
 
-  let invocationArgs: string[];
-  try {
-    invocationArgs = [...context.invocation.args];
-  } catch {
-    return finishFailureSafely(
-      recorder,
-      context.callContext,
-      credentialValues,
-      'failed',
-      'argument-conflict',
-      'CLI invocation arguments could not be read',
-    );
-  }
+  const invocationArgs = [...context.invocation.args];
 
   let validation: unknown;
   try {
     // An invocation that declares no adapter-owned prefix carries no configured
     // arguments, so the whole argv is the prefix and nothing needs scrutiny.
-    validation = adapter.validateArgs(
+    validation = adapter.validateArgs({
       invocationArgs,
-      context.invocation.baseArgs ?? invocationArgs,
-    );
+      baseArgs: context.invocation.baseArgs ?? invocationArgs,
+    });
   } catch {
-    return finishFailureSafely(
+    return finishFailureSafely({
       recorder,
-      context.callContext,
+      context: context.callContext,
       credentialValues,
-      'failed',
-      'callback-failure',
-      'CLI argument validation failed',
-    );
+      status: 'failed',
+      error: { code: 'callback-failure', message: 'CLI argument validation failed' },
+    });
   }
 
   const normalizedValidation = normalizeCliArgumentValidation(validation);
   if (normalizedValidation === null) {
-    return finishFailureSafely(
+    return finishFailureSafely({
       recorder,
-      context.callContext,
+      context: context.callContext,
       credentialValues,
-      'failed',
-      'callback-failure',
-      'CLI argument validation returned an invalid result',
-    );
+      status: 'failed',
+      error: {
+        code: 'callback-failure',
+        message: 'CLI argument validation returned an invalid result',
+      },
+    });
   }
 
   if (!normalizedValidation.valid) {
-    return finishFailureSafely(
+    return finishFailureSafely({
       recorder,
-      context.callContext,
+      context: context.callContext,
       credentialValues,
-      'failed',
-      'argument-conflict',
-      `CLI arguments conflict with the adapter contract: ${formatArgumentConflicts(normalizedValidation.conflicts)}`,
-    );
+      status: 'failed',
+      error: {
+        code: 'argument-conflict',
+        message: `CLI arguments conflict with the adapter contract: ${formatArgumentConflicts(normalizedValidation.conflicts)}`,
+      },
+    });
   }
 
   let prepared: PreparedPrompt;
   try {
     prepared = await preparePrompt(adapter, context.invocation, invocationArgs, context.prompt);
   } catch (cause) {
-    return finishFailureSafely(
+    return finishFailureSafely({
       recorder,
-      context.callContext,
+      context: context.callContext,
       credentialValues,
-      'failed',
-      prelaunchErrorCode(cause),
-      prelaunchErrorMessage(cause),
-    );
+      status: 'failed',
+      error: { code: prelaunchErrorCode(cause), message: prelaunchErrorMessage(cause) },
+    });
   }
 
   const protocolEvents: CliProtocolEvent[] = [];
-  let stdout = '';
   let stderr = '';
   let eventCount = 0;
   let terminalSeen = false;
@@ -272,10 +263,8 @@ export async function invokeProcessCli(
       case 'result':
         terminalSeen = true;
         return;
-      default: {
-        const _exhaustive: never = event;
-        throw _exhaustive;
-      }
+      default:
+        assertNever(event);
     }
   };
 
@@ -301,13 +290,20 @@ export async function invokeProcessCli(
     const executableState = await revalidateCliExecutableIdentity(context.invocation.executable);
     if (executableState !== 'match') {
       return executableState === 'missing'
-        ? fail(recorder, 'failed', 'spawn-not-found', 'Configured CLI executable was not found')
-        : fail(
+        ? fail({
             recorder,
-            'failed',
-            'cli-executable-identity-drift',
-            'CLI executable identity changed; run readiness checks again before execution',
-          );
+            status: 'failed',
+            error: { code: 'spawn-not-found', message: 'Configured CLI executable was not found' },
+          })
+        : fail({
+            recorder,
+            status: 'failed',
+            error: {
+              code: 'cli-executable-identity-drift',
+              message:
+                'CLI executable identity changed; run readiness checks again before execution',
+            },
+          });
     }
     const closed = await spawnPipe<ProcessClose>({
       command: context.invocation.executable.path,
@@ -343,7 +339,6 @@ export async function invokeProcessCli(
       }),
       ...(context.onSpawned !== undefined && { onSpawned: context.onSpawned }),
       onStdout(chunk) {
-        stdout += chunk;
         try {
           lineBuffer.push(chunk);
         } catch (cause) {
@@ -357,29 +352,37 @@ export async function invokeProcessCli(
       },
       onClose(exitCode, processSignal) {
         lineBuffer.flush();
-        return { exitCode, signal: processSignal, stdout, stderr };
+        return { exitCode, signal: processSignal, stderr };
       },
     });
 
     if (closed.signal !== null) {
-      return fail(recorder, 'failed', 'signal-exit', `CLI exited from signal ${closed.signal}`);
+      return fail({
+        recorder,
+        status: 'failed',
+        error: { code: 'signal-exit', message: `CLI exited from signal ${closed.signal}` },
+      });
     }
     if (adapter.outputContract.kind === 'structured-terminal' && !terminalSeen) {
       // Without a parsed terminal the exit code is the only diagnosis available.
       if (closed.exitCode !== 0) {
-        return fail(
+        return fail({
           recorder,
-          'failed',
-          'non-zero-exit',
-          `CLI exited with code ${closed.exitCode ?? 'unknown'}`,
-        );
+          status: 'failed',
+          error: {
+            code: 'non-zero-exit',
+            message: `CLI exited with code ${closed.exitCode ?? 'unknown'}`,
+          },
+        });
       }
-      return fail(
+      return fail({
         recorder,
-        'incomplete',
-        'protocol-failure',
-        'CLI ended without its required terminal result',
-      );
+        status: 'incomplete',
+        error: {
+          code: 'protocol-failure',
+          message: 'CLI ended without its required terminal result',
+        },
+      });
     }
 
     let terminal: Extract<CliProtocolEvent, { type: 'result' }>;
@@ -387,13 +390,16 @@ export async function invokeProcessCli(
       terminal = adapter.terminal({
         outputContract: adapter.outputContract,
         events: protocolEvents,
-        stdout: closed.stdout,
         stderr: closed.stderr,
         exitCode: closed.exitCode,
         signal: closed.signal,
       });
     } catch {
-      return fail(recorder, 'failed', 'protocol-failure', 'CLI terminal result was invalid');
+      return fail({
+        recorder,
+        status: 'failed',
+        error: { code: 'protocol-failure', message: 'CLI terminal result was invalid' },
+      });
     }
 
     // A tool that fails its turn also exits non-zero; its parsed failure
@@ -403,12 +409,14 @@ export async function invokeProcessCli(
     // success against a failure exit is contradictory, so that combination
     // stays on the exit code, fail-closed.
     if (isFailureExit(adapter.outputContract, closed.exitCode) && terminal.status === 'completed') {
-      return fail(
+      return fail({
         recorder,
-        'failed',
-        'non-zero-exit',
-        `CLI exited with code ${closed.exitCode ?? 'unknown'}`,
-      );
+        status: 'failed',
+        error: {
+          code: 'non-zero-exit',
+          message: `CLI exited with code ${closed.exitCode ?? 'unknown'}`,
+        },
+      });
     }
 
     if (terminal.text.length > 0) {
@@ -439,36 +447,42 @@ export async function invokeProcessCli(
     }
     if (signal.aborted) {
       const status = runnerCallInterruptedStatus(signal);
-      return finishFailureSafely(
+      return finishFailureSafely({
         recorder,
-        context.callContext,
+        context: context.callContext,
         credentialValues,
         status,
-        status === 'timeout' ? 'timeout' : 'user-abort',
-        status === 'timeout' ? 'CLI invocation timed out' : 'CLI invocation was aborted',
-      );
+        error: {
+          code: status === 'timeout' ? 'timeout' : 'user-abort',
+          message: status === 'timeout' ? 'CLI invocation timed out' : 'CLI invocation was aborted',
+        },
+      });
     }
     if (processError.isIdleTimeout(cause)) {
       // A silent runner is a timeout, not a protocol failure: the `timeout`
       // code is what the implementer pipeline classifies as retryable.
-      return finishFailureSafely(
+      return finishFailureSafely({
         recorder,
-        context.callContext,
+        context: context.callContext,
         credentialValues,
-        'timeout',
-        'timeout',
-        runnerCallErrorFromUnknown(cause, 'timeout', credentialValues).message,
-      );
+        status: 'timeout',
+        error: {
+          code: 'timeout',
+          message: runnerCallErrorFromUnknown(cause, 'timeout', credentialValues).message,
+        },
+      });
     }
     if (spawnPipeError.isStdinIncomplete(cause)) {
-      return finishFailureSafely(
+      return finishFailureSafely({
         recorder,
-        context.callContext,
+        context: context.callContext,
         credentialValues,
-        'failed',
-        'prompt-transport-error',
-        'CLI prompt could not be fully delivered through stdin',
-      );
+        status: 'failed',
+        error: {
+          code: 'prompt-transport-error',
+          message: 'CLI prompt could not be fully delivered through stdin',
+        },
+      });
     }
     const fatalState = fatalStateOf(cause);
     if (fatalState !== null) {
@@ -479,33 +493,33 @@ export async function invokeProcessCli(
         fatalState === 'output-budget-breach' && envelope !== undefined
           ? TASK_COMPILATION_FAILURE_CODE.task_compiler_output_limited
           : fatalState;
-      return finishFailureSafely(
+      return finishFailureSafely({
         recorder,
-        context.callContext,
+        context: context.callContext,
         credentialValues,
-        fatalState === 'output-budget-breach' ? 'truncated' : 'failed',
-        code,
-        errorMessage(cause),
-      );
+        status: fatalState === 'output-budget-breach' ? 'truncated' : 'failed',
+        error: { code, message: errorMessage(cause) },
+      });
     }
     if (isENOENT(cause)) {
-      return finishFailureSafely(
+      return finishFailureSafely({
         recorder,
-        context.callContext,
+        context: context.callContext,
         credentialValues,
-        'failed',
-        'spawn-not-found',
-        'Configured CLI executable was not found',
-      );
+        status: 'failed',
+        error: { code: 'spawn-not-found', message: 'Configured CLI executable was not found' },
+      });
     }
-    return finishFailureSafely(
+    return finishFailureSafely({
       recorder,
-      context.callContext,
+      context: context.callContext,
       credentialValues,
-      'failed',
-      'protocol-failure',
-      runnerCallErrorFromUnknown(cause, 'protocol-failure', credentialValues).message,
-    );
+      status: 'failed',
+      error: {
+        code: 'protocol-failure',
+        message: runnerCallErrorFromUnknown(cause, 'protocol-failure', credentialValues).message,
+      },
+    });
   } finally {
     clearTimeout(timeout);
     // The terminal result is already recorded; a scratch-directory removal failure
@@ -518,28 +532,31 @@ function callbackFailure(
   context: RunnerCallContext,
   credentialValues: readonly string[],
 ): RunnerCallResult {
-  return fail(
-    createRunnerCallRecorder({ context, credentialValues }),
-    'failed',
-    'callback-failure',
-    'Runner event callback failed',
-  );
+  return fail({
+    recorder: createRunnerCallRecorder({ context, credentialValues }),
+    status: 'failed',
+    error: { code: 'callback-failure', message: 'Runner event callback failed' },
+  });
 }
 
-function finishFailureSafely(
-  recorder: RunnerCallRecorder,
-  context: RunnerCallContext,
-  credentialValues: readonly string[],
-  status: RunnerCallFailureStatus,
-  code: string,
-  message: string,
-): RunnerCallResult {
+function finishFailureSafely(input: {
+  recorder: RunnerCallRecorder;
+  context: RunnerCallContext;
+  credentialValues: readonly string[];
+  status: RunnerCallFailureStatus;
+  error: { code: string; message: string };
+}): RunnerCallResult {
+  const { recorder, context, credentialValues, status, error: failure } = input;
   try {
-    return fail(recorder, status, code, message);
+    return fail({ recorder, status, error: failure });
   } catch {
     // Consumer callbacks are untrusted code. If one throws while the terminal failure is being
     // emitted, finish through a recorder without that callback rather than leaking a raw throw.
-    return fail(createRunnerCallRecorder({ context, credentialValues }), status, code, message);
+    return fail({
+      recorder: createRunnerCallRecorder({ context, credentialValues }),
+      status,
+      error: failure,
+    });
   }
 }
 
@@ -653,16 +670,12 @@ function rejectPlaceholder(args: readonly string[]): void {
   }
 }
 
-function fail(
-  recorder: RunnerCallRecorder,
-  status: RunnerCallFailureStatus,
-  code: string,
-  message: string,
-): RunnerCallResult {
-  return recorder.finishFailed({
-    status,
-    error: { code, message },
-  });
+function fail(input: {
+  recorder: RunnerCallRecorder;
+  status: RunnerCallFailureStatus;
+  error: { code: string; message: string };
+}): RunnerCallResult {
+  return input.recorder.finishFailed({ status: input.status, error: input.error });
 }
 
 function isFailureExit(contract: CliOutputContract, exitCode: number | null): boolean {

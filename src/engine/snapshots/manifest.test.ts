@@ -44,7 +44,6 @@ describe('writeManifest / readManifest', () => {
   });
 
   it('round-trips legal identity and file metadata without storing separate child output', async () => {
-    const childOutputCanary = 'custom-public-child-output-48152';
     const manifest: SnapshotManifest = {
       ...makeManifest('snap-identity'),
       name: 'before-implementation',
@@ -76,8 +75,6 @@ describe('writeManifest / readManifest', () => {
 
     expect(serialized).toBe(`${JSON.stringify(manifest, null, 2)}\n`);
     expect(loaded).toEqual(manifest);
-    expect(serialized).not.toContain(childOutputCanary);
-    expect(JSON.stringify(loaded)).not.toContain(childOutputCanary);
   });
 
   it('throws for missing file', async () => {

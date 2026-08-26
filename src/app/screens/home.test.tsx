@@ -16,6 +16,7 @@ import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { makeResumeAuthorityDeps } from '#testing/helpers/factories/state-authority.js';
 import { saveSummary } from '../../core/sessions/io.js';
 import { prepareNewSession } from '../../core/sessions/prepare.js';
 import { saveState } from '../../core/state/persistence.js';
@@ -185,7 +186,7 @@ function preparedResumeExecution(
 const HOME_DEPS: HomeScreenDeps = {
   prepareExecution: prepareExecutionMock,
   sessionSelect: {
-    loadState,
+    ...makeResumeAuthorityDeps((ref) => loadState(ref)),
     prepareResume: async (input) => ({
       kind: 'prepared',
       execution: preparedResumeExecution(input),
@@ -523,6 +524,16 @@ describe('HomeScreen', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('|___/ .__/');
+    const compactLines = new Set(
+      getLogo('compact')
+        .split('\n')
+        .map((line) => line.trim()),
+    );
+    const fullOnlyLines = getLogo('full')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => !compactLines.has(line));
+    expect(fullOnlyLines.filter((line) => frame.includes(line))).toEqual([]);
     ui.unmount();
   });
 
@@ -660,10 +671,6 @@ describe('HomeScreen', () => {
       expect(route.execution).toEqual({ kind: 'local', prepared: exactExecution });
       if (route.execution.kind === 'local') {
         expect(route.execution.prepared).toBe(exactExecution);
-        expect(route.execution.prepared.config).toBe(exactExecution.config);
-        expect(route.execution.prepared.gates).toBe(exactExecution.gates);
-        expect(route.execution.prepared.session).toBe(exactExecution.session);
-        expect(route.execution.prepared.session.active).toBe(exactExecution.session.active);
       }
     }
     const exactSessionDir = join(

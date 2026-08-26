@@ -332,10 +332,10 @@ describe('streamCompletion', () => {
     expect(JSON.stringify(events)).not.toContain('private reasoning');
   });
 
-  it('emits a progress update for each streamed chunk', async () => {
+  it('skips empty deltas when emitting progress', async () => {
     const client = makeMockClient([
       { content: 'a' },
-      { content: 'b' },
+      { content: '' },
       { content: 'c' },
       { finishReason: 'stop' },
     ]);
@@ -346,7 +346,7 @@ describe('streamCompletion', () => {
       onProgress: (text) => progressCalls.push(text),
     });
 
-    expect(progressCalls).toEqual(['a', 'b', 'c']);
+    expect(progressCalls).toEqual(['a', 'c']);
   });
 
   it('captures usage from final chunk', async () => {

@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 import type {
   FrozenPricing,
   RecoveryBudgetResource,
-  RecoveryOperationEnvelope,
   RecoveryUsage,
-} from '../schemas/brief-recovery.js';
+} from '../schemas/brief-recovery/budget.js';
+import type { TaskCompilationOperationEnvelope } from '../schemas/task-compilation.js';
 import {
   persistRecoveryBudgetResource,
   readRecoveryBudgetResources,
   readRecoveryJournal,
-} from './ledger-storage.js';
+} from './recovery-journal.js';
 import { setupEvidenceTmpDir } from '#testing/helpers/evidence-test-setup.js';
 
 const tmpDir = setupEvidenceTmpDir();
@@ -30,7 +30,7 @@ const resolvedPricing: FrozenPricing = {
   outputPer1M: 15,
 };
 
-function boundedEnvelope(): RecoveryOperationEnvelope {
+function boundedEnvelope(): TaskCompilationOperationEnvelope {
   return {
     version: 1,
     dispatchLimit: 64,
@@ -113,17 +113,14 @@ describe('provider-dependent recovery budget resources', () => {
       kind: 'usage-reconciliation',
       resource: providerDependentResource({ observedUsage: usage }),
     });
-    expect(observedWrite.record.kind).not.toBe(hold.record.kind);
 
     const read = readRecoveryBudgetResources(ref(), 'epoch-1', 'operation-distinct');
-    const observedRecord = read.find((record) => record.kind === 'usage-reconciliation');
-    expect(observedRecord).toBeDefined();
-    const observed = observedRecord?.resource;
-    if (observed?.kind !== 'provider-dependent') {
-      throw new Error('expected a provider-dependent resource');
-    }
-    expect(observed.observedUsage).toEqual(usage);
-    expect(observed.resolvedPricing).toBeNull();
+    expect(read.find((record) => record.kind === 'reservation')?.recordHash).toBe(
+      hold.record.recordHash,
+    );
+    expect(read.find((record) => record.kind === 'usage-reconciliation')?.recordHash).toBe(
+      observedWrite.record.recordHash,
+    );
   });
 
   it('persists a later-resolved price against the same accounting key', () => {

@@ -64,14 +64,14 @@ function hasMarkdownHeading(markdown: string): boolean {
 
     let visibleLine = line;
     if (htmlComment) {
-      const closeIndex = visibleLine.lastIndexOf('-->');
+      const closeIndex = visibleLine.indexOf('-->');
       if (closeIndex === -1) continue;
       htmlComment = false;
       visibleLine = visibleLine.slice(closeIndex + '-->'.length);
     }
 
     while (isMarkdownHtmlCommentStartLine(visibleLine)) {
-      const closeIndex = visibleLine.lastIndexOf('-->');
+      const closeIndex = visibleLine.indexOf('-->');
       if (closeIndex === -1) {
         htmlComment = true;
         visibleLine = '';

@@ -158,43 +158,20 @@ describe('configHasInlineApiKey', () => {
 
   const OPENAI_BASE = 'https://api.openai.com/v1';
 
-  it('detects an inline implementer key', () => {
-    const config = makeConfig({
-      implementer: {
-        kind: 'api',
-        provider: 'openai',
-        apiBase: OPENAI_BASE,
-        model: 'gpt-5-mini',
-        apiKey: PASTED_KEY,
-      },
-    });
-    expect(configHasInlineApiKey(config)).toBe(true);
-  });
+  const inlineKeySeat = {
+    kind: 'api',
+    provider: 'openai',
+    apiBase: OPENAI_BASE,
+    model: 'gpt-5-mini',
+    apiKey: PASTED_KEY,
+  } as const;
 
-  it('detects an inline planner key', () => {
-    const config = makeConfig({
-      planner: {
-        kind: 'api',
-        provider: 'openai',
-        apiBase: OPENAI_BASE,
-        model: 'gpt-5-mini',
-        apiKey: PASTED_KEY,
-      },
-    });
-    expect(configHasInlineApiKey(config)).toBe(true);
-  });
-
-  it('detects an inline reviewer key', () => {
-    const config = makeConfig({
-      reviewer: {
-        kind: 'api',
-        provider: 'openai',
-        apiBase: OPENAI_BASE,
-        model: 'gpt-5-mini',
-        apiKey: PASTED_KEY,
-      },
-    });
-    expect(configHasInlineApiKey(config)).toBe(true);
+  it.each([
+    ['implementer', { implementer: inlineKeySeat }],
+    ['planner', { planner: inlineKeySeat }],
+    ['reviewer', { reviewer: inlineKeySeat }],
+  ])('detects an inline %s key', (_seat, overrides) => {
+    expect(configHasInlineApiKey(makeConfig(overrides))).toBe(true);
   });
 
   it('does not count env: references as inline secrets', () => {

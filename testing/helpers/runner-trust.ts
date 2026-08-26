@@ -1,9 +1,9 @@
 import { resolveImplementerProfiles } from '../../src/core/config/accessors/implementer-profiles.js';
 import {
-  findConfiguredCustomCommand,
   inlineRunnerCommand,
   isCustomCommandRunner,
 } from '../../src/core/config/custom-commands.js';
+import { findConfiguredCustomCommand } from '../../src/core/config/custom-command-catalog.js';
 import type { Config } from '../../src/core/schemas/config.js';
 import {
   inlineRunnerSecurityPosture,

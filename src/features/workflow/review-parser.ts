@@ -15,14 +15,11 @@ import {
 } from '../../lib/terminal/editor-handover.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import {
-  REVIEW_HINT,
   REVIEW_UNKNOWN_COMMAND_MESSAGE,
   parseReviewCommand,
   reviewCommandToApprovalReviewResult,
   reviewOpeningPromptMessage,
 } from './review-commands.js';
-
-export { REVIEW_HINT, parseReviewCommand };
 
 // Ink paints at most every ~33ms (maxFps 30), so the "Opening …" byline needs one frame
 // on screen before the terminal handover freezes the TUI.
@@ -33,10 +30,35 @@ interface EditorExit {
   signal: NodeJS.Signals | null;
 }
 
-function runEditor(command: string, args: string[], filePath: string): Promise<EditorExit> {
+interface EditorProcess {
+  once(event: 'error', listener: (err: Error) => void): void;
+  once(
+    event: 'close',
+    listener: (code: number | null, signal: NodeJS.Signals | null) => void,
+  ): void;
+}
+
+export type SpawnEditor = (command: string, args: string[]) => EditorProcess;
+
+const spawnEditorProcess: SpawnEditor = (command, args) =>
+  spawn(command, args, { stdio: 'inherit' });
+
+interface RunEditorOptions {
+  command: string;
+  args: string[];
+  filePath: string;
+  spawnEditor: SpawnEditor;
+}
+
+function runEditor({
+  command,
+  args,
+  filePath,
+  spawnEditor,
+}: RunEditorOptions): Promise<EditorExit> {
   suspendTerminalForEditor();
   return new Promise<EditorExit>((resolve, reject) => {
-    const child = spawn(command, [...args, filePath], { stdio: 'inherit' });
+    const child = spawnEditor(command, [...args, filePath]);
     child.once('error', reject);
     child.once('close', (code, signal) => resolve({ code, signal }));
   }).finally(() => {
@@ -89,7 +111,10 @@ function applyExternalEdit(
 
 let externalEditorOpen = false;
 
-export async function openReviewFileExternally(inputMode: UseInputModeResult): Promise<void> {
+export async function openReviewFileExternally(
+  inputMode: UseInputModeResult,
+  spawnEditor: SpawnEditor = spawnEditorProcess,
+): Promise<void> {
   const { filePath, ownerToken: reviewOwner } = reviewStore.get();
   if (!filePath) return;
   // A buffered second "e" while the editor is already out would stack a second handover
@@ -114,7 +139,7 @@ export async function openReviewFileExternally(inputMode: UseInputModeResult): P
     }
     let exit: EditorExit;
     try {
-      exit = await runEditor(command, args, filePath);
+      exit = await runEditor({ command, args, filePath, spawnEditor });
     } catch (err) {
       setPostEditorFeedback(
         reviewOwner,

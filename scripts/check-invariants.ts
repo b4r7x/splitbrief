@@ -272,7 +272,7 @@ const gates: readonly Gate[] = [
     id: '34',
     description: 'Zero excluded first-class CLI/API IDs in runtime tuples or catalogs',
     command:
-      "node --import tsx/esm --input-type=module -e \"import { EXCLUDED_CLI_TOOL_IDS, CLI_TOOL_CATALOG } from './src/core/runners/cli-tool-catalog.ts'; import { FORBIDDEN_API_PROVIDER_IDS, API_PROVIDER_CATALOG } from './src/core/providers/api-provider-catalog.ts'; import { PROVIDER_IDS, PLANNER_TOOL_IDS } from './src/core/schemas/enums.ts'; let n=0; const admitted=new Set([...PROVIDER_IDS,...PLANNER_TOOL_IDS,...Object.keys(CLI_TOOL_CATALOG),...Object.keys(API_PROVIDER_CATALOG)]); for (const id of EXCLUDED_CLI_TOOL_IDS) if (admitted.has(id)) n++; for (const id of FORBIDDEN_API_PROVIDER_IDS) if (admitted.has(id)) n++; process.stdout.write(String(n));\"",
+      "node --import tsx/esm --input-type=module -e \"import { EXCLUDED_CLI_TOOL_IDS, CLI_TOOL_CATALOG } from './src/core/runners/cli-tool-catalog.ts'; import { API_PROVIDER_CATALOG } from './src/core/providers/api-provider-catalog.ts'; import { FORBIDDEN_API_PROVIDER_IDS } from './src/core/providers/api-provider-verdicts.ts'; import { PROVIDER_IDS, PLANNER_TOOL_IDS } from './src/core/schemas/enums.ts'; let n=0; const admitted=new Set([...PROVIDER_IDS,...PLANNER_TOOL_IDS,...Object.keys(CLI_TOOL_CATALOG),...Object.keys(API_PROVIDER_CATALOG)]); for (const id of EXCLUDED_CLI_TOOL_IDS) if (admitted.has(id)) n++; for (const id of FORBIDDEN_API_PROVIDER_IDS) if (admitted.has(id)) n++; process.stdout.write(String(n));\"",
     expected: 0,
   },
   {
@@ -480,7 +480,6 @@ function lineMatches(lines: readonly string[], pattern: RegExp): number[] {
   const matches: number[] = [];
   for (const [index, line] of lines.entries()) {
     if (pattern.test(line)) matches.push(index + 1);
-    pattern.lastIndex = 0;
   }
   return matches;
 }
@@ -744,8 +743,11 @@ export function runInvariantGates(
         continue;
       }
       count = parseInt(output, 10);
-    } catch {
-      log(`  ✗ [${gate.id}] ${gate.description}: command failed (expected ${gate.expected}) FAIL`);
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      log(
+        `  ✗ [${gate.id}] ${gate.description}: command failed: ${reason} (expected ${gate.expected}) FAIL`,
+      );
       failed++;
       continue;
     }
@@ -771,7 +773,8 @@ if (isMainModule()) {
   const scanIndex = process.argv.indexOf('--t065-scan');
   if (scanIndex !== -1) {
     const root = process.argv[scanIndex + 1];
-    const requestedRule = process.argv[process.argv.indexOf('--rule') + 1] ?? 'all';
+    const ruleIndex = process.argv.indexOf('--rule');
+    const requestedRule = ruleIndex === -1 ? 'all' : (process.argv[ruleIndex + 1] ?? 'all');
     if (
       root === undefined ||
       (requestedRule !== 'all' && !T065_RULES.includes(requestedRule as T065Rule))

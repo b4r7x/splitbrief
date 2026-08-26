@@ -318,15 +318,16 @@ describe('changedFilesSinceBaseline committed leg', () => {
 });
 
 describe('changedFilesSinceBaseline artifact-name neutrality', () => {
-  it('reports a planner-written tasks.md as a forbidden change without exemption', async () => {
+  it('matches an artifact basename nested under a subdirectory, not only at the root', async () => {
     const dir = createTempDir('changed-files-baseline-artifact-tasks');
     createTestGitRepo(dir);
     try {
       const baseline = await captureChangedFilesBaseline(dir);
 
-      writeFileSync(join(dir, 'tasks.md'), '---\nid: task-1\n---\n# Do the thing\n');
+      mkdirSync(join(dir, 'docs'), { recursive: true });
+      writeFileSync(join(dir, 'docs/tasks.md'), '---\nid: task-1\n---\n# Do the thing\n');
 
-      expect(await changedFilesSinceBaseline(dir, baseline)).toEqual(['tasks.md']);
+      expect(await changedFilesSinceBaseline(dir, baseline)).toEqual(['docs/tasks.md']);
     } finally {
       cleanupTempDir(dir);
     }

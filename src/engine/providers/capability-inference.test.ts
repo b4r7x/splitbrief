@@ -18,7 +18,7 @@ describe('usesOpenAiMaxCompletionTokens', () => {
     ['openrouter', 'openai/o3', 'https://openrouter.ai/api/v1', false],
     ['openai', 'o3', 'https://example.com/v1', false],
   ] as const)('%s / %s / %s => %s', (provider, model, apiBase, expected) => {
-    expect(usesOpenAiMaxCompletionTokens(provider, model, apiBase)).toBe(expected);
+    expect(usesOpenAiMaxCompletionTokens({ provider, model, apiBase })).toBe(expected);
   });
 });
 

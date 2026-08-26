@@ -1,6 +1,7 @@
 import { BRIEF_QUALITY_FILE, TASKS_FILE } from '../../src/core/paths.js';
 import { randomUUID } from 'node:crypto';
 import { readSpecFile, writeSpecFile } from '../../src/core/paths-io.js';
+import type { SessionRef } from '../../src/core/types/session-ref.js';
 import type { WorkflowState } from '../../src/core/schemas/workflow.js';
 import type { BriefAdmissionInput } from '../../src/core/schemas/brief-recovery.js';
 import { saveState } from '../../src/core/state/persistence.js';
@@ -22,12 +23,7 @@ import { sha256Hex } from '../../src/utils/sha256.js';
  * owner commit port and transitions BEGIN_IMPLEMENTATION from the post-commit
  * head, exactly as the approval loop settles an approved candidate.
  */
-export function persistReadyExecutionState(
-  projectDir: string,
-  sessionId: string,
-  state: WorkflowState,
-): WorkflowState {
-  const ref = { projectDir, sessionId };
+export function persistReadyExecutionState(ref: SessionRef, state: WorkflowState): WorkflowState {
   const preparing = {
     ...state,
     stateRevision: state.stateRevision ?? 0,
@@ -62,7 +58,7 @@ export function persistReadyExecutionState(
   }
   const qualityDigest = sha256Hex(persistedQualityText);
   const admission = {
-    sessionId,
+    sessionId: ref.sessionId,
     origin: { mode: state.mode ?? 'standard', entry: 'initial' as const },
     continuation: {
       version: 1 as const,

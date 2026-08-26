@@ -34,7 +34,7 @@ import {
 } from './process-invoke.js';
 import { runnerCallOutcome } from '../../implementers/pipeline/call-result.js';
 import { codexImplementerAdapter } from './codex.js';
-import { opencodeImplementerAdapter } from './opencode.js';
+import { opencodeImplementerAdapter, opencodeProtocolEvents } from './opencode.js';
 import { toCliEnvironment } from '../invoke-cli-adapter.js';
 import {
   resolveCliExecutable,
@@ -100,9 +100,10 @@ function adapter(
     output?: 'structured' | 'text';
     conflicts?: readonly string[];
     validateArgs?:
-      | ((
-          invocationArgs: readonly string[],
-        ) => Readonly<{ valid: true }> | Readonly<{ valid: false; conflicts: readonly string[] }>)
+      | ((input: {
+          invocationArgs: readonly string[];
+          baseArgs: readonly string[];
+        }) => Readonly<{ valid: true }> | Readonly<{ valid: false; conflicts: readonly string[] }>)
       | undefined;
   } = {},
 ): CliImplementerAdapter {
@@ -125,7 +126,8 @@ function adapter(
     environment: {},
     outputContract,
     parse: (line) => {
-      if (opts.output === 'text') return [];
+      if (opts.output === 'text')
+        return line === '' ? [] : [{ type: 'text', channel: 'assistant', text: line } as const];
       if (line === 'RESULT') return [completed];
       if (line === 'ERROR') return [failed];
       // Envelope frames a verbose protocol emits without producing recorded output.
@@ -144,8 +146,11 @@ function adapter(
       }
       throw new Error('invalid fixture protocol');
     },
-    terminal: ({ events, stdout }) => {
-      if (opts.output === 'text') return { ...completed, text: stdout };
+    terminal: ({ events }) => {
+      if (opts.output === 'text') {
+        const text = events.flatMap((event) => (event.type === 'text' ? [event.text] : []));
+        return { ...completed, text: text.join('\n') };
+      }
       const terminal = events.findLast((event) => event.type === 'result');
       if (terminal === undefined || terminal.type !== 'result') {
         throw new Error('missing terminal');
@@ -435,7 +440,7 @@ describe('invokeProcessCli', () => {
       adapter(
         { kind: 'stdin' },
         {
-          validateArgs: (invocationArgs) =>
+          validateArgs: ({ invocationArgs }) =>
             invocationArgs.includes(flag) ? { valid: false, conflicts: [flag] } : { valid: true },
         },
       ),
@@ -465,7 +470,7 @@ describe('invokeProcessCli', () => {
         { kind: 'stdin' },
         {
           output: 'text',
-          validateArgs: (invocationArgs) =>
+          validateArgs: ({ invocationArgs }) =>
             invocationArgs.includes('--output-format')
               ? { valid: false, conflicts: ['--output-format'] }
               : { valid: true },
@@ -531,25 +536,24 @@ describe('invokeProcessCli', () => {
     });
   });
 
-  it('carries data.message, not the bare exit code', async () => {
+  it('carries data.message, not the bare exit code', () => {
     const detail = 'Unexpected server error. Check server logs for details.';
     const envelope = JSON.stringify({
       type: 'error',
       error: { name: 'UnknownError', data: { message: detail } },
     });
 
-    const result = await run(
-      opencodeImplementerAdapter,
-      opencodeEnvelopeInvocation(envelope),
-      'fixture prompt',
-    );
-
-    expect(result).toMatchObject({
-      status: 'failed',
-      error: { code: 'opencode-error', message: `UnknownError: ${detail}` },
-    });
-    expect(result.error?.message).not.toMatch(/^CLI exited with code /);
-    expect(result.error?.code).not.toBe('non-zero-exit');
+    expect(opencodeProtocolEvents(envelope)).toEqual([
+      {
+        type: 'result',
+        status: 'failed',
+        text: '',
+        usage: null,
+        nativeSessionId: null,
+        error: { code: 'opencode-error', message: `UnknownError: ${detail}` },
+        partial: true,
+      },
+    ]);
   });
 
   it('drives usage-limit and unauthenticated classification via runnerCallOutcome', async () => {
@@ -972,7 +976,10 @@ describe('invokeProcessCli', () => {
       chmodSync(executablePath, 0o755);
       const fixedTime = new Date(1_700_000_000_000);
       utimesSync(executablePath, fixedTime, fixedTime);
-      const trustedIdentity = await resolveCliExecutable(executablePath, process.cwd());
+      const trustedIdentity = await resolveCliExecutable({
+        command: executablePath,
+        projectDir: process.cwd(),
+      });
       const before = statSync(executablePath);
 
       writeFileSync(executablePath, replacement, { mode: 0o755 });
@@ -1036,6 +1043,32 @@ describe('invokeProcessCli', () => {
     expect(descendantPid).toBeGreaterThan(1);
     expect(() => process.kill(descendantPid, 0)).toThrow();
   });
+
+  it.skipIf(process.platform === 'win32')(
+    'aborts a real CLI process and reaps its descendant before returning',
+    async () => {
+      await withTempDir('splitbrief-cli-abort', async (directory) => {
+        const startedPath = join(directory, 'descendant-started.txt');
+        const markerPath = join(directory, 'descendant-alive.txt');
+        const childScript = `require('node:fs').writeFileSync(${JSON.stringify(startedPath)}, 'started'); setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(markerPath)}, 'alive'), 1000);`;
+        const parentScript = `const { spawn } = require('node:child_process'); spawn(process.execPath, ['-e', ${JSON.stringify(childScript)}], { stdio: 'ignore' }); setInterval(() => {}, 1000);`;
+        const controller = new AbortController();
+        const pending = run(
+          adapter({ kind: 'stdin' }),
+          invocation({ script: parentScript, signal: controller.signal }),
+          'Zażółć gęślą jaźń — 日本語 🧪',
+        );
+        for (let attempt = 0; attempt < 50 && !existsSync(startedPath); attempt += 1) {
+          await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+        }
+        expect(existsSync(startedPath)).toBe(true);
+        controller.abort();
+        expect(await pending).toMatchObject({ status: 'aborted', error: { code: 'user-abort' } });
+        await new Promise((resolveWait) => setTimeout(resolveWait, 1_100));
+        expect(existsSync(markerPath)).toBe(false);
+      });
+    },
+  );
 
   it('classifies a raw-protocol overflow as the envelope limit while normalized output stays under', async () => {
     const noiseFrames = 700;

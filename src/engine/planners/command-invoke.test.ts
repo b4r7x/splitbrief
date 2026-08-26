@@ -55,7 +55,7 @@ ${marker}`;
     }
   });
 
-  it('escalateHint still succeeds when the command writes files', async () => {
+  it('escalateHint reports failure when the command writes no files', async () => {
     const projectDir = createTempDir('cmd-planner-hint');
     createTestGitRepo(projectDir);
     try {

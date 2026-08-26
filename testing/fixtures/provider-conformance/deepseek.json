@@ -2,14 +2,14 @@
   "rawCapture": {
     "candidateId": "deepseek",
     "role": "planner",
-    "contractSha256": "05c2408142b2babd3b221d495f734a9b76c44fd4879c6287222a7f058b076b58",
+    "contractSha256": "c77204fd3e80949bcb568581efc955e6cde7b7d77f4c3b5afda1a25b0ef591d2",
     "stdout": "raw conformance omitted\n",
     "stderr": "missing credential for DEEPSEEK_API_KEY"
   },
   "productionConformance": {
     "candidateId": "deepseek",
     "role": "planner",
-    "contractSha256": "05c2408142b2babd3b221d495f734a9b76c44fd4879c6287222a7f058b076b58",
+    "contractSha256": "c77204fd3e80949bcb568581efc955e6cde7b7d77f4c3b5afda1a25b0ef591d2",
     "stdout": "",
     "stderr": "missing credential for DEEPSEEK_API_KEY"
   },

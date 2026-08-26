@@ -24,10 +24,6 @@ function validTask(overrides: Parameters<typeof makeTask>[0] = {}): Task {
 }
 
 describe('checkBriefSave', () => {
-  it('accepts a single well-formed task', () => {
-    expect(checkBriefSave([validTask()])).toEqual({ ok: true });
-  });
-
   it('round-trips every fixture deep-equal including multiline list fields', () => {
     const tasks = [
       validTask(),

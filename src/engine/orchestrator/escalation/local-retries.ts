@@ -3,7 +3,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { ABORTED_OUTCOME_TEXT } from '../../implementers/pipeline/call-result.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { createBusTextHandler, publishRetry } from '../events.js';
-import { mergePersistedMessageQueue, transitionAndSave } from '../state-ops.js';
+import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 import { runRetryStep } from './step.js';
 import { failedRetry, type EscalationContext, type RetryStepOutcome } from './types.js';
@@ -12,7 +12,7 @@ import {
   deriveWorkflowAuthority,
   workflowAuthority,
   workflowMutationOptions,
-} from '../run/init.js';
+} from '../run/authority.js';
 
 function isAbortedOutcome(lastError: string, signal: AbortSignal | undefined): boolean {
   if (signal?.aborted) return true;
@@ -20,14 +20,17 @@ function isAbortedOutcome(lastError: string, signal: AbortSignal | undefined): b
 }
 
 export async function runLocalRetries(
-  ctx: EscalationContext,
-  initialTask: Task,
-  initialState: WorkflowState,
-  initialError: string,
+  opts: Readonly<{
+    ctx: EscalationContext;
+    task: Task;
+    state: WorkflowState;
+    lastError: string;
+  }>,
 ): Promise<RetryStepOutcome> {
-  let state = initialState;
-  let task = initialTask;
-  let lastError = initialError;
+  const { ctx } = opts;
+  let state = opts.state;
+  let task = opts.task;
+  let lastError = opts.lastError;
   let attempts = 0;
   const maxRetries = ctx.config.workflow.maxRetries;
 
@@ -42,14 +45,10 @@ export async function runLocalRetries(
     extra: Parameters<typeof transitionAndSave>[3] = undefined,
   ): WorkflowState => {
     const authority = workflowAuthority(ctx);
-    const next = transitionAndSave(
-      ctx,
-      current,
-      action,
-      typeof extra === 'number'
-        ? extra
-        : { ...workflowMutationOptions(current, authority), ...extra },
-    );
+    const next = transitionAndSave(ctx, current, action, {
+      ...workflowMutationOptions(current, authority),
+      ...extra,
+    });
     if (authority !== undefined)
       attachWorkflowAuthority(ctx, deriveWorkflowAuthority(authority, next));
     return next;
@@ -114,7 +113,7 @@ export async function runLocalRetries(
     lastError = outcome.lastError;
     if (outcome.result === undefined && isAbortedOutcome(lastError, ctx.signal)) {
       attempts = attempt - 1;
-      const merged = mergePersistedMessageQueue(ctx, state);
+      const merged = rebaseOnPersistedWorkflowState(ctx, state);
       state = persistTransition(
         { ...merged, attempt: attemptBefore },
         {

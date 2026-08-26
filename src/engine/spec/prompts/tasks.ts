@@ -11,7 +11,7 @@ import type { LanguageContext } from './language-context.js';
 import { buildLanguageContext, buildLanguageContextSections } from './language-context.js';
 import { buildPrompt, instructionsSection } from './builder.js';
 import { buildTaskFormatExample } from './task-format-example.js';
-import { error, matches } from '../../../utils/error.js';
+import { error } from '../../../utils/error.js';
 import { formatTasks } from '../formatter.js';
 import { TASK_BRIEF_HEADINGS } from '../headings.js';
 
@@ -51,21 +51,24 @@ function criticalRules(ctx: LanguageContext): string {
 9. **Reserved delimiter**: Outside fenced code blocks, lines containing only \`---\` are reserved for Task Brief frontmatter delimiters. Never use a bare \`---\` as a horizontal rule or phase-heading separator.`;
 }
 
-export function buildTasksPrompt(
-  spec: string,
-  plan: string,
-  languageContext?: LanguageContext,
-  currentTasks?: Task[],
-): string {
-  const ctx = languageContext ?? buildLanguageContext(undefined);
+export type TasksPromptInput = Readonly<{
+  spec: string;
+  plan: string;
+  languageContext?: LanguageContext | undefined;
+  currentTasks?: Task[] | undefined;
+}>;
+
+export function buildTasksPrompt(input: TasksPromptInput): string {
+  const ctx = input.languageContext ?? buildLanguageContext(undefined);
+  const currentTasks = input.currentTasks;
 
   return buildPrompt({
     title: 'Compile Product Task Briefs',
     intro:
       'You are compiling a set of **Product Task Brief v1** records — the durable contract the implementer model will execute against. Each brief is sent independently to a small implementer model that has NO access to this prompt, the spec, the plan, or sibling briefs. Every brief must stand on its own. The `tasks.md` markdown file is the transport; the brief is the meaning.',
     sections: [
-      { heading: 'Specification', body: spec },
-      { heading: 'Implementation Plan', body: plan },
+      { heading: 'Specification', body: input.spec },
+      { heading: 'Implementation Plan', body: input.plan },
       ...(currentTasks && currentTasks.length > 0
         ? [
             {
@@ -116,7 +119,6 @@ export const taskBatchPromptError = {
       `The Task batch prompt is ${actualBytes} bytes; the bound is ${maxBytes} bytes.`,
       { actualBytes, maxBytes },
     ),
-  isTooLarge: matches(TASK_COMPILATION_FAILURE_CODE.task_compiler_prompt_too_large),
 } as const;
 
 function batchSelectionSection(

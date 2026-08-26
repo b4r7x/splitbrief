@@ -18,7 +18,7 @@ export const ACCEPTED_RUN_SNAPSHOT_NAME = 'accepted-run';
 const RUN_LEDGER_FILE = 'run-ledger.json';
 
 function runLedgerPath(projectDir: string, sessionId: string): string {
-  return join(snapshotsDir(projectDir, sessionId), RUN_LEDGER_FILE);
+  return join(snapshotsDir({ projectDir, sessionId }), RUN_LEDGER_FILE);
 }
 
 export async function readRunLedger(

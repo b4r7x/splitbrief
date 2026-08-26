@@ -13,12 +13,9 @@ import { CLI_CONFORMANCE_CANDIDATES as aiderCandidates } from './aider.js';
 import { CLI_CONFORMANCE_CANDIDATES as copilotCandidates } from './copilot.js';
 import { CLI_CONFORMANCE_CANDIDATES as kiloCodeCandidates } from './kilo-code.js';
 import type { RawCliCandidateContract, UnregisteredCliCandidate } from './candidate-contract.js';
-import {
-  CLI_CONFORMANCE_EXIT_CODES,
-  runProductionCliConformance,
-  runRawCliConformance,
-  type CliConformanceRole,
-} from './contract-harness.js';
+import { CLI_CONFORMANCE_EXIT_CODES, type CliConformanceRole } from './contract-harness.js';
+import { runProductionCliConformance } from './contract-harness-production.js';
+import { runRawCliConformance } from './contract-harness-raw.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const itUnix = process.platform === 'win32' ? it.skip : it;

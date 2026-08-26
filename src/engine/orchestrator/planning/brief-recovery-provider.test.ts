@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { RecoveryProviderRequest } from '../../../core/schemas/brief-recovery.js';
+import type { RecoveryProviderRequest } from '../../../core/schemas/brief-recovery/provider-call.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../../calls/types.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { createEventBus } from '../../events/bus.js';

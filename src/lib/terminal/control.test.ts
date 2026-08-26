@@ -83,7 +83,6 @@ describe('terminal control', () => {
       terminalSequences.enableAnyMotionMouse,
       terminalSequences.enableSgrMouse,
     ]);
-    expect(written).not.toContain(terminalSequences.enableMouseTracking);
   });
 
   it('can enable and disable bracketed paste without mouse tracking', () => {

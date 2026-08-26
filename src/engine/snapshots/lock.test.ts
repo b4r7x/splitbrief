@@ -1,5 +1,5 @@
 import { mkdtemp, rm, mkdir, utimes, writeFile, readFile } from 'node:fs/promises';
-import { openSync, closeSync } from 'node:fs';
+import { openSync, closeSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -34,9 +34,14 @@ afterEach(async () => {
 
 describe('acquireSnapshotLock', () => {
   it('succeeds on first call and releases cleanly', async () => {
+    const lockPath = snapshotLockPath('sess-01');
     const release = await acquireSnapshotLock(tmp, 'sess-01');
     await release();
+    expect(existsSync(lockPath)).toBe(false);
+
     const release2 = await acquireSnapshotLock(tmp, 'sess-01');
+    const onDisk = JSON.parse(await readFile(lockPath, 'utf-8'));
+    expect(onDisk.pid).toBe(process.pid);
     await release2();
   });
 
@@ -63,6 +68,10 @@ describe('acquireSnapshotLock', () => {
     await utimes(lockPath, oldDate, oldDate);
 
     const release = await acquireSnapshotLock(tmp, 'sess-01');
+
+    const onDisk = JSON.parse(await readFile(lockPath, 'utf-8'));
+    expect(onDisk.pid).toBe(process.pid);
+
     await release();
   });
 

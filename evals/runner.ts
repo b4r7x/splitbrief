@@ -236,15 +236,15 @@ async function runSingleEval(
     },
   );
 
-  return collectRunMetrics(
-    scenario.id,
+  return collectRunMetrics({
+    scenarioId: scenario.id,
     mode,
-    completed.summary,
+    summary: completed.summary,
     events,
-    completed.qualityResults,
-    completed.durationMs,
+    qualityResults: completed.qualityResults,
+    durationMs: completed.durationMs,
     sessionArtifactsDir,
-  );
+  });
 }
 
 /**
@@ -304,7 +304,9 @@ export async function runEvalSuite(opts: EvalRunOptions): Promise<EvalReport> {
     const routed = await runSingleEval(scenario, routedConfig, 'routed', opts, modelCache);
     console.log(formatRunProgressLine(routed));
 
-    comparisons.push(compareScenario(scenario.id, scenario.name, baseline, routed));
+    comparisons.push(
+      compareScenario({ scenarioId: scenario.id, scenarioName: scenario.name, baseline, routed }),
+    );
   }
 
   const report: EvalReport = {

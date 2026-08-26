@@ -1,21 +1,27 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { createInitialState } from '../../../src/core/state/machine.js';
+import type { BriefRecoveryControllerDeps } from '../../../src/core/schemas/brief-owner.js';
+import type {
+  BudgetReservation,
+  RecoveryUsage,
+} from '../../../src/core/schemas/brief-recovery/budget.js';
 import {
-  BriefRecoveryStateViewSchema,
-  type BriefAdmissionInput,
-  type BriefRecoveryCommand,
-  type BriefRecoveryController,
-  type BriefRecoveryControllerDeps,
-  type BriefRecoveryMigrationInput,
   type BriefRecoveryProjectionV1,
-  type BudgetReservation,
-  type EvidenceRef,
-  type RecoveryProviderRequest,
-  type RecoveryProviderResult,
-  type RecoveryUsage,
-  type StateAuthorityReceipt,
+  BriefRecoveryStateViewSchema,
+} from '../../../src/core/schemas/brief-recovery/document.js';
+import type {
+  BriefAdmissionInput,
+  BriefRecoveryCommand,
+  BriefRecoveryController,
+  BriefRecoveryMigrationInput,
+  StateAuthorityReceipt,
 } from '../../../src/core/schemas/brief-recovery.js';
+import type { EvidenceRef } from '../../../src/core/schemas/brief-recovery/primitives.js';
+import type {
+  RecoveryProviderRequest,
+  RecoveryProviderResult,
+} from '../../../src/core/schemas/brief-recovery/provider-call.js';
 import { WorkflowStateSchema, type WorkflowState } from '../../../src/core/schemas/workflow.js';
 import {
   createBriefRecoveryController,
@@ -867,6 +873,7 @@ describe('Brief recovery hydration and migration matrix', () => {
         | 'ready'
         | 'blocked'
         | 'unresolved'
+        | 'retrying'
         | 'storage-blocked'
         | 'rejected'
         | 'future-version';
@@ -889,7 +896,40 @@ describe('Brief recovery hydration and migration matrix', () => {
         rawState = workflowState(state.lastState()!);
         artifacts = legacyArtifacts();
         expected = 'ready';
-      } else if (name === 'v4 retrying' || name === 'v4 unresolved') {
+      } else if (name === 'v4 retrying') {
+        const providerRelease: { current: ((result: RecoveryProviderResult) => void) | null } = {
+          current: null,
+        };
+        let providerStarted = false;
+        const state = makeHarness({
+          providerPlan: () => {
+            providerStarted = true;
+            return new Promise<RecoveryProviderResult>((resolve) => {
+              providerRelease.current = resolve;
+            });
+          },
+        });
+        const admission = makeAdmission('quick', 'initial', [qualityIssue()]);
+        const admitted = await state.controller.enterBriefAdmission(admission, state.authority());
+        const dispatch = state.controller.dispatchBriefAction(
+          retryCommand(admission, admitted.epochId ?? 'missing', 'hydrate-retrying'),
+          state.authority(1),
+        );
+        await waitFor(() => providerStarted);
+        rawState = workflowState(state.lastState()!);
+        artifacts = legacyArtifacts();
+        expected = 'retrying';
+        providerRelease.current?.({
+          kind: 'ambiguous-failure',
+          requestId: 'matrix-request',
+          dispatchPossibility: 'possible',
+          remoteObservation: 'unknown',
+          text: null,
+          providerCode: 'provider-timeout',
+          usage: null,
+        });
+        await dispatch;
+      } else if (name === 'v4 unresolved') {
         const state = makeHarness({
           providerPlan: async (input) => ({
             kind: 'ambiguous-failure' as const,
@@ -909,7 +949,7 @@ describe('Brief recovery hydration and migration matrix', () => {
         );
         rawState = workflowState(state.lastState()!);
         artifacts = legacyArtifacts();
-        expected = name === 'v4 retrying' ? 'unresolved' : 'unresolved';
+        expected = 'unresolved';
         expect(retried.kind).toBe('unresolved');
       } else if (name === 'terminal Instant' || name === 'terminal Quick') {
         const state = makeHarness();
@@ -1411,6 +1451,21 @@ describe('Brief recovery provider, input, and accounting races', () => {
         harness.authority(startedRevision),
       );
       expect(['blocked', 'rejected']).toContain(targetResult.kind);
+      let restartedStatus: string | null = null;
+      let restartedProviderCalls = 0;
+      if (lifecycle === 'restart') {
+        const rehydrated = makeHarness();
+        const persisted = workflowState(
+          harness.lastState()!,
+          target === 'reject' ? 'idle' : 'reviewing-briefs',
+        );
+        const migrated = await rehydrated.controller.migrateBriefRecovery(
+          { sessionId: SESSION_ID, rawState: persisted, artifacts: legacyArtifacts() },
+          authorityForRaw(persisted),
+        );
+        restartedStatus = migrated.projection.status;
+        restartedProviderCalls = rehydrated.providerCalls.length;
+      }
       const releaseProvider = providerRelease.current;
       if (releaseProvider !== null) {
         releaseProvider(
@@ -1460,7 +1515,10 @@ describe('Brief recovery provider, input, and accounting races', () => {
         if (target === 'reject')
           expect(harness.accounting.some((call) => call.kind === 'terminal-charge')).toBe(true);
       }
-      if (lifecycle === 'restart') expect(harness.mutations.length).toBeGreaterThanOrEqual(2);
+      if (lifecycle === 'restart') {
+        expect(restartedProviderCalls).toBe(0);
+        expect(restartedStatus).toBe(final?.briefRecovery?.status);
+      }
     },
   );
 });

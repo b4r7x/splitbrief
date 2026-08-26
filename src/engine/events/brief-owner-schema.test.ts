@@ -119,13 +119,9 @@ describe('durable owner publication events', () => {
         type: 'brief_recovery_attempt_accepted',
       }),
     ).toEqual(expect.objectContaining({ type: 'brief_recovery_attempt_accepted' }));
-    expect(
-      parseEngineEvent({
-        ...accepted,
-        type: 'brief_recovery_attempt_accepted',
-        operationId: 'operation-1',
-      }),
-    ).not.toEqual(expect.objectContaining({ type: 'brief_recovery_accepted' }));
+    expect(parseEngineEvent(accepted)).toEqual(
+      expect.objectContaining({ type: 'brief_recovery_accepted' }),
+    );
   });
 
   it('rejects a permit that does not identify the published generation', () => {

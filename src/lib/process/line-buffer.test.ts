@@ -2,6 +2,26 @@ import { describe, expect, it } from 'vitest';
 import { createLineBuffer } from './line-buffer.js';
 
 describe('createLineBuffer', () => {
+  const harness = (maxLineBytes: number) => {
+    const lines: string[] = [];
+    const overflows: number[] = [];
+    const unterminated: number[] = [];
+    const buffer = createLineBuffer(
+      (line) => {
+        lines.push(line);
+      },
+      {
+        maxLineBytes,
+        onOverflow: (overflow) => {
+          overflows.push(overflow.lineBytes);
+        },
+        onUnterminated: (overflow) => {
+          unterminated.push(overflow.lineBytes);
+        },
+      },
+    );
+    return { buffer, lines, overflows, unterminated };
+  };
   it('emits complete newline-delimited lines and buffers the trailing partial line', () => {
     const lines: string[] = [];
     const buffer = createLineBuffer((line) => {
@@ -53,19 +73,7 @@ describe('createLineBuffer', () => {
   });
 
   it('recovers after an oversized line that spans multiple chunks', () => {
-    const lines: string[] = [];
-    const overflows: number[] = [];
-    const buffer = createLineBuffer(
-      (line) => {
-        lines.push(line);
-      },
-      {
-        maxLineBytes: 8,
-        onOverflow: (overflow) => {
-          overflows.push(overflow.lineBytes);
-        },
-      },
-    );
+    const { buffer, lines, overflows } = harness(8);
 
     buffer.push('x'.repeat(20));
     buffer.push('y'.repeat(20));
@@ -76,19 +84,7 @@ describe('createLineBuffer', () => {
   });
 
   it('reports and discards every oversized line within a single chunk', () => {
-    const lines: string[] = [];
-    const overflows: number[] = [];
-    const buffer = createLineBuffer(
-      (line) => {
-        lines.push(line);
-      },
-      {
-        maxLineBytes: 8,
-        onOverflow: (overflow) => {
-          overflows.push(overflow.lineBytes);
-        },
-      },
-    );
+    const { buffer, lines, overflows } = harness(8);
 
     buffer.push('aaaaaaaaaa\nbbbbbbbbbb\nok\n');
 
@@ -97,19 +93,7 @@ describe('createLineBuffer', () => {
   });
 
   it('discards an oversized trailing partial line after safe complete lines', () => {
-    const lines: string[] = [];
-    const overflows: number[] = [];
-    const buffer = createLineBuffer(
-      (line) => {
-        lines.push(line);
-      },
-      {
-        maxLineBytes: 8,
-        onOverflow: (overflow) => {
-          overflows.push(overflow.lineBytes);
-        },
-      },
-    );
+    const { buffer, lines, overflows } = harness(8);
 
     buffer.push(`ok\n${'x'.repeat(20)}`);
     buffer.flush();
@@ -119,19 +103,7 @@ describe('createLineBuffer', () => {
   });
 
   it('does not carry skip state after flushing an oversized partial line', () => {
-    const lines: string[] = [];
-    const overflows: number[] = [];
-    const buffer = createLineBuffer(
-      (line) => {
-        lines.push(line);
-      },
-      {
-        maxLineBytes: 8,
-        onOverflow: (overflow) => {
-          overflows.push(overflow.lineBytes);
-        },
-      },
-    );
+    const { buffer, lines, overflows } = harness(8);
 
     buffer.push('x'.repeat(20));
     buffer.flush();
@@ -142,19 +114,7 @@ describe('createLineBuffer', () => {
   });
 
   it('reports an unterminated capped tail without emitting the partial line', () => {
-    const lines: string[] = [];
-    const unterminated: number[] = [];
-    const buffer = createLineBuffer(
-      (line) => {
-        lines.push(line);
-      },
-      {
-        maxLineBytes: 8,
-        onUnterminated: (overflow) => {
-          unterminated.push(overflow.lineBytes);
-        },
-      },
-    );
+    const { buffer, lines, unterminated } = harness(8);
 
     buffer.push('1234');
     buffer.push('5678');
@@ -165,19 +125,7 @@ describe('createLineBuffer', () => {
   });
 
   it('counts a UTF-8 code point split across chunks once', () => {
-    const lines: string[] = [];
-    const overflows: number[] = [];
-    const buffer = createLineBuffer(
-      (line) => {
-        lines.push(line);
-      },
-      {
-        maxLineBytes: 4,
-        onOverflow: (overflow) => {
-          overflows.push(overflow.lineBytes);
-        },
-      },
-    );
+    const { buffer, lines, overflows } = harness(4);
 
     buffer.push('\ud83d');
     buffer.push('\ude00\n');

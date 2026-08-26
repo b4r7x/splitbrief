@@ -370,8 +370,8 @@ const CLI_IMPLEMENTER_TRUST = Object.freeze({
   autoAllowFlags: Object.freeze([]),
 });
 
-function rolePolicy<T>(planner: T, implementer: T): RolePolicy<T> {
-  return Object.freeze({ planner, implementer });
+function rolePolicy<T>(input: Readonly<{ planner: T; implementer: T }>): RolePolicy<T> {
+  return Object.freeze({ planner: input.planner, implementer: input.implementer });
 }
 
 function cliToolTrust(
@@ -394,18 +394,20 @@ function cliToolTrust(
 }
 
 function authChannel(
-  id: CliAuthChannelId,
-  env: readonly string[],
-  stateBridge: CliAuthChannel['stateBridge'],
-  billing: RunnerBillingPosture,
-  hostKeychainPlatforms: readonly NodeJS.Platform[] = [],
+  input: Readonly<{
+    id: CliAuthChannelId;
+    env: readonly string[];
+    stateBridge: CliAuthChannel['stateBridge'];
+    billing: RunnerBillingPosture;
+    hostKeychainPlatforms?: readonly NodeJS.Platform[];
+  }>,
 ): CliAuthChannel {
   return Object.freeze({
-    id,
-    env: Object.freeze([...env]),
-    stateBridge,
-    billing,
-    hostKeychainPlatforms: Object.freeze([...hostKeychainPlatforms]),
+    id: input.id,
+    env: Object.freeze([...input.env]),
+    stateBridge: input.stateBridge,
+    billing: input.billing,
+    hostKeychainPlatforms: Object.freeze([...(input.hostKeychainPlatforms ?? [])]),
   });
 }
 
@@ -465,15 +467,26 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     executableAliases: ['claude'],
     category: 'cli',
     roles: ALL_ROLES,
-    modelPolicy: rolePolicy('optional', 'optional'),
+    modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: true,
     auth: authPolicy('api-key-or-session', [
-      authChannel('session', [], 'host-cli-state', 'subscription-included', ['darwin']),
-      authChannel('api-key', ['ANTHROPIC_API_KEY'], 'none', 'api-metered'),
+      authChannel({
+        id: 'session',
+        env: [],
+        stateBridge: 'host-cli-state',
+        billing: 'subscription-included',
+        hostKeychainPlatforms: ['darwin'],
+      }),
+      authChannel({
+        id: 'api-key',
+        env: ['ANTHROPIC_API_KEY'],
+        stateBridge: 'none',
+        billing: 'api-metered',
+      }),
     ]),
     billing: 'subscription-included',
     isSubscription: false,
-    sandbox: rolePolicy('none', 'none'),
+    sandbox: rolePolicy({ planner: 'none', implementer: 'none' }),
     internalStatePaths: [],
     compatibility: compatibility({
       installUrl: 'https://claude.ai/code',
@@ -492,15 +505,25 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     executableAliases: ['codex'],
     category: 'cli',
     roles: ALL_ROLES,
-    modelPolicy: rolePolicy('optional', 'optional'),
+    modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: false,
     auth: authPolicy('api-key-or-session', [
-      authChannel('session', [], 'host-cli-state', 'subscription-included'),
-      authChannel('api-key', ['OPENAI_API_KEY'], 'none', 'api-metered'),
+      authChannel({
+        id: 'session',
+        env: [],
+        stateBridge: 'host-cli-state',
+        billing: 'subscription-included',
+      }),
+      authChannel({
+        id: 'api-key',
+        env: ['OPENAI_API_KEY'],
+        stateBridge: 'none',
+        billing: 'api-metered',
+      }),
     ]),
     billing: 'subscription-included',
     isSubscription: false,
-    sandbox: rolePolicy('mode-dependent', 'cli-managed'),
+    sandbox: rolePolicy({ planner: 'mode-dependent', implementer: 'cli-managed' }),
     internalStatePaths: [],
     compatibility: compatibility({
       installUrl: 'https://github.com/openai/codex',
@@ -519,14 +542,19 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     executableAliases: ['opencode'],
     category: 'cli',
     roles: ALL_ROLES,
-    modelPolicy: rolePolicy('optional', 'optional'),
+    modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: false,
     auth: authPolicy('provider-dependent', [
-      authChannel('provider-dependent', [], 'host-cli-state', 'provider-dependent'),
+      authChannel({
+        id: 'provider-dependent',
+        env: [],
+        stateBridge: 'host-cli-state',
+        billing: 'provider-dependent',
+      }),
     ]),
     billing: 'provider-dependent',
     isSubscription: false,
-    sandbox: rolePolicy('none', 'none'),
+    sandbox: rolePolicy({ planner: 'none', implementer: 'none' }),
     internalStatePaths: [
       '.opencode/package-lock.json',
       '.opencode/package.json',
@@ -549,14 +577,19 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     executableAliases: ['aider'],
     category: 'cli',
     roles: ALL_ROLES,
-    modelPolicy: rolePolicy('optional', 'optional'),
+    modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: false,
     auth: authPolicy('provider-dependent', [
-      authChannel('provider-dependent', [], 'none', 'provider-dependent'),
+      authChannel({
+        id: 'provider-dependent',
+        env: [],
+        stateBridge: 'none',
+        billing: 'provider-dependent',
+      }),
     ]),
     billing: 'provider-dependent',
     isSubscription: false,
-    sandbox: rolePolicy('none', 'none'),
+    sandbox: rolePolicy({ planner: 'none', implementer: 'none' }),
     internalStatePaths: [],
     compatibility: compatibility({
       installUrl: 'https://aider.chat',
@@ -575,19 +608,19 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     executableAliases: ['copilot'],
     category: 'cli',
     roles: ALL_ROLES,
-    modelPolicy: rolePolicy('optional', 'optional'),
+    modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: false,
     auth: authPolicy('session', [
-      authChannel(
-        'session',
-        ['GH_TOKEN', 'GITHUB_TOKEN'],
-        'host-cli-state',
-        'subscription-included',
-      ),
+      authChannel({
+        id: 'session',
+        env: ['GH_TOKEN', 'GITHUB_TOKEN'],
+        stateBridge: 'host-cli-state',
+        billing: 'subscription-included',
+      }),
     ]),
     billing: 'subscription-included',
     isSubscription: true,
-    sandbox: rolePolicy('none', 'none'),
+    sandbox: rolePolicy({ planner: 'none', implementer: 'none' }),
     internalStatePaths: [],
     compatibility: compatibility({
       installUrl: 'https://github.com/github/copilot-cli',
@@ -606,14 +639,19 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     executableAliases: ['kilo'],
     category: 'cli',
     roles: ALL_ROLES,
-    modelPolicy: rolePolicy('optional', 'optional'),
+    modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: false,
     auth: authPolicy('provider-dependent', [
-      authChannel('provider-dependent', [], 'host-cli-state', 'provider-dependent'),
+      authChannel({
+        id: 'provider-dependent',
+        env: [],
+        stateBridge: 'host-cli-state',
+        billing: 'provider-dependent',
+      }),
     ]),
     billing: 'provider-dependent',
     isSubscription: true,
-    sandbox: rolePolicy('none', 'none'),
+    sandbox: rolePolicy({ planner: 'none', implementer: 'none' }),
     internalStatePaths: [],
     compatibility: compatibility({
       installUrl: 'https://kilo.ai',
@@ -731,7 +769,7 @@ function trustPolicy(
   trust: RunnerRoleTrustMetadata,
   field: 'mayWriteFilesDirectly' | 'mayUseNetwork' | 'executesLocalCommand',
 ): RolePolicy<boolean> {
-  return rolePolicy(trust.planner[field], trust.implementer[field]);
+  return rolePolicy({ planner: trust.planner[field], implementer: trust.implementer[field] });
 }
 
 function descriptor<Id extends CliToolId>(
@@ -743,10 +781,10 @@ function descriptor<Id extends CliToolId>(
     directWrite: trustPolicy(trust, 'mayWriteFilesDirectly'),
     network: trustPolicy(trust, 'mayUseNetwork'),
     shell: trustPolicy(trust, 'executesLocalCommand'),
-    automaticApproval: rolePolicy(
-      trust.planner.autoAllowFlags.length > 0,
-      trust.implementer.autoAllowFlags.length > 0,
-    ),
+    automaticApproval: rolePolicy({
+      planner: trust.planner.autoAllowFlags.length > 0,
+      implementer: trust.implementer.autoAllowFlags.length > 0,
+    }),
     plannerTier2FullEscalation: trust.plannerTier2FullEscalation,
   });
 }

@@ -55,7 +55,7 @@ describe('buildDetachedRetryState', () => {
     expect(retry.tokenUsage).toEqual(state.tokenUsage);
   });
 
-  it('points at the earliest failed task even when a later task is still pending', () => {
+  it('rewinds currentTaskIndex back to the earliest failed task', () => {
     const state = makeImplState(
       [
         makeTask({ id: 'T001', status: 'done' }),

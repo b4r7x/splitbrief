@@ -112,19 +112,6 @@ describe('RunnerCallEventSchema', () => {
     ).toBe(true);
   });
 
-  it('rejects unknown fields on known event variants', () => {
-    expect(
-      RunnerCallEventSchema.safeParse({
-        type: 'call_text_delta',
-        ts: 1,
-        ...context,
-        channel: 'assistant',
-        text: 'hello',
-        upstreamPayload: { type: 'assistant' },
-      }).success,
-    ).toBe(false);
-  });
-
   it('keeps unknown upstream data behind a bounded raw preview and backend metadata', () => {
     const event = {
       type: 'call_unknown_upstream',

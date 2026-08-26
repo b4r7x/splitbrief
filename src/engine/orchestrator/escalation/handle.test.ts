@@ -506,25 +506,26 @@ describe('handleRetryAndEscalation', () => {
     expect(finalState.tasks[0]?.status).toBe('pending');
   });
 
-  it('runs configured direct full escalation in the outer stage and only promotes an approved diff', async () => {
-    const scenarios = [
-      {
-        name: 'approved',
-        response: {
-          decision: 'confirm',
-          phrase: CONFIRM_PHRASE,
-          reason: 'reviewed full diff',
-        } as const,
-        promoted: true,
-      },
-      {
-        name: 'rejected',
-        response: { decision: 'deny', reason: 'do not promote' } as const,
-        promoted: false,
-      },
-    ];
+  const fullEscalationScenarios = [
+    {
+      name: 'approved',
+      response: {
+        decision: 'confirm',
+        phrase: CONFIRM_PHRASE,
+        reason: 'reviewed full diff',
+      } as const,
+      promoted: true,
+    },
+    {
+      name: 'rejected',
+      response: { decision: 'deny', reason: 'do not promote' } as const,
+      promoted: false,
+    },
+  ];
 
-    for (const scenario of scenarios) {
+  it.each(fullEscalationScenarios)(
+    'runs configured direct full escalation in the outer stage and $name promotion',
+    async (scenario) => {
       const { projectDir, sessionId } = setupProject();
       const stateDir = createTempDir(`t028-full-${scenario.name}-state`);
       const outsideDir = createTempDir(`t028-full-${scenario.name}-outside`);
@@ -663,10 +664,10 @@ describe('handleRetryAndEscalation', () => {
         expect(promoted).toContain('// session-in-prompt:false');
         expect(promoted).not.toContain(projectDir);
       }
-    }
-  });
+    },
+  );
 
-  it('pre_escalation deny raises a hook-named recovery instead of a generic retry-exhausted one', async () => {
+  it('pre_escalation deny skips both tiers and attributes the retry-exhausted recovery message to the hook', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
     const state: WorkflowState = { ...makeValidatingState(), tasks: [task] };

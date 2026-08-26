@@ -34,7 +34,6 @@ describe('startFullscreenThenActivateHandover', () => {
     });
 
     expect(activeHandover).toBe(handover);
-    expect(activeHandover?.hover).toBe(true);
     expect(calls).toEqual([
       'publish-filtered-stdin',
       'start',

@@ -20,10 +20,26 @@ import { resetWorkflow } from '../stores/workflow/actions/reset.js';
 import { tasksStore } from '../stores/workflow/tasks.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { loadDetectionCache, saveDetectionCache } from './detection/cache.js';
+import type { DetectionCacheSnapshot } from './detection/cache.js';
+import { loadDetectionCacheSnapshot, saveDetectionCache } from './detection/cache.js';
 import { detectCapabilities } from './providers/capabilities.js';
 import { createWorktree } from './worktree/create.js';
 import { removeWorktree } from './worktree/remove.js';
+
+const HARD_CUT_CONTEXT = 'runtime-hard-cut-context-v1';
+
+function hardCutSnapshot(): DetectionCacheSnapshot {
+  const observedAt = Date.now();
+  return {
+    contextKey: HARD_CUT_CONTEXT,
+    fetchedAt: observedAt,
+    validatedAt: observedAt,
+    generation: 0,
+    requestId: 0,
+    providers: [],
+    cliTools: [],
+  };
+}
 
 const EXPECTED_LABELS = [
   'state-write',
@@ -62,14 +78,13 @@ it('runtime hard-cut matrix has exactly 8 labeled cases', async () => {
         const projectDir = join(root, 'state-write');
         await mkdir(projectDir);
 
-        await saveDetectionCache(projectDir, [], []);
+        await saveDetectionCache({ projectDir, snapshot: hardCutSnapshot() });
 
         const cachePath = join(projectDir, SPLITBRIEF_DIR, 'detection-cache.json');
         expect(existsSync(cachePath)).toBe(true);
-        expect(await loadDetectionCache(projectDir, 60_000)).toEqual({
-          providers: [],
-          cliTools: [],
-        });
+        expect(
+          await loadDetectionCacheSnapshot({ projectDir, contextKey: HARD_CUT_CONTEXT }),
+        ).toMatchObject({ providers: [], cliTools: [] });
         for (const priorDir of PRIOR_STATE_DIRS) {
           expect(existsSync(join(projectDir, priorDir))).toBe(false);
         }
@@ -91,7 +106,9 @@ it('runtime hard-cut matrix has exactly 8 labeled cases', async () => {
           await writeFile(priorPath, cache);
         }
 
-        expect(await loadDetectionCache(projectDir, 60_000)).toBeNull();
+        expect(
+          await loadDetectionCacheSnapshot({ projectDir, contextKey: HARD_CUT_CONTEXT }),
+        ).toBeNull();
         expect(existsSync(join(projectDir, SPLITBRIEF_DIR))).toBe(false);
         for (const priorDir of PRIOR_STATE_DIRS) {
           expect(await readFile(join(projectDir, priorDir, 'detection-cache.json'), 'utf8')).toBe(

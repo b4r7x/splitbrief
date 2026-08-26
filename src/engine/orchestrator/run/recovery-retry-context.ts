@@ -1,11 +1,9 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type {
-  NormalBriefRecoveryV1,
-  RecoveryEstimateInput,
-} from '../../../core/schemas/brief-recovery.js';
+import type { RecoveryEstimateInput } from '../../../core/schemas/brief-recovery/budget.js';
+import type { NormalBriefRecoveryV1 } from '../../../core/schemas/brief-recovery/document.js';
 import { PLAN_FILE, SPEC_FILE, TASKS_FILE } from '../../../core/paths.js';
 import { readSpecFile } from '../../../core/paths-io.js';
-import { readRecoveryArtifact } from '../../../core/evidence/ledger-storage.js';
+import { readRecoveryArtifact } from '../../../core/evidence/recovery-journal.js';
 import { runPricingIdentity } from '../../../core/providers/pricing-identity.js';
 import { getEscalatedTaskIds } from '../../../core/state/selectors.js';
 import { sha256Hex } from '../../../utils/sha256.js';
@@ -15,28 +13,32 @@ import { parseTasksStrict } from '../../spec/tasks/parse.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { buildTasksPrompt } from '../../spec/prompts/tasks.js';
 import { buildBriefQualityRepairComment } from '../planning/regen-targeted.js';
-import { estimateBriefRecoveryCall } from '../budget/estimate.js';
+import { estimateBriefRecoveryCall } from '../budget/recovery-estimate.js';
 import { getBudgetCostKnownness } from '../budget/knownness.js';
 import type { WorkflowContext } from '../types.js';
 
-export function retryPrompt(
-  wctx: WorkflowContext,
-  state: WorkflowState,
-  recovery: NormalBriefRecoveryV1,
-  frozenInputIds: readonly string[],
-  stagedPayloads?: ReadonlyMap<string, unknown>,
-): string {
+export function retryPrompt(opts: {
+  wctx: WorkflowContext;
+  state: WorkflowState;
+  recovery: NormalBriefRecoveryV1;
+  frozenInputIds: readonly string[];
+  stagedPayloads?: ReadonlyMap<string, unknown> | undefined;
+}): string {
+  const { wctx, state, recovery, frozenInputIds, stagedPayloads } = opts;
   const ref = { projectDir: wctx.projectDir, sessionId: wctx.sessionId };
   const tasksText = readSpecFile(ref, TASKS_FILE);
   if (tasksText === null)
     throw error('brief-recovery-input-invalid', 'The current Task Briefs are unavailable.');
   const currentTasks = parseTasksStrict(tasksText);
-  const base = buildTasksPrompt(
-    readSpecFile(ref, SPEC_FILE) ?? state.feature,
-    readSpecFile(ref, PLAN_FILE) ?? '',
-    buildProjectLanguageContext(wctx.projectDir, state.discoveredValidation?.language),
+  const base = buildTasksPrompt({
+    spec: readSpecFile(ref, SPEC_FILE) ?? state.feature,
+    plan: readSpecFile(ref, PLAN_FILE) ?? '',
+    languageContext: buildProjectLanguageContext(
+      wctx.projectDir,
+      state.discoveredValidation?.language,
+    ),
     currentTasks,
-  );
+  });
   const errors =
     recovery.status === 'rejected' || recovery.matchingReport === null
       ? []

@@ -24,7 +24,6 @@ const ARROW_DOWN = '\u001b[B';
 const ARROW_UP = '\u001b[A';
 const ESC = '\u001b';
 const ENTER = '\r';
-const HOME_HINT = '/help · /crew · /settings · /skills · ctrl+r recent · ctrl+k commands';
 const FOCUS_BAR = '▌';
 const SESSION_FILTER_WAIT_MS = 5000;
 const workflowDeps = { runWorkflow: () => new Promise<never>(() => {}) };
@@ -126,9 +125,10 @@ describe('home navigation flow (through real App)', () => {
     }, SESSION_FILTER_WAIT_MS);
 
     const route = routerStore.get();
-    if (route.screen === 'workflow' && route.execution.kind === 'local') {
-      expect(route.execution.prepared.session.ref.sessionId).toBe('resume-me');
+    if (route.screen !== 'workflow' || route.execution.kind !== 'local') {
+      throw new Error('expected a local workflow route');
     }
+    expect(route.execution.prepared.session.ref.sessionId).toBe('resume-me');
 
     ui.unmount();
   });
@@ -192,9 +192,10 @@ describe('home navigation flow (through real App)', () => {
       expect(routerStore.get().screen).toBe('workflow');
     }, SESSION_FILTER_WAIT_MS);
     const route = routerStore.get();
-    if (route.screen === 'workflow' && route.execution.kind === 'local') {
-      expect(route.execution.prepared.session.ref.sessionId).toBe('focus-1');
+    if (route.screen !== 'workflow' || route.execution.kind !== 'local') {
+      throw new Error('expected a local workflow route');
     }
+    expect(route.execution.prepared.session.ref.sessionId).toBe('focus-1');
 
     ui.unmount();
   });
@@ -215,7 +216,7 @@ describe('home navigation flow (through real App)', () => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).not.toContain('esc back');
       expect(frame).not.toContain(FOCUS_BAR);
-      expect(frame).toContain(HOME_HINT);
+      expect(frame).toContain('ctrl+k commands');
     }, SESSION_FILTER_WAIT_MS);
     await flushEffects();
     ui.stdin.write('hello');
@@ -281,9 +282,10 @@ describe('home navigation flow (through real App)', () => {
       expect(routerStore.get().screen).toBe('workflow');
     }, SESSION_FILTER_WAIT_MS);
     const route = routerStore.get();
-    if (route.screen === 'workflow' && route.execution.kind === 'local') {
-      expect(route.execution.prepared.session.ref.sessionId).toBe('recover-me');
+    if (route.screen !== 'workflow' || route.execution.kind !== 'local') {
+      throw new Error('expected a local workflow route');
     }
+    expect(route.execution.prepared.session.ref.sessionId).toBe('recover-me');
 
     ui.unmount();
   });

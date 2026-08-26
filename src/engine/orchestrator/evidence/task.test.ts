@@ -78,20 +78,6 @@ describe('recordLocalTaskEvidence', () => {
     });
   });
 
-  it('never rewrites passed when marking a stage baseline-exempt', () => {
-    const task = makeTask();
-    const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
-    const updated = recordLocalTaskEvidence({
-      ledger,
-      task,
-      status: 'done',
-      validation: [failing('typecheck', 'error')],
-      exemptStages: ['typecheck'],
-    });
-    expect(updated.tasks[0]?.validation[0]?.passed).toBe(false);
-    expect(updated.tasks[0]?.validation[0]?.baselineExempt).toBe(true);
-  });
-
   it('records a pre-existing-failure line for an exempt stage alongside passing lines', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });

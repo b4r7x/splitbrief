@@ -1,5 +1,7 @@
-import { chmodSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { CLI_TOOL_CATALOG, type CliToolId } from '../../src/core/runners/cli-tool-catalog.js';
+import type { CliStartGate } from '../../src/engine/runners/start-gate.js';
 
 export interface CommandShimOptions {
   dir: string;
@@ -30,6 +32,28 @@ export function prependPath(dir: string): () => void {
   return () => {
     if (original === undefined) delete process.env['PATH'];
     else process.env['PATH'] = original;
+  };
+}
+
+/**
+ * Production CLI runners accept only a canonical identity admitted by readiness.
+ * Test shims are real executable files, so derive the same path/fingerprint the
+ * readiness gate would provide instead of bypassing the gate.
+ */
+export function trustedShimGate(opts: { dir: string; tool: CliToolId }): CliStartGate {
+  const commandPath = join(opts.dir, CLI_TOOL_CATALOG[opts.tool].command);
+  if (!existsSync(commandPath)) {
+    writeFileSync(commandPath, '#!/bin/sh\nexit 0\n', 'utf8');
+    chmodSync(commandPath, 0o755);
+  }
+  const path = realpathSync(commandPath);
+  const info = statSync(path);
+  return {
+    tool: opts.tool,
+    executable: {
+      path,
+      fingerprint: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs },
+    },
   };
 }
 

@@ -9,8 +9,11 @@ import { NO_ESCALATION_WORD, UNSET_EFFORT_WORD, type CrewRow } from '../../core/
 import type { CrewEscalateEntry, CrewSeat } from '../../core/crew/seats.js';
 import type { RunnerBillingPosture } from '../../core/runners/runner-billing.js';
 import { glyph } from '../../lib/glyphs.js';
-import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../utils/display-text.js';
-import { truncateWithEllipsis } from '../../utils/truncate.js';
+import {
+  getTerminalCellWidth,
+  sanitizeTerminalDisplayText,
+  truncateTerminalDisplayText,
+} from '../../utils/display-text.js';
 import { assertNever } from '../../utils/type-guards.js';
 
 export const CREW_COLUMN_GAP = '  ';
@@ -83,7 +86,7 @@ function foldEscalateInto(
   const marker = `${CREW_IDENTITY_SEPARATOR}${glyph('foldMarker')} ${short}`;
   const room = identityWidth - getTerminalCellWidth(marker);
   if (room <= 0) return identity;
-  return `${truncateWithEllipsis(identity, room)}${marker}`;
+  return `${truncateTerminalDisplayText(identity, room)}${marker}`;
 }
 
 function seatContent(seat: CrewSeat, planner: RunnerConfig, layout: SeatBlockLayout): string {
@@ -173,7 +176,10 @@ export function formatCrewRow(
   const posture = layout.posture ? rowPosture(row) : undefined;
   return {
     label: rowLabel(row).padEnd(CREW_LABEL_WIDTH),
-    content: truncateWithEllipsis(rowContent(row, input.planner, layout), layout.identityWidth),
+    content: truncateTerminalDisplayText(
+      rowContent(row, input.planner, layout),
+      layout.identityWidth,
+    ),
     ...(posture !== undefined && { posture }),
     branch: rowBranch(row, layout.spines),
   };

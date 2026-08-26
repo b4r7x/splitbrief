@@ -7,7 +7,7 @@ import { STATE_FILE } from '../../../../core/paths.js';
 import { createInitialState } from '../../../../core/state/machine.js';
 import { acquireStateAuthority, releaseStateAuthority } from '../../../../core/state/authority.js';
 import { loadState, saveState } from '../../../../core/state/persistence.js';
-import type { BriefRecoveryV1 } from '../../../../core/schemas/brief-recovery.js';
+import type { BriefRecoveryV1 } from '../../../../core/schemas/brief-recovery/document.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow.js';
 import {
   canResumeCancelledWorkflow,
@@ -129,7 +129,7 @@ describe('workflow-screen resumability', () => {
   });
 
   it('does not resume terminal or other-phase state', () => {
-    const { projectDir, ref } = fixture('terminal-state');
+    const { ref } = fixture('terminal-state');
     const terminal = loadWorkflowScreenResume({
       ...ref,
       routeSessionId: ref.sessionId,
@@ -143,6 +143,5 @@ describe('workflow-screen resumability', () => {
 
     expect(terminal).toEqual({ kind: 'not-resumable', reason: 'terminal' });
     expect(other).toEqual({ kind: 'not-resumable', reason: 'other-phase' });
-    expect(projectDir).toContain('workflow-screen-resume');
   });
 });

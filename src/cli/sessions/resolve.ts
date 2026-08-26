@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { readActive } from '../../core/sessions/lifecycle.js';
+import { readActive } from '../../core/sessions/active-pointer.js';
 import { sessionDir } from '../../core/paths.js';
 import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';
 import { isResumable } from '../../core/phases.js';

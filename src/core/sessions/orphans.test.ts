@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { activeFile, READINESS_FILE, sessionDir, sessionsRoot } from '../paths.js';
-import { writeActive } from './lifecycle.js';
+import { writeActive } from './active-pointer.js';
 import { discardOrphanSessionDirectory } from './prepare.js';
 import { listOrphanSessionIds, ORPHAN_SESSION_GRACE_MS, pruneOrphanSessions } from './orphans.js';
 

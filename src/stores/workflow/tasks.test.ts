@@ -31,7 +31,6 @@ describe('tasksStore — via addEvent', () => {
   beforeEach(() => resetWorkflow());
 
   it('covers task-start → task-complete happy path end-to-end', () => {
-    // task-start updates currentTask/totalTasks and registers task as in_progress.
     addEvent(makeTaskStart({ taskId: taskId('T010'), title: 'New task', index: 2, total: 5 }));
     expect(tasksStore.get().currentTask).toBe(3);
     expect(tasksStore.get().totalTasks).toBe(5);
@@ -43,7 +42,6 @@ describe('tasksStore — via addEvent', () => {
       action: 'modify',
     });
 
-    // task-complete for the known task flips status to done and records its duration.
     addEvent(makeTaskComplete({ taskId: taskId('T010'), duration: 5000 }));
     expect(tasksStore.get().taskMap.get('T010')!.status).toBe('done');
     expect(tasksStore.get().taskCompletionTimes).toEqual([5000]);
@@ -62,7 +60,6 @@ describe('tasksStore — via addEvent', () => {
 
     addEvent(makeTaskSkipped({ taskId: taskId('T001') }));
     expect(tasksStore.get().taskMap.get('T001')!.status).toBe('skipped');
-    // skipped does not contribute a completion time.
     expect(tasksStore.get().taskCompletionTimes).toEqual([]);
   });
 
@@ -293,12 +290,6 @@ describe('tasks_planned', () => {
     expect(taskTargetLabel({ id: 'T001', title: 'Resumed', status: 'pending', file: 'a.ts' })).toBe(
       'a.ts',
     );
-    for (const label of [
-      taskTargetLabel({ id: 'T001', title: 'x', status: 'pending' }),
-      taskTargetLabel({ id: 'T002', title: 'x', status: 'pending', file: 'a.ts' }),
-    ]) {
-      expect(label).not.toContain('undefined');
-    }
   });
 
   it('agrees with the total task_started carries, so the header cannot flicker', () => {

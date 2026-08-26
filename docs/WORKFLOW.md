@@ -131,7 +131,7 @@ receipt records operation and intent identity, code, category, cap context,
 price and spend knownness, accounting identity, allowance state, and bounded
 evidence references; provider text and diagnostics have explicit byte limits.
 Retention is versioned with hard bounds (`RECOVERY_REFUSAL_RETENTION`,
-`src/core/schemas/brief-recovery.ts`): at most 64 refusal records and 64 KiB of
+`src/core/schemas/brief-recovery/refusal.ts`): at most 64 refusal records and 64 KiB of
 receipts per current epoch, a 1 KiB receipt bound, a 4 KiB diagnostic bound,
 256 KiB of refusal evidence, and 16 closed-epoch summaries of 512 bytes each.
 A refusal preserves the automatic repair allowance, and replaying the same
@@ -410,7 +410,7 @@ Source: `src/engine/orchestrator/planning/rewind.ts`.
 Dispatches `REWIND_TO_SPEC`. Reducer sets `phase: 'specifying'`, clears `tasks`, resets `currentTaskIndex` and `attempt`, clears `awaitingContinue`, sets `rewindPending: { target: 'spec', comment? }`.
 
 On the next planning restart, `handleRewindSpec` detects `rewindPending`:
-- If `comment` is non-empty: calls `planner.regenerate()` with `buildRegeneratePrompt('spec', currentSpec, comment)`. Writes regenerated spec.md.
+- If `comment` is non-empty: calls `planner.regenerate()` with `buildRegeneratePrompt({ artifactType: 'spec', currentContent: currentSpec, feedback: comment })`. Writes regenerated spec.md.
 - If `comment` is empty: skips regeneration.
 - Either way: dispatches `SPEC_DONE` → `reviewing-spec`. Presents the spec approval gate. On approval: dispatches `APPROVE_SPEC` → `planning`. Regenerates plan and tasks from the new spec. Runs `PLAN_DONE` → `reviewing-plan`, then briefs approval.
 

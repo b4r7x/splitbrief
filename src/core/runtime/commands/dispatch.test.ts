@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { RuntimeCommandDef } from './types.js';
 import { executeRuntimeCommand as dispatchRuntimeCommand } from './dispatch.js';
-import { noop, executeRuntimeCommand } from '#testing/helpers/runtime-commands.js';
+import { noop, runCommandInTest } from '#testing/helpers/runtime-commands.js';
 
 describe('executeRuntimeCommand', () => {
   it('runs the command when it is valid on the current screen', () => {
@@ -18,22 +18,32 @@ describe('executeRuntimeCommand', () => {
         },
       },
     ];
-    executeRuntimeCommand(cmds, '/test', 'home', noop);
+    runCommandInTest({ commands: cmds, raw: '/test', screen: 'home', onError: noop });
     expect(called).toBeTruthy();
   });
 
   it('reports an error for an unknown command', () => {
     let errorMsg = '';
-    executeRuntimeCommand([], '/nope', 'home', (msg) => {
-      errorMsg = msg;
+    runCommandInTest({
+      commands: [],
+      raw: '/nope',
+      screen: 'home',
+      onError: (msg) => {
+        errorMsg = msg;
+      },
     });
     expect(errorMsg).toContain('Unknown command');
   });
 
   it('points a removed command at its replacement instead of reporting it unknown', async () => {
     let errorMsg = '';
-    await executeRuntimeCommand([], '/effort high', 'home', (msg) => {
-      errorMsg = msg;
+    await runCommandInTest({
+      commands: [],
+      raw: '/effort high',
+      screen: 'home',
+      onError: (msg) => {
+        errorMsg = msg;
+      },
     });
     expect(errorMsg).toContain('/crew plan');
     expect(errorMsg).not.toContain('Unknown command');
@@ -56,8 +66,8 @@ describe('executeRuntimeCommand', () => {
       },
     ];
 
-    await executeRuntimeCommand(cmds, '/accept-run', 'home', noop);
-    await executeRuntimeCommand(cmds, '/run reject', 'home', noop);
+    await runCommandInTest({ commands: cmds, raw: '/accept-run', screen: 'home', onError: noop });
+    await runCommandInTest({ commands: cmds, raw: '/run reject', screen: 'home', onError: noop });
 
     expect(received).toEqual(['accept', 'reject']);
   });
@@ -89,14 +99,24 @@ describe('executeRuntimeCommand', () => {
       },
     ];
 
-    await executeRuntimeCommand(cmds, '/mde', 'home', (msg) => {
-      errorMsg = msg;
+    await runCommandInTest({
+      commands: cmds,
+      raw: '/mde',
+      screen: 'home',
+      onError: (msg) => {
+        errorMsg = msg;
+      },
     });
     expect(calls).toEqual([]);
     expect(errorMsg).toBe('Unknown command: /mde. Did you mean /mode?');
 
-    await executeRuntimeCommand(cmds, '/reject-rn confirm', 'home', (msg) => {
-      errorMsg = msg;
+    await runCommandInTest({
+      commands: cmds,
+      raw: '/reject-rn confirm',
+      screen: 'home',
+      onError: (msg) => {
+        errorMsg = msg;
+      },
     });
     expect(calls).toEqual([]);
     expect(errorMsg).toBe('Unknown command: /reject-rn. Did you mean /reject-run?');
@@ -114,8 +134,13 @@ describe('executeRuntimeCommand', () => {
         handler: noop,
       },
     ];
-    executeRuntimeCommand(cmds, '/test-home-only', 'workflow', (msg) => {
-      errorMsg = msg;
+    runCommandInTest({
+      commands: cmds,
+      raw: '/test-home-only',
+      screen: 'workflow',
+      onError: (msg) => {
+        errorMsg = msg;
+      },
     });
     expect(errorMsg).toContain('only available');
   });
@@ -135,7 +160,7 @@ describe('executeRuntimeCommand', () => {
         },
       },
     ];
-    executeRuntimeCommand(cmds, '/test hello world', 'home', noop);
+    runCommandInTest({ commands: cmds, raw: '/test hello world', screen: 'home', onError: noop });
     expect(receivedArgs).toBe('hello world');
   });
 
@@ -154,7 +179,7 @@ describe('executeRuntimeCommand', () => {
         },
       },
     ];
-    executeRuntimeCommand(cmds, '/test', 'home', noop);
+    runCommandInTest({ commands: cmds, raw: '/test', screen: 'home', onError: noop });
     expect(receivedArgs).toBeUndefined();
   });
 
@@ -214,8 +239,18 @@ describe('executeRuntimeCommand', () => {
       },
     ];
 
-    await executeRuntimeCommand(cmds, '/copy path', 'workflow', noop);
-    await executeRuntimeCommand(cmds, '/queue clear', 'workflow', noop);
+    await runCommandInTest({
+      commands: cmds,
+      raw: '/copy path',
+      screen: 'workflow',
+      onError: noop,
+    });
+    await runCommandInTest({
+      commands: cmds,
+      raw: '/queue clear',
+      screen: 'workflow',
+      onError: noop,
+    });
 
     expect(received).toEqual(['copy:path', 'queue:clear']);
   });
@@ -233,8 +268,13 @@ describe('executeRuntimeCommand', () => {
       },
     ];
 
-    await executeRuntimeCommand(cmds, '/nope', 'home', (msg) => {
-      errorMsg = msg;
+    await runCommandInTest({
+      commands: cmds,
+      raw: '/nope',
+      screen: 'home',
+      onError: (msg) => {
+        errorMsg = msg;
+      },
     });
 
     expect(errorMsg).toContain('Unknown command: /nope');
@@ -254,7 +294,7 @@ describe('executeRuntimeCommand', () => {
         },
       },
     ];
-    await executeRuntimeCommand(cmds, '/async', 'home', noop);
+    await runCommandInTest({ commands: cmds, raw: '/async', screen: 'home', onError: noop });
     expect(called).toBe(true);
   });
 });

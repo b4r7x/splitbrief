@@ -1,3 +1,4 @@
+import { assertNever } from '../../../utils/type-guards.js';
 import type { Phase } from '../../schemas/enums.js';
 import type { WorkflowMode } from '../../schemas/enums.js';
 import { CREW_SEAT_IDS } from '../../crew/identity.js';
@@ -138,6 +139,8 @@ export function formatDiscoveryRefreshFeedback(
       return { message: `${input.subject} refresh is not initialized`, isError: true };
     case 'superseded':
       return { message: `${input.subject} refresh was superseded`, isError: true };
+    default:
+      return assertNever(input.summary.status);
   }
 }
 

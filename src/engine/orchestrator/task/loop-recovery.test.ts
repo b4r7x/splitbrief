@@ -83,9 +83,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       affectedTaskIds: ['T001', 'T002'],
       availableActions: ['skip-current-task', 'pause-run', 'abort-workflow'],
     });
-    expect(result.state.pendingRecovery?.affectedTaskIds).toEqual(
-      expect.arrayContaining(['T001', 'T002']),
-    );
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
       reason: 'dependency-blocked',
       taskId: 'T002',
@@ -228,36 +225,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     );
   });
 
-  it('stops immediately on resume when pending recovery already exists', async () => {
-    const { projectDir, sessionId } = setupSessionOnly();
-    const task = makeTask({ id: 'T001' });
-    const state = {
-      ...makeImplState([task]),
-      pendingRecovery: buildContextOverflowRecoveryIssue({
-        task,
-        phase: 'implementing',
-        createdAt: '2026-04-28T12:00:00.000Z',
-      }),
-    };
-    const implementer = makeImplementer({ implement: vi.fn() });
-
-    const result = await runTaskLoop({
-      wctx: makeWctx({
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
-        implementer,
-      }),
-      initialState: state,
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
-
-    expect(result.status).toBe('stopped');
-    expect(implementer.implement).not.toHaveBeenCalled();
-    expect(result.state.pendingRecovery).toEqual(state.pendingRecovery);
-  });
-
   it('carries the runner own unavailability reason into the recovery issue', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
@@ -326,124 +293,58 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     });
   });
 
-  it('publishes a transcript-safe warning naming the unresolved recovery before stopping', async () => {
-    const { projectDir, sessionId } = setupSessionOnly();
-    const task = makeTask({ id: 'T001' });
-    const issue = buildContextOverflowRecoveryIssue({
-      task,
-      phase: 'implementing',
-      createdAt: '2026-04-28T12:00:00.000Z',
-    });
-    const state = { ...makeImplState([task]), pendingRecovery: issue };
-    const implementer = makeImplementer({ implement: vi.fn() });
-    const { bus, events } = makeBusRecorder();
+  it.each([{ status: 'awaiting-user' }, { status: 'paused' }] as const)(
+    'stops on resume of a $status recovery, warning about it and leaving the issue unchanged',
+    async ({ status }) => {
+      const { projectDir, sessionId } = setupSessionOnly();
+      const task = makeTask({ id: 'T001' });
+      const issue = {
+        ...buildContextOverflowRecoveryIssue({
+          task,
+          phase: 'implementing',
+          createdAt: '2026-04-28T12:00:00.000Z',
+        }),
+        status,
+      };
+      const state = { ...makeImplState([task]), pendingRecovery: issue };
+      const implementer = makeImplementer({ implement: vi.fn() });
+      const { bus, events } = makeBusRecorder();
 
-    const result = await runTaskLoop({
-      wctx: makeWctx({
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
-        implementer,
-        bus,
-      }),
-      initialState: state,
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
+      const result = await runTaskLoop({
+        wctx: makeWctx({
+          projectDir,
+          sessionId,
+          config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+          implementer,
+          bus,
+        }),
+        initialState: state,
+        setTrackedState: vi.fn(),
+        setCurrentTask: vi.fn(),
+      });
 
-    expect(result.status).toBe('stopped');
-    expect(implementer.implement).not.toHaveBeenCalled();
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'warning',
-        code: 'recovery_pending_unresolved',
-        category: 'recovery',
-        transcriptSafe: true,
-        message: expect.stringContaining('context-overflow'),
-      }),
-    );
-    const warning = events.find((event) => event.type === 'warning');
-    expect(warning).toMatchObject({
-      message: expect.stringContaining('status: awaiting-user'),
-    });
-    expect(warning).toMatchObject({
-      message: expect.stringContaining('pause-run'),
-    });
-    expect(result.state.pendingRecovery).toEqual(issue);
-    expect(result.state.pendingRecovery?.status).toBe('awaiting-user');
-  });
-
-  it('reports a paused recovery on resume with its paused status, unchanged', async () => {
-    const { projectDir, sessionId } = setupSessionOnly();
-    const task = makeTask({ id: 'T001' });
-    const pausedRecovery = {
-      ...buildContextOverflowRecoveryIssue({
-        task,
-        phase: 'implementing',
-        createdAt: '2026-04-28T12:00:00.000Z',
-      }),
-      status: 'paused' as const,
-    };
-    const state = { ...makeImplState([task]), pendingRecovery: pausedRecovery };
-    const implementer = makeImplementer({ implement: vi.fn() });
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runTaskLoop({
-      wctx: makeWctx({
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
-        implementer,
-        bus,
-      }),
-      initialState: state,
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
-
-    expect(result.status).toBe('stopped');
-    expect(implementer.implement).not.toHaveBeenCalled();
-    expect(result.state.pendingRecovery).toEqual(pausedRecovery);
-    expect(result.state.pendingRecovery?.status).toBe('paused');
-    const warning = events.find((event) => event.type === 'warning');
-    expect(warning).toMatchObject({
-      type: 'warning',
-      code: 'recovery_pending_unresolved',
-      message: expect.stringContaining('status: paused'),
-    });
-  });
-
-  it('stops on resume of a paused recovery without re-entering or clearing the issue', async () => {
-    const { projectDir, sessionId } = setupSessionOnly();
-    const task = makeTask({ id: 'T001' });
-    const pausedRecovery = {
-      ...buildContextOverflowRecoveryIssue({
-        task,
-        phase: 'implementing',
-        createdAt: '2026-04-28T12:00:00.000Z',
-      }),
-      status: 'paused' as const,
-    };
-    const state = { ...makeImplState([task]), pendingRecovery: pausedRecovery };
-    const implementer = makeImplementer({ implement: vi.fn() });
-
-    const result = await runTaskLoop({
-      wctx: makeWctx({
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
-        implementer,
-      }),
-      initialState: state,
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
-
-    expect(result.status).toBe('stopped');
-    expect(implementer.implement).not.toHaveBeenCalled();
-    expect(result.state.pendingRecovery).toEqual(pausedRecovery);
-    expect(result.state.pendingRecovery?.status).toBe('paused');
-  });
+      expect(result.status).toBe('stopped');
+      expect(implementer.implement).not.toHaveBeenCalled();
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: 'warning',
+          code: 'recovery_pending_unresolved',
+          category: 'recovery',
+          transcriptSafe: true,
+          message: expect.stringContaining('context-overflow'),
+        }),
+      );
+      const warning = events.find((event) => event.type === 'warning');
+      expect(warning).toMatchObject({
+        message: expect.stringContaining(`status: ${status}`),
+      });
+      expect(warning).toMatchObject({
+        message: expect.stringContaining('pause-run'),
+      });
+      expect(result.state.pendingRecovery).toEqual(issue);
+      expect(result.state.pendingRecovery?.status).toBe(status);
+    },
+  );
 
   it('persists budget pause recovery after a task boundary', async () => {
     const { projectDir, sessionId } = setupProject();

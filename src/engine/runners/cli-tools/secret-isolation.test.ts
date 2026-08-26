@@ -81,7 +81,10 @@ function adapter(promptTransport: CliPromptTransport): CliImplementerAdapter {
       if (line === 'RESULT') return [completed];
       return [];
     },
-    terminal: ({ stdout }) => ({ ...completed, text: stdout }),
+    terminal: ({ events }) => {
+      const terminal = events.findLast((event) => event.type === 'result');
+      return terminal?.type === 'result' ? terminal : completed;
+    },
     probe: {
       version: {
         command: ['fixture', '--version'],
@@ -149,7 +152,7 @@ describe('ambient secret stripping canary matrix', () => {
     setEnv('STRIPE_SECRET_KEY', 'canary-secret-isolation-ambient-stripe-4d5e');
     setEnv('SPLITBRIEF_PUBLIC_FLAG', 'keep-me');
 
-    const env = await createSandboxEnv(projectDir);
+    const env = await createSandboxEnv({ projectDir });
 
     expect(env.GITHUB_TOKEN).toBeUndefined();
     expect(env.XAI_API_KEY).toBeUndefined();
@@ -240,7 +243,7 @@ describe('real-HOME invisibility canary matrix', () => {
       '//registry/:_authToken=canary-secret-isolation-npm-7a8b\n',
     );
 
-    const env = await createSandboxEnv(projectDir);
+    const env = await createSandboxEnv({ projectDir });
 
     expect(env.HOME).toBe(join(projectDir, SANDBOX_DIR, 'home'));
     expect(Object.values(env)).not.toContain(hostHome);
@@ -259,7 +262,7 @@ describe('real-HOME invisibility canary matrix', () => {
     );
     setEnv('HOME', hostHome);
 
-    const env = await createSandboxEnv(projectDir);
+    const env = await createSandboxEnv({ projectDir });
     const sandboxHome = env.HOME as string;
 
     expect(existsSync(join(sandboxHome, '.claude'))).toBe(false);

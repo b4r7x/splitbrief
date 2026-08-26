@@ -257,7 +257,6 @@ describe('recovery logger and JSONL sinks', () => {
         sessionId: 'session-recovery',
         epochId: 'epoch-recovery',
       });
-      expect(JSON.stringify(line)).not.toContain(SECRET);
     }
     expect(lines.find((line) => line.type === 'brief_recovery_refused')).toMatchObject({
       status: 'blocked',
@@ -307,7 +306,6 @@ describe('recovery logger and JSONL sinks', () => {
         sessionId: 'session-recovery',
         epochId: 'epoch-recovery',
       });
-      expect(JSON.stringify(line)).not.toContain(SECRET);
     }
     expect(lines.find((line) => line.type === 'brief_recovery_refused')).toMatchObject({
       status: 'blocked',

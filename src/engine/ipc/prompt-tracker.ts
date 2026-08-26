@@ -14,7 +14,7 @@ import {
   briefReviewCommandToApprovalReviewResult,
   isBriefReviewCommandCurrent,
 } from '../../core/schemas/brief-review-command.js';
-import { BriefRecoveryProjectionV1Schema } from '../../core/schemas/brief-recovery.js';
+import { BriefRecoveryProjectionV1Schema } from '../../core/schemas/brief-recovery/document.js';
 import { PLANNER_ARTIFACT_MAX_BYTES } from '../runners/types.js';
 import { allowedBriefReviewCommandsForProjection } from './protocol.js';
 
@@ -85,9 +85,14 @@ function describePromptForDiagnostic(request: IpcPromptRequest): string {
 
 function boundedDiagnosticText(value: string): string {
   if (Buffer.byteLength(value, 'utf8') <= MAX_PROMPT_DIAGNOSTIC_BYTES) return value;
-  let text = value;
-  while (Buffer.byteLength(`${text}...`, 'utf8') > MAX_PROMPT_DIAGNOSTIC_BYTES && text.length > 0) {
-    text = text.slice(0, -1);
+  const budget = MAX_PROMPT_DIAGNOSTIC_BYTES - Buffer.byteLength('...', 'utf8');
+  let text = '';
+  let bytes = 0;
+  for (const char of value) {
+    const nextBytes = Buffer.byteLength(char, 'utf8');
+    if (bytes + nextBytes > budget) break;
+    text += char;
+    bytes += nextBytes;
   }
   return `${text}...`;
 }

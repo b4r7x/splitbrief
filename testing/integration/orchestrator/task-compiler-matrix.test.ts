@@ -15,8 +15,8 @@ import {
   type TaskCompilationAttemptId,
   type TaskCompilationCallEnvelope,
   type TaskCompilationProgram,
-  type TaskCompilationSessionScope,
-  type TaskCompilationTransport,
+  type PlannerSessionScope,
+  type PlannerArtifactTransport,
 } from '../../../src/core/schemas/task-compilation.js';
 import type { DispatchClaim } from '../../../src/engine/calls/dispatch-ledger.js';
 import {
@@ -90,7 +90,7 @@ function envelopeFixture(
 
 function invocationFixture(
   envelope: TaskCompilationCallEnvelope = envelopeFixture(),
-  transport: TaskCompilationTransport = { kind: 'stdout-final' },
+  transport: PlannerArtifactTransport = { kind: 'stdout-final' },
 ): PreparedPlannerInvocation {
   return {
     runtime: {
@@ -401,7 +401,7 @@ function refusedBatchResult(
   };
 }
 
-type DetachedScope = Extract<TaskCompilationSessionScope, { kind: 'detached-fresh' }>;
+type DetachedScope = Extract<PlannerSessionScope, { kind: 'detached-fresh' }>;
 
 async function spawnBatch(opts: {
   h: MatrixHarness;
@@ -595,7 +595,7 @@ describe('compiler dispatch matrix — production spawn path with a shim executa
   });
 
   describe('continuation cannot reset the counter or replay batches (REQ-006, REQ-012)', () => {
-    it('replaying a claimed attempt is refused before any invoke, and a restored ledger cannot enlarge the counter', async () => {
+    it('replaying a claimed attempt is refused, and a restored ledger cannot enlarge the counter', async () => {
       const run = await runCompile({ count: 12, modes: ['batch', 'batch', 'batch'], failAt: 2 });
       expectFailure(run, 'task_compiler_provider_failed');
       const ledger = requireLedger(run);
@@ -603,12 +603,8 @@ describe('compiler dispatch matrix — production spawn path with a shim executa
       expect(snapshot.dispatchCount).toBe(2);
       const markersAfterFailure = markerCount();
 
-      let invokes = 0;
-      const replay = ledger.claimDispatch(snapshot.claimedAttemptIds[0] ?? '', () => {
-        invokes += 1;
-      });
+      const replay = ledger.claimDispatch(snapshot.claimedAttemptIds[0] ?? '');
       expect(replay).toMatchObject({ kind: 'refused', reason: 'attempt-already-claimed' });
-      expect(invokes).toBe(0);
       expect(markerCount()).toBe(markersAfterFailure);
 
       const program = materializeTaskCompilationProgram(
@@ -787,7 +783,6 @@ describe('compiler dispatch matrix — production spawn path with a shim executa
         program.batches[0]?.batchId,
         program.batches[1]?.batchId,
       ]);
-      expect(batchScopes[0]?.attemptId).not.toBe(batchScopes[1]?.attemptId);
       expect(new Set(batchScopes.map((scope) => scope.attemptId)).size).toBe(2);
       expect(batchCallbacks).toHaveLength(2);
       for (const captured of batchCallbacks) {
@@ -835,10 +830,7 @@ describe('compiler dispatch matrix — production spawn path with a shim executa
       });
 
       expect(first.text).toBe(SENTINEL_A);
-      expect(Buffer.byteLength(first.text, 'utf8')).toBe(Buffer.byteLength(SENTINEL_A, 'utf8'));
       expect(second.text).toBe(SENTINEL_B);
-      expect(Buffer.byteLength(second.text, 'utf8')).toBe(Buffer.byteLength(SENTINEL_B, 'utf8'));
-      expect(first.text).not.toBe(second.text);
       expect(markerCount()).toBe(2);
     });
   });

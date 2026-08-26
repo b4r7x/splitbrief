@@ -12,7 +12,7 @@ import { isENOENT } from '../../lib/process/errors.js';
 import { loadState } from '../state/persistence.js';
 import { sessionError } from './errors.js';
 import { writeSecureFile } from '../../lib/fs.js';
-import { TRANSCRIPT_OMITTED_FEATURE, isOpaqueSessionId } from './lifecycle.js';
+import { TRANSCRIPT_OMITTED_FEATURE, isOpaqueSessionId } from './session-id.js';
 import { readSessionLockfileData } from './lockfile-status.js';
 
 function readSummaryFile(filePath: string, sessionId: string): Session | null {

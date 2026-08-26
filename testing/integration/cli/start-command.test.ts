@@ -34,7 +34,7 @@ describe('start command — concurrency guard', () => {
     }
 
     expect(isCliError(captured)).toBe(true);
-    expect((captured as Error).message.length).toBeGreaterThan(0);
+    expect((captured as Error).message).toContain('2026-04-18-live');
     const activePath = join(tmp, SPLITBRIEF_DIR, 'active');
     expect(existsSync(activePath)).toBe(true);
     expect(readFileSync(activePath, 'utf-8').trim()).toBe('2026-04-18-live');

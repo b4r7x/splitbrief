@@ -5,15 +5,14 @@ import { createInitialState } from '../../../core/state/machine.js';
 import { loadState } from '../../../core/state/persistence.js';
 import type {
   BriefAdmissionInput,
-  BriefQualityIssue,
   BriefRecoveryController,
-  BriefRecoveryControllerDeps,
-  BudgetAccountingKey,
-  BudgetReservation,
-  RecoveryProviderRequest,
-  RecoveryProviderResult,
   StateAuthorityReceipt,
 } from '../../../core/schemas/brief-recovery.js';
+import type { BriefQualityIssue } from '../../../core/schemas/brief-recovery/primitives.js';
+import type {
+  RecoveryProviderRequest,
+  RecoveryProviderResult,
+} from '../../../core/schemas/brief-recovery/provider-call.js';
 import type { BriefOwnerCommitPort } from '../../../core/schemas/brief-owner.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { BRIEF_QUALITY_FILE, sessionDir } from '../../../core/paths.js';
@@ -34,6 +33,7 @@ import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { formatTasks } from '../../spec/formatter.js';
 import { dispatchNativeInjection } from '../queue/native-injection.js';
 import { createBriefRecoveryController } from './brief-recovery-controller.js';
+import { makeBriefRecoveryControllerDeps } from '#testing/helpers/factories/recovery.js';
 import { prepareBriefQuality } from './brief-quality-preparation.js';
 import { observeGenerationStorage } from './brief-generation.js';
 import { makeTestOwnerCommit } from '#testing/helpers/brief-owner.js';
@@ -111,17 +111,6 @@ function preparationAdmission(
   };
 }
 
-function preparationReservation(accountingKey: BudgetAccountingKey): BudgetReservation {
-  return {
-    accountingKey,
-    amount: 0.1,
-    state: 'reserved',
-    usageApplied: false,
-    appliedUsage: null,
-    history: [{ state: 'reserved', at: '2026-01-01T00:00:00.000Z', reason: 'accepted' }],
-  };
-}
-
 function preparationController(
   options: {
     providerResult?: (input: RecoveryProviderRequest) => RecoveryProviderResult;
@@ -129,74 +118,17 @@ function preparationController(
     qualityIssues?: BriefQualityIssue[];
   } = {},
 ): { controller: BriefRecoveryController; calls: RecoveryProviderRequest[] } {
-  const calls: RecoveryProviderRequest[] = [];
   let generatedId = 0;
-  const deps: BriefRecoveryControllerDeps = {
-    provider: {
-      async dispatch(input) {
-        calls.push(input);
-        return (
-          options.providerResult?.(input) ?? {
-            kind: 'completed',
-            requestId: input.requestId,
-            dispatchPossibility: 'possible',
-            remoteObservation: 'confirmed-final',
-            text: 'corrected brief',
-            providerCode: null,
-            usage: null,
-          }
-        );
-      },
-    },
-    budget: {
-      estimate: () => ({
-        kind: 'finite',
-        budgetUnit: 'usd',
-        inputTokens: 1,
-        outputTokens: 1,
-        amount: 0.1,
-        pricingIdentity: 'test',
-      }),
-      reserve: ({ accountingKey }) => ({
-        kind: 'reserved',
-        reservation: preparationReservation(accountingKey),
-      }),
-      reconcile: ({ reservation, remoteObservation, usage }) => ({
-        reservation: {
-          ...reservation,
-          state:
-            remoteObservation === 'not-dispatched'
-              ? 'released'
-              : remoteObservation === 'unknown'
-                ? 'held'
-                : 'reconciled',
-          usageApplied: usage !== null,
-          appliedUsage: usage,
-        },
-        usageApplied: usage !== null,
-        appliedAmount: 0,
-      }),
-      terminalCharge: ({ reservation }) => ({
-        reservation: { ...reservation, state: 'terminal-charged' },
-        usageApplied: reservation.usageApplied,
-        appliedAmount: reservation.amount,
-      }),
-    },
-    commit: options.commit ?? makeTestOwnerCommit(),
-    readRetryContext: () => ({
-      prompt: 'repair the original Task Briefs',
-      projectDir: '/tmp/original-project',
-      currentKnownSpend: 0,
-      maxBudget: 1,
-    }),
-    evaluateQuality: () => options.qualityIssues ?? [PREPARATION_ERROR],
+  const fake = makeBriefRecoveryControllerDeps({
+    ...options,
+    qualityIssues: options.qualityIssues ?? [PREPARATION_ERROR],
     now: () => '2026-01-01T00:00:00.000Z',
     nextId: () => {
       generatedId += 1;
       return `preparation-id-${generatedId}`;
     },
-  };
-  return { controller: createBriefRecoveryController(deps), calls };
+  });
+  return { controller: createBriefRecoveryController(fake.deps), calls: fake.providerCalls };
 }
 
 describe('prepareBriefQuality', () => {

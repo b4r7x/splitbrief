@@ -13,7 +13,7 @@ import type { RunnerGate } from '../runners/prepared-execution.js';
 import type { CustomRunnerRuntimePort } from '../runners/types.js';
 import type { DeclaredArtifactReceipt } from '../runners/types.js';
 import type { RunnerCallContext } from '../calls/types.js';
-import { customRunnerAdmissionError } from '../runners/trust.js';
+import { customRunnerAdmissionError } from '../runners/custom-launchability.js';
 import {
   TaskCompilationSemanticIdSchema,
   createTaskCompilationAttemptId,
@@ -417,6 +417,5 @@ describe('createConfiguredCustomPlanner — stale ambient review cleanup', () =>
 
     expect(result.phases?.[0]?.artifact.text).not.toContain('stale ambient content');
     expect(existsSync(staleRoot)).toBe(false);
-    expect(existsSync(reviewCandidateRoot(projectDir))).toBe(false);
   });
 });

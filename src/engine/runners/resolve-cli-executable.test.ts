@@ -97,7 +97,9 @@ describe('resolveCliExecutable', () => {
     makeExecutable(join(systemDir, 'vendor-cli'));
     setEnv('PATH', [projectBin, systemDir].join(delimiter));
 
-    await expect(resolveCliExecutable('vendor-cli', projectDir)).rejects.toMatchObject({
+    await expect(
+      resolveCliExecutable({ command: 'vendor-cli', projectDir: projectDir }),
+    ).rejects.toMatchObject({
       kind: 'cli-executable-untrusted',
     });
   });
@@ -114,12 +116,16 @@ describe('resolveCliExecutable', () => {
     makeExecutable(join(externalBin, 'relative-cli'));
 
     setEnv('PATH', ['', externalBin].join(delimiter));
-    await expect(resolveCliExecutable('vendor-cli', projectDir)).rejects.toMatchObject({
+    await expect(
+      resolveCliExecutable({ command: 'vendor-cli', projectDir: projectDir }),
+    ).rejects.toMatchObject({
       kind: 'cli-executable-untrusted',
     });
 
     setEnv('PATH', ['relative-bin', externalBin].join(delimiter));
-    await expect(resolveCliExecutable('relative-cli', projectDir)).rejects.toMatchObject({
+    await expect(
+      resolveCliExecutable({ command: 'relative-cli', projectDir: projectDir }),
+    ).rejects.toMatchObject({
       kind: 'cli-executable-untrusted',
     });
   });
@@ -135,7 +141,7 @@ describe('resolveCliExecutable', () => {
     symlinkSync(executable, linkedExecutable);
     setEnv('PATH', linkBin);
 
-    const identity = await resolveCliExecutable('vendor-cli', projectDir);
+    const identity = await resolveCliExecutable({ command: 'vendor-cli', projectDir: projectDir });
     const realPath = realpathSync(executable);
     const info = statSync(realPath);
 
@@ -159,10 +165,12 @@ describe('resolveCliExecutable', () => {
     const executable = join(binDir, 'vendor-cli');
     makeExecutable(executable);
     setEnv('PATH', binDir);
-    const trusted = await resolveCliExecutable('vendor-cli', projectDir);
+    const trusted = await resolveCliExecutable({ command: 'vendor-cli', projectDir: projectDir });
     makeExecutable(executable, '#!/bin/sh\necho replacement\n');
 
-    await expect(resolveCliExecutable('vendor-cli', projectDir, trusted)).rejects.toMatchObject({
+    await expect(
+      resolveCliExecutable({ command: 'vendor-cli', projectDir: projectDir, trust: trusted }),
+    ).rejects.toMatchObject({
       kind: 'cli-executable-identity-drift',
     });
   });
@@ -179,7 +187,7 @@ describe('resolveCliExecutable', () => {
     const fixedTime = new Date(1_700_000_000_000);
     utimesSync(executable, fixedTime, fixedTime);
     setEnv('PATH', binDir);
-    const trusted = await resolveCliExecutable('vendor-cli', projectDir);
+    const trusted = await resolveCliExecutable({ command: 'vendor-cli', projectDir: projectDir });
     const before = statSync(executable);
 
     writeFileSync(executable, replacement, { mode: 0o755 });
@@ -190,7 +198,9 @@ describe('resolveCliExecutable', () => {
     expect(after.ino).toBe(before.ino);
     expect(after.size).toBe(before.size);
     expect(after.mtimeMs).toBe(before.mtimeMs);
-    await expect(resolveCliExecutable('vendor-cli', projectDir, trusted)).rejects.toMatchObject({
+    await expect(
+      resolveCliExecutable({ command: 'vendor-cli', projectDir: projectDir, trust: trusted }),
+    ).rejects.toMatchObject({
       kind: 'cli-executable-identity-drift',
     });
   });
@@ -208,12 +218,14 @@ describe('resolveCliExecutable', () => {
     makeExecutable(second, '#!/bin/sh\necho second\n');
     symlinkSync(first, linkedExecutable);
     setEnv('PATH', linkBin);
-    const trusted = await resolveCliExecutable('vendor-cli', projectDir);
+    const trusted = await resolveCliExecutable({ command: 'vendor-cli', projectDir: projectDir });
 
     unlinkSync(linkedExecutable);
     symlinkSync(second, linkedExecutable);
 
-    await expect(resolveCliExecutable('vendor-cli', projectDir, trusted)).rejects.toMatchObject({
+    await expect(
+      resolveCliExecutable({ command: 'vendor-cli', projectDir: projectDir, trust: trusted }),
+    ).rejects.toMatchObject({
       kind: 'cli-executable-identity-drift',
     });
   });
@@ -226,15 +238,19 @@ describe('resolveCliExecutable', () => {
     makeExecutable(join(approvedBin, 'vendor-cli'));
     makeExecutable(join(replacementBin, 'vendor-cli'), '#!/bin/sh\necho replacement\n');
     setEnv('PATH', approvedBin);
-    const trusted = await resolveCliExecutable('vendor-cli', projectDir);
+    const trusted = await resolveCliExecutable({ command: 'vendor-cli', projectDir: projectDir });
 
     setEnv('PATH', replacementBin);
-    await expect(resolveCliExecutable('vendor-cli', projectDir, trusted)).rejects.toMatchObject({
+    await expect(
+      resolveCliExecutable({ command: 'vendor-cli', projectDir: projectDir, trust: trusted }),
+    ).rejects.toMatchObject({
       kind: 'cli-executable-identity-drift',
     });
 
     setEnv('PATH', '');
-    await expect(resolveCliExecutable('vendor-cli', projectDir, trusted)).rejects.toMatchObject({
+    await expect(
+      resolveCliExecutable({ command: 'vendor-cli', projectDir: projectDir, trust: trusted }),
+    ).rejects.toMatchObject({
       kind: 'cli-executable-identity-drift',
     });
   });
@@ -247,12 +263,18 @@ describe('resolveCliExecutable', () => {
     mkdirSync(binDir);
     makeExecutable(join(binDir, 'vendor-cli'));
     setEnv('PATH', binDir);
-    const trust = await resolveCliExecutable('vendor-cli', neutralProject);
+    const trust = await resolveCliExecutable({ command: 'vendor-cli', projectDir: neutralProject });
 
-    await expect(resolveCliExecutable('vendor-cli', trustedRoot)).rejects.toMatchObject({
+    await expect(
+      resolveCliExecutable({ command: 'vendor-cli', projectDir: trustedRoot }),
+    ).rejects.toMatchObject({
       kind: 'cli-executable-untrusted',
     });
-    const resolved = await resolveCliExecutable('vendor-cli', trustedRoot, trust);
+    const resolved = await resolveCliExecutable({
+      command: 'vendor-cli',
+      projectDir: trustedRoot,
+      trust: trust,
+    });
     expect(resolved.path).toBe(trust.path);
     expect(resolved.fingerprint).toEqual(trust.fingerprint);
     const trustedMetadata = executableIdentityMetadata(trust);
@@ -274,13 +296,13 @@ describe('resolveCliExecutable', () => {
 
     let unavailableFailure: unknown;
     try {
-      await resolveCliExecutable(unavailable, projectDir);
+      await resolveCliExecutable({ command: unavailable, projectDir: projectDir });
     } catch (cause) {
       unavailableFailure = cause;
     }
     let untrustedFailure: unknown;
     try {
-      await resolveCliExecutable(untrusted, projectDir);
+      await resolveCliExecutable({ command: untrusted, projectDir: projectDir });
     } catch (cause) {
       untrustedFailure = cause;
     }
@@ -306,12 +328,12 @@ describe('resolveCliExecutable', () => {
     dirs.push(projectDir, binDir);
     const command = join(binDir, 'drift-cli');
     makeExecutable(command);
-    const trusted = await resolveCliExecutable(command, projectDir);
+    const trusted = await resolveCliExecutable({ command: command, projectDir: projectDir });
     makeExecutable(command, '#!/bin/sh\necho changed identity\n');
 
     let caught: unknown;
     try {
-      await resolveCliExecutable(command, projectDir, trusted);
+      await resolveCliExecutable({ command: command, projectDir: projectDir, trust: trusted });
     } catch (cause) {
       caught = cause;
     }
@@ -376,7 +398,10 @@ describe('resolveCliExecutableAliases', () => {
     dirs.push(projectDir, binDir);
     makeExecutable(join(binDir, CURSOR_FALLBACK_EXECUTABLE));
     setEnv('PATH', binDir);
-    const trust = await resolveCliExecutable(CURSOR_FALLBACK_EXECUTABLE, projectDir);
+    const trust = await resolveCliExecutable({
+      command: CURSOR_FALLBACK_EXECUTABLE,
+      projectDir: projectDir,
+    });
 
     const resolved = await resolveCliExecutableAliases({
       commands: CURSOR_CLI_CANDIDATE.executableAliases,
@@ -397,7 +422,10 @@ describe('resolveCliExecutableAliases', () => {
       dirs.push(projectDir, binDir);
       makeExecutable(join(binDir, CURSOR_FALLBACK_EXECUTABLE));
       setEnv('PATH', binDir);
-      const trust = await resolveCliExecutable(CURSOR_FALLBACK_EXECUTABLE, projectDir);
+      const trust = await resolveCliExecutable({
+        command: CURSOR_FALLBACK_EXECUTABLE,
+        projectDir: projectDir,
+      });
       makeExecutable(join(binDir, CURSOR_PRIMARY_EXECUTABLE));
 
       await expect(

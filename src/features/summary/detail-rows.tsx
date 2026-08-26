@@ -6,8 +6,7 @@ import type { ScrollableDocumentRow } from '../../components/scrollable-document
 import { SOFT_SEP } from '../../components/separators.js';
 import { formatCost } from '../../core/formatting.js';
 import { getMethodDisplay } from '../../core/sessions/display.js';
-import { truncateWithEllipsis } from '../../utils/truncate.js';
-import { stripTerminalControls } from '../../utils/display-text.js';
+import { stripTerminalControls, truncateTerminalDisplayText } from '../../utils/display-text.js';
 import { buildCostBreakdownRows } from './components/cost-breakdown.js';
 import { buildPhaseTimingRows } from './components/phase-timing.js';
 import { buildCheckpointDetailRows } from './components/checkpoints.js';
@@ -76,7 +75,7 @@ export function buildSummaryDetailRows(
             </Box>
             <Box width={taskTitleWidth} flexShrink={0}>
               <Text wrap="truncate-end">
-                {truncateWithEllipsis(stripTerminalControls(task.taskTitle), truncateLength)}
+                {truncateTerminalDisplayText(task.taskTitle, truncateLength)}
               </Text>
             </Box>
             <Box width={10} flexShrink={0}>
@@ -111,7 +110,7 @@ export function buildSummaryDetailRows(
 
   if (summary.phaseTimings) {
     if (rows.length > 0) rows.push(spacerRow('phase-spacer'));
-    rows.push(...buildPhaseTimingRows(summary.phaseTimings, labelWidth, theme));
+    rows.push(...buildPhaseTimingRows({ phaseTimings: summary.phaseTimings, labelWidth, theme }));
   }
 
   return rows;
@@ -156,11 +155,11 @@ function buildEvidenceDetailRows(
       .join(',');
     const expected =
       task.expectedEvidence.length > 0
-        ? truncateWithEllipsis(stripTerminalControls(task.expectedEvidence.join('; ')), truncateLen)
+        ? truncateTerminalDisplayText(task.expectedEvidence.join('; '), truncateLen)
         : '—';
     const observed =
       task.observedEvidence.length > 0
-        ? truncateWithEllipsis(stripTerminalControls(task.observedEvidence.join('; ')), truncateLen)
+        ? truncateTerminalDisplayText(task.observedEvidence.join('; '), truncateLen)
         : '—';
     const done = task.status === 'done' && !task.escalated;
     const marker = done ? glyph('check') : glyph('statusPending');
@@ -178,7 +177,7 @@ function buildEvidenceDetailRows(
             {'  '}
             {marker} {task.id}{' '}
           </Text>
-          <Text>{truncateWithEllipsis(stripTerminalControls(task.title), titleLen)}</Text>
+          <Text>{truncateTerminalDisplayText(task.title, titleLen)}</Text>
         </Text>
       ),
     });

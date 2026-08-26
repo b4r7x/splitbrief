@@ -12,7 +12,7 @@ import {
   PLANNER_CLI_TOOL_IDS,
 } from '../runners/cli-tool-catalog.js';
 
-// agent-sdk is NOT here — it is a meta runner (unpriced-meta); SPLITBRIEF does not serve its pricing.
+// agent-sdk is a meta runner, not an API provider — SPLITBRIEF serves no pricing for it.
 export const META_PROVIDER_IDS = ['shell', 'agent', 'agent-sdk'] as const;
 
 export const PROVIDER_IDS = [
@@ -22,7 +22,6 @@ export const PROVIDER_IDS = [
   ...META_PROVIDER_IDS,
 ] as const;
 
-// Role projection: only CLI tools and API providers the catalog admits for planning.
 export const PLANNER_TOOL_IDS = [
   ...PLANNER_CLI_TOOL_IDS,
   ...PLANNER_API_PROVIDER_IDS,

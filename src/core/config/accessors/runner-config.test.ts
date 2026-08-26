@@ -3,10 +3,12 @@ import {
   getPlannerToolId,
   getRunnerCatalogDisplayName,
   getRunnerDisplayName,
-  isSameCredentialDomain,
-  projectRunnerDiscoveryContext,
   resolveRunnerConfigContext,
 } from './runner-config.js';
+import {
+  isSameCredentialDomain,
+  projectRunnerDiscoveryContext,
+} from './runner-discovery-context.js';
 import { createDefaultConfig } from '../load/io.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
 import type { Config } from '../../schemas/config.js';

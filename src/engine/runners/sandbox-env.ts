@@ -27,7 +27,7 @@ import type { PlannerConfig } from '../../core/schemas/planner-config.js';
 import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
 import { apiKeyEnvReference } from '../providers/client/api-key.js';
 import { SECURE_DIR_MODE } from '../../lib/fs.js';
-import { createSanitizedChildEnv } from '../../lib/process/spawn/lifecycle.js';
+import { createSanitizedChildEnv } from '../../lib/process/spawn/child-env.js';
 import { error } from '../../utils/error.js';
 import { sanitizedRuntimePath } from './resolve-cli-executable.js';
 
@@ -713,7 +713,7 @@ async function clearBridgedStateUnder(root: string, tool: CliToolId | undefined)
  */
 export async function clearBridgedCliState(projectDir: string, tool?: CliToolId): Promise<void> {
   for (const { role, tool: scopedTool } of sandboxRootCandidates(tool)) {
-    await clearBridgedStateUnder(sandboxRoot(projectDir, role, scopedTool), scopedTool ?? tool);
+    await clearBridgedStateUnder(sandboxRoot(projectDir, role, scopedTool), scopedTool);
   }
 }
 
@@ -831,13 +831,20 @@ function withSandboxCreationLock<T>(key: string, work: () => Promise<T>): Promis
  * own sandbox root, which is what keeps a role's clear off a sibling role's
  * live snapshot.
  */
-export async function createSandboxEnv(
-  projectDir: string,
-  preserveEnvKeys: string[] = [],
-  selectedCli?: CliToolId | undefined,
-  hostState: CliHostStateAccess = 'bridged-files',
-  role?: RunnerRole | undefined,
-): Promise<NodeJS.ProcessEnv> {
+export async function createSandboxEnv(options: {
+  projectDir: string;
+  preserveEnvKeys?: string[];
+  selectedCli?: CliToolId | undefined;
+  hostState?: CliHostStateAccess;
+  role?: RunnerRole | undefined;
+}): Promise<NodeJS.ProcessEnv> {
+  const {
+    projectDir,
+    preserveEnvKeys = [],
+    selectedCli,
+    hostState = 'bridged-files',
+    role,
+  } = options;
   return withSandboxCreationLock(
     `${projectDir}\u0000${role ?? ''}\u0000${selectedCli ?? ''}`,
     async () => {
@@ -905,13 +912,18 @@ export async function createRunnerSandboxEnv(
   role: RunnerRole,
 ): Promise<NodeJS.ProcessEnv> {
   if (runner.kind !== 'cli') {
-    return createSandboxEnv(projectDir, runnerAuthEnvKeys(runner), undefined, 'none', role);
+    return createSandboxEnv({
+      projectDir,
+      preserveEnvKeys: runnerAuthEnvKeys(runner),
+      hostState: 'none',
+      role,
+    });
   }
-  return createSandboxEnv(
+  return createSandboxEnv({
     projectDir,
-    runnerAuthEnvKeys(runner),
-    runner.tool,
-    cliAuthChannelHostStateAccess(resolveCliRunnerAuth(runner)),
+    preserveEnvKeys: runnerAuthEnvKeys(runner),
+    selectedCli: runner.tool,
+    hostState: cliAuthChannelHostStateAccess(resolveCliRunnerAuth(runner)),
     role,
-  );
+  });
 }

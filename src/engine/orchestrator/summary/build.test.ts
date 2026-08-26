@@ -1,19 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { buildSummary } from './build.js';
 import type { BuildSummaryState } from './build.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
-
-beforeEach(() => {
-  vi.useFakeTimers();
-  vi.setSystemTime(new Date('2025-01-01T00:00:00Z'));
-});
-
-afterEach(() => {
-  vi.useRealTimers();
-});
 
 function makeState(overrides?: Partial<BuildSummaryState>): BuildSummaryState {
   return {

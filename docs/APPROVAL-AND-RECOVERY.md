@@ -118,7 +118,7 @@ A pre-acceptance refusal is durable and bounded. It persists the operation and
 intent identity, refusal code and category, cap context, price and spend
 knownness, accounting identity, allowance state, and bounded evidence
 references before returning. Retention is versioned with hard bounds
-(`RECOVERY_REFUSAL_RETENTION`, `src/core/schemas/brief-recovery.ts`): 64
+(`RECOVERY_REFUSAL_RETENTION`, `src/core/schemas/brief-recovery/refusal.ts`): 64
 records and 64 KiB of receipts per current epoch, a 1 KiB receipt bound, a
 4 KiB diagnostic bound, 256 KiB of refusal evidence, and 16 closed-epoch
 summaries of 512 bytes each. Retained identities replay exactly — the same

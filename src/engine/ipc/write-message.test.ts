@@ -125,11 +125,10 @@ describe('writeServerMessage', () => {
     const result = writeServerMessage(server, msg, { persistTranscript: false });
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    expect(typeof result).toBe('boolean');
+    expect(result).toBe(false);
     expect(server.destroyed).toBe(false);
     expect(received.lines).toHaveLength(1);
     const line = received.lines[0];
-    expect(line).toBeDefined();
     if (line === undefined) throw new Error('missing artifact review frame');
     expect(Buffer.byteLength(`${line}\n`, 'utf8')).toBeLessThanOrEqual(IPC_MAX_FRAME_BYTES);
     expect(JSON.parse(line) as ServerMessage).toEqual(msg);

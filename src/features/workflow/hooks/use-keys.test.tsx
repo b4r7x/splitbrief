@@ -7,10 +7,6 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
-
-// Read once from a freshly reset store so the assertion tracks the shipped default.
-controlsStore.__testReset();
-const sidebarDefault = controlsStore.get().sidebarVisible;
 import { completionStore } from '../../../stores/ui/completion.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
@@ -160,6 +156,7 @@ describe('useWorkflowKeys', () => {
   });
 
   it('Ctrl+B, Ctrl+E, and Ctrl+F stay with normal composer focus', async () => {
+    const sidebarDefault = controlsStore.get().sidebarVisible;
     reviewStore.setReviewFile('/tmp/spec.md', 1000);
     reviewStore.setScrollOffset(20);
     const ui = render(<Harness />);

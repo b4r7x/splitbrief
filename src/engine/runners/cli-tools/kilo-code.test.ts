@@ -7,10 +7,36 @@ import {
   kiloImplementerProtocolEvents,
   kiloPlannerAdapter,
   kiloPlannerProtocolEvents,
-  kiloPromptArgs,
 } from './kilo-code.js';
+import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 
-const PROMPT = '<PROMPT>';
+const PROMPT = CLI_PROMPT_SENTINEL;
+const PROJECT_DIR = process.cwd();
+
+function plannerArgs(
+  model: string | undefined,
+  mode: 'plan' | 'escalate',
+  configuredArgs: readonly string[],
+) {
+  return kiloPlannerAdapter.buildArgs({
+    prompt: PROMPT,
+    model,
+    projectDir: PROJECT_DIR,
+    configuredArgs,
+    mode,
+    sessionId: null,
+    effort: undefined,
+  });
+}
+
+function implementerArgs(model: string | undefined, configuredArgs: readonly string[]) {
+  return kiloImplementerAdapter.buildArgs({
+    prompt: PROMPT,
+    model,
+    projectDir: PROJECT_DIR,
+    configuredArgs,
+  });
+}
 
 describe('Kilo Code role adapters', () => {
   it('exports planner then implementer candidates with matching hashes', () => {
@@ -50,9 +76,12 @@ describe('Kilo Code role adapters', () => {
     }
     // A hostile role override is a pre-dispatch refusal: the adapter reports
     // the conflict before any subprocess spawn.
-    const implementerBase = kiloPromptArgs({ role: 'implementer' });
+    const implementerBase = implementerArgs(undefined, []);
     expect(
-      kiloImplementerAdapter.validateArgs([...implementerBase, '--agent', 'plan'], implementerBase),
+      kiloImplementerAdapter.validateArgs({
+        invocationArgs: [...implementerBase, '--agent', 'plan'],
+        baseArgs: implementerBase,
+      }),
     ).toEqual({ valid: false, conflicts: ['--agent', 'plan'] });
   });
 
@@ -82,12 +111,16 @@ describe('Kilo Code role adapters', () => {
   });
 
   it('preserves planner read-only JSON flags, implementer code role, model placement, and order', () => {
-    expect(
-      kiloPromptArgs({ role: 'planner', model: undefined, configuredArgs: ['--verbose'] }),
-    ).toEqual(['run', '--format', 'json', '--agent', 'plan', PROMPT, '--verbose']);
-    expect(
-      kiloPromptArgs({ role: 'planner', model: 'claude-sonnet-4-6', configuredArgs: [] }),
-    ).toEqual([
+    expect(plannerArgs(undefined, 'plan', ['--verbose'])).toEqual([
+      'run',
+      '--format',
+      'json',
+      '--agent',
+      'plan',
+      PROMPT,
+      '--verbose',
+    ]);
+    expect(plannerArgs('claude-sonnet-4-6', 'plan', [])).toEqual([
       'run',
       '--model',
       'claude-sonnet-4-6',
@@ -97,13 +130,7 @@ describe('Kilo Code role adapters', () => {
       'plan',
       PROMPT,
     ]);
-    expect(
-      kiloPromptArgs({
-        role: 'implementer',
-        model: 'qwen2.5-coder:7b',
-        configuredArgs: ['--verbose'],
-      }),
-    ).toEqual([
+    expect(implementerArgs('qwen2.5-coder:7b', ['--verbose'])).toEqual([
       'run',
       '--model',
       'qwen2.5-coder:7b',
@@ -113,17 +140,24 @@ describe('Kilo Code role adapters', () => {
       PROMPT,
       '--verbose',
     ]);
-    const plannerBase = kiloPromptArgs({ role: 'planner' });
-    const implementerBase = kiloPromptArgs({ role: 'implementer' });
-    expect(kiloPlannerAdapter.validateArgs(plannerBase, plannerBase)).toEqual({ valid: true });
-    expect(kiloImplementerAdapter.validateArgs(implementerBase, implementerBase)).toEqual({
+    const plannerBase = plannerArgs(undefined, 'plan', []);
+    const implementerBase = implementerArgs(undefined, []);
+    expect(
+      kiloPlannerAdapter.validateArgs({ invocationArgs: plannerBase, baseArgs: plannerBase }),
+    ).toEqual({ valid: true });
+    expect(
+      kiloImplementerAdapter.validateArgs({
+        invocationArgs: implementerBase,
+        baseArgs: implementerBase,
+      }),
+    ).toEqual({
       valid: true,
     });
   });
 
   it('pins the effective role on every vector: default-role, fallback, and subagent runs fail', () => {
-    const plannerBase = kiloPromptArgs({ role: 'planner' });
-    const implementerBase = kiloPromptArgs({ role: 'implementer' });
+    const plannerBase = plannerArgs(undefined, 'plan', []);
+    const implementerBase = implementerArgs(undefined, []);
 
     expect(plannerBase).toContain('--agent');
     expect(plannerBase[plannerBase.indexOf('--agent') + 1]).toBe('plan');
@@ -132,15 +166,30 @@ describe('Kilo Code role adapters', () => {
     expect(implementerBase).toContain('--auto');
 
     for (const base of [plannerBase, implementerBase]) {
-      expect(kiloImplementerAdapter.validateArgs([...base, '--agent', 'subagent'], base)).toEqual({
+      expect(
+        kiloImplementerAdapter.validateArgs({
+          invocationArgs: [...base, '--agent', 'subagent'],
+          baseArgs: base,
+        }),
+      ).toEqual({
         valid: false,
         conflicts: ['--agent'],
       });
-      expect(kiloImplementerAdapter.validateArgs([...base, '--agent=plan'], base)).toEqual({
+      expect(
+        kiloImplementerAdapter.validateArgs({
+          invocationArgs: [...base, '--agent=plan'],
+          baseArgs: base,
+        }),
+      ).toEqual({
         valid: false,
         conflicts: ['--agent'],
       });
-      expect(kiloImplementerAdapter.validateArgs([...base, '--agent', 'default'], base)).toEqual({
+      expect(
+        kiloImplementerAdapter.validateArgs({
+          invocationArgs: [...base, '--agent', 'default'],
+          baseArgs: base,
+        }),
+      ).toEqual({
         valid: false,
         conflicts: ['--agent'],
       });
@@ -148,49 +197,67 @@ describe('Kilo Code role adapters', () => {
   });
 
   it('overrides read-only agent defaults with the verified code agent for full escalation', () => {
-    const args = kiloPromptArgs({ role: 'planner', mode: 'escalate' });
+    const args = plannerArgs(undefined, 'escalate', []);
 
     expect(args).toEqual(['run', '--format', 'json', '--agent', 'code', '--auto', PROMPT]);
-    expect(args).not.toContain('plan');
     expect(
-      kiloPlannerAdapter.validateArgs(
-        kiloPromptArgs({
-          role: 'planner',
-          mode: 'escalate',
-          configuredArgs: ['--agent', 'plan'],
-        }),
-        args,
-      ),
+      kiloPlannerAdapter.validateArgs({
+        invocationArgs: plannerArgs(undefined, 'escalate', ['--agent', 'plan']),
+        baseArgs: args,
+      }),
     ).toEqual({ valid: false, conflicts: ['--agent', 'plan'] });
   });
 
   it('rejects protected flags, reordered args, and alternate prompt placeholders', () => {
-    const base = kiloPromptArgs({ role: 'implementer' });
-    expect(kiloImplementerAdapter.validateArgs([PROMPT, ...base], base)).toEqual({
+    const base = implementerArgs(undefined, []);
+    expect(
+      kiloImplementerAdapter.validateArgs({ invocationArgs: [PROMPT, ...base], baseArgs: base }),
+    ).toEqual({
       valid: false,
       conflicts: ['argument-order', 'prompt-transport'],
     });
-    expect(kiloImplementerAdapter.validateArgs([...base, '--auto'], base)).toEqual({
+    expect(
+      kiloImplementerAdapter.validateArgs({ invocationArgs: [...base, '--auto'], baseArgs: base }),
+    ).toEqual({
       valid: false,
       conflicts: ['--auto'],
     });
-    expect(kiloImplementerAdapter.validateArgs([...base, 'prefix-<PROMPT>'], base)).toEqual({
+    expect(
+      kiloImplementerAdapter.validateArgs({
+        invocationArgs: [...base, 'prefix-<PROMPT>'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });
-    expect(kiloImplementerAdapter.validateArgs([...base, '<OTHER>'], base)).toEqual({
+    expect(
+      kiloImplementerAdapter.validateArgs({ invocationArgs: [...base, '<OTHER>'], baseArgs: base }),
+    ).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });
-    expect(kiloImplementerAdapter.validateArgs([...base, PROMPT], base)).toEqual({
+    expect(
+      kiloImplementerAdapter.validateArgs({ invocationArgs: [...base, PROMPT], baseArgs: base }),
+    ).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });
-    expect(kiloImplementerAdapter.validateArgs([...base, '-m', 'other'], base)).toEqual({
+    expect(
+      kiloImplementerAdapter.validateArgs({
+        invocationArgs: [...base, '-m', 'other'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['-m'],
     });
-    expect(kiloImplementerAdapter.validateArgs([...base, '-mPROMPT'], base)).toEqual({
+    expect(
+      kiloImplementerAdapter.validateArgs({
+        invocationArgs: [...base, '-mPROMPT'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['-m'],
     });
@@ -304,7 +371,6 @@ describe('Kilo Code terminal outcomes', () => {
       kiloPlannerAdapter.terminal({
         outputContract: kiloPlannerAdapter.outputContract,
         events,
-        stdout: '',
         stderr: '',
         exitCode: 0,
         signal: null,
@@ -334,7 +400,6 @@ describe('Kilo Code terminal outcomes', () => {
       kiloPlannerAdapter.terminal({
         outputContract: kiloPlannerAdapter.outputContract,
         events: [aborted],
-        stdout: '',
         stderr: '',
         exitCode: 0,
         signal: null,

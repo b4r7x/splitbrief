@@ -5,7 +5,7 @@ import { removeWorktree } from '../../../engine/worktree/remove.js';
 import { createGitClient } from '../../../lib/git/client.js';
 import { slugify } from '../../../utils/slugify.js';
 import { loadConfig } from '../../../core/config/load/io.js';
-import { generateOpaqueSessionSlug, MAX_SLUG_LENGTH } from '../../../core/sessions/lifecycle.js';
+import { generateOpaqueSessionSlug, MAX_SLUG_LENGTH } from '../../../core/sessions/session-id.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { CreatedWorktree } from './types.js';

@@ -41,13 +41,13 @@ const launcher: PickerOption = {
 
 function makeActions(): PickerActions {
   return {
-    confirm: () => {},
+    confirm: async () => {},
     confirmProviderVariant: async () => {},
     leftChange: () => {},
-    deleteRight: () => {},
+    deleteRight: async () => {},
     chooseContract: () => {},
-    customCommand: () => {},
-    customModel: () => {},
+    customCommand: async () => {},
+    customModel: async () => {},
     openCustomModel: () => {},
     openProviderAuth: () => {},
     submitProviderKey: async () => {},
@@ -70,17 +70,8 @@ describe('PickerView launcher filtering', () => {
       currentItem: codexTool,
       selectedItemId: codexTool.id,
       initialLeftIdx: 2,
-      focusModels: false,
       roleLabel: 'Planner',
-      currentModel: undefined,
-      persistedModel: undefined,
       modelCounts: zeroCounts,
-      catalogDiagnostic: undefined,
-      currentCommand: undefined,
-      currentCommandKind: undefined,
-      customModels: [],
-      discovery: { cold: false, refreshing: false },
-      setCurrentItem: () => {},
     });
 
     const ui = renderFeature(
@@ -110,17 +101,10 @@ describe('PickerView launcher filtering', () => {
       currentItem: codexTool,
       selectedItemId: codexTool.id,
       initialLeftIdx: 1,
-      focusModels: false,
       roleLabel: 'Planner',
-      currentModel: undefined,
-      persistedModel: undefined,
       modelCounts: zeroCounts,
-      catalogDiagnostic: undefined,
       currentCommand: 'my-tool --json',
       currentCommandKind: 'shell',
-      customModels: [],
-      discovery: { cold: false, refreshing: false },
-      setCurrentItem: () => {},
     });
 
     const ui = renderFeature(
@@ -146,17 +130,10 @@ describe('PickerView launcher filtering', () => {
       currentItem: codexTool,
       selectedItemId: codexTool.id,
       initialLeftIdx: 1,
-      focusModels: false,
       roleLabel: 'Planner',
-      currentModel: undefined,
-      persistedModel: undefined,
       modelCounts: zeroCounts,
-      catalogDiagnostic: undefined,
       currentCommand: 'my-ai-tool --format stream-json',
       currentCommandKind: 'agent',
-      customModels: [],
-      discovery: { cold: false, refreshing: false },
-      setCurrentItem: () => {},
     });
 
     const ui = renderFeature(

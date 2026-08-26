@@ -21,7 +21,7 @@ import type { HooksConfig } from '../../../core/schemas/hooks.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
-import { reactivateExistingSession } from '../../../core/sessions/lifecycle.js';
+import { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { SummaryBase } from '../summary/build.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
@@ -122,7 +122,11 @@ async function initializeFromCaller(args: ReturnType<typeof makeInitArgs>) {
     async () => '',
   );
   const config = parsePreparedConfig(hooks === undefined ? args.config : { ...args.config, hooks });
-  rejectUntrustedRunners(config, args.projectDir, args.allowRepoRunners);
+  rejectUntrustedRunners({
+    config,
+    projectDir: args.projectDir,
+    allowRepoRunners: args.allowRepoRunners,
+  });
   const preparationId = `hook-trust-${args.sessionId}`;
   const gates = [
     makeRunnerGate(config.planner, { role: 'planner' }, preparationId),

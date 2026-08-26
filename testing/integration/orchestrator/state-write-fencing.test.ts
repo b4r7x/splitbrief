@@ -5,7 +5,7 @@ import {
   confinedAtomicWriteFileSync,
   confinedAtomicWriteFileSyncForTest,
   type ConfinedAtomicWriteSyncTestOperations,
-} from '../../../src/lib/confined-fs.js';
+} from '../../../src/lib/confined-fs-atomic.js';
 import { SECURE_FILE_MODE } from '../../../src/lib/fs.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { STATE_FILE, stateAuthorityDirectory, sessionDir } from '../../../src/core/paths.js';
@@ -194,7 +194,10 @@ describe('global state writer fencing', () => {
       ownerId: authority.ownerId,
       fence: authority.fence,
     });
-    expect(readStateAuthority(ref)).toThrow;
+    expect(readStateAuthority(ref)).toMatchObject({
+      ownerId: authority.ownerId,
+      fence: authority.fence,
+    });
   });
 
   it('rebases stale concurrent queue and usage writers into one valid head', async () => {
@@ -462,12 +465,6 @@ describe('atomic state-head cut points', () => {
     } else {
       expect(bytes).toBe('base-head\n');
     }
-    expect(
-      WorkflowStateSchema.safeParse({
-        ...createInitialState('cut-point'),
-        stateVersion: 4,
-      }).success,
-    ).toBe(true);
   });
 
   it('does not create a target when the first-writer link cut point fails', () => {

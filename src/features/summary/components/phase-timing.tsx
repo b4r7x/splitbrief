@@ -5,11 +5,15 @@ import { LabeledRow } from '../../../components/labeled-row.js';
 import type { ScrollableDocumentRow } from '../../../components/scrollable-document.js';
 import type { Theme } from '../../../components/theme.js';
 
-export function buildPhaseTimingRows(
-  phaseTimings: Record<string, number>,
-  labelWidth: number,
-  theme: Theme,
-): ScrollableDocumentRow[] {
+export function buildPhaseTimingRows({
+  phaseTimings,
+  labelWidth,
+  theme,
+}: Readonly<{
+  phaseTimings: Record<string, number>;
+  labelWidth: number;
+  theme: Theme;
+}>): ScrollableDocumentRow[] {
   const phases = Object.entries(phaseTimings);
   if (phases.length === 0) return [];
 

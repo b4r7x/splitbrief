@@ -4,7 +4,7 @@ import { runMultiPhasePlanning } from './multi-phase.js';
 import type { PlannerCallbacks } from './types.js';
 import type { RunnerCallContext } from '../calls/types.js';
 import type { PreparedPlannerInvocation } from '../runners/types.js';
-import type { TaskCompilationSessionScope } from '../../core/schemas/task-compilation.js';
+import type { PlannerSessionScope } from '../../core/schemas/task-compilation.js';
 import {
   TASK_BRIEF_COMPILER_POLICY,
   TaskCompilationOperationIdSchema,
@@ -264,7 +264,7 @@ describe('runMultiPhasePlanning — detached compiler batches', () => {
 
   it('gives every batch a distinct detached fresh scope and claims the ledger per batch', async () => {
     const h = compilerHarness(6);
-    const batchScopes: Extract<TaskCompilationSessionScope, { kind: 'detached-fresh' }>[] = [];
+    const batchScopes: Extract<PlannerSessionScope, { kind: 'detached-fresh' }>[] = [];
     let supportCount = 0;
 
     const result = await runMultiPhasePlanning(

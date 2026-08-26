@@ -192,7 +192,7 @@ function restoreEnvironment(saved: ReadonlyMap<EnvironmentKey, string | undefine
 
 function setProperty(target: object, key: string, value: unknown): void {
   const descriptor = Object.getOwnPropertyDescriptor(target, key);
-  if (descriptor !== undefined && !descriptor.configurable && !descriptor.writable) {
+  if (descriptor !== undefined && !descriptor.configurable) {
     throw new Error(`Cannot set deterministic stdout ${key}`);
   }
   Object.defineProperty(target, key, {

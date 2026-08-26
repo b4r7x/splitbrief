@@ -9,6 +9,7 @@ import { RowZone, ROW_ZONE_Z_OVERLAY } from '../../components/pickers/row-zone.j
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+import { reportConfigSaveFailure } from '../../stores/project/save-feedback.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { useStores } from '../../stores/use-stores.js';
 import { truncateTerminalDisplayText } from '../../utils/display-text.js';
@@ -89,20 +90,9 @@ export function ModeSelector() {
     if (!actionableModeIndices.has(index)) return;
     const updated = { ...config, workflow: { ...config.workflow, mode: item.mode } };
     const result = await configStore.save(updated);
-    if (result.kind === 'saved') {
-      feedbackStore.setMessage(`Mode set to: ${item.mode}`);
-      overlayStore.close();
-      return;
-    }
-    if (result.kind === 'failure') {
-      feedbackStore.setError(`Failed to save config: ${result.error.message}`);
-      return;
-    }
-    if (result.kind === 'durability-uncertain') {
-      feedbackStore.setError(`Config save could not be confirmed: ${result.warning}`);
-      return;
-    }
-    feedbackStore.setError('Config changed on disk. Reload before saving again.');
+    if (reportConfigSaveFailure(result)) return;
+    feedbackStore.setMessage(`Mode set to: ${item.mode}`);
+    overlayStore.close();
   };
 
   const { selectedIndex } = useStaticSelector<ModeDef>({

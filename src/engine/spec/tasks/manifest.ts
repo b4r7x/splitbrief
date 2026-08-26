@@ -6,7 +6,7 @@ import {
 } from '../../../core/schemas/task-compilation.js';
 import { formatTaskId, type TaskId } from '../../../core/schemas/task.js';
 import { canonicalJSON } from '../../../utils/canonical-json.js';
-import { error, matches } from '../../../utils/error.js';
+import { error } from '../../../utils/error.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 
 const MANIFEST_VERSION = 1 as const;
@@ -63,9 +63,6 @@ export const taskManifestError = {
       `The task manifest contains ${count} items; the V1 limit is ${limit}.`,
       { count, limit },
     ),
-  isInvalid: matches('task_compiler_manifest_invalid'),
-  isEmpty: matches('task_compiler_manifest_empty'),
-  isCapacity: matches('task_compiler_capacity_exceeded'),
 } as const;
 
 type ParsedEntry = {
@@ -84,7 +81,6 @@ export function parseTaskManifest(
   plan: string,
   policy: TaskCompilationPolicy = TASK_BRIEF_COMPILER_POLICY,
 ): TaskManifest {
-  if (typeof plan !== 'string') throw taskManifestError.invalid('plan must be text');
   const lines = plan.split(/\r?\n/);
   const start = findFileStructureHeading(lines);
   if (start === -1) throw taskManifestError.invalid('missing exact `## File Structure` heading');
@@ -95,10 +91,9 @@ export function parseTaskManifest(
 }
 
 export function createTaskManifest(
-  input: string | readonly ManifestEntryInput[],
+  input: readonly ManifestEntryInput[],
   policy: TaskCompilationPolicy = TASK_BRIEF_COMPILER_POLICY,
 ): TaskManifest {
-  if (typeof input === 'string') return parseTaskManifest(input, policy);
   if (input.length === 0) throw taskManifestError.empty();
   if (input.length > policy.maxManifestItems) {
     throw taskManifestError.capacity(input.length, policy.maxManifestItems);

@@ -72,6 +72,36 @@ function phaseResult(logicalName: PlannerArtifactLogicalName, text: string) {
   };
 }
 
+async function runZeroTaskQuick(approve?: 'all') {
+  const { projectDir, sessionId } = setupProject();
+  const quickPlan = vi.fn().mockResolvedValue({
+    spec: '',
+    plan: '',
+    tasks: [],
+    usage: { inputTokens: 30, outputTokens: 15 },
+    phases: [phaseResult(TASKS_FILE, '# empty')],
+  });
+  const { callbacks } = makeCallbacks();
+  const { bus, events } = makeBusRecorder();
+  const result = await runPlanningPhase({
+    wctx: {
+      projectDir,
+      sessionId,
+      config: makeConfig({
+        workflow: { mode: 'quick', ...(approve !== undefined && { approve }) },
+      }),
+      callbacks,
+      metadata: TEST_METADATA,
+      bus,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+    },
+    planner: makePlanner({ quickPlan }),
+    state: createInitialState('feature'),
+    feature: 'feature',
+  });
+  return { result, events, quickPlan, projectDir, sessionId };
+}
+
 describe('runQuickPlanning', () => {
   it('passes transient rewind feedback without locally starting implementation', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -126,33 +156,7 @@ describe('runQuickPlanning', () => {
   });
 
   it('parks zero tasks without an automatic repair or cancellation', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const quickPlan = vi.fn().mockResolvedValue({
-      spec: '',
-      plan: '',
-      tasks: [],
-      usage: { inputTokens: 30, outputTokens: 15 },
-      phases: [phaseResult(TASKS_FILE, '# empty')],
-    });
-    const planner = makePlanner({ quickPlan });
-    const { callbacks } = makeCallbacks();
-    const config = makeConfig({ workflow: { mode: 'quick' } });
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runPlanningPhase({
-      wctx: {
-        projectDir,
-        sessionId,
-        config,
-        callbacks,
-        metadata: TEST_METADATA,
-        bus,
-        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      },
-      planner,
-      state: createInitialState('feature'),
-      feature: 'feature',
-    });
+    const { result, events, quickPlan } = await runZeroTaskQuick();
 
     expect(result.disposition).toBe('parked');
     expect(result.state.phase).toBe('idle');
@@ -163,69 +167,14 @@ describe('runQuickPlanning', () => {
   });
 
   it('books only the initial planner call when it returns zero tasks', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const quickPlan = vi.fn().mockResolvedValue({
-      spec: '',
-      plan: '',
-      tasks: [],
-      usage: { inputTokens: 30, outputTokens: 15 },
-      phases: [phaseResult(TASKS_FILE, '# empty')],
-    });
-    const planner = makePlanner({ quickPlan });
-    const { callbacks } = makeCallbacks();
-    const config = makeConfig({ workflow: { mode: 'quick' } });
-    const { bus } = makeBusRecorder();
+    const { result } = await runZeroTaskQuick();
 
-    const result = await runPlanningPhase({
-      wctx: {
-        projectDir,
-        sessionId,
-        config,
-        callbacks,
-        metadata: TEST_METADATA,
-        bus,
-        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      },
-      planner,
-      state: createInitialState('feature'),
-      feature: 'feature',
-    });
-
-    expect(result.disposition).toBe('parked');
-    expect(quickPlan).toHaveBeenCalledTimes(1);
     expect(result.state.tokenUsage.plannerInput).toBe(30);
     expect(result.state.tokenUsage.plannerOutput).toBe(15);
   });
 
   it('publishes the zero-task warning without promoting the failed attempt text', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const planner = makePlanner({
-      quickPlan: vi.fn().mockResolvedValue({
-        spec: '',
-        plan: '',
-        tasks: [],
-        usage: { inputTokens: 30, outputTokens: 15 },
-        phases: [phaseResult(TASKS_FILE, '# empty')],
-      }),
-    });
-    const { callbacks } = makeCallbacks();
-    const config = makeConfig({ workflow: { mode: 'quick' } });
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runPlanningPhase({
-      wctx: {
-        projectDir,
-        sessionId,
-        config,
-        callbacks,
-        metadata: TEST_METADATA,
-        bus,
-        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      },
-      planner,
-      state: createInitialState('feature'),
-      feature: 'feature',
-    });
+    const { result, events, projectDir, sessionId } = await runZeroTaskQuick();
 
     expect(result.disposition).toBe('parked');
     expect(existsSync(join(sessionDir(projectDir, sessionId), TASKS_FILE))).toBe(false);
@@ -244,34 +193,7 @@ describe('runQuickPlanning', () => {
   });
 
   it('emits a warning when approve level overrides quick default', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const planner = makePlanner({
-      quickPlan: vi.fn().mockResolvedValue({
-        spec: '',
-        plan: '',
-        tasks: [],
-        usage: { inputTokens: 30, outputTokens: 15 },
-        phases: [phaseResult(TASKS_FILE, '# empty')],
-      }),
-    });
-    const { callbacks } = makeCallbacks();
-    const config = makeConfig({ workflow: { mode: 'quick', approve: 'all' } });
-    const { bus, events } = makeBusRecorder();
-
-    await runPlanningPhase({
-      wctx: {
-        projectDir,
-        sessionId,
-        config,
-        callbacks,
-        metadata: TEST_METADATA,
-        bus,
-        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      },
-      planner,
-      state: createInitialState('feature'),
-      feature: 'feature',
-    });
+    const { events } = await runZeroTaskQuick('all');
 
     const warning = events.find((event) => event.type === 'warning');
     expect(warning).toMatchObject({

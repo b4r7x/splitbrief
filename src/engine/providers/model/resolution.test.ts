@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { CredentialDomainIdentity } from '../../../core/config/accessors/runner-config.js';
+import type { CredentialDomainIdentity } from '../../../core/config/accessors/runner-discovery-context.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import type { ScopedCliCatalogRuntime } from '../../detection/cli-catalog-outcomes.js';
 import {
   NULL_CACHE,
   findKnownModel,
-  findModelMetadata,
   getEffectiveModelId,
   getModelsDevEntries,
   getRuntimeLookupProvider,
@@ -257,13 +256,14 @@ describe('metadata overlay', () => {
       },
     });
 
-    const model = findModelMetadata('anthropic', 'claude-sonnet-4-6', cache);
-
-    expect(model).toMatchObject({
+    expect(lookupRuntimeModel('anthropic', 'claude-sonnet-4-6', cache)).toMatchObject({
       id: 'claude-sonnet-4-6',
       displayName: 'Native Sonnet',
       contextLength: 32_768,
       pricingInput: 8,
+    });
+    expect(lookupModelsDevModel('anthropic', 'claude-sonnet-4-6', cache)).toMatchObject({
+      id: 'claude-sonnet-4-6',
       pricingOutput: 15,
       releaseDate: '2026-01-10',
     });
@@ -297,7 +297,7 @@ describe('metadata overlay', () => {
       },
     });
 
-    expect(findModelMetadata('anthropic', 'native-false-capabilities', cache)).toMatchObject({
+    expect(lookupRuntimeModel('anthropic', 'native-false-capabilities', cache)).toMatchObject({
       supportsImages: false,
       supportsToolCalls: false,
       supportsReasoning: false,
@@ -321,10 +321,17 @@ describe('metadata overlay', () => {
       providerModels: { anthropic: [{ id: 'claude-sonnet-4-6', contextLength: 64_000 }] },
     });
 
-    expect(findModelMetadata('anthropic', 'claude-sonnet-4-6', cache)).toEqual({
+    expect(lookupRuntimeModel('anthropic', 'claude-sonnet-4-6', cache)).toEqual({
       id: 'claude-sonnet-4-6',
       contextLength: 64_000,
     });
+    expect(
+      resolveExactModelsDevModel({
+        providerId: 'anthropic',
+        selectionId: 'claude-sonnet-4-6',
+        cache,
+      }),
+    ).toEqual({ kind: 'not-found' });
   });
 });
 

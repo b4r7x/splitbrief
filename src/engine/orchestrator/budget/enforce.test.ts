@@ -270,8 +270,7 @@ describe('enforceBudget', () => {
       category: 'budget',
       code: 'tracking_paused',
       transcriptSafe: true,
-      message:
-        'Budget tracking paused: pricing unknown for anthropic/definitely-not-a-real-model-xyz; configure pricing or continue acknowledging unknown spend.',
+      message: expect.stringContaining('anthropic/definitely-not-a-real-model-xyz'),
     });
   });
 

@@ -11,7 +11,7 @@ import {
 } from '#testing/helpers/headless-project.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
-import { writeActive } from '../../../src/core/sessions/lifecycle.js';
+import { writeActive } from '../../../src/core/sessions/active-pointer.js';
 import { listSessions } from '../../../src/core/sessions/io.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { Planner } from '../../../src/engine/planners/types.js';
@@ -66,7 +66,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
     const sessionId = 'sess-headless-signal';
     ensureSessionDir(projectDir, sessionId);
     writeActive({ projectDir, sessionId });
-    persistReadyExecutionState(projectDir, sessionId, makeTwoTaskState());
+    persistReadyExecutionState({ projectDir, sessionId }, makeTwoTaskState());
     return { projectDir, sessionId };
   }
 
@@ -79,7 +79,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
     const implementer = makeImplementer({ implement });
     const state = makeTwoTaskState();
 
-    const resumeState = persistReadyExecutionState(projectDir, sessionId, state);
+    const resumeState = persistReadyExecutionState({ projectDir, sessionId }, state);
     await runHeadless({
       prepared: preparedHeadlessExecution({
         projectDir,
@@ -105,7 +105,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
     ensureSessionDir(projectDir, sessionId);
     writeActive({ projectDir, sessionId });
     const state = makeTwoTaskState();
-    const resumeState = persistReadyExecutionState(projectDir, sessionId, state);
+    const resumeState = persistReadyExecutionState({ projectDir, sessionId }, state);
     let seenPersistTranscript: boolean | undefined;
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async (opts) => {
@@ -139,7 +139,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
     const implementer = makeImplementer({ implement });
     const state = makeTwoTaskState();
 
-    const resumeState = persistReadyExecutionState(projectDir, sessionId, state);
+    const resumeState = persistReadyExecutionState({ projectDir, sessionId }, state);
     await runHeadless({
       prepared: preparedHeadlessExecution({
         projectDir,
@@ -171,7 +171,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
     const implementer = makeImplementer({ implement });
     const state = makeTwoTaskState();
 
-    const resumeState = persistReadyExecutionState(projectDir, sessionId, state);
+    const resumeState = persistReadyExecutionState({ projectDir, sessionId }, state);
     await runHeadless({
       prepared: preparedHeadlessExecution({
         projectDir,
@@ -211,7 +211,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
     });
     const implementer = makeImplementer({ implement });
     const state = makeTwoTaskState();
-    const resumeState = persistReadyExecutionState(projectDir, sessionId, state);
+    const resumeState = persistReadyExecutionState({ projectDir, sessionId }, state);
 
     await runHeadless({
       prepared: preparedHeadlessExecution({

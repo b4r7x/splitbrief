@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import { PhaseSchema, WorkflowModeSchema, ApproveLevelSchema } from './enums.js';
+import { PhaseSchema, WorkflowModeSchema, ApproveLevelSchema, type Phase } from './enums.js';
 import { TaskSchema } from './task.js';
 import { TokenUsageSchema, TaskTokenUsageSchema } from './tokens.js';
 import { RecoveryIssueSchema } from './recovery/schemas.js';
-import { BriefRecoveryV1Schema } from './brief-recovery.js';
+import { BriefRecoveryV1Schema } from './brief-recovery/document.js';
 import { BriefGenerationRefSchema, TaskExecutionPermitSchema } from './brief-owner.js';
 import { topoSort } from '../state/topo-sort.js';
 
@@ -58,8 +58,8 @@ export const ChangedFilesBaselineSchema = z.object({
   activeTaskSnapshot: ChangedFilesSnapshotSchema.optional(),
 });
 
-const TASK_ACTIVE_PHASES = new Set(['validating-task', 'escalating']);
-const READY_BRIEF_RECOVERY_PHASES = new Set([
+const TASK_ACTIVE_PHASES = new Set<Phase>(['validating-task', 'escalating']);
+const READY_BRIEF_RECOVERY_PHASES = new Set<Phase>([
   'implementing',
   'validating-task',
   'escalating',
@@ -80,6 +80,7 @@ const WorkflowStateFields = {
   tasks: z.array(TaskSchema),
   plannerSessionId: z.string().nullable().optional(),
   startedAt: z.string(),
+  completedAt: z.string().optional(),
   tokenUsage: TokenUsageSchema,
   taskBreakdowns: z.array(TaskTokenUsageSchema).optional(),
   plannerTool: z.string().optional(),
@@ -176,7 +177,7 @@ export const WorkflowStateSchema = z.strictObject(WorkflowStateFields).superRefi
         });
       }
     }
-    if (state.briefRecovery === undefined || state.briefRecovery === null) {
+    if (state.briefRecovery === null) {
       ctx.addIssue({
         code: 'custom',
         path: ['briefRecovery'],
@@ -213,7 +214,6 @@ export const WorkflowStateSchema = z.strictObject(WorkflowStateFields).superRefi
   }
 
   const recovery = state.briefRecovery;
-  if (recovery === undefined) return;
 
   if (state.phase === 'reviewing-briefs') {
     if (recovery !== null && recovery.status === 'rejected') {

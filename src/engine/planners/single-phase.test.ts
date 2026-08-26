@@ -115,10 +115,12 @@ describe('runSinglePhasePlanning', () => {
         },
       },
       promptBuilder,
-      'add a widget',
-      projectDir,
-      callbacks,
-      'files: a.ts',
+      {
+        feature: 'add a widget',
+        projectDir,
+        callbacks,
+        codebaseContext: 'files: a.ts',
+      },
     );
 
     expect(seenPrompt.startsWith('<repo-map>\nfiles: a.ts\n</repo-map>\n\n')).toBe(true);
@@ -134,21 +136,22 @@ describe('runSinglePhasePlanning', () => {
     expect(result.phases?.[0]?.rawOutput).toBeUndefined();
   });
 
-  it('uses the terminal result text as the artifact and never reopens a file', async () => {
-    const result = await runSinglePhasePlanning(
+  it('omits the repo-map block from the prompt when no codebase context is supplied', async () => {
+    let seenPrompt = '';
+
+    await runSinglePhasePlanning(
       {
-        invokePlan: async () => completedRunnerCall(taskMarkdown),
+        invokePlan: async ({ prompt }) => {
+          seenPrompt = prompt;
+          return completedRunnerCall(taskMarkdown);
+        },
       },
       promptBuilder,
-      'add a widget',
-      projectDir,
-      { onOutput: () => {} },
-      undefined,
+      { feature: 'add a widget', projectDir, callbacks: { onOutput: () => {} } },
     );
 
-    expect(result.phases?.[0]?.artifact.text).toBe(taskMarkdown);
-    expect(result.phases?.[0]?.rawOutput).toBeUndefined();
-    expect(result.tasks[0]?.id).toBe('T001');
+    expect(seenPrompt).not.toContain('<repo-map>');
+    expect(seenPrompt.startsWith('FEATURE:add a widget')).toBe(true);
   });
 
   it('flushes interrupted buffered output when planning aborts', async () => {
@@ -166,15 +169,16 @@ describe('runSinglePhasePlanning', () => {
           },
         },
         promptBuilder,
-        'add a widget',
-        projectDir,
         {
-          onOutput: () => {},
-          persistTranscript: true,
-          sessionId,
-          signal: controller.signal,
+          feature: 'add a widget',
+          projectDir,
+          callbacks: {
+            onOutput: () => {},
+            persistTranscript: true,
+            sessionId,
+            signal: controller.signal,
+          },
         },
-        undefined,
       ),
     ).rejects.toBe(err);
 
@@ -201,10 +205,7 @@ describe('runSinglePhasePlanning — current-call ownership', () => {
         },
       },
       promptBuilder,
-      'add a widget',
-      projectDir,
-      { onOutput: () => {} },
-      undefined,
+      { feature: 'add a widget', projectDir, callbacks: { onOutput: () => {} } },
     );
 
     const phase = result.phases?.[0];
@@ -229,10 +230,7 @@ describe('runSinglePhasePlanning — current-call ownership', () => {
           },
         },
         promptBuilder,
-        'add a widget',
-        projectDir,
-        { onOutput: () => {} },
-        undefined,
+        { feature: 'add a widget', projectDir, callbacks: { onOutput: () => {} } },
       ),
     ).rejects.toMatchObject({ kind: 'runner-call-failed' });
     expect(invokes).toBe(1);
@@ -243,10 +241,7 @@ describe('runSinglePhasePlanning — current-call ownership', () => {
     const result = await runSinglePhasePlanning(
       { invokePlan: async () => completedRunnerCall(taskMarkdown) },
       promptBuilder,
-      'add a widget',
-      projectDir,
-      { onOutput: () => {} },
-      undefined,
+      { feature: 'add a widget', projectDir, callbacks: { onOutput: () => {} } },
     );
     expect(result.phases?.[0]?.artifact.text).toBe(taskMarkdown);
   });
@@ -278,10 +273,7 @@ describe('runSinglePhasePlanning — current-call ownership', () => {
           }),
         },
         promptBuilder,
-        'add a widget',
-        projectDir,
-        { onOutput: () => {} },
-        undefined,
+        { feature: 'add a widget', projectDir, callbacks: { onOutput: () => {} } },
       ),
     ).rejects.toMatchObject({ kind: 'custom-planner-artifact-invalid' });
   });

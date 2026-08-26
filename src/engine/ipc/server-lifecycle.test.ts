@@ -5,7 +5,6 @@ import { createTempDir } from '#testing/helpers/temp-dir.js';
 import { createEventBus } from '../events/bus.js';
 import type { EngineEvent } from '../events/types.js';
 import { startIpcServer } from './server.js';
-import type { ServerMessage } from './protocol.js';
 import {
   createIpcServerTestHarness,
   ipcSocketExists,
@@ -156,7 +155,7 @@ describe('startIpcServer — lifecycle', () => {
     expect(events.some((e) => e.type === 'ipc_client_detached')).toBe(false);
   });
 
-  it('publishes warning on malformed JSON, does not crash', async () => {
+  it('publishes warning on malformed JSON', async () => {
     const events: EngineEvent[] = [];
     const { srv, bus } = await harness.makeServer();
     bus.subscribe((e) => events.push(e));
@@ -178,7 +177,6 @@ describe('startIpcServer — lifecycle', () => {
       expect(warning.message).toContain('bytes');
       expect(warning.message).not.toContain('secret feature prompt');
     }
-    expect(srv.sockPath).toBeTruthy();
     expect(ipcSocketExists(srv.sockPath)).toBe(true);
   });
 
@@ -195,32 +193,9 @@ describe('startIpcServer — lifecycle', () => {
     const { srv } = await harness.makeServer();
     const socket = await harness.connectAndAuth(srv.sockPath);
     const closePromise = srv.close();
-    const messages: ServerMessage[] = [];
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error('timed out waiting for server_complete')),
-        1000,
-      );
-      let buf = '';
-      const onData = (chunk: Buffer) => {
-        buf += chunk.toString('utf8');
-        const lines = buf.split('\n');
-        buf = lines.pop() ?? '';
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          messages.push(JSON.parse(trimmed) as ServerMessage);
-        }
-        if (messages.some((msg) => msg.kind === 'server_complete')) {
-          clearTimeout(timer);
-          socket.removeListener('data', onData);
-          resolve();
-        }
-      };
-      socket.on('data', onData);
-    });
+    const messages = await harness.readLines(socket, 1);
+    expect(messages[0]?.kind).toBe('server_complete');
     await closePromise;
-    expect(messages.some((msg) => msg.kind === 'server_complete')).toBe(true);
     const idx = harness.servers.indexOf(srv);
     if (idx !== -1) harness.servers.splice(idx, 1);
   });

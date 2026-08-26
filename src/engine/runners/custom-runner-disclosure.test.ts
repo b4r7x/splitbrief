@@ -4,10 +4,9 @@ import type { CliExecutableReceipt } from '../../core/discovery/detection.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
   buildCustomRunnerDisclosure,
-  customRunnerSecurityPosture,
   formatCustomRunnerDisclosure,
-  inlineRunnerSecurityPosture,
-} from './custom-trust.js';
+} from './custom-runner-disclosure.js';
+import { customRunnerSecurityPosture, inlineRunnerSecurityPosture } from './custom-trust.js';
 import { escapeTrustLiteral } from '../../core/trust/literal.js';
 import { resolveCustomExecutable } from './resolve-cli-executable.js';
 

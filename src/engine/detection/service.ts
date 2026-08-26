@@ -28,6 +28,7 @@ import type {
 } from '../providers/models-dev-cache.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import { warnError } from '../../lib/warn.js';
+import { createOpaqueIdFactory } from '../../utils/opaque-id.js';
 
 export type { DetectionProjection } from './coordinator.js';
 
@@ -152,8 +153,7 @@ const MODELS_DEV_TTL_MS = 15 * 60 * 1_000;
 const CLI_MODELS_TTL_MS = 0;
 const EMPTY_CLI_MODELS: CliModelSnapshot = [];
 const EMPTY_PROJECTION: DetectionProjection = { providers: [], cliTools: [] };
-const fallbackDependencyContexts = new WeakMap<object, string>();
-let nextFallbackDependencyContext = 1;
+const fallbackDependencyContext = createOpaqueIdFactory('unconfigured-deps');
 
 interface LaneChannel {
   announce(lane: DetectionLanePublication): void;
@@ -245,12 +245,7 @@ function sourceContext(
 ): string {
   const configured = input.deps.sourceContexts?.[input.source];
   if (configured !== undefined) return configured;
-  let dependencyContext = fallbackDependencyContexts.get(input.deps);
-  if (dependencyContext === undefined) {
-    dependencyContext = `unconfigured-deps-${nextFallbackDependencyContext}`;
-    nextFallbackDependencyContext += 1;
-    fallbackDependencyContexts.set(input.deps, dependencyContext);
-  }
+  const dependencyContext = fallbackDependencyContext(input.deps);
   return detectionContextKey({
     platform: process.platform,
     runner: `unconfigured-${input.source}`,

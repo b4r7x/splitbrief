@@ -9,7 +9,7 @@ import {
   createSessionPreparationCandidate,
   prepareNewSession,
 } from '../../src/core/sessions/prepare.js';
-import { reactivateExistingSession } from '../../src/core/sessions/lifecycle.js';
+import { reactivateExistingSession } from '../../src/core/sessions/active-pointer.js';
 import {
   parsePreparedConfig,
   type PreparedExecution,

@@ -1,5 +1,7 @@
-import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
-import { truncateWithEllipsis } from '../../utils/truncate.js';
+import {
+  sanitizeTerminalDisplayText,
+  truncateTerminalDisplayText,
+} from '../../utils/display-text.js';
 import {
   getRunnerCatalogDisplayName,
   type RunnerConfig,
@@ -82,5 +84,5 @@ export function formatCollapsedSeatLine(
 
 /** A seat row cuts its full identity to the block budget; it never falls back to the short form. */
 export function fitSeatIdentity(input: Readonly<{ runner: RunnerConfig; budget: number }>): string {
-  return truncateWithEllipsis(formatSeatIdentity(input.runner), input.budget);
+  return truncateTerminalDisplayText(formatSeatIdentity(input.runner), input.budget);
 }

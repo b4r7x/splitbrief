@@ -64,7 +64,7 @@ describe('runner outcome taxonomy', () => {
 
     // @ts-expect-error An unmapped state must not enter the machine contract.
     const unmapped: RunnerOutcomeState = 'new-unmapped-state';
-    expect(unmapped).toBe('new-unmapped-state');
+    void unmapped;
   });
 
   test('gives every failure bounded remediation and success no remediation', () => {

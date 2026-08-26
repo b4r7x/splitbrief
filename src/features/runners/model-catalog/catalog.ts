@@ -9,14 +9,14 @@ import {
   type ResolvedModelMembership,
 } from '../../../engine/providers/model/catalog.js';
 import { NULL_CACHE, type ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
+import type { PickerOption } from './options.js';
 import {
   compactProviderTag,
   modelBareId,
   modelProviderAuthKey,
   modelProviderPrefix,
   resolveProviderAuthState,
-  type PickerOption,
-} from './options.js';
+} from './provider-axis.js';
 import { sortModelsByRecency, type ModelOption, type ModelVariant } from './recency.js';
 
 // A selection policy, not catalog data: it carries no context length, pricing,
@@ -255,10 +255,10 @@ function toModelOption(entry: ReturnType<typeof resolveModelCatalog>[number]): M
   };
 }
 
-function resolveAndSort(
+export function resolveAndSort(
   providerId: string,
+  role: ActiveRunnerRole,
   cache: ModelCacheAccessor = NULL_CACHE,
-  role?: ActiveRunnerRole,
 ): ModelOption[] {
   const seen = new Set<string>();
   const models: ModelOption[] = [];
@@ -268,22 +268,6 @@ function resolveAndSort(
     models.push(toModelOption(entry));
   }
   return sortModelsByRecency(models);
-}
-
-export function modelsForPlannerTool(
-  toolId: string,
-  cache: ModelCacheAccessor = NULL_CACHE,
-): ModelOption[] {
-  return resolveAndSort(toolId, cache, 'planner');
-}
-
-export function modelsForImplementerProvider(
-  providerId: string,
-  providerKind: PickerOption['kind'],
-  cache: ModelCacheAccessor = NULL_CACHE,
-): ModelOption[] {
-  if (providerKind === 'shell' || providerKind === 'agent') return [];
-  return resolveAndSort(providerId, cache, 'implementer');
 }
 
 export function buildRightModels(params: {
@@ -307,7 +291,7 @@ export function buildRightModels(params: {
 
   const cache = params.cache ?? NULL_CACHE;
   const knownModels = capability.showsDiscovered
-    ? resolveAndSort(params.currentItem.id, cache, params.role)
+    ? resolveAndSort(params.currentItem.id, params.role, cache)
     : [];
   const customOptions: ModelOption[] = capability.allowsCustom
     ? params.customModels

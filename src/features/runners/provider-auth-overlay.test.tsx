@@ -29,18 +29,8 @@ function minimalCatalog(item: RunnerPickerOption): PickerCatalog {
     rightModels: [],
     currentItem: item,
     selectedItemId: item.id,
-    initialLeftIdx: 0,
-    focusModels: false,
     roleLabel: 'Planner',
-    currentModel: undefined,
-    persistedModel: undefined,
     modelCounts: { confirmed: 0, stale: 0, suggestions: 0, bundled: 0, custom: 0 },
-    catalogDiagnostic: undefined,
-    currentCommand: undefined,
-    currentCommandKind: undefined,
-    customModels: [],
-    discovery: { cold: false, refreshing: false },
-    setCurrentItem: () => {},
   });
 }
 

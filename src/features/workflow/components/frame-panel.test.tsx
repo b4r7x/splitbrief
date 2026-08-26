@@ -44,13 +44,16 @@ describe('FramePanel', () => {
     expect(bodyRow).toBeGreaterThan(dividerRow);
   });
 
-  it('floors the inner width at 1 for a tiny width without throwing', () => {
+  it('floors the inner width at 1 for a tiny width', () => {
     ui = renderFeature(
       <FramePanel filePath="a/b.md" width={2} height={6}>
         <Text>X</Text>
       </FramePanel>,
     );
-    const frame = ui.lastFrame() ?? '';
-    expect(frame.length).toBeGreaterThan(0);
+    const rule = glyph('divider', 'unicode');
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const dividerRow = lines.slice(1, -1).find((l) => l.includes(rule));
+    expect(dividerRow).toBeDefined();
+    expect(dividerRow?.split(rule).length).toBe(2);
   });
 });

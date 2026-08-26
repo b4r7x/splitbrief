@@ -8,10 +8,8 @@ import {
 import { resolveIntermediateRunner } from '../../core/config/accessors/intermediate-runner.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
-import {
-  findConfiguredCustomCommand,
-  inlineRunnerCommand,
-} from '../../core/config/custom-commands.js';
+import { inlineRunnerCommand } from '../../core/config/custom-commands.js';
+import { findConfiguredCustomCommand } from '../../core/config/custom-command-catalog.js';
 import { applyRunnerPreparationChecks, collectReadiness } from '../../core/readiness/collect.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
 import {
@@ -22,10 +20,11 @@ import {
 import type { Config } from '../../core/schemas/config.js';
 import { cliAuthRemediation } from '../../core/schemas/readiness.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import { prepareNewSession, type SessionOwnershipReceipt } from '../../core/sessions/prepare.js';
-import { reactivateExistingSession } from '../../core/sessions/lifecycle.js';
+import { prepareNewSession } from '../../core/sessions/prepare.js';
+import type { SessionOwnershipReceipt } from '../../core/sessions/active-pointer.js';
+import { reactivateExistingSession } from '../../core/sessions/active-pointer.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
-import { runnerDiscoveryContextKey, detectRunnerEvidence } from '../detection/detect.js';
+import { runnerDiscoveryContextKey, detectRunnerEvidence } from '../detection/runner-evidence.js';
 import { getProvider } from '../providers/registry.js';
 import { resolveApiKeyOverride } from '../providers/client/api-key.js';
 import { isAgentSdkAvailable } from './agent-sdk/availability.js';

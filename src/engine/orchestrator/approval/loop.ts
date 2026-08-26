@@ -69,7 +69,11 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
         state = queue.state;
         const comment = formatDrainedMessages(queue.messages).trim();
         const current = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
-        const regenPrompt = buildRegeneratePrompt(type, current, comment);
+        const regenPrompt = buildRegeneratePrompt({
+          artifactType: type,
+          currentContent: current,
+          feedback: comment,
+        });
         createBusTextHandler({ bus, phase: state.phase })(
           `\n[Applying ${queue.messages.length} queued message${
             queue.messages.length === 1 ? '' : 's'
@@ -131,6 +135,20 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
 
     const result = await callbacks.onApprovalNeeded(type, filePath);
     if (signal?.aborted) return { state, rejected: false, regenerated, aborted: true };
+    if (!result.approved && result.action === 'edit') {
+      const edited = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
+      if (edited !== snapshot) {
+        snapshot = edited;
+        regenerated = true;
+        bus.publish({
+          type: regeneratedEvent,
+          ts: Date.now(),
+          phase: state.phase,
+          comment: `(edited ${filename})`,
+        });
+      }
+      continue;
+    }
     if (!result.approved && result.action !== 'revise') {
       state = transitionAndSave({ projectDir, sessionId }, state, { type: rejectType });
       publishPlannerStatus(bus, state, 'done');
@@ -163,7 +181,11 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
     );
 
     const current = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
-    const regenPrompt = buildRegeneratePrompt(type, current, comment);
+    const regenPrompt = buildRegeneratePrompt({
+      artifactType: type,
+      currentContent: current,
+      feedback: comment,
+    });
     createBusTextHandler({ bus: bus, phase: state.phase })(
       `\n[Regenerating ${type} with feedback: ${comment}]\n`,
     );

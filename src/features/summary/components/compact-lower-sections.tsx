@@ -3,9 +3,9 @@ import type { Summary } from '../../../core/schemas/summary.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import { useTheme } from '../../../components/theme.js';
 import { SOFT_SEP } from '../../../components/separators.js';
-import { stripTerminalControls } from '../../../utils/display-text.js';
-import { truncateWithEllipsis } from '../../../utils/truncate.js';
-import { compactCount, compactPacketPath } from '../presentation.js';
+import { stripTerminalControls, truncateTerminalDisplayText } from '../../../utils/display-text.js';
+import { countNoun } from '../../../utils/pluralize.js';
+import { compactPacketPath } from '../presentation.js';
 
 export function SummaryCompactLowerSections({
   summary,
@@ -38,7 +38,7 @@ export function SummaryCompactLowerSections({
           <Text bold color={theme.text}>
             Checkpoints:
           </Text>{' '}
-          {compactCount(checkpointSummary.count, 'ckpt')}
+          {countNoun(checkpointSummary.count, 'ckpt')}
           {SOFT_SEP}latest: {stripTerminalControls(checkpointSummary.latestId ?? 'n/a')}
           {checkpointSummary.preFinalReviewId
             ? `${SOFT_SEP}pre: ${stripTerminalControls(checkpointSummary.preFinalReviewId)}`
@@ -53,10 +53,10 @@ export function SummaryCompactLowerSections({
             </Text>
           </Text>
           <Text color={theme.textDim} wrap="truncate-end">
-            md: {truncateWithEllipsis(compactPacketPath(reviewPacket.markdownPath), 34)}
+            md: {truncateTerminalDisplayText(compactPacketPath(reviewPacket.markdownPath), 34)}
           </Text>
           <Text color={theme.textDim} wrap="truncate-end">
-            json: {truncateWithEllipsis(compactPacketPath(reviewPacket.jsonPath), 32)}
+            json: {truncateTerminalDisplayText(compactPacketPath(reviewPacket.jsonPath), 32)}
           </Text>
           <Text
             color={reviewPacket.finalReviewStatus === 'written' ? theme.textDim : theme.warning}

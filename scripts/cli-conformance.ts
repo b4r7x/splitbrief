@@ -1,10 +1,10 @@
 import { pathToFileURL } from 'node:url';
 import {
   CLI_CONFORMANCE_EXIT_CODES,
-  runProductionCliConformance,
-  runRawCliConformance,
   type CliConformanceRole,
 } from '../src/engine/runners/cli-tools/contract-harness.js';
+import { runProductionCliConformance } from '../src/engine/runners/cli-tools/contract-harness-production.js';
+import { runRawCliConformance } from '../src/engine/runners/cli-tools/contract-harness-raw.js';
 import { parseConformanceArguments } from './conformance-arguments.js';
 
 type ParsedArguments =

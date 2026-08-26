@@ -1,13 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { BriefRecoveryV1Schema } from '../../../core/schemas/brief-recovery.js';
+import { BriefRecoveryV1Schema } from '../../../core/schemas/brief-recovery/document.js';
 import type {
-  BriefAdmissionInput,
-  BriefRecoveryV1,
   BudgetReservation,
-  EvidenceRef,
-  NormalBriefRecoveryV1,
   RecoveryUsage,
-} from '../../../core/schemas/brief-recovery.js';
+} from '../../../core/schemas/brief-recovery/budget.js';
+import type { BriefRecoveryV1 } from '../../../core/schemas/brief-recovery/document.js';
 import {
   acceptRecoveryOperation,
   automaticRepairIntent,
@@ -29,32 +26,15 @@ import {
   supersedeRecoveryOperation,
   terminalChargeRecoveryReservations,
 } from './brief-recovery.js';
-import type { RecoveryOperationInput, RecoveryRefusalInput } from './brief-recovery.js';
+import type { RecoveryOperationInput } from './brief-recovery.js';
+import {
+  normalRecovery,
+  recoveryRef,
+  recoveryRefusal,
+  standardAdmissionInput,
+} from '#testing/helpers/factories/brief-recovery.js';
 
-const ref = (path: string, hash = path): EvidenceRef => ({ revision: 1, hash, path });
 const usage: RecoveryUsage = { inputTokens: 2, outputTokens: 3, totalTokens: 5, estimated: false };
-const input: BriefAdmissionInput = {
-  sessionId: 'session-1',
-  origin: { mode: 'standard', entry: 'initial' },
-  continuation: { version: 1, kind: 'approval', mode: 'standard', entry: 'initial' },
-  activeBrief: ref('tasks.md', 'brief-1'),
-  report: {
-    briefHash: 'brief-1',
-    report: ref('brief-quality.json', 'report-1'),
-    ruleVersion: 'quality-v1',
-    issues: [
-      {
-        code: 'missing_acceptance',
-        severity: 'error',
-        taskId: null,
-        message: 'Missing acceptance',
-      },
-    ],
-    errorCount: 1,
-  },
-  qualityPolicyVersion: 'quality-v1',
-};
-
 const reservation = (
   operationId: string,
   state: 'reserved' | 'held' = 'reserved',
@@ -77,17 +57,11 @@ function operation(
     intentHash: `${operationId}-intent`,
     kind,
     acceptedAt: 't1',
-    baseBrief: ref('tasks.md', 'brief-1'),
-    baseReport: ref('brief-quality.json', 'report-1'),
+    baseBrief: recoveryRef('tasks.md', 'brief-1'),
+    baseReport: recoveryRef('brief-quality.json', 'report-1'),
     frozenInputIds: [],
     reservation: reservation(operationId),
   };
-}
-
-function normal(state: BriefRecoveryV1): NormalBriefRecoveryV1 {
-  if (state.status === 'storage-blocked' || state.status === 'rejected')
-    throw new Error('expected normal recovery');
-  return state;
 }
 
 function settled(
@@ -114,13 +88,13 @@ function settled(
 
 describe('brief recovery reducer', () => {
   it('opens blocked admission, consumes automatic allowance at acceptance, and replays IDs', () => {
-    const state = createBriefRecoveryState(input, { epochId: 'epoch-1' });
+    const state = createBriefRecoveryState(standardAdmissionInput, { epochId: 'epoch-1' });
     expect(state.status).toBe('blocked');
     const accepted = acceptRecoveryOperation(state, operation('auto-1', 'automatic'), 't1');
     expect(accepted.kind).toBe('accepted');
     expect(accepted.state).toMatchObject({ status: 'auto-repairing', activeOperationId: 'auto-1' });
     if (accepted.kind !== 'accepted') return;
-    expect(normal(accepted.state).automaticRepair).toMatchObject({
+    expect(normalRecovery(accepted.state).automaticRepair).toMatchObject({
       consumed: true,
       operationId: 'auto-1',
     });
@@ -136,7 +110,7 @@ describe('brief recovery reducer', () => {
   });
 
   it('keeps definite failure, confirmed-final usage, and ambiguous outcomes distinct', () => {
-    const base = createBriefRecoveryState(input, { epochId: 'epoch-1' });
+    const base = createBriefRecoveryState(standardAdmissionInput, { epochId: 'epoch-1' });
     const pre = acceptRecoveryOperation(base, operation('pre'), 't1');
     const preSettled = settleRecoveryOperation(
       pre.state,
@@ -172,7 +146,7 @@ describe('brief recovery reducer', () => {
   });
 
   it('preserves superseded resource semantics before and after dispatch', () => {
-    const base = createBriefRecoveryState(input, { epochId: 'epoch-1' });
+    const base = createBriefRecoveryState(standardAdmissionInput, { epochId: 'epoch-1' });
     const accepted = acceptRecoveryOperation(base, operation('none'), 't1');
     const none = supersedeRecoveryOperation(accepted.state, {
       operationId: 'none',
@@ -208,7 +182,7 @@ describe('brief recovery reducer', () => {
 
   it('requires explicit unresolved resolution and preserves the old receipt', () => {
     const queued = queueRecoveryInput(
-      createBriefRecoveryState(input, { epochId: 'epoch-1' }),
+      createBriefRecoveryState(standardAdmissionInput, { epochId: 'epoch-1' }),
       {
         inputId: 'feedback-1',
         epochId: 'epoch-1',
@@ -216,7 +190,7 @@ describe('brief recovery reducer', () => {
         kind: 'feedback',
         source: 'typed',
         payload: 'try again',
-        base: ref('tasks.md', 'brief-1'),
+        base: recoveryRef('tasks.md', 'brief-1'),
         operationId: null,
       },
       't0',
@@ -239,13 +213,13 @@ describe('brief recovery reducer', () => {
       at: 't4',
     });
     expect(rebound.kind).toBe('rebound');
-    expect(normal(rebound.state).attempts.unresolved?.status).toBe('unresolved');
-    expect(normal(rebound.state).inputs[0]?.state).toBe('carried');
-    expect(normal(rebound.state).attempts.unresolved?.reservation.state).toBe('held');
+    expect(normalRecovery(rebound.state).attempts.unresolved?.status).toBe('unresolved');
+    expect(normalRecovery(rebound.state).inputs[0]?.state).toBe('carried');
+    expect(normalRecovery(rebound.state).attempts.unresolved?.reservation.state).toBe('held');
   });
 
   it('charges all possible held reservations on closure and makes it replay-safe', () => {
-    const base = createBriefRecoveryState(input, { epochId: 'epoch-1' });
+    const base = createBriefRecoveryState(standardAdmissionInput, { epochId: 'epoch-1' });
     const first = reconcileLostOwner(
       startRecoveryOperation(acceptRecoveryOperation(base, operation('one'), 't1').state, {
         operationId: 'one',
@@ -270,14 +244,14 @@ describe('brief recovery reducer', () => {
       't6',
     );
     const charged = terminalChargeRecoveryReservations(second.state, 't7');
-    expect(normal(charged.state).attempts.one?.reservation.state).toBe('terminal-charged');
-    expect(normal(charged.state).attempts.two?.reservation.state).toBe('terminal-charged');
+    expect(normalRecovery(charged.state).attempts.one?.reservation.state).toBe('terminal-charged');
+    expect(normalRecovery(charged.state).attempts.two?.reservation.state).toBe('terminal-charged');
     expect(terminalChargeRecoveryReservations(charged.state, 't8').state).toEqual(charged.state);
     expect(rejectBriefRecovery(charged.state, 't9').state.status).toBe('rejected');
   });
 
   it('derives action and diagnostic precedence without persisting allowed actions', () => {
-    const state = createBriefRecoveryState(input, { epochId: 'epoch-1' });
+    const state = createBriefRecoveryState(standardAdmissionInput, { epochId: 'epoch-1' });
     expect(deriveAllowedActions(state)).toContain('retry');
     expect(deriveRecoveryBlocker(state)?.kind).toBe('quality');
     const projection = inspectBriefRecovery({ sessionId: 'session-1', stateRevision: 4, state });
@@ -285,13 +259,17 @@ describe('brief recovery reducer', () => {
     expect(projection.blocker?.kind).toBe('quality');
     expect('allowedActions' in state).toBe(false);
     expect(
-      briefRecoveryDiagnosticFingerprint('brief', 'quality-v1', input.report.issues),
+      briefRecoveryDiagnosticFingerprint(
+        'brief',
+        'quality-v1',
+        standardAdmissionInput.report.issues,
+      ),
     ).toHaveLength(64);
     expect(BriefRecoveryV1Schema.safeParse(state).success).toBe(true);
   });
 
   it('keeps possible no-usage settlement held until closure', () => {
-    const base = createBriefRecoveryState(input, { epochId: 'epoch-1' });
+    const base = createBriefRecoveryState(standardAdmissionInput, { epochId: 'epoch-1' });
     const started = startRecoveryOperation(
       acceptRecoveryOperation(base, operation('unknown'), 't1').state,
       { operationId: 'unknown', requestId: 'r1', startedAt: 't2' },
@@ -305,13 +283,13 @@ describe('brief recovery reducer', () => {
     const reconciled = reconcileRecoveryReservation(result.state, 'unknown', null, 't5');
     expect(reconciled.receipt?.reservation.state).toBe('held');
     expect(
-      normal(terminalChargeRecoveryReservations(result.state, 't6').state).attempts.unknown
+      normalRecovery(terminalChargeRecoveryReservations(result.state, 't6').state).attempts.unknown
         ?.reservation.state,
     ).toBe('terminal-charged');
   });
 
   it('bounds settled attempt history without blocking later attempts', () => {
-    const base = createBriefRecoveryState(input, { epochId: 'epoch-1' });
+    const base = createBriefRecoveryState(standardAdmissionInput, { epochId: 'epoch-1' });
     const started = startRecoveryOperation(
       acceptRecoveryOperation(base, operation('unresolved-history'), '000').state,
       { operationId: 'unresolved-history', requestId: 'request-history', startedAt: '001' },
@@ -339,15 +317,15 @@ describe('brief recovery reducer', () => {
       state = completed.state;
     }
 
-    expect(Object.keys(normal(state).attempts)).toHaveLength(257);
-    expect(normal(state).attempts['unresolved-history']?.status).toBe('unresolved');
-    expect(normal(state).attempts['attempt-0']).toBeUndefined();
-    expect(normal(state).attempts['attempt-299']?.status).toBe('settled');
+    expect(Object.keys(normalRecovery(state).attempts)).toHaveLength(257);
+    expect(normalRecovery(state).attempts['unresolved-history']?.status).toBe('unresolved');
+    expect(normalRecovery(state).attempts['attempt-0']).toBeUndefined();
+    expect(normalRecovery(state).attempts['attempt-299']?.status).toBe('settled');
     expect(BriefRecoveryV1Schema.safeParse(state).success).toBe(true);
   });
 
   it('projects the chronologically latest attempt when operation IDs sort out of order', () => {
-    const base = createBriefRecoveryState(input, { epochId: 'epoch-1' });
+    const base = createBriefRecoveryState(standardAdmissionInput, { epochId: 'epoch-1' });
     const older = acceptRecoveryOperation(
       base,
       { ...operation('z-old'), acceptedAt: '2026-08-13T12:00:00.000Z' },
@@ -374,49 +352,27 @@ describe('brief recovery reducer', () => {
   });
 });
 
-function refusal(
-  operationId: string,
-  overrides: Partial<RecoveryRefusalInput> = {},
-): RecoveryRefusalInput {
-  return {
-    epochId: 'epoch-1',
-    operationId,
-    intentHash: `${operationId}-intent`,
-    action: 'retry',
-    code: 'brief_budget_unknown',
-    category: 'budget',
-    reasonCode: 'brief_budget_unknown',
-    accountingKey: null,
-    budgetPolicy: 'no-dollar-cap',
-    configuredCap: null,
-    priceKnownness: 'provider-dependent',
-    spendKnownness: 'unknown-paid',
-    evidence: ref('brief-recovery/refusal.json', `refusal-${operationId}`),
-    ...overrides,
-  };
-}
-
-describe('brief recovery refusal retention', () => {
+describe('brief recovery refusal admission', () => {
   it('refuses an automatic repair while preserving the eligible unconsumed allowance', () => {
-    const base = createBriefRecoveryState(input, { epochId: 'epoch-1' });
-    const automatic = automaticRepairIntent(normal(base));
+    const base = createBriefRecoveryState(standardAdmissionInput, { epochId: 'epoch-1' });
+    const automatic = automaticRepairIntent(normalRecovery(base));
     const refused = refuseRecoveryOperation(
       base,
-      refusal('auto-1', { intentHash: automatic }),
+      recoveryRefusal('auto-1', { intentHash: automatic }),
       't1',
     );
     expect(refused.kind).toBe('refused');
     expect(refused.code).toBe('brief_budget_unknown');
-    expect(normal(refused.state).automaticRepair).toMatchObject({
+    expect(normalRecovery(refused.state).automaticRepair).toMatchObject({
       eligible: true,
       consumed: false,
       operationId: null,
     });
-    expect(normal(refused.state).attempts['auto-1']).toBeUndefined();
-    expect(normal(refused.state).status).toBe('blocked');
+    expect(normalRecovery(refused.state).attempts['auto-1']).toBeUndefined();
+    expect(normalRecovery(refused.state).status).toBe('blocked');
     const replay = refuseRecoveryOperation(
       refused.state,
-      refusal('auto-1', { intentHash: automatic }),
+      recoveryRefusal('auto-1', { intentHash: automatic }),
       't2',
     );
     expect(replay.kind).toBe('replayed');
@@ -425,24 +381,24 @@ describe('brief recovery refusal retention', () => {
   });
 
   it('conflicts instead of retaining a refusal for an operation that already holds an attempt', () => {
-    const base = createBriefRecoveryState(input, { epochId: 'epoch-1' });
+    const base = createBriefRecoveryState(standardAdmissionInput, { epochId: 'epoch-1' });
     const accepted = acceptRecoveryOperation(base, operation('op-1'), 't1');
-    const conflict = refuseRecoveryOperation(accepted.state, refusal('op-1'), 't2');
+    const conflict = refuseRecoveryOperation(accepted.state, recoveryRefusal('op-1'), 't2');
     expect(conflict.kind).toBe('conflict');
     expect(conflict.receipt?.status).toBe('accepted');
     expect(conflict.state).toEqual(accepted.state);
-    expect(normal(conflict.state).refusalRetention).toBeUndefined();
+    expect(normalRecovery(conflict.state).refusalRetention).toBeUndefined();
   });
 
   it('replays a retained refusal before any estimate without advancing revision', () => {
-    const base = createBriefRecoveryState(input, { epochId: 'epoch-1' });
-    const refused = refuseRecoveryOperation(base, refusal('op-1'), 't1');
+    const base = createBriefRecoveryState(standardAdmissionInput, { epochId: 'epoch-1' });
+    const refused = refuseRecoveryOperation(base, recoveryRefusal('op-1'), 't1');
     expect(refused.kind).toBe('refused');
-    const before = normal(refused.state).recoveryRevision;
+    const before = normalRecovery(refused.state).recoveryRevision;
     const replay = acceptRecoveryOperation(refused.state, operation('op-1'), 't2');
     expect(replay.kind).toBe('replayed');
     expect(replay.state).toEqual(refused.state);
-    expect(normal(replay.state).recoveryRevision).toBe(before);
+    expect(normalRecovery(replay.state).recoveryRevision).toBe(before);
     const conflict = acceptRecoveryOperation(
       refused.state,
       { ...operation('op-1'), intentHash: 'other' },
@@ -452,7 +408,7 @@ describe('brief recovery refusal retention', () => {
   });
 
   it('compacts 17 refusal epochs into 16 summaries and keeps current replay exact', () => {
-    const base = createBriefRecoveryState(input, { epochId: 'epoch-1' });
+    const base = createBriefRecoveryState(standardAdmissionInput, { epochId: 'epoch-1' });
     let state: BriefRecoveryV1 = base;
     for (let index = 1; index <= 17; index += 1) {
       const epochId = `epoch-${index}`;
@@ -460,7 +416,7 @@ describe('brief recovery refusal retention', () => {
       const at = `t-${String(index).padStart(2, '0')}`;
       const refused = refuseRecoveryOperation(
         state,
-        refusal(`refused-${index}`, { epochId, intentHash: `intent-${index}` }),
+        recoveryRefusal(`refused-${index}`, { epochId, intentHash: `intent-${index}` }),
         at,
       );
       expect(refused.kind).toBe('refused');
@@ -472,7 +428,7 @@ describe('brief recovery refusal retention', () => {
       expect(closed.kind).toBe('epoch-closed');
       state = closed.state;
     }
-    const retention = normal(state).refusalRetention;
+    const retention = normalRecovery(state).refusalRetention;
     expect(retention).toBeDefined();
     if (retention === undefined) return;
     expect(retention.closedEpochSummaries).toHaveLength(16);
@@ -485,7 +441,7 @@ describe('brief recovery refusal retention', () => {
 
     const current = refuseRecoveryOperation(
       state,
-      refusal('current-op', { epochId: 'epoch-18' }),
+      recoveryRefusal('current-op', { epochId: 'epoch-18' }),
       't-18',
     );
     expect(current.kind).toBe('refused');
@@ -500,8 +456,12 @@ describe('brief recovery refusal retention', () => {
   });
 
   it('routes refusal and epoch-close actions through the exhaustive reducer', () => {
-    const base = createBriefRecoveryState(input, { epochId: 'epoch-1' });
-    const refused = reduceBriefRecovery(base, { type: 'refuse', input: refusal('op-1'), at: 't1' });
+    const base = createBriefRecoveryState(standardAdmissionInput, { epochId: 'epoch-1' });
+    const refused = reduceBriefRecovery(base, {
+      type: 'refuse',
+      input: recoveryRefusal('op-1'),
+      at: 't1',
+    });
     if ('input' in refused) throw new Error('expected a recovery mutation');
     expect(refused.kind).toBe('refused');
     const closed = reduceBriefRecovery(refused.state, {
@@ -511,6 +471,6 @@ describe('brief recovery refusal retention', () => {
     });
     if ('input' in closed) throw new Error('expected a recovery mutation');
     expect(closed.kind).toBe('epoch-closed');
-    expect(normal(closed.state).refusalRetention?.currentEpochId).toBe('epoch-2');
+    expect(normalRecovery(closed.state).refusalRetention?.currentEpochId).toBe('epoch-2');
   });
 });

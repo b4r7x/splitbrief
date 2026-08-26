@@ -23,39 +23,30 @@ describe('topoSort', () => {
   test('throws on duplicate task IDs', () => {
     const first = makeTask({ id: 'T001', title: 'First' });
     const second = makeTask({ id: 'T001', title: 'Second' });
-    try {
-      topoSort([first, second]);
-      throw new Error('expected throw');
-    } catch (err) {
-      expect(err).toMatchObject({ kind: 'topo-duplicate-task-id', data: { taskId: 'T001' } });
-    }
+    expect(() => topoSort([first, second])).toThrowError(
+      expect.objectContaining({ kind: 'topo-duplicate-task-id', data: { taskId: 'T001' } }),
+    );
   });
 
   test('throws on unknown dependencies', () => {
     const a = makeTask({ id: 'T001', dependsOn: ['T999'] });
-    try {
-      topoSort([a]);
-      throw new Error('expected throw');
-    } catch (err) {
-      expect(err).toMatchObject({
+    expect(() => topoSort([a])).toThrowError(
+      expect.objectContaining({
         kind: 'topo-unknown-dependency',
         data: { taskId: 'T001', dependencyId: 'T999' },
-      });
-    }
+      }),
+    );
   });
 
   test('throws topoError.circularDependency on cycle', () => {
     const a = makeTask({ id: 'T001', dependsOn: ['T002'] });
     const b = makeTask({ id: 'T002', dependsOn: ['T001'] });
-    try {
-      topoSort([a, b]);
-      throw new Error('expected throw');
-    } catch (err) {
-      expect(err).toMatchObject({
+    expect(() => topoSort([a, b])).toThrowError(
+      expect.objectContaining({
         kind: 'topo-circular-dependency',
         data: { cycle: ['T001', 'T002', 'T001'] },
-      });
-    }
+      }),
+    );
   });
 });
 

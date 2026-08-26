@@ -166,7 +166,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
     try {
       unlinkSync(sockPath);
     } catch {
-      /* ignore */
+      // A stale socket another process already removed is the same as success here.
     }
   }
 
@@ -593,17 +593,17 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
             writeMessage(currentClient.socket, { kind: 'server_complete' });
           }
         } catch {
-          /* ignore */
+          // The client is going away; a failed farewell must not block close().
         }
         try {
           currentClient.unsubscribe();
         } catch {
-          /* ignore */
+          // Same: an unsubscribe that throws must not strand the remaining teardown.
         }
         try {
           currentClient.socket.destroy();
         } catch {
-          /* ignore */
+          // Same: the socket is being abandoned either way.
         }
         currentClient = null;
       }
@@ -613,7 +613,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
           try {
             unlinkSync(sockPath);
           } catch {
-            /* ignore ENOENT */
+            // The socket file is already gone, which is the state this unlink wants.
           }
           resolve();
         });

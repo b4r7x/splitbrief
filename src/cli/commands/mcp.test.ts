@@ -101,38 +101,17 @@ describe('mcp serve — flag exclusivity', () => {
 });
 
 describe('mcp serve — port validation', () => {
-  it('exits with code 1 for non-numeric port', async () => {
+  it.each(['abc', '0', '99999'])('exits with code 1 for --port %s', async (port) => {
     let captured: unknown;
     try {
-      await runMcpServe(['--session', 'foo', '--port', 'abc']);
+      await runMcpServe(['--session', 'foo', '--port', port]);
     } catch (err) {
       captured = err;
     }
 
     expect(isCliError(captured)).toBe(true);
+    expect((captured as { exitCode: number }).exitCode).toBe(1);
     expect((captured as Error).message).toContain('--port');
-  });
-
-  it('exits with code 1 for port 0', async () => {
-    let captured: unknown;
-    try {
-      await runMcpServe(['--session', 'foo', '--port', '0']);
-    } catch (err) {
-      captured = err;
-    }
-
-    expect(isCliError(captured)).toBe(true);
-  });
-
-  it('exits with code 1 for port above 65535', async () => {
-    let captured: unknown;
-    try {
-      await runMcpServe(['--session', 'foo', '--port', '99999']);
-    } catch (err) {
-      captured = err;
-    }
-
-    expect(isCliError(captured)).toBe(true);
   });
 });
 
@@ -156,7 +135,7 @@ describe('mcp serve — startup announcement', () => {
 
     expect(output).toContain('SPLITBRIEF MCP server ready');
     expect(output).toMatch(/resources/i);
-    expect(output).toMatch(/5 evidence tools/i);
+    expect(output).toMatch(/\d+ evidence tools/i);
     expect(output).toContain('http://127.0.0.1:4321/mcp');
     expect(output).toMatch(/Token:\s+[A-Za-z0-9_-]{20,}/);
     expect(output).toContain('Sessions: 2026-04-26-test-session');

@@ -1,14 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { Config } from '../../core/schemas/config.js';
 import { admitCompilerCapability } from './compiler-capability.js';
 import { deriveCompilerClaim } from './compiler-claim.js';
 
-const containment = vi.hoisted(() => ({ profile: 'seatbelt' as string }));
-
-vi.mock('./planner-containment.js', () => ({
-  platformContainmentProfile: async () => containment.profile,
-}));
+const seatbelt = async () => 'seatbelt' as const;
+const unavailable = async () => 'unavailable' as const;
 
 function configWithPlanner(planner: Config['planner']): Config {
   return { ...makeConfig(), planner };
@@ -41,17 +38,17 @@ const SUPPORTED_CLI_CLAIMS = [
   },
 ] as const;
 
-beforeEach(() => {
-  containment.profile = 'seatbelt';
-});
-
 describe('deriveCompilerClaim', () => {
   it.each(SUPPORTED_CLI_CLAIMS)(
     'derives the locked $tool claim from the detected runtime version',
     async (expected) => {
       const config = configWithPlanner({ kind: 'cli', tool: expected.tool, model: 'auto' });
 
-      const result = await deriveCompilerClaim({ config, detectedVersion: '2.1.235' });
+      const result = await deriveCompilerClaim({
+        config,
+        detectedVersion: '2.1.235',
+        _containmentProfile: seatbelt,
+      });
 
       expect(result.kind).toBe('derived');
       if (result.kind !== 'derived') return;
@@ -147,10 +144,13 @@ describe('deriveCompilerClaim — credential channel', () => {
 
 describe('deriveCompilerClaim — containment observation', () => {
   it('reports containment unverified when the host offers no admitted launcher', async () => {
-    containment.profile = 'unavailable';
     const config = configWithPlanner({ kind: 'cli', tool: 'opencode', model: 'auto' });
 
-    const result = await deriveCompilerClaim({ config, detectedVersion: '1.18.15' });
+    const result = await deriveCompilerClaim({
+      config,
+      detectedVersion: '1.18.15',
+      _containmentProfile: unavailable,
+    });
 
     expect(result.kind).toBe('derived');
     if (result.kind !== 'derived') return;
@@ -161,9 +161,16 @@ describe('deriveCompilerClaim — containment observation', () => {
   it('refuses a derived claim on containmentProfile and conformance together, never on conformance alone', async () => {
     const config = configWithPlanner({ kind: 'cli', tool: 'opencode', model: 'auto' });
 
-    const admitted = await deriveCompilerClaim({ config, detectedVersion: '1.18.15' });
-    containment.profile = 'unavailable';
-    const refused = await deriveCompilerClaim({ config, detectedVersion: '1.18.15' });
+    const admitted = await deriveCompilerClaim({
+      config,
+      detectedVersion: '1.18.15',
+      _containmentProfile: seatbelt,
+    });
+    const refused = await deriveCompilerClaim({
+      config,
+      detectedVersion: '1.18.15',
+      _containmentProfile: unavailable,
+    });
 
     expect(admitted.kind).toBe('derived');
     expect(refused.kind).toBe('derived');

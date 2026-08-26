@@ -19,13 +19,12 @@ import { validateConfig } from './validation/config.js';
 import { fromYaml, toYaml } from './transform.js';
 import { SPLITBRIEF_DIR, TREES_DIR, CONFIG_FILE, getSplitbriefPath } from '../../paths.js';
 import { checkConfigPermissions, ensureGitignore } from '../../../lib/fs.js';
+import { confinedWriteFile, confinedEnsureDir } from '../../../lib/confined-fs.js';
 import {
   confinedAtomicWriteFile,
-  confinedWriteFile,
-  confinedEnsureDir,
   type ConfigRevision,
   type ExpectedConfigRevision,
-} from '../../../lib/confined-fs.js';
+} from '../../../lib/confined-fs-atomic.js';
 import { SECURE_FILE_MODE } from '../../../lib/fs.js';
 import { assertWritablePathConfined, pathConfinementError } from '../../../lib/path-confinement.js';
 import { isENOENT, isNodeError } from '../../../lib/process/errors.js';

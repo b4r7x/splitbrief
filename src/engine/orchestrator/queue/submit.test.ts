@@ -6,10 +6,10 @@ import type {
   BriefAdmissionInput,
   BriefRecoveryController,
   QueueBriefInput,
+  QueueResultV1,
   StateAuthorityReceipt,
 } from '../../../core/schemas/brief-recovery.js';
 import { createBriefRecoveryState, inspectBriefRecovery } from '../planning/brief-recovery.js';
-import type { QueueResultV1 } from '../../../core/approval/types.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { setupProject, makeResearchingState } from '#testing/helpers/queue.js';

@@ -32,7 +32,7 @@ import { extractJsonBlock } from '../../../utils/extract-json-block.js';
 import { clamp01 } from '../../../utils/math.js';
 import { runPlannerReview } from '../planner-review.js';
 import { withContinuationLoop } from '../continuation.js';
-import { composeSteeredPrompt } from '../../implementers/types.js';
+import { composeSteeredPrompt } from '../../spec/prompts/steered-prompt.js';
 import { fallbackBriefRecoveryProjection } from './brief-quality-preparation.js';
 import { publishProducerGeneration } from './brief-publication.js';
 
@@ -113,7 +113,6 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
   const planResult = await runFullPlanning({
     ...opts,
     state,
-    deferBriefGate: true,
     afterSpecReview: async ({ state: reviewedState, tasks: reviewedTasks }) => {
       const constitution = await runConstitutionGate({ ...opts, state: reviewedState });
       return { ...constitution, tasks: reviewedTasks };

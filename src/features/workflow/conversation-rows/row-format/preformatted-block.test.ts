@@ -247,10 +247,14 @@ describe('preformattedOutputBlock', () => {
     expect(textAt(rows, 32)).toBe(`${FOOTER} + 10 more lines`);
   });
 
-  it('adds no tail row when everything fits', () => {
-    const rows = rowsOf(build({ maxLines: 30 }));
+  it('adds the tail row only once the body passes maxLines', () => {
+    const lines = (count: number) =>
+      Array.from({ length: count }, (_, index) => `line ${index}`).join('\n');
+    const exact = rowsOf(build({ text: lines(30), maxLines: 30 }));
+    const over = rowsOf(build({ text: lines(31), maxLines: 30 }));
 
-    expect(rows.map(rowText).join('\n')).not.toContain('more line');
+    expect(exact.map(rowText).join('\n')).not.toContain('more line');
+    expect(textAt(over, -1)).toBe(`${FOOTER} + 1 more line`);
   });
 
   it('uses the singular noun for a single hidden line', () => {

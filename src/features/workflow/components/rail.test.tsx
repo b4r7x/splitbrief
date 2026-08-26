@@ -152,8 +152,8 @@ describe('Rail — Form B (horizontal pipeline)', () => {
 
     // With ANSI stripped the role hue is gone, so the seam reads only by the connector shape: the
     // two role seams (briefs→build, build→verify) paint the arrow; the other gaps paint chevrons.
-    const arrow = railConnectorString(true);
-    const chevron = railConnectorString(false);
+    const arrow = railConnectorString({ handoff: true });
+    const chevron = railConnectorString({ handoff: false });
     expect(railLine.split(arrow).length - 1).toBe(2);
     expect(railLine.split(chevron).length - 1).toBe(2);
     ui.unmount();

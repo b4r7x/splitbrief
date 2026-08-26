@@ -114,21 +114,19 @@ describe('runFinalReviewPhase', () => {
     const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
     const phaseTimings: Record<string, number> = {};
 
-    const { summary } = await runFinalReviewPhase(
-      {
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig(),
-        callbacks,
-        bus,
-        state,
-        reviewer,
-        metadata: TEST_METADATA,
-      },
-      SUMMARY_BASE,
-      [] satisfies TaskTokenUsage[],
+    const { summary } = await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state,
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [] satisfies TaskTokenUsage[],
       phaseTimings,
-    );
+    });
 
     expect(reviewPrompts).toHaveLength(1);
     expect(reviewPrompts[0]).toContain('Add auth');
@@ -194,20 +192,18 @@ describe('runFinalReviewPhase', () => {
       },
     });
 
-    await runFinalReviewPhase(
-      {
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig(),
-        callbacks,
-        bus,
-        state: allTasksDoneState([task], runStartHead),
-        reviewer,
-        metadata: TEST_METADATA,
-      },
-      SUMMARY_BASE,
-      [],
-    );
+    await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state: allTasksDoneState([task], runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
 
     expect(reviewPrompts[0]).toContain('## Recorded Validation Output');
     expect(reviewPrompts[0]).toContain('- test (`npm test`): passed');
@@ -227,21 +223,19 @@ describe('runFinalReviewPhase', () => {
       review: async () => ({ text: 'ok', usage: { inputTokens: 200, outputTokens: 40 } }),
     });
 
-    const { state } = await runFinalReviewPhase(
-      {
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig(),
-        callbacks,
-        bus,
-        state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
-        reviewer,
-        metadata: TEST_METADATA,
-        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      },
-      SUMMARY_BASE,
-      [],
-    );
+    const { state } = await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
 
     expect(state.tokenUsage.reviewerInput).toBe(200);
     expect(state.tokenUsage.reviewerOutput).toBe(40);
@@ -281,20 +275,18 @@ describe('runFinalReviewPhase', () => {
       status: 'done',
     });
 
-    await runFinalReviewPhase(
-      {
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig(),
-        callbacks,
-        bus,
-        state: allTasksDoneState([task], runStartHead),
-        reviewer,
-        metadata: TEST_METADATA,
-      },
-      SUMMARY_BASE,
-      [],
-    );
+    await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state: allTasksDoneState([task], runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
 
     expect(reviewPrompts[0]).toContain(
       'Persisted-only acceptance marker: verify password pepper migration.',
@@ -313,20 +305,18 @@ describe('runFinalReviewPhase', () => {
     );
     reviewPrompts.length = 0;
 
-    await runFinalReviewPhase(
-      {
-        projectDir: fallbackProjectDir,
-        sessionId: fallbackSessionId,
-        config: makeNoValidationConfig(),
-        callbacks,
-        bus,
-        state: allTasksDoneState([task], fallbackRunStartHead),
-        reviewer,
-        metadata: TEST_METADATA,
-      },
-      SUMMARY_BASE,
-      [],
-    );
+    await runFinalReviewPhase({
+      projectDir: fallbackProjectDir,
+      sessionId: fallbackSessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state: allTasksDoneState([task], fallbackRunStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
 
     expect(reviewPrompts[0]).toContain('State fallback marker: rotate audit log checksum.');
   });
@@ -349,21 +339,19 @@ describe('runFinalReviewPhase', () => {
     const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
     const phaseTimings: Record<string, number> = {};
 
-    const { summary } = await runFinalReviewPhase(
-      {
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig(),
-        callbacks,
-        bus,
-        state,
-        reviewer,
-        metadata: TEST_METADATA,
-      },
-      SUMMARY_BASE,
-      [],
+    const { summary } = await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state,
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
       phaseTimings,
-    );
+    });
 
     const errorEvent = events.find((e) => e.type === 'error');
     expect(errorEvent).toBeDefined();
@@ -402,20 +390,18 @@ describe('runFinalReviewPhase', () => {
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
 
-    const { summary } = await runFinalReviewPhase(
-      {
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig(),
-        callbacks,
-        bus,
-        state: allTasksDoneState([task], runStartHead),
-        reviewer,
-        metadata: TEST_METADATA,
-      },
-      SUMMARY_BASE,
-      [],
-    );
+    const { summary } = await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state: allTasksDoneState([task], runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
 
     expect(reviewer.review).toHaveBeenCalledTimes(1);
     expect(summary.reviewPacket?.finalReviewStatus).toBe('failed');
@@ -442,20 +428,18 @@ describe('runFinalReviewPhase', () => {
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
 
-    await runFinalReviewPhase(
-      {
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig({ reviewer: REVIEWER_RUNNER }),
-        callbacks,
-        bus,
-        state: allTasksDoneState([task], runStartHead),
-        reviewer,
-        metadata: TEST_METADATA,
-      },
-      SUMMARY_BASE,
-      [],
-    );
+    await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig({ reviewer: REVIEWER_RUNNER }),
+      callbacks,
+      bus,
+      state: allTasksDoneState([task], runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
 
     const failure = events.find((event) => event.type === 'error');
     expect(failure?.message).toContain(REVIEWER_IDENTITY);
@@ -481,22 +465,20 @@ describe('runFinalReviewPhase', () => {
     });
     const phaseTimings: Record<string, number> = {};
 
-    const { summary } = await runFinalReviewPhase(
-      {
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig(),
-        callbacks,
-        bus,
-        state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
-        reviewer,
-        metadata: TEST_METADATA,
-        signal: controller.signal,
-      },
-      SUMMARY_BASE,
-      [],
+    const { summary } = await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      signal: controller.signal,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
       phaseTimings,
-    );
+    });
 
     expect(summary).toBeDefined();
     expect(completions).toEqual([]);
@@ -516,11 +498,17 @@ describe('runFinalReviewPhase', () => {
     });
     const state = allTasksDoneState([], runStartHead);
 
-    const { summary: result } = await runFinalReviewPhase(
-      { projectDir, sessionId, config: makeNoValidationConfig(), callbacks, bus, state, reviewer },
-      SUMMARY_BASE,
-      [],
-    );
+    const { summary: result } = await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state,
+      reviewer,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
 
     expect(result).toBeDefined();
     expect(result.totalTasks).toBe(0);
@@ -541,19 +529,17 @@ describe('runFinalReviewPhase', () => {
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src/hello.ts'), 'export const hello = () => "hi";\n');
 
-    await runFinalReviewPhase(
-      {
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig(),
-        callbacks,
-        bus,
-        state: allTasksDoneState(tasks, runStartHead),
-        reviewer,
-      },
-      SUMMARY_BASE,
-      [],
-    );
+    await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state: allTasksDoneState(tasks, runStartHead),
+      reviewer,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
 
     const drift = JSON.parse(
       readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),
@@ -580,19 +566,17 @@ describe('runFinalReviewPhase', () => {
     const { bus, events } = makeBusRecorder();
     const review = vi.fn().mockResolvedValue({ text: 'ok', usage: null });
 
-    const { summary } = await runFinalReviewPhase(
-      {
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig(),
-        callbacks,
-        bus,
-        state,
-        reviewer: makePlanner({ review }),
-      },
-      SUMMARY_BASE,
-      [],
-    );
+    const { summary } = await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state,
+      reviewer: makePlanner({ review }),
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
 
     const errorEvent = events.find((event) => event.type === 'error');
     const message = errorEvent && 'message' in errorEvent ? errorEvent.message : '';
@@ -642,19 +626,17 @@ describe('runFinalReviewPhase', () => {
       review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }),
     });
 
-    await runFinalReviewPhase(
-      {
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig(),
-        callbacks,
-        bus,
-        state,
-        reviewer,
-      },
-      SUMMARY_BASE,
-      [],
-    );
+    await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state,
+      reviewer,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
 
     const drift = JSON.parse(
       readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),
@@ -687,20 +669,18 @@ describe('runFinalReviewPhase', () => {
     });
     const tasks = [makeTask({ id: 'T001', file: 'src/hello.ts', status: 'done' })];
 
-    await runFinalReviewPhase(
-      {
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig(),
-        callbacks,
-        bus,
-        state: allTasksDoneState(tasks, runStartHead),
-        reviewer,
-        metadata: TEST_METADATA,
-      },
-      SUMMARY_BASE,
-      [],
-    );
+    await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state: allTasksDoneState(tasks, runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
 
     expect(reviewPrompts[0]).toContain(marker);
   });
@@ -733,20 +713,18 @@ describe('runFinalReviewPhase', () => {
     });
     const tasks = [makeTask({ id: 'T001', file: 'src/feature.ts', status: 'done' })];
 
-    await runFinalReviewPhase(
-      {
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig(),
-        callbacks,
-        bus,
-        state: allTasksDoneState(tasks, runStartHead),
-        reviewer,
-        metadata: TEST_METADATA,
-      },
-      SUMMARY_BASE,
-      [],
-    );
+    await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state: allTasksDoneState(tasks, runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
 
     expect(reviewPrompts[0]).toContain(committedMarker);
 
@@ -807,19 +785,17 @@ describe('runFinalReviewPhase', () => {
       },
     };
 
-    await runFinalReviewPhase(
-      {
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig(),
-        callbacks,
-        bus,
-        state,
-        reviewer,
-      },
-      SUMMARY_BASE,
-      [],
-    );
+    await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state,
+      reviewer,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
 
     expect(reviewPrompts[0]).toContain(postRunMarker);
     expect(reviewPrompts[0]).not.toContain(preRunMarker);
@@ -852,26 +828,24 @@ describe('runFinalReviewPhase', () => {
     });
     const task = makeTask({ id: 'T001', file: 'src/from-unborn.ts', status: 'done' });
 
-    await runFinalReviewPhase(
-      {
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig(),
-        callbacks,
-        bus,
-        state: {
-          ...allTasksDoneState([task], runStartHead),
-          changedFilesBaseline: {
-            head: null,
-            fingerprints: {},
-            runStartChangedFiles: [],
-          },
+    await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state: {
+        ...allTasksDoneState([task], runStartHead),
+        changedFilesBaseline: {
+          head: null,
+          fingerprints: {},
+          runStartChangedFiles: [],
         },
-        reviewer,
       },
-      SUMMARY_BASE,
-      [],
-    );
+      reviewer,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
 
     expect(reviewPrompts[0]).toContain(marker);
     const drift = JSON.parse(
@@ -906,19 +880,17 @@ describe('runFinalReviewPhase', () => {
       scope: { outOfBounds: [prohibitedMarker] },
     });
 
-    await runFinalReviewPhase(
-      {
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig(),
-        callbacks,
-        bus,
-        state: allTasksDoneState([task], runStartHead),
-        reviewer,
-      },
-      SUMMARY_BASE,
-      [],
-    );
+    await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks,
+      bus,
+      state: allTasksDoneState([task], runStartHead),
+      reviewer,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
 
     const drift = JSON.parse(
       readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),
@@ -945,19 +917,17 @@ describe('runFinalReviewPhase', () => {
       review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }),
     });
 
-    await runFinalReviewPhase(
-      {
-        projectDir,
-        sessionId,
-        config: { ...makeNoValidationConfig(), snapshots: { auto: { preFinalReview: true } } },
-        callbacks,
-        bus,
-        state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
-        reviewer,
-      },
-      SUMMARY_BASE,
-      [],
-    );
+    await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: { ...makeNoValidationConfig(), snapshots: { auto: { preFinalReview: true } } },
+      callbacks,
+      bus,
+      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      reviewer,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
 
     const snapshotEvent = events.find((e) => e.type === 'snapshot_created');
     expect(snapshotEvent).toMatchObject({ type: 'snapshot_created', name: 'pre-final-review' });

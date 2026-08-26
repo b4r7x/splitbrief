@@ -4,16 +4,11 @@ import type { Summary } from '../../../core/schemas/summary.js';
 import type { Session } from '../../../core/schemas/session.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
-import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import { createInitialState } from '../../../core/state/machine.js';
+import type { StateAuthorityReceipt, ResumeLoadAuthority } from '../../../core/state/types.js';
+import { releaseStateAuthority } from '../../../core/state/authority.js';
 import { loadStateForResume } from '../../../core/state/persistence.js';
-import type {
-  StateAuthorityAcquisitionResult,
-  StateAuthorityReceipt,
-  ResumeLoadAuthority,
-} from '../../../core/state/types.js';
-import { acquireStateAuthority, releaseStateAuthority } from '../../../core/state/authority.js';
-import { featureForTranscriptPolicy } from '../../../core/sessions/lifecycle.js';
+import { featureForTranscriptPolicy } from '../../../core/sessions/session-id.js';
 import { pruneOrphanSessions } from '../../../core/sessions/orphans.js';
 import { recordRunnerPid, releaseRunnerPid } from '../../../core/sessions/runner-pids.js';
 import { runPricingIdentity } from '../../../core/providers/pricing-identity.js';
@@ -25,31 +20,15 @@ import {
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { error } from '../../../utils/error.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { sessionDir } from '../../../core/paths.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
-import { checkServerStatus, writeLockfile, markExited } from '../../ipc/lockfile.js';
-import { startHeartbeat } from '../../ipc/heartbeat.js';
 import { warnError } from '../../../lib/warn.js';
-import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 
-import type { Reviewer } from '../../reviewers/types.js';
-import type {
-  Planner,
-  PlannerCallbacks,
-  PlannerCallEventCallbacks,
-  PlannerOutputCallbacks,
-  PlannerStructuredSummaryOptions,
-  PlannerSummaryOptions,
-  PlannerUserTurnOptions,
-} from '../../planners/types.js';
 import {
   WORKFLOW_CANCEL_REASON_USER,
   workflowCancelledReasonFromSignal,
-  type ResumeContextHolder,
-  type WorkflowContext,
-} from '../types.js';
+} from '../../events/workflow-cancel.js';
+import type { ResumeContextHolder, WorkflowContext } from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary/build.js';
-import { publishError, publishRunnerCallEvent, publishWarning } from '../events.js';
+import { publishError, publishWarning } from '../events.js';
 import { saveFinalSession, shouldPreserveActiveState } from '../session-lifecycle/finalize.js';
 import { withShutdownHandlers } from '../session-lifecycle/shutdown.js';
 import { installQueueHandler } from '../session-lifecycle/install-queue.js';
@@ -57,181 +36,27 @@ import { createRunIsolation } from '../isolation/create.js';
 
 import {
   attachWorkflowAuthority,
-  consumeNewWorkflowCandidate,
   refreshWorkflowAuthority,
-  type RunWorkflowOptions,
   type WorkflowAuthorityHolder,
-  initializeWorkflow,
-} from './init.js';
+} from './authority.js';
+import { type RunWorkflowOptions, initializeWorkflow } from './init.js';
 import { clearBridgedCliState } from '../../runners/sandbox-env.js';
 import { getIsolationStrategy } from '../../../core/config/accessors/values.js';
 import { reapOrphanRunners } from './orphan-reaper.js';
-import { runPlanningPhases, runTasksAndReview } from './phases.js';
+import { runPlanningPhases } from './phases.js';
+import { runTasksAndReview } from './task-execution.js';
+import { acquireAuthoritativeWorkflowState } from './authoritative-state.js';
+import {
+  withPlannerCallPublishing,
+  withReviewerCallPublishing,
+  type PlannerCallPublisherContext,
+} from './call-publishing.js';
+import { acquireLiveness } from './liveness.js';
 import { createWorkflowRecoveryBinding } from './recovery-binding.js';
 import { readWorkflowStateHead } from '../state-ops.js';
 import { matchesPersistedExecutionPermit, parkedPlanningResult } from '../planning/handoff.js';
 
 export const WORKFLOW_REWIND_ABORT_REASON = 'workflow-rewind';
-
-type PlannerCallPublisherContext = {
-  bus: WorkflowContext['bus'];
-  getPhase: () => WorkflowState['phase'];
-};
-
-const workflowLivenessError = {
-  sessionAlreadyLive: (sessionId: string, pid: number) =>
-    error(
-      'workflow-session-already-live',
-      `session '${sessionId}' is already running (pid ${pid}). Use '${SPLITBRIEF_IDENTITY.executable} continue ${sessionId}' to attach or resume it.`,
-      { sessionId, pid },
-    ),
-};
-
-function isDetachedLivenessOwner(data: { pid: number; authToken?: string | undefined }): boolean {
-  return data.pid === process.pid && data.authToken !== undefined;
-}
-
-function publishPlannerRunnerCall(
-  ctx: PlannerCallPublisherContext,
-  event: Parameters<typeof publishRunnerCallEvent>[1],
-): void {
-  publishRunnerCallEvent({ bus: ctx.bus, phase: ctx.getPhase() }, event);
-}
-
-function withPlannerCallbacks(
-  callbacks: PlannerCallbacks,
-  ctx: PlannerCallPublisherContext,
-): PlannerCallbacks {
-  if (callbacks.onCallEvent !== undefined) return callbacks;
-  return {
-    ...callbacks,
-    onCallEvent: (event) => publishPlannerRunnerCall(ctx, event),
-  };
-}
-
-function withPlannerOutputCallbacks(
-  callbacks: PlannerOutputCallbacks,
-  ctx: PlannerCallPublisherContext,
-): PlannerOutputCallbacks {
-  if (callbacks.onCallEvent !== undefined) return callbacks;
-  return {
-    ...callbacks,
-    onCallEvent: (event) => publishPlannerRunnerCall(ctx, event),
-  };
-}
-
-function withPlannerCallEventCallbacks(
-  callbacks: PlannerCallEventCallbacks | undefined,
-  ctx: PlannerCallPublisherContext,
-): PlannerCallEventCallbacks {
-  if (callbacks?.onCallEvent !== undefined) return callbacks;
-  return {
-    ...callbacks,
-    onCallEvent: (event) => publishPlannerRunnerCall(ctx, event),
-  };
-}
-
-function withPlannerSummaryOptions(
-  opts: PlannerSummaryOptions | undefined,
-  ctx: PlannerCallPublisherContext,
-): PlannerSummaryOptions {
-  return {
-    ...opts,
-    callbacks: withPlannerCallEventCallbacks(opts?.callbacks, ctx),
-  };
-}
-
-function withPlannerStructuredSummaryOptions(
-  opts: PlannerStructuredSummaryOptions | undefined,
-  ctx: PlannerCallPublisherContext,
-): PlannerStructuredSummaryOptions {
-  return {
-    ...opts,
-    callbacks: withPlannerCallEventCallbacks(opts?.callbacks, ctx),
-  };
-}
-
-function withPlannerUserTurnOptions(
-  opts: PlannerUserTurnOptions,
-  ctx: PlannerCallPublisherContext,
-): PlannerUserTurnOptions {
-  return {
-    ...opts,
-    callbacks: withPlannerCallEventCallbacks(opts.callbacks, ctx),
-  };
-}
-
-function withPlannerCallPublishing(planner: Planner, ctx: PlannerCallPublisherContext): Planner {
-  const review = planner.review.bind(planner);
-  const wrapped: Planner = {
-    isAvailable: () => planner.isAvailable(),
-    getVersion: () => planner.getVersion(),
-    capabilities: planner.capabilities,
-    plan: (opts) =>
-      planner.plan({
-        ...opts,
-        callbacks: withPlannerCallbacks(opts.callbacks, ctx),
-      }),
-    quickPlan: (opts) =>
-      planner.quickPlan({
-        ...opts,
-        callbacks: withPlannerCallbacks(opts.callbacks, ctx),
-      }),
-    regenerate: (opts) =>
-      planner.regenerate({
-        ...opts,
-        callbacks: withPlannerOutputCallbacks(opts.callbacks, ctx),
-      }),
-    escalateHint: (opts) =>
-      planner.escalateHint({
-        ...opts,
-        callbacks: withPlannerOutputCallbacks(opts.callbacks, ctx),
-      }),
-    escalateFull: (opts) =>
-      planner.escalateFull({
-        ...opts,
-        callbacks: withPlannerOutputCallbacks(opts.callbacks, ctx),
-      }),
-    review: (prompt, projectDir, callbacks) =>
-      review(prompt, projectDir, withPlannerOutputCallbacks(callbacks, ctx)),
-    summarize: (messages, opts) =>
-      planner.summarize(messages, withPlannerSummaryOptions(opts, ctx)),
-  };
-  const unavailabilityReason = planner.unavailabilityReason;
-  if (unavailabilityReason !== undefined) {
-    wrapped.unavailabilityReason = () => unavailabilityReason.call(planner);
-  }
-  const injectUserTurn = planner.injectUserTurn;
-  if (injectUserTurn !== undefined) {
-    wrapped.injectUserTurn = (opts) =>
-      injectUserTurn.call(planner, withPlannerUserTurnOptions(opts, ctx));
-  }
-  const instantPlan = planner.instantPlan;
-  if (instantPlan !== undefined) {
-    wrapped.instantPlan = (opts) =>
-      instantPlan.call(planner, {
-        ...opts,
-        callbacks: withPlannerCallbacks(opts.callbacks, ctx),
-      });
-  }
-  const summarizeStructured = planner.summarizeStructured;
-  if (summarizeStructured !== undefined) {
-    wrapped.summarizeStructured = (messages, opts) =>
-      summarizeStructured.call(planner, messages, withPlannerStructuredSummaryOptions(opts, ctx));
-  }
-  return wrapped;
-}
-
-function withReviewerCallPublishing(
-  reviewer: Reviewer,
-  ctx: PlannerCallPublisherContext,
-): Reviewer {
-  const review = reviewer.review.bind(reviewer);
-  return {
-    review: (prompt, projectDir, callbacks) =>
-      review(prompt, projectDir, withPlannerOutputCallbacks(callbacks, ctx)),
-  };
-}
 
 function shouldPreserveActiveSession(
   state: WorkflowState | undefined,
@@ -261,135 +86,6 @@ function loadPersistedRewindState(opts: {
   });
   if (loaded.kind !== 'loaded') return null;
   return loaded.state.rewindPending !== undefined ? loaded.state : null;
-}
-
-type AuthoritativeWorkflowState = Readonly<{
-  state: WorkflowState;
-  authority: StateAuthorityReceipt;
-  newWorkflow: boolean;
-}>;
-
-function loadedWorkflowState(result: ReturnType<typeof loadStateForResume>): WorkflowState {
-  switch (result.kind) {
-    case 'loaded':
-      return result.state;
-    case 'missing':
-      throw error('workflow-state-missing', 'No persisted workflow state is available to resume.');
-    case 'invalid':
-      throw error('workflow-state-invalid', result.message);
-    default: {
-      const exhaustive: never = result;
-      throw error('workflow-state-invalid', `Unknown workflow state result: ${String(exhaustive)}`);
-    }
-  }
-}
-
-function acquireAuthoritativeWorkflowState(opts: {
-  projectDir: string;
-  sessionId: string;
-  feature: string;
-  purpose: 'new-workflow' | 'resume';
-}): AuthoritativeWorkflowState {
-  const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
-  const acquired: StateAuthorityAcquisitionResult = acquireStateAuthority({
-    ref,
-    purpose: opts.purpose,
-  });
-  let authority: StateAuthorityReceipt;
-  let promotedFromVersion: 3 | null = null;
-  let newWorkflow = false;
-  switch (acquired.kind) {
-    case 'fenced':
-      authority = acquired.receipt;
-      promotedFromVersion = acquired.promotedFromVersion;
-      break;
-    case 'new-workflow':
-      authority = consumeNewWorkflowCandidate(ref, acquired.candidate, opts.feature);
-      newWorkflow = true;
-      break;
-    case 'read-only': {
-      const result = loadStateForResume({ ref, authority: acquired });
-      switch (result.kind) {
-        case 'missing':
-          throw error(
-            'workflow-state-missing',
-            'A read-only authority cannot initialize a workflow.',
-          );
-        case 'invalid':
-          throw error('workflow-state-invalid', result.message);
-        case 'loaded':
-          throw error('state-authority-invalid', 'A read-only authority cannot load a workflow.');
-        default: {
-          const exhaustive: never = result;
-          throw error(
-            'workflow-state-invalid',
-            `Unknown workflow state result: ${String(exhaustive)}`,
-          );
-        }
-      }
-    }
-    default: {
-      const exhaustive: never = acquired;
-      throw error('state-authority-invalid', `Unknown authority result: ${String(exhaustive)}`);
-    }
-  }
-  const loaded = loadStateForResume({
-    ref,
-    authority: { kind: 'fenced', receipt: authority, promotedFromVersion },
-  });
-  return { authority, state: loadedWorkflowState(loaded), newWorkflow };
-}
-
-// Every run (TUI, headless, RPC) writes a liveness lockfile + heartbeat so checkServerStatus
-// can see an in-flight interactive run and refuse a concurrent resume/continue. The detached
-// server already owns an authenticated lockfile for the session; do not clobber it.
-async function acquireLiveness(opts: {
-  projectDir: string;
-  sessionId: string;
-  feature: string;
-  mode: WorkflowMode;
-  persistTranscript: boolean;
-  signal?: AbortSignal | undefined;
-}): Promise<() => Promise<void>> {
-  const dir = sessionDir(opts.projectDir, opts.sessionId);
-  ensureSessionDir(opts.projectDir, opts.sessionId);
-  let status: Awaited<ReturnType<typeof checkServerStatus>>;
-  try {
-    status = await checkServerStatus(dir);
-  } catch (err) {
-    if (opts.signal?.aborted) return async () => {};
-    warnError('Failed to inspect session liveness lockfile', err);
-    return async () => {};
-  }
-  if (status.alive) {
-    if (isDetachedLivenessOwner(status.data)) return async () => {};
-    throw workflowLivenessError.sessionAlreadyLive(opts.sessionId, status.data.pid);
-  }
-
-  try {
-    const now = Date.now();
-    await writeLockfile(dir, {
-      pid: process.pid,
-      startTimeMs: now,
-      lastAliveMs: now,
-      sessionId: opts.sessionId,
-      mode: opts.mode,
-      feature: featureForTranscriptPolicy(opts.feature, opts.persistTranscript),
-    });
-    const stopHeartbeat = startHeartbeat(dir);
-    return async () => {
-      stopHeartbeat();
-      try {
-        await markExited(dir, 0);
-      } catch (err) {
-        warnError('Failed to mark session exited', err);
-      }
-    };
-  } catch (err) {
-    if (opts.signal?.aborted) return async () => {};
-    warnError('Failed to acquire session liveness lockfile', err);
-    return async () => {};
-  }
 }
 
 function resolveSessionStart(savedState: WorkflowState | undefined): number {

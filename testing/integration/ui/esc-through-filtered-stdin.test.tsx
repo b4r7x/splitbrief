@@ -131,7 +131,6 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
     const harness = renderThroughFilteredStdin(<InstantWorkflowApp exit={exit} />);
     await tick(30);
 
-    // Press 1: arm interrupt.
     harness.pressBytes(ESC);
     await tick(AFTER_PRESS_MS);
     expect(abortStore.get().armed).toBe('interrupt');
@@ -144,7 +143,6 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
     controlsStore.setInputMode('question');
     await tick(10);
 
-    // Press 3: in question mode, arm cancel.
     harness.pressBytes(ESC);
     await tick(AFTER_PRESS_MS);
     expect(abortStore.get().armed).toBe('cancel');
@@ -157,7 +155,6 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
     expect(lifecycleStore.get().cancelled).toBe(true);
     expect(routerStore.get().screen).toBe('workflow');
 
-    // Press 5: a separate fresh ESC after cancellation navigates back to the home screen.
     harness.pressBytes(ESC);
     await tick(AFTER_PRESS_MS);
     expect(routerStore.get().screen).toBe('home');
@@ -174,7 +171,6 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
     const harness = renderThroughFilteredStdin(<InstantWorkflowApp />);
     await tick(30);
 
-    // Press 1: arm interrupt.
     harness.pressBytes(ESC);
     await tick(AFTER_PRESS_MS);
     expect(abortStore.get().armed).toBe('interrupt');

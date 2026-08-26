@@ -65,6 +65,7 @@ describe('configStore.load', () => {
     cleanupTempDir(tmpDir);
     configStore.reset();
     feedbackStore.reset();
+    vi.unstubAllEnvs();
   });
 
   it('starts empty', () => {
@@ -93,7 +94,7 @@ describe('configStore.load', () => {
 
   it('applies implementer override to provider and model', () => {
     writeConfigYaml();
-    process.env.DEEPSEEK_API_KEY = 'test-key';
+    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key');
     configStore.load(tmpDir, { implementer: { tool: 'deepseek', model: 'deepseek-r1' } });
     const config = loadedConfig();
     expect(expectApi(config.implementer).provider).toBe('deepseek');

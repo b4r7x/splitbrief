@@ -1,3 +1,4 @@
+import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { StateAuthorityReceipt } from '../../../core/state/types.js';
@@ -25,8 +26,7 @@ function sameStateFence(left: WorkflowState, right: WorkflowState): boolean {
   return leftFence.token === rightFence.token && leftFence.ownerId === rightFence.ownerId;
 }
 
-function persistUnownedState(projectDir: string, sessionId: string, state: WorkflowState): void {
-  const ref = { projectDir, sessionId };
+function persistUnownedState(ref: SessionRef, state: WorkflowState): void {
   const head = readWorkflowStateHead(ref);
   if (
     head !== null &&
@@ -37,7 +37,8 @@ function persistUnownedState(projectDir: string, sessionId: string, state: Workf
   }
   try {
     if (readStateAuthority(ref) !== null) return;
-  } catch {
+  } catch (err) {
+    warnError('Failed to read state authority during shutdown', err);
     return;
   }
   if (
@@ -91,25 +92,28 @@ async function rollBackInterruptedTask(
   await discardChangedFiles(projectDir, taskIntroduced);
 }
 
-export async function shutdownWorkflow(
-  projectDir: string,
-  sessionId: string,
-  getTrackedState: () => WorkflowState | undefined,
-  getCurrentTask: () => Pick<Task, 'file' | 'action'> | undefined,
-  authority?: ShutdownAuthority,
-): Promise<void> {
-  const trackedState = getTrackedState();
+export type WithShutdownHandlersOpts = {
+  projectDir: string;
+  sessionId: string;
+  getTrackedState: () => WorkflowState | undefined;
+  getCurrentTask: () => Pick<Task, 'file' | 'action'> | undefined;
+  authority?: ShutdownAuthority;
+};
+
+export async function shutdownWorkflow(opts: WithShutdownHandlersOpts): Promise<void> {
+  const { projectDir, sessionId, authority } = opts;
+  const trackedState = opts.getTrackedState();
   const initialAuthority = typeof authority === 'function' ? authority() : authority;
   try {
     await killAllProcesses();
     if (trackedState !== undefined && initialAuthority === undefined) {
       try {
-        persistUnownedState(projectDir, sessionId, trackedState);
+        persistUnownedState({ projectDir, sessionId }, trackedState);
       } catch (err) {
         warnError('Failed to save state during shutdown', err);
       }
     }
-    const currentTask = getCurrentTask();
+    const currentTask = opts.getCurrentTask();
     if (currentTask) {
       try {
         await rollBackInterruptedTask(projectDir, currentTask, trackedState);
@@ -129,14 +133,6 @@ export async function shutdownWorkflow(
   }
 }
 
-export type WithShutdownHandlersOpts = {
-  projectDir: string;
-  sessionId: string;
-  getTrackedState: () => WorkflowState | undefined;
-  getCurrentTask: () => Pick<Task, 'file' | 'action'> | undefined;
-  authority?: ShutdownAuthority;
-};
-
 let activeWorkflowShutdown: (() => Promise<void>) | undefined;
 
 export function awaitActiveWorkflowShutdown(): Promise<void> {
@@ -149,13 +145,7 @@ export async function withShutdownHandlers(
 ): Promise<{ cancelled: boolean }> {
   let pending: Promise<void> | undefined;
   const shutdown = () => {
-    pending ??= shutdownWorkflow(
-      opts.projectDir,
-      opts.sessionId,
-      opts.getTrackedState,
-      opts.getCurrentTask,
-      opts.authority,
-    );
+    pending ??= shutdownWorkflow(opts);
     return pending;
   };
   activeWorkflowShutdown = shutdown;

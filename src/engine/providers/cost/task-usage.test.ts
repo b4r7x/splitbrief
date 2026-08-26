@@ -51,7 +51,6 @@ describe('calculateTaskUsageCost', () => {
       implementerTool: 'deepseek',
       plannerTool: 'claude-code',
     });
-    expect(cost).toBeGreaterThan(0);
     expect(cost).toBeCloseTo((0.14 * 200_000) / 1_000_000 + (0.28 * 100_000) / 1_000_000, 6);
   });
 
@@ -257,7 +256,7 @@ describe('calculateTaskUsageCost', () => {
     expect(cost).toBe(0);
   });
 
-  it('allocates cost uniformly across tasks regardless of individual token usage', () => {
+  it('charges every task the same blended rate, so cost scales with its token share', () => {
     const globalUsage = {
       ...ZERO_TOKEN_USAGE,
       implementerInput: 600_000,

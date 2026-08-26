@@ -8,7 +8,7 @@ import { ImplementerConfigSchema } from './implementer-config.js';
 import { PlannerConfigSchema } from './planner-config.js';
 import { ConfigSchema } from './config.js';
 import { createDefaultConfig } from '../config/load/io.js';
-import { readCustomCommandCatalog } from '../config/custom-commands.js';
+import { readCustomCommandCatalog } from '../config/custom-command-catalog.js';
 
 function implementerOnlyApiProviderIds() {
   const plannerIds = new Set<string>(PLANNER_API_PROVIDER_IDS);

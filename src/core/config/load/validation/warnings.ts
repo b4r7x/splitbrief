@@ -101,7 +101,7 @@ function keyInfoWarnings(role: string, info: KeyInfo): string[] {
       `Inline API key in ${role} config. Migrate it: export ${info.envVar} in your shell, then remove the apiKey entry from .splitbrief/config.yaml.`,
     );
   }
-  if (info.key && info.provider && isInlineApiKey(info.key)) {
+  if (info.key && info.provider) {
     warnings.push(...keyFormatWarnings(info.provider, info.key));
   }
   return warnings;

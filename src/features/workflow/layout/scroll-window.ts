@@ -30,7 +30,7 @@ export function computeScrollMaxOffset(input: {
 
 export interface ScrollWindowStateInput {
   totalHeight: number;
-  /** The already-clipped T-077 body height; no sidebar or chrome rows belong here. */
+  /** The already-clipped body height; no sidebar or chrome rows belong here. */
   viewportHeight: number;
   scrollOffset: number;
 }

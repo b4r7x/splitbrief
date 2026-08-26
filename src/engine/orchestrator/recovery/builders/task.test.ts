@@ -187,9 +187,11 @@ describe('buildContextOverflowRecoveryIssue', () => {
       canRouteBigger: false,
     });
 
+    expect(explicitlyUnavailableRoute.recommendedAction).toBe('pause-run');
     expect(explicitlyUnavailableRoute.availableActions).toEqual(
       expect.arrayContaining(['pause-run', 'abort-workflow']),
     );
+    expect(explicitlyUnavailableRoute.availableActions).not.toContain('route-bigger-worker');
     expect(explicitlyUnavailableRoute.availableActions).not.toContain('planner-split-rebase');
     expectValidRecoveryIssue(explicitlyUnavailableRoute);
   });

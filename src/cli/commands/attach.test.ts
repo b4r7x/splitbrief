@@ -117,7 +117,18 @@ describe('attachCommand', () => {
       },
     };
     mockCheckServerStatus.mockResolvedValue(status);
-    mockReadStateAuthority.mockReturnValue(null);
+    mockReadStateAuthority.mockReturnValue({
+      kind: 'usable',
+      sessionId: 'another-session',
+      ownerId: 'owner-1',
+      pid: process.pid,
+      processStart: '1',
+      runId: 'run-1',
+      acquisitionId: 'acquisition-1',
+      fence: 1,
+      stateRevision: 1,
+      stateDigest: 'a'.repeat(64),
+    });
 
     await expect(
       attachCommand('dead-session', { projectDir: testDir }, fakeDeps),
@@ -125,6 +136,8 @@ describe('attachCommand', () => {
       exitCode: 1,
       message: expect.stringContaining('no matching live owner authority'),
     });
+    expect(mockInitObserverStores).not.toHaveBeenCalled();
+    expect(renderCalls).toHaveLength(0);
   });
 
   it('attached entry bypasses local preparation and runner factories', async () => {

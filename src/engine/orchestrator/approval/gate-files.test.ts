@@ -40,12 +40,7 @@ function makeInput(overrides: Partial<GateChangedFilesInput> = {}): GateChangedF
 
 describe('gateChangedFiles', () => {
   it('normalizes unsorted duplicate changed files and allows each write', async () => {
-    const { bus } = makeBusRecorder();
-    const task = makeTask({ file: 'src/a.ts' });
     const input = makeInput({
-      bus,
-      task,
-      taskId: task.id,
       changedFiles: ['src/z.ts', 'src/a.ts', 'src/z.ts'],
       config: makeApprovalConfig({ enabled: true }),
       callbacks: {
@@ -65,12 +60,7 @@ describe('gateChangedFiles', () => {
   });
 
   it('returns the first rejected file and action when a later write is denied', async () => {
-    const { bus } = makeBusRecorder();
-    const task = makeTask({ file: 'src/a.ts' });
     const input = makeInput({
-      bus,
-      task,
-      taskId: task.id,
       changedFiles: ['src/z.ts', 'src/a.ts', 'src/z.ts'],
       config: makeApprovalConfig({ enabled: true }),
       callbacks: {
@@ -95,14 +85,9 @@ describe('gateChangedFiles', () => {
   });
 
   it('aggregates confirm-tier approvals across package and control-plane writes', async () => {
-    const { bus } = makeBusRecorder();
-    const task = makeTask({ file: 'src/foo.ts' });
     let confirmIndex = 0;
     const reasons = ['config plane reason', 'package manifest reason'];
     const input = makeInput({
-      bus,
-      task,
-      taskId: task.id,
       changedFiles: ['package.json', '.splitbrief/config.yaml', 'package.json'],
       config: makeApprovalConfig({ enabled: true }),
       callbacks: {

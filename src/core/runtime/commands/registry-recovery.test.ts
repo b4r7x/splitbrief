@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createRuntimeCommands } from './registry.js';
-import { makeCtx, noop, executeRuntimeCommand } from '#testing/helpers/runtime-commands.js';
+import { makeCtx, noop, runCommandInTest } from '#testing/helpers/runtime-commands.js';
 
 type RewindCall = { target: string; comment: string | undefined };
 type RedoCall = { taskId: string };
@@ -17,13 +17,13 @@ describe('/revise-spec command', () => {
         getCurrentPhase: () => 'implementing',
       }),
     );
-    executeRuntimeCommand(
-      commands,
-      '/revise-spec needs more detail',
-      'workflow',
-      noop,
-      'implementing',
-    );
+    runCommandInTest({
+      commands: commands,
+      raw: '/revise-spec needs more detail',
+      screen: 'workflow',
+      phase: 'implementing',
+      onError: noop,
+    });
     expect(rewinds).toEqual([{ target: 'spec', comment: 'needs more detail' }]);
   });
 
@@ -38,7 +38,13 @@ describe('/revise-spec command', () => {
         getCurrentPhase: () => 'implementing',
       }),
     );
-    executeRuntimeCommand(commands, '/revise-spec', 'workflow', noop, 'implementing');
+    runCommandInTest({
+      commands: commands,
+      raw: '/revise-spec',
+      screen: 'workflow',
+      phase: 'implementing',
+      onError: noop,
+    });
     expect(rewinds).toEqual([{ target: 'spec', comment: undefined }]);
   });
 
@@ -57,15 +63,15 @@ describe('/revise-spec command', () => {
         getCurrentPhase: () => 'researching',
       }),
     );
-    executeRuntimeCommand(
-      commands,
-      '/revise-spec',
-      'workflow',
-      (m) => {
+    runCommandInTest({
+      commands: commands,
+      raw: '/revise-spec',
+      screen: 'workflow',
+      phase: 'researching',
+      onError: (m) => {
         error = m;
       },
-      'researching',
-    );
+    });
     expect(rewinds).toEqual([]);
     expect(error).toMatch(/revise/i);
   });
@@ -81,7 +87,13 @@ describe('/revise-spec command', () => {
         getCurrentPhase: () => 'implementing',
       }),
     );
-    executeRuntimeCommand(commands, '/revise-spec', 'workflow', noop, 'implementing');
+    runCommandInTest({
+      commands: commands,
+      raw: '/revise-spec',
+      screen: 'workflow',
+      phase: 'implementing',
+      onError: noop,
+    });
     expect(error).toMatch(/cannot rewind|no active/i);
   });
 });
@@ -98,13 +110,13 @@ describe('/revise-plan command', () => {
         getCurrentPhase: () => 'implementing',
       }),
     );
-    executeRuntimeCommand(
-      commands,
-      '/revise-plan too many tasks',
-      'workflow',
-      noop,
-      'implementing',
-    );
+    runCommandInTest({
+      commands: commands,
+      raw: '/revise-plan too many tasks',
+      screen: 'workflow',
+      phase: 'implementing',
+      onError: noop,
+    });
     expect(rewinds).toEqual([{ target: 'plan', comment: 'too many tasks' }]);
   });
 
@@ -123,15 +135,15 @@ describe('/revise-plan command', () => {
         getCurrentPhase: () => 'specifying',
       }),
     );
-    executeRuntimeCommand(
-      commands,
-      '/revise-plan',
-      'workflow',
-      (m) => {
+    runCommandInTest({
+      commands: commands,
+      raw: '/revise-plan',
+      screen: 'workflow',
+      phase: 'specifying',
+      onError: (m) => {
         error = m;
       },
-      'specifying',
-    );
+    });
     expect(rewinds).toEqual([]);
     expect(error).toMatch(/revise/i);
   });
@@ -149,7 +161,13 @@ describe('/redo-task command', () => {
         getCurrentPhase: () => 'implementing',
       }),
     );
-    executeRuntimeCommand(commands, '/redo-task T001', 'workflow', noop, 'implementing');
+    runCommandInTest({
+      commands: commands,
+      raw: '/redo-task T001',
+      screen: 'workflow',
+      phase: 'implementing',
+      onError: noop,
+    });
     expect(redos).toEqual([{ taskId: 'T001' }]);
   });
 
@@ -168,7 +186,13 @@ describe('/redo-task command', () => {
         getCurrentPhase: () => 'implementing',
       }),
     );
-    executeRuntimeCommand(commands, '/redo-task', 'workflow', noop, 'implementing');
+    runCommandInTest({
+      commands: commands,
+      raw: '/redo-task',
+      screen: 'workflow',
+      phase: 'implementing',
+      onError: noop,
+    });
     expect(redos).toEqual([]);
     expect(error).toMatch(/task id/i);
   });
@@ -188,15 +212,15 @@ describe('/redo-task command', () => {
         getCurrentPhase: () => 'planning',
       }),
     );
-    executeRuntimeCommand(
-      commands,
-      '/redo-task T001',
-      'workflow',
-      (m) => {
+    runCommandInTest({
+      commands: commands,
+      raw: '/redo-task T001',
+      screen: 'workflow',
+      phase: 'planning',
+      onError: (m) => {
         error = m;
       },
-      'planning',
-    );
+    });
     expect(redos).toEqual([]);
     expect(error).toMatch(/redo/i);
   });

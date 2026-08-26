@@ -6,7 +6,7 @@ import {
   type TaskCompilationPolicy,
   type TaskCompilationProgramId,
 } from '../../../core/schemas/task-compilation.js';
-import { error, matches } from '../../../utils/error.js';
+import { error } from '../../../utils/error.js';
 import {
   digestManifest,
   TaskManifestSchema,
@@ -45,8 +45,6 @@ export const partitionError = {
     ),
   invalidManifest: (detail: string) =>
     error('task_compiler_manifest_invalid', `Cannot partition the manifest: ${detail}`, { detail }),
-  isCapacity: matches('task_compiler_capacity_exceeded'),
-  isInvalidManifest: matches('task_compiler_manifest_invalid'),
 } as const;
 
 export function partitionManifest(
@@ -54,7 +52,6 @@ export function partitionManifest(
   inputs: TaskCompilationProgramInputs = {},
   policy: TaskCompilationPolicy = TASK_BRIEF_COMPILER_POLICY,
 ): TaskManifestPartition {
-  assertManifest(manifest, policy);
   const count = manifest.items.length;
   const batchCount = Math.ceil(count / policy.maxBatchItems);
   if (batchCount > policy.maxDispatches) {

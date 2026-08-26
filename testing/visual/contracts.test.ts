@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ACTIVE_OVERLAYS, ALL_SCREENS } from '../../src/core/navigation/types.js';
 import {
   CheckpointDefinitionSchema,
   CheckpointKindSchema,
@@ -155,33 +156,20 @@ describe('visual contract boundaries', () => {
   });
 
   it('covers every navigable screen and overlay surface with stable schema values', () => {
-    const screens: readonly ScreenSurface[] = ['home', 'workflow', 'summary', 'setup'];
-    const overlays: readonly OverlaySurface[] = [
-      'help',
-      'command-palette',
-      'skills',
-      'settings',
-      'mode-selector',
-      'planner-picker',
-      'implementer-picker',
-      'reviewer-picker',
-      'escalation-picker',
-      'sessions',
-      'editor',
-      'cost-drilldown',
-    ];
+    const screens: readonly ScreenSurface[] = ALL_SCREENS;
+    const overlays: readonly OverlaySurface[] = ACTIVE_OVERLAYS;
     const kinds: readonly SurfaceKind[] = ['screen', 'overlay'];
-    const surfaces: readonly Surface[] = [
-      ...screens.map((screen) => SurfaceSchema.parse({ kind: 'screen', screen })),
-      ...overlays.map((overlay) =>
-        SurfaceSchema.parse({ kind: 'overlay', overlay, underlyingScreen: 'workflow' }),
-      ),
-    ];
+    for (const screen of screens) {
+      expect(SurfaceSchema.parse({ kind: 'screen', screen })).toEqual({ kind: 'screen', screen });
+    }
+    for (const overlay of overlays) {
+      const surface = { kind: 'overlay', overlay, underlyingScreen: 'workflow' } satisfies Surface;
+      expect(SurfaceSchema.parse(surface)).toEqual(surface);
+    }
 
     for (const screen of screens) expect(ScreenSurfaceSchema.parse(screen)).toBe(screen);
     for (const overlay of overlays) expect(OverlaySurfaceSchema.parse(overlay)).toBe(overlay);
     for (const kind of kinds) expect(SurfaceKindSchema.parse(kind)).toBe(kind);
-    expect(surfaces).toHaveLength(screens.length + overlays.length);
     expect(
       SurfaceSchema.safeParse({ kind: 'overlay', overlay: 'unknown', underlyingScreen: 'home' })
         .success,

@@ -62,6 +62,9 @@ describe('api implementer — Anthropic path', () => {
       onOutput: vi.fn(),
     });
 
+    const request = new Request(fetchMock.mock.calls.at(0)?.[0], fetchMock.mock.calls.at(0)?.[1]);
+    expect(request.headers.get('x-api-key')).toBe('sk-ant-test-key');
+    expect(request.url).toBe('https://api.anthropic.com/v1/messages');
     expect(result.success).toBe(true);
     if (result.success) expect(result.usage).toEqual({ inputTokens: 88, outputTokens: 44 });
   });

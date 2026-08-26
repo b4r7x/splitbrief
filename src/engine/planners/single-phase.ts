@@ -1,6 +1,12 @@
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { TASKS_FILE } from '../../core/paths.js';
-import type { PlannerCallbacks, PlanResult, PriorMessage, PlannerInvokeResult } from './types.js';
+import type {
+  PlannerCallbacks,
+  PlanOptions,
+  PlanResult,
+  PriorMessage,
+  PlannerInvokeResult,
+} from './types.js';
 import { normalizePlannerPhase } from './normalize.js';
 import { formatMessagesForCli } from '../streaming/format-messages.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
@@ -85,11 +91,9 @@ export async function runSinglePhasePlanning(
     projectContext: string,
     languageContext: LanguageContext,
   ) => string,
-  feature: string,
-  projectDir: string,
-  callbacks: PlannerCallbacks,
-  codebaseContext: string | undefined,
+  opts: PlanOptions,
 ): Promise<PlanResult> {
+  const { feature, projectDir, callbacks, codebaseContext } = opts;
   const projectContext = await buildProjectContextMarkdown(projectDir);
   const languageContext = buildProjectLanguageContext(
     projectDir,

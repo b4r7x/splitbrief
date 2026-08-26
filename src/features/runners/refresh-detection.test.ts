@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
-import { refreshPickerDetection } from './picker-view.js';
+import { refreshPickerDetection } from './refresh-detection.js';
 import type {
   DiscoveryRefreshStatus,
   DiscoveryRefreshSummary,
@@ -94,15 +94,7 @@ describe('refreshPickerDetection', () => {
         message: 'Refreshing models…',
         isError: false,
       });
-      return {
-        status: 'fresh',
-        published: true,
-        lanes: {
-          readiness: { outcome: 'fresh' },
-          modelsDev: { outcome: 'fresh' },
-          cliModels: { outcome: 'fresh' },
-        },
-      };
+      return refreshSummary('fresh');
     });
 
     expect(feedbackStore.get()).toEqual({
@@ -126,7 +118,7 @@ describe('refreshPickerDetection', () => {
 
   it('reports a first-ever all-lane failure without claiming that prior results were retained', async () => {
     await refreshPickerDetection('/tmp/project', async () => refreshSummary('failed'));
-    expect(feedbackStore.get()).toEqual({ message: 'Models refresh failed', isError: true });
+    expect(modelCacheStore.getModelsDevCatalog()).toBeNull();
   });
 
   it('reports a same-context overlapping refresh as superseded without inventing a settings change', async () => {

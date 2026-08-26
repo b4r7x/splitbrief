@@ -3,8 +3,6 @@ import { modelKey } from '../../core/runners/capabilities.js';
 
 const OPENAI_REASONING_MODEL_RE = /^(o[0-9]|gpt-[5-9])/i;
 
-// The single OpenAI reasoning-model predicate. Reused for temperature omission,
-// max_completion_tokens routing, and reasoning_effort clamping.
 export function isOpenAiReasoningModel(model: string): boolean {
   return OPENAI_REASONING_MODEL_RE.test(modelKey(model));
 }
@@ -25,11 +23,12 @@ export function clampOpenAiEffort(effort: EffortLevel): Exclude<EffortLevel, 'xh
   return effort === 'xhigh' ? 'high' : effort;
 }
 
-export function usesOpenAiMaxCompletionTokens(
-  provider: string,
-  model: string,
-  apiBase?: string | undefined,
-): boolean {
+export function usesOpenAiMaxCompletionTokens(opts: {
+  provider: string;
+  model: string;
+  apiBase?: string | undefined;
+}): boolean {
+  const { provider, model, apiBase } = opts;
   if (provider !== 'openai') return false;
   if (apiBase !== undefined && !apiBase.includes('api.openai.com')) return false;
   return isOpenAiReasoningModel(model);

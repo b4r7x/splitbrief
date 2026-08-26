@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildServerArgs } from './spawn-server.js';
 import { createServerArgsAttachmentDrain, parseIpcServerArgs } from './server-args.js';
 
@@ -43,13 +43,23 @@ describe('createServerArgsAttachmentDrain', () => {
     expect(drain()).toEqual([]);
   });
 
-  it('falls back to a positive size when the file is gone', () => {
+  it('drops records whose file is gone rather than inventing a size, and says so', () => {
+    const missing = join(tmp, 'missing.png');
+    const written: string[] = [];
+    const writeSpy = vi
+      .spyOn(process.stderr, 'write')
+      .mockImplementation((chunk: string | Uint8Array) => {
+        written.push(String(chunk));
+        return true;
+      });
+
     const drain = createServerArgsAttachmentDrain([
-      { id: 'att-1', path: join(tmp, 'missing.png'), mimeType: 'image/png' },
+      { id: 'att-1', path: missing, mimeType: 'image/png' },
     ]);
 
-    const drained = drain();
-    expect(drained[0]?.sizeBytes).toBeGreaterThan(0);
+    expect(drain()).toEqual([]);
+    writeSpy.mockRestore();
+    expect(written.join('')).toContain(missing);
   });
 
   it('returns nothing when no attachments were persisted', () => {

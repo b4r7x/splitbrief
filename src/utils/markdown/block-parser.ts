@@ -133,7 +133,10 @@ function parseLines(options: ParseLinesOptions): MarkdownBlock[] {
 }
 
 function splitLines(source: string): string[] {
-  return source.replace(/\r\n?/g, '\n').split('\n').map(stripTerminalControls);
+  return source
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => stripTerminalControls(line));
 }
 
 function parseCodeBlock(state: ParseState, fence: MarkdownFenceStart): MarkdownCodeBlock {

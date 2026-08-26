@@ -188,7 +188,10 @@ describe('reviewer seat flags', () => {
       'some-custom-provider',
     ]);
 
-    expect(opts.reviewer).toBe(opts.planner);
+    expect(opts).toMatchObject({
+      planner: 'some-custom-provider',
+      reviewer: 'some-custom-provider',
+    });
   });
 
   it('leaves an out-of-catalog reviewer for the config layer to admit', async () => {

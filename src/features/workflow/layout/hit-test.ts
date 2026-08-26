@@ -93,7 +93,7 @@ export function hitBriefTaskRow(
   });
 }
 
-// The phase rail now shares the header row itself: the first stage line is the 1st 1-based screen row.
+// The phase rail shares the header row, so the first stage line is the 1st 1-based screen row.
 export const RAIL_STAGE_FIRST_ROW = 1;
 // The header row is flush to the terminal edge (no paddingX), so the first rail stage's marker
 // glyph renders in the 1st 1-based column.
@@ -196,9 +196,9 @@ export function getRailStageZones(input: {
   stages.forEach((state, index) => {
     if (index > 0) {
       const handoff = railIsHandoff(stages[index - 1]?.stage ?? state.stage, state.stage);
-      cursor += railConnectorWidth(handoff, tier);
+      cursor += railConnectorWidth({ handoff }, tier);
     }
-    const width = railFormBSegmentWidth(state, short);
+    const width = railFormBSegmentWidth(state, { short });
     if (cursor <= maxCol) {
       zones.push({
         stage: state.stage,

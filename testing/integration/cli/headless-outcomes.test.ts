@@ -11,7 +11,8 @@ import {
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { saveState } from '../../../src/core/state/persistence.js';
-import { beginSession, writeActive } from '../../../src/core/sessions/lifecycle.js';
+import { writeActive } from '../../../src/core/sessions/active-pointer.js';
+import { generateSessionId } from '../../../src/core/sessions/session-id.js';
 import { listSessions } from '../../../src/core/sessions/io.js';
 import { buildRetryExhaustedRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/task.js';
 import { processError } from '../../../src/lib/process/errors.js';
@@ -194,7 +195,9 @@ describe('runHeadless — failed session exits non-zero', () => {
     dirs.push(projectDir);
     createTestGitRepo(projectDir);
     writeMinimalHeadlessConfigYaml(projectDir);
-    const sessionId = beginSession(projectDir, 'stall out');
+    const sessionId = generateSessionId({ projectDir, feature: 'stall out' });
+    ensureSessionDir(projectDir, sessionId);
+    writeActive({ projectDir, sessionId });
 
     const stalledPlanner = makePlanner({
       quickPlan: vi

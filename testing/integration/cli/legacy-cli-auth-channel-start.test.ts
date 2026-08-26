@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createHash } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import YAML from 'yaml';
@@ -7,7 +6,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { runCommand } from '#testing/helpers/commander.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { projectRunnerDiscoveryContext } from '../../../src/core/config/accessors/runner-config.js';
+import { projectRunnerDiscoveryContext } from '../../../src/core/config/accessors/runner-discovery-context.js';
 import { createDefaultConfig, loadConfig } from '../../../src/core/config/load/io.js';
 import { toYaml } from '../../../src/core/config/load/transform.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../../src/core/paths.js';
@@ -124,7 +123,6 @@ describe('CLI integration: legacy Claude auth-channel start', () => {
   it('projects the session default channel without rewriting the loaded YAML', async () => {
     const path = configFilePath();
     const before = readFileSync(path, 'utf-8');
-    const beforeHash = createHash('sha256').update(before).digest('hex');
     const beforeStat = statSync(path, { bigint: true });
     const config = loadConfig(projectDir).config;
     const context = projectRunnerDiscoveryContext({ config, role: 'planner' });
@@ -157,7 +155,6 @@ describe('CLI integration: legacy Claude auth-channel start', () => {
     expect(gates?.find((gate) => gate.kind === 'cli' && gate.tool === 'claude-code')).toBeDefined();
     expect(readFileSync(authMarkerPath, 'utf-8')).toBe('session\n');
     expect(after).toBe(before);
-    expect(createHash('sha256').update(after).digest('hex')).toBe(beforeHash);
     expect(afterStat.mtimeNs).toBe(beforeStat.mtimeNs);
     expect(emitted).not.toContain(API_KEY);
   });

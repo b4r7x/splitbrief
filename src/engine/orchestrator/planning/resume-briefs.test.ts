@@ -101,11 +101,12 @@ describe('resumeBriefsApproval', () => {
 
     const result = await resumeBriefsApproval({
       wctx: makeWctx({ projectDir, sessionId, callbacks, bus, planner }),
-      state: parkedState(),
+      state: parkedState({ tasks: [] }),
     });
 
     expect(result.disposition).toBe('parked');
     expect(result.state.phase).toBe('reviewing-briefs');
+    expect(result.state.tasks).toEqual([]);
     expect(callbacks.onApprovalNeeded).not.toHaveBeenCalled();
   });
 });

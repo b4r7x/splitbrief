@@ -35,7 +35,7 @@ export function displayValue(
     return `auto (${formatContextLength(detectedContextLength)})`;
   }
   if (value !== undefined && value !== null) {
-    return def.formatValue ? def.formatValue(value) : String(value);
+    return String(value);
   }
   return def.unsetLabel ?? '—';
 }

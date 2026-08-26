@@ -13,15 +13,13 @@ import type {
   ExecutableIdentity,
 } from '../../core/discovery/detection.js';
 import type * as Detection from '../../core/discovery/detection.js';
-import { isENOENT } from '../../lib/process/errors.js';
+import { isENOENT, isNodeError } from '../../lib/process/errors.js';
 import { error, matches } from '../../utils/error.js';
 
 export type CliExecutableTrust = Detection.CliExecutableTrust | null | undefined;
 
 export type CliExecutableResolver = (
-  command: string,
-  projectDir: string,
-  trust?: CliExecutableTrust,
+  options: Readonly<{ command: string; projectDir: string; trust?: CliExecutableTrust }>,
 ) => Promise<CliExecutableIdentity>;
 
 export type ResolvedCliExecutable = Readonly<{
@@ -267,11 +265,14 @@ export async function revalidateCliExecutableIdentity(
 }
 
 function assertTrustedIdentity(
-  command: string,
-  identity: CliExecutableReceipt,
-  trust: CliExecutableTrust,
-  requiresExactTrust: boolean,
+  options: Readonly<{
+    command: string;
+    identity: CliExecutableReceipt;
+    trust: CliExecutableTrust;
+    requiresExactTrust: boolean;
+  }>,
 ): void {
+  const { command, identity, trust, requiresExactTrust } = options;
   if (trust !== null && trust !== undefined) {
     if (!exactTrustMatches(identity, trust)) {
       throw error(
@@ -303,14 +304,6 @@ async function canonicalProjectDir(projectDir: string): Promise<string> {
   }
 }
 
-function executableNames(command: string): string[] {
-  if (process.platform !== 'win32' || command.includes('.')) return [command];
-  const extensions = (process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD')
-    .split(';')
-    .filter((extension) => extension.length > 0);
-  return [command, ...extensions.map((extension) => `${command}${extension.toLowerCase()}`)];
-}
-
 function customExecutableNames(command: string, pathExt: string | undefined): string[] {
   if (process.platform !== 'win32' || command.includes('.')) return [command];
   const extensions = (pathExt ?? '.COM;.EXE;.BAT;.CMD')
@@ -318,10 +311,6 @@ function customExecutableNames(command: string, pathExt: string | undefined): st
     .map((extension) => extension.trim())
     .filter((extension) => extension.length > 0);
   return [command, ...extensions.map((extension) => `${command}${extension.toLowerCase()}`)];
-}
-
-function hasNodeErrorCode(cause: unknown, code: string): boolean {
-  return cause instanceof Error && 'code' in cause && cause.code === code;
 }
 
 async function inspectCustomExecutableCandidate(
@@ -332,21 +321,21 @@ async function inspectCustomExecutableCandidate(
     const info = await stat(canonicalPath);
     if (!info.isFile()) return { kind: 'non-executable' };
   } catch (cause) {
-    return hasNodeErrorCode(cause, 'ENOENT') ? { kind: 'missing' } : { kind: 'invalid' };
+    return isENOENT(cause) ? { kind: 'missing' } : { kind: 'invalid' };
   }
 
   try {
     await access(canonicalPath, constants.X_OK);
   } catch (cause) {
-    return hasNodeErrorCode(cause, 'ENOENT') ? { kind: 'missing' } : { kind: 'non-executable' };
+    return isENOENT(cause) ? { kind: 'missing' } : { kind: 'non-executable' };
   }
 
   try {
     const executable = await readExecutableIdentity(canonicalPath);
     return executable === null ? { kind: 'invalid' } : { kind: 'resolved', executable };
   } catch (cause) {
-    if (hasNodeErrorCode(cause, 'ENOENT')) return { kind: 'missing' };
-    if (hasNodeErrorCode(cause, 'EACCES')) return { kind: 'non-executable' };
+    if (isENOENT(cause)) return { kind: 'missing' };
+    if (isNodeError(cause) && cause.code === 'EACCES') return { kind: 'non-executable' };
     return { kind: 'invalid' };
   }
 }
@@ -406,7 +395,7 @@ async function firstExecutable(
   directory: string,
   command: string,
 ): Promise<CliExecutableReceipt | null> {
-  for (const name of executableNames(command)) {
+  for (const name of customExecutableNames(command, process.env.PATHEXT)) {
     const identity = await executableIdentity(join(directory, name));
     if (identity) return identity;
   }
@@ -427,7 +416,9 @@ export async function sanitizedRuntimePath(projectDir: string): Promise<string> 
       if (!info.isDirectory() || isWithin(path, realProjectPath) || seen.has(path)) continue;
       seen.add(path);
       directories.push(path);
-    } catch {}
+    } catch {
+      // An unreadable or missing PATH entry is not a usable runtime directory.
+    }
   }
 
   const nodeDirectory = await realpath(dirname(process.execPath));
@@ -438,10 +429,9 @@ export async function sanitizedRuntimePath(projectDir: string): Promise<string> 
 }
 
 export async function resolveCliExecutable(
-  command: string,
-  projectDir: string,
-  trust?: CliExecutableTrust,
+  options: Readonly<{ command: string; projectDir: string; trust?: CliExecutableTrust }>,
 ): Promise<CliExecutableIdentity> {
+  const { command, projectDir, trust } = options;
   if (command.length === 0 || command.trim() !== command) {
     throw error('cli-executable-unavailable', 'CLI executable command must be non-empty.', {
       command: diagnosticCommand(command),
@@ -466,7 +456,7 @@ export async function resolveCliExecutable(
       !isAbsolute(command) ||
       isWithin(resolve(candidate), projectPath) ||
       isWithin(identity.path, realProjectPath);
-    assertTrustedIdentity(command, identity, trust, requiresExactTrust);
+    assertTrustedIdentity({ command, identity, trust, requiresExactTrust });
     return identity;
   }
 
@@ -478,7 +468,7 @@ export async function resolveCliExecutable(
 
     const requiresExactTrust =
       unsafeEntry || isWithin(directory, projectPath) || isWithin(identity.path, realProjectPath);
-    assertTrustedIdentity(command, identity, trust, requiresExactTrust);
+    assertTrustedIdentity({ command, identity, trust, requiresExactTrust });
     return identity;
   }
 
@@ -529,7 +519,7 @@ export async function resolveCliExecutableAliases(
   for (const [index, command] of commands.entries()) {
     if (hasTrust) {
       try {
-        await resolveExecutable(command, options.projectDir);
+        await resolveExecutable({ command, projectDir: options.projectDir });
       } catch (cause) {
         if (matches('cli-executable-unavailable')(cause)) {
           lastUnavailable = cause;
@@ -540,7 +530,11 @@ export async function resolveCliExecutableAliases(
     }
 
     try {
-      const executable = await resolveExecutable(command, options.projectDir, options.trust);
+      const executable = await resolveExecutable({
+        command,
+        projectDir: options.projectDir,
+        trust: options.trust,
+      });
       return { command, executable, usedFallback: index > 0 };
     } catch (cause) {
       // With no receipt, this is the one safe condition that admits the next

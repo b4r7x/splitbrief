@@ -1,14 +1,18 @@
 import type { Task } from '../../../core/schemas/task.js';
+import type { BriefReadinessDecision } from '../../../core/schemas/brief-recovery/attempt.js';
 import type {
-  BriefContinuationV1,
-  BriefReadinessDecision,
   BriefRecoveryCommand,
   BriefRecoveryController,
-  EvidenceRef,
   RecoveryResultV1,
   StateAuthorityReceipt,
 } from '../../../core/schemas/brief-recovery.js';
+import type {
+  BriefContinuationV1,
+  EvidenceRef,
+} from '../../../core/schemas/brief-recovery/primitives.js';
+import { canonicalJSON } from '../../../utils/canonical-json.js';
 import { sha256Hex } from '../../../utils/sha256.js';
+import { isRecord } from '../../../utils/type-guards.js';
 import type { BriefReadinessGateReport } from './brief-readiness-gate.js';
 
 type BriefReviewBytes = string | Uint8Array;
@@ -62,24 +66,6 @@ export type BriefReviewProofResult =
   | Readonly<{ ok: true; proof: BriefReviewProof }>
   | Readonly<{ ok: false; code: BriefReviewProofFailureCode; message: string }>;
 
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') {
-    const primitive = JSON.stringify(value);
-    return primitive === undefined ? 'null' : primitive;
-  }
-  if (Array.isArray(value)) return `[${value.map((item) => canonicalJson(item)).join(',')}]`;
-  if (!isRecord(value)) return '{}';
-  const record = value;
-  return `{${Object.keys(record)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
-    .join(',')}}`;
-}
-
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function bytesHash(bytes: BriefReviewBytes): string {
   return sha256Hex(typeof bytes === 'string' ? bytes : Buffer.from(bytes));
 }
@@ -112,7 +98,7 @@ function parseReportIdentity(
 
 function proofIntentHash(input: Omit<BriefReviewProof, 'intentHash'>): string {
   return sha256Hex(
-    canonicalJson({
+    canonicalJSON({
       version: 1,
       sessionId: input.sessionId,
       epochId: input.epochId,
@@ -276,7 +262,7 @@ export function briefReadinessFingerprint(
   report: BriefReadinessGateReport,
 ): string {
   return sha256Hex(
-    canonicalJson({
+    canonicalJSON({
       briefHash: proof.briefHash,
       reportHash: proof.reportHash,
       qualityPolicyVersion: proof.qualityPolicyVersion,
@@ -361,7 +347,7 @@ export async function runBriefReviewExit(opts: {
   const continuation = recovery.projection.continuation;
   if (
     continuation === null ||
-    canonicalJson(continuation) !== canonicalJson(proof.proof.continuation)
+    canonicalJSON(continuation) !== canonicalJSON(proof.proof.continuation)
   ) {
     return {
       kind: 'contract-blocked',

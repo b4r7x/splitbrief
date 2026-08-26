@@ -116,7 +116,7 @@ describe('FieldEditorView model == painted (CON-F)', () => {
       const pos = visualPositionOf(wrapVisualLines(s.value, columns), s.cursor);
       expect(pos).toEqual({ row: 1, col: 2 });
       const rows = (ui.lastFrame() ?? '').split('\n');
-      expect(firstStyledCol(rows[pos.row])).toBe(pos.col); // caret painted at row 1, col 2 ('l')
+      expect(firstStyledCol(rows[pos.row])).toBe(pos.col);
     }
 
     editorStore.dispatch({ kind: 'motion', motion: 'line-end', select: false });

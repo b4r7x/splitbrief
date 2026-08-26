@@ -45,7 +45,6 @@ describe('abort during implementer phase terminates the task loop cleanly', {
     const { bus, events: busEvents } = makeBusRecorder();
     const planner = makePlanner();
 
-    // Abort the engine signal while the implementer is "running".
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async () => {
         controller.abort();

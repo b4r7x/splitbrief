@@ -7,7 +7,7 @@ import {
   admitCustomRunner,
   revalidateCustomRunnerInvocation,
   resolveCustomRunnerLaunchability,
-} from './trust.js';
+} from './custom-launchability.js';
 import { customRunnerSecurityPosture, markCustomRunnerTrusted } from './custom-trust.js';
 import { resolveCustomExecutable } from './resolve-cli-executable.js';
 

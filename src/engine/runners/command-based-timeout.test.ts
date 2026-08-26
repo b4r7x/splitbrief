@@ -164,31 +164,27 @@ describe('invokeCommandBasedRunner with timeout', () => {
     expect(chunks).toEqual(['draft', ' final']);
   });
 
-  it('uses final stream-json result text instead of assistant draft text on the timeout branch', async () => {
-    const chunks: string[] = [];
-    const lines = [
-      JSON.stringify({
-        type: 'assistant',
-        message: { content: [{ type: 'text', text: 'draft text' }] },
+  it('rejects a child that outlives the timeout and reports it as a timeout call error', async () => {
+    const events: RunnerCallEvent[] = [];
+
+    await expect(
+      invokeCommandBasedRunner({
+        command: 'sh',
+        args: ['-c', 'sleep 5'],
+        timeout: 200,
+        prompt: '',
+        projectDir: process.cwd(),
+        onCallEvent: (event) => events.push(event),
       }),
-      JSON.stringify({
-        type: 'result',
-        result: 'final text',
-        usage: { input_tokens: 11, output_tokens: 7 },
+    ).rejects.toMatchObject({ kind: 'command-timeout' });
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_error',
+        status: 'timeout',
+        error: expect.objectContaining({ code: 'command-timeout' }),
       }),
-    ];
-    const result = await invokeCommandBasedRunner({
-      command: 'printf',
-      args: ['%s\\n', lines.join('\n')],
-      outputFormat: 'stream-json',
-      timeout: 30_000,
-      prompt: '',
-      projectDir: process.cwd(),
-      onOutput: (chunk) => chunks.push(chunk),
-    });
-    expect(result.stdout).toBe('final text');
-    expect(result.callResult.text).toBe('final text');
-    expect(chunks).toEqual(['draft text']);
+    );
   });
 
   it('keeps one tool-use id and name across stream-json start and input deltas', async () => {

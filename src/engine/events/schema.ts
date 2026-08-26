@@ -19,7 +19,7 @@ import {
   BriefContractStatusSchema,
   BriefRecoveryActionSchema,
   DispatchPossibilitySchema,
-} from '../../core/schemas/brief-recovery.js';
+} from '../../core/schemas/brief-recovery/primitives.js';
 import {
   BriefGenerationRefSchema,
   TaskExecutionPermitSchema,

@@ -71,8 +71,9 @@ describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('conversation flow hover pe
     expect(p95).toBeLessThanOrEqual(40);
 
     const focused = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(countGlyphOccurrences(focused, FOCUS_MARK)).toBeLessThanOrEqual(1);
-    for (const token of ['line-1', 'line-8', 'large hover event 0']) {
+    expect(countGlyphOccurrences(focused, FOCUS_MARK)).toBe(1);
+    expect(focused).not.toBe(baseline);
+    for (const token of ['large hover event 3999']) {
       expect(focused).toContain(token);
       expect(baseline).toContain(token);
     }

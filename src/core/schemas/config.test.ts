@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { createDefaultConfig } from '../config/load/io.js';
 import {
   API_PROVIDER_CATALOG,
-  FORBIDDEN_API_PROVIDER_IDS,
   IMPLEMENTER_API_PROVIDER_IDS,
   PLANNER_API_PROVIDER_IDS,
 } from '../providers/api-provider-catalog.js';
+import { FORBIDDEN_API_PROVIDER_IDS } from '../providers/api-provider-verdicts.js';
 import { ConfigSchema } from './config.js';
 import { ImplementerApiProviderIdSchema, PlannerApiProviderIdSchema } from './enums.js';
 
@@ -265,9 +265,6 @@ function apiRunnerForProvider(provider: string) {
 
 describe('ConfigSchema API role admission', () => {
   it('derives planner and implementer API enums from the admitted catalog', () => {
-    expect(PlannerApiProviderIdSchema.options).toEqual(PLANNER_API_PROVIDER_IDS);
-    expect(ImplementerApiProviderIdSchema.options).toEqual(IMPLEMENTER_API_PROVIDER_IDS);
-
     for (const id of Object.keys(API_PROVIDER_CATALOG)) {
       const descriptor = API_PROVIDER_CATALOG[id as keyof typeof API_PROVIDER_CATALOG];
       if (descriptor.roles.some((role) => role === 'planner')) {
@@ -329,7 +326,6 @@ describe('ConfigSchema API role admission', () => {
     expect(admittedIds.has('mimo-token-plan')).toBe(false);
     expect(admittedIds.has('mistral')).toBe(false);
     expect(admittedIds.has('gemini')).toBe(false);
-    expect(admittedIds.has('siliconflow')).toBe(false);
   });
 });
 

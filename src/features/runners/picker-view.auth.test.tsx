@@ -17,21 +17,23 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { ToolModelPicker } from '../../app/overlays/runners.js';
-import { failureCopy, validateProviderKey } from './provider-auth.js';
-
-vi.mock('./provider-auth.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./provider-auth.js')>();
-  return { ...actual, validateProviderKey: vi.fn() };
-});
-vi.mock('../../engine/detection/store-publication.js', () => ({
-  refreshDetectionForCurrentConfig: vi.fn(async () => ({})),
-}));
+import { failureCopy, type ProviderKeyValidation } from './provider-auth.js';
+import type { PickerActionDeps } from './use-picker-actions.js';
 
 const KEY = 'sk-test-secret-0123456789-abcdef';
 const ENTER = '\r';
 const ESC = '\u001B';
 
-const validateKeyMock = vi.mocked(validateProviderKey);
+let validateCalls = 0;
+let validateResult: ProviderKeyValidation = { kind: 'invalid', failure: 'invalid-credential' };
+
+const deps: Partial<PickerActionDeps> = {
+  validateKey: async () => {
+    validateCalls += 1;
+    return validateResult;
+  },
+  refreshDetection: async () => {},
+};
 
 function providerRow(
   provider: ProviderDetection['provider'],
@@ -42,7 +44,7 @@ function providerRow(
 
 async function renderPlannerPicker() {
   overlayStore.open('planner-picker');
-  const ui = renderFeature(<ToolModelPicker role="planner" />);
+  const ui = renderFeature(<ToolModelPicker role="planner" deps={deps} />);
   await flushEffects();
   return ui;
 }
@@ -69,7 +71,8 @@ describe('picker provider auth journey', () => {
     projectDir = createTempDir('picker-view-auth');
     writeConfig(projectDir, createDefaultConfig());
     configStore.load(projectDir);
-    validateKeyMock.mockReset();
+    validateCalls = 0;
+    validateResult = { kind: 'invalid', failure: 'invalid-credential' };
   });
 
   afterEach(() => {
@@ -93,12 +96,12 @@ describe('picker provider auth journey', () => {
     const panelFrame = frameText(ui);
     expect(panelFrame).toContain('Add API key');
     expect(panelFrame).toContain('OpenAI API key');
-    expect(validateKeyMock).not.toHaveBeenCalled();
+    expect(validateCalls).toBe(0);
     ui.unmount();
   });
 
   it('shows the enum failure copy and persists nothing when the provider rejects the key', async () => {
-    validateKeyMock.mockResolvedValue({ kind: 'invalid', failure: 'invalid-credential' });
+    validateResult = { kind: 'invalid', failure: 'invalid-credential' };
     detectionStore.setDetection({
       cliTools: [],
       providers: [providerRow('openai', { hasKey: false })],
@@ -126,7 +129,7 @@ describe('picker provider auth journey', () => {
   });
 
   it('saves the validated key, selects the provider, and closes the picker', async () => {
-    validateKeyMock.mockResolvedValue({ kind: 'valid', models: [{ id: 'gpt-5-mini' }] });
+    validateResult = { kind: 'valid', models: [{ id: 'gpt-5-mini' }] };
     detectionStore.setDetection({
       cliTools: [],
       providers: [providerRow('openai', { hasKey: false })],

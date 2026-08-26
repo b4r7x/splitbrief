@@ -246,7 +246,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
     ).toBe(true);
   });
 
-  it('standard mode refreshes readiness and warns when a brief overflows workers, and a repeated approval overrides', async () => {
+  it('standard mode refreshes readiness and warns when a brief overflows workers, and a decline ends the run rejected', async () => {
     const overflowingTask = makePassingTask('T001');
     const planner = makePlanner({
       plan: vi.fn().mockResolvedValue({
@@ -1111,7 +1111,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
     ).toBe(false);
   });
 
-  it('an always-editing callback over an unfixable plan calls onApprovalNeeded at most the no-progress cap and ends rejected', async () => {
+  it('an always-editing callback over an unfixable plan stops one prompt past the no-progress cap and ends rejected', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const planner = makePassingPlanner();
     const tasksPath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
@@ -1138,7 +1138,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
 
     const { result, events } = await runPhase({ planner, callbacks, config });
 
-    expect(onApprovalNeeded.mock.calls.length).toBeLessThanOrEqual(20);
+    expect(onApprovalNeeded.mock.calls.length).toBeLessThanOrEqual(21);
     expect(result).toMatchObject({ disposition: 'terminal', outcome: 'rejected' });
     expect(result.state.phase).toBe('idle');
     expect(

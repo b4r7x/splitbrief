@@ -23,7 +23,7 @@ import { executableReceipt } from '#testing/helpers/custom-command-based.js';
 import type { RunnerSlot } from './prepared-execution.js';
 import { resolveConfiguredCustomRunner } from './configured-custom.js';
 import { customRunnerSecurityPosture } from './custom-trust.js';
-import type { AdmittedCustomRunnerInvocation } from './trust.js';
+import type { AdmittedCustomRunnerInvocation } from './custom-launchability.js';
 import type { Planner, PlannerFactoryOptions } from '../planners/types.js';
 import type { ImplementerFactoryOptions } from '../implementers/types.js';
 import { resolveCliExecutableAliases } from './resolve-cli-executable.js';

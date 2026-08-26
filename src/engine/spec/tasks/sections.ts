@@ -1,7 +1,7 @@
 import type { TaskId } from '../../../core/schemas/task.js';
 import { extractFrontmatter } from '../../../utils/frontmatter.js';
 import { TASK_BRIEF_HEADINGS } from '../headings.js';
-import { fenceMarkerLength } from './fence-marker.js';
+import { fenceMarkerLength, nextFenceLength } from './fence-marker.js';
 
 export type ParsedTaskSections = {
   description: string;
@@ -45,11 +45,7 @@ export function unknownSectionHeaders(block: string): string[] {
   let fenceLength = 0;
 
   for (const line of body.split('\n')) {
-    const marker = fenceMarkerLength(line.trim());
-    if (marker !== null) {
-      if (fenceLength === 0) fenceLength = marker;
-      else if (marker >= fenceLength) fenceLength = 0;
-    }
+    fenceLength = nextFenceLength(fenceLength, line.trim());
 
     const headerMatch = fenceLength > 0 ? null : line.match(/^###\s+(.+)/);
     if (headerMatch?.[1]) {
@@ -82,11 +78,7 @@ export function extractSections(block: string): ParsedTaskSections {
   const lines = body.split('\n');
 
   for (const line of lines) {
-    const marker = fenceMarkerLength(line.trim());
-    if (marker !== null) {
-      if (fenceLength === 0) fenceLength = marker;
-      else if (marker >= fenceLength) fenceLength = 0;
-    }
+    fenceLength = nextFenceLength(fenceLength, line.trim());
 
     const headerMatch = fenceLength > 0 ? null : line.match(/^###\s+(.+)/);
     if (headerMatch?.[1]) {

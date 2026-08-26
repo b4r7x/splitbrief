@@ -25,8 +25,6 @@ function expectedEvidenceForTask(task: Task, evidence: EvidenceTask | undefined)
 }
 
 function missingExpectedEvidence(expectedEvidence: string[], observedEvidence: string[]): string[] {
-  if (expectedEvidence.length === 0) return [];
-  if (observedEvidence.length === 0) return [...expectedEvidence];
   return expectedEvidence.filter(
     (expected) => !observedEvidence.some((observed) => observed.includes(expected)),
   );
@@ -40,12 +38,13 @@ function groupDriftFindings(findings: DriftFinding[]): ReviewPacket['drift']['fi
   };
 }
 
-export function buildChanges(
-  state: WorkflowState,
-  ledger: EvidenceLedger | null,
-  drift: DriftReport | null,
-  changedFiles: string[],
-): ReviewPacket['changes'] {
+export function buildChanges(opts: {
+  state: WorkflowState;
+  ledger: EvidenceLedger | null;
+  drift: DriftReport | null;
+  changedFiles: string[];
+}): ReviewPacket['changes'] {
+  const { state, ledger, drift, changedFiles } = opts;
   const expectedFiles = uniqueSorted(
     drift?.expectedFiles ?? state.tasks.map((task) => task.file).filter(Boolean),
   );
@@ -131,11 +130,12 @@ export function buildEvidence(ledger: EvidenceLedger | null): ReviewPacket['evid
   };
 }
 
-export function buildDrift(
-  chainState: DriftChainState | null,
-  drift: DriftReport | null,
-  briefQuality: BriefQualityArtifact | null,
-): ReviewPacket['drift'] {
+export function buildDrift(opts: {
+  chainState: DriftChainState | null;
+  drift: DriftReport | null;
+  briefQuality: BriefQualityArtifact | null;
+}): ReviewPacket['drift'] {
+  const { chainState, drift, briefQuality } = opts;
   const topChain =
     chainState && chainState.emittedChains.length > 0
       ? chainState.emittedChains.reduce((best, chain) => (best.score >= chain.score ? best : chain))
@@ -180,11 +180,12 @@ export function buildDrift(
   };
 }
 
-export function buildEscalations(
-  state: WorkflowState,
-  ledger: EvidenceLedger | null,
-  events: PacketEvent[],
-): ReviewPacket['escalations'] {
+export function buildEscalations(opts: {
+  state: WorkflowState;
+  ledger: EvidenceLedger | null;
+  events: PacketEvent[];
+}): ReviewPacket['escalations'] {
+  const { state, ledger, events } = opts;
   const retryMap = retryCountsFromEvents(events, (event) => event.message);
   for (const entry of ledger?.tasks ?? []) {
     if (entry.retries <= 0) continue;

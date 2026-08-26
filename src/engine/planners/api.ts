@@ -172,7 +172,8 @@ export function createApiPlanner(config: Config): Planner {
   const contextLength = plannerCfg.contextLength ?? DEFAULT_CONTEXT_LENGTH;
   const providerId: ProviderId | null = isProviderId(provider) ? provider : null;
   const supportsEffort = providerId !== null && modelSupportsEffort(providerId, model);
-  const supportsImages = providerId !== null && modelSupportsImages(providerId, model);
+  const supportsImages =
+    providerId !== null && modelSupportsImages({ provider: providerId, model });
 
   const invoke = ({
     prompt,

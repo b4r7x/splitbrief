@@ -129,7 +129,7 @@ function resolveLocalModulePath(
       if (lstatSync(candidate).isSymbolicLink()) continue;
       return relativePath;
     } catch {
-      // try next candidate
+      // an unconfined, missing, or symlinked candidate is not a resolvable module path
     }
   }
   return null;

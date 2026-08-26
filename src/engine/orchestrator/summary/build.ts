@@ -6,7 +6,7 @@ import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { formatCost } from '../../../core/formatting.js';
 import { getFailedTaskIds, getSkippedTaskIds } from '../../../core/state/selectors.js';
 import { projectCostPredictionForTranscriptPolicy } from '../../events/protection/protect.js';
-import { featureForTranscriptPolicy } from '../../../core/sessions/lifecycle.js';
+import { featureForTranscriptPolicy } from '../../../core/sessions/session-id.js';
 import { loadSessionArtifactRollups } from './artifact-rollups.js';
 import { reconcileTokenUsageWithSessionLog } from './usage-reconcile.js';
 import {

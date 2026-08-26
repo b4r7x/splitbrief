@@ -266,36 +266,7 @@ describe('Header — rail and elapsed', () => {
     instance.unmount();
   });
 
-  it('freezes the elapsed clock when the workflow is interrupted', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(5_000);
-    lifecycleStore.__testReset({
-      phase: 'implementing',
-      status: 'running',
-      startedAt: 0,
-    });
-
-    const instance = render(<Header startedAt={STARTED_AT} />);
-    expect(instance.lastFrame() ?? '').toContain('0:05');
-
-    act(() => {
-      vi.advanceTimersByTime(5_000);
-    });
-    expect(instance.lastFrame() ?? '').toContain('0:10');
-
-    act(() => {
-      markInterruptRequested();
-    });
-    expect(instance.lastFrame() ?? '').toContain('0:10');
-
-    act(() => {
-      vi.advanceTimersByTime(30_000);
-    });
-    expect(instance.lastFrame() ?? '').toContain('0:10');
-    instance.unmount();
-  });
-
-  it('resumes ticking when the workflow returns to running', () => {
+  it('freezes the elapsed clock while interrupted and resumes on resume', () => {
     vi.useFakeTimers();
     vi.setSystemTime(5_000);
     lifecycleStore.__testReset({

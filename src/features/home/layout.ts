@@ -9,8 +9,7 @@ interface HomeLayoutInput {
 }
 
 interface HomeLayout {
-  inputWidth: number;
-  bodyWidth: number;
+  width: number;
   logoTier: LogoTier;
   inputBottomMargin: number;
   recentSessionLimit: number;
@@ -98,8 +97,7 @@ export function getHomeLayout({
   });
 
   return {
-    inputWidth: width,
-    bodyWidth: width,
+    width,
     logoTier,
     inputBottomMargin,
     recentSessionLimit,

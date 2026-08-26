@@ -489,11 +489,6 @@ describe('createFilteredStdin input filtering', () => {
   });
 
   it('enables terminal modes on create and disables them once', () => {
-    const written: string[] = [];
-    process.stdout.write = ((chunk: string) => {
-      written.push(chunk);
-      return true;
-    }) as typeof process.stdout.write;
     const fakeStdin = makeFakeStdin();
 
     const filtered = createFilteredStdin(fakeStdin);
@@ -513,17 +508,12 @@ describe('createFilteredStdin input filtering', () => {
   });
 
   it('enables any-motion tracking for hover and clears every mouse mode on disable', () => {
-    const writtenHover: string[] = [];
-    process.stdout.write = ((chunk: string) => {
-      writtenHover.push(chunk);
-      return true;
-    }) as typeof process.stdout.write;
     const fakeStdin = makeFakeStdin();
 
     const filtered = createFilteredStdin(fakeStdin, { hover: true });
     filtered.disable();
 
-    expect(writtenHover).toEqual([
+    expect(written).toEqual([
       terminalSequences.enableAnyMotionMouse,
       terminalSequences.enableSgrMouse,
       terminalSequences.enableBracketedPaste,
@@ -533,7 +523,7 @@ describe('createFilteredStdin input filtering', () => {
       terminalSequences.disableSgrMouse,
       terminalSequences.disableBracketedPaste,
     ]);
-    expect(writtenHover).not.toContain(terminalSequences.enableMouseTracking);
+    expect(written).not.toContain(terminalSequences.enableMouseTracking);
   });
 
   it('can enable paste filtering without mouse tracking or mouse dispatch', async () => {

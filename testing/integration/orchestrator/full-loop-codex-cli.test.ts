@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
+import type { Summary } from '../../../src/core/schemas/summary.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -12,10 +13,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { seedValidationProject } from '#testing/helpers/validation-project.js';
 import { executableReceipt } from '#testing/helpers/custom-command-based.js';
-import {
-  parsePreparedConfig,
-  type PreparedExecution,
-} from '../../../src/engine/runners/prepared-execution.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
 
 const dirs: string[] = [];
@@ -104,118 +102,128 @@ function prependFakeCodexToPath(opts: {
   return { binDir, executablePath, runLogPath };
 }
 
+const TARGET_FILE = 'src/loop.ts';
+
+async function runCodexLoop(opts: {
+  marker: string;
+  sessionId: string;
+  requiredPromptText: string;
+  preparationId: string;
+  generation: string;
+  terminalLine?: string | undefined;
+}): Promise<{
+  summary: Summary;
+  events: EngineEvent[];
+  runLog: FakeCodexRun;
+  projectDir: string;
+}> {
+  const projectDir = setupProject(opts.marker);
+  const fakeCodex = prependFakeCodexToPath({
+    marker: opts.marker,
+    requiredPromptText: opts.requiredPromptText,
+    ...(opts.terminalLine === undefined ? {} : { terminalLine: opts.terminalLine }),
+  });
+  const events: EngineEvent[] = [];
+
+  const task = makeTask({
+    id: 'T001',
+    action: 'create',
+    file: TARGET_FILE,
+    title: opts.requiredPromptText,
+    description: 'Create a module using a Codex-style cheap CLI implementer.',
+    implementationSteps: ['Create src/loop.ts with the Codex CLI marker export.'],
+    tests: ['node validate.mjs passes'],
+    scope: { inBounds: [TARGET_FILE], outOfBounds: ['unrelated files'] },
+    evidence: ['workflow_complete event is emitted after Codex CLI implementation'],
+    typeDefs: 'export const loop: string',
+  });
+
+  const planner = makePlanner({
+    plan: vi.fn().mockResolvedValue({
+      spec: '# Spec\n\nCreate a module with a Codex CLI implementer.',
+      plan: '# Plan\n\nUse the configured cheap CLI implementer.',
+      tasks: [task],
+      usage: { inputTokens: 140, outputTokens: 90 },
+    }),
+    review: vi.fn().mockResolvedValue({
+      text: '# Final review\n\nCodex CLI implementer passed validation.',
+      usage: { inputTokens: 60, outputTokens: 30 },
+    }),
+  });
+
+  const implementerResolution = await resolveCustomExecutable({ command: 'codex', projectDir });
+  if (implementerResolution.kind !== 'resolved') {
+    throw new Error('Codex fixture executable did not resolve.');
+  }
+  const preparationId = opts.preparationId;
+  const prepared = makePreparedExecution({
+    projectDir,
+    sessionId: opts.sessionId,
+    feature: 'run a Codex CLI implementer loop',
+    config: makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'codex',
+        model: 'codex/test-cheap-model',
+        contextLength: 4096,
+        temperature: 0.1,
+      },
+      validation: {
+        typecheck: false,
+        lint: false,
+        test: true,
+        testCommand: 'node validate.mjs',
+      },
+      workflow: {
+        mode: 'standard',
+        approve: 'none',
+        maxRetries: 1,
+        persistTranscript: true,
+      },
+    }),
+    preparationId,
+    active: { version: 1, sessionId: opts.sessionId, generation: opts.generation },
+    gates: () => [
+      {
+        kind: 'cli',
+        slot: { role: 'planner' },
+        preparationId,
+        tool: 'claude-code',
+        executable: executableReceipt(),
+      },
+      {
+        kind: 'cli',
+        slot: { role: 'implementer', profile: 'default' },
+        preparationId,
+        tool: 'codex',
+        executable: implementerResolution.executable,
+      },
+    ],
+  });
+
+  const summary = await runWorkflow({
+    prepared,
+    callbacks: makeCallbacks().callbacks,
+    sinks: TEST_WORKFLOW_SINKS,
+    _planner: planner,
+    _eventSink: (event) => events.push(event),
+  });
+
+  const runLog = JSON.parse(readFileSync(fakeCodex.runLogPath, 'utf-8')) as FakeCodexRun;
+  return { summary, events, runLog, projectDir };
+}
+
 describe('full workflow Codex CLI implementer', { timeout: 90_000 }, () => {
   it('records codex turn usage in the summary with cached input excluded from input tokens', async () => {
-    const marker = 'from-codex-cli';
-    const projectDir = setupProject(marker);
-    const sessionId = 'sess-full-loop-codex-cli';
-    const targetFile = 'src/loop.ts';
     const requiredPromptText = 'Codex CLI backed module';
-    const fakeCodex = prependFakeCodexToPath({ marker, requiredPromptText });
-    const events: EngineEvent[] = [];
-
-    const task = makeTask({
-      id: 'T001',
-      action: 'create',
-      file: targetFile,
-      title: requiredPromptText,
-      description: 'Create a module using a Codex-style cheap CLI implementer.',
-      implementationSteps: ['Create src/loop.ts with the Codex CLI marker export.'],
-      tests: ['node validate.mjs passes'],
-      scope: { inBounds: [targetFile], outOfBounds: ['unrelated files'] },
-      evidence: ['workflow_complete event is emitted after Codex CLI implementation'],
-      typeDefs: 'export const loop: string',
-    });
-
-    const planner = makePlanner({
-      plan: vi.fn().mockResolvedValue({
-        spec: '# Spec\n\nCreate a module with a Codex CLI implementer.',
-        plan: '# Plan\n\nUse the configured cheap CLI implementer.',
-        tasks: [task],
-        usage: { inputTokens: 140, outputTokens: 90 },
-      }),
-      review: vi.fn().mockResolvedValue({
-        text: '# Final review\n\nCodex CLI implementer passed validation.',
-        usage: { inputTokens: 60, outputTokens: 30 },
-      }),
-    });
-
-    const feature = 'run a Codex CLI implementer loop';
-    const config = parsePreparedConfig(
-      makeConfig({
-        implementer: {
-          kind: 'cli',
-          tool: 'codex',
-          model: 'codex/test-cheap-model',
-          contextLength: 4096,
-          temperature: 0.1,
-        },
-        validation: {
-          typecheck: false,
-          lint: false,
-          test: true,
-          testCommand: 'node validate.mjs',
-        },
-        workflow: {
-          mode: 'standard',
-          approve: 'none',
-          maxRetries: 1,
-          persistTranscript: true,
-        },
-      }),
-    );
-    const preparationId = 'full-loop-codex-preparation';
-    const implementerResolution = await resolveCustomExecutable({ command: 'codex', projectDir });
-    if (implementerResolution.kind !== 'resolved') {
-      throw new Error('Codex fixture executable did not resolve.');
-    }
-    const active = {
-      version: 1 as const,
-      sessionId,
+    const { summary, events, runLog, projectDir } = await runCodexLoop({
+      marker: 'from-codex-cli',
+      sessionId: 'sess-full-loop-codex-cli',
+      requiredPromptText,
+      preparationId: 'full-loop-codex-preparation',
       generation: '5b555555-5555-4555-8555-555555555555',
-    };
-    const prepared: PreparedExecution = {
-      purpose: 'new-workflow',
-      config,
-      preparationId,
-      report: {
-        generatedAt: '2026-08-04T00:00:00.000Z',
-        projectDir,
-        status: 'ready',
-        counts: { ok: 2, info: 0, warning: 0, blocker: 0 },
-        nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
-        sections: [],
-        metadata: {},
-      },
-      gates: [
-        {
-          kind: 'cli',
-          slot: { role: 'planner' },
-          preparationId,
-          tool: 'claude-code',
-          executable: executableReceipt(),
-        },
-        {
-          kind: 'cli',
-          slot: { role: 'implementer', profile: 'default' },
-          preparationId,
-          tool: 'codex',
-          executable: implementerResolution.executable,
-        },
-      ],
-      session: { kind: 'existing', ref: { projectDir, sessionId }, active },
-      runtime: { feature, allowRepoRunners: false, allowHooks: false },
-    };
-
-    const summary = await runWorkflow({
-      prepared,
-      callbacks: makeCallbacks().callbacks,
-      sinks: TEST_WORKFLOW_SINKS,
-      _planner: planner,
-      _eventSink: (event) => events.push(event),
     });
 
-    const runLog = JSON.parse(readFileSync(fakeCodex.runLogPath, 'utf-8')) as FakeCodexRun;
     expect(runLog.cwd).not.toBe(projectDir);
     expect(runLog.args).toEqual(
       expect.arrayContaining([
@@ -230,7 +238,7 @@ describe('full workflow Codex CLI implementer', { timeout: 90_000 }, () => {
       ]),
     );
     expect(runLog.args[runLog.args.length - 1]).toContain(requiredPromptText);
-    expect(readFileSync(join(projectDir, targetFile), 'utf-8')).toContain(
+    expect(readFileSync(join(projectDir, TARGET_FILE), 'utf-8')).toContain(
       'export const loop = "from-codex-cli";',
     );
     expect(summary).toMatchObject({
@@ -266,123 +274,17 @@ describe('full workflow Codex CLI implementer', { timeout: 90_000 }, () => {
   }, 90_000);
 
   it('records zero implementer input and publishes the usage-not-reported warning when codex reports no usage', async () => {
-    const marker = 'from-codex-cli-no-usage';
-    const projectDir = setupProject(marker);
     const sessionId = 'sess-full-loop-codex-cli-no-usage';
-    const targetFile = 'src/loop.ts';
-    const requiredPromptText = 'Codex CLI backed module without usage';
-    const fakeCodex = prependFakeCodexToPath({
-      marker,
-      requiredPromptText,
+    const { summary, events, projectDir } = await runCodexLoop({
+      marker: 'from-codex-cli-no-usage',
+      sessionId,
+      requiredPromptText: 'Codex CLI backed module without usage',
+      preparationId: 'full-loop-codex-preparation-no-usage',
+      generation: '5b555555-5555-4555-8555-555555555556',
       terminalLine: JSON.stringify({ type: 'turn.completed' }),
     });
-    const events: EngineEvent[] = [];
 
-    const task = makeTask({
-      id: 'T001',
-      action: 'create',
-      file: targetFile,
-      title: requiredPromptText,
-      description:
-        'Create a module using a Codex-style cheap CLI implementer that reports no usage.',
-      implementationSteps: ['Create src/loop.ts with the Codex CLI marker export.'],
-      tests: ['node validate.mjs passes'],
-      scope: { inBounds: [targetFile], outOfBounds: ['unrelated files'] },
-      evidence: ['workflow_complete event is emitted after Codex CLI implementation'],
-      typeDefs: 'export const loop: string',
-    });
-
-    const planner = makePlanner({
-      plan: vi.fn().mockResolvedValue({
-        spec: '# Spec\n\nCreate a module with a usage-less Codex CLI implementer.',
-        plan: '# Plan\n\nUse the configured cheap CLI implementer.',
-        tasks: [task],
-        usage: { inputTokens: 140, outputTokens: 90 },
-      }),
-      review: vi.fn().mockResolvedValue({
-        text: '# Final review\n\nCodex CLI implementer passed validation.',
-        usage: { inputTokens: 60, outputTokens: 30 },
-      }),
-    });
-
-    const feature = 'run a usage-less Codex CLI implementer loop';
-    const config = parsePreparedConfig(
-      makeConfig({
-        implementer: {
-          kind: 'cli',
-          tool: 'codex',
-          model: 'codex/test-cheap-model',
-          contextLength: 4096,
-          temperature: 0.1,
-        },
-        validation: {
-          typecheck: false,
-          lint: false,
-          test: true,
-          testCommand: 'node validate.mjs',
-        },
-        workflow: {
-          mode: 'standard',
-          approve: 'none',
-          maxRetries: 1,
-          persistTranscript: true,
-        },
-      }),
-    );
-    const preparationId = 'full-loop-codex-preparation-no-usage';
-    const implementerResolution = await resolveCustomExecutable({ command: 'codex', projectDir });
-    if (implementerResolution.kind !== 'resolved') {
-      throw new Error('Codex fixture executable did not resolve.');
-    }
-    const active = {
-      version: 1 as const,
-      sessionId,
-      generation: '5b555555-5555-4555-8555-555555555556',
-    };
-    const prepared: PreparedExecution = {
-      purpose: 'new-workflow',
-      config,
-      preparationId,
-      report: {
-        generatedAt: '2026-08-04T00:00:00.000Z',
-        projectDir,
-        status: 'ready',
-        counts: { ok: 2, info: 0, warning: 0, blocker: 0 },
-        nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
-        sections: [],
-        metadata: {},
-      },
-      gates: [
-        {
-          kind: 'cli',
-          slot: { role: 'planner' },
-          preparationId,
-          tool: 'claude-code',
-          executable: executableReceipt(),
-        },
-        {
-          kind: 'cli',
-          slot: { role: 'implementer', profile: 'default' },
-          preparationId,
-          tool: 'codex',
-          executable: implementerResolution.executable,
-        },
-      ],
-      session: { kind: 'existing', ref: { projectDir, sessionId }, active },
-      runtime: { feature, allowRepoRunners: false, allowHooks: false },
-    };
-
-    const summary = await runWorkflow({
-      prepared,
-      callbacks: makeCallbacks().callbacks,
-      sinks: TEST_WORKFLOW_SINKS,
-      _planner: planner,
-      _eventSink: (event) => events.push(event),
-    });
-
-    const runLog = JSON.parse(readFileSync(fakeCodex.runLogPath, 'utf-8')) as FakeCodexRun;
-    expect(runLog.cwd).not.toBe(projectDir);
-    expect(readFileSync(join(projectDir, targetFile), 'utf-8')).toContain(
+    expect(readFileSync(join(projectDir, TARGET_FILE), 'utf-8')).toContain(
       'export const loop = "from-codex-cli-no-usage";',
     );
     expect(summary).toMatchObject({

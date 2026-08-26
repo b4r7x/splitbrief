@@ -5,6 +5,7 @@ import { useTheme } from '../../components/theme.js';
 import { SOFT_SEP } from '../../components/separators.js';
 import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/overlay-panel.js';
 import { ListRow } from '../../components/list-row.js';
+import { commandLabelWidth, descriptionColumn } from '../../components/list-columns.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
 import { isItemIndexVisible } from '../../components/pickers/scroll-window.js';
 import { dropLastGrapheme } from '../../components/input/text-editing.js';
@@ -25,11 +26,6 @@ import { COMMAND_CATEGORY_LABELS } from '../../core/runtime/commands/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { overlayRect, type OverlayDensity } from '../../core/navigation/overlay-rect.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import {
-  getTerminalCellWidth,
-  padTerminalDisplayTextEnd,
-  truncateTerminalDisplayText,
-} from '../../utils/display-text.js';
 import { handleSessionSelect } from '../../stores/navigation/session-select.js';
 import { sessionSelectDeps } from '../prepare-resume.js';
 
@@ -39,13 +35,6 @@ const HINT_ROWS = 2;
 // Below this budget a header costs more rows than it organises, so the 60x18 palette
 // keeps the category order but drops the labels (§Target frames, palette-60x18).
 const SECTION_HEADER_MIN_ROWS = 12;
-// ListRow's own chrome around the description column: the cursor gutter it prepends, the single
-// space before the description, and the single space before the shortcut.
-const LEAD_COLS = 2;
-const LABEL_GAP = 1;
-const TRAILING_GAP = 1;
-// §Target frames: two cells separate a description from a right-aligned shortcut.
-const SHORTCUT_GAP = 2;
 // A pathological command name must not swallow the row: past half the panel the label column is
 // truncated instead, so the description column always survives (exercised by the row-truncation
 // test at 50 columns).
@@ -62,37 +51,6 @@ function sectionLabel(result: PaletteResult): string {
   return result.category === null
     ? SOURCE_HEADERS[result.source]
     : COMMAND_CATEGORY_LABELS[result.category];
-}
-
-// One label column for every row on every screen: the registry's widest name, not the widest
-// row that happens to be on screen, so the description column does not jump between screens.
-function commandLabelWidth(commands: RuntimeCommandDef[]): number {
-  let width = 0;
-  for (const command of commands) {
-    width = Math.max(width, getTerminalCellWidth(command.name));
-    for (const alias of command.aliases ?? []) {
-      width = Math.max(width, getTerminalCellWidth(alias.name));
-    }
-  }
-  return width;
-}
-
-// The description column is padded to the exact remaining width so the shortcut lands on the
-// panel's right edge; ListRow cannot right-align a trailing next to a fixed label column.
-function descriptionColumn(input: {
-  description: string;
-  shortcut: string | null;
-  innerWidth: number;
-  labelWidth: number;
-}): string {
-  const trailingCols =
-    input.shortcut === null ? 0 : TRAILING_GAP + getTerminalCellWidth(input.shortcut);
-  const field = Math.max(
-    0,
-    input.innerWidth - LEAD_COLS - input.labelWidth - LABEL_GAP - trailingCols,
-  );
-  const budget = input.shortcut === null ? field : Math.max(0, field - SHORTCUT_GAP + TRAILING_GAP);
-  return padTerminalDisplayTextEnd(truncateTerminalDisplayText(input.description, budget), field);
 }
 
 export interface CommandPaletteOverlayProps {

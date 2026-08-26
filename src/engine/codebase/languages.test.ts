@@ -64,12 +64,16 @@ describe('language registry', () => {
       'parseFile extracts the exported symbol from a %s file',
       async (ext) => {
         const file = join(dir, `widget${ext}`);
-        writeFileSync(file, "import './dep.js';\nexport function widget() {}\n");
+        writeFileSync(
+          file,
+          "import './dep.js';\nexport function widget() {}\nfunction helper() {}\n",
+        );
         const node = await parseFile(file);
         expect(node).not.toBeNull();
         const widget = node?.symbols.find((s) => s.name === 'widget');
         expect(widget?.exported).toBe(true);
         expect(widget?.kind).toBe('function');
+        expect(node?.symbols.find((s) => s.name === 'helper')?.exported).toBe(false);
         expect(node?.imports).toContain('./dep.js');
         rmSync(file);
       },
@@ -122,11 +126,6 @@ describe('isExported per language', () => {
     expect(rs.isExported?.('hello', 'pub fn hello() {}')).toBe(true);
     expect(rs.isExported?.('hello', 'fn hello() {}')).toBe(false);
     expect(rs.isExported?.('hello', 'pub(crate) fn hello() {}')).toBe(true);
-  });
-
-  it('TypeScript: isExported is not defined (handled via export_statement)', () => {
-    const ts = getLanguageForExtension('.ts')!;
-    expect(ts.isExported).toBeUndefined();
   });
 });
 

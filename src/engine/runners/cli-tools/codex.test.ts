@@ -18,7 +18,6 @@ function terminalInput(
   return adapter.terminal({
     outputContract: adapter.outputContract,
     events,
-    stdout: '',
     stderr: '',
     exitCode: 0,
     signal: null,
@@ -103,8 +102,9 @@ describe('Codex role adapters', () => {
       '--label',
       'fixture',
     ]);
-    expect(resumed).not.toContain('--reasoning-effort');
-    expect(codexPlannerAdapter.validateArgs(resumed, resumed.slice(0, -2))).toEqual({
+    expect(
+      codexPlannerAdapter.validateArgs({ invocationArgs: resumed, baseArgs: resumed.slice(0, -2) }),
+    ).toEqual({
       valid: true,
     });
 
@@ -135,10 +135,6 @@ describe('Codex role adapters', () => {
       '/project',
       PROMPT,
     ]);
-    expect(readOnly).toContain('read-only');
-    expect(readOnly).toContain('never');
-    expect(readOnly).toContain('--ephemeral');
-    expect(readOnly).not.toContain('workspace-write');
 
     const escalation = codexPlannerAdapter.buildArgs({
       prompt: PROMPT,
@@ -162,7 +158,6 @@ describe('Codex role adapters', () => {
       '/project',
       PROMPT,
     ]);
-    expect(escalation).not.toContain('--ephemeral');
   });
 
   it('preserves implementer workspace-write, cd, model, and prompt placement', () => {
@@ -190,12 +185,24 @@ describe('Codex role adapters', () => {
       'fixture',
     ]);
     const base = args.slice(0, -2);
-    expect(codexImplementerAdapter.validateArgs(args, base)).toEqual({ valid: true });
-    expect(codexImplementerAdapter.validateArgs([...args, '--sandbox', 'danger'], base)).toEqual({
+    expect(codexImplementerAdapter.validateArgs({ invocationArgs: args, baseArgs: base })).toEqual({
+      valid: true,
+    });
+    expect(
+      codexImplementerAdapter.validateArgs({
+        invocationArgs: [...args, '--sandbox', 'danger'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['--sandbox'],
     });
-    expect(codexImplementerAdapter.validateArgs([...args, 'prefix-<PROMPT>'], base)).toEqual({
+    expect(
+      codexImplementerAdapter.validateArgs({
+        invocationArgs: [...args, 'prefix-<PROMPT>'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });
@@ -229,7 +236,10 @@ describe('Codex role adapters', () => {
       effort: undefined,
     });
     const invocation = [...base, ...tokens];
-    const validation = codexPlannerAdapter.validateArgs(invocation, base);
+    const validation = codexPlannerAdapter.validateArgs({
+      invocationArgs: invocation,
+      baseArgs: base,
+    });
     expect(validation.valid).toBe(false);
     if (!validation.valid) {
       expect(validation.conflicts.length).toBeGreaterThan(0);
@@ -447,8 +457,6 @@ describe('Codex exact last-message terminal (REQ-013)', () => {
     );
 
     expect(terminal.text).toBe('final brief text');
-    expect(terminal.text).not.toContain('STALE PROGRESS MESSAGE');
-    expect(terminal.text).not.toContain('TOOL TRAFFIC PAYLOAD');
   });
 
   it('never promotes tool traffic when the turn ends without a final message', () => {
@@ -459,8 +467,6 @@ describe('Codex exact last-message terminal (REQ-013)', () => {
 
     expect(terminal.status).toBe('completed');
     expect(terminal.text).toBe('');
-    expect(terminal.text).not.toContain('progress');
-    expect(terminal.text).not.toContain('tool ran');
   });
 
   it('joins deltas only within the final message', () => {
@@ -491,9 +497,21 @@ describe('Codex exact last-message terminal (REQ-013)', () => {
   });
 
   it('does not promote earlier text when the terminal record is missing', () => {
-    const events = codexProtocolEvents(
-      JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'partial' } }),
-    );
+    const events = [
+      ...codexProtocolEvents(JSON.stringify({ type: 'thread.started', thread_id: 'session-last' })),
+      ...codexProtocolEvents(
+        JSON.stringify({
+          type: 'item.completed',
+          item: { type: 'agent_message', text: 'EARLIER MESSAGE TEXT' },
+        }),
+      ),
+      ...codexProtocolEvents(
+        JSON.stringify({
+          type: 'item.completed',
+          item: { type: 'local_shell_exec', input: { command: 'tool ran' } },
+        }),
+      ),
+    ];
     expect(() => terminalInput(codexPlannerAdapter, events)).toThrow(
       'Codex output ended without a terminal result',
     );

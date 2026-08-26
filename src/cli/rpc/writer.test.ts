@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest';
 import type { EngineEvent } from '../../engine/events/types.js';
 import { PLANNER_ARTIFACT_MAX_BYTES } from '../../engine/runners/types.js';
 import {
-  BriefRecoveryProjectionV1Schema,
   type BriefRecoveryProjectionV1,
-} from '../../core/schemas/brief-recovery.js';
+  BriefRecoveryProjectionV1Schema,
+} from '../../core/schemas/brief-recovery/document.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { taskId } from '../../core/schemas/task.js';
 import { RPC_MAX_FRAME_BYTES } from './types.js';

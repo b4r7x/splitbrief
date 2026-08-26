@@ -1,4 +1,4 @@
-import { findConfiguredCustomCommand } from '../../core/config/custom-commands.js';
+import { findConfiguredCustomCommand } from '../../core/config/custom-command-catalog.js';
 import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
 import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 import type { Config } from '../../core/schemas/config.js';

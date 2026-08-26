@@ -63,13 +63,10 @@ describe('resolveAttachment', () => {
     if (!result.ok) expect(result.reason).toBe('outside-safe-roots');
   });
 
-  it('rejects path-traversal attempts', () => {
+  it('rejects a path-traversal attempt that resolves outside to nothing', () => {
     const result = resolveAttachment({ input: '../../etc/passwd.png', projectDir });
     expect(result.ok).toBe(false);
-    // Either not-found or outside-safe-roots — either is a refusal.
-    if (!result.ok) {
-      expect(['not-found', 'outside-safe-roots', 'not-image']).toContain(result.reason);
-    }
+    if (!result.ok) expect(result.reason).toBe('not-found');
   });
 
   it('strips wrapping quotes from input', () => {

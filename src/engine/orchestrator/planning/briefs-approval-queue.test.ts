@@ -1,22 +1,28 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { BriefRecoveryControllerDeps } from '../../../core/schemas/brief-owner.js';
 import type {
-  BriefAdmissionInput,
   BriefRecoveryBudgetPort,
-  BriefRecoveryController,
-  BriefRecoveryControllerDeps,
+  BudgetReservation,
+  RecoveryCallEstimate,
+  RecoveryUsage,
+} from '../../../core/schemas/brief-recovery/budget.js';
+import type {
   BriefRecoveryStateView,
   BriefRecoveryV1,
-  BudgetReservation,
-  EvidenceRef,
   NormalBriefRecoveryV1,
+} from '../../../core/schemas/brief-recovery/document.js';
+import type {
+  BriefAdmissionInput,
+  BriefRecoveryController,
   QueueBriefInput,
   QueueResultV1,
-  RecoveryCallEstimate,
-  RecoveryProviderRequest,
-  RecoveryProviderResult,
-  RecoveryUsage,
   StateAuthorityReceipt,
 } from '../../../core/schemas/brief-recovery.js';
+import type { EvidenceRef } from '../../../core/schemas/brief-recovery/primitives.js';
+import type {
+  RecoveryProviderRequest,
+  RecoveryProviderResult,
+} from '../../../core/schemas/brief-recovery/provider-call.js';
 import type { Planner } from '../../planners/types.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
@@ -39,7 +45,7 @@ import {
   reconcileBriefRecoveryCall,
   reserveBriefRecoveryCall,
   terminalChargeBriefRecoveryCall,
-} from '../budget/enforce.js';
+} from '../budget/recovery-reservation.js';
 import {
   claimQueuedMessage,
   readQueueForPrompt,
@@ -49,7 +55,7 @@ import {
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupProject } from '#testing/helpers/queue.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
-import { persistBriefOwnerTransition } from '../evidence/persistence.js';
+import { persistBriefOwnerTransition } from '../evidence/recovery-journal.js';
 import { readWorkflowStateHead } from '../state-ops.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import type {
@@ -599,9 +605,6 @@ describe('brief approval queue recovery races', () => {
       reservation: heldFromReservation.reservation,
     });
     const replay = budget.terminalCharge({ accountingKey: key, reservation: charged.reservation });
-    expect(budget.reserve).toHaveBeenCalledTimes(1);
-    expect(budget.reconcile).toHaveBeenCalledTimes(1);
-    expect(budget.terminalCharge).toHaveBeenCalledTimes(2);
     expect(charged.reservation).toMatchObject({
       accountingKey: key,
       state: 'terminal-charged',

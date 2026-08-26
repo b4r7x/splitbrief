@@ -50,14 +50,13 @@ describe('agent implementer', () => {
       args: ['-c', `echo "hello" > ${join(testDir, 'output.txt')}`],
     });
 
-    const output: string[] = [];
     const implementer = createAgentImplementer(config);
     const result = await implementer.implement({
       task: makeTask(),
       projectDir: testDir,
       config,
       context: { ...context, dir: testDir },
-      onOutput: (text) => output.push(text),
+      onOutput: () => {},
     });
 
     expect(result.success).toBe(true);

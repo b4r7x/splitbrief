@@ -1,15 +1,16 @@
 import { z } from 'zod';
+import { assertNever } from '../../utils/type-guards.js';
 import type { ApprovalReviewResult } from '../approval/types.js';
 import {
-  BriefRecoveryProjectionV1Schema,
-  BriefRecoveryStatusSchema,
-  EvidenceRefSchema,
-  RecoveryResultV1Schema,
-  type BriefRecoveryAction,
   type BriefRecoveryProjectionV1,
+  BriefRecoveryProjectionV1Schema,
+} from './brief-recovery/document.js';
+import {
   type RecoveryResult,
   type RecoveryResultV1,
+  RecoveryResultV1Schema,
 } from './brief-recovery.js';
+import { type BriefRecoveryAction, EvidenceRefSchema } from './brief-recovery/primitives.js';
 
 const MAX_ID = 256;
 const MAX_HASH = 512;
@@ -45,8 +46,6 @@ export const BriefReviewActionIdSchema = z.enum(BRIEF_REVIEW_COMMAND_ACTIONS);
 export const BRIEF_REVIEW_PROMPT_KINDS = ['spec', 'plan', 'briefs', 'artifact'] as const;
 export const BriefReviewPromptKindSchema = z.enum(BRIEF_REVIEW_PROMPT_KINDS);
 export type BriefReviewPromptKind = z.infer<typeof BriefReviewPromptKindSchema>;
-
-export const BriefReviewStatusSchema = BriefRecoveryStatusSchema;
 
 export const BriefReviewProjectionSchema = BriefRecoveryProjectionV1Schema;
 
@@ -298,10 +297,8 @@ export function briefReviewCommandDisposition(
     case 'resolve-unresolved':
     case 'status':
       return { kind: 'status' };
-    default: {
-      const exhaustive: never = command;
-      return exhaustive;
-    }
+    default:
+      return assertNever(command);
   }
 }
 

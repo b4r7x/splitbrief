@@ -1,9 +1,10 @@
 import { createStore, storeBase } from '../create-store.js';
+import type { CustomCommandRunnerKind } from '../../core/config/custom-commands.js';
 
 export type PickerSubView =
   | { kind: 'picker' }
-  | { kind: 'custom-command-contract'; refocusKind?: 'shell' | 'agent' | undefined }
-  | { kind: 'custom-command'; intendedKind: 'shell' | 'agent' }
+  | { kind: 'custom-command-contract'; refocusKind?: CustomCommandRunnerKind | undefined }
+  | { kind: 'custom-command'; intendedKind: CustomCommandRunnerKind }
   | { kind: 'custom-model' }
   | { kind: 'provider-auth' };
 

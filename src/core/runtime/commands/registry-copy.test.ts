@@ -1,6 +1,6 @@
 import { afterEach, describe, it, expect } from 'vitest';
 import { createRuntimeCommands } from './registry.js';
-import { makeCtx, noop, executeRuntimeCommand } from '#testing/helpers/runtime-commands.js';
+import { makeCtx, noop, runCommandInTest } from '#testing/helpers/runtime-commands.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { CopyResult, CopyTarget } from './types.js';
 
@@ -24,7 +24,12 @@ describe('/copy command', () => {
       }),
     );
 
-    await executeRuntimeCommand(commands, '/copy path', 'workflow', noop);
+    await runCommandInTest({
+      commands: commands,
+      raw: '/copy path',
+      screen: 'workflow',
+      onError: noop,
+    });
 
     expect(copied).toBe('path');
     expect(feedback).toBe('Copied (native)');
@@ -41,7 +46,7 @@ describe('/copy command', () => {
       }),
     );
 
-    await executeRuntimeCommand(commands, '/copy', 'workflow', noop);
+    await runCommandInTest({ commands: commands, raw: '/copy', screen: 'workflow', onError: noop });
     expect(copied).toBe('message');
   });
 
@@ -56,7 +61,12 @@ describe('/copy command', () => {
       }),
     );
 
-    await executeRuntimeCommand(commands, '/copy brief', 'workflow', noop);
+    await runCommandInTest({
+      commands: commands,
+      raw: '/copy brief',
+      screen: 'workflow',
+      onError: noop,
+    });
     expect(feedback).toBe('Nothing to copy');
   });
 
@@ -75,7 +85,12 @@ describe('/copy command', () => {
       }),
     );
 
-    await executeRuntimeCommand(commands, '/copy bogus', 'workflow', noop);
+    await runCommandInTest({
+      commands: commands,
+      raw: '/copy bogus',
+      screen: 'workflow',
+      onError: noop,
+    });
     expect(copied).toBe(false);
     expect(error).toMatch(/Invalid copy target/);
   });
@@ -83,8 +98,13 @@ describe('/copy command', () => {
   it('is unavailable on the summary screen', async () => {
     let error: string | undefined;
     const commands = createRuntimeCommands(makeCtx());
-    await executeRuntimeCommand(commands, '/copy path', 'summary', (m) => {
-      error = m;
+    await runCommandInTest({
+      commands: commands,
+      raw: '/copy path',
+      screen: 'summary',
+      onError: (m) => {
+        error = m;
+      },
     });
     expect(error).toMatch(/only available/);
   });
@@ -103,8 +123,13 @@ describe('/copy command', () => {
         },
       }),
     );
-    await executeRuntimeCommand(commands, '/copy path', 'home', (m) => {
-      error = m;
+    await runCommandInTest({
+      commands: commands,
+      raw: '/copy path',
+      screen: 'home',
+      onError: (m) => {
+        error = m;
+      },
     });
     expect(copied).toBe(false);
     expect(error).toMatch(/only available/);

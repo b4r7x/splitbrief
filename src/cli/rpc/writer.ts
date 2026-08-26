@@ -102,6 +102,7 @@ export function createResponseWriter(deps: {
 
   function write(response: RpcResponse): boolean {
     if (broken) return false;
+    let serialized: string | undefined;
     try {
       const protectedResponse = protectConsumerPayload({ context: 'rpc', payload: response });
       const output = protectedResponse.oversized
@@ -110,13 +111,12 @@ export function createResponseWriter(deps: {
             error: `omitted oversized ${response.type} response exceeding ${protectedResponse.maxBytes} bytes`,
           }
         : protectedResponse.payload;
-      const serialized = JSON.stringify(output);
-      if (serialized === undefined) return false;
-      return writeSerialized(serialized);
+      serialized = JSON.stringify(output);
     } catch {
-      closeWriter('output stream write failed');
       return false;
     }
+    if (serialized === undefined) return false;
+    return writeSerialized(serialized);
   }
 
   function writeSerialized(serialized: string): boolean {

@@ -3,8 +3,7 @@ import type { ReviewPacketSummary, Summary } from '../../../core/schemas/summary
 import type { ScrollableDocumentRow } from '../../../components/scrollable-document.js';
 import type { Theme } from '../../../components/theme.js';
 import { SPLITBRIEF_DIR } from '../../../core/paths.js';
-import { truncateWithEllipsis } from '../../../utils/truncate.js';
-import { stripTerminalControls } from '../../../utils/display-text.js';
+import { stripTerminalControls, truncateTerminalDisplayText } from '../../../utils/display-text.js';
 import { formatScoreSummary } from '../../../core/formatting.js';
 
 function sessionPath(path: string, sessionId: string | undefined): string {
@@ -15,14 +14,14 @@ function sessionPath(path: string, sessionId: string | undefined): string {
 function compactPath(path: string, maxLength: number): string {
   if (path.length <= maxLength) return path;
   const lastSlash = path.lastIndexOf('/');
-  if (lastSlash === -1) return truncateWithEllipsis(path, maxLength);
+  if (lastSlash === -1) return truncateTerminalDisplayText(path, maxLength);
 
   const fileName = path.slice(lastSlash + 1);
   const parent = path.slice(0, lastSlash);
   const parentMaxLength = maxLength - fileName.length - 1;
-  if (parentMaxLength <= 1) return truncateWithEllipsis(path, maxLength);
+  if (parentMaxLength <= 1) return truncateTerminalDisplayText(path, maxLength);
 
-  return `${truncateWithEllipsis(parent, parentMaxLength)}/${fileName}`;
+  return `${truncateTerminalDisplayText(parent, parentMaxLength)}/${fileName}`;
 }
 
 function formatFinalReviewStatus(packet: ReviewPacketSummary): string {

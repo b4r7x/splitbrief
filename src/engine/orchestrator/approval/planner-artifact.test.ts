@@ -302,18 +302,21 @@ describe('declared artifact review lease', () => {
     );
   });
 
-  it('cleans the candidate when interactive approval rejects the artifact', async () => {
-    await withReview(
-      { onApprovalNeeded: async () => ({ approved: false }) },
-      async (fixture, review) => {
-        writeArtifact(fixture, 'requires approval');
-        await expect(review.reviewAfterChild()).rejects.toMatchObject({
-          kind: 'custom-planner-artifact-rejected',
-        });
-        expect(existsSync(candidateRoot(fixture.projectDir))).toBe(false);
-      },
-    );
-  });
+  it.each(['requires approval', 'original bytes'])(
+    'cleans the candidate when interactive approval rejects the artifact (%s)',
+    async (payload) => {
+      await withReview(
+        { onApprovalNeeded: async () => ({ approved: false }) },
+        async (fixture, review) => {
+          writeArtifact(fixture, payload);
+          await expect(review.reviewAfterChild()).rejects.toMatchObject({
+            kind: 'custom-planner-artifact-rejected',
+          });
+          expect(existsSync(candidateRoot(fixture.projectDir))).toBe(false);
+        },
+      );
+    },
+  );
 
   it('never creates a pathname candidate for a successful immutable review', async () => {
     await withReview(
@@ -328,23 +331,6 @@ describe('declared artifact review lease', () => {
       async (fixture, review) => {
         writeArtifact(fixture, 'original bytes');
         await expect(review.reviewAfterChild()).resolves.toBe('original bytes');
-        expect(existsSync(candidateRoot(fixture.projectDir))).toBe(false);
-      },
-    );
-  });
-
-  it('does not create a candidate on rejected immutable review', async () => {
-    await withReview(
-      {
-        onApprovalNeeded: async () => {
-          return { approved: false };
-        },
-      },
-      async (fixture, review) => {
-        writeArtifact(fixture, 'original bytes');
-        await expect(review.reviewAfterChild()).rejects.toMatchObject({
-          kind: 'custom-planner-artifact-rejected',
-        });
         expect(existsSync(candidateRoot(fixture.projectDir))).toBe(false);
       },
     );

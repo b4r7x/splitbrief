@@ -5,17 +5,16 @@ describe('getHomeLayout', () => {
   it('sizes the dock and body to one wide overlay budget on tall terminals', () => {
     const layout = getHomeLayout({ cols: 160, rows: 42 });
     expect(layout).toMatchObject({
-      inputWidth: 140,
-      bodyWidth: 140,
+      width: 140,
       logoTier: 'full',
       inputBottomMargin: 2,
     });
   });
 
   it('gives the body the same width at each catalogued viewport', () => {
-    expect(getHomeLayout({ cols: 120, rows: 40 }).bodyWidth).toBe(108);
-    expect(getHomeLayout({ cols: 80, rows: 24 }).bodyWidth).toBe(76);
-    expect(getHomeLayout({ cols: 60, rows: 18 }).bodyWidth).toBe(56);
+    expect(getHomeLayout({ cols: 120, rows: 40 }).width).toBe(108);
+    expect(getHomeLayout({ cols: 80, rows: 24 }).width).toBe(76);
+    expect(getHomeLayout({ cols: 60, rows: 18 }).width).toBe(56);
   });
 
   it('budgets session rows against the seat block at each catalogued viewport', () => {
@@ -26,8 +25,7 @@ describe('getHomeLayout', () => {
 
   it('keeps medium terminals on the full logo', () => {
     expect(getHomeLayout({ cols: 100, rows: 32 })).toMatchObject({
-      inputWidth: 90,
-      bodyWidth: 90,
+      width: 90,
       logoTier: 'full',
       inputBottomMargin: 1,
     });
@@ -35,8 +33,7 @@ describe('getHomeLayout', () => {
 
   it('uses the compact logo on shorter terminals', () => {
     expect(getHomeLayout({ cols: 80, rows: 20 })).toMatchObject({
-      inputWidth: 76,
-      bodyWidth: 76,
+      width: 76,
       logoTier: 'compact',
       inputBottomMargin: 0,
     });

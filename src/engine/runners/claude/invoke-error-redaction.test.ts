@@ -55,24 +55,21 @@ describe('Claude invoke process diagnostics', () => {
     const executable = installFailingClaudeShim();
     const events: RunnerCallEvent[] = [];
 
-    await expect(
-      runClaudeOneShot({
-        prompt: 'prompt',
-        projectDir,
-        executable,
-        onOutput: () => {},
-        onCallEvent: (event) => events.push(event),
-      }),
-    ).rejects.toSatisfy((err: unknown) => {
-      if (!(err instanceof Error)) return false;
-      const data = (err as Error & { data?: unknown }).data;
-      return (
-        err.message === 'claude exited with code 23: failure from claude' &&
-        !err.message.includes(executable.path) &&
-        JSON.stringify(data).includes('claude') &&
-        !JSON.stringify(data).includes(executable.path)
-      );
+    const caught = await runClaudeOneShot({
+      prompt: 'prompt',
+      projectDir,
+      executable,
+      onOutput: () => {},
+      onCallEvent: (event) => events.push(event),
+    }).catch((err: unknown) => err);
+
+    expect(caught).toMatchObject({
+      kind: 'process-output',
+      message: 'claude exited with code 23: failure from claude',
     });
+    const data = JSON.stringify((caught as { data?: unknown }).data);
+    expect(data).toContain('claude');
+    expect(data).not.toContain(executable.path);
 
     expect(JSON.stringify(events)).not.toContain(executable.path);
     expect(events).toEqual(

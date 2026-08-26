@@ -41,12 +41,14 @@ import {
   releaseStateAuthority,
 } from '../../../core/state/authority.js';
 import {
-  TRANSCRIPT_OMITTED_FEATURE,
-  generateSessionId,
   reactivateExistingSession,
   readActive,
   writeActive,
-} from '../../../core/sessions/lifecycle.js';
+} from '../../../core/sessions/active-pointer.js';
+import {
+  TRANSCRIPT_OMITTED_FEATURE,
+  generateSessionId,
+} from '../../../core/sessions/session-id.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
 import { registerProcess } from '../../../lib/process/registry.js';
@@ -54,7 +56,7 @@ import { readRunnerPids } from '../../../core/sessions/runner-pids.js';
 import { simpleGit } from 'simple-git';
 import { runWorkflow as runPreparedWorkflow, WORKFLOW_REWIND_ABORT_REASON } from './workflow.js';
 import type { RunWorkflowOptions } from './init.js';
-import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../types.js';
+import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../events/workflow-cancel.js';
 import { error } from '../../../utils/error.js';
 import { parsePreparedConfig, type RunnerGate } from '../../runners/prepared-execution.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
@@ -155,7 +157,9 @@ async function runWorkflow(input: WorkflowTestOptions) {
   const config = parsePreparedConfig(hooks === undefined ? inputConfig : { ...inputConfig, hooks });
   const sessionId =
     explicitSessionId ??
-    generateSessionId(projectDir, feature, new Date(), {
+    generateSessionId({
+      projectDir,
+      feature,
       persistTranscript: config.workflow.persistTranscript,
     });
   ensureSessionDir(projectDir, sessionId);
@@ -290,12 +294,9 @@ describe('runWorkflow — smoke', () => {
       _eventSink: (e) => events.push(e),
     });
 
-    // The entry point produces a Summary even when planner is not available.
-    expect(summary).toBeDefined();
     expect(summary.feature).toBe(TRANSCRIPT_OMITTED_FEATURE);
     expect(summary.totalTasks).toBe(0);
 
-    // An error event was emitted explaining the missing planner to the user.
     const errorEvent = events.find(
       (e): e is Extract<EngineEvent, { type: 'error' }> => e.type === 'error',
     );
@@ -446,7 +447,6 @@ describe('runWorkflow — smoke', () => {
 
     // acquireLiveness writes the lockfile at the start of EVERY run (TUI/headless/RPC),
     // so checkServerStatus can refuse a concurrent resume/continue. Assert the record on disk.
-    const { sessionDir } = await import('../../../core/paths.js');
     const { readLockfile, checkServerStatus } = await import('../../ipc/lockfile.js');
     const dir = sessionDir(projectDir, 'liveness-sid');
     const lock = await readLockfile(dir);
@@ -837,8 +837,6 @@ describe('runWorkflow — smoke', () => {
 
     // ensureSessionDir is called during init before the isAvailable check — verify it
     // created the explicit session directory on disk.
-    const { existsSync } = await import('node:fs');
-    const { sessionDir } = await import('../../../core/paths.js');
     expect(existsSync(sessionDir(projectDir, 'explicit-sid'))).toBe(true);
   });
 
@@ -881,6 +879,7 @@ describe('runWorkflow — smoke', () => {
 
     const controller = new AbortController();
     controller.abort();
+    const events: EngineEvent[] = [];
 
     const summary = await runWorkflow({
       feature: 'aborted-before-start',
@@ -889,9 +888,11 @@ describe('runWorkflow — smoke', () => {
       callbacks,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       signal: controller.signal,
+      _eventSink: (e) => events.push(e),
     });
 
-    expect(summary).toBeDefined();
+    expect(summary.totalTasks).toBe(0);
+    expect(events.some((e) => e.type === 'task_started')).toBe(false);
     expect(summary.feature).toBe(TRANSCRIPT_OMITTED_FEATURE);
   });
 
@@ -1108,10 +1109,8 @@ describe('runWorkflow — smoke', () => {
   });
 
   it('carries the planner-produced tasks straight into the task loop and completes them', async () => {
-    // The post-plan boundary (formerly applyPostPlanDrain, F-069) used to be a no-op
-    // placeholder between planning and the task loop. With it gone, planning.state must
-    // flow directly into runTasksAndReview — observable as the planner's task actually
-    // being implemented and counted in the summary.
+    // planning.state flows directly into runTasksAndReview: the planner's task is
+    // implemented and counted in the summary.
     const projectDir = setupProject();
     const { callbacks } = makeCallbacks();
     const events: EngineEvent[] = [];
@@ -1574,7 +1573,7 @@ describe('runWorkflow — smoke', () => {
     });
     const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
-      const summary = await runWorkflow({
+      await runWorkflow({
         feature: 'isolation dispose failure',
         projectDir,
         config: unavailablePlannerConfig(),
@@ -1582,7 +1581,6 @@ describe('runWorkflow — smoke', () => {
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       });
 
-      expect(summary).toBeDefined();
       expect(
         stderrWrite.mock.calls.some(([chunk]) => String(chunk).includes('run isolation disposal')),
       ).toBe(true);
@@ -1613,7 +1611,7 @@ describe('runWorkflow — orphan session sweep', () => {
     chmodSync(unreadable, 0o000);
 
     try {
-      const summary = await runWorkflow({
+      await runWorkflow({
         feature: 'sweep unreadable session',
         projectDir,
         config: unavailablePlannerConfig(),
@@ -1621,7 +1619,6 @@ describe('runWorkflow — orphan session sweep', () => {
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       });
 
-      expect(summary).toBeDefined();
       expect(existsSync(unreadable)).toBe(true);
     } finally {
       chmodSync(unreadable, 0o755);
@@ -1633,7 +1630,7 @@ describe('runWorkflow — orphan session sweep', () => {
     const { callbacks } = makeCallbacks();
     const collectable = readinessOnly(projectDir, '2026-08-04-sweep-old', oldMtime());
 
-    const summary = await runWorkflow({
+    await runWorkflow({
       feature: 'sweep collectable session',
       projectDir,
       config: unavailablePlannerConfig(),
@@ -1641,7 +1638,6 @@ describe('runWorkflow — orphan session sweep', () => {
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
     });
 
-    expect(summary).toBeDefined();
     expect(existsSync(collectable)).toBe(false);
   });
 
@@ -1672,7 +1668,7 @@ describe('runWorkflow — orphan session sweep', () => {
     const activeSessionId = '2026-08-04-sweep-active';
     const active = readinessOnly(projectDir, activeSessionId, oldMtime());
 
-    const summary = await runWorkflow({
+    await runWorkflow({
       feature: 'sweep every kind',
       projectDir,
       config: unavailablePlannerConfig(),
@@ -1681,7 +1677,6 @@ describe('runWorkflow — orphan session sweep', () => {
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
     });
 
-    expect(summary).toBeDefined();
     expect(existsSync(old)).toBe(false);
     expect(existsSync(withState)).toBe(true);
     expect(existsSync(fresh)).toBe(true);

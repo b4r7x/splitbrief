@@ -44,18 +44,7 @@ export const taskMergeError = {
   isCycle: matches('task_compiler_cycle'),
 } as const;
 
-export function mergeTaskResult(manifest: TaskManifest, blocks: readonly Task[]): TaskMergeResult;
-export function mergeTaskResult(blocks: readonly Task[], manifest: TaskManifest): TaskMergeResult;
-export function mergeTaskResult(
-  first: TaskManifest | readonly Task[],
-  second: TaskManifest | readonly Task[],
-): TaskMergeResult {
-  const firstIsManifest = isTaskManifest(first);
-  const manifest = firstIsManifest ? first : second;
-  const blocks = firstIsManifest ? second : first;
-  if (!isTaskManifest(manifest))
-    throw taskMergeError.invalidManifest('manifest argument is missing');
-  if (!Array.isArray(blocks)) throw taskMergeError.invalidTask('Task block argument is missing');
+export function mergeTaskResult(manifest: TaskManifest, blocks: readonly Task[]): TaskMergeResult {
   validateManifest(manifest);
 
   const tasks = parseTasks(blocks);
@@ -94,10 +83,6 @@ export function mergeTaskResult(
     tasks: frozenTasks,
     tasksDigest: digestTasks(manifest.manifestDigest, frozenTasks),
   });
-}
-
-function isTaskManifest(value: TaskManifest | readonly Task[]): value is TaskManifest {
-  return !Array.isArray(value) && typeof value === 'object' && value !== null && 'items' in value;
 }
 
 export function digestTasks(manifestDigest: string, tasks: readonly Task[]): string {

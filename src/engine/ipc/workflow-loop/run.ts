@@ -9,8 +9,11 @@ import type { TaskId } from '../../../core/schemas/task.js';
 import { buildDetachedRetryState } from '../retry-state.js';
 import type { EventBus } from '../../events/types.js';
 import { transitionAndSave } from '../../orchestrator/state-ops.js';
-import { refreshWorkflowAuthority } from '../../orchestrator/run/init.js';
+import { refreshWorkflowAuthority } from '../../orchestrator/run/authority.js';
 import { assertPromptResponse, makeCallbacks } from './prompts.js';
+import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
+import { projectBriefRecovery } from '../../orchestrator/planning/brief-recovery-controller.js';
+import { recoveryViewOf } from '../../orchestrator/planning/brief-owner-projection.js';
 import {
   buildPausedSummary,
   loadOwnerWorkflowState,
@@ -71,6 +74,20 @@ function persistDetachedRetryState(ctx: WorkflowLoopContext, state: WorkflowStat
   return next;
 }
 
+function readBriefRecoveryProjection(
+  ctx: WorkflowLoopContext,
+): BriefRecoveryProjectionV1 | undefined {
+  const state = loadOwnerWorkflowState(ctx);
+  if (state === undefined || state.briefRecovery === undefined || state.briefRecovery === null) {
+    return undefined;
+  }
+  return projectBriefRecovery({
+    sessionId: ctx.prepared.session.ref.sessionId,
+    now: new Date().toISOString(),
+    state: recoveryViewOf(state),
+  });
+}
+
 export async function runWorkflowLoop(
   ctx: WorkflowLoopContext,
   ipcServer: IpcServer,
@@ -113,7 +130,9 @@ export async function runWorkflowLoop(
       sinks: ipcBridge.sinks,
       signal: ipcBridge.signal,
       drainPendingAttachments,
-      callbacks: makeCallbacks(ipcServer),
+      callbacks: makeCallbacks(ipcServer, {
+        readBriefRecovery: () => readBriefRecoveryProjection(ctx),
+      }),
       ...(stateForRun !== undefined && { savedState: stateForRun }),
       ...(retryProfileOverride !== undefined && { retryProfileOverride }),
       ...(retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
@@ -122,11 +141,7 @@ export async function runWorkflowLoop(
     retryProfileOverrideTaskId = undefined;
 
     const saved = loadOwnerWorkflowState(ctx);
-    if (saved?.pendingRecovery) {
-      stateForRun = saved;
-      continue;
-    }
-    if (saved?.rewindPending) {
+    if (saved?.pendingRecovery || saved?.rewindPending) {
       stateForRun = saved;
       continue;
     }

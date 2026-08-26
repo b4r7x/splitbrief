@@ -62,11 +62,10 @@ describe('restoreSnapshot — from delta snapshot', () => {
     await writeFile(join(tmp, 'changed.ts'), 'modified');
     const delta = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
-    // Confirm delta snapshot only has changed.ts in fileEntries
     expect(delta.manifest.fileEntries.some((e) => e.path === 'changed.ts')).toBe(true);
     expect(delta.manifest.fileEntries.some((e) => e.path === 'unchanged.ts')).toBe(false);
 
-    // Now delete both files to force restore from storage (currentHash === null → always restored)
+    // currentHash === null → restore always rewrites from storage.
     await unlink(join(tmp, 'unchanged.ts'));
     await unlink(join(tmp, 'changed.ts'));
 
@@ -80,7 +79,6 @@ describe('restoreSnapshot — from delta snapshot', () => {
     expect(result.restoredPaths).toContain('unchanged.ts');
     expect(result.restoredPaths).toContain('changed.ts');
 
-    const { readFile } = await import('node:fs/promises');
     const unchangedContent = await readFile(join(tmp, 'unchanged.ts'), 'utf-8');
     const changedContent = await readFile(join(tmp, 'changed.ts'), 'utf-8');
     // unchanged.ts comes from baseline files/, changed.ts from delta files/
@@ -101,7 +99,6 @@ describe('restoreSnapshot — conflict detection', () => {
       name: 'snap1',
     });
 
-    // Modify the file after snapshot
     await writeFile(join(tmp, 'foo.ts'), 'modified after snapshot');
 
     const result = await restoreSnapshot({
@@ -139,7 +136,6 @@ describe('restoreSnapshot — conflict detection', () => {
     expect(result.conflictedPaths).not.toContain('foo.ts');
     expect(result.restoredPaths).not.toContain('foo.ts');
 
-    const { readFile } = await import('node:fs/promises');
     const content = await readFile(join(tmp, 'foo.ts'), 'utf-8');
     expect(content).toBe('original');
   });
@@ -168,7 +164,6 @@ describe('restoreSnapshot — deleted file on disk', () => {
     expect(result.restoredPaths).toContain('gone.ts');
     expect(result.conflictedPaths).not.toContain('gone.ts');
 
-    const { readFile } = await import('node:fs/promises');
     const content = await readFile(join(tmp, 'gone.ts'), 'utf-8');
     expect(content).toBe('was here');
   });
@@ -186,7 +181,6 @@ describe('restoreSnapshot — missingSnapshotFiles', () => {
       name: 'snap1',
     });
 
-    // Manually corrupt: add a path to fileHashes with no entry in fileEntries or baseline
     const { writeManifest } = await import('./manifest.js');
     const corruptManifest = {
       ...snap.manifest,
@@ -206,7 +200,6 @@ describe('restoreSnapshot — missingSnapshotFiles', () => {
 
 describe('restoreSnapshot — missing baseline', () => {
   it('throws "Baseline snapshot missing" when no baseline exists', async () => {
-    // Write a manifest directly without creating a baseline
     const { writeManifest } = await import('./manifest.js');
     await writeManifest(tmp, 'sess-01', {
       version: 1,
@@ -230,7 +223,6 @@ describe('restoreSnapshot — missing baseline', () => {
 
 describe('restoreSnapshot — lock release on error', () => {
   it('releases lock even when error thrown mid-restore', async () => {
-    // No baseline exists — will throw during restore
     const { writeManifest } = await import('./manifest.js');
     await writeManifest(tmp, 'sess-01', {
       version: 1,
@@ -411,7 +403,7 @@ describe('restoreSnapshot — event emission', () => {
     await writeFile(join(tmp, 'foo.ts'), 'user-edit-after-snapshot');
 
     // Tamper with the stored blob to simulate disk corruption.
-    const filesDir = snapshotFilesDir(tmp, 'sess-01', snap.manifest.id);
+    const filesDir = snapshotFilesDir({ projectDir: tmp, sessionId: 'sess-01' }, snap.manifest.id);
     const blobs = await readdir(filesDir);
     expect(blobs.length).toBeGreaterThan(0);
     const blobPath = join(filesDir, blobs[0]!);
@@ -441,7 +433,6 @@ describe('restoreSnapshot — extraneous files created after snapshot', () => {
       name: 'snap1',
     });
 
-    // Create a new tracked file AFTER the snapshot was captured.
     await writeFile(join(tmp, 'created-later.ts'), 'new');
 
     const result = await restoreSnapshot({

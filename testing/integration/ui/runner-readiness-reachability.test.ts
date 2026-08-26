@@ -140,6 +140,5 @@ describe('CLI readiness reachability from the real detection producer', () => {
 
     expect(enabledArguments.length).toBe(CLI_TOOL_IDS.length);
     expect(enabledArguments.every((enabled) => enabled === undefined)).toBe(true);
-    expect(UNREACHABLE_PICKER_STATES).toEqual(['disabled']);
   });
 });

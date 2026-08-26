@@ -1,23 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import {
-  writeFileSync,
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  statSync,
-} from 'node:fs';
+import { writeFileSync, chmodSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Config } from '../../core/schemas/config.js';
 import type { CliImplementerConfig } from '../../core/schemas/implementer-config.js';
 import { createCliImplementer as createCliImplementerImpl } from './cli.js';
-import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
-import type { CliStartGate } from '../runners/start-gate.js';
 import type { ImplementerFactoryOptions } from './types.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { processError } from '../../lib/process/errors.js';
@@ -27,29 +17,7 @@ import type { ImplementerPublisher } from './types.js';
 
 let projectDir: string;
 let shimDir: string;
-let originalPath: string | undefined;
-
-/**
- * Production CLI runners require an explicit identity admitted by readiness.
- * The test shims are real executable files, so derive the same canonical
- * path/fingerprint that readiness would provide instead of bypassing the gate.
- */
-function trustedGate(tool: CliToolId): CliStartGate {
-  const commandPath = join(shimDir, CLI_TOOL_CATALOG[tool].command);
-  if (!existsSync(commandPath)) {
-    writeFileSync(commandPath, '#!/bin/sh\nexit 0\n', 'utf8');
-    chmodSync(commandPath, 0o755);
-  }
-  const path = realpathSync(commandPath);
-  const info = statSync(path);
-  return {
-    tool,
-    executable: {
-      path,
-      fingerprint: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs },
-    },
-  };
-}
+let restorePath: () => void;
 
 function createCliImplementer(
   config: CliImplementerConfig,
@@ -57,7 +25,7 @@ function createCliImplementer(
 ): ReturnType<typeof createCliImplementerImpl> {
   return createCliImplementerImpl(config, {
     ...options,
-    trustedCli: options?.trustedCli ?? trustedGate(config.tool),
+    trustedCli: options?.trustedCli ?? trustedShimGate({ dir: shimDir, tool: config.tool }),
   });
 }
 
@@ -134,16 +102,11 @@ beforeEach(() => {
   projectDir = createTempDir('splitbrief-cli-impl');
   createTestGitRepo(projectDir);
   shimDir = createTempDir('splitbrief-cli-impl-shim');
-  originalPath = process.env['PATH'];
-  process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+  restorePath = prependPath(shimDir);
 });
 
 afterEach(() => {
-  if (originalPath === undefined) {
-    delete process.env['PATH'];
-  } else {
-    process.env['PATH'] = originalPath;
-  }
+  restorePath();
   cleanupTempDir(shimDir);
   cleanupTempDir(projectDir);
 });

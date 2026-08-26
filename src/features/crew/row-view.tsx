@@ -6,8 +6,11 @@ import type { CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewRow } from '../../core/crew/rows.js';
 import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
 import { glyph, type GlyphName } from '../../lib/glyphs.js';
-import { getTerminalCellWidth, padTerminalDisplayTextEnd } from '../../utils/display-text.js';
-import { truncateWithEllipsis } from '../../utils/truncate.js';
+import {
+  getTerminalCellWidth,
+  padTerminalDisplayTextEnd,
+  truncateTerminalDisplayText,
+} from '../../utils/display-text.js';
 import { assertNever } from '../../utils/type-guards.js';
 import {
   CREW_COLUMN_GAP,
@@ -99,7 +102,7 @@ export function CrewVerdictLine({ verdict, width }: CrewVerdictLineProps) {
   const lead = `${' '.repeat(CREW_MARKER_GUTTER)}${glyph('treeLast')} `;
   return (
     <Text color={t.textDim}>
-      {`${lead}${truncateWithEllipsis(VERDICT_WORDS[verdict], width - CREW_MARKER_GUTTER - CREW_RAIL_WIDTH)}`}
+      {`${lead}${truncateTerminalDisplayText(VERDICT_WORDS[verdict], width - CREW_MARKER_GUTTER - CREW_RAIL_WIDTH)}`}
     </Text>
   );
 }

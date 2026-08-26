@@ -4,7 +4,7 @@ import { chmod, realpath, stat, utimes, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
-import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-config.js';
+import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import {
   CliExecutableReceiptSchema,
   formatDigestBoundExecutableFingerprint,
@@ -12,7 +12,8 @@ import {
 } from '../../core/discovery/detection.js';
 import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
-import { detectionRuntimeNamespace, detectRunnerEvidence } from './detect.js';
+import { detectionRuntimeNamespace } from './cli-context.js';
+import { detectRunnerEvidence } from './runner-evidence.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -130,8 +131,8 @@ describe('detection runtime binding', () => {
           record: true,
         }),
       );
-      const receipt = await resolveCliExecutable(shim, '/neutral/project');
-      const again = await resolveCliExecutable(shim, '/neutral/project');
+      const receipt = await resolveCliExecutable({ command: shim, projectDir: '/neutral/project' });
+      const again = await resolveCliExecutable({ command: shim, projectDir: '/neutral/project' });
 
       expect(detectionRuntimeNamespace(receipt)).toBe(detectionRuntimeNamespace(again));
       expect(detectionRuntimeNamespace(receipt)).toMatch(
@@ -151,7 +152,7 @@ describe('detection runtime binding', () => {
         'codex',
         catalogShimScript({ version: ADMITTED_VERSION, marker, record: true }),
       );
-      const receipt = await resolveCliExecutable(shim, '/neutral/project');
+      const receipt = await resolveCliExecutable({ command: shim, projectDir: '/neutral/project' });
 
       const evidence = await detectRunnerEvidence({
         context: cliContext(),
@@ -176,7 +177,7 @@ describe('detection runtime binding', () => {
         'codex',
         catalogShimScript({ version: '0.39.9', marker, record: true }),
       );
-      const receipt = await resolveCliExecutable(shim, '/neutral/project');
+      const receipt = await resolveCliExecutable({ command: shim, projectDir: '/neutral/project' });
 
       const evidence = await detectRunnerEvidence({
         context: cliContext(),
@@ -200,7 +201,10 @@ describe('detection runtime binding', () => {
           'codex',
           catalogShimScript({ version: '0.40.0-rc.1', marker, record: true }),
         );
-        const receipt = await resolveCliExecutable(shim, '/neutral/project');
+        const receipt = await resolveCliExecutable({
+          command: shim,
+          projectDir: '/neutral/project',
+        });
 
         const evidence = await detectRunnerEvidence({
           context: cliContext(),
@@ -277,7 +281,10 @@ describe('fake loader and different-cache zero-dispatch', () => {
         });
         await installShim(directory, 'codex', first);
         const before = await stat(shimPath);
-        const receipt = await resolveCliExecutable(shimPath, '/neutral/project');
+        const receipt = await resolveCliExecutable({
+          command: shimPath,
+          projectDir: '/neutral/project',
+        });
         const namespace = detectionRuntimeNamespace(receipt);
         expect(namespace).toBeDefined();
 
@@ -323,7 +330,7 @@ describe('fake loader and different-cache zero-dispatch', () => {
         'codex',
         catalogShimScript({ version: ADMITTED_VERSION, marker, record: true }),
       );
-      const receipt = await resolveCliExecutable(shim, '/neutral/project');
+      const receipt = await resolveCliExecutable({ command: shim, projectDir: '/neutral/project' });
       const fake = { path: receipt.path, fingerprint: { ...receipt.fingerprint } };
 
       expect(detectionRuntimeNamespace(fake)).toBeUndefined();

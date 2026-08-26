@@ -1,4 +1,4 @@
-import { createStore } from '../create-store.js';
+import { createStore, storeBase } from '../create-store.js';
 import type {
   CliToolDetection,
   DetectedModel,
@@ -94,8 +94,6 @@ interface ModelCacheState {
   readonly cliCatalogsLoaded: boolean;
   /** The same rule on the API axis: false until a live readiness lane has run. */
   readonly configuredProvidersLoaded: boolean;
-  /** Deprecated generic test/manual injection fallback, never used by discovery. */
-  readonly cliModels: Partial<Record<CliToolId, ProviderModelCache>>;
   readonly modelsDevCatalog: ModelsDevCatalog | null;
   readonly modelsDevFetchedAt: number | null;
   readonly refresh: DiscoveryRefreshState;
@@ -149,7 +147,6 @@ function initialState(): ModelCacheState {
     cliCatalogs: {},
     cliCatalogsLoaded: false,
     configuredProvidersLoaded: false,
-    cliModels: {},
     modelsDevCatalog: null,
     modelsDevFetchedAt: null,
     refresh,
@@ -211,7 +208,11 @@ function cloneConfiguredProviderRuntime(
   runtime: ConfiguredProviderRuntime,
 ): ConfiguredProviderRuntime {
   return {
-    connection: { ...runtime.connection },
+    connection: {
+      role: runtime.connection.role,
+      provider: runtime.connection.provider,
+      contextKey: runtime.connection.contextKey,
+    },
     state: runtime.state,
     catalog: runtime.catalog,
     models: runtime.models === null ? null : runtime.models.map(cloneDetectedModel),
@@ -1082,9 +1083,7 @@ function resetAll(): void {
 }
 
 export const modelCacheStore = {
-  get: store.get,
-  subscribe: store.subscribe,
-  use: store.use,
+  ...storeBase(store),
   reset: resetAll,
 
   getDetection(): DetectionStoreState {
@@ -1263,13 +1262,6 @@ export const modelCacheStore = {
   setProviderModels(provider: ProviderId, models: DetectedModel[]): void {
     const current = store.get();
     const cache = { models: freezeModels(models), fetchedAt: Date.now(), isStale: false };
-    if (includes(CLI_TOOL_IDS, provider)) {
-      store.set({
-        ...current,
-        cliModels: { ...current.cliModels, [provider]: cache },
-      });
-      return;
-    }
     store.set({
       ...current,
       providers: {
@@ -1283,8 +1275,8 @@ export const modelCacheStore = {
     const current = store.get();
     if (includes(CLI_TOOL_IDS, provider)) {
       // Remembered rows are role-scoped and answer only through the scoped
-      // lookup; this role-blind map must not serve them.
-      if (!current.cliCatalogsLoaded) return current.cliModels[provider]?.models ?? null;
+      // lookup, so a role-blind lookup has no answer before a live lane runs.
+      if (!current.cliCatalogsLoaded) return null;
       // A generic tool lookup is deliberately denied when planner/implementer
       // or two selected channels make the catalog ambiguous.
       return (
@@ -1304,8 +1296,8 @@ export const modelCacheStore = {
   isProviderModelCacheStale(provider: ProviderId): boolean {
     const current = store.get();
     if (includes(CLI_TOOL_IDS, provider)) {
-      // Mirrors getProviderModels: before a live lane completes the CLI answer
-      // comes from the manual-injection map, which is never remembered data.
+      // Mirrors getProviderModels: remembered rows never answer a role-blind
+      // lookup, so there is nothing whose staleness could be reported.
       if (!current.cliCatalogsLoaded) return false;
       return (
         findGenericCliCatalogRuntimeAtStoreBoundary(cliCatalogValues(current.cliCatalogs), provider)

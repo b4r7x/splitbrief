@@ -13,7 +13,7 @@ import {
   type CustomCommandBasedTestSeam,
 } from '../../src/engine/runners/command-based.js';
 import type { RunnerCallEvent } from '../../src/engine/calls/types.js';
-import type { AdmittedCustomRunnerInvocation } from '../../src/engine/runners/trust.js';
+import type { AdmittedCustomRunnerInvocation } from '../../src/engine/runners/custom-launchability.js';
 
 export function executableReceipt(path = process.execPath): CliExecutableReceipt {
   const realPath = realpathSync(path);

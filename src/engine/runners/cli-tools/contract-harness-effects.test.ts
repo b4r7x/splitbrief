@@ -6,9 +6,11 @@ import type { CliExecutableReceipt } from '../../../core/discovery/detection.js'
 import { effectScenario, runEffect } from '#testing/helpers/factories/cli-effect-fixture.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { CLI_CONFORMANCE_EXIT_CODES } from './contract-harness.js';
+import { admitCandidateEffect } from '../../providers/candidate-contract.js';
 import { runFactoryEffectConformance } from './contract-harness-effects.js';
 
 const NONCE = 'nonce-7f3a9c11';
+const EFFECT_NONCE = 'nonce-1a2b3c4d';
 
 describe('production-factory effect conformance', () => {
   afterEach(() => {
@@ -276,4 +278,60 @@ describe('production-factory effect conformance', () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  it('proves the planner prompt on a real capture file and admits the receipt', async () => {
+    const scenario = await effectScenario('planner-distinct-prompt');
+    try {
+      const plannerPrompt = 'review the staged plan read-only; do not modify any file';
+      const outcome = await runEffect({
+        role: 'planner',
+        prompt: plannerPrompt,
+        body: `printf '%s\\n' "$*" > "$(dirname "$0")/prompt-received.txt"\nexit 0`,
+        effect: { kind: 'planner-read-only' },
+        ...scenario,
+      });
+      expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
+      expect(await readFile(join(scenario.toolsDir, 'prompt-received.txt'), 'utf8')).toContain(
+        plannerPrompt,
+      );
+      const record = JSON.parse(await readFile(scenario.recordPath, 'utf8'));
+      expect(admitCandidateEffect({ receipt: record, role: 'planner' })).toMatchObject({
+        admitted: true,
+      });
+    } finally {
+      await scenario.cleanup();
+    }
+  }, 30_000);
+
+  it('proves the exact implementer effect on a real sentinel file with a role-distinct prompt', async () => {
+    const scenario = await effectScenario('implementer-distinct-prompt');
+    try {
+      const plannerPrompt = 'review-only-marker-9d41';
+      const outcome = await runEffect({
+        role: 'implementer',
+        prompt: plannerPrompt,
+        body: `mkdir -p src\nprintf '%s' '${EFFECT_NONCE}' > src/hello.ts\nprintf '%s\\n' "$*" > "$(dirname "$0")/prompt-received.txt"\nexit 0`,
+        effect: { kind: 'direct-write', file: 'src/hello.ts', nonceContent: EFFECT_NONCE },
+        task: makeTask(),
+        ...scenario,
+      });
+      expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
+      expect(await readFile(join(scenario.projectDir, 'src', 'hello.ts'), 'utf8')).toBe(
+        EFFECT_NONCE,
+      );
+      const captured = await readFile(join(scenario.toolsDir, 'prompt-received.txt'), 'utf8');
+      expect(captured).toContain('src/hello.ts');
+      expect(captured).not.toContain(plannerPrompt);
+      const record = JSON.parse(await readFile(scenario.recordPath, 'utf8'));
+      expect(
+        admitCandidateEffect({
+          receipt: record,
+          role: 'implementer',
+          declaredFile: 'src/hello.ts',
+        }),
+      ).toMatchObject({ admitted: true });
+    } finally {
+      await scenario.cleanup();
+    }
+  }, 30_000);
 });

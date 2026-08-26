@@ -150,7 +150,8 @@ export function runnerCallFailureMessage(
 ): string {
   if (result.status === 'completed') return 'Implementer call completed';
   if (result.status === 'aborted' && signal?.aborted) return ABORTED_OUTCOME_TEXT;
-  return result.error?.message ?? runnerCallStatusMessage(result.status);
+  const message = result.error.message;
+  return message.length > 0 ? message : runnerCallStatusMessage(result.status);
 }
 
 function errorData(err: unknown): Record<string, unknown> | null {

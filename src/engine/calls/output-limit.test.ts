@@ -103,6 +103,7 @@ describe('createRunnerCallEnvelopeLimiter', () => {
     limiter.checkDeadline(1001);
     limiter.checkIdle(1001);
     expect(limiter.limit).toBe(first);
+    expect(limiter.limit?.maxBytes).toBe(100);
   });
 
   it('clamps negative normalized deltas at zero so abuse cannot hold the counter below the bound', () => {
@@ -161,17 +162,5 @@ describe('createRunnerCallEnvelopeLimiter', () => {
     expect(limiter.limit).toBeNull();
     limiter.checkIdle(1001);
     expect(limiter.limit).toMatchObject({ code: 'task_compiler_timeout' });
-  });
-
-  it('keeps the first breached counter as the permanent terminal identity', () => {
-    const limiter = createRunnerCallEnvelopeLimiter({
-      envelope: envelope({ maxRawProtocolBytes: 100, deadlineMs: 1000 }),
-      startedAt: 0,
-    });
-    limiter.recordRaw(101);
-    expect(limiter.limit?.code).toBe('task_compiler_output_limited');
-    limiter.checkDeadline(2000);
-    expect(limiter.limit?.code).toBe('task_compiler_output_limited');
-    expect(limiter.limit?.maxBytes).toBe(100);
   });
 });

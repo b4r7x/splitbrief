@@ -76,7 +76,15 @@ export const configError = {
       `Cannot infer runner kind for ${role}: need one of 'kind', 'tool', 'apiBase', 'command', or 'existing' to be provided. Got: ${stringifyRedacted(opts)}`,
       { role, opts: redactSensitiveKeys(opts) },
     ),
-  runnerMissingField: (role: ActiveRunnerRole, kind: string, field: string) =>
+  runnerMissingField: ({
+    role,
+    kind,
+    field,
+  }: {
+    role: ActiveRunnerRole;
+    kind: string;
+    field: string;
+  }) =>
     error('config-runner-missing-field', `${role} ${kind} kind requires '${field}' field`, {
       role,
       kind,

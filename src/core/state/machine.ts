@@ -3,12 +3,12 @@ import type { WorkflowState } from '../schemas/workflow.js';
 import type { TaskId } from '../schemas/task.js';
 import type { Phase, TaskStatus } from '../schemas/enums.js';
 import { ZERO_TOKEN_USAGE } from '../schemas/tokens.js';
+import type { BriefReadinessDecision } from '../schemas/brief-recovery/attempt.js';
 import type {
-  BriefReadinessDecision,
   BriefRecoveryV1,
   NormalBriefRecoveryV1,
   RejectedStorageBriefRecoveryV1,
-} from '../schemas/brief-recovery.js';
+} from '../schemas/brief-recovery/document.js';
 import { sameExecutionPermit, sameGeneration } from '../schemas/brief-owner.js';
 import { isQueuedMessageClearable, isQueuedMessagePendingDelivery } from '../queue-state.js';
 import { taskStatusForCompletionMethod } from '../task-completion.js';
@@ -596,6 +596,7 @@ export function transition(
       return {
         ...state,
         phase: 'complete',
+        completedAt: now.toISOString(),
         authorityRevision: undefined,
         generation: null,
         permit: null,

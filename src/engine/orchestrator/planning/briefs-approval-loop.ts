@@ -1,16 +1,18 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import type { ApprovalReviewResult } from '../../../core/approval/types.js';
 import type {
   BriefRecoveryProjectionV1,
+  NormalBriefRecoveryV1,
+} from '../../../core/schemas/brief-recovery/document.js';
+import type {
   BriefRecoveryCommand,
   BriefRecoveryController,
   QueueBriefInput,
   QueueResultV1,
   RecoveryResultV1,
   StateAuthorityReceipt,
-} from '../../../core/approval/types.js';
-import type { NormalBriefRecoveryV1 } from '../../../core/schemas/brief-recovery.js';
+} from '../../../core/schemas/brief-recovery.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { EventBus } from '../../events/types.js';
@@ -21,12 +23,13 @@ import { readSessionFileConfined } from '../../../core/sessions/confinement.js';
 import { parseTasksStrict } from '../../spec/tasks/parse.js';
 import { formatTasks } from '../../spec/formatter.js';
 import { error, matches } from '../../../utils/error.js';
+import { sha256Hex } from '../../../utils/sha256.js';
 import { driftedCompilerReceipt } from '../../runners/compiler-drift-warning.js';
 import { recordRuntimeConformance } from '../../runners/runtime-conformance-cache.js';
 import { briefGenerationRefFor } from './brief-generation-ref.js';
 import type { BriefsApprovalLoopOptions, BriefsApprovalLoopResult } from './types.js';
 import { readWorkflowStateHead, transitionAndSave } from '../state-ops.js';
-import { persistBriefOwnerTransition } from '../evidence/persistence.js';
+import { persistBriefOwnerTransition } from '../evidence/recovery-journal.js';
 import { issueApprovedGenerationPermit } from './briefs-approval-queue.js';
 import { readPersistedTasks } from './io.js';
 import { writeAndPublishArtifacts } from '../artifact-write.js';
@@ -73,10 +76,6 @@ type RetryReviewResult = {
 type ApprovalDecision = ApprovalReviewResult | RetryReviewResult;
 
 const MAX_NO_PROGRESS_ATTEMPTS = 20;
-
-function hashIntent(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
-}
 
 function isNormalRecovery(
   recovery: WorkflowState['briefRecovery'],
@@ -148,13 +147,13 @@ function updateCursor(
   cursor: RecoveryCursor,
   result: RecoveryResultV1 | QueueResultV1,
   inputIds: readonly string[],
-  authority?: StateAuthorityReceipt,
+  authority: StateAuthorityReceipt,
 ): boolean {
   const previous = cursor.projection;
   cursor.authority = {
     ...cursor.authority,
+    ...authority,
     stateRevision: result.projection.stateRevision,
-    ...(authority ?? {}),
   };
   cursor.projection = result.projection;
   cursor.epochId = result.projection.epochId;
@@ -242,7 +241,7 @@ function retryCommand(
 ): BriefRecoveryCommand | null {
   const identity = commandBase(cursor);
   if (identity === null) return null;
-  const diagnostic = hashIntent(
+  const diagnostic = sha256Hex(
     JSON.stringify(
       cursor.projection?.blocker ?? { status: cursor.projection?.status ?? 'blocked' },
     ),
@@ -251,7 +250,7 @@ function retryCommand(
   const frozenInputIds = feedbackInputIds ?? cursor.inputIds;
   const intentHash =
     result.intentHash ??
-    hashIntent(
+    sha256Hex(
       `${operationId}:${identity.base.hash}:${diagnostic}:${feedbackInputIds === undefined ? 'retry' : 'feedback-revision'}:${frozenInputIds.join(',')}`,
     );
   return {
@@ -279,7 +278,7 @@ function rejectionCommand(
     epochId: identity.epochId,
     operationId: `reject-${randomUUID()}`,
     base: identity.base,
-    intentHash: hashIntent(`reject:${identity.base.hash}`),
+    intentHash: sha256Hex(`reject:${identity.base.hash}`),
     action: 'reject',
     userIntentId: randomUUID(),
   };
@@ -298,7 +297,7 @@ function editCommand(
     epochId: identity.epochId,
     operationId: `edit-${inputId}`,
     base: identity.base,
-    intentHash: hashIntent(`edit:${identity.base.hash}:${briefText}`),
+    intentHash: sha256Hex(`edit:${identity.base.hash}:${briefText}`),
     action: 'edit',
     briefText,
     newInputId: inputId,
@@ -397,7 +396,7 @@ export async function runBriefsApprovalLoop(
     noProgressAttempts = updateCursor(cursor, result, inputIds, recovery.authority)
       ? 0
       : noProgressAttempts + 1;
-    return noProgressAttempts + 1 < MAX_NO_PROGRESS_ATTEMPTS;
+    return noProgressAttempts < MAX_NO_PROGRESS_ATTEMPTS;
   };
   const rejectBriefs = (): BriefsApprovalLoopResult => {
     try {
@@ -593,8 +592,7 @@ export async function runBriefsApprovalLoop(
       continue;
     }
 
-    const action: 'approve' | 'reject' = result.approved ? 'approve' : 'reject';
-    if (action === 'approve') {
+    if (result.approved) {
       const projection = cursor.projection;
       const activeBrief = projection?.activeBrief;
       const matchingReport = projection?.matchingReport;
@@ -795,7 +793,7 @@ export async function runBriefsApprovalLoop(
       return { state, tasks, rejected: false, outcome: 'failed' };
     }
     if (!applyRecoveryResult(recoveryResult)) return failNoProgress();
-    if (action === 'reject' && recoveryResult.kind === 'rejected') {
+    if (recoveryResult.kind === 'rejected') {
       return rejectBriefs();
     }
     publishRefusal(opts.bus, state, recoveryResult);

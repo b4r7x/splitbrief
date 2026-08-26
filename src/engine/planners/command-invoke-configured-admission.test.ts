@@ -9,7 +9,7 @@ import {
   type ConfiguredCustomRunner,
 } from '../runners/custom-trust.js';
 import { prepareCustomRunnerAdmission } from '../runners/custom-admission.js';
-import { customRunnerAdmissionError } from '../runners/trust.js';
+import { customRunnerAdmissionError } from '../runners/custom-launchability.js';
 import type { CustomRunnerRuntimePort } from '../runners/types.js';
 import { createConfiguredCustomPlanner as createPreparedConfiguredCustomPlanner } from './command-invoke.js';
 import {

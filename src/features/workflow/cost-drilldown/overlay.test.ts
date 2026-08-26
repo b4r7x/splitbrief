@@ -1,11 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { createElement } from 'react';
-import { render } from 'ink-testing-library';
+import { renderFeature } from '#testing/helpers/ink.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { CostDrilldownOverlay } from './overlay.js';
 
 describe('CostDrilldownOverlay', () => {
+  beforeEach(() => {
+    tokensStore.__testReset();
+    terminalSizeStore.__testReset({ cols: 100, rows: 40 });
+  });
+
   it('renders real phase cost and cache data from the store', () => {
     tokensStore.__testReset({
       perPhase: {
@@ -17,9 +22,7 @@ describe('CostDrilldownOverlay', () => {
         },
       },
     });
-    terminalSizeStore.__testReset({ cols: 100, rows: 40 });
-
-    const ui = render(createElement(CostDrilldownOverlay));
+    const ui = renderFeature(createElement(CostDrilldownOverlay));
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('planning');
@@ -51,9 +54,7 @@ describe('CostDrilldownOverlay', () => {
         },
       },
     });
-    terminalSizeStore.__testReset({ cols: 100, rows: 40 });
-
-    const ui = render(createElement(CostDrilldownOverlay));
+    const ui = renderFeature(createElement(CostDrilldownOverlay));
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('local');
@@ -79,9 +80,7 @@ describe('CostDrilldownOverlay', () => {
         },
       },
     });
-    terminalSizeStore.__testReset({ cols: 100, rows: 40 });
-
-    const ui = render(createElement(CostDrilldownOverlay));
+    const ui = renderFeature(createElement(CostDrilldownOverlay));
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('planning');
@@ -114,9 +113,7 @@ describe('CostDrilldownOverlay', () => {
         },
       },
     });
-    terminalSizeStore.__testReset({ cols: 100, rows: 40 });
-
-    const ui = render(createElement(CostDrilldownOverlay));
+    const ui = renderFeature(createElement(CostDrilldownOverlay));
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('implementing');
@@ -155,9 +152,7 @@ describe('CostDrilldownOverlay', () => {
         },
       },
     });
-    terminalSizeStore.__testReset({ cols: 100, rows: 40 });
-
-    const ui = render(createElement(CostDrilldownOverlay));
+    const ui = renderFeature(createElement(CostDrilldownOverlay));
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('final-review');

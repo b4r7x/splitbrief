@@ -146,33 +146,22 @@ describe('worktree path', () => {
 });
 
 describe('worktree missing target', () => {
-  it.each(['switch', 'path'])('exits 1 when %s targets a missing worktree', async (command) => {
-    mockListWorktrees.mockResolvedValue([]);
+  it.each(['switch', 'path', 'remove'])(
+    'exits 1 when %s targets a missing worktree',
+    async (command) => {
+      mockListWorktrees.mockResolvedValue([]);
 
-    let captured: unknown;
-    try {
-      await runWorktree([command, 'missing-wt']);
-    } catch (err) {
-      captured = err;
-    }
+      let captured: unknown;
+      try {
+        await runWorktree([command, 'missing-wt']);
+      } catch (err) {
+        captured = err;
+      }
 
-    expect(isCliError(captured)).toBe(true);
-    expect((captured as Error).message).toContain('missing-wt');
-  });
-
-  it('exits 1 when remove targets a genuinely missing worktree', async () => {
-    mockListWorktrees.mockResolvedValue([]);
-
-    let captured: unknown;
-    try {
-      await runWorktree(['remove', 'missing-wt']);
-    } catch (err) {
-      captured = err;
-    }
-
-    expect(isCliError(captured)).toBe(true);
-    expect((captured as Error).message).toContain('missing-wt');
-  });
+      expect(isCliError(captured)).toBe(true);
+      expect((captured as Error).message).toContain('missing-wt');
+    },
+  );
 });
 
 describe('worktree remove', () => {

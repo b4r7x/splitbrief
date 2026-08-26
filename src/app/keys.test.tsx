@@ -7,6 +7,7 @@ import { makeCostPrediction } from '#testing/helpers/factories/cost-prediction.j
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
+import { makeResumeAuthorityDeps } from '#testing/helpers/factories/state-authority.js';
 import {
   parsePreparedConfig,
   type PreparationOutcome,
@@ -569,7 +570,7 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     };
     const pending = Promise.withResolvers<PreparationOutcome>();
     const selection = handleSessionSelect(selected, '/tmp/session-preparation-keys', {
-      loadState: () => resumeState,
+      ...makeResumeAuthorityDeps(() => resumeState),
       prepareResume: () => pending.promise,
     });
     const exit = vi.fn();

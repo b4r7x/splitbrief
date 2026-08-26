@@ -6,12 +6,14 @@ import {
   RecoveryStatusSchema,
 } from '../../core/schemas/enums.js';
 import {
-  BriefRecoveryProjectionV1Schema,
-  RecoveryResultV1Schema,
-  type BriefQualityIssue,
   type BriefRecoveryProjectionV1,
+  BriefRecoveryProjectionV1Schema,
+} from '../../core/schemas/brief-recovery/document.js';
+import {
   type RecoveryResultV1,
+  RecoveryResultV1Schema,
 } from '../../core/schemas/brief-recovery.js';
+import type { BriefQualityIssue } from '../../core/schemas/brief-recovery/primitives.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import { protectConsumerPayload, type CallConsumerContext } from '../../core/consumer-policy.js';
 import { EngineEventSchema } from './schema.js';
@@ -70,7 +72,7 @@ interface ProtectHeadlessJsonRecordOptions {
 
 export function protectBriefRecoveryProjectionForConsumer(
   projection: BriefRecoveryProjectionV1,
-  opts: CallConsumerContext | ProtectHeadlessJsonRecordOptions = {},
+  opts: ProtectHeadlessJsonRecordOptions = {},
 ): BriefRecoveryProjectionV1 | null {
   const { context, persistTranscript } = resolveProtectHeadlessOptions(opts);
   const parsed = BriefRecoveryProjectionV1Schema.safeParse(projection);
@@ -84,7 +86,7 @@ export function protectBriefRecoveryProjectionForConsumer(
 
 export function protectRecoveryResultForConsumer(
   result: RecoveryResultV1,
-  opts: CallConsumerContext | ProtectHeadlessJsonRecordOptions = {},
+  opts: ProtectHeadlessJsonRecordOptions = {},
 ): RecoveryResultV1 | null {
   const { context, persistTranscript } = resolveProtectHeadlessOptions(opts);
   const parsed = RecoveryResultV1Schema.safeParse(result);
@@ -126,7 +128,7 @@ export function projectRecoveryIssueForTranscriptPolicy(
 
 export function protectHeadlessJsonRecord(
   record: HeadlessJsonRecord,
-  opts: CallConsumerContext | ProtectHeadlessJsonRecordOptions = {},
+  opts: ProtectHeadlessJsonRecordOptions = {},
 ): HeadlessJsonRecord | null {
   const { context, persistTranscript } = resolveProtectHeadlessOptions(opts);
   const transcriptSafeRecord = projectHeadlessJsonRecordForTranscriptPolicy(
@@ -163,12 +165,10 @@ export function writeHeadlessJsonRecord(
   out.write(JSON.stringify(protectedRecord) + '\n');
 }
 
-function resolveProtectHeadlessOptions(
-  opts: CallConsumerContext | ProtectHeadlessJsonRecordOptions,
-): { context: CallConsumerContext; persistTranscript: boolean } {
-  if (typeof opts === 'string') {
-    return { context: opts, persistTranscript: true };
-  }
+function resolveProtectHeadlessOptions(opts: ProtectHeadlessJsonRecordOptions): {
+  context: CallConsumerContext;
+  persistTranscript: boolean;
+} {
   return {
     context: opts.context ?? 'stdout-json',
     persistTranscript: opts.persistTranscript ?? true,

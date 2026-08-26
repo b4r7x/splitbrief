@@ -19,10 +19,7 @@ import {
 } from '../runners/cli-tool-catalog.js';
 import { ImplementerConfigSchema } from '../schemas/implementer-config.js';
 import { PlannerConfigSchema } from '../schemas/planner-config.js';
-import {
-  modelsForImplementerProvider,
-  modelsForPlannerTool,
-} from '../../features/runners/model-catalog/catalog.js';
+import { resolveAndSort } from '../../features/runners/model-catalog/catalog.js';
 
 const RUNNER_ROLES = ['planner', 'implementer'] as const satisfies readonly RunnerRole[];
 
@@ -126,11 +123,12 @@ describe('KNOWN_MODELS cheap and local provider metadata', () => {
 });
 
 describe('KNOWN_MODELS recommendation metadata', () => {
-  it('leaves no pending-evaluation rows after T-081', () => {
-    for (const models of Object.values(KNOWN_MODELS)) {
-      for (const model of models ?? []) {
-        expect(['recommended', 'compatible-only']).toContain(model.recommendation);
-      }
+  it('resolves every pending-evaluation candidate to a bundled row', () => {
+    for (const candidate of PENDING_EVALUATION_CANDIDATE_IDS) {
+      const model = (KNOWN_MODELS[candidate.provider] ?? []).find(
+        (entry) => entry.name === candidate.model,
+      );
+      expect(model, `${candidate.provider}/${candidate.model}`).toBeDefined();
     }
   });
 
@@ -155,10 +153,10 @@ describe('KNOWN_MODELS recommendation metadata', () => {
     }
   });
 
-  it('requires recommendation on every bundled model row', () => {
-    for (const models of Object.values(KNOWN_MODELS)) {
+  it('records a provenance note on every bundled model row', () => {
+    for (const [provider, models] of Object.entries(KNOWN_MODELS)) {
       for (const model of models ?? []) {
-        expect(model.recommendation).toMatch(/^(recommended|compatible-only)$/);
+        expect(model.provenance, `${provider}/${model.name}`).toBeTruthy();
       }
     }
   });
@@ -212,8 +210,8 @@ describe('automatic-selection sentinel coherence', () => {
   it.each([...CLI_TOOL_IDS])('offers %s only models both role schemas accept', (tool) => {
     const offered = new Set([
       AUTOMATIC_MODEL,
-      ...modelsForPlannerTool(tool).map(({ id }) => id),
-      ...modelsForImplementerProvider(tool, 'cli').map(({ id }) => id),
+      ...resolveAndSort(tool, 'planner').map(({ id }) => id),
+      ...resolveAndSort(tool, 'implementer').map(({ id }) => id),
     ]);
 
     for (const model of offered) {

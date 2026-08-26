@@ -2,18 +2,13 @@ import { Box, Text } from 'ink';
 import { SOFT_SEP } from '../../components/separators.js';
 import { useTheme, type Theme } from '../../components/theme.js';
 import { glyph } from '../../lib/glyphs.js';
+import type { CustomCommandContract } from '../../core/config/custom-commands.js';
 
-export type ContractTier = 'output' | 'direct';
-
-export function contractTierOf(kind: 'shell' | 'agent'): ContractTier {
-  return kind === 'shell' ? 'output' : 'direct';
-}
-
-export function tierColor(t: Theme, tier: ContractTier): string {
+export function tierColor(t: Theme, tier: CustomCommandContract): string {
   return tier === 'output' ? t.info : t.warning;
 }
 
-export function ContractChip({ tier, solid }: { tier: ContractTier; solid: boolean }) {
+export function ContractChip({ tier, solid }: { tier: CustomCommandContract; solid: boolean }) {
   const t = useTheme();
   return (
     <Text color={tierColor(t, tier)} inverse={solid}>
@@ -22,7 +17,7 @@ export function ContractChip({ tier, solid }: { tier: ContractTier; solid: boole
   );
 }
 
-export function ContractRecap({ tier }: { tier: ContractTier }) {
+export function ContractRecap({ tier }: { tier: CustomCommandContract }) {
   const t = useTheme();
   const color = tierColor(t, tier);
   const digest =

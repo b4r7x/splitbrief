@@ -13,7 +13,7 @@ import {
 } from '#testing/helpers/start-command.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR, worktreePath } from '../../../src/core/paths.js';
 import { isCliError } from '../../../src/cli/errors.js';
-import { MAX_SLUG_LENGTH } from '../../../src/core/sessions/lifecycle.js';
+import { MAX_SLUG_LENGTH } from '../../../src/core/sessions/session-id.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import type { SpawnServerResult } from '../../../src/engine/ipc/spawn-server.js';
 

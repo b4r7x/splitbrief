@@ -106,7 +106,7 @@ describe('validation output redaction', () => {
       phase: 'implementing',
     });
 
-    expect(results[0]?.output?.length).toBeLessThanOrEqual(4097);
+    expect(results[0]?.output?.length).toBe(4096);
   });
 
   it('keeps the tail of long passing test output so the runner summary line survives', async () => {

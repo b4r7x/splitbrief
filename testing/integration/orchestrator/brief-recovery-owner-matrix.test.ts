@@ -1,18 +1,13 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createInitialState } from '../../../src/core/state/machine.js';
-import { saveState } from '../../../src/core/state/persistence.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
-import type { StateAuthorityReceipt } from '../../../src/core/state/types.js';
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
-import { STATE_FILE, TASKS_FILE, sessionDir } from '../../../src/core/paths.js';
+import { TASKS_FILE } from '../../../src/core/paths.js';
 import { readSpecFile } from '../../../src/core/paths-io.js';
 import type {
   BriefRecoveryStateView,
-  EvidenceRef,
   NormalBriefRecoveryV1,
-} from '../../../src/core/schemas/brief-recovery.js';
+} from '../../../src/core/schemas/brief-recovery/document.js';
+import type { EvidenceRef } from '../../../src/core/schemas/brief-recovery/primitives.js';
 import type {
   BriefGenerationRef,
   BriefOwnerCommitInput,
@@ -20,22 +15,21 @@ import type {
   BriefOwnerEvent,
   TaskExecutionPermit,
 } from '../../../src/core/schemas/brief-owner.js';
-import { WorkflowStateSchema } from '../../../src/core/schemas/workflow.js';
 import {
+  type WorkflowStateHead,
   readWorkflowStateHead,
   workflowStateRevision,
 } from '../../../src/engine/orchestrator/state-ops.js';
-import { createWorkflowRecoveryBinding } from '../../../src/engine/orchestrator/run/recovery-binding.js';
 import {
   drainRecoveryOutbox,
   persistBriefOwnerTransition,
-} from '../../../src/engine/orchestrator/evidence/persistence.js';
-import { readRecoveryJournal } from '../../../src/core/evidence/ledger-storage.js';
+} from '../../../src/engine/orchestrator/evidence/recovery-journal.js';
+import { readRecoveryJournal } from '../../../src/core/evidence/recovery-journal.js';
 import { publishBriefGeneration } from '../../../src/engine/orchestrator/planning/brief-publication.js';
 import {
+  type RecoveryRefusalInput,
   automaticRepairIntent,
   refuseRecoveryOperation,
-  type RecoveryRefusalInput,
 } from '../../../src/engine/orchestrator/planning/brief-recovery.js';
 import type { BriefGenerationCandidate } from '../../../src/engine/orchestrator/planning/brief-generation.js';
 import type { Planner } from '../../../src/engine/planners/types.js';
@@ -44,17 +38,23 @@ import { createEventBus } from '../../../src/engine/events/bus.js';
 import { sha256Hex } from '../../../src/utils/sha256.js';
 import { evaluateBriefQuality } from '../../../src/engine/spec/brief-quality.js';
 import { parseTasksStrict } from '../../../src/engine/spec/tasks/parse.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
 import {
   makeBriefQualityFailureTask,
   makePassingPlanner,
   makePassingTask,
   REAL_TASKS_MD,
-  setupProject,
   TEST_METADATA,
 } from '#testing/helpers/planning-phase.js';
-import { makeWctx } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import {
+  type BindingFixture,
+  PRICED_MODEL_CACHE,
+  makeRecoveryBinding,
+  makeRecoveryBindingFixture,
+  normalRecovery,
+  recoveryOwnerExpectation,
+  stateBytes,
+} from '#testing/helpers/brief-recovery-fixtures.js';
 
 const dirs: string[] = [];
 
@@ -65,62 +65,18 @@ afterEach(() => {
   }
 });
 
-const PRICED_MODEL_CACHE = {
-  getModelsDevCatalog: () => ({
-    openai: {
-      id: 'openai',
-      models: {
-        'gpt-5.4': {
-          id: 'gpt-5.4',
-          cost: { input: 2.5, output: 15 },
-          limit: { context: 400_000 },
-        },
-      },
-    },
-  }),
-  getProviderModels: () => null,
-};
-
 const NOW = '2026-08-13T00:00:00.000Z';
 
-function stateBytes(ref: SessionRef): string {
-  return readFileSync(join(sessionDir(ref.projectDir, ref.sessionId), STATE_FILE), 'utf8');
-}
-
-function authorityFor(
-  state: WorkflowState,
-  digest: string,
-  sessionId: string,
-): StateAuthorityReceipt {
-  return {
-    kind: 'usable',
-    sessionId,
-    ownerId: state.stateFence?.ownerId ?? 'owner-matrix',
-    pid: process.pid,
-    processStart: 'owner-matrix-process',
-    runId: 'owner-matrix-run',
-    acquisitionId: 'owner-matrix-acquisition',
-    fence: state.stateFence?.token ?? 0,
-    stateRevision: workflowStateRevision(state),
-    stateDigest: digest,
-  };
-}
-
-type BindingFixture = {
-  binding: ReturnType<typeof createWorkflowRecoveryBinding>;
-  ref: SessionRef;
-  authority: () => StateAuthorityReceipt;
-  trackedState: () => WorkflowState;
-};
-
-function seedState(ref: SessionRef, mode?: WorkflowState['mode']): WorkflowState {
-  const state: WorkflowState = {
-    ...createInitialState('owner-matrix'),
-    stateFence: { token: 1, ownerId: 'owner-matrix' },
-    ...(mode === undefined ? {} : { mode }),
-  };
-  saveState(ref, state);
-  return state;
+function fixture(
+  options: {
+    planner?: Planner | undefined;
+    modelCache?: ModelCacheAccessor | undefined;
+    maxBudget?: number | undefined;
+    mode?: WorkflowState['mode'] | undefined;
+    model?: string | undefined;
+  } = {},
+): BindingFixture {
+  return makeRecoveryBindingFixture({ dirs, ownerId: 'owner-matrix', ...options });
 }
 
 function makeBinding(
@@ -132,61 +88,7 @@ function makeBinding(
     model?: string | undefined;
   } = {},
 ): BindingFixture {
-  const initialHead = readWorkflowStateHead(ref);
-  if (initialHead === null) throw new Error('expected the initial workflow head');
-  const wctx = makeWctx({
-    projectDir: ref.projectDir,
-    sessionId: ref.sessionId,
-    config: makeConfig({
-      planner: {
-        kind: 'api',
-        provider: 'openai',
-        service: 'openai',
-        offering: 'payg',
-        apiBase: 'https://api.openai.com/v1',
-        model: options.model ?? 'gpt-5.4',
-      },
-      workflow: {
-        ...(options.maxBudget === undefined ? {} : { maxBudget: options.maxBudget }),
-      },
-    }),
-    planner: options.planner ?? makePassingPlanner(),
-    ...(options.modelCache === undefined ? {} : { modelCache: options.modelCache }),
-    metadata: TEST_METADATA,
-  });
-  let trackedState: WorkflowState = initialHead.state;
-  let authority = authorityFor(initialHead.state, initialHead.digest, ref.sessionId);
-  const binding = createWorkflowRecoveryBinding({
-    wctx,
-    getState: () => trackedState,
-    setState: (next) => {
-      trackedState = next;
-      const head = readWorkflowStateHead(ref);
-      if (head === null) throw new Error('expected the committed workflow head');
-      authority = {
-        ...authority,
-        stateRevision: workflowStateRevision(next),
-        stateDigest: head.digest,
-      };
-    },
-    getAuthority: () => authority,
-  });
-  return { binding, ref, authority: () => authority, trackedState: () => trackedState };
-}
-
-function fixture(
-  options: {
-    planner?: Planner | undefined;
-    modelCache?: ModelCacheAccessor | undefined;
-    maxBudget?: number | undefined;
-    mode?: WorkflowState['mode'] | undefined;
-    model?: string | undefined;
-  } = {},
-): BindingFixture {
-  const { projectDir, sessionId } = setupProject(dirs);
-  const ref = { projectDir, sessionId };
-  seedState(ref, options.mode);
-  return makeBinding(ref, options);
+  return makeRecoveryBinding({ ref, ownerId: 'owner-matrix', ...options });
 }
 
 function retryCommand(input: {
@@ -210,24 +112,8 @@ function retryCommand(input: {
   };
 }
 
-function normalRecovery(state: WorkflowState): NormalBriefRecoveryV1 {
-  const recovery = state.briefRecovery;
-  if (recovery === null || recovery === undefined || !('attempts' in recovery))
-    throw new Error('expected a normal recovery');
-  return recovery;
-}
-
-function ownerExpectedFromHead(head: NonNullable<ReturnType<typeof readWorkflowStateHead>>) {
-  const recovery = head.state.briefRecovery;
-  if (recovery === null || recovery === undefined)
-    throw new Error('expected a recovery in the persisted head');
-  return {
-    epochId: recovery.epochId,
-    stateRevision: head.revision,
-    authorityRevision: workflowStateRevision(head.state),
-    fence: String(head.state.stateFence?.token ?? 0),
-    evidenceHead: recovery.evidenceHead,
-  };
+function ownerExpectedFromHead(head: WorkflowStateHead) {
+  return recoveryOwnerExpectation({ head, authorityRevision: workflowStateRevision(head.state) });
 }
 
 function lockstepOwnerCommit(ref: SessionRef): BriefOwnerCommitPort {
@@ -356,7 +242,6 @@ describe('recovery owner integration matrix', () => {
       outcome: 'ready',
       reservation: { state: 'held' },
     });
-    expect(WorkflowStateSchema.safeParse(head.state).success).toBe(true);
   });
 
   it('leaves the pre-pointer state byte-identical when the owner commit faults before the state CAS', async () => {

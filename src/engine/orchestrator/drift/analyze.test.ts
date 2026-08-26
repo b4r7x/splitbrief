@@ -485,7 +485,6 @@ describe('analyzeBriefDrift', () => {
       diff: 'diff --git a/src/a.ts b/src/a.ts',
       preRunChangedFiles: [],
     });
-    expect(report.findings.some((f) => f.code === 'missing_expected_file')).toBe(false);
     expect(report.findings).toEqual([]);
   });
 
@@ -744,8 +743,8 @@ describe('analyzeBriefDrift', () => {
       preRunChangedFiles: [],
     });
     const r2 = analyzeBriefDrift({
-      tasks,
-      changedFiles: ['src/a.ts', 'src/b.ts'],
+      tasks: [...tasks].reverse(),
+      changedFiles: ['src/b.ts', 'src/a.ts'],
       diff: '',
       preRunChangedFiles: [],
     });

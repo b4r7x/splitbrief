@@ -1,7 +1,7 @@
 import type { PhaseTokens } from '../../../stores/workflow/tokens.js';
 import { formatCost, formatTokensShort } from '../../../core/formatting.js';
 import { calculateUsageCost } from '../../../engine/providers/cost-math.js';
-import type { ResolvedPricing } from '../../../engine/providers/pricing-resolver.js';
+import type { PricingMode, ResolvedPricing } from '../../../engine/providers/pricing-resolver.js';
 import { phaseCostRole } from '../../../core/phases.js';
 import { PhaseSchema, type Phase } from '../../../core/schemas/enums.js';
 import { assertNever } from '../../../utils/type-guards.js';
@@ -19,7 +19,7 @@ export type PhaseRow = PhaseRowData & { cost: number };
 
 export function buildPhaseRows(
   perPhase: Partial<Record<Phase, PhaseTokens>>,
-  costForRow: (row: PhaseRowData) => number = () => 0,
+  costForRow: (row: PhaseRowData) => number,
 ): PhaseRow[] {
   return Object.entries(perPhase)
     .flatMap(([phase, data]) => {
@@ -54,7 +54,7 @@ export function formatInputOutputSplit(options: {
 export function formatPhaseCost(options: {
   cost: number;
   isPhasePriced: boolean;
-  pricingMode: string | null;
+  pricingMode: PricingMode | null;
 }): string {
   const { cost, isPhasePriced, pricingMode } = options;
   if (cost > 0 || isPhasePriced) return formatCost(cost);
@@ -65,7 +65,7 @@ export function formatPhaseCost(options: {
 
 export function formatSplitPhaseCost(options: {
   cost: number;
-  seats: { priced: boolean; mode: string | null }[];
+  seats: { priced: boolean; mode: PricingMode | null }[];
 }): string {
   const { cost, seats } = options;
   if (seats.every((seat) => seat.priced)) return formatCost(cost);

@@ -201,7 +201,9 @@ describe('persistPhases', () => {
       bus,
       phase: 'planning',
     });
-    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(1);
+    expect(
+      events.filter((event) => event.type === 'artifact_written').map((event) => event.filename),
+    ).toEqual([SPEC_FILE]);
   });
 });
 

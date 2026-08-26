@@ -147,7 +147,6 @@ describe('Claude stream credential redaction', () => {
     const result = finishClaudeStream(state);
     expect(result.status).toBe('completed');
     expect(result.text).toBe('final text');
-    expect(result.text).not.toContain('draft text');
   });
 
   it('fails an empty final response under a compiler envelope instead of falling back to partials', () => {

@@ -301,7 +301,10 @@ describe('publishBriefGeneration — matching-digest success', () => {
     );
 
     const event = BriefOwnerEventSchema.parse(capturedEvent);
-    if (event.type !== 'brief_generation_published') return;
+    expect(event.type).toBe('brief_generation_published');
+    if (event.type !== 'brief_generation_published') {
+      throw new Error('expected a generation-published event');
+    }
     expect(event.generation).toEqual(result.identity.ref);
     expect(event.epochId).toBe(EXPECTED.epochId);
     expect(event.provenanceDigest).toBe(

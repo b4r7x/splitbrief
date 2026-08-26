@@ -19,6 +19,7 @@ import { createValidator } from '../validation/run.js';
 import { persistRetryApprovalEvidence, persistRetryRejectionEvidence } from './retry-evidence.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { EscalationContext } from './types.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
 
 let dirs: string[] = [];
 
@@ -36,30 +37,35 @@ function setupProject(): { projectDir: string; sessionId: string } {
   return { projectDir, sessionId };
 }
 
+async function makeRetryEvidenceCtx(
+  snapshot?: ChangedFilesSnapshot,
+): Promise<{ ctx: EscalationContext; projectDir: string; sessionId: string }> {
+  const { projectDir, sessionId } = setupProject();
+  const { bus } = makeBusRecorder();
+  const { callbacks } = makeCallbacks();
+  const ctx: EscalationContext = {
+    projectDir,
+    sessionId,
+    config: makeNoValidationConfig(),
+    callbacks,
+    bus,
+    planner: makePlanner(),
+    reviewer: makePlanner(),
+    context: { name: 'test', dir: projectDir },
+    implementer: makeImplementer(),
+    metadata: TEST_METADATA,
+    sinks: TEST_SINKS,
+    validator: createValidator(),
+    isolation: makeCopyingIsolation({ projectDir: projectDir, sessionId }),
+    taskStartSnapshot: snapshot ?? (await getChangedFilesSnapshot(projectDir)),
+    dependsOnFiles: [] as string[],
+  };
+  return { ctx, projectDir, sessionId };
+}
+
 describe('persistRetryApprovalEvidence', () => {
   it('writes approval evidence to ledger', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const config = makeNoValidationConfig();
-    const { bus } = makeBusRecorder();
-    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-    const { callbacks } = makeCallbacks();
-    const ctx: EscalationContext = {
-      projectDir,
-      sessionId,
-      config,
-      callbacks,
-      bus,
-      planner: makePlanner(),
-      reviewer: makePlanner(),
-      context: { name: 'test', dir: projectDir },
-      implementer: makeImplementer(),
-      metadata: TEST_METADATA,
-      sinks: TEST_SINKS,
-      validator: createValidator(),
-      isolation: makeCopyingIsolation({ projectDir: projectDir, sessionId }),
-      taskStartSnapshot,
-      dependsOnFiles: [] as string[],
-    };
+    const { ctx, projectDir, sessionId } = await makeRetryEvidenceCtx();
     const state = makeImplState([]);
     const task = makeTask({ id: 'T001', file: 'src/test.ts' });
     const decision = {
@@ -85,27 +91,12 @@ describe('persistRetryApprovalEvidence', () => {
     });
   });
 
-  it('does nothing when no confirmApprovals', () => {
-    const { projectDir, sessionId } = setupProject();
-    const { bus } = makeBusRecorder();
-    const { callbacks } = makeCallbacks();
-    const ctx: EscalationContext = {
-      projectDir,
-      sessionId,
-      config: makeNoValidationConfig(),
-      callbacks,
-      bus,
-      planner: makePlanner(),
-      reviewer: makePlanner(),
-      context: { name: 'test', dir: projectDir },
-      implementer: makeImplementer(),
-      metadata: TEST_METADATA,
-      sinks: TEST_SINKS,
-      validator: createValidator(),
-      isolation: makeCopyingIsolation({ projectDir: projectDir, sessionId }),
-      taskStartSnapshot: { head: 'abc', files: [], dirtyFileContents: {} },
-      dependsOnFiles: [] as string[],
-    };
+  it('does nothing when no confirmApprovals', async () => {
+    const { ctx, projectDir, sessionId } = await makeRetryEvidenceCtx({
+      head: 'abc',
+      files: [],
+      dirtyFileContents: {},
+    });
     const state = makeImplState([]);
     const task = makeTask({ id: 'T001', file: 'src/test.ts' });
     const decision = { allow: true, changedFiles: [] };
@@ -118,28 +109,7 @@ describe('persistRetryApprovalEvidence', () => {
 
 describe('persistRetryRejectionEvidence', () => {
   it('writes rejection evidence to ledger', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const config = makeNoValidationConfig();
-    const { bus } = makeBusRecorder();
-    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-    const { callbacks } = makeCallbacks();
-    const ctx: EscalationContext = {
-      projectDir,
-      sessionId,
-      config,
-      callbacks,
-      bus,
-      planner: makePlanner(),
-      reviewer: makePlanner(),
-      context: { name: 'test', dir: projectDir },
-      implementer: makeImplementer(),
-      metadata: TEST_METADATA,
-      sinks: TEST_SINKS,
-      validator: createValidator(),
-      isolation: makeCopyingIsolation({ projectDir: projectDir, sessionId }),
-      taskStartSnapshot,
-      dependsOnFiles: [] as string[],
-    };
+    const { ctx, projectDir, sessionId } = await makeRetryEvidenceCtx();
     const state = makeImplState([]);
     const task = makeTask({ id: 'T002', file: 'src/test.ts' });
     const decision = {
@@ -161,27 +131,12 @@ describe('persistRetryRejectionEvidence', () => {
     });
   });
 
-  it('does nothing for auto tier', () => {
-    const { projectDir, sessionId } = setupProject();
-    const { bus } = makeBusRecorder();
-    const { callbacks } = makeCallbacks();
-    const ctx: EscalationContext = {
-      projectDir,
-      sessionId,
-      config: makeNoValidationConfig(),
-      callbacks,
-      bus,
-      planner: makePlanner(),
-      reviewer: makePlanner(),
-      context: { name: 'test', dir: projectDir },
-      implementer: makeImplementer(),
-      metadata: TEST_METADATA,
-      sinks: TEST_SINKS,
-      validator: createValidator(),
-      isolation: makeCopyingIsolation({ projectDir: projectDir, sessionId }),
-      taskStartSnapshot: { head: 'abc', files: [], dirtyFileContents: {} },
-      dependsOnFiles: [] as string[],
-    };
+  it('does nothing for auto tier', async () => {
+    const { ctx, projectDir, sessionId } = await makeRetryEvidenceCtx({
+      head: 'abc',
+      files: [],
+      dirtyFileContents: {},
+    });
     const state = makeImplState([]);
     const task = makeTask({ id: 'T003', file: 'src/test.ts' });
     const decision = { allow: false, changedFiles: [], tier: 'auto' as const };
