@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { deriveCrewSeats, type CrewSeat, type CrewSeatId } from './seats.js';
+import type { CrewSeatId } from './identity.js';
+import { deriveCrewSeats, type CrewSeat } from './seats.js';
 
 function seatOf<Id extends CrewSeatId>(
   seats: readonly CrewSeat[],
@@ -33,7 +34,8 @@ describe('deriveCrewSeats', () => {
 
     expect(review.source).toBe('configured');
     expect(review.runner).toEqual(config.reviewer);
-    expect(review.model).toBe('gpt-5-codex');
+    expect(review.model).toContain('OpenAI Codex CLI');
+    expect(review.model).toContain('GPT-5 Codex');
     expect(review.posture).toBe('subscription-included');
   });
 
@@ -41,7 +43,8 @@ describe('deriveCrewSeats', () => {
     const build = seatOf(deriveCrewSeats({ config: makeConfig() }), 'build');
 
     expect(build.runner.kind).toBe('api');
-    expect(build.model).toBe('qwen2.5-coder:7b');
+    expect(build.model).toContain('Ollama');
+    expect(build.model).toContain('Qwen 2.5 Coder 7B');
     expect(build.posture).toBe('local');
   });
 
@@ -94,11 +97,38 @@ describe('deriveCrewSeats', () => {
     expect(build.escalate).toBeUndefined();
   });
 
-  it('leaves the model undefined when the runner names none', () => {
+  it('says the automatic word when the runner names no model', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
     const plan = seatOf(deriveCrewSeats({ config }), 'plan');
 
-    expect(plan.model).toBeUndefined();
-    expect(plan.displayName.length).toBeGreaterThan(0);
+    expect(plan.model).toContain('auto');
+  });
+
+  it('carries the planner effort the config states', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4', effort: 'high' },
+    });
+    const plan = seatOf(deriveCrewSeats({ config }), 'plan');
+
+    expect(plan.effort).toBe('high');
+    expect(plan.supportsEffort).toBe(true);
+  });
+
+  it('refuses effort on a build seat no implementer adapter can deliver it to', () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4' },
+    });
+    const build = seatOf(deriveCrewSeats({ config }), 'build');
+
+    expect(build.supportsEffort).toBe(false);
+  });
+
+  it('offers effort on a build seat whose api model reasons', () => {
+    const config = makeConfig({
+      implementer: { kind: 'api', provider: 'anthropic', model: 'claude-sonnet-4' },
+    });
+    const build = seatOf(deriveCrewSeats({ config }), 'build');
+
+    expect(build.supportsEffort).toBe(true);
   });
 });

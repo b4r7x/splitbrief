@@ -158,57 +158,6 @@ describe('/mode command', () => {
   });
 });
 
-describe('/effort command', () => {
-  it('shows success only after a saved effort result resolves', async () => {
-    let savedEffort: string | undefined;
-    let feedback: string | undefined;
-    const saved = Promise.withResolvers<RuntimeConfigSaveResult>();
-    const commands = createRuntimeCommands(
-      makeCtx({
-        setPlannerEffort: (effort) => {
-          savedEffort = effort;
-          return saved.promise;
-        },
-        setFeedbackMessage: (message) => {
-          feedback = message;
-        },
-      }),
-    );
-    const execution = executeRuntimeCommand(commands, '/effort high', 'home', noop);
-
-    expect(savedEffort).toBe('high');
-    expect(feedback).toBeUndefined();
-
-    saved.resolve({ kind: 'saved', ok: true });
-    await execution;
-
-    expect(feedback).toMatch(/high/);
-  });
-
-  it.each(['conflict', 'durability-uncertain', 'failure'] as const)(
-    'does not show success feedback when effort persistence resolves %s',
-    async (kind) => {
-      let feedback: string | undefined;
-      const completion = Promise.withResolvers<RuntimeConfigSaveResult>();
-      const commands = createRuntimeCommands(
-        makeCtx({
-          setPlannerEffort: () => completion.promise,
-          setFeedbackMessage: (message) => {
-            feedback = message;
-          },
-        }),
-      );
-      const execution = executeRuntimeCommand(commands, '/effort medium', 'home', noop);
-
-      expect(feedback).toBeUndefined();
-      completion.resolve({ kind, ok: false });
-      await execution;
-
-      expect(feedback).toBeUndefined();
-    },
-  );
-});
-
 describe('/refresh command', () => {
   beforeEach(() => {
     modelCacheStore.reset();
@@ -305,35 +254,41 @@ describe('/refresh command', () => {
   });
 });
 
-describe('/planner command', () => {
-  it('opens the planner-picker overlay', () => {
-    let openedOverlay: string | undefined;
+describe('/crew command', () => {
+  it('opens the settings overlay focused on the seat it names', () => {
+    const focused: Array<string | undefined> = [];
     const commands = createRuntimeCommands(
       makeCtx({
-        openOverlay: (type) => {
-          openedOverlay = type;
+        openOverlay: (type, focus) => {
+          focused.push(`${type}:${focus ?? ''}`);
         },
       }),
     );
-    executeRuntimeCommand(commands, '/planner', 'home', noop);
-    expect(openedOverlay).toBe('planner-picker');
-  });
-});
 
-describe('/reviewer and /crew commands', () => {
-  it('open the reviewer-picker and crew overlays', () => {
+    executeRuntimeCommand(commands, '/crew', 'home', noop);
+    executeRuntimeCommand(commands, '/crew review', 'home', noop);
+    executeRuntimeCommand(commands, '/planner', 'home', noop);
+
+    expect(focused).toEqual(['settings:seat:plan', 'settings:seat:review', 'settings:seat:plan']);
+  });
+
+  it('refuses a seat the crew does not have', () => {
+    let error: string | undefined;
     const opened: string[] = [];
     const commands = createRuntimeCommands(
       makeCtx({
         openOverlay: (type) => {
           opened.push(type);
         },
+        setFeedbackError: (message) => {
+          error = message;
+        },
       }),
     );
 
-    executeRuntimeCommand(commands, '/reviewer', 'home', noop);
-    executeRuntimeCommand(commands, '/crew', 'home', noop);
+    executeRuntimeCommand(commands, '/crew captain', 'home', noop);
 
-    expect(opened).toEqual(['reviewer-picker', 'crew']);
+    expect(opened).toEqual([]);
+    expect(error).toMatch(/captain/i);
   });
 });

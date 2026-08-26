@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from 'react';
+import { useLayoutEffect, useState, type ReactNode } from 'react';
 import { useInput } from 'ink';
 import { filterByFields, type FilterableItem } from '../../../components/pickers/filtering.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { clampIndex } from '../../../utils/indexing.js';
+import { assertNever } from '../../../utils/type-guards.js';
 import { handleKeyboardInput } from './keyboard.js';
 import { useColumnState } from './use-column-state.js';
 import {
@@ -15,6 +16,25 @@ import { overlayAllowsPickerKeys } from '../../../core/navigation/types.js';
 
 const noop = () => {};
 
+/**
+ * A left row that answers for itself: the right column becomes a read-only card
+ * and Enter commits the row instead of advancing into an empty model column.
+ */
+export interface TerminalPane {
+  label: string;
+  /** The verb the hint promises for Enter on this row. */
+  verb: string;
+  lines: string[];
+}
+
+/** What Enter does on the highlighted right row. */
+export type RightActivation = 'confirm' | 'expand' | 'collapse' | 'refresh' | 'none';
+
+export interface RightSectionProps<R> {
+  by: (item: R) => string;
+  headerFor?: ((section: string) => boolean) | undefined;
+}
+
 export interface LeftColumnProps<L> {
   items: L[];
   label?: string | undefined;
@@ -24,10 +44,9 @@ export interface LeftColumnProps<L> {
     meta: { isCursor: boolean; isSelected: boolean; maxWidth: number },
   ) => ReactNode;
   getKey: (item: L) => string;
-  isSpecial?: ((item: L) => boolean) | undefined;
+  terminalPane?: ((item: L) => TerminalPane | undefined) | undefined;
   isDisabled?: ((item: L) => boolean) | undefined;
   initialIndex?: number | undefined;
-  specialHelp?: ReactNode | undefined;
 }
 
 export interface CustomRowOptions<L, R> {
@@ -45,8 +64,14 @@ export interface RightColumnProps<L, R> {
   placeholder?: ReactNode | undefined;
   customRow?: CustomRowOptions<L, R> | undefined;
   onLeftChange?: ((item: L) => void) | undefined;
+  /** Index into `items`; the display offset for pinned virtual rows is added here. */
   initialIndex?: number | undefined;
   resolveInitialIndex?: ((left: L | undefined) => number | undefined) | undefined;
+  section?: RightSectionProps<R> | undefined;
+  activationOf?: ((item: R) => RightActivation) | undefined;
+  onExpand?: ((item: R) => void) | undefined;
+  onCollapse?: (() => void) | undefined;
+  isExpanded?: boolean | undefined;
 }
 
 export interface ColumnState<T> {
@@ -61,9 +86,8 @@ export interface TwoColumnNavState<L, R> {
   left: ColumnState<L>;
   right: ColumnState<RightItemOrVirtual<R>>;
   selectedLeftKey: string | null;
-  isSpecial: boolean;
+  terminalPane: TerminalPane | undefined;
   isOnCustomItem: boolean;
-  isOnLeftCustomItem: boolean;
   currentRightIsCustom: boolean;
   activateLeft: (index: number) => void;
   activateRight: (index: number) => void;
@@ -103,28 +127,35 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const leftItems = leftProps.items;
   const rightItems = rightProps.items;
   const leftGetKey = leftProps.getKey;
-  const isLeftItemSpecial = leftProps.isSpecial;
+  const terminalPaneOf = leftProps.terminalPane;
   const isLeftItemDisabled = leftProps.isDisabled;
   const isRightItemCustom = rightProps.customRow?.isCustom;
   const initialLeftIndex = leftProps.initialIndex ?? 0;
   const allowCustomRight = !!rightProps.customRow;
-  const defaultRightIndex = allowCustomRight ? 1 : 0;
-  const initialRightIndex = rightProps.initialIndex ?? defaultRightIndex;
+  const virtualCount = allowCustomRight ? 1 : 0;
+  const initialRightIndex = (rightProps.initialIndex ?? 0) + virtualCount;
   const resolveInitialRightIndex = rightProps.resolveInitialIndex;
-  const rightPlaceholder = rightProps.placeholder;
   const onLeftChange = rightProps.onLeftChange ?? noop;
   const onCustomRightOverlay = rightProps.customRow?.onSelect;
   const onDeleteRight = rightProps.customRow?.onDelete;
+  const activationOf = rightProps.activationOf;
+  const onExpand = rightProps.onExpand;
+  const onCollapse = rightProps.onCollapse;
 
   const initialLeftItem = leftItems[initialLeftIndex];
+  const initialLeftTerminal =
+    initialLeftItem === undefined ? undefined : terminalPaneOf?.(initialLeftItem);
   const initialLeftDisabled = initialLeftItem
     ? (isLeftItemDisabled?.(initialLeftItem) ?? false)
     : false;
   const effectiveInitialColumn =
-    initialColumn === 'right' && initialLeftDisabled ? 'left' : initialColumn;
+    initialColumn === 'right' && (initialLeftDisabled || initialLeftTerminal !== undefined)
+      ? 'left'
+      : initialColumn;
 
   const [activeColumn, setActiveColumn] = useState<'left' | 'right'>(effectiveInitialColumn);
   const [selectedLeftKey, setSelectedLeftKey] = useState<string | null>(null);
+  const [pendingExpand, setPendingExpand] = useState<{ key: string; length: number } | null>(null);
 
   const leftCol = useColumnState<L>({
     source: leftItems,
@@ -140,7 +171,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
     filterFn: rightProps.filterBy ?? defaultRightFilter,
     getKey: rightProps.getKey,
     initialIndex: initialRightIndex,
-    virtualCount: allowCustomRight ? 1 : 0,
+    virtualCount,
   });
 
   const filteredRight: RightItemOrVirtual<R>[] = allowCustomRight
@@ -149,13 +180,10 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const rightEffectiveIndex = clampIndex(rightCol.index, filteredRight.length);
   const rightCurrentItem = filteredRight[rightEffectiveIndex];
 
-  const isSpecial = leftCol.currentItem
-    ? (isLeftItemSpecial?.(leftCol.currentItem) ?? false)
-    : false;
+  const terminalPane = leftCol.currentItem ? terminalPaneOf?.(leftCol.currentItem) : undefined;
   const isDisabled = leftCol.currentItem
     ? (isLeftItemDisabled?.(leftCol.currentItem) ?? false)
     : false;
-  const leftActive = activeColumn === 'left';
   const rightActive = activeColumn === 'right';
   const isOnVirtual = !!rightCurrentItem && isVirtualCustomItem(rightCurrentItem);
   const currentRightIsCustom =
@@ -169,7 +197,33 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   // synthesized Auto row at index 0, a constant reset would land on it and
   // confirming would silently rewrite an explicitly configured model.
   const resetRight = (left?: L) =>
-    rightCol.reset(resolveInitialRightIndex?.(left) ?? defaultRightIndex);
+    rightCol.reset((resolveInitialRightIndex?.(left) ?? 0) + virtualCount);
+
+  // A column of notices and headers is a dead end: advancing into it parks the
+  // cursor on rows whose Enter does nothing.
+  const hasSelectableRight =
+    virtualCount > 0 ||
+    rightItems.some((item) => {
+      const activation = activationOf?.(item) ?? 'confirm';
+      return activation === 'confirm' || activation === 'expand';
+    });
+
+  // The row that opened the routes keeps the cursor until the routes are in the
+  // list; then the cursor lands on the first of them, even when the expanded row
+  // was the last one, where an index computed against the old list clamps back.
+  useLayoutEffect(() => {
+    if (pendingExpand === null) return;
+    if (!(rightProps.isExpanded ?? false)) {
+      setPendingExpand(null);
+      return;
+    }
+    if (filteredRight.length <= pendingExpand.length) return;
+    const at = filteredRight.findIndex(
+      (row) => isRealRightItem(row) && rightProps.getKey(row) === pendingExpand.key,
+    );
+    setPendingExpand(null);
+    if (at >= 0 && at + 1 < filteredRight.length) rightCol.setIndex(at + 1);
+  });
 
   const activateLeft = (index: number) => {
     if (params.maxVisible <= 0) return;
@@ -177,10 +231,16 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
     if (!item) return;
     leftCol.setIndex(index);
     resetRight(item);
-    setActiveColumn('left');
-    const disabled = isLeftItemDisabled?.(item) ?? false;
-    const special = isLeftItemSpecial?.(item) ?? false;
-    if (!disabled && special) onConfirm(item, null);
+    if (isLeftItemDisabled?.(item) ?? false) {
+      onDisabledSelect?.(item);
+      return;
+    }
+    if (terminalPaneOf?.(item) !== undefined) {
+      onConfirm(item, null);
+      return;
+    }
+    setSelectedLeftKey(leftGetKey(item));
+    if (hasSelectableRight) setActiveColumn('right');
   };
 
   const activateRight = (index: number) => {
@@ -194,8 +254,30 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
       return;
     }
     if (!isRealRightItem(item)) return;
-    const leftItem = leftCol.items[leftCol.effectiveIndex];
-    if (leftItem) onConfirm(leftItem, item);
+    const activation = activationOf?.(item) ?? 'confirm';
+    switch (activation) {
+      case 'expand':
+        onExpand?.(item);
+        // The routes are not in `items` yet — the expansion reaches this hook as
+        // props on the next render — so the cursor moves once they are there.
+        setPendingExpand({ key: rightProps.getKey(item), length: filteredRight.length });
+        return;
+      case 'collapse':
+        onCollapse?.();
+        return;
+      case 'refresh':
+        params.onRefresh?.();
+        return;
+      case 'none':
+        return;
+      case 'confirm': {
+        const leftItem = leftCol.items[leftCol.effectiveIndex];
+        if (leftItem) onConfirm(leftItem, item);
+        return;
+      }
+      default:
+        return assertNever(activation);
+    }
   };
 
   const isActive = overlayStore.use((s) => overlayAllowsPickerKeys(s.active));
@@ -203,28 +285,22 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   useInput(
     (input, key) => {
       handleKeyboardInput(input, key, {
-        leftActive,
+        leftActive: activeColumn === 'left',
         rightActive,
-        isSpecial,
+        isTerminal: terminalPane !== undefined,
         isDisabled,
-        isOnVirtual,
+        hasSelectableRight,
         currentRightIsCustom,
         leftCurrentItem: leftCol.currentItem,
-        onDisabledSelect,
         leftFiltered: leftCol.items,
         filteredRight,
         leftFilter: leftCol.filter,
         rightFilter: rightCol.filter,
-        rightVirtualCount: allowCustomRight ? 1 : 0,
+        rightVirtualCount: virtualCount,
         leftEffectiveIndex: leftCol.effectiveIndex,
         rightEffectiveIndex,
-        rightItems,
-        rightPlaceholder,
-        leftGetKey,
         isRightItemCustom,
         onDeleteRight,
-        onCustomRightOverlay,
-        onConfirm,
         onCancel,
         onRefresh: params.onRefresh,
         maxVisible: params.maxVisible,
@@ -235,6 +311,10 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
         setLeftIndex: leftCol.setIndex,
         setRightIndex: rightCol.setIndex,
         resetRight,
+        activateLeft,
+        activateRight,
+        isExpanded: rightProps.isExpanded ?? false,
+        onCollapse,
       });
     },
     { isActive },
@@ -255,9 +335,8 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
       currentItem: rightCurrentItem,
     },
     selectedLeftKey,
-    isSpecial,
+    terminalPane,
     isOnCustomItem: rightActive && isOnVirtual,
-    isOnLeftCustomItem: leftActive && isSpecial,
     currentRightIsCustom,
     activateLeft,
     activateRight,

@@ -197,7 +197,7 @@ function createAdapter(
       ...shared,
       role,
       supportsSessionResume: true,
-      supportsEffort: true,
+      supportsEffort: CLI_TOOL_CATALOG[CLAUDE_ID].supportsEffort,
       baseArgs: plannerBaseArgs,
       buildArgs: (input) => [...plannerBaseArgs(input), ...input.configuredArgs],
     } satisfies CliPlannerAdapter<'claude-code'>;

@@ -54,11 +54,19 @@ export type ListDisplaySlot<T> =
   | { kind: 'indicator'; direction: 'up' | 'down' }
   | { kind: 'header'; itemIndex: number; section: string }
   | { kind: 'gap'; itemIndex: number }
+  | { kind: 'before'; itemIndex: number }
+  | { kind: 'after'; itemIndex: number }
   | { kind: 'item'; item: T; itemIndex: number; section: string | null };
 
 interface ListSectionOptions<T> {
   by: (item: T) => string;
   gapBetweenSections?: boolean | undefined;
+  headerFor?: ((section: string) => boolean) | undefined;
+}
+
+interface ListDecorationOptions<T> {
+  before?: ((item: T, index: number) => boolean) | undefined;
+  after?: ((item: T, index: number) => boolean) | undefined;
 }
 
 interface ListDisplayWindowInput<T> {
@@ -70,6 +78,8 @@ interface ListDisplayWindowInput<T> {
   maxVisible?: number | undefined;
   listFloor?: number | undefined;
   section?: ListSectionOptions<T> | undefined;
+  decorations?: ListDecorationOptions<T> | undefined;
+  pinnedHead?: number | undefined;
 }
 
 function clampWindowSize(windowSize: number, totalItems: number): number {
@@ -80,26 +90,30 @@ function clampWindowSize(windowSize: number, totalItems: number): number {
 function buildListDisplaySlots<T>(
   items: T[],
   section: ListSectionOptions<T> | undefined,
+  decorations: ListDecorationOptions<T> | undefined,
 ): ListDisplaySlot<T>[] {
-  if (!section) {
-    return items.map((item, itemIndex) => ({ kind: 'item', item, itemIndex, section: null }));
-  }
-
   const slots: ListDisplaySlot<T>[] = [];
   for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
     const item = items[itemIndex];
     if (item === undefined) continue;
 
-    const current = section.by(item);
-    const previous = itemIndex > 0 ? items[itemIndex - 1] : undefined;
-    const previousSection = previous === undefined ? null : section.by(previous);
-    if (current !== previousSection) {
-      if (section.gapBetweenSections && slots.length > 0) {
-        slots.push({ kind: 'gap', itemIndex });
+    const current = section ? section.by(item) : null;
+    if (section && current !== null) {
+      const previous = itemIndex > 0 ? items[itemIndex - 1] : undefined;
+      const previousSection = previous === undefined ? null : section.by(previous);
+      if (current !== previousSection) {
+        if (section.gapBetweenSections && slots.length > 0) {
+          slots.push({ kind: 'gap', itemIndex });
+        }
+        if (section.headerFor === undefined || section.headerFor(current)) {
+          slots.push({ kind: 'header', itemIndex, section: current });
+        }
       }
-      slots.push({ kind: 'header', itemIndex, section: current });
     }
+
+    if (decorations?.before?.(item, itemIndex)) slots.push({ kind: 'before', itemIndex });
     slots.push({ kind: 'item', item, itemIndex, section: current });
+    if (decorations?.after?.(item, itemIndex)) slots.push({ kind: 'after', itemIndex });
   }
   return slots;
 }
@@ -128,13 +142,14 @@ function computeContentWindow(opts: {
   totalSlots: number;
   selectedSlotIndex: number;
   rowBudget: number;
+  pinToStart: boolean;
 }): {
   contentRows: number;
   scrollOffset: number;
   showScrollUp: boolean;
   showScrollDown: boolean;
 } {
-  const { totalSlots, selectedSlotIndex, rowBudget } = opts;
+  const { totalSlots, selectedSlotIndex, rowBudget, pinToStart } = opts;
   if (totalSlots <= rowBudget) {
     return { contentRows: totalSlots, scrollOffset: 0, showScrollUp: false, showScrollDown: false };
   }
@@ -156,6 +171,18 @@ function computeContentWindow(opts: {
       showScrollUp: scrollOffset > 0,
       showScrollDown: scrollOffset === 0 && totalSlots > 1,
     };
+  }
+
+  if (pinToStart) {
+    const pinnedRows = clampWindowSize(rowBudget - 1, totalSlots);
+    if (selectedSlotIndex < pinnedRows) {
+      return {
+        contentRows: pinnedRows,
+        scrollOffset: 0,
+        showScrollUp: false,
+        showScrollDown: true,
+      };
+    }
   }
 
   let contentRows = clampWindowSize(rowBudget - 2, totalSlots);
@@ -183,11 +210,19 @@ function computeContentWindow(opts: {
   return { contentRows, scrollOffset, showScrollUp, showScrollDown };
 }
 
+function trimEdgeDecorations<T>(content: ListDisplaySlot<T>[]): ListDisplaySlot<T>[] {
+  const start = content[0]?.kind === 'after' ? 1 : 0;
+  const end = content.at(-1)?.kind === 'before' ? content.length - 1 : content.length;
+  return content.slice(start, Math.max(start, end));
+}
+
 export function isItemIndexVisible<T>(opts: {
   items: T[];
   selectedIndex: number;
   rowBudget: number;
   section?: ListSectionOptions<T> | undefined;
+  decorations?: ListDecorationOptions<T> | undefined;
+  pinnedHead?: number | undefined;
 }): boolean {
   if (opts.rowBudget <= 0 || opts.items.length === 0) return false;
   const { visibleSlots } = computeListDisplayWindow({
@@ -195,13 +230,15 @@ export function isItemIndexVisible<T>(opts: {
     selectedIndex: opts.selectedIndex,
     rowBudget: opts.rowBudget,
     ...(opts.section ? { section: opts.section } : {}),
+    ...(opts.decorations ? { decorations: opts.decorations } : {}),
+    ...(opts.pinnedHead === undefined ? {} : { pinnedHead: opts.pinnedHead }),
   });
   return visibleSlots.some((slot) => slot.kind === 'item' && slot.itemIndex === opts.selectedIndex);
 }
 
 export function computeListDisplayWindow<T>(opts: ListDisplayWindowInput<T>) {
   const rowBudget = resolveRowBudget(opts);
-  const slots = buildListDisplaySlots(opts.items, opts.section);
+  const slots = buildListDisplaySlots(opts.items, opts.section, opts.decorations);
 
   if (rowBudget <= 0 || slots.length === 0) {
     return {
@@ -218,8 +255,9 @@ export function computeListDisplayWindow<T>(opts: ListDisplayWindowInput<T>) {
     totalSlots: slots.length,
     selectedSlotIndex: selectedSlot,
     rowBudget,
+    pinToStart: opts.selectedIndex < normalizeCount(opts.pinnedHead ?? 0),
   });
-  const content = slots.slice(scrollOffset, scrollOffset + contentRows);
+  const content = trimEdgeDecorations(slots.slice(scrollOffset, scrollOffset + contentRows));
   const visibleSlots: ListDisplaySlot<T>[] = [];
   if (showScrollUp) visibleSlots.push({ kind: 'indicator', direction: 'up' });
   visibleSlots.push(...content);

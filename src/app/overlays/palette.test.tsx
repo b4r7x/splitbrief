@@ -2,6 +2,7 @@ import { beforeEach, afterEach, describe, it, expect } from 'vitest';
 import { render } from 'ink-testing-library';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { saveSummary } from '../../core/sessions/io.js';
 import { configStore } from '../../stores/project/config.js';
@@ -12,9 +13,11 @@ import { sessionsStore } from '../../stores/project/sessions.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { commandPaletteMruStore } from '../../stores/ui/command-palette-mru.js';
+import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { createRuntimeCommands } from '../../core/runtime/commands/registry.js';
 import { executeRuntimeCommand } from '../../core/runtime/commands/dispatch.js';
+import { COMMAND_CATEGORY_LABELS } from '../../core/runtime/commands/types.js';
 import type {
   RuntimeConfigSaveResult,
   RuntimeCommandContext,
@@ -53,7 +56,6 @@ function createTestCommands(opts: { isAttached?: boolean } = {}): RuntimeCommand
     navigate: (to) => routerStore.navigate({ to }),
     quit: () => {},
     setWorkflowMode: setWorkflowModeForTest,
-    setPlannerEffort: async () => ({ kind: 'saved', ok: true }),
     setFeedbackMessage: feedbackStore.setMessage,
     setFeedbackError: feedbackStore.setError,
     refreshDetection: async () => ({
@@ -69,11 +71,9 @@ function createTestCommands(opts: { isAttached?: boolean } = {}): RuntimeCommand
     getCurrentPhase: () => lifecycleStore.get().phase,
     requestRewind: () => true,
     requestTaskRedo: () => true,
-    requestWorkflowResume: () => true,
     getQueueDepth: () => lifecycleStore.get().queueDepth,
     clearQueue: () => ({ status: 'cleared', count: 0 }),
-    rebuildRepomap: async () => ({ deleted: false, files: [] }),
-    attachImage: () => ({ ok: false, reason: 'not implemented in test' }),
+    attachImage: () => ({ ok: false, reason: 'not-found' }),
     detachImage: () => false,
     listAttachments: () => [],
     writeHandoff: async () => ({ outputDir: '' }),
@@ -87,6 +87,7 @@ function createTestCommands(opts: { isAttached?: boolean } = {}): RuntimeCommand
     exportSession: async () => ({ status: 'ok', path: '/tmp/report.html' }),
     scrollConversation: () => ({ status: 'scrolled' }),
     toggleLatestActivityBatch: () => ({ status: 'toggled', expanded: true }),
+    toggleLatestDiff: () => ({ status: 'toggled', expanded: true }),
     toggleSidebar: () => ({ status: 'toggled', visible: true }),
     copyTarget: async () => 'empty',
   };
@@ -102,10 +103,11 @@ function renderCommandPalette(): ReturnType<typeof render> {
         executeRuntimeCommand(commands, raw, {
           screen: routerStore.get().screen,
           phase: lifecycleStore.get().phase,
+          attached: false,
+          plannerSupportsImages: true,
           onError: feedbackStore.setError,
         })
       }
-      onWorkflowMode={setWorkflowModeForTest}
     />,
   );
 }
@@ -128,27 +130,61 @@ function renderAttachedCommandPalette(): ReturnType<typeof render> {
         executeRuntimeCommand(commands, raw, {
           screen: routerStore.get().screen,
           phase: lifecycleStore.get().phase,
+          attached: false,
+          plannerSupportsImages: true,
           onError: feedbackStore.setError,
         })
       }
-      onWorkflowMode={setWorkflowModeForTest}
     />,
   );
 }
 
-const GROUP_HEADERS = ['Commands', 'Modes', 'Pickers', 'Tasks', 'Sessions', 'Actions'];
+function enterWorkflowScreen(): void {
+  routerStore.navigate({
+    to: 'workflow',
+    execution: {
+      kind: 'local',
+      prepared: makePreparedExecution({
+        projectDir,
+        sessionId: 'command-palette-session',
+        feature: 'command palette workflow',
+        config: makeConfig(),
+        gates: () => [],
+      }),
+    },
+  });
+}
+
+// Command rows are sectioned by category; task, session and custom rows by their source.
+const GROUP_HEADERS = [...Object.values(COMMAND_CATEGORY_LABELS), 'Tasks', 'Sessions', 'Actions'];
+
+function innerText(line: string): string {
+  // Strip the OverlayPanel frame (vertical borders + padding) so the checks below see the bare
+  // row content; the ascii glyph tier renders the round border as `+-|`.
+  return stripAnsiStyles(line)
+    .replace(/^\s*[|│]\s*/u, '')
+    .replace(/\s*[|│]\s*$/u, '')
+    .trim();
+}
+
+function sectionHeaders(frame: string): string[] {
+  return frame
+    .split('\n')
+    .map(innerText)
+    .filter((text) => GROUP_HEADERS.includes(text));
+}
+
+function commandRows(frame: string): string[] {
+  return paletteResultRows(frame).filter((line) =>
+    innerText(line).replace(glyph('liveBar'), '').trimStart().startsWith('/'),
+  );
+}
 
 function paletteResultRows(frame: string): string[] {
   return frame.split('\n').filter((line) => {
-    // Strip the restored OverlayPanel frame (vertical borders + padding) so the inner text checks
-    // below see the bare row content; the ascii glyph tier renders the round border as `+-|`.
-    const text = stripAnsiStyles(line)
-      .replace(/^\s*[|│]\s*/u, '')
-      .replace(/\s*[|│]\s*$/u, '')
-      .trim();
+    const text = innerText(line);
     if (text === '') return false;
     if (/^[+-]+$/.test(text)) return false;
-    if (text.startsWith('palette')) return false;
     if (text.startsWith(`${glyph('prompt')} `)) return false;
     if (text.includes('navigate')) return false;
     if (text === 'No matching commands') return false;
@@ -191,6 +227,7 @@ beforeEach(() => {
   tasksStore.reset();
   lifecycleStore.reset();
   commandPaletteMruStore.__testReset();
+  composerDraftStore.clear();
   terminalSizeStore.reset();
   _resetMouseZones();
   overlayStore.open('command-palette');
@@ -205,21 +242,24 @@ afterEach(() => {
   tasksStore.reset();
   lifecycleStore.reset();
   commandPaletteMruStore.__testReset();
+  composerDraftStore.clear();
   terminalSizeStore.reset();
   if (projectDir) cleanupTempDir(projectDir);
   projectDir = '';
 });
 
 describe('CommandPaletteOverlay', () => {
-  it('renders the palette shell with default command sources', async () => {
+  it('names the surface in the filter placeholder and offers the run-or-fill-in hint', async () => {
     const instance = renderCommandPalette();
     await tick(1);
     await tick(1);
-    const frame = instance.lastFrame() ?? '';
-    expect(frame).toContain('palette');
-    expect(frame).toContain('navigate');
+    const raw = instance.lastFrame() ?? '';
+    const frame = stripAnsiStyles(raw);
+    expect(promptLine(raw)).toContain('Type a command…');
+    expect(frame).toContain('↑↓ navigate');
+    expect(frame).toContain('run or fill in');
     expect(frame).toContain('esc close');
-    expect(frame).toContain('Commands');
+    expect(commandRows(raw).length).toBeGreaterThan(0);
     instance.unmount();
   });
 
@@ -468,111 +508,6 @@ describe('CommandPaletteOverlay', () => {
     instance.unmount();
   });
 
-  it('mode items are shown in results', async () => {
-    const instance = renderCommandPalette();
-    await tick(1);
-    await tick(1);
-
-    await write(instance, 'standard');
-    await tick(1);
-    await tick(1);
-    const frame = instance.lastFrame() ?? '';
-    expect(frame).toContain('Modes');
-    instance.unmount();
-  });
-
-  it('executes the injected workflow mode action', async () => {
-    const instance = renderCommandPalette();
-    await tick(1);
-    await tick(1);
-
-    await write(instance, 'instant');
-    await tick(1);
-    await tick(1);
-    await write(instance, ENTER);
-    await tick(1);
-    await tick(1);
-
-    expect(configStore.get().config?.workflow.mode).toBe('instant');
-    expect(overlayStore.get().active).toBe('none');
-    instance.unmount();
-  });
-
-  it('keeps the palette open until a mode save resolves', async () => {
-    const saved = Promise.withResolvers<RuntimeConfigSaveResult>();
-    const instance = render(
-      <CommandPaletteOverlay
-        commands={createTestCommands()}
-        onRuntimeCommand={() => {}}
-        onWorkflowMode={() => saved.promise}
-      />,
-    );
-    await tick(1);
-    await tick(1);
-
-    await write(instance, 'instant');
-    await tick(1);
-    await tick(1);
-    await write(instance, ENTER);
-    await tick(1);
-
-    expect(overlayStore.get().active).toBe('command-palette');
-    expect(commandPaletteMruStore.get().ids).toHaveLength(0);
-    expect(feedbackStore.get().message).toBeNull();
-
-    saved.resolve({ kind: 'saved', ok: true });
-    await tick(1);
-    await tick(1);
-
-    expect(overlayStore.get().active).toBe('none');
-    expect(commandPaletteMruStore.get().ids).toContain('mode:instant');
-    instance.unmount();
-  });
-
-  it('keeps the palette open after a mode save conflict', async () => {
-    const instance = render(
-      <CommandPaletteOverlay
-        commands={createTestCommands()}
-        onRuntimeCommand={() => {}}
-        onWorkflowMode={async () => ({
-          kind: 'conflict',
-          ok: false,
-          errorMessage: 'Config changed on disk. Reload before saving again.',
-        })}
-      />,
-    );
-    await tick(1);
-    await tick(1);
-
-    await write(instance, 'instant');
-    await tick(1);
-    await tick(1);
-    await write(instance, ENTER);
-    await tick(1);
-    await tick(1);
-
-    expect(overlayStore.get().active).toBe('command-palette');
-    expect(commandPaletteMruStore.get().ids).toHaveLength(0);
-    expect(feedbackStore.get()).toMatchObject({
-      isError: true,
-      message: 'Config changed on disk. Reload before saving again.',
-    });
-    instance.unmount();
-  });
-
-  it('picker items are shown in results', async () => {
-    const instance = renderCommandPalette();
-    await tick(1);
-    await tick(1);
-
-    await write(instance, 'settings');
-    await tick(1);
-    await tick(1);
-    const frame = instance.lastFrame() ?? '';
-    expect(frame).toContain('Pickers');
-    instance.unmount();
-  });
-
   it('truncates long palette result rows instead of wrapping them', async () => {
     terminalSizeStore.__testReset({ cols: 50, rows: 24, isSmall: true });
     const longCommand: RuntimeCommandDef = {
@@ -580,16 +515,13 @@ describe('CommandPaletteOverlay', () => {
       name: '/very-long-command-name-for-row-layout',
       label: 'VeryLongCommandLabelForPaletteRowLayout',
       description: 'A long command description that must be truncated before TAIL_SENTINEL_PALETTE',
+      category: 'navigate',
       validScreens: ['home'],
       handler: () => {},
     };
 
     const instance = render(
-      <CommandPaletteOverlay
-        commands={[longCommand]}
-        onRuntimeCommand={() => {}}
-        onWorkflowMode={setWorkflowModeForTest}
-      />,
+      <CommandPaletteOverlay commands={[longCommand]} onRuntimeCommand={() => {}} />,
     );
     await tick(1);
     await tick(1);
@@ -617,8 +549,8 @@ describe('CommandPaletteOverlay', () => {
 
     const helpRow = rowContaining(rows, '/help');
     const settingsRow = rowContaining(rows, '/settings');
-    expect(helpRow).toContain('Show help overlay');
-    expect(settingsRow).toContain('Planner, model & settings');
+    expect(helpRow).toContain('Show help');
+    expect(settingsRow).toContain('Crew, validation, workflow');
 
     instance.unmount();
   });
@@ -685,15 +617,16 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
 
     const frame = instance.lastFrame() ?? '';
-    expect(frame).not.toContain('Modes');
     expect(frame).not.toContain('Planner');
     expect(frame).not.toContain('implementer');
     expect(frame).not.toContain('settings');
 
-    await write(instance, 'instant');
+    await write(instance, 'mode');
     await tick(1);
     await tick(1);
-    expect(instance.lastFrame() ?? '').toContain('No matching commands');
+    expect(commandRows(instance.lastFrame() ?? '').some((row) => row.includes('/mode'))).toBe(
+      false,
+    );
 
     instance.unmount();
   });
@@ -739,6 +672,7 @@ describe('CommandPaletteOverlay', () => {
       name: '/hidden',
       label: 'Hidden Palette Command',
       description: 'must not run when clipped',
+      category: 'navigate',
       validScreens: ['home'],
       handler: () => {
         overlayStore.open('help');
@@ -747,11 +681,7 @@ describe('CommandPaletteOverlay', () => {
 
     terminalSizeStore.__testReset({ cols: 80, rows: 1, isSmall: false });
     const instance = render(
-      <CommandPaletteOverlay
-        commands={[hiddenCommand]}
-        onRuntimeCommand={() => {}}
-        onWorkflowMode={setWorkflowModeForTest}
-      />,
+      <CommandPaletteOverlay commands={[hiddenCommand]} onRuntimeCommand={() => {}} />,
     );
     await tick(1);
     await tick(1);
@@ -770,30 +700,115 @@ describe('CommandPaletteOverlay', () => {
     instance.unmount();
   });
 
-  it('keeps the palette open when a mode save rejects', async () => {
-    const commands = createTestCommands();
-    const instance = render(
-      <CommandPaletteOverlay
-        commands={commands}
-        onRuntimeCommand={() => {}}
-        onWorkflowMode={async () => {
-          throw new Error('mode switch boom');
-        }}
-      />,
-    );
+  it('groups rows under category headers when the list budget allows', async () => {
+    for (const size of [
+      { cols: 120, rows: 40 },
+      { cols: 80, rows: 24 },
+    ]) {
+      terminalSizeStore.__testReset({ ...size, isSmall: false });
+      const instance = renderCommandPalette();
+      await tick(1);
+      await tick(1);
+
+      const headers = sectionHeaders(instance.lastFrame() ?? '');
+      expect(headers, `${size.cols}x${size.rows}`).toContain('Navigate');
+      expect(headers.length, `${size.cols}x${size.rows}`).toBeGreaterThan(1);
+      instance.unmount();
+    }
+  });
+
+  it('draws each section header exactly once when a query reorders the list by relevance', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const instance = renderCommandPalette();
+    await tick(1);
+    await tick(1);
+    expect(sectionHeaders(instance.lastFrame() ?? '')).toContain('Navigate');
+
+    await write(instance, 'e');
     await tick(1);
     await tick(1);
 
-    await write(instance, 'instant');
+    const frame = instance.lastFrame() ?? '';
+    const headers = sectionHeaders(frame);
+    expect(headers.length).toBeGreaterThan(0);
+    expect(new Set(headers).size).toBe(headers.length);
+    expect(commandRows(frame).length).toBeGreaterThan(0);
+    instance.unmount();
+  });
+
+  it('drops the category headers at the 60x18 floor and keeps the rows', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+    const instance = renderCommandPalette();
     await tick(1);
     await tick(1);
+
+    const frame = instance.lastFrame() ?? '';
+    expect(sectionHeaders(frame)).toEqual([]);
+    expect(commandRows(frame).length).toBeGreaterThanOrEqual(8);
+    instance.unmount();
+  });
+
+  it('Enter on an argument command fills the composer instead of running it bare', async () => {
+    enterWorkflowScreen();
+    const instance = renderCommandPalette();
+    await tick(1);
+    await tick(1);
+
+    await write(instance, '/copy');
+    await tick(1);
+    await tick(1);
+    expect(commandRows(instance.lastFrame() ?? '')[0]).toContain('/copy');
+
     await write(instance, ENTER);
     await tick(1);
     await tick(1);
 
-    expect(feedbackStore.get().isError).toBe(true);
-    expect(feedbackStore.get().message).toContain('mode switch boom');
-    expect(overlayStore.get().active).toBe('command-palette');
+    expect(composerDraftStore.get().request?.value).toBe('/copy ');
+    expect(overlayStore.get().active).toBe('none');
+    expect(feedbackStore.get().isError).toBe(false);
     instance.unmount();
+  });
+
+  it('does not offer workflow-only commands on the home screen', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const instance = renderCommandPalette();
+    await tick(1);
+    await tick(1);
+
+    const rows = commandRows(instance.lastFrame() ?? '');
+    expect(rows.some((row) => row.includes('/help'))).toBe(true);
+    expect(rows.some((row) => row.includes('/diff'))).toBe(false);
+    expect(rows.some((row) => row.includes('/cost'))).toBe(false);
+    instance.unmount();
+  });
+
+  it('reports no error whichever visible row is run', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const probe = renderCommandPalette();
+    await tick(1);
+    await tick(1);
+    const rowCount = commandRows(probe.lastFrame() ?? '').length;
+    probe.unmount();
+    expect(rowCount).toBeGreaterThan(8);
+
+    for (let row = 0; row < rowCount; row++) {
+      overlayStore.reset();
+      overlayStore.open('command-palette');
+      feedbackStore.reset();
+      commandPaletteMruStore.__testReset();
+      const instance = renderCommandPalette();
+      await tick(1);
+      await tick(1);
+
+      const label = commandRows(instance.lastFrame() ?? '')[row] ?? '';
+      for (let step = 0; step < row; step++) await write(instance, DOWN);
+      await tick(1);
+      await write(instance, ENTER);
+      await tick(1);
+      await tick(1);
+
+      expect(feedbackStore.get().isError, label).toBe(false);
+      instance.unmount();
+    }
   });
 });

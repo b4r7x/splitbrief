@@ -2,17 +2,18 @@ import { useState, useEffect } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { MultilineInput } from '../../components/input/multiline-input.js';
+import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { SOFT_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
-import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
+import type { SeatPickerRole } from '../../core/runners/cli-tool-catalog.js';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { SubPanel } from './sub-panel.js';
+import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import { overlayAllowsPickerKeys } from '../../core/navigation/types.js';
 
 interface TextInputOverlayProps {
   title: string;
-  role: ActiveRunnerRole;
+  role: SeatPickerRole;
   stepIndicator?: ReactElement | undefined;
   recap?: ReactElement | undefined;
   label: ReactNode;
@@ -75,12 +76,17 @@ export function TextInputOverlay({
   const spacedExamples = helper === undefined;
 
   return (
-    <SubPanel
-      title={title}
-      role={role}
-      stepIndicator={stepIndicator}
+    <OverlayPanel
+      density="roomy"
+      title={sanitizeTerminalDisplayText(`${title}${SOFT_SEP}${role}`)}
       hint={hint ?? `⏎ save${SOFT_SEP}esc back`}
     >
+      {stepIndicator ? (
+        <Box flexDirection="column">
+          {stepIndicator}
+          <Box height={1} />
+        </Box>
+      ) : null}
       {recap ? (
         <Box flexDirection="column">
           {recap}
@@ -103,6 +109,7 @@ export function TextInputOverlay({
             maxRows={maxRows}
             mask={mask}
             placeholder={placeholder}
+            keepPlaceholderWhileFocused
             focus={focus}
             onVisibleRowsChange={setVisibleRows}
             keyBindings={{
@@ -129,9 +136,8 @@ export function TextInputOverlay({
               </Text>
             </Box>
           ))}
-          {spacedExamples ? <Box height={1} /> : null}
         </Box>
       ) : null}
-    </SubPanel>
+    </OverlayPanel>
   );
 }

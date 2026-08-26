@@ -4,7 +4,24 @@ import { renderFeature, tick } from '#testing/helpers/ink.js';
 import type { PickerOption } from './model-catalog/options.js';
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
 import type { ModelOption } from './model-catalog/recency.js';
+import { glyph } from '../../lib/glyphs.js';
+import type { ProvenanceWord } from '../../core/providers/provenance.js';
+import type { RightRow, RouteAuthState } from './model-catalog/rows.js';
 import { renderModelRow, renderToolRow } from './tool-row.js';
+
+function modelRow(model: ModelOption, provenance: ProvenanceWord, section = ''): RightRow {
+  return { kind: 'model', model, provenance, section, expanded: false };
+}
+
+function routeRow(auth: RouteAuthState): RightRow {
+  return {
+    kind: 'route',
+    model: { id: 'openai/gpt-5.6' },
+    variant: { fullId: 'openai/gpt-5.6', providerPrefix: 'openai', tag: 'openai' },
+    tagWidth: 6,
+    auth,
+  };
+}
 
 function pickerItem(
   item: Omit<PickerOption, 'modelCapability'> & { modelPolicy: PickerOption['modelPolicy'] },
@@ -158,12 +175,15 @@ describe('runner row grammar', () => {
     ui.unmount();
   });
 
-  it('renders custom/default model suffixes without parens badges', async () => {
-    const custom: ModelOption = { id: 'my-org/custom', isCustom: true };
-    const bundledDefault: ModelOption = { id: 'gpt-5.4', isDefault: true };
-
+  it('renders custom/default model provenance without parens badges', async () => {
     const customUi = renderFeature(
-      renderModelRow({ item: custom, isCursor: false, maxWidth: 40, currentModel: undefined }),
+      renderModelRow({
+        row: modelRow({ id: 'my-org/custom', isCustom: true }, 'Custom'),
+        isCursor: false,
+        maxWidth: 40,
+        currentModel: undefined,
+        sectioned: false,
+      }),
     );
     await tick(20);
     const customFrame = customUi.lastFrame() ?? '';
@@ -173,31 +193,28 @@ describe('runner row grammar', () => {
 
     const defaultUi = renderFeature(
       renderModelRow({
-        item: bundledDefault,
+        row: modelRow({ id: 'gpt-5.4' }, 'Known'),
         isCursor: false,
         maxWidth: 40,
         currentModel: undefined,
+        sectioned: false,
       }),
     );
     await tick(20);
     const defaultFrame = defaultUi.lastFrame() ?? '';
-    expect(defaultFrame).toContain('Default');
-    expect(defaultFrame).not.toContain('(Default)');
+    expect(defaultFrame).toContain('Known');
+    expect(defaultFrame).not.toContain('(Known)');
     defaultUi.unmount();
   });
 
   it('marks a stale retained model without calling it detected', async () => {
     const ui = renderFeature(
       renderModelRow({
-        item: {
-          id: 'retained-model',
-          membership: 'stale',
-          isStale: true,
-          isDetected: false,
-        },
+        row: modelRow({ id: 'retained-model', membership: 'stale', isStale: true }, 'Stale'),
         isCursor: false,
         maxWidth: 60,
         currentModel: undefined,
+        sectioned: false,
       }),
     );
     await tick(20);
@@ -209,16 +226,84 @@ describe('runner row grammar', () => {
     ui.unmount();
   });
 
-  it('renders the Auto policy row as a bare label with no model metadata', async () => {
+  it('keeps the Default word on the Auto row even inside a sectioned list', async () => {
     const ui = renderFeature(
-      renderModelRow({ item: { id: 'auto' }, isCursor: false, maxWidth: 40, currentModel: 'auto' }),
+      renderModelRow({
+        row: modelRow({ id: 'auto' }, 'Default'),
+        isCursor: false,
+        maxWidth: 40,
+        currentModel: 'auto',
+        sectioned: true,
+      }),
     );
     await tick(20);
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Auto');
-    expect(frame).not.toContain('Default');
-    expect(frame).not.toContain('Custom');
-    expect(frame).not.toContain('K');
+    expect(frame).toContain('Default');
+    ui.unmount();
+  });
+
+  it('drops the provenance word when the section header already carries it', async () => {
+    const ui = renderFeature(
+      renderModelRow({
+        row: modelRow({ id: 'opus' }, 'Known', 'Known aliases · 3'),
+        isCursor: false,
+        maxWidth: 40,
+        currentModel: undefined,
+        sectioned: true,
+      }),
+    );
+    await tick(20);
+    expect(ui.lastFrame() ?? '').not.toContain('Known');
+    ui.unmount();
+  });
+
+  it('renders a route row with its tag, and drops the glyph at the floor width', async () => {
+    const wide = renderFeature(
+      renderModelRow({
+        row: routeRow({ kind: 'configured', source: 'oauth' }),
+        isCursor: false,
+        maxWidth: 40,
+        currentModel: undefined,
+        sectioned: false,
+      }),
+    );
+    await tick(20);
+    const wideFrame = wide.lastFrame() ?? '';
+    expect(wideFrame).toContain('openai');
+    expect(wideFrame).toContain(glyph('stageDone'));
+    wide.unmount();
+
+    // 22 cells is the 60-column column width; below 26 the glyph and the indent go.
+    const floor = renderFeature(
+      renderModelRow({
+        row: routeRow({ kind: 'configured', source: 'oauth' }),
+        isCursor: false,
+        maxWidth: 22,
+        currentModel: undefined,
+        sectioned: false,
+      }),
+    );
+    await tick(20);
+    const floorFrame = floor.lastFrame() ?? '';
+    expect(floorFrame).toContain('openai');
+    expect(floorFrame).not.toContain(glyph('stageDone'));
+    floor.unmount();
+  });
+
+  it('renders an unchecked route as the tag alone', async () => {
+    const ui = renderFeature(
+      renderModelRow({
+        row: routeRow({ kind: 'unchecked' }),
+        isCursor: false,
+        maxWidth: 40,
+        currentModel: undefined,
+        sectioned: false,
+      }),
+    );
+    await tick(20);
+    const frame = (ui.lastFrame() ?? '').trim();
+    expect(frame).toBe('openai');
     ui.unmount();
   });
 
@@ -268,7 +353,13 @@ describe('runner row grammar', () => {
 
     it('signposts a multi-provider row with a provider count, no tags or glyphs', async () => {
       const ui = renderFeature(
-        renderModelRow({ item: MERGED, isCursor: false, maxWidth: 60, currentModel: undefined }),
+        renderModelRow({
+          row: modelRow(MERGED, 'Detected'),
+          isCursor: false,
+          maxWidth: 60,
+          currentModel: undefined,
+          sectioned: false,
+        }),
       );
       await tick(20);
       const frame = ui.lastFrame() ?? '';
@@ -283,19 +374,23 @@ describe('runner row grammar', () => {
     it('renders a single-variant row without any provider annotation', async () => {
       const ui = renderFeature(
         renderModelRow({
-          item: {
-            id: 'openrouter/gemini-3-flash',
-            variants: [
-              {
-                fullId: 'openrouter/gemini-3-flash',
-                providerPrefix: 'openrouter',
-                tag: 'openrouter',
-              },
-            ],
-          },
+          row: modelRow(
+            {
+              id: 'openrouter/gemini-3-flash',
+              variants: [
+                {
+                  fullId: 'openrouter/gemini-3-flash',
+                  providerPrefix: 'openrouter',
+                  tag: 'openrouter',
+                },
+              ],
+            },
+            'Detected',
+          ),
           isCursor: false,
           maxWidth: 60,
           currentModel: undefined,
+          sectioned: true,
         }),
       );
       await tick(20);
@@ -308,10 +403,11 @@ describe('runner row grammar', () => {
     it('marks the row configured when any variant spelling matches the saved model', async () => {
       const ui = renderFeature(
         renderModelRow({
-          item: MERGED,
+          row: modelRow(MERGED, 'Detected'),
           isCursor: false,
           maxWidth: 60,
           currentModel: 'kilo/openrouter/gpt-5.6',
+          sectioned: false,
         }),
       );
       await tick(20);

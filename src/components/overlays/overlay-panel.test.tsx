@@ -1,20 +1,30 @@
+import type { ReactElement } from 'react';
 import { Text } from 'ink';
 import { render } from 'ink-testing-library';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { getTheme } from '../theme.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import {
-  OverlayPanel,
-  computeOverlayInnerRowCapacity,
-  computeOverlayInnerWidth,
-} from './overlay-panel.js';
+import { overlayRect } from '../../core/navigation/overlay-rect.js';
+import { OverlayPanel, overlayInnerRowCapacity } from './overlay-panel.js';
 
 function colorOpen(color: string): string {
   const ui = render(<Text color={color}>x</Text>);
   const frame = ui.lastFrame() ?? '';
   ui.unmount();
   return frame.slice(0, frame.indexOf('x'));
+}
+
+function renderPanelLines(node: ReactElement): string[] {
+  const ui = render(node);
+  const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+  ui.unmount();
+  return frame.split('\n');
+}
+
+function panelOuterWidth(lines: string[]): number {
+  const topBorder = lines.find((line) => line.trim() !== '') ?? '';
+  return topBorder.trim().length;
 }
 
 describe('OverlayPanel title', () => {
@@ -30,7 +40,7 @@ describe('OverlayPanel title', () => {
     const dimOpen = colorOpen(theme.textDim);
 
     const ui = render(
-      <OverlayPanel title={title}>
+      <OverlayPanel title={title} density="roomy">
         <Text>body</Text>
       </OverlayPanel>,
     );
@@ -50,31 +60,62 @@ describe('OverlayPanel title', () => {
 });
 
 describe('OverlayPanel inner row capacity', () => {
-  it('accounts for border and vertical padding in the frame row budget', () => {
-    expect(computeOverlayInnerRowCapacity({ terminalRows: 10, outerChromeRows: 4 })).toBe(2);
-    expect(computeOverlayInnerRowCapacity({ terminalRows: 4, outerChromeRows: 4 })).toBe(0);
+  it('leaves room for the frame rows and the gutter around the panel', () => {
+    const capacity = (rows: number) => overlayInnerRowCapacity({ rows, outerChromeRows: 4 });
+
+    expect(capacity(10)).toBe(2);
+    expect(capacity(40)).toBe(30);
+    expect(capacity(4)).toBe(0);
   });
 });
 
-describe('OverlayPanel inner width', () => {
-  beforeEach(() => {
-    terminalSizeStore.__testReset({ cols: 20, rows: 8, isSmall: true });
+describe('OverlayPanel sizing', () => {
+  it('sizes the panel from its density and the terminal width', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const wide = renderPanelLines(
+      <OverlayPanel density="roomy">
+        <Text>body</Text>
+      </OverlayPanel>,
+    );
+    expect(panelOuterWidth(wide)).toBe(84);
+
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: false });
+    const narrow = renderPanelLines(
+      <OverlayPanel density="roomy">
+        <Text>body</Text>
+      </OverlayPanel>,
+    );
+    expect(panelOuterWidth(narrow)).toBe(76);
   });
 
   it('keeps child content inside the framed panel width', () => {
-    const outerWidth = 12;
-    const innerWidth = computeOverlayInnerWidth(outerWidth);
-    const ui = render(
-      <OverlayPanel maxWidth={outerWidth}>
-        <Text>{'1'.repeat(innerWidth)}</Text>
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: false });
+    const inner = overlayRect({ cols: 80, rows: 24, density: 'roomy' }).innerWidth;
+    const lines = renderPanelLines(
+      <OverlayPanel density="roomy">
+        <Text>{'1'.repeat(inner)}</Text>
       </OverlayPanel>,
     );
 
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    ui.unmount();
+    expect(inner).toBe(70);
+    expect(lines.every((line) => line.length <= 80)).toBe(true);
+    expect(lines.some((line) => line.includes('1'.repeat(inner)))).toBe(true);
+  });
+});
 
-    expect(innerWidth).toBe(6);
-    expect(frame.split('\n').every((line) => line.length <= 20)).toBe(true);
-    expect(frame).toMatch(/[│|] {2}111111 {2}[│|]/);
+describe('OverlayPanel hint', () => {
+  it('truncates an over-wide hint to a single row', () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+    const hint = `esc close · ${'x'.repeat(51)}`;
+    expect(hint.length).toBe(63);
+
+    const lines = renderPanelLines(
+      <OverlayPanel hint={hint} density="roomy">
+        <Text>body</Text>
+      </OverlayPanel>,
+    );
+
+    expect(lines.filter((line) => line.includes('x'))).toHaveLength(1);
+    expect(lines.some((line) => line.includes(hint))).toBe(false);
   });
 });

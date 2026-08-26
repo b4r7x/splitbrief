@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { SETTINGS_DEFS } from '../../core/settings/catalog.js';
+import { buildSettingsItems } from './items.js';
 import { matchesFilter, validateNumber, displayValue } from './presentation.js';
 import { glyph } from '../../lib/glyphs.js';
 
@@ -9,20 +11,7 @@ function getDef(id: string) {
   return def;
 }
 
-describe('displayValue with formatValue', () => {
-  it('formats tool fields with getDisplayName', () => {
-    const def = getDef('planner.kind');
-    expect(displayValue(def, 'claude-code')).toBe('Claude Code CLI');
-    expect(displayValue(def, 'codex')).toBe('OpenAI Codex CLI');
-    expect(displayValue(def, 'ollama')).toBe('Ollama');
-  });
-
-  it('formats model fields with formatModelName', () => {
-    const def = getDef('implementer.model');
-    expect(displayValue(def, 'qwen2.5-coder:7b')).toBe('Qwen 2.5 Coder 7B');
-    expect(displayValue(def, 'deepseek-chat')).toBe('DeepSeek V3');
-  });
-
+describe('displayValue', () => {
   it('shows raw value for defs without formatValue', () => {
     const def = getDef('validation.testCommand');
     expect(displayValue(def, 'npm test')).toBe('npm test');
@@ -34,8 +23,8 @@ describe('displayValue with formatValue', () => {
     expect(displayValue(def, false)).toBe('off');
   });
 
-  it('— stays the default for defless fields', () => {
-    const def = getDef('planner.model');
+  it('— stays the default for unset fields without an unsetLabel', () => {
+    const def = getDef('validation.testCommand');
     expect(displayValue(def, undefined)).toBe('—');
     expect(displayValue(def, null)).toBe('—');
   });
@@ -48,23 +37,33 @@ describe('displayValue with formatValue', () => {
     ).toBe('auto (256K)');
   });
 
-  it('unsetLabel fallbacks for effort/timeout/contextLength', () => {
-    expect(displayValue(getDef('planner.effort'), undefined)).toBe('auto (tool default)');
+  it('unsetLabel fallbacks for timeout and contextLength', () => {
     expect(displayValue(getDef('implementer.timeout'), null)).toBe('auto (idle kill 30m)');
     expect(displayValue(getDef('implementer.contextLength'), undefined)).toBe('auto');
   });
 });
 
 describe('matchesFilter', () => {
-  it('matches on label', () => {
-    const def = getDef('workflow.git.commitStrategy');
-    expect(matchesFilter(def, 'commit')).toBe(true);
-    expect(matchesFilter(def, 'Strategy')).toBe(true);
+  const items = buildSettingsItems({ config: makeConfig(), defs: SETTINGS_DEFS });
+  const matching = (query: string): readonly string[] =>
+    items.filter((item) => matchesFilter(item, query)).map((item) => item.key);
+
+  it('reaches a seat and its own effort row by the seat word, never another seat', () => {
+    const matched = matching('plan');
+    expect(matched).toEqual(expect.arrayContaining(['seat:plan', 'effort:plan']));
+    expect(matched).not.toContain('seat:build');
   });
 
-  it('matches on section', () => {
-    const def = getDef('workflow.mode');
-    expect(matchesFilter(def, 'workflow')).toBe(true);
+  it('reaches a setting by its label, and nothing else', () => {
+    expect(matching('temp')).toEqual(['implementer.temperature']);
+  });
+
+  it('reaches settings by their section name', () => {
+    expect(matching('Workflow')).toEqual(
+      items
+        .filter((item) => item.kind === 'setting' && item.def.section === 'Workflow')
+        .map((item) => item.key),
+    );
   });
 });
 

@@ -1,7 +1,21 @@
+import type { SeatPickerRole } from '../runners/cli-tool-catalog.js';
+import { includes } from '../../utils/type-guards.js';
+
 export const ALL_SCREENS = ['home', 'workflow', 'summary', 'setup'] as const;
 export type Screen = (typeof ALL_SCREENS)[number];
 
 export type InputMode = 'normal' | 'review' | 'question';
+
+export const SEAT_PICKER_OVERLAYS = [
+  'planner-picker',
+  'implementer-picker',
+  'reviewer-picker',
+  'escalation-picker',
+] as const;
+
+export function seatPickerOverlayFor(role: SeatPickerRole): (typeof SEAT_PICKER_OVERLAYS)[number] {
+  return `${role}-picker`;
+}
 
 export const ACTIVE_OVERLAYS = [
   'help',
@@ -9,10 +23,7 @@ export const ACTIVE_OVERLAYS = [
   'skills',
   'settings',
   'mode-selector',
-  'planner-picker',
-  'implementer-picker',
-  'reviewer-picker',
-  'crew',
+  ...SEAT_PICKER_OVERLAYS,
   'sessions',
   'editor',
   'cost-drilldown',
@@ -20,10 +31,5 @@ export const ACTIVE_OVERLAYS = [
 export type OverlayType = 'none' | (typeof ACTIVE_OVERLAYS)[number];
 
 export function overlayAllowsPickerKeys(active: OverlayType): boolean {
-  return (
-    active === 'none' ||
-    active === 'planner-picker' ||
-    active === 'implementer-picker' ||
-    active === 'reviewer-picker'
-  );
+  return active === 'none' || includes(SEAT_PICKER_OVERLAYS, active);
 }

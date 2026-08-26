@@ -10,12 +10,13 @@ import { useCrew } from './use-crew.js';
 
 function CrewProbe() {
   const crew = useCrew();
-  const review = crew.seats.find((seat) => seat.id === 'review');
-  const source = review !== undefined && review.id === 'review' ? review.source : 'missing';
+  const seats = crew.rows.flatMap((row) => (row.kind === 'seat' ? [row] : []));
+  const review = seats.find((row) => row.id === 'review');
+  const source = review !== undefined && 'source' in review.seat ? review.seat.source : 'missing';
 
   return (
     <Text>
-      {crew.seats.map((seat) => seat.id).join(',')}/{source}/
+      {seats.map((row) => row.id).join(',')}/{source}/{crew.verdict ?? 'no-verdict'}/
       {crew.presets.map((preset) => preset.id).join(',') || 'none'}
     </Text>
   );
@@ -47,6 +48,19 @@ describe('useCrew', () => {
     });
 
     expect(await frame()).toContain('/configured/');
+  });
+
+  it('surfaces the cross-lab verdict once both labs are determined', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'cli', tool: 'claude-code' },
+        reviewer: { kind: 'cli', tool: 'codex' },
+      }),
+    });
+
+    expect(await frame()).toContain('/cross-lab/');
   });
 
   it('offers no preset while no tool has been detected as ready', async () => {

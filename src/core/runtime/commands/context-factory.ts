@@ -34,17 +34,14 @@ interface CommandContextFactoryOptions {
   getCurrentPhase: () => Phase;
   requestRewind: (request: CommandRewindRequest) => boolean;
   requestTaskRedo: (taskId: string) => boolean;
-  requestWorkflowResume: () => boolean;
   getQueueDepth: () => number;
   clearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
-  rebuildRepomap: (
-    projectDir: string,
-    cacheDir: string | undefined,
-  ) => ReturnType<RuntimeCommandContext['rebuildRepomap']>;
-  attachImage: (
-    input: string,
-    projectDir: string,
-  ) => ReturnType<RuntimeCommandContext['attachImage']>;
+  attachImage: (input: {
+    path: string;
+    projectDir: string;
+    supportsImages: boolean;
+  }) => ReturnType<RuntimeCommandContext['attachImage']>;
+  plannerSupportsImages: () => boolean;
   detachImage: RuntimeCommandContext['detachImage'];
   listAttachments: RuntimeCommandContext['listAttachments'];
   writeHandoff: (opts: {
@@ -70,6 +67,7 @@ interface CommandContextFactoryOptions {
   ) => ReturnType<RuntimeCommandContext['exportSession']>;
   scrollConversation: RuntimeCommandContext['scrollConversation'];
   toggleLatestActivityBatch: RuntimeCommandContext['toggleLatestActivityBatch'];
+  toggleLatestDiff: RuntimeCommandContext['toggleLatestDiff'];
   toggleSidebar: RuntimeCommandContext['toggleSidebar'];
   copyTarget: RuntimeCommandContext['copyTarget'];
 }
@@ -99,8 +97,6 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     quit: opts.quit,
     setWorkflowMode: (mode) =>
       updateConfig((current) => ({ ...current, workflow: { ...current.workflow, mode } })),
-    setPlannerEffort: (effort) =>
-      updateConfig((current) => ({ ...current, planner: { ...current.planner, effort } })),
     setFeedbackMessage: opts.setFeedbackMessage,
     setFeedbackError: opts.setFeedbackError,
     refreshDetection: opts.refreshDetection,
@@ -111,15 +107,12 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
       return opts.requestRewind(request);
     },
     requestTaskRedo: opts.requestTaskRedo,
-    requestWorkflowResume: opts.requestWorkflowResume,
     getQueueDepth: opts.getQueueDepth,
     clearQueue: opts.clearQueue,
-    rebuildRepomap: async () => {
-      const projectDir = opts.projectDir();
-      const cacheDir = opts.getConfig()?.codebase?.cacheDir;
-      return opts.rebuildRepomap(projectDir, cacheDir);
+    attachImage: (path) => {
+      const supportsImages = opts.plannerSupportsImages();
+      return opts.attachImage({ path, projectDir: opts.projectDir(), supportsImages });
     },
-    attachImage: (input) => opts.attachImage(input, opts.projectDir()),
     detachImage: opts.detachImage,
     listAttachments: opts.listAttachments,
     writeHandoff: async (target, taskId) => {
@@ -142,9 +135,9 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
       opts.setApprovalEnabled?.(enabled);
     },
     acceptRunSnapshot: () =>
-      opts.acceptRunSnapshot(opts.projectDir(), sessionIdOrThrow('/accept-run')),
+      opts.acceptRunSnapshot(opts.projectDir(), sessionIdOrThrow('/run accept')),
     rejectRunSnapshot: () =>
-      opts.rejectRunSnapshot(opts.projectDir(), sessionIdOrThrow('/reject-run')),
+      opts.rejectRunSnapshot(opts.projectDir(), sessionIdOrThrow('/run reject')),
     compactTranscript: opts.compactTranscript,
     exportSession: async () => {
       const projectDir = opts.projectDir();
@@ -157,6 +150,7 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     },
     scrollConversation: opts.scrollConversation,
     toggleLatestActivityBatch: opts.toggleLatestActivityBatch,
+    toggleLatestDiff: opts.toggleLatestDiff,
     toggleSidebar: opts.toggleSidebar,
     copyTarget: opts.copyTarget,
   };

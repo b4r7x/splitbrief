@@ -24,10 +24,18 @@ const ARROW_DOWN = '\u001b[B';
 const ARROW_UP = '\u001b[A';
 const ESC = '\u001b';
 const ENTER = '\r';
-const HOME_HINT = '/help · /settings · /skills · ctrl+r recent · ctrl+k commands';
+const HOME_HINT = '/help · /crew · /settings · /skills · ctrl+r recent · ctrl+k commands';
 const FOCUS_BAR = '▌';
 const SESSION_FILTER_WAIT_MS = 5000;
 const workflowDeps = { runWorkflow: () => new Promise<never>(() => {}) };
+
+// Ink lays out at stdout.columns, so a mount that ignores the seeded viewport
+// renders the body at a width the screen never asked for: at 120 the wide body
+// overflows the helper's 100-column default and the frame loses its left edge.
+function seededViewport() {
+  const { cols, rows } = terminalSizeStore.get();
+  return { cols, rows };
+}
 
 async function focusRecentSessions(ui: ReturnType<typeof renderFeature>): Promise<void> {
   await flushEffects();
@@ -104,7 +112,7 @@ describe('home navigation flow (through real App)', () => {
   it('Ctrl+R then Enter resumes the focused session on the workflow screen', async () => {
     seedInterruptedSession(projectDir, 'resume-me', 'resume feature', 1_700_000_500);
 
-    const ui = renderFeature(<App workflowDeps={workflowDeps} />);
+    const ui = renderFeature(<App workflowDeps={workflowDeps} />, seededViewport());
     await tick(20);
 
     await focusRecentSessions(ui);
@@ -138,7 +146,7 @@ describe('home navigation flow (through real App)', () => {
       }),
     );
 
-    const ui = renderFeature(<App workflowDeps={workflowDeps} />);
+    const ui = renderFeature(<App workflowDeps={workflowDeps} />, seededViewport());
     await tick(20);
 
     await focusRecentSessions(ui);
@@ -168,7 +176,7 @@ describe('home navigation flow (through real App)', () => {
       seedInterruptedSession(projectDir, `focus-${i}`, `focus feature ${i}`, 1_700_000_000 + i);
     }
 
-    const ui = renderFeature(<App workflowDeps={workflowDeps} />);
+    const ui = renderFeature(<App workflowDeps={workflowDeps} />, seededViewport());
     await tick(20);
 
     await focusRecentSessions(ui);
@@ -196,7 +204,7 @@ describe('home navigation flow (through real App)', () => {
       seedInterruptedSession(projectDir, `focus-${i}`, `focus feature ${i}`, 1_700_000_000 + i);
     }
 
-    const ui = renderFeature(<App workflowDeps={workflowDeps} />);
+    const ui = renderFeature(<App workflowDeps={workflowDeps} />, seededViewport());
     await tick(20);
 
     await focusRecentSessions(ui);
@@ -224,7 +232,7 @@ describe('home navigation flow (through real App)', () => {
     }
     inputHistoryStore.push('recalled prompt');
 
-    const ui = renderFeature(<App workflowDeps={workflowDeps} />);
+    const ui = renderFeature(<App workflowDeps={workflowDeps} />, seededViewport());
     await flushEffects();
 
     ui.stdin.write(ARROW_UP);
@@ -248,7 +256,7 @@ describe('home navigation flow (through real App)', () => {
     );
     seedInterruptedSession(projectDir, 'recover-me', 'recover feature', 1_700_000_600);
 
-    const ui = renderFeature(<App workflowDeps={workflowDeps} />);
+    const ui = renderFeature(<App workflowDeps={workflowDeps} />, seededViewport());
     await tick(20);
 
     await focusRecentSessions(ui);

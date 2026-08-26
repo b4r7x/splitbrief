@@ -12,6 +12,26 @@ export type PlannerTierRole = 'planner' | 'reviewer';
 
 export type ActiveRunnerRole = PlannerTierRole | 'implementer';
 
+export const SEAT_PICKER_ROLES = ['planner', 'implementer', 'reviewer', 'escalation'] as const;
+
+/** The seats the tool/model picker can edit: the config seats plus the escalate seat. */
+export type SeatPickerRole = (typeof SEAT_PICKER_ROLES)[number];
+
+/** The config seat a picker role reads its catalog and policies from. */
+export function seatPickerLane(role: SeatPickerRole): ActiveRunnerRole {
+  switch (role) {
+    case 'escalation':
+    case 'planner':
+      return 'planner';
+    case 'reviewer':
+      return 'reviewer';
+    case 'implementer':
+      return 'implementer';
+    default:
+      return assertNever(role);
+  }
+}
+
 export function runnerRoleForActiveRole(role: ActiveRunnerRole): RunnerRole {
   switch (role) {
     case 'planner':
@@ -247,6 +267,8 @@ export type CliToolDeclarationBase<Id extends string = string> = Readonly<{
   category: 'cli';
   roles: readonly RunnerRole[];
   modelPolicy: RolePolicy<CliModelPolicy>;
+  /** Whether the tool accepts a per-call effort level on its own command line. */
+  supportsEffort: boolean;
   auth: CliAuthPolicy;
   billing: RunnerBillingPosture;
   isSubscription: boolean;
@@ -444,6 +466,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     category: 'cli',
     roles: ALL_ROLES,
     modelPolicy: rolePolicy('optional', 'optional'),
+    supportsEffort: true,
     auth: authPolicy('api-key-or-session', [
       authChannel('session', [], 'host-cli-state', 'subscription-included', ['darwin']),
       authChannel('api-key', ['ANTHROPIC_API_KEY'], 'none', 'api-metered'),
@@ -470,6 +493,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     category: 'cli',
     roles: ALL_ROLES,
     modelPolicy: rolePolicy('optional', 'optional'),
+    supportsEffort: false,
     auth: authPolicy('api-key-or-session', [
       authChannel('session', [], 'host-cli-state', 'subscription-included'),
       authChannel('api-key', ['OPENAI_API_KEY'], 'none', 'api-metered'),
@@ -496,6 +520,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     category: 'cli',
     roles: ALL_ROLES,
     modelPolicy: rolePolicy('optional', 'optional'),
+    supportsEffort: false,
     auth: authPolicy('provider-dependent', [
       authChannel('provider-dependent', [], 'host-cli-state', 'provider-dependent'),
     ]),
@@ -525,6 +550,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     category: 'cli',
     roles: ALL_ROLES,
     modelPolicy: rolePolicy('optional', 'optional'),
+    supportsEffort: false,
     auth: authPolicy('provider-dependent', [
       authChannel('provider-dependent', [], 'none', 'provider-dependent'),
     ]),
@@ -550,6 +576,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     category: 'cli',
     roles: ALL_ROLES,
     modelPolicy: rolePolicy('optional', 'optional'),
+    supportsEffort: false,
     auth: authPolicy('session', [
       authChannel(
         'session',
@@ -580,6 +607,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     category: 'cli',
     roles: ALL_ROLES,
     modelPolicy: rolePolicy('optional', 'optional'),
+    supportsEffort: false,
     auth: authPolicy('provider-dependent', [
       authChannel('provider-dependent', [], 'host-cli-state', 'provider-dependent'),
     ]),
@@ -843,6 +871,20 @@ export const NATIVE_CLI_CATALOG_TOOL_IDS = Object.freeze([
 export function hasNativeCliCatalog(tool: string): boolean {
   return NATIVE_CLI_CATALOG_TOOL_IDS.some((id) => id === tool);
 }
+
+export function isCliToolId(tool: string): tool is CliToolId {
+  return Object.hasOwn(CLI_TOOL_CATALOG, tool);
+}
+
+/**
+ * The admitted CLIs that ship a read-only per-provider credential listing.
+ * Both the probe commands and the detection normalizer derive from this set,
+ * so a new oracle tool cannot be recognised on only one side.
+ */
+export const PROVIDER_ORACLE_TOOL_IDS = Object.freeze([
+  'opencode',
+  'kilo-code',
+] as const satisfies readonly CliToolId[]);
 
 export function cliModelPolicyViolations(
   policy: CliModelPolicy,

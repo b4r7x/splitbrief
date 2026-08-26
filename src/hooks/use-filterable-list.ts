@@ -30,6 +30,7 @@ interface UseFilterableListOptions<T> {
   isActive?: boolean | undefined;
   shouldAppendChar?: ((input: string) => boolean) | undefined;
   initialKey?: string | undefined;
+  initialFilter?: string | undefined;
   pageSize: PageSize<T>;
   customKeys?: (input: string, key: Key, ctx: FilterableListKeyContext<T>) => boolean | undefined;
 }
@@ -289,15 +290,19 @@ export function useFilterableList<T>({
   isActive = true,
   shouldAppendChar,
   initialKey,
+  initialFilter,
   pageSize,
   customKeys,
 }: UseFilterableListOptions<T>): UseFilterableListResult<T> {
   const [state, setState] = useState<FilterableListState<T>>(() => {
+    const filter = initialFilter ?? '';
+    const candidates = getFilteredItems(items, filterFn, filter);
     const initialItem =
-      (initialKey === undefined ? undefined : items.find((item) => getKey(item) === initialKey)) ??
-      items[0];
+      (initialKey === undefined
+        ? undefined
+        : candidates.find((item) => getKey(item) === initialKey)) ?? candidates[0];
     return {
-      filter: '',
+      filter,
       selectedKey: initialItem === undefined ? null : getKey(initialItem),
       pendingCommits: [],
       nextCommitId: 1,

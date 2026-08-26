@@ -70,7 +70,7 @@ splitbrief start "add endpoint" @api-spec.yaml @existing-handler.ts
 | `agent` | Subprocess that writes files directly; no shell/network sandbox | File-writing tools (no stdout extraction) |
 | `agent-sdk` | `@anthropic-ai/claude-agent-sdk` library call | In-process Anthropic Agent SDK |
 
-**Auto-detection.** `splitbrief init` and `/refresh` probe installed CLI tools and reachable API endpoints; the picker overlays (`/planner`, `/implementer`) surface only what is available. A first setup with no remembered result shows a generic "Initializing your tools…" state and advances when discovery succeeds. On later TUI setup loads, SPLITBRIEF publishes the sanitized, project/config-scoped remembered result — including remembered model rows — before discovery refreshes in the background; a failed refresh leaves those rows visible with a refresh-failure indication. The home screen shows a spinner with "Initializing your tools…" during a cold first discovery and "Refreshing your tools…" during warm background refreshes, and the runner pickers mirror the same cold/warm states.
+**Auto-detection.** `splitbrief init` and `/refresh` probe installed CLI tools and reachable API endpoints; the seat pickers, reached from Settings ∋ Crew (`/crew plan`, `/crew build`), surface only what is available. A first setup with no remembered result shows a generic "Initializing your tools…" state and advances when discovery succeeds. On later TUI setup loads, SPLITBRIEF publishes the sanitized, project/config-scoped remembered result — including remembered model rows — before discovery refreshes in the background; a failed refresh leaves those rows visible with a refresh-failure indication. The home screen shows a spinner with "Initializing your tools…" during a cold first discovery and "Refreshing your tools…" during warm background refreshes, and the runner pickers mirror the same cold/warm states.
 
 Remembered detection is presentation-only. It can populate a picker, but it cannot authorize a workflow, resume, or `spec` run, and it is not an offline execution mode. Every local run still performs fresh execution preparation against its exact effective configuration.
 
@@ -391,7 +391,7 @@ splitbrief snapshot restore <id-or-name> [--force]
 splitbrief snapshot diff <id-or-name>          # exits non-zero when changes detected
 ```
 
-Manual snapshots require the CLI command above; there is no `/snapshot` slash command. Run-level TUI accept/reject is available through `/accept-run` and `/reject-run confirm`; reject is hash-guarded and preserves user edits as conflicts. Auto-triggers (`preTask`, `postTask`, `preFinalReview`) are configurable without manual invocation.
+Manual snapshots require the CLI command above; there is no `/snapshot` slash command. Run-level TUI accept/reject is available through `/run accept` and `/run reject confirm`; reject is hash-guarded and preserves user edits as conflicts. Auto-triggers (`preTask`, `postTask`, `preFinalReview`) are configurable without manual invocation.
 
 **When to use.** Bookmark known-good states before risky refactors; recover from a planner that wandered. Layered on top of git — never replaces it.
 
@@ -657,42 +657,69 @@ splitbrief snapshot list --session 1
 
 ### Slash commands palette
 
-**What it does.** Runtime commands use slash names (`/help`, `/mode`, etc.), but the same registry backs composer `/` input, the command palette, and RPC dispatch. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match.
+**What it does.** Runtime commands use slash names (`/help`, `/mode`, etc.), but the same registry backs composer `/` input, the command palette, and RPC dispatch. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match. Every one of the 27 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output — and the palette and help overlay render those as section headers when no query is typed. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter.
+
+**Navigate**
 
 | Command | Purpose |
 |---|---|
-| `/help` | Open help overlay (Ctrl+/) |
-| `/palette` | Open command palette (Ctrl+K) |
-| `/skills` | Pick planner skills (home only; Ctrl+S) |
+| `/help` | Show help overlay (Ctrl+/) |
+| `/palette` | Open command palette (Ctrl+K) — typeable, hidden from the palette's own list |
+| `/skills` | Select planner skills (home only; Ctrl+S) |
 | `/sessions` | Browse past sessions |
-| `/settings` (alias `/config`) | Settings overlay (Ctrl+,) |
-| `/mode <instant\|quick\|standard\|speckit>` | Switch workflow mode |
-| `/effort <low\|medium\|high\|xhigh>` | Set planner effort |
-| `/planner` | Open planner picker |
-| `/implementer` | Open implementer picker |
+| `/settings` | Crew, validation, workflow (Ctrl+,) |
 | `/home` | Return to home screen |
+| `/quit` | Exit application (Ctrl+Q) |
+
+**Crew**
+
+| Command | Purpose |
+|---|---|
+| `/crew [plan\|build\|review]` | Who fills each seat — opens Settings with the cursor on that seat |
+| `/mode [instant\|quick\|standard\|speckit]` | Workflow mode |
 | `/refresh` | Re-detect available tools |
-| `/revise-spec [comment]` | Rewind to spec phase with optional feedback |
-| `/revise-plan [comment]` | Rewind to plan phase with optional feedback |
-| `/redo-task <id>` | Reset a task to pending and re-run |
-| `/queue [show\|clear]` | Inspect or clear the message queue |
-| `/handoff <target> [task-id]` | Export handoff pack inline |
+
+**Workflow**
+
+| Command | Purpose |
+|---|---|
+| `/revise-spec [feedback]` | Rewind to spec phase with optional feedback |
+| `/revise-plan [feedback]` | Rewind to plan phase with optional feedback |
+| `/redo-task <task-id>` | Reset a task to pending and re-run it |
+| `/queue [show\|clear]` | Show or clear the message queue |
+| `/approval [list\|clear]` | List or clear sticky approval grants |
+| `/handoff <target> [task-id]` | Export handoff pack for an external agent |
+| `/run <accept\|reject>` | Accept or reject what this run wrote (rejection needs `/run reject confirm`) |
+| `/yolo` | Toggle file-write tiered approvals off/on |
+
+**View**
+
+| Command | Purpose |
+|---|---|
+| `/scroll <top\|bottom\|page-up\|page-down>` | Scroll the conversation |
+| `/activity` | Expand or collapse the latest activity batch |
+| `/diff` | Expand or collapse the latest diff (Ctrl+D) |
+| `/cost` | Show the cost breakdown (Ctrl+G) |
+| `/sidebar` | Show or hide the workflow sidebar |
+
+**Input & output**
+
+| Command | Purpose |
+|---|---|
+| `/copy [message\|brief\|path\|command\|cost]` | Copy to clipboard |
 | `/export` | Export session as HTML report |
 | `/compact-transcript` | Summarize older transcript turns |
-| `/repomap rebuild` | Clear the repo-map cache |
-| `/attach <path>` | Attach an image for the next planner call |
-| `/detach <index-or-id>` | Remove a pending image attachment |
-| `/approval [list\|clear]` | List or clear sticky approval grants |
-| `/accept-run` | Accept current run changes and prevent run rejection |
-| `/reject-run confirm` | Restore SPLITBRIEF-written files from the run baseline |
-| `/yolo` | Toggle file-write tiered approvals off/on for the session |
-| `/quit` | Exit application (Ctrl+Q) |
+| `/image <path> \| list \| remove <index-or-id>` | Attach, list or remove images for the next planner call |
+
+**Capability-aware `/image`.** The command is offered only when the PLAN seat can actually receive images — `cli` and `agent-sdk` seats can, an `api` seat depends on its model, `shell` and `agent` never can. On a seat without vision the row is hidden and typing the command answers `PLAN seat cannot see images — pick a vision model with /crew plan`, instead of dropping the attachment silently at call time.
+
+**Aliases.** `/config` runs `/settings`; `/planner`, `/implementer` and `/reviewer` run `/crew plan`, `/crew build` and `/crew review`. They are kept for one release, render as alias rows in the palette, and are listed in full — together with the removed names and where each one went — in [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
 Full reference: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
 ### Command palette overlay (Ctrl+K)
 
-**What it does.** Fuzzy search across slash commands, mode actions, pickers, live tasks, recent sessions, and user-defined custom actions. Recently used items rank higher within each query (in-memory MRU).
+**What it does.** Fuzzy search across slash commands, live tasks, recent sessions, and user-defined custom actions. Recently used items rank higher within each query (in-memory MRU).
 
 **How to use.** `Ctrl+K` opens it from any screen. Arrow keys + Enter to select; Esc to dismiss.
 
@@ -718,11 +745,19 @@ Sessions are execution records scoped to one workflow each. The brief review gat
 
 ### Settings overlay
 
-**What it does.** Edits planner / implementer / model / workflow defaults from inside the TUI. Open via `/settings` (Ctrl+,) or `/config`. Writes back to `.splitbrief/config.yaml`.
+**What it does.** One overlay for crew, validation and workflow defaults. Open via `/settings` (Ctrl+,) or `/config`. Writes back to `.splitbrief/config.yaml`. Crew is its first section; there is no separate crew surface.
 
-### Mode / planner / implementer pickers
+### Settings ∋ Crew
 
-**What it does.** Two-column pickers for workflow mode (`/mode` no-arg), planner backend (`/planner`), and implementer backend (`/implementer`). Filtered to detected/available tools.
+**What it does.** The crew section is a rail, not a list of settings rows: one labelled row per seat — `PLAN`, `BUILD`, `REVIEW` — each carrying the seat identity (`Claude Code CLI · Claude Sonnet 4`) and a right-aligned posture word, joined by a tree rail (`●` for a seat, `├`/`└` for its branches). A REVIEW seat with no `reviewer:` block shows the planner's identity with the inheritance mark.
+
+**Branches.** Effort lives on the seat that honours it: a seat whose runner supports effort gets an effort branch under it, cycled in place, and an inherited REVIEW seat shows the planner's effort read-only. The `escalate` branch under `BUILD` is editable — Enter opens the escalation picker. Enter on a seat row opens that seat's tool/model picker.
+
+**How to use.** `/crew` opens Settings on the crew section; `/crew plan`, `/crew build` and `/crew review` land the cursor on that seat directly. Ready-made crew presets are offered only on the first-run Setup screen, never here. At small viewports the section yields in a fixed order — the lab verdict line first, then the rail spine gaps, then the escalate branch folding into the `BUILD` row, then the posture column — so all three seat rows stay visible down to the 60x18 floor.
+
+### Mode and seat pickers
+
+**What it does.** Two-column pickers for workflow mode (`/mode` with no argument) and for a seat's tool and model (Enter on a seat row in Settings ∋ Crew). Filtered to detected/available tools.
 
 ### Input footer
 
@@ -880,7 +915,7 @@ codebase:
   exclude: ["\\.test\\.tsx?$"]
 ```
 
-Force a rebuild with `/repomap rebuild`. Full details: [REPOMAP.md](./REPOMAP.md).
+The map rebuilds itself on each planning run when the cache is stale; there is no manual rebuild step. Full details: [REPOMAP.md](./REPOMAP.md).
 
 ### OpenTelemetry sink
 
@@ -903,9 +938,12 @@ Or per-run: `--otel-exporter console`. Full details: [OTEL.md](./OTEL.md).
 **How to use.**
 
 ```
-/attach screenshot.png
-/detach 1
+/image screenshot.png
+/image list
+/image remove 1
 ```
+
+Offered only when the PLAN seat can receive images; on a seat without vision the command answers with the reason instead of dropping the attachment at call time.
 
 ### Skills
 

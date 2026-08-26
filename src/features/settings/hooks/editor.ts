@@ -1,38 +1,116 @@
 import { configStore } from '../../../stores/project/config.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
-import { SETTINGS_DEFS, type SettingDef } from '../../../core/settings/catalog.js';
+import { reportConfigSaveFailure } from '../../../stores/project/save-feedback.js';
+import type { SettingDef } from '../../../core/settings/catalog.js';
 import { matchesFilter } from '../presentation.js';
+import { settingsItemDescription, type SettingsItem } from '../items.js';
 import { getConfigValue, applyEdits } from '../../../core/config/accessors/values.js';
+import {
+  readActiveRunner,
+  updateActiveRunner,
+} from '../../../core/config/accessors/active-runner.js';
+import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
+import type { CrewSeatId } from '../../../core/crew/identity.js';
 import { configError } from '../../../core/config/errors.js';
 import { useFilterableList, type PageSize } from '../../../hooks/use-filterable-list.js';
 import { useEditBuffer } from './buffer.js';
 import type { Config } from '../../../core/schemas/config.js';
+import { PlannerConfigSchema, type PlannerConfig } from '../../../core/schemas/planner-config.js';
+import {
+  ImplementerConfigSchema,
+  type ImplementerConfig,
+} from '../../../core/schemas/implementer-config.js';
+import { EFFORT_LEVELS, type EffortLevel } from '../../../core/schemas/enums.js';
 import { isTextEntryInput } from '../../../lib/terminal/text-entry.js';
+import { SOFT_SEP } from '../../../components/separators.js';
+import { assertNever } from '../../../utils/type-guards.js';
+
+export type CrewSettingsItem = Extract<SettingsItem, { kind: 'crew' }>;
 
 interface UseSettingsEditorParams {
   config: Config;
-  focusSetting: string | undefined;
+  items: SettingsItem[];
+  initialKey: string | undefined;
+  initialFilter: string | undefined;
   onClose: () => void;
-  onOpenSubPicker: (def: SettingDef) => void;
-  pageSize: PageSize<SettingDef>;
-  canActOnIndex: (filtered: SettingDef[], index: number) => boolean;
+  onActivateCrew: (item: CrewSettingsItem) => void;
+  pageSize: PageSize<SettingsItem>;
+  canActOnIndex: (filtered: SettingsItem[], index: number) => boolean;
 }
 
 interface SettingsEditorState {
   filter: string;
-  filtered: SettingDef[];
+  filtered: SettingsItem[];
   effectiveIndex: number;
   editingId: string | null;
   editBuffer: string;
-  selectedDef: SettingDef | undefined;
+  selectedItem: SettingsItem | undefined;
   getValue: (def: SettingDef) => unknown;
   activate: (index: number) => void;
+}
+
+/** Enter is advertised only on the rows where it does something. */
+export function hintFor(item: SettingsItem): string {
+  if (item.kind === 'setting') {
+    const kind = item.def.kind;
+    return kind === 'string' || kind === 'number' ? '⏎ edit' : 'space toggle';
+  }
+  switch (item.row.kind) {
+    case 'seat':
+      return '⏎ change seat';
+    case 'effort':
+      return 'space cycle';
+    case 'escalate':
+      return `⏎ change${SOFT_SEP}choose none to disable`;
+    default:
+      return assertNever(item.row);
+  }
 }
 
 function getCurrentConfig(): Config {
   const current = configStore.get().config;
   if (current === null) throw configError.loadNotCalled('updating settings');
   return current;
+}
+
+const EFFORT_CYCLE = [undefined, ...EFFORT_LEVELS] as const;
+
+function nextEffort(current: EffortLevel | undefined): EffortLevel | undefined {
+  return EFFORT_CYCLE[(EFFORT_CYCLE.indexOf(current) + 1) % EFFORT_CYCLE.length];
+}
+
+/** An unset effort must leave no key behind, so the cleared shape is re-parsed rather than widened. */
+function runnerWithEffort<T extends PlannerConfig | ImplementerConfig>(
+  existing: T,
+  effort: EffortLevel | undefined,
+): unknown {
+  if (effort !== undefined) return { ...existing, effort };
+  const { effort: _cleared, ...rest } = existing;
+  return rest;
+}
+
+function configWithSeatEffort(
+  input: Readonly<{ config: Config; seatId: CrewSeatId; effort: EffortLevel | undefined }>,
+): Config {
+  const role = CREW_SEAT_ROLES[input.seatId];
+  if (role === 'implementer') {
+    return updateActiveRunner({
+      config: input.config,
+      role,
+      updater: (existing) =>
+        ImplementerConfigSchema.parse(runnerWithEffort(existing, input.effort)),
+    });
+  }
+  return updateActiveRunner({
+    config: input.config,
+    role,
+    updater: (existing) => PlannerConfigSchema.parse(runnerWithEffort(existing, input.effort)),
+  });
+}
+
+function cyclesInPlace(item: SettingsItem): boolean {
+  if (item.kind === 'crew') return item.row.kind === 'effort';
+  return item.def.kind === 'boolean' || item.def.kind === 'enum';
 }
 
 // configStore.save is async with revision conflict detection, so each edit must
@@ -44,11 +122,19 @@ function enqueueSave(task: () => Promise<void>): void {
   saveQueue = saveQueue.then(task).catch(() => undefined);
 }
 
+async function persist(updated: Config): Promise<void> {
+  const result = await configStore.save(updated);
+  if (reportConfigSaveFailure(result)) return;
+  feedbackStore.setMessage('Saved');
+}
+
 export function useSettingsEditor({
   config,
-  focusSetting,
+  items,
+  initialKey,
+  initialFilter,
   onClose,
-  onOpenSubPicker,
+  onActivateCrew,
   pageSize,
   canActOnIndex,
 }: UseSettingsEditorParams): SettingsEditorState {
@@ -56,22 +142,7 @@ export function useSettingsEditor({
     def.readValue ? def.readValue(source) : getConfigValue(source, def.id);
 
   const saveValue = async (dotPath: string, value: unknown) => {
-    const current = getCurrentConfig();
-    const updated = applyEdits(current, { [dotPath]: value });
-    const result = await configStore.save(updated);
-    if (result.kind === 'saved') {
-      feedbackStore.setMessage('Saved');
-      return;
-    }
-    if (result.kind === 'failure') {
-      feedbackStore.setError(`Failed to save config: ${result.error.message}`);
-      return;
-    }
-    if (result.kind === 'durability-uncertain') {
-      feedbackStore.setError(`Config save could not be confirmed: ${result.warning}`);
-      return;
-    }
-    feedbackStore.setError('Config changed on disk. Reload before saving again.');
+    await persist(applyEdits(getCurrentConfig(), { [dotPath]: value }));
   };
 
   const editor = useEditBuffer({
@@ -80,7 +151,7 @@ export function useSettingsEditor({
     },
   });
 
-  const onSpaceToggle = (def: SettingDef) => {
+  const toggleSetting = (def: SettingDef) => {
     enqueueSave(async () => {
       const currentConfig = getCurrentConfig();
       if (def.kind === 'boolean') {
@@ -98,30 +169,56 @@ export function useSettingsEditor({
     });
   };
 
-  const isListActive = !editor.isEditing;
-  const applicableDefs = SETTINGS_DEFS.filter((def) => def.appliesTo?.(config) ?? true);
+  const cycleEffort = (seatId: CrewSeatId) => {
+    enqueueSave(async () => {
+      const current = getCurrentConfig();
+      const seatEffort = readActiveRunner({
+        config: current,
+        role: CREW_SEAT_ROLES[seatId],
+      }).effort;
+      await persist(
+        configWithSeatEffort({ config: current, seatId, effort: nextEffort(seatEffort) }),
+      );
+    });
+  };
 
-  const runSelect = (def: SettingDef) => {
-    if (def.kind === 'picker') {
-      onOpenSubPicker(def);
+  const runItemAction = (item: SettingsItem) => {
+    if (item.kind === 'setting') {
+      toggleSetting(item.def);
       return;
     }
+    const row = item.row;
+    if (row.kind !== 'effort') return;
+    if (row.inherited) {
+      feedbackStore.setMessage(settingsItemDescription({ item, config }));
+      return;
+    }
+    cycleEffort(row.seatId);
+  };
+
+  const runSelect = (item: SettingsItem) => {
+    if (item.kind === 'crew') {
+      onActivateCrew(item);
+      return;
+    }
+    const def = item.def;
     if (def.kind === 'string' || def.kind === 'number') {
       const current = getValue(def);
       editor.startEditing(def.id, current != null ? String(current) : '');
     }
   };
 
-  const list = useFilterableList<SettingDef>({
-    items: applicableDefs,
-    getKey: (def) => def.id,
+  const list = useFilterableList<SettingsItem>({
+    items,
+    getKey: (item) => item.key,
     filterFn: matchesFilter,
     onSelect: runSelect,
-    onItemAction: onSpaceToggle,
+    onItemAction: runItemAction,
     onClose,
-    isActive: isListActive,
+    isActive: !editor.isEditing,
     shouldAppendChar: (c) => c !== ' ',
-    initialKey: focusSetting,
+    initialKey,
+    initialFilter,
     pageSize,
     customKeys: (input, key, { runSelectedItemAction }) => {
       if (input !== ' ' || !isTextEntryInput(input, key)) return false;
@@ -133,13 +230,13 @@ export function useSettingsEditor({
   const activate = (index: number) => {
     if (editor.isEditing) return;
     if (!canActOnIndex(list.filtered, index)) return;
-    const def = list.filtered[index];
-    if (!def) return;
-    if (def.kind === 'boolean' || def.kind === 'enum') {
-      list.runItemAction(def);
+    const item = list.filtered[index];
+    if (!item) return;
+    if (cyclesInPlace(item)) {
+      list.runItemAction(item);
       return;
     }
-    list.selectItem(def);
+    list.selectItem(item);
   };
 
   return {
@@ -148,7 +245,7 @@ export function useSettingsEditor({
     effectiveIndex: list.selectedIndex,
     editingId: editor.editingId,
     editBuffer: editor.editBuffer,
-    selectedDef: list.filtered[list.selectedIndex],
+    selectedItem: list.filtered[list.selectedIndex],
     getValue,
     activate,
   };

@@ -269,15 +269,18 @@ describe('settings overlay integration', () => {
 
   it('PageDown moves by visible selectable settings without skipping a section', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
-    overlayStore.open('settings', 'planner.kind');
+    overlayStore.open('settings', 'implementer.temperature');
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();
+    expect(lineContaining(stripAnsiStyles(ui.lastFrame() ?? ''), CURSOR_GLYPH)).toContain(
+      'Temperature',
+    );
 
     ui.stdin.write(PAGE_DOWN);
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(frame, '\u2192 /')).toContain('/implementer');
-      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Tool');
+      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Lint');
+      expect(frame).toContain('Test command');
     });
     ui.unmount();
   });
@@ -288,7 +291,7 @@ describe('settings overlay integration', () => {
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Planner');
+    expect(frame).toContain('Tuning');
     expect(frame).toContain('Validation');
     expect(frame).not.toContain('more');
     ui.unmount();

@@ -251,7 +251,7 @@ const gates: readonly Gate[] = [
     id: '31',
     description: 'No vendor-ID JSX branches in seat-selection surfaces',
     command:
-      "{ rg -i \"\\\\b(cursor|antigravity|mimo-token-plan|mistral|gemini|cerebras|zai|minimax|moonshot|dashscope|llama-cpp)\\\\b\" src/features/runners src/app/overlays/runners.tsx src/features/crew src/app/overlays/crew.tsx src/app/screens/setup.tsx --glob '*.tsx' --glob '!**/*.test.tsx' || true; } | wc -l",
+      "{ rg -i \"\\\\b(cursor|antigravity|mimo-token-plan|mistral|gemini|cerebras|zai|minimax|moonshot|dashscope|llama-cpp)\\\\b\" src/features/runners src/app/overlays/runners.tsx src/features/crew src/features/settings src/app/overlays/settings.tsx src/app/screens/setup.tsx --glob '*.tsx' --glob '!**/*.test.tsx' || true; } | wc -l",
     expected: 0,
   },
   {
@@ -339,6 +339,20 @@ const gates: readonly Gate[] = [
     id: '45',
     description: 'T-065 hydration paths are exhaustively classified',
     command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule hydration | wc -l',
+    expected: 0,
+  },
+  {
+    id: '46',
+    description: 'Pinned overlay widths are gone',
+    command:
+      '{ rg -n "maxWidth=" src/app src/features src/components/overlays || true; rg -n "getResponsivePanelWidth|getClampedTerminalWidth|PICKER_WIDTHS|SUB_PANEL_MAX_WIDTH|MAX_PANEL_WIDTH|SETUP_PANEL_WIDTH|PALETTE_MAX_WIDTH" src || true; rg -n "isSmall" src/app/overlays src/app/screens/home.tsx src/app/screens/setup.tsx src/features/home/layout.ts src/features/runners src/features/start-preparation src/features/workflow/cost-drilldown src/components/overlays src/components/pickers testing/visual/locators/registry.ts --glob \'!**/*.test.ts\' --glob \'!**/*.test.tsx\' || true; } | wc -l',
+    expected: 0,
+  },
+  {
+    id: '47',
+    description: 'Capability inference is imported from core, never from engine',
+    command:
+      "{ rg -n \"from '.*engine/providers/capability-inference\" src/features src/app src/components src/core --glob '!**/*.test.ts' --glob '!**/*.test.tsx' || true; } | wc -l",
     expected: 0,
   },
 ];

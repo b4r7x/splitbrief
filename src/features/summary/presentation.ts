@@ -2,7 +2,7 @@ import type { Summary } from '../../core/schemas/summary.js';
 import type { Session } from '../../core/schemas/session.js';
 import type { Theme } from '../../components/theme.js';
 import type { GlyphName } from '../../lib/glyphs.js';
-import { ARROW_SEP } from '../../components/separators.js';
+import { arrowSep } from '../../components/separators.js';
 import { formatToolModel } from '../../core/model-display.js';
 import { uniqueSorted } from '../../utils/collections.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
@@ -70,7 +70,7 @@ export function formatRouteSummary(
   if (!plannerSummary && !implementerSummary) return null;
   if (!plannerSummary) return implementerSummary;
   if (!implementerSummary) return plannerSummary;
-  return `${plannerSummary}${ARROW_SEP}${implementerSummary}`;
+  return `${plannerSummary}${arrowSep()}${implementerSummary}`;
 }
 
 export function compactCount(count: number, noun: string): string {

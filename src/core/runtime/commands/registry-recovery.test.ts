@@ -67,7 +67,7 @@ describe('/revise-spec command', () => {
       'researching',
     );
     expect(rewinds).toEqual([]);
-    expect(error).toMatch(/only available|not available|cannot/i);
+    expect(error).toMatch(/revise/i);
   });
 
   it('surfaces a guard error when the engine rejects the rewind', () => {
@@ -133,7 +133,7 @@ describe('/revise-plan command', () => {
       'specifying',
     );
     expect(rewinds).toEqual([]);
-    expect(error).toMatch(/only available|not available|cannot/i);
+    expect(error).toMatch(/revise/i);
   });
 });
 
@@ -198,41 +198,6 @@ describe('/redo-task command', () => {
       'planning',
     );
     expect(redos).toEqual([]);
-    expect(error).toMatch(/only available|not available/i);
-  });
-});
-
-describe('/resume command', () => {
-  it('is registered in the runtime command registry', () => {
-    const commands = createRuntimeCommands(makeCtx());
-    expect(commands.some((command) => command.name === '/resume')).toBe(true);
-  });
-
-  it('calls requestWorkflowResume when the workflow is paused', () => {
-    let resumed = false;
-    const commands = createRuntimeCommands(
-      makeCtx({
-        requestWorkflowResume: () => {
-          resumed = true;
-          return true;
-        },
-      }),
-    );
-    executeRuntimeCommand(commands, '/resume', 'workflow', noop, 'implementing');
-    expect(resumed).toBe(true);
-  });
-
-  it('surfaces an error when the workflow is not paused', () => {
-    let error: string | undefined;
-    const commands = createRuntimeCommands(
-      makeCtx({
-        requestWorkflowResume: () => false,
-        setFeedbackError: (message) => {
-          error = message;
-        },
-      }),
-    );
-    executeRuntimeCommand(commands, '/resume', 'workflow', noop, 'implementing');
-    expect(error).toMatch(/not paused/i);
+    expect(error).toMatch(/redo/i);
   });
 });

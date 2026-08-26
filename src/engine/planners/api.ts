@@ -13,11 +13,8 @@ import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { providerError } from '../providers/errors.js';
 import { assertPlannerKind } from '../config-assertions.js';
 import { isProviderId } from '../../core/schemas/enums.js';
-import {
-  modelSupportsEffort,
-  modelSupportsImages,
-  clampToMaxOutput,
-} from '../providers/capability-inference.js';
+import { clampToMaxOutput } from '../providers/capability-inference.js';
+import { modelSupportsEffort, modelSupportsImages } from '../../core/runners/capabilities.js';
 import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
 import { dispatchStreamCompletion } from '../providers/dispatch-stream.js';
 import { toStreamClient } from '../providers/openai-stream/client.js';

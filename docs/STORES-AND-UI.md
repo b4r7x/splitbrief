@@ -93,6 +93,8 @@ Runtime state of the active workflow run.
 - **inputHistoryStore** -- command history with disk persistence.
 - **commandPaletteMruStore** -- most-recently-used entries for the command palette.
 - **projectFilesStore** -- refresh invalidation tick for project-file completion; the composer owns the async file read and local suggestion list.
+- **pickerViewStore** -- the seat picker's sub-view, preserved left index, expanded model and text draft. See [The picker view state](#picker-view-state).
+- **composerDraftStore** -- a one-shot draft request (`{ epoch, value }`) aimed at the composer. Code outside the composer -- the palette's prefill of an `arg` command, a visual fixture -- sets the draft only through this store, never by reaching into the composer.
 
 ### Project -- `src/stores/project/`
 
@@ -300,25 +302,39 @@ zero-height and prompt-clamped bodies cannot introduce a second breakpoint or hi
 
 `overlayStore` manages a stack. Opening an overlay pushes the current one onto the stack. `Esc` pops. When an overlay is active, `Layout` (`src/app/layout.tsx`) hides the screen and renders the overlay in its place.
 
-Overlay types: `help`, `command-palette`, `skills`, `settings`, `mode-selector`, `planner-picker`, `implementer-picker`, `reviewer-picker`, `crew`, `sessions`, `editor`, `cost-drilldown` — the `ACTIVE_OVERLAYS` tuple in `src/core/navigation/types.ts`.
+Overlay types: `help`, `command-palette`, `skills`, `settings`, `mode-selector`, `planner-picker`, `implementer-picker`, `reviewer-picker`, `escalation-picker`, `sessions`, `editor`, `cost-drilldown` — the `ACTIVE_OVERLAYS` tuple in `src/core/navigation/types.ts`, which spreads `SEAT_PICKER_OVERLAYS` (one picker overlay per seat picker role). There is no `crew` overlay: crew is the first section of `settings`.
 
-Each type maps to a component in `renderOverlay()` in `src/app/router.tsx`. The three picker overlays all render the same component parameterised by role: `<ToolModelPicker role="planner" | "implementer" | "reviewer" />` (`src/app/overlays/runners.tsx`). `role` is `ActiveRunnerRole` (`src/core/runners/cli-tool-catalog.ts`) — the one role union the UI uses; confirming a `reviewer` selection writes the `reviewer` block in project config.
+Each type maps to a component in `renderOverlay()` in `src/app/router.tsx`. The four picker overlays all render the same component parameterised by role: `<ToolModelPicker role="planner" | "implementer" | "reviewer" | "escalation" />` (`src/app/overlays/runners.tsx`). `role` is `SeatPickerRole = ActiveRunnerRole | 'escalation'` (`src/core/runners/cli-tool-catalog.ts`); confirming a `reviewer` selection writes the `reviewer` block in project config, and confirming an `escalation` selection writes the intermediate provider and model rather than a runner block.
 
-### The Crew page
+### Settings ∋ Crew
 
-`crew` is the page `src/app/overlays/crew.tsx`, backed by the feature `src/features/crew/`:
+Crew has no page of its own. `buildSettingsItems` (`src/features/settings/items.ts`) returns one flat `SettingsItem[]` — the crew rows from `deriveCrewRows` (`src/core/crew/rows.ts`, keyed `seat:<id>` / `effort:<id>` / `escalate`) followed by the settings defs, sorted by section — and `settingsItemSection` files the crew items under the `Crew` section, which `SETTINGS_SECTIONS` orders first. One list, one cursor, one filter: `↑↓` walks from `PLAN` into `Tuning` without a mode switch, and a filter narrows seats and settings together.
 
-| File | Owns |
-|---|---|
-| `use-crew.ts` | Reads `configStore` and `detectionStore` and returns `{ seats, presets }` — seats from `deriveCrewSeats()`, presets from `computeCrewPresets()` over the tools detection reports as `ready`. |
-| `rows.ts` | The focus model. Rows are identified by key (`preset:<id>`, `seat:<id>`, `continue`), not index, so discovery adding a preset while the page is open never shifts focus, and dropping the focused preset hands focus to the first seat rather than to whatever slid into its index. `CREW_SEAT_PICKER` maps each seat to the picker overlay it opens. |
-| `format.ts` | Pure row layout — label, identity (`display name · model`), and the posture tag, with the tag yielding its column before a model id gets truncated past legibility. An unresolved posture earns no tag rather than a guess. |
-| `seat-rows.tsx` | Renders the seat spine, the indented `escalate` branch under `BUILD`, and the cross-lab line under `REVIEW`. |
-| `preset-row.tsx` | Renders the ready-made crews and applies one — all three seats in a single config save. |
+- **Decoration slots.** The spine rows between seats and the cross-lab verdict under `REVIEW` are not items. They are `ListViewport` decorations (`decorations.before` / `after`, `src/components/pickers/list-viewport.tsx`), so `computeListDisplayWindow` charges them against the row budget while they stay unreachable by the cursor. A filtered list is no longer the block, so the page switches them off.
+- **`pinnedHead`.** The page passes the crew item count as `pinnedHead`, so the rail never scrolls out from under a seat row — a visible seat always renders with its own rail above it.
+- **The rail.** Layout is pure. `planSeatBlock` (`src/features/crew/format.ts`) plans the whole block from `innerWidth` plus a row budget; `formatCrewRow` plans one row — the 8-cell label, the identity truncated to one budget shared by every row, the right-aligned posture word and which rail branch it sits on; the renderer paints the cursor gutter and the rail glyph (`●` on a seat, `├` / `└` on a branch). `CrewRowView`, `CrewSpine` and `CrewVerdictLine` (`src/features/crew/row-view.tsx`) render what it planned.
+- **The ladder.** When the block does not fit its budget, `planSeatBlock` yields in a fixed order: the verdict line, then the spine rows, then the `escalate` row folds into `BUILD` (`layout.foldEscalate`; the page drops that item and `visibleCrewRows` drops it from the block). Posture is a width decision, not a budget one — it drops for the whole block when the identity column would fall under its minimum.
+- **`/crew` deep link.** `/crew [plan|build|review]` calls `overlayStore.open('settings', 'seat:<id>')`. The page reads that focus as the `initialKey` for `useFilterableList`, or as `initialFilter` when it carries the `filter:` prefix — so an overlay focus can also reproduce a typed filter.
 
-The seat and lab models live in core, not in the feature: `src/core/crew/seats.ts` (`deriveCrewSeats`, the `plan` / `build` / `review` seats), `src/core/crew/presets.ts` (`computeCrewPresets`, which offers only crews whose every tool is installed and authenticated), and `src/core/crew/labs.ts` (`resolveLab` / `crossLabVerdict` — a verdict is rendered only when the labs behind `BUILD` and `REVIEW` are both determined).
+The seat and lab models live in core, not in the feature: `src/core/crew/seats.ts` (`deriveCrewSeats`, the `plan` / `build` / `review` seats), `src/core/crew/rows.ts` (`deriveCrewRows`, which adds the effort and escalate branches), `src/core/crew/presets.ts` (`computeCrewPresets`, which offers only crews whose every tool is installed and authenticated) and `src/core/crew/labs.ts` (`resolveLab` / `crossLabVerdict` — a verdict is rendered only when the labs behind `BUILD` and `REVIEW` are both determined). The feature keeps `use-crew.ts` (config + detection → `{ seats, presets }`), `rows.ts` (`crewActivate`, which maps a seat to its picker overlay and performs the `overlayStore.open`, or applies a preset in a single config save), `format.ts`, `row-view.tsx` and `preset-row.tsx`.
 
-The first-run setup screen (`src/app/screens/setup.tsx`) is built on the same feature: its second step is the crew surface with a continue row appended, so first run and `/crew` show the same seats through the same code.
+The first-run setup screen (`src/app/screens/setup.tsx`) composes the same feature — the ready-made crews above the same seat block, plus a continue row — so first run and `/crew` show the same seats through the same code.
+
+### The sizing rule
+
+No surface carries a width constant. `overlayRect` (`src/core/navigation/overlay-rect.ts`) computes every panel's rectangle from the live terminal size and a named density:
+
+| density | share | min | max | who |
+|---|---|---|---|---|
+| `compact` | 0.60 | 56 | 72 | mode selector, start preparation, the picker's "initializing tools" panel |
+| `roomy` | 0.70 | 76 | 96 | settings (crew included), help, palette, the summary screen, the picker's sub-steps |
+| `wide` | 0.90 | 76 | 140 | the seat picker, setup, sessions, skills, the cost drilldown, the home body and composer |
+
+`width = min(cols - 4, max(min, floor(cols * share)), max)`; the frame costs 6 columns and 4 rows, and `overlayGutterRows` gives back one row of vertical air per 6 rows above the 18-row floor, capped at 2 (the first at 24 rows, the second at 30). Every panel passes a `density` to `OverlayPanel`; `maxWidth` no longer exists, so nothing renders byte-identical at 80 and 120 columns.
+
+### Picker view state
+
+`pickerViewStore` (`src/stores/ui/picker-view.ts`) holds the seat picker's sub-view: which step is showing (`picker`, the two custom-command steps, custom model, provider auth), the left index preserved across a step, the expanded multi-route model, and the in-flight text draft. It replaces the picker's component-local `useReducer`. The move buys two things a component-local reducer cannot: the state survives the picker unmounting and remounting, and a test or a visual fixture can seed a step directly (`pickerViewStore.open(...)`, `pickerViewStore.expand(id)`) instead of driving keystrokes into it.
 
 ---
 
@@ -428,6 +444,26 @@ interface ConfigState {
   diskConfig: Config | null;   // config as persisted on disk, without overrides
   projectDir: string;
   overrides: CLIOverrides;
+}
+
+// src/stores/ui/picker-view.ts
+type PickerSubView =
+  | { kind: 'picker' }
+  | { kind: 'custom-command-contract'; refocusKind?: 'shell' | 'agent' }
+  | { kind: 'custom-command'; intendedKind: 'shell' | 'agent' }
+  | { kind: 'custom-model' }
+  | { kind: 'provider-auth' };
+interface PickerViewState {
+  view: PickerSubView;
+  preservedLeftIndex: number;    // left column index restored when a step closes
+  expandedModelId: string | null; // multi-route model showing its provider rows
+  draft: string | null;           // text the current step is editing
+}
+
+// src/stores/ui/composer-draft.ts
+interface ComposerDraftRequest {
+  epoch: number;   // increments per request, so the same text can be sent twice
+  value: string;
 }
 
 // src/stores/navigation/router.ts

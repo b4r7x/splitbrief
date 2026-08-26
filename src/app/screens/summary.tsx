@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
-import { SOFT_SEP, ARROW_SEP } from '../../components/separators.js';
+import { SOFT_SEP, arrowSep } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
 import { formatTime } from '../../utils/format-time.js';
 import { formatScoreSummary } from '../../core/formatting.js';
@@ -28,10 +28,10 @@ import { useSummaryEvidenceLedger } from '../../features/summary/hooks/use-summa
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { routerStore } from '../../stores/navigation/router.js';
-import { getResponsivePanelWidth } from '../../utils/terminal-width.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 import { clamp } from '../../utils/math.js';
 import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
+import { overlayWidth } from '../../core/navigation/overlay-rect.js';
 
 interface SummaryScreenProps {
   commands: RuntimeCommandDef[];
@@ -54,12 +54,7 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
   const onDone = () => routerStore.navigate({ to: 'home' });
 
   const completed = summary.completedByLocal + summary.escalatedToPlanner;
-  const contentWidth = getResponsivePanelWidth({
-    cols,
-    size: isSmall ? 'small' : 'large',
-    widths: { small: 64, large: 96 },
-    gutter: 2,
-  });
+  const contentWidth = overlayWidth({ cols, density: 'roomy' });
   const labelWidth = isSmall ? clamp(Math.floor(contentWidth / 3), 10, 13) : 20;
   const taskTitleWidth = clamp(contentWidth - 24, 8, isSmall ? 16 : 30);
   const truncateLength = Math.max(6, taskTitleWidth - 2);
@@ -142,7 +137,7 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
             <Text wrap="truncate-end">
               {plannerSummary !== null && <Text color={theme.planner}>{plannerSummary}</Text>}
               {plannerSummary !== null && implementerSummary !== null && (
-                <Text color={theme.textDim}>{ARROW_SEP}</Text>
+                <Text color={theme.textDim}>{arrowSep()}</Text>
               )}
               {implementerSummary !== null && (
                 <Text color={theme.implementer}>{implementerSummary}</Text>
@@ -200,7 +195,7 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
             {summary.chainDriftSummary && (
               <LabeledRow label="Drift chain" labelWidth={labelWidth}>
                 <Text color={theme.textDim} wrap="truncate-end">
-                  {summary.chainDriftSummary.chainLength} tasks{ARROW_SEP}
+                  {summary.chainDriftSummary.chainLength} tasks{arrowSep()}
                   {stripTerminalControls(summary.chainDriftSummary.representativePath)}
                   {SOFT_SEP}
                   {summary.chainDriftSummary.score.toFixed(2)}

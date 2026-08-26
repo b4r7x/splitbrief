@@ -8,15 +8,30 @@ export interface ListSectionConfig<T> {
   by: (item: T) => string;
   renderHeader: (section: string, index: number) => ReactNode;
   gapBetweenSections?: boolean | undefined;
+  headerFor?: ((section: string) => boolean) | undefined;
+}
+
+interface ListRowContext {
+  isCursor: boolean;
+  globalIndex: number;
+}
+
+export interface ListDecorationsConfig<T> {
+  hasBefore: (item: T, index: number) => boolean;
+  renderBefore: (item: T, ctx: ListRowContext) => ReactNode;
+  hasAfter: (item: T, index: number) => boolean;
+  renderAfter: (item: T, ctx: ListRowContext) => ReactNode;
 }
 
 interface ListViewportBaseProps<T> {
   items: T[];
   selectedIndex: number;
   getKey: (item: T) => string;
-  renderItem: (item: T, ctx: { isCursor: boolean; globalIndex: number }) => ReactNode;
+  renderItem: (item: T, ctx: ListRowContext) => ReactNode;
   placeholder?: ReactNode;
   section?: ListSectionConfig<T>;
+  decorations?: ListDecorationsConfig<T> | undefined;
+  pinnedHead?: number | undefined;
   onRowActivate?: ((globalIndex: number) => void) | undefined;
   rowZonePrefix?: string | undefined;
   rowZoneZ?: number | undefined;
@@ -50,6 +65,8 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
     renderItem,
     placeholder,
     section,
+    decorations,
+    pinnedHead,
     onRowActivate,
     rowZonePrefix = 'list-row',
     rowZoneZ = ROW_ZONE_Z_OVERLAY,
@@ -69,8 +86,18 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
     selectedIndex,
     ...rowBudgetInput,
     ...(section
-      ? { section: { by: section.by, gapBetweenSections: section.gapBetweenSections } }
+      ? {
+          section: {
+            by: section.by,
+            gapBetweenSections: section.gapBetweenSections,
+            headerFor: section.headerFor,
+          },
+        }
       : {}),
+    ...(decorations
+      ? { decorations: { before: decorations.hasBefore, after: decorations.hasAfter } }
+      : {}),
+    ...(pinnedHead === undefined ? {} : { pinnedHead }),
   });
   if (resolvedRows <= 0) return null;
 
@@ -101,6 +128,22 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
             );
           case 'gap':
             return <Box key={`gap-${slot.itemIndex}-${i}`} height={1} />;
+          case 'before':
+          case 'after': {
+            const item = items[slot.itemIndex];
+            if (item === undefined || decorations === undefined) return null;
+            const ctx = {
+              isCursor: slot.itemIndex === selectedIndex,
+              globalIndex: slot.itemIndex,
+            };
+            return (
+              <Box key={`${slot.kind}-${slot.itemIndex}`}>
+                {slot.kind === 'before'
+                  ? decorations.renderBefore(item, ctx)
+                  : decorations.renderAfter(item, ctx)}
+              </Box>
+            );
+          }
           case 'item': {
             const rendered = renderItem(slot.item, {
               isCursor: slot.itemIndex === selectedIndex,

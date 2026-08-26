@@ -2,77 +2,37 @@ import {
   clearReviewerSeat,
   updateActiveRunner,
 } from '../../core/config/accessors/active-runner.js';
+import type { CrewSeatId } from '../../core/crew/identity.js';
+import { crossLabVerdict, resolveLab, type CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
-import type { CrewSeat, CrewSeatId } from '../../core/crew/seats.js';
-import type { OverlayType } from '../../core/navigation/types.js';
+import type { CrewRow } from '../../core/crew/rows.js';
+import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
+import { seatPickerOverlayFor } from '../../core/navigation/types.js';
 import type { Config } from '../../core/schemas/config.js';
 import { configStore } from '../../stores/project/config.js';
 import { reportConfigSaveFailure } from '../../stores/project/save-feedback.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
+import { assertNever } from '../../utils/type-guards.js';
 
-const CREW_SEAT_PICKER: Readonly<Record<CrewSeatId, OverlayType>> = {
-  plan: 'planner-picker',
-  build: 'implementer-picker',
-  review: 'reviewer-picker',
-};
+export type CrewActivationTarget =
+  | Readonly<{ kind: 'crew'; row: CrewRow }>
+  | Readonly<{ kind: 'preset'; preset: CrewPreset }>;
 
-export type CrewFocusRow =
-  | Readonly<{ kind: 'preset'; id: string }>
-  | Readonly<{ kind: 'seat'; id: CrewSeatId }>
-  | Readonly<{ kind: 'continue' }>;
+export type CrewActivation =
+  | Readonly<{ kind: 'opened' }>
+  | Readonly<{ kind: 'applied'; config: Config }>
+  | Readonly<{ kind: 'inert' }>;
 
-export function crewFocusRows(
-  input: Readonly<{
-    presets: readonly CrewPreset[];
-    seats: readonly CrewSeat[];
-    continueRow: boolean;
-  }>,
-): readonly CrewFocusRow[] {
-  return [
-    ...input.presets.map((preset): CrewFocusRow => ({ kind: 'preset', id: preset.id })),
-    ...input.seats.map((seat): CrewFocusRow => ({ kind: 'seat', id: seat.id })),
-    ...(input.continueRow ? [{ kind: 'continue' } as const] : []),
-  ];
-}
-
-export function crewFocusKey(row: CrewFocusRow): string {
-  return row.kind === 'continue' ? 'continue' : `${row.kind}:${row.id}`;
-}
-
-/**
- * Discovery can add or drop presets while the surface is open, so focus is held by row identity;
- * a row that is no longer offered hands focus to the first seat rather than to its neighbour.
- */
-export function crewFocusIndex(
-  input: Readonly<{ rows: readonly CrewFocusRow[]; key: string | undefined }>,
-): number {
-  const found = input.rows.findIndex((row) => crewFocusKey(row) === input.key);
-  return found >= 0 ? found : input.rows.findIndex((row) => row.kind === 'seat');
-}
-
-export function crewFocusMove(
-  input: Readonly<{ rows: readonly CrewFocusRow[]; index: number; delta: number }>,
-): string | undefined {
-  const row = input.rows[Math.min(input.rows.length - 1, Math.max(0, input.index + input.delta))];
-  return row === undefined ? undefined : crewFocusKey(row);
-}
-
-export function crewActivate(
-  input: Readonly<{
-    row: CrewFocusRow | undefined;
-    presets: readonly CrewPreset[];
-    config: Config;
-  }>,
-): void {
-  const { row } = input;
-  if (row?.kind === 'seat') {
-    overlayStore.open(CREW_SEAT_PICKER[row.id]);
-    return;
-  }
-  if (row?.kind !== 'preset') return;
-  const preset = input.presets.find((candidate) => candidate.id === row.id);
-  if (preset !== undefined) void applyCrewPreset({ config: input.config, preset });
+export function crewVerdict(rows: readonly CrewRow[]): CrewLabVerdict | undefined {
+  const seatRunner = (id: CrewSeatId) => {
+    for (const row of rows) if (row.kind === 'seat' && row.id === id) return row.seat.runner;
+    return undefined;
+  };
+  const build = seatRunner('build');
+  const review = seatRunner('review');
+  if (build === undefined || review === undefined) return undefined;
+  return crossLabVerdict({ build: resolveLab(build), review: resolveLab(review) });
 }
 
 function withPresetSeats(config: Config, preset: CrewPreset): Config {
@@ -96,11 +56,35 @@ function withPresetSeats(config: Config, preset: CrewPreset): Config {
   });
 }
 
-export async function applyCrewPreset(
-  input: Readonly<{ config: Config; preset: CrewPreset }>,
-): Promise<boolean> {
-  const result = await configStore.save(withPresetSeats(input.config, input.preset));
-  if (reportConfigSaveFailure(result)) return false;
-  feedbackStore.setMessage(`Crew set to ${input.preset.label}`);
-  return true;
+async function persistCrew(config: Config, label: string): Promise<void> {
+  const result = await configStore.save(config);
+  if (reportConfigSaveFailure(result)) return;
+  feedbackStore.setMessage(`Crew set to ${label}`);
+}
+
+/** An effort row is cycled in place by its list, so activating it is deliberately nothing. */
+function openCrewRow(row: CrewRow): CrewActivation {
+  switch (row.kind) {
+    case 'seat':
+      overlayStore.open(seatPickerOverlayFor(CREW_SEAT_ROLES[row.id]));
+      return { kind: 'opened' };
+    case 'escalate':
+      overlayStore.open(seatPickerOverlayFor('escalation'));
+      return { kind: 'opened' };
+    case 'effort':
+      return { kind: 'inert' };
+    default:
+      return assertNever(row);
+  }
+}
+
+export function crewActivate(
+  input: Readonly<{ target: CrewActivationTarget; config: Config }>,
+): CrewActivation {
+  const { target } = input;
+  if (target.kind === 'crew') return openCrewRow(target.row);
+
+  const config = withPresetSeats(input.config, target.preset);
+  void persistCrew(config, target.preset.label);
+  return { kind: 'applied', config };
 }

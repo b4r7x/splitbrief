@@ -20,6 +20,7 @@ const LONE_CONTROL = '\x1f';
 function Harness({
   items,
   initialKey,
+  initialFilter,
   pageSize = 3,
   upAtStart,
   onCommit,
@@ -27,6 +28,7 @@ function Harness({
 }: {
   items: string[];
   initialKey?: string | undefined;
+  initialFilter?: string | undefined;
   pageSize?: number | undefined;
   upAtStart?: 'wrap' | 'close' | undefined;
   onCommit?: ((event: string) => void) | undefined;
@@ -39,6 +41,7 @@ function Harness({
     items,
     getKey: (item) => item,
     initialKey,
+    initialFilter,
     onSelect: (item) => {
       onCommit?.(`select:${item}`);
       setChosen(item);
@@ -64,7 +67,7 @@ function Harness({
   const current = list.filtered[list.selectedIndex] ?? 'none';
   return (
     <Text>
-      {`filter:${list.filter}|current:${current}|chosen:${chosen}|acted:${acted}|closed:${closed}`}
+      {`filter:${list.filter}|current:${current}|chosen:${chosen}|acted:${acted}|closed:${closed}|count:${list.filtered.length}`}
     </Text>
   );
 }
@@ -255,6 +258,22 @@ describe('useFilterableList', () => {
     ui.stdin.write(ENTER);
     await tick(20);
     expect(ui.lastFrame()).toContain('chosen:delta');
+
+    ui.unmount();
+  });
+
+  it('opens on a seeded filter with the cursor on its first match', async () => {
+    const ui = renderFeature(
+      <Harness items={['alpha', 'temperature', 'gamma']} initialFilter="temp" />,
+    );
+    await tick(20);
+
+    expect(ui.lastFrame()).toContain('filter:temp|current:temperature');
+    expect(ui.lastFrame()).toContain('count:1');
+
+    ui.stdin.write(ENTER);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('chosen:temperature');
 
     ui.unmount();
   });

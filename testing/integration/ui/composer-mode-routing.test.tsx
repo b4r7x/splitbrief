@@ -80,6 +80,7 @@ describe('composer mode routing', () => {
         name: '/tmp/path',
         label: 'Tmp path',
         description: 'Test path-shaped command',
+        category: 'navigate',
         validScreens: ['workflow'],
         handler: () => {},
       },

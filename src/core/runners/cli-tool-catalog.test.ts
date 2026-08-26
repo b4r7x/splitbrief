@@ -25,8 +25,13 @@ import {
   defaultCliAuthChannel,
   getCliModelPolicy,
   selectCliAuthChannel,
+  seatPickerLane,
+  SEAT_PICKER_ROLES,
+  type ActiveRunnerRole,
   type CliModelPolicy,
+  type SeatPickerRole,
 } from './cli-tool-catalog.js';
+import { CLI_PLANNER_ADAPTERS } from '../../engine/runners/cli-tools/registry.js';
 
 const REPO_ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '../../..');
 
@@ -506,5 +511,42 @@ describe('CLI tool catalog', () => {
     });
     expect(defaultCliAuthChannel('codex').id).toBe('session');
     expect(defaultCliAuthChannel('aider').id).toBe('provider-dependent');
+  });
+});
+
+describe('effort support', () => {
+  it('declares the per-call effort flag only for Claude Code', () => {
+    expect(CLI_TOOL_CATALOG['claude-code'].supportsEffort).toBe(true);
+    for (const tool of CLI_TOOL_IDS) {
+      if (tool === 'claude-code') continue;
+      expect({ tool, supportsEffort: CLI_TOOL_CATALOG[tool].supportsEffort }).toEqual({
+        tool,
+        supportsEffort: false,
+      });
+    }
+  });
+
+  it('states the same effort fact the planner adapter actually invokes with', () => {
+    for (const tool of PLANNER_CLI_TOOL_IDS) {
+      expect({ tool, supportsEffort: CLI_PLANNER_ADAPTERS[tool].supportsEffort }).toEqual({
+        tool,
+        supportsEffort: CLI_TOOL_CATALOG[tool].supportsEffort,
+      });
+    }
+  });
+});
+
+describe('seatPickerLane', () => {
+  it('reads the escalate seat through the planner lane and every other seat through its own', () => {
+    expect(seatPickerLane('escalation')).toBe('planner');
+    for (const role of ['planner', 'implementer', 'reviewer'] as const) {
+      expect(seatPickerLane(role)).toBe(role);
+    }
+  });
+
+  it('accepts every config seat as a picker role', () => {
+    const seat: ActiveRunnerRole = 'reviewer';
+    const pickerRole: SeatPickerRole = seat;
+    expect(SEAT_PICKER_ROLES).toContain(pickerRole);
   });
 });

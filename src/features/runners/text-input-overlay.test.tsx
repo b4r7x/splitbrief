@@ -6,8 +6,20 @@ import { SOFT_SEP } from '../../components/separators.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { glyph } from '../../lib/glyphs.js';
-import { ContractRecap } from './sub-panel.js';
+import { ContractRecap, StepIndicator } from './contract-chip.js';
 import { TextInputOverlay } from './text-input-overlay.js';
+
+function panelHeight(frame: string): number {
+  const lines = frame.split('\n');
+  const top = lines.findIndex((line) => line.includes('╭'));
+  const bottom = lines.findLastIndex((line) => line.includes('╰'));
+  return bottom - top + 1;
+}
+
+function panelWidth(frame: string): number {
+  const top = frame.split('\n').find((line) => line.includes('╭')) ?? '';
+  return top.trimEnd().length - top.indexOf('╭');
+}
 
 describe('TextInputOverlay', () => {
   beforeEach(() => {
@@ -75,12 +87,6 @@ describe('TextInputOverlay', () => {
   });
 
   it('keeps the panel height fixed while a long command word-wraps to more input rows', async () => {
-    const panelHeight = (frame: string): number => {
-      const lines = frame.split('\n');
-      const top = lines.findIndex((line) => line.includes('╭'));
-      const bottom = lines.findLastIndex((line) => line.includes('╰'));
-      return bottom - top + 1;
-    };
     terminalSizeStore.__testReset({ cols: 100, rows: 30, isSmall: false });
     const ui = renderFeature(
       <TextInputOverlay
@@ -101,10 +107,10 @@ describe('TextInputOverlay', () => {
     expect(initialFrame).toContain('prompt on stdin');
     expect(initialFrame).toContain('e.g. my-planner --json');
 
-    // Word wrap yields three rendered rows here while perfect cell packing
-    // would predict two — the yield must follow the actual rows.
+    // Three 40-cell words: each fits an input row alone, no two fit together
+    // (81 cells) in the ~64-cell input row, so the draft renders as three rows.
     await flushEffects();
-    ui.stdin.write(`${'a'.repeat(30)} ${'b'.repeat(30)} ${'c'.repeat(33)}`);
+    ui.stdin.write(`${'a'.repeat(40)} ${'b'.repeat(40)} ${'c'.repeat(40)}`);
     await tick(20);
     await flushEffects();
 
@@ -115,8 +121,30 @@ describe('TextInputOverlay', () => {
     ui.unmount();
   });
 
-  it('shows the full contract recap digest with an aligned chip at 60 cols', async () => {
+  it('keeps the contract recap on one truncating row when it outgrows the panel', async () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 30, isSmall: true });
+    const ui = renderFeature(
+      <TextInputOverlay
+        title="Custom command"
+        role="planner"
+        recap={<ContractRecap tier="direct" />}
+        label="Command to run"
+        placeholder="cmd"
+        onSubmit={() => {}}
+      />,
+    );
+    await tick(20);
+
+    // The roomy panel is 56 wide at 60 cols, so the recap has 50 inner cells for
+    // a 51-cell digest: it stays on one row and only the tail is dropped.
+    const rows = (ui.lastFrame() ?? '').split('\n');
+    expect(rows.filter((row) => row.includes('DIRECT'))).toHaveLength(1);
+    expect(rows.some((row) => row.includes('stdout ignored'))).toBe(false);
+    ui.unmount();
+  });
+
+  it('shows the full contract recap digest where the panel is wide enough', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     const ui = renderFeature(
       <TextInputOverlay
         title="Custom command"
@@ -131,25 +159,57 @@ describe('TextInputOverlay', () => {
 
     const bar = glyph('liveBar');
     const arrow = glyph('connectorHandoff');
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain(
+    expect(ui.lastFrame() ?? '').toContain(
       `${bar}  OUTPUT  ${arrow} result from stdout${SOFT_SEP}no direct writes`,
     );
+    ui.unmount();
+  });
 
-    ui.rerender(
+  it('is 84 cells wide at 120x40', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const ui = renderFeature(
       <TextInputOverlay
-        title="Custom command"
+        title="Custom model"
         role="planner"
-        recap={<ContractRecap tier="direct" />}
-        label="Command to run"
-        placeholder="cmd"
+        label="Model id for Ollama"
+        placeholder="e.g. llama3.3:latest"
+        examples={['llama3.3:70b', 'anthropic/claude-3-opus', 'deepseek/deepseek-chat']}
         onSubmit={() => {}}
       />,
     );
     await tick(20);
-    expect(ui.lastFrame() ?? '').toContain(
-      `${bar}  DIRECT  ${arrow} writes files directly${SOFT_SEP}stdout ignored`,
+
+    expect(panelWidth(ui.lastFrame() ?? '')).toBe(84);
+    ui.unmount();
+  });
+
+  it('drops the examples and stays inside 18 rows at 60x18 with a three-row draft', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+    const ui = renderFeature(
+      <TextInputOverlay
+        title="Custom command"
+        role="planner"
+        stepIndicator={<StepIndicator active="command" />}
+        recap={<ContractRecap tier="output" />}
+        label="Command to run"
+        placeholder="cmd"
+        helper="prompt on stdin"
+        examples={['my-planner --json']}
+        rows={1}
+        maxRows={3}
+        onSubmit={() => {}}
+      />,
     );
+    await tick(20);
+    await flushEffects();
+    ui.stdin.write(`${'a'.repeat(40)} ${'b'.repeat(40)} ${'c'.repeat(40)}`);
+    await tick(20);
+    await flushEffects();
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).not.toContain('e.g. my-planner --json');
+    expect(frame).not.toContain('prompt on stdin');
+    expect(panelHeight(frame)).toBeLessThanOrEqual(18);
     ui.unmount();
   });
 });

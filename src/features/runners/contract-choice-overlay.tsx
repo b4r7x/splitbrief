@@ -5,7 +5,8 @@ import { useTheme } from '../../components/theme.js';
 import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
 import { glyph } from '../../lib/glyphs.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { ContractChip, StepIndicator, SubPanel, contractTierOf, tierColor } from './sub-panel.js';
+import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
+import { ContractChip, StepIndicator, contractTierOf, tierColor } from './contract-chip.js';
 import { overlayAllowsPickerKeys } from '../../core/navigation/types.js';
 
 export type CustomCommandContract = 'shell' | 'agent';
@@ -46,28 +47,35 @@ function ContractCardView({
   const t = useTheme();
   const tier = contractTierOf(card.kind);
   const color = tierColor(t, tier);
-  const lead = (first: boolean) =>
-    focused ? (
+  /** The bar marks one row, so only the card's first row carries it. */
+  const lead = (first: boolean) => {
+    if (!first) return <Text color={t.textDim}>{'  '}</Text>;
+    return focused ? (
       <Text color={color}>{`${glyph('liveBar')} `}</Text>
     ) : (
-      <Text color={t.textDim}>{first ? '· ' : '  '}</Text>
+      <Text color={t.textDim}>{'· '}</Text>
     );
+  };
   return (
     <Box flexDirection="column">
       <Box height={1} overflow="hidden">
-        {lead(true)}
-        <ContractChip tier={tier} solid={focused} />
+        <Box flexShrink={0}>
+          {lead(true)}
+          <ContractChip tier={tier} solid={focused} />
+        </Box>
         <Box flexGrow={1} minWidth={0} overflow="hidden">
           <Text color={t.text} wrap="truncate-end">{` ${card.title}`}</Text>
         </Box>
         <Box flexShrink={0}>
           <Text color={t.textDim}>{` ${card.kind}`}</Text>
-          {configured ? <Text color={t.success}>{` ${glyph('check')}`}</Text> : null}
+          {configured ? <Text color={t.success}>{` ${glyph('check')}`}</Text> : <Text>{'  '}</Text>}
         </Box>
       </Box>
       <Box height={1} overflow="hidden">
-        {lead(false)}
-        <Text color={t.textDim}>{`${LEDGER_INDENT}result${SOFT_SEP}`}</Text>
+        <Box flexShrink={0}>
+          {lead(false)}
+          <Text color={t.textDim}>{`${LEDGER_INDENT}result${SOFT_SEP}`}</Text>
+        </Box>
         <Box flexGrow={1} minWidth={0} overflow="hidden">
           <Text color={t.textDim} wrap="truncate-end">
             {card.resultClause}
@@ -75,8 +83,10 @@ function ContractCardView({
         </Box>
       </Box>
       <Box height={1} overflow="hidden">
-        {lead(false)}
-        <Text color={t.textDim}>{`${LEDGER_INDENT}files ${SOFT_SEP}`}</Text>
+        <Box flexShrink={0}>
+          {lead(false)}
+          <Text color={t.textDim}>{`${LEDGER_INDENT}files ${SOFT_SEP}`}</Text>
+        </Box>
         <Box flexGrow={1} minWidth={0} overflow="hidden">
           <Text color={color} wrap="truncate-end">
             {card.filesClause}
@@ -128,22 +138,23 @@ export function ContractChoiceOverlay({
   );
 
   return (
-    <SubPanel
-      title="Custom command"
-      role={role}
-      stepIndicator={<StepIndicator active="contract" />}
+    <OverlayPanel
+      density="roomy"
+      title={`Custom command${SOFT_SEP}${role}`}
       hint={`↑↓ select${SOFT_SEP}⏎ continue${SOFT_SEP}esc back`}
     >
+      <Box marginBottom={1}>
+        <StepIndicator active="contract" />
+      </Box>
       {CONTRACT_CARDS.map((card, cardIndex) => (
-        <Box key={card.kind} flexDirection="column">
+        <Box key={card.kind} flexDirection="column" marginTop={cardIndex === 0 ? 0 : 1}>
           <ContractCardView
             card={card}
             focused={cardIndex === index}
             configured={card.kind === configuredKind}
           />
-          <Box height={1} />
         </Box>
       ))}
-    </SubPanel>
+    </OverlayPanel>
   );
 }

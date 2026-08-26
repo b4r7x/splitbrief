@@ -1,52 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import type { CrewEscalateEntry, CrewSeat } from '../../core/crew/seats.js';
-import type { RunnerBillingPosture } from '../../core/runners/runner-billing.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import type { RunnerConfig } from '../../core/config/accessors/runner-config.js';
+import { formatInheritedIdentity } from '../../core/crew/identity.js';
 import {
-  CREW_COLUMN_GAP,
-  formatCrewEscalateRow,
-  formatCrewSeatRow,
-  type CrewRow,
-} from './format.js';
-
-/** Mirrors how seat-rows.tsx lays the row out, so the assertion covers what is displayed. */
-function renderedWidth(row: CrewRow): number {
-  const index = row.index === undefined ? '' : `${row.index}${CREW_COLUMN_GAP}`;
-  const posture = row.posture === undefined ? '' : `${CREW_COLUMN_GAP}${row.posture}`;
-  return `${index}${row.label}${CREW_COLUMN_GAP}${row.identity}${posture}`.length;
-}
+  crewRowFilterText,
+  deriveCrewRows,
+  type CrewRow as CrewBlockRow,
+} from '../../core/crew/rows.js';
+import type { CrewEscalateEntry } from '../../core/crew/seats.js';
+import { glyph } from '../../lib/glyphs.js';
+import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { formatCrewRow, planSeatBlock, visibleCrewRows, type SeatBlockLayout } from './format.js';
 
 const WIDTHS = [120, 80, 60];
 
 const LONG_DISPLAY_NAME = 'Some Extremely Long Runner Display Name From The Catalog';
 const LONG_MODEL = 'vendor/some-extremely-long-model-identifier-2026-preview';
-const REVIEWER_NAME = 'Codex CLI';
-const REVIEWER_MODEL = 'gpt-5-codex';
-
-function planSeat(
-  input: Readonly<{ model?: string | undefined; posture?: RunnerBillingPosture | undefined }> = {},
-): CrewSeat {
-  return {
-    id: 'plan',
-    label: 'PLAN',
-    runner: { kind: 'cli', tool: 'claude-code' },
-    displayName: LONG_DISPLAY_NAME,
-    model: input.model,
-    posture: input.posture ?? 'subscription-included',
-  };
-}
-
-function reviewSeat(source: 'configured' | 'planner'): CrewSeat {
-  return {
-    id: 'review',
-    label: 'REVIEW',
-    source,
-    runner: { kind: 'cli', tool: 'claude-code' },
-    displayName: REVIEWER_NAME,
-    model: REVIEWER_MODEL,
-    posture: 'subscription-included',
-  };
-}
-
 const escalate: CrewEscalateEntry = {
   label: 'escalate',
   displayName: LONG_DISPLAY_NAME,
@@ -58,116 +27,270 @@ const ESCAPE = '\u001b';
 const BELL = '\u0007';
 const HOSTILE_MODEL = '\u001b[31mvendor/\u001b]0;pwned\u0007model\u001b[0m';
 
-describe('formatCrewSeatRow', () => {
-  it.each(WIDTHS)('strips terminal control sequences from the identity at %i columns', (width) => {
-    const row = formatCrewSeatRow({
-      seat: { ...planSeat({ model: HOSTILE_MODEL }), displayName: 'Ollama' },
-      position: 1,
-      width,
+const PLANNER: RunnerConfig = { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4' };
+
+function crewOf(overrides: Parameters<typeof makeConfig>[0]): readonly CrewBlockRow[] {
+  return deriveCrewRows({ config: makeConfig(overrides) });
+}
+
+/** Three seats, one effort row and the escalate row: the catalogued config. */
+const CATALOGUED_CREW = crewOf({});
+/** Three seats, two effort rows, escalate — the fullest crew short of a third effort row. */
+const DEEP_CREW = crewOf({
+  implementer: { kind: 'api', provider: 'anthropic', model: 'claude-sonnet-4' },
+  escalation: {
+    enabled: true,
+    intermediateProvider: 'deepseek',
+    intermediateModel: 'deepseek-chat',
+  },
+});
+/** Every row a crew can have: three seats, three effort rows, escalate. */
+const FULL_CREW = crewOf({
+  implementer: { kind: 'api', provider: 'anthropic', model: 'claude-sonnet-4' },
+  reviewer: {
+    kind: 'api',
+    provider: 'anthropic',
+    model: 'claude-sonnet-4',
+    apiBase: 'https://api.anthropic.com/v1',
+  },
+  escalation: {
+    enabled: true,
+    intermediateProvider: 'deepseek',
+    intermediateModel: 'deepseek-chat',
+  },
+});
+
+function blockRows(
+  rows: readonly CrewBlockRow[],
+  layout: SeatBlockLayout,
+): readonly ReturnType<typeof formatCrewRow>[] {
+  return rows.map((row) => formatCrewRow({ row, layout, planner: PLANNER }));
+}
+
+function escalateName(rows: readonly CrewBlockRow[]): string {
+  const row = rows.find((candidate) => candidate.kind === 'escalate');
+  if (row?.kind !== 'escalate' || row.entry === undefined) throw new Error('no escalate entry');
+  return row.entry.displayName;
+}
+
+describe('planSeatBlock', () => {
+  it.each([78, 70])('keeps the posture column at %i inner columns', (innerWidth) => {
+    const layout = planSeatBlock({
+      rows: FULL_CREW,
+      verdict: undefined,
+      innerWidth,
+      rowBudget: 12,
     });
 
-    expect(row.identity).not.toContain(ESCAPE);
-    expect(row.identity).not.toContain(BELL);
-    expect(row.identity).not.toContain('pwned');
-    expect(renderedWidth(row)).toBeLessThanOrEqual(width);
+    expect(layout.posture).toBe(true);
+    expect(blockRows(FULL_CREW, layout).some((row) => row.posture !== undefined)).toBe(true);
   });
 
-  it.each(WIDTHS)('keeps the composed seat row inside %i columns', (width) => {
-    const row = formatCrewSeatRow({ seat: planSeat({ model: LONG_MODEL }), position: 1, width });
-
-    expect(renderedWidth(row)).toBeLessThanOrEqual(width);
-  });
-
-  it('keeps the composed seat row inside a width narrower than its own prefix', () => {
-    const row = formatCrewSeatRow({
-      seat: planSeat({ model: LONG_MODEL }),
-      position: 1,
-      width: 10,
+  it('drops the posture column for the whole block once the identity would stop naming a model', () => {
+    const layout = planSeatBlock({
+      rows: FULL_CREW,
+      verdict: undefined,
+      innerWidth: 50,
+      rowBudget: 12,
     });
 
-    expect(renderedWidth(row)).toBeLessThanOrEqual(10);
+    expect(layout.posture).toBe(false);
+    for (const row of blockRows(FULL_CREW, layout)) expect(row.posture).toBeUndefined();
   });
 
-  it('drops the posture tag rather than truncating the model past recognition', () => {
-    const narrow = formatCrewSeatRow({
-      seat: planSeat({ model: LONG_MODEL }),
-      position: 1,
-      width: 48,
-    });
-    const wide = formatCrewSeatRow({
-      seat: planSeat({ model: LONG_MODEL }),
-      position: 1,
-      width: 120,
+  it('fits every identity in the one block budget', () => {
+    const layout = planSeatBlock({
+      rows: FULL_CREW,
+      verdict: undefined,
+      innerWidth: 78,
+      rowBudget: 12,
     });
 
-    expect(narrow.posture).toBeUndefined();
-    expect(narrow.identity.length).toBeGreaterThan(28);
-    expect(wide.posture).toBeDefined();
+    for (const row of blockRows(FULL_CREW, layout)) {
+      expect(getTerminalCellWidth(row.content)).toBeLessThanOrEqual(layout.identityWidth);
+    }
   });
 
-  it('keeps the posture tag when a short identity leaves room for both', () => {
-    const row = formatCrewSeatRow({
-      seat: { ...planSeat(), displayName: 'Ollama' },
-      position: 1,
-      width: 48,
+  it('yields the spines first when the rows overflow the budget', () => {
+    const layout = planSeatBlock({
+      rows: CATALOGUED_CREW,
+      verdict: undefined,
+      innerWidth: 50,
+      rowBudget: 6,
     });
 
-    expect(row.posture).toBeDefined();
-    expect(row.identity).toBe('Ollama');
+    expect(layout).toMatchObject({ verdict: false, spines: false, foldEscalate: false, rows: 5 });
   });
 
-  it.each(WIDTHS)('omits an absent model instead of filling the gap at %i columns', (width) => {
-    const row = formatCrewSeatRow({ seat: planSeat(), position: 1, width });
-
-    expect(row.identity.length).toBeLessThanOrEqual(LONG_DISPLAY_NAME.length);
-    expect(LONG_DISPLAY_NAME.startsWith(row.identity.slice(0, -1))).toBe(true);
-    expect(renderedWidth(row)).toBeLessThanOrEqual(width);
-  });
-
-  it.each(WIDTHS)('omits the posture tag when billing is unresolved at %i columns', (width) => {
-    const row = formatCrewSeatRow({
-      seat: planSeat({ model: LONG_MODEL, posture: 'unknown' }),
-      position: 2,
-      width,
+  it('yields the verdict before the spines', () => {
+    const layout = planSeatBlock({
+      rows: DEEP_CREW,
+      verdict: 'cross-lab',
+      innerWidth: 50,
+      rowBudget: 6,
     });
 
-    expect(row.posture).toBeUndefined();
-    expect(renderedWidth(row)).toBeLessThanOrEqual(width);
+    expect(layout).toMatchObject({ verdict: false, spines: false, foldEscalate: false, rows: 6 });
   });
 
-  it.each(WIDTHS)('points the review seat at the planner rather than naming a runner', (width) => {
-    const row = formatCrewSeatRow({ seat: reviewSeat('planner'), position: 3, width });
+  it('folds escalate into the build row when yielding the spines is not enough', () => {
+    const layout = planSeatBlock({
+      rows: FULL_CREW,
+      verdict: undefined,
+      innerWidth: 78,
+      rowBudget: 6,
+    });
+    const build = FULL_CREW.find((row) => row.kind === 'seat' && row.id === 'build');
+    if (build === undefined) throw new Error('no build seat');
 
-    expect(row.identity).not.toContain(REVIEWER_NAME);
-    expect(row.identity).not.toContain(REVIEWER_MODEL);
-    expect(row.posture).toBeUndefined();
+    expect(layout).toMatchObject({ foldEscalate: true, rows: 6 });
+    expect(formatCrewRow({ row: build, layout, planner: PLANNER }).content).toContain(
+      `${glyph('foldMarker')} ${escalateName(FULL_CREW)}`,
+    );
   });
 
-  it('names the runner on a review seat that has its own', () => {
-    const row = formatCrewSeatRow({ seat: reviewSeat('configured'), position: 3, width: 120 });
+  it('keeps the verdict and the spines while the budget allows them', () => {
+    const layout = planSeatBlock({
+      rows: FULL_CREW,
+      verdict: 'cross-lab',
+      innerWidth: 78,
+      rowBudget: 12,
+    });
 
-    expect(row.identity).toContain(REVIEWER_NAME);
-    expect(row.identity).toContain(REVIEWER_MODEL);
+    expect(layout).toMatchObject({ verdict: true, spines: true, foldEscalate: false, rows: 10 });
   });
 });
 
-describe('formatCrewEscalateRow', () => {
-  it.each(WIDTHS)('keeps the composed escalate row inside %i columns', (width) => {
-    const row = formatCrewEscalateRow({ escalate, width });
+describe('formatCrewRow', () => {
+  it.each(WIDTHS)(
+    'strips terminal control sequences from a seat identity at %i columns',
+    (innerWidth) => {
+      const rows = crewOf({ planner: { kind: 'cli', tool: 'claude-code', model: HOSTILE_MODEL } });
+      const row = rows.find((candidate) => candidate.kind === 'seat' && candidate.id === 'plan');
+      if (row === undefined) throw new Error('no plan seat');
+      const layout = planSeatBlock({ rows, verdict: undefined, innerWidth, rowBudget: 12 });
+      const formatted = formatCrewRow({ row, layout, planner: PLANNER });
 
-    expect(renderedWidth(row)).toBeLessThanOrEqual(width);
-    expect(row.index).toBeUndefined();
+      expect(formatted.content).not.toContain(ESCAPE);
+      expect(formatted.content).not.toContain(BELL);
+      expect(formatted.content).not.toContain('pwned');
+      expect(getTerminalCellWidth(formatted.content)).toBeLessThanOrEqual(layout.identityWidth);
+    },
+  );
+
+  it.each(WIDTHS)(
+    'strips terminal control sequences from an escalate identity at %i columns',
+    (innerWidth) => {
+      const row: CrewBlockRow = {
+        kind: 'escalate',
+        entry: { ...escalate, displayName: 'Ollama', model: HOSTILE_MODEL },
+      };
+      const layout = planSeatBlock({ rows: [row], verdict: undefined, innerWidth, rowBudget: 12 });
+      const formatted = formatCrewRow({ row, layout, planner: PLANNER });
+
+      expect(formatted.content).not.toContain(ESCAPE);
+      expect(formatted.content).not.toContain(BELL);
+      expect(formatted.content).not.toContain('pwned');
+      expect(getTerminalCellWidth(formatted.content)).toBeLessThanOrEqual(layout.identityWidth);
+    },
+  );
+
+  it('prints an escalate identity the row filter matches word for word', () => {
+    const row = FULL_CREW.find((candidate) => candidate.kind === 'escalate');
+    if (row === undefined) throw new Error('no escalate row');
+    const layout = planSeatBlock({
+      rows: FULL_CREW,
+      verdict: undefined,
+      innerWidth: 120,
+      rowBudget: 12,
+    });
+    const { content } = formatCrewRow({ row, layout, planner: PLANNER });
+    const filter = crewRowFilterText(row);
+
+    const words = content
+      .toLowerCase()
+      .split(/[·\s]+/)
+      .filter(Boolean);
+
+    for (const word of words) {
+      expect(filter).toContain(word);
+    }
   });
 
-  it.each(WIDTHS)('strips terminal control sequences from the identity at %i columns', (width) => {
-    const row = formatCrewEscalateRow({
-      escalate: { ...escalate, displayName: 'Ollama', model: HOSTILE_MODEL },
-      width,
+  it('reads an inherited review seat off the planner', () => {
+    const row = CATALOGUED_CREW.find(
+      (candidate) => candidate.kind === 'seat' && candidate.id === 'review',
+    );
+    if (row === undefined) throw new Error('no review seat');
+    const layout = planSeatBlock({
+      rows: CATALOGUED_CREW,
+      verdict: undefined,
+      innerWidth: 78,
+      rowBudget: 12,
     });
 
-    expect(row.identity).not.toContain(ESCAPE);
-    expect(row.identity).not.toContain(BELL);
-    expect(row.identity).not.toContain('pwned');
-    expect(renderedWidth(row)).toBeLessThanOrEqual(width);
+    expect(formatCrewRow({ row, layout, planner: PLANNER }).content).toContain(
+      formatInheritedIdentity(PLANNER),
+    );
+  });
+
+  it.each([78, 50, 44, 26])(
+    'keeps the folded escalate name whole or drops the marker at %i inner columns',
+    (innerWidth) => {
+      const build = FULL_CREW.find((row) => row.kind === 'seat' && row.id === 'build');
+      if (build === undefined) throw new Error('no build seat');
+      const layout = planSeatBlock({
+        rows: FULL_CREW,
+        verdict: undefined,
+        innerWidth,
+        rowBudget: 6,
+      });
+      const { content } = formatCrewRow({ row: build, layout, planner: PLANNER });
+
+      expect(layout.foldEscalate).toBe(true);
+      if (content.includes(glyph('statusEscalated'))) {
+        expect(content.endsWith(escalateName(FULL_CREW))).toBe(true);
+      }
+      expect(getTerminalCellWidth(content)).toBeLessThanOrEqual(layout.identityWidth);
+    },
+  );
+
+  it('drops the escalate row from the block once it folds into the build row', () => {
+    const folded = planSeatBlock({
+      rows: FULL_CREW,
+      verdict: undefined,
+      innerWidth: 78,
+      rowBudget: 6,
+    });
+    const open = planSeatBlock({
+      rows: FULL_CREW,
+      verdict: undefined,
+      innerWidth: 78,
+      rowBudget: 12,
+    });
+
+    expect(visibleCrewRows(FULL_CREW, folded)).toHaveLength(FULL_CREW.length - 1);
+    expect(visibleCrewRows(FULL_CREW, folded).some((row) => row.kind === 'escalate')).toBe(false);
+    expect(visibleCrewRows(FULL_CREW, open)).toEqual(FULL_CREW);
+  });
+
+  it('closes every branch once the spines have yielded', () => {
+    const spined = planSeatBlock({
+      rows: FULL_CREW,
+      verdict: undefined,
+      innerWidth: 78,
+      rowBudget: 12,
+    });
+    const flat = planSeatBlock({
+      rows: FULL_CREW,
+      verdict: undefined,
+      innerWidth: 78,
+      rowBudget: 7,
+    });
+
+    expect(blockRows(FULL_CREW, spined).map((row) => row.branch)).toContain('mid');
+    for (const row of blockRows(FULL_CREW, flat)) {
+      expect(row.branch === 'node' || row.branch === 'last').toBe(true);
+    }
   });
 });

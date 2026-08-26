@@ -1,6 +1,16 @@
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { OverlayType } from '../../../src/core/navigation/types.js';
+import { sessionsRoot } from '../../../src/core/paths.js';
+import type {
+  CliProviderAuth,
+  CliProviderAuthUnreadableReason,
+} from '../../../src/core/discovery/detection.js';
+import { ModelsDevCatalogSchema } from '../../../src/core/schemas/models-dev.js';
+import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { editorStore } from '../../../src/stores/ui/editor.js';
+import { pickerViewStore } from '../../../src/stores/ui/picker-view.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';
 import { sessionsStore } from '../../../src/stores/project/sessions.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
@@ -9,19 +19,64 @@ import { reviewStore } from '../../../src/stores/workflow/review.js';
 import { tokensStore } from '../../../src/stores/workflow/tokens.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { scenarioId } from '../contracts/identifiers.js';
+import { cliDetectionFor } from '../../helpers/factories/detection.js';
 import { makeSession } from '../../helpers/factories/session.js';
 import { makeSummary, makeUsage } from '../../helpers/factories/summary.js';
 import type { FixtureFactory, FixtureLifecycle, FixtureRegistry } from './common.js';
 import {
+  publishVisualDiscovery,
+  seedVisualConfig,
   setupVisualFixture,
   teardownVisualFixture,
+  type visualConfig,
   VISUAL_FIXTURE_PROJECT_DIR,
+  VISUAL_PUBLISHED_AT,
 } from './screen-fixtures.js';
 
 type OverlaySeed = () => void;
 type OverlayUnderlyingScreen = 'home' | 'workflow';
+type VisualConfigOverrides = Parameters<typeof visualConfig>[0];
 
 const EMPTY_SEED: OverlaySeed = () => {};
+
+/** The merged two-route row the provider-expansion frames open on. */
+const OPENCODE_ROUTED_MODEL = 'openai/gpt-5.6-luna';
+const AIDER_ROUTED_MODEL = 'anthropic/claude-sonnet-4';
+
+/** Opens the picker on OpenCode with the model column live, as the frames show. */
+const OPENCODE_FOCUS = 'tool:opencode';
+
+function fixtureIds(name: string): string[] {
+  return readFileSync(join(import.meta.dirname, '../../fixtures/', name), 'utf8')
+    .split('\n')
+    .filter((line) => line.trim() !== '');
+}
+
+function modelsDevSlice(): ReturnType<typeof ModelsDevCatalogSchema.parse> {
+  const raw = readFileSync(
+    join(import.meta.dirname, '../../fixtures/models-dev-slice.json'),
+    'utf8',
+  );
+  return ModelsDevCatalogSchema.parse(JSON.parse(raw));
+}
+
+function hydrateSlice(): void {
+  modelCacheStore.hydrateModelsDevCatalog({
+    catalog: modelsDevSlice(),
+    fetchedAt: VISUAL_PUBLISHED_AT,
+    validatedAt: VISUAL_PUBLISHED_AT,
+  });
+}
+
+function catalogAttempt(input: {
+  tool: ScopedCliCatalogAttempt['connection']['tool'];
+  outcome: ScopedCliCatalogAttempt['outcome'];
+}): ScopedCliCatalogAttempt {
+  return {
+    connection: { role: 'planner', tool: input.tool, contextKey: `planner-${input.tool}-visual` },
+    outcome: input.outcome,
+  };
+}
 
 function seedRunnerCatalog(): void {
   detectionStore.setDetection({
@@ -104,6 +159,11 @@ function seedSessions(): void {
       estimatedCostSavings: '$4.80',
     }),
   });
+  // The sessions overlay re-reads the project directory on mount, so the
+  // session has to exist on disk to survive to the capture.
+  const dir = join(sessionsRoot(VISUAL_FIXTURE_PROJECT_DIR), session.id);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'summary.json'), JSON.stringify(session));
   sessionsStore.__testReset({ sessions: [session], allSessions: [session], totalCount: 1 });
 }
 
@@ -136,12 +196,16 @@ function seedCostBreakdown(): void {
       implementerOutput: 3_800,
       escalationInput: 1_200,
       escalationOutput: 440,
+      reviewerInput: 1_800,
+      reviewerOutput: 600,
     }),
     pricingContext: {
       plannerTool: 'claude-code',
       plannerModel: 'claude-sonnet-4',
       implementerTool: 'ollama',
       implementerModel: 'qwen2.5-coder:7b',
+      reviewerTool: 'codex',
+      reviewerModel: 'gpt-5-codex',
     },
     perPhase: {
       planning: {
@@ -200,11 +264,124 @@ function seedCostBreakdown(): void {
   });
 }
 
+const AIDER_CATALOG_IDS = [
+  AIDER_ROUTED_MODEL,
+  'openrouter/claude-sonnet-4',
+  'anthropic/claude-opus-4',
+  'openrouter/claude-opus-4',
+  'anthropic/claude-haiku-3-5',
+  'openrouter/claude-haiku-3-5',
+  'openai/gpt-5.1',
+  'openrouter/gpt-5.1',
+  'openai/o4-mini',
+  'openrouter/o4-mini',
+];
+
+function seedConfig(overrides?: VisualConfigOverrides): OverlaySeed {
+  return () => seedVisualConfig(overrides);
+}
+
+function seedOpencodeCatalog(): void {
+  // OpenCode's routes are one fact: the `opencode` provider block of the
+  // models.dev slice. A second hand-written list drifts from it silently, since
+  // an unmatched id just renders without metadata.
+  const routes = modelsDevSlice().opencode?.models;
+  if (routes === undefined) throw new Error('models-dev-slice.json has no opencode provider');
+  seedConfig({ planner: { kind: 'cli', tool: 'opencode', model: OPENCODE_ROUTED_MODEL } })();
+  publishVisualDiscovery({
+    cliTools: [cliDetectionFor('ready', 'opencode')],
+    cliModels: [
+      catalogAttempt({
+        tool: 'opencode',
+        outcome: { kind: 'success', value: Object.keys(routes).map((id) => ({ id })) },
+      }),
+    ],
+  });
+  hydrateSlice();
+}
+
+function seedProviderAuth(
+  arm: 'read' | 'empty' | 'unreadable',
+  reason: CliProviderAuthUnreadableReason = 'parse-failure',
+): void {
+  seedOpencodeCatalog();
+  const providerAuth: CliProviderAuth =
+    arm === 'read'
+      ? { kind: 'read', facts: [{ provider: 'OpenAI', source: 'api' }] }
+      : arm === 'empty'
+        ? { kind: 'empty' }
+        : { kind: 'unreadable', reason };
+  const detection = detectionStore.get();
+  detectionStore.setDetection({
+    providers: [...detection.providers],
+    cliTools: [
+      ...detection.cliTools.filter((tool) => tool.tool !== 'opencode'),
+      cliDetectionFor('ready', 'opencode', { providerAuth }),
+    ],
+  });
+}
+
+function seedAiderMultiRoute(): void {
+  seedConfig({ planner: { kind: 'cli', tool: 'aider', model: AIDER_ROUTED_MODEL } })();
+  publishVisualDiscovery({
+    cliTools: [cliDetectionFor('ready', 'aider')],
+    cliModels: [
+      catalogAttempt({
+        tool: 'aider',
+        outcome: { kind: 'success', value: AIDER_CATALOG_IDS.map((id) => ({ id })) },
+      }),
+    ],
+  });
+  hydrateSlice();
+}
+
+function seedModelsDevLane(outcome: 'uninitialized' | 'failed'): OverlaySeed {
+  return () => {
+    publishVisualDiscovery({
+      cliTools: [cliDetectionFor('ready', 'claude-code')],
+      modelsDev: outcome === 'failed' ? 'failed' : 'pending',
+    });
+  };
+}
+
+function seedClaudeCodeUnsupported(): void {
+  publishVisualDiscovery({
+    cliTools: [cliDetectionFor('ready', 'claude-code')],
+    cliModels: [catalogAttempt({ tool: 'claude-code', outcome: { kind: 'unsupported' } })],
+    modelsDev: { catalog: modelsDevSlice() },
+  });
+}
+
+function seedKiloConfirmed(): void {
+  const ids = fixtureIds('kilo-models-7.0.49.txt');
+  const persisted = ids[4] ?? ids[0] ?? 'kilo/kilo-auto/free';
+  seedConfig({ planner: { kind: 'cli', tool: 'kilo-code', model: persisted } })();
+  publishVisualDiscovery({
+    cliTools: [cliDetectionFor('ready', 'kilo-code')],
+    cliModels: [
+      catalogAttempt({
+        tool: 'kilo-code',
+        outcome: { kind: 'success', value: ids.map((id) => ({ id })) },
+      }),
+    ],
+  });
+}
+
+function seedKiloMalformed(): void {
+  seedConfig({ planner: { kind: 'cli', tool: 'kilo-code', model: 'kilo/kilo-auto/free' } })();
+  publishVisualDiscovery({
+    cliTools: [cliDetectionFor('ready', 'kilo-code')],
+    cliModels: [catalogAttempt({ tool: 'kilo-code', outcome: { kind: 'malformed' } })],
+  });
+}
+
 function createOverlayFixture(
   overlay: OverlayType,
   seed: OverlaySeed = EMPTY_SEED,
   underlyingScreen: OverlayUnderlyingScreen = 'home',
+  focus?: string,
 ): FixtureLifecycle {
+  let stopReseed: (() => void) | undefined;
   return {
     setup: (context) => {
       setupVisualFixture(context);
@@ -223,22 +400,178 @@ function createOverlayFixture(
       );
       seedRunnerCatalog();
       seed();
-      overlayStore.open(overlay);
+      if (underlyingScreen === 'workflow') stopReseed = reseedAfterWorkflowReset(seed);
+      overlayStore.open(overlay, focus);
     },
-    teardown: teardownVisualFixture,
+    teardown: () => {
+      stopReseed?.();
+      stopReseed = undefined;
+      teardownVisualFixture();
+    },
   };
 }
 
-const createHelpFixture: FixtureFactory = () => createOverlayFixture('help');
-const createPaletteFixture: FixtureFactory = () => createOverlayFixture('command-palette');
+// The attached workflow screen resets the session-scoped stores in a mount
+// effect (`use-attachment.ts:54`), which runs after this fixture has seeded
+// them — `resetWorkflow` clears the token totals a workflow overlay reads. The
+// first token reset after setup is that wipe, so re-apply the seed there.
+function reseedAfterWorkflowReset(seed: OverlaySeed): () => void {
+  const stop = tokensStore.subscribe(() => {
+    stop();
+    seed();
+  });
+  return stop;
+}
+
+const REVIEWER_SEAT = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' } as const;
+const REVIEWER_API_SEAT = {
+  kind: 'api',
+  provider: 'openai',
+  model: 'o3',
+  apiBase: 'https://api.openai.com/v1',
+  effort: 'high',
+} as const;
+const ESCALATION_SEAT = {
+  intermediateProvider: 'deepseek',
+  intermediateModel: 'deepseek-chat',
+} as const;
+/** The verdict line only exists when both BUILD and REVIEW resolve to a lab, so BUILD names one. */
+const BUILD_ANTHROPIC_SEAT = {
+  kind: 'cli',
+  tool: 'claude-code',
+  model: 'claude-sonnet-4',
+} as const;
+const PLANNER_HIGH_EFFORT = {
+  kind: 'cli',
+  tool: 'claude-code',
+  model: 'claude-sonnet-4',
+  effort: 'high',
+} as const;
+
+const createHelpFixture: FixtureFactory = () =>
+  createOverlayFixture('help', EMPTY_SEED, 'workflow');
+const createPaletteFixture: FixtureFactory = () =>
+  createOverlayFixture('command-palette', EMPTY_SEED, 'workflow');
 const createSkillsFixture: FixtureFactory = () => createOverlayFixture('skills', seedSkills);
 const createSettingsFixture: FixtureFactory = () => createOverlayFixture('settings');
+const createSettingsCrewFullFixture: FixtureFactory = () =>
+  createOverlayFixture(
+    'settings',
+    seedConfig({
+      planner: PLANNER_HIGH_EFFORT,
+      implementer: BUILD_ANTHROPIC_SEAT,
+      reviewer: REVIEWER_SEAT,
+      escalation: ESCALATION_SEAT,
+    }),
+    'home',
+    'escalate',
+  );
+const createSettingsInheritedEffortFixture: FixtureFactory = () =>
+  createOverlayFixture(
+    'settings',
+    seedConfig({ planner: PLANNER_HIGH_EFFORT }),
+    'home',
+    'effort:review',
+  );
+const createSettingsFloorFullFixture: FixtureFactory = () =>
+  createOverlayFixture(
+    'settings',
+    seedConfig({
+      planner: PLANNER_HIGH_EFFORT,
+      reviewer: REVIEWER_API_SEAT,
+      escalation: ESCALATION_SEAT,
+    }),
+    'home',
+    'escalate',
+  );
+const createSettingsFilteredFixture: FixtureFactory = () =>
+  createOverlayFixture('settings', EMPTY_SEED, 'home', 'filter:temp');
+const createSettingsFilterPlanFixture: FixtureFactory = () =>
+  createOverlayFixture('settings', EMPTY_SEED, 'home', 'filter:plan');
 const createModeSelectorFixture: FixtureFactory = () => createOverlayFixture('mode-selector');
 const createPlannerPickerFixture: FixtureFactory = () => createOverlayFixture('planner-picker');
+const createPlannerPickerCatalogFixture: FixtureFactory = () =>
+  createOverlayFixture('planner-picker', seedOpencodeCatalog, 'home', OPENCODE_FOCUS);
+const createProviderExpandedReadFixture: FixtureFactory = () =>
+  createOverlayFixture(
+    'planner-picker',
+    () => {
+      seedProviderAuth('read');
+      pickerViewStore.expand(OPENCODE_ROUTED_MODEL);
+    },
+    'home',
+    OPENCODE_FOCUS,
+  );
+const createProviderExpandedEmptyFixture: FixtureFactory = () =>
+  createOverlayFixture(
+    'planner-picker',
+    () => {
+      seedProviderAuth('empty');
+      pickerViewStore.expand(OPENCODE_ROUTED_MODEL);
+    },
+    'home',
+    OPENCODE_FOCUS,
+  );
+const createProviderExpandedUnreadableFixture: FixtureFactory = () =>
+  createOverlayFixture(
+    'planner-picker',
+    () => {
+      seedProviderAuth('unreadable', 'parse-failure');
+      pickerViewStore.expand(OPENCODE_ROUTED_MODEL);
+    },
+    'home',
+    OPENCODE_FOCUS,
+  );
+const createRoutesUncheckedFixture: FixtureFactory = () =>
+  createOverlayFixture(
+    'planner-picker',
+    () => {
+      seedAiderMultiRoute();
+      pickerViewStore.expand(AIDER_ROUTED_MODEL);
+    },
+    'home',
+    'tool:aider',
+  );
+const createPlannerPickerColdFixture: FixtureFactory = () =>
+  createOverlayFixture('planner-picker', seedModelsDevLane('uninitialized'));
+const createPlannerPickerNoListingFixture: FixtureFactory = () =>
+  createOverlayFixture('planner-picker', seedClaudeCodeUnsupported);
+const createPlannerPickerKiloFixture: FixtureFactory = () =>
+  createOverlayFixture('planner-picker', seedKiloConfirmed, 'home', 'tool:kilo-code');
+const createPlannerPickerMalformedFixture: FixtureFactory = () =>
+  createOverlayFixture('planner-picker', seedKiloMalformed, 'home', 'tool:kilo-code');
+const createContractChoiceFixture: FixtureFactory = () =>
+  createOverlayFixture('planner-picker', () => {
+    seedConfig({ planner: { kind: 'shell', command: 'my-planner --json' } })();
+    pickerViewStore.open({ kind: 'custom-command-contract' });
+  });
+const createCustomCommandFixture: FixtureFactory = () =>
+  createOverlayFixture('planner-picker', () =>
+    pickerViewStore.open({ kind: 'custom-command', intendedKind: 'shell' }),
+  );
+const createCustomModelFixture: FixtureFactory = () =>
+  createOverlayFixture(
+    'planner-picker',
+    () => pickerViewStore.open({ kind: 'custom-model' }),
+    'home',
+    'tool:ollama',
+  );
+const createApiKeyFixture: FixtureFactory = () =>
+  createOverlayFixture(
+    'planner-picker',
+    () => pickerViewStore.open({ kind: 'provider-auth' }),
+    'home',
+    'tool:deepseek',
+  );
 const createImplementerPickerFixture: FixtureFactory = () =>
   createOverlayFixture('implementer-picker');
 const createReviewerPickerFixture: FixtureFactory = () => createOverlayFixture('reviewer-picker');
-const createCrewFixture: FixtureFactory = () => createOverlayFixture('crew');
+const createReviewerPickerToolFixture: FixtureFactory = () =>
+  createOverlayFixture('reviewer-picker', EMPTY_SEED, 'home', 'tool:codex');
+const createEscalationPickerFixture: FixtureFactory = () =>
+  createOverlayFixture('escalation-picker');
+const createEscalationPickerProviderFixture: FixtureFactory = () =>
+  createOverlayFixture('escalation-picker', EMPTY_SEED, 'home', 'tool:deepseek');
 const createSessionsFixture: FixtureFactory = () => createOverlayFixture('sessions', seedSessions);
 const createEditorFixture: FixtureFactory = () =>
   createOverlayFixture('editor', seedEditor, 'workflow');
@@ -250,11 +583,34 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-command-palette'), createPaletteFixture],
   [scenarioId('overlay-skills'), createSkillsFixture],
   [scenarioId('overlay-settings'), createSettingsFixture],
+  [scenarioId('overlay-settings-crew-full'), createSettingsCrewFullFixture],
+  [scenarioId('overlay-settings-inherited-effort'), createSettingsInheritedEffortFixture],
+  [scenarioId('overlay-settings-floor-full'), createSettingsFloorFullFixture],
+  [scenarioId('overlay-settings-filtered'), createSettingsFilteredFixture],
+  [scenarioId('overlay-settings-filter-plan'), createSettingsFilterPlanFixture],
   [scenarioId('overlay-mode-selector'), createModeSelectorFixture],
   [scenarioId('overlay-planner-picker'), createPlannerPickerFixture],
+  [scenarioId('overlay-planner-picker-catalog'), createPlannerPickerCatalogFixture],
+  [scenarioId('overlay-picker-provider-expanded-read'), createProviderExpandedReadFixture],
+  [scenarioId('overlay-picker-provider-expanded-empty'), createProviderExpandedEmptyFixture],
+  [
+    scenarioId('overlay-picker-provider-expanded-unreadable'),
+    createProviderExpandedUnreadableFixture,
+  ],
+  [scenarioId('overlay-picker-routes-unchecked'), createRoutesUncheckedFixture],
+  [scenarioId('overlay-planner-picker-cold'), createPlannerPickerColdFixture],
+  [scenarioId('overlay-planner-picker-no-listing'), createPlannerPickerNoListingFixture],
+  [scenarioId('overlay-planner-picker-kilo'), createPlannerPickerKiloFixture],
+  [scenarioId('overlay-planner-picker-malformed'), createPlannerPickerMalformedFixture],
+  [scenarioId('overlay-picker-contract-choice'), createContractChoiceFixture],
+  [scenarioId('overlay-picker-custom-command'), createCustomCommandFixture],
+  [scenarioId('overlay-picker-custom-model'), createCustomModelFixture],
+  [scenarioId('overlay-picker-api-key'), createApiKeyFixture],
   [scenarioId('overlay-implementer-picker'), createImplementerPickerFixture],
-  [scenarioId('overlay-reviewer-picker'), createReviewerPickerFixture],
-  [scenarioId('overlay-crew'), createCrewFixture],
+  [scenarioId('overlay-reviewer-picker-inherited'), createReviewerPickerFixture],
+  [scenarioId('overlay-reviewer-picker-tool'), createReviewerPickerToolFixture],
+  [scenarioId('overlay-escalation-picker'), createEscalationPickerFixture],
+  [scenarioId('overlay-escalation-picker-provider'), createEscalationPickerProviderFixture],
   [scenarioId('overlay-sessions'), createSessionsFixture],
   [scenarioId('overlay-editor'), createEditorFixture],
   [scenarioId('overlay-cost-drilldown'), createCostDrilldownFixture],

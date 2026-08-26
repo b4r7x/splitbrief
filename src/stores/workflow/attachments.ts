@@ -1,14 +1,11 @@
 import { createStore, storeBase } from '../create-store.js';
-import { resolveAttachment, type ResolveAttachmentReason } from '../../core/attachments/resolve.js';
+import { resolveAttachment } from '../../core/attachments/resolve.js';
+import type { AttachImageResult } from '../../core/runtime/commands/types.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 
 export interface AttachmentsState {
   pending: Attachment[];
 }
-
-export type AttachImageResult =
-  | { ok: true; path: string }
-  | { ok: false; reason: ResolveAttachmentReason };
 
 const initial: AttachmentsState = { pending: [] };
 
@@ -49,8 +46,13 @@ export const attachmentsStore = {
   peek,
 };
 
-export function attachImage(input: string, projectDir: string): AttachImageResult {
-  const result = resolveAttachment({ input, projectDir });
+export function attachImage(input: {
+  path: string;
+  projectDir: string;
+  supportsImages: boolean;
+}): AttachImageResult {
+  if (!input.supportsImages) return { ok: false, reason: 'no-vision' };
+  const result = resolveAttachment({ input: input.path, projectDir: input.projectDir });
   if (!result.ok) return { ok: false, reason: result.reason };
   attachmentsStore.add(result.attachment);
   return { ok: true, path: result.attachment.path };

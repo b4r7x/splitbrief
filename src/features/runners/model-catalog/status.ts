@@ -1,10 +1,16 @@
-import type { CliToolDetection, ProviderDetection } from '../../../core/discovery/detection.js';
+import {
+  cliProviderAuthFacts,
+  type CliToolDetection,
+  type ProviderDetection,
+} from '../../../core/discovery/detection.js';
 import type { CliReadinessState } from '../../../core/discovery/detection.js';
 import type { ApiProviderDescriptor } from '../../../core/providers/api-provider-catalog.js';
 import { hasApiKey } from '../../../core/providers/catalog.js';
-import type {
-  ActiveRunnerRole,
-  CliToolDescriptor,
+import {
+  seatPickerLane,
+  type ActiveRunnerRole,
+  type CliToolDescriptor,
+  type SeatPickerRole,
 } from '../../../core/runners/cli-tool-catalog.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
 import type { ConfiguredProviderRuntime } from '../../../engine/detection/provider-outcomes.js';
@@ -86,7 +92,7 @@ function providerFactStatus(
   detection: CliToolDetection,
 ): PickerOptionStatus | undefined {
   if (descriptor.auth.kind !== 'provider-dependent') return undefined;
-  const facts = detection.providerAuth;
+  const facts = cliProviderAuthFacts(detection.providerAuth);
   if (facts === undefined) return undefined;
   if (detection.diagnostic.state !== 'ready' && detection.diagnostic.state !== 'unauthenticated') {
     return undefined;
@@ -152,7 +158,7 @@ function compatibilityStatus(descriptor: ApiProviderDescriptor): PickerOptionSta
 export function deriveApiStatus(
   descriptor: ApiProviderDescriptor,
   detections: PickerDetectionSnapshot,
-  role?: ActiveRunnerRole,
+  role?: SeatPickerRole,
 ): PickerOptionStatus {
   const qualification = compatibilityStatus(descriptor);
   if (qualification) return qualification;
@@ -160,7 +166,10 @@ export function deriveApiStatus(
   const configured =
     role === undefined
       ? undefined
-      : findConfiguredProviderRuntime(detections, { role, provider: descriptor.id });
+      : findConfiguredProviderRuntime(detections, {
+          role: seatPickerLane(role),
+          provider: descriptor.id,
+        });
   if (configured !== undefined && configured !== null) {
     return configuredProviderStatus({
       descriptor,
@@ -274,7 +283,7 @@ function configuredProviderStatus(
 export function deriveMetaStatus(
   kind: 'custom-command' | 'agent-sdk',
   detections: PickerDetectionSnapshot,
-  role?: ActiveRunnerRole,
+  role?: SeatPickerRole,
   useConfiguredProviderOutcome = false,
 ): PickerOptionStatus {
   if (kind === 'custom-command') {
@@ -283,7 +292,10 @@ export function deriveMetaStatus(
   const configured =
     !useConfiguredProviderOutcome || role === undefined
       ? undefined
-      : findConfiguredProviderRuntime(detections, { role, provider: 'anthropic' });
+      : findConfiguredProviderRuntime(detections, {
+          role: seatPickerLane(role),
+          provider: 'anthropic',
+        });
   if (configured !== undefined && configured !== null) {
     return configuredProviderStatus({
       descriptor: { service: 'Agent SDK', credentialEnv: 'ANTHROPIC_API_KEY' },

@@ -35,7 +35,7 @@ codebase:
   tokenBudget: 4000
 ```
 
-To disable: set `enabled: false`. To force a cache rebuild: type `/repomap rebuild` in the TUI.
+To disable: set `enabled: false`. The cache rebuilds itself on each planning run when it is stale; there is no manual rebuild step.
 
 ### OpenTelemetry
 ```yaml

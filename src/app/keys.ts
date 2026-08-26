@@ -17,7 +17,7 @@ import { isLivePhase } from '../core/phases.js';
 import { useFieldSessionOwned } from '../features/editor/use-field-session-owned.js';
 import { useStores } from '../stores/use-stores.js';
 import { assertNever } from '../utils/type-guards.js';
-import type { OverlayType } from '../core/navigation/types.js';
+import { SEAT_PICKER_OVERLAYS, type OverlayType } from '../core/navigation/types.js';
 import type { InterruptResult } from '../features/workflow/handlers.js';
 import { sessionSelectStore } from '../stores/navigation/session-select.js';
 
@@ -38,12 +38,7 @@ const GLOBAL_ESC_OVERLAYS = new Set<OverlayType>(['help', 'cost-drilldown']);
 // These overlays handle Escape themselves — the runner pickers give it a meaning beyond closing
 // (a non-empty filter query clears first, only a second press exits). The global close must stand
 // down for them even on an empty stack, or one press would fire both handlers.
-const SELF_ESC_OVERLAYS = new Set<OverlayType>([
-  'planner-picker',
-  'implementer-picker',
-  'reviewer-picker',
-  'crew',
-]);
+const SELF_ESC_OVERLAYS = new Set<OverlayType>(SEAT_PICKER_OVERLAYS);
 
 interface UseAppKeysOptions {
   exit: () => void;

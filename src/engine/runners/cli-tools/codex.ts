@@ -137,7 +137,7 @@ function createCodexPlannerAdapter(): CliPlannerAdapter<'codex'> {
     descriptor: CLI_TOOL_CATALOG.codex,
     role: 'planner',
     supportsSessionResume: true,
-    supportsEffort: false,
+    supportsEffort: CLI_TOOL_CATALOG.codex.supportsEffort,
     promptTransport: CODEX_PROMPT_TRANSPORT,
     baseArgs: plannerBaseArgs,
     buildArgs: (input) => [...plannerBaseArgs(input), ...input.configuredArgs],

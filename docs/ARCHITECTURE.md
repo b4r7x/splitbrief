@@ -479,10 +479,12 @@ src/
 │   ├── approval/                  Sticky-grant persistence (store, types)
 │   │                              — .splitbrief/approvals.json
 │   ├── config/
-│   │   ├── accessors/             runner-config, state accessors
+│   │   ├── accessors/             runner-config, escalation, state accessors
 │   │   ├── load/                  load, transform, validate
 │   │   ├── runtime/               build-runner, overrides, resolve
 │   │   └── errors.ts              ConfigError types
+│   ├── crew/                      identity (seat ids + seat identity
+│   │                              strings), rows, seats, presets, labs
 │   ├── formatting.ts              formatCost, formatDuration, etc.
 │   ├── hooks/trust.ts             Hook trust receipts (~/.splitbrief/trust/hooks.json)
 │   ├── trust/receipt-store.ts     Machine-scoped receipt store shared by hook and custom runner trust
@@ -492,12 +494,17 @@ src/
 │   │                              (other layout math lives under
 │   │                              features/workflow/layout/)
 │   ├── model-display.ts           formatToolModel, etc.
+│   ├── navigation/                overlay-rect (the one overlay sizing rule:
+│   │                              density → width/height), types
 │   ├── paths.ts                   All on-disk path constants + builders
 │   ├── paths-io.ts                Path-aware read/write helpers
 │   ├── phases.ts                  Phase taxonomy: cancellable, resumable,
 │   │                              live, role(planner|implementer)
 │   ├── project-meta.ts            Project name / git origin discovery
-│   ├── providers/                 catalog, known-models, model-selection
+│   ├── providers/                 catalog, known-models, model-selection,
+│   │                              provenance, pricing-identity
+│   ├── runners/                   capabilities (what a CLI tool can be told
+│   │                              to run), cli-tool-catalog, runner-billing
 │   ├── schemas/                   All Zod schemas (see §6 storage)
 │   │                              analyze, approval-store, attachment,
 │   │                              codebase, config, constitution,
@@ -690,8 +697,8 @@ src/
 │   ├── navigation/router.ts       Active screen + overlay
 │   ├── project/                   config, detection, sessions, skills
 │   ├── ui/                        controls, feedback, input-height,
-│   │                              input-history, overlay,
-│   │                              command-palette-mru,
+│   │                              input-history, overlay, picker-view,
+│   │                              composer-draft, command-palette-mru,
 │   │                              persistence, terminal-size
 │   └── workflow/                  abort, actions, attachments,
 │                                  conversation-scroll, events, lifecycle,
@@ -699,21 +706,26 @@ src/
 │
 ├── features/                      TUI feature slices — components/hooks/helpers
 │                                  (page entries are FLAT pages under app/)
-│   ├── home/                      components (config-summary, recent-sessions
-│   │                              list/shell) + layout + logo +
+│   ├── crew/                      use-crew + rows + row-view + preset-row +
+│   │                              format (seat identity rendering, shared by
+│   │                              the Crew section of Settings and setup)
+│   ├── home/                      components (recent-sessions list/shell,
+│   │                              seat-block) + layout + logo +
 │   │                              use-recent-sessions-focus
 │   ├── palette/                   sources + results (command-palette source
 │   │                              assembly + cross-store result aggregator)
 │   ├── runners/                   picker-view, tool-row, picker-format,
-│   │                              config-transforms, view-state,
-│   │                              use-picker-actions, use-picker-catalog,
+│   │                              config-transforms, use-picker-actions,
+│   │                              use-picker-catalog, contract-chip,
+│   │                              contract-choice-overlay,
 │   │                              model-catalog/{catalog, options, posture,
-│   │                              recency, status},
+│   │                              recency, rows, status},
 │   │                              two-column-picker/{picker, keyboard,
 │   │                              use-column-state, use-nav-state,
 │   │                              virtual-items}
 │   │                              (planner / implementer runner selection)
-│   ├── settings/                  mode-selector + presentation +
+│   ├── settings/                  items (section + row model, Crew first) +
+│   │                              mode-selector + presentation +
 │   │                              hooks/{buffer, editor}
 │   ├── summary/                   components (cost-breakdown, hero-savings,
 │   │                              phase-timing, progress, checkpoints,
@@ -723,11 +735,12 @@ src/
 │   └── workflow/                  Largest feature (entry: app/screens/workflow.tsx)
 │       ├── conversation-rows/     row-based conversation renderer
 │       ├── components/            approval-prompt, body, brief-review-*,
-│       │                          chrome, conversation-flow/, cost/{drilldown-
-│       │                          overlay, compute-eta}, divider, feedback-row,
-│       │                          header, input-footer, prompt-body, rail,
-│       │                          readiness-panel, review-view, runner-label,
-│       │                          sidebar, spinner, task-summary
+│       │                          chrome, conversation-flow/, cost/compute-eta,
+│       │                          divider, feedback-row, frame-panel, header,
+│       │                          input-footer, prompt-body, question-prompt,
+│       │                          rail, review-view, sidebar, task-summary
+│       ├── cost-drilldown/        overlay + phase-breakdown +
+│       │                          task-breakdown + seat-bar
 │       ├── display/               activity-display-text,
 │       │                          runner-activity-display
 │       ├── handlers.ts            Runtime command context actions
@@ -793,6 +806,11 @@ src/
 ```
 
 Sectioned picker display now lives in the picker display-window/ListViewport path: `src/components/pickers/scroll-window.ts` computes header/gap/item slots, and `src/components/pickers/list-viewport.tsx` renders them.
+
+Two modules are load-bearing for the seat surfaces and worth naming with their paths:
+
+- `src/core/crew/identity.ts` — the single seat vocabulary: the seat ids `plan` / `build` / `review` and the identity string (`Claude Code CLI · Claude Sonnet 4`, one ` · ` separator) that the Crew section of Settings, the setup screen and the home seat block all render from.
+- `src/stores/ui/picker-view.ts` — the picker's selection/filter state, a store rather than component state, so the page and the feature read the same view.
 
 ---
 
@@ -1208,9 +1226,11 @@ Registered in `src/cli.ts`. [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) is the cano
 
 ---
 
-## 10. Runtime commands (full list, 30)
+## 10. Runtime commands (full list, 27)
 
-Defined in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'` (no args) or `'arg'` (positional input). Commands are callable from composer `/` input, the command palette, and RPC command dispatch.
+Defined in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'` (no args) or `'arg'` (positional input); every command declares a `category` from `COMMAND_CATEGORIES` (`src/core/runtime/commands/types.ts`), which is the order the command palette groups them in. Commands are callable from composer `/` input, the command palette, and RPC command dispatch. Aliases resolve to their canonical command and may pin an argument.
+
+**Navigate**
 
 | Runtime command | Description |
 |---|---|
@@ -1218,32 +1238,51 @@ Defined in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'
 | `/palette` | Open command palette |
 | `/skills` | Select planner skills |
 | `/sessions` | Browse past sessions |
-| `/settings` | Planner, model & settings overlay |
-| `/mode` | Select workflow mode (`instant` / `quick` / `standard` / `speckit`) |
-| `/copy [message\|brief\|path\|command\|cost]` | Copy a reviewed value to the clipboard |
-| `/effort` | Set planner effort (`low` / `medium` / `high` / `xhigh`) |
-| `/planner` | Select planner tool |
-| `/implementer` | Select implementer |
+| `/settings` (alias `/config`) | Crew, validation, workflow |
 | `/home` | Return to home screen |
+| `/quit` | Exit application |
+
+**Crew**
+
+| Runtime command | Description |
+|---|---|
+| `/crew [plan\|build\|review]` | Who fills each seat — opens Settings on the Crew section, or straight on that seat's picker |
+| `/mode [instant\|quick\|standard\|speckit]` | Select workflow mode |
+| `/refresh` | Re-detect available tools |
+
+`/planner`, `/implementer` and `/reviewer` survive one release as aliases of `/crew plan`, `/crew build` and `/crew review`.
+
+**Workflow**
+
+| Runtime command | Description |
+|---|---|
+| `/run <accept\|reject>` | Accept or reject what this run wrote (aliases `/accept-run`, `/reject-run`) |
+| `/revise-spec [feedback]` | Rewind to spec phase with optional feedback |
+| `/revise-plan [feedback]` | Rewind to plan phase with optional feedback |
+| `/redo-task <task-id>` | Reset a task to pending and re-run it |
+| `/queue [show\|clear]` | Show or clear the message queue |
+| `/handoff <target>` | Export Handoff Pack inline |
+| `/approval [list\|clear]` | List or clear sticky approval grants |
+| `/yolo` | Toggle file-write tiered approvals off/on |
+
+**View**
+
+| Runtime command | Description |
+|---|---|
 | `/scroll <top\|bottom\|page-up\|page-down>` | Scroll the workflow conversation |
 | `/activity` | Expand or collapse the latest activity batch |
+| `/diff` | Expand or collapse the latest diff |
+| `/cost` | Show the cost breakdown |
 | `/sidebar` | Show or hide the workflow sidebar |
-| `/refresh` | Re-detect available tools |
-| `/revise-spec` | Rewind to spec phase with optional feedback |
-| `/revise-plan` | Rewind to plan phase with optional feedback |
-| `/redo-task` | Reset a task to pending and re-run it |
-| `/queue [show\|clear]` | Show or clear the message queue |
-| `/handoff <target> [task-id]` | Export Handoff Pack inline |
+
+**Input & output**
+
+| Runtime command | Description |
+|---|---|
+| `/copy [message\|brief\|path\|command\|cost]` | Copy a reviewed value to the clipboard |
+| `/image <path> \| list \| remove <index\|id>` | Attach, list or remove images for the next planner call (aliases `/attach`, `/detach`) |
 | `/export` | Export session as HTML report |
 | `/compact-transcript` | Summarize older transcript turns |
-| `/repomap rebuild` | Clear the repo-map cache |
-| `/attach <path>` | Attach an image for the next planner call |
-| `/detach <index-or-id>` | Remove a pending image attachment |
-| `/approval` | List or clear sticky approval grants |
-| `/accept-run` | Accept current run changes and prevent run rejection |
-| `/reject-run confirm` | Restore SPLITBRIEF-written files from the run baseline |
-| `/yolo` | Toggle file-write tiered approvals off/on for the session |
-| `/quit` | Exit application |
 
 ---
 
@@ -1300,6 +1339,8 @@ Enforced by hooks, type system, exhaustive switches, or pre-merge greps. Breakin
 11. **One foreground active session per project directory.** `.splitbrief/active` is the foreground lock; detached sessions use lockfiles, and for isolated parallel work use `splitbrief worktree` (each worktree has its own `.splitbrief/`).
 12. **Snapshot path encoding.** Blob filenames always go through `encodeSnapshotPath` (a one-way `sha256` hash) — never bare-join slashes. Encoding is not reversible; the original path is recovered from the manifest's `fileEntries[].path`, never decoded.
 13. **Sanctioned `as` / `!` only.** Production code may not use unsafe assertions outside the named modules listed in `CLAUDE.md`.
+14. **No pinned overlay widths.** Every overlay, picker and panel sizes itself through `src/core/navigation/overlay-rect.ts`; the density table is the only place a width number lives. Enforced by `scripts/check-invariants.ts` gate 46 (`docs/INVARIANTS.md` row 46): `maxWidth=` under `src/app src/features src/components/overlays`, the retired width constants (`getResponsivePanelWidth`, `getClampedTerminalWidth`, `PICKER_WIDTHS`, `SUB_PANEL_MAX_WIDTH`, `MAX_PANEL_WIDTH`, `SETUP_PANEL_WIDTH`, `PALETTE_MAX_WIDTH`) anywhere under `src`, and `isSmall` in the width-choice path list must each stay at 0. Content-density branches that survive (`features/settings/mode-selector.tsx`, `features/summary/*`, `workflow/components/header.tsx`) are deliberately outside that path list.
+15. **Capability inference lives in `core/`, not `engine/`.** The UI must never import `engine/providers/capability-inference`; what a runner can be told to run is decided in `src/core/runners/capabilities.ts`. Enforced by `scripts/check-invariants.ts` gate 47 (`docs/INVARIANTS.md` row 47): `from '.*engine/providers/capability-inference` under `src/features src/app src/components src/core` must stay at 0.
 
 ---
 

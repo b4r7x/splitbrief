@@ -3,18 +3,14 @@ import { ListRow } from '../../components/list-row.js';
 import { SOFT_SEP } from '../../components/separators.js';
 import { glyph } from '../../lib/glyphs.js';
 import { useTheme } from '../../components/theme.js';
-import {
-  OverlayPanel,
-  computeOverlayInnerWidth,
-  computeOverlayInnerRowCapacity,
-} from '../../components/overlays/overlay-panel.js';
+import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/overlay-panel.js';
+import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
 import { RowZone, ROW_ZONE_Z_OVERLAY } from '../../components/pickers/row-zone.js';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { useStores } from '../../stores/use-stores.js';
-import { getClampedTerminalWidth } from '../../utils/terminal-width.js';
 import { truncateTerminalDisplayText } from '../../utils/display-text.js';
 import { useStaticSelector } from '../../hooks/use-static-selector.js';
 import { WORKFLOW_MODES, type WorkflowMode } from '../../core/schemas/enums.js';
@@ -33,6 +29,7 @@ const MODE_METADATA: Record<WorkflowMode, { cost: string; size: string }> = {
   speckit: { cost: `6-7 calls${SOFT_SEP}2 approvals`, size: 'large scope' },
 };
 
+const PANEL_DENSITY: OverlayDensity = 'compact';
 const MODE_SELECTOR_TITLE_ROWS = 2;
 const MODE_SELECTOR_HINT_ROWS = 2;
 const MODE_LABEL_WIDTH = 12;
@@ -80,10 +77,9 @@ export function ModeSelector() {
   const config = configStore.useConfig();
   const currentMode = getWorkflowMode(config);
   const currentIdx = MODES.findIndex((m) => m.mode === currentMode);
-  const panelOuterWidth = getClampedTerminalWidth({ cols, maxWidth: isSmall ? 55 : 68 });
-  const panelInnerWidth = computeOverlayInnerWidth(panelOuterWidth);
-  const modeRowBudget = computeOverlayInnerRowCapacity({
-    terminalRows: rows,
+  const panelInnerWidth = overlayRect({ cols, rows, density: PANEL_DENSITY }).innerWidth;
+  const modeRowBudget = overlayInnerRowCapacity({
+    rows,
     outerChromeRows: MODE_SELECTOR_TITLE_ROWS + MODE_SELECTOR_HINT_ROWS,
   });
   const actionableModeIndices = new Set(visibleModeIndices(modeRowBudget, isSmall));
@@ -124,7 +120,7 @@ export function ModeSelector() {
     : `↑↓ navigate${SOFT_SEP}esc close`;
 
   return (
-    <OverlayPanel hint={hint} maxWidth={panelOuterWidth}>
+    <OverlayPanel hint={hint} density={PANEL_DENSITY}>
       <Box marginBottom={1}>
         <Text color={t.textDim}>Workflow mode</Text>
       </Box>

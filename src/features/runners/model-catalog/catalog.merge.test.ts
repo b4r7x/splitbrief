@@ -196,18 +196,25 @@ describe('provider variant merge', () => {
       cache: cliCache('opencode', enumerated),
     } as const;
 
-    const withFacts = findMergedRow(buildRightModels({ ...base, providerAuthFacts: facts }));
-    expect(withFacts?.variants?.map((variant) => variant.fullId)).toEqual([
+    const read = findMergedRow(
+      buildRightModels({ ...base, providerAuth: { kind: 'read', facts } }),
+    );
+    expect(read?.variants?.map((variant) => variant.fullId)).toEqual([
       'openrouter/deepseek-v4-flash',
       'anthropic/deepseek-v4-flash',
     ]);
 
-    // Unreadable oracle: no auth claim, so enumeration recency order stands.
-    const withoutFacts = findMergedRow(buildRightModels({ ...base }));
-    expect(withoutFacts?.variants?.map((variant) => variant.fullId)).toEqual([
-      'anthropic/deepseek-v4-flash',
-      'openrouter/deepseek-v4-flash',
-    ]);
+    // Only a read listing claims an auth state; every other listing leaves the
+    // enumeration recency order standing.
+    const recencyOrder = ['anthropic/deepseek-v4-flash', 'openrouter/deepseek-v4-flash'];
+    for (const providerAuth of [
+      undefined,
+      { kind: 'empty' },
+      { kind: 'unreadable', reason: 'timeout' },
+    ] as const) {
+      const row = findMergedRow(buildRightModels({ ...base, providerAuth }));
+      expect(row?.variants?.map((variant) => variant.fullId)).toEqual(recencyOrder);
+    }
   });
 
   it('passes unprefixed ids and the Auto row through without joining a group', () => {

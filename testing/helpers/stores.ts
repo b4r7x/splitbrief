@@ -26,6 +26,7 @@ import { approvalPromptStore } from '../../src/stores/approval-prompt/prompt.js'
 import { costApprovalStore } from '../../src/stores/cost-approval/prompt.js';
 import { commandPaletteMruStore } from '../../src/stores/ui/command-palette-mru.js';
 import { reviewKeysStore } from '../../src/stores/ui/review-keys.js';
+import { composerDraftStore } from '../../src/stores/ui/composer-draft.js';
 
 export function resetAllStores(): void {
   eventsStore.reset();
@@ -56,4 +57,5 @@ export function resetAllStores(): void {
   costApprovalStore.reset();
   commandPaletteMruStore.reset();
   reviewKeysStore.reset();
+  composerDraftStore.reset();
 }

@@ -16,7 +16,6 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     navigate: noop,
     quit: noop,
     setWorkflowMode: noopSaved,
-    setPlannerEffort: noopSaved,
     setFeedbackMessage: noop,
     setFeedbackError: noop,
     refreshDetection: async () => ({
@@ -32,10 +31,8 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     getCurrentPhase: () => 'idle',
     requestRewind: noopTrue,
     requestTaskRedo: noopTrue,
-    requestWorkflowResume: noopTrue,
     getQueueDepth: () => 0,
     clearQueue: () => ({ status: 'cleared', count: 0 }),
-    rebuildRepomap: async () => ({ deleted: false, files: [] }),
     attachImage: () => ({ ok: false, reason: 'not-image' }),
     detachImage: () => false,
     listAttachments: () => [],
@@ -57,6 +54,7 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     exportSession: async () => ({ status: 'ok', path: '/fake/report.html' }),
     scrollConversation: () => ({ status: 'scrolled' }),
     toggleLatestActivityBatch: () => ({ status: 'toggled', expanded: true }),
+    toggleLatestDiff: () => ({ status: 'toggled', expanded: true }),
     toggleSidebar: () => ({ status: 'toggled', visible: true }),
     copyTarget: async () => 'empty',
     ...overrides,
@@ -70,5 +68,11 @@ export function executeRuntimeCommand(
   onError: (msg: string) => void,
   phase: Phase = 'idle',
 ): Promise<void> {
-  return runRuntimeCommand(commands, raw, { screen, phase, onError });
+  return runRuntimeCommand(commands, raw, {
+    screen,
+    phase,
+    attached: false,
+    plannerSupportsImages: true,
+    onError,
+  });
 }

@@ -1,15 +1,15 @@
 import { Fragment, useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { INITIALIZING_TOOLS_TITLE, REFRESHING_TOOLS_TITLE } from '../../core/discovery/copy.js';
-import { getProviderDisplayName } from '../../core/providers/catalog.js';
-import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
+import { CREW_SEAT_LABELS, formatShortSeatIdentity } from '../../core/crew/identity.js';
+import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution.js';
 import { useTheme } from '../../components/theme.js';
 import { Composer } from '../../components/composer/composer.js';
 import { ScreenShell } from '../../components/screen-shell.js';
 import { SOFT_SEP } from '../../components/separators.js';
-import { HomeConfigSummary } from '../../features/home/components/config-summary.js';
+import { HomeSeatBlock } from '../../features/home/components/seat-block.js';
 import { RecentSessions } from '../../features/home/components/recent-sessions.js';
 import { useSpinnerFrame } from '../../features/workflow/hooks/use-spinner-frame.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -37,8 +37,8 @@ import { observePreparationCleanup } from '../../features/start-preparation/obse
 import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 
-const DEFAULT_HOME_HINT = `/help${SOFT_SEP}/settings${SOFT_SEP}/skills${SOFT_SEP}ctrl+k commands`;
-const HOME_HINT = `/help${SOFT_SEP}/settings${SOFT_SEP}/skills${SOFT_SEP}ctrl+r recent${SOFT_SEP}ctrl+k commands`;
+const DEFAULT_HOME_HINT = `/help${SOFT_SEP}/crew${SOFT_SEP}/settings${SOFT_SEP}/skills${SOFT_SEP}ctrl+k commands`;
+const HOME_HINT = `/help${SOFT_SEP}/crew${SOFT_SEP}/settings${SOFT_SEP}/skills${SOFT_SEP}ctrl+r recent${SOFT_SEP}ctrl+k commands`;
 const HOME_SELECTION_ERROR_CLEAR_MS = 3000;
 
 export interface HomeScreenDeps {
@@ -86,8 +86,9 @@ function DiscoveryPanel() {
     (refresh.readiness.outcome === 'failed' || refresh.readiness.outcome === 'not-run');
   if (!refreshing && !stalled) return null;
   const failedOutcome = refresh.readiness.outcome === 'failed';
-  const plannerName = getProviderDisplayName(getRunnerDisplayName(config.planner));
-  const implementerName = getProviderDisplayName(getRunnerDisplayName(config.implementer));
+  const plannerSeat = `${CREW_SEAT_LABELS.plan} ${formatShortSeatIdentity(config.planner)}`;
+  const build = resolveImplementerProfiles(config).defaultProfile.config;
+  const implementerSeat = `${CREW_SEAT_LABELS.build} ${formatShortSeatIdentity(build)}`;
 
   return (
     <Box
@@ -111,9 +112,9 @@ function DiscoveryPanel() {
             </Text>
           </Text>
           <Text>
-            <Text color={theme.planner}>{plannerName}</Text>
+            <Text color={theme.planner}>{plannerSeat}</Text>
             <Text color={theme.textDim}>{SOFT_SEP}</Text>
-            <Text color={theme.implementer}>{implementerName}</Text>
+            <Text color={theme.implementer}>{implementerSeat}</Text>
             <Text color={theme.textDim}>{SOFT_SEP}first run, results are remembered</Text>
           </Text>
         </Fragment>
@@ -129,7 +130,7 @@ export function HomeScreen({
 }: HomeScreenProps) {
   const theme = useTheme();
   const hasOverlay = overlayStore.use((s) => s.active !== 'none');
-  const [{ cols, rows, isSmall }, { sessions, totalCount }, { projectDir }] = useStores(
+  const [{ cols, rows }, { sessions, totalCount }, { projectDir }] = useStores(
     terminalSizeStore,
     sessionsStore,
     configStore,
@@ -174,14 +175,12 @@ export function HomeScreen({
   const preliminaryLayout = getHomeLayout({
     cols,
     rows,
-    isSmall,
     sessionCount: totalCount,
     sessionsFocused: false,
   });
   const focusedLayout = getHomeLayout({
     cols,
     rows,
-    isSmall,
     sessionCount: totalCount,
     sessionsFocused: true,
   });
@@ -278,7 +277,7 @@ export function HomeScreen({
               <Text color={theme.accent}>{getLogo(layout.logoTier)}</Text>
             </Box>
 
-            <HomeConfigSummary />
+            <HomeSeatBlock rows={rows} width={layout.bodyWidth} />
 
             {hasRoomForSessions && (
               <RecentSessions

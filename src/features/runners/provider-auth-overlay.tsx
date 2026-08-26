@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import { SOFT_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
-import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
+import type { SeatPickerRole } from '../../core/runners/cli-tool-catalog.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
 import {
   getApiProviderDescriptor,
@@ -35,7 +35,7 @@ function KeyRecap({ descriptor }: { descriptor: ApiProviderDescriptor }) {
 }
 
 interface ProviderAuthOverlayProps {
-  role: ActiveRunnerRole;
+  role: SeatPickerRole;
   item: RunnerPickerOption;
   onSubmit: (value: string) => void;
 }
@@ -63,7 +63,7 @@ export function ProviderAuthOverlay({ role, item, onSubmit }: ProviderAuthOverla
       mask={glyph('stageDone')}
       helper={env ? `preferred path: export ${env} in your shell` : undefined}
       examples={env ? [`export ${env}=…`] : undefined}
-      hint={`⏎ validate & save to ${SPLITBRIEF_DIR}/${CONFIG_FILE} (0600)${SOFT_SEP}esc discard`}
+      hint={`⏎ validate & save${SOFT_SEP}esc discard${SOFT_SEP}written to ${SPLITBRIEF_DIR}/${CONFIG_FILE} (0600)`}
       onSubmit={onSubmit}
     />
   );

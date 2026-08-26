@@ -217,7 +217,6 @@ describe('RecentSessions', () => {
     const layout = getHomeLayout({
       cols: 80,
       rows: terminalRows,
-      isSmall: true,
       sessionCount: 2,
       sessionsFocused: false,
     });
@@ -249,7 +248,6 @@ describe('RecentSessions', () => {
     const layout = getHomeLayout({
       cols: 80,
       rows: terminalRows,
-      isSmall: true,
       sessionCount: 3,
       sessionsFocused: true,
     });

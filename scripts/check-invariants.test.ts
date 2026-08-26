@@ -234,6 +234,99 @@ describe('check-invariants', () => {
     }
   });
 
+  it('guards the settings surfaces that now host the seat rows in gate 31', () => {
+    const [gate] = getInvariantGates('31');
+    if (gate === undefined) throw new Error('gate 31 is not registered');
+
+    expect(gate.command).toContain('src/features/settings');
+    expect(gate.command).toContain('src/app/overlays/settings.tsx');
+    expect(gate.command).not.toContain('src/app/overlays/crew.tsx');
+    expect(readFileSync('docs/INVARIANTS.md', 'utf8')).toContain('src/app/overlays/settings.tsx');
+  });
+
+  it('passes the responsive-width and capability-direction gates 46 and 47 on the maintained tree', () => {
+    const gates = [...getInvariantGates('46'), ...getInvariantGates('47')];
+    expect(gates).toHaveLength(2);
+    const { lines, log } = captureLog();
+
+    expect(runInvariantGates(gates, undefined, log)).toBe(0);
+    expect(lines).toEqual(
+      gates.map((gate) => `  \u2713 [${gate.id}] ${gate.description}: 0 (expected 0) PASS`),
+    );
+  });
+
+  it('gate 46 detects pinned widths retargeted at a synthetic tree', () => {
+    const root = mkdtempSync(join(tmpdir(), 'splitbrief-gate-46-'));
+    try {
+      for (const dir of [
+        'app/overlays',
+        'app/screens',
+        'features/home',
+        'features/runners',
+        'features/start-preparation',
+        'features/workflow/cost-drilldown',
+        'components/overlays',
+        'components/pickers',
+      ]) {
+        mkdirSync(join(root, dir), { recursive: true });
+      }
+      writeFileSync(join(root, 'app/screens/home.tsx'), 'export const Home = () => null;\n');
+      writeFileSync(join(root, 'app/screens/setup.tsx'), 'export const Setup = () => null;\n');
+      writeFileSync(
+        join(root, 'app/overlays/pinned.tsx'),
+        'export const P = <Box maxWidth={64} />;\n',
+      );
+      writeFileSync(join(root, 'features/home/layout.ts'), 'export const w = isSmall ? 60 : 84;\n');
+      writeFileSync(join(root, 'registry.ts'), 'export const locators = [];\n');
+      const [gate] = getInvariantGates('46');
+      if (gate === undefined) throw new Error('gate 46 is not registered');
+      const { lines, log } = captureLog();
+      const retargeted = gate.command
+        .replaceAll('src/', `${root}/`)
+        .replaceAll('" src ', `" ${root} `)
+        .replaceAll('testing/visual/locators/registry.ts', join(root, 'registry.ts'));
+
+      expect(runInvariantGates([{ ...gate, command: retargeted }], undefined, log)).toBe(1);
+      // one `maxWidth=` prop plus one width-carrying `isSmall` branch
+      expect(lines).toEqual([
+        expect.stringContaining('[46] Pinned overlay widths are gone: 2 (expected 0) FAIL'),
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('gate 47 detects a UI import of engine capability inference in a synthetic tree', () => {
+    const root = mkdtempSync(join(tmpdir(), 'splitbrief-gate-47-'));
+    try {
+      for (const dir of ['features/runners', 'app', 'components', 'core']) {
+        mkdirSync(join(root, dir), { recursive: true });
+      }
+      writeFileSync(
+        join(root, 'features/runners/row.ts'),
+        "import { infer } from '../../engine/providers/capability-inference.js';\n",
+      );
+      const [gate] = getInvariantGates('47');
+      if (gate === undefined) throw new Error('gate 47 is not registered');
+      const { lines, log } = captureLog();
+
+      expect(
+        runInvariantGates(
+          [{ ...gate, command: gate.command.replaceAll('src/', `${root}/`) }],
+          undefined,
+          log,
+        ),
+      ).toBe(1);
+      expect(lines).toEqual([
+        expect.stringContaining(
+          '[47] Capability inference is imported from core, never from engine: 1 (expected 0) FAIL',
+        ),
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('registers the path-aware T-065 controller-boundary gates', () => {
     expect(T065_RULES).toHaveLength(10);
     for (const id of ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45']) {

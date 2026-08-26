@@ -1,8 +1,10 @@
 import { Box, Text } from 'ink';
 import { TwoColumnPicker, type PreviewContext } from './two-column-picker/picker.js';
-import { ARROW_SEP, SOFT_SEP } from '../../components/separators.js';
+import type { TerminalPane } from './two-column-picker/use-nav-state.js';
+import { arrowSep, SOFT_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
+import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { getDefaultDetectionService } from '../../engine/detection/service.js';
 import { refreshDetectionForCurrentConfig } from '../../engine/detection/store-publication.js';
@@ -10,41 +12,30 @@ import { providerOracleCommand } from '../../engine/runners/cli-tools/provider-o
 import { configStore } from '../../stores/project/config.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 
-import type { CliProviderAuthFact } from '../../core/discovery/detection.js';
 import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
-  type ActiveRunnerRole,
+  type SeatPickerRole,
 } from '../../core/runners/cli-tool-catalog.js';
+import type { RunnerBillingPosture } from '../../core/runners/runner-billing.js';
 import { includes } from '../../utils/type-guards.js';
+import type { PickerOption } from './model-catalog/options.js';
+import { isCustomModel, type ModelVariant } from './model-catalog/recency.js';
 import {
-  compactProviderTag,
-  findProviderCredentialFact,
-  findProviderCredentialFacts,
-  modelProviderAuthKey,
-  modelProviderPrefix,
-  providerFactMatchesAuthKey,
-  type PickerOption,
-} from './model-catalog/options.js';
-import { isCustomModel, type ModelOption } from './model-catalog/recency.js';
-import {
-  buildRightModels,
-  modelRowMatchesId,
-  type PickerModelCounts,
-} from './model-catalog/catalog.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache.js';
+  rightRowKey,
+  routeAuthStateFor,
+  sectionOf,
+  type RightRow,
+  type RouteAuthState,
+} from './model-catalog/rows.js';
 import { filterByFields } from '../../components/pickers/filtering.js';
 import {
-  formatAuthFactsUnavailableNotice,
-  formatCustomCommandPreview,
+  formatAuthActionAffordance,
+  formatBillingLabel,
   formatModelCatalogGuidance,
-  formatNeedsSignInSaveFeedback,
-  formatProviderConfiguredClause,
-  formatProviderSignInClause,
-  formatStoredCredentialNote,
-  formatToolPostureSummary,
-  formatToolPreview,
-  gatewayAccountName,
+  formatPermissionLabels,
+  formatPickerByline,
+  formatRouteRemedy,
   isPickerItemDisabled,
   type ModelCatalogDiagnostic,
 } from './picker-format.js';
@@ -53,94 +44,40 @@ import { renderToolRow, renderModelRow } from './tool-row.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import type { PickerActions } from './use-picker-actions.js';
 import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
-import { formatModelName } from '../../core/model-display.js';
-import { formatContextLength } from '../../core/formatting.js';
+import type { PickerModelCounts } from './model-catalog/catalog.js';
 import {
   formatDiscoveryRefreshFeedback,
   type DiscoveryRefreshSummary,
 } from '../../core/runtime/commands/types.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 
+/**
+ * The seat cards say how the seat is paid for in one lower-case word; the
+ * capitalised billing labels belong to the byline, not to a card line.
+ */
+const POSTURE_WORDS: Readonly<Record<RunnerBillingPosture, string | undefined>> = {
+  local: 'local',
+  'subscription-included': 'subscription',
+  'api-metered': 'metered',
+  'provider-dependent': 'provider',
+  unknown: undefined,
+};
+
 const MAX_STALE_MODEL_COPY_COUNT = 99;
 
+/** Rows a failed refresh left behind are not a count the byline can claim. */
 function staleModelCopy(staleCount: number): string | undefined {
   if (staleCount <= 0) return undefined;
   const count = Math.min(staleCount, MAX_STALE_MODEL_COPY_COUNT);
   const label = staleCount > MAX_STALE_MODEL_COPY_COUNT ? `${count}+` : String(count);
-  const noun = count === 1 && staleCount === 1 ? 'model' : 'models';
+  const noun = staleCount === 1 ? 'model' : 'models';
   return `${label} stale ${noun} retained. Refresh detection.`;
 }
 
-/**
- * Resolved provider-axis context for the highlighted provider-dependent tool.
- * `facts` is tri-state at the source: undefined means the credential oracle
- * could not be read, and nothing may claim an auth state.
- */
-interface ProviderAxisView {
-  facts: readonly CliProviderAuthFact[] | undefined;
-  loginCommand: string;
-  oracleCommand: string | undefined;
-  gatewayKey: string;
-  gatewayAccount: string | undefined;
-}
-
-function providerSignInGateway(
-  axis: ProviderAxisView,
-  authKey: string,
-): { gatewayAccount?: string | undefined } {
-  return authKey === axis.gatewayKey ? { gatewayAccount: axis.gatewayAccount } : {};
-}
-
-function modelPreview(
-  model: ModelOption,
-  tool: PickerOption | undefined,
-  axis?: ProviderAxisView,
-): string {
-  const parts = [formatModelName(model.id)];
-  const ctx = formatContextLength(model.contextLength);
-  if (ctx) parts.push(`${ctx} context`);
-  if (tool) parts.push(`via ${tool.displayName}`);
-  if (axis !== undefined) {
-    const authKey = modelProviderAuthKey(model.id);
-    const prefix = modelProviderPrefix(model.id);
-    if (axis.facts === undefined) {
-      if (axis.oracleCommand !== undefined) {
-        parts.push(formatAuthFactsUnavailableNotice(axis.oracleCommand));
-      }
-    } else if (authKey !== undefined && prefix !== undefined) {
-      const facts = findProviderCredentialFacts(authKey, axis.facts);
-      const tag = compactProviderTag(prefix);
-      parts.push(
-        facts.length > 0
-          ? formatProviderConfiguredClause(tag, facts)
-          : formatProviderSignInClause({
-              tag,
-              authKey,
-              loginCommand: axis.loginCommand,
-              ...providerSignInGateway(axis, authKey),
-            }),
-      );
-    }
-  }
-  if (model.isStale || model.membership === 'stale') {
-    parts.push('Last confirmed catalog is stale. Refresh detection.');
-  }
-  return parts.join(SOFT_SEP);
-}
-
-function modelGuidancePreview(
-  item: PickerOption,
-  counts: PickerModelCounts,
-  diagnostic: ModelCatalogDiagnostic | undefined,
-  refreshing: boolean,
-): string {
-  const guidance = formatModelCatalogGuidance(item, counts, diagnostic, refreshing);
-  const parts = [guidance.headline];
-  if (guidance.detail) parts.push(guidance.detail);
-  const staleCopy = staleModelCopy(counts.stale);
-  if (staleCopy) parts.push(staleCopy);
-  parts.push(formatToolPostureSummary(item));
-  return parts.filter(Boolean).join(SOFT_SEP);
+function postureLine(item: PickerOption): string {
+  return [POSTURE_WORDS[item.billing], ...formatPermissionLabels(item.permissions)]
+    .filter(Boolean)
+    .join(SOFT_SEP);
 }
 
 function ModelGuidance({
@@ -149,36 +86,22 @@ function ModelGuidance({
   diagnostic,
   refreshing,
 }: {
-  currentItem: PickerOption | undefined;
+  currentItem: PickerOption;
   counts: PickerModelCounts;
   diagnostic: ModelCatalogDiagnostic | undefined;
   refreshing: boolean;
 }) {
   const t = useTheme();
-  if (!currentItem) {
-    return <Text color={t.textDim}>Select a tool</Text>;
-  }
-
   const guidance = formatModelCatalogGuidance(currentItem, counts, diagnostic, refreshing);
-  const posture = formatToolPostureSummary(currentItem);
-  const staleCopy = staleModelCopy(counts.stale);
 
   return (
     <Box flexDirection="column">
-      <Text color={t.textDim}>{guidance.headline}</Text>
+      <Text color={t.textDim} wrap="truncate-end">
+        {guidance.headline}
+      </Text>
       {guidance.detail ? (
-        <Text color={t.textDim} dimColor>
+        <Text color={t.textDim} dimColor wrap="truncate-end">
           {guidance.detail}
-        </Text>
-      ) : null}
-      {staleCopy ? (
-        <Text color={t.textDim} dimColor>
-          {staleCopy}
-        </Text>
-      ) : null}
-      {posture ? (
-        <Text color={t.textDim} dimColor>
-          {posture}
         </Text>
       ) : null}
     </Box>
@@ -186,7 +109,7 @@ function ModelGuidance({
 }
 
 interface PickerViewProps {
-  role: ActiveRunnerRole;
+  role: SeatPickerRole;
   stepLabel?: string | undefined;
   catalog: PickerCatalog;
   actions: PickerActions;
@@ -218,98 +141,89 @@ export async function refreshPickerDetection(
   }
 }
 
+function subtitleFor(role: SeatPickerRole): string {
+  if (role === 'implementer') return 'Model';
+  if (role === 'escalation') return 'Provider & model';
+  return 'Tool & model';
+}
+
+/**
+ * The two-column picker keys its rows by `id`; a `RightRow` is a shape, not an
+ * entity, so the row key it already publishes becomes that id.
+ */
+type KeyedRightRow = RightRow & { id: string };
+
+function keyRows(rows: readonly RightRow[]): KeyedRightRow[] {
+  return rows.map((row) => ({ ...row, id: rightRowKey(row) }));
+}
+
 export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProps) {
-  const t = useTheme();
   const projectDir = configStore.use((s) => s.projectDir);
   const providers = detectionStore.use((s) => s.providers);
-  const cliTools = detectionStore.use((s) => s.cliTools);
-  const allowsCustom = catalog.currentItem?.modelCapability.allowsCustom ?? false;
+  // The escalate seat keeps a provider and a model, not a custom-model list, so
+  // adding or deleting one there could only touch another seat's list.
+  const allowsCustom =
+    role !== 'escalation' && (catalog.currentItem?.modelCapability.allowsCustom ?? false);
 
-  const axisTool =
-    catalog.currentItem !== undefined && catalog.currentItem.providerDependent === true
-      ? catalog.currentItem
+  const toolId =
+    catalog.currentItem !== undefined && includes(CLI_TOOL_IDS, catalog.currentItem.id)
+      ? catalog.currentItem.id
       : undefined;
-  const axisToolId =
-    axisTool !== undefined && includes(CLI_TOOL_IDS, axisTool.id) ? axisTool.id : undefined;
-  const providerAxisView: ProviderAxisView | undefined =
-    axisToolId === undefined
-      ? undefined
-      : {
-          facts: cliTools.find((detection) => detection.tool === axisToolId)?.providerAuth,
-          loginCommand: `${CLI_TOOL_CATALOG[axisToolId].command} auth login`,
-          oracleCommand: providerOracleCommand(axisToolId)?.join(' '),
-          gatewayKey: CLI_TOOL_CATALOG[axisToolId].command,
-          gatewayAccount: gatewayAccountName(axisToolId),
-        };
+  const oracleCommand = toolId === undefined ? undefined : providerOracleCommand(toolId)?.join(' ');
+  // The frame names the version gap the upgrade closes; the catalog is the only
+  // place that knows what SplitBrief was tested against.
+  const versions =
+    toolId !== undefined && catalog.currentItem?.version !== undefined
+      ? {
+          observed: catalog.currentItem.version,
+          required: CLI_TOOL_CATALOG[toolId].compatibility.minimumAdmittedVersion,
+        }
+      : undefined;
 
-  const credentialNoteFor = (tool: PickerOption): string | undefined => {
-    if (providerAxisView === undefined || tool.id !== axisToolId) return undefined;
-    const facts = providerAxisView.facts;
-    if (facts === undefined) {
-      return providerAxisView.oracleCommand === undefined
-        ? undefined
-        : formatAuthFactsUnavailableNotice(providerAxisView.oracleCommand);
+  const terminalPaneFor = (item: PickerOption): TerminalPane | undefined => {
+    if (item.kind === 'inherit-planner') {
+      return {
+        label: "Planner's setup",
+        verb: "use planner's setup",
+        lines: [
+          'The review seat runs whatever the planner runs.',
+          '',
+          catalog.plannerIdentity,
+          postureLine(item),
+          '',
+          'Pick a tool on the left to give the review seat its own setup.',
+        ],
+      };
     }
-    const distinctProviders = new Set(facts.map((fact) => fact.provider)).size;
-    if (distinctProviders === 0) return undefined;
-    const listedKeys = [
-      ...new Set(
-        catalog.rightModels
-          .map((model) => modelProviderAuthKey(model.id))
-          .filter((key): key is string => key !== undefined),
-      ),
-    ];
-    // Stored auth must never be invisible: a credential whose provider
-    // contributes no enumerated models surfaces as a count on the tool line.
-    const hasUnlisted = facts.some(
-      (fact) => !listedKeys.some((key) => providerFactMatchesAuthKey(fact, key)),
-    );
-    return hasUnlisted ? formatStoredCredentialNote(distinctProviders) : undefined;
+    if (item.kind === 'escalation-off') {
+      return {
+        label: 'Escalation off',
+        verb: 'disable escalation',
+        lines: [
+          'No intermediate model.',
+          '',
+          'A stuck task goes straight to the planner:',
+          catalog.plannerIdentity,
+          '',
+          'Pick a provider on the left to add a stronger API model in between.',
+        ],
+      };
+    }
+    if (item.kind !== 'custom-command') return undefined;
+    return {
+      label: 'Custom command',
+      verb: 'add custom',
+      lines: [
+        `run a custom ${catalog.roleLabel.toLowerCase()} command`,
+        '',
+        `OUTPUT${SOFT_SEP}reads stdout`,
+        `DIRECT${SOFT_SEP}writes files`,
+        '',
+        `⏎ contract${arrowSep()}command`,
+        'saved only on final ⏎',
+      ],
+    };
   };
-
-  const needsSignInSaveNote = (selection: PickerOption, model: ModelOption): string | undefined => {
-    if (providerAxisView?.facts === undefined || selection.id !== axisToolId) return undefined;
-    const authKey = modelProviderAuthKey(model.id);
-    const prefix = modelProviderPrefix(model.id);
-    if (authKey === undefined || prefix === undefined) return undefined;
-    if (findProviderCredentialFact(authKey, providerAxisView.facts) !== undefined) return undefined;
-    return formatNeedsSignInSaveFeedback({
-      modelId: model.id,
-      tag: compactProviderTag(prefix),
-      authKey,
-      loginCommand: providerAxisView.loginCommand,
-      ...providerSignInGateway(providerAxisView, authKey),
-    });
-  };
-
-  const confirmSelection = (selection: PickerOption, model: ModelOption | null) => {
-    const note = model === null ? undefined : needsSignInSaveNote(selection, model);
-    const outcome = actions.confirm(selection, model);
-    if (note === undefined) return;
-    // The commit path posts its own save or failure feedback first; the
-    // provider honesty note replaces only a successful save message.
-    void Promise.resolve(outcome).then(() => {
-      if (!feedbackStore.get().isError) feedbackStore.setMessage(note);
-    });
-  };
-
-  // Both the mount index and every reset must land on the configured model, or
-  // confirming without first moving within the model column silently rewrites it.
-  const resolveModelIndex = (item: PickerOption | undefined): number | undefined => {
-    const persistedModel = catalog.persistedModel;
-    if (!item?.isCurrent || persistedModel === undefined) return undefined;
-    const models = buildRightModels({
-      role,
-      customModels: catalog.customModels,
-      currentItem: item,
-      cache: modelCacheStore,
-      persistedModel,
-    });
-    const idx = models.findIndex((model) => modelRowMatchesId(model, persistedModel));
-    if (idx < 0) return undefined;
-    return idx + (item.modelCapability.allowsCustom ? 1 : 0);
-  };
-  const initialRightIndex = resolveModelIndex(catalog.currentItem);
 
   const handleRefresh = () => {
     void refreshPickerDetection(projectDir);
@@ -326,71 +240,104 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
     );
   };
 
-  const resolvePreview = (ctx: PreviewContext<PickerOption, ModelOption>): string | undefined => {
-    if (ctx.isOnLeftCustomItem) {
-      return formatCustomCommandPreview(
-        role,
-        catalog.currentCommand !== undefined && catalog.currentCommandKind !== undefined
-          ? { command: catalog.currentCommand, kind: catalog.currentCommandKind }
-          : undefined,
-      );
+  // One signed-in route needs no chooser: Enter saves it. Two or more, or none,
+  // is a decision the user has to see, so the row expands instead.
+  const soleConfiguredRoute = (row: RightRow): ModelVariant | undefined => {
+    if (row.kind !== 'model') return undefined;
+    const variants = row.model.variants ?? [];
+    if (variants.length <= 1) return variants[0];
+    const configured = variants.filter(
+      (variant) =>
+        routeAuthStateFor({
+          hasOracle: catalog.hasOracle,
+          variant,
+          providerAuth: catalog.providerAuth,
+        }).kind === 'configured',
+    );
+    return configured.length === 1 ? configured[0] : undefined;
+  };
+
+  const rightRows = keyRows(catalog.rightRows);
+
+  const confirmRow = (left: PickerOption, row: RightRow | null) => {
+    if (row === null) {
+      actions.confirm(left, null);
+      return;
     }
-    if (ctx.isOnCustomItem) {
-      const tool = catalog.currentItem;
-      const toolName = tool?.displayName ?? role;
-      const parts = [`add a model id ${toolName} can't auto-detect`];
-      if (tool) {
-        parts.push(
-          modelGuidancePreview(
-            tool,
-            catalog.modelCounts,
-            catalog.catalogDiagnostic,
-            catalog.discovery.refreshing,
-          ),
-        );
-      }
-      return parts.join(SOFT_SEP);
+    if (row.kind === 'route') {
+      void actions.confirmProviderVariant(row.variant.fullId);
+      return;
     }
-    if (ctx.activeColumn === 'right' && ctx.rightItem) {
-      return modelPreview(ctx.rightItem, catalog.currentItem, providerAxisView);
+    if (row.kind !== 'model') return;
+    const sole = soleConfiguredRoute(row);
+    if (sole !== undefined) {
+      void actions.confirmProviderVariant(sole.fullId);
+      return;
     }
+    actions.confirm(left, row.model);
+  };
+
+  const resolvePreview = (ctx: PreviewContext<PickerOption, KeyedRightRow>): string | undefined => {
     const tool = ctx.leftItem ?? catalog.currentItem;
     if (!tool) return undefined;
-    if (tool.kind === 'inherit-planner') {
-      return ['the review seat runs whatever the planner runs', formatToolPostureSummary(tool)]
-        .filter(Boolean)
-        .join(SOFT_SEP);
+    // A signed-in route needs no remedy, so the byline is what the row falls
+    // back to rather than an empty preview line.
+    const remedyFor = (auth: RouteAuthState, variant: ModelVariant): string | undefined =>
+      formatRouteRemedy({
+        auth,
+        toolName: tool.displayName,
+        oracleCommand: oracleCommand ?? '',
+        provider: variant.providerPrefix,
+        versions,
+      });
+    const row = ctx.rightItem;
+    if (row?.kind === 'route') {
+      const remedy = remedyFor(row.auth, row.variant);
+      if (remedy !== undefined) return remedy;
     }
-    if (ctx.activeColumn === 'right' && catalog.rightModels.length === 0) {
-      return modelGuidancePreview(
-        tool,
-        catalog.modelCounts,
-        catalog.catalogDiagnostic,
-        catalog.discovery.refreshing,
+    if (row?.kind === 'model' && row.expanded) {
+      // The route that still needs the user is the one worth naming, not the
+      // first one the model happens to list.
+      const pending = catalog.rightRows.find(
+        (candidate) =>
+          candidate.kind === 'route' &&
+          candidate.model.id === row.model.id &&
+          candidate.auth.kind !== 'configured',
       );
+      if (pending?.kind === 'route') {
+        const remedy = remedyFor(pending.auth, pending.variant);
+        if (remedy !== undefined) return remedy;
+      }
     }
-    return [
-      staleModelCopy(catalog.modelCounts.stale),
-      formatToolPreview(
-        tool,
-        catalog.modelCounts,
-        resolveAuthAction(tool),
-        catalog.catalogDiagnostic,
-        credentialNoteFor(tool),
-        catalog.discovery.refreshing,
-      ),
-    ]
-      .filter(Boolean)
-      .join(SOFT_SEP);
+    const byline = formatPickerByline({
+      toolName: tool.displayName,
+      version: tool.version,
+      counts: catalog.modelCounts,
+      lane: catalog.catalogLane,
+      diagnostic: catalog.catalogDiagnostic,
+      capabilities: [...formatPermissionLabels(tool.permissions), formatBillingLabel(tool.billing)],
+    });
+    const stale = staleModelCopy(catalog.modelCounts.stale);
+    const trail = stale === undefined ? byline : `${byline}${SOFT_SEP}${stale}`;
+    // A provider whose key this picker can take has its remedy in a keystroke.
+    // Like a route's sign-in command it leads, so right truncation cuts the
+    // byline before it ever reaches the actionable part.
+    const authAction = resolveAuthAction(tool);
+    if (authAction === null) return trail;
+    const affordance = formatAuthActionAffordance(authAction);
+    const reason = tool.status.remediation;
+    return reason === null
+      ? `${affordance}${SOFT_SEP}${trail}`
+      : `${affordance}${SOFT_SEP}${reason}${SOFT_SEP}${trail}`;
   };
 
   return (
-    <TwoColumnPicker<PickerOption, ModelOption>
+    <TwoColumnPicker<PickerOption, KeyedRightRow>
       title={catalog.roleLabel}
-      subtitle={role === 'implementer' ? 'Model' : 'Tool & model'}
+      subtitle={subtitleFor(role)}
       stepLabel={stepLabel}
       initialColumn={catalog.focusModels ? 'right' : 'left'}
-      onConfirm={confirmSelection}
+      onConfirm={confirmRow}
       onCancel={() => overlayStore.close()}
       onRefresh={handleRefresh}
       onDisabledSelect={(item) => {
@@ -399,40 +346,15 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
       preview={resolvePreview}
       leftProps={{
         items: catalog.items,
-        label: 'Tools',
+        label: role === 'escalation' ? 'Providers' : 'Tools',
         getKey: (item) => item.id,
         // The launcher stays visible under any filter query so adding a custom
         // command is always reachable.
         filterBy: (item, query) =>
           item.kind === 'custom-command' || filterByFields(item, query, ['id', 'displayName']),
-        isSpecial: (item) => item.kind === 'custom-command',
+        terminalPane: terminalPaneFor,
         isDisabled: isPickerItemDisabled,
         initialIndex: catalog.initialLeftIdx,
-        specialHelp: (
-          <Box flexDirection="column">
-            <Text color={t.textDim}>run a custom {role} command</Text>
-            <Box marginTop={1} flexDirection="column">
-              <Text wrap="truncate-end">
-                <Text color={t.info} bold>
-                  OUTPUT
-                </Text>
-                <Text color={t.textDim}>{`${SOFT_SEP}reads stdout`}</Text>
-              </Text>
-              <Text wrap="truncate-end">
-                <Text color={t.warning} bold>
-                  DIRECT
-                </Text>
-                <Text color={t.textDim}>{`${SOFT_SEP}writes files`}</Text>
-              </Text>
-            </Box>
-            <Box marginTop={1} flexDirection="column">
-              <Text color={t.textDim} wrap="truncate-end">{`⏎ contract${ARROW_SEP}command`}</Text>
-              <Text color={t.textDim} dimColor wrap="truncate-end">
-                saved only on final ⏎
-              </Text>
-            </Box>
-          </Box>
-        ),
         renderRow: (item, { isCursor, isSelected, maxWidth }) =>
           renderToolRow({
             item,
@@ -444,43 +366,68 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
           }),
       }}
       rightProps={{
-        items: catalog.rightModels,
+        items: rightRows,
         label: 'Models',
-        getKey: (item) => item.id,
+        getKey: (row) => row.id,
         // A merged row answers for every provider spelling it folded, so typing
         // a provider name ("openrouter") still finds it.
-        filterBy: (item, query) =>
-          filterByFields(item, query, ['id']) ||
-          (item.variants?.some((variant) =>
-            variant.fullId.toLowerCase().includes(query.toLowerCase()),
-          ) ??
-            false),
-        initialIndex: initialRightIndex,
-        resolveInitialIndex: resolveModelIndex,
+        filterBy: (row, query) => {
+          if (row.kind === 'notice') return true;
+          if (row.kind !== 'model') return false;
+          return (
+            filterByFields(row.model, query, ['id']) ||
+            (row.model.variants?.some((variant) =>
+              variant.fullId.toLowerCase().includes(query.toLowerCase()),
+            ) ??
+              false)
+          );
+        },
+        initialIndex: catalog.initialRightIndex,
+        resolveInitialIndex: catalog.resolveRightIndex,
         onLeftChange: actions.leftChange,
-        placeholder: (
-          <ModelGuidance
-            currentItem={catalog.currentItem}
-            counts={catalog.modelCounts}
-            diagnostic={catalog.catalogDiagnostic}
-            refreshing={catalog.discovery.refreshing}
-          />
-        ),
+        section: { by: (row) => sectionOf(row) ?? '' },
+        activationOf: (row) => {
+          if (row.kind === 'notice') return row.action === 'refresh' ? 'refresh' : 'none';
+          if (row.kind === 'route') return 'confirm';
+          if (row.expanded) return 'collapse';
+          return (row.model.variants?.length ?? 0) > 1 && soleConfiguredRoute(row) === undefined
+            ? 'expand'
+            : 'confirm';
+        },
+        onExpand: (row) => {
+          if (row.kind === 'model') pickerViewStore.expand(row.model.id);
+        },
+        onCollapse: () => pickerViewStore.collapse(),
+        // The store's id survives a move to another tool, whose rows carry no
+        // expansion; only the rows on screen can say whether Escape collapses.
+        isExpanded: catalog.rightRows.some((row) => row.kind === 'model' && row.expanded),
+        placeholder:
+          catalog.currentItem === undefined ? undefined : (
+            <ModelGuidance
+              currentItem={catalog.currentItem}
+              counts={catalog.modelCounts}
+              diagnostic={catalog.catalogDiagnostic}
+              refreshing={catalog.discovery.refreshing}
+            />
+          ),
         ...(allowsCustom
           ? {
               customRow: {
                 onSelect: actions.openCustomModel,
-                onDelete: actions.deleteRight,
-                isCustom: isCustomModel,
+                onDelete: (row: KeyedRightRow) => {
+                  if (row.kind === 'model') actions.deleteRight(row.model);
+                },
+                isCustom: (row: KeyedRightRow) => row.kind === 'model' && isCustomModel(row.model),
               },
             }
           : {}),
-        renderRow: (item, { isCursor, maxWidth }) =>
+        renderRow: (row, { isCursor, maxWidth }) =>
           renderModelRow({
-            item,
+            row,
             isCursor,
             maxWidth,
             currentModel: catalog.currentModel,
+            sectioned: sectionOf(row) !== undefined,
           }),
       }}
     />

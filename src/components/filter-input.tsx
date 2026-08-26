@@ -15,7 +15,7 @@ export function FilterInput({ filter, placeholder = 'Type to filter…' }: Filte
       <Box flexShrink={1} minWidth={0} overflow="hidden">
         {filter ? (
           <Text color={t.text} wrap="truncate-end">
-            {filter}
+            {`${filter}${glyph('editCursor')}`}
           </Text>
         ) : (
           <Text color={t.textDim} wrap="truncate-end">

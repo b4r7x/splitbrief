@@ -17,7 +17,7 @@ describe('CostDrilldownOverlay', () => {
         },
       },
     });
-    terminalSizeStore.__testReset({ cols: 100 });
+    terminalSizeStore.__testReset({ cols: 100, rows: 40 });
 
     const ui = render(createElement(CostDrilldownOverlay));
     const frame = ui.lastFrame() ?? '';
@@ -51,7 +51,7 @@ describe('CostDrilldownOverlay', () => {
         },
       },
     });
-    terminalSizeStore.__testReset({ cols: 100 });
+    terminalSizeStore.__testReset({ cols: 100, rows: 40 });
 
     const ui = render(createElement(CostDrilldownOverlay));
     const frame = ui.lastFrame() ?? '';
@@ -79,7 +79,7 @@ describe('CostDrilldownOverlay', () => {
         },
       },
     });
-    terminalSizeStore.__testReset({ cols: 100 });
+    terminalSizeStore.__testReset({ cols: 100, rows: 40 });
 
     const ui = render(createElement(CostDrilldownOverlay));
     const frame = ui.lastFrame() ?? '';
@@ -114,7 +114,7 @@ describe('CostDrilldownOverlay', () => {
         },
       },
     });
-    terminalSizeStore.__testReset({ cols: 100 });
+    terminalSizeStore.__testReset({ cols: 100, rows: 40 });
 
     const ui = render(createElement(CostDrilldownOverlay));
     const frame = ui.lastFrame() ?? '';
@@ -155,7 +155,7 @@ describe('CostDrilldownOverlay', () => {
         },
       },
     });
-    terminalSizeStore.__testReset({ cols: 100 });
+    terminalSizeStore.__testReset({ cols: 100, rows: 40 });
 
     const ui = render(createElement(CostDrilldownOverlay));
     const frame = ui.lastFrame() ?? '';

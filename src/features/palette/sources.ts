@@ -1,17 +1,14 @@
-import { WORKFLOW_MODES } from '../../core/schemas/enums.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { Phase, WorkflowMode } from '../../core/schemas/enums.js';
+import type { Phase } from '../../core/schemas/enums.js';
 import type { Session } from '../../core/schemas/session.js';
 import type { Screen } from '../../core/navigation/types.js';
-import type {
-  RuntimeCommandDef,
-  RuntimeConfigSaveResult,
-} from '../../core/runtime/commands/types.js';
+import type { CommandGuardContext, RuntimeCommandDef } from '../../core/runtime/commands/types.js';
+import { detectedModelFact, seatSupportsImages } from '../../core/runners/capabilities.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
-import { overlayStore } from '../../stores/ui/overlay.js';
 import type { WorkflowTask } from '../../stores/workflow/tasks.js';
-import type { PaletteInputs } from './results.js';
+import type { PaletteAction, PaletteCommandItem, PaletteInputs } from './results.js';
 
 type PaletteSources = Omit<PaletteInputs, 'query' | 'mruIds'>;
 
@@ -24,7 +21,6 @@ interface BuildPaletteSourcesOptions {
   sessions: Session[];
   projectDir: string;
   onRuntimeCommand: (raw: string) => unknown;
-  onWorkflowMode: (mode: WorkflowMode) => Promise<RuntimeConfigSaveResult>;
   onSessionSelect: (session: Session, projectDir: string) => Promise<void>;
   isAttached?: boolean | undefined;
 }
@@ -38,104 +34,110 @@ export function buildPaletteSources({
   sessions,
   projectDir,
   onRuntimeCommand,
-  onWorkflowMode,
   onSessionSelect,
   isAttached = false,
 }: BuildPaletteSourcesOptions): PaletteSources {
   return {
-    commandItems: buildCommandItems(commands, screen, phase, onRuntimeCommand),
-    modeItems: isAttached ? [] : buildModeItems(onWorkflowMode),
-    pickerItems: buildPickerItems({ isAttached }),
+    commandItems: buildCommandItems({
+      commands,
+      screen,
+      onRuntimeCommand,
+      guardContext: {
+        phase,
+        attached: isAttached,
+        plannerSupportsImages: seatSupportsImages({
+          runner: config.planner,
+          detected: detectedModelFact(modelCacheStore.getDetection().providers, config.planner),
+        }),
+      },
+    }),
     taskItems: buildTaskItems(tasks, phase),
     sessionItems: buildSessionItems(sessions, projectDir, onSessionSelect),
     customItems: isAttached ? [] : buildCustomItems(config, onRuntimeCommand),
   };
 }
 
-function buildCommandItems(
-  commands: RuntimeCommandDef[],
-  screen: Screen,
-  phase: Phase,
+function describeCommand(command: RuntimeCommandDef): string {
+  if (command.kind === 'noarg') return command.description;
+  const hint =
+    command.args.kind === 'closed' ? `[${command.args.options.join('|')}]` : command.args.hint;
+  return `${command.description}  ${hint}`;
+}
+
+function runAction(raw: string, onRuntimeCommand: (raw: string) => unknown): PaletteAction {
+  return {
+    kind: 'run',
+    run: () => {
+      void onRuntimeCommand(raw);
+    },
+  };
+}
+
+function aliasAction(
+  command: RuntimeCommandDef,
+  alias: { name: string; args?: string },
   onRuntimeCommand: (raw: string) => unknown,
-): PaletteSources['commandItems'] {
-  return commands
-    .filter((cmd): cmd is RuntimeCommandDef & { label: string } => !!cmd.label)
-    .filter((cmd) => cmd.validScreens.includes(screen))
-    .filter((cmd) => cmd.phaseGuard === undefined || cmd.phaseGuard(phase))
-    .map((cmd) => ({
-      label: cmd.name,
-      description: cmd.description,
-      shortcut: cmd.shortcut ?? null,
-      action: () => {
-        void onRuntimeCommand(cmd.name);
-      },
-      availableOn: cmd.validScreens,
-    }));
+): PaletteAction {
+  if (alias.args !== undefined) {
+    const raw = `${command.name} ${alias.args}`;
+    // A `closed` spec enumerates every accepted value, so an alias resolving to one is a whole
+    // command line. A `free` spec's hint is a grammar (`remove <index|id>`) whose head the alias
+    // only fills in — running it would only print a usage error, so hand the rest to the composer.
+    const isWholeCommandLine =
+      command.kind === 'arg' &&
+      command.args.kind === 'closed' &&
+      command.args.options.includes(alias.args);
+    if (isWholeCommandLine) return runAction(raw, onRuntimeCommand);
+    return { kind: 'prefill', text: `${raw} ` };
+  }
+  if (command.kind === 'arg') return { kind: 'prefill', text: `${alias.name} ` };
+  return runAction(alias.name, onRuntimeCommand);
 }
 
-function buildModeItems(
-  onWorkflowMode: (mode: WorkflowMode) => Promise<RuntimeConfigSaveResult>,
-): PaletteSources['modeItems'] {
-  return WORKFLOW_MODES.map((mode) => ({
-    label: mode,
-    description: `Switch to ${mode} mode`,
-    action: async () => {
-      return await onWorkflowMode(mode);
-    },
-  }));
-}
+export function buildCommandItems({
+  commands,
+  screen,
+  onRuntimeCommand,
+  guardContext,
+}: {
+  commands: RuntimeCommandDef[];
+  screen: Screen;
+  onRuntimeCommand: (raw: string) => unknown;
+  guardContext: CommandGuardContext;
+}): PaletteCommandItem[] {
+  const items: PaletteCommandItem[] = [];
 
-function buildPickerItems(opts: { isAttached: boolean }): PaletteSources['pickerItems'] {
-  const shared = [
-    {
-      label: 'sessions',
-      description: 'Browse past sessions',
-      action: () => {
-        overlayStore.open('sessions');
-      },
-    },
-  ];
+  for (const command of commands) {
+    if (command.hidden) continue;
+    if (!command.validScreens.includes(screen)) continue;
+    if (command.guard?.(guardContext) !== undefined) continue;
 
-  if (opts.isAttached) return shared;
+    items.push({
+      label: command.name,
+      description: describeCommand(command),
+      shortcut: command.shortcut ?? null,
+      category: command.category,
+      action:
+        command.kind === 'arg'
+          ? { kind: 'prefill', text: `${command.name} ` }
+          : runAction(command.name, onRuntimeCommand),
+    });
 
-  return [
-    {
-      label: 'planner',
-      description: 'Select planner tool',
-      action: () => {
-        overlayStore.open('planner-picker');
-      },
-    },
-    {
-      label: 'implementer',
-      description: 'Select implementer',
-      action: () => {
-        overlayStore.open('implementer-picker');
-      },
-    },
-    {
-      label: 'reviewer',
-      description: 'Select reviewer tool',
-      action: () => {
-        overlayStore.open('reviewer-picker');
-      },
-    },
-    {
-      label: 'crew',
-      description: 'Choose which tool fills each seat',
-      action: () => {
-        overlayStore.open('crew');
-      },
-    },
-    ...shared,
-    {
-      label: 'settings',
-      description: 'Planner, model & settings',
-      action: () => {
-        overlayStore.open('settings');
-      },
-    },
-  ];
+    for (const alias of command.aliases ?? []) {
+      items.push({
+        label: alias.name,
+        description:
+          alias.args === undefined
+            ? `Alias for ${command.name}`
+            : `Alias for ${command.name} ${alias.args}`,
+        shortcut: null,
+        category: command.category,
+        action: aliasAction(command, alias, onRuntimeCommand),
+      });
+    }
+  }
+
+  return items;
 }
 
 function buildTaskItems(tasks: WorkflowTask[], phase: Phase): PaletteSources['taskItems'] {

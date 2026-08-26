@@ -2,12 +2,15 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import {
   BRAILLE_SPINNER_FRAMES,
+  GLYPH_NAMES,
   LINE_SPINNER_FRAMES,
   glyph,
   prefersBrailleSpinner,
   resolveGlyphTier,
   spinnerFrames,
 } from './glyphs.js';
+
+const ASCII_ONLY = /^[\x20-\x7e]+$/;
 
 describe('glyph tier', () => {
   const envSnapshot = { ...process.env };
@@ -29,6 +32,18 @@ describe('glyph tier', () => {
     expect(glyph('statusCancelled', 'ascii')).toBe('x');
     expect(glyph('check', 'ascii')).toBe('+');
     expect(glyph('divider', 'ascii')).toBe('-');
+  });
+
+  it('gives every glyph a printable ascii fallback', () => {
+    for (const name of GLYPH_NAMES) {
+      expect(ASCII_ONLY.test(glyph(name, 'ascii'))).toBe(true);
+    }
+  });
+
+  it('offers the disclosure marks and the cost bar in both tiers', () => {
+    expect(glyph('disclosureClosed', 'unicode')).not.toBe(glyph('disclosureClosed', 'ascii'));
+    expect(glyph('disclosureOpen', 'unicode')).not.toBe(glyph('disclosureOpen', 'ascii'));
+    expect(glyph('barFilled', 'unicode')).not.toBe(glyph('barFilled', 'ascii'));
   });
 
   it('maps the prompt marker through both tiers', () => {

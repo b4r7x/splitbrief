@@ -415,7 +415,7 @@ describe.runIf(process.platform !== 'win32')('provider oracle three-way readines
         });
 
         expect(result).toMatchObject({ auth: 'authenticated', status: 'ready' });
-        expect(result.providerAuth).toEqual(ORACLE_TOOLS[tool].facts);
+        expect(result.providerAuth).toEqual({ kind: 'read', facts: ORACLE_TOOLS[tool].facts });
       });
     },
   );
@@ -441,7 +441,7 @@ describe.runIf(process.platform !== 'win32')('provider oracle three-way readines
         });
 
         expect(result).toMatchObject({ auth: 'unauthenticated', status: 'unauthenticated' });
-        expect(result.providerAuth).toBeUndefined();
+        expect(result.providerAuth).toEqual({ kind: 'empty' });
       });
     },
   );
@@ -463,7 +463,7 @@ describe.runIf(process.platform !== 'win32')('provider oracle three-way readines
         });
 
         expect(result).toMatchObject({ auth: 'authenticated', status: 'ready' });
-        expect(result.providerAuth).toBeUndefined();
+        expect(result.providerAuth).toEqual({ kind: 'unreadable', reason: 'exit-failure' });
       });
     },
   );

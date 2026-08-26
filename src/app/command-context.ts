@@ -2,16 +2,14 @@ import { join } from 'node:path';
 import { useRef } from 'react';
 import { createRuntimeCommands } from '../core/runtime/commands/registry.js';
 import { executeRuntimeCommand } from '../core/runtime/commands/dispatch.js';
-import {
-  requestRewind,
-  requestClearQueue,
-  requestWorkflowResume,
-} from '../features/workflow/handlers.js';
+import { requestRewind, requestClearQueue } from '../features/workflow/handlers.js';
 import { findLatestExpandableActivityBatchKey } from '../features/workflow/conversation-rows/activity-batch-key.js';
+import { findLatestRenderableDiffKey } from '../core/sections/event-sections.js';
 import { createTuiSink } from '../features/workflow/tui-sink.js';
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
 import { resolveCopyValue } from '../features/workflow/copy/resolve.js';
 import { getSections } from '../stores/workflow/actions/sections.js';
+import type { Config } from '../core/schemas/config.js';
 import type { Screen } from '../core/navigation/types.js';
 import { configStore } from '../stores/project/config.js';
 import { overlayStore } from '../stores/ui/overlay.js';
@@ -37,11 +35,13 @@ import type {
   ScrollCommandTarget,
   ScrollConversationResult,
   ToggleLatestActivityBatchResult,
+  ToggleLatestDiffResult,
 } from '../core/runtime/commands/types.js';
+import { detectedModelFact, seatSupportsImages } from '../core/runners/capabilities.js';
+import { modelCacheStore } from '../stores/discovery/model-cache.js';
 import { createCommandContext } from '../core/runtime/commands/context-factory.js';
 import { copyToClipboard } from '../lib/clipboard/clipboard.js';
 import { sessionDir } from '../core/paths.js';
-import { rebuildRepomap } from '../engine/codebase/rebuild.js';
 import { writeHandoffPack } from '../engine/handoff/write.js';
 import { acceptRunSnapshot, rejectRunSnapshot } from '../engine/snapshots/run/lifecycle.js';
 import { createEventBus } from '../engine/events/bus.js';
@@ -71,6 +71,7 @@ export interface WorkflowCommandPorts {
   requestRewind: (request: RewindTarget) => boolean;
   requestClearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
   findLatestActivityBatchKey: () => string | null;
+  findLatestDiffKey: () => string | null;
   readScrollMetrics: () => ConversationScrollMetrics;
   resolveCopyValue: (target: CopyTarget) => string | null;
 }
@@ -88,6 +89,14 @@ function routeSessionId(route: RouteData, projectDir: string): string | null {
   }
   if (route.screen === 'summary' && route.sessionId) return route.sessionId;
   return readActive(projectDir);
+}
+
+function plannerSupportsImages(config: Config | null): boolean {
+  if (config === null) return false;
+  return seatSupportsImages({
+    runner: config.planner,
+    detected: detectedModelFact(modelCacheStore.getDetection().providers, config.planner),
+  });
 }
 
 function conversationPageStep(viewportHeight: number): number {
@@ -140,6 +149,19 @@ function toggleLatestActivityBatch(
 
   const expanded = !conversationScrollStore.get().expandedActivityBatches.has(key);
   conversationScrollStore.toggleActivityBatch(key);
+  return { status: 'toggled', expanded };
+}
+
+function toggleLatestDiff(
+  findLatestDiffKey: WorkflowCommandPorts['findLatestDiffKey'],
+): ToggleLatestDiffResult {
+  const key = findLatestDiffKey();
+  if (key === null) {
+    return { status: 'unavailable', message: 'No diff is available to expand.' };
+  }
+
+  const expanded = !conversationScrollStore.get().expandedDiffs.has(key);
+  conversationScrollStore.toggleDiff(key);
   return { status: 'toggled', expanded };
 }
 
@@ -222,12 +244,10 @@ export function buildCommandContext({
     getCurrentPhase: () => lifecycleStore.get().phase,
     requestRewind: workflow.requestRewind,
     requestTaskRedo: (taskId) => workflow.requestRewind({ target: 'task', taskId }),
-    requestWorkflowResume,
     getQueueDepth: () => lifecycleStore.get().queueDepth,
     clearQueue: workflow.requestClearQueue,
-    rebuildRepomap: async (projectDir, cacheDir) =>
-      rebuildRepomap(projectDir, cacheDir === undefined ? {} : { cacheDir }),
     attachImage,
+    plannerSupportsImages: () => plannerSupportsImages(configStore.get().config),
     detachImage,
     listAttachments,
     writeHandoff: ({ projectDir, sessionId, target, taskId }) =>
@@ -271,6 +291,7 @@ export function buildCommandContext({
       writeSessionHtmlReport(sessionDir(projectDir, sessionId), sessionId),
     scrollConversation: (target) => scrollConversation(target, workflow.readScrollMetrics),
     toggleLatestActivityBatch: () => toggleLatestActivityBatch(workflow.findLatestActivityBatchKey),
+    toggleLatestDiff: () => toggleLatestDiff(workflow.findLatestDiffKey),
     copyTarget: (target) => copyTarget(target, workflow.resolveCopyValue),
     toggleSidebar: () => {
       if (terminalSizeStore.get().isSmall) {
@@ -295,6 +316,7 @@ export function useRuntimeCommands({ exit, phase }: { exit: () => void; phase: P
       requestRewind,
       requestClearQueue,
       findLatestActivityBatchKey: () => findLatestExpandableActivityBatchKey(getSections()),
+      findLatestDiffKey: () => findLatestRenderableDiffKey(getSections()),
       readScrollMetrics: readConversationScrollSnapshot,
       resolveCopyValue,
     },
@@ -302,11 +324,15 @@ export function useRuntimeCommands({ exit, phase }: { exit: () => void; phase: P
   const commands = createRuntimeCommands(ctx);
   const runtimeChainRef = useRef(Promise.resolve());
   const handleRuntimeCommand = (raw: string, from: Screen) => {
+    const route = routerStore.get();
+    const config = configStore.get().config;
     runtimeChainRef.current = runtimeChainRef.current
       .then(() =>
         executeRuntimeCommand(commands, raw, {
           screen: from,
           phase,
+          attached: route.screen === 'workflow' && route.execution.kind === 'attached',
+          plannerSupportsImages: plannerSupportsImages(config),
           onError: feedbackStore.setError,
         }),
       )

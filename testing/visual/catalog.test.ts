@@ -13,6 +13,9 @@ import {
   VISUAL_FIXTURE_VERSION,
 } from './catalog.js';
 import { formatViewport } from './contracts/geometry.js';
+import { overlayFixtureRegistry } from './fixtures/overlay-fixtures.js';
+import { screenFixtureRegistry } from './fixtures/screen-fixtures.js';
+import { workflowFixtureRegistry } from './fixtures/workflow/registry.js';
 import { createCaptureRequest } from '../../scripts/tui-shots/selection.js';
 
 function sorted(values: Iterable<string>): string[] {
@@ -136,6 +139,25 @@ describe('visual catalog', () => {
       cols: 119,
       rows: 16,
     });
+  });
+
+  it('pairs every scenario with a fixture and leaves no fixture unreferenced', () => {
+    const registered = [
+      ...workflowFixtureRegistry.keys(),
+      ...screenFixtureRegistry.keys(),
+      ...overlayFixtureRegistry.keys(),
+    ];
+
+    expect(new Set(registered).size).toBe(registered.length);
+    expect(sorted(registered)).toEqual(sorted(VISUAL_CATALOG.map((scenario) => scenario.id)));
+  });
+
+  it('gives each screen and overlay scenario its own fixture registration', () => {
+    const factories = [...screenFixtureRegistry.values(), ...overlayFixtureRegistry.values()];
+    const calls = factories.map((factory) => factory.toString());
+
+    expect(new Set(factories).size).toBe(factories.length);
+    expect(new Set(calls).size).toBe(calls.length);
   });
 
   it('lists the catalog without changing stores or starting network work', () => {

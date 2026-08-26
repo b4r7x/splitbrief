@@ -1,8 +1,13 @@
 import type { CliProviderAuthFact } from '../../../core/discovery/detection.js';
 import type { AuthFact } from '../../../core/discovery/runner-evidence.js';
-import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import {
+  PROVIDER_ORACLE_TOOL_IDS,
+  type CliToolId,
+} from '../../../core/runners/cli-tool-catalog.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
 import type { CliProbeCommand, CliProbeOutput } from './contract.js';
+
+type ProviderOracleToolId = (typeof PROVIDER_ORACLE_TOOL_IDS)[number];
 
 /**
  * OpenCode and its Kilo fork ship a read-only per-provider credential listing
@@ -10,19 +15,25 @@ import type { CliProbeCommand, CliProbeOutput } from './contract.js';
  * names each stored credential (`oauth` / `api`) and each recognized
  * environment variable; it never prints credential values.
  */
-const PROVIDER_ORACLE_COMMANDS: Partial<Record<CliToolId, readonly [string, ...string[]]>> = {
+const PROVIDER_ORACLE_COMMANDS: Readonly<
+  Record<ProviderOracleToolId, readonly [string, ...string[]]>
+> = {
   opencode: ['opencode', 'providers', 'list'],
   'kilo-code': ['kilo', 'auth', 'list'],
 };
 
+function isProviderOracleTool(tool: CliToolId): tool is ProviderOracleToolId {
+  return PROVIDER_ORACLE_TOOL_IDS.some((id) => id === tool);
+}
+
 export function providerOracleCommand(tool: CliToolId): readonly [string, ...string[]] | undefined {
-  return PROVIDER_ORACLE_COMMANDS[tool];
+  return isProviderOracleTool(tool) ? PROVIDER_ORACLE_COMMANDS[tool] : undefined;
 }
 
 export function isProviderOracleProbe(
   input: Readonly<{ tool: CliToolId; command: CliProbeCommand }>,
 ): boolean {
-  const oracle = PROVIDER_ORACLE_COMMANDS[input.tool];
+  const oracle = providerOracleCommand(input.tool);
   return (
     oracle !== undefined &&
     input.command.command.length === oracle.length &&

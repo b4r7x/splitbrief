@@ -1,17 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { RuntimeConfigSaveResult } from '../../core/runtime/commands/types.js';
 import { buildPaletteResults } from './results.js';
-import type { PaletteInputs } from './results.js';
+import type { PaletteAction, PaletteInputs } from './results.js';
 
 const noop = () => {};
-const savedMode = async (): Promise<RuntimeConfigSaveResult> => ({ kind: 'saved', ok: true });
+const run: PaletteAction = { kind: 'run', run: noop };
 
 function makeInputs(overrides: Partial<PaletteInputs> = {}): PaletteInputs {
   return {
     query: '',
     commandItems: [],
-    modeItems: [],
-    pickerItems: [],
     taskItems: [],
     sessionItems: [],
     customItems: [],
@@ -21,21 +18,19 @@ function makeInputs(overrides: Partial<PaletteInputs> = {}): PaletteInputs {
 }
 
 describe('buildPaletteResults', () => {
-  it('shows every palette source in default order with user-facing metadata', () => {
+  it('shows every palette source with user-facing metadata', () => {
     const customAction = vi.fn();
     const results = buildPaletteResults(
       makeInputs({
         commandItems: [
           {
-            label: 'Run',
+            label: '/run',
             description: 'Run it',
             shortcut: 'ctrl+r',
-            action: noop,
-            availableOn: [],
+            category: 'workflow',
+            action: run,
           },
         ],
-        modeItems: [{ label: 'Standard', description: 'Standard mode', action: savedMode }],
-        pickerItems: [{ label: 'File', description: 'Pick file', action: noop }],
         taskItems: [{ id: 'T-001', title: 'Fix bug', action: noop }],
         sessionItems: [{ id: 'S-001', feature: 'Auth', status: 'running', action: noop }],
         customItems: [{ id: 'C-001', label: 'Deploy', description: '', action: customAction }],
@@ -43,86 +38,109 @@ describe('buildPaletteResults', () => {
     );
 
     expect(results.map((result) => result.id)).toEqual([
-      'command:Run',
-      'mode:Standard',
-      'picker:File',
+      'command:/run',
       'task:T-001',
       'session:S-001',
       'custom:C-001',
     ]);
-    expect(results.map((result) => result.label)).toEqual([
-      'Run',
-      'Standard',
-      'File',
-      'Fix bug',
-      'Auth',
-      'Deploy',
-    ]);
+    expect(results.map((result) => result.label)).toEqual(['/run', 'Fix bug', 'Auth', 'Deploy']);
     expect(results.map((result) => result.description)).toEqual([
       'Run it',
-      'Standard mode',
-      'Pick file',
       'task T-001',
       'running',
       '',
     ]);
-    expect(results.map((result) => result.shortcut)).toEqual([
-      'ctrl+r',
-      null,
-      null,
-      null,
-      null,
-      null,
-    ]);
+    expect(results.map((result) => result.shortcut)).toEqual(['ctrl+r', null, null, null]);
 
-    results.at(-1)?.action();
+    const last = results.at(-1)?.action;
+    if (last?.kind === 'run') void last.run();
     expect(customAction).toHaveBeenCalledOnce();
   });
 
+  it('groups an unfiltered list by category in the declared category order', () => {
+    const results = buildPaletteResults(
+      makeInputs({
+        commandItems: [
+          { label: '/copy', description: 'Copy', shortcut: null, category: 'io', action: run },
+          { label: '/crew', description: 'Crew', shortcut: null, category: 'crew', action: run },
+          {
+            label: '/home',
+            description: 'Home',
+            shortcut: null,
+            category: 'navigate',
+            action: run,
+          },
+          {
+            label: '/help',
+            description: 'Help',
+            shortcut: null,
+            category: 'navigate',
+            action: run,
+          },
+        ],
+        customItems: [{ id: 'C-001', label: 'Deploy', description: '', action: noop }],
+      }),
+    );
+
+    // COMMAND_CATEGORIES is navigate → crew → workflow → view → io; uncategorised rows come last.
+    expect(results.map((result) => result.label)).toEqual([
+      '/home',
+      '/help',
+      '/crew',
+      '/copy',
+      'Deploy',
+    ]);
+  });
+
+  it('carries a prefill action through to the result', () => {
+    const results = buildPaletteResults(
+      makeInputs({
+        commandItems: [
+          {
+            label: '/mode',
+            description: 'Workflow mode',
+            shortcut: null,
+            category: 'crew',
+            action: { kind: 'prefill', text: '/mode ' },
+          },
+        ],
+      }),
+    );
+
+    expect(results[0]?.action).toEqual({ kind: 'prefill', text: '/mode ' });
+  });
+
   it('filters unmatched items and orders visible matches by relevance then label', () => {
-    const matchingResults = buildPaletteResults(
+    const results = buildPaletteResults(
       makeInputs({
         query: 'run',
         commandItems: [
           {
-            label: 'Deploy',
+            label: '/deploy',
             description: 'Ship to prod',
             shortcut: null,
-            action: noop,
-            availableOn: [],
+            category: 'io',
+            action: run,
           },
           {
-            label: 'Run task',
+            label: '/run-task',
             description: 'run a task',
             shortcut: null,
-            action: noop,
-            availableOn: [],
+            category: 'workflow',
+            action: run,
           },
           {
-            label: 'run',
+            label: '/run',
             description: 'exact match',
             shortcut: null,
-            action: noop,
-            availableOn: [],
+            category: 'workflow',
+            action: run,
           },
         ],
       }),
     );
 
-    expect(matchingResults.map((result) => result.label)).toEqual(['run', 'Run task']);
-    expect(matchingResults.some((result) => result.label === 'Deploy')).toBe(false);
-
-    const tiedResults = buildPaletteResults(
-      makeInputs({
-        query: 'a',
-        modeItems: [
-          { label: 'azure', description: 'desc', action: savedMode },
-          { label: 'apple', description: 'desc', action: savedMode },
-        ],
-      }),
-    );
-
-    expect(tiedResults.map((result) => result.label)).toEqual(['apple', 'azure']);
+    expect(results.map((result) => result.label)).toEqual(['/run', '/run-task']);
   });
 
   it('puts recently used matches first in recorded recency order', () => {
@@ -130,48 +148,54 @@ describe('buildPaletteResults', () => {
       makeInputs({
         query: 'run',
         commandItems: [
-          { label: 'run', description: 'exact', shortcut: null, action: noop, availableOn: [] },
           {
-            label: 'Runner',
+            label: '/run',
+            description: 'exact',
+            shortcut: null,
+            category: 'workflow',
+            action: run,
+          },
+          {
+            label: '/runner',
             description: 'runner cmd',
             shortcut: null,
-            action: noop,
-            availableOn: [],
+            category: 'workflow',
+            action: run,
           },
           {
-            label: 'Run task',
+            label: '/run-task',
             description: 'run a task',
             shortcut: null,
-            action: noop,
-            availableOn: [],
+            category: 'workflow',
+            action: run,
           },
         ],
-        modeItems: [{ label: 'Runner mode', description: 'runner mode', action: savedMode }],
-        mruIds: ['mode:Runner mode', 'command:Runner'],
+        sessionItems: [{ id: 'S-001', feature: 'runner rewrite', status: 'done', action: noop }],
+        mruIds: ['session:S-001', 'command:/runner'],
       }),
     );
 
     expect(results.map((result) => result.id).slice(0, 2)).toEqual([
-      'mode:Runner mode',
-      'command:Runner',
+      'session:S-001',
+      'command:/runner',
     ]);
   });
 
   it('does not mutate source arrays while ranking results', () => {
     const commandItems = [
       {
-        label: 'Run',
+        label: '/run',
         description: 'run it',
         shortcut: null,
-        action: noop,
-        availableOn: [] as const,
+        category: 'workflow' as const,
+        action: run,
       },
       {
-        label: 'Deploy',
+        label: '/deploy',
         description: 'deploy',
         shortcut: null,
-        action: noop,
-        availableOn: [] as const,
+        category: 'io' as const,
+        action: run,
       },
     ];
     const originalOrder = commandItems.map((item) => item.label);
@@ -180,7 +204,7 @@ describe('buildPaletteResults', () => {
       makeInputs({
         query: 'run',
         commandItems,
-        mruIds: ['command:Run'],
+        mruIds: ['command:/run'],
       }),
     );
 

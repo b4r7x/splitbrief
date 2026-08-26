@@ -153,7 +153,7 @@ function createPlannerAdapter(): CliPlannerAdapter<'copilot'> {
     descriptor: CLI_TOOL_CATALOG.copilot,
     role: 'planner',
     supportsSessionResume: false,
-    supportsEffort: false,
+    supportsEffort: CLI_TOOL_CATALOG.copilot.supportsEffort,
     promptTransport: COPILOT_PROMPT_TRANSPORT,
     baseArgs: plannerBaseArgs,
     buildArgs: (input) => [...plannerBaseArgs(input), ...input.configuredArgs],

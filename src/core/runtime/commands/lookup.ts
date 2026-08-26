@@ -1,17 +1,27 @@
 import { Fzf } from 'fzf';
-import type { RuntimeCommandDef } from './types.js';
+import { REMOVED_COMMANDS, type RuntimeCommandDef } from './types.js';
+
+export interface RuntimeCommandMatch {
+  command: RuntimeCommandDef;
+  aliasArgs?: string;
+}
 
 export function findRuntimeCommand(
   commands: RuntimeCommandDef[],
   name: string,
-): RuntimeCommandDef | null {
+): RuntimeCommandMatch | null {
   const lower = name.toLowerCase();
-  return (
-    commands.find(
-      (cmd) =>
-        cmd.name.toLowerCase() === lower || cmd.aliases?.some((a) => a.toLowerCase() === lower),
-    ) ?? null
-  );
+  const exact = commands.find((command) => command.name.toLowerCase() === lower);
+  if (exact) return { command: exact };
+  for (const command of commands) {
+    const alias = command.aliases?.find((a) => a.name.toLowerCase() === lower);
+    if (alias) return { command, ...(alias.args !== undefined && { aliasArgs: alias.args }) };
+  }
+  return null;
+}
+
+export function removedCommandPointer(name: string): string | undefined {
+  return REMOVED_COMMANDS[name.toLowerCase()];
 }
 
 export function suggestRuntimeCommand(

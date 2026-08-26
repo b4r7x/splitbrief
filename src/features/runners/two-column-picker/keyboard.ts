@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import type { FilterableItem } from '../../../components/pickers/filtering.js';
 import { isVirtualCustomItem, type RightItemOrVirtual } from './virtual-items.js';
 
@@ -10,9 +9,11 @@ function stepIndex<T>(items: T[], from: number, direction: 1 | -1): number {
 export interface KeyboardContext<L extends FilterableItem, R extends { id: string }> {
   leftActive: boolean;
   rightActive: boolean;
-  isSpecial: boolean;
+  /** The highlighted left row answers for itself: Enter commits, → is inert. */
+  isTerminal: boolean;
   isDisabled: boolean;
-  isOnVirtual: boolean;
+  /** The right column holds at least one row Enter can act on. */
+  hasSelectableRight: boolean;
   currentRightIsCustom: boolean;
   leftCurrentItem: L | undefined;
   leftFiltered: L[];
@@ -23,17 +24,11 @@ export interface KeyboardContext<L extends FilterableItem, R extends { id: strin
   rightVirtualCount: number;
   leftEffectiveIndex: number;
   rightEffectiveIndex: number;
-  rightItems: R[];
-  rightPlaceholder: ReactNode;
-  leftGetKey: (item: L) => string;
   isRightItemCustom: ((item: R) => boolean) | undefined;
   onDeleteRight: ((item: R) => void) | undefined;
-  onCustomRightOverlay: ((item: L) => void) | undefined;
-  onConfirm: (left: L, right: R | null) => void;
   onCancel: () => void;
   onRefresh?: (() => void) | undefined;
   maxVisible: number;
-  onDisabledSelect?: ((item: L) => void) | undefined;
   setActiveColumn: (col: 'left' | 'right') => void;
   setSelectedLeftKey: (key: string | null) => void;
   setLeftFilter: (fn: (prev: string) => string) => void;
@@ -42,6 +37,11 @@ export interface KeyboardContext<L extends FilterableItem, R extends { id: strin
   setLeftIndex: (index: number) => L | undefined;
   setRightIndex: (index: number) => void;
   resetRight: (left?: L | undefined) => void;
+  /** The two activation paths; Enter never re-implements either. */
+  activateLeft: (index: number) => void;
+  activateRight: (index: number) => void;
+  isExpanded: boolean;
+  onCollapse?: (() => void) | undefined;
 }
 
 export function handleKeyboardInput<L extends FilterableItem, R extends { id: string }>(
@@ -72,6 +72,10 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
       ctx.setRightIndex(ctx.rightVirtualCount);
       return;
     }
+    if (ctx.isExpanded) {
+      ctx.onCollapse?.();
+      return;
+    }
     ctx.onCancel();
     return;
   }
@@ -87,9 +91,7 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
   }
 
   if (key.ctrl && input === 'r') {
-    if (ctx.onRefresh) {
-      ctx.onRefresh();
-    }
+    ctx.onRefresh?.();
     return;
   }
 
@@ -106,8 +108,8 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
       ctx.leftActive &&
       ctx.leftCurrentItem &&
       !ctx.isDisabled &&
-      !ctx.isSpecial &&
-      (ctx.rightItems.length > 0 || ctx.rightPlaceholder)
+      !ctx.isTerminal &&
+      ctx.hasSelectableRight
     ) {
       ctx.setActiveColumn('right');
     }
@@ -131,34 +133,17 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
   if (key.return) {
     if (ctx.maxVisible <= 0) return;
     if (ctx.leftActive) {
-      if (!ctx.leftCurrentItem) return;
-      if (ctx.isDisabled) {
-        ctx.onDisabledSelect?.(ctx.leftCurrentItem);
-        return;
-      }
-      if (ctx.isSpecial) {
-        ctx.onConfirm(ctx.leftCurrentItem, null);
-        return;
-      }
-      ctx.setSelectedLeftKey(ctx.leftGetKey(ctx.leftCurrentItem));
-      if (ctx.rightItems.length > 0 || ctx.rightPlaceholder) ctx.setActiveColumn('right');
+      ctx.activateLeft(ctx.leftEffectiveIndex);
       return;
     }
-    if (ctx.isOnVirtual) {
-      if (ctx.onCustomRightOverlay && ctx.leftCurrentItem)
-        ctx.onCustomRightOverlay(ctx.leftCurrentItem);
-      return;
-    }
-    const rc = ctx.filteredRight[ctx.rightEffectiveIndex];
-    const ri = rc && !isVirtualCustomItem(rc) ? rc : null;
-    const leftItem = ctx.leftFiltered[ctx.leftEffectiveIndex];
-    if (leftItem) ctx.onConfirm(leftItem, ri);
+    ctx.activateRight(ctx.rightEffectiveIndex);
     return;
   }
 
   // Type-anywhere: every printable key edits the focused column's query, no matter
   // which row the cursor sits on — including the pinned custom-command launcher —
-  // and the cursor then lands on the first visible match.
+  // and the cursor then lands on the first visible match. An expanded model
+  // collapses first, or the query would filter a list the user cannot see whole.
   if (key.backspace || key.delete) {
     if (ctx.leftActive) {
       ctx.setLeftFilter((prev) => prev.slice(0, -1));
@@ -171,6 +156,7 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
   }
 
   if (input && !key.ctrl && !key.meta && !key.tab) {
+    if (ctx.isExpanded) ctx.onCollapse?.();
     if (ctx.leftActive) {
       ctx.setLeftFilter((prev) => prev + input);
       ctx.resetRight(ctx.setLeftIndex(0));

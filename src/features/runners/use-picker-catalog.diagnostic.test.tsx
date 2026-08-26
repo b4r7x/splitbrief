@@ -105,10 +105,10 @@ function Probe({ role, toolId }: { role: 'planner' | 'implementer'; toolId: stri
   return <Text>probe</Text>;
 }
 
-let capturedModels: PickerCatalog['rightModels'] = [];
+let capturedRows: PickerCatalog['rightRows'] = [];
 
 function ModelsProbe({ toolId }: { toolId: string }) {
-  capturedModels = usePickerCatalog('planner', 0, toolId).rightModels;
+  capturedRows = usePickerCatalog('planner', 0, toolId).rightRows;
   return <Text>models</Text>;
 }
 
@@ -167,8 +167,17 @@ describe('usePickerCatalog catalog diagnostic', () => {
     ui.unmount();
   });
 
-  it('reports nothing for a tool without a native catalog contract', () => {
+  it('reports a tool without a listing command as unsupported', () => {
     const ui = renderFeature(<Probe role="planner" toolId="claude-code" />);
+
+    expect(captured).toEqual({ kind: 'unsupported' });
+    ui.unmount();
+  });
+
+  // The unsupported verdict is about CLI listing commands; an API provider has
+  // no listing command to miss, so it must claim nothing.
+  it('claims nothing for an API provider', () => {
+    const ui = renderFeature(<Probe role="planner" toolId="anthropic" />);
 
     expect(captured).toBeUndefined();
     ui.unmount();
@@ -293,7 +302,7 @@ describe('usePickerCatalog role-scoped Agent SDK status', () => {
 
 describe('usePickerCatalog provider variant threading', () => {
   beforeEach(() => {
-    capturedModels = [];
+    capturedRows = [];
     configStore.__testReset({ projectDir: '/tmp/project', config: makeConfig() });
     detectionStore.reset();
     modelCacheStore.reset();
@@ -317,16 +326,17 @@ describe('usePickerCatalog provider variant threading', () => {
       ],
       [
         cliDetectionFor('ready', 'opencode', {
-          providerAuth: [{ provider: 'OpenCode Go', source: 'oauth' }],
+          providerAuth: { kind: 'read', facts: [{ provider: 'OpenCode Go', source: 'oauth' }] },
         }),
       ],
     );
 
     const ui = renderFeature(<ModelsProbe toolId="opencode" />);
 
-    const merged = capturedModels.find(
-      (model) => model.variants !== undefined && model.variants.length === 2,
-    );
+    const merged = capturedRows
+      .filter((row) => row.kind === 'model')
+      .map((row) => row.model)
+      .find((model) => model.variants !== undefined && model.variants.length === 2);
     expect(merged?.id).toBe('opencode-go/deepseek-v4-flash');
     expect(merged?.variants?.map((variant) => variant.fullId)).toEqual([
       'opencode-go/deepseek-v4-flash',

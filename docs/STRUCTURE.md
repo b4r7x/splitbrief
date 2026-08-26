@@ -42,7 +42,8 @@ src/
     ├── home/
     ├── palette/
     ├── summary/
-    ├── settings/                            # retains mode-selector.tsx + presentation.ts + hooks/
+    ├── settings/                            # retains mode-selector.tsx + items.ts + presentation.ts + hooks/
+    ├── crew/                                # seat rows + renderers (no page of its own)
     ├── runners/
     └── editor/                              # inline spec/plan/brief editor (overlay entry: app/overlays/editor.tsx)
 ```
@@ -163,7 +164,7 @@ src/engine/codebase/
 ├── pagerank.ts                      # rank files by reference density
 ├── format.ts                        # render the ranked graph into the planner-facing section
 ├── budget.ts                        # token-aware truncation
-├── rebuild.ts                       # /repomap rebuild TUI command handler
+├── rebuild.ts                       # rebuild the parsed-symbol cache from scratch
 ├── extract-mentioned-filenames.ts   # pulls filenames out of user feature prompt for seeding
 └── types.ts
 ```
@@ -266,19 +267,20 @@ The page `app/screens/workflow.tsx` holds the composition (layout math + `Screen
 ```
 features/settings/
 ├── mode-selector.tsx         # router-imported feature component (NOT a page) — mounted by renderOverlay in app/router.tsx
+├── items.ts                  # builds the one settings list: crew rows first, then the settings defs by section
 ├── presentation.ts           # pure formatters on SettingDef (value color, filter match, validate, display) — feature-local
 └── hooks/
     ├── buffer.ts             # useEditBuffer — feature-local
     └── editor.ts             # useSettingsEditor — feature-local
 ```
 
-The `SettingsOverlay` entry is the page `app/overlays/settings.tsx`; it composes `presentation.ts` and `hooks/editor.ts`. `mode-selector.tsx` is the exception that proves the rule — it stays in the feature and is imported **directly by `app/router.tsx`** (a router-imported feature component, not a page).
+The `SettingsOverlay` entry is the page `app/overlays/settings.tsx`; it composes `items.ts`, `presentation.ts`, `hooks/editor.ts` and the `crew` feature's renderers. `mode-selector.tsx` is the exception that proves the rule — it stays in the feature and is imported **directly by `app/router.tsx`** (a router-imported feature component, not a page).
 
 `features/palette/` follows the same shape: its entry is the page `app/overlays/palette.tsx`, which composes the feature-local `sources.ts` and `results.ts` (`sources.ts` assembles commands/modes/picker actions/live tasks/sessions/custom actions; `results.ts` ranks/filter-matches them for rendering).
 
 **Dissolved (pure-entry) surfaces** (e.g. `setup`, `help`, `sessions`, `skills`):
 
-A dissolved surface has **no `features/` folder** — the page *is* the whole surface. It may still compose a context-free feature owned by another domain: `src/app/screens/setup.tsx` renders `src/features/crew/` directly (`useCrew` + `SeatRows` + `PresetRow`) and reaches the runners picker through `crewActivate` in `src/features/crew/rows.ts`, which owns the seat→overlay map and performs the `overlayStore.open`. The cross-surface hop is a **store-mediated overlay transition**, not a render prop. `runners` is the feature boundary; `ToolModelPicker` is a component name, not a `tool-picker` feature. `help`, `sessions`, and `skills` are likewise the page alone (`src/app/overlays/{help,sessions,skills}.tsx`).
+A dissolved surface has **no `features/` folder** — the page *is* the whole surface. It may still compose a context-free feature owned by another domain: `src/app/screens/setup.tsx` renders `src/features/crew/` directly (`useCrew` + `CrewRowView` + `PresetRowView`) and reaches the runners picker through `crewActivate` in `src/features/crew/rows.ts`, which owns the seat→overlay map and performs the `overlayStore.open`. The cross-surface hop is a **store-mediated overlay transition**, not a render prop. `runners` is the feature boundary; `ToolModelPicker` is a component name, not a `tool-picker` feature. `help`, `sessions`, and `skills` are likewise the page alone (`src/app/overlays/{help,sessions,skills}.tsx`).
 
 Rules:
 - **`components/` subfolder** appears only when the feature has ≥2 component files.
@@ -363,7 +365,7 @@ Why:
 
 If you need shared behavior across features, it belongs in `src/components/`, `src/hooks/`, `src/utils/`, `src/core/`, or `src/stores/`. Composition between features happens at the `app/` shell (`src/app/router.tsx` dispatches the FLAT pages, `src/app/layout.tsx` wraps).
 
-When one surface needs UI owned by another (e.g. the `setup` page reaching the `runners` picker), the page imports the other domain's context-free feature and coordinates the rest through stores: `src/app/screens/setup.tsx` and `src/app/overlays/crew.tsx` both render `src/features/crew/`, and each opens the picker by calling `crewActivate` from `src/features/crew/rows.ts`, which performs the `overlayStore.open` for the selected seat. Keep the feature folder named for the domain (`runners`, `crew`); component names do not create folder names.
+When one surface needs UI owned by another (e.g. the `setup` page reaching the `runners` picker), the page imports the other domain's context-free feature and coordinates the rest through stores: `src/app/screens/setup.tsx` and `src/app/overlays/settings.tsx` both render `src/features/crew/`, and each opens the picker by calling `crewActivate` from `src/features/crew/rows.ts`, which performs the `overlayStore.open` for the selected seat. Keep the feature folder named for the domain (`runners`, `crew`); component names do not create folder names.
 
 The one sanctioned cross-cutting channel between features is **stores**. Feature A can write to `workflowStore`, and feature B can read from it — that is the same engine→UI pattern already described in [`STORES.md`](./STORES.md).
 
@@ -503,12 +505,13 @@ Features are small and irregular. A template would over-prescribe (minimal featu
 | Surface | Responsibility | Entry page | Feature folder |
 |---|---|---|---|
 | `workflow` | Running workflow — conversation flow, event cards, sidebar, input mode, keyboard, runner lifecycle | `app/screens/workflow.tsx` | `features/workflow/` |
-| `home` | Landing screen — banner, config summary, recent sessions, input | `app/screens/home.tsx` | `features/home/` |
+| `home` | Landing screen — banner, seat block, recent sessions, input | `app/screens/home.tsx` | `features/home/` |
 | `summary` | Post-workflow report — cost, task table, phase timing | `app/screens/summary.tsx` | `features/summary/` |
-| `setup` | First-time setup — planner + implementer selection | `app/screens/setup.tsx` | dissolved (page only) |
+| `setup` | First-run crew setup — ready-made crews above the seat block | `app/screens/setup.tsx` | dissolved (page only) |
 | `palette` | Command palette overlay — source assembly, filtering, MRU ranking | `app/overlays/palette.tsx` | `features/palette/` |
-| `settings` | Settings overlay — field editor for config | `app/overlays/settings.tsx` | `features/settings/` (mode-selector + presentation + hooks) |
-| `runners` | Planner/implementer runner + model selection | `app/overlays/runners.tsx` | `features/runners/` |
+| `settings` | Settings overlay — the crew section plus the field editor for config | `app/overlays/settings.tsx` | `features/settings/` (mode-selector + items + presentation + hooks) |
+| `crew` | No page of its own — rows + renderers consumed by the settings and setup pages | — | `features/crew/` |
+| `runners` | Seat picker — tool + model selection for each seat picker role | `app/overlays/runners.tsx` | `features/runners/` |
 | `editor` | Inline spec / plan / Task Brief editor — headless editing kernel over raw + brief-field surfaces | `app/overlays/editor.tsx` | `features/editor/` |
 | `help` | Global help overlay — keyboard and command reference | `app/overlays/help.tsx` | dissolved (page only) |
 | `sessions` | Sessions picker — select a past session to resume | `app/overlays/sessions.tsx` | dissolved (page only) |

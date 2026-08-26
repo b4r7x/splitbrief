@@ -7,6 +7,7 @@ import { createDefaultConfig, writeConfig } from '../../core/config/load/io.js';
 import { apiKeyErrors } from '../../core/config/load/validation/credentials.js';
 import { readCustomCommandCatalog } from '../../core/config/custom-commands.js';
 import { fromYaml } from '../../core/config/load/transform.js';
+import { getProviderDisplayName } from '../../core/providers/catalog.js';
 import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import { ConfigSchema } from '../../core/schemas/config.js';
 import type { Config } from '../../core/schemas/config.js';
@@ -220,7 +221,7 @@ describe('runner selection commits', () => {
   const agentSdkSelection = realPickerOption('planner', 'agent-sdk');
 
   it('commits planner Agent SDK selections with the explicit kind', () => {
-    const updated = commitPlannerTierSelection({
+    const { config: updated } = commitPlannerTierSelection({
       config: makeBaseConfig(),
       role: 'planner',
       selection: agentSdkSelection,
@@ -234,7 +235,7 @@ describe('runner selection commits', () => {
   });
 
   it('commits implementer Agent SDK selections with the explicit kind', () => {
-    const updated = commitImplementerSelection(makeBaseConfig(), agentSdkSelection, {
+    const { config: updated } = commitImplementerSelection(makeBaseConfig(), agentSdkSelection, {
       id: 'claude-sonnet-4-6',
     });
 
@@ -250,7 +251,7 @@ describe('runner selection commits', () => {
       planner: { kind: 'cli', tool: 'claude-code', model: 'sonnet' },
     };
 
-    const updated = commitPlannerTierSelection({
+    const { config: updated } = commitPlannerTierSelection({
       config,
       role: 'planner',
       selection: realPickerOption('planner', 'claude-code'),
@@ -267,9 +268,13 @@ describe('runner selection commits', () => {
       Object.entries(before ?? {}).filter(([name]) => name !== 'active-cloud'),
     );
 
-    const updated = commitImplementerSelection(config, realPickerOption('implementer', 'codex'), {
-      id: 'AUTO',
-    });
+    const { config: updated } = commitImplementerSelection(
+      config,
+      realPickerOption('implementer', 'codex'),
+      {
+        id: 'AUTO',
+      },
+    );
 
     // Stored exactly as chosen — the picker's own Auto row carries the lower-case
     // id, and nothing rewrites a user's spelling behind their back.
@@ -285,7 +290,7 @@ describe('runner selection commits', () => {
 
   it('switches a named API profile to CLI without parsing the API profile as model-less', () => {
     const config = namedImplementerProfileConfig();
-    const updated = commitImplementerSelection(
+    const { config: updated } = commitImplementerSelection(
       config,
       realPickerOption('implementer', 'codex'),
       null,
@@ -300,7 +305,7 @@ describe('runner selection commits', () => {
 
   it('preserves an active API model when the API provider remains selected', () => {
     const config = namedImplementerProfileConfig();
-    const updated = commitImplementerSelection(
+    const { config: updated } = commitImplementerSelection(
       config,
       realPickerOption('implementer', 'together'),
       null,
@@ -314,7 +319,7 @@ describe('runner selection commits', () => {
   });
 
   it('preserves explicit model IDs when committing a CLI selection', () => {
-    const updated = commitPlannerTierSelection({
+    const { config: updated } = commitPlannerTierSelection({
       config: makeBaseConfig(),
       role: 'planner',
       selection: realPickerOption('planner', 'claude-code'),
@@ -343,7 +348,7 @@ describe('runner selection commits', () => {
       },
     };
 
-    const updated = commitImplementerSelection(
+    const { config: updated } = commitImplementerSelection(
       config,
       realPickerOption('implementer', 'codex'),
       null,
@@ -372,7 +377,7 @@ describe('runner selection commits', () => {
   });
 
   it('switches planners from shell to api when selecting an API provider', () => {
-    const updated = commitPlannerTierSelection({
+    const { config: updated } = commitPlannerTierSelection({
       config: makeBaseConfig(),
       role: 'planner',
       selection: realPickerOption('planner', 'anthropic'),
@@ -388,7 +393,7 @@ describe('runner selection commits', () => {
 
   it('preserves optional top-level config sections when committing picker selections', () => {
     const config = makeConfigWithOptionalSections();
-    const updated = commitPlannerTierSelection({
+    const { config: updated } = commitPlannerTierSelection({
       config,
       role: 'planner',
       selection: realPickerOption('planner', 'anthropic'),
@@ -410,7 +415,7 @@ describe('runner selection commits', () => {
     if (!profiles) return;
     const dormant = profiles.profiles['dormant-local'];
 
-    const selectedModel = commitImplementerSelection(
+    const { config: selectedModel } = commitImplementerSelection(
       config,
       realPickerOption('implementer', 'together'),
       { id: 'selected-model' },
@@ -424,7 +429,7 @@ describe('runner selection commits', () => {
       model: 'selected-model',
     });
 
-    const selectedTool = commitImplementerSelection(
+    const { config: selectedTool } = commitImplementerSelection(
       config,
       realPickerOption('implementer', 'codex'),
       { id: 'gpt-5.4-mini' },
@@ -481,12 +486,73 @@ describe('runner selection commits', () => {
   });
 });
 
+describe('effort across a seat switch', () => {
+  function plannerWithEffort(): Config {
+    return makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code', model: 'auto', effort: 'high' },
+    });
+  }
+
+  it('clears effort when the chosen tool has no effort channel and names that tool', () => {
+    const { config: updated, notice } = commitPlannerTierSelection({
+      config: plannerWithEffort(),
+      role: 'planner',
+      selection: realPickerOption('planner', 'codex'),
+      model: { id: 'auto' },
+    });
+
+    expect(updated.planner).toMatchObject({ kind: 'cli', tool: 'codex' });
+    expect(updated.planner).not.toHaveProperty('effort');
+    expect(notice).toContain(getProviderDisplayName('codex'));
+    expect(notice).toContain('high');
+  });
+
+  it('keeps effort when the chosen seat has an effort channel', () => {
+    const { config: updated, notice } = commitPlannerTierSelection({
+      config: plannerWithEffort(),
+      role: 'planner',
+      selection: realPickerOption('planner', 'agent-sdk'),
+      model: { id: 'claude-opus-4-6' },
+    });
+
+    expect(updated.planner).toMatchObject({ kind: 'agent-sdk', effort: 'high' });
+    expect(notice).toBeUndefined();
+  });
+
+  it('keeps effort when the chosen API seat resolves Auto to an effort-capable model', () => {
+    const { config: updated, notice } = commitPlannerTierSelection({
+      config: plannerWithEffort(),
+      role: 'planner',
+      selection: realPickerOption('planner', 'anthropic'),
+      model: { id: 'auto' },
+    });
+
+    expect(updated.planner).toMatchObject({ kind: 'api', provider: 'anthropic', effort: 'high' });
+    expect(notice).toBeUndefined();
+  });
+
+  it('clears effort on the implementer seat, where a CLI tool has no effort channel', () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'claude-code', model: 'auto', effort: 'high' },
+    });
+
+    const { config: updated, notice } = commitImplementerSelection(
+      config,
+      realPickerOption('implementer', 'claude-code'),
+      { id: 'auto' },
+    );
+
+    expect(updated.implementer).not.toHaveProperty('effort');
+    expect(notice).toBeDefined();
+  });
+});
+
 describe('commitPlannerTierSelection for the reviewer seat', () => {
   it('writes the reviewer block and leaves the planner untouched', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } });
     const plannerBefore = JSON.stringify(config.planner);
 
-    const updated = commitPlannerTierSelection({
+    const { config: updated } = commitPlannerTierSelection({
       config,
       role: 'reviewer',
       selection: realPickerOption('planner', 'codex'),
@@ -500,7 +566,7 @@ describe('commitPlannerTierSelection for the reviewer seat', () => {
   it('records an explicit reviewer block even when the choice matches the planner', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } });
 
-    const updated = commitPlannerTierSelection({
+    const { config: updated } = commitPlannerTierSelection({
       config,
       role: 'reviewer',
       selection: realPickerOption('planner', 'claude-code'),
@@ -517,7 +583,7 @@ describe('commitPlannerTierSelection for the reviewer seat', () => {
     });
     const plannerBefore = JSON.stringify(config.planner);
 
-    const updated = commitPlannerTierSelection({
+    const { config: updated } = commitPlannerTierSelection({
       config,
       role: 'reviewer',
       selection: realPickerOption('planner', 'opencode'),
@@ -541,7 +607,7 @@ describe('commitPlannerTierSelection for the reviewer seat', () => {
       },
     });
 
-    const updated = commitPlannerTierSelection({
+    const { config: updated } = commitPlannerTierSelection({
       config,
       role: 'reviewer',
       selection: realPickerOption('planner', 'openrouter'),
@@ -567,7 +633,7 @@ describe('commitPlannerTierSelection for the reviewer seat', () => {
       },
     });
 
-    const updated = commitPlannerTierSelection({
+    const { config: updated } = commitPlannerTierSelection({
       config,
       role: 'reviewer',
       selection: realPickerOption('planner', 'openai'),
@@ -591,7 +657,7 @@ describe('commitPlannerTierSelection for the reviewer seat', () => {
       },
     });
 
-    const updated = commitPlannerTierSelection({
+    const { config: updated } = commitPlannerTierSelection({
       config,
       role: 'reviewer',
       selection: realPickerOption('planner', 'openrouter'),

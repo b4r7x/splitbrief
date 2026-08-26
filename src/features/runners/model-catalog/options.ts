@@ -12,9 +12,11 @@ import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
   runnerRoleForActiveRole,
+  seatPickerLane,
   type CliToolDescriptor,
   type RunnerRole,
   type ActiveRunnerRole,
+  type SeatPickerRole,
 } from '../../../core/runners/cli-tool-catalog.js';
 import type { RunnerBillingPosture } from '../../../core/runners/runner-billing.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
@@ -80,9 +82,40 @@ export interface InheritPlannerOption extends PickerOptionBase {
   kind: 'inherit-planner';
 }
 
-export type PickerOption = RunnerPickerOption | CustomCommandLauncherOption | InheritPlannerOption;
+/** The escalation seat's off row: confirming it clears the intermediate model. */
+export interface EscalationOffOption extends PickerOptionBase {
+  kind: 'escalation-off';
+}
+
+export type PickerOption =
+  | RunnerPickerOption
+  | CustomCommandLauncherOption
+  | InheritPlannerOption
+  | EscalationOffOption;
 
 export const INHERIT_PLANNER_OPTION_ID = 'inherit-planner';
+
+export const ESCALATION_OFF_OPTION_ID = 'escalation-off';
+
+/**
+ * Turning escalation off is an edit that always succeeds, so the row carries
+ * no readiness and no model axis of its own.
+ */
+export function escalationOffOption(input: Readonly<{ isCurrent: boolean }>): EscalationOffOption {
+  return {
+    id: ESCALATION_OFF_OPTION_ID,
+    displayName: 'None \u2014 disable escalation',
+    kind: 'escalation-off',
+    roles: ['planner'],
+    modelPolicy: 'none',
+    modelCapability: deriveModelCatalogCapability('none'),
+    billing: 'unknown',
+    permissions: trustPermissions('api', 'planner'),
+    status: { state: 'ready', remediation: null },
+    available: true,
+    ...(input.isCurrent ? { isCurrent: true } : {}),
+  };
+}
 
 /**
  * The inherit row borrows the planner's posture because that is what the seat
@@ -326,28 +359,29 @@ export function assemblePickerDescriptors(): readonly RunnerPickerDescriptor[] {
 }
 
 export function buildPickerOptions(
-  role: ActiveRunnerRole,
+  role: SeatPickerRole,
   descriptors: readonly RunnerPickerDescriptor[],
   detections: PickerDetectionSnapshot,
   currentConfig: PlannerConfig | ImplementerConfig | undefined,
   statusLens?: PickerStatusLens | undefined,
 ): PickerOption[] {
+  const lane = seatPickerLane(role);
   const currentId = currentConfig !== undefined ? getRunnerDisplayName(currentConfig) : undefined;
 
   const options = descriptors.flatMap((entry) => {
-    if (!descriptorSupportsRole(entry, role)) return [];
+    if (!descriptorSupportsRole(entry, lane)) return [];
 
     const isCurrent = currentId === pickerDescriptorId(entry);
     const useConfiguredProviderOutcome =
       isCurrent || statusLens?.activeRunnerId === pickerDescriptorId(entry);
     if (entry.kind === 'cli') {
-      return [projectCliOption(entry.descriptor, role, detections, isCurrent)];
+      return [projectCliOption(entry.descriptor, lane, detections, isCurrent)];
     }
     if (entry.kind === 'api') {
-      return [projectApiOption(entry.descriptor, role, detections, isCurrent)];
+      return [projectApiOption(entry.descriptor, lane, detections, isCurrent)];
     }
     return [
-      projectMetaOption(entry.kind, role, detections, isCurrent, useConfiguredProviderOutcome),
+      projectMetaOption(entry.kind, lane, detections, isCurrent, useConfiguredProviderOutcome),
     ];
   });
 

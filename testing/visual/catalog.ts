@@ -110,11 +110,23 @@ const BRIEF_RECOVERY_SCENARIOS = [
   ['workflow-brief-recovery-budget-blocked', 'Budget blocked', 'BUDGET REFUSAL'],
 ] as const satisfies readonly (readonly [string, string, string])[];
 
+interface ScreenScenarioInput {
+  readonly id: string;
+  readonly title: string;
+}
+
+const HOME_SCENARIOS: readonly ScreenScenarioInput[] = [
+  { id: 'home-empty', title: 'Home · empty project' },
+  { id: 'home-reviewer', title: 'Home · reviewer seat configured' },
+  { id: 'home-floor-collapsed', title: 'Home · one-token reviewer' },
+  { id: 'home-cold', title: 'Home · detection still cold' },
+];
+
 const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
-  home: [
+  home: HOME_SCENARIOS.map((home) =>
     defineScenario({
-      id: 'home-empty',
-      title: 'Home · empty project',
+      id: home.id,
+      title: home.title,
       surface: screenSurface('home'),
       checkpoint: {
         id: 'ready',
@@ -128,7 +140,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Feature composer' },
       ],
     }),
-  ],
+  ),
   workflow: [
     defineScenario({
       id: 'workflow-idle',
@@ -230,6 +242,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
+    defineScenario({
+      id: 'overlay-command-palette-arg',
+      title: 'Workflow · command argument completion',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Command argument completion',
+        kind: 'ready',
+        marker: '/copy',
+      },
+      elements: [
+        { id: 'composer', title: 'Workflow composer' },
+        { id: 'completion', title: 'Command argument completion menu' },
+      ],
+    }),
     ...BRIEF_RECOVERY_SCENARIOS.map(([id, title, marker]) =>
       defineScenario({
         id,
@@ -292,152 +319,268 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
   ],
 };
 
-const OVERLAY_SCENARIOS = {
-  help: defineScenario({
-    id: 'overlay-help',
-    title: 'Overlay · help',
-    surface: overlaySurface('help', 'home'),
-    checkpoint: {
-      id: 'ready',
-      title: 'Help ready',
-      kind: 'ready',
-      marker: 'Help · commands & shortcuts',
-    },
-    elements: [{ id: 'overlay-panel', title: 'Help panel' }],
+interface OverlayScenarioInput {
+  readonly id: string;
+  readonly title: string;
+  readonly marker: string;
+}
+
+interface OverlayGroupInput {
+  readonly overlay: OverlaySurface;
+  readonly underlyingScreen: Screen;
+  readonly panelTitle: string;
+  readonly checkpointTitle: string;
+  readonly scenarios: readonly OverlayScenarioInput[];
+}
+
+function overlayGroup(input: OverlayGroupInput): readonly ScenarioDefinition[] {
+  return input.scenarios.map((scenario) =>
+    defineScenario({
+      id: scenario.id,
+      title: scenario.title,
+      surface: overlaySurface(input.overlay, input.underlyingScreen),
+      checkpoint: {
+        id: 'ready',
+        title: input.checkpointTitle,
+        kind: 'ready',
+        marker: scenario.marker,
+      },
+      elements: [{ id: 'overlay-panel', title: input.panelTitle }],
+    }),
+  );
+}
+
+const PICKER_TITLE_MARKER = 'Tool & model';
+const ESCALATION_TITLE_MARKER = 'Escalate · Provider & model';
+
+const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> = {
+  help: overlayGroup({
+    overlay: 'help',
+    underlyingScreen: 'workflow',
+    panelTitle: 'Help panel',
+    checkpointTitle: 'Help ready',
+    scenarios: [
+      { id: 'overlay-help', title: 'Overlay · help', marker: 'Help · commands & shortcuts' },
+    ],
   }),
-  'command-palette': defineScenario({
-    id: 'overlay-command-palette',
-    title: 'Overlay · command palette',
-    surface: overlaySurface('command-palette', 'home'),
-    checkpoint: {
-      id: 'ready',
-      title: 'Command palette ready',
-      kind: 'ready',
-      marker: 'Commands',
-    },
-    elements: [{ id: 'overlay-panel', title: 'Command palette panel' }],
+  'command-palette': overlayGroup({
+    overlay: 'command-palette',
+    underlyingScreen: 'workflow',
+    panelTitle: 'Command palette panel',
+    checkpointTitle: 'Command palette ready',
+    scenarios: [
+      {
+        id: 'overlay-command-palette',
+        title: 'Overlay · command palette',
+        marker: 'Type a command…',
+      },
+    ],
   }),
-  skills: defineScenario({
-    id: 'overlay-skills',
-    title: 'Overlay · skills',
-    surface: overlaySurface('skills', 'home'),
-    checkpoint: {
-      id: 'ready',
-      title: 'Skills ready',
-      kind: 'ready',
-      marker: 'Skills',
-    },
-    elements: [{ id: 'overlay-panel', title: 'Skills panel' }],
+  skills: overlayGroup({
+    overlay: 'skills',
+    underlyingScreen: 'home',
+    panelTitle: 'Skills panel',
+    checkpointTitle: 'Skills ready',
+    scenarios: [{ id: 'overlay-skills', title: 'Overlay · skills', marker: 'Skills' }],
   }),
-  settings: defineScenario({
-    id: 'overlay-settings',
-    title: 'Overlay · settings',
-    surface: overlaySurface('settings', 'home'),
-    checkpoint: {
-      id: 'ready',
-      title: 'Settings ready',
-      kind: 'ready',
-      marker: 'Settings',
-    },
-    elements: [{ id: 'overlay-panel', title: 'Settings panel' }],
+  settings: overlayGroup({
+    overlay: 'settings',
+    underlyingScreen: 'home',
+    panelTitle: 'Settings panel',
+    checkpointTitle: 'Settings ready',
+    scenarios: [
+      { id: 'overlay-settings', title: 'Overlay · settings', marker: 'Settings' },
+      {
+        id: 'overlay-settings-crew-full',
+        title: 'Overlay · settings · full crew',
+        marker: 'Settings',
+      },
+      {
+        id: 'overlay-settings-inherited-effort',
+        title: 'Overlay · settings · effort inherited by the reviewer',
+        marker: 'Settings',
+      },
+      {
+        id: 'overlay-settings-floor-full',
+        title: 'Overlay · settings · full crew at the floor',
+        marker: 'Settings',
+      },
+      {
+        id: 'overlay-settings-filtered',
+        title: 'Overlay · settings · filtered to temperature',
+        marker: 'Settings',
+      },
+      {
+        id: 'overlay-settings-filter-plan',
+        title: 'Overlay · settings · filtered to plan',
+        marker: 'Settings',
+      },
+    ],
   }),
-  'mode-selector': defineScenario({
-    id: 'overlay-mode-selector',
-    title: 'Overlay · workflow mode',
-    surface: overlaySurface('mode-selector', 'home'),
-    checkpoint: {
-      id: 'ready',
-      title: 'Workflow mode ready',
-      kind: 'ready',
-      marker: 'Workflow mode',
-    },
-    elements: [{ id: 'overlay-panel', title: 'Workflow mode panel' }],
+  'mode-selector': overlayGroup({
+    overlay: 'mode-selector',
+    underlyingScreen: 'home',
+    panelTitle: 'Workflow mode panel',
+    checkpointTitle: 'Workflow mode ready',
+    scenarios: [
+      { id: 'overlay-mode-selector', title: 'Overlay · workflow mode', marker: 'Workflow mode' },
+    ],
   }),
-  'planner-picker': defineScenario({
-    id: 'overlay-planner-picker',
-    title: 'Overlay · planner picker',
-    surface: overlaySurface('planner-picker', 'home'),
-    checkpoint: {
-      id: 'ready',
-      title: 'Planner picker ready',
-      kind: 'ready',
-      marker: 'Tool & model',
-    },
-    elements: [{ id: 'overlay-panel', title: 'Planner picker panel' }],
+  'planner-picker': overlayGroup({
+    overlay: 'planner-picker',
+    underlyingScreen: 'home',
+    panelTitle: 'Planner picker panel',
+    checkpointTitle: 'Planner picker ready',
+    scenarios: [
+      {
+        id: 'overlay-planner-picker',
+        title: 'Overlay · planner picker',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-catalog',
+        title: 'Overlay · planner picker · OpenCode catalog',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-provider-expanded-read',
+        title: 'Overlay · planner picker · routes with readable sign-in',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-provider-expanded-empty',
+        title: 'Overlay · planner picker · routes with no signed-in provider',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-provider-expanded-unreadable',
+        title: 'Overlay · planner picker · routes with unknown sign-in',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-routes-unchecked',
+        title: 'Overlay · planner picker · routes without a credential oracle',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-cold',
+        title: 'Overlay · planner picker · models.dev lane pending',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-no-listing',
+        title: 'Overlay · planner picker · tool without model listing',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-kilo',
+        title: 'Overlay · planner picker · Kilo Code catalog sections',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-malformed',
+        title: 'Overlay · planner picker · malformed probe output',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-contract-choice',
+        title: 'Overlay · planner picker · custom command contract',
+        marker: 'Custom command',
+      },
+      {
+        id: 'overlay-picker-custom-command',
+        title: 'Overlay · planner picker · custom command entry',
+        marker: 'Custom command',
+      },
+      {
+        id: 'overlay-picker-custom-model',
+        title: 'Overlay · planner picker · custom model entry',
+        marker: 'Custom model',
+      },
+      {
+        id: 'overlay-picker-api-key',
+        title: 'Overlay · planner picker · API key entry',
+        marker: 'Add API key',
+      },
+    ],
   }),
-  'implementer-picker': defineScenario({
-    id: 'overlay-implementer-picker',
-    title: 'Overlay · implementer picker',
-    surface: overlaySurface('implementer-picker', 'home'),
-    checkpoint: {
-      id: 'ready',
-      title: 'Implementer picker ready',
-      kind: 'ready',
-      marker: 'Add custom model',
-    },
-    elements: [{ id: 'overlay-panel', title: 'Implementer picker panel' }],
+  'implementer-picker': overlayGroup({
+    overlay: 'implementer-picker',
+    underlyingScreen: 'home',
+    panelTitle: 'Implementer picker panel',
+    checkpointTitle: 'Implementer picker ready',
+    scenarios: [
+      {
+        id: 'overlay-implementer-picker',
+        title: 'Overlay · implementer picker',
+        marker: 'Add custom model',
+      },
+    ],
   }),
-  'reviewer-picker': defineScenario({
-    id: 'overlay-reviewer-picker',
-    title: 'Overlay · reviewer picker',
-    surface: overlaySurface('reviewer-picker', 'home'),
-    checkpoint: {
-      id: 'ready',
-      title: 'Reviewer picker ready',
-      kind: 'ready',
-      marker: 'Reviewer',
-    },
-    elements: [{ id: 'overlay-panel', title: 'Reviewer picker panel' }],
+  'reviewer-picker': overlayGroup({
+    overlay: 'reviewer-picker',
+    underlyingScreen: 'home',
+    panelTitle: 'Reviewer picker panel',
+    checkpointTitle: 'Reviewer picker ready',
+    scenarios: [
+      {
+        id: 'overlay-reviewer-picker-inherited',
+        title: 'Overlay · reviewer picker · inherited from the planner',
+        marker: 'Reviewer',
+      },
+      {
+        id: 'overlay-reviewer-picker-tool',
+        title: 'Overlay · reviewer picker · tool chosen',
+        marker: 'Reviewer',
+      },
+    ],
   }),
-  crew: defineScenario({
-    id: 'overlay-crew',
-    title: 'Overlay · crew',
-    surface: overlaySurface('crew', 'home'),
-    checkpoint: {
-      id: 'ready',
-      title: 'Crew ready',
-      kind: 'ready',
-      marker: 'Crew',
-    },
-    elements: [{ id: 'overlay-panel', title: 'Crew panel' }],
+  'escalation-picker': overlayGroup({
+    overlay: 'escalation-picker',
+    underlyingScreen: 'home',
+    panelTitle: 'Escalation picker panel',
+    checkpointTitle: 'Escalation picker ready',
+    scenarios: [
+      {
+        id: 'overlay-escalation-picker',
+        title: 'Overlay · escalation picker',
+        marker: ESCALATION_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-escalation-picker-provider',
+        title: 'Overlay · escalation picker · provider chosen',
+        marker: ESCALATION_TITLE_MARKER,
+      },
+    ],
   }),
-  sessions: defineScenario({
-    id: 'overlay-sessions',
-    title: 'Overlay · sessions',
-    surface: overlaySurface('sessions', 'home'),
-    checkpoint: {
-      id: 'ready',
-      title: 'Sessions ready',
-      kind: 'ready',
-      marker: 'Sessions',
-    },
-    elements: [{ id: 'overlay-panel', title: 'Sessions panel' }],
+  sessions: overlayGroup({
+    overlay: 'sessions',
+    underlyingScreen: 'home',
+    panelTitle: 'Sessions panel',
+    checkpointTitle: 'Sessions ready',
+    scenarios: [{ id: 'overlay-sessions', title: 'Overlay · sessions', marker: 'Sessions' }],
   }),
-  editor: defineScenario({
-    id: 'overlay-editor',
-    title: 'Overlay · editor',
-    surface: overlaySurface('editor', 'workflow'),
-    checkpoint: {
-      id: 'ready',
-      title: 'Editor ready',
-      kind: 'ready',
-      marker: 'Visual fixture plan',
-    },
-    elements: [{ id: 'overlay-panel', title: 'Editor frame' }],
+  editor: overlayGroup({
+    overlay: 'editor',
+    underlyingScreen: 'workflow',
+    panelTitle: 'Editor frame',
+    checkpointTitle: 'Editor ready',
+    scenarios: [{ id: 'overlay-editor', title: 'Overlay · editor', marker: 'Visual fixture plan' }],
   }),
-  'cost-drilldown': defineScenario({
-    id: 'overlay-cost-drilldown',
-    title: 'Overlay · cost breakdown',
-    surface: overlaySurface('cost-drilldown', 'workflow'),
-    checkpoint: {
-      id: 'ready',
-      title: 'Cost breakdown ready',
-      kind: 'ready',
-      marker: 'Cost · breakdown',
-    },
-    elements: [{ id: 'overlay-panel', title: 'Cost breakdown panel' }],
+  'cost-drilldown': overlayGroup({
+    overlay: 'cost-drilldown',
+    underlyingScreen: 'workflow',
+    panelTitle: 'Cost breakdown panel',
+    checkpointTitle: 'Cost breakdown ready',
+    scenarios: [
+      {
+        id: 'overlay-cost-drilldown',
+        title: 'Overlay · cost breakdown',
+        marker: 'Cost · breakdown',
+      },
+    ],
   }),
-} satisfies Record<OverlaySurface, ScenarioDefinition>;
+};
 
 function createCatalog(scenarios: readonly ScenarioDefinition[]): readonly ScenarioDefinition[] {
   const ids = new Set<string>();
@@ -452,7 +595,7 @@ function createCatalog(scenarios: readonly ScenarioDefinition[]): readonly Scena
 
 export const VISUAL_CATALOG = createCatalog([
   ...ALL_SCREENS.flatMap((screen) => SCREEN_SCENARIOS[screen]),
-  ...ACTIVE_OVERLAYS.map((overlay) => OVERLAY_SCENARIOS[overlay]),
+  ...ACTIVE_OVERLAYS.flatMap((overlay) => OVERLAY_SCENARIOS[overlay]),
 ]);
 
 const SCENARIO_BY_ID: ReadonlyMap<string, ScenarioDefinition> = new Map(

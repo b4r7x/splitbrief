@@ -120,10 +120,13 @@ describe('CLI runner readiness', () => {
   });
 
   it('carries optional per-provider oracle facts through derivation and validation', () => {
-    const providerAuth = [
-      { provider: 'GitHub Copilot', source: 'oauth' as const },
-      { provider: 'OpenAI', source: 'env' as const, envVar: 'OPENAI_API_KEY' },
-    ];
+    const providerAuth = {
+      kind: 'read' as const,
+      facts: [
+        { provider: 'GitHub Copilot', source: 'oauth' as const },
+        { provider: 'OpenAI', source: 'env' as const, envVar: 'OPENAI_API_KEY' },
+      ],
+    };
     const result = deriveCliReadiness(readyFacts({ providerAuth }));
 
     expect(result.providerAuth).toEqual(providerAuth);
@@ -132,7 +135,7 @@ describe('CLI runner readiness', () => {
     expect(
       CliReadinessResultSchema.safeParse({
         ...result,
-        providerAuth: [{ provider: 'OpenAI', source: 'stolen-token' }],
+        providerAuth: { kind: 'read', facts: [{ provider: 'OpenAI', source: 'stolen-token' }] },
       }).success,
     ).toBe(false);
   });

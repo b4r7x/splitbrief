@@ -5,12 +5,14 @@ import { detectionStore } from '../../stores/project/detection.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { reportConfigSaveFailure } from '../../stores/project/save-feedback.js';
-import { CHEVRON_SEP, SOFT_SEP } from '../../components/separators.js';
+import { SOFT_SEP } from '../../components/separators.js';
 import { error } from '../../utils/error.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { cliProviderAuthFacts } from '../../core/discovery/detection.js';
 import { formatModelName } from '../../core/model-display.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { clearReviewerSeat } from '../../core/config/accessors/active-runner.js';
+import { clearEscalation, writeEscalationRunner } from '../../core/config/accessors/escalation.js';
 
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
@@ -18,8 +20,11 @@ import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
+  seatPickerLane,
   type ActiveRunnerRole,
+  type SeatPickerRole,
 } from '../../core/runners/cli-tool-catalog.js';
+import { isProviderId } from '../../core/schemas/enums.js';
 import type { Config } from '../../core/schemas/config.js';
 import { getDefaultDetectionService } from '../../engine/detection/service.js';
 import { refreshDetectionForCurrentConfig } from '../../engine/detection/store-publication.js';
@@ -42,6 +47,7 @@ import {
   commitCustomModel,
   inheritsPlannerSeat,
   removeCustomModel,
+  type SeatCommitResult,
 } from './config-transforms.js';
 import {
   configHasInlineApiKey,
@@ -50,7 +56,7 @@ import {
   redactKey,
   validateProviderKey,
 } from './provider-auth.js';
-import type { ViewState, ViewAction } from './view-state.js';
+import { pickerViewStore, type PickerSubView } from '../../stores/ui/picker-view.js';
 
 export interface PickerActions {
   confirm(selection: PickerOption, model: ModelOption | null): void;
@@ -91,6 +97,19 @@ async function defaultReadGitignore(projectDir: string): Promise<string | null> 
   }
 }
 
+/** The seat rows that can carry a model; the terminal rows never reach a commit. */
+function runnerItemOf(item: PickerOption | undefined): RunnerPickerOption | undefined {
+  if (item === undefined) return undefined;
+  if (
+    item.kind === 'custom-command' ||
+    item.kind === 'inherit-planner' ||
+    item.kind === 'escalation-off'
+  ) {
+    return undefined;
+  }
+  return item;
+}
+
 /**
  * The provider honesty note for a chosen variant, mirroring the picker's
  * confirm-time semantics: an unreadable oracle claims nothing, a configured
@@ -100,7 +119,9 @@ async function defaultReadGitignore(projectDir: string): Promise<string | null> 
 function needsSignInVariantNote(item: RunnerPickerOption, fullId: string): string | undefined {
   const toolId = includes(CLI_TOOL_IDS, item.id) ? item.id : undefined;
   if (toolId === undefined) return undefined;
-  const facts = detectionStore.get().cliTools.find((d) => d.tool === toolId)?.providerAuth;
+  const facts = cliProviderAuthFacts(
+    detectionStore.get().cliTools.find((d) => d.tool === toolId)?.providerAuth,
+  );
   if (facts === undefined) return undefined;
   const authKey = modelProviderAuthKey(fullId);
   const prefix = modelProviderPrefix(fullId);
@@ -117,18 +138,25 @@ function needsSignInVariantNote(item: RunnerPickerOption, fullId: string): strin
 }
 
 export function usePickerActions(opts: {
-  role: ActiveRunnerRole;
+  role: SeatPickerRole;
   catalog: PickerCatalog;
-  viewState: ViewState;
-  dispatchView: (action: ViewAction) => void;
   deps?: Partial<PickerActionDeps> | undefined;
 }): PickerActions {
-  const { role, catalog, viewState, dispatchView } = opts;
+  const { role, catalog } = opts;
+  const seatRole: ActiveRunnerRole = seatPickerLane(role);
   const config = configStore.useConfig();
+  const view = pickerViewStore.use((s) => s.view);
+  const preservedLeftIndex = pickerViewStore.use((s) => s.preservedLeftIndex);
   const deps: PickerActionDeps = {
     validateKey: opts.deps?.validateKey ?? validateProviderKey,
     refreshDetection: opts.deps?.refreshDetection ?? defaultRefreshDetection,
     readGitignore: opts.deps?.readGitignore ?? defaultReadGitignore,
+  };
+
+  const reportNotice = (notice: string | undefined) => {
+    if (notice !== undefined && !feedbackStore.get().isError) {
+      feedbackStore.setMessage(notice);
+    }
   };
 
   const commit = async (updated: Config, message: string) => {
@@ -144,8 +172,8 @@ export function usePickerActions(opts: {
     selection: RunnerPickerOption,
     model: { id: string } | null,
     apiKey?: string,
-  ): Config => {
-    switch (role) {
+  ): SeatCommitResult => {
+    switch (seatRole) {
       case 'planner':
         return commitPlannerTierSelection({ config, role: 'planner', selection, model, apiKey });
       case 'reviewer':
@@ -153,121 +181,147 @@ export function usePickerActions(opts: {
       case 'implementer':
         return commitImplementerSelection(config, selection, model, apiKey);
       default:
-        return assertNever(role);
+        return assertNever(seatRole);
     }
   };
 
   const launcherIndex = catalog.items.findIndex((item) => item.kind === 'custom-command');
 
+  const openSubView = (subView: PickerSubView, item: PickerOption) => {
+    const index = catalog.items.findIndex((entry) => entry.id === item.id);
+    pickerViewStore.open(subView, index >= 0 ? index : 0);
+  };
+
+  // The escalate seat is not a runner block: it writes the intermediate model
+  // in one save instead of going through the seat commit transforms.
+  const saveModelSelection = async (
+    selection: RunnerPickerOption,
+    modelId: string | null,
+    note?: string | undefined,
+  ) => {
+    const label =
+      modelId === null
+        ? selection.displayName
+        : `${selection.displayName}${SOFT_SEP}${formatModelName(modelId)}`;
+    const message = `${catalog.roleLabel} set to: ${label}`;
+    if (role === 'escalation') {
+      if (modelId === null || !isProviderId(selection.id)) return;
+      await commit(
+        writeEscalationRunner(config, { provider: selection.id, model: modelId }),
+        message,
+      );
+      reportNotice(note);
+      return;
+    }
+    const seat = commitSelection(selection, modelId === null ? null : { id: modelId });
+    await commit(seat.config, message);
+    // Both notices are news the save does not carry: neither may overwrite the
+    // other, so they land as one line.
+    reportNotice(
+      [seat.notice, note].filter((line) => line !== undefined).join(SOFT_SEP) || undefined,
+    );
+  };
+
   return {
     async confirm(selection: PickerOption, model: ModelOption | null) {
       if (selection.kind === 'custom-command') {
         const selectionIndex = catalog.items.findIndex((item) => item.id === selection.id);
-        dispatchView({
-          type: 'open-custom-command-contract',
-          preservedLeftIndex:
-            selectionIndex >= 0 ? selectionIndex : launcherIndex >= 0 ? launcherIndex : 0,
-        });
+        pickerViewStore.open(
+          { kind: 'custom-command-contract' },
+          selectionIndex >= 0 ? selectionIndex : launcherIndex >= 0 ? launcherIndex : 0,
+        );
+        return;
+      }
+      if (selection.kind === 'escalation-off') {
+        await commit(clearEscalation(config), `${catalog.roleLabel} set to: none`);
         return;
       }
       if (selection.kind === 'inherit-planner') {
         await commit(clearReviewerSeat(config), `${catalog.roleLabel} set to: same as planner`);
         return;
       }
-      if (model !== null && (model.variants?.length ?? 0) > 1) {
-        // A merged row spans several provider routes; the choice of route is
-        // the user's, so nothing saves until the overlay picks one.
-        dispatchView({ type: 'open-provider-choice', item: selection, model });
-        return;
-      }
-      const label = model
-        ? `${selection.displayName}${CHEVRON_SEP}${formatModelName(model.id)}`
-        : selection.displayName;
-      const updated = commitSelection(selection, model);
-      await commit(updated, `${catalog.roleLabel} set to: ${label}`);
+      await saveModelSelection(selection, model?.id ?? null);
     },
     async confirmProviderVariant(fullId: string) {
-      if (viewState.view.kind !== 'provider-choice') return;
-      const item = viewState.view.item;
-      const note = needsSignInVariantNote(item, fullId);
-      const label = `${item.displayName}${CHEVRON_SEP}${formatModelName(fullId)}`;
-      const updated = commitSelection(item, { id: fullId });
-      await commit(updated, `${catalog.roleLabel} set to: ${label}`);
-      // The commit posts its own save or failure feedback first; the provider
-      // honesty note replaces only a successful save message.
-      if (note !== undefined && !feedbackStore.get().isError) {
-        feedbackStore.setMessage(note);
-      }
+      const item = runnerItemOf(catalog.currentItem);
+      if (item === undefined) return;
+      await saveModelSelection(item, fullId, needsSignInVariantNote(item, fullId));
     },
     leftChange(item: PickerOption) {
       catalog.setCurrentItem(item);
     },
     async deleteRight(item: ModelOption) {
-      if (inheritsPlannerSeat(config, role)) {
+      if (inheritsPlannerSeat(config, seatRole)) {
         feedbackStore.setError(`${item.id} belongs to the planner. Remove it from the planner.`);
         return;
       }
-      const updated = removeCustomModel(config, role, item.id);
+      const updated = removeCustomModel(config, seatRole, item.id);
       const result = await configStore.save(updated);
       if (reportConfigSaveFailure(result)) return;
       feedbackStore.setMessage(`Removed custom model: ${item.id}`);
     },
     chooseContract(kind: 'shell' | 'agent') {
-      if (viewState.view.kind !== 'custom-command-contract') return;
-      dispatchView({
-        type: 'open-custom-command',
-        preservedLeftIndex: viewState.preservedLeftIndex,
-        intendedKind: kind,
-      });
+      if (view.kind !== 'custom-command-contract') return;
+      pickerViewStore.open({ kind: 'custom-command', intendedKind: kind }, preservedLeftIndex);
     },
     async customCommand(cmd: string) {
-      if (viewState.view.kind !== 'custom-command') {
+      if (view.kind !== 'custom-command') {
         throw error('picker-invalid-view', 'customCommand called outside custom-command view', {
-          view: viewState.view.kind,
+          view: view.kind,
         });
       }
       const updated = commitCustomCommand({
         config,
-        role,
+        role: seatRole,
         command: cmd,
-        kind: viewState.view.intendedKind,
+        kind: view.intendedKind,
       });
-      await commit(updated, `${catalog.roleLabel} set to: ${viewState.view.intendedKind}: ${cmd}`);
+      await commit(updated, `${catalog.roleLabel} set to: ${view.intendedKind}: ${cmd}`);
     },
     async customModel(modelName: string) {
-      if (viewState.view.kind !== 'custom-model') return;
+      if (view.kind !== 'custom-model') return;
       if (isAutomaticModel(modelName)) {
         feedbackStore.setError('"auto" is already offered as the Auto row — select it there.');
         return;
       }
-      const customModelItem = viewState.view.item;
+      const customModelItem = runnerItemOf(catalog.currentItem);
+      if (customModelItem === undefined) return;
       const updated = commitCustomModel({
         config,
-        role,
+        role: seatRole,
         selection: customModelItem,
         modelName,
         customModels: catalog.customModels,
       });
       await commit(
         updated,
-        `${catalog.roleLabel} set to: ${customModelItem.displayName}${CHEVRON_SEP}${formatModelName(modelName)}`,
+        `${catalog.roleLabel} set to: ${customModelItem.displayName}${SOFT_SEP}${formatModelName(modelName)}`,
       );
     },
     openCustomModel(item: PickerOption) {
-      if (item.kind === 'custom-command' || item.kind === 'inherit-planner') return;
-      dispatchView({ type: 'open-custom-model', item });
+      if (runnerItemOf(item) === undefined) return;
+      openSubView({ kind: 'custom-model' }, item);
     },
     openProviderAuth(item: PickerOption) {
       if (item.kind !== 'api') return;
-      dispatchView({ type: 'open-provider-auth', item });
+      // The escalate seat names a provider and a model; it has no key of its
+      // own, so a key typed here could only land on another seat's block.
+      if (role === 'escalation') {
+        feedbackStore.setError(
+          item.status.remediation ?? `Set the ${item.displayName} API key, then press ctrl+r.`,
+        );
+        return;
+      }
+      openSubView({ kind: 'provider-auth' }, item);
     },
     async submitProviderKey(value: string) {
-      if (viewState.view.kind !== 'provider-auth') {
+      if (view.kind !== 'provider-auth') {
         throw error('picker-invalid-view', 'submitProviderKey called outside provider-auth view', {
-          view: viewState.view.kind,
+          view: view.kind,
         });
       }
-      const item = viewState.view.item;
+      const item = runnerItemOf(catalog.currentItem);
+      if (item === undefined) return;
       const descriptor = getApiProviderDescriptor(item.id);
       if (descriptor === undefined) {
         feedbackStore.setError(`Unknown provider: ${item.id}`);
@@ -282,7 +336,7 @@ export function usePickerActions(opts: {
       // An implementer moving onto a new provider needs a model; the probe's
       // catalog supplies one. A planner-tier seat or an unchanged provider keeps its own.
       const authModel = (): { id: string } | null => {
-        if (role !== 'implementer') return null;
+        if (seatRole !== 'implementer') return null;
         const existing = resolveImplementerProfiles(config).defaultProfile.config;
         if (
           existing.kind === 'api' &&
@@ -295,9 +349,9 @@ export function usePickerActions(opts: {
         return first === undefined ? null : { id: first.id };
       };
       const firstInlineKey = !configHasInlineApiKey(config);
-      let updated: Config;
+      let seat: SeatCommitResult;
       try {
-        updated = commitSelection(item, authModel(), value);
+        seat = commitSelection(item, authModel(), value);
       } catch (err) {
         feedbackStore.setError(redactKey(toErrorMessage(err), value));
         return;
@@ -308,12 +362,15 @@ export function usePickerActions(opts: {
       const gitignore = firstInlineKey
         ? await deps.readGitignore(configStore.get().projectDir)
         : null;
-      const result = await configStore.save(updated);
+      const result = await configStore.save(seat.config);
       if (reportConfigSaveFailure(result, (message) => redactKey(message, value))) return;
       let message = `${catalog.roleLabel} set to: ${item.displayName}${SOFT_SEP}key saved to ${SPLITBRIEF_DIR}/${CONFIG_FILE}`;
       if (firstInlineKey && !gitignoreCoversSplitbrief(gitignore)) {
         message += `${SOFT_SEP}warning: .gitignore did not cover ${SPLITBRIEF_DIR}/ — verify before committing`;
       }
+      // The effort note is news the save line does not carry; appending keeps
+      // the .gitignore warning on screen instead of replacing it.
+      if (seat.notice !== undefined) message += `${SOFT_SEP}${seat.notice}`;
       feedbackStore.setMessage(message);
       overlayStore.close();
       try {
@@ -323,7 +380,7 @@ export function usePickerActions(opts: {
       }
     },
     closeOverlay() {
-      dispatchView({ type: 'close' });
+      pickerViewStore.close();
     },
   };
 }

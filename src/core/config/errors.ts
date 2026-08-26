@@ -104,6 +104,12 @@ export const configError = {
       value,
       reason,
     }),
+  reviewerInherited: (path: string) =>
+    error(
+      'config-reviewer-inherited',
+      `Cannot edit ${path}: the review seat inherits the planner; give REVIEW its own tool first.`,
+      { path },
+    ),
   kindMismatch: (role: ActiveRunnerRole, expectedKind: string) =>
     error('config-kind-mismatch', `Expected ${expectedKind} ${role} config`, {
       role,

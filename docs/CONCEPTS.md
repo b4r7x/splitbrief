@@ -284,7 +284,7 @@ First-time trust gate for hook configs. `src/core/hooks/trust.ts` computes a has
 
 ## Repo-map
 
-Token-budgeted codebase summary injected into the planner prompt at workflow start. Pipeline: tree-sitter parse → SQLite cache → symbol graph → PageRank → token-aware format. Lives in `src/engine/codebase/`. Opt-out via `codebase.enabled: false`. Force a rebuild with `/repomap rebuild` in the TUI. See [REPOMAP.md](./REPOMAP.md).
+Token-budgeted codebase summary injected into the planner prompt at workflow start. Pipeline: tree-sitter parse → SQLite cache → symbol graph → PageRank → token-aware format. Lives in `src/engine/codebase/`. Opt-out via `codebase.enabled: false`. The map rebuilds itself on each planning run when the cache is stale; there is no manual rebuild step. See [REPOMAP.md](./REPOMAP.md).
 
 - **RepoMapOptions** — options to `buildRepoMap(projectDir, opts)` in `src/engine/codebase/repomap.ts`: `{ projectDir, tokenBudget?, include?, exclude?, focusFiles? }`. `tokenBudget` defaults to 4000. `include`/`exclude` default to `['src/**/*.ts', 'src/**/*.tsx']` minus tests, `dist/`, and `node_modules/`. `focusFiles` boosts the PageRank personalization vector for files the planner already knows are relevant.
 

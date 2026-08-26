@@ -89,6 +89,27 @@ describe('ContractChoiceOverlay', () => {
     ui.unmount();
   });
 
+  it('fits 18 rows at 60 columns and ends the content on a card row', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+    const ui = renderFeature(
+      <ContractChoiceOverlay role="planner" initialKind={undefined} onChoose={() => {}} />,
+      { cols: 60, rows: 18 },
+    );
+    await tick(20);
+
+    const lines = (ui.lastFrame() ?? '').split('\n');
+    const top = lines.findIndex((line) => line.includes('\u256D'));
+    const bottom = lines.findLastIndex((line) => line.includes('\u2570'));
+    expect(top).toBeGreaterThanOrEqual(0);
+    expect(bottom - top + 1).toBeLessThanOrEqual(18);
+
+    const hint = lines.findIndex((line) => line.includes('continue'));
+    // OverlayPanel already spaces the hint by one row, so the card block ends two rows above it.
+    expect(lines[hint - 1]?.replace(/[\u2502\u256D\u256E\u2570\u256F]/g, '').trim()).toBe('');
+    expect(lines[hint - 2]).toContain('written directly to your tree');
+    ui.unmount();
+  });
+
   it('names the reviewer seat and takes input while the reviewer picker is open', async () => {
     overlayStore.open('reviewer-picker');
     const chosen: string[] = [];

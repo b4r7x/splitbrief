@@ -7,15 +7,23 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createDefaultConfig, loadConfig, writeConfig } from '../../core/config/load/io.js';
 import type { Config } from '../../core/schemas/config.js';
+import type { CliToolDetection } from '../../core/discovery/detection.js';
 import type { ScopedCliCatalogAttempt } from '../../engine/detection/cli-catalog-outcomes.js';
 import type { DetectionServiceResult } from '../../engine/detection/service.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
+import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { listRowLead } from '../../components/list-row.js';
 import { ToolModelPicker } from './runners.js';
+
+// The merged row is expanded only while both of its route ids are on screen;
+// collapsed it shows a route count instead.
+const showsBothRoutes = (frame: string) =>
+  frame.includes('openrouter') && frame.includes('anthropic');
 
 const ESC = '\u001B';
 const ARROW_DOWN = `${ESC}[B`;
@@ -85,7 +93,7 @@ describe('ToolModelPicker custom-command input', () => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).not.toContain('Output command');
       expect(frame).toContain('Tools'); // back on the two-column picker view
-      expect(frame).toContain('Models');
+      expect(frame).toContain('Claude Code CLI'); // the tool rows are listed again
     });
     ui.unmount();
   });
@@ -143,7 +151,7 @@ describe('ToolModelPicker custom-command input', () => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).not.toContain('Output command');
       expect(frame).toContain('Tools');
-      expect(frame).toContain('Models');
+      expect(frame).toContain('Claude Code CLI');
     });
     ui.unmount();
   });
@@ -242,7 +250,7 @@ function frameText(ui: ReturnType<typeof renderFeature>): string {
   return stripAnsiStyles(ui.lastFrame() ?? '');
 }
 
-describe('ToolModelPicker provider choice', () => {
+describe('ToolModelPicker provider routes', () => {
   let projectDir: string;
   let initialPlanner: Config['planner'];
 
@@ -251,10 +259,16 @@ describe('ToolModelPicker provider choice', () => {
     resetAllStores();
     _resetMouseZones();
     terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
-    projectDir = createTempDir('runners-provider-choice');
+    projectDir = createTempDir('runners-provider-routes');
     writeConfig(projectDir, createDefaultConfig());
     configStore.load(projectDir);
     initialPlanner = loadConfig(projectDir).config.planner;
+    overlayStore.open('planner-picker');
+  });
+
+  // The models lane publishes an empty tool list, so the detected tool has to be
+  // re-stated after it; seeding in the other order leaves OpenCode undetected.
+  function seedOpenCode(providerAuth: CliToolDetection['providerAuth']) {
     publishOpenCodePlannerModels([
       'openrouter/deepseek-v4-flash',
       'anthropic/deepseek-v4-flash',
@@ -262,49 +276,77 @@ describe('ToolModelPicker provider choice', () => {
     ]);
     detectionStore.setDetection({
       providers: [],
-      cliTools: [
-        cliDetectionFor('ready', 'opencode', {
-          providerAuth: [{ provider: 'Anthropic', source: 'oauth' }],
-        }),
-      ],
+      cliTools: [cliDetectionFor('ready', 'opencode', { providerAuth })],
     });
-    overlayStore.open('planner-picker');
-  });
+  }
+
+  const signedInToAnthropic = {
+    kind: 'read',
+    facts: [{ provider: 'Anthropic', source: 'oauth' }],
+  } as const;
+
+  // Signed in, but to neither of the merged row's two routes.
+  const signedInToGroq = { kind: 'read', facts: [{ provider: 'Groq', source: 'api' }] } as const;
 
   afterEach(() => {
     configStore.__testReset();
     cleanupTempDir(projectDir);
   });
 
-  async function openProviderChoice(ui: ReturnType<typeof renderFeature>) {
+  async function focusMergedModelRow(ui: ReturnType<typeof renderFeature>) {
     await flushEffects();
     ui.stdin.write('opencode'); // narrow the tool list to OpenCode
     await flushEffects();
     ui.stdin.write('\r'); // select the tool and focus the model column
     await flushEffects();
-    ui.stdin.write('deepseek'); // narrow to the colliding bare id
     await vi.waitFor(() => {
       expect(frameText(ui)).toContain('DeepSeek V4 Flash');
     });
+    // Auto → GPT-5.4 → Claude Sonnet 4.6 → the merged DeepSeek row. Filtering
+    // there instead would hide the route rows the expansion has to reveal.
+    for (let i = 0; i < 3; i += 1) {
+      await flushEffects();
+      ui.stdin.write(ARROW_DOWN);
+    }
+    await vi.waitFor(() => {
+      expect(frameText(ui)).toContain(`${listRowLead('active')}DeepSeek V4 Flash`);
+    });
     await flushEffects();
-    ui.stdin.write('\r'); // Enter on the merged row opens the provider choice
+  }
+
+  it('confirms the one signed-in route without expanding the merged row', async () => {
+    seedOpenCode(signedInToAnthropic);
+    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    await focusMergedModelRow(ui);
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(loadConfig(projectDir).config.planner).toMatchObject({
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'anthropic/deepseek-v4-flash',
+      });
+    });
+    expect(ui.frames.map(stripAnsiStyles).some(showsBothRoutes)).toBe(false);
+    ui.unmount();
+  });
+
+  it('expands to the route rows when neither route is signed in, then saves the chosen one', async () => {
+    seedOpenCode(signedInToGroq);
+    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    await focusMergedModelRow(ui);
+
+    ui.stdin.write('\r'); // Enter on the merged row expands its routes
     await vi.waitFor(() => {
       const frame = frameText(ui);
-      expect(frame).toContain('⏎ choose');
       expect(frame).toContain('openrouter');
       expect(frame).toContain('anthropic');
     });
-  }
-
-  it('opens the provider choice on a multi-provider row and saves the qualified id', async () => {
-    const ui = renderFeature(<ToolModelPicker role="planner" />);
-    await openProviderChoice(ui);
-
-    // Opening the choice saved nothing yet.
+    // Expanding saved nothing yet.
     expect(loadConfig(projectDir).config.planner).toEqual(initialPlanner);
 
     await flushEffects();
-    ui.stdin.write('\r'); // choose the focused provider through the existing save path
+    ui.stdin.write('\r'); // confirm the focused route
     await vi.waitFor(() => {
       const planner = loadConfig(projectDir).config.planner;
       expect(planner).toMatchObject({ kind: 'cli', tool: 'opencode' });
@@ -313,15 +355,21 @@ describe('ToolModelPicker provider choice', () => {
     ui.unmount();
   });
 
-  it('esc returns to the model list with nothing saved', async () => {
+  it('esc collapses the expanded routes with nothing saved', async () => {
+    seedOpenCode(signedInToGroq);
     const ui = renderFeature(<ToolModelPicker role="planner" />);
-    await openProviderChoice(ui);
+    await focusMergedModelRow(ui);
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(showsBothRoutes(frameText(ui))).toBe(true);
+    });
 
     await flushEffects();
     ui.stdin.write(ESC);
     await vi.waitFor(() => {
       const frame = frameText(ui);
-      expect(frame).not.toContain('⏎ choose');
+      expect(showsBothRoutes(frame)).toBe(false);
       expect(frame).toContain('Tools');
       expect(frame).toContain('Models');
     });
@@ -329,7 +377,8 @@ describe('ToolModelPicker provider choice', () => {
     ui.unmount();
   });
 
-  it('saves a single-provider model directly without the overlay', async () => {
+  it('saves a single-route model directly without expanding', async () => {
+    seedOpenCode(signedInToAnthropic);
     const ui = renderFeature(<ToolModelPicker role="planner" />);
     await flushEffects();
     ui.stdin.write('opencode');
@@ -349,7 +398,7 @@ describe('ToolModelPicker provider choice', () => {
         model: 'openrouter/deepseek-v4-flash-free',
       });
     });
-    expect(ui.frames.some((frame) => frame.includes('⏎ choose'))).toBe(false);
+    expect(ui.frames.map(stripAnsiStyles).some(showsBothRoutes)).toBe(false);
     ui.unmount();
   });
 });
@@ -387,6 +436,27 @@ describe('ToolModelPicker discovery state', () => {
     expect(frame).toContain('Refreshing your tools…');
     expect(frame).toContain('Tools');
     expect(frame).not.toContain('Initializing your tools…');
+    ui.unmount();
+  });
+});
+
+describe('ToolModelPicker sub-view desync', () => {
+  beforeEach(() => {
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 120, rows: 36, isSmall: false });
+    configStore.__testReset({ projectDir: '/tmp/project', config: makeConfig() });
+  });
+
+  it('closes the provider-auth view when the focused row is not an API provider', async () => {
+    publishOpenCodePlannerModels(['openrouter/deepseek-v4-flash']);
+    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    await tick(20);
+
+    pickerViewStore.open({ kind: 'provider-auth' });
+    await vi.waitFor(() => {
+      expect(pickerViewStore.get().view.kind).toBe('picker');
+    });
+    expect(frameText(ui)).toContain('Tools');
     ui.unmount();
   });
 });

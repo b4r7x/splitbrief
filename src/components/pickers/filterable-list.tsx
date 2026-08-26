@@ -6,6 +6,8 @@ import { FilterInput } from '../filter-input.js';
 import type { FilterableListKeyContext } from '../../hooks/use-filterable-list.js';
 import { useFilterableList } from '../../hooks/use-filterable-list.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { useStores } from '../../stores/use-stores.js';
+import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { availableRows } from './scroll-window.js';
 import { ListViewport, type ListSectionConfig } from './list-viewport.js';
@@ -14,7 +16,10 @@ interface FilterableListProps<T> {
   items: T[];
   filterFn: (item: T, query: string) => boolean;
   getKey: (item: T) => string;
-  renderItem: (item: T, ctx: { isCursor: boolean; globalIndex: number }) => ReactNode;
+  renderItem: (
+    item: T,
+    ctx: { isCursor: boolean; globalIndex: number; innerWidth: number },
+  ) => ReactNode;
   onConfirm?: (item: T) => void;
   onActivate?: (item: T) => void;
   title?: string;
@@ -23,7 +28,7 @@ interface FilterableListProps<T> {
   chromeRows: number;
   maxVisible?: number;
   listFloor?: number;
-  width?: number;
+  density: OverlayDensity;
   filterPlaceholder?: string | undefined;
   shouldAppendChar?: (ch: string) => boolean;
   customKeys?: (input: string, key: Key, ctx: FilterableListKeyContext<T>) => boolean | undefined;
@@ -43,13 +48,14 @@ export function FilterableList<T>({
   chromeRows,
   maxVisible: maxVisibleProp,
   listFloor = 0,
-  width,
+  density,
   filterPlaceholder,
   shouldAppendChar,
   customKeys,
   section,
 }: FilterableListProps<T>) {
-  const rows = terminalSizeStore.use((s) => s.rows);
+  const [{ cols, rows }] = useStores(terminalSizeStore);
+  const { innerWidth } = overlayRect({ cols, rows, density });
   const available = availableRows({ rows, chromeRows, floor: listFloor });
   const rowBudget =
     maxVisibleProp === undefined
@@ -71,7 +77,7 @@ export function FilterableList<T>({
   const { filter, filtered, selectedIndex } = list;
 
   return (
-    <OverlayPanel title={title} hint={hint} maxWidth={width}>
+    <OverlayPanel title={title} hint={hint} density={density}>
       <Box marginBottom={1}>
         <FilterInput
           filter={filter}
@@ -82,7 +88,7 @@ export function FilterableList<T>({
         items={filtered}
         selectedIndex={selectedIndex}
         getKey={getKey}
-        renderItem={renderItem}
+        renderItem={(item, ctx) => renderItem(item, { ...ctx, innerWidth })}
         rowBudget={rowBudget}
         {...(onActivate || onConfirm
           ? {

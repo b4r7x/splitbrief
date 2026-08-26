@@ -2,51 +2,62 @@ import { describe, expect, it } from 'vitest';
 import { getHomeLayout } from './layout.js';
 
 describe('getHomeLayout', () => {
-  it('centers a capped body inside a wider dock on tall terminals', () => {
-    const layout = getHomeLayout({ cols: 160, rows: 42, isSmall: false });
+  it('sizes the dock and body to one wide overlay budget on tall terminals', () => {
+    const layout = getHomeLayout({ cols: 160, rows: 42 });
     expect(layout).toMatchObject({
-      inputWidth: 92,
-      bodyWidth: 72,
+      inputWidth: 140,
+      bodyWidth: 140,
       logoTier: 'full',
       inputBottomMargin: 2,
     });
   });
 
+  it('gives the body the same width at each catalogued viewport', () => {
+    expect(getHomeLayout({ cols: 120, rows: 40 }).bodyWidth).toBe(108);
+    expect(getHomeLayout({ cols: 80, rows: 24 }).bodyWidth).toBe(76);
+    expect(getHomeLayout({ cols: 60, rows: 18 }).bodyWidth).toBe(56);
+  });
+
+  it('budgets session rows against the seat block at each catalogued viewport', () => {
+    expect(getHomeLayout({ cols: 120, rows: 40 }).recentSessionLimit).toBe(18);
+    expect(getHomeLayout({ cols: 80, rows: 24 }).recentSessionLimit).toBe(5);
+    expect(getHomeLayout({ cols: 60, rows: 18 }).recentSessionLimit).toBe(2);
+  });
+
   it('keeps medium terminals on the full logo', () => {
-    expect(getHomeLayout({ cols: 100, rows: 32, isSmall: true })).toMatchObject({
-      inputWidth: 70,
-      bodyWidth: 70,
+    expect(getHomeLayout({ cols: 100, rows: 32 })).toMatchObject({
+      inputWidth: 90,
+      bodyWidth: 90,
       logoTier: 'full',
       inputBottomMargin: 1,
     });
   });
 
   it('uses the compact logo on shorter terminals', () => {
-    expect(getHomeLayout({ cols: 80, rows: 20, isSmall: true })).toMatchObject({
-      inputWidth: 70,
-      bodyWidth: 70,
+    expect(getHomeLayout({ cols: 80, rows: 20 })).toMatchObject({
+      inputWidth: 76,
+      bodyWidth: 76,
       logoTier: 'compact',
       inputBottomMargin: 0,
     });
   });
 
   it('falls back to the compact logo when the full wordmark cannot fit', () => {
-    const layout = getHomeLayout({ cols: 50, rows: 30, isSmall: true });
+    const layout = getHomeLayout({ cols: 50, rows: 30 });
     expect(layout.logoTier).toBe('compact');
   });
 
-  it('budgets two body gap rows in small and large layouts', () => {
-    const small = getHomeLayout({ cols: 80, rows: 18, isSmall: true });
-    const large = getHomeLayout({ cols: 120, rows: 18, isSmall: false });
-    expect(small.recentSessionLimit).toBe(2);
-    expect(large.recentSessionLimit).toBe(1);
+  it('budgets two body gap rows at narrow and wide layouts', () => {
+    const narrow = getHomeLayout({ cols: 80, rows: 18 });
+    const wide = getHomeLayout({ cols: 120, rows: 18 });
+    expect(narrow.recentSessionLimit).toBe(2);
+    expect(wide.recentSessionLimit).toBe(1);
   });
 
   it('does not allocate sessions when the body gaps consume a short terminal', () => {
     const layout = getHomeLayout({
       cols: 80,
       rows: 16,
-      isSmall: true,
       sessionCount: 2,
     });
     expect(layout.recentSessionLimit).toBe(0);
@@ -61,20 +72,17 @@ describe('getHomeLayout', () => {
     const unfocused = getHomeLayout({
       cols: 80,
       rows: baseRows,
-      isSmall: true,
       sessionCount,
     });
     const focusedAtSameHeight = getHomeLayout({
       cols: 80,
       rows: baseRows,
-      isSmall: true,
       sessionCount,
       sessionsFocused: true,
     });
     const focusedWithChromeRows = getHomeLayout({
       cols: 80,
       rows: baseRows + focusedChromeRows,
-      isSmall: true,
       sessionCount,
       sessionsFocused: true,
     });
@@ -89,7 +97,6 @@ describe('getHomeLayout', () => {
     const layout = getHomeLayout({
       cols: 80,
       rows: 18,
-      isSmall: true,
       sessionCount: 25,
     });
     expect(layout.recentSessionLimit).toBe(1);
@@ -97,13 +104,13 @@ describe('getHomeLayout', () => {
   });
 
   it('uses all safe vertical space for recent sessions on tall terminals', () => {
-    const layout = getHomeLayout({ cols: 120, rows: 60, isSmall: false });
+    const layout = getHomeLayout({ cols: 120, rows: 60 });
     expect(layout.recentSessionLimit).toBeGreaterThan(20);
   });
 
   it('grows the session limit monotonically with terminal height', () => {
     const limits = [14, 18, 24, 30, 42, 60].map(
-      (rows) => getHomeLayout({ cols: 120, rows, isSmall: false }).recentSessionLimit,
+      (rows) => getHomeLayout({ cols: 120, rows }).recentSessionLimit,
     );
     limits.reduce((prev, current) => {
       expect(current).toBeGreaterThanOrEqual(prev);
@@ -113,29 +120,21 @@ describe('getHomeLayout', () => {
   });
 
   it('clamps recentSessionLimit to exactly 0 on a tiny terminal', () => {
-    const layout = getHomeLayout({ cols: 80, rows: 8, isSmall: true });
+    const layout = getHomeLayout({ cols: 80, rows: 8 });
     expect(layout.recentSessionLimit).toBe(0);
   });
 
-  it('shifts recentSessionLimit when isSmall flips the summed overhead at equal rows', () => {
-    const small = getHomeLayout({
-      cols: 100,
-      rows: 36,
-      isSmall: true,
-    }).recentSessionLimit;
-    const large = getHomeLayout({
-      cols: 100,
-      rows: 36,
-      isSmall: false,
-    }).recentSessionLimit;
-    expect(small).not.toBe(large);
-    expect(small).toBeGreaterThan(large);
+  it('shifts recentSessionLimit when the sessions header gains a row at equal height', () => {
+    const narrow = getHomeLayout({ cols: 100, rows: 36 }).recentSessionLimit;
+    const wide = getHomeLayout({ cols: 120, rows: 36 }).recentSessionLimit;
+    expect(narrow).not.toBe(wide);
+    expect(narrow).toBeGreaterThan(wide);
   });
 
   it('pins inputBottomMargin tier boundaries at 29/30 and 37/38', () => {
-    expect(getHomeLayout({ cols: 120, rows: 29, isSmall: false }).inputBottomMargin).toBe(0);
-    expect(getHomeLayout({ cols: 120, rows: 30, isSmall: false }).inputBottomMargin).toBe(1);
-    expect(getHomeLayout({ cols: 120, rows: 37, isSmall: false }).inputBottomMargin).toBe(1);
-    expect(getHomeLayout({ cols: 120, rows: 38, isSmall: false }).inputBottomMargin).toBe(2);
+    expect(getHomeLayout({ cols: 120, rows: 29 }).inputBottomMargin).toBe(0);
+    expect(getHomeLayout({ cols: 120, rows: 30 }).inputBottomMargin).toBe(1);
+    expect(getHomeLayout({ cols: 120, rows: 37 }).inputBottomMargin).toBe(1);
+    expect(getHomeLayout({ cols: 120, rows: 38 }).inputBottomMargin).toBe(2);
   });
 });

@@ -26,6 +26,10 @@ import type { InputMode } from '../../core/navigation/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { useHistory } from './use-history.js';
 import { attachImage, attachmentsStore } from '../../stores/workflow/attachments.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache.js';
+import { composerDraftStore } from '../../stores/ui/composer-draft.js';
+import { CREW_SEAT_LABELS, formatSeatIdentity } from '../../core/crew/identity.js';
+import { detectedModelFact, seatSupportsImages } from '../../core/runners/capabilities.js';
 import { computeCompletionOverlayRows, computeCompletionCap } from './completion/layout.js';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
 import {
@@ -42,6 +46,8 @@ const RESUME_INTERRUPTED_PREFIX = 'Cannot resume "';
 const RESUME_INTERRUPTED_SUFFIX = '": interrupted before it made progress \u2014 start it again.';
 const SESSION_FAILED_PREFIX = 'Session "';
 const SESSION_FAILED_SUFFIX = '" failed without a summary to display';
+const NO_VISION_PREFIX = `Cannot attach: ${CREW_SEAT_LABELS.plan} seat `;
+const NO_VISION_SUFFIX = ' cannot see images \u2014 /crew plan';
 
 // The prompt glyph is structure: it marks where typing goes, it does not name a category. Weight
 // and position carry it, never hue — so normal and review draw the same mark. Question mode keeps
@@ -63,20 +69,27 @@ function structureKnownFeedbackMessage(message: string): FeedbackMessageInput {
   return (
     matchKnownFeedbackMessage(message, RESUME_INTERRUPTED_PREFIX, RESUME_INTERRUPTED_SUFFIX) ??
     matchKnownFeedbackMessage(message, SESSION_FAILED_PREFIX, SESSION_FAILED_SUFFIX) ??
+    matchKnownFeedbackMessage(message, NO_VISION_PREFIX, NO_VISION_SUFFIX) ??
     message
   );
 }
 
-function resetComposerDraft(actions: {
+interface ComposerDraftActions {
   setValue: (value: string) => void;
   clearPastes: () => void;
   resetHistory: () => void;
   bumpEpoch: () => void;
-}): void {
-  actions.setValue('');
+}
+
+function applyComposerDraft(value: string, actions: ComposerDraftActions): void {
+  actions.setValue(value);
   actions.clearPastes();
   actions.resetHistory();
   actions.bumpEpoch();
+}
+
+function resetComposerDraft(actions: ComposerDraftActions): void {
+  applyComposerDraft('', actions);
 }
 
 export interface ComposerBoxHints {
@@ -146,6 +159,7 @@ export function Composer({
   const [{ projectDir, config }] = useStores(configStore);
   const [{ message: feedbackMessage, isError: feedbackIsError }] = useStores(feedbackStore);
   const [{ pending: pendingAttachments }] = useStores(attachmentsStore);
+  const [{ request: draftRequest }] = useStores(composerDraftStore);
   const inputColumns = Math.max(1, (width ?? cols) - 4 - inputPaddingX * 2);
   const [value, setValue] = useState('');
   const [visibleRows, setVisibleRows] = useState(1);
@@ -209,13 +223,25 @@ export function Composer({
       feedbackStore.setError('Attachments are unavailable while attached.');
       return;
     }
-    const result = attachImage(path, projectDir);
+    const supportsImages =
+      config !== null &&
+      seatSupportsImages({
+        runner: config.planner,
+        detected: detectedModelFact(modelCacheStore.getDetection().providers, config.planner),
+      });
+    const result = attachImage({ path, projectDir, supportsImages });
     if (result.ok) {
       onReviewInteraction?.();
       feedbackStore.setMessage(`Attached: ${result.path}`);
-    } else {
-      feedbackStore.setError(`Cannot attach: ${result.reason}`);
+      return;
     }
+    if (result.reason === 'no-vision' && config !== null) {
+      feedbackStore.setError(
+        `${NO_VISION_PREFIX}${formatSeatIdentity(config.planner)}${NO_VISION_SUFFIX}`,
+      );
+      return;
+    }
+    feedbackStore.setError(`Cannot attach: ${result.reason}`);
   };
 
   const handleSubmit = (text: string) => {
@@ -363,11 +389,15 @@ export function Composer({
 
   useEffect(() => {
     if (!draftRestore) return;
-    setValue(draftRestore.value);
-    clearPastes();
-    resetHistory();
-    bumpEpoch();
+    applyComposerDraft(draftRestore.value, { setValue, clearPastes, resetHistory, bumpEpoch });
   }, [draftRestore?.epoch]);
+
+  useEffect(() => {
+    if (!draftRequest) return;
+    applyComposerDraft(draftRequest.value, { setValue, clearPastes, resetHistory, bumpEpoch });
+    // Consuming the request keeps it from replaying into the composer of the next screen.
+    composerDraftStore.clear();
+  }, [draftRequest?.epoch]);
 
   const completionOpen = showCommandSuggestions || showReferenceSuggestions;
   useEffect(() => {
@@ -384,7 +414,9 @@ export function Composer({
               {feedbackLine}
             </Text>
           ) : showHomeHint ? (
-            <Text color={theme.textDim}>{homeHint}</Text>
+            <Text color={theme.textDim} wrap="truncate-end">
+              {homeHint}
+            </Text>
           ) : (
             <Text> </Text>
           )}

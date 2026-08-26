@@ -80,9 +80,9 @@ On read, `cache.ts` compares the row's `(mtime_ms, size_bytes, parse_version)` t
 - **Miss (file changed):** mtime or size differs → re-parse, upsert the row.
 - **Miss (parser changed):** the global `parse_version` constant was bumped (grammar upgrade, capture changes) → every row is stale, the entire cache is rebuilt transparently on next read.
 
-This means grammar bumps don't need manual cleanup. For forced rebuilds after unexplained behavior, type `/repomap rebuild` in the TUI — it deletes the SQLite file; the next planning phase parses from scratch.
+This means grammar bumps don't need manual cleanup, and neither does anything else: every planning run re-reads the cache and re-parses whatever is stale, so there is no manual rebuild step.
 
-Cold parse on a 200-file repo: ~3s on M1. Warm hit: <100ms (mtime check + JSON load). Note: mtime-based invalidation misses the rare content-equal-mtime-different case; `/repomap rebuild` is the escape hatch.
+Cold parse on a 200-file repo: ~3s on M1. Warm hit: <100ms (mtime check + JSON load). Note: mtime-based invalidation misses the rare content-equal-mtime-different case; the escape hatch is deleting `${projectDir}/.splitbrief/repomap.sqlite` by hand, along with the `-shm` and `-wal` siblings WAL mode leaves beside it — the next planning run parses from scratch.
 
 ## Opt-out
 
