@@ -150,33 +150,86 @@ describe('SingleColumnPicker row zones', () => {
     expect(withScrollbar).toBe(withoutScrollbar);
   });
 
-  it('fills every list-window row with a track while keeping filler rows non-clickable', async () => {
+  function listWindow(frame: string, visibleRows: number): string[] {
+    const lines = stripAnsiStyles(frame).split('\n');
+    const filterRow = lines.findIndex((line) => line.includes('Type to filter'));
+    return lines.slice(filterRow + 1, filterRow + 1 + visibleRows);
+  }
+
+  const gutterTrackEdge = `${glyph('scrollTrack')} ${glyph('scrollTrack')}`;
+
+  async function renderColumn(
+    items: string[],
+    visibleRows: number,
+    extra?: { rowZonePrefix?: string },
+  ) {
     const ui = renderFeature(
       <SingleColumnPicker
         label="Items"
-        items={['one', 'two']}
+        items={items}
         filter=""
         selectedIndex={0}
         isActive
-        height={9}
-        visibleRows={5}
+        height={visibleRows + 4}
+        visibleRows={visibleRows}
         getKey={(item) => item}
         contentMaxWidth={18}
-        rowZonePrefix="fixed-window"
-        onRowActivate={() => undefined}
+        rowZonePrefix={extra?.rowZonePrefix}
+        onRowActivate={extra?.rowZonePrefix === undefined ? undefined : () => undefined}
         renderRow={(item) => <Text>{item}</Text>}
       />,
     );
     await tick();
+    return ui;
+  }
 
-    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
-    const filterRow = lines.findIndex((line) => line.includes('Type to filter'));
-    const listRows = lines.slice(filterRow + 1, -1);
-    const trackAtRightEdge = `${glyph('scrollTrack')} ${glyph('scrollTrack')}`;
+  it('draws no track when items fit the window and keeps row width identical to overflow', async () => {
+    const visibleRows = 5;
+    const fitting = await renderColumn(['one', 'two'], visibleRows);
+    const overflowing = await renderColumn(
+      Array.from({ length: 8 }, (_, index) => `item-${index}`),
+      visibleRows,
+    );
+
+    const fitRows = listWindow(fitting.lastFrame() ?? '', visibleRows);
+    const overflowRows = listWindow(overflowing.lastFrame() ?? '', visibleRows);
+
+    expect(fitRows).toHaveLength(visibleRows);
+    expect(overflowRows).toHaveLength(visibleRows);
+    expect(
+      fitRows.every((line) => !line.endsWith(gutterTrackEdge)),
+      JSON.stringify(fitRows),
+    ).toBe(true);
+    expect(fitRows.map(getTerminalCellWidth)).toEqual(overflowRows.map(getTerminalCellWidth));
+
+    fitting.unmount();
+    overflowing.unmount();
+  });
+
+  it('draws track and thumb when items overflow the window', async () => {
+    const ui = await renderColumn(
+      Array.from({ length: 8 }, (_, index) => `item-${index}`),
+      3,
+    );
+    const frame = ui.lastFrame() ?? '';
+    const rows = listWindow(frame, 3);
+
+    expect(frame).toContain(glyph('scrollThumb'));
+    expect(frame).toContain(glyph('scrollTrack'));
+    expect(
+      rows.some((line) => line.endsWith(gutterTrackEdge) || line.includes(glyph('scrollThumb'))),
+      JSON.stringify(rows),
+    ).toBe(true);
+    ui.unmount();
+  });
+
+  it('fills every list-window row while keeping filler rows non-clickable', async () => {
+    const ui = await renderColumn(['one', 'two'], 5, { rowZonePrefix: 'fixed-window' });
+    const listRows = listWindow(ui.lastFrame() ?? '', 5);
 
     expect(listRows).toHaveLength(5);
     expect(
-      listRows.every((line) => line.endsWith(trackAtRightEdge)),
+      listRows.every((line) => !line.endsWith(gutterTrackEdge)),
       JSON.stringify(listRows),
     ).toBe(true);
     expect(collectClickableZones({ cols: 100, rows: 24 }).size).toBe(2);

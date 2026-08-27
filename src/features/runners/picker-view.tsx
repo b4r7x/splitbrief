@@ -16,7 +16,7 @@ import {
 } from '../../core/runners/cli-tool-catalog.js';
 import type { RunnerBillingPosture } from '../../core/runners/runner-billing.js';
 import { includes } from '../../utils/type-guards.js';
-import type { PickerOption } from './model-catalog/options.js';
+import { sortPickerOptions, type PickerOption } from './model-catalog/options.js';
 import { isCustomModel, type ModelVariant } from './model-catalog/recency.js';
 import {
   rightRowKey,
@@ -303,6 +303,7 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
         // command is always reachable.
         filterBy: (item, query) =>
           item.kind === 'custom-command' || filterByFields(item, query, ['id', 'displayName']),
+        compare: (a, b) => sortPickerOptions(a, b, { filterActive: true }),
         terminalPane: terminalPaneFor,
         isDisabled: isPickerItemDisabled,
         initialIndex: catalog.initialLeftIdx,

@@ -136,24 +136,22 @@ type RightDisplaySlot<R> =
   | { kind: 'guidance'; key: string }
   | { kind: 'row'; key: string; item: RightItemOrVirtual<R>; navIndex: number };
 
-function buildRightDisplay<R extends { id: string }>(
+export function buildRightDisplay<R extends { id: string }>(
   items: RightItemOrVirtual<R>[],
   getKey: (item: R) => string,
   section: RightSectionProps<R> | undefined,
 ): RightDisplaySlot<R>[] {
   const slots: RightDisplaySlot<R>[] = [];
   let previous: string | null = null;
-  let sectionCount = 0;
   items.forEach((item, navIndex) => {
     const key = isVirtualCustomItem(item) ? CUSTOM_ROW_ID : getKey(item);
     if (section && isRealRightItem(item)) {
       const current = section.by(item);
       if (current !== '' && current !== previous && (section.headerFor?.(current) ?? true)) {
-        if (sectionCount > 0) {
+        if (slots.length > 0) {
           slots.push({ kind: 'spacer', key: `spacer:${current}` });
         }
         slots.push({ kind: 'header', key: `section:${current}`, section: current });
-        sectionCount++;
       }
       previous = current;
     }

@@ -23,11 +23,20 @@ export interface ColumnStateInput<T> {
    * count these rows or the selection can never reach the last real item.
    */
   virtualCount?: number | undefined;
+  compare?: ((a: T, b: T) => number) | undefined;
   onCurrentItemChange?: ((item: T | undefined) => void) | undefined;
 }
 
 export function useColumnState<T>(input: ColumnStateInput<T>): ColumnStateHook<T> {
-  const { source, filterFn, getKey, initialIndex, virtualCount = 0, onCurrentItemChange } = input;
+  const {
+    source,
+    filterFn,
+    getKey,
+    initialIndex,
+    virtualCount = 0,
+    compare,
+    onCurrentItemChange,
+  } = input;
   const [filter, setFilterState] = useState('');
   const [index, setIndexState] = useState(initialIndex);
 
@@ -38,8 +47,12 @@ export function useColumnState<T>(input: ColumnStateInput<T>): ColumnStateHook<T
   indexRef.current = index;
   sourceRef.current = source;
 
-  const getItems = (filterValue: string, src: T[] = sourceRef.current) =>
-    filterValue ? src.filter((item) => filterFn(item, filterValue)) : src;
+  const getItems = (filterValue: string, src: T[] = sourceRef.current) => {
+    if (!filterValue) return src;
+    const filtered = src.filter((item) => filterFn(item, filterValue));
+    if (!compare) return filtered;
+    return filtered.toSorted(compare);
+  };
 
   const itemAt = (nextIndex: number, nextItems: T[]) =>
     nextIndex < virtualCount
