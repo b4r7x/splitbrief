@@ -621,7 +621,7 @@ describe('TwoColumnPicker', () => {
     ui.unmount();
   });
 
-  it('shows the re-voiced empty placeholder and an in-card scrollbar on overflow', async () => {
+  it('shows an overflow thumb and leaves a track beside the empty placeholder', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 20, isSmall: true });
     const many: Tool[] = Array.from({ length: 20 }, (_, i) => ({
       id: `tool-${i}`,
@@ -646,7 +646,6 @@ describe('TwoColumnPicker', () => {
       />,
     );
     await tick(20);
-    // The plain "(i / N)" counter is replaced by the interior scrollbar thumb in the right gutter.
     expect(overflowing.lastFrame() ?? '').toContain(glyph('scrollThumb'));
     overflowing.unmount();
 
@@ -669,7 +668,10 @@ describe('TwoColumnPicker', () => {
       />,
     );
     await tick(20);
-    expect(empty.lastFrame() ?? '').toContain('No tools match');
+    const emptyFrame = empty.lastFrame() ?? '';
+    expect(emptyFrame).toContain('No tools match');
+    expect(emptyFrame).toContain(glyph('scrollTrack'));
+    expect(emptyFrame).not.toContain(glyph('scrollThumb'));
     empty.unmount();
   });
 

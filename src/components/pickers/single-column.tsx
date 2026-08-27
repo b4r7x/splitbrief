@@ -26,6 +26,146 @@ interface SingleColumnPickerProps<T> {
   rowZoneZ?: number | undefined;
 }
 
+function ScrollbarGutter({ onThumb, color }: { onThumb: boolean; color: string }) {
+  return (
+    <Box marginLeft={1}>
+      <Text color={color}>{onThumb ? glyph('scrollThumb') : glyph('scrollTrack')}</Text>
+    </Box>
+  );
+}
+
+function FilterRow({
+  filter,
+  isActive,
+  customFilterPrompt,
+}: Pick<SingleColumnPickerProps<unknown>, 'filter' | 'isActive' | 'customFilterPrompt'>) {
+  const t = useTheme();
+  let prompt: ReactNode;
+  if (customFilterPrompt !== undefined && customFilterPrompt !== null) {
+    prompt = customFilterPrompt;
+  } else if (filter) {
+    prompt = <Text color={t.text}>{filter}</Text>;
+  } else {
+    prompt = <Text color={t.textDim}>Type to filter…</Text>;
+  }
+
+  return (
+    <Box>
+      <Text color={isActive ? t.accent : t.textDim}>{`${glyph('prompt')} `}</Text>
+      {prompt}
+    </Box>
+  );
+}
+
+function FillerRows({ count, color }: { count: number; color: string }) {
+  return Array.from({ length: count }, (_, index) => (
+    <Box key={`scrollbar-filler-${index}`}>
+      <Box flexGrow={1} />
+      <ScrollbarGutter onThumb={false} color={color} />
+    </Box>
+  ));
+}
+
+type PickerRowsProps<T> = Pick<
+  SingleColumnPickerProps<T>,
+  | 'items'
+  | 'selectedIndex'
+  | 'isActive'
+  | 'visibleRows'
+  | 'getKey'
+  | 'renderRow'
+  | 'contentMaxWidth'
+  | 'placeholderWhenEmpty'
+  | 'onRowActivate'
+> & {
+  emptyText: string;
+  rowZonePrefix: string;
+  rowZoneZ: number;
+};
+
+function PickerRows<T>({
+  items,
+  selectedIndex,
+  isActive,
+  visibleRows,
+  getKey,
+  renderRow,
+  contentMaxWidth,
+  placeholderWhenEmpty,
+  emptyText,
+  onRowActivate,
+  rowZonePrefix,
+  rowZoneZ,
+}: PickerRowsProps<T>) {
+  const t = useTheme();
+  if (items.length === 0) {
+    if (visibleRows <= 0) return null;
+    return (
+      <>
+        <Box>
+          <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+            {placeholderWhenEmpty ?? <Text color={t.textDim}>{emptyText}</Text>}
+          </Box>
+          <ScrollbarGutter onThumb={false} color={t.scrollIndicator} />
+        </Box>
+        <FillerRows count={visibleRows - 1} color={t.scrollIndicator} />
+      </>
+    );
+  }
+
+  const { scrollOffset, visibleSlice } = windowSlice({
+    items,
+    selectedIndex,
+    windowSize: visibleRows,
+  });
+  const overflow = hasScrollbarOverflow({
+    lineCount: items.length,
+    visibleHeight: visibleRows,
+  });
+  const thumb = getScrollbarThumb({
+    offset: scrollOffset,
+    lineCount: items.length,
+    visibleHeight: visibleRows,
+  });
+  const rowContentWidth = contentMaxWidth - 2;
+
+  return (
+    <>
+      {visibleSlice.map((item, index) => {
+        const itemIndex = scrollOffset + index;
+        const itemKey = getKey(item);
+        const isCursor = isActive && itemIndex === selectedIndex;
+        const rowNode = (
+          <Box key={itemKey} width="100%">
+            <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+              {renderRow(item, isCursor, rowContentWidth)}
+            </Box>
+            <ScrollbarGutter
+              onThumb={overflow && scrollbarCell(index, thumb)}
+              color={t.scrollIndicator}
+            />
+          </Box>
+        );
+        if (!onRowActivate) return rowNode;
+        return (
+          <RowZone
+            key={itemKey}
+            zoneId={`${rowZonePrefix}:${itemKey}`}
+            z={rowZoneZ}
+            onActivate={() => onRowActivate(itemIndex)}
+          >
+            {rowNode}
+          </RowZone>
+        );
+      })}
+      <FillerRows
+        count={Math.max(0, visibleRows - visibleSlice.length)}
+        color={t.scrollIndicator}
+      />
+    </>
+  );
+}
+
 export function SingleColumnPicker<T>({
   label,
   items,
@@ -47,23 +187,6 @@ export function SingleColumnPicker<T>({
 }: SingleColumnPickerProps<T>) {
   const t = useTheme();
 
-  const { scrollOffset, visibleSlice: slice } = windowSlice({
-    items,
-    selectedIndex,
-    windowSize: visibleRows,
-  });
-
-  const overflow = hasScrollbarOverflow({
-    lineCount: items.length,
-    visibleHeight: slice.length,
-  });
-  const thumb = getScrollbarThumb({
-    offset: scrollOffset,
-    lineCount: items.length,
-    visibleHeight: slice.length,
-  });
-  const rowContentWidth = Math.max(1, contentMaxWidth - (overflow ? 2 : 0));
-
   return (
     <Box
       flexDirection="column"
@@ -78,50 +201,23 @@ export function SingleColumnPicker<T>({
       <Text color={isActive ? t.accent : t.textDim}>{label}</Text>
 
       {!hideFilterRow && (
-        <Box>
-          <Text color={isActive ? t.accent : t.textDim}>{`${glyph('prompt')} `}</Text>
-          {customFilterPrompt ??
-            (filter ? (
-              <Text color={t.text}>{filter}</Text>
-            ) : (
-              <Text color={t.textDim}>Type to filter…</Text>
-            ))}
-        </Box>
+        <FilterRow filter={filter} isActive={isActive} customFilterPrompt={customFilterPrompt} />
       )}
 
-      {items.length === 0
-        ? (placeholderWhenEmpty ?? <Text color={t.textDim}>{emptyText}</Text>)
-        : slice.map((item, i) => {
-            const idx = scrollOffset + i;
-            const isCursor = isActive && idx === selectedIndex;
-            const onThumb = scrollbarCell(i, thumb);
-            const rowNode = (
-              <Box key={getKey(item)}>
-                <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
-                  {renderRow(item, isCursor, rowContentWidth)}
-                </Box>
-                {overflow ? (
-                  <Box marginLeft={1}>
-                    <Text color={onThumb ? t.accent : t.scrollIndicator}>
-                      {onThumb ? glyph('scrollThumb') : glyph('scrollTrack')}
-                    </Text>
-                  </Box>
-                ) : null}
-              </Box>
-            );
-            return onRowActivate ? (
-              <RowZone
-                key={getKey(item)}
-                zoneId={`${rowZonePrefix}:${getKey(item)}`}
-                z={rowZoneZ}
-                onActivate={() => onRowActivate(idx)}
-              >
-                {rowNode}
-              </RowZone>
-            ) : (
-              rowNode
-            );
-          })}
+      <PickerRows
+        items={items}
+        selectedIndex={selectedIndex}
+        isActive={isActive}
+        visibleRows={visibleRows}
+        getKey={getKey}
+        renderRow={renderRow}
+        contentMaxWidth={contentMaxWidth}
+        placeholderWhenEmpty={placeholderWhenEmpty}
+        emptyText={emptyText}
+        onRowActivate={onRowActivate}
+        rowZonePrefix={rowZonePrefix}
+        rowZoneZ={rowZoneZ}
+      />
     </Box>
   );
 }
