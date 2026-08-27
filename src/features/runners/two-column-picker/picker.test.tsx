@@ -518,7 +518,7 @@ describe('TwoColumnPicker', () => {
     ui.unmount();
   });
 
-  it('fills the panel with 20 list rows at 30 terminal rows', async () => {
+  it('fills the panel with 18 list rows at 30 terminal rows (capped by VISIBLE_ROWS_CAP)', async () => {
     terminalSizeStore.__testReset({ cols: 140, rows: 30, isSmall: false });
     const items: Tool[] = Array.from({ length: 30 }, (_, i) => ({
       id: `tool-${i}`,
@@ -545,9 +545,9 @@ describe('TwoColumnPicker', () => {
 
     const frame = ui.lastFrame() ?? '';
     const renderedRows = frame.split('\n').filter((line) => /\bTool \d+\b/.test(line));
-    expect(renderedRows).toHaveLength(20);
-    expect(frame).toContain('Tool 19');
-    expect(frame).not.toContain('Tool 20');
+    expect(renderedRows).toHaveLength(18);
+    expect(frame).toContain('Tool 17');
+    expect(frame).not.toContain('Tool 18');
     ui.unmount();
   });
 
@@ -736,8 +736,9 @@ describe('TwoColumnPicker', () => {
     expect(confirms).toEqual([]);
     ui.unmount();
   });
+
   it.each([
-    { cols: 120, rows: 40, left: 3, right: 41, visible: 30, custom: false },
+    { cols: 120, rows: 40, left: 3, right: 41, visible: 18, custom: false },
     { cols: 60, rows: 18, left: 3, right: 41, visible: 8, custom: false },
     { cols: 120, rows: 40, left: 9, right: 9, visible: 9, custom: false },
     { cols: 120, rows: 40, left: 3, right: 9, visible: 9, custom: true },
@@ -813,6 +814,119 @@ describe('TwoColumnPicker', () => {
     expect(getTerminalCellWidth((hintRows[0] ?? '').trim())).toBeLessThanOrEqual(
       overlayWidth({ cols: 60, density: 'wide' }),
     );
+    ui.unmount();
+  });
+
+  it('yields byte-identical column-frame height when mounted with a 5-model tool vs a 40-model tool at the same terminal size', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const models5: Model[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `m5-${i}`,
+      displayName: `Model 5-${i}`,
+    }));
+    const models40: Model[] = Array.from({ length: 40 }, (_, i) => ({
+      id: `m40-${i}`,
+      displayName: `Model 40-${i}`,
+    }));
+
+    function makePicker(models: Model[]) {
+      return (
+        <TwoColumnPicker<Tool, Model>
+          title="Picker"
+          leftProps={{
+            items: TOOLS,
+            getKey: (t) => t.id,
+            renderRow: (t) => <Text>{t.displayName}</Text>,
+          }}
+          rightProps={{
+            items: models,
+            getKey: (m) => m.id,
+            renderRow: (m) => <Text>{m.displayName}</Text>,
+          }}
+          onConfirm={() => {}}
+          onCancel={() => {}}
+        />
+      );
+    }
+
+    const ui5 = renderFeature(makePicker(models5), { cols: 120, rows: 40 });
+    await tick(20);
+    const frame5 = ui5.lastFrame() ?? '';
+    const lines5 = frame5.split('\n');
+    ui5.unmount();
+
+    const ui40 = renderFeature(makePicker(models40), { cols: 120, rows: 40 });
+    await tick(20);
+    const frame40 = ui40.lastFrame() ?? '';
+    const lines40 = frame40.split('\n');
+    ui40.unmount();
+
+    expect(lines5).toHaveLength(lines40.length);
+
+    const open5 = lines5.findIndex((line) => line.includes('╭'));
+    const close5 = lines5.findIndex((line) => line.includes('╰'));
+    const height5 = close5 - open5 + 1;
+
+    const open40 = lines40.findIndex((line) => line.includes('╭'));
+    const close40 = lines40.findIndex((line) => line.includes('╰'));
+    const height40 = close40 - open40 + 1;
+
+    expect(height5).toBe(22);
+    expect(height40).toBe(22);
+    expect(height5).toBe(height40);
+  });
+
+  it('occupies the same 2 rows for the preview region whether or not a preview exists across selection change', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const toolsWithPreview: Tool[] = [
+      { id: 'with-prev', displayName: 'Tool With Preview' },
+      { id: 'without-prev', displayName: 'Tool Without Preview' },
+    ];
+
+    const ui = renderFeature(
+      <TwoColumnPicker<Tool, Model>
+        title="Picker"
+        leftProps={{
+          items: toolsWithPreview,
+          getKey: (t) => t.id,
+          renderRow: (t) => <Text>{t.displayName}</Text>,
+        }}
+        rightProps={{
+          items: [],
+          getKey: (m) => m.id,
+          renderRow: (m) => <Text>{m.displayName}</Text>,
+        }}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+        preview={(ctx) =>
+          ctx.leftItem?.id === 'with-prev' ? 'Active preview text content' : undefined
+        }
+      />,
+      { cols: 120, rows: 40 },
+    );
+    await flushEffects();
+
+    const frameWith = ui.lastFrame() ?? '';
+    expect(frameWith).toContain('Active preview text content');
+    const linesWith = frameWith.split('\n');
+
+    ui.stdin.write('\u001B[B');
+    await flushEffects();
+
+    const frameWithout = ui.lastFrame() ?? '';
+    expect(frameWithout).not.toContain('Active preview text content');
+    const linesWithout = frameWithout.split('\n');
+
+    expect(linesWith).toHaveLength(linesWithout.length);
+
+    const closeIdxWith = linesWith.findIndex((line) => line.includes('╰'));
+    const hintIdxWith = linesWith.findIndex((line) => line.includes('←→ column'));
+    const closeIdxWithout = linesWithout.findIndex((line) => line.includes('╰'));
+    const hintIdxWithout = linesWithout.findIndex((line) => line.includes('←→ column'));
+
+    expect(hintIdxWith - closeIdxWith).toBe(4);
+    expect(hintIdxWithout - closeIdxWithout).toBe(4);
+    expect(hintIdxWith - closeIdxWith).toBe(hintIdxWithout - closeIdxWithout);
+
     ui.unmount();
   });
 });

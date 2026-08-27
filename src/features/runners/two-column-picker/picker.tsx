@@ -55,7 +55,7 @@ const CARD_WRAP_MIN_WIDTH = 40;
 const COLUMN_GAP = 3;
 const OUTER_CHROME_ROWS = 6;
 const INNER_CHROME_ROWS = 4;
-const MIN_LIST_ROWS = 6;
+const VISIBLE_ROWS_CAP = 18;
 
 type PickerHintKind = 'terminal' | 'expanded' | 'default';
 
@@ -88,10 +88,18 @@ function getHint(input: {
 }
 
 /**
- * The read-only pane a terminal left row opens: it hugs its content, so the
- * right box closes while the tool column keeps scrolling beside it.
+ * The read-only pane a terminal left row opens: fixed height matching
+ * columnHeight so the right box never collapses.
  */
-function TerminalPaneCard({ pane, contentWidth }: { pane: TerminalPane; contentWidth: number }) {
+function TerminalPaneCard({
+  pane,
+  contentWidth,
+  height,
+}: {
+  pane: TerminalPane;
+  contentWidth: number;
+  height: number;
+}) {
   const t = useTheme();
   // Only the widest viewport has room to spend a second row on a wrapped
   // sentence; below it the card truncates so the box keeps its line count.
@@ -101,6 +109,7 @@ function TerminalPaneCard({ pane, contentWidth }: { pane: TerminalPane; contentW
       flexDirection="column"
       flexGrow={1}
       flexBasis={0}
+      height={height}
       borderStyle={borderStyleFor('round')}
       borderColor={t.border}
       borderDimColor
@@ -168,11 +177,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
 
   const maxVisible = Math.min(
     availableRows({ rows, chromeRows: OUTER_CHROME_ROWS + INNER_CHROME_ROWS }),
-    Math.max(
-      leftProps.items.length,
-      rightProps.items.length + (rightProps.customRow ? 1 : 0),
-      MIN_LIST_ROWS,
-    ),
+    VISIBLE_ROWS_CAP,
   );
   const columnHeight = maxVisible + INNER_CHROME_ROWS;
   const totalBoxWidth = overlayWidth({ cols, density: 'wide' });
@@ -271,7 +276,11 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
         </Box>
         <Box width={rightBoxWidth} flexShrink={0}>
           {terminalPane !== undefined ? (
-            <TerminalPaneCard pane={terminalPane} contentWidth={rightContentWidth} />
+            <TerminalPaneCard
+              pane={terminalPane}
+              contentWidth={rightContentWidth}
+              height={columnHeight}
+            />
           ) : (
             <SingleColumnPicker<RightDisplaySlot<R>>
               label={rightProps.label ?? 'Options'}
@@ -314,13 +323,11 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
           )}
         </Box>
       </Box>
-      {showPreview ? (
-        <Box width={totalBoxWidth} marginTop={1}>
-          <Text color={t.textDim} wrap="truncate-end">
-            {previewText}
-          </Text>
-        </Box>
-      ) : null}
+      <Box width={totalBoxWidth} marginTop={1}>
+        <Text color={t.textDim} wrap="truncate-end">
+          {showPreview ? previewText : ' '}
+        </Text>
+      </Box>
       <Box width={totalBoxWidth} marginTop={1}>
         <Text color={t.textDim} wrap="truncate-end">
           {hint}
