@@ -48,20 +48,13 @@ describe('deriveCrewSeats', () => {
     expect(build.posture).toBe('local');
   });
 
-  it('omits the escalate branch when escalation is not configured', () => {
-    const build = seatOf(deriveCrewSeats({ config: makeConfig() }), 'build');
-
-    expect(build.escalate).toBeUndefined();
-  });
-
-  it('carries one escalate branch under build when escalation is configured', () => {
+  it('keeps the YAML-only escalation config out of the build seat', () => {
     const config = makeConfig({
       escalation: { intermediateProvider: 'deepseek', intermediateModel: 'deepseek-chat' },
     });
     const build = seatOf(deriveCrewSeats({ config }), 'build');
 
-    expect(build.escalate?.model).toBe('deepseek-chat');
-    expect(build.escalate?.posture).toBe('api-metered');
+    expect(build).toEqual(seatOf(deriveCrewSeats({ config: makeConfig() }), 'build'));
   });
 
   it('reports the billing posture of the configured auth channel', () => {
@@ -71,30 +64,6 @@ describe('deriveCrewSeats', () => {
     const review = seatOf(deriveCrewSeats({ config }), 'review');
 
     expect(review.posture).toBe('api-metered');
-  });
-
-  it('carries the escalate branch when the escalation provider is not a known one', () => {
-    const config = makeConfig({
-      escalation: { intermediateProvider: 'my-gateway', intermediateModel: 'big-model' },
-    });
-    const build = seatOf(deriveCrewSeats({ config }), 'build');
-
-    expect(build.escalate?.displayName).toBe('my-gateway');
-    expect(build.escalate?.model).toBe('big-model');
-    expect(build.escalate?.posture).toBe('unknown');
-  });
-
-  it('omits the escalate branch when escalation is disabled', () => {
-    const config = makeConfig({
-      escalation: {
-        enabled: false,
-        intermediateProvider: 'deepseek',
-        intermediateModel: 'deepseek-chat',
-      },
-    });
-    const build = seatOf(deriveCrewSeats({ config }), 'build');
-
-    expect(build.escalate).toBeUndefined();
   });
 
   it('says the automatic word when the runner names no model', () => {

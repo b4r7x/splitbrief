@@ -13,14 +13,8 @@ function rowAt(rows: readonly CrewRow[], key: string): CrewRow {
 }
 
 describe('deriveCrewRows', () => {
-  it('lays the seats out with their branches, escalate hanging under build', () => {
-    expect(keysOf(makeConfig())).toEqual([
-      'seat:plan',
-      'effort:plan',
-      'seat:build',
-      'escalate',
-      'seat:review',
-    ]);
+  it('lays the seats out with their branches', () => {
+    expect(keysOf(makeConfig())).toEqual(['seat:plan', 'effort:plan', 'seat:build', 'seat:review']);
   });
 
   it('shows an inherited review seat the planner effort, read-only', () => {
@@ -45,10 +39,14 @@ describe('deriveCrewRows', () => {
     expect(keysOf(config)).toContain('effort:build');
   });
 
-  it('keeps the escalate row even with no intermediate model configured', () => {
-    expect(rowAt(deriveCrewRows({ config: makeConfig() }), 'escalate')).toMatchObject({
-      entry: undefined,
+  it('keeps the YAML-only escalation config out of the crew rows', () => {
+    const rows = deriveCrewRows({
+      config: makeConfig({
+        escalation: { intermediateProvider: 'deepseek', intermediateModel: 'deepseek-chat' },
+      }),
     });
+
+    expect(rows.map(crewRowKey)).toEqual(['seat:plan', 'effort:plan', 'seat:build', 'seat:review']);
   });
 });
 
@@ -77,15 +75,5 @@ describe('crewRowFilterText', () => {
     const rows = deriveCrewRows({ config: makeConfig() });
 
     expect(crewRowFilterText(rowAt(rows, 'effort:plan'))).toBe('effort auto');
-  });
-
-  it('matches the escalate row by its own word and by the model it points at', () => {
-    const config = makeConfig({
-      escalation: { intermediateProvider: 'deepseek', intermediateModel: 'deepseek-chat' },
-    });
-    const text = crewRowFilterText(rowAt(deriveCrewRows({ config }), 'escalate'));
-
-    expect(text).toContain('escalate');
-    expect(text).toContain('deepseek');
   });
 });

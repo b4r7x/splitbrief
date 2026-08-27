@@ -11,17 +11,11 @@ import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import {
-  escalationOffOption,
-  inheritPlannerOption,
-  type PickerOption,
-} from './model-catalog/options.js';
+import { inheritPlannerOption, type PickerOption } from './model-catalog/options.js';
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
 import type { ModelVariant } from './model-catalog/recency.js';
 import type { RightRow } from './model-catalog/rows.js';
 import { PickerView } from './picker-view.js';
-import { usePickerActions } from './use-picker-actions.js';
-import { usePickerCatalog } from './use-picker-catalog.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import type { PickerActions } from './use-picker-actions.js';
 
@@ -146,26 +140,6 @@ describe('PickerView terminal panes', () => {
     ui.unmount();
   });
 
-  it('answers the escalation None row with the planner a stuck task falls back to', async () => {
-    const off = escalationOffOption({ isCurrent: true });
-    const ui = renderFeature(
-      <PickerView
-        role="escalation"
-        catalog={makeCatalog({ items: [off], currentItem: off, roleLabel: 'Escalate' })}
-        actions={makeActions()}
-      />,
-    );
-    await flushEffects();
-    const frame = frameText(ui);
-
-    expect(frame).toContain('Escalate');
-    expect(frame).toContain('Provider & model');
-    expect(frame).toContain('Escalation off');
-    expect(frame).toContain('Claude Code CLI · Claude Sonnet 4');
-    expect(frame).toContain('disable escalation');
-    ui.unmount();
-  });
-
   it('confirms the sole configured route of a two-route model without expanding', async () => {
     const kilo = cliTool('kilo-code', 'Kilo Code CLI');
     const variants: ModelVariant[] = [
@@ -267,59 +241,6 @@ describe('PickerView terminal panes', () => {
     await flushEffects();
 
     expect(frameText(ui)).toContain('sign in: kilo auth login openrouter');
-    ui.unmount();
-  });
-});
-
-/** The escalate seat's left column comes from the real catalog, not a fixture. */
-function EscalationPicker() {
-  const catalog = usePickerCatalog('escalation', 0);
-  const actions = usePickerActions({
-    role: 'escalation',
-    catalog,
-    deps: { refreshDetection: async () => {} },
-  });
-  return <PickerView role="escalation" catalog={catalog} actions={actions} />;
-}
-
-describe('PickerView escalation role', () => {
-  beforeEach(() => {
-    forceUnicodeGlyphs();
-    resetAllStores();
-    _resetMouseZones();
-    terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
-    configStore.__testReset({
-      projectDir: '/tmp/project',
-      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } }),
-    });
-    detectionStore.setDetection({
-      providers: [],
-      cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'codex')],
-    });
-  });
-
-  it('offers API providers and the off row, never a CLI tool', async () => {
-    const ui = renderFeature(<EscalationPicker />);
-    await flushEffects();
-    const frame = frameText(ui);
-
-    expect(frame).toContain('disable escalation');
-    // The card names the planner; the tool column must not offer one.
-    expect(frame).not.toContain('· Claude Code CLI');
-    expect(frame).not.toContain('· OpenAI Codex CLI');
-    ui.unmount();
-  });
-
-  it('offers no custom-model row on a provider, which has no list to add one to', async () => {
-    const ui = renderFeature(<EscalationPicker />);
-    await flushEffects();
-    ui.stdin.write('\u001B[B'); // off the terminal row, onto the first provider
-    await flushEffects();
-
-    const frame = frameText(ui);
-    // Off the terminal row: the card is gone and the model column is live.
-    expect(frame).not.toContain('Escalation off');
-    expect(frame).not.toContain('Add custom model');
     ui.unmount();
   });
 });

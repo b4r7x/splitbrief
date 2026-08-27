@@ -24,6 +24,7 @@ interface SingleColumnPickerProps<T> {
   onRowActivate?: ((globalIndex: number) => void) | undefined;
   rowZonePrefix?: string | undefined;
   rowZoneZ?: number | undefined;
+  lineCountOf?: ((item: T) => number) | undefined;
 }
 
 function ScrollbarGutter({ onThumb, color }: { onThumb: boolean; color: string }) {
@@ -77,6 +78,7 @@ type PickerRowsProps<T> = Pick<
   | 'contentMaxWidth'
   | 'placeholderWhenEmpty'
   | 'onRowActivate'
+  | 'lineCountOf'
 > & {
   emptyText: string;
   rowZonePrefix: string;
@@ -96,6 +98,7 @@ function PickerRows<T>({
   onRowActivate,
   rowZonePrefix,
   rowZoneZ,
+  lineCountOf,
 }: PickerRowsProps<T>) {
   const t = useTheme();
   if (items.length === 0) {
@@ -128,6 +131,10 @@ function PickerRows<T>({
     visibleHeight: visibleRows,
   });
   const rowContentWidth = contentMaxWidth - 2;
+  const renderedLineCount = visibleSlice.reduce(
+    (sum, item) => sum + (lineCountOf ? lineCountOf(item) : 1),
+    0,
+  );
 
   return (
     <>
@@ -158,10 +165,7 @@ function PickerRows<T>({
           </RowZone>
         );
       })}
-      <FillerRows
-        count={Math.max(0, visibleRows - visibleSlice.length)}
-        color={t.scrollIndicator}
-      />
+      <FillerRows count={Math.max(0, visibleRows - renderedLineCount)} color={t.scrollIndicator} />
     </>
   );
 }
@@ -184,6 +188,7 @@ export function SingleColumnPicker<T>({
   onRowActivate,
   rowZonePrefix = 'single-column-row',
   rowZoneZ = ROW_ZONE_Z_OVERLAY,
+  lineCountOf,
 }: SingleColumnPickerProps<T>) {
   const t = useTheme();
 
@@ -217,6 +222,7 @@ export function SingleColumnPicker<T>({
         onRowActivate={onRowActivate}
         rowZonePrefix={rowZonePrefix}
         rowZoneZ={rowZoneZ}
+        lineCountOf={lineCountOf}
       />
     </Box>
   );

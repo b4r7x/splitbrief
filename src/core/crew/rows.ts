@@ -2,7 +2,7 @@ import { assertNever } from '../../utils/type-guards.js';
 import type { Config } from '../schemas/config.js';
 import type { EffortLevel } from '../schemas/enums.js';
 import type { CrewSeatId } from './identity.js';
-import { deriveCrewSeats, type CrewEscalateEntry, type CrewSeat } from './seats.js';
+import { deriveCrewSeats, type CrewSeat } from './seats.js';
 
 export type CrewRow =
   | Readonly<{ kind: 'seat'; id: CrewSeatId; seat: CrewSeat }>
@@ -12,14 +12,12 @@ export type CrewRow =
       value: EffortLevel | undefined;
       editable: boolean;
       inherited: boolean;
-    }>
-  | Readonly<{ kind: 'escalate'; entry: CrewEscalateEntry | undefined }>;
+    }>;
 
-export type CrewRowKey = `seat:${CrewSeatId}` | `effort:${CrewSeatId}` | 'escalate';
+export type CrewRowKey = `seat:${CrewSeatId}` | `effort:${CrewSeatId}`;
 
 /** An effort nobody set reads as this position, on the row and in the filter alike. */
 export const UNSET_EFFORT_WORD = 'auto';
-export const NO_ESCALATION_WORD = 'none';
 const IDENTITY_SEPARATORS = /[·\s]+/;
 
 export function crewRowKey(row: CrewRow): CrewRowKey {
@@ -28,8 +26,6 @@ export function crewRowKey(row: CrewRow): CrewRowKey {
       return `seat:${row.id}`;
     case 'effort':
       return `effort:${row.seatId}`;
-    case 'escalate':
-      return 'escalate';
     default:
       return assertNever(row);
   }
@@ -63,7 +59,6 @@ export function deriveCrewRows(input: Readonly<{ config: Config }>): readonly Cr
     rows.push({ kind: 'seat', id: seat.id, seat });
     const effort = effortRow(seat, plannerEffort);
     if (effort !== undefined) rows.push(effort);
-    if (seat.id === 'build') rows.push({ kind: 'escalate', entry: seat.escalate });
   }
   return rows;
 }
@@ -78,12 +73,6 @@ export function crewRowFilterText(row: CrewRow): string {
       return filterWords(`${row.seat.label} ${row.seat.model}`);
     case 'effort':
       return `effort ${row.value ?? UNSET_EFFORT_WORD}`;
-    case 'escalate':
-      return filterWords(
-        row.entry === undefined
-          ? `escalate build ${NO_ESCALATION_WORD}`
-          : `escalate build ${row.entry.displayName} ${row.entry.model}`,
-      );
     default:
       return assertNever(row);
   }

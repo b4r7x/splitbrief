@@ -14,7 +14,7 @@ import {
 import { crewRowKey, deriveCrewRows, type CrewRowKey } from '../../core/crew/rows.js';
 import type { Config } from '../../core/schemas/config.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
-import { planSeatBlock, visibleCrewRows } from './format.js';
+import { planSeatBlock } from './format.js';
 import { CrewRowView, CrewSpine, CrewVerdictLine } from './row-view.js';
 
 /** The label column starts here: cursor gutter (2) plus the rail glyph and its gap (2). */
@@ -29,7 +29,7 @@ function CrewBlock({ config, width, cursor }: BlockProps) {
 
   return (
     <Box flexDirection="column">
-      {visibleCrewRows(rows, layout).map((row) => (
+      {rows.map((row) => (
         <CrewRowView
           key={crewRowKey(row)}
           row={row}
@@ -114,16 +114,7 @@ describe('crew row view', () => {
   });
 
   it('gives every row a word in the label column, never a glyph alone', async () => {
-    const lines = await linesFor({
-      config: makeConfig({
-        escalation: {
-          enabled: true,
-          intermediateProvider: 'deepseek',
-          intermediateModel: 'deepseek-chat',
-        },
-      }),
-      width: 78,
-    });
+    const lines = await linesFor({ config: makeConfig(), width: 78 });
 
     expect(lines.length).toBeGreaterThan(3);
     for (const line of lines) {

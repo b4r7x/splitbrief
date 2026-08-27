@@ -322,13 +322,13 @@ The first-run setup screen (`src/app/screens/setup.tsx`) composes the same featu
 
 ### The sizing rule
 
-No surface carries a width constant. `overlayRect` (`src/core/navigation/overlay-rect.ts`) computes every panel's rectangle from the live terminal size and a named density:
+`overlayRect` (`src/core/navigation/overlay-rect.ts`) computes every panel's rectangle from the live terminal size and a named density; the home body and composer apply a local 108-column cap:
 
 | density | share | min | max | who |
 |---|---|---|---|---|
 | `compact` | 0.60 | 56 | 72 | mode selector, start preparation, the picker's "initializing tools" panel |
 | `roomy` | 0.70 | 76 | 96 | settings (crew included), help, palette, the summary screen, the picker's sub-steps |
-| `wide` | 0.90 | 76 | 140 | the seat picker, setup, sessions, skills, the cost drilldown, the home body and composer |
+| `wide` | 0.90 | 76 | 140 | the seat picker, setup, sessions, skills, the cost drilldown, the home body and composer (capped locally at 108) |
 
 `width = min(cols - 4, max(min, floor(cols * share)), max)`; the frame costs 6 columns and 4 rows, and `overlayGutterRows` gives back one row of vertical air per 6 rows above the 18-row floor, capped at 2 (the first at 24 rows, the second at 30). Every panel passes a `density` to `OverlayPanel`; `maxWidth` no longer exists, so nothing renders byte-identical at 80 and 120 columns.
 

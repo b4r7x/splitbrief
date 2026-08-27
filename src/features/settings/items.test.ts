@@ -20,16 +20,15 @@ describe('buildSettingsItems', () => {
     const config = makeConfig();
     const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });
 
-    expect(items.slice(0, 5).map((item) => [item.kind, item.key])).toEqual([
+    expect(items.slice(0, 4).map((item) => [item.kind, item.key])).toEqual([
       ['crew', 'seat:plan'],
       ['crew', 'effort:plan'],
       ['crew', 'seat:build'],
-      ['crew', 'escalate'],
       ['crew', 'seat:review'],
     ]);
-    expect(items.slice(0, 5).map(settingsItemSection)).toEqual(Array(5).fill('Crew'));
+    expect(items.slice(0, 4).map(settingsItemSection)).toEqual(Array(4).fill('Crew'));
 
-    const settingSections = items.slice(5).map(settingsItemSection);
+    const settingSections = items.slice(4).map(settingsItemSection);
     expect(settingSections.filter((section, at) => section !== settingSections[at - 1])).toEqual([
       'Tuning',
       'Validation',
@@ -65,15 +64,12 @@ describe('settingsItemFilterText', () => {
 });
 
 describe('settingsItemDescription', () => {
-  it('explains the plan seat and the escalation row', () => {
+  it('explains the plan seat', () => {
     const config = makeConfig();
     const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });
 
     expect(settingsItemDescription({ item: itemAt(items, 'seat:plan'), config })).toContain(
       'compiles every brief',
-    );
-    expect(settingsItemDescription({ item: itemAt(items, 'escalate'), config })).toContain(
-      'escalates to before the planner takes over',
     );
   });
 

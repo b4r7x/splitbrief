@@ -81,40 +81,9 @@ export interface InheritPlannerOption extends PickerOptionBase {
   kind: 'inherit-planner';
 }
 
-/** The escalation seat's off row: confirming it clears the intermediate model. */
-export interface EscalationOffOption extends PickerOptionBase {
-  kind: 'escalation-off';
-}
-
-export type PickerOption =
-  | RunnerPickerOption
-  | CustomCommandLauncherOption
-  | InheritPlannerOption
-  | EscalationOffOption;
+export type PickerOption = RunnerPickerOption | CustomCommandLauncherOption | InheritPlannerOption;
 
 export const INHERIT_PLANNER_OPTION_ID = 'inherit-planner';
-
-export const ESCALATION_OFF_OPTION_ID = 'escalation-off';
-
-/**
- * Turning escalation off is an edit that always succeeds, so the row carries
- * no readiness and no model axis of its own.
- */
-export function escalationOffOption(input: Readonly<{ isCurrent: boolean }>): EscalationOffOption {
-  return {
-    id: ESCALATION_OFF_OPTION_ID,
-    displayName: 'None \u2014 disable escalation',
-    kind: 'escalation-off',
-    roles: ['planner'],
-    modelPolicy: 'none',
-    modelCapability: deriveModelCatalogCapability('none'),
-    billing: 'unknown',
-    permissions: trustPermissions('api', 'planner'),
-    status: { state: 'ready', remediation: null },
-    available: true,
-    ...(input.isCurrent ? { isCurrent: true } : {}),
-  };
-}
 
 /**
  * The inherit row borrows the planner's posture because that is what the seat

@@ -68,9 +68,6 @@ function openCrewRow(row: CrewRow): CrewActivation {
     case 'seat':
       overlayStore.open(seatPickerOverlayFor(CREW_SEAT_ROLES[row.id]));
       return { kind: 'opened' };
-    case 'escalate':
-      overlayStore.open(seatPickerOverlayFor('escalation'));
-      return { kind: 'opened' };
     case 'effort':
       return { kind: 'inert' };
     default:

@@ -124,8 +124,6 @@ function renderOverlay({
       return <ToolModelPicker role="implementer" />;
     case 'reviewer-picker':
       return <ToolModelPicker role="reviewer" />;
-    case 'escalation-picker':
-      return <ToolModelPicker role="escalation" />;
     case 'sessions':
       return <SessionsPicker />;
     case 'editor':

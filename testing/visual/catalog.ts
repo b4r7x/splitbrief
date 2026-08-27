@@ -351,7 +351,6 @@ function overlayGroup(input: OverlayGroupInput): readonly ScenarioDefinition[] {
 }
 
 const PICKER_TITLE_MARKER = 'Tool & model';
-const ESCALATION_TITLE_MARKER = 'Escalate · Provider & model';
 
 const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> = {
   help: overlayGroup({
@@ -532,24 +531,6 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-reviewer-picker-tool',
         title: 'Overlay · reviewer picker · tool chosen',
         marker: 'Reviewer',
-      },
-    ],
-  }),
-  'escalation-picker': overlayGroup({
-    overlay: 'escalation-picker',
-    underlyingScreen: 'home',
-    panelTitle: 'Escalation picker panel',
-    checkpointTitle: 'Escalation picker ready',
-    scenarios: [
-      {
-        id: 'overlay-escalation-picker',
-        title: 'Overlay · escalation picker',
-        marker: ESCALATION_TITLE_MARKER,
-      },
-      {
-        id: 'overlay-escalation-picker-provider',
-        title: 'Overlay · escalation picker · provider chosen',
-        marker: ESCALATION_TITLE_MARKER,
       },
     ],
   }),

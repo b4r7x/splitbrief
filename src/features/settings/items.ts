@@ -24,9 +24,6 @@ const SEAT_DESCRIPTIONS: Readonly<Record<CrewSeatId, string>> = {
   review: "Reads the diff after every task; with no tool of its own it runs the planner's setup.",
 };
 
-const ESCALATE_DESCRIPTION =
-  'Stronger API model a stuck task escalates to before the planner takes over.';
-
 const INHERITED_EFFORT_DESCRIPTION =
   "Inherited with the planner's setup. Give REVIEW its own tool to set it separately (⏎ on REVIEW).";
 
@@ -64,8 +61,6 @@ function crewRowDescription(row: CrewRow): string {
       return SEAT_DESCRIPTIONS[row.id];
     case 'effort':
       return row.inherited ? INHERITED_EFFORT_DESCRIPTION : EFFORT_DESCRIPTION;
-    case 'escalate':
-      return ESCALATE_DESCRIPTION;
     default:
       return assertNever(row);
   }

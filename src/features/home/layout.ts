@@ -30,6 +30,7 @@ interface SessionLimitInput {
 const FOCUSED_FILTER_BLOCK_ROWS = 4;
 const FOCUSED_SELECTION_ERROR_ROWS = 1;
 const COMPACT_CONFIG_BLOCK_ROWS = 2;
+const HOME_MAX_WIDTH = 108;
 
 export function homeConfigBlockRows(rows: number): number {
   return rows >= 24 ? 4 : COMPACT_CONFIG_BLOCK_ROWS;
@@ -84,7 +85,7 @@ export function getHomeLayout({
   sessionCount = 0,
   sessionsFocused = false,
 }: HomeLayoutInput): HomeLayout {
-  const width = overlayWidth({ cols, density: 'wide' });
+  const width = Math.min(overlayWidth({ cols, density: 'wide' }), HOME_MAX_WIDTH);
   const logoTier = getLogoTier(rows, cols);
   const inputBottomMargin = rows >= 38 ? 2 : rows >= 30 ? 1 : 0;
   const { recentSessionLimit, showHiddenCount, sessionCapacity } = getContentAwareSessionLimit({

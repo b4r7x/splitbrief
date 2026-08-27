@@ -291,6 +291,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
               height={columnHeight}
               visibleRows={maxVisible}
               getKey={(slot) => slot.key}
+              lineCountOf={(slot) => (slot.kind === 'guidance' ? 2 : 1)}
               contentMaxWidth={rightContentWidth}
               onRowActivate={(displayIndex) => {
                 const slot = display[displayIndex];

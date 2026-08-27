@@ -734,7 +734,7 @@ escalation:
   intermediateModel: z-ai/glm-4.6
 ```
 
-**Editing from the TUI.** The intermediate tier is editable live: `/crew` (the Crew section of Settings) puts an escalate row under the BUILD seat, and it opens the same provider/model picker as the seats. Committing a choice writes `intermediateProvider` and `intermediateModel` together, plus `enabled: true` (`writeEscalationRunner`, `src/core/config/accessors/escalation.ts`); choosing `none` removes both (`clearEscalation`). Half a pair cannot be persisted from the TUI.
+**Editing from the TUI.** The intermediate tier is configured in YAML only. The Crew section of Settings exposes planner, implementer, and reviewer seats; it has no escalation row or picker. Set `enabled: false` in YAML to disable the tier while retaining its provider and model configuration.
 
 **When to use:** you run a cheap implementer (Ollama / DeepSeek) and want a "10x cheaper than the planner but smarter than the implementer" stop along the way before paying for an Opus retry. Skip if your implementer is already frontier-class. Setting `intermediateProvider` is enough to turn the tier on; add `enabled: false` only when you want to keep the provider config but bypass the tier.
 

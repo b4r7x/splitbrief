@@ -539,8 +539,7 @@ describe('effort support', () => {
 });
 
 describe('seatPickerLane', () => {
-  it('reads the escalate seat through the planner lane and every other seat through its own', () => {
-    expect(seatPickerLane('escalation')).toBe('planner');
+  it('reads every picker role through its own seat lane', () => {
     for (const role of ['planner', 'implementer', 'reviewer'] as const) {
       expect(seatPickerLane(role)).toBe(role);
     }
