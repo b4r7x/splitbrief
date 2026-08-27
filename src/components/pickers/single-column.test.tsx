@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import chalk from 'chalk';
 import { Text } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { glyph } from '../../lib/glyphs.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { ListRow } from '../list-row.js';
+import { getTheme, ThemeProvider } from '../theme.js';
 import { SingleColumnPicker } from './single-column.js';
 
 beforeEach(() => {
@@ -107,7 +110,7 @@ describe('SingleColumnPicker row zones', () => {
     ui.unmount();
   });
 
-  it('reserves a 2-cell scrollbar gutter so metadata keeps its last character', async () => {
+  it('keeps row content at the same width with and without overflow', async () => {
     async function metadataEndColumn(visibleRows: number): Promise<number> {
       const ui = renderFeature(
         <SingleColumnPicker
@@ -144,6 +147,71 @@ describe('SingleColumnPicker row zones', () => {
     const withScrollbar = await metadataEndColumn(2);
     const withoutScrollbar = await metadataEndColumn(3);
 
-    expect(withoutScrollbar - withScrollbar).toBe(2);
+    expect(withScrollbar).toBe(withoutScrollbar);
+  });
+
+  it('fills every list-window row with a track while keeping filler rows non-clickable', async () => {
+    const ui = renderFeature(
+      <SingleColumnPicker
+        label="Items"
+        items={['one', 'two']}
+        filter=""
+        selectedIndex={0}
+        isActive
+        height={9}
+        visibleRows={5}
+        getKey={(item) => item}
+        contentMaxWidth={18}
+        rowZonePrefix="fixed-window"
+        onRowActivate={() => undefined}
+        renderRow={(item) => <Text>{item}</Text>}
+      />,
+    );
+    await tick();
+
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const filterRow = lines.findIndex((line) => line.includes('Type to filter'));
+    const listRows = lines.slice(filterRow + 1, -1);
+    const trackAtRightEdge = `${glyph('scrollTrack')} ${glyph('scrollTrack')}`;
+
+    expect(listRows).toHaveLength(5);
+    expect(
+      listRows.every((line) => line.endsWith(trackAtRightEdge)),
+      JSON.stringify(listRows),
+    ).toBe(true);
+    expect(collectClickableZones({ cols: 100, rows: 24 }).size).toBe(2);
+    ui.unmount();
+  });
+
+  it('renders an overflow thumb with the muted scrollbar color, not the accent color', async () => {
+    const originalColorLevel = chalk.level;
+    chalk.level = 1;
+    const theme = { ...getTheme('terminal'), accent: 'red', scrollIndicator: 'green' };
+    const ui = renderFeature(
+      <ThemeProvider theme={theme}>
+        <SingleColumnPicker
+          label="Items"
+          items={Array.from({ length: 8 }, (_, index) => `item-${index}`)}
+          filter=""
+          selectedIndex={0}
+          isActive
+          height={7}
+          visibleRows={3}
+          getKey={(item) => item}
+          contentMaxWidth={18}
+          renderRow={(item) => <Text>{item}</Text>}
+        />
+      </ThemeProvider>,
+    );
+    await tick();
+
+    try {
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain(`\u001B[32m${glyph('scrollThumb')}\u001B[39m`);
+      expect(frame).not.toContain(`\u001B[31m${glyph('scrollThumb')}\u001B[39m`);
+    } finally {
+      ui.unmount();
+      chalk.level = originalColorLevel;
+    }
   });
 });
