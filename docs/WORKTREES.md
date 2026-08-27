@@ -85,7 +85,7 @@ Two more consequences worth knowing:
 - **Concurrent runs share the real credential** — the same situation as running the tool in two terminals, with the same vendor semantics. One refresh wins; the loser re-reads the rotated file on its next invocation. Under the old snapshot model a concurrent rotation was a guaranteed burn; under passthrough it is at worst one failed call.
 - **A value rotated mid-run is a secret SPLITBRIEF never held**, so the parent-side redactor cannot strip it the way it strips the pre-run value it read when the bridge was built. Pattern-based secret redaction still applies to everything a runner emits.
 
-Related honesty fix, same incident: `codex login status` prints `Logged in using ChatGPT` from a pure file read — the burned host above still printed it while every real call returned 401. Readiness therefore caps a positive local status at *unverified* ("stored credentials prove presence, not a working session"); a definitive *not logged in* is still trusted, and interactive runs proceed with the unverified state disclosed rather than pretending the gauge is proof either way.
+Related honesty fix, same incident: `codex login status` prints `Logged in using ChatGPT` from a pure file read — the burned host above still printed it while every real call returned 401. A positive local status therefore proves a credential is present, not that the token is live; readiness treats it as authenticated and the first real call settles liveness (a dead token fails there with its own remediation). A definitive *not logged in* is still trusted and still blocks.
 
 ## What worktrees do NOT isolate
 

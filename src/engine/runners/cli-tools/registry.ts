@@ -191,24 +191,12 @@ function authFactFromText(value: string) {
   return undefined;
 }
 
+// A positive local status proves a credential is present; liveness is established
+// by the first real call, which carries its own failure remediation.
 function parseStatusAuth(output: CliProbeOutput) {
   const fromJson = jsonAuthFact(output);
   if (fromJson !== undefined) return fromJson;
   return authFactFromText(`${output.stdout}\n${output.stderr}`) ?? 'malformed';
-}
-
-/**
- * `codex login status` is a pure read of `auth.json` — it prints "Logged in
- * using ChatGPT" for any well-formed file, with no server round-trip. It can
- * prove a login is absent, never that one still works: measured 2026-08-06 on
- * a host whose refresh token had already been rotated away server-side, the
- * command reported a login while every real call returned 401. A positive
- * status is therefore capped at `unknown` — credentials are present, and only
- * a real call can verify them. The negative outcomes stay definitive.
- */
-function parseCodexStatusAuth(output: CliProbeOutput) {
-  const fact = parseStatusAuth(output);
-  return fact === 'verified' ? ('unknown' as const) : fact;
 }
 
 function declaredAuthProbe(tool: CliToolId, command: string): CliAuthProbe {
@@ -229,7 +217,7 @@ function declaredAuthProbe(tool: CliToolId, command: string): CliAuthProbe {
         cwd: 'neutral',
         timeoutMs: PROBE_TIMEOUT_MS,
         maxOutputBytes: PROBE_OUTPUT_MAX_BYTES,
-        parse: parseCodexStatusAuth,
+        parse: parseStatusAuth,
       };
     // OpenCode and Kilo expose a read-only per-provider credential listing
     // that names each stored credential and recognized env var without ever

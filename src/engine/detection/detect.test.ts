@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { chmod, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { env, platform } from 'node:process';
 import { describe, expect, it } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
@@ -232,6 +233,52 @@ describe('legacy CLI detection presentation', () => {
     });
   });
 
+  it.runIf(platform !== 'win32')(
+    'codex positive login status is ready and authenticated',
+    async () => {
+      await withTempDir('detect-codex-positive-login', async (directory) => {
+        const shim = await installCodexShim(
+          directory,
+          [
+            '#!/bin/sh',
+            'if [ "$1" = "--version" ]; then',
+            "  printf '%s\\n' 'codex-cli 0.150.1'",
+            '  exit 0',
+            'fi',
+            'if [ "$1" = "login" ] && [ "$2" = "status" ]; then',
+            "  printf '%s\\n' 'Logged in using ChatGPT'",
+            '  exit 0',
+            'fi',
+            'exit 1',
+            '',
+          ].join('\n'),
+        );
+        const previousApiKey = env.OPENAI_API_KEY;
+        env.OPENAI_API_KEY = 'test-api-key';
+        try {
+          const [result] = await detectAvailableCliTools({
+            tools: ['codex'],
+            authChannels: { codex: 'api-key' },
+            projectDir: directory,
+            resolveExecutable: async () => shim,
+            now: () => 43,
+          });
+
+          expect(result).toMatchObject({
+            tool: 'codex',
+            auth: 'authenticated',
+            diagnostic: { state: 'ready', remediation: null },
+            installedVersion: '0.150.1',
+          });
+        } finally {
+          if (previousApiKey === undefined) delete env.OPENAI_API_KEY;
+          else env.OPENAI_API_KEY = previousApiKey;
+        }
+      });
+    },
+    20_000,
+  );
+
   it('keeps the credential oracle listing when no auth channel is selected', async () => {
     const [result] = await detectAvailableCliTools({
       tools: ['opencode'],
@@ -421,7 +468,7 @@ describe('context-bound runner evidence', () => {
     expect(evidence.credential).toBe(credential);
   });
 
-  it.runIf(process.platform !== 'win32')(
+  it.runIf(platform !== 'win32')(
     'publishes catalog evidence only through the context-bound detector',
     async () => {
       await withTempDir('detect-context-catalog', async (directory) => {
@@ -446,7 +493,7 @@ describe('context-bound runner evidence', () => {
     },
   );
 
-  it.runIf(process.platform !== 'win32')(
+  it.runIf(platform !== 'win32')(
     'keeps catalog work scoped to an exact complete context',
     async () => {
       await withTempDir('detect-context-scope', async (directory) => {
@@ -512,7 +559,7 @@ describe('context-bound runner evidence', () => {
     },
   );
 
-  it.runIf(process.platform !== 'win32')(
+  it.runIf(platform !== 'win32')(
     'ignores an injected declaration and preserves canonical version-to-catalog ordering',
     async () => {
       await withTempDir('detect-invented-declared-probe', async (directory) => {
@@ -541,7 +588,7 @@ describe('context-bound runner evidence', () => {
     },
   );
 
-  it.runIf(process.platform !== 'win32')(
+  it.runIf(platform !== 'win32')(
     'does not let injected readiness facts or callbacks authorize catalog work',
     async () => {
       type DeclaredReadinessSeam = typeof readinessProbeModule.probeDeclaredCliReadinessEvidence;
@@ -602,9 +649,9 @@ describe('context-bound runner evidence', () => {
               credentialLog,
             }),
           );
-          const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
+          const originalOpenAiApiKey = env.OPENAI_API_KEY;
           let observedMutation = true;
-          process.env.OPENAI_API_KEY = 'r5-injected-secret';
+          env.OPENAI_API_KEY = 'r5-injected-secret';
           try {
             const evidence = await detectRunnerEvidence({
               context: cliContext(),
@@ -636,9 +683,9 @@ describe('context-bound runner evidence', () => {
             expect(readFileSync(credentialLog, 'utf8').trim().split('\n')).toEqual(['unset']);
           } finally {
             if (originalOpenAiApiKey === undefined) {
-              Reflect.deleteProperty(process.env, 'OPENAI_API_KEY');
+              Reflect.deleteProperty(env, 'OPENAI_API_KEY');
             } else {
-              process.env.OPENAI_API_KEY = originalOpenAiApiKey;
+              env.OPENAI_API_KEY = originalOpenAiApiKey;
             }
           }
         });
@@ -646,7 +693,7 @@ describe('context-bound runner evidence', () => {
     },
   );
 
-  it.runIf(process.platform !== 'win32')(
+  it.runIf(platform !== 'win32')(
     'uses the exact 30-second catalog admission boundary and rejects older or future clocks',
     async () => {
       const cases = [
@@ -689,7 +736,7 @@ describe('context-bound runner evidence', () => {
     },
   );
 
-  it.runIf(process.platform !== 'win32')(
+  it.runIf(platform !== 'win32')(
     'keeps the admitted catalog argv, parser, limits, and shape immutable after issuance',
     async () => {
       await withTempDir('detect-catalog-immutable-operation', async (directory) => {
@@ -755,7 +802,7 @@ describe('context-bound runner evidence', () => {
     expect(inline.context.key).not.toBe(env.context.key);
   });
 
-  it.runIf(process.platform !== 'win32')(
+  it.runIf(platform !== 'win32')(
     'uses the admitted parser contract and never retains raw probe output',
     async () => {
       await withTempDir('detect-runner-evidence', async (directory) => {
@@ -776,8 +823,8 @@ describe('context-bound runner evidence', () => {
             '',
           ].join('\n'),
         );
-        const previousApiKey = process.env.OPENAI_API_KEY;
-        process.env.OPENAI_API_KEY = 'test-api-key';
+        const previousApiKey = env.OPENAI_API_KEY;
+        env.OPENAI_API_KEY = 'test-api-key';
         try {
           const evidence = await detectRunnerEvidence({
             context: cliContext({ authChannel: 'api-key', credentialPresent: true }),
@@ -793,21 +840,19 @@ describe('context-bound runner evidence', () => {
               kind: 'compatible',
               installedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
             },
-            // A positive `codex login status` is a local file read and caps at
-            // unknown; the parsed fact still comes from the admitted contract.
-            auth: 'unknown',
+            auth: 'verified',
           });
           expect(JSON.stringify(evidence)).not.toContain(rawProbeText);
         } finally {
-          if (previousApiKey === undefined) delete process.env.OPENAI_API_KEY;
-          else process.env.OPENAI_API_KEY = previousApiKey;
+          if (previousApiKey === undefined) delete env.OPENAI_API_KEY;
+          else env.OPENAI_API_KEY = previousApiKey;
         }
       });
     },
     20_000,
   );
 
-  it.runIf(process.platform !== 'win32')(
+  it.runIf(platform !== 'win32')(
     'keeps a version-only legacy shim authentication-unknown',
     async () => {
       await withTempDir('detect-version-only', async (directory) => {

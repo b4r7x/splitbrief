@@ -71,12 +71,13 @@ afterEach(() => {
   cleanupTempDir(tmp);
 });
 
-function activateCodexShim(version: string) {
+function activateCodexShim(version: string, authProbe?: 'verified' | 'unverified') {
   const shim = installCompatibleCliShim({
     directory: binDir,
     tool: 'codex',
     authChannel: 'api-key',
     version,
+    ...(authProbe === undefined ? {} : { authProbe }),
   });
   restoreCompatibleCliShim = activateCompatibleCliShim(shim, 'test-only-start-gate-key');
   return shim;
@@ -91,10 +92,9 @@ function startDeps(run: { gates?: readonly RunnerGate[] | undefined }): Partial<
   };
 }
 
-// A cheap auth probe proves a credential exists, never that the server still
-// honours it, so fresh CLI evidence reports auth as unknown and a headless
-// start stays fail-closed without --allow-unverified-auth. These fixtures
-// accept unverified auth so the assertions stay about version admission.
+// A positive local status now settles auth, so these fixtures are authenticated
+// and their assertions stay about version admission; --allow-unverified-auth is
+// kept so a probe that cannot settle auth never turns into a version failure.
 function startWithFreshPreparation() {
   const run: { gates?: readonly RunnerGate[] | undefined } = {};
   return runCommand(
@@ -121,7 +121,9 @@ describe('CLI integration: fresh CLI runner start gate', () => {
   );
 
   it('fail-closes a headless start on unverified auth and names the escape hatch', async () => {
-    activateCodexShim('0.999.0');
+    // A status probe that prints success while exiting non-zero is the shape the
+    // readiness probe still refuses to settle: auth stays unknown.
+    activateCodexShim('0.999.0', 'unverified');
 
     const run: { gates?: readonly RunnerGate[] | undefined } = {};
     const { exitCode } = await runCommand(

@@ -126,7 +126,7 @@ describe('detection cache', () => {
     expect(raw).not.toContain('/private/local-cli-path-canary');
     expect(raw).not.toContain('credential-private-remediation-canary');
     expect(JSON.parse(raw)).toEqual({
-      version: 3,
+      version: 4,
       contextKey: CACHE_CONTEXT,
       fetchedAt: 1_786_000_000_000,
       validatedAt: 1_786_000_001_000,
@@ -428,7 +428,7 @@ describe('detection cache', () => {
     await writeFile(
       join(dir, 'detection-cache.json'),
       JSON.stringify({
-        version: 3,
+        version: 4,
         contextKey: CACHE_CONTEXT,
         fetchedAt: 1_786_000_000_000,
         validatedAt: 1_786_000_001_000,
@@ -496,7 +496,7 @@ describe('detection cache', () => {
     await writeFile(
       join(dir, 'detection-cache.json'),
       JSON.stringify({
-        version: 3,
+        version: 4,
         contextKey: CACHE_CONTEXT,
         fetchedAt: 1_786_000_000_000,
         validatedAt: 1_786_000_001_000,
@@ -537,7 +537,7 @@ describe('detection cache', () => {
     await writeFile(
       join(dir, 'detection-cache.json'),
       JSON.stringify({
-        version: 3,
+        version: 4,
         contextKey: CACHE_CONTEXT,
         fetchedAt: 1_786_000_000_000,
         validatedAt: 1_786_000_001_000,
@@ -570,6 +570,28 @@ describe('detection cache', () => {
       kind: 'read',
       facts: [{ provider: 'OpenAI', source: 'oauth' }],
     });
+  });
+
+  it('rejects a version-3 cache payload without unlinking it', async () => {
+    const dir = join(tempDir, SPLITBRIEF_DIR);
+    await mkdir(dir, { recursive: true });
+    const cachePath = join(dir, 'detection-cache.json');
+    const payload = JSON.stringify({
+      version: 3,
+      contextKey: CACHE_CONTEXT,
+      fetchedAt: 1_786_000_000_000,
+      validatedAt: 1_786_000_001_000,
+      generation: 12,
+      requestId: 27,
+      providers: [],
+      cliTools: [],
+    });
+    await writeFile(cachePath, payload, 'utf8');
+
+    await expect(
+      loadDetectionCacheSnapshot({ projectDir: tempDir, contextKey: CACHE_CONTEXT }),
+    ).resolves.toBeNull();
+    await expect(readFile(cachePath, 'utf8')).resolves.toBe(payload);
   });
 
   it('does not reuse a cache record for a different context', async () => {
