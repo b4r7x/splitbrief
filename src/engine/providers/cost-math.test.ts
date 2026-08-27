@@ -17,14 +17,14 @@ describe('calculateCost', () => {
   });
 
   it('calculates priced API usage', () => {
-    const pricing = resolvePricing('anthropic', undefined, 'claude-sonnet-4-6');
-    expect(calculateCost(1_000_000, 1_000_000, pricing)).toBe(18);
+    const pricing = resolvePricing('anthropic', undefined, 'claude-sonnet-5');
+    expect(calculateCost(1_000_000, 1_000_000, pricing)).toBe(12);
   });
 });
 
 describe('calculateUsageCost', () => {
   it('includes cache read and create costs when known', () => {
-    const pricing = resolvePricing('anthropic', undefined, 'claude-sonnet-4-6');
+    const pricing = resolvePricing('anthropic', undefined, 'claude-sonnet-5');
     expect(
       calculateUsageCost({
         inputTokens: 1_000_000,
@@ -33,7 +33,7 @@ describe('calculateUsageCost', () => {
         cacheCreateTokens: 1_000_000,
         pricing,
       }),
-    ).toBeCloseTo(22.05, 10);
+    ).toBeCloseTo(14.7, 10);
   });
 
   it('returns zero for unknown models with unpriced fallback', () => {
@@ -126,10 +126,10 @@ describe('calculateUsageCost', () => {
 
 describe('buildProviderUsageSegment', () => {
   it('keeps cache-only usage in the segment totals and provider rollup', () => {
-    const pricing = resolvePricing('anthropic', undefined, 'claude-sonnet-4-6');
+    const pricing = resolvePricing('anthropic', undefined, 'claude-sonnet-5');
     const segment = buildProviderUsageSegment({
       tool: 'anthropic',
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5',
       inputTokens: 0,
       outputTokens: 0,
       cacheReadTokens: 1_000_000,
@@ -139,7 +139,7 @@ describe('buildProviderUsageSegment', () => {
 
     expect(segment.usageTokens).toBe(1_000_000);
     expect(segment.contextTokens).toBe(1_000_000);
-    expect(segment.cost).toBeCloseTo(0.3, 10);
+    expect(segment.cost).toBeCloseTo(0.2, 10);
     expect(segment.costKnown).toBe(true);
 
     const providerCosts = {};
@@ -149,7 +149,7 @@ describe('buildProviderUsageSegment', () => {
         inputTokens: 0,
         outputTokens: 0,
         cacheReadTokens: 1_000_000,
-        cost: 0.3,
+        cost: 0.2,
       },
     });
   });

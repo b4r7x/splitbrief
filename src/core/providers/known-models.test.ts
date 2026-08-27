@@ -134,7 +134,7 @@ describe('KNOWN_MODELS recommendation metadata', () => {
 
   it('freezes the exact pending-candidate provider/model identities', () => {
     expect(PENDING_EVALUATION_CANDIDATE_IDS).toEqual([
-      { provider: 'openrouter', model: 'anthropic/claude-sonnet-4.6' },
+      { provider: 'openrouter', model: 'anthropic/claude-sonnet-5' },
       { provider: 'groq', model: 'openai/gpt-oss-120b' },
       { provider: 'ollama', model: 'qwen3-coder:30b' },
       { provider: 'lm-studio', model: 'qwen2.5-coder-7b' },
@@ -157,6 +157,15 @@ describe('KNOWN_MODELS recommendation metadata', () => {
     for (const [provider, models] of Object.entries(KNOWN_MODELS)) {
       for (const model of models ?? []) {
         expect(model.provenance, `${provider}/${model.name}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('keeps every bundled catalog id non-empty and provenance off 2026-04', () => {
+    for (const [provider, models] of Object.entries(KNOWN_MODELS)) {
+      for (const model of models ?? []) {
+        expect(model.catalogModelId ?? model.name, `${provider}/${model.name}`).toBeTruthy();
+        expect(model.provenance, `${provider}/${model.name}`).not.toContain('2026-04');
       }
     }
   });

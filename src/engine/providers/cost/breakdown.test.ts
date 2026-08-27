@@ -23,7 +23,7 @@ describe('calculateCostBreakdown', () => {
       totalTasks: 5,
       escalatedCount: 0,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerTool: 'deepseek',
       implementerModel: 'deepseek-v4-flash',
     });
@@ -43,7 +43,7 @@ describe('calculateCostBreakdown', () => {
       totalTasks: 3,
       escalatedCount: 3,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
     });
     expect(result.localCompletionRate).toBe(0);
@@ -61,7 +61,7 @@ describe('calculateCostBreakdown', () => {
       totalTasks: 7,
       escalatedCount: 2,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
     });
     expect(Math.abs(result.localCompletionRate - 0.7142857142857143)).toBeLessThan(0.001);
@@ -74,7 +74,7 @@ describe('calculateCostBreakdown', () => {
       totalTasks: 0,
       escalatedCount: 0,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
     });
     expect(result.localCompletionRate).toBe(0);
@@ -94,11 +94,11 @@ describe('calculateCostBreakdown', () => {
       totalTasks: 1,
       escalatedCount: 0,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerTool: 'deepseek',
       implementerModel: 'deepseek-v4-flash',
     });
-    expect(result.savingsAmount).toBeCloseTo(0.001022, 10);
+    expect(result.savingsAmount).toBeCloseTo(0.000672, 10);
     expect(result.savingsPercentage).toBeGreaterThan(0);
   });
 
@@ -168,7 +168,7 @@ describe('calculateCostBreakdown', () => {
       escalatedCount: 1,
       plannerTool: 'anthropic',
       implementerTool: 'deepseek',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerModel: 'deepseek-v4-flash',
     });
 
@@ -211,7 +211,7 @@ describe('calculateCostBreakdown', () => {
       plannerTool: 'deepseek',
       plannerModel: 'deepseek-v4-flash',
       implementerTool: 'anthropic',
-      implementerModel: 'claude-sonnet-4-6',
+      implementerModel: 'claude-sonnet-5',
     });
 
     expect(result.hasSavingsEstimate).toBe(true);
@@ -229,7 +229,7 @@ describe('calculateCostBreakdown', () => {
       escalatedCount: 0,
       plannerTool: 'anthropic',
       implementerTool: 'deepseek',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerModel: 'deepseek-v4-flash',
     });
 
@@ -243,7 +243,7 @@ describe('calculateCostBreakdown', () => {
       escalatedCount: 0,
       plannerTool: 'anthropic',
       implementerTool: 'deepseek',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerModel: 'deepseek-v4-flash',
     });
 
@@ -463,7 +463,7 @@ describe('calculateCostBreakdown', () => {
           escalationTokens: 0,
           retryCount: 0,
           tool: 'anthropic',
-          model: 'claude-sonnet-4-6',
+          model: 'claude-sonnet-5',
         },
       ],
     });
@@ -472,7 +472,7 @@ describe('calculateCostBreakdown', () => {
     if (!anthropic) throw new Error('expected anthropic provider costs');
     expect(anthropic.inputTokens).toBeCloseTo(250_000, 10);
     expect(anthropic.outputTokens).toBeCloseTo(250_000, 10);
-    expect(anthropic.cost).toBeCloseTo(4.5, 10);
+    expect(anthropic.cost).toBeCloseTo(3, 10);
 
     const deepseek = result.providerCosts?.['deepseek'];
     if (!deepseek) throw new Error('expected deepseek residual provider costs');
@@ -480,7 +480,7 @@ describe('calculateCostBreakdown', () => {
     expect(deepseek.outputTokens).toBeCloseTo(750_000, 10);
     expect(deepseek.cost).toBeCloseTo(0.315, 10);
 
-    expect(result.actualImplementerCost).toBeCloseTo(4.815, 10);
+    expect(result.actualImplementerCost).toBeCloseTo(3.315, 10);
   });
 
   it('includes cache-only task-aware implementer usage', () => {
@@ -505,12 +505,12 @@ describe('calculateCostBreakdown', () => {
           implementerCacheCreateTokens: 0,
           retryCount: 0,
           tool: 'anthropic',
-          model: 'claude-sonnet-4-6',
+          model: 'claude-sonnet-5',
         },
       ],
     });
 
-    expect(result.actualImplementerCost).toBeCloseTo(0.3, 10);
+    expect(result.actualImplementerCost).toBeCloseTo(0.2, 10);
     expect(result.isActualImplementerCostKnown).toBe(true);
     expect(result.hasPricedUsage).toBe(true);
     expect(result.hasUnpricedUsage).toBe(false);
@@ -535,7 +535,7 @@ describe('calculateCostBreakdown', () => {
       totalTasks: 0,
       escalatedCount: 0,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
     });
 
@@ -635,7 +635,7 @@ describe('offering billing metadata', () => {
       totalTasks: 1,
       escalatedCount: 0,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
       implementerModel: 'qwen-local',
     });
@@ -687,7 +687,7 @@ describe('summary persistence', () => {
 
 describe('cache pricing', () => {
   it('calculateCostBreakdown with cacheRead tokens + priced provider returns correct cacheReadSavings', () => {
-    // Sonnet 4.6: input=$3/MTok, cacheRead=$0.30/MTok => savings=$2.70/MTok of cache reads
+    // Sonnet 5: input=$2/MTok, cacheRead=$0.20/MTok => savings=$1.80/MTok of cache reads
     const usage = makeUsage({
       plannerInput: 100_000,
       plannerOutput: 50_000,
@@ -702,12 +702,12 @@ describe('cache pricing', () => {
       escalatedCount: 0,
       plannerTool: 'anthropic',
       implementerTool: 'deepseek',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerModel: 'deepseek-v4-flash',
     });
 
-    // 1_000_000 cache read tokens at (3.00 - 0.30) = $2.70/MTok = $2.70 savings
-    expect(result.cacheReadSavings).toBeCloseTo(2.7, 10);
+    // 1_000_000 cache read tokens at (2.00 - 0.20) = $1.80/MTok = $1.80 savings
+    expect(result.cacheReadSavings).toBeCloseTo(1.8, 10);
     expect(result.cacheReadTokens).toBe(1_000_000);
   });
 
@@ -747,7 +747,7 @@ describe('cache pricing', () => {
       escalatedCount: 0,
       plannerTool: 'anthropic',
       implementerTool: 'deepseek',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerModel: 'deepseek-v4-flash',
     });
 
@@ -772,12 +772,12 @@ describe('cache pricing', () => {
       escalatedCount: 0,
       plannerTool: 'anthropic',
       implementerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
-      implementerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
+      implementerModel: 'claude-sonnet-5',
     });
 
-    // (500k + 500k) @ $2.70/MTok = $2.70 total
-    expect(result.cacheReadSavings).toBeCloseTo(2.7, 10);
+    // (500k + 500k) @ $1.80/MTok = $1.80 total
+    expect(result.cacheReadSavings).toBeCloseTo(1.8, 10);
     expect(result.cacheReadTokens).toBe(1_000_000);
   });
 });
@@ -785,7 +785,7 @@ describe('cache pricing', () => {
 describe('reviewer pricing', () => {
   const anthropicPlanner = {
     plannerTool: 'anthropic',
-    plannerModel: 'claude-sonnet-4-6',
+    plannerModel: 'claude-sonnet-5',
     implementerTool: 'deepseek',
     implementerModel: 'deepseek-v4-flash',
   } as const;
@@ -830,7 +830,7 @@ describe('reviewer pricing', () => {
       totalTasks: 1,
       escalatedCount: 0,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
       reviewerTool: 'deepseek',
       reviewerModel: 'deepseek-v4-flash',

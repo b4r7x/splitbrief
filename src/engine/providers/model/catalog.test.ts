@@ -310,11 +310,11 @@ describe('runner-owned catalog resolution', () => {
       cache: makeModelCacheAccessor({ providerModels: { anthropic: [] } }),
     });
 
-    expect(offlineRows.find((row) => row.selectionId === 'claude-sonnet-4-6')).toMatchObject({
+    expect(offlineRows.find((row) => row.selectionId === 'claude-sonnet-5')).toMatchObject({
       source: 'bundled-fallback',
       isDefault: true,
     });
-    expect(freshEmptyRows.find((row) => row.selectionId === 'claude-sonnet-4-6')).toMatchObject({
+    expect(freshEmptyRows.find((row) => row.selectionId === 'claude-sonnet-5')).toMatchObject({
       source: 'bundled-fallback',
       membership: 'bundled-suggestion',
     });
@@ -327,7 +327,7 @@ describe('runner-owned catalog resolution', () => {
         anthropic: {
           id: 'anthropic',
           models: {
-            'claude-opus-4-6': { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
+            'claude-opus-5': { id: 'claude-opus-5', name: 'Claude Opus 5' },
           },
         },
       },
@@ -335,18 +335,18 @@ describe('runner-owned catalog resolution', () => {
 
     const rows = resolveModelCatalog('claude-code', { cache });
     const alias = rows.find((row) => row.selectionId === 'opus');
-    const catalogModel = rows.find((row) => row.selectionId === 'claude-opus-4-6');
+    const catalogModel = rows.find((row) => row.selectionId === 'claude-opus-5');
 
     expect(alias).toMatchObject({
       source: 'bundled-fallback',
       membership: 'bundled-suggestion',
       selectionId: 'opus',
-      displayName: 'Claude Opus 4.6',
+      displayName: 'Claude Opus 5',
     });
     expect(catalogModel).toMatchObject({
       source: 'models-dev',
       membership: 'catalog-suggestion',
-      selectionId: 'claude-opus-4-6',
+      selectionId: 'claude-opus-5',
     });
   });
 
@@ -423,7 +423,7 @@ describe('runner-owned catalog resolution', () => {
         },
       }),
     ],
-    ['bundled fallback', 'claude-sonnet-4-6', makeModelCacheAccessor()],
+    ['bundled fallback', 'claude-sonnet-5', makeModelCacheAccessor()],
   ])('does not duplicate a configured ID already present in the %s', (_source, id, cache) => {
     const rows = resolveModelCatalog('anthropic', { configuredSelectionId: id, cache });
 
@@ -432,7 +432,7 @@ describe('runner-owned catalog resolution', () => {
   });
 
   it('does not fuzzy-merge a configured snapshot with an alias or its catalog model', () => {
-    const configuredSelectionId = 'claude-opus-4-6-20260201';
+    const configuredSelectionId = 'claude-opus-5-20260201';
     const rows = resolveModelCatalog('claude-code', {
       configuredSelectionId,
       cache: makeModelCacheAccessor({
@@ -440,7 +440,7 @@ describe('runner-owned catalog resolution', () => {
           anthropic: {
             id: 'anthropic',
             models: {
-              'claude-opus-4-6': { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
+              'claude-opus-5': { id: 'claude-opus-5', name: 'Claude Opus 5' },
             },
           },
         },
@@ -453,7 +453,7 @@ describe('runner-owned catalog resolution', () => {
         .map((row) => [row.source, row.membership]),
     ).toEqual([['configured-recovery', 'custom']]);
     expect(rows.some((row) => row.selectionId === 'opus')).toBe(true);
-    expect(rows.some((row) => row.selectionId === 'claude-opus-4-6')).toBe(true);
+    expect(rows.some((row) => row.selectionId === 'claude-opus-5')).toBe(true);
   });
 
   it.each([undefined, '', '   ', 'auto', 'AUTO', '  auto  '])(

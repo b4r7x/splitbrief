@@ -16,10 +16,10 @@ describe('resolveAutoModel', () => {
   });
 
   it.each([
-    ['claude-sonnet-4-6', undefined, 'claude-sonnet-4-6'],
-    ['auto', 'openai', 'gpt-5.4'],
-    ['auto', 'anthropic', 'claude-sonnet-4-6'],
-    ['auto', 'agent-sdk', 'claude-sonnet-4-6'],
+    ['claude-sonnet-5', undefined, 'claude-sonnet-5'],
+    ['auto', 'openai', 'gpt-5.6-sol'],
+    ['auto', 'anthropic', 'claude-sonnet-5'],
+    ['auto', 'agent-sdk', 'claude-sonnet-5'],
   ])('resolves %j (tool=%j) to %j', (model, tool, expected) => {
     expect(resolveAutoModel(model, tool as string | undefined)).toBe(expected);
   });

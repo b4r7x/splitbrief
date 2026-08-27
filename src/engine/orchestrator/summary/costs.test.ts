@@ -26,7 +26,7 @@ describe('buildSummary estimatedCostSavings', () => {
       state: makeState({ tasks: [], tokenUsage: usage }),
       startTime: Date.now(),
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
     });
     expect(summary.estimatedCostSavings).toBe('$0.00');
@@ -39,12 +39,12 @@ describe('buildSummary estimatedCostSavings', () => {
       state: makeState({ tasks: [], tokenUsage: usage }),
       startTime: Date.now(),
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerTool: 'deepseek',
       implementerModel: 'deepseek-v4-flash',
     });
-    expect(summary.estimatedCostSavings).toBe('$17.58');
-    expect(summary.costBreakdown?.hypotheticalCost).toBe(18);
+    expect(summary.estimatedCostSavings).toBe('$11.58');
+    expect(summary.costBreakdown?.hypotheticalCost).toBe(12);
     expect(summary.costBreakdown?.actualImplementerCost).toBeCloseTo(0.42, 10);
     expect(summary.costBreakdown?.hasSavingsEstimate).toBe(true);
   });
@@ -56,7 +56,7 @@ describe('buildSummary estimatedCostSavings', () => {
       state: makeState({ tasks: [], tokenUsage: usage }),
       startTime: Date.now(),
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
     });
 
@@ -78,7 +78,7 @@ describe('buildSummary estimatedCostSavings', () => {
       state: makeState({ tasks: [], tokenUsage: usage }),
       startTime: Date.now(),
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerTool: 'deepseek',
       implementerModel: 'deepseek-v4-flash',
     });
@@ -181,7 +181,7 @@ describe('buildSummary task costs', () => {
       startTime: Date.now(),
       taskBreakdowns: breakdowns,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-opus-4-6',
+      plannerModel: 'claude-opus-5',
       implementerTool: 'ollama',
     });
 
@@ -323,7 +323,7 @@ describe('buildSummary offering presentation', () => {
         startTime: Date.now(),
         taskBreakdowns: breakdowns,
         plannerTool: 'anthropic',
-        plannerModel: 'claude-sonnet-4-6',
+        plannerModel: 'claude-sonnet-5',
         implementerTool: 'deepseek',
         implementerModel: 'deepseek-v4-flash',
         ...(reviewerSeat !== undefined && {

@@ -20,7 +20,7 @@ export interface KnownModel {
 }
 
 export const PENDING_EVALUATION_CANDIDATE_IDS = Object.freeze([
-  { provider: 'openrouter', model: 'anthropic/claude-sonnet-4.6' },
+  { provider: 'openrouter', model: 'anthropic/claude-sonnet-5' },
   { provider: 'groq', model: 'openai/gpt-oss-120b' },
   { provider: 'ollama', model: 'qwen3-coder:30b' },
   { provider: 'lm-studio', model: 'qwen2.5-coder-7b' },
@@ -32,19 +32,19 @@ function compatibleModel(model: Omit<KnownModel, 'recommendation'>): KnownModel 
   return { ...model, recommendation: 'compatible-only' };
 }
 
-export const DEFAULT_AGENT_SDK_MODEL = 'claude-sonnet-4-6';
+export const DEFAULT_AGENT_SDK_MODEL = 'claude-sonnet-5';
 
-// Cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26.
-// Sonnet 4.6: cache read = $0.30/MTok (0.1x base input), cache write = $3.75/MTok (1.25x, 5-minute TTL).
-const CLAUDE_SONNET_46_PRICING = {
-  pricingInput: 3,
-  pricingOutput: 15,
-  pricingCacheRead: 0.3,
-  pricingCacheWrite: 3.75,
+// Cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-08-27.
+// Sonnet 5: cache read = $0.20/MTok (0.1x base input), cache write = $2.50/MTok (1.25x, 5-minute TTL).
+const CLAUDE_SONNET_5_PRICING = {
+  pricingInput: 2,
+  pricingOutput: 10,
+  pricingCacheRead: 0.2,
+  pricingCacheWrite: 2.5,
 } as const;
 
-// Opus 4.6: cache read = $0.50/MTok (0.1x base input), cache write = $6.25/MTok (1.25x, 5-minute TTL).
-const CLAUDE_OPUS_46_PRICING = {
+// Opus 5: cache read = $0.50/MTok (0.1x base input), cache write = $6.25/MTok (1.25x, 5-minute TTL).
+const CLAUDE_OPUS_5_PRICING = {
   pricingInput: 5,
   pricingOutput: 25,
   pricingCacheRead: 0.5,
@@ -57,79 +57,92 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
       name: 'sonnet',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
-      catalogModelId: 'claude-sonnet-4-6',
-      provenance: 'Claude Code model aliases (2026-04)',
+      catalogModelId: 'claude-sonnet-5',
+      provenance: 'Claude Code model aliases (2026-08); code.claude.com/docs/en/model-config',
     }),
     compatibleModel({
       name: 'opus',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
-      catalogModelId: 'claude-opus-4-6',
-      provenance: 'Claude Code model aliases (2026-04)',
+      catalogModelId: 'claude-opus-5',
+      provenance: 'Claude Code model aliases (2026-08); code.claude.com/docs/en/model-config',
     }),
     compatibleModel({
       name: 'opusplan',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
-      catalogModelId: 'claude-opus-4-6',
-      provenance: 'Claude Code model aliases (2026-04)',
+      catalogModelId: 'claude-opus-5',
+      provenance: 'Claude Code model aliases (2026-08); code.claude.com/docs/en/model-config',
+    }),
+    compatibleModel({
+      name: 'haiku',
+      contextLength: 200_000,
+      catalogProvider: 'anthropic',
+      catalogModelId: 'claude-haiku-4-5',
+      provenance: 'Claude Code model aliases (2026-08); code.claude.com/docs/en/model-config',
     }),
   ],
   codex: [
     compatibleModel({
-      name: 'gpt-5.4',
-      contextLength: 1_050_000,
+      name: 'gpt-5.6-sol',
+      contextLength: 272_000,
       catalogProvider: 'openai',
-      provenance: 'OpenAI flagship coding model (2026-04)',
+      provenance: 'Codex native probe cliCatalogs (2026-08)',
     }),
     compatibleModel({
-      name: 'gpt-5-codex',
-      contextLength: 1_050_000,
+      name: 'gpt-5.5',
+      contextLength: 272_000,
       catalogProvider: 'openai',
-      provenance: 'OpenAI coding-specialized model (2026-04)',
+      provenance: 'Codex native probe cliCatalogs (2026-08)',
+    }),
+    compatibleModel({
+      name: 'gpt-5.4',
+      contextLength: 272_000,
+      catalogProvider: 'openai',
+      provenance: 'Codex native probe cliCatalogs (2026-08)',
     }),
   ],
   aider: [
     compatibleModel({
-      name: 'claude-sonnet-4-6',
+      name: 'claude-sonnet-5',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
-      provenance: 'Minimal bundled fallback (2026-04)',
+      provenance: 'Minimal bundled fallback (2026-08)',
     }),
     compatibleModel({
-      name: 'gpt-5.4',
-      contextLength: 1_050_000,
+      name: 'gpt-5.6-sol',
+      contextLength: 272_000,
       catalogProvider: 'openai',
-      provenance: 'Minimal bundled fallback (2026-04)',
+      provenance: 'Minimal bundled fallback (2026-08)',
     }),
   ],
   opencode: [
     compatibleModel({
-      name: 'anthropic/claude-sonnet-4.6',
+      name: 'anthropic/claude-sonnet-5',
       contextLength: 1_000_000,
       catalogProvider: 'openrouter',
-      provenance: 'Minimal bundled fallback (2026-04)',
+      provenance: 'Minimal bundled fallback (2026-08)',
     }),
     compatibleModel({
-      name: 'openai/gpt-5.4',
-      contextLength: 1_050_000,
+      name: 'openai/gpt-5.6-sol',
+      contextLength: 272_000,
       catalogProvider: 'openrouter',
-      provenance: 'Minimal bundled fallback (2026-04)',
+      provenance: 'Minimal bundled fallback (2026-08)',
     }),
   ],
   copilot: [
     compatibleModel({
-      name: 'claude-opus-4.6',
+      name: 'claude-opus-5',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
-      catalogModelId: 'claude-opus-4-6',
-      provenance: 'Minimal bundled fallback (2026-04)',
+      catalogModelId: 'claude-opus-5',
+      provenance: 'Minimal bundled fallback (2026-08)',
     }),
     compatibleModel({
-      name: 'gpt-5.2-codex',
-      contextLength: 1_050_000,
+      name: 'gpt-5.6-sol',
+      contextLength: 272_000,
       catalogProvider: 'openai',
-      provenance: 'Minimal bundled fallback (2026-04)',
+      provenance: 'Minimal bundled fallback (2026-08)',
     }),
   ],
   'agent-sdk': [
@@ -138,39 +151,39 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
       isDefault: true,
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
-      provenance: 'Anthropic Claude 4.6 fallback (2026-04); unpriced-meta, pricing not served',
+      provenance: 'Anthropic Claude 5 fallback (2026-08); unpriced-meta, pricing not served',
     }),
     compatibleModel({
-      name: 'claude-opus-4-6',
+      name: 'claude-opus-5',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
-      provenance: 'Anthropic Claude 4.6 fallback (2026-04); unpriced-meta, pricing not served',
+      provenance: 'Anthropic Claude 5 fallback (2026-08); unpriced-meta, pricing not served',
     }),
   ],
   anthropic: [
     compatibleModel({
-      name: 'claude-sonnet-4-6',
+      name: 'claude-sonnet-5',
       isDefault: true,
       contextLength: 1_000_000,
-      ...CLAUDE_SONNET_46_PRICING,
+      ...CLAUDE_SONNET_5_PRICING,
       provenance:
-        'Anthropic Claude 4.6 fallback (2026-04); cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26',
+        'Anthropic Claude 5 fallback (2026-08); cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-08-27',
     }),
     compatibleModel({
-      name: 'claude-opus-4-6',
+      name: 'claude-opus-5',
       contextLength: 1_000_000,
-      ...CLAUDE_OPUS_46_PRICING,
+      ...CLAUDE_OPUS_5_PRICING,
       provenance:
-        'Anthropic Claude 4.6 fallback (2026-04); cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-04-26',
+        'Anthropic Claude 5 fallback (2026-08); cache prices verified platform.claude.com/docs/en/about-claude/pricing 2026-08-27',
     }),
   ],
   openrouter: [
     compatibleModel({
-      name: 'anthropic/claude-sonnet-4.6',
+      name: 'anthropic/claude-sonnet-5',
       isDefault: true,
       catalogProvider: 'openrouter',
       provenance:
-        'Minimal bundled fallback (2026-04); T-080 evaluation candidate, OMIT-NOT-APPLICABLE until a credentialed run records metrics',
+        'Minimal bundled fallback (2026-08); T-080 evaluation candidate, OMIT-NOT-APPLICABLE until a credentialed run records metrics',
     }),
     compatibleModel({
       name: 'openrouter/free',
@@ -224,18 +237,18 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
   ],
   openai: [
     compatibleModel({
-      name: 'gpt-5.4',
+      name: 'gpt-5.6-sol',
       isDefault: true,
-      contextLength: 1_050_000,
-      pricingInput: 2.5,
-      pricingOutput: 15,
+      contextLength: 272_000,
+      pricingInput: 4,
+      pricingOutput: 20,
       provenance:
-        'OpenAI flagship fallback (2026-04); flat base rate, models.dev context_over_200k tiers not applied',
+        'OpenAI flagship fallback (2026-08); standard short-context rate from platform.openai.com/docs/pricing, long-context tiers not applied',
     }),
     compatibleModel({
-      name: 'gpt-5-codex',
-      contextLength: 1_050_000,
-      provenance: 'OpenAI coding-specialized fallback (2026-04)',
+      name: 'gpt-5.5',
+      contextLength: 272_000,
+      provenance: 'OpenAI coding fallback (2026-08)',
     }),
   ],
   groq: [
@@ -252,7 +265,7 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
     compatibleModel({
       name: 'zai-org/GLM-5.1',
       isDefault: true,
-      provenance: 'Together recommended Coding Agents model (2026-04)',
+      provenance: 'Together Coding Agents model (2026-08)',
     }),
   ],
 };

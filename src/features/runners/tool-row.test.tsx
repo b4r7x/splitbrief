@@ -248,7 +248,7 @@ describe('runner row grammar', () => {
   it('drops the provenance word when the section header already carries it', async () => {
     const ui = renderFeature(
       renderModelRow({
-        row: modelRow({ id: 'opus' }, 'Known', 'Suggestions'),
+        row: modelRow({ id: 'opus' }, 'Known', 'Fallback'),
         isCursor: false,
         maxWidth: 40,
         currentModel: undefined,

@@ -105,10 +105,10 @@ describe('calculateTaskUsageCost', () => {
       tokenUsage: globalUsage,
       implementerTool: 'ollama',
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
     });
 
-    expect(cost).toBeCloseTo(5.1, 6);
+    expect(cost).toBeCloseTo(3.4, 6);
   });
 
   it('does not allocate planner-phase cache to an escalated task with explicit-zero cache fields', () => {
@@ -137,11 +137,11 @@ describe('calculateTaskUsageCost', () => {
       tokenUsage: globalUsage,
       implementerTool: 'ollama',
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
     });
 
-    // 100k input @ $3/MTok + 50k output @ $15/MTok = $0.30 + $0.75 = $1.05, with no cache dollars.
-    expect(cost).toBeCloseTo(1.05, 6);
+    // 100k input @ $2/MTok + 50k output @ $10/MTok = $0.20 + $0.50 = $0.70, with no cache dollars.
+    expect(cost).toBeCloseTo(0.7, 6);
   });
 
   it('uses planner model pricing for per-task escalation attribution', () => {
@@ -166,17 +166,17 @@ describe('calculateTaskUsageCost', () => {
       tokenUsage: globalUsage,
       implementerTool: 'ollama',
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
     });
     const opusCost = calculateTaskUsageCost({
       task: task,
       tokenUsage: globalUsage,
       implementerTool: 'ollama',
       plannerTool: 'anthropic',
-      plannerModel: 'claude-opus-4-6',
+      plannerModel: 'claude-opus-5',
     });
 
-    expect(sonnetCost).toBeCloseTo(1.05, 6);
+    expect(sonnetCost).toBeCloseTo(0.7, 6);
     expect(opusCost).toBeCloseTo(1.75, 6);
   });
 
@@ -191,7 +191,7 @@ describe('calculateTaskUsageCost', () => {
       implementerCacheCreate: 0,
     };
     // Both tasks account for half the global implementer tokens, so proportional allocation would
-    // charge each 500k cache read ($0.15). Exact fields split it unevenly: one carries none, the
+    // charge each 500k cache read ($0.10). Exact fields split it unevenly: one carries none, the
     // other carries the full 1M.
     const noCacheTask = {
       taskId: taskId('T001'),
@@ -218,17 +218,17 @@ describe('calculateTaskUsageCost', () => {
       tokenUsage: globalUsage,
       implementerTool: 'anthropic',
       plannerTool: 'claude-code',
-      implementerModel: 'claude-sonnet-4-6',
+      implementerModel: 'claude-sonnet-5',
     };
     const noCacheCost = calculateTaskUsageCost({ ...args, task: noCacheTask });
     const fullCacheCost = calculateTaskUsageCost({ ...args, task: fullCacheTask });
 
-    // Base each leg: 300k input @ $3/MTok ($0.90) + 200k output @ $15/MTok ($3.00) = $3.90.
-    // Exact attribution: exact-zero leg = $3.90, exact-1M leg = $3.90 + 1M @ $0.30/MTok = $4.20.
-    // Proportional allocation would have charged both legs the same $4.05 (500k cache each).
-    expect(noCacheCost).toBeCloseTo(3.9, 6);
-    expect(fullCacheCost).toBeCloseTo(4.2, 6);
-    expect(fullCacheCost - noCacheCost).toBeCloseTo(0.3, 6);
+    // Base each leg: 300k input @ $2/MTok ($0.60) + 200k output @ $10/MTok ($2.00) = $2.60.
+    // Exact attribution: exact-zero leg = $2.60, exact-1M leg = $2.60 + 1M @ $0.20/MTok = $2.80.
+    // Proportional allocation would have charged both legs the same $2.70 (500k cache each).
+    expect(noCacheCost).toBeCloseTo(2.6, 6);
+    expect(fullCacheCost).toBeCloseTo(2.8, 6);
+    expect(fullCacheCost - noCacheCost).toBeCloseTo(0.2, 6);
   });
 
   it('returns cost 0 when all global token totals are zero', () => {
@@ -421,7 +421,7 @@ describe('isTaskUsageCostKnown — cache alignment with calculateTaskUsageCost',
         tokenUsage: globalUsage,
         implementerTool: 'ollama',
         plannerTool: 'anthropic',
-        plannerModel: 'claude-sonnet-4-6',
+        plannerModel: 'claude-sonnet-5',
       }),
     ).toBe(true);
   });
@@ -440,7 +440,7 @@ describe('reviewer cache fold', () => {
     task: escalatedTask,
     implementerTool: 'ollama',
     plannerTool: 'anthropic',
-    plannerModel: 'claude-sonnet-4-6',
+    plannerModel: 'claude-sonnet-5',
   };
   const baseUsage = {
     ...ZERO_TOKEN_USAGE,

@@ -16,7 +16,7 @@ describe('buildPhaseRows', () => {
   });
 
   it('can sort by a derived display cost when store rows keep raw token data', () => {
-    const pricing = resolvePricing('anthropic', undefined, 'claude-sonnet-4-6');
+    const pricing = resolvePricing('anthropic', undefined, 'claude-sonnet-5');
     const rows = buildPhaseRows(
       {
         planning: {
@@ -117,7 +117,7 @@ describe('formatPhaseCost', () => {
 });
 
 describe('calculatePhaseRowCost — reviewer fold', () => {
-  const plannerPricing = resolvePricing('anthropic', undefined, 'claude-sonnet-4-6');
+  const plannerPricing = resolvePricing('anthropic', undefined, 'claude-sonnet-5');
   const reviewerPricing = resolvePricing('deepseek', undefined, 'deepseek-v4-flash');
   const row = {
     phase: 'final-review',

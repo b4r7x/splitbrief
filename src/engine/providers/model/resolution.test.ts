@@ -127,12 +127,12 @@ describe('exact model resolution', () => {
     expect(getEffectiveModelId('claude-code', 'opus')).toBe('opus');
     expect(getEffectiveModelId('anthropic', '  claude-sonnet-4-6  ')).toBe('  claude-sonnet-4-6  ');
     expect(getEffectiveModelId('anthropic', 'AUTO')).toBe('AUTO');
-    expect(getEffectiveModelId('anthropic', 'auto')).toBe('claude-sonnet-4-6');
-    expect(getEffectiveModelId('anthropic', '   ')).toBe('claude-sonnet-4-6');
+    expect(getEffectiveModelId('anthropic', 'auto')).toBe('claude-sonnet-5');
+    expect(getEffectiveModelId('anthropic', '   ')).toBe('claude-sonnet-5');
   });
 
   it('uses runner aliases as explicit metadata relationships without rewriting the alias', () => {
-    expect(findKnownModel('claude-code', 'opus')?.catalogModelId).toBe('claude-opus-4-6');
+    expect(findKnownModel('claude-code', 'opus')?.catalogModelId).toBe('claude-opus-5');
     expect(findKnownModel('claude-code', 'OPUS')).toBeUndefined();
     expect(getEffectiveModelId('claude-code', 'opus')).toBe('opus');
   });

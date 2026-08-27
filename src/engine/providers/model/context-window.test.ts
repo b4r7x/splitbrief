@@ -7,7 +7,7 @@ describe('resolveRunnerContextWindow', () => {
   it('resolves a CLI tool under automatic model selection to the smallest bundled window', () => {
     const result = resolveRunnerContextWindow({ providerId: 'aider', model: 'auto' });
 
-    expect(result).toEqual({ contextLength: 1_000_000, source: 'automatic-catalog' });
+    expect(result).toEqual({ contextLength: 272_000, source: 'automatic-catalog' });
   });
 
   it('resolves an explicitly pinned unknown model to nothing', () => {
@@ -30,8 +30,8 @@ describe('resolveRunnerContextWindow', () => {
       anthropic: {
         id: 'anthropic',
         models: {
-          'claude-sonnet-4-6': {
-            id: 'claude-sonnet-4-6',
+          'claude-sonnet-5': {
+            id: 'claude-sonnet-5',
             limit: { context: 400_000 },
           },
         },
@@ -47,6 +47,6 @@ describe('resolveRunnerContextWindow', () => {
   it('resolves a codex/auto implementer to its real window, not the conservative fallback', () => {
     const result = resolveRunnerContextWindow({ providerId: 'codex', model: 'auto' });
 
-    expect(result).toEqual({ contextLength: 1_050_000, source: 'automatic-catalog' });
+    expect(result).toEqual({ contextLength: 272_000, source: 'automatic-catalog' });
   });
 });
