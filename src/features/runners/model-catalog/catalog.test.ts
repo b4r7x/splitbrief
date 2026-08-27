@@ -501,3 +501,63 @@ describe('runtime recommendation quality', () => {
     }
   });
 });
+
+describe('toModelOption displayName precedence', () => {
+  it('carries displayName and prefers provider runtime name over models.dev catalog name', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => ({
+        anthropic: {
+          id: 'anthropic',
+          models: {
+            'claude-sonnet-4-6': {
+              id: 'claude-sonnet-4-6',
+              name: 'ModelsDev Sonnet',
+            },
+          },
+        },
+      }),
+      getProviderModels: () => null,
+      getScopedProviderRuntime: () => ({
+        connection: { role: 'planner', provider: 'anthropic', contextKey: 'planner-context' },
+        state: 'fresh',
+        catalog: 'populated',
+        models: [{ id: 'claude-sonnet-4-6', displayName: 'Provider Sonnet' }],
+        fetchedAt: 1,
+        validatedAt: 2,
+      }),
+    };
+
+    const models = resolveAndSort('anthropic', 'planner', cache);
+    const sonnet = models.find((m) => m.id === 'claude-sonnet-4-6');
+    expect(sonnet?.displayName).toBe('Provider Sonnet');
+  });
+
+  it('uses models.dev name when provider has no runtime display name', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => ({
+        anthropic: {
+          id: 'anthropic',
+          models: {
+            'claude-sonnet-4-6': {
+              id: 'claude-sonnet-4-6',
+              name: 'ModelsDev Sonnet',
+            },
+          },
+        },
+      }),
+      getProviderModels: () => null,
+      getScopedProviderRuntime: () => ({
+        connection: { role: 'planner', provider: 'anthropic', contextKey: 'planner-context' },
+        state: 'fresh',
+        catalog: 'populated',
+        models: [{ id: 'claude-sonnet-4-6' }],
+        fetchedAt: 1,
+        validatedAt: 2,
+      }),
+    };
+
+    const models = resolveAndSort('anthropic', 'planner', cache);
+    const sonnet = models.find((m) => m.id === 'claude-sonnet-4-6');
+    expect(sonnet?.displayName).toBe('ModelsDev Sonnet');
+  });
+});

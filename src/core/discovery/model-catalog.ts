@@ -119,11 +119,36 @@ export function formatConservativeModelDisplay(selectionId: string): string {
   return selectionId;
 }
 
-export function resolveModelDisplayName(option: ModelOption): string {
-  for (const source of ['native', 'runtime', 'models-dev'] as const) {
-    const displayName = option.metadata.find((metadata) => metadata.source === source)?.displayName;
-    if (displayName) return displayName;
+export type ModelDisplayNameCandidate =
+  | ModelOption
+  | Readonly<{
+      displayName?: string | undefined;
+      selectionId?: string | undefined;
+      id?: string | undefined;
+      metadata?: readonly ModelMetadata[] | undefined;
+      key?: ModelKey | undefined;
+    }>;
+
+export function resolveModelDisplayName(candidate: ModelDisplayNameCandidate): string {
+  if ('metadata' in candidate && Array.isArray(candidate.metadata)) {
+    for (const source of ['native', 'runtime', 'models-dev'] as const) {
+      const displayName = candidate.metadata.find(
+        (metadata) => metadata.source === source,
+      )?.displayName;
+      if (displayName) return displayName;
+    }
   }
 
-  return formatConservativeModelDisplay(option.key.selectionId);
+  if ('displayName' in candidate && typeof candidate.displayName === 'string') {
+    return candidate.displayName;
+  }
+
+  const rawId =
+    ('key' in candidate && candidate.key ? candidate.key.selectionId : undefined) ??
+    ('selectionId' in candidate && typeof candidate.selectionId === 'string'
+      ? candidate.selectionId
+      : undefined) ??
+    ('id' in candidate && typeof candidate.id === 'string' ? candidate.id : undefined) ??
+    '';
+  return formatConservativeModelDisplay(rawId);
 }

@@ -73,6 +73,7 @@ function rowContent(row: CrewRow, planner: RunnerConfig): string {
     case 'seat':
       return seatContent(row.seat, planner);
     case 'effort':
+      if (!row.deliverable && !row.inherited) return 'n/a';
       return `${row.value ?? UNSET_EFFORT_WORD}${row.inherited ? INHERITED_EFFORT_SUFFIX : ''}`;
     default:
       return assertNever(row);

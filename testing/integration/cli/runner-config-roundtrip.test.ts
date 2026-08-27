@@ -489,7 +489,7 @@ describe('runner config roundtrip integration', () => {
           model: 'existing-model',
           customModels: ['existing-model'],
         },
-        extra: { theme: 'terminal' },
+        extra: { planner_estimate_review: false },
       });
 
       configStore.load(dir);
@@ -499,7 +499,7 @@ describe('runner config roundtrip integration', () => {
 
       const updated: Config = {
         ...before,
-        theme: 'mono',
+        plannerEstimateReview: true,
         implementer: {
           kind: 'api',
           provider: 'together',
@@ -530,7 +530,7 @@ describe('runner config roundtrip integration', () => {
       };
 
       const reloaded = await saveAndReload(dir, updated);
-      expect(reloaded.theme).toBe('mono');
+      expect(reloaded.plannerEstimateReview).toBe(true);
       expect(resolvedDefaultProfile(reloaded)).toMatchObject({
         provider: 'together',
         apiBase: 'https://api.together.ai/v1',

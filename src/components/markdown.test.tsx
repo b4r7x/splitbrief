@@ -275,45 +275,39 @@ describe('strikethrough (REQ-005)', () => {
 });
 
 describe('heading rank ladder (REQ-006)', () => {
-  it.each(['terminal' as const, 'mono' as const])(
-    'resolves the top ranks from theme.markdown.heading and the deep ranks from textDim (%s)',
-    async (preset) => {
-      const theme = getTheme(preset);
-      const top = await renderMarkdown({ source: '## T', width: 40, theme });
-      const deep = await renderMarkdown({ source: '##### T', width: 40, theme });
+  it('resolves the top ranks from theme.markdown.heading and the deep ranks from textDim', async () => {
+    const theme = getTheme();
+    const top = await renderMarkdown({ source: '## T', width: 40, theme });
+    const deep = await renderMarkdown({ source: '##### T', width: 40, theme });
 
-      expectFrameUsesThemeColor(top.raw, theme.markdown.heading);
-      expectFrameUsesThemeColor(deep.raw, theme.textDim);
-      top.unmount();
-      deep.unmount();
-    },
-  );
+    expectFrameUsesThemeColor(top.raw, theme.markdown.heading);
+    expectFrameUsesThemeColor(deep.raw, theme.textDim);
+    top.unmount();
+    deep.unmount();
+  });
 
   // The review overlay renders through this module and the transcript through
   // markdown-rows; a rank that reads the same as its neighbour flattens the outline in both.
-  it.each(['terminal' as const, 'mono' as const])(
-    'gives each of the six ranks its own rendered form (%s)',
-    async (preset) => {
-      const theme = getTheme(preset);
-      const forms: string[] = [];
-      for (const depth of [1, 2, 3, 4, 5, 6]) {
-        const { raw, unmount } = await renderMarkdown({
-          source: `${'#'.repeat(depth)} Rank`,
-          width: 40,
-          theme,
-        });
-        forms.push(raw);
-        unmount();
-      }
+  it('gives each of the six ranks its own rendered form', async () => {
+    const theme = getTheme();
+    const forms: string[] = [];
+    for (const depth of [1, 2, 3, 4, 5, 6]) {
+      const { raw, unmount } = await renderMarkdown({
+        source: `${'#'.repeat(depth)} Rank`,
+        width: 40,
+        theme,
+      });
+      forms.push(raw);
+      unmount();
+    }
 
-      expect(new Set(forms).size).toBe(6);
-    },
-  );
+    expect(new Set(forms).size).toBe(6);
+  });
 });
 
 describe('fenced code highlighting (REQ-007)', () => {
   it('renders a ts fence with at least two distinct syntax colors', async () => {
-    const theme = getTheme('mono');
+    const theme = getTheme();
     const source = ['```ts', "const x = 'y';", '```'].join('\n');
     const { raw, unmount } = await renderMarkdown({ source, width: 40, theme });
 
@@ -323,7 +317,7 @@ describe('fenced code highlighting (REQ-007)', () => {
   });
 
   it('renders an unknown-tag fence in the monochrome code style with no syntax color', async () => {
-    const theme = getTheme('mono');
+    const theme = getTheme();
     const source = ['```zzz', "const x = 'y';", '```'].join('\n');
     const { raw, stripped, unmount } = await renderMarkdown({ source, width: 40, theme });
 
@@ -397,21 +391,18 @@ describe('code block framing', () => {
     unmount();
   });
 
-  it.each(['mono' as const, 'terminal' as const])(
-    'paints the code background for the %s preset',
-    async (preset) => {
-      const theme = getTheme(preset);
-      const codeBg = theme.markdown.codeBg;
-      if (codeBg === undefined) throw new Error(`the ${preset} theme must define markdown.codeBg`);
-      const { raw, unmount } = await renderMarkdown({ source: codeSource, width: 40, theme });
+  it('paints the code background for the terminal preset', async () => {
+    const theme = getTheme();
+    const codeBg = theme.markdown.codeBg;
+    if (codeBg === undefined) throw new Error('the theme must define markdown.codeBg');
+    const { raw, unmount } = await renderMarkdown({ source: codeSource, width: 40, theme });
 
-      expect(raw).toContain(backgroundOpen(codeBg));
-      unmount();
-    },
-  );
+    expect(raw).toContain(backgroundOpen(codeBg));
+    unmount();
+  });
 
   it('paints the code background across the full layout width, not just the text', async () => {
-    const theme = getTheme('mono');
+    const theme = getTheme();
     const width = 40;
     const { stripped, unmount } = await renderMarkdown({
       source: ['```zzz', 'x', '```'].join('\n'),

@@ -12,6 +12,7 @@ export type CrewRow =
       value: EffortLevel | undefined;
       editable: boolean;
       inherited: boolean;
+      deliverable: boolean;
     }>;
 
 export type CrewRowKey = `seat:${CrewSeatId}` | `effort:${CrewSeatId}`;
@@ -32,33 +33,43 @@ export function crewRowKey(row: CrewRow): CrewRowKey {
 }
 
 /**
- * An inherited review seat mirrors the planner: it offers no effort of its own, and shows the
- * planner's only while the planner has one.
+ * Every seat always carries an effort row. When review inherits from planner,
+ * it mirrors the planner's effort read-only.
  */
-function effortRow(seat: CrewSeat, plannerEffort: EffortLevel | undefined): CrewRow | undefined {
+function effortRow(seat: CrewSeat, plannerEffort: EffortLevel | undefined): CrewRow {
   if (seat.id === 'review' && seat.source === 'planner') {
-    if (plannerEffort === undefined) return undefined;
     return {
       kind: 'effort',
       seatId: seat.id,
       value: plannerEffort,
       editable: false,
       inherited: true,
+      deliverable: seat.supportsEffort,
     };
   }
-  if (!seat.supportsEffort) return undefined;
-  return { kind: 'effort', seatId: seat.id, value: seat.effort, editable: true, inherited: false };
+  return {
+    kind: 'effort',
+    seatId: seat.id,
+    value: seat.effort,
+    editable: seat.supportsEffort,
+    inherited: false,
+    deliverable: seat.supportsEffort,
+  };
 }
 
-export function deriveCrewRows(input: Readonly<{ config: Config }>): readonly CrewRow[] {
+export function deriveCrewRows(
+  input: Readonly<{
+    config: Config;
+    displayNames?: Partial<Record<CrewSeatId, string>> | undefined;
+  }>,
+): readonly CrewRow[] {
   const seats = deriveCrewSeats(input);
   const plannerEffort = seats.find((seat) => seat.id === 'plan')?.effort;
 
   const rows: CrewRow[] = [];
   for (const seat of seats) {
     rows.push({ kind: 'seat', id: seat.id, seat });
-    const effort = effortRow(seat, plannerEffort);
-    if (effort !== undefined) rows.push(effort);
+    rows.push(effortRow(seat, plannerEffort));
   }
   return rows;
 }
@@ -72,7 +83,8 @@ export function crewRowFilterText(row: CrewRow): string {
     case 'seat':
       return filterWords(`${row.seat.label} ${row.seat.model}`);
     case 'effort':
-      return `effort ${row.value ?? UNSET_EFFORT_WORD}`;
+      if (!row.deliverable && !row.inherited) return 'effort n/a';
+      return `effort ${row.value ?? UNSET_EFFORT_WORD}${row.inherited ? ' from planner' : ''}`;
     default:
       return assertNever(row);
   }

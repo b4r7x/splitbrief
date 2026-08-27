@@ -30,11 +30,16 @@ const INHERITED_EFFORT_DESCRIPTION =
 const EFFORT_DESCRIPTION = 'How hard this seat reasons; auto leaves the choice to the tool.';
 
 export function buildSettingsItems(
-  input: Readonly<{ config: Config; defs: readonly SettingDef[] }>,
+  input: Readonly<{
+    config: Config;
+    defs: readonly SettingDef[];
+    displayNames?: Partial<Record<CrewSeatId, string>> | undefined;
+  }>,
 ): SettingsItem[] {
-  const crew = deriveCrewRows({ config: input.config }).map(
-    (row): SettingsItem => ({ kind: 'crew', row, key: crewRowKey(row) }),
-  );
+  const crew = deriveCrewRows({
+    config: input.config,
+    displayNames: input.displayNames,
+  }).map((row): SettingsItem => ({ kind: 'crew', row, key: crewRowKey(row) }));
   const settings = input.defs
     .filter((def) => def.appliesTo?.(input.config) ?? true)
     .toSorted((a, b) => SETTINGS_SECTIONS.indexOf(a.section) - SETTINGS_SECTIONS.indexOf(b.section))

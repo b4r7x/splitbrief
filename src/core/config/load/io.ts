@@ -68,7 +68,6 @@ export function createDefaultConfig(): Config {
       mode: 'standard',
       taskReview: 'none',
     },
-    theme: 'terminal',
     plannerEstimateReview: false,
     autoSplitOverflow: false,
   };
@@ -97,7 +96,6 @@ const MERGE_HANDLED_KEYS = new Set([
   'implementerProfiles',
   'validation',
   'workflow',
-  'theme',
   'plannerEstimateReview',
   'autoSplitOverflow',
 ]);
@@ -125,7 +123,6 @@ function mergeWithDefaults(loaded: Record<string, unknown>): Record<string, unkn
     workflow: narrowRecord(loaded['workflow'])
       ? { ...defaults.workflow, ...narrowRecord(loaded['workflow']) }
       : defaults.workflow,
-    theme: loaded['theme'] ?? defaults.theme,
     ...passthrough,
     plannerEstimateReview: loaded['plannerEstimateReview'] ?? defaults.plannerEstimateReview,
     autoSplitOverflow: loaded['autoSplitOverflow'] ?? defaults.autoSplitOverflow,

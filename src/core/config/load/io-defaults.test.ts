@@ -78,11 +78,11 @@ describe('config defaults', () => {
       const dir = join(TMP, 'stale-shiki-theme');
       writeConfigYaml(dir, {
         shiki_theme: 'github-light',
-        theme: 'mono',
+        workflow: { mode: 'quick' },
       });
 
       const { config } = loadConfig(dir);
-      expect(config.theme).toBe('mono');
+      expect(config.workflow.mode).toBe('quick');
       expect(config).not.toHaveProperty('shikiTheme');
     });
 
@@ -171,7 +171,7 @@ describe('config defaults', () => {
       await initConfig(dir);
       expect(loadConfig(dir).config).toEqual(createDefaultConfig());
 
-      const existing = 'version: 3\ntheme: mono\n';
+      const existing = 'version: 3\nworkflow:\n  mode: quick\n';
       writeFileSync(file, existing);
       await initConfig(dir);
       expect(readFileSync(file, 'utf-8')).toBe(existing);

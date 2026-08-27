@@ -20,20 +20,21 @@ describe('buildSettingsItems', () => {
     const config = makeConfig();
     const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });
 
-    expect(items.slice(0, 4).map((item) => [item.kind, item.key])).toEqual([
+    expect(items.slice(0, 6).map((item) => [item.kind, item.key])).toEqual([
       ['crew', 'seat:plan'],
       ['crew', 'effort:plan'],
       ['crew', 'seat:build'],
+      ['crew', 'effort:build'],
       ['crew', 'seat:review'],
+      ['crew', 'effort:review'],
     ]);
-    expect(items.slice(0, 4).map(settingsItemSection)).toEqual(Array(4).fill('Crew'));
+    expect(items.slice(0, 6).map(settingsItemSection)).toEqual(Array(6).fill('Crew'));
 
-    const settingSections = items.slice(4).map(settingsItemSection);
+    const settingSections = items.slice(6).map(settingsItemSection);
     expect(settingSections.filter((section, at) => section !== settingSections[at - 1])).toEqual([
       'Tuning',
-      'Validation',
       'Workflow',
-      'Appearance',
+      'Validation',
     ]);
   });
 
@@ -59,7 +60,7 @@ describe('settingsItemFilterText', () => {
 
     expect(seatText.startsWith('seat:plan ')).toBe(true);
     expect(seatText).toBe(seatText.toLowerCase());
-    expect(settingsItemFilterText(itemAt(items, 'theme'))).toBe('theme appearance');
+    expect(settingsItemFilterText(itemAt(items, 'workflow.mode'))).toBe('mode workflow');
   });
 });
 
@@ -90,10 +91,10 @@ describe('settingsItemDescription', () => {
   it('reads a setting row straight off its definition', () => {
     const config = makeConfig();
     const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });
-    const theme = SETTINGS_DEFS.find((def) => def.id === 'theme');
+    const mode = SETTINGS_DEFS.find((def) => def.id === 'workflow.mode');
 
-    expect(settingsItemDescription({ item: itemAt(items, 'theme'), config })).toBe(
-      theme?.description,
+    expect(settingsItemDescription({ item: itemAt(items, 'workflow.mode'), config })).toBe(
+      mode?.description,
     );
   });
 });

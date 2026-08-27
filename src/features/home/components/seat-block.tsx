@@ -14,6 +14,7 @@ import {
   formatCollapsedSeatLine,
   type CrewSeatId,
 } from '../../../core/crew/identity.js';
+import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import { deriveCrewSeats, type CrewSeat } from '../../../core/crew/seats.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { homeConfigBlockRows } from '../layout.js';
@@ -34,8 +35,9 @@ export function HomeSeatBlock({ rows, width }: { rows: number; width: number }) 
   // Dim until the first discovery result ever lands: the seats are what the
   // config says, not yet what the machine confirmed.
   const coldDiscovery = detectionStore.use((s) => s.refresh.readiness.fetchedAt === null);
+  const displayNames = useCrewDisplayNames(config);
 
-  const seats = deriveCrewSeats({ config });
+  const seats = deriveCrewSeats({ config, displayNames });
   const seatColor: Record<CrewSeatId, string> = {
     plan: theme.planner,
     build: theme.implementer,
@@ -62,6 +64,7 @@ export function HomeSeatBlock({ rows, width }: { rows: number; width: number }) 
             planner: config.planner,
             build: resolveImplementerProfiles(config).defaultProfile.config,
             reviewer: configuredReviewerRunner(config),
+            displayNames,
           })}
         </Text>
       ) : (

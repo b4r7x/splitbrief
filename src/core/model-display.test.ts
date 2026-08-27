@@ -91,6 +91,21 @@ describe('formatModelName (heuristic)', () => {
   ])('capitalizes tag parts: %s → %s', (input, expected) => {
     expect(formatModelName(input)).toBe(expected);
   });
+
+  it.each([
+    ['claude-opus-4-5-20251101', 'Claude Opus 4.5'],
+    ['claude-sonnet-4-6-20260115', 'Claude Sonnet 4.6'],
+    ['gpt-5-turbo-20250412', 'GPT-5 Turbo'],
+  ])('strips trailing standalone 8-digit datestamp: %s → %s', (input, expected) => {
+    expect(formatModelName(input)).toBe(expected);
+  });
+
+  it.each([
+    ['qwen-3.8-max', 'Qwen 3.8 Max'],
+    ['deepseek-v3.2-exp', 'DeepSeek V3.2 Exp'],
+  ])('preserves non-date numbers and suffixes: %s → %s', (input, expected) => {
+    expect(formatModelName(input)).toBe(expected);
+  });
 });
 
 describe('formatToolModel', () => {

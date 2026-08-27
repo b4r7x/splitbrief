@@ -13,10 +13,10 @@ describe('config persistence', () => {
     const result = persistedConfigForSave({
       persisted,
       effective,
-      updated: { ...effective, theme: 'mono' },
+      updated: { ...effective, plannerEstimateReview: true },
     });
 
-    expect(result.theme).toBe('mono');
+    expect(result.plannerEstimateReview).toBe(true);
     expect(result.implementer.model).toBe(persisted.implementer.model);
   });
 

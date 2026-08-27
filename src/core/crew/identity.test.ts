@@ -59,6 +59,23 @@ describe('formatSeatIdentity', () => {
     expect(identity).not.toContain('pwned');
     expect(getTerminalCellWidth(identity)).toBe(identity.length);
   });
+
+  it('prefers displayName when provided over formatModelName fallback', () => {
+    expect(formatSeatIdentity(planner, 'Claude Sonnet 5')).toBe(
+      'Claude Code CLI · Claude Sonnet 5',
+    );
+    expect(formatSeatIdentity(planner)).toBe('Claude Code CLI · Claude Sonnet 4');
+  });
+
+  it('sanitizes displayName before measuring and formatting', () => {
+    const identity = formatSeatIdentity(
+      planner,
+      '\u001b[31mClaude\u001b]0;pwned\u0007 Sonnet 5\u001b[0m',
+    );
+    expect(identity).toBe('Claude Code CLI · Claude Sonnet 5');
+    expect(identity).not.toContain('\u001b');
+    expect(identity).not.toContain('pwned');
+  });
 });
 
 describe('formatShortSeatIdentity', () => {
@@ -96,6 +113,17 @@ describe('formatCollapsedSeatLine', () => {
 
     expect(formatCollapsedSeatLine({ planner, build, reviewer })).toContain('REVIEW GPT-5 Codex');
   });
+
+  it('uses displayNames when provided', () => {
+    expect(
+      formatCollapsedSeatLine({
+        planner,
+        build,
+        reviewer: undefined,
+        displayNames: { planner: 'Claude Sonnet 5', build: 'Qwen 2.5 7B' },
+      }),
+    ).toBe('PLAN Sonnet 5 · BUILD Qwen 7B · REVIEW = plan');
+  });
 });
 
 describe('fitSeatIdentity', () => {
@@ -108,5 +136,11 @@ describe('fitSeatIdentity', () => {
 
   it('leaves an identity that already fits alone', () => {
     expect(fitSeatIdentity({ runner: planner, budget: 80 })).toBe(formatSeatIdentity(planner));
+  });
+
+  it('uses displayName in fitSeatIdentity', () => {
+    expect(fitSeatIdentity({ runner: planner, budget: 80, displayName: 'Claude Sonnet 5' })).toBe(
+      'Claude Code CLI · Claude Sonnet 5',
+    );
   });
 });

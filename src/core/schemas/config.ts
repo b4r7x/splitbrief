@@ -3,7 +3,6 @@ import {
   WorkflowModeSchema,
   CommitStrategySchema,
   ApproveLevelSchema,
-  ThemeModeSchema,
   SessionScopeSchema,
   IsolationStrategySchema,
 } from './enums.js';
@@ -126,7 +125,6 @@ export const ConfigSchema = z.object({
     compactionThreshold: z.number().int().min(10).optional(),
     compactionFormat: CompactionFormatSchema.default('auto'),
   }),
-  theme: ThemeModeSchema.optional(),
   sessions: z
     .object({
       scope: SessionScopeSchema.optional(),

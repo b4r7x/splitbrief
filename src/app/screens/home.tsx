@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { INITIALIZING_TOOLS_TITLE, REFRESHING_TOOLS_TITLE } from '../../core/discovery/copy.js';
 import { CREW_SEAT_LABELS, formatShortSeatIdentity } from '../../core/crew/identity.js';
+import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution.js';
@@ -75,6 +76,7 @@ const DISCOVERY_PANEL_SLACK_ROWS = 5;
 function DiscoveryPanel() {
   const theme = useTheme();
   const config = configStore.useConfig();
+  const displayNames = useCrewDisplayNames(config);
   const refresh = detectionStore.use((s) => s.refresh);
   const cold = refresh.readiness.fetchedAt === null;
   const refreshing =
@@ -90,9 +92,9 @@ function DiscoveryPanel() {
     (refresh.readiness.outcome === 'failed' || refresh.readiness.outcome === 'not-run');
   if (!refreshing && !stalled) return null;
   const failedOutcome = refresh.readiness.outcome === 'failed';
-  const plannerSeat = `${CREW_SEAT_LABELS.plan} ${formatShortSeatIdentity(config.planner)}`;
+  const plannerSeat = `${CREW_SEAT_LABELS.plan} ${formatShortSeatIdentity(config.planner, displayNames.plan)}`;
   const build = resolveImplementerProfiles(config).defaultProfile.config;
-  const implementerSeat = `${CREW_SEAT_LABELS.build} ${formatShortSeatIdentity(build)}`;
+  const implementerSeat = `${CREW_SEAT_LABELS.build} ${formatShortSeatIdentity(build, displayNames.build)}`;
 
   return (
     <Box

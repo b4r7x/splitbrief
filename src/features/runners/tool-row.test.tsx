@@ -248,7 +248,7 @@ describe('runner row grammar', () => {
   it('drops the provenance word when the section header already carries it', async () => {
     const ui = renderFeature(
       renderModelRow({
-        row: modelRow({ id: 'opus' }, 'Known', 'Known aliases · 3'),
+        row: modelRow({ id: 'opus' }, 'Known', 'Suggestions'),
         isCursor: false,
         maxWidth: 40,
         currentModel: undefined,
@@ -449,5 +449,33 @@ describe('runner row grammar', () => {
       expect(ui.lastFrame()).toContain(`${contractWord} · my-tool --json`);
       ui.unmount();
     }
+  });
+
+  it('renders displayName when present and falls back to formatModelName when absent', async () => {
+    const withName = renderFeature(
+      renderModelRow({
+        row: modelRow({ id: 'custom-coder-v1', displayName: 'Claude Opus 4.5' }, 'Known'),
+        isCursor: false,
+        maxWidth: 40,
+        currentModel: undefined,
+        sectioned: false,
+      }),
+    );
+    await tick(20);
+    expect(withName.lastFrame() ?? '').toContain('Claude Opus 4.5');
+    withName.unmount();
+
+    const withoutName = renderFeature(
+      renderModelRow({
+        row: modelRow({ id: 'custom-coder-v1' }, 'Known'),
+        isCursor: false,
+        maxWidth: 40,
+        currentModel: undefined,
+        sectioned: false,
+      }),
+    );
+    await tick(20);
+    expect(withoutName.lastFrame() ?? '').toContain('Custom Coder V1');
+    withoutName.unmount();
   });
 });

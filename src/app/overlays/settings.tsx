@@ -20,6 +20,7 @@ import {
   settingsItemSection,
   type SettingsItem,
 } from '../../features/settings/items.js';
+import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { hintFor, useSettingsEditor } from '../../features/settings/hooks/editor.js';
 import { CrewRowView, CrewSpine, CrewVerdictLine } from '../../features/crew/row-view.js';
 import { planSeatBlock } from '../../features/crew/format.js';
@@ -49,6 +50,7 @@ function isReviewSeat(item: SettingsItem): boolean {
 export function SettingsOverlay() {
   const t = useTheme();
   const config = configStore.useConfig();
+  const displayNames = useCrewDisplayNames(config);
   const detectedContextLength = configStore.use((state) => state.detectedContextLength);
   const [{ focus }, { cols, rows }] = useStores(overlayStore, terminalSizeStore);
 
@@ -59,7 +61,7 @@ export function SettingsOverlay() {
     chromeRows: BASE_CHROME_ROWS + (showDescription ? DESCRIPTION_ROWS : 0),
   });
 
-  const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });
+  const items = buildSettingsItems({ config, defs: SETTINGS_DEFS, displayNames });
   const crewRows = items.filter((item) => item.kind === 'crew').map((item) => item.row);
   const verdict = crewVerdict(crewRows);
   const layout = planSeatBlock({
@@ -125,10 +127,11 @@ export function SettingsOverlay() {
   });
 
   const actionable = selectedItem !== undefined && canActOnIndex(filtered, effectiveIndex);
+  const actionHint = actionable ? hintFor(selectedItem) : '';
   const hintText = editingId
     ? `⏎ confirm${SOFT_SEP}esc cancel`
-    : actionable
-      ? `↑↓ navigate${SOFT_SEP}${hintFor(selectedItem)}${SOFT_SEP}esc close`
+    : actionHint
+      ? `↑↓ navigate${SOFT_SEP}${actionHint}${SOFT_SEP}esc close`
       : `↑↓ navigate${SOFT_SEP}esc close`;
 
   const verdictLine =

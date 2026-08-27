@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SOFT_SEP } from '../../../components/separators.js';
 import { AUTOMATIC_MODEL } from '../../../core/providers/automatic-model.js';
 import type { ModelOption, ModelVariant } from './recency.js';
 import type { RightRow } from './rows.js';
@@ -68,10 +67,7 @@ describe('buildRightRows', () => {
     expect(first?.kind).toBe('model');
     expect(first?.kind === 'model' && first.model.id).toBe(AUTOMATIC_MODEL);
     expect(first === undefined ? undefined : sectionOf(first)).toBeUndefined();
-    expect(sections(rows)).toEqual([
-      ['Known aliases', '3'].join(SOFT_SEP),
-      ['Catalog', 'Anthropic', '10'].join(SOFT_SEP),
-    ]);
+    expect(sections(rows)).toEqual(['Suggestions', 'Catalog (models.dev)']);
   });
 
   it('opens a kilo-shaped list on the configured section and groups the rest by provider', () => {
@@ -90,8 +86,8 @@ describe('buildRightRows', () => {
 
     const rows = buildRightRows({ ...BASE, models, persistedModel });
     const seen = sections(rows);
-    const kilo = ['Detected', 'Kilo', '19'].join(SOFT_SEP);
-    const openai = ['Detected', 'OpenAI', '37'].join(SOFT_SEP);
+    const kilo = 'On Kilo';
+    const openai = 'On OpenAI';
 
     expect(models).toHaveLength(126);
     expect(seen[0]).toBe('Configured');

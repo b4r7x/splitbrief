@@ -35,33 +35,42 @@ export const PLANNER_INHERITANCE = Object.freeze({
 export const CREW_IDENTITY_SEPARATOR = ' · ';
 const CLAUDE_BRAND = 'Claude';
 
-function modelWord(runner: RunnerConfig): string {
+function modelWord(runner: RunnerConfig, displayName?: string | undefined): string {
   const configured = 'model' in runner ? runner.model : undefined;
   const model = normalizeConfiguredModel(
     configured,
     runner.kind === 'cli' ? runner.tool : undefined,
   );
   if (model === undefined || model === AUTOMATIC_MODEL) return AUTO_MODEL_WORD;
+  if (displayName) return displayName;
   return formatModelName(model);
 }
 
-export function formatSeatIdentity(runner: RunnerConfig): string {
+export function formatSeatIdentity(runner: RunnerConfig, displayName?: string | undefined): string {
   return sanitizeTerminalDisplayText(
-    `${getRunnerCatalogDisplayName(runner)}${CREW_IDENTITY_SEPARATOR}${modelWord(runner)}`,
+    `${getRunnerCatalogDisplayName(runner)}${CREW_IDENTITY_SEPARATOR}${modelWord(runner, displayName)}`,
   );
 }
 
 /** The collapsed form: the brand is implied by the seat, so only the distinguishing words survive. */
-export function formatShortSeatIdentity(runner: RunnerConfig): string {
-  const words = sanitizeTerminalDisplayText(modelWord(runner)).split(' ').filter(Boolean);
+export function formatShortSeatIdentity(
+  runner: RunnerConfig,
+  displayName?: string | undefined,
+): string {
+  const words = sanitizeTerminalDisplayText(modelWord(runner, displayName))
+    .split(' ')
+    .filter(Boolean);
   const stripped = words[0] === CLAUDE_BRAND ? words.slice(1) : words;
   const rest = stripped.length === 0 ? words : stripped;
   const kept = rest.length > 2 ? [...rest.slice(0, 1), ...rest.slice(-1)] : rest;
   return kept.join(' ');
 }
 
-export function formatInheritedIdentity(planner: RunnerConfig): string {
-  return `${PLANNER_INHERITANCE.mark}${CREW_IDENTITY_SEPARATOR}${formatSeatIdentity(planner)}`;
+export function formatInheritedIdentity(
+  planner: RunnerConfig,
+  plannerDisplayName?: string | undefined,
+): string {
+  return `${PLANNER_INHERITANCE.mark}${CREW_IDENTITY_SEPARATOR}${formatSeatIdentity(planner, plannerDisplayName)}`;
 }
 
 export function formatCollapsedSeatLine(
@@ -69,20 +78,37 @@ export function formatCollapsedSeatLine(
     planner: RunnerConfig;
     build: RunnerConfig;
     reviewer: RunnerConfig | undefined;
+    displayNames?:
+      | Readonly<{
+          planner?: string | undefined;
+          build?: string | undefined;
+          reviewer?: string | undefined;
+          plan?: string | undefined;
+          review?: string | undefined;
+        }>
+      | undefined;
   }>,
 ): string {
+  const plannerName = input.displayNames?.planner ?? input.displayNames?.plan;
+  const buildName = input.displayNames?.build;
+  const reviewerName = input.displayNames?.reviewer ?? input.displayNames?.review ?? plannerName;
   const review =
     input.reviewer === undefined
       ? PLANNER_INHERITANCE.short
-      : formatShortSeatIdentity(input.reviewer);
+      : formatShortSeatIdentity(input.reviewer, reviewerName);
   return [
-    `${CREW_SEAT_LABELS.plan} ${formatShortSeatIdentity(input.planner)}`,
-    `${CREW_SEAT_LABELS.build} ${formatShortSeatIdentity(input.build)}`,
+    `${CREW_SEAT_LABELS.plan} ${formatShortSeatIdentity(input.planner, plannerName)}`,
+    `${CREW_SEAT_LABELS.build} ${formatShortSeatIdentity(input.build, buildName)}`,
     `${CREW_SEAT_LABELS.review} ${review}`,
   ].join(CREW_IDENTITY_SEPARATOR);
 }
 
 /** A seat row cuts its full identity to the block budget; it never falls back to the short form. */
-export function fitSeatIdentity(input: Readonly<{ runner: RunnerConfig; budget: number }>): string {
-  return truncateTerminalDisplayText(formatSeatIdentity(input.runner), input.budget);
+export function fitSeatIdentity(
+  input: Readonly<{ runner: RunnerConfig; budget: number; displayName?: string | undefined }>,
+): string {
+  return truncateTerminalDisplayText(
+    formatSeatIdentity(input.runner, input.displayName),
+    input.budget,
+  );
 }
