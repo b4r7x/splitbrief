@@ -226,10 +226,15 @@ describe('admitted readiness probe contracts', () => {
     });
     if (planner.declared.auth.kind === 'not-run')
       throw new Error('expected Codex auth status probe');
-    // `codex login status` reads auth.json and never talks to the server: a
-    // host with an already-burned refresh token still prints "Logged in using
-    // ChatGPT" while every real call 401s (measured 2026-08-06). A positive
-    // local status is therefore presence, never proof — capped at `unknown`.
+  });
+
+  it('codex positive login status is verified', () => {
+    const planner = lookupCliReadinessProbe({ tool: 'codex', role: 'planner' });
+    expect(isDeclaredCliProbeContract(planner)).toBe(true);
+    if (!isDeclaredCliProbeContract(planner)) throw new Error('expected declared Codex probe');
+    if (planner.declared.auth.kind === 'not-run')
+      throw new Error('expected Codex auth status probe');
+
     expect(
       planner.declared.auth.parse({
         stdout: 'Logged in using ChatGPT',
@@ -238,16 +243,31 @@ describe('admitted readiness probe contracts', () => {
         timedOut: false,
         outputExceeded: false,
       }),
-    ).toBe('unknown');
+    ).toBe('verified');
+  });
+
+  it.each([
+    ['not logged in', 'missing'],
+    ['expired', 'invalid'],
+    ['forbidden', 'policy-denied'],
+    ['network', 'offline'],
+    ['no recognizable auth keywords', 'malformed'],
+  ] as const)('codex negative login status maps %s to %s', (stdout, expected) => {
+    const planner = lookupCliReadinessProbe({ tool: 'codex', role: 'planner' });
+    expect(isDeclaredCliProbeContract(planner)).toBe(true);
+    if (!isDeclaredCliProbeContract(planner)) throw new Error('expected declared Codex probe');
+    if (planner.declared.auth.kind === 'not-run')
+      throw new Error('expected Codex auth status probe');
+
     expect(
       planner.declared.auth.parse({
-        stdout: 'Not logged in',
+        stdout,
         stderr: '',
         exitCode: 1,
         timedOut: false,
         outputExceeded: false,
       }),
-    ).toBe('missing');
+    ).toBe(expected);
   });
 
   it.each([

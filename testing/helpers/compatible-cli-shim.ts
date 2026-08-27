@@ -30,6 +30,12 @@ export interface InstallCompatibleCliShimOptions {
   readonly authChannel: CliAuthChannelId;
   readonly version?: string | undefined;
   readonly invocation?: ShimInvocation | undefined;
+  /**
+   * `unverified` prints a positive status but exits non-zero, the one shape the
+   * readiness probe still resolves to `unknown` auth — the state a fail-closed
+   * headless start refuses on.
+   */
+  readonly authProbe?: 'verified' | 'unverified' | undefined;
 }
 
 function shellQuote(value: string): string {
@@ -120,7 +126,7 @@ export function installCompatibleCliShim(
     `if ${exactArgumentsCondition(authProbeArguments(options.tool))}; then`,
     ...requiredCredentialLines(channel.env),
     "  printf 'authenticated\\n'",
-    '  exit 0',
+    `  exit ${options.authProbe === 'unverified' ? 1 : 0}`,
     'fi',
     ...markerLines(options.invocation?.marker),
     ...(options.invocation?.stdoutLines ?? []).map((line) => `printf '%s\\n' ${shellQuote(line)}`),

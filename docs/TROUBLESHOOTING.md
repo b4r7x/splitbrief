@@ -277,9 +277,19 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 2. Re-run `splitbrief doctor`.
 3. If you would rather not let a planner child see your home directory at all, set `auth_channel: api-key` for that runner in `.splitbrief/config.yaml` and `export ANTHROPIC_API_KEY=...` — that channel is metered and exposes nothing.
 
-**Prevention:** Trust `splitbrief doctor` — including its refusals to overclaim. Readiness never reads a login off directory contents, and it also refuses to promote a tool's own local status read into proof: `codex login status` prints `Logged in using ChatGPT` from a pure file read even after the refresh token has been invalidated server-side, so a positive local status reports as *unverified* ("stored credentials prove presence, not a working session") and the first real call settles it. A definitive negative — no credential, or the tool answering signed-out — still blocks, because that run really would have failed.
+**Prevention:** Trust `splitbrief doctor` — including its refusals to overclaim. Readiness never reads a login off directory contents alone. For session-channel tools such as Codex, a positive `codex login status` proves a credential is present, not that the token is still live — the first real call settles liveness, and a dead token fails there with its own remediation (measured 2026-08-06: a host whose refresh token had already been rotated away server-side still printed `Logged in using ChatGPT` while every real call returned 401). A definitive negative — no credential, or the tool answering signed-out — still blocks, because that run really would have failed.
 
 **See also:** [docs/API-KEYS.md](./API-KEYS.md), [docs/CONFIGURATION.md](./CONFIGURATION.md).
+
+---
+
+### Symptom: codex shows unverified although it is installed and logged in
+
+**Likely cause:** Detection was cached before the auth-policy change that treats a positive local `codex login status` as authenticated. Older cache rows stored `auth: "unknown"` for a positive login probe.
+
+**Fix:** Refresh detection — caches written before the auth-policy change are discarded automatically on upgrade.
+
+**See also:** [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) (readiness states).
 
 ---
 
