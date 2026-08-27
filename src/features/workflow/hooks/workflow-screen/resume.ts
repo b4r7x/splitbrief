@@ -18,7 +18,7 @@ function fencedAuthority(
 }
 
 function resumeAuthority(input: ResumeAuthorityInput): ResumeLoadAuthority {
-  return 'kind' in input && input.kind === 'usable' ? fencedAuthority(input) : input;
+  return input.kind === 'usable' ? fencedAuthority(input) : input;
 }
 
 function classifyLoadedState(state: WorkflowState): WorkflowScreenResumeResult {

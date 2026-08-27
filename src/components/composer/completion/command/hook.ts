@@ -11,6 +11,7 @@ import { modelCacheStore } from '../../../../stores/discovery/model-cache.js';
 import { routerStore } from '../../../../stores/navigation/router.js';
 import { inputHistoryStore } from '../../../../stores/ui/input-history.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
+import type { CommandCompletionRow } from './menu.js';
 import { useCompletionSelection } from '../use-completion-selection.js';
 import { useCompletionNavigation } from '../use-completion-navigation.js';
 
@@ -28,19 +29,6 @@ function matchingRows(cmd: RuntimeCommandDef, query: string): RuntimeCommandDef[
   return rows;
 }
 
-// Argument rows are display-only: the hook submits the command token plus the row name, so the
-// synthesized handler is never reached.
-function argumentRow(cmd: RuntimeCommandDef, option: string): RuntimeCommandDef {
-  return {
-    kind: 'noarg',
-    name: option,
-    description: '',
-    category: cmd.category,
-    validScreens: cmd.validScreens,
-    handler: () => {},
-  };
-}
-
 interface UseCommandCompletionOptions {
   // Pre-filtered by createRuntimeCommands (e.g. attached clients expose ATTACHED_AVAILABLE_COMMANDS).
   commands: RuntimeCommandDef[];
@@ -53,7 +41,7 @@ interface UseCommandCompletionOptions {
 }
 
 interface UseCommandCompletionResult {
-  filtered: RuntimeCommandDef[];
+  filtered: CommandCompletionRow[];
   fuzzyMatch: RuntimeCommandDef | null;
   selectedIndex: number;
   showSuggestions: boolean;
@@ -65,7 +53,7 @@ interface LatestCommandState {
   currentScreen: Screen;
   selectionKey: string;
   itemCount: number;
-  filtered: RuntimeCommandDef[];
+  filtered: CommandCompletionRow[];
   fuzzyMatch: RuntimeCommandDef | null;
   argPrefix: string | null;
 }
@@ -74,7 +62,7 @@ interface SelectionKeyInput {
   currentScreen: Screen;
   phase: Phase;
   query: string;
-  filtered: RuntimeCommandDef[];
+  filtered: CommandCompletionRow[];
   fuzzyMatch: RuntimeCommandDef | null;
 }
 
@@ -146,7 +134,7 @@ export function useCommandCompletion({
     argCommand !== undefined && closedArgs !== null
       ? closedArgs.options
           .filter((option) => option.toLowerCase().startsWith(argToken.toLowerCase()))
-          .map((option) => argumentRow(argCommand, option))
+          .map((option): CommandCompletionRow => ({ name: option, description: '' }))
       : null;
   const argRows = argOptions !== null && argOptions.length > 0 ? argOptions : null;
   const showSuggestions = commandMode && !suppressed && (!hasArgs || argRows !== null);

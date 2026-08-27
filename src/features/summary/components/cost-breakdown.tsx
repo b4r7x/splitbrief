@@ -45,12 +45,17 @@ function providerCostLabel(costBreakdown: CostBreakdown, provider: string, cost:
   return costBreakdown.offeringPresentations?.[provider]?.costLabel ?? formatCost(cost);
 }
 
-function costRow(
-  key: string,
-  label: string,
-  labelWidth: number,
-  value: ReactNode,
-): ScrollableDocumentRow {
+function costRow({
+  key,
+  label,
+  labelWidth,
+  value,
+}: Readonly<{
+  key: string;
+  label: string;
+  labelWidth: number;
+  value: ReactNode;
+}>): ScrollableDocumentRow {
   return {
     key,
     node: (
@@ -70,14 +75,16 @@ function providerRows(
   theme: Theme,
 ): ScrollableDocumentRow[] {
   return Object.entries(costBreakdown.providerCosts ?? {}).map(([provider, providerCost]) =>
-    costRow(
-      `cost-provider:${provider}`,
-      stripTerminalControls(getProviderDisplayName(provider)),
+    costRow({
+      key: `cost-provider:${provider}`,
+      label: stripTerminalControls(getProviderDisplayName(provider)),
       labelWidth,
-      <Text color={theme.textDim}>
-        {providerCostLabel(costBreakdown, provider, providerCost.cost)}
-      </Text>,
-    ),
+      value: (
+        <Text color={theme.textDim}>
+          {providerCostLabel(costBreakdown, provider, providerCost.cost)}
+        </Text>
+      ),
+    }),
   );
 }
 
@@ -101,31 +108,31 @@ export function buildCostBreakdownRows({
   const unmetered = unmeteredRunCostLabel(costBreakdown);
   if (unmetered !== null) {
     rows.push(
-      costRow(
-        'cost-billing',
-        'Billing',
+      costRow({
+        key: 'cost-billing',
+        label: 'Billing',
         labelWidth,
-        <Text color={theme.textDim}>{unmetered}</Text>,
-      ),
+        value: <Text color={theme.textDim}>{unmetered}</Text>,
+      }),
     );
     if (baseline !== null) {
       rows.push(
-        costRow(
-          'cost-baseline',
-          'All-planner baseline',
+        costRow({
+          key: 'cost-baseline',
+          label: 'All-planner baseline',
           labelWidth,
-          <Text color={theme.textDim}>{baseline}</Text>,
-        ),
+          value: <Text color={theme.textDim}>{baseline}</Text>,
+        }),
       );
     }
     if (costBreakdown.hasSavingsEstimate !== false && costBreakdown.savingsAmount > 0) {
       rows.push(
-        costRow(
-          'cost-saved',
-          'Saved',
+        costRow({
+          key: 'cost-saved',
+          label: 'Saved',
           labelWidth,
-          <Text color={theme.success}>{formatSavingsLabel(costBreakdown)}</Text>,
-        ),
+          value: <Text color={theme.success}>{formatSavingsLabel(costBreakdown)}</Text>,
+        }),
       );
     }
     rows.push(...providerRows(costBreakdown, labelWidth, theme));
@@ -135,28 +142,35 @@ export function buildCostBreakdownRows({
   const valueRows: ScrollableDocumentRow[] = [];
   const actual = knownCostText(costBreakdown.totalActualCost, totalCostKnown);
   if (actual !== null) {
-    valueRows.push(costRow('cost-actual', 'Actual cost', labelWidth, <Text bold>{actual}</Text>));
+    valueRows.push(
+      costRow({
+        key: 'cost-actual',
+        label: 'Actual cost',
+        labelWidth,
+        value: <Text bold>{actual}</Text>,
+      }),
+    );
   }
   const planner = knownCostText(costBreakdown.actualPlannerCost, plannerCostKnown);
   if (planner !== null) {
     valueRows.push(
-      costRow(
-        'cost-planner',
-        'Planner cost',
+      costRow({
+        key: 'cost-planner',
+        label: 'Planner cost',
         labelWidth,
-        <Text color={theme.textDim}>{planner}</Text>,
-      ),
+        value: <Text color={theme.textDim}>{planner}</Text>,
+      }),
     );
   }
   const implementer = knownCostText(costBreakdown.actualImplementerCost, implementerCostKnown);
   if (implementer !== null) {
     valueRows.push(
-      costRow(
-        'cost-implementer',
-        'Implementer cost',
+      costRow({
+        key: 'cost-implementer',
+        label: 'Implementer cost',
         labelWidth,
-        <Text color={theme.textDim}>{implementer}</Text>,
-      ),
+        value: <Text color={theme.textDim}>{implementer}</Text>,
+      }),
     );
   }
   const reviewerCost = costBreakdown.actualReviewerCost;
@@ -164,33 +178,37 @@ export function buildCostBreakdownRows({
     const reviewer = knownCostText(reviewerCost, reviewerCostKnown);
     if (reviewer !== null) {
       valueRows.push(
-        costRow(
-          'cost-reviewer',
-          'Reviewer cost',
+        costRow({
+          key: 'cost-reviewer',
+          label: 'Reviewer cost',
           labelWidth,
-          <Text color={theme.textDim}>{reviewer}</Text>,
-        ),
+          value: <Text color={theme.textDim}>{reviewer}</Text>,
+        }),
       );
     }
   }
   if (baseline !== null) {
     valueRows.push(
-      costRow(
-        'cost-baseline',
-        'All-planner baseline',
+      costRow({
+        key: 'cost-baseline',
+        label: 'All-planner baseline',
         labelWidth,
-        <Text color={theme.textDim}>{baseline}</Text>,
-      ),
+        value: <Text color={theme.textDim}>{baseline}</Text>,
+      }),
     );
   }
   if (costBreakdown.hasSavingsEstimate !== false) {
     valueRows.push(
-      costRow(
-        'cost-saved',
-        costBreakdown.savingsAmount < 0 ? 'Extra cost' : 'Saved',
+      costRow({
+        key: 'cost-saved',
+        label: costBreakdown.savingsAmount < 0 ? 'Extra cost' : 'Saved',
         labelWidth,
-        <Text color={savingsColor(costBreakdown, theme)}>{formatSavingsLabel(costBreakdown)}</Text>,
-      ),
+        value: (
+          <Text color={savingsColor(costBreakdown, theme)}>
+            {formatSavingsLabel(costBreakdown)}
+          </Text>
+        ),
+      }),
     );
   }
   rows.push(...valueRows);

@@ -316,15 +316,7 @@ export function finishRunnerCallOutputLimit(
     nativeSessionId?: string | null | undefined;
   } = {},
 ): RunnerCallResult {
-  recorder.warning({
-    warning: {
-      code: limit.code,
-      severity: 'warning',
-      source: 'system',
-      surface: 'activity',
-      message: limit.message,
-    },
-  });
+  recorder.warning({ warning: runnerCallLimitWarning(limit) });
   return recorder.finishFailed({
     status: 'truncated',
     error: {

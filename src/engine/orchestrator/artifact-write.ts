@@ -55,9 +55,6 @@ type PreparedArtifact = Readonly<{
 }>;
 
 type ArtifactPrepareOptions = Readonly<{
-  projectDir: string;
-  sessionId: string;
-  phase: Phase;
   kind: ArtifactKind;
   text: string;
   metadata?: SpecMetadata | null | undefined;
@@ -128,9 +125,6 @@ export function writeAndPublishArtifact(opts: ArtifactWriteOptions): void {
 export function writeAndPublishArtifacts(opts: ArtifactBatchWriteOptions): void {
   const prepared = opts.items.map((item) =>
     prepareArtifact({
-      projectDir: opts.projectDir,
-      sessionId: opts.sessionId,
-      phase: opts.phase,
       kind: item.kind,
       text: item.text,
       metadata: opts.metadata,

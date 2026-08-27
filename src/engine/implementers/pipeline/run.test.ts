@@ -293,7 +293,11 @@ describe('createImplementerBase — wrote-nothing warning', () => {
     expect(result.success).toBe(false);
 
     const packetEvents = await readPacketEvents(projectDir, sessionId, []);
-    const warnings = buildEscalations(createInitialState('feat'), null, packetEvents).warnings;
+    const warnings = buildEscalations({
+      state: createInitialState('feat'),
+      ledger: null,
+      events: packetEvents,
+    }).warnings;
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toMatchObject({ type: 'warning', phase: 'implementing', taskId: 'T001' });
     if (warnings[0]?.type === 'warning') {

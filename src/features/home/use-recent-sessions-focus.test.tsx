@@ -52,58 +52,21 @@ describe('useRecentSessionsFocus', () => {
     expect(fired).toBe(1);
   });
 
-  it('does not fire when the composer is already focused', async () => {
+  it.each([
+    ['the composer is already focused', { focused: true }],
+    ['an overlay is open', { hasOverlay: true }],
+    ['there are no sessions', { hasSessions: false }],
+  ])('does not fire when %s', async (_name, overrides) => {
     let fired = 0;
     const ui = renderFeature(
       <Host
         hasSessions={true}
         hasOverlay={false}
-        focused={true}
-        onEnter={() => {
-          fired += 1;
-        }}
-      />,
-    );
-    unmount = ui.unmount;
-    await flushEffects();
-
-    ui.stdin.write(CTRL_R);
-    await tick(20);
-
-    expect(fired).toBe(0);
-  });
-
-  it('does not fire when an overlay is open', async () => {
-    let fired = 0;
-    const ui = renderFeature(
-      <Host
-        hasSessions={true}
-        hasOverlay={true}
         focused={false}
         onEnter={() => {
           fired += 1;
         }}
-      />,
-    );
-    unmount = ui.unmount;
-    await flushEffects();
-
-    ui.stdin.write(CTRL_R);
-    await tick(20);
-
-    expect(fired).toBe(0);
-  });
-
-  it('does not fire when there are no sessions', async () => {
-    let fired = 0;
-    const ui = renderFeature(
-      <Host
-        hasSessions={false}
-        hasOverlay={false}
-        focused={false}
-        onEnter={() => {
-          fired += 1;
-        }}
+        {...overrides}
       />,
     );
     unmount = ui.unmount;

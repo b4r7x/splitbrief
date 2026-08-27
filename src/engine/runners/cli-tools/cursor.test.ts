@@ -16,8 +16,5 @@ describe('Cursor candidate', () => {
           'Cursor Agent CLI is unavailable until R7-008 verifies an exact build-pinned protocol and a fresh filtered workspace.',
       },
     });
-    expect('compatibility' in CURSOR_CLI_CANDIDATE).toBe(false);
-    expect('catalog' in CURSOR_CLI_CANDIDATE).toBe(false);
-    expect('run' in CURSOR_CLI_CANDIDATE).toBe(false);
   });
 });

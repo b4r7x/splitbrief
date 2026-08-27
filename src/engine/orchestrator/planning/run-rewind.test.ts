@@ -606,8 +606,8 @@ describe('runPlanningPhase — rewindPending', () => {
       prompts: false,
     },
     {
-      name: "approve 'spec' keeps the rewound spec gate",
-      workflow: { approve: 'spec' },
+      name: "approve 'default' prompts the rewound spec",
+      workflow: { approve: 'default' },
       prompts: true,
     },
   ];

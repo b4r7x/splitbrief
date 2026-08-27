@@ -50,7 +50,7 @@ export default defineConfig({
             'testing/integration/**/*.test.{ts,tsx}',
             'testing/helpers/**/*.test.{ts,tsx}',
             'testing/visual/**/*.test.{ts,tsx}',
-            'evals/eval.test.ts',
+            'evals/*.test.ts',
           ],
           exclude: ['node_modules', 'dist', ...workflowScreenIntegration],
           setupFiles: [stateHomeSetup],

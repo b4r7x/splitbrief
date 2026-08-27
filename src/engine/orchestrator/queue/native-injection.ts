@@ -4,7 +4,7 @@ import type {
   QueueBriefInput,
   QueueResultV1,
   StateAuthorityReceipt,
-} from '../../../core/approval/types.js';
+} from '../../../core/schemas/brief-recovery.js';
 import { loadState } from '../../../core/state/persistence.js';
 import type { Planner } from '../../planners/types.js';
 import type { EventBus } from '../../events/types.js';
@@ -124,22 +124,19 @@ export async function dispatchNativeInjection(
     if (recovery !== undefined) {
       const input = recoveryInput(current, message, injectionText, recovery, sessionId);
       if (input === null) {
-        releaseQueuedMessage(ref, message.id, 'native');
         return { status: 'not-delivered', reason: 'failed' };
       }
-      const queued = await recovery.controller.queueBriefInput(input, recovery.authority);
-      if (queueWasRefused(queued)) {
-        releaseQueuedMessage(ref, message.id, 'native');
+      const queueResult = await recovery.controller.queueBriefInput(input, recovery.authority);
+      if (queueWasRefused(queueResult)) {
         return {
           status: 'not-delivered',
-          reason: queued.kind === 'conflict' ? 'already-owned' : 'failed',
+          reason: queueResult.kind === 'conflict' ? 'already-owned' : 'failed',
         };
       }
-      if (alreadyApplied(queued)) {
+      if (alreadyApplied(queueResult)) {
         const latest = rebaseOnPersistedWorkflowState(ref, getState());
         const latestMessage = findQueuedMessage(latest, message.id);
         if (latestMessage === undefined) {
-          releaseQueuedMessage(ref, message.id, 'native');
           return { status: 'not-delivered', reason: 'cleared' };
         }
         const delivered = transitionAndSave(ref, latest, {
@@ -147,7 +144,6 @@ export async function dispatchNativeInjection(
           id: message.id,
         });
         setState(delivered);
-        releaseQueuedMessage(ref, message.id, 'native');
         return { status: 'delivered' };
       }
       throwIfAborted(signal);
@@ -168,13 +164,11 @@ export async function dispatchNativeInjection(
     });
     throwIfAborted(signal);
     if (wasCleared(ref, message.id)) {
-      releaseQueuedMessage(ref, message.id, 'native');
       return { status: 'not-delivered', reason: 'cleared' };
     }
     const latest = rebaseOnPersistedWorkflowState(ref, getState());
     const latestMessage = findQueuedMessage(latest, message.id);
     if (!latestMessage) {
-      releaseQueuedMessage(ref, message.id, 'native');
       return { status: 'not-delivered', reason: 'cleared' };
     }
     const booked = addUsageAndSave({ projectDir, sessionId, bus }, latest, 'planner', usage);
@@ -183,7 +177,6 @@ export async function dispatchNativeInjection(
       id: message.id,
     });
     setState(next);
-    releaseQueuedMessage(ref, message.id, 'native');
     const preview = formatQueuedMessagePreview(message);
     bus.publish({
       type: 'message_injected_native',
@@ -196,13 +189,11 @@ export async function dispatchNativeInjection(
   } catch (err) {
     const aborted = signal?.aborted || isAbortError(err);
     if (wasCleared(ref, message.id)) {
-      releaseQueuedMessage(ref, message.id, 'native');
       return { status: 'not-delivered', reason: 'cleared' };
     }
     const latest = rebaseOnPersistedWorkflowState(ref, getState());
     const latestMessage = findQueuedMessage(latest, message.id);
     if (!latestMessage) {
-      releaseQueuedMessage(ref, message.id, 'native');
       return { status: 'not-delivered', reason: 'cleared' };
     }
     const next = transitionAndSave(ref, latest, {
@@ -210,9 +201,10 @@ export async function dispatchNativeInjection(
       id: message.id,
     });
     setState(next);
-    releaseQueuedMessage(ref, message.id, 'native');
     if (aborted) return { status: 'not-delivered', reason: 'aborted' };
     publishWarningFromError({ bus, phase: getState().phase }, 'native injection failed', err);
     return { status: 'not-delivered', reason: 'failed' };
+  } finally {
+    releaseQueuedMessage(ref, message.id, 'native');
   }
 }

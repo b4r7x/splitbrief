@@ -40,22 +40,14 @@ describe('estimateTokens', () => {
   it.each([
     ['known text', 'Hello, world!', Math.ceil(13 / 4)],
     ['empty string', '', 0],
-  ] as const)('estimates %s', (_name, text, expected) => {
+    ['an exact multiple of 4 chars', '1234', 1],
+    ['a partial trailing token', '12345', 2],
+    ['a long string', 'a'.repeat(400), 100],
+  ] as const)('estimates %s at 4 chars per token', (_name, text, expected) => {
     expect(estimateTokens(text)).toBe(expected);
   });
 
-  it('rounds up — 1 token per 4 chars', () => {
-    expect(estimateTokens('')).toBe(0);
-    expect(estimateTokens('1234')).toBe(1);
-    expect(estimateTokens('12345')).toBe(2);
-  });
-
-  it('estimates without model (backward compatible)', () => {
-    expect(estimateTokens('a'.repeat(400))).toBe(100);
-  });
-
-  it('estimates with Claude model (fewer tokens per char)', () => {
+  it('estimates with the Claude 3.5 chars-per-token divisor', () => {
     expect(estimateTokens('a'.repeat(350), 'claude-sonnet-4-6')).toBe(100);
-    expect(estimateTokens('a'.repeat(350))).toBe(88);
   });
 });

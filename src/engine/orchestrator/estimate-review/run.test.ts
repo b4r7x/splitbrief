@@ -85,7 +85,6 @@ function estimateWithRuntimeTaskFields(): DeterministicEstimate {
 
 describe('planner estimate review packet', () => {
   it('is compact and task-focused for the planner prompt', () => {
-    const hugeTaskBody = 'full source body '.repeat(500);
     const estimate = estimateWithRuntimeTaskFields();
     const config = {
       ...makeConfig(),
@@ -134,7 +133,6 @@ describe('planner estimate review packet', () => {
     expect(prompt).toContain('"title": "Large parser rewrite"');
     expect(prompt).toContain('"selectedProfileId": "cheap-worker"');
     expect(prompt).toContain('do not reassign models');
-    expect(prompt).not.toContain(hugeTaskBody);
     expect(JSON.stringify(packet.tasks)).not.toContain(SENTINEL_DESCRIPTION);
     expect(JSON.stringify(packet.tasks)).not.toContain(SENTINEL_CURRENT_CODE);
     expect(prompt).not.toContain(SENTINEL_DESCRIPTION);

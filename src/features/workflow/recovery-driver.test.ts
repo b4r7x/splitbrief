@@ -9,7 +9,7 @@ import type { ApprovalReviewResult } from '../../core/approval/types.js';
 import { acquireStateAuthority } from '../../core/state/authority.js';
 import type { StateAuthorityReceipt } from '../../core/state/types.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
-import { reactivateExistingSession } from '../../core/sessions/lifecycle.js';
+import { reactivateExistingSession } from '../../core/sessions/active-pointer.js';
 import { saveState } from '../../core/state/persistence.js';
 import {
   parsePreparedConfig,
@@ -80,9 +80,9 @@ function runDriver(
   sessionId: string,
   inputMode: UseInputModeResult,
   authority: StateAuthorityReceipt,
-): ReturnType<ReturnType<ReturnType<typeof createRecoveryDriver>>> {
+): ReturnType<ReturnType<typeof createRecoveryDriver>> {
   const prepared = makePreparedExecution(projectDir, sessionId);
-  const promptPendingRecovery = createRecoveryDriver()({
+  const promptPendingRecovery = createRecoveryDriver({
     prepared,
     authority,
     inputMode,

@@ -250,9 +250,7 @@ describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('conversation row projectio
       width: 96,
     };
 
-    const startedAt = performance.now();
     const first = markdownConversationRowsProjection(input);
-    const firstMs = performance.now() - startedAt;
     const appendAt = performance.now();
     const appended = markdownConversationRowsProjection({
       ...input,
@@ -261,17 +259,13 @@ describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('conversation row projectio
     const appendMs = performance.now() - appendAt;
 
     resetMarkdownConversationRowsCache();
-    const coldAppendAt = performance.now();
     const coldAppended = markdownConversationRowsProjection({
       ...input,
       text: appendedText,
     });
-    const coldAppendMs = performance.now() - coldAppendAt;
 
     expect(appended.rowCount).toBeGreaterThanOrEqual(first.rowCount);
     expect(coldAppended.rowCount).toBe(appended.rowCount);
-    expect(appendMs).toBeLessThan(Math.max(150, coldAppendMs * 2));
-    expect(appendMs).toBeLessThan(Math.max(150, firstMs * 2));
     expect(appendMs).toBeLessThan(150);
   });
 

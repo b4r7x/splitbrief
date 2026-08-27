@@ -1,16 +1,14 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { writeFileSync, chmodSync, mkdirSync, realpathSync, statSync, existsSync } from 'node:fs';
+import { writeFileSync, readFileSync, chmodSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createCliPlanner as createCliPlannerImpl } from './cli.js';
 import { makeConfig as makeBaseConfig } from '#testing/helpers/factories/config.js';
-import { prependPath, writeCommandShim } from '#testing/helpers/command-shim.js';
+import { prependPath, trustedShimGate, writeCommandShim } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { TASKS_FILE } from '../../core/paths.js';
 import { writeSpecFile } from '../../core/paths-io.js';
-import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import type { PlannerFactoryOptions } from './types.js';
-import type { CliStartGate } from '../runners/start-gate.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 
 function makeConfig(overrides: Parameters<typeof makeBaseConfig>[0] = {}) {
@@ -28,33 +26,18 @@ let projectDir: string;
 let shimDir: string;
 let restorePath: () => void;
 
-function trustedGate(tool: CliToolId): CliStartGate {
-  const commandPath = join(shimDir, CLI_TOOL_CATALOG[tool].command);
-  if (!existsSync(commandPath)) {
-    writeFileSync(commandPath, '#!/bin/sh\nexit 0\n', 'utf8');
-    chmodSync(commandPath, 0o755);
-  }
-  const path = realpathSync(commandPath);
-  const info = statSync(path);
-  return {
-    tool,
-    executable: {
-      path,
-      fingerprint: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs },
-    },
-  };
-}
-
 function createCliPlanner(
-  config: Parameters<typeof createCliPlannerImpl>[0],
+  config: Parameters<typeof createCliPlannerImpl>[0]['config'],
   initialSessionId?: string | null,
   options?: PlannerFactoryOptions,
 ): ReturnType<typeof createCliPlannerImpl> {
   const tool = config.planner.kind === 'cli' ? config.planner.tool : null;
   if (tool === null) throw new Error('test helper requires a CLI planner config');
-  return createCliPlannerImpl(config, initialSessionId, {
+  return createCliPlannerImpl({
+    config,
+    initialSessionId,
     ...options,
-    trustedCli: options?.trustedCli ?? trustedGate(tool),
+    trustedCli: options?.trustedCli ?? trustedShimGate({ dir: shimDir, tool }),
   });
 }
 
@@ -138,7 +121,19 @@ Stale ambient content.
     expect(result.phases?.[0]?.rawOutput).toBeUndefined();
   });
 
-  it('detached-expiry-without-fallback: an expired resume session fails with exactly one attempt', async () => {
+  it('detached-expiry: a failed resume claims no artifact from an ambient tasks file', async () => {
+    const ambientTasks = `---
+id: T999
+title: Ambient task
+action: create
+file: src/ambient.ts
+depends_on: []
+---
+
+### Description
+Stale ambient content.
+`;
+    writeFileSync(join(projectDir, TASKS_FILE), ambientTasks);
     const shimPath = join(shimDir, 'codex');
     writeFileSync(
       shimPath,
@@ -160,7 +155,6 @@ Stale ambient content.
     chmodSync(shimPath, 0o755);
 
     const events: RunnerCallEvent[] = [];
-    const onSessionExpired = vi.fn();
     const planner = createCliPlanner(
       makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
       'sess-old',
@@ -172,14 +166,12 @@ Stale ambient content.
         projectDir,
         callbacks: {
           onOutput: vi.fn(),
-          onSessionExpired,
           onCallEvent: (event) => events.push(event),
         },
       }),
     ).rejects.toMatchObject({ kind: 'session-resume-expired' });
 
-    expect(onSessionExpired).toHaveBeenCalledWith('sess-old');
-    expect(events.filter((event) => event.type === 'call_started')).toHaveLength(1);
+    expect(readFileSync(join(projectDir, TASKS_FILE), 'utf8')).toBe(ambientTasks);
     expect(events).not.toContainEqual(expect.objectContaining({ type: 'call_completed' }));
   });
 });

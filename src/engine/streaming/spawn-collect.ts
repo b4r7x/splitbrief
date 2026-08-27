@@ -116,12 +116,7 @@ function isOutputBudgetFatalSignal(
   err: unknown,
 ): err is SpawnPipeFatalSignal & { state: 'output-budget-breach' } {
   return (
-    typeof err === 'object' &&
-    err !== null &&
-    'state' in err &&
-    err.state === 'output-budget-breach' &&
-    'remediation' in err &&
-    typeof err.remediation === 'string'
+    isRecord(err) && err.state === 'output-budget-breach' && typeof err.remediation === 'string'
   );
 }
 

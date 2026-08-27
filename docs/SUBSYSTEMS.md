@@ -193,7 +193,7 @@ Activated via `splitbrief start --rpc`. The workflow runs headlessly with a mach
 
 ## 14. Session directory lifecycle
 
-`src/core/sessions/prepare.ts`, `src/core/sessions/lifecycle.ts`, `src/core/sessions/orphans.ts`, `src/engine/orchestrator/run/orphan-reaper.ts`
+`src/core/sessions/prepare.ts`, `src/core/sessions/ownership-marker.ts`, `src/core/sessions/detached-handoff.ts`, `src/core/sessions/active-pointer.ts`, `src/core/sessions/liveness.ts`, `src/core/sessions/session-id.ts`, `src/core/sessions/orphans.ts`, `src/engine/orchestrator/run/orphan-reaper.ts`
 
 **Creation.** `prepareNewSession` (`src/core/sessions/prepare.ts`) allocates `.splitbrief/sessions/<id>/` under the project mutation lock, writes a private ownership marker (`.prepare-owner.json`) proving dev/ino identity plus a session generation, and finally publishes `.splitbrief/active` with a v1 receipt (or a legacy plain session id on older paths). Nothing is ever created outside these steps.
 

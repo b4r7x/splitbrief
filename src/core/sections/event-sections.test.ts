@@ -55,16 +55,6 @@ describe('groupEventsIntoSections', () => {
     expect(section.startIndex).toBe(0);
   });
 
-  it('preserves task-complete duration in milliseconds without unit conversion', () => {
-    const events = [
-      makeTaskStart({ taskId: taskId('T001'), title: 'Auth', index: 0 }),
-      makeTaskComplete({ taskId: taskId('T001'), duration: 1234 }),
-    ];
-    const sections = groupEventsIntoSections(events);
-    const summary = requireSection(sections, 0, 'completed-task').summary;
-    expect(summary.duration).toBe(1234);
-  });
-
   it('creates completed-task section for task-start + task-skipped pair', () => {
     const events = [
       makeTaskStart({ taskId: taskId('T002'), title: 'Skipped task', index: 1 }),

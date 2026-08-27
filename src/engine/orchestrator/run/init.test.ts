@@ -17,34 +17,30 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { stateAuthorityDirectory } from '../../../core/paths.js';
-import { reactivateExistingSession } from '../../../core/sessions/lifecycle.js';
+import { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { SkillMeta } from '../../../core/skills/types.js';
 import type { StateAuthorityReceipt } from '../../../core/state/types.js';
-import type { EngineEvent } from '../../events/types.js';
+import type { EngineEvent, EventBus } from '../../events/types.js';
 import { createEventBus } from '../../events/bus.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { formatValidationError } from '../validation/format-error.js';
 import { loadState, loadStateForResume, saveState } from '../../../core/state/persistence.js';
-import {
-  acquireStateAuthority,
-  assertStateAuthority,
-  releaseStateAuthority,
-} from '../../../core/state/authority.js';
+import { acquireStateAuthority } from '../../../core/state/authority.js';
 import type { SummaryBase } from '../summary/build.js';
 import {
   consumeNewWorkflowCandidate,
-  initializeWorkflow,
   refreshWorkflowAuthority,
   workflowAuthority,
-} from './init.js';
+} from './authority.js';
+import { initializeWorkflow } from './init.js';
 import { createRunIsolation } from '../isolation/create.js';
 import type { RunIsolation } from '../isolation/types.js';
 import { parsePreparedConfig, type PreparedExecution } from '../../runners/prepared-execution.js';
 import { resolveHooksConfig } from '../../hooks/discover.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
-import { transitionAndSave } from '../state-ops.js';
 import { installCompilerSeam } from '../../planners/base.js';
 import { recordRuntimeConformance } from '../../runners/runtime-conformance-cache.js';
 import { makeCompilerSeam } from '#testing/helpers/factories/compiler-seam.js';
@@ -125,16 +121,25 @@ async function initializeFencedWorkflow(
     projectDir: string;
     sessionId: string;
     feature: string;
-    authority: StateAuthorityReceipt;
-    savedState: WorkflowState | undefined;
-    newWorkflow: boolean;
+    authority?: StateAuthorityReceipt;
+    savedState?: WorkflowState | undefined;
+    newWorkflow?: boolean;
     reviewer?: Config['reviewer'];
+    configOverrides?: Parameters<typeof makeConfig>[0];
+    plannerTool?: string;
+    plannerRunner?: ReturnType<typeof makePlanner>;
+    selectedSkills?: SkillMeta[];
+    eventSink?: (event: EngineEvent) => void;
+    eventBus?: EventBus;
+    headless?: boolean;
+    isolation?: RunIsolation;
   }>,
 ): Promise<{
   init: Awaited<ReturnType<typeof initializeWorkflow>>;
-  authorityHolder: { current: StateAuthorityReceipt };
+  config: Config;
   planner: ReturnType<typeof makePlanner>;
   implementer: ReturnType<typeof makeImplementer>;
+  tracked: { current: WorkflowState | undefined };
 }> {
   const config = makeConfig({
     validation: {
@@ -147,6 +152,7 @@ async function initializeFencedWorkflow(
     approval: { enabled: false, feedRejectionsToPlanner: true },
     codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
     ...(input.reviewer === undefined ? {} : { reviewer: input.reviewer }),
+    ...input.configOverrides,
   });
   const prepared = await preparedTestExecution({
     projectDir: input.projectDir,
@@ -155,53 +161,62 @@ async function initializeFencedWorkflow(
     inputConfig: config,
     allowHooks: true,
   });
-  const planner = makePlanner();
+  const planner = input.plannerRunner ?? makePlanner();
   const implementer = makeImplementer();
+  const plannerTool = input.plannerTool ?? 'test-planner';
   const summaryBase: SummaryBase = {
     feature: input.feature,
     startTime: Date.now(),
-    plannerTool: 'test-planner',
+    plannerTool,
     implementerTool: 'test-implementer',
     mode: 'quick',
     projectDir: input.projectDir,
     sessionId: input.sessionId,
   };
   const metadata: SpecMetadata = {
-    plannerTool: 'test-planner',
+    plannerTool,
     implementerTool: 'test-implementer',
     mode: 'quick',
   };
-  const authorityHolder = { current: input.authority };
+  const authorityHolder = input.authority === undefined ? undefined : { current: input.authority };
+  const tracked: { current: WorkflowState | undefined } = { current: undefined };
 
   const init = await initializeWorkflow({
     opts: {
       prepared: prepared.execution,
       callbacks: makeCallbacks().callbacks,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      ...(input.savedState === undefined ? {} : { savedState: input.savedState }),
+      savedState: input.savedState,
+      selectedSkills: input.selectedSkills,
+      headless: input.headless,
+      eventBus: input.eventBus,
       _planner: planner,
       _implementer: implementer,
+      _eventSink: input.eventSink,
     },
     config: prepared.config,
     sessionId: input.sessionId,
     summaryBase,
     metadata,
     setTrackedState: (state) => {
-      authorityHolder.current = refreshWorkflowAuthority(
-        { projectDir: input.projectDir, sessionId: input.sessionId },
-        authorityHolder.current,
-        state,
-      );
+      tracked.current = state;
+      if (authorityHolder !== undefined) {
+        authorityHolder.current = refreshWorkflowAuthority(
+          { projectDir: input.projectDir, sessionId: input.sessionId },
+          authorityHolder.current,
+          state,
+        );
+      }
     },
     resumeHolder: { messages: [] },
-    isolation: makeCopyingIsolation(input.projectDir, input.sessionId),
+    isolation: input.isolation ?? makeCopyingIsolation(input.projectDir, input.sessionId),
     authority: input.authority,
     authorityHolder,
-    ...(input.savedState === undefined ? {} : { savedState: input.savedState }),
+    savedState: input.savedState,
     newWorkflow: input.newWorkflow,
   });
 
-  return { init, authorityHolder, planner, implementer };
+  return { init, config, planner, implementer, tracked };
 }
 
 let trustHome: ReturnType<typeof useTrustHome>;
@@ -425,10 +440,11 @@ describe('initializeWorkflow', () => {
   it('refuses a second initialization authority while the current owner is live', async () => {
     await withTempDir('splitbrief-init-authority-live-owner', async (tempDir) => {
       const projectDir = realpathSync(tempDir);
+      const feature = 'live owner';
       const sessionId = 'session-init-authority-live';
       const ref = { projectDir, sessionId };
       ensureSessionDir(projectDir, sessionId);
-      saveState(ref, createInitialState('live owner'));
+      saveState(ref, createInitialState(feature));
 
       const owner = acquireStateAuthority({
         ref,
@@ -439,7 +455,16 @@ describe('initializeWorkflow', () => {
       });
       expect(owner.kind).toBe('fenced');
       if (owner.kind !== 'fenced') return;
-      expect(() => assertStateAuthority({ ref, receipt: owner.receipt })).not.toThrow();
+
+      const result = await initializeFencedWorkflow({
+        projectDir,
+        sessionId,
+        feature,
+        authority: owner.receipt,
+        savedState: loadState(ref) ?? undefined,
+        newWorkflow: false,
+      });
+      expect(result.init.ok).toBe(true);
 
       expect(() =>
         acquireStateAuthority({
@@ -450,7 +475,6 @@ describe('initializeWorkflow', () => {
           acquisitionId: 'second-acquisition',
         }),
       ).toThrow(/live|proven dead|claimed/u);
-      expect(releaseStateAuthority(ref, owner.receipt)).toBe(true);
     });
   });
 
@@ -495,22 +519,17 @@ describe('initializeWorkflow', () => {
       });
       if (current === null) return;
 
-      expect(() => assertStateAuthority({ ref, receipt: oldOwner.receipt })).toThrow();
-      expect(() =>
-        transitionAndSave(
-          ref,
-          current,
-          { type: 'START' },
-          {
-            expectedRevision: current.stateRevision,
-            authority: oldOwner.receipt,
-          },
-        ),
-      ).toThrow();
+      await expect(
+        initializeFencedWorkflow({
+          projectDir,
+          sessionId,
+          feature: 'take over dead owner',
+          authority: oldOwner.receipt,
+          savedState: current,
+          newWorkflow: false,
+        }),
+      ).rejects.toThrow();
       expect(loadState(ref)).toEqual(current);
-      expect(releaseStateAuthority(ref, oldOwner.receipt)).toBe(false);
-      expect(() => assertStateAuthority({ ref, receipt: successor.receipt })).not.toThrow();
-      expect(releaseStateAuthority(ref, successor.receipt)).toBe(true);
     });
   });
 
@@ -518,64 +537,17 @@ describe('initializeWorkflow', () => {
     await withTempDir('splitbrief-init-headless-logger', async (projectDir) => {
       const feature = 'headless logger lifecycle';
       const sessionId = 'session-init-headless-logger';
-      const config = makeConfig({
-        validation: {
-          typecheck: false,
-          lint: false,
-          test: false,
-          testCommand: 'noop',
-        },
-        workflow: { mode: 'quick', persistTranscript: true },
-        approval: { enabled: false, feedRejectionsToPlanner: true },
-        codebase: {
-          enabled: false,
-          tokenBudget: 4000,
-          cacheDir: '.splitbrief',
-        },
-      });
-      const { callbacks } = makeCallbacks();
       const events: EngineEvent[] = [];
       const bus = createEventBus();
       bus.subscribe((event) => events.push(event));
-      const summaryBase: SummaryBase = {
-        feature,
-        startTime: Date.now(),
-        plannerTool: 'test-planner',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-        projectDir,
-        sessionId,
-      };
-      const metadata: SpecMetadata = {
-        plannerTool: 'test-planner',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-      };
-      const prepared = await preparedTestExecution({
-        projectDir,
-        sessionId,
-        feature,
-        inputConfig: config,
-        allowHooks: true,
-      });
 
-      const init = await initializeWorkflow({
-        opts: {
-          prepared: prepared.execution,
-          callbacks,
-          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-          headless: true,
-          eventBus: bus,
-          _planner: makePlanner(),
-          _implementer: makeImplementer(),
-        },
-        config: prepared.config,
+      const { init } = await initializeFencedWorkflow({
+        projectDir,
         sessionId,
-        summaryBase,
-        metadata,
-        setTrackedState: () => {},
-        resumeHolder: { messages: [] },
-        isolation: makeCopyingIsolation(projectDir, sessionId),
+        feature,
+        configOverrides: { workflow: { mode: 'quick', persistTranscript: true } },
+        headless: true,
+        eventBus: bus,
       });
 
       expect(init.ok).toBe(true);
@@ -596,66 +568,14 @@ describe('initializeWorkflow', () => {
 
       const feature = 'use discovered hook';
       const sessionId = 'session-init-hooks';
-      const config = makeConfig({
-        validation: {
-          typecheck: false,
-          lint: false,
-          test: false,
-          testCommand: 'noop',
-        },
-        workflow: { mode: 'quick', persistTranscript: false },
-        approval: { enabled: false, feedRejectionsToPlanner: true },
-        codebase: {
-          enabled: false,
-          tokenBudget: 4000,
-          cacheDir: '.splitbrief',
-        },
-      });
-      const { callbacks } = makeCallbacks();
-      const summaryBase: SummaryBase = {
-        feature,
-        startTime: Date.now(),
-        plannerTool: 'test-planner',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-        projectDir,
-        sessionId,
-      };
-      const metadata: SpecMetadata = {
-        plannerTool: 'test-planner',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-      };
-      let trackedState: WorkflowState | undefined;
-      const prepared = await preparedTestExecution({
+      const { init, tracked } = await initializeFencedWorkflow({
         projectDir,
         sessionId,
         feature,
-        inputConfig: config,
-        allowHooks: true,
-      });
-
-      const init = await initializeWorkflow({
-        opts: {
-          prepared: prepared.execution,
-          callbacks,
-          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-          _planner: makePlanner(),
-          _implementer: makeImplementer(),
-        },
-        config: prepared.config,
-        sessionId,
-        summaryBase,
-        metadata,
-        setTrackedState: (state) => {
-          trackedState = state;
-        },
-        resumeHolder: { messages: [] },
-        isolation: makeCopyingIsolation(projectDir, sessionId),
       });
 
       expect(init.ok).toBe(true);
-      expect(trackedState?.feature).toBe(feature);
+      expect(tracked.current?.feature).toBe(feature);
       if (!init.ok) return;
 
       const task = makeTask();
@@ -687,82 +607,30 @@ describe('initializeWorkflow', () => {
     await withTempDir('splitbrief-init-skills', async (projectDir) => {
       const feature = 'feature needing skills';
       const sessionId = 'session-init-skills';
-      const config = makeConfig({
-        validation: {
-          typecheck: false,
-          lint: false,
-          test: false,
-          testCommand: 'noop',
-        },
-        workflow: { mode: 'quick', persistTranscript: false },
-        approval: { enabled: false, feedRejectionsToPlanner: true },
-        codebase: {
-          enabled: false,
-          tokenBudget: 4000,
-          cacheDir: '.splitbrief',
-        },
-      });
-      const { callbacks } = makeCallbacks();
-      const summaryBase: SummaryBase = {
-        feature,
-        startTime: Date.now(),
-        plannerTool: 'test-planner',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-        projectDir,
-        sessionId,
-      };
-      const metadata: SpecMetadata = {
-        plannerTool: 'test-planner',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-      };
-      let trackedState: WorkflowState | undefined;
-      const prepared = await preparedTestExecution({
+      const { init, tracked } = await initializeFencedWorkflow({
         projectDir,
         sessionId,
         feature,
-        inputConfig: config,
-        allowHooks: true,
-      });
-
-      const init = await initializeWorkflow({
-        opts: {
-          prepared: prepared.execution,
-          callbacks,
-          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-          _planner: makePlanner(),
-          _implementer: makeImplementer(),
-          selectedSkills: [
-            {
-              id: 'typescript',
-              name: 'TypeScript',
-              description: 'ts skill',
-              path: '/skills/typescript/SKILL.md',
-              scope: 'global',
-            },
-            {
-              id: 'react',
-              name: 'React',
-              description: 'react skill',
-              path: '/skills/react/SKILL.md',
-              scope: 'global',
-            },
-          ],
-        },
-        config: prepared.config,
-        sessionId,
-        summaryBase,
-        metadata,
-        setTrackedState: (state) => {
-          trackedState = state;
-        },
-        resumeHolder: { messages: [] },
-        isolation: makeCopyingIsolation(projectDir, sessionId),
+        selectedSkills: [
+          {
+            id: 'typescript',
+            name: 'TypeScript',
+            description: 'ts skill',
+            path: '/skills/typescript/SKILL.md',
+            scope: 'global',
+          },
+          {
+            id: 'react',
+            name: 'React',
+            description: 'react skill',
+            path: '/skills/react/SKILL.md',
+            scope: 'global',
+          },
+        ],
       });
 
       expect(init.ok).toBe(true);
-      expect(trackedState?.selectedSkills).toEqual(['typescript', 'react']);
+      expect(tracked.current?.selectedSkills).toEqual(['typescript', 'react']);
       expect(loadState({ projectDir, sessionId })?.selectedSkills).toEqual(['typescript', 'react']);
     });
   });
@@ -771,71 +639,27 @@ describe('initializeWorkflow', () => {
     await withTempDir('splitbrief-init-api-unavailable', async (projectDir) => {
       const feature = 'needs a reachable provider';
       const sessionId = 'session-init-api-unavailable';
-      const config = makeConfig({
-        planner: {
-          kind: 'api',
-          provider: 'openrouter',
-          model: 'some-model',
-          apiBase: 'https://openrouter.ai/api/v1',
-          apiKey: 'k',
-        },
-        validation: {
-          typecheck: false,
-          lint: false,
-          test: false,
-          testCommand: 'noop',
-        },
-        workflow: { mode: 'quick', persistTranscript: false },
-        approval: { enabled: false, feedRejectionsToPlanner: true },
-        codebase: {
-          enabled: false,
-          tokenBudget: 4000,
-          cacheDir: '.splitbrief',
-        },
-      });
-      const { callbacks } = makeCallbacks();
       const events: EngineEvent[] = [];
-      const summaryBase: SummaryBase = {
-        feature,
-        startTime: Date.now(),
-        plannerTool: 'openrouter',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-        projectDir,
-        sessionId,
-      };
-      const metadata: SpecMetadata = {
-        plannerTool: 'openrouter',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-      };
-      const prepared = await preparedTestExecution({
-        projectDir,
-        sessionId,
-        feature,
-        inputConfig: config,
-        allowHooks: true,
-      });
 
-      const init = await initializeWorkflow({
-        opts: {
-          prepared: prepared.execution,
-          callbacks,
-          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-          _planner: makePlanner({
-            isAvailable: vi.fn().mockResolvedValue(false),
-            unavailabilityReason: () => 'HTTP 401',
-          }),
-          _implementer: makeImplementer(),
-          _eventSink: (e) => events.push(e),
-        },
-        config: prepared.config,
+      const { init } = await initializeFencedWorkflow({
+        projectDir,
         sessionId,
-        summaryBase,
-        metadata,
-        setTrackedState: () => {},
-        resumeHolder: { messages: [] },
-        isolation: makeCopyingIsolation(projectDir, sessionId),
+        feature,
+        configOverrides: {
+          planner: {
+            kind: 'api',
+            provider: 'openrouter',
+            model: 'some-model',
+            apiBase: 'https://openrouter.ai/api/v1',
+            apiKey: 'k',
+          },
+        },
+        plannerTool: 'openrouter',
+        plannerRunner: makePlanner({
+          isAvailable: vi.fn().mockResolvedValue(false),
+          unavailabilityReason: () => 'HTTP 401',
+        }),
+        eventSink: (e) => events.push(e),
       });
 
       expect(init.ok).toBe(false);
@@ -852,65 +676,14 @@ describe('initializeWorkflow', () => {
     await withTempDir('splitbrief-init-resume-implementing', async (projectDir) => {
       const feature = 'resume implementation';
       const sessionId = 'session-init-resume-implementing';
-      const config = makeConfig({
-        validation: {
-          typecheck: false,
-          lint: false,
-          test: false,
-          testCommand: 'noop',
-        },
-        workflow: { mode: 'quick', persistTranscript: false },
-        approval: { enabled: false, feedRejectionsToPlanner: true },
-        codebase: {
-          enabled: false,
-          tokenBudget: 4000,
-          cacheDir: '.splitbrief',
-        },
-      });
-      const { callbacks } = makeCallbacks();
       const events: EngineEvent[] = [];
-      const summaryBase: SummaryBase = {
-        feature,
-        startTime: Date.now(),
-        plannerTool: 'test-planner',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-        projectDir,
-        sessionId,
-      };
-      const metadata: SpecMetadata = {
-        plannerTool: 'test-planner',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-      };
-      const prepared = await preparedTestExecution({
-        projectDir,
-        sessionId,
-        feature,
-        inputConfig: config,
-        allowHooks: true,
-      });
 
-      const init = await initializeWorkflow({
-        opts: {
-          prepared: prepared.execution,
-          callbacks,
-          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-          savedState: {
-            ...createInitialState(feature),
-            phase: 'implementing',
-          },
-          _planner: makePlanner(),
-          _implementer: makeImplementer(),
-          _eventSink: (e) => events.push(e),
-        },
-        config: prepared.config,
+      const { init } = await initializeFencedWorkflow({
+        projectDir,
         sessionId,
-        summaryBase,
-        metadata,
-        setTrackedState: () => {},
-        resumeHolder: { messages: [] },
-        isolation: makeCopyingIsolation(projectDir, sessionId),
+        feature,
+        savedState: { ...createInitialState(feature), phase: 'implementing' },
+        eventSink: (e) => events.push(e),
       });
 
       expect(init.ok).toBe(true);
@@ -929,43 +702,6 @@ describe('initializeWorkflow', () => {
     await withTempDir('splitbrief-init-resume-native-delivery', async (projectDir) => {
       const feature = 'resume interrupted native delivery';
       const sessionId = 'session-init-resume-native-delivery';
-      const config = makeConfig({
-        validation: {
-          typecheck: false,
-          lint: false,
-          test: false,
-          testCommand: 'noop',
-        },
-        workflow: { mode: 'quick', persistTranscript: false },
-        approval: { enabled: false, feedRejectionsToPlanner: true },
-        codebase: {
-          enabled: false,
-          tokenBudget: 4000,
-          cacheDir: '.splitbrief',
-        },
-      });
-      const { callbacks } = makeCallbacks();
-      const summaryBase: SummaryBase = {
-        feature,
-        startTime: Date.now(),
-        plannerTool: 'test-planner',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-        projectDir,
-        sessionId,
-      };
-      const metadata: SpecMetadata = {
-        plannerTool: 'test-planner',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-      };
-      const prepared = await preparedTestExecution({
-        projectDir,
-        sessionId,
-        feature,
-        inputConfig: config,
-        allowHooks: true,
-      });
       const savedState: WorkflowState = {
         ...createInitialState(feature),
         phase: 'implementing',
@@ -980,30 +716,15 @@ describe('initializeWorkflow', () => {
           },
         ],
       };
-      let trackedState: WorkflowState | undefined;
-
-      const init = await initializeWorkflow({
-        opts: {
-          prepared: prepared.execution,
-          callbacks,
-          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-          savedState,
-          _planner: makePlanner(),
-          _implementer: makeImplementer(),
-        },
-        config: prepared.config,
+      const { init, tracked } = await initializeFencedWorkflow({
+        projectDir,
         sessionId,
-        summaryBase,
-        metadata,
-        setTrackedState: (state) => {
-          trackedState = state;
-        },
-        resumeHolder: { messages: [] },
-        isolation: makeCopyingIsolation(projectDir, sessionId),
+        feature,
+        savedState,
       });
 
       expect(init.ok).toBe(true);
-      expect(trackedState?.messageQueue[0]?.nativeDeliveryState).toBe('pending');
+      expect(tracked.current?.messageQueue[0]?.nativeDeliveryState).toBe('pending');
       expect(loadState({ projectDir, sessionId })?.messageQueue[0]?.nativeDeliveryState).toBe(
         'pending',
       );
@@ -1014,64 +735,16 @@ describe('initializeWorkflow', () => {
     await withTempDir('splitbrief-init-cli-unavailable', async (projectDir) => {
       const feature = 'needs an installed cli';
       const sessionId = 'session-init-cli-unavailable';
-      const config = makeConfig({
-        planner: { kind: 'cli', tool: 'claude-code' },
-        validation: {
-          typecheck: false,
-          lint: false,
-          test: false,
-          testCommand: 'noop',
-        },
-        workflow: { mode: 'quick', persistTranscript: false },
-        approval: { enabled: false, feedRejectionsToPlanner: true },
-        codebase: {
-          enabled: false,
-          tokenBudget: 4000,
-          cacheDir: '.splitbrief',
-        },
-      });
-      const { callbacks } = makeCallbacks();
       const events: EngineEvent[] = [];
-      const summaryBase: SummaryBase = {
-        feature,
-        startTime: Date.now(),
-        plannerTool: 'claude-code',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-        projectDir,
-        sessionId,
-      };
-      const metadata: SpecMetadata = {
-        plannerTool: 'claude-code',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-      };
-      const prepared = await preparedTestExecution({
-        projectDir,
-        sessionId,
-        feature,
-        inputConfig: config,
-        allowHooks: true,
-      });
 
-      const init = await initializeWorkflow({
-        opts: {
-          prepared: prepared.execution,
-          callbacks,
-          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-          _planner: makePlanner({
-            isAvailable: vi.fn().mockResolvedValue(false),
-          }),
-          _implementer: makeImplementer(),
-          _eventSink: (e) => events.push(e),
-        },
-        config: prepared.config,
+      const { init } = await initializeFencedWorkflow({
+        projectDir,
         sessionId,
-        summaryBase,
-        metadata,
-        setTrackedState: () => {},
-        resumeHolder: { messages: [] },
-        isolation: makeCopyingIsolation(projectDir, sessionId),
+        feature,
+        configOverrides: { planner: { kind: 'cli', tool: 'claude-code' } },
+        plannerTool: 'claude-code',
+        plannerRunner: makePlanner({ isAvailable: vi.fn().mockResolvedValue(false) }),
+        eventSink: (e) => events.push(e),
       });
 
       expect(init.ok).toBe(false);
@@ -1088,65 +761,19 @@ describe('initializeWorkflow', () => {
     await withTempDir('splitbrief-init-cli-unavailable-reason', async (projectDir) => {
       const feature = 'needs an installed cli';
       const sessionId = 'session-init-cli-unavailable-reason';
-      const config = makeConfig({
-        planner: { kind: 'cli', tool: 'claude-code' },
-        validation: {
-          typecheck: false,
-          lint: false,
-          test: false,
-          testCommand: 'noop',
-        },
-        workflow: { mode: 'quick', persistTranscript: false },
-        approval: { enabled: false, feedRejectionsToPlanner: true },
-        codebase: {
-          enabled: false,
-          tokenBudget: 4000,
-          cacheDir: '.splitbrief',
-        },
-      });
-      const { callbacks } = makeCallbacks();
       const events: EngineEvent[] = [];
-      const summaryBase: SummaryBase = {
-        feature,
-        startTime: Date.now(),
-        plannerTool: 'claude-code',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-        projectDir,
-        sessionId,
-      };
-      const metadata: SpecMetadata = {
-        plannerTool: 'claude-code',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-      };
-      const prepared = await preparedTestExecution({
-        projectDir,
-        sessionId,
-        feature,
-        inputConfig: config,
-        allowHooks: true,
-      });
 
-      const init = await initializeWorkflow({
-        opts: {
-          prepared: prepared.execution,
-          callbacks,
-          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-          _planner: makePlanner({
-            isAvailable: vi.fn().mockResolvedValue(false),
-            unavailabilityReason: () => 'probe timed out after 5s',
-          }),
-          _implementer: makeImplementer(),
-          _eventSink: (e) => events.push(e),
-        },
-        config: prepared.config,
+      const { init } = await initializeFencedWorkflow({
+        projectDir,
         sessionId,
-        summaryBase,
-        metadata,
-        setTrackedState: () => {},
-        resumeHolder: { messages: [] },
-        isolation: makeCopyingIsolation(projectDir, sessionId),
+        feature,
+        configOverrides: { planner: { kind: 'cli', tool: 'claude-code' } },
+        plannerTool: 'claude-code',
+        plannerRunner: makePlanner({
+          isAvailable: vi.fn().mockResolvedValue(false),
+          unavailabilityReason: () => 'probe timed out after 5s',
+        }),
+        eventSink: (e) => events.push(e),
       });
 
       expect(init.ok).toBe(false);
@@ -1163,59 +790,18 @@ describe('initializeWorkflow', () => {
     await withTempDir('splitbrief-init-baseline', async (projectDir) => {
       const feature = 'red-at-start project';
       const sessionId = 'session-init-baseline';
-      const config = makeConfig({
-        validation: {
-          typecheck: true,
-          lint: false,
-          test: false,
-          typecheckCommand: 'node -e "process.exit(1)"',
-        },
-        workflow: { mode: 'quick', persistTranscript: false },
-        approval: { enabled: false, feedRejectionsToPlanner: true },
-        codebase: {
-          enabled: false,
-          tokenBudget: 4000,
-          cacheDir: '.splitbrief',
-        },
-      });
-      const { callbacks } = makeCallbacks();
-      const summaryBase: SummaryBase = {
-        feature,
-        startTime: Date.now(),
-        plannerTool: 'test-planner',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-        projectDir,
-        sessionId,
-      };
-      const metadata: SpecMetadata = {
-        plannerTool: 'test-planner',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-      };
-      const prepared = await preparedTestExecution({
+      const { init, config } = await initializeFencedWorkflow({
         projectDir,
         sessionId,
         feature,
-        inputConfig: config,
-        allowHooks: true,
-      });
-
-      const init = await initializeWorkflow({
-        opts: {
-          prepared: prepared.execution,
-          callbacks,
-          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-          _planner: makePlanner(),
-          _implementer: makeImplementer(),
+        configOverrides: {
+          validation: {
+            typecheck: true,
+            lint: false,
+            test: false,
+            typecheckCommand: 'node -e "process.exit(1)"',
+          },
         },
-        config: prepared.config,
-        sessionId,
-        summaryBase,
-        metadata,
-        setTrackedState: () => {},
-        resumeHolder: { messages: [] },
-        isolation: makeCopyingIsolation(projectDir, sessionId),
       });
 
       expect(init.ok).toBe(true);
@@ -1244,7 +830,7 @@ describe('initializeWorkflow', () => {
       expect(acceptance.blockingStages).toContain('typecheck');
 
       const error = formatValidationError(results, acceptance);
-      expect(error).not.toBe('');
+      expect(error).toContain('typecheck');
     });
   });
 
@@ -1252,59 +838,12 @@ describe('initializeWorkflow', () => {
     await withTempDir('splitbrief-init-isolation', async (projectDir) => {
       const feature = 'carry isolation handle';
       const sessionId = 'session-init-isolation';
-      const config = makeConfig({
-        validation: {
-          typecheck: false,
-          lint: false,
-          test: false,
-          testCommand: 'noop',
-        },
-        workflow: { mode: 'quick', persistTranscript: false },
-        approval: { enabled: false, feedRejectionsToPlanner: true },
-        codebase: {
-          enabled: false,
-          tokenBudget: 4000,
-          cacheDir: '.splitbrief',
-        },
-      });
-      const { callbacks } = makeCallbacks();
-      const summaryBase: SummaryBase = {
-        feature,
-        startTime: Date.now(),
-        plannerTool: 'test-planner',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-        projectDir,
-        sessionId,
-      };
-      const metadata: SpecMetadata = {
-        plannerTool: 'test-planner',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-      };
-      const prepared = await preparedTestExecution({
-        projectDir,
-        sessionId,
-        feature,
-        inputConfig: config,
-        allowHooks: true,
-      });
       const isolation = makeCopyingIsolation(projectDir, sessionId);
 
-      const init = await initializeWorkflow({
-        opts: {
-          prepared: prepared.execution,
-          callbacks,
-          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-          _planner: makePlanner(),
-          _implementer: makeImplementer(),
-        },
-        config: prepared.config,
+      const { init } = await initializeFencedWorkflow({
+        projectDir,
         sessionId,
-        summaryBase,
-        metadata,
-        setTrackedState: () => {},
-        resumeHolder: { messages: [] },
+        feature,
         isolation,
       });
 
@@ -1318,64 +857,17 @@ describe('initializeWorkflow', () => {
     await withTempDir('splitbrief-init-drift-warning', async (projectDir) => {
       const feature = 'drift warning';
       const sessionId = 'session-init-drift-warning';
-      const config = makeConfig({
-        validation: {
-          typecheck: false,
-          lint: false,
-          test: false,
-          testCommand: 'noop',
-        },
-        workflow: { mode: 'quick', persistTranscript: false },
-        approval: { enabled: false, feedRejectionsToPlanner: true },
-        codebase: {
-          enabled: false,
-          tokenBudget: 4000,
-          cacheDir: '.splitbrief',
-        },
-      });
-      const { callbacks } = makeCallbacks();
       const events: EngineEvent[] = [];
-      const summaryBase: SummaryBase = {
-        feature,
-        startTime: Date.now(),
-        plannerTool: 'opencode',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-        projectDir,
-        sessionId,
-      };
-      const metadata: SpecMetadata = {
-        plannerTool: 'opencode',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-      };
-      const prepared = await preparedTestExecution({
-        projectDir,
-        sessionId,
-        feature,
-        inputConfig: config,
-        allowHooks: true,
-      });
-
       const planner = makePlanner();
       installCompilerSeam(planner, makeCompilerSeam({ backend: 'opencode' }));
 
-      const init = await initializeWorkflow({
-        opts: {
-          prepared: prepared.execution,
-          callbacks,
-          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-          _planner: planner,
-          _implementer: makeImplementer(),
-          _eventSink: (e) => events.push(e),
-        },
-        config: prepared.config,
+      const { init } = await initializeFencedWorkflow({
+        projectDir,
         sessionId,
-        summaryBase,
-        metadata,
-        setTrackedState: () => {},
-        resumeHolder: { messages: [] },
-        isolation: makeCopyingIsolation(projectDir, sessionId),
+        feature,
+        plannerTool: 'opencode',
+        plannerRunner: planner,
+        eventSink: (e) => events.push(e),
       });
 
       expect(init.ok).toBe(true);
@@ -1393,64 +885,17 @@ describe('initializeWorkflow', () => {
 
       const feature = 'drift warning suppressed';
       const sessionId = 'session-init-drift-suppressed';
-      const config = makeConfig({
-        validation: {
-          typecheck: false,
-          lint: false,
-          test: false,
-          testCommand: 'noop',
-        },
-        workflow: { mode: 'quick', persistTranscript: false },
-        approval: { enabled: false, feedRejectionsToPlanner: true },
-        codebase: {
-          enabled: false,
-          tokenBudget: 4000,
-          cacheDir: '.splitbrief',
-        },
-      });
-      const { callbacks } = makeCallbacks();
       const events: EngineEvent[] = [];
-      const summaryBase: SummaryBase = {
-        feature,
-        startTime: Date.now(),
-        plannerTool: 'opencode',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-        projectDir,
-        sessionId,
-      };
-      const metadata: SpecMetadata = {
-        plannerTool: 'opencode',
-        implementerTool: 'test-implementer',
-        mode: 'quick',
-      };
-      const prepared = await preparedTestExecution({
-        projectDir,
-        sessionId,
-        feature,
-        inputConfig: config,
-        allowHooks: true,
-      });
-
       const planner = makePlanner();
       installCompilerSeam(planner, makeCompilerSeam({ backend: 'opencode' }));
 
-      const init = await initializeWorkflow({
-        opts: {
-          prepared: prepared.execution,
-          callbacks,
-          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-          _planner: planner,
-          _implementer: makeImplementer(),
-          _eventSink: (e) => events.push(e),
-        },
-        config: prepared.config,
+      const { init } = await initializeFencedWorkflow({
+        projectDir,
         sessionId,
-        summaryBase,
-        metadata,
-        setTrackedState: () => {},
-        resumeHolder: { messages: [] },
-        isolation: makeCopyingIsolation(projectDir, sessionId),
+        feature,
+        plannerTool: 'opencode',
+        plannerRunner: planner,
+        eventSink: (e) => events.push(e),
       });
 
       expect(init.ok).toBe(true);

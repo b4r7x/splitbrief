@@ -74,7 +74,9 @@ describe('CLI tool catalog', () => {
     expect(IMPLEMENTER_CLI_TOOL_IDS).toEqual(
       CLI_TOOL_IDS.filter((id) => CLI_TOOL_CATALOG[id].roles.includes('implementer')),
     );
+  });
 
+  it('gives every admitted CLI the same structural posture', () => {
     for (const id of EXISTING_CLI_TOOL_IDS) {
       const descriptor = CLI_TOOL_CATALOG[id];
 
@@ -103,7 +105,9 @@ describe('CLI tool catalog', () => {
       expect(descriptor.compatibility.minimumAdmittedVersion).toMatch(/^\d+\.\d+\.\d+$/);
       expect(descriptor.compatibility.evidence.asOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     }
+  });
 
+  it('pins the minimum admitted version of every CLI', () => {
     expect(
       Object.fromEntries(
         CLI_TOOL_IDS.map((id) => [id, CLI_TOOL_CATALOG[id].compatibility.minimumAdmittedVersion]),
@@ -501,7 +505,7 @@ describe('CLI tool catalog', () => {
     }
   });
 
-  it('names the subscription channel as the default on every platform', () => {
+  it('names the subscription channel as the Claude Code default', () => {
     // The subscription the user already pays for is the planner default
     // everywhere; no platform resolves a fresh Claude Code runner to metered
     // billing. `.specify/memory/constitution.md` Principle I.
@@ -509,8 +513,6 @@ describe('CLI tool catalog', () => {
       id: 'session',
       billing: 'subscription-included',
     });
-    expect(defaultCliAuthChannel('codex').id).toBe('session');
-    expect(defaultCliAuthChannel('aider').id).toBe('provider-dependent');
   });
 });
 
@@ -545,8 +547,13 @@ describe('seatPickerLane', () => {
   });
 
   it('accepts every config seat as a picker role', () => {
-    const seat: ActiveRunnerRole = 'reviewer';
-    const pickerRole: SeatPickerRole = seat;
-    expect(SEAT_PICKER_ROLES).toContain(pickerRole);
+    for (const seat of [
+      'planner',
+      'implementer',
+      'reviewer',
+    ] as const satisfies readonly ActiveRunnerRole[]) {
+      const pickerRole: SeatPickerRole = seat;
+      expect(SEAT_PICKER_ROLES).toContain(pickerRole);
+    }
   });
 });

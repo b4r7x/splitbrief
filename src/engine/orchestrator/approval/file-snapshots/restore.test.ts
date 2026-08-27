@@ -88,12 +88,10 @@ describe('restoreDirtyFilesFromSnapshot', () => {
       writeFileSync(join(dir, 'init.txt'), 'DIRTY_TASK_OUTPUT');
       const snapshot = await getChangedFilesSnapshot(dir);
 
-      // A later rejected change overwrites the file on disk.
       writeFileSync(join(dir, 'init.txt'), 'REJECTED_OVERWRITE');
 
       const result = await restoreDirtyFilesFromSnapshot(dir, snapshot, ['init.txt']);
 
-      // The file on disk is back to the captured content and the result is accurate.
       expect(readFileSync(join(dir, 'init.txt'), 'utf-8')).toBe('DIRTY_TASK_OUTPUT');
       expect(result.restoredFiles).toEqual(['init.txt']);
       expect(result.conflictedFiles).toEqual([]);

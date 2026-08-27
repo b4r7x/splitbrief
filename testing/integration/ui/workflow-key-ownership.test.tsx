@@ -174,7 +174,7 @@ describe('WorkflowScreen key ownership', () => {
 
     ui.unmount();
   });
-  it('the focused composer still captures printable keys while no review prompt is active', async () => {
+  it('the composer still captures printable keys during the reviewing-briefs phase', async () => {
     const ui = mountWorkflow();
     await tick(20);
 

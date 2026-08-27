@@ -423,3 +423,41 @@ describe('Composer draft requests', () => {
     second.unmount();
   });
 });
+
+describe('Composer workflow width', () => {
+  beforeEach(() => {
+    resetAllStores();
+  });
+
+  it.each([119, 120, 121])(
+    'keeps the workflow input at full width through review transition at %i columns',
+    async (cols) => {
+      terminalSizeStore.__testReset({ cols, rows: 24 });
+      const composer = (mode: 'normal' | 'review') => (
+        <Composer
+          commands={[]}
+          currentScreen="workflow"
+          mode={mode}
+          hint=""
+          onSubmit={() => {}}
+          onRuntimeCommand={() => {}}
+        />
+      );
+      const ui = renderFeature(composer('normal'), { cols, rows: 24 });
+      await flushEffects();
+      const normalWidth = Math.max(
+        ...(ui.lastFrame() ?? '').split('\n').map((line) => getTerminalCellWidth(line)),
+      );
+
+      ui.rerender(composer('review'));
+      await flushEffects();
+      const reviewWidth = Math.max(
+        ...(ui.lastFrame() ?? '').split('\n').map((line) => getTerminalCellWidth(line)),
+      );
+
+      expect(normalWidth).toBe(cols);
+      expect(reviewWidth).toBe(cols);
+      ui.unmount();
+    },
+  );
+});

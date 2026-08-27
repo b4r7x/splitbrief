@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { highlightMarkdownCode } from './highlight.js';
 
 describe('highlightMarkdownCode', () => {
-  it('yields at least two distinct scopes for a ts fence', () => {
+  it('assigns keyword, string and function scopes in a ts fence', () => {
     const result = highlightMarkdownCode({
       lines: ["const greeting = 'hello';", 'function shout(text: string) {', '  return text;', '}'],
       language: 'ts',
@@ -13,12 +13,6 @@ describe('highlightMarkdownCode', () => {
     expect(spans).toContainEqual({ text: 'const', scope: 'keyword' });
     expect(spans).toContainEqual({ text: "'hello'", scope: 'string' });
     expect(spans).toContainEqual({ text: 'shout', scope: 'function' });
-
-    const scopes = new Set<string>();
-    for (const span of spans) {
-      if (span.scope !== undefined) scopes.add(span.scope);
-    }
-    expect(scopes.size).toBeGreaterThanOrEqual(2);
   });
 
   it('returns null for an unknown language tag', () => {

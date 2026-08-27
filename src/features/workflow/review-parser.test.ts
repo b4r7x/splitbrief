@@ -3,22 +3,21 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { spawn } from 'node:child_process';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { setActiveTerminalHandover } from '../../lib/terminal/editor-handover.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
-import { createReviewInputHandler, openReviewFileExternally } from './review-parser.js';
+import {
+  createReviewInputHandler,
+  openReviewFileExternally,
+  type SpawnEditor,
+} from './review-parser.js';
 import { reviewOpeningPromptMessage } from './review-commands.js';
-
-vi.mock('node:child_process', () => ({ spawn: vi.fn() }));
 
 type EditorOutcome =
   | { kind: 'close'; code: number | null; signal: NodeJS.Signals | null }
   | { kind: 'error'; error: Error };
-
-const spawnMock = vi.mocked(spawn);
 
 function makeInputMode(mode: UseInputModeResult['mode'] = 'review'): UseInputModeResult {
   return {
@@ -37,7 +36,6 @@ describe('openReviewFileExternally stale-owner feedback', () => {
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'review-parser-test-'));
-    spawnMock.mockReset();
     feedbackStore.reset();
     reviewStore.reset();
     lifecycleStore.__testReset({ phase: 'reviewing-spec' });
@@ -91,7 +89,7 @@ describe('openReviewFileExternally stale-owner feedback', () => {
     reviewStore.setReviewFile(reviewFile);
 
     const child = new EventEmitter();
-    spawnMock.mockImplementation(() => {
+    const spawnEditor: SpawnEditor = () => {
       queueMicrotask(() => {
         reviewStore.setReviewFile(newerReviewFile);
         feedbackStore.setMessage('new-owner feedback');
@@ -101,10 +99,10 @@ describe('openReviewFileExternally stale-owner feedback', () => {
           child.emit('close', outcome.code, outcome.signal);
         }
       });
-      return child as unknown as ReturnType<typeof spawn>;
-    });
+      return child;
+    };
 
-    await openReviewFileExternally(makeInputMode());
+    await openReviewFileExternally(makeInputMode(), spawnEditor);
 
     expect(feedbackStore.get()).toEqual({
       message: 'new-owner feedback',

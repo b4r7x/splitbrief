@@ -10,9 +10,9 @@ import {
   isValidSessionId,
 } from '../../core/paths.js';
 import {
-  BriefRecoveryProjectionV1Schema,
   type BriefRecoveryProjectionV1,
-} from '../../core/schemas/brief-recovery.js';
+  BriefRecoveryProjectionV1Schema,
+} from '../../core/schemas/brief-recovery/document.js';
 import { WorkflowStateSchema } from '../../core/schemas/workflow.js';
 import { readSessionFileConfined } from '../../core/sessions/confinement.js';
 import { isBriefQualityReport, type BriefQualityReport } from '../../engine/spec/brief-quality.js';

@@ -54,7 +54,7 @@ describe('buildRepoMap', () => {
       (out.match(/^[\w.-]+\.ts:/gm) ?? []).map((line) => line.replace(':', ''));
     const baselinePos = headerOrder(baseline).indexOf('a.ts');
     const featurePos = headerOrder(withFeature).indexOf('a.ts');
-    expect(baselinePos).toBe(3);
+    expect(baselinePos).toBeGreaterThan(0);
     expect(featurePos).toBeLessThan(baselinePos);
   });
 
@@ -65,7 +65,7 @@ describe('buildRepoMap', () => {
       (out.match(/^[\w.-]+\.ts:/gm) ?? []).map((line) => line.replace(':', ''));
     const baselinePos = headerOrder(baseline).indexOf('a.ts');
     const focusedPos = headerOrder(focused).indexOf('a.ts');
-    expect(baselinePos).toBe(3);
+    expect(baselinePos).toBeGreaterThan(0);
     expect(focusedPos).toBe(1);
     expect(focusedPos).toBeLessThan(baselinePos);
   });

@@ -1,4 +1,5 @@
-import { clearActive, clearActiveReceipt, isSessionLive, readActiveRecord } from './lifecycle.js';
+import { clearActive, clearActiveReceipt, readActiveRecord } from './active-pointer.js';
+import { isSessionLive } from './liveness.js';
 import { sessionError } from './errors.js';
 
 export function clearStaleSession(projectDir: string): void {

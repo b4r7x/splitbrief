@@ -6,7 +6,7 @@ import { buildPhaseTimingRows } from './phase-timing.js';
 
 function PhaseTimingRows({ phaseTimings }: { phaseTimings: Record<string, number> }) {
   const theme = useTheme();
-  const rows = buildPhaseTimingRows(phaseTimings, 16, theme);
+  const rows = buildPhaseTimingRows({ phaseTimings, labelWidth: 16, theme });
   return (
     <Box flexDirection="column">
       {rows.map((row) => (

@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { sessionDir } from '../../core/paths.js';
 import { listAllSessions } from '../../core/sessions/io.js';
-import { readActive } from '../../core/sessions/lifecycle.js';
+import { readActive } from '../../core/sessions/active-pointer.js';
 import { error } from '../../utils/error.js';
 
 export const mcpDiscoveryError = {

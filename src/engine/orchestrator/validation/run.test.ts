@@ -763,13 +763,14 @@ describe('discovered validation sanitization', () => {
       discoveredValidation: discovered,
     });
 
-    for (const call of runner.calls) {
-      expect(call.cmd).not.toContain('evil');
-      expect(call.args.join(' ')).not.toContain('evil');
-    }
-    if (results.length > 0) {
-      expect(results.find((r) => r.stage === 'test')?.output).not.toContain('evil');
-    }
+    expect(runner.calls).toHaveLength(1);
+    expect(runner.calls[0]?.cmd).toBe('npm');
+    expect(runner.calls.map((call) => [call.cmd, ...call.args].join(' ')).join(' ')).not.toContain(
+      'evil',
+    );
+    const testResult = results.find((result) => result.stage === 'test');
+    expect(testResult).toBeDefined();
+    expect(testResult?.output).not.toContain('evil');
   });
 
   it('does NOT execute planner-discovered commands with shell operators', async () => {
@@ -795,10 +796,11 @@ describe('discovered validation sanitization', () => {
       discoveredValidation: discovered,
     });
 
-    for (const call of runner.calls) {
-      expect(call.cmd).not.toContain('curl');
-      expect(call.args.join(' ')).not.toContain('curl');
-    }
+    expect(runner.calls).toHaveLength(1);
+    expect(runner.calls[0]?.cmd).toBe('npm');
+    expect(runner.calls.map((call) => [call.cmd, ...call.args].join(' ')).join(' ')).not.toContain(
+      'curl',
+    );
   });
 
   it('executes safe planner-discovered commands normally', async () => {

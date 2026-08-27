@@ -95,7 +95,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     expect(
       events.filter((event) => event.type === 'task_review_needed').map((event) => event.taskId),
     ).toEqual(['T001', 'T002']);
-  }, 90_000);
+  });
 
   it('taskReview notes are queued and persisted before continuing', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -151,7 +151,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     expect(log).toContain('"kind":"message"');
     expect(log).toContain('Task review note for T001 - Add auth');
     expect(log).toContain('tighten the follow-up assertions');
-  }, 90_000);
+  });
 
   it('taskReview every reports cancellation after a task review abort', async () => {
     const { projectDir, sessionId } = setupProject();

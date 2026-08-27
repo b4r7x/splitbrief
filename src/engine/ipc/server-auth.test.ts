@@ -84,7 +84,6 @@ describe('startIpcServer — auth', () => {
     expect(events).toContain('authentication_timeout');
     await closePromise;
     expect(socket.destroyed).toBe(true);
-    expect(IPC_AUTH_DEADLINE_MS).toBeGreaterThan(0);
   });
 
   it('rejects connections beyond the pending unauthenticated socket budget', async () => {

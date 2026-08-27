@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultConfig } from '../../core/config/load/io.js';
 import type { Config } from '../../core/schemas/config.js';
-import {
-  isCustomCommandSelected,
-  listCustomCommandConsumers,
-  readRoleCustomCommandCatalog,
-} from './custom-catalog.js';
+import { listCustomCommandConsumers, readRoleCustomCommandCatalog } from './custom-catalog.js';
 
 const reviewDefinition = {
   label: 'Review changes',
@@ -107,9 +103,12 @@ describe('role custom command catalogs', () => {
     expect(configured).toBeDefined();
     expect(config.planner.kind).toBe('shell');
     if (configured === undefined || config.planner.kind !== 'shell') return;
-    expect(isCustomCommandSelected({ ...config.planner, env: ['OTHER_TOKEN'] }, configured)).toBe(
-      false,
-    );
+    expect(
+      readRoleCustomCommandCatalog(
+        { ...config, planner: { ...config.planner, env: ['OTHER_TOKEN'] } },
+        'planner',
+      ).selectedId,
+    ).not.toBe('review');
   });
 
   it('does not select configured commands for non-command runners', () => {
@@ -122,7 +121,13 @@ describe('role custom command catalogs', () => {
       model: 'test',
     };
 
-    expect(isCustomCommandSelected(runner, reviewDefinition)).toBe(false);
+    const config: Config = {
+      ...createDefaultConfig(),
+      customCommands: { review: reviewDefinition },
+      planner: runner,
+    };
+
+    expect(readRoleCustomCommandCatalog(config, 'planner').selectedId).toBeUndefined();
   });
 
   it('counts the reviewer as a consumer of the command it runs', () => {

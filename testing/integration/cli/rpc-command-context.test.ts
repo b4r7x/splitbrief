@@ -25,7 +25,6 @@ function createMutableRpcContext(args: {
   getSessionId?: () => string | undefined;
   getState?: () => WorkflowState | null;
   bus?: ReturnType<typeof createEventBus>;
-  setRewindFeedback?: (feedback: string | undefined) => void;
   requestRewind?: (request: { target: 'spec' | 'plan'; comment?: string }) => boolean;
   requestTaskRedo?: (taskId: string) => boolean;
 }) {
@@ -51,9 +50,6 @@ function createMutableRpcContext(args: {
     clearQueueHandler: () => null,
     abort: () => {},
     bus: args.bus ?? createEventBus(),
-    ...(args.setRewindFeedback !== undefined && {
-      setRewindFeedback: args.setRewindFeedback,
-    }),
     ...(args.requestRewind !== undefined && { requestRewind: args.requestRewind }),
     ...(args.requestTaskRedo !== undefined && { requestTaskRedo: args.requestTaskRedo }),
     messages: [],

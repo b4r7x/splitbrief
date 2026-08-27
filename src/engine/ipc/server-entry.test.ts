@@ -3,15 +3,13 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { formatConfigLoaderDiagnostic } from '../../core/config/load/io.js';
-import type { ConfigLoaderDiagnostic } from '../../core/config/load/io.js';
 import { sessionDir } from '../../core/paths.js';
-import { readActive } from '../../core/sessions/lifecycle.js';
+import { readActive } from '../../core/sessions/active-pointer.js';
 import {
   acceptDetachedSessionHandoff,
-  prepareNewSession,
   settleDetachedSessionHandoff,
-} from '../../core/sessions/prepare.js';
+} from '../../core/sessions/detached-handoff.js';
+import { prepareNewSession } from '../../core/sessions/prepare.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { readLockfile } from './lockfile.js';
 import {
@@ -26,7 +24,6 @@ import {
   createServerExitHandlers,
   createParentAcceptanceBarrier,
   createServerProcessCleanup,
-  emitConfigWarnings,
   getArgv,
   main,
   writeStartupLockfile,
@@ -78,11 +75,12 @@ describe('getArgv', () => {
 
     const result = getArgv(['node', 'server-entry.js', argsFile]);
 
-    expect(result).toMatchObject({
+    expect(result.args).toMatchObject({
       candidate: { sessionId },
       projectDir,
       feature: 'add login',
     });
+    expect(result.bootstrapDir).toBe(bootstrapDir);
     expect(existsSync(argsFile)).toBe(false);
   });
 
@@ -94,57 +92,6 @@ describe('getArgv', () => {
     const missing = join(bootstrapDir, 'server-args.json');
 
     expect(() => getArgv(['node', 'server-entry.js', missing])).toThrow('process.exit(1)');
-  });
-});
-
-describe('emitConfigWarnings', () => {
-  let stderrChunks: string[];
-
-  beforeEach(() => {
-    stderrChunks = [];
-    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
-      stderrChunks.push(String(chunk));
-      return true;
-    });
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('writes each effective-config warning to stderr so the detached server log surfaces it', () => {
-    emitConfigWarnings([
-      {
-        source: 'loader',
-        diagnostic: { kind: 'config-file-permissions', path: '/tmp/.splitbrief/config.yaml' },
-      },
-      { source: 'validation', message: 'budget override exceeds the configured ceiling.' },
-    ]);
-
-    const written = stderrChunks.join('');
-    expect(written).toContain('⚠ Config file /tmp/.splitbrief/config.yaml has overly permissive');
-    expect(written).toContain('⚠ budget override exceeds the configured ceiling.');
-  });
-
-  it('prints matching loader and validation warnings once', () => {
-    const diagnostic = {
-      kind: 'config-file-permissions',
-      path: '/tmp/.splitbrief/config.yaml',
-    } satisfies ConfigLoaderDiagnostic;
-    const message = formatConfigLoaderDiagnostic(diagnostic);
-
-    emitConfigWarnings([
-      { source: 'loader', diagnostic },
-      { source: 'validation', message },
-    ]);
-
-    expect(stderrChunks.filter((chunk) => chunk.includes(message))).toHaveLength(1);
-  });
-
-  it('writes nothing when there are no warnings', () => {
-    emitConfigWarnings([]);
-
-    expect(stderrChunks.join('')).toBe('');
   });
 });
 
@@ -394,7 +341,6 @@ describe('writeStartupLockfile ps-facing redaction', () => {
 
     const lock = await readLockfile(testDir);
     expect(lock?.feature).toBe(TRANSCRIPT_OMITTED_MESSAGE);
-    expect(lock?.feature).not.toBe('add secret oauth login');
   });
 
   it('keeps the raw lockfile feature under persistTranscript:true', async () => {
@@ -408,15 +354,18 @@ describe('writeStartupLockfile ps-facing redaction', () => {
     expect(lock?.feature).toBe('add secret oauth login');
   });
 
-  it('keeps the raw lockfile feature when persistence is enabled', async () => {
-    await writeStartupLockfile(testDir, {
+  it('writes the session identity, mode and a fresh auth token to the lockfile', async () => {
+    const written = await writeStartupLockfile(testDir, {
       argv: makeArgv({}),
       mode: 'standard',
       persistTranscript: true,
     });
 
     const lock = await readLockfile(testDir);
-    expect(lock?.feature).toBe('add secret oauth login');
+    expect(lock?.sessionId).toBe(basename(testDir));
+    expect(lock?.mode).toBe('standard');
+    expect(lock?.authToken).toMatch(/^[0-9a-f]{64}$/);
+    expect(lock?.authToken).toBe(written.authToken);
   });
 });
 

@@ -9,9 +9,9 @@ import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { sessionDir } from '../../../core/paths.js';
 import type { Config } from '../../../core/schemas/config.js';
-import { readActive } from '../../../core/sessions/lifecycle.js';
+import { readActive } from '../../../core/sessions/active-pointer.js';
 import { prepareNewSession } from '../../../core/sessions/prepare.js';
-import { runnerDiscoveryContextKey } from '../../../engine/detection/detect.js';
+import { runnerDiscoveryContextKey } from '../../../engine/detection/runner-evidence.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution.js';
 import {
   cliPreparationPolicy,

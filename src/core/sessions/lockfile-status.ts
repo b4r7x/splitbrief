@@ -91,12 +91,12 @@ export function readSessionLockfileData(options: SessionLockfileOptions): Sessio
   }
 }
 
-function canSignalProcess(pid: number): boolean {
+function probePid(pid: number): 'dead' | 'unknown' {
   try {
     process.kill(pid, 0);
-    return true;
+    return 'unknown';
   } catch (err) {
-    return isNodeError(err) && err.code === 'EPERM';
+    return isNodeError(err) && err.code === 'ESRCH' ? 'dead' : 'unknown';
   }
 }
 
@@ -111,13 +111,7 @@ export function checkProcessIdentity(
       : 'pid-reused';
   }
 
-  if (canSignalProcess(pid)) return 'unknown';
-  try {
-    process.kill(pid, 0);
-    return 'unknown';
-  } catch (err) {
-    return isNodeError(err) && err.code === 'ESRCH' ? 'dead' : 'unknown';
-  }
+  return probePid(pid);
 }
 
 function processMatchesLockfile(data: LockfileData): boolean {

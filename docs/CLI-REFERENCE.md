@@ -272,7 +272,7 @@ splitbrief spec --allow-hooks "tighten zod schemas"
 - Planner output streams to stdout in real time via the `onOutput` callback. Phase headings appear as bold `--- <phase> ---` separators.
 - The line printed before planning starts names the planner and the resolved mode, so the mode in force is visible at the point of decision.
 - `spec` runs no approval gate. `--approve` is not accepted here; the mode's approval defaults apply to `splitbrief start`, not to planning-only runs.
-- `clearStaleSession()` runs before `beginSession()` — a crashed prior run will not block this one.
+- The stale-session sweep runs before the new session is prepared — a crashed prior run will not block this one.
 - Session id is generated from the feature; the final summary prints the absolute path of every artifact the mode produced.
 - The number of generated tasks is reported as `... (N tasks)` after the run.
 

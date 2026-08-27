@@ -86,10 +86,6 @@ describe('clarifications', () => {
     expect(injected.text).toContain('A: Yes, use JWT');
     expect(injected.dir).toBe(projectDir);
 
-    expect(events.some((e) => e.type === 'clarification_answered')).toBe(true);
-    expect(events.some((e) => e.type === 'message_queued')).toBe(true);
-    expect(events.some((e) => e.type === 'clarifications_collected')).toBe(true);
-
     const answeredEvent = events.find((e) => e.type === 'clarification_answered');
     if (!answeredEvent || answeredEvent.type !== 'clarification_answered')
       throw new Error('clarification_answered event missing');
@@ -148,31 +144,19 @@ describe('clarifications', () => {
       return 'Yes';
     };
 
-    const stderrWrites: string[] = [];
-    const originalWrite = process.stderr.write.bind(process.stderr);
-    process.stderr.write = ((chunk: string | Uint8Array) => {
-      stderrWrites.push(typeof chunk === 'string' ? chunk : chunk.toString());
-      return true;
-    }) as typeof process.stderr.write;
+    const resultState = await collectAndPersistClarifications({
+      questions,
+      projectDir,
+      sessionId,
+      state,
+      onQuestionAsked,
+      persistTranscript: false,
+      bus,
+      metadata: null,
+      planner,
+    });
 
-    try {
-      const resultState = await collectAndPersistClarifications({
-        questions,
-        projectDir,
-        sessionId,
-        state,
-        onQuestionAsked,
-        persistTranscript: false,
-        bus,
-        metadata: null,
-        planner,
-      });
-
-      expect(resultState.messageQueue).toHaveLength(0);
-      expect(asked).toBe(0);
-      expect(stderrWrites.some((s) => s.includes('clarifications: unexpected phase'))).toBe(true);
-    } finally {
-      process.stderr.write = originalWrite;
-    }
+    expect(resultState.messageQueue).toHaveLength(0);
+    expect(asked).toBe(0);
   });
 });

@@ -80,7 +80,7 @@ function RailFormBNode({
   const live = state.status === 'active';
   // Three-tier weight: pending stays faint, done steps up to full hue (it happened), active gets
   // bold plus the ◉ marker so the eye lands on exactly one node without adding any characters
-  // (the marker+label text is byte-identical to before, so hit-test geometry never moves).
+  // (the marker+label text keeps its cell count, so the hit-test geometry never moves).
   const dim = state.status === 'pending' || state.status === 'cancelled';
   const rc = roleColor(railStageRole(state.stage), t);
   const label = railFormBLabel(state, { short });
@@ -88,7 +88,7 @@ function RailFormBNode({
   const connector =
     left !== undefined
       ? {
-          text: railConnectorString(railIsHandoff(left.stage, state.stage)),
+          text: railConnectorString({ handoff: railIsHandoff(left.stage, state.stage) }),
           color: left.status === 'done' ? roleColor(railStageRole(left.stage), t) : t.textDim,
         }
       : undefined;
@@ -181,7 +181,7 @@ export function measureRailCells(input: {
     return getTerminalCellWidth(railFormCText(stages, fraction));
   }
   const { short } = chooseFormBVariant(stages, getChromeContentWidth(input.cols));
-  return measureFormB(stages, short);
+  return measureFormB(stages, { short });
 }
 
 export function Rail({ form }: { form?: RailForm | undefined }) {

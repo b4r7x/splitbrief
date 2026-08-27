@@ -11,8 +11,6 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { getApiProviderDescriptor } from '../src/core/providers/api-provider-catalog.js';
-import { getKnownProviderBaseURL } from '../src/core/providers/catalog.js';
 import {
   KNOWN_MODELS,
   PENDING_EVALUATION_CANDIDATE_IDS,
@@ -30,16 +28,13 @@ import {
 } from './implementer-provider.js';
 import {
   collectCostMetrics,
-  collectGreenRunAggregates,
   collectRunMetrics,
   compareScenario,
   type EvalReport,
-  type ReviewMetrics,
   type RunMetrics,
   type ScenarioComparison,
 } from './metrics.js';
 import { formatCliSummary, generateReport } from './report.js';
-import { resolveEvalConnection } from './connection.js';
 import {
   aggregateComparisons,
   buildEvalConfig,
@@ -52,13 +47,12 @@ import {
 import { calculateCostBreakdown } from '../src/engine/providers/cost/breakdown.js';
 import { lookupModelsDevModel } from '../src/engine/providers/model/resolution.js';
 import type { ModelsDevCatalogSnapshot } from '../src/engine/providers/models-dev-cache.js';
-import { ConfigSchema } from '../src/core/schemas/config.js';
 import type { QualityCheckResult } from './scenarios/types.js';
-import { ReviewVerdictSchema, type Summary } from '../src/core/schemas/summary.js';
+import type { Summary } from '../src/core/schemas/summary.js';
 import type { EngineEvent } from '../src/engine/events/types.js';
 import { taskId } from '../src/core/schemas/task.js';
-import type { TaskTokenUsage } from '../src/core/schemas/tokens.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { breakdownEntry, makeRunMetrics, makeSummary } from './eval-factories.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const MODEL_EVALUATION_EVIDENCE_PATH = join(
@@ -68,30 +62,35 @@ const MODEL_EVALUATION_EVIDENCE_PATH = join(
 
 describe('eval harness', () => {
   it('compares fake run metrics for cost savings and quality retention', () => {
-    const baseline = collectRunMetrics(
-      'fake',
-      'baseline',
-      makeSummary(0.1),
-      [],
-      [{ passed: true, detail: 'ok' }],
-      120,
-      null,
-    );
+    const baseline = collectRunMetrics({
+      scenarioId: 'fake',
+      mode: 'baseline',
+      summary: makeSummary(0.1),
+      events: [],
+      qualityResults: [{ passed: true, detail: 'ok' }],
+      durationMs: 120,
+      sessionArtifactsDir: null,
+    });
     const routedQuality: QualityCheckResult[] = [
       { passed: true, detail: 'ok' },
       { passed: false, detail: 'missing edge case' },
     ];
-    const routed = collectRunMetrics(
-      'fake',
-      'routed',
-      makeSummary(0.04),
-      [],
-      routedQuality,
-      90,
-      null,
-    );
+    const routed = collectRunMetrics({
+      scenarioId: 'fake',
+      mode: 'routed',
+      summary: makeSummary(0.04),
+      events: [],
+      qualityResults: routedQuality,
+      durationMs: 90,
+      sessionArtifactsDir: null,
+    });
 
-    const comparison = compareScenario('fake', 'Fake scenario', baseline, routed);
+    const comparison = compareScenario({
+      scenarioId: 'fake',
+      scenarioName: 'Fake scenario',
+      baseline,
+      routed,
+    });
 
     expect(comparison.costSavingsPercent).toBe(60);
     expect(comparison.qualityRetentionPercent).toBe(50);
@@ -100,19 +99,19 @@ describe('eval harness', () => {
   });
 
   it('reports pricing available only for a run whose usage was priced and whose total is known', () => {
-    const noBreakdown = collectRunMetrics(
-      'fake',
-      'baseline',
-      makeSummary(0, { costBreakdown: undefined }),
-      [],
-      [{ passed: true, detail: 'ok' }],
-      120,
-      null,
-    );
-    const unpriced = collectRunMetrics(
-      'fake',
-      'baseline',
-      makeSummary(0, {
+    const noBreakdown = collectRunMetrics({
+      scenarioId: 'fake',
+      mode: 'baseline',
+      summary: makeSummary(0, { costBreakdown: undefined }),
+      events: [],
+      qualityResults: [{ passed: true, detail: 'ok' }],
+      durationMs: 120,
+      sessionArtifactsDir: null,
+    });
+    const unpriced = collectRunMetrics({
+      scenarioId: 'fake',
+      mode: 'baseline',
+      summary: makeSummary(0, {
         costBreakdown: {
           hypotheticalCost: 0,
           actualPlannerCost: 0,
@@ -126,15 +125,15 @@ describe('eval harness', () => {
           isTotalActualCostKnown: false,
         },
       }),
-      [],
-      [{ passed: true, detail: 'ok' }],
-      120,
-      null,
-    );
-    const partlyPriced = collectRunMetrics(
-      'fake',
-      'baseline',
-      makeSummary(0.1, {
+      events: [],
+      qualityResults: [{ passed: true, detail: 'ok' }],
+      durationMs: 120,
+      sessionArtifactsDir: null,
+    });
+    const partlyPriced = collectRunMetrics({
+      scenarioId: 'fake',
+      mode: 'baseline',
+      summary: makeSummary(0.1, {
         costBreakdown: {
           hypotheticalCost: 0.2,
           actualPlannerCost: 0.1,
@@ -148,20 +147,20 @@ describe('eval harness', () => {
           isTotalActualCostKnown: false,
         },
       }),
-      [],
-      [{ passed: true, detail: 'ok' }],
-      120,
-      null,
-    );
-    const priced = collectRunMetrics(
-      'fake',
-      'baseline',
-      makeSummary(0.1),
-      [],
-      [{ passed: true, detail: 'ok' }],
-      120,
-      null,
-    );
+      events: [],
+      qualityResults: [{ passed: true, detail: 'ok' }],
+      durationMs: 120,
+      sessionArtifactsDir: null,
+    });
+    const priced = collectRunMetrics({
+      scenarioId: 'fake',
+      mode: 'baseline',
+      summary: makeSummary(0.1),
+      events: [],
+      qualityResults: [{ passed: true, detail: 'ok' }],
+      durationMs: 120,
+      sessionArtifactsDir: null,
+    });
 
     expect(noBreakdown.cost.pricingAvailable).toBe(false);
     expect(unpriced.cost.pricingAvailable).toBe(false);
@@ -182,15 +181,15 @@ describe('eval harness', () => {
       implementerModel: 'gpt-4o-mini',
     });
 
-    const metrics = collectRunMetrics(
-      'fake',
-      'baseline',
-      makeSummary(0, { tokenUsage, costBreakdown }),
-      [],
-      [{ passed: true, detail: 'ok' }],
-      120,
-      null,
-    );
+    const metrics = collectRunMetrics({
+      scenarioId: 'fake',
+      mode: 'baseline',
+      summary: makeSummary(0, { tokenUsage, costBreakdown }),
+      events: [],
+      qualityResults: [{ passed: true, detail: 'ok' }],
+      durationMs: 120,
+      sessionArtifactsDir: null,
+    });
 
     expect(costBreakdown.isTotalActualCostKnown).toBe(true);
     expect(metrics.cost.estimatedCostUSD).toBe(0);
@@ -293,12 +292,12 @@ describe('eval harness', () => {
 
   it('withholds the routed and savings aggregates when a routed run was unpriced, keeping the fully priced baseline total', async () => {
     await withTempDir((dir) => {
-      const scenario = compareScenario(
-        'fix-bug',
-        'Routed unpriced',
-        makeRunMetrics({ mode: 'baseline', cost: 0.1 }),
-        makeRunMetrics({ mode: 'routed', cost: 0.04, priced: false }),
-      );
+      const scenario = compareScenario({
+        scenarioId: 'fix-bug',
+        scenarioName: 'Routed unpriced',
+        baseline: makeRunMetrics({ mode: 'baseline', cost: 0.1 }),
+        routed: makeRunMetrics({ mode: 'routed', cost: 0.04, priced: false }),
+      });
       const { mdPath } = generateReport(makeReportOf([scenario]), dir);
       const markdown = readFileSync(mdPath, 'utf-8');
       const summary = markdown.slice(0, markdown.indexOf('## Per-scenario results'));
@@ -313,12 +312,12 @@ describe('eval harness', () => {
 
   it('publishes null in the JSON aggregate for every cost figure the markdown withholds as n/a', async () => {
     await withTempDir((dir) => {
-      const scenario = compareScenario(
-        'fix-bug',
-        'Routed unpriced',
-        makeRunMetrics({ mode: 'baseline', cost: 0.1 }),
-        makeRunMetrics({ mode: 'routed', cost: 0.04, priced: false }),
-      );
+      const scenario = compareScenario({
+        scenarioId: 'fix-bug',
+        scenarioName: 'Routed unpriced',
+        baseline: makeRunMetrics({ mode: 'baseline', cost: 0.1 }),
+        routed: makeRunMetrics({ mode: 'routed', cost: 0.04, priced: false }),
+      });
       const { jsonPath, mdPath } = generateReport(makeReportOf([scenario]), dir);
       const json = JSON.parse(readFileSync(jsonPath, 'utf-8'));
       const summary = readFileSync(mdPath, 'utf-8');
@@ -360,12 +359,12 @@ describe('eval harness', () => {
 
   it('rounds the aggregate first-pass delta to one decimal instead of publishing the raw subtraction', async () => {
     await withTempDir((dir) => {
-      const scenario = compareScenario(
-        'fake',
-        'Fake scenario',
-        makeRunMetrics({ mode: 'baseline', cost: 0.1, summary: firstPassOfThree(1) }),
-        makeRunMetrics({ mode: 'routed', cost: 0.04, summary: firstPassOfThree(2) }),
-      );
+      const scenario = compareScenario({
+        scenarioId: 'fake',
+        scenarioName: 'Fake scenario',
+        baseline: makeRunMetrics({ mode: 'baseline', cost: 0.1, summary: firstPassOfThree(1) }),
+        routed: makeRunMetrics({ mode: 'routed', cost: 0.04, summary: firstPassOfThree(2) }),
+      });
       const report = makeReportOf([scenario]);
       const { mdPath } = generateReport(report, dir);
       const markdown = readFileSync(mdPath, 'utf-8');
@@ -384,12 +383,12 @@ describe('eval harness', () => {
     expect(mixed.totalSavingsUSD).toBeCloseTo(0.06);
 
     const routedUnpriced = aggregateComparisons([
-      compareScenario(
-        'fix-bug',
-        'Routed unpriced',
-        makeRunMetrics({ mode: 'baseline', cost: 0.1 }),
-        makeRunMetrics({ mode: 'routed', cost: 0.04, priced: false }),
-      ),
+      compareScenario({
+        scenarioId: 'fix-bug',
+        scenarioName: 'Routed unpriced',
+        baseline: makeRunMetrics({ mode: 'baseline', cost: 0.1 }),
+        routed: makeRunMetrics({ mode: 'routed', cost: 0.04, priced: false }),
+      }),
     ]);
     expect(routedUnpriced.totalRoutedCostUSD).toBeNull();
     expect(routedUnpriced.totalSavingsUSD).toBeNull();
@@ -409,10 +408,10 @@ describe('eval harness', () => {
 
   it('renders the recorded verdict in the scenario table next to an unknown run', async () => {
     await withTempDir((dir) => {
-      const baseline = collectRunMetrics(
-        'fake',
-        'baseline',
-        makeSummary(0.1, {
+      const baseline = collectRunMetrics({
+        scenarioId: 'fake',
+        mode: 'baseline',
+        summary: makeSummary(0.1, {
           reviewPacket: {
             jsonPath: 'review-packet.json',
             markdownPath: 'review-packet.md',
@@ -426,11 +425,11 @@ describe('eval harness', () => {
             missingArtifactCount: 0,
           },
         }),
-        [],
-        [{ passed: true, detail: 'ok' }],
-        100,
-        null,
-      );
+        events: [],
+        qualityResults: [{ passed: true, detail: 'ok' }],
+        durationMs: 100,
+        sessionArtifactsDir: null,
+      });
       const { mdPath } = generateReport(makeReport(null, baseline), dir);
       const markdown = readFileSync(mdPath, 'utf-8');
       const tableRow = markdown.split('\n').find((line) => line.includes('Fake scenario'));
@@ -493,15 +492,15 @@ describe('eval harness', () => {
           error: 'validation failed',
         },
       ];
-      const metrics = collectRunMetrics(
-        'fake',
-        'baseline',
-        makeSummary(0.1),
-        retryEvents,
-        [{ passed: true, detail: 'ok' }],
-        100,
-        null,
-      );
+      const metrics = collectRunMetrics({
+        scenarioId: 'fake',
+        mode: 'baseline',
+        summary: makeSummary(0.1),
+        events: retryEvents,
+        qualityResults: [{ passed: true, detail: 'ok' }],
+        durationMs: 100,
+        sessionArtifactsDir: null,
+      });
 
       expect(metrics.retryCount).toBe(1);
       expect(metrics).not.toHaveProperty('events');
@@ -698,7 +697,6 @@ describe('eval harness', () => {
   });
 
   it('discovers pending-evaluation candidates for OpenRouter, Groq, Ollama, and LM Studio', () => {
-    expect(discoverPendingEvaluationCandidates()).toEqual(PENDING_EVALUATION_CANDIDATE_IDS);
     expect(discoverPendingEvaluationCandidates()).toEqual([
       { provider: 'openrouter', model: 'anthropic/claude-sonnet-4.6' },
       { provider: 'groq', model: 'openai/gpt-oss-120b' },
@@ -880,382 +878,6 @@ describe('eval harness', () => {
   });
 });
 
-describe('outcome metrics', () => {
-  it('counts a task as first-pass only when it completed locally with zero retries', () => {
-    const summary = makeSummary(0, {
-      totalTasks: 4,
-      completedByLocal: 1,
-      escalatedToPlanner: 2,
-      taskBreakdown: [
-        breakdownEntry('T001', 'local', 0),
-        breakdownEntry('T002', 'local', 2),
-        breakdownEntry('T003', 'escalated-hint', 0),
-        breakdownEntry('T004', 'escalated-full', 1),
-      ],
-    });
-
-    const metrics = collectRunMetrics('fake', 'baseline', summary, [], [], 100, null);
-
-    expect(metrics.outcome.firstPassTasks).toBe(1);
-    expect(metrics.outcome.retriedTasks).toBe(2);
-    expect(metrics.outcome.escalatedTasks).toBe(2);
-  });
-
-  it('counts every escalation attempt from the events while the summary counts only completions', () => {
-    const escalations: EngineEvent[] = [
-      { type: 'escalate', ts: 1, phase: 'implementing', taskId: taskId('T001'), tier: 1 },
-      { type: 'escalate', ts: 2, phase: 'implementing', taskId: taskId('T001'), tier: 2 },
-    ];
-
-    const metrics = collectRunMetrics(
-      'fake',
-      'baseline',
-      makeSummary(0.1, { escalatedToPlanner: 0 }),
-      escalations,
-      [{ passed: true, detail: 'ok' }],
-      100,
-      null,
-    );
-    const aggregate = aggregateComparisons([
-      compareScenario(
-        'fake',
-        'Fake scenario',
-        metrics,
-        makeRunMetrics({ mode: 'routed', cost: 0.04 }),
-      ),
-    ]);
-
-    expect(metrics.outcome.escalationAttempts).toBe(2);
-    expect(metrics.outcome.escalatedTasks).toBe(0);
-    expect(aggregate.totalEscalations).toBe(2);
-    expect(aggregate.totalEscalationCompletions).toBe(0);
-  });
-
-  it('divides first-pass tasks by the run total, not by completed tasks', () => {
-    const summary = makeSummary(0, {
-      totalTasks: 4,
-      completedByLocal: 2,
-      taskBreakdown: [breakdownEntry('T001', 'local', 0), breakdownEntry('T002', 'local', 0)],
-    });
-
-    const metrics = collectRunMetrics('fake', 'baseline', summary, [], [], 100, null);
-
-    expect(metrics.outcome.firstPassTasks).toBe(2);
-    expect(metrics.outcome.firstPassRate).toBe(0.5);
-  });
-
-  it('takes failed and skipped counts from the summary when the total exceeds breakdown plus failed plus skipped', () => {
-    const summary = makeSummary(0, {
-      totalTasks: 10,
-      completedByLocal: 3,
-      skipped: 2,
-      failed: 2,
-      taskBreakdown: [
-        breakdownEntry('T001', 'local', 0),
-        breakdownEntry('T002', 'local', 1),
-        breakdownEntry('T003', 'local', 0),
-      ],
-    });
-
-    const metrics = collectRunMetrics('fake', 'baseline', summary, [], [], 100, null);
-
-    expect(metrics.outcome.failedTasks).toBe(2);
-    expect(metrics.outcome.skippedTasks).toBe(2);
-  });
-
-  it('treats an absent task breakdown as an empty list, never as zero total tasks', () => {
-    const summary = makeSummary(0, { totalTasks: 2, completedByLocal: 0 });
-
-    const metrics = collectRunMetrics('fake', 'baseline', summary, [], [], 100, null);
-
-    expect(metrics.outcome.totalTasks).toBe(2);
-    expect(metrics.outcome.firstPassTasks).toBe(0);
-    expect(metrics.outcome.firstPassRate).toBe(0);
-  });
-
-  it('reports the routed-minus-baseline first-pass difference in percentage points', () => {
-    const baseline = collectRunMetrics(
-      'fake',
-      'baseline',
-      makeSummary(0, {
-        totalTasks: 4,
-        completedByLocal: 1,
-        taskBreakdown: [breakdownEntry('T001', 'local', 0)],
-      }),
-      [],
-      [],
-      100,
-      null,
-    );
-    const routed = collectRunMetrics(
-      'fake',
-      'routed',
-      makeSummary(0, {
-        totalTasks: 2,
-        completedByLocal: 1,
-        taskBreakdown: [breakdownEntry('T001', 'local', 0)],
-      }),
-      [],
-      [],
-      100,
-      null,
-    );
-
-    const comparison = compareScenario('fake', 'Fake scenario', baseline, routed);
-
-    expect(baseline.outcome.firstPassRate).toBe(0.25);
-    expect(routed.outcome.firstPassRate).toBe(0.5);
-    expect(comparison.firstPassRateDeltaPercent).toBe(25);
-  });
-});
-
-describe('review metrics', () => {
-  function summaryWithReviewPacket(
-    verdict: ReviewMetrics['verdict'],
-    findingCounts: { critical: number; warning: number; note: number },
-    overrides: Partial<Summary> = {},
-  ): Summary {
-    return makeSummary(0, {
-      ...overrides,
-      reviewPacket: {
-        jsonPath: 'review-packet.json',
-        markdownPath: 'review-packet.md',
-        generatedAt: '2026-08-05T00:00:00.000Z',
-        finalReviewStatus: 'written',
-        finalReviewVerdict: verdict,
-        finalReviewFindingCounts: findingCounts,
-        driftPassed: true,
-        evidenceValidatedTasks: 1,
-        evidenceTotalTasks: 1,
-        missingArtifactCount: 0,
-      },
-    });
-  }
-
-  it('reports the review findings and marks the run validation-green', () => {
-    const metrics = collectRunMetrics(
-      'fake',
-      'baseline',
-      summaryWithReviewPacket('fail', { critical: 1, warning: 2, note: 3 }),
-      [],
-      [],
-      100,
-      null,
-    );
-
-    expect(metrics.review.verdict).toBe('fail');
-    expect(metrics.review.criticalFindings).toBe(1);
-    expect(metrics.review.warningFindings).toBe(2);
-    expect(metrics.review.noteFindings).toBe(3);
-    expect(metrics.review.validationGreen).toBe(true);
-  });
-
-  it('still reports the same findings on a run with a failure, with validation-green false', () => {
-    const metrics = collectRunMetrics(
-      'fake',
-      'baseline',
-      summaryWithReviewPacket(
-        'pass_with_notes',
-        { critical: 0, warning: 1, note: 3 },
-        { failed: 1 },
-      ),
-      [],
-      [],
-      100,
-      null,
-    );
-
-    expect(metrics.review.verdict).toBe('pass_with_notes');
-    expect(metrics.review.criticalFindings).toBe(0);
-    expect(metrics.review.warningFindings).toBe(1);
-    expect(metrics.review.noteFindings).toBe(3);
-    expect(metrics.review.validationGreen).toBe(false);
-  });
-
-  it('carries every verdict the review schema admits', () => {
-    const carried = ReviewVerdictSchema.options.map(
-      (verdict) =>
-        collectRunMetrics(
-          'fake',
-          'baseline',
-          summaryWithReviewPacket(verdict, { critical: 0, warning: 0, note: 0 }),
-          [],
-          [],
-          100,
-          null,
-        ).review.verdict,
-    );
-
-    expect(carried).toEqual([...ReviewVerdictSchema.options]);
-  });
-
-  it('yields an unknown verdict and zero counts when there is no review packet', () => {
-    const metrics = collectRunMetrics('fake', 'baseline', makeSummary(0), [], [], 100, null);
-
-    expect(metrics.review.verdict).toBeNull();
-    expect(metrics.review.criticalFindings).toBe(0);
-    expect(metrics.review.warningFindings).toBe(0);
-    expect(metrics.review.noteFindings).toBe(0);
-  });
-
-  it('excludes zero-task runs from the green-run aggregate', () => {
-    const greenWithFindings = collectRunMetrics(
-      'fake',
-      'baseline',
-      summaryWithReviewPacket('pass_with_notes', { critical: 2, warning: 0, note: 0 }),
-      [],
-      [],
-      100,
-      null,
-    );
-    const greenWithoutFindings = collectRunMetrics(
-      'fake',
-      'routed',
-      summaryWithReviewPacket('pass', { critical: 0, warning: 0, note: 0 }),
-      [],
-      [],
-      100,
-      null,
-    );
-    const greenZeroTaskWithFindings = collectRunMetrics(
-      'fake',
-      'baseline',
-      summaryWithReviewPacket(
-        'pass_with_notes',
-        { critical: 1, warning: 0, note: 0 },
-        { totalTasks: 0, completedByLocal: 0 },
-      ),
-      [],
-      [],
-      100,
-      null,
-    );
-    const failedWithFindings = collectRunMetrics(
-      'fake',
-      'routed',
-      summaryWithReviewPacket('fail', { critical: 3, warning: 0, note: 0 }, { failed: 1 }),
-      [],
-      [],
-      100,
-      null,
-    );
-
-    const comparisons = [
-      compareScenario('green', 'Green', greenWithFindings, greenWithoutFindings),
-      compareScenario('zero-task', 'Zero-task', greenZeroTaskWithFindings, failedWithFindings),
-    ];
-
-    const aggregates = collectGreenRunAggregates(comparisons);
-
-    expect(aggregates.greenRunsWithFindings).toBe(1);
-    expect(aggregates.greenRunsCriticalFindings).toBe(2);
-  });
-});
-
-describe('eval connection resolution', () => {
-  it('fills an empty base URL from the provider catalog', () => {
-    const resolved = resolveEvalConnection({
-      provider: 'openai',
-      baseUrl: '',
-      apiKey: '',
-      replay: true,
-    });
-
-    expect(resolved.baseUrl).toBe(getKnownProviderBaseURL('openai'));
-  });
-
-  it('keeps an explicitly given base URL instead of filling from the catalog', () => {
-    const resolved = resolveEvalConnection({
-      provider: 'openai',
-      baseUrl: 'https://api.example.test/v1',
-      apiKey: '',
-      replay: true,
-    });
-
-    expect(resolved.baseUrl).toBe('https://api.example.test/v1');
-  });
-
-  it('fills a prefix-correct placeholder credential in replay mode so admission is not blocked', () => {
-    for (const provider of ['openai', 'groq', 'anthropic']) {
-      const prefix = getApiProviderDescriptor(provider)?.credentialPrefix;
-      expect(prefix).toBeTruthy();
-      const resolved = resolveEvalConnection({ provider, baseUrl: '', apiKey: '', replay: true });
-      expect(resolved.apiKey).toBe(`${prefix}eval-replay`);
-    }
-
-    const noPrefix = resolveEvalConnection({
-      provider: 'together',
-      baseUrl: '',
-      apiKey: '',
-      replay: true,
-    });
-    expect(noPrefix.apiKey).toBe('eval-replay');
-  });
-
-  it('fills a loopback provider with a credential the config schema accepts, inventing none', () => {
-    const ollama = resolveEvalConnection({
-      provider: 'ollama',
-      baseUrl: '',
-      apiKey: '',
-      replay: true,
-    });
-    const lmStudio = resolveEvalConnection({
-      provider: 'lm-studio',
-      baseUrl: '',
-      apiKey: '',
-      replay: true,
-    });
-
-    const ollamaParsed = ConfigSchema.safeParse(localImplementerConfig('ollama', ollama));
-    const lmStudioParsed = ConfigSchema.safeParse(localImplementerConfig('lm-studio', lmStudio));
-
-    expect(ollamaParsed.error).toBeUndefined();
-    expect(lmStudioParsed.error).toBeUndefined();
-    expect(lmStudio.apiKey).toBe('');
-  });
-
-  it('requires a real credential outside replay mode', () => {
-    expect(() =>
-      resolveEvalConnection({ provider: 'openai', baseUrl: '', apiKey: '', replay: false }),
-    ).toThrow(expect.objectContaining({ kind: 'eval-api-key-required' }));
-  });
-
-  it('reports a provider without a default endpoint instead of guessing', () => {
-    expect(() =>
-      resolveEvalConnection({ provider: 'not-a-provider', baseUrl: '', apiKey: '', replay: true }),
-    ).toThrow(expect.objectContaining({ kind: 'eval-provider-no-default-endpoint' }));
-  });
-});
-
-function localImplementerConfig(
-  provider: 'ollama' | 'lm-studio',
-  connection: { baseUrl: string; apiKey: string },
-) {
-  return {
-    version: 3,
-    planner: {
-      kind: 'api',
-      provider: 'openai',
-      service: 'openai',
-      offering: 'payg',
-      apiBase: 'https://api.example.test/v1',
-      model: 'planner-model',
-      apiKey: 'secret',
-    },
-    implementer: {
-      kind: 'api',
-      provider,
-      service: provider,
-      offering: 'local',
-      apiBase: connection.baseUrl,
-      model: 'local-model',
-      apiKey: connection.apiKey,
-    },
-    validation: { typecheck: true, lint: false, test: true, testCommand: 'npm test' },
-    workflow: { maxRetries: 1, mode: 'quick', persistTranscript: true },
-  };
-}
-
 function makeModelPair() {
   return {
     plannerModel: 'planner-model',
@@ -1307,79 +929,11 @@ function perfectScenarioMetrics(): ModelEvaluationScenarioMetrics {
   };
 }
 
-function makeSummary(totalActualCost: number, overrides: Partial<Summary> = {}): Summary {
-  return {
-    feature: 'fake feature',
-    totalTasks: 1,
-    completedByLocal: 1,
-    escalatedToPlanner: 0,
-    skipped: 0,
-    failed: 0,
-    totalTime: 100,
-    tokenUsage: makeUsage({
-      plannerInput: 100,
-      plannerOutput: 50,
-      implementerInput: 80,
-      implementerOutput: 40,
-    }),
-    estimatedCostSavings: '60%',
-    escalationRate: 0,
-    costBreakdown: {
-      hypotheticalCost: totalActualCost * 2,
-      actualPlannerCost: totalActualCost * 0.6,
-      actualImplementerCost: totalActualCost * 0.4,
-      totalActualCost,
-      savingsAmount: totalActualCost,
-      savingsPercentage: 50,
-      localCompletionRate: 1,
-      hasPricedUsage: totalActualCost > 0,
-    },
-    ...overrides,
-  };
-}
-
 function writeSessionArtifacts(projectDir: string, sessionId: string): void {
   const sessionDirectory = join(projectDir, '.splitbrief', 'sessions', sessionId);
   mkdirSync(sessionDirectory, { recursive: true });
   writeFileSync(join(sessionDirectory, 'review.md'), '# review');
   writeFileSync(join(sessionDirectory, 'session.jsonl'), '{"type":"escalate"}\n');
-}
-
-function breakdownEntry(
-  taskNumber: string,
-  method: TaskTokenUsage['method'],
-  retryCount: number,
-): TaskTokenUsage {
-  return {
-    taskId: taskId(taskNumber),
-    taskTitle: 'fake task',
-    method,
-    implementerTokens: 0,
-    escalationTokens: 0,
-    retryCount,
-  };
-}
-
-function makeRunMetrics(input: {
-  mode: 'baseline' | 'routed';
-  cost: number;
-  sessionArtifactsDir?: string | null;
-  priced?: boolean;
-  summary?: Partial<Summary>;
-}): RunMetrics {
-  const priced = input.priced ?? true;
-  return collectRunMetrics(
-    'fake',
-    input.mode,
-    makeSummary(input.cost, {
-      ...(priced ? {} : { costBreakdown: undefined }),
-      ...input.summary,
-    }),
-    [],
-    [{ passed: true, detail: 'ok' }],
-    100,
-    input.sessionArtifactsDir ?? null,
-  );
 }
 
 function firstPassOfThree(firstPassTasks: number): Partial<Summary> {
@@ -1393,18 +947,18 @@ function firstPassOfThree(firstPassTasks: number): Partial<Summary> {
 
 function mixedPricingScenarios(): ScenarioComparison[] {
   return [
-    compareScenario(
-      'priced',
-      'Priced scenario',
-      makeRunMetrics({ mode: 'baseline', cost: 0.1 }),
-      makeRunMetrics({ mode: 'routed', cost: 0.04 }),
-    ),
-    compareScenario(
-      'unpriced',
-      'Unpriced scenario',
-      makeRunMetrics({ mode: 'baseline', cost: 0.2, priced: false }),
-      makeRunMetrics({ mode: 'routed', cost: 0.05, priced: false }),
-    ),
+    compareScenario({
+      scenarioId: 'priced',
+      scenarioName: 'Priced scenario',
+      baseline: makeRunMetrics({ mode: 'baseline', cost: 0.1 }),
+      routed: makeRunMetrics({ mode: 'routed', cost: 0.04 }),
+    }),
+    compareScenario({
+      scenarioId: 'unpriced',
+      scenarioName: 'Unpriced scenario',
+      baseline: makeRunMetrics({ mode: 'baseline', cost: 0.2, priced: false }),
+      routed: makeRunMetrics({ mode: 'routed', cost: 0.05, priced: false }),
+    }),
   ];
 }
 
@@ -1427,7 +981,14 @@ function makeReport(
   const baselineMetrics =
     baseline ?? makeRunMetrics({ mode: 'baseline', cost: 0.1, sessionArtifactsDir, priced });
   const routed = makeRunMetrics({ mode: 'routed', cost: 0.04, priced });
-  return makeReportOf([compareScenario('fake', 'Fake scenario', baselineMetrics, routed)]);
+  return makeReportOf([
+    compareScenario({
+      scenarioId: 'fake',
+      scenarioName: 'Fake scenario',
+      baseline: baselineMetrics,
+      routed,
+    }),
+  ]);
 }
 
 async function withTempDir(fn: (dir: string) => void | Promise<void>): Promise<void> {

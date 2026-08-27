@@ -70,12 +70,12 @@ describe('runLocalRetries — aborted outcomes', () => {
     const implementer = makeImplementer({ retry });
     const { bus, events } = makeBusRecorder();
 
-    const outcome = await runLocalRetries(
-      makeLocalRetriesCtx({ projectDir, sessionId, implementer, bus }),
-      makeTask(),
-      makeValidatingState(),
-      ABORTED_OUTCOME_TEXT,
-    );
+    const outcome = await runLocalRetries({
+      ctx: makeLocalRetriesCtx({ projectDir, sessionId, implementer, bus }),
+      task: makeTask(),
+      state: makeValidatingState(),
+      lastError: ABORTED_OUTCOME_TEXT,
+    });
 
     expect(outcome.attempts).toBe(0);
     expect(outcome.result).toEqual({ completed: false, method: 'failed', attempts: 0 });
@@ -117,18 +117,18 @@ describe('runLocalRetries — aborted outcomes', () => {
     const implementer = makeImplementer({ retry });
     const { bus, events } = makeBusRecorder();
 
-    const run = runLocalRetries(
-      makeLocalRetriesCtx({
+    const run = runLocalRetries({
+      ctx: makeLocalRetriesCtx({
         projectDir,
         sessionId,
         implementer,
         bus,
         signal: controller.signal,
       }),
-      makeTask(),
-      makeValidatingState(),
-      'type error',
-    );
+      task: makeTask(),
+      state: makeValidatingState(),
+      lastError: 'type error',
+    });
 
     await secondRetryEnteredPromise;
     controller.abort();
@@ -155,12 +155,12 @@ describe('runLocalRetries — aborted outcomes', () => {
     const implementer = makeImplementer({ retry });
     const { bus, events } = makeBusRecorder();
 
-    const outcome = await runLocalRetries(
-      makeLocalRetriesCtx({ projectDir, sessionId, implementer, bus }),
-      makeTask(),
-      makeValidatingState(),
-      'type error',
-    );
+    const outcome = await runLocalRetries({
+      ctx: makeLocalRetriesCtx({ projectDir, sessionId, implementer, bus }),
+      task: makeTask(),
+      state: makeValidatingState(),
+      lastError: 'type error',
+    });
 
     expect(outcome.attempts).toBe(3);
     expect(outcome.result).toBeUndefined();
@@ -181,12 +181,12 @@ describe('runLocalRetries — attempt that throws', () => {
     const { bus, events } = makeBusRecorder();
 
     await expect(
-      runLocalRetries(
-        makeLocalRetriesCtx({ projectDir, sessionId, implementer, bus }),
-        makeTask(),
-        makeValidatingState(),
-        'type error',
-      ),
+      runLocalRetries({
+        ctx: makeLocalRetriesCtx({ projectDir, sessionId, implementer, bus }),
+        task: makeTask(),
+        state: makeValidatingState(),
+        lastError: 'type error',
+      }),
     ).rejects.toThrow('implementer crashed');
 
     const retryAttempts = events

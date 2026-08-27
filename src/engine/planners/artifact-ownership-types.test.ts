@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  OwnedPlannerArtifactSchema,
   TaskCompilationSemanticIdSchema,
   createTaskCompilationAttemptId,
   createTaskCompilationBatchId,
@@ -63,22 +62,22 @@ const artifact: OwnedPlannerArtifact = {
 
 describe('planner ownership types', () => {
   it('admits exactly one explicit transport and only completed receipts', () => {
-    expect(OwnedPlannerArtifactSchema.safeParse(artifact).success).toBe(true);
+    expect(isOwnedPlannerArtifactFor(request, artifact)).toBe(true);
     expect(
-      OwnedPlannerArtifactSchema.safeParse({
+      isOwnedPlannerArtifactFor(request, {
         ...artifact,
         terminal: {
           status: 'failed',
           recordId: 'record-1',
           protocolDigest: 'protocol-digest',
         },
-      }).success,
+      }),
     ).toBe(false);
     expect(
-      OwnedPlannerArtifactSchema.safeParse({
+      isOwnedPlannerArtifactFor(request, {
         ...artifact,
         transport: 'auto',
-      }).success,
+      }),
     ).toBe(false);
   });
 

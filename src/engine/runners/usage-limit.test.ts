@@ -224,7 +224,6 @@ describe('end-to-end classification of the live codex limit records', () => {
     const terminal = codexImplementerAdapter.terminal({
       outputContract: codexImplementerAdapter.outputContract,
       events,
-      stdout: CODEX_LIMIT_RECORDS.join('\n'),
       stderr: '',
       exitCode: 1,
       signal: null,

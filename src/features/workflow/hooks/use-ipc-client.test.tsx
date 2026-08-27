@@ -46,6 +46,42 @@ function makeServer(sockPath: string): Promise<Server> {
   });
 }
 
+interface CollectingServer {
+  server: Server;
+  received: string[];
+  connected: { current: Socket | null };
+}
+
+function makeCollectingServer(sockPath: string): Promise<CollectingServer> {
+  const received: string[] = [];
+  const connected: { current: Socket | null } = { current: null };
+  const server = createServer();
+  server.on('connection', (socket: Socket) => {
+    connected.current = socket;
+    send(socket, {
+      kind: 'session_meta',
+      sessionId: 'sess',
+      startedAt: 1,
+      mode: 'standard',
+      feature: 'f',
+    });
+    let buf = '';
+    socket.on('data', (chunk: Buffer) => {
+      buf += chunk.toString('utf8');
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed) received.push(trimmed);
+      }
+    });
+  });
+  return new Promise<CollectingServer>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(sockPath, () => resolve({ server, received, connected }));
+  });
+}
+
 function makeRejectingServer(sockPath: string): Promise<Server> {
   return new Promise((resolve, reject) => {
     const server = createServer();
@@ -155,30 +191,8 @@ describe('useIpcClient', () => {
     tmpDirs.push(dir);
     const sockPath = join(dir, 'test.sock');
 
-    const received: string[] = [];
-    let connectedSocket: Socket | null = null;
-    const server = createServer();
+    const { server, received, connected } = await makeCollectingServer(sockPath);
     servers.push(server);
-    server.on('connection', (socket: Socket) => {
-      connectedSocket = socket;
-      send(socket, {
-        kind: 'session_meta',
-        sessionId: 'sess',
-        startedAt: 1,
-        mode: 'standard',
-        feature: 'f',
-      });
-      let buf = '';
-      socket.on('data', (chunk: Buffer) => {
-        buf += chunk.toString('utf8');
-        const lines = buf.split('\n');
-        buf = lines.pop() ?? '';
-        for (const line of lines) {
-          if (line.trim()) received.push(line.trim());
-        }
-      });
-    });
-    await new Promise<void>((resolve) => server.listen(sockPath, resolve));
 
     const capture: { current: CapturedState | null } = { current: null };
     const ui = render(
@@ -190,7 +204,7 @@ describe('useIpcClient', () => {
     );
     await tick(100);
 
-    if (connectedSocket) {
+    if (connected.current) {
       const msg: ServerMessage = {
         kind: 'prompt_request',
         request: {
@@ -201,7 +215,7 @@ describe('useIpcClient', () => {
           allowedCommands: [],
         },
       };
-      send(connectedSocket, msg);
+      send(connected.current, msg);
     }
     await tick(50);
 
@@ -223,20 +237,8 @@ describe('useIpcClient', () => {
     tmpDirs.push(dir);
     const sockPath = join(dir, 'test.sock');
 
-    const received: string[] = [];
-    const server = await makeServer(sockPath);
+    const { server, received } = await makeCollectingServer(sockPath);
     servers.push(server);
-    server.on('connection', (socket: Socket) => {
-      let buf = '';
-      socket.on('data', (chunk: Buffer) => {
-        buf += chunk.toString('utf8');
-        const lines = buf.split('\n');
-        buf = lines.pop() ?? '';
-        for (const line of lines) {
-          if (line.trim()) received.push(line.trim());
-        }
-      });
-    });
 
     const capture: { current: CapturedState | null } = { current: null };
     const ui = render(<Harness sockPath={sockPath} capture={capture} />);
@@ -259,29 +261,8 @@ describe('useIpcClient', () => {
     tmpDirs.push(dir);
     const sockPath = join(dir, 'test.sock');
 
-    const received: string[] = [];
-    const server = createServer();
+    const { server, received } = await makeCollectingServer(sockPath);
     servers.push(server);
-    server.on('connection', (socket: Socket) => {
-      send(socket, {
-        kind: 'session_meta',
-        sessionId: 'sess',
-        startedAt: 1,
-        mode: 'standard',
-        feature: 'f',
-      });
-      let buf = '';
-      socket.on('data', (chunk: Buffer) => {
-        buf += chunk.toString('utf8');
-        const lines = buf.split('\n');
-        buf = lines.pop() ?? '';
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (trimmed) received.push(trimmed);
-        }
-      });
-    });
-    await new Promise<void>((resolve) => server.listen(sockPath, resolve));
 
     const capture: { current: CapturedState | null } = { current: null };
     const ui = render(<Harness sockPath={sockPath} capture={capture} />);
@@ -310,29 +291,8 @@ describe('useIpcClient', () => {
     tmpDirs.push(dir);
     const sockPath = join(dir, 'test.sock');
 
-    const received: string[] = [];
-    const server = createServer();
+    const { server, received } = await makeCollectingServer(sockPath);
     servers.push(server);
-    server.on('connection', (socket: Socket) => {
-      send(socket, {
-        kind: 'session_meta',
-        sessionId: 'sess',
-        startedAt: 1,
-        mode: 'standard',
-        feature: 'f',
-      });
-      let buf = '';
-      socket.on('data', (chunk: Buffer) => {
-        buf += chunk.toString('utf8');
-        const lines = buf.split('\n');
-        buf = lines.pop() ?? '';
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (trimmed) received.push(trimmed);
-        }
-      });
-    });
-    await new Promise<void>((resolve) => server.listen(sockPath, resolve));
 
     const capture: { current: CapturedState | null } = { current: null };
     const ui = render(<Harness sockPath={sockPath} capture={capture} />);
@@ -386,7 +346,6 @@ describe('useIpcClient', () => {
       { timeout: 5000 },
     );
 
-    // Destroy the server-side socket to trigger unexpected close
     for (const s of connectedSockets) s.destroy();
 
     await vi.waitFor(
@@ -585,7 +544,6 @@ describe('useIpcClient', () => {
         mode: 'standard',
         feature: 'f',
       });
-      // Send malformed JSON after meta
       setTimeout(() => {
         socket.write('not valid json\n');
       }, 20);
@@ -640,23 +598,50 @@ describe('useIpcClient', () => {
     const dir = makeTmpDir();
     tmpDirs.push(dir);
     const sockPath = join(dir, 'test.sock');
-    const server = await makeServer(sockPath);
+
+    let connections = 0;
+    let closedSockets = 0;
+    const server = createServer();
     servers.push(server);
+    server.on('connection', (socket: Socket) => {
+      connections += 1;
+      // An unread socket never sees the peer's FIN, so it would never report the close.
+      socket.resume();
+      socket.on('close', () => {
+        closedSockets += 1;
+      });
+      send(socket, {
+        kind: 'session_meta',
+        sessionId: 'test-session-id',
+        startedAt: 1000,
+        mode: 'standard',
+        feature: 'test feature',
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(sockPath, resolve));
 
     const capture: { current: CapturedState | null } = { current: null };
     const ui = render(<Harness sockPath={sockPath} capture={capture} />);
-    await tick(100);
+    await vi.waitFor(
+      () => {
+        expect(capture.current?.status).toBe('connected');
+      },
+      { timeout: 5000 },
+    );
+    expect(connections).toBe(1);
 
-    expect(capture.current?.status).toBe('connected');
     ui.unmount();
+    await vi.waitFor(
+      () => {
+        expect(closedSockets).toBe(1);
+      },
+      { timeout: 5000 },
+    );
     await tick(200);
 
-    // Status stays at what it was at unmount time (connected), NOT reconnecting/failed
-    // (The unmount cleanup fires before any reconnect can be scheduled)
-    expect(capture.current?.status).toBe('connected');
-    const reconnectAttempts =
-      capture.current?.events.filter((e) => e.type === 'ipc_reconnect_attempt') ?? [];
-    expect(reconnectAttempts.length).toBe(0);
+    // The server outlives the component, so it — not the frozen capture ref — is what can
+    // still see a post-unmount reconnect: the socket closes and no second one is opened.
+    expect(connections).toBe(1);
   });
 
   it('stolen-victim terminal frame ends the client without reconnecting', async () => {

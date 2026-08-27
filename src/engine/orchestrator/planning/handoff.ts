@@ -2,11 +2,11 @@ import type { StateAuthorityReceipt } from '../../../core/state/types.js';
 import { loadStateForResume } from '../../../core/state/persistence.js';
 import { BRIEF_QUALITY_FILE, TASKS_FILE } from '../../../core/paths.js';
 import { readSpecFile } from '../../../core/paths-io.js';
+import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
 import {
-  BriefQualityIssueSchema,
   type BriefQualityIssue,
-  type BriefRecoveryProjectionV1,
-} from '../../../core/schemas/brief-recovery.js';
+  BriefQualityIssueSchema,
+} from '../../../core/schemas/brief-recovery/primitives.js';
 import {
   sameExecutionPermit,
   sameGeneration,
@@ -191,8 +191,7 @@ function qualityArtifactMatches(
     !expectedIssues.success ||
     report.passed !== expected.passed ||
     report.score !== expected.score ||
-    !sameQualityIssues(report.issues, expectedIssues.data) ||
-    report.passed !== true
+    !sameQualityIssues(report.issues, expectedIssues.data)
   ) {
     return null;
   }
@@ -339,16 +338,5 @@ export function withPlanningResultState(
   result: PlanningPhaseResult,
   state: WorkflowState,
 ): PlanningPhaseResult {
-  switch (result.disposition) {
-    case 'ready-for-tasks':
-      return { ...result, state };
-    case 'parked':
-      return { ...result, state };
-    case 'terminal':
-      return { ...result, state };
-    default: {
-      const exhaustive: never = result;
-      return exhaustive;
-    }
-  }
+  return { ...result, state };
 }

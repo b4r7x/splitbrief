@@ -119,8 +119,7 @@ export const TASK_COMPILATION_FAILURE_CODES = [
 export const TaskCompilationFailureCodeSchema = z.enum(TASK_COMPILATION_FAILURE_CODES);
 export type TaskCompilationFailureCode = z.infer<typeof TaskCompilationFailureCodeSchema>;
 
-export const TASK_COMPILATION_TERMINAL_STATUSES = [
-  'completed',
+const TASK_COMPILATION_FAILURE_STATUSES = [
   'failed',
   'refused',
   'unsupported_tool',
@@ -131,22 +130,14 @@ export const TASK_COMPILATION_TERMINAL_STATUSES = [
   'truncated',
   'protocol-invalid',
   'unknown',
+] as const;
+
+const TASK_COMPILATION_TERMINAL_STATUSES = [
+  'completed',
+  ...TASK_COMPILATION_FAILURE_STATUSES,
 ] as const;
 
 export const TaskCompilationTerminalStatusSchema = z.enum(TASK_COMPILATION_TERMINAL_STATUSES);
-
-export const TASK_COMPILATION_FAILURE_STATUSES = [
-  'failed',
-  'refused',
-  'unsupported_tool',
-  'incomplete',
-  'cancelled',
-  'aborted',
-  'timeout',
-  'truncated',
-  'protocol-invalid',
-  'unknown',
-] as const;
 
 export const TaskCompilationFailureStatusSchema = z.enum(TASK_COMPILATION_FAILURE_STATUSES);
 export type TaskCompilationFailureStatus = z.infer<typeof TaskCompilationFailureStatusSchema>;
@@ -160,15 +151,13 @@ const leaseSchema = z
   })
   .readonly();
 
-export const TaskCompilationTransportSchema = z
+export const PlannerArtifactTransportSchema = z
   .discriminatedUnion('kind', [
     z.strictObject({ kind: z.literal('stdout-final') }).readonly(),
     z.strictObject({ kind: z.literal('declared-file'), lease: leaseSchema }).readonly(),
   ])
   .readonly();
-export type TaskCompilationTransport = z.infer<typeof TaskCompilationTransportSchema>;
-export type PlannerArtifactTransport = TaskCompilationTransport;
-export const PlannerArtifactTransportSchema = TaskCompilationTransportSchema;
+export type PlannerArtifactTransport = z.infer<typeof PlannerArtifactTransportSchema>;
 export const DeclaredArtifactLeaseSchema = leaseSchema;
 export type DeclaredArtifactLease = z.infer<typeof DeclaredArtifactLeaseSchema>;
 
@@ -192,7 +181,6 @@ export const PlannerSessionScopeSchema = z
   ])
   .readonly();
 export type PlannerSessionScope = z.infer<typeof PlannerSessionScopeSchema>;
-export type TaskCompilationSessionScope = PlannerSessionScope;
 
 const callEnvelopeShape = {
   version: z.literal(1),
@@ -335,8 +323,6 @@ export const OperationEnvelopeSchema = z
   })
   .readonly();
 export type TaskCompilationOperationEnvelope = z.infer<typeof OperationEnvelopeSchema>;
-export type RecoveryOperationEnvelope = TaskCompilationOperationEnvelope;
-export const RecoveryOperationEnvelopeSchema = OperationEnvelopeSchema;
 
 export const TaskCompilationFailureSchema = z
   .strictObject({

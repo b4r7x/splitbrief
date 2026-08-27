@@ -8,7 +8,7 @@ import { ensureSessionDir } from '../../core/paths-io.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { saveState } from '../../core/state/persistence.js';
 import { saveSummary } from '../../core/sessions/io.js';
-import { writeActive } from '../../core/sessions/lifecycle.js';
+import { writeActive } from '../../core/sessions/active-pointer.js';
 import { taskId } from '../../core/schemas/task.js';
 import { isCliError } from '../errors.js';
 import { registerExplainCommand } from './explain.js';

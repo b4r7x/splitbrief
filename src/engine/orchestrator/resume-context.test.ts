@@ -93,7 +93,6 @@ describe('applyRebuiltContext', () => {
       { role: 'user', content: 'add auth' },
       { role: 'assistant', content: 'here is the spec' },
     ]);
-    // No warning when transcript is present and non-empty.
     expect(events.find((e) => e.type === 'warning')).toBeUndefined();
   });
 
@@ -123,7 +122,9 @@ describe('applyRebuiltContext', () => {
   it('skips populating the holder when requireNonEmpty is set and no messages were rebuilt', async () => {
     const { projectDir, sessionId } = setupSession();
     const { bus, events } = makeBusRecorder();
-    const resumeHolder: ResumeContextHolder = { messages: [] };
+    const resumeHolder: ResumeContextHolder = {
+      messages: [{ role: 'user', content: 'carried over' }],
+    };
 
     await applyRebuiltContext({
       projectDir,
@@ -134,7 +135,7 @@ describe('applyRebuiltContext', () => {
       requireNonEmpty: true,
     });
 
-    expect(resumeHolder.messages).toEqual([]);
+    expect(resumeHolder.messages).toEqual([{ role: 'user', content: 'carried over' }]);
     expect(events.find((e) => e.type === 'warning')).toBeUndefined();
   });
 

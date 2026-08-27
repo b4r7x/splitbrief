@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createDefaultConfig, formatConfigLoaderDiagnostic } from '../load/io.js';
 import type { ConfigLoaderDiagnostic } from '../load/io.js';
-import { formatEffectiveConfigWarnings, resolveEffectiveConfig } from './effective-config.js';
+import {
+  emitEffectiveConfigWarnings,
+  formatEffectiveConfigWarnings,
+  resolveEffectiveConfig,
+} from './effective-config.js';
 
 describe('resolveEffectiveConfig', () => {
   it('returns effective validation warnings as typed records', () => {
@@ -133,5 +137,56 @@ describe('resolveEffectiveConfig', () => {
         { source: 'validation', message },
       ]),
     ).toEqual([message]);
+  });
+});
+
+describe('emitEffectiveConfigWarnings', () => {
+  let stderrChunks: string[];
+
+  beforeEach(() => {
+    stderrChunks = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderrChunks.push(String(chunk));
+      return true;
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('writes each effective-config warning to stderr so the detached server log surfaces it', () => {
+    emitEffectiveConfigWarnings([
+      {
+        source: 'loader',
+        diagnostic: { kind: 'config-file-permissions', path: '/tmp/.splitbrief/config.yaml' },
+      },
+      { source: 'validation', message: 'budget override exceeds the configured ceiling.' },
+    ]);
+
+    const written = stderrChunks.join('');
+    expect(written).toContain('⚠ Config file /tmp/.splitbrief/config.yaml has overly permissive');
+    expect(written).toContain('⚠ budget override exceeds the configured ceiling.');
+  });
+
+  it('prints matching loader and validation warnings once', () => {
+    const diagnostic = {
+      kind: 'config-file-permissions',
+      path: '/tmp/.splitbrief/config.yaml',
+    } satisfies ConfigLoaderDiagnostic;
+    const message = formatConfigLoaderDiagnostic(diagnostic);
+
+    emitEffectiveConfigWarnings([
+      { source: 'loader', diagnostic },
+      { source: 'validation', message },
+    ]);
+
+    expect(stderrChunks.filter((chunk) => chunk.includes(message))).toHaveLength(1);
+  });
+
+  it('writes nothing when there are no warnings', () => {
+    emitEffectiveConfigWarnings([]);
+
+    expect(stderrChunks.join('')).toBe('');
   });
 });

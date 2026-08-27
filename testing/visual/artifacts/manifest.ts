@@ -3,11 +3,9 @@ import { isDeepStrictEqual } from 'node:util';
 import type { ArtifactRecord } from '../contracts/artifacts.js';
 import type { Failure } from '../contracts/failures.js';
 import { ManifestSchema, serializeManifest, type Manifest } from '../contracts/manifest.js';
-import { TerminalProfileSchema } from '../contracts/manifest-fields.js';
 import type {
   DeterminismEnvelope,
   RendererMetadata,
-  TerminalProfile,
   Warning,
 } from '../contracts/manifest-fields.js';
 import {
@@ -27,7 +25,6 @@ import {
 import { resolveWritableContainedArtifactPath } from './confinement.js';
 
 const MANIFEST_TEMP_RELATIVE_PATH = 'manifest.json.tmp';
-const DEFAULT_TERMINAL_PROFILE: TerminalProfile = 'unicode-color';
 
 export interface BuildManifestOptions {
   readonly toolVersion: string;
@@ -60,8 +57,8 @@ export interface PublishedArtifactPublication {
 }
 
 export function buildManifest(options: BuildManifestOptions): Manifest {
-  const selectionProfile = terminalProfileOf(options.selection);
-  const determinismProfile = terminalProfileOf(options.determinism);
+  const selectionProfile = options.selection.profile;
+  const determinismProfile = options.determinism.profile;
   if (selectionProfile !== determinismProfile) {
     throw new Error('Capture selection and determinism profiles must match');
   }
@@ -84,12 +81,7 @@ export function buildManifest(options: BuildManifestOptions): Manifest {
     warnings: options.warnings,
     failures: options.failures,
   };
-  const withProfile = ManifestSchema.safeParse({
-    ...baseManifest,
-    profile: selectionProfile,
-  });
-  if (withProfile.success) return withProfile.data;
-  return ManifestSchema.parse(baseManifest);
+  return ManifestSchema.parse({ ...baseManifest, profile: selectionProfile });
 }
 
 export async function prepareArtifactPublication(options: {
@@ -111,12 +103,6 @@ export async function stageArtifactManifest(
 ): Promise<ManifestedArtifactPublication> {
   const layout = validateLayout(publication.layout);
   const manifest = ManifestSchema.parse(manifestInput);
-  const selectionProfile = terminalProfileOf(manifest.selection);
-  const determinismProfile = terminalProfileOf(manifest.determinism);
-  const manifestProfile = terminalProfileOf(manifest);
-  if (selectionProfile !== determinismProfile || manifestProfile !== selectionProfile) {
-    throw new Error('Manifest profile does not match its capture selection and determinism');
-  }
   if (createRunKey(manifest.selection) !== layout.runKey) {
     throw new Error('Manifest selection does not match its prepared publication namespace');
   }
@@ -248,17 +234,4 @@ async function assertManifestFilesStaged(options: {
 
 function isMissingPathError(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT';
-}
-
-function terminalProfileOf(value: unknown): TerminalProfile {
-  if (typeof value !== 'object' || value === null || !('profile' in value)) {
-    return DEFAULT_TERMINAL_PROFILE;
-  }
-  const profile = value.profile;
-  if (isTerminalProfile(profile)) return profile;
-  throw new Error('Visual capture profile is invalid');
-}
-
-function isTerminalProfile(value: unknown): value is TerminalProfile {
-  return TerminalProfileSchema.safeParse(value).success;
 }

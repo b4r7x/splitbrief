@@ -11,7 +11,7 @@ import type { Config } from '../../core/schemas/config.js';
 import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
 import type { PlannerConfig } from '../../core/schemas/planner-config.js';
 import type { ReviewerConfig } from '../../core/schemas/reviewer-config.js';
-import { detectProviderCatalog } from '../../engine/providers/registry.js';
+import { detectProviderCatalog } from '../../engine/providers/catalog-detection.js';
 import type { ProviderCatalogFailureKind } from '../../engine/providers/types.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { PickerOptionStatus } from './model-catalog/status.js';

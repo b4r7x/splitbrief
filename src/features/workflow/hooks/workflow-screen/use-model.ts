@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { dirname } from 'node:path';
 import { sessionDir } from '../../../../core/paths.js';
-import type { BriefRecoveryProjectionV1 } from '../../../../core/schemas/brief-recovery.js';
+import type { BriefRecoveryProjectionV1 } from '../../../../core/schemas/brief-recovery/document.js';
 import type { Phase } from '../../../../core/schemas/enums.js';
 import type { CopyResult, CopyTarget } from '../../../../core/runtime/commands/types.js';
 import type { Focus } from '../../../../stores/ui/focus.js';

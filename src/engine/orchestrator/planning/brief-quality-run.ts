@@ -1,11 +1,9 @@
 import type { BriefQualityReport } from '../../spec/brief-quality.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type {
-  BriefRecoveryCommand,
-  BriefRecoveryProjectionV1,
-  PlannerAttemptSettlement,
-} from '../../../core/schemas/brief-recovery.js';
+import type { PlannerAttemptSettlement } from '../../../core/schemas/brief-recovery/attempt.js';
+import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
+import type { BriefRecoveryCommand } from '../../../core/schemas/brief-recovery.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import type { PlanningPhaseResult } from './types.js';
 import { handlePlanningFailure } from './failure.js';

@@ -7,12 +7,11 @@ import {
   NormalizedCustomCommandSchema,
   customCommandTuple,
   customCommandTupleForRunner,
-  findConfiguredCustomCommand,
   isCustomCommandRunner,
   matchesCustomCommandRunner,
   normalizeCustomCommand,
-  readCustomCommandCatalog,
 } from './custom-commands.js';
+import { findConfiguredCustomCommand, readCustomCommandCatalog } from './custom-command-catalog.js';
 
 const safeDefinition = {
   label: 'Review changes',

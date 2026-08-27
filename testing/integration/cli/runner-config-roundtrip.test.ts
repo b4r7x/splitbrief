@@ -288,7 +288,7 @@ function commitCell(cell: MatrixCell): Config {
   }
   return cell.role === 'planner'
     ? commitPlannerTierSelection({ config: base, role: 'planner', selection, model }).config
-    : commitImplementerSelection(base, selection, model).config;
+    : commitImplementerSelection({ config: base, selection, model }).config;
 }
 
 function clearRunnerCredentials(): void {
@@ -406,7 +406,11 @@ describe('runner config roundtrip integration', () => {
 
       current = await saveAndReload(
         dir,
-        commitImplementerSelection(current, together, { id: 'selected-model' }).config,
+        commitImplementerSelection({
+          config: current,
+          selection: together,
+          model: { id: 'selected-model' },
+        }).config,
       );
       expect(resolvedDefaultProfile(current)).toMatchObject({
         apiBase: 'https://api.together.ai/v1',
@@ -452,8 +456,10 @@ describe('runner config roundtrip integration', () => {
 
       current = await saveAndReload(
         dir,
-        commitImplementerSelection(current, realPickerOption('implementer', 'codex'), {
-          id: 'gpt-5.4-mini',
+        commitImplementerSelection({
+          config: current,
+          selection: realPickerOption('implementer', 'codex'),
+          model: { id: 'gpt-5.4-mini' },
         }).config,
       );
       expect(resolvedDefaultProfile(current)).toMatchObject({
@@ -657,11 +663,11 @@ codebase:
         writeRunnerConfigYaml(dir, { profile: testCase.existing });
         configStore.load(dir);
         const before = loadConfig(dir).config;
-        const updated = commitImplementerSelection(
-          before,
-          pickerForRunner('implementer', testCase.existing),
-          { id: modelOverride },
-        ).config;
+        const updated = commitImplementerSelection({
+          config: before,
+          selection: pickerForRunner('implementer', testCase.existing),
+          model: { id: modelOverride },
+        }).config;
         const reloaded = await saveAndReload(dir, updated);
         expect(resolvedDefaultProfile(reloaded)).toEqual(
           expectedSameTarget(testCase, modelOverride),
@@ -674,6 +680,10 @@ codebase:
   });
 
   describe('cross-target matrix', () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
     it.each(crossTargetCases)('$label through save/reload', async (testCase) => {
       const dir = createTempDir(`cross-target-${testCase.label.replace(/\s+/g, '-')}`);
       dirs.push(dir);
@@ -687,7 +697,11 @@ codebase:
       configStore.load(dir);
       const before = loadConfig(dir).config;
 
-      const updated = commitImplementerSelection(before, selection, testCase.model).config;
+      const updated = commitImplementerSelection({
+        config: before,
+        selection,
+        model: testCase.model,
+      }).config;
       const reloaded = await saveAndReload(dir, updated);
       // The destination inherits the source's effort only where it has an effort
       // channel; each case's `expected` spells out which side of that it lands on.
@@ -695,10 +709,6 @@ codebase:
       expect(reloaded.implementerProfiles?.profiles['dormant-local']).toEqual(
         before.implementerProfiles?.profiles['dormant-local'],
       );
-
-      if (needsAnthropicKey) {
-        vi.unstubAllEnvs();
-      }
     });
   });
 

@@ -10,7 +10,7 @@ import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types
 import { configPath, loadConfig } from '../../core/config/load/io.js';
 import { CONFIG_FILE, sessionDir, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { computeCrewPresets } from '../../core/crew/presets.js';
-import { readActive } from '../../core/sessions/lifecycle.js';
+import { readActive } from '../../core/sessions/active-pointer.js';
 import { prepareNewSession } from '../../core/sessions/prepare.js';
 import type {
   DetectionRefreshOutcomes,

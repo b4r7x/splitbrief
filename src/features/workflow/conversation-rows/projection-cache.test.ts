@@ -99,13 +99,14 @@ describe('conversation rows projection cache', () => {
 
     const first = getConversationRowsProjection(base);
     const widthChanged = getConversationRowsProjection({ ...base, cols: 60 });
+    const reprimed = getConversationRowsProjection(base);
     const expansionChanged = getConversationRowsProjection({
       ...base,
       expandedDiffs: new Set(['implementer_generate_done:1']),
     });
 
     expect(widthChanged).not.toBe(first);
-    expect(expansionChanged).not.toBe(widthChanged);
+    expect(expansionChanged).not.toBe(reprimed);
   });
 
   it('rebuilds when a set input is a new identity with equal contents', () => {

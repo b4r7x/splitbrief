@@ -27,12 +27,14 @@ describe('confinedReadFile', () => {
     expect(confinedReadFile(root, 'absent.md')).toBeNull();
   });
 
-  it('returns null when the read itself fails instead of throwing', () => {
+  it('propagates a read failure instead of reporting it as a missing file', () => {
     const root = createTempDir('confined-sync-eisdir');
     tmpDirs.push(root);
     mkdirSync(join(root, 'a-directory'));
 
-    expect(confinedReadFile(root, 'a-directory')).toBeNull();
+    expect(() => confinedReadFile(root, 'a-directory')).toThrow(
+      expect.objectContaining({ code: 'EISDIR' }),
+    );
   });
 
   it('propagates path-confinement errors for escaping paths', () => {
@@ -72,12 +74,14 @@ describe('confinedReadFileAsync', () => {
     await expect(confinedReadFileAsync(root, 'absent.md')).resolves.toBeNull();
   });
 
-  it('resolves to null when the async read itself fails instead of rejecting', async () => {
+  it('rejects on a read failure instead of reporting it as a missing file', async () => {
     const root = createTempDir('confined-async-eisdir');
     tmpDirs.push(root);
     mkdirSync(join(root, 'a-directory'));
 
-    await expect(confinedReadFileAsync(root, 'a-directory')).resolves.toBeNull();
+    await expect(confinedReadFileAsync(root, 'a-directory')).rejects.toMatchObject({
+      code: 'EISDIR',
+    });
   });
 
   it('propagates path-confinement errors for escaping paths', async () => {

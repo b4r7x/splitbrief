@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { warnError } from '../../lib/warn.js';
 import { isValidSessionId, READINESS_FILE, sessionDir, sessionsRoot } from '../paths.js';
 import type { SessionRef } from '../types/session-ref.js';
-import { readActiveRecord } from './lifecycle.js';
+import { readActiveRecord } from './active-pointer.js';
 import { discardOrphanSessionDirectory } from './prepare.js';
 
 export const ORPHAN_SESSION_GRACE_MS = 24 * 60 * 60 * 1000;

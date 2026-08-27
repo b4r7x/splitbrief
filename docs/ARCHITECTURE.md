@@ -380,7 +380,7 @@ splitbrief start --json "add endpoint" | jq -c 'select(.type == "task_completed"
 
 ### RPC mode (--rpc)
 
-`splitbrief start --rpc` also skips Ink, but it does not attach `stdoutJsonSink`. Instead `src/cli/rpc/run/host.ts` owns an `EventBus`, subscribes a response writer, and emits workflow events as wrapped responses: `{ "type": "event", "data": <EngineEvent> }`. Status projection, Task Brief review draft handling, and recovery prompting live in `src/cli/rpc/run/status.ts`, `brief-review.ts`, and `recovery.ts` respectively. Stdin is parsed as NDJSON commands by `src/cli/rpc/reader.ts`; stdout responses are `ack`, `error`, `status`, or `event`.
+`splitbrief start --rpc` also skips Ink, but it does not attach `stdoutJsonSink`. Instead `src/cli/rpc/run/host.ts` owns an `EventBus`, subscribes a response writer, and emits workflow events as wrapped responses: `{ "type": "event", "data": <EngineEvent> }`. Status projection and recovery prompting live in `src/cli/rpc/run/status.ts` and `recovery.ts` respectively. Stdin is parsed as NDJSON commands by `src/cli/rpc/reader.ts`; stdout responses are `ack`, `error`, `status`, or `event`.
 
 RPC keeps engine gates bidirectional. Approval, question, continuation, cost, tiered approval, user-edit conflict, task-review, and recovery prompts publish status/event responses and wait until the client sends `approve`, `reject`, `regenerate`, prompt-scoped `brief_review`, `message`, or `recovery`. The `message` command feeds either the active prompt or the workflow message queue. The `status` command reads the current persisted `WorkflowState`; `abort` trips the workflow abort signal.
 

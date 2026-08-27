@@ -4,7 +4,7 @@ import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { StateAuthorityReceipt } from '../../../core/state/types.js';
-import type { ActiveSessionReceipt } from '../../../core/sessions/lifecycle.js';
+import type { ActiveSessionReceipt } from '../../../core/sessions/active-pointer.js';
 import type { EventBus } from '../../../engine/events/types.js';
 import { applyRecoveryAction } from '../../../engine/orchestrator/recovery/actions.js';
 import {
@@ -199,5 +199,5 @@ export function createRpcRecoveryHandlers(deps: RpcRecoveryHandlersDeps) {
     return { shouldRun: false, state };
   };
 
-  return { waitForRecoveryAction, receiveRecoveryAction, requestRecoveryAction };
+  return { receiveRecoveryAction, requestRecoveryAction };
 }

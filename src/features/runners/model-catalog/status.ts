@@ -281,16 +281,19 @@ function configuredProviderStatus(
 }
 
 export function deriveMetaStatus(
-  kind: 'custom-command' | 'agent-sdk',
-  detections: PickerDetectionSnapshot,
-  role?: SeatPickerRole,
-  useConfiguredProviderOutcome = false,
+  input: Readonly<{
+    kind: 'custom-command' | 'agent-sdk';
+    detections: PickerDetectionSnapshot;
+    role?: SeatPickerRole | undefined;
+    useConfiguredProviderOutcome: boolean;
+  }>,
 ): PickerOptionStatus {
+  const { kind, detections, role } = input;
   if (kind === 'custom-command') {
     return { state: 'ready', remediation: null };
   }
   const configured =
-    !useConfiguredProviderOutcome || role === undefined
+    !input.useConfiguredProviderOutcome || role === undefined
       ? undefined
       : findConfiguredProviderRuntime(detections, {
           role: seatPickerLane(role),

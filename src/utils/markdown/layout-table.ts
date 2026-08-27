@@ -95,26 +95,35 @@ function layoutStackedTable(input: {
   key: string;
   glyphs: MarkdownLayoutGlyphs;
 }): MarkdownLayoutRow[] {
-  const headerLines = stackTableCells(input.block.header, input.width, input.block, true);
+  const headerLines = stackTableCells({
+    cells: input.block.header,
+    width: input.width,
+    block: input.block,
+    header: true,
+  });
   const border: MarkdownLayoutLine = {
     segments: [{ kind: 'tableBorder', text: input.glyphs.divider.repeat(input.width) }],
   };
   const rows = input.block.rows.map((cells, index) =>
-    makeTableRow(`${input.key}-${index}`, stackTableCells(cells, input.width, input.block, false)),
+    makeTableRow(
+      `${input.key}-${index}`,
+      stackTableCells({ cells, width: input.width, block: input.block, header: false }),
+    ),
   );
 
   return [makeTableRow(`${input.key}-header`, [...headerLines, border]), ...rows];
 }
 
-function stackTableCells(
-  cells: readonly MarkdownTableCell[],
-  width: number,
-  block: MarkdownTableBlock,
-  header: boolean,
-): MarkdownLayoutLine[] {
+function stackTableCells(input: {
+  cells: readonly MarkdownTableCell[];
+  width: number;
+  block: MarkdownTableBlock;
+  header: boolean;
+}): MarkdownLayoutLine[] {
+  const { cells, width, block, header } = input;
   const lines: MarkdownLayoutLine[] = [];
   for (const [column, cell] of cells.entries()) {
-    const wrapped = wrapCellSegments(cellSegments(cell, header), width);
+    const wrapped = wrapCellSegments(cellSegments({ cell, header }), width);
     for (const line of wrapped) {
       lines.push({
         segments: trimTrailingSpace(padCellLine(line, width, block.alignments[column] ?? 'left')),
@@ -139,7 +148,7 @@ function layoutTableCells(input: {
 }): MarkdownLayoutLine[] {
   const { cells, columnWidths, block, width, header, separator } = input;
   const wrappedCells = columnWidths.map((columnWidth, column) =>
-    wrapCellSegments(cellSegments(cells[column], header), columnWidth),
+    wrapCellSegments(cellSegments({ cell: cells[column], header }), columnWidth),
   );
   const lineCount = Math.max(1, ...wrappedCells.map((cellLines) => cellLines.length));
   const lines: MarkdownLayoutLine[] = [];
@@ -160,10 +169,11 @@ function layoutTableCells(input: {
   return lines;
 }
 
-function cellSegments(
-  cell: MarkdownTableCell | undefined,
-  header: boolean,
-): MarkdownLayoutSegment[] {
+function cellSegments(input: {
+  cell: MarkdownTableCell | undefined;
+  header: boolean;
+}): MarkdownLayoutSegment[] {
+  const { cell, header } = input;
   if (cell === undefined) return [];
   if (header) {
     const text = concatInlineText(cell.inlines);

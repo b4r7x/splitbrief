@@ -239,7 +239,7 @@ describe('markdownConversationRows', () => {
     expect(text).not.toContain(secret);
   });
 
-  it('reuses cached layout for identical markdown and invalidates on width changes', () => {
+  it('keeps a second keyPrefix from evicting or aliasing the first entry', () => {
     resetMarkdownConversationRowsCache();
     const input = {
       keyPrefix: 'markdown-cache',
@@ -248,11 +248,10 @@ describe('markdownConversationRows', () => {
     };
 
     const first = markdownConversationRowsProjection(input);
-    const second = markdownConversationRowsProjection(input);
-    const widthChanged = markdownConversationRowsProjection({ ...input, width: 20 });
+    const other = markdownConversationRowsProjection({ ...input, keyPrefix: 'markdown-other' });
 
-    expect(second).toBe(first);
-    expect(widthChanged).not.toBe(first);
+    expect(other).not.toBe(first);
+    expect(markdownConversationRowsProjection(input)).toBe(first);
   });
 
   it('retains newest active markdown entries when a projection pass exceeds the cache cap', () => {

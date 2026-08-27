@@ -81,6 +81,7 @@ function seedConversation(): void {
 function openBriefReview(taskCount: number) {
   routerStore.init(WORKFLOW_ROUTE);
   lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+  controlsStore.setInputMode('review');
   reviewStore.setReviewFile('briefs.md', taskCount);
   const snapshot = readBriefListSnapshot();
   if (snapshot === null) throw new Error('expected a brief-list snapshot');
@@ -204,11 +205,15 @@ describe('wireAppMouse', () => {
 
   it('blocks workflow fallback hit testing while question input owns the prompt', () => {
     const snapshot = openBriefReview(12);
-    controlsStore.setInputMode('question');
     const listTop = snapshot.rect.top + snapshot.taskTopOffset;
     const mock = createMockFilteredStdin();
     const dispose = wireAppMouse(mock.filtered);
 
+    mock.emit(pointerEvent('press', snapshot.rect.left, listTop));
+    expect(focusStore.get()).toEqual({ region: 'brief', index: snapshot.previousCount });
+
+    focusStore.clear();
+    controlsStore.setInputMode('question');
     mock.emit(pointerEvent('press', snapshot.rect.left, listTop));
 
     expect(focusStore.get()).toBeNull();
@@ -217,16 +222,20 @@ describe('wireAppMouse', () => {
 
   it('blocks workflow fallback hit testing while a field-editor session owns input', () => {
     const snapshot = openBriefReview(12);
+    const listTop = snapshot.rect.top + snapshot.taskTopOffset;
+    const mock = createMockFilteredStdin();
+    const dispose = wireAppMouse(mock.filtered);
+
+    mock.emit(pointerEvent('press', snapshot.rect.left, listTop));
+    expect(focusStore.get()).toEqual({ region: 'brief', index: snapshot.previousCount });
+
+    focusStore.clear();
     editorStore.openField({
       filePath: 'briefs.md',
       value: 'title text',
       ownerToken: reviewStore.get().ownerToken,
       layout: { columns: 80, rows: 30 },
     });
-    const listTop = snapshot.rect.top + snapshot.taskTopOffset;
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-
     mock.emit(pointerEvent('press', snapshot.rect.left, listTop));
 
     expect(focusStore.get()).toBeNull();
@@ -239,32 +248,59 @@ describe('wireAppMouse', () => {
     const mock = createMockFilteredStdin();
     const dispose = wireAppMouse(mock.filtered);
 
-    overlayStore.open('cost-drilldown');
     mock.emit(pointerEvent('wheel-up', 2, 7));
-    overlayStore.close();
-    approvalPromptStore.__testReset({
-      status: 'pending',
-      request: makePendingApprovalRequest(),
-      resolve: () => {},
-    });
-    mock.emit(pointerEvent('wheel-up', 2, 7));
-    approvalPromptStore.__testReset();
-    costApprovalStore.__testReset({
-      status: 'pending',
-      prediction: makeCostPrediction(),
-      resolve: () => {},
-    });
-    mock.emit(pointerEvent('wheel-up', 2, 7));
-    costApprovalStore.__testReset();
-    editorStore.openField({
-      filePath: 'briefs.md',
-      value: 'title text',
-      ownerToken: 1,
-      layout: { columns: 80, rows: 30 },
-    });
-    mock.emit(pointerEvent('wheel-up', 2, 7));
+    expect(conversationScrollStore.get().scrollOffset).toBeGreaterThan(0);
 
-    expect(conversationScrollStore.get().scrollOffset).toBe(0);
+    const owners: ReadonlyArray<{ name: string; take: () => void; release: () => void }> = [
+      {
+        name: 'overlay',
+        take: () => overlayStore.open('cost-drilldown'),
+        release: () => overlayStore.close(),
+      },
+      {
+        name: 'approval prompt',
+        take: () =>
+          approvalPromptStore.__testReset({
+            status: 'pending',
+            request: makePendingApprovalRequest(),
+            resolve: () => {},
+          }),
+        release: () => approvalPromptStore.__testReset(),
+      },
+      {
+        name: 'cost prompt',
+        take: () =>
+          costApprovalStore.__testReset({
+            status: 'pending',
+            prediction: makeCostPrediction(),
+            resolve: () => {},
+          }),
+        release: () => costApprovalStore.__testReset(),
+      },
+      {
+        name: 'field editor',
+        take: () =>
+          editorStore.openField({
+            filePath: 'briefs.md',
+            value: 'title text',
+            ownerToken: 1,
+            layout: { columns: 80, rows: 30 },
+          }),
+        release: () => editorStore.close(),
+      },
+    ];
+
+    for (const owner of owners) {
+      conversationScrollStore.reset();
+      owner.take();
+      mock.emit(pointerEvent('wheel-up', 2, 7));
+      expect({ owner: owner.name, offset: conversationScrollStore.get().scrollOffset }).toEqual({
+        owner: owner.name,
+        offset: 0,
+      });
+      owner.release();
+    }
+
     dispose();
   });
 

@@ -43,14 +43,6 @@ describe('parseClientMessage', () => {
     const parsed = parseIpcPromptResponse(JSON.parse(JSON.stringify(response)));
 
     expect(parsed).toEqual(response);
-    if (parsed?.kind === 'approval_needed' && 'command' in parsed) {
-      expect(parsed.command).toMatchObject({
-        action: 'retry',
-        operationId: 'operation-1',
-        epochId: 'epoch-1',
-      });
-      expect('comment' in parsed.command).toBe(false);
-    }
   });
 
   it('rejects retry commands without the current identity envelope', () => {

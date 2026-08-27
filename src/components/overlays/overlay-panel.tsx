@@ -30,10 +30,7 @@ export function OverlayPanel({ title, hint, density, children }: OverlayPanelPro
   const [{ cols, rows }] = useStores(terminalSizeStore);
   const rect = overlayRect({ cols, rows, density });
 
-  // Surface titles stay quiet dim metadata (§1.1 accent budget) and use sentence case — first word
-  // capitalized — like every TUI title, label, status, and empty state. Three token classes stay lowercase
-  // even at string start: key tokens (esc, ctrl+k, ⏎, space), slash commands (/settings), and config enum
-  // values (standard, auto, cli). Real role titles (the runner picker) still hand-roll their own accent.
+  // Surface titles stay quiet dim metadata (§1.1 accent budget).
   const titleNode = title && (
     <Box marginBottom={1}>
       <Text color={t.textDim}>{title}</Text>

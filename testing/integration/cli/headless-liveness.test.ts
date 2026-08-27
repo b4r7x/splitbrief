@@ -10,7 +10,8 @@ import {
 } from '#testing/helpers/headless-project.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
-import { writeActive, TRANSCRIPT_OMITTED_FEATURE } from '../../../src/core/sessions/lifecycle.js';
+import { writeActive } from '../../../src/core/sessions/active-pointer.js';
+import { TRANSCRIPT_OMITTED_FEATURE } from '../../../src/core/sessions/session-id.js';
 import { sessionDir } from '../../../src/core/paths.js';
 import { readLockfile, checkServerStatus } from '../../../src/engine/ipc/lockfile.js';
 import type { LockfileData } from '../../../src/engine/ipc/lockfile.js';
@@ -64,7 +65,7 @@ describe('runHeadless — liveness record (F-261)', () => {
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
     };
-    persistReadyExecutionState(projectDir, sessionId, state);
+    persistReadyExecutionState({ projectDir, sessionId }, state);
     return { projectDir, sessionId };
   }
 
@@ -86,7 +87,7 @@ describe('runHeadless — liveness record (F-261)', () => {
       implementerTool: 'ollama',
     };
 
-    const resumeState = persistReadyExecutionState(projectDir, sessionId, state);
+    const resumeState = persistReadyExecutionState({ projectDir, sessionId }, state);
     await runHeadless({
       prepared: preparedHeadlessExecution({
         projectDir,

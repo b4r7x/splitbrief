@@ -1,37 +1,30 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { symlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { Box, Text } from 'ink';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { BRIEF_READINESS_FILE, TASKS_FILE } from '../../../../core/paths.js';
 import {
-  BriefRecoveryProjectionV1Schema,
+  BRIEF_QUALITY_FILE,
+  BRIEF_READINESS_FILE,
+  STATE_FILE,
+  TASKS_FILE,
+} from '../../../../core/paths.js';
+import {
   type BriefRecoveryProjectionV1,
-} from '../../../../core/schemas/brief-recovery.js';
+  BriefRecoveryProjectionV1Schema,
+} from '../../../../core/schemas/brief-recovery/document.js';
+import { createInitialState } from '../../../../core/state/machine.js';
+import { createBriefRecoveryState } from '../../../../engine/orchestrator/planning/brief-recovery.js';
 import { formatTasks } from '../../../../engine/spec/formatter.js';
+import type { LoadBriefReviewDataResult } from '../../brief-review-loader.js';
 import { reviewStore } from '../../../../stores/workflow/review.js';
 import { PlanReviewHeader } from './header.js';
 import { BriefReviewView } from './view.js';
-import { useBriefData } from './use-load-state.js';
-
-const loaderOverride = vi.hoisted(() => ({
-  current: null as ((options: unknown) => Promise<unknown>) | null,
-}));
-
-vi.mock('../../brief-review-loader.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../brief-review-loader.js')>();
-  return {
-    ...actual,
-    loadBriefReviewData: ((options: Parameters<typeof actual.loadBriefReviewData>[0]) =>
-      loaderOverride.current === null
-        ? actual.loadBriefReviewData(options)
-        : loaderOverride.current(options)) as typeof actual.loadBriefReviewData,
-  };
-});
+import { useBriefData, type BriefDataLoader } from './use-load-state.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 const tmpDirs: string[] = [];
@@ -67,6 +60,42 @@ function writeBlockingReadiness(dir: string): void {
   );
 }
 
+function writePersistedBlockedState(dir: string): void {
+  const sessionId = basename(dir);
+  const hash = 'b'.repeat(64);
+  const state = {
+    ...createInitialState('persisted projection fixture'),
+    stateRevision: 4,
+    stateFence: { token: 1, ownerId: 'use-load-state-test' },
+    phase: 'reviewing-briefs' as const,
+    briefRecovery: createBriefRecoveryState(
+      {
+        sessionId,
+        origin: { mode: 'standard', entry: 'initial' },
+        continuation: { version: 1, kind: 'approval', mode: 'standard', entry: 'initial' },
+        activeBrief: { revision: 2, hash, path: TASKS_FILE },
+        report: {
+          briefHash: hash,
+          report: { revision: 2, hash: 'r'.repeat(64), path: BRIEF_QUALITY_FILE },
+          ruleVersion: 'brief-quality-v1',
+          issues: [
+            {
+              code: 'empty_task_list',
+              severity: 'error' as const,
+              taskId: null,
+              message: 'current persisted contract issue',
+            },
+          ],
+          errorCount: 1,
+        },
+        qualityPolicyVersion: 'brief-quality-v1',
+      },
+      { epochId: 'epoch-1', recoveryRevision: 2 },
+    ),
+  };
+  writeFileSync(join(dir, STATE_FILE), JSON.stringify(state), 'utf8');
+}
+
 function recoveryProjection(status: BriefRecoveryProjectionV1['status'] = 'blocked') {
   const hash = 'brief-hash';
   const issue = {
@@ -100,7 +129,7 @@ function recoveryProjection(status: BriefRecoveryProjectionV1['status'] = 'block
   });
 }
 
-function projectedResult(projection: BriefRecoveryProjectionV1) {
+function projectedResult(projection: BriefRecoveryProjectionV1): LoadBriefReviewDataResult {
   return {
     tasks: [makeTask({ id: 'T001', title: 'Current task' })],
     quality: {
@@ -137,12 +166,10 @@ function Harness({ filePath }: { filePath: string }) {
 describe('useBriefData', () => {
   beforeEach(() => {
     resetAllStores();
-    loaderOverride.current = null;
   });
 
   afterEach(() => {
     resetAllStores();
-    loaderOverride.current = null;
     for (const dir of tmpDirs.splice(0)) cleanupTempDir(dir);
   });
 
@@ -211,10 +238,10 @@ describe('useBriefData', () => {
   it('uses the current persisted projection instead of stale quality artifacts', async () => {
     const dir = tempDir('brief-data-current-projection');
     const filePath = writeTasks(dir);
-    const current = recoveryProjection();
-    loaderOverride.current = async () => ({
-      ...projectedResult(current),
-      quality: {
+    writePersistedBlockedState(dir);
+    writeFileSync(
+      join(dir, BRIEF_QUALITY_FILE),
+      JSON.stringify({
         version: 1,
         passed: false,
         score: 0,
@@ -226,8 +253,9 @@ describe('useBriefData', () => {
             message: 'stale artifact issue',
           },
         ],
-      },
-    });
+      }),
+      'utf8',
+    );
 
     function ProjectionHarness() {
       const data = useBriefData(filePath);
@@ -257,14 +285,15 @@ describe('useBriefData', () => {
     const filePath = writeTasks(dir);
     const firstProjection = recoveryProjection('checking');
     const currentProjection = recoveryProjection('ready');
-    let resolveFirst: ((value: unknown) => void) | undefined;
-    loaderOverride.current = async () =>
+    let resolveFirst: ((value: LoadBriefReviewDataResult) => void) | undefined;
+    let current: BriefDataLoader = () =>
       new Promise((resolve) => {
         resolveFirst = resolve;
       });
+    const load: BriefDataLoader = (options) => current(options);
 
     function ProjectionHarness() {
-      const data = useBriefData(filePath);
+      const data = useBriefData(filePath, load);
       return <Text>{data.recovery?.status ?? 'none'}</Text>;
     }
 
@@ -273,7 +302,7 @@ describe('useBriefData', () => {
     try {
       await vi.waitFor(() => expect(resolveFirst).toBeTypeOf('function'));
       reviewStore.reloadReviewFile();
-      loaderOverride.current = async () => projectedResult(currentProjection);
+      current = async () => projectedResult(currentProjection);
       await vi.waitFor(() => expect(stripAnsiStyles(ui.lastFrame())).toContain('ready'));
       resolveFirst?.({ ...projectedResult(firstProjection) });
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -287,8 +316,8 @@ describe('useBriefData', () => {
   it('renders an explicit loading state without recovery actions while the brief is pending', async () => {
     const dir = tempDir('brief-data-loading');
     const filePath = writeTasks(dir);
-    let resolveLoad: ((value: unknown) => void) | undefined;
-    loaderOverride.current = async () =>
+    let resolveLoad: ((value: LoadBriefReviewDataResult) => void) | undefined;
+    const load: BriefDataLoader = () =>
       new Promise((resolve) => {
         resolveLoad = resolve;
       });
@@ -300,6 +329,7 @@ describe('useBriefData', () => {
         height={16}
         width={80}
         recovery={recoveryProjection('blocked')}
+        load={load}
       />,
     );
     try {

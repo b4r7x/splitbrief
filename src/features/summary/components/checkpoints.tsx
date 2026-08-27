@@ -2,8 +2,7 @@ import { Text } from 'ink';
 import type { CheckpointSummaryRollup } from '../../../core/schemas/summary.js';
 import type { ScrollableDocumentRow } from '../../../components/scrollable-document.js';
 import type { Theme } from '../../../components/theme.js';
-import { truncateWithEllipsis } from '../../../utils/truncate.js';
-import { stripTerminalControls } from '../../../utils/display-text.js';
+import { stripTerminalControls, truncateTerminalDisplayText } from '../../../utils/display-text.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 
@@ -26,7 +25,7 @@ function formatLatestCheckpoint(
   const id = summary.latestId ?? 'n/a';
   const prefix = uniqueParts([summary.latestKind, summary.latestName]).join(' ');
   const text = prefix ? `${prefix} ${id}` : id;
-  return truncateWithEllipsis(stripTerminalControls(text), maxLength);
+  return truncateTerminalDisplayText(text, maxLength);
 }
 
 function formatRunStatus(summary: CheckpointSummaryRollup): string | null {

@@ -19,7 +19,6 @@ describe('buildAnthropicStreamRequest', () => {
     expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 24_000 });
     expect(body).not.toHaveProperty('temperature');
     const thinking = body.thinking as { budget_tokens: number };
-    expect(thinking.budget_tokens).toBe(24_000);
     expect(typeof body.max_tokens).toBe('number');
     expect(body.max_tokens as number).toBeGreaterThan(thinking.budget_tokens);
   });

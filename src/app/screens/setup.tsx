@@ -29,7 +29,7 @@ import { PresetRowView } from '../../features/crew/preset-row.js';
 import { CrewRowView, CrewSpine, CrewVerdictLine } from '../../features/crew/row-view.js';
 import { useCrew } from '../../features/crew/use-crew.js';
 import { useFilterableList } from '../../hooks/use-filterable-list.js';
-import { refreshPickerDetection } from '../../features/runners/picker-view.js';
+import { refreshPickerDetection } from '../../features/runners/refresh-detection.js';
 import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
 import { StartPreparationPanel } from '../../features/start-preparation/panel.js';
 import { observePreparationCleanup } from '../../features/start-preparation/observe-cleanup.js';
@@ -45,7 +45,7 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import { assertNever } from '../../utils/type-guards.js';
-import { interactivePreparationPolicy } from '../prepare-resume.js';
+import { appPreparationError, interactivePreparationPolicy } from '../prepare-resume.js';
 
 type Step = 'discovery' | 'crew';
 
@@ -369,7 +369,7 @@ export function SetupScreen({ prepare = prepareExecution }: SetupScreenProps) {
     prepare: async (input, signal) => {
       const currentConfig = configStore.get().config;
       if (currentConfig === null) {
-        return { kind: 'failed', error: new Error('Project configuration is not loaded.') };
+        return { kind: 'failed', error: appPreparationError.configNotLoaded() };
       }
       return prepare({
         projectDir: input.projectDir,

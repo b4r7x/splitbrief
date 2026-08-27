@@ -353,12 +353,18 @@ function resolveToolUseDelta(
 }
 
 export function throwForClaudeCallFailure(result: RunnerCallResult): never {
-  throw processError.exitCode({
-    command: 'claude',
-    code: 0,
-    stderr: '',
+  const detail = result.error?.message;
+  const message =
+    detail !== undefined && detail.length > 0
+      ? `Claude runner call ${result.status}: ${detail}`
+      : `Claude runner call ${result.status}`;
+  throw error('runner-call-failed', message, {
+    callId: result.callId,
+    status: result.status,
     output: result.text,
-    detail: result.error?.message ?? `Claude runner call ended with ${result.status}`,
+    nativeSessionId: result.nativeSessionId,
+    partial: result.partial,
+    error: result.error,
   });
 }
 

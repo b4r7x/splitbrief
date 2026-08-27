@@ -3,15 +3,11 @@ import { API_OFFERINGS, API_PROVIDER_CATALOG } from '../providers/api-provider-c
 import {
   CLI_AUTH_CHANNEL_IDS,
   CLI_TOOL_CATALOG,
-  CLI_TOOL_TRUST,
   cliModelPolicyViolations,
   runnerRoleForActiveRole,
   type ActiveRunnerRole,
-  type CliModelPolicy,
   type PlannerTierRole,
   type RunnerRole,
-  type RunnerRoleTrustMetadata,
-  type RunnerTrustMetadata,
 } from '../runners/cli-tool-catalog.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import { isAutomaticModel, normalizeConfiguredModel } from '../providers/automatic-model.js';
@@ -26,7 +22,6 @@ import {
   PlannerApiProviderIdSchema,
   PlannerCliToolIdSchema,
 } from './enums.js';
-import type { CliToolId } from '../runners/cli-tool-catalog.js';
 import type { RunnerKind } from './enums.js';
 
 const PROMPT_PLACEHOLDER = '{prompt}';
@@ -128,13 +123,10 @@ function apiProviderSchemaForSeat(seat: ActiveRunnerRole) {
     .string()
     .min(1)
     .refine(
-      (provider) => {
-        const [descriptor] = descriptorsForProviderIdentity(provider);
-        return (
-          descriptor === undefined ||
-          descriptor.roles.some((candidateRole) => candidateRole === role)
-        );
-      },
+      (provider) =>
+        descriptorsForProviderIdentity(provider).every((descriptor) =>
+          descriptor.roles.some((candidateRole) => candidateRole === role),
+        ),
       {
         message: `API provider is not admitted for the ${seat} role`,
       },
@@ -273,23 +265,6 @@ function validateCliAuthChannel(input: unknown, ctx: z.RefinementCtx): void {
   });
 }
 
-export function createCliModelPolicySchema(policy: CliModelPolicy) {
-  return z
-    .strictObject({
-      model: z.string().min(1).optional(),
-      customModels: z.array(z.string()).optional(),
-    })
-    .superRefine((selection, ctx) => {
-      for (const violation of cliModelPolicyViolations(policy, selection)) {
-        ctx.addIssue({
-          code: 'custom',
-          path: [violation.field],
-          message: violation.message,
-        });
-      }
-    });
-}
-
 const PlannerCapabilitiesPartialSchema = PlannerCapabilitiesSchema.partial();
 
 const PlannerCapabilitiesField = {
@@ -329,109 +304,13 @@ export const GenerationCommonFields = {
   effort: EffortLevelSchema.optional(),
 };
 
-type RunnerKindCapabilities = {
-  usesArgsOutputFormat: boolean;
-  usesApiKey: boolean;
-  requiresCommand: boolean;
-  // Non-CLI kinds expose one role map. CLI trust is keyed by the catalog tool
-  // because permission flags and posture are tool-specific.
-  trust: RunnerRoleTrustMetadata | typeof CLI_TOOL_TRUST;
-};
-
-type RunnerTrustConfig = { kind: 'cli'; tool: CliToolId } | { kind: Exclude<RunnerKind, 'cli'> };
-
-const API_TRUST: RunnerTrustMetadata = {
-  executesLocalCommand: false,
-  mayUseNetwork: true,
-  mayWriteFilesDirectly: false,
-  autoAllowFlags: [],
-};
-
-const COMMAND_TRUST: RunnerTrustMetadata = {
-  executesLocalCommand: true,
-  mayUseNetwork: true,
-  mayWriteFilesDirectly: true,
-  autoAllowFlags: [],
-};
-
-const AGENT_SDK_PLANNER_TRUST: RunnerTrustMetadata = {
-  executesLocalCommand: false,
-  mayUseNetwork: true,
-  mayWriteFilesDirectly: false,
-  autoAllowFlags: [],
-};
-
-const AGENT_SDK_IMPLEMENTER_TRUST: RunnerTrustMetadata = {
-  executesLocalCommand: true,
-  mayUseNetwork: true,
-  mayWriteFilesDirectly: true,
-  autoAllowFlags: [],
-};
-
-export const RUNNER_DESCRIPTORS = {
-  cli: {
-    fields: CliRunnerFields,
-    usesArgsOutputFormat: true,
-    usesApiKey: false,
-    requiresCommand: false,
-    trust: CLI_TOOL_TRUST,
-  },
-  api: {
-    fields: ApiRunnerFields,
-    usesArgsOutputFormat: false,
-    usesApiKey: true,
-    requiresCommand: false,
-    trust: {
-      planner: API_TRUST,
-      implementer: API_TRUST,
-    },
-  },
-  shell: {
-    fields: ShellRunnerFields,
-    usesArgsOutputFormat: true,
-    usesApiKey: false,
-    requiresCommand: true,
-    trust: {
-      planner: COMMAND_TRUST,
-      implementer: COMMAND_TRUST,
-    },
-  },
-  agent: {
-    fields: AgentRunnerFields,
-    usesArgsOutputFormat: true,
-    usesApiKey: false,
-    requiresCommand: true,
-    trust: {
-      planner: COMMAND_TRUST,
-      implementer: COMMAND_TRUST,
-    },
-  },
-  'agent-sdk': {
-    fields: AgentSdkRunnerFields,
-    usesArgsOutputFormat: false,
-    usesApiKey: true,
-    requiresCommand: false,
-    trust: {
-      planner: AGENT_SDK_PLANNER_TRUST,
-      implementer: AGENT_SDK_IMPLEMENTER_TRUST,
-    },
-  },
-} as const satisfies Record<
-  RunnerKind,
-  { fields: Record<string, z.ZodTypeAny> } & RunnerKindCapabilities
->;
-
-export function getRunnerKindMeta(kind: RunnerKind): RunnerKindCapabilities {
-  return RUNNER_DESCRIPTORS[kind];
-}
-
-export function getRunnerTrustMeta(
-  role: RunnerRole,
-  runner: RunnerTrustConfig,
-): RunnerTrustMetadata {
-  if (runner.kind === 'cli') return CLI_TOOL_TRUST[runner.tool][role];
-  return RUNNER_DESCRIPTORS[runner.kind].trust[role];
-}
+const RUNNER_DESCRIPTORS = {
+  cli: { fields: CliRunnerFields },
+  api: { fields: ApiRunnerFields },
+  shell: { fields: ShellRunnerFields },
+  agent: { fields: AgentRunnerFields },
+  'agent-sdk': { fields: AgentSdkRunnerFields },
+} as const satisfies Record<RunnerKind, { fields: Record<string, z.ZodTypeAny> }>;
 
 export function createRunnerConfigSchema<C extends z.ZodRawShape>(commonFields: C) {
   const { model: _requiredModel, ...cliCommonFields } = commonFields;

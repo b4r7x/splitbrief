@@ -49,8 +49,6 @@ export interface TerminalDisplayTextOptions {
   preserveLineBreaks?: boolean | undefined;
 }
 
-export function stripTerminalControls(text: string): string;
-export function stripTerminalControls(text: string, opts: TerminalDisplayTextOptions): string;
 export function stripTerminalControls(text: string, opts: TerminalDisplayTextOptions = {}): string {
   const controlPattern = opts.preserveLineBreaks
     ? CONTROL_CHARACTER_EXCEPT_LINE_BREAK_PATTERN

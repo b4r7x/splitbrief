@@ -201,12 +201,13 @@ async function runPlannerEffect(
   });
 }
 
-async function runImplementerEffect(
-  options: FactoryEffectConformanceOptions,
-  config: Config,
-  executable: CliExecutableReceipt,
-  task: Task,
-): Promise<ImplementerResult> {
+async function runImplementerEffect(input: {
+  options: FactoryEffectConformanceOptions;
+  config: Config;
+  executable: CliExecutableReceipt;
+  task: Task;
+}): Promise<ImplementerResult> {
+  const { options, config, executable, task } = input;
   const slot = { role: 'implementer', profile: 'default' } as const;
   const preparationId = 'effect-conformance-implementer';
   const gates: readonly RunnerGate[] = [
@@ -269,7 +270,12 @@ export async function runFactoryEffectConformance(
         'implementer effect requires a task',
       );
     } else {
-      const result = await runImplementerEffect(options, config, receipt.data, options.task);
+      const result = await runImplementerEffect({
+        options,
+        config,
+        executable: receipt.data,
+        task: options.task,
+      });
       changed = await changedFilesSinceBaseline(options.projectDir, baseline);
       outcome = await verifyImplementerEffect(options, result, changed);
     }

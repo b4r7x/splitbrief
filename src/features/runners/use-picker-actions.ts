@@ -10,6 +10,7 @@ import { error } from '../../utils/error.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { cliProviderAuthFacts } from '../../core/discovery/detection.js';
 import { formatModelName } from '../../core/model-display.js';
+import type { CustomCommandRunnerKind } from '../../core/config/custom-commands.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { clearReviewerSeat } from '../../core/config/accessors/active-runner.js';
 import { clearEscalation, writeEscalationRunner } from '../../core/config/accessors/escalation.js';
@@ -29,14 +30,13 @@ import type { Config } from '../../core/schemas/config.js';
 import { getDefaultDetectionService } from '../../engine/detection/service.js';
 import { refreshDetectionForCurrentConfig } from '../../engine/detection/store-publication.js';
 import { assertNever, includes } from '../../utils/type-guards.js';
+import type { PickerOption, RunnerPickerOption } from './model-catalog/options.js';
 import {
   compactProviderTag,
   modelProviderAuthKey,
   modelProviderPrefix,
   resolveProviderAuthState,
-  type PickerOption,
-  type RunnerPickerOption,
-} from './model-catalog/options.js';
+} from './model-catalog/provider-axis.js';
 import type { ModelOption } from './model-catalog/recency.js';
 import { formatNeedsSignInSaveFeedback, gatewayAccountName } from './picker-format.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
@@ -59,13 +59,13 @@ import {
 import { pickerViewStore, type PickerSubView } from '../../stores/ui/picker-view.js';
 
 export interface PickerActions {
-  confirm(selection: PickerOption, model: ModelOption | null): void;
+  confirm(selection: PickerOption, model: ModelOption | null): Promise<void>;
   confirmProviderVariant(fullId: string): Promise<void>;
   leftChange(item: PickerOption): void;
-  deleteRight(item: ModelOption): void;
-  chooseContract(kind: 'shell' | 'agent'): void;
-  customCommand(cmd: string): void;
-  customModel(modelName: string): void;
+  deleteRight(item: ModelOption): Promise<void>;
+  chooseContract(kind: CustomCommandRunnerKind): void;
+  customCommand(cmd: string): Promise<void>;
+  customModel(modelName: string): Promise<void>;
   openCustomModel(item: PickerOption): void;
   openProviderAuth(item: PickerOption): void;
   submitProviderKey(value: string): Promise<void>;
@@ -76,6 +76,15 @@ export interface PickerActionDeps {
   validateKey: typeof validateProviderKey;
   refreshDetection: () => Promise<unknown>;
   readGitignore: (projectDir: string) => Promise<string | null>;
+}
+
+/** A picker action runs unawaited; its failure has to reach the user here. */
+async function reportFailure(task: () => Promise<void>): Promise<void> {
+  try {
+    await task();
+  } catch (err) {
+    feedbackStore.setError(toErrorMessage(err));
+  }
 }
 
 function defaultRefreshDetection(): Promise<unknown> {
@@ -179,7 +188,7 @@ export function usePickerActions(opts: {
       case 'reviewer':
         return commitPlannerTierSelection({ config, role: 'reviewer', selection, model, apiKey });
       case 'implementer':
-        return commitImplementerSelection(config, selection, model, apiKey);
+        return commitImplementerSelection({ config, selection, model, apiKey });
       default:
         return assertNever(seatRole);
     }
@@ -223,24 +232,26 @@ export function usePickerActions(opts: {
   };
 
   return {
-    async confirm(selection: PickerOption, model: ModelOption | null) {
-      if (selection.kind === 'custom-command') {
-        const selectionIndex = catalog.items.findIndex((item) => item.id === selection.id);
-        pickerViewStore.open(
-          { kind: 'custom-command-contract' },
-          selectionIndex >= 0 ? selectionIndex : launcherIndex >= 0 ? launcherIndex : 0,
-        );
-        return;
-      }
-      if (selection.kind === 'escalation-off') {
-        await commit(clearEscalation(config), `${catalog.roleLabel} set to: none`);
-        return;
-      }
-      if (selection.kind === 'inherit-planner') {
-        await commit(clearReviewerSeat(config), `${catalog.roleLabel} set to: same as planner`);
-        return;
-      }
-      await saveModelSelection(selection, model?.id ?? null);
+    confirm(selection: PickerOption, model: ModelOption | null) {
+      return reportFailure(async () => {
+        if (selection.kind === 'custom-command') {
+          const selectionIndex = catalog.items.findIndex((item) => item.id === selection.id);
+          pickerViewStore.open(
+            { kind: 'custom-command-contract' },
+            selectionIndex >= 0 ? selectionIndex : launcherIndex >= 0 ? launcherIndex : 0,
+          );
+          return;
+        }
+        if (selection.kind === 'escalation-off') {
+          await commit(clearEscalation(config), `${catalog.roleLabel} set to: none`);
+          return;
+        }
+        if (selection.kind === 'inherit-planner') {
+          await commit(clearReviewerSeat(config), `${catalog.roleLabel} set to: same as planner`);
+          return;
+        }
+        await saveModelSelection(selection, model?.id ?? null);
+      });
     },
     async confirmProviderVariant(fullId: string) {
       const item = runnerItemOf(catalog.currentItem);
@@ -250,53 +261,59 @@ export function usePickerActions(opts: {
     leftChange(item: PickerOption) {
       catalog.setCurrentItem(item);
     },
-    async deleteRight(item: ModelOption) {
-      if (inheritsPlannerSeat(config, seatRole)) {
-        feedbackStore.setError(`${item.id} belongs to the planner. Remove it from the planner.`);
-        return;
-      }
-      const updated = removeCustomModel(config, seatRole, item.id);
-      const result = await configStore.save(updated);
-      if (reportConfigSaveFailure(result)) return;
-      feedbackStore.setMessage(`Removed custom model: ${item.id}`);
+    deleteRight(item: ModelOption) {
+      return reportFailure(async () => {
+        if (inheritsPlannerSeat(config, seatRole)) {
+          feedbackStore.setError(`${item.id} belongs to the planner. Remove it from the planner.`);
+          return;
+        }
+        const updated = removeCustomModel(config, seatRole, item.id);
+        const result = await configStore.save(updated);
+        if (reportConfigSaveFailure(result)) return;
+        feedbackStore.setMessage(`Removed custom model: ${item.id}`);
+      });
     },
-    chooseContract(kind: 'shell' | 'agent') {
+    chooseContract(kind: CustomCommandRunnerKind) {
       if (view.kind !== 'custom-command-contract') return;
       pickerViewStore.open({ kind: 'custom-command', intendedKind: kind }, preservedLeftIndex);
     },
-    async customCommand(cmd: string) {
-      if (view.kind !== 'custom-command') {
-        throw error('picker-invalid-view', 'customCommand called outside custom-command view', {
-          view: view.kind,
+    customCommand(cmd: string) {
+      return reportFailure(async () => {
+        if (view.kind !== 'custom-command') {
+          throw error('picker-invalid-view', 'customCommand called outside custom-command view', {
+            view: view.kind,
+          });
+        }
+        const updated = commitCustomCommand({
+          config,
+          role: seatRole,
+          command: cmd,
+          kind: view.intendedKind,
         });
-      }
-      const updated = commitCustomCommand({
-        config,
-        role: seatRole,
-        command: cmd,
-        kind: view.intendedKind,
+        await commit(updated, `${catalog.roleLabel} set to: ${view.intendedKind}: ${cmd}`);
       });
-      await commit(updated, `${catalog.roleLabel} set to: ${view.intendedKind}: ${cmd}`);
     },
-    async customModel(modelName: string) {
-      if (view.kind !== 'custom-model') return;
-      if (isAutomaticModel(modelName)) {
-        feedbackStore.setError('"auto" is already offered as the Auto row — select it there.');
-        return;
-      }
-      const customModelItem = runnerItemOf(catalog.currentItem);
-      if (customModelItem === undefined) return;
-      const updated = commitCustomModel({
-        config,
-        role: seatRole,
-        selection: customModelItem,
-        modelName,
-        customModels: catalog.customModels,
+    customModel(modelName: string) {
+      return reportFailure(async () => {
+        if (view.kind !== 'custom-model') return;
+        if (isAutomaticModel(modelName)) {
+          feedbackStore.setError('"auto" is already offered as the Auto row — select it there.');
+          return;
+        }
+        const customModelItem = runnerItemOf(catalog.currentItem);
+        if (customModelItem === undefined) return;
+        const updated = commitCustomModel({
+          config,
+          role: seatRole,
+          selection: customModelItem,
+          modelName,
+          customModels: catalog.customModels,
+        });
+        await commit(
+          updated,
+          `${catalog.roleLabel} set to: ${customModelItem.displayName}${SOFT_SEP}${formatModelName(modelName)}`,
+        );
       });
-      await commit(
-        updated,
-        `${catalog.roleLabel} set to: ${customModelItem.displayName}${SOFT_SEP}${formatModelName(modelName)}`,
-      );
     },
     openCustomModel(item: PickerOption) {
       if (runnerItemOf(item) === undefined) return;

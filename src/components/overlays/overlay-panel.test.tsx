@@ -1,12 +1,26 @@
 import type { ReactElement } from 'react';
 import { Text } from 'ink';
 import { render } from 'ink-testing-library';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { getTheme } from '../theme.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayRect } from '../../core/navigation/overlay-rect.js';
 import { OverlayPanel, overlayInnerRowCapacity } from './overlay-panel.js';
+
+// ink-testing-library's stdout mock resolves chalk color level 0 unless FORCE_COLOR is set before
+// ink (and its chalk dependency) first load, so the color assertions below would silently no-op
+// without this. Restored in afterAll so it never leaks into other test files.
+const originalForceColor = vi.hoisted(() => {
+  const saved = process.env['FORCE_COLOR'];
+  process.env['FORCE_COLOR'] = '3';
+  return saved;
+});
+
+afterAll(() => {
+  if (originalForceColor === undefined) delete process.env['FORCE_COLOR'];
+  else process.env['FORCE_COLOR'] = originalForceColor;
+});
 
 function colorOpen(color: string): string {
   const ui = render(<Text color={color}>x</Text>);
@@ -49,13 +63,8 @@ describe('OverlayPanel title', () => {
 
     expect(stripAnsiStyles(frame)).toContain(title);
 
-    // With color disabled (FORCE_COLOR=0) Ink emits no ANSI prefixes, so `accentOpen`/`dimOpen`
-    // are empty and there is no styling to inspect — the stripped-text check above is the only
-    // available signal. Guard the prefix assertions to the color-on case where they are non-empty.
-    if (accentOpen !== '') {
-      expect(frame).toContain(dimOpen);
-      expect(frame).not.toContain(accentOpen);
-    }
+    expect(frame).toContain(dimOpen);
+    expect(frame).not.toContain(accentOpen);
   });
 });
 

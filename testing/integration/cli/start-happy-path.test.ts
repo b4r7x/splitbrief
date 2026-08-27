@@ -15,7 +15,7 @@ import { createDefaultConfig } from '../../../src/core/config/load/io.js';
 import { defaultCliAuthChannel } from '../../../src/core/runners/cli-tool-catalog.js';
 import { toYaml } from '../../../src/core/config/load/transform.js';
 import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../../src/core/paths.js';
-import { readActive } from '../../../src/core/sessions/lifecycle.js';
+import { readActive } from '../../../src/core/sessions/active-pointer.js';
 
 // Runner availability is a live network claim, and the default config points the
 // implementer at a local Ollama. The shared no-claim mock keeps the verdict off

@@ -146,15 +146,7 @@ function protectedFlag(input: {
   if (protectedFlags.has(flag)) return flag;
   if (value.startsWith('--')) return null;
   for (const shortFlag of protectedShortValueFlags) {
-    if (
-      shortFlag.length === 2 &&
-      shortFlag.startsWith('-') &&
-      protectedFlags.has(shortFlag) &&
-      value.length > shortFlag.length &&
-      value.startsWith(shortFlag)
-    ) {
-      return shortFlag;
-    }
+    if (value.length > shortFlag.length && value.startsWith(shortFlag)) return shortFlag;
   }
   return null;
 }

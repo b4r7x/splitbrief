@@ -224,35 +224,23 @@ describe('MultilineInput control-byte sanitization', () => {
     unmount = undefined;
   });
 
-  it('does not echo multi-character BEL bytes into the rendered draft', async () => {
-    let stored = '';
-    const ui = renderFeature(<SanitizeHarness onChange={(v) => (stored = v)} />);
-    unmount = ui.unmount;
-    await flushEffects();
+  it.each(['\x07', '\x01'])(
+    'does not echo multi-character control byte %j into the rendered draft',
+    async (byte) => {
+      let stored = '';
+      const ui = renderFeature(<SanitizeHarness onChange={(v) => (stored = v)} />);
+      unmount = ui.unmount;
+      await flushEffects();
 
-    ui.stdin.write('a\x07b');
-    await flushEffects();
+      ui.stdin.write(`a${byte}b`);
+      await flushEffects();
 
-    const frame = ui.lastFrame() ?? '';
-    expect(stored).toBe('a\x07b');
-    expect(frame).toContain('ab');
-    expect(frame).not.toContain('\x07');
-  });
-
-  it('does not echo multi-character C0 control bytes into the rendered draft', async () => {
-    let stored = '';
-    const ui = renderFeature(<SanitizeHarness onChange={(v) => (stored = v)} />);
-    unmount = ui.unmount;
-    await flushEffects();
-
-    ui.stdin.write('a\x01b');
-    await flushEffects();
-
-    const frame = ui.lastFrame() ?? '';
-    expect(stored).toBe('a\x01b');
-    expect(frame).toContain('ab');
-    expect(frame).not.toContain('\x01');
-  });
+      const frame = ui.lastFrame() ?? '';
+      expect(stored).toBe(`a${byte}b`);
+      expect(frame).toContain('ab');
+      expect(frame).not.toContain(byte);
+    },
+  );
 });
 
 const BACKSPACE = '\x7f';

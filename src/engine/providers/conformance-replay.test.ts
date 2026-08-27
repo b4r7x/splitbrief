@@ -4,11 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { API_PROVIDER_CATALOG } from '../../core/providers/api-provider-catalog.js';
 import {
-  API_PROVIDER_CATALOG,
   API_PROVIDER_VERDICT_CANDIDATE_PATHS,
   PASS_API_PROVIDER_IDS,
-} from '../../core/providers/api-provider-catalog.js';
+} from '../../core/providers/api-provider-verdicts.js';
 import { assemblePickerDescriptors } from '../../features/runners/model-catalog/options.js';
 import {
   CandidateEvidence,
@@ -17,7 +17,7 @@ import {
   contractSha256,
 } from './candidate-contract.js';
 import type { OpenAICompatPolicy } from './openai-compat-policy.js';
-import { OPENAI_COMPAT_STANDARD_FINISH_REASONS } from './openai-compat-policy.js';
+import { resolveOpenAICompatPolicy } from './openai-compat-policy.js';
 import {
   PROVIDER_CONFORMANCE_EXIT_CODES,
   createUnregisteredOpenAICompatProvider,
@@ -72,15 +72,6 @@ interface ProviderReplayRow {
   readonly candidateTest?: string;
   readonly omitFromCatalog: boolean;
 }
-
-interface ReplayRowResult {
-  readonly taskId: VerdictTaskId;
-  readonly candidateId: string;
-  readonly kind: 'PASS-replay' | 'OMIT-NOT-APPLICABLE';
-  readonly resolvedWithoutNetwork: boolean;
-}
-
-const replayRowResults: ReplayRowResult[] = [];
 
 function resolveRepoPath(relativePath: string): string {
   return join(REPO_ROOT, relativePath);
@@ -227,7 +218,7 @@ const REPLAY_ROWS: readonly ProviderReplayRow[] = [
       expectedRawTerminal: 'finish_reason',
       asOf: '2026-07-31',
     }),
-    capturedContractSha256: '05c2408142b2babd3b221d495f734a9b76c44fd4879c6287222a7f058b076b58',
+    capturedContractSha256: 'c77204fd3e80949bcb568581efc955e6cde7b7d77f4c3b5afda1a25b0ef591d2',
     evidencePath: 'testing/fixtures/provider-conformance/deepseek.json',
     candidateSource: '.nuke/release-evidence/deepseek-candidate.ts',
     omitFromCatalog: false,
@@ -540,9 +531,7 @@ async function temporaryDirectory(): Promise<string> {
 
 function validateCapturedEvidence(row: ProviderReplayRow): void {
   const evidence = readEvidenceJson(row.evidencePath);
-  if (row.taskId !== 'T-043') {
-    expect(row.capturedContractSha256).toBe(contractSha256(row.contract));
-  }
+  expect(row.capturedContractSha256).toBe(contractSha256(row.contract));
   const rawCapture = evidence.rawCapture as Record<string, unknown> | undefined;
   expect(rawCapture).toBeDefined();
   if (rawCapture === undefined) return;
@@ -576,12 +565,6 @@ function executeOmitNotApplicable(row: ProviderReplayRow): void {
       .map((entry) => entry.descriptor.id);
     expect(pickerIds).toContain(row.candidateId);
   }
-  replayRowResults.push({
-    taskId: row.taskId,
-    candidateId: row.candidateId,
-    kind: 'OMIT-NOT-APPLICABLE',
-    resolvedWithoutNetwork: true,
-  });
 }
 
 async function loadCandidateModule(modulePath: string): Promise<UnregisteredProviderCandidate> {
@@ -686,13 +669,6 @@ async function replayPassEvidence(row: ProviderReplayRow): Promise<void> {
   });
   const registeredModels = await registeredProvider.listModels();
   expect(registeredModels.length).toBeGreaterThan(0);
-
-  replayRowResults.push({
-    taskId: row.taskId,
-    candidateId: row.candidateId,
-    kind: 'PASS-replay',
-    resolvedWithoutNetwork: true,
-  });
 }
 
 describe('provider conformance replay', () => {
@@ -721,33 +697,14 @@ describe('provider conformance replay', () => {
   });
 
   it('fails when OpenAICompatPolicy grows without updating replay capture', () => {
-    const samplePolicy: OpenAICompatPolicy = {
-      tokenField: 'max_tokens',
-      streamUsage: true,
-      temperature: 'verbatim',
-      effort: 'omit',
-      reasoning: 'omit',
-      extraBody: undefined,
-      finishReasons: OPENAI_COMPAT_STANDARD_FINISH_REASONS,
-    };
-    expect(Object.keys(samplePolicy).sort()).toEqual([...OPENAI_COMPAT_POLICY_FIELD_NAMES].sort());
-    const pollutedPolicy = { ...samplePolicy, surprise: 'uncaptured' };
-    expect(Object.keys(pollutedPolicy).sort()).not.toEqual(
-      [...OPENAI_COMPAT_POLICY_FIELD_NAMES].sort(),
-    );
-    expect([...PRODUCTION_REPLAY_CAPTURED_FIELDS].sort()).toEqual(
-      [
-        'candidate',
-        'cancellationProbe',
-        'errorDiagnostics',
-        'model',
-        'redirectPolicy',
-        'status',
-        'terminal',
-        'textBytes',
-        'usage',
-      ].sort(),
-    );
+    for (const row of REPLAY_ROWS) {
+      assertClosedPolicySurface(
+        resolveOpenAICompatPolicy({
+          provider: row.candidateId,
+          model: row.contract.modelIds[0],
+        }),
+      );
+    }
   });
 
   it.each(REPLAY_ROWS)(
@@ -763,19 +720,11 @@ describe('provider conformance replay', () => {
     },
   );
 
-  it('records one resolved row per T-043–T-053 verdict', () => {
-    expect(replayRowResults).toHaveLength(11);
-    for (const row of REPLAY_ROWS) {
-      const recorded = replayRowResults.find((entry) => entry.taskId === row.taskId);
-      expect(recorded).toBeDefined();
-      if (recorded === undefined) continue;
-      expect(recorded.candidateId).toBe(row.candidateId);
-      expect(recorded.resolvedWithoutNetwork).toBe(true);
-      if (isPassCandidateId(row.candidateId)) {
-        expect(recorded.kind).toBe('PASS-replay');
-      } else {
-        expect(recorded.kind).toBe('OMIT-NOT-APPLICABLE');
-      }
+  it('gives every T-043–T-053 verdict row its own evidence fixture on disk', () => {
+    const evidencePaths = REPLAY_ROWS.map((row) => row.evidencePath);
+    expect(new Set(evidencePaths).size).toBe(evidencePaths.length);
+    for (const evidencePath of evidencePaths) {
+      expect(existsSync(resolveRepoPath(evidencePath))).toBe(true);
     }
   });
 });

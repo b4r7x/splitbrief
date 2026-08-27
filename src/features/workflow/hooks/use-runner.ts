@@ -20,10 +20,8 @@ import {
   runWorkflow,
   WORKFLOW_REWIND_ABORT_REASON,
 } from '../../../engine/orchestrator/run/workflow.js';
-import {
-  WORKFLOW_USER_CANCELLED_ABORT_REASON,
-  type WorkflowSinks,
-} from '../../../engine/orchestrator/types.js';
+import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../engine/events/workflow-cancel.js';
+import type { WorkflowSinks } from '../../../engine/orchestrator/types.js';
 import { addTuiEvent, createTuiSink } from '../tui-sink.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import type { StreamingSink } from '../../../engine/orchestrator/task/streaming-feed.js';
@@ -50,7 +48,7 @@ import { readSession } from '../../../core/sessions/io.js';
 import { appendProtectedEngineEvent } from '../../../core/sessions/log-writer.js';
 import { RewindEventSchema } from '../../../core/state/rewind-event.js';
 import { transitionAndSave } from '../../../engine/orchestrator/state-ops.js';
-import { refreshWorkflowAuthority } from '../../../engine/orchestrator/run/init.js';
+import { refreshWorkflowAuthority } from '../../../engine/orchestrator/run/authority.js';
 import { isResumable } from '../../../core/phases.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -222,9 +220,6 @@ export function useWorkflowRunner({
     }
   };
 
-  const buildCallbacks = buildPromptCallbacks();
-  const recoveryDriverFactory = createRecoveryDriver();
-
   const startWorkflow = useEffectEvent(async (controller: AbortController) => {
     if (prepared === undefined) return;
     const { session, config } = prepared;
@@ -329,7 +324,7 @@ export function useWorkflowRunner({
       let retryProfileOverride: string | undefined;
       let retryProfileOverrideTaskId: TaskId | undefined;
       while (!isWorkflowAborted(controller, abortedRef)) {
-        const promptPendingRecovery = recoveryDriverFactory({
+        const promptPendingRecovery = createRecoveryDriver({
           prepared,
           authority: authorityRef.current,
           inputMode,
@@ -366,7 +361,7 @@ export function useWorkflowRunner({
           drainPendingAttachments: () => attachmentsStore.drain(),
           streamingSink: storeStreamingSink,
           signal: controller.signal,
-          callbacks: buildCallbacks({
+          callbacks: buildPromptCallbacks({
             inputMode,
             abortedRef,
             controller,
@@ -508,7 +503,7 @@ export function useWorkflowRunner({
         text,
         phase: saved.phase,
         bus,
-        persistTranscript: persistTranscript !== false,
+        persistTranscript,
         enforcePhasePolicy: false,
       });
       next = queued.state;

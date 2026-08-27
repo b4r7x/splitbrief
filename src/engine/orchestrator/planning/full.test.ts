@@ -24,17 +24,16 @@ import {
   OwnedPlannerArtifactSchema,
 } from '../../../core/schemas/task-compilation.js';
 import {
-  BriefRecoveryProjectionV1Schema,
   type BriefRecoveryProjectionV1,
-  type StateAuthorityReceipt,
-} from '../../../core/schemas/brief-recovery.js';
+  BriefRecoveryProjectionV1Schema,
+} from '../../../core/schemas/brief-recovery/document.js';
+import type { StateAuthorityReceipt } from '../../../core/schemas/brief-recovery.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import type { PlanOptions, Planner, PlannerArtifactLogicalName } from '../../planners/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import type { PhaseRecoveryBinding } from '../run/phases.js';
 import { recoveryResultFromProjection } from './brief-review-gate.js';
 import { resolveValidationDisplayCommand } from '../validation/commands.js';
-import { formatTasks } from '../../spec/formatter.js';
 import { runFullPlanning } from './full.js';
 
 let dirs: string[] = [];
@@ -159,7 +158,6 @@ describe('runFullPlanning — skill rehydration', () => {
       feature: 'feat',
       selectedSkills: undefined,
       approveLevel: 'none',
-      deferBriefGate: true,
     });
 
     expect(captured?.skillsContext).toContain('AuthSkill');
@@ -200,7 +198,6 @@ describe('runFullPlanning — skill rehydration', () => {
       feature: 'feat',
       selectedSkills: undefined,
       approveLevel: 'none',
-      deferBriefGate: true,
     });
 
     expect(captured?.skillsContext).toBeUndefined();
@@ -249,7 +246,6 @@ describe('runFullPlanning — questions', () => {
       feature: 'feat',
       selectedSkills: undefined,
       approveLevel: 'none',
-      deferBriefGate: true,
     });
 
     expect(onQuestionAsked).toHaveBeenCalledWith(question, 1, 1);
@@ -301,7 +297,6 @@ Some architecture.`;
       feature: 'feat',
       selectedSkills: undefined,
       approveLevel: 'none',
-      deferBriefGate: true,
     });
 
     const persisted = loadState({ projectDir, sessionId });
@@ -506,7 +501,7 @@ describe('runFullPlanning — brief quality preparation', () => {
     expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(0);
   });
 
-  it('repairs an initial zero-task result once before entering brief review', async () => {
+  it('does not repair an initial zero-task result before brief review', async () => {
     const projectDir = createTempDir('full-quality-repair');
     dirs.push(projectDir);
     const sessionId = 'sess-quality-repair';
@@ -520,7 +515,6 @@ describe('runFullPlanning — brief quality preparation', () => {
         tasks: [],
         usage: { inputTokens: 1, outputTokens: 1 },
       }),
-      review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
     });
 
     const result = await runFullPlanning({
@@ -579,18 +573,17 @@ describe('runFullPlanning — brief quality preparation', () => {
       state: transition(createInitialState('feat'), { type: 'START' }),
       feature: 'feat',
       approveLevel: 'none',
-      deferBriefGate: true,
     });
 
     expect(planner.review).not.toHaveBeenCalled();
     expect(callbacks.callbacks.onApprovalNeeded).not.toHaveBeenCalled();
     expect(result.disposition).toBe('parked');
-    expect(result.disposition).toBe('parked');
     expect(result.state.phase).toBe('reviewing-plan');
     expect(result.state.tasks).toEqual([]);
+    expect(readSpecFile({ projectDir, sessionId }, TASKS_FILE)).toBeNull();
   });
 
-  it('cancels after a second quality failure without opening brief review', async () => {
+  it('parks an invalid brief in reviewing-plan without opening brief review or erroring', async () => {
     const projectDir = createTempDir('full-quality-failure');
     dirs.push(projectDir);
     const sessionId = 'sess-quality-failure';
@@ -605,7 +598,6 @@ describe('runFullPlanning — brief quality preparation', () => {
         tasks: [invalidTask],
         usage: { inputTokens: 1, outputTokens: 1 },
       }),
-      review: vi.fn().mockResolvedValue({ text: formatTasks([invalidTask]), usage: null }),
     });
 
     const result = await runFullPlanning({
@@ -626,7 +618,6 @@ describe('runFullPlanning — brief quality preparation', () => {
 
     expect(planner.review).not.toHaveBeenCalled();
     expect(callbacks.callbacks.onApprovalNeeded).not.toHaveBeenCalled();
-    expect(result.disposition).toBe('parked');
     expect(result.disposition).toBe('parked');
     expect(result.state.phase).toBe('reviewing-plan');
     expect(result.state.tasks).toHaveLength(1);

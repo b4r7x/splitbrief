@@ -1,11 +1,13 @@
 import {
   isCustomCommandRunner,
   matchesCustomCommandRunner,
-  readCustomCommandCatalog,
   type CustomCommand,
-  type CustomCommandCatalog,
   type CustomCommandDefinition,
 } from '../../core/config/custom-commands.js';
+import {
+  readCustomCommandCatalog,
+  type CustomCommandCatalog,
+} from '../../core/config/custom-command-catalog.js';
 import { pickDefaultProfileName } from '../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import {
@@ -40,13 +42,6 @@ function runnerMatches(
   command: CustomCommand | CustomCommandDefinition,
 ): boolean {
   return isCustomCommandRunner(runner) && matchesCustomCommandRunner(runner, command);
-}
-
-export function isCustomCommandSelected(
-  runner: PlannerConfig | ImplementerConfig | ImplementerProfileConfig,
-  command: CustomCommand | CustomCommandDefinition,
-): boolean {
-  return runnerMatches(runner, command);
 }
 
 export function readRoleCustomCommandCatalog(

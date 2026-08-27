@@ -165,7 +165,6 @@ describe('runSingleTask — recovery', () => {
 
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async ({ task }: ImplementerOptions) => {
-        // Task 1 writes broken code; task 2 writes clean code.
         if (task.id === 'T001') {
           writeFileSync(join(projectDir, 'src/one.ts'), 'export const one = 999; // broken\n');
         } else {

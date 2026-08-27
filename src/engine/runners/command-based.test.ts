@@ -119,7 +119,7 @@ describe('invokeCommandBasedRunner', () => {
       prompt: '',
       projectDir: process.cwd(),
     });
-    expect(result.stdout).toContain('console.log');
+    expect(result.stdout.trim()).toBe(codeBlock);
   });
 
   it('propagates command-not-found error', async () => {

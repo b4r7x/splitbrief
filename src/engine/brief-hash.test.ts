@@ -3,8 +3,11 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { hashTaskBrief } from './brief-hash.js';
 
 describe('hashTaskBrief', () => {
-  it('returns a 64-char hex string for a non-empty task array', () => {
-    const hash = hashTaskBrief([makeTask()]);
+  it.each([
+    ['a non-empty task array', [makeTask()]],
+    ['an empty task array', []],
+  ])('returns a 64-char hex digest for %s', (_name, tasks) => {
+    const hash = hashTaskBrief(tasks);
     expect(hash).toHaveLength(64);
     expect(hash).toMatch(/^[0-9a-f]{64}$/);
   });
@@ -31,17 +34,6 @@ describe('hashTaskBrief', () => {
     const t1 = makeTask({ id: 'T001', title: 'First' });
     const t2 = makeTask({ id: 'T002', title: 'Second' });
     expect(hashTaskBrief([t1, t2])).not.toBe(hashTaskBrief([t2, t1]));
-  });
-
-  it('is stable: same input always produces same hash', () => {
-    const tasks = [makeTask()];
-    expect(hashTaskBrief(tasks)).toBe(hashTaskBrief(tasks));
-  });
-
-  it('returns valid 64-char hex for empty array', () => {
-    const hash = hashTaskBrief([]);
-    expect(hash).toHaveLength(64);
-    expect(hash).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it('is independent of key-insertion order on the task object', () => {

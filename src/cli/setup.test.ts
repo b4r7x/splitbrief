@@ -76,12 +76,10 @@ describe('setupWorkflow', () => {
   it('re-requests setup on a second call when the first wizard was abandoned (no config written)', async () => {
     createTestGitRepo(tmp);
 
-    // First call signals setup but writes nothing (wizard never completes).
     const first = await setupWorkflow({ project: tmp, fullscreen: false });
     expect(first.needsSetup).toBe(true);
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(false);
 
-    // Abandoned wizard -> next start still requests setup, not skips it.
     const second = await setupWorkflow({ project: tmp, fullscreen: false });
     expect(second.needsSetup).toBe(true);
   });
@@ -93,7 +91,6 @@ describe('setupWorkflow', () => {
     expect(first.needsSetup).toBeUndefined();
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(true);
 
-    // Second invocation: config exists -> no setup prompt.
     const second = await setupWorkflow({ project: tmp, fullscreen: false });
     expect(second.needsSetup).toBeUndefined();
   });
@@ -112,10 +109,8 @@ describe('setupWorkflow', () => {
       planner: 'claude-code',
     });
 
-    // The resolved project root is the repository toplevel, never the subdir.
     expect(result.projectDir).not.toBe(subdir);
     expect(result.projectDir).toBe(realpathSync(tmp));
-    // The config landed at the toplevel, not under the invocation subdir.
     expect(existsSync(join(result.projectDir, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(true);
     expect(existsSync(join(subdir, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(false);
     errorSpy.mockRestore();

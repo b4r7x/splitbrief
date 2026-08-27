@@ -112,7 +112,8 @@ async function regenerateRewoundArtifact(args: {
   let state = args.state;
 
   const regenPrompt =
-    formatDrainedMessages([...queuedMessages]) + buildRegeneratePrompt(target, current, comment);
+    formatDrainedMessages([...queuedMessages]) +
+    buildRegeneratePrompt({ artifactType: target, currentContent: current, feedback: comment });
   createBusTextHandler({ bus: wctx.bus, phase: state.phase })(
     `\n[Regenerating ${target} with feedback: ${comment}]\n`,
   );

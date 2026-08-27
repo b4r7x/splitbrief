@@ -12,7 +12,7 @@ import { resolvePricing } from '../../../engine/providers/pricing-resolver.js';
 
 describe('buildPhaseRows', () => {
   it('returns empty array for empty perPhase', () => {
-    expect(buildPhaseRows({})).toEqual([]);
+    expect(buildPhaseRows({}, () => 0)).toEqual([]);
   });
 
   it('can sort by a derived display cost when store rows keep raw token data', () => {
@@ -71,7 +71,7 @@ describe('formatSplitPhaseCost', () => {
       formatSplitPhaseCost({
         cost: 18,
         seats: [
-          { priced: true, mode: 'priced' },
+          { priced: true, mode: 'api-priced' },
           { priced: false, mode: 'unpriced-local' },
         ],
       }),
@@ -83,8 +83,8 @@ describe('formatSplitPhaseCost', () => {
       formatSplitPhaseCost({
         cost: 18,
         seats: [
-          { priced: true, mode: 'priced' },
-          { priced: true, mode: 'priced' },
+          { priced: true, mode: 'api-priced' },
+          { priced: true, mode: 'api-priced' },
         ],
       }),
     ).toBe('$18.00');
@@ -95,9 +95,9 @@ describe('formatSplitPhaseCost', () => {
       formatSplitPhaseCost({
         cost: 18,
         seats: [
-          { priced: false, mode: 'priced' },
-          { priced: false, mode: 'priced' },
-          { priced: true, mode: 'priced' },
+          { priced: false, mode: 'api-priced' },
+          { priced: false, mode: 'api-priced' },
+          { priced: true, mode: 'api-priced' },
         ],
       }),
     ).toBe('$18.00 + partial');

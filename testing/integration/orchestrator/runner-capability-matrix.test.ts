@@ -1,8 +1,6 @@
-import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
-import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CliExecutableReceipt } from '../../../src/core/discovery/detection.js';
 import type { CliToolId } from '../../../src/core/runners/cli-tool-catalog.js';
@@ -24,12 +22,12 @@ import type { RunnerGate } from '../../../src/engine/runners/prepared-execution.
 import {
   effectScenario,
   fixtureExecutable,
+  gitStatus,
+  seedHostileConfig,
 } from '#testing/helpers/factories/cli-effect-fixture.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir, normalizeMacTmpPath } from '#testing/helpers/temp-dir.js';
-
-const execFileAsync = promisify(execFile);
 
 const SENTINEL = 'final-\u03b1\u03b2-\u2713-\ud83d\ude80-matrix-sentinel';
 const DRAFT = 'draft bytes before the final group';
@@ -121,38 +119,6 @@ function toolUseEvent(): string {
 
 function echoJson(value: string): string {
   return `printf '%s\\n' '${value}'`;
-}
-
-async function gitStatus(projectDir: string): Promise<string[]> {
-  const { stdout } = await execFileAsync('git', ['status', '--porcelain'], { cwd: projectDir });
-  return stdout
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && line !== '?? opencode.json');
-}
-
-async function seedHostileConfig(
-  projectDir: string,
-  hostileHome: string,
-  hostileXdg: string,
-): Promise<void> {
-  mkdirSync(join(hostileHome, '.config', 'opencode'), { recursive: true });
-  writeFileSync(
-    join(hostileHome, '.config', 'opencode', 'config.json'),
-    '{"permissions":{"edit":true,"approval":"always"},"model":"evil"}',
-    'utf8',
-  );
-  mkdirSync(join(hostileXdg, 'opencode'), { recursive: true });
-  writeFileSync(
-    join(hostileXdg, 'opencode', 'config.json'),
-    '{"permissions":{"edit":true}}',
-    'utf8',
-  );
-  writeFileSync(
-    join(projectDir, 'opencode.json'),
-    '{"permissions":{"edit":true},"sandbox":false}',
-    'utf8',
-  );
 }
 
 describe('runner capability and session matrix — exact tuples, fresh scopes, zero-dispatch refusals', () => {
@@ -256,7 +222,7 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
           echoJson(textEvent(SENTINEL)),
           'exit 0',
         ].join('\n');
-        const receipt = await fixtureExecutable(scenario.toolsDir, body);
+        const receipt = await fixtureExecutable({ directory: scenario.toolsDir, body });
         const config = makeConfig({ planner: { kind: 'cli', tool: 'opencode' } });
         const planner = await createPlanner(config, {
           preparedConfig: config,
@@ -269,7 +235,6 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
         });
 
         expect(result.text).toBe(SENTINEL);
-        expect(Buffer.byteLength(result.text, 'utf8')).toBe(Buffer.byteLength(SENTINEL, 'utf8'));
         const invocation = readFileSync(log, 'utf8').trim();
         expect(invocation).toContain('--agent plan');
         expect(invocation).toContain('--format json');
@@ -332,11 +297,11 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
         try {
           vi.stubEnv('PATH', `${scenario.toolsDir}${delimiter}${process.env.PATH ?? ''}`);
           const markerPath = join(scenario.toolsDir, `${tool}-spawned.marker`);
-          const receipt = await fixtureExecutable(
-            scenario.toolsDir,
-            `touch ${JSON.stringify(markerPath)}\nexit 0`,
-            tool,
-          );
+          const receipt = await fixtureExecutable({
+            directory: scenario.toolsDir,
+            body: `touch ${JSON.stringify(markerPath)}\nexit 0`,
+            name: tool,
+          });
           const config = makeConfig({ planner: { kind: 'cli', tool } });
           await expect(
             createPlanner(config, {
@@ -385,7 +350,7 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
           echoJson(textEvent(SENTINEL)),
           'exit 0',
         ].join('\n');
-        const receipt = await fixtureExecutable(scenario.toolsDir, body);
+        const receipt = await fixtureExecutable({ directory: scenario.toolsDir, body });
         const config = makeConfig({ planner: { kind: 'cli', tool: 'opencode' } });
         const planner = await createPlanner(config, {
           preparedConfig: config,
@@ -461,10 +426,10 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
       try {
         vi.stubEnv('PATH', `${scenario.toolsDir}${delimiter}${process.env.PATH ?? ''}`);
         const markerPath = join(scenario.toolsDir, 'spawned.marker');
-        const receipt = await fixtureExecutable(
-          scenario.toolsDir,
-          `touch ${JSON.stringify(markerPath)}\nexit 0`,
-        );
+        const receipt = await fixtureExecutable({
+          directory: scenario.toolsDir,
+          body: `touch ${JSON.stringify(markerPath)}\nexit 0`,
+        });
         const config = makeConfig({
           planner: {
             kind: 'cli',
@@ -490,7 +455,7 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
       const hostileHome = createTempDir('capability-matrix-hostile-home');
       const hostileXdg = createTempDir('capability-matrix-hostile-xdg');
       try {
-        await seedHostileConfig(scenario.projectDir, hostileHome, hostileXdg);
+        await seedHostileConfig({ projectDir: scenario.projectDir, hostileHome, hostileXdg });
         vi.stubEnv('HOME', hostileHome);
         vi.stubEnv('XDG_CONFIG_HOME', hostileXdg);
         vi.stubEnv('PATH', `${scenario.toolsDir}${delimiter}${process.env.PATH ?? ''}`);
@@ -500,7 +465,7 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
           echoJson(textEvent(SENTINEL)),
           'exit 0',
         ].join('\n');
-        const receipt = await fixtureExecutable(scenario.toolsDir, body);
+        const receipt = await fixtureExecutable({ directory: scenario.toolsDir, body });
         const config = makeConfig({ planner: { kind: 'cli', tool: 'opencode' } });
         const planner = await createPlanner(config, {
           preparedConfig: config,
@@ -548,7 +513,7 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
           role: 'planner',
           projectDir: scenario.projectDir,
           prompt: 'review the staged plan',
-          executable: await fixtureExecutable(scenario.toolsDir, body),
+          executable: await fixtureExecutable({ directory: scenario.toolsDir, body }),
           effect: { kind: 'planner-read-only' },
           recordPath: scenario.recordPath,
         });
@@ -577,10 +542,10 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
       try {
         vi.stubEnv('PATH', `${scenario.toolsDir}${delimiter}${process.env.PATH ?? ''}`);
         const markerPath = join(scenario.toolsDir, 'spawned.marker');
-        const receipt = await fixtureExecutable(
-          scenario.toolsDir,
-          `printf spawned > ${markerPath}\nexit 0`,
-        );
+        const receipt = await fixtureExecutable({
+          directory: scenario.toolsDir,
+          body: `printf spawned > ${markerPath}\nexit 0`,
+        });
         await writeFile(join(scenario.toolsDir, 'opencode'), '\n# drifted\n', { flag: 'a' });
         const outcome = await runFactoryEffectConformance({
           role: 'planner',

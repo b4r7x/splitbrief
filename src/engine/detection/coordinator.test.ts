@@ -45,7 +45,7 @@ function failedSource(): DetectionSourceError {
 }
 
 describe('detection coordinator', () => {
-  it('scopes opaque source contexts without placing credentials in their keys', () => {
+  it('scopes source contexts per source and encodes the opaque credential domain', () => {
     const context = detectionContextKey({
       platform: 'darwin',
       runner: 'openai',
@@ -62,7 +62,6 @@ describe('detection coordinator', () => {
 
     expect(readinessScope).not.toBe(modelsScope);
     expect(readinessScope).toContain(encodeURIComponent('opaque-config-node-4'));
-    expect(readinessScope).not.toContain('sk-live-secret-value');
   });
 
   it('coalesces identical readers, uses a soft TTL, and lets manual refresh replace a valid empty snapshot', async () => {

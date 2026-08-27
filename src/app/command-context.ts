@@ -24,7 +24,7 @@ import { conversationScrollStore } from '../stores/workflow/conversation-scroll.
 import { getDefaultDetectionService } from '../engine/detection/service.js';
 import { refreshDetectionForCurrentConfig } from '../engine/detection/store-publication.js';
 import { detectionStore } from '../stores/project/detection.js';
-import { readActive } from '../core/sessions/lifecycle.js';
+import { readActive } from '../core/sessions/active-pointer.js';
 import type { RewindTarget } from '../core/state/build-rewind-action.js';
 import type {
   CopyResult,
@@ -216,11 +216,7 @@ export function buildCommandContext({
           };
       }
     },
-    setApprovalEnabled: (enabled) => {
-      const current = configStore.get().config;
-      if (!current) return;
-      configStore.setApprovalEnabled(enabled);
-    },
+    setApprovalEnabled: configStore.setApprovalEnabled,
     getSessionId: () => routeSessionId(route, projectDir),
     noActiveSession: appCommandContextError.noActiveSession,
     exportMissingSession: () => ({ status: 'error', error: 'No active session for /export' }),

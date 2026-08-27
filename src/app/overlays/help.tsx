@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useInput } from 'ink';
 import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/overlay-panel.js';
 import { ListGroupHeader, ListRow } from '../../components/list-row.js';
+import { commandLabelWidth, descriptionColumn } from '../../components/list-columns.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
 import { SOFT_SEP } from '../../components/separators.js';
 import { buildCommandItems } from '../../features/palette/sources.js';
@@ -22,11 +23,7 @@ import { configStore } from '../../stores/project/config.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
-import {
-  getTerminalCellWidth,
-  padTerminalDisplayTextEnd,
-  truncateTerminalDisplayText,
-} from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { clamp } from '../../utils/math.js';
 import { assertNever } from '../../utils/type-guards.js';
 
@@ -36,13 +33,6 @@ const HELP_CHROME_ROWS = 8;
 // Below this budget a header costs more rows than it organises, so the 60x18 help keeps the
 // category order but drops the labels (§Target frames).
 const SECTION_HEADER_MIN_ROWS = 12;
-// ListRow's own chrome around the description column: the lead it prepends, the single space
-// before the description, and the single space before the shortcut.
-const LEAD_COLS = 2;
-const LABEL_GAP = 1;
-const TRAILING_GAP = 1;
-// §Target frames: two cells separate a description from a right-aligned shortcut.
-const SHORTCUT_GAP = 2;
 const SHORTCUTS_SECTION = 'Keyboard shortcuts';
 
 interface HelpRow {
@@ -51,37 +41,6 @@ interface HelpRow {
   description: string;
   shortcut: string | null;
   section: string;
-}
-
-// One label column for every row: the whole registry's widest name — not the widest row that
-// happens to be on screen — so the description column does not jump between screens.
-function labelColumnWidth(commands: RuntimeCommandDef[]): number {
-  let width = 0;
-  for (const command of commands) {
-    width = Math.max(width, getTerminalCellWidth(command.name));
-    for (const alias of command.aliases ?? []) {
-      width = Math.max(width, getTerminalCellWidth(alias.name));
-    }
-  }
-  return width;
-}
-
-// The description column is padded to the exact remaining width so the shortcut lands on the
-// panel's right edge; ListRow cannot right-align a trailing next to a fixed label column.
-function descriptionColumn(input: {
-  description: string;
-  shortcut: string | null;
-  innerWidth: number;
-  labelWidth: number;
-}): string {
-  const trailingCols =
-    input.shortcut === null ? 0 : TRAILING_GAP + getTerminalCellWidth(input.shortcut);
-  const field = Math.max(
-    0,
-    input.innerWidth - LEAD_COLS - input.labelWidth - LABEL_GAP - trailingCols,
-  );
-  const budget = input.shortcut === null ? field : Math.max(0, field - SHORTCUT_GAP + TRAILING_GAP);
-  return padTerminalDisplayTextEnd(truncateTerminalDisplayText(input.description, budget), field);
 }
 
 function cursorForScrollAction(input: {
@@ -165,7 +124,7 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
     outerChromeRows: HELP_CHROME_ROWS - OVERLAY_FRAME_ROWS,
   });
   const { innerWidth } = overlayRect({ cols, rows, density: PANEL_DENSITY });
-  const labelWidth = labelColumnWidth(commands);
+  const labelWidth = commandLabelWidth(commands);
 
   // A scrolled list spends two of its budget rows on the up/down indicators, so a page step of
   // the full budget would carry the cursor past rows that were never rendered.

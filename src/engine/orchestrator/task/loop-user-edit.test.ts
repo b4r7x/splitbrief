@@ -34,6 +34,39 @@ function setupProject(): { projectDir: string; sessionId: string } {
 
 const defaultWorkflow = { maxRetries: 2 };
 
+function futureEditScenario(projectDir: string): {
+  state: ReturnType<typeof makeImplState>;
+  implementer: ReturnType<typeof makeImplementer>;
+} {
+  const first = makeTask({ id: 'T001', file: 'src/current.ts' });
+  const second = makeTask({ id: 'T002', action: 'modify', file: 'src/future.ts' });
+  mkdirSync(join(projectDir, 'src'), { recursive: true });
+  const implementer = makeImplementer({
+    capabilities: { writesFiles: 'direct' },
+    implement: vi
+      .fn()
+      .mockImplementation(
+        async ({
+          task,
+          projectDir: runDir,
+        }: {
+          task: ReturnType<typeof makeTask>;
+          projectDir: string;
+        }) => {
+          mkdirSync(join(runDir, 'src'), { recursive: true });
+          if (task.id === 'T001') {
+            writeFileSync(join(runDir, 'src/current.ts'), 'export const current = true;\n');
+            writeFileSync(join(projectDir, 'src/future.ts'), 'export const userEdit = true;\n');
+          } else {
+            writeFileSync(join(runDir, 'src/future.ts'), 'export const future = true;\n');
+          }
+          return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+        },
+      ),
+  });
+  return { state: makeImplState([first, second]), implementer };
+}
+
 describe('runTaskLoop', { timeout: 90_000 }, () => {
   it('unrelated dirty file present before the loop starts does not emit a user-edit conflict', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -101,11 +134,10 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
           setCurrentTask: vi.fn(),
         });
 
-        const warning = events.find((event) => event.type === 'warning');
-        expect(warning).toBeDefined();
-        if (warning && warning.type === 'warning') {
-          expect(warning.message).toContain('src/leak.ts');
-        }
+        expect(events.find((event) => event.type === 'warning')).toMatchObject({
+          type: 'warning',
+          message: expect.stringContaining('src/leak.ts'),
+        });
         expect(events.find((event) => event.type === 'task_started')).toBeDefined();
         expect(events.find((event) => event.type === 'paused_external_changes')).toBeUndefined();
         expect(result.state.pendingRecovery).toBeUndefined();
@@ -221,34 +253,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
 
   it('asks about a future task edit before it becomes a current-task conflict', async () => {
     const { projectDir, sessionId } = setupProject();
-    const first = makeTask({ id: 'T001', file: 'src/current.ts' });
-    const second = makeTask({ id: 'T002', action: 'modify', file: 'src/future.ts' });
-    const state = makeImplState([first, second]);
-    mkdirSync(join(projectDir, 'src'), { recursive: true });
-
-    const implementer = makeImplementer({
-      capabilities: { writesFiles: 'direct' },
-      implement: vi
-        .fn()
-        .mockImplementation(
-          async ({
-            task,
-            projectDir: runDir,
-          }: {
-            task: ReturnType<typeof makeTask>;
-            projectDir: string;
-          }) => {
-            mkdirSync(join(runDir, 'src'), { recursive: true });
-            if (task.id === 'T001') {
-              writeFileSync(join(runDir, 'src/current.ts'), 'export const current = true;\n');
-              writeFileSync(join(projectDir, 'src/future.ts'), 'export const userEdit = true;\n');
-            } else {
-              writeFileSync(join(runDir, 'src/future.ts'), 'export const future = true;\n');
-            }
-            return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
-          },
-        ),
-    });
+    const { state, implementer } = futureEditScenario(projectDir);
     const onUserEditConflict = vi.fn().mockResolvedValue('continue-unrelated');
     const { callbacks } = makeCallbacks({ onUserEditConflict });
     const { bus, events } = makeBusRecorder();
@@ -361,34 +366,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
 
   it('pauses explicitly when a future stale edit cannot continue automatically', async () => {
     const { projectDir, sessionId } = setupProject();
-    const first = makeTask({ id: 'T001', file: 'src/current.ts' });
-    const second = makeTask({ id: 'T002', action: 'modify', file: 'src/future.ts' });
-    const state = makeImplState([first, second]);
-    mkdirSync(join(projectDir, 'src'), { recursive: true });
-
-    const implementer = makeImplementer({
-      capabilities: { writesFiles: 'direct' },
-      implement: vi
-        .fn()
-        .mockImplementation(
-          async ({
-            task,
-            projectDir: runDir,
-          }: {
-            task: ReturnType<typeof makeTask>;
-            projectDir: string;
-          }) => {
-            mkdirSync(join(runDir, 'src'), { recursive: true });
-            if (task.id === 'T001') {
-              writeFileSync(join(runDir, 'src/current.ts'), 'export const current = true;\n');
-              writeFileSync(join(projectDir, 'src/future.ts'), 'export const userEdit = true;\n');
-            } else {
-              writeFileSync(join(runDir, 'src/future.ts'), 'export const future = true;\n');
-            }
-            return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
-          },
-        ),
-    });
+    const { state, implementer } = futureEditScenario(projectDir);
     const onUserEditConflict = vi.fn().mockResolvedValue('pause');
     const { callbacks } = makeCallbacks({ onUserEditConflict });
     const { bus, events } = makeBusRecorder();

@@ -1,9 +1,9 @@
 import {
-  BriefRecoveryV1Schema,
+  type BriefRecoveryProjectionV1,
   BriefRecoveryProjectionV1Schema,
   type BriefRecoveryV1,
-  type BriefRecoveryProjectionV1,
-} from '../../../../src/core/schemas/brief-recovery.js';
+  BriefRecoveryV1Schema,
+} from '../../../../src/core/schemas/brief-recovery/document.js';
 import type { WorkflowState } from '../../../../src/core/schemas/workflow.js';
 import { WORKFLOW_STATE_VERSION } from '../../../../src/core/schemas/workflow.js';
 import { formatTasks } from '../../../../src/engine/spec/formatter.js';
@@ -82,13 +82,16 @@ function qualityBlocker(issues: readonly ReturnType<typeof issue>[]) {
   return { kind: 'quality' as const, issues };
 }
 
-function attemptSummary(
-  operationId: string,
-  status: 'accepted' | 'unresolved' | 'settled',
-  dispatchPossibility: 'none' | 'possible',
-  reservationState: 'reserved' | 'held' | 'reconciled',
-  outcome: 'ready' | 'provider-failed' | null,
-) {
+interface AttemptInput {
+  readonly operationId: string;
+  readonly status: 'accepted' | 'unresolved' | 'settled';
+  readonly dispatchPossibility: 'none' | 'possible';
+  readonly reservationState: 'reserved' | 'held' | 'reconciled';
+  readonly outcome: 'ready' | 'provider-failed' | null;
+}
+
+function attemptSummary(input: AttemptInput) {
+  const { operationId, status, dispatchPossibility, reservationState, outcome } = input;
   return {
     operationId,
     status,
@@ -126,13 +129,8 @@ function reservation(operationId: string, state: 'reserved' | 'held' | 'reconcil
   };
 }
 
-function attempt(
-  operationId: string,
-  status: 'accepted' | 'unresolved' | 'settled',
-  dispatchPossibility: 'none' | 'possible',
-  reservationState: 'reserved' | 'held' | 'reconciled',
-  outcome: 'ready' | 'provider-failed' | null,
-) {
+function attempt(input: AttemptInput) {
+  const { operationId, status, dispatchPossibility, reservationState, outcome } = input;
   const base = {
     epochId: EPOCH_ID,
     operationId,
@@ -227,18 +225,19 @@ function persistedRecovery(recovery: BriefRecoveryProjectionV1): BriefRecoveryV1
   const attempts =
     operationId !== undefined && attemptStatus !== null
       ? {
-          [operationId]: attempt(
+          [operationId]: attempt({
             operationId,
-            attemptStatus,
-            recovery.activeOperation?.dispatchPossibility ??
+            status: attemptStatus,
+            dispatchPossibility:
+              recovery.activeOperation?.dispatchPossibility ??
               recovery.latestAttempt?.dispatchPossibility ??
               'none',
-            attemptReservationState(
+            reservationState: attemptReservationState(
               recovery.activeOperation?.reservation.state ??
                 recovery.latestAttempt?.reservation.state,
             ),
-            attemptOutcome(recovery.latestAttempt?.outcome),
-          ),
+            outcome: attemptOutcome(recovery.latestAttempt?.outcome),
+          }),
         }
       : {};
 
@@ -367,18 +366,28 @@ const taskBlocked = projection(
   'workflow-brief-recovery-task-blocked',
 );
 
+const RETRY_ATTEMPT: AttemptInput = {
+  operationId: 'visual-recovery-retry-1',
+  status: 'accepted',
+  dispatchPossibility: 'none',
+  reservationState: 'reserved',
+  outcome: null,
+};
+
+const UNRESOLVED_ATTEMPT: AttemptInput = {
+  operationId: 'visual-recovery-unresolved-1',
+  status: 'unresolved',
+  dispatchPossibility: 'possible',
+  reservationState: 'held',
+  outcome: null,
+};
+
 const retrying = projection(
   {
     stateRevision: 4,
     status: 'retrying',
-    activeOperation: attemptSummary(
-      'visual-recovery-retry-1',
-      'accepted',
-      'none',
-      'reserved',
-      null,
-    ),
-    latestAttempt: attemptSummary('visual-recovery-retry-1', 'accepted', 'none', 'reserved', null),
+    activeOperation: attemptSummary(RETRY_ATTEMPT),
+    latestAttempt: attemptSummary(RETRY_ATTEMPT),
     allowedActions: ['edit', 'reject', 'status'],
     queuedInputs: {
       ids: ['visual-input-queued', 'visual-input-carried', 'visual-input-held'],
@@ -395,20 +404,8 @@ const unresolved = projection(
   {
     stateRevision: 5,
     status: 'unresolved',
-    activeOperation: attemptSummary(
-      'visual-recovery-unresolved-1',
-      'unresolved',
-      'possible',
-      'held',
-      null,
-    ),
-    latestAttempt: attemptSummary(
-      'visual-recovery-unresolved-1',
-      'unresolved',
-      'possible',
-      'held',
-      null,
-    ),
+    activeOperation: attemptSummary(UNRESOLVED_ATTEMPT),
+    latestAttempt: attemptSummary(UNRESOLVED_ATTEMPT),
     blocker: {
       kind: 'unresolved' as const,
       code: 'brief_unresolved' as const,
@@ -435,13 +432,13 @@ const ready = projection(
       issues: [warningIssue],
     },
     activeOperation: null,
-    latestAttempt: attemptSummary(
-      'visual-recovery-repair-1',
-      'settled',
-      'possible',
-      'reconciled',
-      'ready',
-    ),
+    latestAttempt: attemptSummary({
+      operationId: 'visual-recovery-repair-1',
+      status: 'settled',
+      dispatchPossibility: 'possible',
+      reservationState: 'reconciled',
+      outcome: 'ready',
+    }),
     allowedActions: ['approve', 'edit', 'reject', 'revise', 'status'],
   },
   'workflow-brief-recovery-ready',
@@ -460,13 +457,13 @@ const providerFailed = projection(
       code: 'provider_unavailable',
       message: providerIssue.message,
     },
-    latestAttempt: attemptSummary(
-      'visual-recovery-provider-1',
-      'settled',
-      'none',
-      'reconciled',
-      'provider-failed',
-    ),
+    latestAttempt: attemptSummary({
+      operationId: 'visual-recovery-provider-1',
+      status: 'settled',
+      dispatchPossibility: 'none',
+      reservationState: 'reconciled',
+      outcome: 'provider-failed',
+    }),
     allowedActions: ['retry', 'edit', 'reject', 'status'],
   },
   'workflow-brief-recovery-provider-failed',

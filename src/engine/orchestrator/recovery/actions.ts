@@ -83,17 +83,13 @@ function recoveryMutationOptions(
   opts: ApplyRecoveryActionOptions,
   state: WorkflowState,
 ): { expectedRevision: number; authority?: StateAuthorityReceipt } {
-  if (opts.authority !== undefined) {
-    const current = readStateAuthority({ projectDir: opts.projectDir, sessionId: opts.sessionId });
-    if (current === null) {
-      throw error('state-authority-invalid', 'The recovery state authority is unavailable.');
-    }
-    opts.authority = current;
+  const expectedRevision = state.stateRevision ?? 0;
+  if (opts.authority === undefined) return { expectedRevision };
+  const current = readStateAuthority({ projectDir: opts.projectDir, sessionId: opts.sessionId });
+  if (current === null) {
+    throw error('state-authority-invalid', 'The recovery state authority is unavailable.');
   }
-  return {
-    expectedRevision: state.stateRevision ?? 0,
-    ...(opts.authority === undefined ? {} : { authority: opts.authority }),
-  };
+  return { expectedRevision, authority: current };
 }
 
 export function applyRecoveryAction(opts: ApplyRecoveryActionOptions): ApplyRecoveryActionResult {
@@ -200,7 +196,7 @@ function applyContinueRecoveryAction(
     },
     recoveryMutationOptions(opts, state),
   );
-  publishRecoveryResolved(opts.bus, issue, opts.action, 'continued');
+  publishRecoveryResolved({ bus: opts.bus, issue, action: opts.action, outcome: 'continued' });
 
   return { ok: true, action: opts.action, issue, state, status: 'continued' };
 }
@@ -232,7 +228,7 @@ function applyAbortRecoveryAction(
     { type: 'ABORT_PENDING_RECOVERY' },
     recoveryMutationOptions(opts, state),
   );
-  publishRecoveryResolved(opts.bus, issue, opts.action, 'aborted');
+  publishRecoveryResolved({ bus: opts.bus, issue, action: opts.action, outcome: 'aborted' });
   return { ok: true, action: opts.action, issue, state, status: 'aborted' };
 }
 
@@ -258,7 +254,7 @@ function applySkipCurrentTaskRecoveryAction(
       projectDir: opts.projectDir,
       sessionId: opts.sessionId,
       state: opts.state,
-      task: target.task,
+      task: target,
       mode: opts.mode,
       reason,
     });
@@ -278,7 +274,7 @@ function applySkipCurrentTaskRecoveryAction(
     state,
     {
       type: 'SKIP_TASK',
-      taskId: target.task.id,
+      taskId: target.id,
     },
     recoveryMutationOptions(opts, state),
   );
@@ -293,12 +289,17 @@ function applySkipCurrentTaskRecoveryAction(
   publishTaskSkipped(
     { bus: opts.bus, phase: issue.phase },
     {
-      taskId: target.task.id,
-      title: target.task.title,
+      taskId: target.id,
+      title: target.title,
       reason,
     },
   );
-  publishRecoveryResolved(opts.bus, issue, opts.action, 'skipped-current-task');
+  publishRecoveryResolved({
+    bus: opts.bus,
+    issue,
+    action: opts.action,
+    outcome: 'skipped-current-task',
+  });
 
   return { ok: true, action: opts.action, issue, state, status: 'skipped-current-task' };
 }
@@ -373,7 +374,7 @@ function applyRetryCurrentTaskRecoveryAction(
     state,
     {
       type: 'RESET_TASK',
-      taskId: target.task.id,
+      taskId: target.id,
     },
     recoveryMutationOptions(opts, state),
   );
@@ -381,7 +382,7 @@ function applyRetryCurrentTaskRecoveryAction(
     type: 'task_reset',
     ts: Date.now(),
     phase: state.phase,
-    taskId: target.task.id,
+    taskId: target.id,
   });
   state = transitionAndSave(
     opts,
@@ -391,7 +392,13 @@ function applyRetryCurrentTaskRecoveryAction(
     },
     recoveryMutationOptions(opts, state),
   );
-  publishRecoveryResolved(opts.bus, issue, opts.action, 'retry-current-task', effectiveProfile);
+  publishRecoveryResolved({
+    bus: opts.bus,
+    issue,
+    action: opts.action,
+    outcome: 'retry-current-task',
+    implementerProfile: effectiveProfile,
+  });
 
   return {
     ok: true,
@@ -413,7 +420,7 @@ function markRecoveryApplying(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
 ): WorkflowState {
-  publishRecoveryActionSelected(opts.bus, issue, opts.action);
+  publishRecoveryActionSelected({ bus: opts.bus, issue, action: opts.action });
   return transitionAndSave(
     opts,
     opts.state,
@@ -434,9 +441,14 @@ function blockRecoveryAction(
   },
 ): ApplyRecoveryActionResult {
   if (opts.publishSelected) {
-    publishRecoveryActionSelected(opts.bus, opts.issue, opts.action);
+    publishRecoveryActionSelected({ bus: opts.bus, issue: opts.issue, action: opts.action });
   }
-  publishRecoveryActionFailed(opts.bus, opts.issue, opts.action, opts.message);
+  publishRecoveryActionFailed({
+    bus: opts.bus,
+    issue: opts.issue,
+    action: opts.action,
+    message: opts.message,
+  });
   return {
     ok: false,
     action: opts.action,
@@ -449,10 +461,7 @@ function blockRecoveryAction(
   };
 }
 
-function currentRecoveryTask(
-  state: WorkflowState,
-  issue: RecoveryIssue,
-): { task: Task; index: number } | undefined {
+function currentRecoveryTask(state: WorkflowState, issue: RecoveryIssue): Task | undefined {
   const current = state.tasks[state.currentTaskIndex];
   const targetId = issue.taskId ?? current?.id;
   if (targetId === undefined) return undefined;
@@ -460,7 +469,7 @@ function currentRecoveryTask(
   if (index < 0 || index !== state.currentTaskIndex) return undefined;
   const task = state.tasks[index];
   if (!task || isTaskCompleted(task.status)) return undefined;
-  return { task, index };
+  return task;
 }
 
 function recordRecoverySkipEvidence(opts: {

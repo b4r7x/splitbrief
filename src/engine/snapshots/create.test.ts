@@ -53,7 +53,10 @@ describe('createSnapshot — first call (baseline)', () => {
     expect(entry).toBeDefined();
     expect(Object.keys(entry ?? {}).sort()).toEqual(['encodedName', 'hash', 'path']);
 
-    const manifestFile = snapshotManifestPath(tmp, 'sess-01', result.manifest.id);
+    const manifestFile = snapshotManifestPath(
+      { projectDir: tmp, sessionId: 'sess-01' },
+      result.manifest.id,
+    );
     const raw = JSON.parse(await readFile(manifestFile, 'utf-8'));
     for (const persisted of raw.fileEntries) {
       expect(persisted).not.toHaveProperty('sizeBytes');
@@ -103,9 +106,6 @@ describe('createSnapshot — first call (baseline)', () => {
   });
 
   it('round-trips two paths whose legacy encodings would have collided without losing data', async () => {
-    // Regression for the collision-free encoding: snapshot, modify both,
-    // then re-snapshot and verify both files appear with distinct entries
-    // and distinct stored blobs.
     await writeFile(join(tmp, 'a__b.ts'), 'literal underscores');
     await mkdir(join(tmp, 'a'), { recursive: true });
     await writeFile(join(tmp, 'a', 'b.ts'), 'nested path');

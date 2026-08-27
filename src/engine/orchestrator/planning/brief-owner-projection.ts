@@ -1,5 +1,5 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type { BriefRecoveryStateView } from '../../../core/schemas/brief-recovery.js';
+import type { BriefRecoveryStateView } from '../../../core/schemas/brief-recovery/document.js';
 import type {
   BriefOwnerCommitResult,
   BriefOwnerStatePatch,

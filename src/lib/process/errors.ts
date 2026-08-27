@@ -97,8 +97,8 @@ export const processError = {
     const subject = label ?? command;
     // Tool output is column-structured (formatter diffs, test reports); losing the
     // line breaks here flattens it into unreadable soup before any renderer sees it.
-    const stderr = sanitizeTerminalDiagnosticText(opts.stderr ?? '', { preserveLineBreaks: true });
-    const output = sanitizeTerminalDiagnosticText(opts.output ?? opts.detail ?? opts.stderr ?? '', {
+    const stderr = sanitizeTerminalDiagnosticText(opts.stderr, { preserveLineBreaks: true });
+    const output = sanitizeTerminalDiagnosticText(opts.output ?? opts.detail ?? opts.stderr, {
       preserveLineBreaks: true,
     });
     const detail = stderr.trim() || sanitizeTerminalDiagnosticText(opts.detail ?? '').trim();

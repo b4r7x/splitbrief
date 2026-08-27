@@ -504,18 +504,16 @@ describe('usePickerCatalog', () => {
     const ui = renderFeature(<KeyboardCatalogProbe role="implementer" />);
     await flushEffects();
     const initial = ui.lastFrame() ?? '';
+    expect(initial).toContain('ollama:');
+    expect(initial).toContain('ollama-only-model');
 
     await flushEffects();
     ui.stdin.write('\u001B[B');
     await flushEffects();
 
     const next = ui.lastFrame() ?? '';
-    if (initial.includes('ollama-only-model')) {
-      expect(next).not.toContain('ollama-only-model');
-    } else if (initial.includes('anthropic-only-model')) {
-      expect(next).not.toContain('anthropic-only-model');
-    }
-    expect(next).not.toBe(initial);
+    expect(next).toContain('codex:');
+    expect(next).not.toContain('ollama-only-model');
     ui.unmount();
   });
 });

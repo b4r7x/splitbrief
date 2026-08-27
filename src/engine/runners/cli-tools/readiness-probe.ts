@@ -77,14 +77,6 @@ export interface ProbeCliReadinessOptions {
         testedVersion: string;
       }) => 'compatible' | 'incompatible' | 'unverified')
     | undefined;
-  /**
-   * @deprecated Legacy command callbacks cannot establish authentication.
-   * Adapter-declared `auth-status` probes expose a parser and are required
-   * for a verified authentication fact.
-   */
-  classifyAuth?:
-    | ((input: { stdout: string; stderr: string; exitCode: number }) => CliAuthState)
-    | undefined;
 }
 
 export type CliReadinessProbeEvidence = Readonly<{
@@ -158,12 +150,12 @@ async function probeEnvironment({
   channel: CliAuthChannel | undefined;
 }>): Promise<ProbeEnvironment> {
   const hostState = channel === undefined ? 'none' : cliAuthChannelHostStateAccess(channel);
-  const env = await createSandboxEnv(
-    neutralDir,
-    [...(channel?.env ?? [])],
-    hostState === 'none' ? undefined : tool,
+  const env = await createSandboxEnv({
+    projectDir: neutralDir,
+    preserveEnvKeys: [...(channel?.env ?? [])],
+    selectedCli: hostState === 'none' ? undefined : tool,
     hostState,
-  );
+  });
   return {
     env: {
       ...env,

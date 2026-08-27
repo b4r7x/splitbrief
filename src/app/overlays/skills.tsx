@@ -133,7 +133,7 @@ export function SkillsPicker() {
           }
           return true;
         }
-        if (input && !key.ctrl && !key.meta && input !== ' ') {
+        if (input && !key.ctrl && !key.meta) {
           setNavigating(false);
         }
         return false;

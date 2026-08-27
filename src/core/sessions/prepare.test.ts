@@ -32,17 +32,19 @@ import {
   STATE_FILE,
 } from '../paths.js';
 import { createInitialState } from '../state/machine.js';
-import { readActive, writeActive } from './lifecycle.js';
+import { readActive, writeActive, type PreparedNewSession } from './active-pointer.js';
 import {
   acceptDetachedSessionHandoff,
+  rollbackDetachedSessionHandoff,
+  settleDetachedSessionHandoff,
+  transferPreparedSessionToDetached,
+} from './detached-handoff.js';
+import {
   createSessionPreparationCandidate,
   discardOrphanSessionDirectory,
   prepareNewSession,
   releasePreparedSession,
-  rollbackDetachedSessionHandoff,
   rollbackPreparedSession,
-  settleDetachedSessionHandoff,
-  transferPreparedSessionToDetached,
   type PrepareNewSessionInput,
   type SessionMutationBoundary,
 } from './prepare.js';
@@ -59,6 +61,14 @@ function projectDir(): string {
   const dir = createTempDir('prepare-session');
   tempDirs.push(dir);
   return dir;
+}
+
+function preparedSession(input: PrepareNewSessionInput): PreparedNewSession {
+  const result = prepareNewSession(input);
+  if (result.kind !== 'prepared') {
+    throw new Error(`expected a prepared session, got ${result.kind}`);
+  }
+  return result.session;
 }
 
 function prepareInput(
@@ -138,16 +148,14 @@ describe('prepareNewSession', () => {
     const lock = lockSibling(activeFile(project));
     let publishLocked = false;
     let rollbackLocked = false;
-    const prepared = prepareNewSession({
+    const session = preparedSession({
       ...prepareInput(project, sessionId, new AbortController().signal),
       _beforeMutation: (boundary) => {
         if (boundary === 'active') publishLocked = existsSync(lock);
       },
     });
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
 
-    rollbackPreparedSession(prepared.session, {
+    rollbackPreparedSession(session, {
       _beforeMutation: (boundary) => {
         if (boundary === 'directory-claim') rollbackLocked = existsSync(lock);
       },
@@ -164,15 +172,20 @@ describe('prepareNewSession', () => {
     const sessionId = '2026-08-03-ready-first';
     const readinessPath = join(sessionDir(project, sessionId), READINESS_FILE);
     const controller = new AbortController();
+    let readinessBeforeActive: boolean | null = null;
+    let activeBeforeActive: string | null | undefined;
 
     const result = prepareNewSession({
       ...prepareInput(project, sessionId, controller.signal),
       _beforeMutation: (boundary) => {
         if (boundary !== 'active') return;
-        expect(existsSync(readinessPath)).toBe(true);
-        expect(readActive(project)).toBeNull();
+        readinessBeforeActive = existsSync(readinessPath);
+        activeBeforeActive = readActive(project);
       },
     });
+
+    expect(readinessBeforeActive).toBe(true);
+    expect(activeBeforeActive).toBeNull();
 
     expect(result).toMatchObject({
       kind: 'prepared',
@@ -406,14 +419,12 @@ describe('prepareNewSession', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-replaced-rollback';
     const signal = new AbortController().signal;
-    const prepared = prepareNewSession(prepareInput(project, sessionId, signal));
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, signal));
     replaceSessionDirectory(project, sessionId);
 
     let caught: unknown;
     try {
-      rollbackPreparedSession(prepared.session);
+      rollbackPreparedSession(session);
     } catch (cause) {
       caught = cause;
     }
@@ -430,16 +441,14 @@ describe('prepareNewSession', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-invalid-owner';
     const signal = new AbortController().signal;
-    const prepared = prepareNewSession(prepareInput(project, sessionId, signal));
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, signal));
 
     writeFileSync(
       join(sessionDir(project, sessionId), OWNERSHIP_FILE),
       JSON.stringify({ version: 1, sessionId, dev: '1', ino: '2', unexpected: true }),
     );
 
-    expect(() => rollbackPreparedSession(prepared.session)).toThrowError(
+    expect(() => rollbackPreparedSession(session)).toThrowError(
       expect.objectContaining({
         kind: 'session-prepare-io',
         data: { operation: 'rollback-session', sessionId },
@@ -453,15 +462,13 @@ describe('prepareNewSession', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-cold-rollback';
     const signal = new AbortController().signal;
-    const prepared = prepareNewSession(prepareInput(project, sessionId, signal));
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, signal));
 
     vi.resetModules();
     const coldModule = await import('./prepare.js');
     coldModule.rollbackPreparedSession({
-      ref: prepared.session.ref,
-      ownership: prepared.session.ownership,
+      ref: session.ref,
+      ownership: session.ownership,
     });
 
     expect(readActive(project)).toBeNull();
@@ -472,16 +479,14 @@ describe('prepareNewSession', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-released';
     const signal = new AbortController().signal;
-    const prepared = prepareNewSession(prepareInput(project, sessionId, signal));
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, signal));
     const directory = sessionDir(project, sessionId);
     const readinessPath = join(directory, READINESS_FILE);
     const readiness = readFileSync(readinessPath, 'utf8');
 
     vi.resetModules();
     const coldReleaseModule = await import('./prepare.js');
-    const ownership = { ref: prepared.session.ref, ownership: prepared.session.ownership };
+    const ownership = { ref: session.ref, ownership: session.ownership };
     coldReleaseModule.releasePreparedSession(ownership);
 
     expect(readActive(project)).toBe(sessionId);
@@ -506,16 +511,12 @@ describe('prepareNewSession', () => {
   it('release validates ownership and removes the marker under one project mutation lock', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-release-one-lock';
-    const prepared = prepareNewSession(
-      prepareInput(project, sessionId, new AbortController().signal),
-    );
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
     const marker = join(sessionDir(project, sessionId), OWNERSHIP_FILE);
     const lock = lockSibling(activeFile(project));
     let releaseLocked = false;
 
-    releasePreparedSession(prepared.session, {
+    releasePreparedSession(session, {
       _beforeMutation: (boundary) => {
         if (boundary === 'ownership-claim') releaseLocked = existsSync(lock);
       },
@@ -529,25 +530,21 @@ describe('prepareNewSession', () => {
   it('transfers exact rollback authority to a durable detached handoff before release', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-detached-handoff';
-    const prepared = prepareNewSession(
-      prepareInput(project, sessionId, new AbortController().signal),
-    );
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
     const directory = sessionDir(project, sessionId);
 
-    transferPreparedSessionToDetached(prepared.session);
+    transferPreparedSessionToDetached(session);
 
     expect(existsSync(join(directory, OWNERSHIP_FILE))).toBe(true);
     expect(existsSync(join(directory, DETACHED_HANDOFF_FILE))).toBe(true);
-    expect(() => rollbackPreparedSession(prepared.session)).toThrowError(
+    expect(() => rollbackPreparedSession(session)).toThrowError(
       expect.objectContaining({
         kind: 'session-prepare-io',
         data: { operation: 'rollback-session', sessionId },
       }),
     );
 
-    expect(acceptDetachedSessionHandoff(prepared.session)).toBe(true);
+    expect(acceptDetachedSessionHandoff(session)).toBe(true);
 
     expect(existsSync(join(directory, OWNERSHIP_FILE))).toBe(false);
     expect(existsSync(join(directory, DETACHED_HANDOFF_FILE))).toBe(false);
@@ -558,14 +555,10 @@ describe('prepareNewSession', () => {
   it('rolls back the exact detached handoff after the parent transfers ownership', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-detached-handoff-rollback';
-    const prepared = prepareNewSession(
-      prepareInput(project, sessionId, new AbortController().signal),
-    );
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
 
-    transferPreparedSessionToDetached(prepared.session);
-    rollbackDetachedSessionHandoff(prepared.session);
+    transferPreparedSessionToDetached(session);
+    rollbackDetachedSessionHandoff(session);
 
     expect(existsSync(sessionDir(project, sessionId))).toBe(false);
     expect(readActive(project)).toBeNull();
@@ -574,13 +567,9 @@ describe('prepareNewSession', () => {
   it('leaves a canonical proof when the transfer process crashes after the atomic handoff', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-detached-handoff-crash';
-    const prepared = prepareNewSession(
-      prepareInput(project, sessionId, new AbortController().signal),
-    );
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
     const script = `
-      import { transferPreparedSessionToDetached } from ${JSON.stringify(new URL('./prepare.ts', import.meta.url).href)};
+      import { transferPreparedSessionToDetached } from ${JSON.stringify(new URL('./detached-handoff.ts', import.meta.url).href)};
       const projectDir = process.env['SPLITBRIEF_TEST_HANDOFF_PROJECT'];
       const sessionId = process.env['SPLITBRIEF_TEST_HANDOFF_SESSION'];
       const generation = process.env['SPLITBRIEF_TEST_HANDOFF_GENERATION'];
@@ -604,7 +593,7 @@ describe('prepareNewSession', () => {
         ...process.env,
         SPLITBRIEF_TEST_HANDOFF_PROJECT: project,
         SPLITBRIEF_TEST_HANDOFF_SESSION: sessionId,
-        SPLITBRIEF_TEST_HANDOFF_GENERATION: prepared.session.ownership.generation,
+        SPLITBRIEF_TEST_HANDOFF_GENERATION: session.ownership.generation,
       },
       stdio: 'pipe',
     });
@@ -613,7 +602,7 @@ describe('prepareNewSession', () => {
     expect(existsSync(join(sessionDir(project, sessionId), OWNERSHIP_FILE))).toBe(true);
     expect(existsSync(join(sessionDir(project, sessionId), DETACHED_HANDOFF_FILE))).toBe(true);
 
-    rollbackDetachedSessionHandoff(prepared.session);
+    rollbackDetachedSessionHandoff(session);
     expect(existsSync(sessionDir(project, sessionId))).toBe(false);
     expect(readActive(project)).toBeNull();
   });
@@ -621,13 +610,9 @@ describe('prepareNewSession', () => {
   it('atomically rolls back the original owner when detached handoff times out', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-detached-handoff-timeout';
-    const prepared = prepareNewSession(
-      prepareInput(project, sessionId, new AbortController().signal),
-    );
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
 
-    expect(settleDetachedSessionHandoff(prepared.session)).toBe('rolled-back');
+    expect(settleDetachedSessionHandoff(session)).toBe('rolled-back');
 
     expect(existsSync(sessionDir(project, sessionId))).toBe(false);
     expect(readActive(project)).toBeNull();
@@ -639,11 +624,7 @@ describe('prepareNewSession', () => {
   ] as const)('preserves a %s owner replacement during detached transfer', (_, newer) => {
     const project = projectDir();
     const sessionId = `2026-08-03-detached-owner-${newer ? 'newer' : 'same'}`;
-    const prepared = prepareNewSession(
-      prepareInput(project, sessionId, new AbortController().signal),
-    );
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
     const directory = sessionDir(project, sessionId);
     const marker = join(directory, OWNERSHIP_FILE);
     const original = readFileSync(marker, 'utf8');
@@ -655,7 +636,7 @@ describe('prepareNewSession', () => {
       : original;
 
     expect(() =>
-      transferPreparedSessionToDetached(prepared.session, {
+      transferPreparedSessionToDetached(session, {
         _beforeMutation: (boundary) => {
           if (boundary !== 'ownership-claim') return;
           renameSync(marker, `${marker}.displaced`);
@@ -683,18 +664,14 @@ describe('prepareNewSession', () => {
   it('preserves a handoff replacement claimed during failed transfer cleanup', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-detached-recovery-replacement';
-    const prepared = prepareNewSession(
-      prepareInput(project, sessionId, new AbortController().signal),
-    );
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
     const directory = sessionDir(project, sessionId);
     const marker = join(directory, OWNERSHIP_FILE);
     const handoff = join(directory, DETACHED_HANDOFF_FILE);
     const replacement = readFileSync(marker, 'utf8');
 
     expect(() =>
-      transferPreparedSessionToDetached(prepared.session, {
+      transferPreparedSessionToDetached(session, {
         _beforeMutation: (boundary) => {
           if (boundary === 'ownership-claim') {
             renameSync(marker, `${marker}.displaced`);
@@ -713,7 +690,7 @@ describe('prepareNewSession', () => {
       }),
     );
 
-    expect(acceptDetachedSessionHandoff(prepared.session)).toBe(false);
+    expect(acceptDetachedSessionHandoff(session)).toBe(false);
     expect(existsSync(handoff)).toBe(false);
     expect(readFileSync(marker, 'utf8')).toBe(replacement);
     expect(readFileSync(`${handoff}.displaced`, 'utf8')).toBe(replacement);
@@ -727,11 +704,7 @@ describe('prepareNewSession', () => {
   it('does not delete an owner replacement introduced immediately before alias cleanup', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-detached-alias-replacement';
-    const prepared = prepareNewSession(
-      prepareInput(project, sessionId, new AbortController().signal),
-    );
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
     const directory = sessionDir(project, sessionId);
     const marker = join(directory, OWNERSHIP_FILE);
     const handoff = join(directory, DETACHED_HANDOFF_FILE);
@@ -739,10 +712,10 @@ describe('prepareNewSession', () => {
       ...JSON.parse(readFileSync(marker, 'utf8')),
       generation: '55555555-5555-4555-8555-555555555555',
     })}\n`;
-    transferPreparedSessionToDetached(prepared.session);
+    transferPreparedSessionToDetached(session);
 
     expect(() =>
-      acceptDetachedSessionHandoff(prepared.session, {
+      acceptDetachedSessionHandoff(session, {
         _beforeMutation: (boundary) => {
           if (boundary !== 'detached-alias-claim') return;
           renameSync(marker, `${marker}.displaced`);
@@ -757,7 +730,7 @@ describe('prepareNewSession', () => {
     );
 
     expect(existsSync(handoff)).toBe(true);
-    expect(() => acceptDetachedSessionHandoff(prepared.session)).toThrowError(
+    expect(() => acceptDetachedSessionHandoff(session)).toThrowError(
       expect.objectContaining({
         kind: 'session-prepare-io',
         data: { operation: 'accept-detached-session', sessionId },
@@ -775,11 +748,7 @@ describe('prepareNewSession', () => {
   it('accepts the exact committed handoff while preserving a later foreign owner', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-detached-owner-after-link';
-    const prepared = prepareNewSession(
-      prepareInput(project, sessionId, new AbortController().signal),
-    );
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
     const directory = sessionDir(project, sessionId);
     const marker = join(directory, OWNERSHIP_FILE);
     const replacement = `${JSON.stringify({
@@ -787,14 +756,14 @@ describe('prepareNewSession', () => {
       generation: '55555555-5555-4555-8555-555555555555',
     })}\n`;
 
-    transferPreparedSessionToDetached(prepared.session, {
+    transferPreparedSessionToDetached(session, {
       _beforeMutation: (boundary) => {
         if (boundary !== 'ownership-captured') return;
         unlinkSync(marker);
         writeFileSync(marker, replacement, { mode: 0o600 });
       },
     });
-    expect(acceptDetachedSessionHandoff(prepared.session)).toBe(true);
+    expect(acceptDetachedSessionHandoff(session)).toBe(true);
 
     expect(existsSync(marker)).toBe(false);
     expect(existsSync(join(directory, DETACHED_HANDOFF_FILE))).toBe(false);
@@ -811,12 +780,8 @@ describe('prepareNewSession', () => {
   it('rejects handoff acceptance after a newer same-session activation', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-detached-active-generation';
-    const prepared = prepareNewSession(
-      prepareInput(project, sessionId, new AbortController().signal),
-    );
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
-    transferPreparedSessionToDetached(prepared.session);
+    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
+    transferPreparedSessionToDetached(session);
     writeFileSync(
       activeFile(project),
       `${JSON.stringify({
@@ -827,7 +792,7 @@ describe('prepareNewSession', () => {
       { mode: 0o600 },
     );
 
-    expect(() => acceptDetachedSessionHandoff(prepared.session)).toThrowError(
+    expect(() => acceptDetachedSessionHandoff(session)).toThrowError(
       expect.objectContaining({
         kind: 'session-prepare-io',
         data: { operation: 'accept-detached-session', sessionId },
@@ -839,15 +804,11 @@ describe('prepareNewSession', () => {
   it('keeps original rollback authority when detached transfer fails before publication', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-detached-handoff-failed';
-    const prepared = prepareNewSession(
-      prepareInput(project, sessionId, new AbortController().signal),
-    );
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
     const directory = sessionDir(project, sessionId);
 
     expect(() =>
-      transferPreparedSessionToDetached(prepared.session, {
+      transferPreparedSessionToDetached(session, {
         _beforeMutation: (boundary) => {
           if (boundary === 'ownership-captured') throw new Error('stop before transfer');
         },
@@ -860,20 +821,16 @@ describe('prepareNewSession', () => {
     );
     expect(existsSync(join(directory, OWNERSHIP_FILE))).toBe(true);
     expect(existsSync(join(directory, DETACHED_HANDOFF_FILE))).toBe(false);
-    expect(acceptDetachedSessionHandoff(prepared.session)).toBe(false);
+    expect(acceptDetachedSessionHandoff(session)).toBe(false);
 
-    rollbackPreparedSession(prepared.session);
+    rollbackPreparedSession(session);
     expect(existsSync(directory)).toBe(false);
   });
 
   it('a stale same-session generation cannot release clear or delete a newer generation', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-generation-aba';
-    const prepared = prepareNewSession(
-      prepareInput(project, sessionId, new AbortController().signal),
-    );
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
     const directory = sessionDir(project, sessionId);
     const marker = join(directory, OWNERSHIP_FILE);
     const newerGeneration = '55555555-5555-4555-8555-555555555555';
@@ -888,13 +845,13 @@ describe('prepareNewSession', () => {
       { mode: 0o600 },
     );
 
-    expect(() => releasePreparedSession(prepared.session)).toThrowError(
+    expect(() => releasePreparedSession(session)).toThrowError(
       expect.objectContaining({
         kind: 'session-prepare-io',
         data: { operation: 'release-session', sessionId },
       }),
     );
-    expect(() => rollbackPreparedSession(prepared.session)).toThrowError(
+    expect(() => rollbackPreparedSession(session)).toThrowError(
       expect.objectContaining({
         kind: 'session-prepare-io',
         data: { operation: 'rollback-session', sessionId },
@@ -914,15 +871,13 @@ describe('prepareNewSession', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-replaced-release';
     const signal = new AbortController().signal;
-    const prepared = prepareNewSession(prepareInput(project, sessionId, signal));
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, signal));
     const marker = join(sessionDir(project, sessionId), OWNERSHIP_FILE);
     const proof = readFileSync(marker, 'utf8');
     replaceSessionDirectory(project, sessionId);
     writeFileSync(marker, proof, { mode: 0o600 });
 
-    expect(() => releasePreparedSession(prepared.session)).toThrowError(
+    expect(() => releasePreparedSession(session)).toThrowError(
       expect.objectContaining({
         kind: 'session-prepare-io',
         data: { operation: 'release-session', sessionId },
@@ -937,15 +892,13 @@ describe('prepareNewSession', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-replaced-marker-release';
     const signal = new AbortController().signal;
-    const prepared = prepareNewSession(prepareInput(project, sessionId, signal));
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, signal));
     const marker = join(sessionDir(project, sessionId), OWNERSHIP_FILE);
     const displaced = `${marker}.displaced`;
     const proof = readFileSync(marker, 'utf8');
 
     expect(() =>
-      releasePreparedSession(prepared.session, {
+      releasePreparedSession(session, {
         _beforeMutation: (boundary) => {
           if (boundary !== 'ownership-claim') return;
           renameSync(marker, displaced);
@@ -968,15 +921,13 @@ describe('prepareNewSession', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-marker-after-claim';
     const signal = new AbortController().signal;
-    const prepared = prepareNewSession(prepareInput(project, sessionId, signal));
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, signal));
     const directory = sessionDir(project, sessionId);
     const marker = join(directory, OWNERSHIP_FILE);
     const proof = readFileSync(marker, 'utf8');
 
     expect(() =>
-      releasePreparedSession(prepared.session, {
+      releasePreparedSession(session, {
         _beforeMutation: (boundary) => {
           if (boundary === 'ownership-captured') {
             writeFileSync(marker, proof, { mode: 0o600 });
@@ -1004,12 +955,10 @@ describe('prepareNewSession', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-terminal-directory-replacement';
     const signal = new AbortController().signal;
-    const prepared = prepareNewSession(prepareInput(project, sessionId, signal));
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, signal));
 
     expect(() =>
-      rollbackPreparedSession(prepared.session, {
+      rollbackPreparedSession(session, {
         _beforeMutation: (boundary) => {
           if (boundary === 'directory-claim') replaceSessionDirectory(project, sessionId);
         },
@@ -1036,12 +985,10 @@ describe('prepareNewSession', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-recreated-after-claim';
     const signal = new AbortController().signal;
-    const prepared = prepareNewSession(prepareInput(project, sessionId, signal));
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, signal));
 
     expect(() =>
-      rollbackPreparedSession(prepared.session, {
+      rollbackPreparedSession(session, {
         _beforeMutation: (boundary) => {
           if (boundary !== 'directory-captured') return;
           mkdirSync(sessionDir(project, sessionId));
@@ -1068,16 +1015,14 @@ describe('prepareNewSession', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-active-cleanup-failure';
     const signal = new AbortController().signal;
-    const prepared = prepareNewSession(prepareInput(project, sessionId, signal));
-    expect(prepared.kind).toBe('prepared');
-    if (prepared.kind !== 'prepared') return;
+    const session = preparedSession(prepareInput(project, sessionId, signal));
     const directory = sessionDir(project, sessionId);
     const readinessPath = join(directory, READINESS_FILE);
     const readiness = readFileSync(readinessPath, 'utf8');
     rmSync(activeFile(project));
     mkdirSync(activeFile(project));
 
-    expect(() => rollbackPreparedSession(prepared.session)).toThrowError(
+    expect(() => rollbackPreparedSession(session)).toThrowError(
       expect.objectContaining({
         kind: 'session-prepare-io',
         data: { operation: 'rollback-session', sessionId },

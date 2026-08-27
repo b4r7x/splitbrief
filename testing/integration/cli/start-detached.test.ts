@@ -25,7 +25,7 @@ import {
   worktreePath,
 } from '../../../src/core/paths.js';
 import { isCliError } from '../../../src/cli/errors.js';
-import { isOpaqueSessionId } from '../../../src/core/sessions/lifecycle.js';
+import { isOpaqueSessionId } from '../../../src/core/sessions/session-id.js';
 import type {
   SpawnServerOptions,
   SpawnServerResult,

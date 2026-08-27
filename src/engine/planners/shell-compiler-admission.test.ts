@@ -7,7 +7,8 @@ import { runMultiPhasePlanning } from './multi-phase.js';
 import { createPlannerCallContext } from './call-context.js';
 import { createTaskDispatchClaimPort, createTaskDispatchLedger } from '../calls/dispatch-ledger.js';
 import { materializeTaskCompilationProgram } from '../spec/tasks/compiler.js';
-import { COMPILER_SUPPORT_TABLE } from '../runners/compiler-capability.js';
+import { admitCompilerCapability } from '../runners/compiler-capability.js';
+import { capabilityTuple } from '#testing/helpers/factories/compiler-capability.js';
 import {
   TASK_BRIEF_COMPILER_POLICY,
   TaskCompilationBatchIdSchema,
@@ -104,11 +105,15 @@ describe('legacy shell planner compiler admission', () => {
     });
   });
 
-  it('reads the typed-unsupported shell row from the capability registry', () => {
-    const row = COMPILER_SUPPORT_TABLE.shell;
-    expect(row.state).toBe('unsupported');
-    expect(row.transports).toEqual([]);
-    expect(row.unsupportedReason).toContain('containment and final-response conformance');
+  it('refuses capability admission for the shell backend with the registry reason', () => {
+    const admission = admitCompilerCapability({ ...capabilityTuple('opencode'), backend: 'shell' });
+
+    expect(admission.kind).toBe('refused');
+    if (admission.kind !== 'refused') return;
+    expect(admission.failure.code).toBe('task_compiler_capability_unsupported');
+    expect(admission.failure.message).toContain(
+      'legacy shell planner lacks compiler containment and final-response conformance',
+    );
   });
 
   it('refuses compiler batch dispatch with a typed capability failure and zero batch spawns', async () => {

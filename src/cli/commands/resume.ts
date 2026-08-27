@@ -1,6 +1,5 @@
 import type { Command } from 'commander';
-import { acquireStateAuthority, releaseStateAuthority } from '../../core/state/authority.js';
-import { loadStateForResume } from '../../core/state/persistence.js';
+import { loadOwnerWorkflowState } from '../../core/state/resume-hydration.js';
 import {
   addWorkflowOptions,
   assertModeFlagsExclusive,
@@ -8,35 +7,11 @@ import {
 } from '../options.js';
 import { canonicalizeProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
-import { readActive } from '../../core/sessions/lifecycle.js';
+import { readActive } from '../../core/sessions/active-pointer.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import { sessionDir } from '../../core/paths.js';
 import { resumeSavedSession } from './continue/resume.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
-import type { SessionRef } from '../../core/types/session-ref.js';
-
-type ResumeHydration = ReturnType<typeof loadStateForResume>;
-
-function loadOwnedResumeState(ref: SessionRef): ResumeHydration {
-  let acquired: ReturnType<typeof acquireStateAuthority>;
-  try {
-    acquired = acquireStateAuthority({ ref, purpose: 'resume' });
-  } catch (cause) {
-    return {
-      kind: 'invalid',
-      code: 'malformed',
-      message: cause instanceof Error ? cause.message : 'State authority is unavailable.',
-    };
-  }
-
-  if (acquired.kind === 'new-workflow') return { kind: 'missing' };
-  if (acquired.kind !== 'fenced') return loadStateForResume({ ref, authority: acquired });
-  try {
-    return loadStateForResume({ ref, authority: acquired });
-  } finally {
-    releaseStateAuthority(ref, acquired.receipt);
-  }
-}
 
 export interface ResumeDeps {
   checkServerStatus: typeof checkServerStatus;
@@ -76,7 +51,7 @@ export async function resumeCommand(
     );
   }
 
-  const hydrated = loadOwnedResumeState({ projectDir, sessionId });
+  const hydrated = loadOwnerWorkflowState({ projectDir, sessionId });
 
   if (hydrated.kind === 'invalid') {
     throw cliError(`session '${sessionId}' has invalid saved state: ${hydrated.message}`, 1);

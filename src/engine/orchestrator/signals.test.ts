@@ -15,8 +15,13 @@ describe('withSignalHandlers', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it('propagates exceptions and still cleans up — future invocations run without inherited handlers', async () => {
+  it('propagates exceptions and still removes every signal listener it installed', async () => {
     const handler = vi.fn();
+    const before = {
+      SIGINT: process.listenerCount('SIGINT'),
+      SIGTERM: process.listenerCount('SIGTERM'),
+      SIGHUP: process.listenerCount('SIGHUP'),
+    };
 
     await expect(
       withSignalHandlers(handler, async () => {
@@ -24,8 +29,11 @@ describe('withSignalHandlers', () => {
       }),
     ).rejects.toThrow('boom');
 
-    const after = await withSignalHandlers(handler, async () => {});
-    expect(after).toEqual({ cancelled: false });
+    expect({
+      SIGINT: process.listenerCount('SIGINT'),
+      SIGTERM: process.listenerCount('SIGTERM'),
+      SIGHUP: process.listenerCount('SIGHUP'),
+    }).toEqual(before);
     expect(handler).not.toHaveBeenCalled();
   });
 

@@ -1,6 +1,6 @@
 import type { Task } from '../../../core/schemas/task.js';
 import { topoSort } from '../../../core/state/topo-sort.js';
-import { error, matches } from '../../../utils/error.js';
+import { error } from '../../../utils/error.js';
 import {
   looksLikeTaskBlock,
   normalizeTaskSeparators,
@@ -16,10 +16,8 @@ import { warnUnknownSections } from './sections.js';
 export const parseTasksError = {
   invalidTaskBlock: (detail: string) =>
     error('parse-tasks-invalid-block', `Invalid task block: ${detail}`, { detail }),
-  isInvalidTaskBlock: matches('parse-tasks-invalid-block'),
   unterminatedTaskBlock: () =>
     error('parse-tasks-unterminated-block', 'unterminated task block after separator'),
-  isUnterminatedTaskBlock: matches('parse-tasks-unterminated-block'),
 } as const;
 
 export type ParseTasksOptions = {

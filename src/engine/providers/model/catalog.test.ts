@@ -58,7 +58,7 @@ describe('runner-owned catalog resolution', () => {
       },
     });
 
-    const runtimeRows = resolveModelCatalog('codex', cache).filter(
+    const runtimeRows = resolveModelCatalog('codex', { cache }).filter(
       (row) => row.source === 'runtime',
     );
 
@@ -126,7 +126,7 @@ describe('runner-owned catalog resolution', () => {
       },
     });
 
-    const rows = resolveModelCatalog('anthropic', cache);
+    const rows = resolveModelCatalog('anthropic', { cache });
 
     expect(rows.slice(0, 2).map((row) => row.selectionId)).toEqual([
       'claude-opus-4-6',
@@ -181,7 +181,7 @@ describe('runner-owned catalog resolution', () => {
       },
     });
 
-    const row = resolveModelCatalog('anthropic', cache).find(
+    const row = resolveModelCatalog('anthropic', { cache }).find(
       (entry) => entry.selectionId === 'native-false-capabilities',
     );
 
@@ -205,7 +205,9 @@ describe('runner-owned catalog resolution', () => {
       },
     });
 
-    const rows = resolveModelCatalog('opencode', cache).filter((row) => row.source === 'runtime');
+    const rows = resolveModelCatalog('opencode', { cache }).filter(
+      (row) => row.source === 'runtime',
+    );
 
     expect(rows.map((row) => [row.sourceProviderId, row.selectionId])).toEqual([
       ['vendor-a', 'model-x'],
@@ -233,7 +235,7 @@ describe('runner-owned catalog resolution', () => {
       },
     });
 
-    const rows = resolveModelCatalog('kilo-code', cache);
+    const rows = resolveModelCatalog('kilo-code', { cache });
 
     expect(rows.map((row) => [row.selectionId, row.membership])).toEqual([
       ['kilo/model-1', 'confirmed'],
@@ -259,7 +261,7 @@ describe('runner-owned catalog resolution', () => {
       },
     });
 
-    const row = resolveModelCatalog('anthropic', cache).find(
+    const row = resolveModelCatalog('anthropic', { cache }).find(
       (entry) => entry.selectionId === 'claude-sonnet-4-6',
     );
 
@@ -292,7 +294,7 @@ describe('runner-owned catalog resolution', () => {
       },
     });
 
-    const rows = resolveModelCatalog('anthropic', cache);
+    const rows = resolveModelCatalog('anthropic', { cache });
 
     expect(rows.filter((row) => row.source === 'runtime')).toMatchObject([
       { selectionId: 'claude-sonnet-4-6', contextLength: 32_768 },
@@ -303,11 +305,10 @@ describe('runner-owned catalog resolution', () => {
   });
 
   it('demotes a bundled default when a fresh authoritative snapshot omits it', () => {
-    const offlineRows = resolveModelCatalog('anthropic', makeModelCacheAccessor());
-    const freshEmptyRows = resolveModelCatalog(
-      'anthropic',
-      makeModelCacheAccessor({ providerModels: { anthropic: [] } }),
-    );
+    const offlineRows = resolveModelCatalog('anthropic', { cache: makeModelCacheAccessor() });
+    const freshEmptyRows = resolveModelCatalog('anthropic', {
+      cache: makeModelCacheAccessor({ providerModels: { anthropic: [] } }),
+    });
 
     expect(offlineRows.find((row) => row.selectionId === 'claude-sonnet-4-6')).toMatchObject({
       source: 'bundled-fallback',
@@ -332,7 +333,7 @@ describe('runner-owned catalog resolution', () => {
       },
     });
 
-    const rows = resolveModelCatalog('claude-code', cache);
+    const rows = resolveModelCatalog('claude-code', { cache });
     const alias = rows.find((row) => row.selectionId === 'opus');
     const catalogModel = rows.find((row) => row.selectionId === 'claude-opus-4-6');
 
@@ -372,7 +373,7 @@ describe('runner-owned catalog resolution', () => {
       },
     });
 
-    const suggestions = resolveModelCatalog('openai', cache).filter(
+    const suggestions = resolveModelCatalog('openai', { cache }).filter(
       (row) => row.source === 'models-dev',
     );
 

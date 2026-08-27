@@ -6,7 +6,7 @@ import type { ChangeDetector } from '../change-detection.js';
 import { createImplementerBase } from './pipeline/run.js';
 import { createCommandExistsAvailability } from '../availability.js';
 import { createChangeDetector } from '../change-detection.js';
-import type { AdmittedCustomRunnerInvocation } from '../runners/trust.js';
+import type { AdmittedCustomRunnerInvocation } from '../runners/custom-launchability.js';
 import type { CustomRunnerRuntimePort } from '../runners/types.js';
 import {
   invokeCommandBasedRunner,

@@ -10,7 +10,6 @@ interface EditorArgv {
 interface ResolveEditorArgvOptions {
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
-  commandExists?: (command: string, env: NodeJS.ProcessEnv) => boolean;
 }
 
 const guiEditorCandidates: readonly EditorArgv[] = [
@@ -139,19 +138,8 @@ export function resolveEditorArgv(options: ResolveEditorArgvOptions = {}): Edito
   const editor = parseEditor(env.EDITOR);
   if (editor && !isTerminalEditor(editor.command)) return editor;
 
-  if (options.commandExists !== undefined) {
-    for (const candidate of guiEditorCandidates) {
-      if (options.commandExists(candidate.command, env)) {
-        return { command: candidate.command, args: [...candidate.args] };
-      }
-    }
-    if (platform === 'darwin' && options.commandExists('open', env)) {
-      return { command: 'open', args: ['-W', '-t'] };
-    }
-  } else {
-    const guiEditor = detectGuiEditor(env, platform);
-    if (guiEditor) return guiEditor;
-  }
+  const guiEditor = detectGuiEditor(env, platform);
+  if (guiEditor) return guiEditor;
 
   if (editor) return editor;
   return { command: 'vi', args: [] };

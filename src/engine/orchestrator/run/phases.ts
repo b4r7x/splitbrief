@@ -3,10 +3,8 @@ import type { WorkflowContext, PlannerCallbacksContext } from '../types.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { EngineEvent } from '../../events/types.js';
 import type { Planner } from '../../planners/types.js';
-import type {
-  BriefRecoveryProjectionV1,
-  RecoveryResultV1,
-} from '../../../core/schemas/brief-recovery.js';
+import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
+import type { RecoveryResultV1 } from '../../../core/schemas/brief-recovery.js';
 import { RecoveryResultV1Schema } from '../../../core/schemas/brief-recovery.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
 import {
@@ -27,9 +25,6 @@ import { runBriefQuality } from '../planning/brief-quality-run.js';
 import type { BriefQualityRecoveryBinding } from '../planning/brief-quality-preparation.js';
 import { transitionAndSave } from '../state-ops.js';
 import { APPROVAL_PARKED_ARTIFACT } from './task-execution.js';
-
-export { runTasksAndReview } from './task-execution.js';
-export type { RunTasksAndReviewOptions } from './task-execution.js';
 
 export type RunPlanningPhasesOptions = {
   wctx: WorkflowContext;
@@ -65,23 +60,6 @@ function stateAfterRecovery(state: WorkflowState, recovery: PhaseRecoveryBinding
   return state;
 }
 
-function recoveryAfterResult(
-  recovery: PhaseRecoveryBinding,
-  result: { projection: BriefRecoveryProjectionV1 } | null,
-): PhaseRecoveryBinding {
-  if (result === null) return recovery;
-  const recoveryResult = RecoveryResultV1Schema.safeParse(result);
-  return {
-    ...recovery,
-    authority: {
-      ...recovery.authority,
-      stateRevision: result.projection.stateRevision,
-    },
-    projection: result.projection,
-    ...(recoveryResult.success ? { admission: recoveryResult.data } : {}),
-  };
-}
-
 function recoveryHasAdmission(recovery: PhaseRecoveryBinding): boolean {
   return recovery.projection.epochId !== null;
 }
@@ -91,6 +69,10 @@ function applyBriefQualityResult(
   result: Awaited<ReturnType<typeof runBriefQuality>>,
 ): void {
   recovery.projection = result.projection;
+  recovery.authority = {
+    ...recovery.authority,
+    stateRevision: result.projection.stateRevision,
+  };
   const parsed = RecoveryResultV1Schema.safeParse(result.recovery);
   if (parsed.success) recovery.admission = parsed.data;
 }
@@ -210,8 +192,8 @@ async function continueApprovedArtifact(opts: {
     setTrackedState(preserved);
     return parkedPlanningResult(wctx.sessionId, preserved, recovery.projection);
   }
-  const qualityRecovery = recoveryAfterResult(recovery, quality.recovery);
-  const latest = stateAfterRecovery(quality.state, qualityRecovery);
+  applyBriefQualityResult(recovery, quality);
+  const latest = stateAfterRecovery(quality.state, recovery);
   setTrackedState(latest);
   if (!quality.ok) return withPlanningResultState(quality.result, latest);
 
@@ -219,9 +201,9 @@ async function continueApprovedArtifact(opts: {
     wctx,
     state: latest,
     qualityValidatedTasks: quality.tasks,
-    recovery: qualityRecovery,
+    recovery,
   });
-  const finalState = stateAfterRecovery(briefs.state, qualityRecovery);
+  const finalState = stateAfterRecovery(briefs.state, recovery);
   setTrackedState(finalState);
   return withPlanningResultState(briefs, finalState);
 }

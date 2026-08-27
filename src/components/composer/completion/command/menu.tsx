@@ -1,6 +1,5 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../theme.js';
-import type { RuntimeCommandDef } from '../../../../core/runtime/commands/types.js';
 import {
   AlignedOptionRow,
   getAlignedOptionLabelWidth,
@@ -15,10 +14,16 @@ const MAX_COMMAND_NAME_WIDTH = 18;
 const COMMAND_NAME_GAP = 2;
 const NARROW_FOOTER_COLS = 50;
 
+export interface CommandCompletionRow {
+  name: string;
+  description: string;
+  shortcut?: string | null;
+}
+
 interface CommandCompletionMenuProps {
-  filtered: RuntimeCommandDef[];
+  filtered: CommandCompletionRow[];
   selectedIndex: number;
-  fuzzyMatch?: RuntimeCommandDef | null;
+  fuzzyMatch?: CommandCompletionRow | null;
   maxVisible: number;
 }
 
@@ -83,7 +88,7 @@ function CommandRow({
   rowBg,
   nameWidth,
 }: {
-  cmd: RuntimeCommandDef;
+  cmd: CommandCompletionRow;
   isSelected: boolean;
   rowBg: string;
   nameWidth: number;

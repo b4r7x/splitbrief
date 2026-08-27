@@ -13,7 +13,6 @@ function terminalFor(adapter: CliImplementerAdapter, events: readonly CliProtoco
   return adapter.terminal({
     outputContract: adapter.outputContract,
     events,
-    stdout: '',
     stderr: '',
     exitCode: 0,
     signal: null,
@@ -89,21 +88,22 @@ describe('withOutputFormat', () => {
     });
   });
 
-  it('rejects conflicting output flags and separator forms with zero spawn', () => {
+  it('rejects conflicting output flags and separator forms', () => {
     const base = baseFor(claudeCodeImplementerAdapter);
     const conflicting = [
-      [...base, '--output-format', 'text'],
-      [...base, '--format=json'],
-      [...base, '--print'],
-      [...base, '--json'],
-      [...base, '--', '--output-format', 'text'],
+      { tail: ['--output-format', 'text'], conflict: '--output-format' },
+      { tail: ['--format=json'], conflict: '--format' },
+      { tail: ['--print'], conflict: '--print' },
+      { tail: ['--json'], conflict: '--json' },
+      { tail: ['--', '--output-format', 'text'], conflict: '--output-format' },
     ];
-    for (const args of conflicting) {
-      let spawns = 0;
-      const verdict = claudeCodeImplementerAdapter.validateArgs(args, base);
-      if (verdict.valid) spawns += 1;
-      expect(verdict.valid).toBe(false);
-      expect(spawns).toBe(0);
+    for (const { tail, conflict } of conflicting) {
+      expect(
+        claudeCodeImplementerAdapter.validateArgs({
+          invocationArgs: [...base, ...tail],
+          baseArgs: base,
+        }),
+      ).toEqual({ valid: false, conflicts: [conflict] });
     }
   });
 });

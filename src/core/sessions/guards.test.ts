@@ -7,7 +7,7 @@ import {
   withSessionMutationLock,
   writeActive,
   writeActiveReceiptLocked,
-} from './lifecycle.js';
+} from './active-pointer.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
 import { activeFile, sessionDir, STATE_FILE, SPLITBRIEF_DIR, LOCKFILE } from '../paths.js';

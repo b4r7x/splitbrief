@@ -1,6 +1,6 @@
 import { beforeEach, describe, it, expect } from 'vitest';
 import { createRuntimeCommands } from './registry.js';
-import { makeCtx, noop, executeRuntimeCommand } from '#testing/helpers/runtime-commands.js';
+import { makeCtx, noop, runCommandInTest } from '#testing/helpers/runtime-commands.js';
 import type { DiscoveryRefreshSummary, RuntimeConfigSaveResult } from './types.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
 
@@ -66,7 +66,7 @@ describe('/mode command', () => {
         },
       }),
     );
-    await executeRuntimeCommand(commands, '/mode', 'home', noop);
+    await runCommandInTest({ commands: commands, raw: '/mode', screen: 'home', onError: noop });
     expect(openedOverlay).toBe('mode-selector');
   });
 
@@ -89,7 +89,12 @@ describe('/mode command', () => {
         },
       }),
     );
-    const execution = executeRuntimeCommand(commands, '/mode quick', 'home', noop);
+    const execution = runCommandInTest({
+      commands: commands,
+      raw: '/mode quick',
+      screen: 'home',
+      onError: noop,
+    });
 
     expect(savedMode).toBe('quick');
     expect(feedback).toBeUndefined();
@@ -111,7 +116,12 @@ describe('/mode command', () => {
         },
       }),
     );
-    await executeRuntimeCommand(commands, '/mode speckit', 'home', noop);
+    await runCommandInTest({
+      commands: commands,
+      raw: '/mode speckit',
+      screen: 'home',
+      onError: noop,
+    });
     expect(savedMode).toBe('speckit');
   });
 
@@ -128,7 +138,12 @@ describe('/mode command', () => {
           },
         }),
       );
-      const execution = executeRuntimeCommand(commands, '/mode quick', 'home', noop);
+      const execution = runCommandInTest({
+        commands: commands,
+        raw: '/mode quick',
+        screen: 'home',
+        onError: noop,
+      });
 
       expect(feedback).toBeUndefined();
       completion.resolve({ kind, ok: false });
@@ -152,7 +167,12 @@ describe('/mode command', () => {
         },
       }),
     );
-    await executeRuntimeCommand(commands, '/mode turbo', 'home', noop);
+    await runCommandInTest({
+      commands: commands,
+      raw: '/mode turbo',
+      screen: 'home',
+      onError: noop,
+    });
     expect(savedMode).toBeUndefined();
     expect(error).toMatch(/invalid/i);
   });
@@ -185,7 +205,7 @@ describe('/refresh command', () => {
         },
       }),
     );
-    await executeRuntimeCommand(commands, '/refresh', 'home', noop);
+    await runCommandInTest({ commands: commands, raw: '/refresh', screen: 'home', onError: noop });
     expect(refreshRan).toBe(true);
     expect(messages.length).toBeGreaterThan(0);
   });
@@ -208,7 +228,7 @@ describe('/refresh command', () => {
       }),
     );
 
-    await executeRuntimeCommand(commands, '/refresh', 'home', noop);
+    await runCommandInTest({ commands: commands, raw: '/refresh', screen: 'home', onError: noop });
 
     expect(errors).toEqual([message]);
     expect(messages).not.toContain('Tool detection refreshed');
@@ -223,7 +243,7 @@ describe('/refresh command', () => {
       }),
     );
 
-    await executeRuntimeCommand(commands, '/refresh', 'home', noop);
+    await runCommandInTest({ commands: commands, raw: '/refresh', screen: 'home', onError: noop });
 
     expect(errors).toEqual(['Tool detection refresh failed']);
   });
@@ -244,8 +264,18 @@ describe('/refresh command', () => {
       }),
     );
 
-    const first = executeRuntimeCommand(commands, '/refresh', 'home', noop);
-    const second = executeRuntimeCommand(commands, '/refresh', 'home', noop);
+    const first = runCommandInTest({
+      commands: commands,
+      raw: '/refresh',
+      screen: 'home',
+      onError: noop,
+    });
+    const second = runCommandInTest({
+      commands: commands,
+      raw: '/refresh',
+      screen: 'home',
+      onError: noop,
+    });
     firstRefresh.resolve(failedRefreshSummary('superseded'));
     await Promise.all([first, second]);
 
@@ -265,9 +295,9 @@ describe('/crew command', () => {
       }),
     );
 
-    executeRuntimeCommand(commands, '/crew', 'home', noop);
-    executeRuntimeCommand(commands, '/crew review', 'home', noop);
-    executeRuntimeCommand(commands, '/planner', 'home', noop);
+    runCommandInTest({ commands: commands, raw: '/crew', screen: 'home', onError: noop });
+    runCommandInTest({ commands: commands, raw: '/crew review', screen: 'home', onError: noop });
+    runCommandInTest({ commands: commands, raw: '/planner', screen: 'home', onError: noop });
 
     expect(focused).toEqual(['settings:seat:plan', 'settings:seat:review', 'settings:seat:plan']);
   });
@@ -286,7 +316,7 @@ describe('/crew command', () => {
       }),
     );
 
-    executeRuntimeCommand(commands, '/crew captain', 'home', noop);
+    runCommandInTest({ commands: commands, raw: '/crew captain', screen: 'home', onError: noop });
 
     expect(opened).toEqual([]);
     expect(error).toMatch(/captain/i);

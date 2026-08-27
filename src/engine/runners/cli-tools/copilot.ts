@@ -38,10 +38,9 @@ type CopilotPlannerBuildInput = Parameters<CliPlannerAdapter<'copilot'>['buildAr
 type CopilotImplementerBuildInput = Parameters<CliImplementerAdapter<'copilot'>['buildArgs']>[0];
 type CopilotTerminalEvent = Extract<CliProtocolEvent, { type: 'result' }>;
 
-function validateArgs(invocationArgs: readonly string[], baseArgs: readonly string[]) {
+function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: readonly string[] }) {
   return validateCliArgs({
-    invocationArgs,
-    baseArgs,
+    ...input,
     protectedFlags: COPILOT_PROTECTED_FLAGS,
     protectedShortValueFlags: COPILOT_PROTECTED_SHORT_VALUE_FLAGS,
     promptTransport: 'argv',
@@ -88,8 +87,6 @@ export function copilotPlannerProtocolEvents(line: string): readonly CliProtocol
 export function copilotImplementerProtocolEvents(line: string): readonly CliProtocolEvent[] {
   return toProtocolEvents(parseTextLine(line));
 }
-
-export { parseCopilotLine as copilotParseLine };
 
 function terminal(input: { events: readonly CliProtocolEvent[] }): CopilotTerminalEvent {
   let usage: TokenDelta | null = null;
@@ -249,29 +246,3 @@ export const CLI_CONFORMANCE_CANDIDATES: readonly CopilotCliConformanceCandidate
     adapter: copilotImplementerAdapter,
   }),
 ]);
-
-export function copilotPromptArgs(opts: {
-  role: 'planner' | 'implementer';
-  model?: string | undefined;
-  mode?: 'plan' | 'escalate' | undefined;
-  configuredArgs?: readonly string[] | undefined;
-}): readonly string[] {
-  const configuredArgs = opts.configuredArgs ?? [];
-  if (opts.role === 'planner') {
-    return copilotPlannerAdapter.buildArgs({
-      prompt: CLI_PROMPT_SENTINEL,
-      model: opts.model,
-      projectDir: '',
-      configuredArgs,
-      mode: opts.mode ?? 'plan',
-      sessionId: null,
-      effort: undefined,
-    });
-  }
-  return copilotImplementerAdapter.buildArgs({
-    prompt: CLI_PROMPT_SENTINEL,
-    model: opts.model,
-    projectDir: '',
-    configuredArgs,
-  });
-}

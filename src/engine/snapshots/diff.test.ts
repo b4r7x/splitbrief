@@ -181,7 +181,10 @@ describe('computeSnapshotDiff', () => {
     const outsideBlob = resolve(tmp, '..', 'evil-diff-blob');
     await writeFile(outsideBlob, 'EVIL SNAPSHOT CONTENT');
 
-    const manifestFile = snapshotManifestPath(tmp, 'sess-01', snap.manifest.id);
+    const manifestFile = snapshotManifestPath(
+      { projectDir: tmp, sessionId: 'sess-01' },
+      snap.manifest.id,
+    );
     const raw = JSON.parse(await readFile(manifestFile, 'utf-8'));
     const traversalEncoded = encodeSnapshotPath(`../../../../../../..${outsideBlob}`);
     raw.fileEntries = raw.fileEntries.map((e: { path: string; encodedName: string }) =>

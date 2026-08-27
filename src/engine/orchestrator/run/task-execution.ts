@@ -22,7 +22,7 @@ import {
   matchesPersistedExecutionPermit,
   revalidatePersistedExecutionPermit,
 } from '../planning/handoff.js';
-import { workflowAuthority } from './init.js';
+import { workflowAuthority } from './authority.js';
 
 export type RunTasksAndReviewOptions = {
   wctx: WorkflowContext;
@@ -85,28 +85,24 @@ export async function runTasksAndReview(
   let { summaryBase } = opts;
   let { state } = opts;
   const { callbacks } = wctx;
+  const bail = () => ({
+    summary: buildSummary({ ...summaryBase, state, phaseTimings }),
+    completed: false,
+    cancelled: false,
+    state,
+  });
 
   const planning = opts.planning;
   if (
     planning.disposition !== 'ready-for-tasks' ||
     !matchesPersistedExecutionPermit(planning, state)
   ) {
-    return {
-      summary: buildSummary({ ...summaryBase, state, phaseTimings }),
-      completed: false,
-      cancelled: false,
-      state,
-    };
+    return bail();
   }
 
   const authority = workflowAuthority(wctx);
   if (authority === undefined) {
-    return {
-      summary: buildSummary({ ...summaryBase, state, phaseTimings }),
-      completed: false,
-      cancelled: false,
-      state,
-    };
+    return bail();
   }
 
   const revalidated = revalidatePersistedExecutionPermit({
@@ -116,12 +112,7 @@ export async function runTasksAndReview(
     authority,
   });
   if (revalidated === null) {
-    return {
-      summary: buildSummary({ ...summaryBase, state, phaseTimings }),
-      completed: false,
-      cancelled: false,
-      state,
-    };
+    return bail();
   }
   state = revalidated.state;
   let handoff = revalidated.planning;
@@ -184,12 +175,7 @@ export async function runTasksAndReview(
       if (gateDecision === 'gate' && wctx.callbacks.onCostApprovalNeeded) {
         const approved = await wctx.callbacks.onCostApprovalNeeded(prediction);
         if (!approved) {
-          return {
-            summary: buildSummary({ ...summaryBase, state, phaseTimings }),
-            completed: false,
-            cancelled: false,
-            state,
-          };
+          return bail();
         }
       }
     }
@@ -220,12 +206,7 @@ export async function runTasksAndReview(
               transcriptSafe: true,
             },
           });
-          return {
-            summary: buildSummary({ ...summaryBase, state, phaseTimings }),
-            completed: false,
-            cancelled: false,
-            state,
-          };
+          return bail();
         }
         const reviewed = await reviewAutoSplitOutput({
           wctx,
@@ -236,12 +217,7 @@ export async function runTasksAndReview(
         });
         state = reviewed.state;
         if (reviewed.disposition !== 'ready-for-tasks') {
-          return {
-            summary: buildSummary({ ...summaryBase, state, phaseTimings }),
-            completed: false,
-            cancelled: false,
-            state,
-          };
+          return bail();
         }
         handoff = reviewed;
         prediction = predictTasksCost({
@@ -259,12 +235,7 @@ export async function runTasksAndReview(
 
   const finalAuthority = workflowAuthority(wctx);
   if (finalAuthority === undefined) {
-    return {
-      summary: buildSummary({ ...summaryBase, state, phaseTimings }),
-      completed: false,
-      cancelled: false,
-      state,
-    };
+    return bail();
   }
   const finalRevalidated = revalidatePersistedExecutionPermit({
     ref: { projectDir: wctx.projectDir, sessionId: wctx.sessionId },
@@ -273,12 +244,7 @@ export async function runTasksAndReview(
     authority: finalAuthority,
   });
   if (finalRevalidated === null) {
-    return {
-      summary: buildSummary({ ...summaryBase, state, phaseTimings }),
-      completed: false,
-      cancelled: false,
-      state,
-    };
+    return bail();
   }
   state = finalRevalidated.state;
   setTrackedState(state);
@@ -326,23 +292,21 @@ export async function runTasksAndReview(
     };
   }
 
-  const finalReview = await runFinalReviewPhase(
-    {
-      projectDir: wctx.projectDir,
-      sessionId: wctx.sessionId,
-      config: wctx.config,
-      callbacks,
-      bus: wctx.bus,
-      state,
-      reviewer: wctx.reviewer,
-      metadata: wctx.metadata,
-      signal: wctx.signal,
-      sinks: wctx.sinks,
-    },
+  const finalReview = await runFinalReviewPhase({
+    projectDir: wctx.projectDir,
+    sessionId: wctx.sessionId,
+    config: wctx.config,
+    callbacks,
+    bus: wctx.bus,
+    state,
+    reviewer: wctx.reviewer,
+    metadata: wctx.metadata,
+    signal: wctx.signal,
+    sinks: wctx.sinks,
     summaryBase,
-    taskResult.taskBreakdowns,
+    taskBreakdowns: taskResult.taskBreakdowns,
     phaseTimings,
-  );
+  });
   return {
     summary: finalReview.summary,
     completed: !wctx.signal?.aborted && finalReview.state.phase === 'complete',

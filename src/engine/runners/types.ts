@@ -184,7 +184,6 @@ export type PreparedDeclaredArtifactReview = Readonly<{
       declaredRedactionValues?: readonly string[] | undefined;
     }>,
   ) => Promise<DeclaredArtifactRead>;
-  readonly receipt: DeclaredArtifactReceipt | undefined;
   getReceipt: () => DeclaredArtifactReceipt | undefined;
   dispose: () => Promise<void>;
 }>;

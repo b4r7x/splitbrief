@@ -1,20 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import {
   RecoveryBudgetResourceSchema,
-  type BudgetAccountingKey,
   type RecoveryCallEstimate,
-  type RecoveryOperationEnvelope,
-} from '../../../core/schemas/brief-recovery.js';
-import { estimateBriefRecoveryCall, type RecoveryFiniteEstimate } from './estimate.js';
+} from '../../../core/schemas/brief-recovery/budget.js';
+import { estimateBriefRecoveryCall } from './recovery-estimate.js';
 import {
   recoveryBudgetAccountingKey,
   reserveBriefRecoveryCall,
   reserveProviderDependentRecoveryCall,
-} from './enforce.js';
+} from './recovery-reservation.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
+import {
+  makeBoundedOperationEnvelope as boundedEnvelope,
+  makePricedRecoveryEstimate,
+  makeRecoveryBudgetKey as key,
+} from '#testing/helpers/factories/recovery.js';
 
-const pricingCache: ModelCacheAccessor = {
-  getModelsDevCatalog: () => ({
+const pricingCache = makeModelCacheAccessor({
+  catalog: {
     openai: {
       id: 'openai',
       models: {
@@ -25,30 +28,8 @@ const pricingCache: ModelCacheAccessor = {
         },
       },
     },
-  }),
-  getProviderModels: () => null,
-};
-
-const key = (operationId: string, generation = 3): BudgetAccountingKey => ({
-  sessionId: 'session-1',
-  epochId: 'epoch-1',
-  operationId,
-  generation,
+  },
 });
-
-function boundedEnvelope(): RecoveryOperationEnvelope {
-  return {
-    version: 1,
-    dispatchLimit: 64,
-    callCount: 1,
-    totalPromptBytes: 1_000,
-    totalInputTokensUpperBound: 8_000,
-    totalOutputTokensUpperBound: 8_192,
-    totalNormalizedOutputBytes: 96 * 1_024,
-    totalDeclaredArtifactBytes: 96 * 1_024,
-    callsDigest: 'calls'.padEnd(64, '0'),
-  };
-}
 
 function unavailableEstimate(): RecoveryCallEstimate {
   const estimate = estimateBriefRecoveryCall({
@@ -62,26 +43,6 @@ function unavailableEstimate(): RecoveryCallEstimate {
     throw new Error('expected an unpriced recovery estimate');
   }
   return estimate;
-}
-
-function pricedEstimate(): RecoveryFiniteEstimate {
-  const estimate = estimateBriefRecoveryCall({
-    prompt: 'Retry the frozen Brief once.',
-    plannerTool: 'openai',
-    plannerModel: 'gpt-5.4',
-    configuredOutputCap: 1_000,
-    pricingCache,
-  });
-  if (!isFiniteRecoveryEstimate(estimate)) {
-    throw new Error('expected a priced recovery estimate');
-  }
-  return estimate;
-}
-
-function isFiniteRecoveryEstimate(
-  estimate: ReturnType<typeof estimateBriefRecoveryCall>,
-): estimate is RecoveryFiniteEstimate {
-  return estimate.kind === 'finite' && estimate.amount !== null;
 }
 
 describe('provider-dependent recovery budget policy', () => {
@@ -145,7 +106,7 @@ describe('provider-dependent recovery budget policy', () => {
     expect(() =>
       reserveProviderDependentRecoveryCall({
         accountingKey: key('operation-misroute'),
-        estimate: pricedEstimate(),
+        estimate: makePricedRecoveryEstimate(pricingCache),
         envelope: boundedEnvelope(),
       }),
     ).toThrow('requires an unpriced recovery estimate');
@@ -172,7 +133,7 @@ describe('recovery budget finite exactness', () => {
   });
 
   it('reserves the exact finite amount within the cap and refuses a known excess', () => {
-    const estimate = pricedEstimate();
+    const estimate = makePricedRecoveryEstimate(pricingCache);
     const within = reserveBriefRecoveryCall({
       accountingKey: key('operation-exact'),
       estimate,

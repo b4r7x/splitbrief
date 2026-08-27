@@ -107,7 +107,7 @@ export async function createSnapshot(opts: CreateSnapshotOptions): Promise<Creat
     const trackedPaths = await collectTrackedFiles(projectDir);
 
     if (!(await hasBaseline(projectDir, sessionId))) {
-      const filesDir = join(baselineDir(projectDir, sessionId), 'files');
+      const filesDir = join(baselineDir({ projectDir, sessionId }), 'files');
       assertWritablePathConfined(relative(projectDir, filesDir), projectDir);
       await mkdir(filesDir, { recursive: true });
       assertWritablePathConfined(relative(projectDir, filesDir), projectDir);
@@ -135,7 +135,7 @@ export async function createSnapshot(opts: CreateSnapshotOptions): Promise<Creat
       await writeManifest(projectDir, sessionId, manifest);
       result = {
         manifest,
-        snapshotDir: baselineDir(projectDir, sessionId),
+        snapshotDir: baselineDir({ projectDir, sessionId }),
         isFirstSnapshot: true,
       };
     } else {
@@ -143,7 +143,7 @@ export async function createSnapshot(opts: CreateSnapshotOptions): Promise<Creat
       const baselineHashes = new Map(Object.entries(baselineManifest.fileHashes));
 
       const id = generateSnapshotId();
-      const filesDir = snapshotFilesDir(projectDir, sessionId, id);
+      const filesDir = snapshotFilesDir({ projectDir, sessionId }, id);
       assertWritablePathConfined(relative(projectDir, filesDir), projectDir);
       await mkdir(filesDir, { recursive: true });
       assertWritablePathConfined(relative(projectDir, filesDir), projectDir);
@@ -177,7 +177,7 @@ export async function createSnapshot(opts: CreateSnapshotOptions): Promise<Creat
       await writeManifest(projectDir, sessionId, manifest);
       result = {
         manifest,
-        snapshotDir: snapshotDir(projectDir, sessionId, id),
+        snapshotDir: snapshotDir({ projectDir, sessionId }, id),
         isFirstSnapshot: false,
       };
     }

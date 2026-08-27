@@ -154,8 +154,7 @@ describe('run with no reviewer configured', () => {
       REVIEW_TEXT,
     );
 
-    // The whole sequence as it was before the review seat became assignable:
-    // seat resolution happens at init, so a new event there would show here too.
+    // Seat resolution happens at init, so a new event there would show here too.
     const types = events.map((event) => event.type);
     expect(types).toEqual([
       'workflow_started',
@@ -208,8 +207,7 @@ describe('run with no reviewer configured', () => {
     expect(summary.tokenUsage.reviewerInput).toBe(REVIEW_USAGE.inputTokens);
     expect(summary.tokenUsage.reviewerOutput).toBe(REVIEW_USAGE.outputTokens);
 
-    // One cost line for the strong side, carrying the review tokens: that is
-    // the pre-change accounting, and the only line a run without a reviewer had.
+    // A run without a reviewer bills the review tokens on the strong side's single cost line.
     const providerCosts = summary.costBreakdown?.providerCosts ?? {};
     expect(Object.keys(providerCosts)).toEqual([PLANNER_PROVIDER]);
     expect(providerCosts[PLANNER_PROVIDER]).toMatchObject({

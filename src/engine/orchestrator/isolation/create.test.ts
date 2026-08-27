@@ -19,7 +19,9 @@ import {
   isolationWorktreePath,
   isolationWorktreeRoot,
   SANDBOX_DIR,
+  SESSIONS_DIR,
   SPLITBRIEF_DIR,
+  STATE_FILE,
 } from '../../../core/paths.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { createGitClient } from '../../../lib/git/client.js';
@@ -733,8 +735,45 @@ describe('createRunIsolation', () => {
 
       const stderrText = stderrSpy.mock.calls.map((call) => String(call[0])).join('');
       expect(stderrText).not.toContain('uncommitted file');
-      const publishedText = warningPublisher.mock.calls.map((call) => String(call[0])).join('');
-      expect(publishedText).not.toContain('uncommitted file');
+      expect(warningPublisher).not.toHaveBeenCalled();
+      expect(existsSync(isolationWorktree(dir))).toBe(false);
+    } finally {
+      stderrSpy.mockRestore();
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('dispose routes the removal warning through the injected publisher', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-publisher-wiring');
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      createTestGitRepo(dir, { 'README.md': '# test\n' });
+      const warningPublisher = vi.fn();
+      const handle = createRunIsolation({
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        strategy: 'worktree',
+        onFallback: () => {},
+        onRetained: () => {},
+        warningPublisher,
+      });
+
+      const ws = await acquireDirect(handle);
+      const liveSessionId = 'live-isolation-session';
+      const liveSessionDir = join(ws.projectDir, SPLITBRIEF_DIR, SESSIONS_DIR, liveSessionId);
+      mkdirSync(liveSessionDir, { recursive: true });
+      writeFileSync(join(liveSessionDir, STATE_FILE), JSON.stringify({ phase: 'implementing' }));
+
+      await handle.dispose();
+
+      expect(warningPublisher).toHaveBeenCalledOnce();
+      expect(String(warningPublisher.mock.calls[0]?.[0])).toContain(
+        `live session ${liveSessionId}`,
+      );
+      const stderrText = stderrSpy.mock.calls.map((call) => String(call[0])).join('');
+      expect(stderrText).not.toContain('live session');
       expect(existsSync(isolationWorktree(dir))).toBe(false);
     } finally {
       stderrSpy.mockRestore();

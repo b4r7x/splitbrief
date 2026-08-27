@@ -43,13 +43,13 @@ function normalizeVisibleHeight(height: number): number {
   return Math.max(1, Math.floor(height));
 }
 
-export function clampScrollableDocumentOffset(
-  offset: number,
-  lineCount: number,
-  height: number,
-): number {
-  const maxOffset = Math.max(0, lineCount - normalizeVisibleHeight(height));
-  return clamp(Math.floor(offset), 0, maxOffset);
+export function clampScrollableDocumentOffset(args: {
+  offset: number;
+  lineCount: number;
+  height: number;
+}): number {
+  const maxOffset = Math.max(0, args.lineCount - normalizeVisibleHeight(args.height));
+  return clamp(Math.floor(args.offset), 0, maxOffset);
 }
 
 interface VisibleScrollableDocumentRow {
@@ -101,7 +101,11 @@ function getScrollableDocumentWindow(
 ): ScrollableDocumentWindow {
   const visibleHeight = normalizeVisibleHeight(height);
   const lineCount = getScrollableDocumentLineCount(rows);
-  const offset = clampScrollableDocumentOffset(requestedOffset, lineCount, visibleHeight);
+  const offset = clampScrollableDocumentOffset({
+    offset: requestedOffset,
+    lineCount,
+    height: visibleHeight,
+  });
   return {
     lineCount,
     offset,
@@ -112,13 +116,14 @@ function getScrollableDocumentWindow(
   };
 }
 
-function offsetForScrollAction(
-  action: ScrollKeyAction,
-  offset: number,
-  lineCount: number,
-  visibleHeight: number,
-): number {
-  switch (action) {
+function offsetForScrollAction(args: {
+  action: ScrollKeyAction;
+  offset: number;
+  lineCount: number;
+  visibleHeight: number;
+}): number {
+  const { offset, lineCount, visibleHeight } = args;
+  switch (args.action) {
     case 'line-up':
       return offset - 1;
     case 'line-down':
@@ -159,11 +164,11 @@ export function ScrollableDocument({
   }, [controlledScrollOffset, internalScrollOffset, windowState.offset, onScrollOffsetChange]);
 
   function setRequestedOffset(offset: number) {
-    const nextOffset = clampScrollableDocumentOffset(
+    const nextOffset = clampScrollableDocumentOffset({
       offset,
-      windowState.lineCount,
-      windowState.visibleHeight,
-    );
+      lineCount: windowState.lineCount,
+      height: windowState.visibleHeight,
+    });
     if (controlledScrollOffset === undefined) setInternalScrollOffset(nextOffset);
     onScrollOffsetChange?.(nextOffset);
   }
@@ -177,12 +182,12 @@ export function ScrollableDocument({
       });
       if (scrollKey === null) return;
       setRequestedOffset(
-        offsetForScrollAction(
-          scrollKey,
-          windowState.offset,
-          windowState.lineCount,
-          windowState.visibleHeight,
-        ),
+        offsetForScrollAction({
+          action: scrollKey,
+          offset: windowState.offset,
+          lineCount: windowState.lineCount,
+          visibleHeight: windowState.visibleHeight,
+        }),
       );
     },
     { isActive },

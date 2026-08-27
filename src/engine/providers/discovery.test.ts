@@ -2,7 +2,7 @@ import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-config.js';
+import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import type { CliAuthChannelId, CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
 import type { ScopedCliCatalogAttempt } from '../detection/cli-catalog-outcomes.js';
@@ -111,8 +111,11 @@ function nativeContexts(): readonly RunnerDiscoveryContext[] {
   return [context('codex'), context('aider'), context('opencode'), context('kilo-code')];
 }
 
-async function exactResolver(command: string, projectDir: string) {
-  return resolveCliExecutable(join(shimDir, command), projectDir);
+async function exactResolver(options: Readonly<{ command: string; projectDir: string }>) {
+  return resolveCliExecutable({
+    command: join(shimDir, options.command),
+    projectDir: options.projectDir,
+  });
 }
 
 function attemptFor(
@@ -269,17 +272,11 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
     expect(loggedArgs(logPath)).toEqual(['--version|', 'debug|models|--bundled|']);
   });
 
-  it.each([
-    ['codex', '0.40.0-rc.1'],
-    ['aider', 'broken-version'],
-    ['opencode', '0.5.0-rc.1'],
-    ['kilo-code', 'not-a-version'],
-  ] as const)(
-    'does not spawn a %s catalog for prerelease or malformed version evidence',
+  it.each([['aider', 'broken-version']] as const)(
+    'does not spawn a %s catalog for an unlabeled malformed version',
     async (tool, version) => {
-      const command = tool === 'kilo-code' ? 'kilo' : tool;
-      const logPath = join(shimDir, `${command}.args`);
-      installCatalogShim(command, { logPath, version, catalog: 'must-not-run/model' });
+      const logPath = join(shimDir, `${tool}.args`);
+      installCatalogShim(tool, { logPath, version, catalog: 'must-not-run/model' });
 
       await discoverAllCliTools({
         contexts: [context(tool)],

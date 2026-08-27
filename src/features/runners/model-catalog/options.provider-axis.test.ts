@@ -1,15 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { CliProviderAuthFact } from '../../../core/discovery/detection.js';
+import { assemblePickerDescriptors, buildPickerOptions } from './options.js';
 import {
-  assemblePickerDescriptors,
-  buildPickerOptions,
   compactProviderTag,
   findProviderCredentialFact,
   modelBareId,
   modelProviderAuthKey,
   modelProviderPrefix,
   resolveProviderAuthState,
-} from './options.js';
+} from './provider-axis.js';
 
 const FACTS: readonly CliProviderAuthFact[] = [
   { provider: 'GitHub Copilot', source: 'oauth' },

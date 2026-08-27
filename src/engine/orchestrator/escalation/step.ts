@@ -1,6 +1,7 @@
 import { defaultImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
 import { formatValidationError } from '../validation/format-error.js';
-import { refreshAndPersistCode, addUsageAndSave } from '../state-ops.js';
+import { addUsageAndSave } from '../state-ops.js';
+import { refreshAndPersistCode } from '../task/refresh-code.js';
 import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { publishError } from '../events.js';

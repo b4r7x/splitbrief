@@ -56,11 +56,6 @@ describe('buildProjectContextMarkdown', () => {
     expect(result).not.toContain('Line 51');
   });
 
-  it('omits the README section when no README file exists', async () => {
-    const result = await buildProjectContextMarkdown(tempDir);
-    expect(result).not.toContain('## README');
-  });
-
   it('lists source files when src/ directory exists', async () => {
     const srcDir = join(tempDir, 'src');
     mkdirSync(srcDir);

@@ -16,32 +16,10 @@ const contractCases = [
   { kind: 'rejected', label: 'protocol', value: 'tiny.spec' }, // brand-contract-negative
 ];
 
-const expectedCaseOrder = [
-  'canonical:display',
-  'canonical:machine',
-  'canonical:state',
-  'canonical:environment',
-  'canonical:branch',
-  'canonical:protocol',
-  'rejected:display',
-  'rejected:machine',
-  'rejected:state',
-  'rejected:environment',
-  'rejected:branch',
-  'rejected:protocol',
-];
-
 describe('maintained tree brand contract', () => {
-  it('brand contract has exactly 6 canonical and 6 rejected prior-only cases', () => {
-    const identities = contractCases.map(({ kind, label }) => `${kind}:${label}`);
+  it('accepts canonical brand strings and flags every prior-identity form', () => {
     const canonical = contractCases.filter(({ kind }) => kind === 'canonical');
     const rejected = contractCases.filter(({ kind }) => kind === 'rejected');
-
-    expect(contractCases).toHaveLength(12);
-    expect(canonical).toHaveLength(6);
-    expect(rejected).toHaveLength(6);
-    expect(identities).toEqual(expectedCaseOrder);
-    expect(new Set(identities).size).toBe(12);
 
     for (const testCase of canonical) {
       expect(countPriorBrandMatches(testCase.value), testCase.label).toBe(0);

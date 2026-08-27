@@ -271,10 +271,7 @@ describe('createWorkflowRecoveryBinding', () => {
     expect(readSpecFile(ref, BRIEF_QUALITY_FILE)).toBeNull();
   });
 
-  function bindingFixture(
-    dirs: string[],
-    planner: ReturnType<typeof makePassingPlanner>,
-  ): {
+  function bindingFixture(planner: ReturnType<typeof makePassingPlanner>): {
     binding: ReturnType<typeof createWorkflowRecoveryBinding>;
     ref: { projectDir: string; sessionId: string };
     authority: () => StateAuthorityReceipt;
@@ -347,214 +344,189 @@ describe('createWorkflowRecoveryBinding', () => {
   }
 
   it('commits recovery-exists transitions through the sole owner port with journaled evidence', async () => {
-    const dirs: string[] = [];
-    try {
-      const planner = makePassingPlanner({
-        review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
-      });
-      const { binding, ref, authority, trackedState } = bindingFixture(dirs, planner);
-      const admission = binding.createAdmissionInput({
-        state: trackedState(),
-        tasks: [makeBriefQualityFailureTask()],
-        projectDir: ref.projectDir,
-        sessionId: ref.sessionId,
-      });
-      const admissionReportHash = admission.report.report.hash;
+    const planner = makePassingPlanner({
+      review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
+    });
+    const { binding, ref, authority, trackedState } = bindingFixture(planner);
+    const admission = binding.createAdmissionInput({
+      state: trackedState(),
+      tasks: [makeBriefQualityFailureTask()],
+      projectDir: ref.projectDir,
+      sessionId: ref.sessionId,
+    });
+    const admissionReportHash = admission.report.report.hash;
 
-      const result = await binding.controller.enterBriefAdmission(admission, authority());
+    const result = await binding.controller.enterBriefAdmission(admission, authority());
 
-      expect(result.kind).toBe('ready');
-      const recovery = readWorkflowStateHead(ref)?.state.briefRecovery;
-      if (recovery === null || recovery === undefined || !('attempts' in recovery)) {
-        throw new Error('expected a normal recovery record');
-      }
-      expect(Object.keys(recovery.attempts)).toHaveLength(1);
-      expect(recovery.evidenceHead).toMatch(/^[a-f0-9]{64}$/u);
-      expect(recovery.evidenceHead).not.toBe(admissionReportHash);
-      expect(recovery.outbox.length).toBeGreaterThan(0);
-      expect(recovery.outbox.every((entry) => entry.payloadRef.startsWith('brief-recovery/'))).toBe(
-        true,
-      );
-      expect(recovery.status).toBe('ready');
-    } finally {
-      for (const dir of dirs) cleanupTempDir(dir);
+    expect(result.kind).toBe('ready');
+    const recovery = readWorkflowStateHead(ref)?.state.briefRecovery;
+    if (recovery === null || recovery === undefined || !('attempts' in recovery)) {
+      throw new Error('expected a normal recovery record');
     }
+    expect(Object.keys(recovery.attempts)).toHaveLength(1);
+    expect(recovery.evidenceHead).toMatch(/^[a-f0-9]{64}$/u);
+    expect(recovery.evidenceHead).not.toBe(admissionReportHash);
+    expect(recovery.outbox.length).toBeGreaterThan(0);
+    expect(recovery.outbox.every((entry) => entry.payloadRef.startsWith('brief-recovery/'))).toBe(
+      true,
+    );
+    expect(recovery.status).toBe('ready');
   });
 
   it('admitted report hash matches the committed brief-quality.json bytes for a warning-carrying brief', async () => {
-    const dirs: string[] = [];
-    try {
-      const planner = makePassingPlanner();
-      const { binding, ref, authority, trackedState } = bindingFixture(dirs, planner);
-      const admission = binding.createAdmissionInput({
-        state: trackedState(),
-        tasks: [{ ...makePassingTask(), typeDefs: '' }],
-        projectDir: ref.projectDir,
-        sessionId: ref.sessionId,
-      });
-      expect(admission.report.errorCount).toBe(0);
-      expect(admission.report.issues.map((issue) => issue.severity)).toContain('warning');
+    const planner = makePassingPlanner();
+    const { binding, ref, authority, trackedState } = bindingFixture(planner);
+    const admission = binding.createAdmissionInput({
+      state: trackedState(),
+      tasks: [{ ...makePassingTask(), typeDefs: '' }],
+      projectDir: ref.projectDir,
+      sessionId: ref.sessionId,
+    });
+    expect(admission.report.errorCount).toBe(0);
+    expect(admission.report.issues.map((issue) => issue.severity)).toContain('warning');
 
-      const result = await binding.controller.enterBriefAdmission(admission, authority());
+    const result = await binding.controller.enterBriefAdmission(admission, authority());
 
-      expect(result.kind).toBe('ready');
-      expect(planner.review).not.toHaveBeenCalled();
-      const reportBytes = readSpecFile(ref, BRIEF_QUALITY_FILE);
-      const briefBytes = readSpecFile(ref, TASKS_FILE);
-      const proof = buildBriefReviewProof({
-        sessionId: ref.sessionId,
-        epochId: 'epoch-warning-brief',
-        operationId: 'approve-warning-brief',
-        brief: admission.activeBrief,
-        report: admission.report.report,
-        briefBytes,
-        reportBytes,
-        qualityPolicyVersion: admission.report.ruleVersion,
-        stateRevision: admission.activeBrief.revision,
-        fence: authority().fence,
-        continuation: admission.continuation,
-      });
+    expect(result.kind).toBe('ready');
+    expect(planner.review).not.toHaveBeenCalled();
+    const reportBytes = readSpecFile(ref, BRIEF_QUALITY_FILE);
+    const briefBytes = readSpecFile(ref, TASKS_FILE);
+    const proof = buildBriefReviewProof({
+      sessionId: ref.sessionId,
+      epochId: 'epoch-warning-brief',
+      operationId: 'approve-warning-brief',
+      brief: admission.activeBrief,
+      report: admission.report.report,
+      briefBytes,
+      reportBytes,
+      qualityPolicyVersion: admission.report.ruleVersion,
+      stateRevision: admission.activeBrief.revision,
+      fence: authority().fence,
+      continuation: admission.continuation,
+    });
 
-      expect(proof).toMatchObject({ ok: true });
-      expect(JSON.parse(reportBytes ?? '{}')).toMatchObject({ passed: true, score: 0.95 });
-    } finally {
-      for (const dir of dirs) cleanupTempDir(dir);
-    }
+    expect(proof).toMatchObject({ ok: true });
+    expect(JSON.parse(reportBytes ?? '{}')).toMatchObject({ passed: true, score: 0.95 });
   });
 
   it('refreshes the compatibility files only from committed settlement evidence', async () => {
-    const dirs: string[] = [];
-    try {
-      const planner = makePassingPlanner({
-        review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
-      });
-      const { binding, ref, authority, trackedState } = bindingFixture(dirs, planner);
-      const admission = binding.createAdmissionInput({
-        state: trackedState(),
-        tasks: [makeBriefQualityFailureTask()],
-        projectDir: ref.projectDir,
-        sessionId: ref.sessionId,
-      });
-      const tasksBefore = readSpecFile(ref, TASKS_FILE);
-      const qualityBefore = readSpecFile(ref, BRIEF_QUALITY_FILE);
-      expect(tasksBefore).toBeNull();
-      expect(qualityBefore).toBeNull();
+    const planner = makePassingPlanner({
+      review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
+    });
+    const { binding, ref, authority, trackedState } = bindingFixture(planner);
+    const admission = binding.createAdmissionInput({
+      state: trackedState(),
+      tasks: [makeBriefQualityFailureTask()],
+      projectDir: ref.projectDir,
+      sessionId: ref.sessionId,
+    });
+    const tasksBefore = readSpecFile(ref, TASKS_FILE);
+    const qualityBefore = readSpecFile(ref, BRIEF_QUALITY_FILE);
+    expect(tasksBefore).toBeNull();
+    expect(qualityBefore).toBeNull();
 
-      const result = await binding.controller.enterBriefAdmission(admission, authority());
+    const result = await binding.controller.enterBriefAdmission(admission, authority());
 
-      expect(result.kind).toBe('ready');
-      expect(readSpecFile(ref, TASKS_FILE)).toBe(REAL_TASKS_MD);
-      expect(readSpecFile(ref, TASKS_FILE)).not.toBe(tasksBefore);
-      expect(readSpecFile(ref, BRIEF_QUALITY_FILE)).not.toBe(qualityBefore);
-      const projected = JSON.parse(readSpecFile(ref, BRIEF_QUALITY_FILE) ?? '{}') as {
-        passed?: boolean;
-        score?: number;
-      };
-      expect(projected).toMatchObject({ passed: true, score: 1 });
-      const recovery = readWorkflowStateHead(ref)?.state.briefRecovery;
-      if (recovery === null || recovery === undefined || !('attempts' in recovery)) {
-        throw new Error('expected a normal recovery record');
-      }
-      expect(recovery.status).toBe('ready');
-    } finally {
-      for (const dir of dirs) cleanupTempDir(dir);
+    expect(result.kind).toBe('ready');
+    expect(readSpecFile(ref, TASKS_FILE)).toBe(REAL_TASKS_MD);
+    expect(readSpecFile(ref, TASKS_FILE)).not.toBe(tasksBefore);
+    expect(readSpecFile(ref, BRIEF_QUALITY_FILE)).not.toBe(qualityBefore);
+    const projected = JSON.parse(readSpecFile(ref, BRIEF_QUALITY_FILE) ?? '{}') as {
+      passed?: boolean;
+      score?: number;
+    };
+    expect(projected).toMatchObject({ passed: true, score: 1 });
+    const recovery = readWorkflowStateHead(ref)?.state.briefRecovery;
+    if (recovery === null || recovery === undefined || !('attempts' in recovery)) {
+      throw new Error('expected a normal recovery record');
     }
+    expect(recovery.status).toBe('ready');
   });
 
   it('refuses a repeated retry command for a settled operation without a further commit or dispatch', async () => {
-    const dirs: string[] = [];
-    try {
-      const planner = makePassingPlanner({
-        review: vi.fn().mockResolvedValue({ text: 'not a task brief', usage: null }),
-      });
-      const { binding, ref, authority, trackedState } = bindingFixture(dirs, planner);
-      const admission = binding.createAdmissionInput({
-        state: trackedState(),
-        tasks: [makeBriefQualityFailureTask()],
-        projectDir: ref.projectDir,
-        sessionId: ref.sessionId,
-      });
+    const planner = makePassingPlanner({
+      review: vi.fn().mockResolvedValue({ text: 'not a task brief', usage: null }),
+    });
+    const { binding, ref, authority, trackedState } = bindingFixture(planner);
+    const admission = binding.createAdmissionInput({
+      state: trackedState(),
+      tasks: [makeBriefQualityFailureTask()],
+      projectDir: ref.projectDir,
+      sessionId: ref.sessionId,
+    });
 
-      const admitted = await binding.controller.enterBriefAdmission(admission, authority());
-      expect(admitted.kind).toBe('blocked');
-      const recovery = readWorkflowStateHead(ref)?.state.briefRecovery;
-      if (recovery === null || recovery === undefined || !('attempts' in recovery)) {
-        throw new Error('expected a normal recovery record');
-      }
-      const operationId = recovery.automaticRepair.operationId;
-      const receipt = operationId === null ? undefined : recovery.attempts[operationId];
-      if (operationId === null || receipt === undefined) {
-        throw new Error('expected a consumed automatic attempt');
-      }
-      const revisionBefore = readWorkflowStateHead(ref)?.state.stateRevision;
-      const replay = await binding.controller.dispatchBriefAction(
-        {
-          version: 1,
-          sessionId: ref.sessionId,
-          epochId: recovery.epochId,
-          operationId,
-          base: receipt.baseBrief,
-          intentHash: receipt.intentHash,
-          diagnosticFingerprint: 'replay-fingerprint',
-          action: 'retry',
-          frozenInputIds: [],
-        },
-        authority(),
-      );
-
-      expect(replay.kind).toBe('conflict');
-      expect(readWorkflowStateHead(ref)?.state.stateRevision).toBe(revisionBefore);
-      expect(planner.review).toHaveBeenCalledTimes(1);
-    } finally {
-      for (const dir of dirs) cleanupTempDir(dir);
+    const admitted = await binding.controller.enterBriefAdmission(admission, authority());
+    expect(admitted.kind).toBe('blocked');
+    const recovery = readWorkflowStateHead(ref)?.state.briefRecovery;
+    if (recovery === null || recovery === undefined || !('attempts' in recovery)) {
+      throw new Error('expected a normal recovery record');
     }
+    const operationId = recovery.automaticRepair.operationId;
+    const receipt = operationId === null ? undefined : recovery.attempts[operationId];
+    if (operationId === null || receipt === undefined) {
+      throw new Error('expected a consumed automatic attempt');
+    }
+    const revisionBefore = readWorkflowStateHead(ref)?.state.stateRevision;
+    const replay = await binding.controller.dispatchBriefAction(
+      {
+        version: 1,
+        sessionId: ref.sessionId,
+        epochId: recovery.epochId,
+        operationId,
+        base: receipt.baseBrief,
+        intentHash: receipt.intentHash,
+        diagnosticFingerprint: 'replay-fingerprint',
+        action: 'retry',
+        frozenInputIds: [],
+      },
+      authority(),
+    );
+
+    expect(replay.kind).toBe('conflict');
+    expect(readWorkflowStateHead(ref)?.state.stateRevision).toBe(revisionBefore);
+    expect(planner.review).toHaveBeenCalledTimes(1);
   });
 
   it('refuses a command bound to a stale epoch before any state mutation', async () => {
-    const dirs: string[] = [];
-    try {
-      const planner = makePassingPlanner({
-        review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
-      });
-      const { binding, ref, authority, trackedState } = bindingFixture(dirs, planner);
-      const admission = binding.createAdmissionInput({
-        state: trackedState(),
-        tasks: [makeBriefQualityFailureTask()],
-        projectDir: ref.projectDir,
-        sessionId: ref.sessionId,
-      });
-      const admitted = await binding.controller.enterBriefAdmission(admission, authority());
-      if (admitted.kind !== 'ready') throw new Error('expected a ready admission');
-      const recovery = readWorkflowStateHead(ref)?.state.briefRecovery;
-      if (recovery === null || recovery === undefined || !('attempts' in recovery)) {
-        throw new Error('expected a normal recovery record');
-      }
-      const operationId = recovery.automaticRepair.operationId;
-      const receipt = operationId === null ? undefined : recovery.attempts[operationId];
-      if (operationId === null || receipt === undefined) {
-        throw new Error('expected a consumed automatic attempt');
-      }
-      const revisionBefore = readWorkflowStateHead(ref)?.state.stateRevision;
-
-      const stale = await binding.controller.dispatchBriefAction(
-        {
-          version: 1,
-          sessionId: ref.sessionId,
-          epochId: 'stale-epoch',
-          operationId,
-          base: recovery.activeBrief,
-          intentHash: receipt.intentHash,
-          diagnosticFingerprint: 'stale-fingerprint',
-          action: 'retry',
-          frozenInputIds: [],
-        },
-        authority(),
-      );
-
-      expect(stale.kind).toBe('conflict');
-      expect(readWorkflowStateHead(ref)?.state.stateRevision).toBe(revisionBefore);
-    } finally {
-      for (const dir of dirs) cleanupTempDir(dir);
+    const planner = makePassingPlanner({
+      review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
+    });
+    const { binding, ref, authority, trackedState } = bindingFixture(planner);
+    const admission = binding.createAdmissionInput({
+      state: trackedState(),
+      tasks: [makeBriefQualityFailureTask()],
+      projectDir: ref.projectDir,
+      sessionId: ref.sessionId,
+    });
+    const admitted = await binding.controller.enterBriefAdmission(admission, authority());
+    if (admitted.kind !== 'ready') throw new Error('expected a ready admission');
+    const recovery = readWorkflowStateHead(ref)?.state.briefRecovery;
+    if (recovery === null || recovery === undefined || !('attempts' in recovery)) {
+      throw new Error('expected a normal recovery record');
     }
+    const operationId = recovery.automaticRepair.operationId;
+    const receipt = operationId === null ? undefined : recovery.attempts[operationId];
+    if (operationId === null || receipt === undefined) {
+      throw new Error('expected a consumed automatic attempt');
+    }
+    const revisionBefore = readWorkflowStateHead(ref)?.state.stateRevision;
+
+    const stale = await binding.controller.dispatchBriefAction(
+      {
+        version: 1,
+        sessionId: ref.sessionId,
+        epochId: 'stale-epoch',
+        operationId,
+        base: recovery.activeBrief,
+        intentHash: receipt.intentHash,
+        diagnosticFingerprint: 'stale-fingerprint',
+        action: 'retry',
+        frozenInputIds: [],
+      },
+      authority(),
+    );
+
+    expect(stale.kind).toBe('conflict');
+    expect(readWorkflowStateHead(ref)?.state.stateRevision).toBe(revisionBefore);
   });
 });

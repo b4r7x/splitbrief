@@ -321,17 +321,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
       state,
       action: 'route-bigger-worker',
       bus,
-      config: {
-        version: 3,
-        planner: { kind: 'cli', tool: 'claude-code' },
-        implementer: {
-          kind: 'api',
-          provider: 'ollama',
-          service: 'ollama',
-          offering: 'local',
-          apiBase: 'http://localhost:11434/v1',
-          model: 'qwen-small',
-        },
+      config: makeConfig({
         implementerProfiles: {
           default: 'local-qwen',
           profiles: {
@@ -355,15 +345,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
             },
           },
         },
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: {
-          maxRetries: 3,
-          persistTranscript: true,
-          compactionFormat: 'auto',
-          mode: 'standard',
-          taskReview: 'none',
-        },
-      },
+      }),
     });
 
     expect(result).toMatchObject({

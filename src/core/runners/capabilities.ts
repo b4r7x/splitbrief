@@ -33,11 +33,14 @@ export function modelSupportsEffort(provider: ProviderId, model: string | undefi
  * carries it; the name regexes are the cold-start fallback.
  */
 export function modelSupportsImages(
-  provider: ProviderId,
-  model: string | undefined,
-  detected?: DetectedModelFact | undefined,
+  input: Readonly<{
+    provider: ProviderId;
+    model: string | undefined;
+    detected?: DetectedModelFact | undefined;
+  }>,
 ): boolean {
-  if (detected?.supportsImages !== undefined) return detected.supportsImages;
+  const { provider, model } = input;
+  if (input.detected?.supportsImages !== undefined) return input.detected.supportsImages;
   if (!model) return false;
   const key = provider === 'openrouter' ? modelKey(model) : model;
   if (provider === 'anthropic') return ANTHROPIC_IMAGE_MODEL_RE.test(key);
@@ -79,7 +82,11 @@ export function seatSupportsImages(
     case 'api':
       return (
         isProviderId(runner.provider) &&
-        modelSupportsImages(runner.provider, runner.model, input.detected)
+        modelSupportsImages({
+          provider: runner.provider,
+          model: resolveAutoModel(runner.model, runner.provider),
+          detected: input.detected,
+        })
       );
     case 'shell':
     case 'agent':
@@ -96,7 +103,8 @@ export function detectedModelFact(
 ): DetectedModelFact | undefined {
   if (runner.kind !== 'api') return undefined;
   const detection = providers.find((provider) => provider.provider === runner.provider);
-  const model = detection?.models?.find((candidate) => candidate.id === runner.model);
+  const resolved = resolveAutoModel(runner.model, runner.provider);
+  const model = detection?.models?.find((candidate) => candidate.id === resolved);
   if (model === undefined) return undefined;
   return model.supportsImages === undefined ? {} : { supportsImages: model.supportsImages };
 }

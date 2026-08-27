@@ -6,6 +6,13 @@ describe('validateWorktreeName', () => {
     expect(() => validateWorktreeName('a'.repeat(64))).not.toThrow();
   });
 
+  it.each(['feat-x', 'feature_42', 'a.b.c', 'X1', '_internal', 'a'])(
+    'accepts a valid worktree name "%s"',
+    (slug) => {
+      expect(() => validateWorktreeName(slug)).not.toThrow();
+    },
+  );
+
   it.each([
     ['empty string', ''],
     ['leading dot', '.hidden'],

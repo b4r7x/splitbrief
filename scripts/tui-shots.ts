@@ -83,7 +83,7 @@ export async function runTuiShots(
     const request = await createCaptureRequest({ ...options, profile }, (value) =>
       resolveOutputRoot({ cwd, value }),
     );
-    const selection = stampProfile(request.selection, profile);
+    const selection = request.selection;
     const capture = dependencies.capture ?? captureWithGallery;
     const result = await capture({
       outputRoot: request.outputRoot,
@@ -212,14 +212,6 @@ async function captureWithGallery(options: TuiShotsCaptureOptions): Promise<TuiS
     warningCount: publication.manifest.warnings.length,
     failureCount: publication.manifest.failures.length,
   };
-}
-
-type ProfiledSelection = CaptureSelection & {
-  readonly profile: TerminalProfile;
-};
-
-function stampProfile(selection: CaptureSelection, profile: TerminalProfile): ProfiledSelection {
-  return { ...selection, profile };
 }
 
 async function readGitRevision(cwd: string): Promise<string | null> {

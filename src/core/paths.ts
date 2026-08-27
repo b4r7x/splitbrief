@@ -58,11 +58,11 @@ export function sessionDir(projectDir: string, sessionId: string): string {
 export const stateAuthorityDirectory = (ref: SessionRef): string =>
   join(sessionDir(ref.projectDir, ref.sessionId), STATE_AUTHORITY_DIRECTORY);
 
-export const reviewPacketJsonPath = (projectDir: string, sessionId: string): string =>
-  join(sessionDir(projectDir, sessionId), REVIEW_PACKET_JSON_FILE);
+export const reviewPacketJsonPath = (ref: SessionRef): string =>
+  join(sessionDir(ref.projectDir, ref.sessionId), REVIEW_PACKET_JSON_FILE);
 
-export const reviewPacketMarkdownPath = (projectDir: string, sessionId: string): string =>
-  join(sessionDir(projectDir, sessionId), REVIEW_PACKET_MARKDOWN_FILE);
+export const reviewPacketMarkdownPath = (ref: SessionRef): string =>
+  join(sessionDir(ref.projectDir, ref.sessionId), REVIEW_PACKET_MARKDOWN_FILE);
 
 export const getSplitbriefPath = (projectDir: string, ...parts: string[]): string =>
   join(projectDir, SPLITBRIEF_DIR, ...parts);
@@ -160,26 +160,19 @@ export const SNAPSHOT_MANIFEST_FILE = 'manifest.json';
 const SNAPSHOT_FILES_DIR = 'files';
 const SNAPSHOT_LOCK_FILE = '.lock';
 
-export const snapshotsDir = (projectDir: string, sessionId: string): string =>
-  join(sessionDir(projectDir, sessionId), SNAPSHOTS_DIR);
+export const snapshotsDir = (ref: SessionRef): string =>
+  join(sessionDir(ref.projectDir, ref.sessionId), SNAPSHOTS_DIR);
 
-export const snapshotDir = (projectDir: string, sessionId: string, snapshotId: string): string =>
-  join(snapshotsDir(projectDir, sessionId), snapshotId);
+export const snapshotDir = (ref: SessionRef, snapshotId: string): string =>
+  join(snapshotsDir(ref), snapshotId);
 
-export const baselineDir = (projectDir: string, sessionId: string): string =>
-  snapshotDir(projectDir, sessionId, SNAPSHOT_BASELINE_ID);
+export const baselineDir = (ref: SessionRef): string => snapshotDir(ref, SNAPSHOT_BASELINE_ID);
 
-export const snapshotManifestPath = (
-  projectDir: string,
-  sessionId: string,
-  snapshotId: string,
-): string => join(snapshotDir(projectDir, sessionId, snapshotId), SNAPSHOT_MANIFEST_FILE);
+export const snapshotManifestPath = (ref: SessionRef, snapshotId: string): string =>
+  join(snapshotDir(ref, snapshotId), SNAPSHOT_MANIFEST_FILE);
 
-export const snapshotFilesDir = (
-  projectDir: string,
-  sessionId: string,
-  snapshotId: string,
-): string => join(snapshotDir(projectDir, sessionId, snapshotId), SNAPSHOT_FILES_DIR);
+export const snapshotFilesDir = (ref: SessionRef, snapshotId: string): string =>
+  join(snapshotDir(ref, snapshotId), SNAPSHOT_FILES_DIR);
 
-export const snapshotLockPath = (projectDir: string, sessionId: string): string =>
-  join(snapshotsDir(projectDir, sessionId), SNAPSHOT_LOCK_FILE);
+export const snapshotLockPath = (ref: SessionRef): string =>
+  join(snapshotsDir(ref), SNAPSHOT_LOCK_FILE);

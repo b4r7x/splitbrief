@@ -17,7 +17,7 @@ import {
 } from './io.js';
 import { SPLITBRIEF_DIR, TREES_DIR } from '../../paths.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
-import { confinedAtomicWriteFileForTest } from '../../../lib/confined-fs.js';
+import { confinedAtomicWriteFileForTest } from '../../../lib/confined-fs-atomic.js';
 
 const TMP = join(import.meta.dirname, '.tmp-config-io-safety');
 

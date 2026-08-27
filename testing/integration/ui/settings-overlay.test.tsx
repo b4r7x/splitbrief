@@ -83,8 +83,9 @@ describe('settings overlay integration', () => {
 
     ui.stdin.write(' ');
     ui.stdin.write(' ');
+    ui.stdin.write(' ');
     await vi.waitFor(() => {
-      expect(loadConfig(dir).config.validation.typecheck).toBe(true);
+      expect(loadConfig(dir).config.validation.typecheck).toBe(false);
     });
 
     ui.stdin.write(' ');
@@ -92,7 +93,7 @@ describe('settings overlay integration', () => {
     ui.stdin.write(' ');
     await vi.waitFor(() => {
       const validation = loadConfig(dir).config.validation;
-      expect(validation.typecheck).toBe(false);
+      expect(validation.typecheck).toBe(true);
       expect(validation.lint).toBe(false);
     });
     ui.unmount();

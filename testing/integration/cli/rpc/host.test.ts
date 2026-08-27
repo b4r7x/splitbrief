@@ -25,7 +25,7 @@ import { createBriefRecoveryState } from '../../../../src/engine/orchestrator/pl
 import { projectBriefRecovery } from '../../../../src/engine/orchestrator/planning/brief-recovery-controller.js';
 import { loadConfig } from '../../../../src/core/config/load/io.js';
 import { configForSessionTranscriptPolicy } from '../../../../src/core/sessions/io.js';
-import { reactivateExistingSession } from '../../../../src/core/sessions/lifecycle.js';
+import { reactivateExistingSession } from '../../../../src/core/sessions/active-pointer.js';
 import type { EventBus } from '../../../../src/engine/events/types.js';
 import type { RunWorkflowOptions } from '../../../../src/engine/orchestrator/run/init.js';
 import {
@@ -314,11 +314,7 @@ describe('runRpc', () => {
     await waitForLine(
       chunks,
       (line) =>
-        line.type === 'status' &&
-        typeof line.data === 'object' &&
-        line.data !== null &&
-        'pending' in line.data &&
-        line.data.pending === 'approval',
+        line.type === 'status' && isTestRecord(line.data) && line.data.pending === 'approval',
     );
     expect(approved).toBeUndefined();
 
@@ -570,22 +566,15 @@ describe('runRpc', () => {
     );
   });
 
-  it('maps a current RPC edit command to the workflow edit action', async () => {
+  it('rejects an RPC edit command whose expected Brief revision is stale', async () => {
     const projectDir = setupProject();
     const sessionId = 'rpc-brief-edit-session';
     const ref = { projectDir, sessionId };
     saveOwnedState(ref, briefReviewState(sessionId, 'brief rpc external edit'));
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
-    let approved: boolean | undefined;
-    let action: string | undefined;
     const runWorkflowStub = async (workflowOpts: RunWorkflowOptions) => {
-      const result = await workflowOpts.callbacks.onApprovalNeeded(
-        'briefs',
-        join(projectDir, 'tasks.md'),
-      );
-      approved = result.approved;
-      action = result.action;
+      await workflowOpts.callbacks.onApprovalNeeded('briefs', join(projectDir, 'tasks.md'));
     };
 
     const run = runRpc({
@@ -617,31 +606,45 @@ describe('runRpc', () => {
     }
     const promptId = pendingLine.data.promptId;
 
+    const current = briefReviewCommand(ref, 'edit', 'op-edit');
+    if (current.action !== 'edit') throw new Error('expected an edit command');
+    input.write(
+      `${JSON.stringify({
+        type: 'brief_review',
+        id: 'cmd-edit-stale',
+        promptId,
+        operationId: 'op-edit-stale',
+        command: {
+          ...current,
+          operationId: 'op-edit-stale',
+          expectedBriefRevision: current.expectedBriefRevision + 1,
+          base: { ...current.base, revision: current.base.revision + 1 },
+        },
+      })}\n`,
+    );
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'error' && isTestRecord(line.data) && line.data.code === 'stale-revision',
+    );
+
     input.write(
       `${JSON.stringify({
         type: 'brief_review',
         id: 'cmd-edit',
         promptId,
         operationId: 'op-edit',
-        command: briefReviewCommand(ref, 'edit', 'op-edit'),
+        command: current,
       })}\n`,
     );
     await run;
 
-    expect(approved).toBe(false);
-    expect(action).toBe('edit');
-    expect(parseLines(chunks)).toContainEqual(
-      expect.objectContaining({
-        type: 'ack',
-        command: 'brief_review',
-        data: expect.objectContaining({
-          id: 'cmd-edit',
-          promptId,
-          action: 'edit',
-          status: 'accepted',
-        }),
-      }),
-    );
+    expect(
+      parseLines(chunks).filter(
+        (line) =>
+          line.type === 'ack' && isTestRecord(line.data) && line.data.id === 'cmd-edit-stale',
+      ),
+    ).toEqual([]);
   });
 
   it('answers status commands with the persisted workflow state', async () => {
@@ -787,11 +790,7 @@ describe('runRpc', () => {
     await waitForLine(
       chunks,
       (line) =>
-        line.type === 'status' &&
-        typeof line.data === 'object' &&
-        line.data !== null &&
-        'pending' in line.data &&
-        line.data.pending === 'approval',
+        line.type === 'status' && isTestRecord(line.data) && line.data.pending === 'approval',
     );
     expect(approved).toBeUndefined();
 
@@ -1336,11 +1335,7 @@ describe('runRpc', () => {
     await waitForLine(
       chunks,
       (line) =>
-        line.type === 'status' &&
-        typeof line.data === 'object' &&
-        line.data !== null &&
-        'pending' in line.data &&
-        line.data.pending === 'approval',
+        line.type === 'status' && isTestRecord(line.data) && line.data.pending === 'approval',
     );
     input.write(`{"type":"slash","command":"/revise-plan ${sentinel}"}\n`);
     await waitForLine(
@@ -1630,17 +1625,13 @@ describe('runRpc', () => {
     finishWorkflow?.();
     await run;
 
-    const lines = parseLines(chunks);
-    const hasError = lines.some(
-      (line) => line.type === 'error' && String(line.error).includes('crash'),
-    );
-    expect(hasError).toBe(false);
+    expect(parseLines(chunks).filter((line) => line.type === 'error')).toEqual([]);
   });
 
   it('rejects pending approval gate when stdin closes unexpectedly', async () => {
     const projectDir = setupProject();
     const input = new PassThrough();
-    const { output } = captureWritable();
+    const { chunks, output } = captureWritable();
     const runWorkflowStub = async (workflowOpts: RunWorkflowOptions) => {
       await workflowOpts.callbacks.onApprovalNeeded('spec', join(projectDir, 'spec.md'));
     };
@@ -1654,9 +1645,11 @@ describe('runRpc', () => {
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
-    await vi.waitFor(() => {
-      expect(input.readable).toBe(true);
-    });
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'status' && isTestRecord(line.data) && line.data.pending === 'approval',
+    );
 
     input.end();
     await expect(run).rejects.toSatisfy((err: unknown) => {

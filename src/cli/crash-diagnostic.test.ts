@@ -84,8 +84,8 @@ describe('formatCrashDiagnostic', () => {
     expect(out).toContain('Error: ENOMEM');
   });
 
-  it('omits log tail section when logTail is null', () => {
-    const out = formatCrashDiagnostic(exitedDiag);
+  it('omits log tail section when logTail is null on a crashed status', () => {
+    const out = formatCrashDiagnostic({ ...crashedDiag, logTail: null });
     expect(out).not.toContain('server.log');
   });
 

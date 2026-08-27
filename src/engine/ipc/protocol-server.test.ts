@@ -443,17 +443,6 @@ describe('parseServerMessage', () => {
     const parsed = parseServerMessage(JSON.parse(JSON.stringify(message)));
 
     expect(parsed).toEqual(message);
-    if (parsed?.kind === 'event') {
-      expect(parsed.payload).toMatchObject({
-        type: 'brief_recovery_attempt_settled',
-        sessionId: 'session-1',
-        epochId: 'epoch-1',
-        operationId: 'operation-1',
-        resultId: 'result-1',
-        outcome: 'provider-failed',
-      });
-      expect('rawProviderPayload' in parsed.payload).toBe(false);
-    }
   });
 
   it('rejects recovery records that carry secrets or oversized protected identifiers', () => {
@@ -472,9 +461,12 @@ describe('parseServerMessage', () => {
   });
 
   it('replays duplicate recovery records byte-equivalently', () => {
-    const message = { kind: 'event', payload: protectedRecoveryEvent() };
-    const first = parseServerMessage(message);
-    const replay = parseServerMessage(JSON.parse(JSON.stringify(message)));
+    const payload = protectedRecoveryEvent();
+    const first = parseServerMessage({ kind: 'event', payload });
+    const replay = parseServerMessage({
+      kind: 'event',
+      payload: Object.fromEntries(Object.entries(payload).reverse()),
+    });
 
     expect(first).toEqual(replay);
     expect(JSON.stringify(first)).toBe(JSON.stringify(replay));

@@ -4,10 +4,8 @@ import {
   protectHeadlessJsonRecord,
   protectRecoveryResultForConsumer,
 } from './public-json.js';
-import type {
-  BriefRecoveryProjectionV1,
-  RecoveryResultV1,
-} from '../../core/schemas/brief-recovery.js';
+import type { BriefRecoveryProjectionV1 } from '../../core/schemas/brief-recovery/document.js';
+import type { RecoveryResultV1 } from '../../core/schemas/brief-recovery.js';
 
 const briefHash = 'a'.repeat(64);
 
@@ -165,7 +163,7 @@ describe('protectHeadlessJsonRecord', () => {
           message: 'x'.repeat(100),
         })),
       },
-      'otel',
+      { context: 'otel' },
     );
 
     expect(protectedRecord).toMatchObject({
@@ -244,11 +242,11 @@ describe('protectHeadlessJsonRecord', () => {
 
   it('emits canonical projection and result records with stable JSON for equal input', () => {
     const value = recoveryProjection('retrying');
+    const reordered = Object.fromEntries(
+      Object.entries(value).reverse(),
+    ) as BriefRecoveryProjectionV1;
     const first = protectHeadlessJsonRecord({ type: 'brief_recovery', projection: value });
-    const second = protectHeadlessJsonRecord({
-      type: 'brief_recovery',
-      projection: { ...value, queuedInputs: { ...value.queuedInputs } },
-    });
+    const second = protectHeadlessJsonRecord({ type: 'brief_recovery', projection: reordered });
 
     expect(first).toEqual(second);
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));

@@ -84,10 +84,9 @@ function implementerBaseArgs(opts: ClaudeImplementerBuild): string[] {
   ];
 }
 
-function validateArgs(invocationArgs: readonly string[], baseArgs: readonly string[]) {
+function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: readonly string[] }) {
   return validateCliArgs({
-    invocationArgs,
-    baseArgs,
+    ...input,
     protectedFlags: CLAUDE_PROTECTED_FLAGS,
     promptTransport: 'stdin',
   });

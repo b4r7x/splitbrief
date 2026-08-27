@@ -4,9 +4,9 @@ import {
   isSameCredentialDomain,
   projectRunnerDiscoveryContext,
   type RunnerDiscoveryContext,
-} from '../../core/config/accessors/runner-config.js';
+} from '../../core/config/accessors/runner-discovery-context.js';
 import { isApiProviderId } from '../../core/providers/api-provider-catalog.js';
-import type { CredentialDomainIdentity } from '../../core/config/accessors/runner-config.js';
+import type { CredentialDomainIdentity } from '../../core/config/accessors/runner-discovery-context.js';
 import {
   CLI_TOOL_IDS,
   defaultCliAuthChannel,
@@ -18,7 +18,8 @@ import {
 } from '../../core/runners/cli-tool-catalog.js';
 import { includes } from '../../utils/type-guards.js';
 import { error } from '../../utils/error.js';
-import { detectAll, runnerDiscoveryContextKey } from './detect.js';
+import { detectAll } from './detect.js';
+import { runnerDiscoveryContextKey } from './runner-evidence.js';
 import type {
   ConfiguredProviderConnection,
   ConfiguredProviderOutcome,
@@ -31,7 +32,7 @@ import type {
 } from './service.js';
 import { fetchModelsDevCatalogWithCache } from '../providers/models-dev.js';
 import { discoverAllCliTools } from '../providers/discovery.js';
-import { detectProviderCatalog } from '../providers/registry.js';
+import { detectProviderCatalog } from '../providers/catalog-detection.js';
 import type { ProviderOverrides } from '../providers/types.js';
 
 interface ActiveRunnerContexts {
@@ -166,10 +167,10 @@ function configuredProviderDetection(
         }),
       })),
     );
-    const outcomesByConnection = new Map(outcomes.map(({ probe, outcome }) => [probe, outcome]));
+    const outcomesByProbe = new Map(outcomes.map(({ probe, outcome }) => [probe, outcome]));
     return plans.map((plan) => {
       const probe = plan.kind === 'probe' ? plan.probe : plan.source;
-      const outcome = outcomesByConnection.get(probe);
+      const outcome = outcomesByProbe.get(probe);
       if (outcome === undefined) {
         throw error(
           'detection-configured-provider-outcome-missing',

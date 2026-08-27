@@ -14,7 +14,6 @@ import {
   emitEffectiveConfigWarnings,
   resolveEffectiveConfig,
 } from '../../core/config/runtime/effective-config.js';
-import type { EffectiveConfigWarning } from '../../core/config/runtime/effective-config.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import {
   readIpcServerArgsFileConfined,
@@ -23,15 +22,15 @@ import {
 } from './server-args.js';
 import {
   clearActiveReceipt,
-  featureForTranscriptPolicy,
   type SessionOwnershipReceipt,
-} from '../../core/sessions/lifecycle.js';
+} from '../../core/sessions/active-pointer.js';
+import { featureForTranscriptPolicy } from '../../core/sessions/session-id.js';
 import {
   acceptDetachedSessionHandoff,
   rollbackDetachedSessionHandoff,
-  rollbackPreparedSession,
   settleDetachedSessionHandoff,
-} from '../../core/sessions/prepare.js';
+} from '../../core/sessions/detached-handoff.js';
+import { rollbackPreparedSession } from '../../core/sessions/prepare.js';
 import { loadState, loadStateForResume } from '../../core/state/persistence.js';
 import {
   acquireStateAuthority,
@@ -43,6 +42,7 @@ import type {
   StateAuthorityReceipt,
 } from '../../core/state/types.js';
 import { shouldPreserveActiveState } from '../orchestrator/session-lifecycle/finalize.js';
+import { canSignalProcess } from '../../lib/process/liveness.js';
 import { killAllProcesses } from '../../lib/process/registry.js';
 import { bootstrapOtel, flushOtel } from '../../lib/otel.js';
 import { runWorkflowLoop } from './workflow-loop/run.js';
@@ -136,15 +136,6 @@ export const detachedServerEntryError = {
     ),
 } as const;
 
-function processIsAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return typeof err === 'object' && err !== null && 'code' in err && err.code === 'EPERM';
-  }
-}
-
 export function createParentAcceptanceBarrier(
   input: Readonly<{
     candidate: SessionOwnershipReceipt;
@@ -201,7 +192,7 @@ export function createParentAcceptanceBarrier(
           reject(cause);
         };
         const poll = () => {
-          const parentAlive = processIsAlive(input.parentPid);
+          const parentAlive = canSignalProcess(input.parentPid);
           const now = Date.now();
           if (accepted) {
             try {
@@ -269,8 +260,8 @@ export function createServerCleanup(
       let reaping: { error: unknown } | undefined;
       try {
         await options.cleanupProcesses();
-      } catch (error) {
-        reaping = { error };
+      } catch (cause) {
+        reaping = { error: cause };
       }
       options.closeBridge();
       await options.closeServer();
@@ -322,10 +313,6 @@ function exitInvalidArgs(message: string): never {
   process.exit(1);
 }
 
-export function emitConfigWarnings(warnings: readonly EffectiveConfigWarning[]): void {
-  emitEffectiveConfigWarnings(warnings);
-}
-
 function readConfinedArgsFileOrExit(argsFile: string): IpcServerArgs {
   try {
     return readIpcServerArgsFileConfined({ argsFile });
@@ -334,7 +321,7 @@ function readConfinedArgsFileOrExit(argsFile: string): IpcServerArgs {
   }
 }
 
-export function getArgv(processArgv: string[]): IpcServerArgs {
+export function getArgv(processArgv: string[]): { args: IpcServerArgs; bootstrapDir: string } {
   const argsFile = processArgv[2];
   if (!argsFile) {
     exitInvalidArgs('missing required argv');
@@ -345,7 +332,7 @@ export function getArgv(processArgv: string[]): IpcServerArgs {
   } catch {
     exitInvalidArgs('could not consume detached bootstrap request');
   }
-  return args;
+  return { args, bootstrapDir: dirname(argsFile) };
 }
 
 export async function writeStartupLockfile(
@@ -505,7 +492,7 @@ export async function main(
     overrides: argv.overrides,
     loaderDiagnostics,
   });
-  emitConfigWarnings(warnings);
+  emitEffectiveConfigWarnings(warnings);
   const preparation = await deps.prepare({
     projectDir: argv.projectDir,
     feature: argv.feature,
@@ -544,8 +531,29 @@ export async function main(
     ref: sessionRef,
     ownership: prepared.session.ownership,
   };
+  const dir = sessionDir(argv.projectDir, argv.candidate.sessionId);
   let authorityReceipt: StateAuthorityReceipt | undefined;
   let authorityResult: StateAuthorityAcquisitionResult | undefined;
+  let stopHeartbeat: () => void = () => {};
+  let closeBridge: (() => void) | undefined;
+  let terminalize: ((termination: ServerTermination) => Promise<void>) | undefined;
+  const abortStartup = (
+    cause: unknown,
+    receipt: StateAuthorityReceipt | undefined = authorityReceipt,
+  ): Promise<void> =>
+    cleanupBeforeServe({
+      rollback: deps.rollback,
+      rollbackHandoff: deps.rollbackHandoff,
+      session: owned,
+      ref: sessionRef,
+      receipt,
+      releaseAuthority: deps.releaseAuthority,
+      stopHeartbeat,
+      closeBridge,
+      terminalize,
+      bootstrapDir,
+      cause,
+    });
   try {
     authorityResult = deps.acquireAuthority({
       ref: sessionRef,
@@ -563,19 +571,15 @@ export async function main(
       deps.assertAuthority({ ref: sessionRef, receipt: authorityReceipt });
     }
   } catch (cause) {
-    await cleanupBeforeServe({
-      rollback: deps.rollback,
-      rollbackHandoff: deps.rollbackHandoff,
-      session: owned,
-      ref: sessionRef,
-      receipt: authorityResult?.kind === 'fenced' ? authorityResult.receipt : undefined,
-      releaseAuthority: deps.releaseAuthority,
-      bootstrapDir,
+    await abortStartup(
       cause,
-    });
+      authorityResult?.kind === 'fenced' ? authorityResult.receipt : undefined,
+    );
     throw cause;
   }
-  const dir = sessionDir(argv.projectDir, argv.candidate.sessionId);
+  terminalize = async (termination) => {
+    if (termination.kind === 'exit' && existsSync(dir)) await markExited(dir, termination.exitCode);
+  };
   let authToken: string;
   let startedAt: number;
   try {
@@ -585,45 +589,19 @@ export async function main(
       persistTranscript: prepared.config.workflow.persistTranscript,
     }));
   } catch (cause) {
-    await cleanupBeforeServe({
-      rollback: deps.rollback,
-      rollbackHandoff: deps.rollbackHandoff,
-      session: owned,
-      ref: sessionRef,
-      receipt: authorityReceipt,
-      releaseAuthority: deps.releaseAuthority,
-      terminalize: async (termination) => {
-        if (termination.kind === 'exit' && existsSync(dir))
-          await markExited(dir, termination.exitCode);
-      },
-      bootstrapDir,
-      cause,
-    });
+    await abortStartup(cause);
     throw cause;
   }
 
-  let stopHeartbeat: () => void = () => {};
   try {
     stopHeartbeat = startHeartbeat(dir);
   } catch (cause) {
-    await cleanupBeforeServe({
-      rollback: deps.rollback,
-      rollbackHandoff: deps.rollbackHandoff,
-      session: owned,
-      ref: sessionRef,
-      receipt: authorityReceipt,
-      releaseAuthority: deps.releaseAuthority,
-      terminalize: async (termination) => {
-        if (termination.kind === 'exit' && existsSync(dir))
-          await markExited(dir, termination.exitCode);
-      },
-      bootstrapDir,
-      cause,
-    });
+    await abortStartup(cause);
     throw cause;
   }
   const ipcBus = createEventBus();
   const ipcBridge = createIpcWorkflowBridge(ipcBus);
+  closeBridge = ipcBridge.close;
   const acceptance = createParentAcceptanceBarrier({
     candidate: argv.candidate,
     ...(authorityReceipt === undefined
@@ -659,22 +637,7 @@ export async function main(
       onParentAccept: acceptance.accept,
     });
   } catch (cause) {
-    await cleanupBeforeServe({
-      rollback: deps.rollback,
-      rollbackHandoff: deps.rollbackHandoff,
-      session: owned,
-      ref: sessionRef,
-      receipt: authorityReceipt,
-      releaseAuthority: deps.releaseAuthority,
-      stopHeartbeat,
-      closeBridge: ipcBridge.close,
-      terminalize: async (termination) => {
-        if (termination.kind === 'exit' && existsSync(dir))
-          await markExited(dir, termination.exitCode);
-      },
-      bootstrapDir,
-      cause,
-    });
+    await abortStartup(cause);
     throw cause;
   }
   const onCleanup = createServerCleanup({
@@ -792,10 +755,8 @@ export async function main(
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  const argsFile = process.argv[2];
-  const argv = getArgv(process.argv);
+  const { args: argv, bootstrapDir } = getArgv(process.argv);
   const dir = sessionDir(argv.projectDir, argv.candidate.sessionId);
-  const bootstrapDir = argsFile === undefined ? '' : dirname(argsFile);
   const cleanupProcesses = createServerProcessCleanup();
   const exitHandlers = createServerExitHandlers({
     cleanup: createServerCleanup({

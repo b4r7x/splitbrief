@@ -4,11 +4,37 @@ import {
   CLI_CONFORMANCE_CANDIDATES,
   opencodeImplementerAdapter,
   opencodePlannerAdapter,
-  opencodePromptArgs,
   opencodeProtocolEvents,
 } from './opencode.js';
+import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 
-const PROMPT = '<PROMPT>';
+const PROMPT = CLI_PROMPT_SENTINEL;
+const PROJECT_DIR = process.cwd();
+
+function plannerArgs(
+  model: string | undefined,
+  mode: 'plan' | 'escalate',
+  configuredArgs: readonly string[],
+) {
+  return opencodePlannerAdapter.buildArgs({
+    prompt: PROMPT,
+    model,
+    projectDir: PROJECT_DIR,
+    configuredArgs,
+    mode,
+    sessionId: null,
+    effort: undefined,
+  });
+}
+
+function implementerArgs(model: string | undefined, configuredArgs: readonly string[]) {
+  return opencodeImplementerAdapter.buildArgs({
+    prompt: PROMPT,
+    model,
+    projectDir: PROJECT_DIR,
+    configuredArgs,
+  });
+}
 
 describe('OpenCode role adapters', () => {
   it('exports planner then implementer candidates with matching canonical hashes', () => {
@@ -62,19 +88,27 @@ describe('OpenCode role adapters', () => {
   });
 
   it('preserves planner agent, model placement, implementer build role, and configured order', () => {
-    expect(
-      opencodePromptArgs({ role: 'planner', model: undefined, configuredArgs: ['--label', 'one'] }),
-    ).toEqual(['run', '--format', 'json', '--agent', 'plan', PROMPT, '--label', 'one']);
-    expect(
-      opencodePromptArgs({ role: 'planner', model: 'openai/gpt-5', configuredArgs: [] }),
-    ).toEqual(['run', '--model', 'openai/gpt-5', '--format', 'json', '--agent', 'plan', PROMPT]);
-    expect(
-      opencodePromptArgs({
-        role: 'implementer',
-        model: 'anthropic/claude-sonnet',
-        configuredArgs: [],
-      }),
-    ).toEqual([
+    expect(plannerArgs(undefined, 'plan', ['--label', 'one'])).toEqual([
+      'run',
+      '--format',
+      'json',
+      '--agent',
+      'plan',
+      PROMPT,
+      '--label',
+      'one',
+    ]);
+    expect(plannerArgs('openai/gpt-5', 'plan', [])).toEqual([
+      'run',
+      '--model',
+      'openai/gpt-5',
+      '--format',
+      'json',
+      '--agent',
+      'plan',
+      PROMPT,
+    ]);
+    expect(implementerArgs('anthropic/claude-sonnet', [])).toEqual([
       'run',
       '--model',
       'anthropic/claude-sonnet',
@@ -84,21 +118,23 @@ describe('OpenCode role adapters', () => {
       'build',
       PROMPT,
     ]);
-    const plannerBase = opencodePromptArgs({ role: 'planner' });
-    const implementerBase = opencodePromptArgs({ role: 'implementer' });
-    expect(opencodePlannerAdapter.validateArgs(plannerBase, plannerBase)).toEqual({ valid: true });
+    const plannerBase = plannerArgs(undefined, 'plan', []);
+    const implementerBase = implementerArgs(undefined, []);
     expect(
-      opencodeImplementerAdapter.validateArgs(
-        [...implementerBase, '--format', 'text'],
-        implementerBase,
-      ),
+      opencodePlannerAdapter.validateArgs({ invocationArgs: plannerBase, baseArgs: plannerBase }),
+    ).toEqual({ valid: true });
+    expect(
+      opencodeImplementerAdapter.validateArgs({
+        invocationArgs: [...implementerBase, '--format', 'text'],
+        baseArgs: implementerBase,
+      }),
     ).toEqual({ valid: false, conflicts: ['--format'] });
   });
 
   it('pins the effective role on every vector: default-role, fallback, and subagent runs fail', () => {
-    const plannerBase = opencodePromptArgs({ role: 'planner' });
-    const implementerBase = opencodePromptArgs({ role: 'implementer' });
-    const escalationArgs = opencodePromptArgs({ role: 'planner', mode: 'escalate' });
+    const plannerBase = plannerArgs(undefined, 'plan', []);
+    const implementerBase = implementerArgs(undefined, []);
+    const escalationArgs = plannerArgs(undefined, 'escalate', []);
 
     expect(plannerBase).toContain('--agent');
     expect(plannerBase[plannerBase.indexOf('--agent') + 1]).toBe('plan');
@@ -109,14 +145,25 @@ describe('OpenCode role adapters', () => {
 
     for (const base of [plannerBase, implementerBase]) {
       expect(
-        opencodeImplementerAdapter.validateArgs([...base, '--agent', 'subagent'], base),
+        opencodeImplementerAdapter.validateArgs({
+          invocationArgs: [...base, '--agent', 'subagent'],
+          baseArgs: base,
+        }),
       ).toEqual({ valid: false, conflicts: ['--agent'] });
-      expect(opencodeImplementerAdapter.validateArgs([...base, '--agent=plan'], base)).toEqual({
+      expect(
+        opencodeImplementerAdapter.validateArgs({
+          invocationArgs: [...base, '--agent=plan'],
+          baseArgs: base,
+        }),
+      ).toEqual({
         valid: false,
         conflicts: ['--agent'],
       });
       expect(
-        opencodeImplementerAdapter.validateArgs([...base, '--agent', 'default'], base),
+        opencodeImplementerAdapter.validateArgs({
+          invocationArgs: [...base, '--agent', 'default'],
+          baseArgs: base,
+        }),
       ).toEqual({
         valid: false,
         conflicts: ['--agent'],
@@ -145,36 +192,61 @@ describe('OpenCode role adapters', () => {
     const escalationArgs = opencodePlannerAdapter.buildArgs({ ...input, mode: 'escalate' });
     expect(escalationArgs).toEqual(['run', '--format', 'json', '--agent', 'build', PROMPT]);
     expect(
-      opencodePlannerAdapter.validateArgs(
-        opencodePlannerAdapter.buildArgs({
+      opencodePlannerAdapter.validateArgs({
+        invocationArgs: opencodePlannerAdapter.buildArgs({
           ...input,
           mode: 'escalate',
           configuredArgs: ['--agent', 'plan'],
         }),
-        escalationArgs,
-      ),
+        baseArgs: escalationArgs,
+      }),
     ).toEqual({ valid: false, conflicts: ['--agent', 'plan'] });
   });
 
   it('rejects prompt placeholders, duplicate sentinels, and reordered protected args', () => {
-    const base = opencodePromptArgs({ role: 'implementer' });
-    expect(opencodeImplementerAdapter.validateArgs([...base, 'prefix-<PROMPT>'], base)).toEqual({
+    const base = implementerArgs(undefined, []);
+    expect(
+      opencodeImplementerAdapter.validateArgs({
+        invocationArgs: [...base, 'prefix-<PROMPT>'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });
-    expect(opencodeImplementerAdapter.validateArgs([...base, PROMPT], base)).toEqual({
+    expect(
+      opencodeImplementerAdapter.validateArgs({
+        invocationArgs: [...base, PROMPT],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });
-    expect(opencodeImplementerAdapter.validateArgs([PROMPT, ...base], base)).toEqual({
+    expect(
+      opencodeImplementerAdapter.validateArgs({
+        invocationArgs: [PROMPT, ...base],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['argument-order', 'prompt-transport'],
     });
-    expect(opencodeImplementerAdapter.validateArgs([...base, '-m', 'other'], base)).toEqual({
+    expect(
+      opencodeImplementerAdapter.validateArgs({
+        invocationArgs: [...base, '-m', 'other'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['-m'],
     });
-    expect(opencodeImplementerAdapter.validateArgs([...base, '-mPROMPT'], base)).toEqual({
+    expect(
+      opencodeImplementerAdapter.validateArgs({
+        invocationArgs: [...base, '-mPROMPT'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['-m'],
     });
@@ -284,7 +356,6 @@ describe('OpenCode JSON envelope adapter', () => {
     const terminal = opencodePlannerAdapter.terminal({
       outputContract: opencodePlannerAdapter.outputContract,
       events,
-      stdout: '',
       stderr: '',
       exitCode: 0,
       signal: null,
@@ -314,7 +385,6 @@ describe('OpenCode JSON envelope adapter', () => {
       opencodeImplementerAdapter.terminal({
         outputContract: opencodeImplementerAdapter.outputContract,
         events,
-        stdout: '',
         stderr: '',
         exitCode: 0,
         signal: null,

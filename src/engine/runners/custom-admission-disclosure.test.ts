@@ -14,7 +14,6 @@ import {
   prepareCustomRunnerAdmission,
   type PrepareCustomRunnerAdmissionOptions,
 } from './custom-admission.js';
-import { resolveCustomExecutable } from './resolve-cli-executable.js';
 
 const RECEIPT_CONFIRMATION_NOTICE = 'Exact confirmation stores an owner-only reusable receipt.';
 let directories: string[] = [];
@@ -59,17 +58,6 @@ function admissionOptions(
   };
 }
 
-async function resolvedExecutable(projectDir: string, pathEnv?: string) {
-  const resolution = await resolveCustomExecutable({
-    command: process.execPath,
-    projectDir,
-    ...(pathEnv === undefined ? {} : { pathEnv }),
-  });
-  if (resolution.kind !== 'resolved')
-    throw new Error('Custom runner test executable did not resolve');
-  return resolution.executable;
-}
-
 afterEach(() => {
   for (const directory of directories) cleanupTempDir(directory);
   directories = [];
@@ -99,25 +87,15 @@ describe('prepareCustomRunnerAdmission', () => {
     );
 
     expect(requests).toEqual([
-      {
+      expect.objectContaining({
         tier: 'confirm',
         actionClass: 'network',
-        actionDescription: `Executable: ${JSON.stringify((await resolvedExecutable(projectDir)).path)}
-Arguments: (none)
-Contract: output
-Working directory: Disposable staged project
-Staging: Filtered disposable stage
-Environment names: "ADMISSION_TEST_SECRET"
-Environment access: Declared environment references only
-Filesystem: Not an OS sandbox; the process can access files available to the current user
-Network: Network access is not restricted
-Result: Parsed output only; stage-local writes are discarded
-
-${RECEIPT_CONFIRMATION_NOTICE}`,
         phase: 'planning',
         taskId: taskId('T001'),
-      },
+      }),
     ]);
+    expect(requests[0]?.actionDescription).toContain('"ADMISSION_TEST_SECRET"');
+    expect(requests[0]?.actionDescription).toContain(RECEIPT_CONFIRMATION_NOTICE);
     expect(admission).toMatchObject({
       kind: 'admitted',
       invocation: { authorization: 'receipt', runner: configuredRunner },

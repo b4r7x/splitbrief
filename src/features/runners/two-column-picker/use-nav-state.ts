@@ -189,7 +189,6 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const currentRightIsCustom =
     rightActive &&
     !!rightCurrentItem &&
-    !isOnVirtual &&
     isRealRightItem(rightCurrentItem) &&
     (isRightItemCustom?.(rightCurrentItem) ?? false);
 

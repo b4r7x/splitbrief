@@ -129,7 +129,7 @@ describe('visualPositionOf honors affinity at soft-wrap seams', () => {
   });
 });
 
-describe('caretVisualPosition', () => {
+describe('visualPositionOf on an empty buffer', () => {
   it('returns the origin for an empty buffer', () => {
     expect(visualPositionOf(wrapVisualLines('', 40), 0)).toEqual({ row: 0, col: 0 });
   });

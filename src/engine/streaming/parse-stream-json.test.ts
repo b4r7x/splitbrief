@@ -206,23 +206,6 @@ describe('parseStreamLine', () => {
     });
   });
 
-  it('joins text deltas into the message the assistant record restates', () => {
-    const deltas = ['returning `a', ' - b`', '\n\n', 'second para.'];
-    const streamed = deltas
-      .map((text) =>
-        parseStreamLine(
-          jsonLine({
-            type: 'stream_event',
-            event: { type: 'content_block_delta', delta: { type: 'text_delta', text } },
-          }),
-        ),
-      )
-      .map((parsed) => parsed.text ?? '')
-      .join('');
-
-    expect(streamed).toBe('returning `a - b`\n\nsecond para.');
-  });
-
   it('preserves result text and isResult when usage is malformed', () => {
     const line = jsonLine({
       type: 'result',

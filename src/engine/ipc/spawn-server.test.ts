@@ -34,12 +34,12 @@ import {
   createSessionPreparationCandidate,
   prepareNewSession,
   rollbackPreparedSession,
-  transferPreparedSessionToDetached,
 } from '../../core/sessions/prepare.js';
+import { transferPreparedSessionToDetached } from '../../core/sessions/detached-handoff.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { EventEmitter } from 'node:events';
 import type { ChildProcess, spawn as spawnProcess } from 'node:child_process';
-import { readActiveRecord } from '../../core/sessions/lifecycle.js';
+import { readActiveRecord } from '../../core/sessions/active-pointer.js';
 import { detachedBootstrapRoot, sessionDir } from '../../core/paths.js';
 
 let testDir: string;
@@ -509,8 +509,9 @@ describe('detached receipt handoff', () => {
     }
   });
 
-  it('terminates the child and removes bootstrap and final artifacts for every detached startup failure', async () => {
-    for (const stage of ['pre-directory', 'post-creation', 'log-transfer', 'transfer'] as const) {
+  it.each(['pre-directory', 'post-creation', 'log-transfer', 'transfer'] as const)(
+    'terminates the child and removes bootstrap and final artifacts on a %s startup failure',
+    async (stage) => {
       const candidate = detachedCandidate(testDir, `failure-${stage}`);
       const child = fakeChild();
       const order: string[] = [];
@@ -563,8 +564,8 @@ describe('detached receipt handoff', () => {
       expect(order.indexOf('rollback')).toBeGreaterThan(order.indexOf('wait'));
       expect(existsSync(sessionDir(testDir, candidate.sessionId))).toBe(false);
       expect(bootstrapArtifacts(testDir)).toEqual([]);
-    }
-  });
+    },
+  );
 
   it('preserves owned state when child termination cannot be confirmed', async () => {
     const candidate = detachedCandidate(testDir, 'unconfirmed-child');
@@ -659,20 +660,6 @@ describe('detached receipt handoff', () => {
         waitForPrepared: async () => {
           const prepared = prepareDetachedCandidate(testDir, candidate);
           expect(prepared.kind).toBe('prepared');
-          expect(
-            acceptsDetachedPreparedResult({
-              result: {
-                version: 1,
-                kind: 'prepared',
-                sessionId: candidate.sessionId,
-                ownership: candidate,
-                active: candidate,
-                pid: 4242,
-              },
-              candidate,
-              childPid: 4242,
-            }),
-          ).toBe(true);
           order.push('response');
           order.push('socket');
           return { ok: true, pid: 4242, sessionId: candidate.sessionId, authToken: 'auth' };
@@ -831,5 +818,65 @@ describe('detached receipt handoff', () => {
       reason: 'startup rejected; startup rollback failed',
     });
     expect(bootstrapArtifacts(testDir)).toEqual([]);
+  });
+});
+
+describe('acceptsDetachedPreparedResult', () => {
+  it('accepts a response matching the candidate receipt and the spawned child pid', () => {
+    const candidate = detachedCandidate(testDir, 'accepts-match');
+
+    expect(
+      acceptsDetachedPreparedResult({
+        result: {
+          version: 1,
+          kind: 'prepared',
+          sessionId: candidate.sessionId,
+          ownership: candidate,
+          active: candidate,
+          pid: 4242,
+        },
+        candidate,
+        childPid: 4242,
+      }),
+    ).toBe(true);
+  });
+
+  it('rejects a response reporting a pid other than the spawned child', () => {
+    const candidate = detachedCandidate(testDir, 'rejects-pid');
+
+    expect(
+      acceptsDetachedPreparedResult({
+        result: {
+          version: 1,
+          kind: 'prepared',
+          sessionId: candidate.sessionId,
+          ownership: candidate,
+          active: candidate,
+          pid: 4242,
+        },
+        candidate,
+        childPid: 4243,
+      }),
+    ).toBe(false);
+  });
+
+  it('rejects a response whose ownership generation is not the candidate generation', () => {
+    const candidate = detachedCandidate(testDir, 'rejects-generation');
+    const stale = { ...candidate, generation: '12345678-1234-4123-8123-123456789abc' };
+
+    expect(
+      acceptsDetachedPreparedResult({
+        result: {
+          version: 1,
+          kind: 'prepared',
+          sessionId: candidate.sessionId,
+          ownership: stale,
+          active: candidate,
+          pid: 4242,
+        },
+        candidate,
+        childPid: 4242,
+      }),
+    ).toBe(false);
   });
 });

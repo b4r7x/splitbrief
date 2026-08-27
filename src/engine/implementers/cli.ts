@@ -38,20 +38,26 @@ function cliNotFoundMessage(displayName: string, installUrl: string): string {
 
 /**
  * The files the child changed since the baseline. Git-status diffs drop
- * internal sandbox/state paths, matching the isolation retention scan; the
- * file-hashes branch re-walks the project so files created or deleted since
- * the baseline count as changes, mirroring the shared detector.
+ * internal sandbox/state paths, matching the isolation retention scan, and the
+ * declared file is judged by content so a file that was already dirty before
+ * the call still counts as changed; the file-hashes branch re-walks the project
+ * so files created or deleted since the baseline count as changes, mirroring
+ * the shared detector.
  */
 async function changedFilesSince(
   projectDir: string,
   baseline: ChangeDetectorBaseline,
+  declared: { file: string; hash: string | null },
 ): Promise<string[]> {
   if (baseline.kind === 'git-status') {
     const current = (await getCurrentChangedFiles(projectDir)).filter(
       (file) => !isInternalGitStatusPath(file),
     );
     const beforeSet = new Set(baseline.files);
-    return current.filter((file) => !beforeSet.has(file));
+    const others = current.filter((file) => !beforeSet.has(file) && file !== declared.file);
+    const after = await hashFiles(projectDir, [declared.file]);
+    const declaredChanged = (after[declared.file] ?? null) !== declared.hash;
+    return declaredChanged ? [declared.file, ...others] : others;
   }
   const files = await collectTrackedFiles(projectDir, {
     ignoreProjectDir: baseline.ignoreProjectDir,
@@ -123,7 +129,7 @@ export function createCliImplementer(
     descriptor.compatibility.installUrl,
   );
   const timeout = config.timeout;
-  const changeDetectorLabel = `Tool implementer (${toolName})`;
+  const runnerLabel = `Tool implementer (${toolName})`;
 
   return createImplementerBase({
     extractsCode: false,
@@ -142,6 +148,8 @@ export function createCliImplementer(
         opts.sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, config, 'implementer'));
       const adapter = resolveImplementerAdapter(toolName, config.outputFormat);
       const effectBaseline = await captureChangeDetectorBaseline(projectDir);
+      const declaredFileHash =
+        (await hashFiles(projectDir, [opts.task.file]))[opts.task.file] ?? null;
 
       try {
         let executable: CliExecutableIdentity;
@@ -191,27 +199,30 @@ export function createCliImplementer(
         });
         if (timeout !== undefined && timeoutSignal?.aborted && !signal?.aborted) {
           throw processError.timeout({
-            command: `Tool implementer (${toolName})`,
-            label: `Tool implementer (${toolName})`,
+            command: runnerLabel,
+            label: runnerLabel,
             timeoutMs: timeout,
             output: result.text,
           });
         }
         if (result.status === 'completed') {
-          const changed = await changedFilesSince(projectDir, effectBaseline);
+          const changed = await changedFilesSince(projectDir, effectBaseline, {
+            file: opts.task.file,
+            hash: declaredFileHash,
+          });
           return assertExactEffect({
             result,
             changed,
             declaredFile: opts.task.file,
-            label: changeDetectorLabel,
+            label: runnerLabel,
           });
         }
         return result;
       } catch (err: unknown) {
         if (timeout !== undefined && timeoutSignal?.aborted && !signal?.aborted) {
           throw processError.timeout({
-            command: `Tool implementer (${toolName})`,
-            label: `Tool implementer (${toolName})`,
+            command: runnerLabel,
+            label: runnerLabel,
             timeoutMs: timeout,
             output: '',
           });
@@ -220,7 +231,7 @@ export function createCliImplementer(
       }
     },
 
-    detectChanges: createChangeDetector(`Tool implementer (${toolName})`),
+    detectChanges: createChangeDetector(runnerLabel),
 
     ...createCommandExistsAvailability(descriptor.executableAliases),
   });

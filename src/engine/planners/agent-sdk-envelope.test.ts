@@ -39,7 +39,6 @@ async function* asyncIter<T>(items: T[]): AsyncIterable<T> {
 describe('Agent SDK compiler envelope stream', () => {
   it('keeps only the divergent final response as text when an envelope is present', async () => {
     const events: RunnerCallEvent[] = [];
-    const chunks: string[] = [];
     const result = await processStream({
       stream: asyncIter([
         { type: 'assistant', message: { content: [{ type: 'text', text: 'draft text' }] } },
@@ -52,7 +51,7 @@ describe('Agent SDK compiler envelope stream', () => {
         },
       ]),
       callContext: compilerCallContext(envelope()),
-      onOutput: (text) => chunks.push(text),
+      onOutput: () => {},
       onCallEvent: (event) => events.push(event),
     });
 
@@ -63,7 +62,6 @@ describe('Agent SDK compiler envelope stream', () => {
 
   it('fails a missing final response instead of falling back to earlier text', async () => {
     const events: RunnerCallEvent[] = [];
-    const chunks: string[] = [];
 
     await expect(
       processStream({
@@ -77,7 +75,7 @@ describe('Agent SDK compiler envelope stream', () => {
           },
         ]),
         callContext: compilerCallContext(envelope()),
-        onOutput: (text) => chunks.push(text),
+        onOutput: () => {},
         onCallEvent: (event) => events.push(event),
       }),
     ).rejects.toMatchObject({

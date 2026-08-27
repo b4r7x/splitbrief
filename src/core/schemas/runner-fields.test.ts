@@ -1,14 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { CLI_TOOL_TRUST } from '../runners/cli-tool-catalog.js';
 import { PlannerConfigSchema } from './planner-config.js';
 import {
   GenerationCommonFields,
-  RUNNER_DESCRIPTORS,
-  createCliModelPolicySchema,
   createPlannerConfigSchema,
   createRunnerConfigSchema,
-  getRunnerKindMeta,
-  getRunnerTrustMeta,
 } from './runner-fields.js';
 
 describe('createRunnerConfigSchema', () => {
@@ -228,32 +223,7 @@ describe('createRunnerConfigSchema', () => {
     expect(unsupported.error?.issues[0]?.path).toEqual(['authChannel']);
   });
 
-  it('schema validation covers every CLI model policy without magic auto data', () => {
-    expect(createCliModelPolicySchema('required').safeParse({}).success).toBe(false);
-    expect(
-      createCliModelPolicySchema('required').safeParse({ model: 'explicit-model' }).success,
-    ).toBe(true);
-
-    expect(createCliModelPolicySchema('optional').safeParse({}).success).toBe(true);
-    expect(
-      createCliModelPolicySchema('optional').safeParse({ model: 'explicit-model' }).success,
-    ).toBe(true);
-
-    for (const policy of ['backend-default', 'auto-only'] as const) {
-      expect(createCliModelPolicySchema(policy).safeParse({}).success).toBe(true);
-      expect(
-        createCliModelPolicySchema(policy).safeParse({ model: 'explicit-model' }).success,
-      ).toBe(false);
-      expect(
-        createCliModelPolicySchema(policy).safeParse({ customModels: ['explicit-model'] }).success,
-      ).toBe(false);
-    }
-
-    expect(createCliModelPolicySchema('auto-only').safeParse({ model: 'auto' }).success).toBe(true);
-    expect(createCliModelPolicySchema('backend-default').safeParse({ model: 'auto' }).success).toBe(
-      true,
-    );
-    expect(createCliModelPolicySchema('required').safeParse({ model: 'auto' }).success).toBe(false);
+  it('accepts the automatic model sentinel for a backend-default CLI tool', () => {
     expect(
       createRunnerConfigSchema(GenerationCommonFields).safeParse({
         kind: 'cli',
@@ -613,24 +583,5 @@ describe('createRunnerConfigSchema', () => {
     });
 
     expect(result.success).toBe(false);
-  });
-});
-
-describe('runner trust metadata', () => {
-  it('derives every CLI trust lookup from the canonical catalog', () => {
-    expect(RUNNER_DESCRIPTORS.cli.trust).toBe(CLI_TOOL_TRUST);
-
-    for (const tool of Object.keys(CLI_TOOL_TRUST) as Array<keyof typeof CLI_TOOL_TRUST>) {
-      for (const role of ['planner', 'implementer'] as const) {
-        expect(getRunnerTrustMeta(role, { kind: 'cli', tool })).toBe(CLI_TOOL_TRUST[tool][role]);
-      }
-    }
-  });
-
-  it('retains role trust maps for non-CLI runner kinds', () => {
-    expect(getRunnerKindMeta('api').trust).toBe(RUNNER_DESCRIPTORS.api.trust);
-    expect(getRunnerKindMeta('shell').trust).toBe(RUNNER_DESCRIPTORS.shell.trust);
-    expect(getRunnerKindMeta('agent').trust).toBe(RUNNER_DESCRIPTORS.agent.trust);
-    expect(getRunnerKindMeta('agent-sdk').trust).toBe(RUNNER_DESCRIPTORS['agent-sdk'].trust);
   });
 });

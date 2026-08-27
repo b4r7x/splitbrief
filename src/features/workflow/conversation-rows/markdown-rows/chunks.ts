@@ -366,7 +366,7 @@ function markdownSourceChunks(sourceText: string, startOffset: number): Markdown
     }
 
     const endIndex = paragraphEndIndex(lines, index);
-    chunks.push(...paragraphSourceChunks(sourceText, startOffset, lines, index, endIndex));
+    chunks.push(sourceChunkFromLines(sourceText, startOffset, lines, index, endIndex));
     index = endIndex;
   }
 
@@ -421,16 +421,6 @@ function sourceChunkFromLines(
     startOffset: first.startOffset,
     endOffset: last.endOffset,
   };
-}
-
-function paragraphSourceChunks(
-  sourceText: string,
-  sourceStartOffset: number,
-  lines: readonly MarkdownSourceLine[],
-  startIndex: number,
-  endIndex: number,
-): MarkdownSourceChunk[] {
-  return [sourceChunkFromLines(sourceText, sourceStartOffset, lines, startIndex, endIndex)];
 }
 
 function metadataCandidateAt(

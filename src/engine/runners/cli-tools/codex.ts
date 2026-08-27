@@ -3,6 +3,7 @@ import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
+import { lastMessageGroupText } from './final-group.js';
 import { validateCliArgs } from './validate-args.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { isRecord, optionalString } from '../../../utils/type-guards.js';
@@ -55,10 +56,9 @@ type CodexPlannerBuildInput = Parameters<CliPlannerAdapter<'codex'>['buildArgs']
 type CodexImplementerBuildInput = Parameters<CliImplementerAdapter<'codex'>['buildArgs']>[0];
 type CodexTerminalEvent = Extract<CliProtocolEvent, { type: 'result' }>;
 
-function validateArgs(invocationArgs: readonly string[], baseArgs: readonly string[]) {
+function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: readonly string[] }) {
   return validateCliArgs({
-    invocationArgs,
-    baseArgs,
+    ...input,
     protectedFlags: CODEX_PROTECTED_FLAGS,
     protectedShortValueFlags: CODEX_PROTECTED_SHORT_VALUE_FLAGS,
     promptTransport: 'argv',
@@ -367,25 +367,6 @@ export function codexProtocolEvents(line: string): readonly CliProtocolEvent[] {
   return parseCodexRecord(value);
 }
 
-/**
- * REQ-013 exact last-message reduction: only the assistant text after the last
- * tool call is the authoritative final response of the turn; earlier messages,
- * partials, and tool-call text are evidence, never content. Deltas are joined
- * only within that final message.
- */
-export function codexLastMessageText(events: readonly CliProtocolEvent[]): string {
-  let boundary = -1;
-  for (let index = 0; index < events.length; index += 1) {
-    if (events[index]?.type === 'tool-use') boundary = index;
-  }
-  let groupText = '';
-  for (let index = boundary + 1; index < events.length; index += 1) {
-    const event = events[index];
-    if (event?.type === 'text' && event.channel !== 'stderr') groupText += event.text;
-  }
-  return groupText;
-}
-
 function codexTerminal(input: { events: readonly CliProtocolEvent[] }): CodexTerminalEvent {
   const terminal = input.events.findLast(
     (event): event is CodexTerminalEvent => event.type === 'result',
@@ -404,7 +385,7 @@ function codexTerminal(input: { events: readonly CliProtocolEvent[] }): CodexTer
   }
   return {
     ...terminal,
-    text: codexLastMessageText(input.events),
+    text: lastMessageGroupText(input.events),
     ...(terminal.nativeSessionId === null && nativeSessionId !== null ? { nativeSessionId } : {}),
   };
 }

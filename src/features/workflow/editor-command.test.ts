@@ -5,77 +5,96 @@ import { basename, join } from 'node:path';
 import { chdir, cwd } from 'node:process';
 import { editorDisplayLabel, resolveEditorArgv } from './editor-command.js';
 
-const missingCommand = () => false;
+function withBinDir<T>(executables: readonly string[], run: (dir: string) => T): T {
+  const dir = mkdtempSync(join(tmpdir(), 'editor-command-test-'));
+  try {
+    for (const name of executables) {
+      const file = join(dir, name);
+      writeFileSync(file, '#!/bin/sh\n');
+      chmodSync(file, 0o755);
+    }
+    return run(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 describe('resolveEditorArgv', () => {
   it('splits non-terminal EDITOR values with arguments', () => {
-    expect(
-      resolveEditorArgv({
-        env: { EDITOR: 'code --wait' },
-        platform: 'linux',
-        commandExists: missingCommand,
-      }),
-    ).toEqual({ command: 'code', args: ['--wait'] });
+    withBinDir([], (dir) => {
+      expect(
+        resolveEditorArgv({
+          env: { EDITOR: 'code --wait', PATH: dir },
+          platform: 'linux',
+        }),
+      ).toEqual({ command: 'code', args: ['--wait'] });
+    });
   });
 
   it('selects VISUAL over EDITOR when both are plain non-terminal commands', () => {
-    expect(
-      resolveEditorArgv({
-        env: { VISUAL: 'a', EDITOR: 'b' },
-        platform: 'linux',
-        commandExists: missingCommand,
-      }),
-    ).toEqual({ command: 'a', args: [] });
+    withBinDir([], (dir) => {
+      expect(
+        resolveEditorArgv({
+          env: { VISUAL: 'a', EDITOR: 'b', PATH: dir },
+          platform: 'linux',
+        }),
+      ).toEqual({ command: 'a', args: [] });
+    });
   });
 
   it('prefers VISUAL exactly over EDITOR and detected GUI editors', () => {
-    expect(
-      resolveEditorArgv({
-        env: { VISUAL: 'nvim --clean', EDITOR: 'code --wait' },
-        platform: 'darwin',
-        commandExists: (command) => command === 'cursor',
-      }),
-    ).toEqual({ command: 'nvim', args: ['--clean'] });
+    withBinDir(['cursor'], (dir) => {
+      expect(
+        resolveEditorArgv({
+          env: { VISUAL: 'nvim --clean', EDITOR: 'code --wait', PATH: dir },
+          platform: 'darwin',
+        }),
+      ).toEqual({ command: 'nvim', args: ['--clean'] });
+    });
   });
 
   it('prefers a detected GUI editor over terminal EDITOR fallback', () => {
-    expect(
-      resolveEditorArgv({
-        env: { VISUAL: '', EDITOR: 'vim' },
-        platform: 'linux',
-        commandExists: (command) => command === 'code',
-      }),
-    ).toEqual({ command: 'code', args: ['--wait'] });
+    withBinDir(['code'], (dir) => {
+      expect(
+        resolveEditorArgv({
+          env: { VISUAL: '', EDITOR: 'vim', PATH: dir },
+          platform: 'linux',
+        }),
+      ).toEqual({ command: join(dir, 'code'), args: ['--wait'] });
+    });
   });
 
   it('uses macOS open text-editor fallback before terminal EDITOR fallback', () => {
-    expect(
-      resolveEditorArgv({
-        env: { VISUAL: '', EDITOR: 'vim' },
-        platform: 'darwin',
-        commandExists: (command) => command === 'open',
-      }),
-    ).toEqual({ command: 'open', args: ['-W', '-t'] });
+    withBinDir(['open'], (dir) => {
+      expect(
+        resolveEditorArgv({
+          env: { VISUAL: '', EDITOR: 'vim', PATH: dir },
+          platform: 'darwin',
+        }),
+      ).toEqual({ command: join(dir, 'open'), args: ['-W', '-t'] });
+    });
   });
 
   it('falls back to terminal EDITOR when no GUI editor is detected', () => {
-    expect(
-      resolveEditorArgv({
-        env: { VISUAL: '   ', EDITOR: 'emacs -nw' },
-        platform: 'linux',
-        commandExists: missingCommand,
-      }),
-    ).toEqual({ command: 'emacs', args: ['-nw'] });
+    withBinDir([], (dir) => {
+      expect(
+        resolveEditorArgv({
+          env: { VISUAL: '   ', EDITOR: 'emacs -nw', PATH: dir },
+          platform: 'linux',
+        }),
+      ).toEqual({ command: 'emacs', args: ['-nw'] });
+    });
   });
 
   it('defaults to vi when no editor is configured or detected', () => {
-    expect(
-      resolveEditorArgv({
-        env: { VISUAL: '   ', EDITOR: '   ' },
-        platform: 'linux',
-        commandExists: missingCommand,
-      }),
-    ).toEqual({ command: 'vi', args: [] });
+    withBinDir([], (dir) => {
+      expect(
+        resolveEditorArgv({
+          env: { VISUAL: '   ', EDITOR: '   ', PATH: dir },
+          platform: 'linux',
+        }),
+      ).toEqual({ command: 'vi', args: [] });
+    });
   });
 
   it('skips empty, dot, and relative PATH segments during implicit GUI editor discovery', () => {

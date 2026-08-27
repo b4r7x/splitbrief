@@ -4,16 +4,9 @@ import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
-import { questionPromptStore } from '../../../src/stores/question-prompt/prompt.js';
-import { completionStore } from '../../../src/stores/ui/completion.js';
-import { editorStore } from '../../../src/stores/ui/editor.js';
-import { externalEditRequestStore } from '../../../src/stores/ui/external-edit-request.js';
 import { composerDraftStore } from '../../../src/stores/ui/composer-draft.js';
-import { pickerViewStore } from '../../../src/stores/ui/picker-view.js';
-import { projectFilesStore } from '../../../src/stores/ui/project-files.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
-import { operationsStore } from '../../../src/stores/workflow/operations/state.js';
 import type { CliToolDetection } from '../../../src/core/discovery/detection.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import type { ModelsDevRefreshOutcome } from '../../../src/engine/detection/service.js';
@@ -90,14 +83,6 @@ export function visualConfig(overrides?: VisualConfigOverrides): Config {
 export function resetVisualFixtureStores(): void {
   resetAllStores();
   resetWorkflow();
-  operationsStore.reset();
-  editorStore.reset();
-  questionPromptStore.reset();
-  externalEditRequestStore.reset();
-  completionStore.reset();
-  projectFilesStore.reset();
-  pickerViewStore.reset();
-  composerDraftStore.reset();
 }
 
 export function setupVisualFixture(context: FixtureContext): void {
@@ -235,12 +220,12 @@ export function publishVisualDiscovery(input: {
       outcome: {
         kind: 'fresh',
         origin: 'request',
-        snapshot: laneSnapshot(
-          'readiness',
-          VISUAL_DETECTION_CONTEXTS.readiness,
-          request.id,
-          readiness,
-        ),
+        snapshot: laneSnapshot({
+          source: 'readiness',
+          contextKey: VISUAL_DETECTION_CONTEXTS.readiness,
+          requestId: request.id,
+          value: readiness,
+        }),
       },
     },
   });
@@ -251,12 +236,12 @@ export function publishVisualDiscovery(input: {
       outcome: {
         kind: 'fresh',
         origin: 'request',
-        snapshot: laneSnapshot(
-          'cli-models',
-          VISUAL_DETECTION_CONTEXTS.cliModels,
-          request.id,
-          input.cliModels ?? [],
-        ),
+        snapshot: laneSnapshot({
+          source: 'cli-models',
+          contextKey: VISUAL_DETECTION_CONTEXTS.cliModels,
+          requestId: request.id,
+          value: input.cliModels ?? [],
+        }),
       },
     },
   });
@@ -268,12 +253,13 @@ export function publishVisualDiscovery(input: {
   });
 }
 
-function laneSnapshot<Source extends string, Value extends object>(
-  source: Source,
-  contextKey: string,
-  requestId: number,
-  value: Value,
-) {
+function laneSnapshot<Source extends string, Value extends object>(options: {
+  readonly source: Source;
+  readonly contextKey: string;
+  readonly requestId: number;
+  readonly value: Value;
+}) {
+  const { source, contextKey, requestId, value } = options;
   return {
     source,
     contextKey,
@@ -312,12 +298,12 @@ function modelsDevOutcome(
   return {
     kind: 'fresh',
     origin: 'request',
-    snapshot: laneSnapshot(
-      'models-dev',
-      VISUAL_DETECTION_CONTEXTS.modelsDev,
+    snapshot: laneSnapshot({
+      source: 'models-dev',
+      contextKey: VISUAL_DETECTION_CONTEXTS.modelsDev,
       requestId,
-      arm.catalog,
-    ),
+      value: arm.catalog,
+    }),
   };
 }
 
@@ -362,6 +348,6 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
     () => createHomeFixture({ config: { reviewer: HOME_REVIEWER_API_SEAT } }),
   ],
   [scenarioId('home-cold'), () => createHomeFixture({ cold: true })],
-  [scenarioId('overlay-command-palette-arg'), createCommandArgumentFixture],
+  [scenarioId('workflow-command-argument'), createCommandArgumentFixture],
   [scenarioId('setup-initial'), createSetupFixture],
 ]);

@@ -184,7 +184,7 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
     expect(readFileSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE), 'utf-8')).toContain(
       'Validation passed after one local retry.',
     );
-    expect(existsSync(reviewPacketJsonPath(projectDir, sessionId))).toBe(true);
+    expect(existsSync(reviewPacketJsonPath({ projectDir, sessionId }))).toBe(true);
   }, 90_000);
 
   it('uses planner hint escalation when local retry does not fix validation', async () => {

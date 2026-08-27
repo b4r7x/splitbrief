@@ -21,17 +21,10 @@ export interface BriefReadinessBlock {
   nextAction: string;
 }
 
-export interface BriefReadinessOverride {
-  at: string;
-  blockedTaskIds: string[];
-  kinds: string[];
-}
-
 export interface BriefReadinessGateReport {
   ok: boolean;
   metadata: PlanTaskReviewMetadata[];
   blocks: BriefReadinessBlock[];
-  override?: BriefReadinessOverride | undefined;
 }
 
 function classifyReadinessBlock(

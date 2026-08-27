@@ -52,6 +52,7 @@ describe('writeHandoffPack — basic output', () => {
       mode: 'default',
     });
 
+    expect(result.files.length).toBeGreaterThan(0);
     for (const relPath of result.files) {
       expect(existsSync(join(outDir, relPath))).toBe(true);
     }
@@ -96,11 +97,8 @@ describe('writeHandoffPack — mode: append', () => {
       mode: 'append',
     });
 
-    // Existing file must NOT be overwritten
     expect(readFileSync(join(outDir, 'tasks', 'T001.md'), 'utf-8')).toBe(existingContent);
-    // Missing files should have been written
     expect(existsSync(join(outDir, 'README.md'))).toBe(true);
-    // Returned files list should only include files that were actually written
     expect(result.files).not.toContain('tasks/T001.md');
     expect(result.files).toContain('README.md');
   });
@@ -225,7 +223,6 @@ describe('writeHandoffPack — mode: overwrite', () => {
 
     const outDir = join(tmp, SPLITBRIEF_DIR, 'handoffs', 'stale-overwrite');
 
-    // First pass: write all three tasks
     await writeHandoffPack({
       projectDir: tmp,
       sessionId,
@@ -238,7 +235,6 @@ describe('writeHandoffPack — mode: overwrite', () => {
     expect(existsSync(join(outDir, 'tasks', 'T002.md'))).toBe(true);
     expect(existsSync(join(outDir, 'tasks', 'T003.md'))).toBe(true);
 
-    // Second pass: overwrite with only T001
     await writeHandoffPack({
       projectDir: tmp,
       sessionId,

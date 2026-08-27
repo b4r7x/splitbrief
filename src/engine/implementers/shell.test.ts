@@ -149,7 +149,7 @@ describe('shell implementer', () => {
       },
     });
 
-    expect(progressCalls.length).toBeGreaterThan(0);
+    expect(progressCalls.join('')).toContain('export const x = 1;');
   });
 
   it('retry passes error context to the prompt', async () => {

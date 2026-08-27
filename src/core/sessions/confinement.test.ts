@@ -104,11 +104,14 @@ describe('assertSessionConfinement', () => {
     const filePath = join(sessionDir, 'link', 'spec.md');
 
     expect(() => resolveSessionFilePath('link/spec.md', sessionDir)).toThrow();
+
+    let err: unknown;
     try {
       assertSessionConfinement(filePath, sessionDir);
-    } catch (err) {
-      expect((err as { kind?: string }).kind).toBe('session-io-read');
+    } catch (caught) {
+      err = caught;
     }
+    expect(err).toMatchObject({ kind: 'session-io-read' });
   });
 
   itUnix('rejects when a session-path segment is itself a symlink', () => {

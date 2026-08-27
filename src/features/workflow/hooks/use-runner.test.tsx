@@ -11,17 +11,12 @@ import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
-import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { buildContextOverflowRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
-import {
-  parsePreparedConfig,
-  type PreparedExecution,
-  type RunnerGate,
-} from '../../../engine/runners/prepared-execution.js';
+import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
 import { useInputMode } from './use-input-mode.js';
 import { useWorkflowRunner } from './use-runner.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
@@ -42,7 +37,7 @@ import {
   clearActiveReceipt,
   reactivateExistingSession,
   writeActive,
-} from '../../../core/sessions/lifecycle.js';
+} from '../../../core/sessions/active-pointer.js';
 import { acquireStateAuthority, releaseStateAuthority } from '../../../core/state/authority.js';
 import type { StateAuthorityReceipt } from '../../../core/state/types.js';
 import { ensureSplitbriefDir, ensureSessionDir } from '../../../core/paths-io.js';
@@ -101,8 +96,11 @@ function preparedExecution(input: {
   const sessionId = input.sessionId ?? 'prepared-workflow-session';
   const ref = { projectDir: input.projectDir, sessionId };
   ensureSessionDir(input.projectDir, sessionId);
-  const config = parsePreparedConfig(
-    configForSessionTranscriptPolicy(
+  return makePreparedExecution({
+    projectDir: input.projectDir,
+    sessionId,
+    feature: input.feature,
+    config: configForSessionTranscriptPolicy(
       makeConfig({
         planner: input.planner ?? {
           kind: 'agent',
@@ -112,37 +110,10 @@ function preparedExecution(input: {
       }),
       ref,
     ),
-  );
-  const preparationId = `workflow-hook-${sessionId}`;
-  const gates: readonly RunnerGate[] = [
-    makeRunnerGate(config.planner, { role: 'planner' }, preparationId),
-    ...resolveImplementerProfiles(config).profiles.map((profile) =>
-      makeRunnerGate(profile.config, { role: 'implementer', profile: profile.name }, preparationId),
-    ),
-  ];
-  const active = reactivateExistingSession(ref);
-  return {
-    purpose: input.resumeState === undefined ? 'new-workflow' : 'resume',
-    config,
-    preparationId,
-    report: {
-      generatedAt: '2026-08-04T00:00:00.000Z',
-      projectDir: input.projectDir,
-      status: 'ready',
-      counts: { ok: gates.length, info: 0, warning: 0, blocker: 0 },
-      nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
-      sections: [],
-      metadata: {},
-    },
-    gates,
-    session: { kind: 'existing', ref, active },
-    runtime: {
-      feature: input.feature,
-      ...(input.resumeState !== undefined && { resumeState: input.resumeState }),
-      allowRepoRunners: false,
-      allowHooks: false,
-    },
-  };
+    preparationId: `workflow-hook-${sessionId}`,
+    active: reactivateExistingSession(ref),
+    ...(input.resumeState !== undefined && { resumeState: input.resumeState }),
+  });
 }
 
 async function flush(ms = 60) {
@@ -542,14 +513,13 @@ describe('useWorkflowRunner', () => {
     const inst = render(<Harness prepared={prepared} onComplete={() => {}} />);
     await flush();
     // No `.splitbrief/active` pointer is hand-written. The rewind handler must use the
-    // in-scope sessionId prop (F-317), so the rewind still lands even though the bogus
+    // in-scope sessionId prop, so the rewind still lands even though the bogus
     // planner has finished and saveFinalSession cleared the active marker.
 
     const didRewind = requestRewind({ target: 'spec', comment: 'needs clarification' });
     expect(didRewind).toBe(true);
     await flush();
 
-    // Rewind appended to the session log on disk.
     const logPath = join(sessionDir(projectDir, sessionId), 'session.jsonl');
     expect(existsSync(logPath)).toBe(true);
     const log = readFileSync(logPath, 'utf-8');
@@ -800,7 +770,7 @@ describe('useWorkflowRunner', () => {
 
   it('rewinds the in-scope session even when .splitbrief/active names a different session', async () => {
     // pointer=A (a foreign interrupted session) while the screen is scoped to sessionId=B.
-    // Per F-317/F-329 the rewind handler must use the in-scope id (B) and never touch A.
+    // The rewind handler must use the in-scope id (B) and never touch A.
     const foreignSessionId = '2024-01-01-foreign';
     const scopedSessionId = '2024-01-01-scoped';
     ensureSessionDir(projectDir, foreignSessionId);
@@ -832,7 +802,6 @@ describe('useWorkflowRunner', () => {
     expect(didRewind).toBe(true);
     await flush();
 
-    // The scoped session received the rewind...
     const scopedLog = readFileSync(
       join(sessionDir(projectDir, scopedSessionId), 'session.jsonl'),
       'utf-8',
@@ -840,7 +809,6 @@ describe('useWorkflowRunner', () => {
     expect(scopedLog).toContain('rewind_to_spec');
     expect(scopedLog).toContain('scope-correct rewind');
 
-    // ...and the foreign session named by .splitbrief/active was never written to.
     expect(existsSync(join(sessionDir(projectDir, foreignSessionId), 'session.jsonl'))).toBe(false);
 
     inst.unmount();
@@ -888,71 +856,43 @@ describe('useWorkflowRunner', () => {
     inst.unmount();
   });
 
-  it('enqueues injected resume text into the saved state message queue so the resumed planner drains it', async () => {
-    const sessionId = '2024-01-01-inject';
-    ensureSessionDir(projectDir, sessionId);
-    const saved: WorkflowState = {
-      ...createInitialState('add auth'),
-      phase: 'planning',
-    };
-    saveState({ projectDir, sessionId }, saved);
-
-    const captureRunner: HarnessProps['captureRunner'] = { current: null };
-    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
-    const inst = render(
-      <Harness prepared={prepared} onComplete={() => {}} captureRunner={captureRunner} />,
-    );
-    await flush();
-
-    const runner = captureRunner.current;
-    if (!runner) throw new Error('expected captureRunner.current to be populated');
-    runner.handleResume('what about edge case X?');
-    await flush();
-
-    const persisted = loadState({ projectDir, sessionId });
-    if (!persisted) throw new Error('expected persisted state on disk');
-    const pending = persisted.messageQueue.filter((m) => !m.drainedAt);
-    expect(pending).toHaveLength(1);
-    expect(pending[0]?.text).toBe('what about edge case X?');
-    expect(pending[0]?.phase).toBe('planning');
-    expect(pending[0]?.origin).toBe('user-input');
-
-    inst.unmount();
-  });
-
-  it('enqueues injected resume text while resuming an implementing phase', async () => {
-    const sessionId = '2024-01-01-implementing-inject';
-    ensureSessionDir(projectDir, sessionId);
-    const saved: WorkflowState = {
-      ...createInitialState('add auth'),
+  it.each([
+    { phase: 'planning', sessionId: '2024-01-01-inject', text: 'what about edge case X?' },
+    {
       phase: 'implementing',
-    };
-    saveState({ projectDir, sessionId }, saved);
+      sessionId: '2024-01-01-implementing-inject',
+      text: 'carry this into implementation',
+    },
+  ] as const)(
+    'enqueues injected resume text into the saved state message queue while resuming a $phase phase',
+    async ({ phase, sessionId, text }) => {
+      ensureSessionDir(projectDir, sessionId);
+      saveState({ projectDir, sessionId }, { ...createInitialState('add auth'), phase });
 
-    const captureRunner: HarnessProps['captureRunner'] = { current: null };
-    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
-    const inst = render(
-      <Harness prepared={prepared} onComplete={() => {}} captureRunner={captureRunner} />,
-    );
-    await flush();
+      const captureRunner: HarnessProps['captureRunner'] = { current: null };
+      const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+      const inst = render(
+        <Harness prepared={prepared} onComplete={() => {}} captureRunner={captureRunner} />,
+      );
+      await flush();
 
-    const runner = captureRunner.current;
-    if (!runner) throw new Error('expected captureRunner.current to be populated');
-    runner.handleResume('carry this into implementation');
-    await flush();
+      const runner = captureRunner.current;
+      if (!runner) throw new Error('expected captureRunner.current to be populated');
+      runner.handleResume(text);
+      await flush();
 
-    const persisted = loadState({ projectDir, sessionId });
-    if (!persisted) throw new Error('expected persisted state on disk');
-    expect(persisted.messageQueue).toEqual([
-      expect.objectContaining({
-        text: 'carry this into implementation',
-        phase: 'implementing',
-      }),
-    ]);
-    expect(feedbackStore.get().isError).toBe(false);
+      const persisted = loadState({ projectDir, sessionId });
+      if (!persisted) throw new Error('expected persisted state on disk');
+      const pending = persisted.messageQueue.filter((m) => !m.drainedAt);
+      expect(pending).toHaveLength(1);
+      expect(pending[0]?.text).toBe(text);
+      expect(pending[0]?.phase).toBe(phase);
+      expect(pending[0]?.origin).toBe('user-input');
+      expect(feedbackStore.get().isError).toBe(false);
 
-    inst.unmount();
-  });
+      inst.unmount();
+    },
+  );
 
   it('resumes without queuing when no injected text is provided', async () => {
     const sessionId = '2024-01-01-empty-continue';
@@ -990,7 +930,6 @@ describe('useWorkflowRunner', () => {
     inst.unmount();
     await flush();
 
-    // After unmount, no handler is registered.
     expect(abortTurn()).toBe(false);
     expect(requestRewind({ target: 'spec' })).toBe(false);
   });

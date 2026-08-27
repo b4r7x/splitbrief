@@ -8,8 +8,9 @@ describe('workflow scroll shortcut', () => {
     expect(scroll).toBeDefined();
     expect(scroll?.key).toBe('shift+↑/↓, pgup/pgdn, home/end');
     expect(scroll?.description).toBe('Scroll; PageUp/PageDown; /scroll top|bottom');
-    expect(scroll?.key).not.toBe('↑/↓');
-    expect(scroll?.key).not.toContain('Ctrl+B/F');
+  });
+
+  it('advertises no toggle-sidebar shortcut on workflow', () => {
     expect(getShortcutsForScreen('workflow').some((s) => s.id === 'toggle-sidebar')).toBe(false);
   });
 

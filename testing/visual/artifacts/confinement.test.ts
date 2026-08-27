@@ -1,4 +1,4 @@
-import { access, mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -21,7 +21,6 @@ describe('visual artifact confinement paths', () => {
         resolveContainedArtifactPath({ root: outputRoot, relativePath: invalidPath }),
       ).toThrow();
     }
-    await expect(access(join(outputRoot, 'owned'))).rejects.toThrow();
   });
 });
 

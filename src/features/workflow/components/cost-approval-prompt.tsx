@@ -199,7 +199,7 @@ function CostGateButtons() {
           {index === 0 ? <Text color={t.text}>{cursorGlyph()}</Text> : NO_CURSOR}
           <Text color={t.textDim}>{approvalOptionKeyCell(option, keyWidth)}</Text>
           {'   '}
-          {approvalOptionLabelText(option, keyWidth, costTextWidth(cols))}
+          {approvalOptionLabelText({ option, keyWidth, width: costTextWidth(cols) })}
         </Text>
       ))}
     </>

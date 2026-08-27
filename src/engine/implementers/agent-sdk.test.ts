@@ -240,22 +240,7 @@ describe('createAgentSdkImplementer', () => {
   });
 
   it('reports success when the SDK-triggered work leaves new dirty files in the repo', async () => {
-    // Simulate the SDK writing a file as part of its stream processing.
-    queryMock.mockImplementation((_opts: unknown) => {
-      return asyncIter([
-        { type: 'system', subtype: 'init', session_id: 'sess-1' },
-        { type: 'assistant', message: { content: [{ type: 'text', text: 'wrote a file' }] } },
-        {
-          type: 'result',
-          result: 'wrote a file',
-          session_id: 'sess-1',
-          usage: { input_tokens: 10, output_tokens: 5 },
-        },
-      ]);
-    });
-    // Create a new, untracked file BEFORE invoke — createAgentSdkBackend will snapshot
-    // the dirty list BEFORE the SDK runs, so we need to write the file during the
-    // async SDK iteration. Simulate by tweaking the stream iterator:
+    // createAgentSdkBackend snapshots the dirty list before the SDK runs, so the new file must appear during stream iteration.
     queryMock.mockImplementation(async function* () {
       yield { type: 'system', subtype: 'init', session_id: 'sess-1' };
       mkdirSync(join(projectDir, 'src'), { recursive: true });
@@ -398,6 +383,13 @@ describe('createAgentSdkImplementer', () => {
         onOutput: vi.fn(),
       });
 
+      expect(queryMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          options: expect.objectContaining({
+            env: expect.objectContaining({ ANTHROPIC_API_KEY: 'sk-threaded-key' }),
+          }),
+        }),
+      );
       expect(process.env['ANTHROPIC_API_KEY']).toBeUndefined();
     } finally {
       if (origEnv === undefined) delete process.env['ANTHROPIC_API_KEY'];

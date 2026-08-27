@@ -1,11 +1,8 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { listTrackedAndUntrackedFiles } from '../../../lib/git/files.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-
-vi.mock('../../../lib/git/files.js', { spy: true });
 
 const control = vi.hoisted(() => ({
   failCp: false,
@@ -25,6 +22,10 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     cp: (...args: Parameters<typeof actual.cp>) => {
       if (control.failCp) return Promise.reject(new Error('ENOSPC: simulated copy failure'));
       return actual.cp(...args);
+    },
+    copyFile: (...args: Parameters<typeof actual.copyFile>) => {
+      if (control.failCp) return Promise.reject(new Error('ENOSPC: simulated copy failure'));
+      return actual.copyFile(...args);
     },
     lstat: (path: Parameters<typeof actual.lstat>[0], ...rest: unknown[]) => {
       if (
@@ -49,7 +50,6 @@ afterEach(() => {
   control.failCp = false;
   control.failLstatBasename = '';
   control.lastStagedRoot = '';
-  vi.mocked(listTrackedAndUntrackedFiles).mockRestore();
   for (const dir of dirs) cleanupTempDir(dir);
   dirs = [];
 });
@@ -73,7 +73,6 @@ describe('createStagedProject — failure handling', () => {
     mkdirSync(join(dir, 'src'), { recursive: true });
     writeFileSync(join(dir, 'src', 'app.ts'), 'export const app = true;\n');
 
-    vi.mocked(listTrackedAndUntrackedFiles).mockResolvedValue(null);
     control.failCp = true;
     await expect(createStagedProject(dir)).rejects.toThrow(/simulated copy failure/);
     expect(control.lastStagedRoot).not.toBe('');

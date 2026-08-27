@@ -47,8 +47,7 @@ describe('planner text rows', () => {
     expect(text).not.toContain('###');
     expect(text).not.toContain('```typescript');
     expect(text).not.toContain('```');
-    // Depth 3 carries the heading tone without bold — that is what separates it from depth 2 now
-    // that the two no longer render identically.
+    // Depth 3 carries the heading tone without bold, which is what separates it from depth 2.
     expect(heading?.segments).toContainEqual({ text: 'Description', tone: 'markdownHeading' });
   });
 

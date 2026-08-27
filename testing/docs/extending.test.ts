@@ -99,9 +99,7 @@ describe('forbidden-abstraction', () => {
 
   it('rejects a generic argv DSL and plugin framework', () => {
     const constraints = sectionSlice('### Architectural constraints');
-    expect(constraints).toMatch(/no argv dsl/i);
     expect(constraints).toMatch(/no argv dsl or plugin framework/i);
-    expect(constraints).toMatch(/plugin framework/i);
     expect(constraints).toMatch(/do not build a generic argv insertion dsl/i);
   });
 

@@ -4,7 +4,7 @@ import type {
   RunnerRole,
 } from '../../../core/runners/cli-tool-catalog.js';
 import type { RunnerBillingPosture } from '../../../core/runners/runner-billing.js';
-import { getRunnerTrustMeta } from '../../../core/schemas/runner-fields.js';
+import { getRunnerTrustMeta } from '../../../core/runners/trust.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
 
 export type RunnerPermissionPosture = Readonly<{

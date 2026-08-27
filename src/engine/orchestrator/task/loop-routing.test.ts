@@ -29,39 +29,43 @@ function setupProject(): { projectDir: string; sessionId: string } {
 
 const defaultWorkflow = { maxRetries: 2 };
 
+function profilesConfig(windows: { largeWindow: number; smallWindow: number }): Config {
+  return {
+    ...makeNoValidationConfig({ workflow: defaultWorkflow }),
+    implementerProfiles: {
+      default: 'local-small',
+      profiles: {
+        'cheap-large': {
+          kind: 'api',
+          provider: 'ollama',
+          service: 'ollama',
+          offering: 'local',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'qwen-large',
+          costTier: 'cheap',
+          contextLength: windows.largeWindow,
+        },
+        'local-small': {
+          kind: 'api',
+          provider: 'ollama',
+          service: 'ollama',
+          offering: 'local',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'qwen-small',
+          costTier: 'local',
+          contextLength: windows.smallWindow,
+        },
+      },
+    },
+  };
+}
+
 describe('runTaskLoop', { timeout: 90_000 }, () => {
   it('routes a task to the selected profile and publishes profile/tool/model metadata', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
     const state = makeImplState([task]);
-    const config: Config = {
-      ...makeNoValidationConfig({ workflow: defaultWorkflow }),
-      implementerProfiles: {
-        default: 'local-small',
-        profiles: {
-          'local-small': {
-            kind: 'api',
-            provider: 'ollama',
-            service: 'ollama',
-            offering: 'local',
-            apiBase: 'http://localhost:11434/v1',
-            model: 'qwen-small',
-            costTier: 'local',
-            contextLength: 100,
-          },
-          'cheap-large': {
-            kind: 'api',
-            provider: 'ollama',
-            service: 'ollama',
-            offering: 'local',
-            apiBase: 'http://localhost:11434/v1',
-            model: 'qwen-large',
-            costTier: 'cheap',
-            contextLength: 32768,
-          },
-        },
-      },
-    };
+    const config = profilesConfig({ largeWindow: 32768, smallWindow: 100 });
     const selectedImplementer = makeImplementer({
       implement: vi.fn().mockResolvedValue({
         success: true,
@@ -154,34 +158,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
     const state = makeImplState([task]);
-    const config: Config = {
-      ...makeNoValidationConfig({ workflow: defaultWorkflow }),
-      implementerProfiles: {
-        default: 'local-small',
-        profiles: {
-          'cheap-large': {
-            kind: 'api',
-            provider: 'ollama',
-            service: 'ollama',
-            offering: 'local',
-            apiBase: 'http://localhost:11434/v1',
-            model: 'qwen-large',
-            costTier: 'cheap',
-            contextLength: 32768,
-          },
-          'local-small': {
-            kind: 'api',
-            provider: 'ollama',
-            service: 'ollama',
-            offering: 'local',
-            apiBase: 'http://localhost:11434/v1',
-            model: 'qwen-small',
-            costTier: 'local',
-            contextLength: 32768,
-          },
-        },
-      },
-    };
+    const config = profilesConfig({ largeWindow: 32768, smallWindow: 32768 });
     const selectedImplementer = makeImplementer({
       implement: vi.fn().mockResolvedValue({
         success: true,
@@ -238,34 +215,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
 
     const task = makeTask({ id: 'T001', action: 'modify', file: 'src/target.ts' });
     const state = makeImplState([task]);
-    const config: Config = {
-      ...makeNoValidationConfig({ workflow: defaultWorkflow }),
-      implementerProfiles: {
-        default: 'local-small',
-        profiles: {
-          'cheap-large': {
-            kind: 'api',
-            provider: 'ollama',
-            service: 'ollama',
-            offering: 'local',
-            apiBase: 'http://localhost:11434/v1',
-            model: 'qwen-large',
-            costTier: 'cheap',
-            contextLength: 80_000,
-          },
-          'local-small': {
-            kind: 'api',
-            provider: 'ollama',
-            service: 'ollama',
-            offering: 'local',
-            apiBase: 'http://localhost:11434/v1',
-            model: 'qwen-small',
-            costTier: 'local',
-            contextLength: 10_000,
-          },
-        },
-      },
-    };
+    const config = profilesConfig({ largeWindow: 80_000, smallWindow: 10_000 });
     const selectedImplementer = makeImplementer({
       implement: vi
         .fn()
@@ -381,34 +331,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
     const state = makeImplState([task]);
-    const config: Config = {
-      ...makeNoValidationConfig({ workflow: defaultWorkflow }),
-      implementerProfiles: {
-        default: 'local-small',
-        profiles: {
-          'cheap-large': {
-            kind: 'api',
-            provider: 'ollama',
-            service: 'ollama',
-            offering: 'local',
-            apiBase: 'http://localhost:11434/v1',
-            model: 'qwen-large',
-            costTier: 'cheap',
-            contextLength: 32768,
-          },
-          'local-small': {
-            kind: 'api',
-            provider: 'ollama',
-            service: 'ollama',
-            offering: 'local',
-            apiBase: 'http://localhost:11434/v1',
-            model: 'qwen-small',
-            costTier: 'local',
-            contextLength: 100,
-          },
-        },
-      },
-    };
+    const config = profilesConfig({ largeWindow: 32768, smallWindow: 100 });
     const selectedImplementer = makeImplementer({
       isAvailable: vi.fn().mockResolvedValue(false),
       implement: vi.fn(),

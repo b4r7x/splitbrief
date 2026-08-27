@@ -1,5 +1,6 @@
 import type { BriefGenerationRef } from '../../../core/schemas/brief-owner.js';
 import type { Task } from '../../../core/schemas/task.js';
+import { canonicalJSON } from '../../../utils/canonical-json.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 
 /**
@@ -26,10 +27,10 @@ export function briefGenerationRefFor(opts: {
     action: task.action,
     dependsOn: task.dependsOn,
   }));
-  const tasksDigest = sha256Hex(JSON.stringify(opts.tasks));
+  const tasksDigest = sha256Hex(canonicalJSON(opts.tasks));
   return {
     generationId: `brief-${opts.epochId}-${tasksDigest.slice(0, 16)}`,
-    manifestDigest: sha256Hex(JSON.stringify(taskManifest)),
+    manifestDigest: sha256Hex(canonicalJSON(taskManifest)),
     tasksDigest,
     qualityDigest: opts.qualityDigest,
     programId: null,

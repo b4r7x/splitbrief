@@ -166,15 +166,15 @@ describe('useCommandCompletion submit routing', () => {
     ui.unmount();
   });
 
-  it('forwards an argument-bearing command unchanged on Enter', async () => {
+  it.each(['/copy path', '/queue clear'])('forwards %s unchanged on Enter', async (typed) => {
     const { ui, commandCalls, submits } = renderComposer();
 
     await flushEffects();
-    ui.stdin.write('/copy path');
+    ui.stdin.write(typed);
     await tick(20);
     await vi.waitFor(
       () => {
-        expect(ui.lastFrame()).toContain('/copy path');
+        expect(ui.lastFrame()).toContain(typed);
       },
       { timeout: 5000 },
     );
@@ -182,35 +182,12 @@ describe('useCommandCompletion submit routing', () => {
     ui.stdin.write(ENTER);
     await vi.waitFor(
       () => {
-        expect(commandCalls).toEqual(['/copy path']);
+        expect(commandCalls).toEqual([typed]);
       },
       { timeout: 5000 },
     );
 
     expect(submits).toEqual([]);
-    ui.unmount();
-  });
-
-  it('forwards /queue clear unchanged on Enter', async () => {
-    const { ui, commandCalls } = renderComposer();
-
-    await flushEffects();
-    ui.stdin.write('/queue clear');
-    await tick(20);
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame()).toContain('/queue clear');
-      },
-      { timeout: 5000 },
-    );
-    await flushEffects();
-    ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => {
-        expect(commandCalls).toEqual(['/queue clear']);
-      },
-      { timeout: 5000 },
-    );
     ui.unmount();
   });
 

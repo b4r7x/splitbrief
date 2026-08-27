@@ -9,7 +9,7 @@ import { customRunnerSecurityPosture } from '../runners/custom-trust.js';
 import type { ConfiguredCustomRunner } from '../runners/custom-trust.js';
 import type { RunnerGate } from '../runners/prepared-execution.js';
 import type { CustomRunnerRuntimePort } from '../runners/types.js';
-import { customRunnerAdmissionError } from '../runners/trust.js';
+import { customRunnerAdmissionError } from '../runners/custom-launchability.js';
 import {
   configuredPlanner,
   createCommandInvokeTestFixtures,
@@ -107,9 +107,6 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
               return prepared.reviewAfterChild();
             },
             readWithReceiptAfterChild: (readInput) => prepared.readWithReceiptAfterChild(readInput),
-            get receipt() {
-              return prepared.receipt;
-            },
             getReceipt: () => prepared.getReceipt(),
             dispose: async () => {
               operations.push('dispose');
@@ -159,6 +156,9 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
 
   it('delivers direct planner artifact text as an immutable review without a candidate path', async () => {
     const { projectDir, stateDir } = testProject('configured-direct-candidate-race');
+    let seenReview: unknown;
+    let seenFrozen = false;
+    let approvalRequests = 0;
     const planner = await createConfiguredCustomPlanner(
       configuredPlanner({
         contract: 'direct',
@@ -169,11 +169,9 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
         projectDir,
         stateDir,
         onApprovalNeeded: async (_type, review) => {
-          expect(review).toEqual({
-            label: 'Custom planner artifact',
-            text: 'original artifact',
-          });
-          expect(Object.isFrozen(review)).toBe(true);
+          approvalRequests += 1;
+          seenReview = review;
+          seenFrozen = Object.isFrozen(review);
           return { approved: true };
         },
       }),
@@ -183,6 +181,9 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
       expect.objectContaining({ text: 'original artifact' }),
     );
 
+    expect(approvalRequests).toBe(1);
+    expect(seenReview).toEqual({ label: 'Custom planner artifact', text: 'original artifact' });
+    expect(seenFrozen).toBe(true);
     expect(existsSync(reviewCandidateRoot(projectDir))).toBe(false);
   });
 

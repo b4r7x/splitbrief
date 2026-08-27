@@ -27,30 +27,6 @@ import { matches } from '../../utils/error.js';
 import { RPC_MAX_FRAME_BYTES } from './types.js';
 import { runRpc } from './run/host.js';
 
-const { applyRecoveryActionMock, createPlannerMock } = vi.hoisted(() => ({
-  applyRecoveryActionMock: vi.fn(),
-  createPlannerMock: vi.fn(),
-}));
-
-vi.mock('../../engine/runners/factory.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../engine/runners/factory.js')>();
-  return { ...actual, createPlanner: createPlannerMock };
-});
-
-vi.mock('../../engine/orchestrator/recovery/actions.js', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('../../engine/orchestrator/recovery/actions.js')>();
-  return {
-    ...actual,
-    applyRecoveryAction: (
-      options: Parameters<typeof actual.applyRecoveryAction>[0],
-    ): ReturnType<typeof actual.applyRecoveryAction> => {
-      applyRecoveryActionMock(options);
-      return actual.applyRecoveryAction(options);
-    },
-  };
-});
-
 const isRpcShuttingDown = matches('rpc-shutting-down');
 
 let dirs: string[] = [];
@@ -520,11 +496,8 @@ describe('runRpc', () => {
     expect(ownerAuthority.kind).toBe('fenced');
     const config = makeConfig({
       planner: {
-        kind: 'api',
-        provider: 'openrouter',
-        apiBase: 'https://openrouter.ai/api/v1',
-        model: 'planner-model',
-        apiKey: 'prepared-secret',
+        kind: 'shell',
+        command: 'planner-shell',
       },
       implementerProfiles: {
         default: 'small',
@@ -546,11 +519,10 @@ describe('runRpc', () => {
     });
     const gates = Object.freeze<RunnerGate[]>([
       {
-        kind: 'api',
+        kind: 'shell',
         slot: { role: 'planner' },
         preparationId: 'rpc-preparation',
-        provider: 'openrouter',
-        endpointOrigin: 'https://openrouter.ai',
+        command: { kind: 'validated-config' },
       },
     ]);
     const prepared = preparedExecution(projectDir, sessionId, {
@@ -568,11 +540,6 @@ describe('runRpc', () => {
     });
     const workflowTurn = Promise.withResolvers<void>();
     let receivedOptions: RunWorkflowOptions | undefined;
-    applyRecoveryActionMock.mockReset();
-    createPlannerMock.mockReset();
-    createPlannerMock.mockResolvedValue({
-      capabilities: { supportsSelfSummarisation: false },
-    });
 
     const run = runRpc({
       prepared,
@@ -600,23 +567,13 @@ describe('runRpc', () => {
     expect(receivedOptions?.prepared.gates).toBe(prepared.gates);
     expect(receivedOptions?.retryProfileOverride).toBe('bigger');
     expect(Object.isFrozen(prepared.config)).toBe(true);
-    expect(applyRecoveryActionMock).toHaveBeenCalledOnce();
-    expect(applyRecoveryActionMock.mock.calls[0]?.[0]?.config).toBe(prepared.config);
 
     input.write('{"type":"slash","command":"/compact-transcript"}\n');
     await vi.waitFor(() => {
-      expect(createPlannerMock).toHaveBeenCalledOnce();
-    });
-    const [compactionConfig, compactionAuthority] = createPlannerMock.mock.calls[0] ?? [];
-    expect(compactionConfig).toBe(prepared.config);
-    expect(compactionAuthority).toMatchObject({
-      preparationId: prepared.preparationId,
-      slot: { role: 'planner' },
-    });
-    expect(compactionAuthority?.gates).toBe(prepared.gates);
-    await vi.waitFor(() => {
       expect(chunks.join('')).toContain('does not support transcript compaction');
     });
+    expect(chunks.join('')).not.toContain('runner-gate-mismatch');
+    expect(chunks.join('')).not.toContain('does not match the prepared planner context');
 
     workflowTurn.resolve();
     await run;

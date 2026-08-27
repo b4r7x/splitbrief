@@ -175,6 +175,19 @@ describe('typed candidate contracts', () => {
     expect(evidence.rawCapture.stderr).not.toContain('secret-value');
     expect(evidence.rawCapture.stdout).not.toContain('/Users/private');
   });
+
+  it('accepts evidence whose secret assignment is followed by more text', () => {
+    const evidence = normalizeCandidateEvidence({
+      rawCapture: {
+        candidateId: 'example-cli',
+        role: 'implementer' as const,
+        contractSha256: 'a'.repeat(64),
+        stdout: 'token: abc123 and more text',
+      },
+      verdict: 'OMIT',
+    });
+    expect(evidence.rawCapture.stdout).toBe('token: [REDACTED] and more text');
+  });
 });
 
 describe('role-singular CLI contracts and prompt transport', () => {

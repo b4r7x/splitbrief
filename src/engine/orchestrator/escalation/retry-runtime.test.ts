@@ -23,7 +23,7 @@ import type { RunnerGate } from '../../runners/prepared-execution.js';
 import { resolveConfiguredCustomRunner } from '../../runners/configured-custom.js';
 import { customRunnerSecurityPosture } from '../../runners/custom-trust.js';
 import { prepareCustomRunnerAdmission } from '../../runners/custom-admission.js';
-import { customRunnerAdmissionError } from '../../runners/trust.js';
+import { customRunnerAdmissionError } from '../../runners/custom-launchability.js';
 import { createStagedProject } from '../approval/staged-project.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createValidator } from '../validation/run.js';
@@ -285,28 +285,18 @@ describe('stateForRetryProfile', () => {
     expect(result.implementerModel).toBe('gpt-4');
   });
 
-  it('preserves existing implementerModel when profile model is unchanged', () => {
+  it('drops implementerModel when the profile config carries no model', () => {
     const state = makeImplState([], { implementerTool: 'ollama', implementerModel: 'qwen' });
     const profile = {
       name: 'test',
-      config: {
-        kind: 'api' as const,
-        provider: 'openai',
-        service: 'openai',
-        offering: 'payg' as const,
-        apiBase: 'https://api.openai.com/v1',
-        apiKey: 'key',
-        model: 'qwen',
-        costTier: 'frontier' as const,
-        contextLength: 8192,
-      },
-      costTier: 'frontier' as const,
+      config: { kind: 'cli' as const, tool: 'aider' as const },
+      costTier: 'local' as const,
       capabilities: { writesFiles: 'direct' as const },
       isDefault: false,
     };
     const result = stateForRetryProfile(state, profile);
-    expect(result.implementerTool).toBe('openai');
-    expect(result.implementerModel).toBe('qwen');
+    expect(result.implementerTool).toBe('aider');
+    expect('implementerModel' in result).toBe(false);
   });
 });
 

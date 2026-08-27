@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   admitPlanningArtifact,
-  planningArtifactError,
   type PlanningArtifactPhase,
 } from './planning-artifact-admission.js';
 
@@ -179,19 +178,23 @@ describe('planning artifact admission', () => {
     );
   });
 
-  it('exposes a typed error factory without retaining rejected content', () => {
-    const failure = planningArtifactError.invalid({
-      phase: 'specifying',
-      filename: 'spec.md',
-      missingShape: 'Markdown heading',
-    });
+  it('does not retain rejected artifact content in the thrown error', () => {
+    let thrown: unknown;
+    try {
+      admitPlanningArtifact({
+        phase: 'specifying',
+        filename: 'spec.md',
+        text: 'Which scope should tasks.md cover?\nPlease explain the intended boundaries.',
+      });
+    } catch (err) {
+      thrown = err;
+    }
 
-    expect(failure.kind).toBe('planning-invalid-artifact');
-    expect(failure.data).toEqual({
-      phase: 'specifying',
-      filename: 'spec.md',
-      missingShape: 'Markdown heading',
+    expect(thrown).toMatchObject({
+      kind: 'planning-invalid-artifact',
+      data: { phase: 'specifying', filename: 'spec.md', missingShape: 'Markdown heading' },
     });
-    expect(failure.message).not.toContain('Which scope');
+    expect(JSON.stringify(thrown)).not.toContain('Which scope');
+    expect((thrown as { message: string }).message).not.toContain('Which scope');
   });
 });

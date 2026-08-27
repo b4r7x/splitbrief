@@ -1,7 +1,7 @@
 import type {
   BriefRecoveryProjectionV1,
   RecoveryBlocker,
-} from '../../core/schemas/brief-recovery.js';
+} from '../../core/schemas/brief-recovery/document.js';
 import type { BriefQualityReport } from '../../engine/spec/brief-quality.js';
 import type { BriefReadinessGateReport } from '../../engine/orchestrator/planning/brief-readiness-gate.js';
 import {
@@ -9,6 +9,7 @@ import {
   truncateTerminalDisplayText,
 } from '../../utils/display-text.js';
 import { countNoun } from '../../utils/pluralize.js';
+import { assertNever } from '../../utils/type-guards.js';
 
 export type BriefReviewFormatInput = Readonly<{
   projection: BriefRecoveryProjectionV1;
@@ -69,10 +70,8 @@ export function formatBriefRecoveryStatus(
       return 'CONTRACT READY';
     case 'rejected':
       return 'CONTRACT BLOCKED';
-    default: {
-      const exhaustive: never = projection.status;
-      return exhaustive;
-    }
+    default:
+      return assertNever(projection.status);
   }
 }
 
@@ -114,10 +113,8 @@ function blockerCause(blocker: RecoveryBlocker): string {
       return `STORAGE: ${sanitizedCauseText(blocker.message)}`;
     case 'unresolved':
       return `UNRESOLVED RETRY ${sanitizeTerminalDisplayText(blocker.operationId)}`;
-    default: {
-      const exhaustive: never = blocker;
-      return exhaustive;
-    }
+    default:
+      return assertNever(blocker);
   }
 }
 
@@ -170,10 +167,8 @@ export function formatBriefRecoveryConsequence(
       return 'SO approval is blocked by operational readiness checks';
     case 'rejected':
       return 'SO this Brief epoch is closed';
-    default: {
-      const exhaustive: never = projection.status;
-      return exhaustive;
-    }
+    default:
+      return assertNever(projection.status);
   }
 }
 
@@ -201,10 +196,8 @@ export function formatBriefRecoveryAction(
       return 'NOW edit or reject';
     case 'rejected':
       return 'NOW start a new Brief epoch';
-    default: {
-      const exhaustive: never = projection.status;
-      return exhaustive;
-    }
+    default:
+      return assertNever(projection.status);
   }
 }
 
@@ -249,12 +242,9 @@ export function formatEvidenceSpine(input: BriefReviewFormatInput): EvidenceSpin
   };
 }
 
-export function formatEvidenceSpineLines(
-  input: BriefReviewFormatInput,
-  maxCells = Number.POSITIVE_INFINITY,
-): string[] {
+export function formatEvidenceSpineLines(input: BriefReviewFormatInput): string[] {
   const lines = formatEvidenceSpine(input);
-  const cellLimit = input.width ?? maxCells;
+  const cellLimit = input.width ?? Number.POSITIVE_INFINITY;
   return [
     lines.status,
     lines.evidence,

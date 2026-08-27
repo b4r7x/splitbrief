@@ -11,10 +11,7 @@ import { persistReadyExecutionState } from '#testing/helpers/persisted-execution
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
-import {
-  parsePreparedConfig,
-  type PreparedExecution,
-} from '../../../src/engine/runners/prepared-execution.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 
 const dirs: string[] = [];
 
@@ -32,25 +29,23 @@ describe('EventBus end-to-end flow', { timeout: 90_000 }, () => {
     const recorded: EngineEvent[] = [];
     const { callbacks } = makeCallbacks();
 
-    const config = parsePreparedConfig(
-      makeConfig({
-        planner: {
-          kind: 'shell',
-          command: 'node',
-          args: ['-e', `process.stdout.write(${JSON.stringify(TASK_MARKDOWN)})`],
-        },
-        implementer: {
-          kind: 'shell',
-          command: 'node',
-          args: ['-e', `process.stdout.write(${JSON.stringify(CODE_RESPONSE)})`],
-          model: 'fake-model',
-          contextLength: 4096,
-          temperature: 0,
-        },
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { mode: 'quick', persistTranscript: false, maxRetries: 1 },
-      }),
-    );
+    const config = makeConfig({
+      planner: {
+        kind: 'shell',
+        command: 'node',
+        args: ['-e', `process.stdout.write(${JSON.stringify(TASK_MARKDOWN)})`],
+      },
+      implementer: {
+        kind: 'shell',
+        command: 'node',
+        args: ['-e', `process.stdout.write(${JSON.stringify(CODE_RESPONSE)})`],
+        model: 'fake-model',
+        contextLength: 4096,
+        temperature: 0,
+      },
+      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      workflow: { mode: 'quick', persistTranscript: false, maxRetries: 1 },
+    });
     const feature = 'add foo';
     const sessionId = 'event-bus-flow-session';
     const preparationId = 'event-bus-flow-preparation';
@@ -59,37 +54,37 @@ describe('EventBus end-to-end flow', { timeout: 90_000 }, () => {
       sessionId,
       generation: '3a333333-3333-4333-8333-333333333333',
     };
-    const resumeState = persistReadyExecutionState(projectDir, sessionId, {
-      ...createInitialState(feature),
-      phase: 'implementing',
-      mode: 'quick',
-      plannerTool: 'shell',
-      implementerTool: 'shell',
-      tasks: [
-        makeTask({
-          scope: {
-            inBounds: ['Modify only `src/hello.ts`.'],
-            outOfBounds: ['Do not touch anything outside the task file.'],
-          },
-          evidence: ['brief-quality.json confirms the task brief is complete'],
-          typeDefs: 'type HelloModule = { greeting: string }',
-        }),
-      ],
-    });
-    const prepared: PreparedExecution = {
-      purpose: 'new-workflow',
+    const resumeState = persistReadyExecutionState(
+      { projectDir, sessionId },
+      {
+        ...createInitialState(feature),
+        phase: 'implementing',
+        mode: 'quick',
+        plannerTool: 'shell',
+        implementerTool: 'shell',
+        tasks: [
+          makeTask({
+            scope: {
+              inBounds: ['Modify only `src/hello.ts`.'],
+              outOfBounds: ['Do not touch anything outside the task file.'],
+            },
+            evidence: ['brief-quality.json confirms the task brief is complete'],
+            typeDefs: 'type HelloModule = { greeting: string }',
+          }),
+        ],
+      },
+    );
+    const prepared = makePreparedExecution({
+      projectDir,
+      sessionId,
+      feature,
       config,
       preparationId,
-      report: {
-        generatedAt: '2026-08-04T00:00:00.000Z',
-        projectDir,
-        status: 'ready',
-        counts: { ok: 2, info: 0, warning: 0, blocker: 0 },
-        nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
-        sections: [],
-        metadata: {},
-      },
-      gates: [
+      active,
+      resumeState,
+      purpose: 'new-workflow',
+      allowHooks: true,
+      gates: () => [
         {
           kind: 'shell',
           slot: { role: 'planner' },
@@ -103,9 +98,7 @@ describe('EventBus end-to-end flow', { timeout: 90_000 }, () => {
           command: { kind: 'validated-config' },
         },
       ],
-      session: { kind: 'existing', ref: { projectDir, sessionId }, active },
-      runtime: { feature, allowRepoRunners: false, allowHooks: true, resumeState },
-    };
+    });
 
     await runWorkflow({
       prepared,
@@ -129,7 +122,6 @@ describe('EventBus end-to-end flow', { timeout: 90_000 }, () => {
 
     const idx = (t: EngineEvent['type']) => types.indexOf(t);
 
-    // Canonical ordering invariants:
     expect(idx('workflow_resumed')).toBeLessThan(idx('workflow_config'));
     expect(idx('workflow_config')).toBeLessThan(idx('task_started'));
     expect(idx('task_started')).toBeLessThan(idx('implementer_generate_running'));

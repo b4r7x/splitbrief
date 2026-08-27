@@ -98,7 +98,6 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
     .filter((file) => !isSessionArtifact(file))
     .sort();
 
-  // Files attributed to task execution by the evidence ledger.
   const runAttributed = new Set<string>();
   if (input.ledger) {
     for (const entry of input.ledger.tasks) {

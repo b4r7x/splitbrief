@@ -2,8 +2,11 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../components/theme.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
 import { glyph } from '../../lib/glyphs.js';
-import { getTerminalCellWidth, padTerminalDisplayTextEnd } from '../../utils/display-text.js';
-import { truncateWithEllipsis } from '../../utils/truncate.js';
+import {
+  getTerminalCellWidth,
+  padTerminalDisplayTextEnd,
+  truncateTerminalDisplayText,
+} from '../../utils/display-text.js';
 import { CREW_COLUMN_GAP, CREW_MARKER_GUTTER, CREW_RAIL_WIDTH } from './format.js';
 
 /** Preset labels sit on the seat label edge: the marker gutter plus the rail column. */
@@ -20,7 +23,7 @@ export function PresetRowView({ preset, isCursor, width, labelWidth }: PresetRow
   const t = useTheme();
   const gutter = isCursor ? `${glyph('liveBar')} ` : ' '.repeat(CREW_MARKER_GUTTER);
 
-  const description = truncateWithEllipsis(
+  const description = truncateTerminalDisplayText(
     preset.description,
     width - LABEL_COLUMN - labelWidth - getTerminalCellWidth(CREW_COLUMN_GAP),
   );

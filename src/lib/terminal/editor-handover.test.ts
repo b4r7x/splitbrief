@@ -231,9 +231,6 @@ describe('terminal handover for $EDITOR', () => {
     suspendTerminalForEditor({ fullscreen: false, mouse: false, sourceStdin: stdin });
     resumeTerminalAfterEditor({ fullscreen: false, mouse: false, sourceStdin: stdin });
 
-    expect(written).not.toContain(terminalSequences.exitAltBuffer);
-    expect(written).not.toContain(terminalSequences.enterAltBuffer);
-    expect(written).not.toContain(terminalSequences.disableMouseTracking);
     expect(written).toEqual([terminalSequences.showCursor, terminalSequences.hideCursor]);
     expect(calls).toEqual(['pause', 'resume']);
   });

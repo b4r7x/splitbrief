@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CliInstallationStateSchema,
   CliReadinessResultSchema,
   deriveCliReadiness,
+  type CliInstallationState,
   type CliReadinessFacts,
 } from './readiness.js';
-import type { CliInstallationState } from './readiness.js';
-
-const INSTALLATION_STATES: readonly CliInstallationState[] = ['installed', 'unavailable'];
 
 const executable = {
   path: '/opt/splitbrief/bin/codex',
@@ -31,7 +30,8 @@ function readyFacts(overrides: Partial<CliReadinessFacts> = {}): CliReadinessFac
 
 describe('CLI runner readiness', () => {
   it('keeps installation state explicit and closed', () => {
-    expect(INSTALLATION_STATES).toEqual(['installed', 'unavailable']);
+    const states: readonly CliInstallationState[] = CliInstallationStateSchema.options;
+    expect(states).toEqual(['installed', 'unavailable']);
   });
 
   it.each([

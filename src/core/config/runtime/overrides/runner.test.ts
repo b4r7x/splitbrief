@@ -231,6 +231,10 @@ describe('applyCLIOverrides — unusable provider overrides', () => {
 });
 
 describe('applyCLIOverrides — runner commands', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('uses shell config for planner command override without explicit tool', () => {
     const result = applyCLIOverrides(baseConfig, {
       planner: { command: 'custom-planner' },
@@ -439,11 +443,10 @@ describe('applyCLIOverrides — runner commands', () => {
   });
 
   it('leaves the review seat with the planner when the reviewer override is discarded', () => {
-    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    vi.spyOn(process.stderr, 'write').mockReturnValue(true);
     const result = applyRunnerOverrides('reviewer', { apiKey: 'env:MY_KEY' }, baseConfig);
 
     expect(result.reviewer).toBeUndefined();
-    stderr.mockRestore();
   });
 
   it('names the reviewer seat when a reviewer override fails validation', () => {

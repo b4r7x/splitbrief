@@ -167,7 +167,6 @@ function missingCliStartGate(tool: CliToolId): never {
  * ladder revalidates them at resolve time.
  */
 function receiptStillMatchesDisk(executable: CliExecutableTrust): boolean {
-  if (executable === null || executable === undefined) return false;
   if (!('executableIdentity' in executable)) return true;
   const identity = executable.executableIdentity;
   const expected = parseDigestBoundExecutableFingerprint(identity.fingerprint);

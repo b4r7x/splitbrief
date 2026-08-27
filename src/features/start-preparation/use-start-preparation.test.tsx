@@ -11,7 +11,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { Composer } from '../../components/composer/composer.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
-import { readActive } from '../../core/sessions/lifecycle.js';
+import { readActive } from '../../core/sessions/active-pointer.js';
 import {
   createSessionPreparationCandidate,
   prepareNewSession,

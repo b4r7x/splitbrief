@@ -91,10 +91,7 @@ export type TaskDispatchLedgerOptions = Readonly<{
 }>;
 
 export type TaskDispatchLedger = Readonly<{
-  claimDispatch: (
-    attemptId: TaskCompilationAttemptId | string,
-    invoke?: () => void,
-  ) => DispatchClaim;
+  claimDispatch: (attemptId: TaskCompilationAttemptId | string) => DispatchClaim;
   snapshot: () => DispatchLedgerSnapshot;
 }>;
 
@@ -151,10 +148,7 @@ export function createTaskDispatchLedger({
     ...(restore === undefined ? {} : { restore }),
   });
 
-  const claimDispatch = (
-    attemptId: TaskCompilationAttemptId | string,
-    invoke?: () => void,
-  ): DispatchClaim => {
+  const claimDispatch = (attemptId: TaskCompilationAttemptId | string): DispatchClaim => {
     const parsedAttempt = TaskCompilationAttemptIdSchema.safeParse(attemptId);
     if (!parsedAttempt.success) {
       const snapshot = sharedLedger.snapshot();
@@ -166,10 +160,7 @@ export function createTaskDispatchLedger({
         dispatchLimit: snapshot.dispatchLimit,
       };
     }
-    const currentAttemptId = parsedAttempt.data;
-    const claim = sharedLedger.claim(currentAttemptId);
-    if (claim.kind === 'claimed') invoke?.();
-    return claim;
+    return sharedLedger.claim(parsedAttempt.data);
   };
 
   return {

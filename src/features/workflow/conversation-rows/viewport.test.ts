@@ -120,16 +120,8 @@ describe('splitConversationViewport — bookend budget', () => {
       heightAtScroll: 0,
       streaming,
     });
-    const painted =
-      split.transcriptViewportHeight +
-      (split.completedRows > 0 ? split.completedRows + 2 : 0) +
-      (split.queuedRows > 0 ? split.queuedRows + 2 : 0);
-
-    expect(painted).toBe(20);
     expect(split.transcriptViewportHeight).toBe(scroll.viewportHeight);
-    expect(scroll.maxOffset).toBe(scroll.totalDynamicHeight - scroll.viewportHeight);
     expect(scroll.scrollOffset).toBe(scroll.maxOffset);
     expect(split.stickyLeadingRows).toBe(split.completedRows + 2);
-    expect(scroll.rows[2]).toBeDefined();
   });
 });

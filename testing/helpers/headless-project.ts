@@ -8,7 +8,7 @@ import { resolveImplementerProfiles } from '../../src/core/config/accessors/impl
 import { configuredReviewerRunner } from '../../src/core/config/accessors/reviewer-runner.js';
 import { loadConfig } from '../../src/core/config/load/io.js';
 import { configForSessionTranscriptPolicy } from '../../src/core/sessions/io.js';
-import { reactivateExistingSession } from '../../src/core/sessions/lifecycle.js';
+import { reactivateExistingSession } from '../../src/core/sessions/active-pointer.js';
 import type { WorkflowState } from '../../src/core/schemas/workflow.js';
 import {
   parsePreparedConfig,

@@ -8,10 +8,8 @@ import type {
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
 import { isUserEditConflictAction } from '../../engine/events/workflow-events.js';
 import { normalizeUserEditConflictAction } from '../../engine/orchestrator/user-edit/conflicts.js';
-import type {
-  BriefRecoveryProjectionV1,
-  RecoveryResultV1,
-} from '../../core/schemas/brief-recovery.js';
+import type { BriefRecoveryProjectionV1 } from '../../core/schemas/brief-recovery/document.js';
+import type { RecoveryResultV1 } from '../../core/schemas/brief-recovery.js';
 import { validateConfirmApprovalFields, type ApprovalGateResult } from './gates.js';
 import { withRecoveryStatus, type RpcRecoveryStatus } from './run/status.js';
 

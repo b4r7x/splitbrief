@@ -16,6 +16,7 @@ import type { Session } from '../../core/schemas/session.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { SessionsPicker } from './sessions.js';
 import { flushEffects, tick } from '#testing/helpers/ink.js';
+import { makeResumeAuthorityDeps } from '#testing/helpers/factories/state-authority.js';
 
 let tmp: string;
 
@@ -207,7 +208,10 @@ describe('SessionsPicker', () => {
     const instance = render(
       <SessionsPicker
         deps={{
-          loadState: () => ({ ...createInitialState(session.feature), phase: 'implementing' }),
+          ...makeResumeAuthorityDeps(() => ({
+            ...createInitialState(session.feature),
+            phase: 'implementing',
+          })),
           prepareResume: async () => {
             throw new Error('sessions overlay resume rejected');
           },
@@ -229,96 +233,44 @@ describe('SessionsPicker', () => {
     instance.unmount();
   });
 
-  it('keeps long filter text visible at 80x18', async () => {
-    terminalSizeStore.__testReset({ cols: 80, rows: 18, isSmall: true });
-    writeSessionSummary(
-      tmp,
-      makeSession({
-        id: 'sess-alpha',
-        feature: 'alpha feature',
-        status: 'interrupted',
-        summary: null,
-      }),
-    );
+  it.each([
+    { rows: 18, compact: false },
+    { rows: 10, compact: true },
+    { rows: 6, compact: true },
+  ])(
+    'keeps the title, hint and long filter text visible at 80x$rows',
+    async ({ rows, compact }) => {
+      terminalSizeStore.__testReset({ cols: 80, rows, isSmall: true });
+      writeSessionSummary(
+        tmp,
+        makeSession({
+          id: 'sess-alpha',
+          feature: 'alpha feature',
+          status: 'interrupted',
+          summary: null,
+        }),
+      );
 
-    const instance = render(<SessionsPicker />);
-    await tick(1);
-    await flushEffects();
+      const instance = render(<SessionsPicker />);
+      await tick(1);
+      await flushEffects();
 
-    instance.stdin.write('alpha-feature-filter');
-    await vi.waitFor(() => {
-      expect(instance.lastFrame() ?? '').toContain('alpha-feature');
-    });
+      instance.stdin.write('alpha-feature-filter');
+      await vi.waitFor(() => {
+        expect(instance.lastFrame() ?? '').toContain('alpha-feature');
+      });
 
-    const frame = instance.lastFrame() ?? '';
-    expect(stripAnsiStyles(frame)).toContain('Sessions · 1');
-    expect(frame).toContain('navigate');
+      const frame = instance.lastFrame() ?? '';
+      expect(stripAnsiStyles(frame)).toContain('Sessions · 1');
+      expect(frame).toContain('navigate');
+      if (compact) {
+        expect(frame.split('\n').length).toBeLessThanOrEqual(rows);
+        expect(frame).not.toContain('No matching sessions');
+        expect(frame).not.toContain('╭');
+        expect(frame).not.toContain('╰');
+      }
 
-    instance.unmount();
-  });
-
-  it('keeps title and hint visible when tiny terminals collapse the list', async () => {
-    const terminalRows = 6;
-    terminalSizeStore.__testReset({ cols: 80, rows: terminalRows, isSmall: true });
-    writeSessionSummary(
-      tmp,
-      makeSession({
-        id: 'sess-alpha',
-        feature: 'alpha feature',
-        status: 'interrupted',
-        summary: null,
-      }),
-    );
-
-    const instance = render(<SessionsPicker />);
-    await tick(1);
-    await flushEffects();
-
-    instance.stdin.write('alpha-feature-filter');
-    await vi.waitFor(() => {
-      expect(instance.lastFrame() ?? '').toContain('alpha-feature');
-    });
-
-    const frame = instance.lastFrame() ?? '';
-    expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
-    expect(stripAnsiStyles(frame)).toContain('Sessions · 1');
-    expect(frame).toContain('navigate');
-    expect(frame).not.toContain('No matching sessions');
-
-    instance.unmount();
-  });
-
-  it('uses compact inline filtering at rows=10 when no list rows fit', async () => {
-    const terminalRows = 10;
-    terminalSizeStore.__testReset({ cols: 80, rows: terminalRows, isSmall: true });
-    writeSessionSummary(
-      tmp,
-      makeSession({
-        id: 'sess-alpha',
-        feature: 'alpha feature',
-        status: 'interrupted',
-        summary: null,
-      }),
-    );
-
-    const instance = render(<SessionsPicker />);
-    await tick(1);
-    await flushEffects();
-
-    instance.stdin.write('alpha-feature-filter');
-    await vi.waitFor(() => {
-      const current = instance.lastFrame() ?? '';
-      expect(stripAnsiStyles(current)).toContain('Sessions · 1');
-      expect(current).toContain('alpha-feature');
-    });
-
-    const frame = instance.lastFrame() ?? '';
-    expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
-    expect(frame).toContain('navigate');
-    expect(frame).not.toContain('No matching sessions');
-    expect(frame).not.toContain('╭');
-    expect(frame).not.toContain('╰');
-
-    instance.unmount();
-  });
+      instance.unmount();
+    },
+  );
 });

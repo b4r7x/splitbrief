@@ -67,14 +67,19 @@ export function useInputMode(): UseInputModeResult {
 
   const resolve = (value: ApprovalReviewResult | string): void => {
     const currentMode = modeRef.current;
+    const answersReview = currentMode === 'review' && typeof value === 'object';
+    const answersQuestion = currentMode === 'question' && typeof value === 'string';
+    // A value that does not match the committed mode belongs to a superseded prompt: leaving the
+    // open gate untouched keeps its prompt on screen and its resolver settleable.
+    if (!answersReview && !answersQuestion) return;
     setModeState((state) => ({ ...state, mode: 'normal', hint: '' }));
     controlsStore.clearInputMode();
     questionPromptStore.clearHint();
-    if (currentMode === 'review' && typeof value === 'object') {
+    if (answersReview) {
       const resolver = reviewResolverRef.current;
       reviewResolverRef.current = null;
       resolver?.(value);
-    } else if (currentMode === 'question' && typeof value === 'string') {
+    } else if (typeof value === 'string') {
       const resolver = questionResolverRef.current;
       questionResolverRef.current = null;
       resolver?.(value);

@@ -541,7 +541,5 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
     expect(retryAttempts).toEqual([1, 2]);
     expect(escalateTiers).toEqual([1, 2]);
     expect(result).toEqual({ completed: false, method: 'failed', attempts: expect.any(Number) });
-    expect(result.completed).toBe(false);
-    expect(result.method).toBe('failed');
   });
 });

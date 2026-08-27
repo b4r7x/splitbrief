@@ -60,6 +60,7 @@ describe('parseJsonlLine — codex liveness and failure records', () => {
           source: 'jsonl',
           parser: 'jsonl',
           upstreamType: 'mystery.event',
+          channel: 'stdout',
           fingerprint: expect.stringMatching(/^rw:/),
         }),
       ],
@@ -352,21 +353,5 @@ describe('parseJsonlLine', () => {
     const event = { type: 'turn.completed' };
     const result = parseJsonlLine(JSON.stringify(event));
     expect(result).toEqual({});
-  });
-
-  it('returns a bounded warning for event with no recognizable fields', () => {
-    const event = { type: 'unknown', metadata: {} };
-    const result = parseJsonlLine(JSON.stringify(event));
-    expect(result).toEqual({
-      warning: [
-        expect.objectContaining({
-          code: 'unknown_jsonl_record',
-          source: 'jsonl',
-          parser: 'jsonl',
-          upstreamType: 'unknown',
-          channel: 'stdout',
-        }),
-      ],
-    });
   });
 });

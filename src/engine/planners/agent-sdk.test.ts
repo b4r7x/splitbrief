@@ -21,7 +21,7 @@ afterEach(() => {
 });
 
 describe('createAgentSdkPlanner', () => {
-  it('passes planner read-only tools, plan permission mode, and planner role to the SDK query', async () => {
+  it('passes planner read-only tools and plan permission mode to the SDK query', async () => {
     queryMock.mockImplementationOnce(() =>
       (async function* () {
         yield { type: 'result', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 } };

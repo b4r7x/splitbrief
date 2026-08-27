@@ -180,8 +180,8 @@ describe('parseMarkdownBlocks', () => {
     const compactMarkers = `${'>'.repeat(5000)} safe`;
     const spacedMarkers = `${Array.from({ length: 5000 }, () => '>').join(' ')} safe`;
 
-    expect(() => parseMarkdownBlocks(compactMarkers)).not.toThrow();
-    expect(() => parseMarkdownBlocks(spacedMarkers)).not.toThrow();
+    expect(JSON.stringify(parseMarkdownBlocks(compactMarkers))).toContain('safe');
+    expect(JSON.stringify(parseMarkdownBlocks(spacedMarkers))).toContain('safe');
   });
 
   describe('heading depths 4-6', () => {

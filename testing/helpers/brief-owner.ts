@@ -2,7 +2,7 @@ import type {
   BriefOwnerCommitPort,
   BriefOwnerCommitResult,
 } from '../../src/core/schemas/brief-owner.js';
-import type { BriefRecoveryStateView } from '../../src/core/schemas/brief-recovery.js';
+import type { BriefRecoveryStateView } from '../../src/core/schemas/brief-recovery/document.js';
 
 type TestOwnerCommitOptions = Readonly<{
   onCommit?: ((state: BriefRecoveryStateView) => void) | undefined;

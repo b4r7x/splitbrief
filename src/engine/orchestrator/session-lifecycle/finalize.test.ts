@@ -9,7 +9,7 @@ import {
   readActiveRecord,
   reactivateExistingSession,
   type ActiveSessionReceipt,
-} from '../../../core/sessions/lifecycle.js';
+} from '../../../core/sessions/active-pointer.js';
 import { randomUUID } from 'node:crypto';
 import { activeFile, sessionDir } from '../../../core/paths.js';
 import { createInitialState } from '../../../core/state/machine.js';

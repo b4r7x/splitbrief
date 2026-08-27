@@ -10,7 +10,7 @@ import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import type { PhaseRecoveryBinding } from '../run/phases.js';
-import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery.js';
+import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
 import type { BriefGenerationRef, TaskExecutionPermit } from '../../../core/schemas/brief-owner.js';
 
 export type PlanningPhaseOptions = {
@@ -24,7 +24,6 @@ export type PlanningPhaseOptions = {
   codebaseContext?: string | undefined;
   approveLevel?: ApproveLevel | undefined;
   attachments?: Attachment[] | undefined;
-  deferBriefGate?: boolean | undefined;
   afterSpecReview?: (input: {
     state: WorkflowState;
     tasks: Task[];

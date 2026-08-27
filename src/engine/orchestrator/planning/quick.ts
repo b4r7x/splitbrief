@@ -15,13 +15,14 @@ import { publishProducerGeneration, settleApprovedAdmission } from './brief-publ
 import { planningResultForState, terminalPlanningResult } from './handoff.js';
 import { TASKS_FILE } from '../../../core/paths.js';
 import { PhaseSchema } from '../../../core/schemas/enums.js';
+import { labelError } from '../../../utils/format-errors.js';
 
 function syncRecoveryState(opts: PlanningPhaseOptions, state: typeof opts.state): void {
   if (
     opts.recovery !== undefined &&
     (state.stateRevision ?? 0) > opts.recovery.authority.stateRevision
   ) {
-    opts.recovery.writeState?.(state);
+    opts.recovery.writeState(state);
   }
 }
 
@@ -167,14 +168,14 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
         opts.recovery.authority,
       );
       if (admission.kind === 'rejected') {
-        const rejected = opts.recovery.readState?.() ?? state;
+        const rejected = opts.recovery.readState();
         return terminalPlanningResult(rejected, 'rejected');
       }
       if (admission.kind !== 'ready') {
-        const parked = opts.recovery.readState?.() ?? state;
+        const parked = opts.recovery.readState();
         return parkedResult({ recovery: opts.recovery, sessionId, state: parked });
       }
-      const admitted = opts.recovery.readState?.() ?? state;
+      const admitted = opts.recovery.readState();
       const settled = settleApprovedAdmission({
         ref: { projectDir, sessionId },
         state: admitted,
@@ -192,14 +193,20 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
         return parkedResult({
           recovery: opts.recovery,
           sessionId,
-          state: opts.recovery.readState?.() ?? state,
+          state: opts.recovery.readState(),
         });
       }
       state = settled.state;
       publishPlannerStatus(wctx.bus, state, 'running');
       return planningResultForState({ sessionId, state, tasks: planResult.tasks });
-    } catch {
-      const parked = opts.recovery.readState?.() ?? state;
+    } catch (err) {
+      publishWarning({
+        bus: wctx.bus,
+        phase: state.phase,
+        message: labelError('quick mode: the Task Brief admission failed', err),
+        safety: { category: 'planning', code: 'brief_admission_failed', transcriptSafe: true },
+      });
+      const parked = opts.recovery.readState();
       return parkedResult({ recovery: opts.recovery, sessionId, state: parked });
     }
   }

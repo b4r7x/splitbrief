@@ -252,13 +252,11 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
     await vi.advanceTimersByTimeAsync(100);
     await run;
 
-    const heartbeat = events.find(
-      (e) =>
-        e.type === 'planner_heartbeat' && e.callId === 'planner-call-1' && e.accumulatedTokens > 0,
+    const heartbeat = events.findLast(
+      (e) => e.type === 'planner_heartbeat' && e.callId === 'planner-call-1',
     );
     expect(heartbeat).toBeDefined();
     if (heartbeat?.type === 'planner_heartbeat') {
-      expect(heartbeat.accumulatedTokens).toBeGreaterThan(0);
       expect(heartbeat.accumulatedTokens).toBe(150);
     }
   });

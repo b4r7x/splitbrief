@@ -45,7 +45,7 @@ describe('decideValidationAcceptance', () => {
     ).toEqual({ accepted: false, exemptStages: [], blockingStages: ['test'] });
   });
 
-  it('accepts when nothing fails and when there are no results', () => {
+  it('accepts when every stage passed', () => {
     const results: ValidationResult[] = [{ passed: true, stage: 'typecheck', output: 'ok' }];
     expect(
       decideValidationAcceptance({
@@ -54,6 +54,9 @@ describe('decideValidationAcceptance', () => {
         changedFiles: ['src/foo.ts'],
       }),
     ).toEqual({ accepted: true, exemptStages: [], blockingStages: [] });
+  });
+
+  it('accepts when there are no results', () => {
     expect(
       decideValidationAcceptance({
         results: [],

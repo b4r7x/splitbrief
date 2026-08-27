@@ -1,48 +1,60 @@
-import { createHash } from 'node:crypto';
+import type { TaskCompilationOperationEnvelope } from '../../../core/schemas/task-compilation.js';
 import type {
   AttemptBase,
-  BriefAdmissionInput,
-  BriefRecoveryAction,
-  BriefRecoveryCommand,
-  BriefRecoveryController,
-  BriefRecoveryControllerDeps,
+  PlannerAttemptSettlement,
+  RecoveryReceipt,
+} from '../../../core/schemas/brief-recovery/attempt.js';
+import type { BriefRecoveryControllerDeps } from '../../../core/schemas/brief-owner.js';
+import type {
+  BudgetAccountingKey,
+  BudgetReservation,
+  RecoveryCallEstimate,
+} from '../../../core/schemas/brief-recovery/budget.js';
+import type {
   BriefRecoveryInspection,
   BriefRecoveryProjectionV1,
   BriefRecoveryStateView,
   BriefRecoveryV1,
-  BriefRecoveryMigrationInput,
-  BudgetAccountingKey,
-  BudgetReservation,
-  EvidenceRef,
-  BriefQualityReportEvidence,
-  MigrationResultV1,
   NormalBriefRecoveryV1,
-  PlannerAttemptSettlement,
+} from '../../../core/schemas/brief-recovery/document.js';
+import type {
+  BriefAdmissionInput,
+  BriefRecoveryCommand,
+  BriefRecoveryController,
+  BriefRecoveryMigrationInput,
+  MigrationResultV1,
   QueueBriefInput,
   QueueResultV1,
-  RecoveryCallEstimate,
-  RecoveryOperationEnvelope,
-  RecoveryProviderResult,
-  RecoveryReceipt,
-  RecoveryRefusalReceipt,
   RecoveryResultV1,
   StateAuthorityReceipt,
 } from '../../../core/schemas/brief-recovery.js';
-import { mapV3StateToV4, parseLegacyWorkflowState } from '../../../core/state/persistence.js';
+import type {
+  BriefQualityReportEvidence,
+  BriefRecoveryAction,
+  EvidenceRef,
+} from '../../../core/schemas/brief-recovery/primitives.js';
+import type { RecoveryProviderResult } from '../../../core/schemas/brief-recovery/provider-call.js';
+import type { RecoveryRefusalReceipt } from '../../../core/schemas/brief-recovery/refusal.js';
+import { parseLegacyWorkflowState } from '../../../core/state/migration/legacy-state.js';
+import { mapV3StateToV4 } from '../../../core/state/migration/map-v3.js';
 import { WorkflowStateSchema } from '../../../core/schemas/workflow.js';
+import { PlannerAttemptSettlementSchema } from '../../../core/schemas/brief-recovery/attempt.js';
 import {
-  BriefAdmissionInputSchema,
-  BriefRecoveryCommandSchema,
   BriefRecoveryInspectionSchema,
   BriefRecoveryProjectionV1Schema,
   BriefRecoveryStateViewSchema,
   BriefRecoveryV1Schema,
-  BriefRecoveryMigrationInputSchema,
-  PlannerAttemptSettlementSchema,
-  QueueBriefInputSchema,
-  RecoveryProviderResultSchema,
-} from '../../../core/schemas/brief-recovery.js';
+} from '../../../core/schemas/brief-recovery/document.js';
 import {
+  BriefAdmissionInputSchema,
+  BriefRecoveryCommandSchema,
+  BriefRecoveryMigrationInputSchema,
+  QueueBriefInputSchema,
+} from '../../../core/schemas/brief-recovery.js';
+import { RecoveryProviderResultSchema } from '../../../core/schemas/brief-recovery/provider-call.js';
+import {
+  type RecoveryMutation,
+  type RecoverySettlement,
   createBriefRecoveryState,
   createStorageBlockedRecovery,
   editBriefRecovery,
@@ -53,16 +65,15 @@ import {
   rejectBriefRecovery,
   settleRecoveryOperation,
   startRecoveryOperation,
-  type RecoverySettlement,
-  type RecoveryMutation,
 } from './brief-recovery.js';
-import { reserveProviderDependentRecoveryCall } from '../budget/enforce.js';
+import { reserveProviderDependentRecoveryCall } from '../budget/recovery-reservation.js';
 import {
   BRIEF_QUALITY_RULE_VERSION,
   briefQualityReportBytes,
 } from '../../spec/brief-quality-file.js';
 import { canonicalJSON } from '../../../utils/canonical-json.js';
 import { sha256Hex } from '../../../utils/sha256.js';
+import { isRecord } from '../../../utils/type-guards.js';
 import { PhaseSchema } from '../../../core/schemas/enums.js';
 import type {
   BriefOwnerCommitResult,
@@ -114,10 +125,6 @@ const REFUSAL_EVENT_CATEGORY: Readonly<
   provider: 'provider',
 };
 
-function hashText(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
-}
-
 /**
  * The bounded single-call operation envelope for a provider-dependent retry
  * reservation: one dispatch, the estimate's token upper bounds, and a
@@ -127,7 +134,7 @@ function hashText(value: string): string {
 function recoveryRetryEnvelope(
   prompt: string,
   estimate: RecoveryCallEstimate,
-): RecoveryOperationEnvelope {
+): TaskCompilationOperationEnvelope {
   const normalizedOutputBytes = estimate.outputTokens * 4;
   return {
     version: 1,
@@ -220,17 +227,26 @@ function baseResult(
   };
 }
 
+const BLOCKED_CODES = [
+  'brief_contract_blocked',
+  'brief_quality_unavailable',
+  'brief_budget_exhausted',
+  'brief_budget_unknown',
+  'brief_no_progress',
+  'brief_storage_invalid',
+  'brief_provider_error',
+] as const;
+
+type BlockedCode = (typeof BLOCKED_CODES)[number];
+
+function blockedCode(code: string | undefined): BlockedCode {
+  return BLOCKED_CODES.find((candidate) => candidate === code) ?? 'brief_contract_blocked';
+}
+
 function blockedResult(
   sessionId: string,
   view: BriefRecoveryStateView,
-  code:
-    | 'brief_contract_blocked'
-    | 'brief_quality_unavailable'
-    | 'brief_budget_exhausted'
-    | 'brief_budget_unknown'
-    | 'brief_no_progress'
-    | 'brief_storage_invalid'
-    | 'brief_provider_error',
+  code: BlockedCode,
   reason?: string,
   operationId?: string | null,
 ): RecoveryResultV1 {
@@ -323,15 +339,7 @@ function authorityResult(
   }
   if (mutation.kind === 'refused') {
     const reason = mutation.reason ?? 'Recovery command is not allowed in the current state.';
-    const code = reason.includes('budget')
-      ? 'brief_budget_exhausted'
-      : reason.includes('no-progress')
-        ? 'brief_no_progress'
-        : 'brief_contract_blocked';
-    return blockedResult(sessionId, view, code, reason, operationId);
-  }
-  if (mutation.kind === 'stale-ignored') {
-    return blockedResult(sessionId, view, 'brief_contract_blocked', mutation.reason, operationId);
+    return blockedResult(sessionId, view, blockedCode(mutation.code), reason, operationId);
   }
   return blockedResult(sessionId, view, 'brief_contract_blocked', mutation.reason, operationId);
 }
@@ -427,10 +435,6 @@ function canLeaveBriefAdmission(
       input.state === 'held' ||
       input.state === 'held-superseded',
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 
 function isRefusalAudit(value: unknown): value is RefusalAudit {
@@ -539,7 +543,7 @@ export function createBriefRecoveryController(
         : typeof record?.text === 'string'
           ? record.text
           : (JSON.stringify(input) ?? String(input));
-    const hash = hashText(payload);
+    const hash = sha256Hex(payload);
     const ref: EvidenceRef = {
       revision: 1,
       hash,
@@ -571,7 +575,7 @@ export function createBriefRecoveryController(
     const currentRecovery = current.briefRecovery;
     const nextRecovery = next.briefRecovery;
     const epochId = nextRecovery?.epochId ?? currentRecovery?.epochId ?? `brief-${sessionId}`;
-    const eventId = `brief-owner-${next.stateRevision}-${hashText(JSON.stringify(audit) ?? '').slice(0, 16)}`;
+    const eventId = `brief-owner-${next.stateRevision}-${sha256Hex(JSON.stringify(audit) ?? '').slice(0, 16)}`;
     const operationId =
       isRecord(audit) && typeof audit.operationId === 'string' ? audit.operationId : eventId;
     const currentNormal = normalRecovery(current);
@@ -597,7 +601,7 @@ export function createBriefRecoveryController(
         reportRevision: matchingReport?.report.revision ?? null,
         reportHash,
         operationId,
-        intentHash: hashText(JSON.stringify(audit) ?? ''),
+        intentHash: sha256Hex(JSON.stringify(audit) ?? ''),
         attemptKind: 'manual-retry',
         status: 'accepted',
         dispatchPossibility: 'none',
@@ -706,7 +710,7 @@ export function createBriefRecoveryController(
       view: result.recovery,
       stateDigest: result.stateRevision.rawSha256,
     });
-    for (const staged of stagedEvidence.values()) stagedEvidence.delete(staged.ref.path);
+    stagedEvidence.clear();
     return true;
   }
 
@@ -1054,10 +1058,10 @@ export function createBriefRecoveryController(
           epochId: recovery.epochId,
           operationId,
           base: recovery.activeBrief,
-          intentHash: hashText(
+          intentHash: sha256Hex(
             `${recovery.activeBrief.hash}:${admitted.qualityPolicyVersion}:${admitted.report.issues.map((issue) => issue.code).join(',')}`,
           ),
-          diagnosticFingerprint: hashText(JSON.stringify(admitted.report.issues) ?? ''),
+          diagnosticFingerprint: sha256Hex(JSON.stringify(admitted.report.issues) ?? ''),
           action: 'retry' as const,
           frozenInputIds: [] as readonly string[],
         },
@@ -1292,16 +1296,7 @@ export function createBriefRecoveryController(
               };
             }
           }
-          const brief = await stageEvidence({ kind: 'brief-edit', text: valid.briefText });
-          if (brief === null)
-            return {
-              result: blockedResult(
-                valid.sessionId,
-                current.view,
-                'brief_storage_invalid',
-                'The edited Brief could not be written.',
-              ),
-            };
+          const brief = stageEvidence({ kind: 'brief-edit', text: valid.briefText });
           let report: BriefQualityReportEvidence | null = null;
           try {
             const issues = evaluate(valid.briefText);
@@ -1315,21 +1310,11 @@ export function createBriefRecoveryController(
                   valid.operationId,
                 ),
               };
-            const reportRef = await stageEvidence({
+            const reportRef = stageEvidence({
               kind: 'planner-report',
               briefHash: brief.hash,
               issues,
             });
-            if (reportRef === null)
-              return {
-                result: blockedResult(
-                  valid.sessionId,
-                  current.view,
-                  'brief_storage_invalid',
-                  'The edited Brief quality report could not be written.',
-                  valid.operationId,
-                ),
-              };
             report = {
               briefHash: brief.hash,
               report: reportRef,
@@ -1761,34 +1746,28 @@ export function createBriefRecoveryController(
     let reportEvidence: RecoverySettlement['reportEvidence'];
     let settlementOutcome: PlannerAttemptSettlement['outcome'] = 'provider-failed';
     if (result.kind === 'completed') {
-      candidate = await stageEvidence({ kind: 'planner-candidate', text: result.text });
-      if (candidate === null) settlementOutcome = 'storage-failed';
-      else {
-        const issues = evaluate(result.text);
-        if (issues === null) {
-          settlementOutcome = 'quality-failed';
-        } else {
-          report = await stageEvidence({
-            kind: 'planner-report',
-            briefHash: candidate.hash,
-            issues,
-          });
-          settlementOutcome =
-            report === null
-              ? 'storage-failed'
-              : issues.some((issue) => issue.severity === 'error')
-                ? 'quality-failed'
-                : 'ready';
-        }
-        if (report !== null && issues !== null)
-          reportEvidence = {
-            briefHash: candidate.hash,
-            report,
-            ruleVersion: BRIEF_QUALITY_RULE_VERSION,
-            issues,
-            errorCount: issues.filter((issue) => issue.severity === 'error').length,
-          };
+      candidate = stageEvidence({ kind: 'planner-candidate', text: result.text });
+      const issues = evaluate(result.text);
+      if (issues === null) {
+        settlementOutcome = 'quality-failed';
+      } else {
+        report = stageEvidence({
+          kind: 'planner-report',
+          briefHash: candidate.hash,
+          issues,
+        });
+        settlementOutcome = issues.some((issue) => issue.severity === 'error')
+          ? 'quality-failed'
+          : 'ready';
       }
+      if (report !== null && issues !== null)
+        reportEvidence = {
+          briefHash: candidate.hash,
+          report,
+          ruleVersion: BRIEF_QUALITY_RULE_VERSION,
+          issues,
+          errorCount: issues.filter((issue) => issue.severity === 'error').length,
+        };
     }
     const settlement = {
       sessionId: outcome.retry.command.sessionId,
@@ -1877,7 +1856,7 @@ export function createBriefRecoveryController(
         };
       const existing = recovery.inputs.find((candidate) => candidate.inputId === input.inputId);
       if (existing !== undefined) {
-        return existing.textHash === hashText(input.payload)
+        return existing.textHash === sha256Hex(input.payload)
           ? {
               version: 1,
               sessionId: input.sessionId,
@@ -1897,21 +1876,11 @@ export function createBriefRecoveryController(
               projection,
             };
       }
-      const payloadRef = await stageEvidence({
+      const payloadRef = stageEvidence({
         kind: 'queued-input',
         inputId: input.inputId,
         payload: input.payload,
       });
-      if (payloadRef === null)
-        return {
-          version: 1,
-          sessionId: input.sessionId,
-          epochId: input.epochId,
-          kind: 'refused',
-          code: 'brief_storage_invalid',
-          reason: 'Queued input evidence could not be written.',
-          projection,
-        };
       const mutation = queueRecoveryInput(recovery, { ...input, payloadRef }, now());
       if (mutation.kind === 'replayed' && mutation.input !== null)
         return {
@@ -2283,6 +2252,22 @@ export function createBriefRecoveryController(
           code: 'brief_storage_invalid',
           reason: 'The persisted v4 recovery state is malformed.',
         };
+      const storageBlockedFallback = (): BriefRecoveryStateView =>
+        nextView(
+          current.view,
+          createStorageBlockedRecovery(
+            {
+              origin: { mode: 'standard', entry: 'initial' },
+              continuation: {
+                version: 1,
+                kind: 'approval',
+                mode: 'standard',
+                entry: 'initial',
+              },
+            },
+            { epochId: nextId() },
+          ),
+        );
       let next: BriefRecoveryStateView;
       if (rawVersion === 3) {
         try {
@@ -2316,36 +2301,10 @@ export function createBriefRecoveryController(
             briefRecovery: mapped.briefRecovery ?? null,
           };
         } catch {
-          const fallbackOrigin = { mode: 'standard' as const, entry: 'initial' as const };
-          const fallbackContinuation = {
-            version: 1 as const,
-            kind: 'approval' as const,
-            mode: 'standard' as const,
-            entry: 'initial' as const,
-          };
-          next = nextView(
-            current.view,
-            createStorageBlockedRecovery(
-              { origin: fallbackOrigin, continuation: fallbackContinuation },
-              { epochId: nextId() },
-            ),
-          );
+          next = storageBlockedFallback();
         }
       } else {
-        const fallbackOrigin = { mode: 'standard' as const, entry: 'initial' as const };
-        const fallbackContinuation = {
-          version: 1 as const,
-          kind: 'approval' as const,
-          mode: 'standard' as const,
-          entry: 'initial' as const,
-        };
-        next = nextView(
-          current.view,
-          createStorageBlockedRecovery(
-            { origin: fallbackOrigin, continuation: fallbackContinuation },
-            { epochId: nextId() },
-          ),
-        );
+        next = storageBlockedFallback();
       }
       if (
         !(await commit(input.sessionId, authority, current, next, {
@@ -2374,8 +2333,8 @@ export function createBriefRecoveryController(
     inspectBriefRecovery(input: BriefRecoveryInspection): BriefRecoveryProjectionV1 {
       const parsed = BriefRecoveryInspectionSchema.safeParse(input);
       if (parsed.success) {
-        const current = heads.get(parsed.data.sessionId)?.view;
         const currentHead = heads.get(parsed.data.sessionId);
+        const current = currentHead?.view;
         if (
           current === undefined ||
           parsed.data.state.stateRevision > current.stateRevision ||

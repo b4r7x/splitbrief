@@ -4,13 +4,10 @@ import { ReviewPacketSummarySchema } from './summary.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 describe('review packet schema verdict fields', () => {
-  it('keeps REVIEW_PACKET_VERSION at 1 for the additive verdict fields', () => {
-    expect(REVIEW_PACKET_VERSION).toBe(1);
-  });
-
   it('parses a packet written before the verdict fields and yields their defaults', () => {
     const packet = ReviewPacketSchema.parse(packetBeforeVerdictFields());
 
+    expect(packet.version).toBe(REVIEW_PACKET_VERSION);
     expect(packet.finalReview.verdict).toBeNull();
     expect(packet.finalReview.criteriaPassed).toBe(0);
     expect(packet.finalReview.criteriaFailed).toBe(0);
@@ -33,7 +30,7 @@ describe('review packet schema verdict fields', () => {
     expect(rollup.finalReviewFindingCounts).toEqual({ critical: 0, warning: 0, note: 0 });
   });
 
-  it('keeps the reviewer cost line so the packet costs sum to the packet total', () => {
+  it('keeps the reviewer cost line through a packet round-trip', () => {
     const base = ReviewPacketSchema.parse(packetBeforeVerdictFields());
     const packet = ReviewPacketSchema.parse({
       ...base,
@@ -60,11 +57,7 @@ describe('review packet schema verdict fields', () => {
     if (!breakdown) throw new Error('expected a cost breakdown');
     expect(breakdown.actualReviewerCost).toBe(0.25);
     expect(breakdown.isActualReviewerCostKnown).toBe(true);
-    expect(
-      breakdown.actualPlannerCost +
-        breakdown.actualImplementerCost +
-        (breakdown.actualReviewerCost ?? 0),
-    ).toBeCloseTo(breakdown.totalActualCost, 10);
+    expect(breakdown.totalActualCost).toBe(1.75);
   });
 });
 

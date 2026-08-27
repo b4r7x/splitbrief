@@ -9,14 +9,12 @@ import {
 } from '../../../../core/plan-review/predicates.js';
 import type { Task } from '../../../../core/schemas/task.js';
 import type { PlanTaskReviewMetadata } from '../../../../core/plan-review/types.js';
-import type * as BriefRecoverySchemas from '../../../../core/schemas/brief-recovery.js';
+import type { BriefQualityIssue } from '../../../../core/schemas/brief-recovery/primitives.js';
 import type * as LegacyBriefQuality from '../../../../engine/spec/brief-quality.js';
 import { sanitizeTaskDisplayText } from '../../brief-review-format.js';
 import { formatTaskIdentityParts } from '../../layout/task-row.js';
 
-export type BriefReviewIssue =
-  | BriefRecoverySchemas.BriefQualityIssue
-  | LegacyBriefQuality.BriefQualityIssue;
+export type BriefReviewIssue = BriefQualityIssue | LegacyBriefQuality.BriefQualityIssue;
 
 interface TaskStateWord {
   text: string;

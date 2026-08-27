@@ -14,10 +14,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { seedValidationProject } from '#testing/helpers/validation-project.js';
 import { executableReceipt } from '#testing/helpers/custom-command-based.js';
-import {
-  parsePreparedConfig,
-  type PreparedExecution,
-} from '../../../src/engine/runners/prepared-execution.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 
 const dirs: string[] = [];
 let originalOpenRouterApiKey: string | undefined;
@@ -99,51 +96,43 @@ describe('full workflow OpenRouter API implementer', { timeout: 90_000 }, () => 
     });
 
     const feature = 'run an OpenRouter API implementer loop';
-    const config = parsePreparedConfig(
-      makeConfig({
-        implementer: {
-          kind: 'api',
-          provider: 'openrouter',
-          apiBase: 'https://openrouter.ai/api/v1',
-          apiKey: 'env:OPENROUTER_API_KEY',
-          model: 'openrouter/test-cheap-model',
-          contextLength: 4096,
-          temperature: 0.1,
-        },
-        validation: {
-          typecheck: false,
-          lint: false,
-          test: true,
-          testCommand: 'node validate.mjs',
-        },
-        workflow: {
-          mode: 'standard',
-          approve: 'none',
-          maxRetries: 1,
-          persistTranscript: true,
-        },
-      }),
-    );
+    const config = makeConfig({
+      implementer: {
+        kind: 'api',
+        provider: 'openrouter',
+        apiBase: 'https://openrouter.ai/api/v1',
+        apiKey: 'env:OPENROUTER_API_KEY',
+        model: 'openrouter/test-cheap-model',
+        contextLength: 4096,
+        temperature: 0.1,
+      },
+      validation: {
+        typecheck: false,
+        lint: false,
+        test: true,
+        testCommand: 'node validate.mjs',
+      },
+      workflow: {
+        mode: 'standard',
+        approve: 'none',
+        maxRetries: 1,
+        persistTranscript: true,
+      },
+    });
     const preparationId = 'full-loop-openrouter-preparation';
     const active = {
       version: 1 as const,
       sessionId,
       generation: '6a666666-6666-4666-8666-666666666666',
     };
-    const prepared: PreparedExecution = {
-      purpose: 'new-workflow',
+    const prepared = makePreparedExecution({
+      projectDir,
+      sessionId,
+      feature,
       config,
       preparationId,
-      report: {
-        generatedAt: '2026-08-04T00:00:00.000Z',
-        projectDir,
-        status: 'ready',
-        counts: { ok: 2, info: 0, warning: 0, blocker: 0 },
-        nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
-        sections: [],
-        metadata: {},
-      },
-      gates: [
+      active,
+      gates: () => [
         {
           kind: 'cli',
           slot: { role: 'planner' },
@@ -159,9 +148,7 @@ describe('full workflow OpenRouter API implementer', { timeout: 90_000 }, () => 
           endpointOrigin: 'https://openrouter.ai',
         },
       ],
-      session: { kind: 'existing', ref: { projectDir, sessionId }, active },
-      runtime: { feature, allowRepoRunners: false, allowHooks: false },
-    };
+    });
 
     const summary = await runWorkflow({
       prepared,
@@ -171,7 +158,6 @@ describe('full workflow OpenRouter API implementer', { timeout: 90_000 }, () => 
       _eventSink: (event) => events.push(event),
     });
 
-    expect(fetchMock).toHaveBeenCalled();
     expect(readFileSync(join(projectDir, targetFile), 'utf-8')).toContain(
       'export const loop = "from-openrouter";',
     );

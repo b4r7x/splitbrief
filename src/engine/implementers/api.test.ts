@@ -53,10 +53,8 @@ describe('api implementer — OpenAI-compatible path', () => {
   });
 
   it('re-probes the endpoint on the next availability gate instead of latching the verdict', async () => {
-    // The per-task implementer is constructed at task/loop.ts:176
-    // (createTaskImplementer); the gate calls isAvailable() once per task
-    // iteration, so an implementer unavailable for task N must be probed
-    // afresh for task N+1.
+    // The gate calls isAvailable() once per task iteration, so an implementer
+    // unavailable for task N must be probed afresh for task N+1.
     fetchMock.mockRejectedValue(new TypeError('fetch failed'));
     const implementer = createApiImplementer(makeConfig());
 

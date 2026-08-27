@@ -1,12 +1,12 @@
-import {
-  composeSteeredPrompt,
-  type Implementer,
-  type ImplementerOptions,
-  type ImplementerPublisher,
-  type ImplementerResult,
-  type InvokeOpts,
-  type RetryOptions,
+import type {
+  Implementer,
+  ImplementerOptions,
+  ImplementerPublisher,
+  ImplementerResult,
+  InvokeOpts,
+  RetryOptions,
 } from '../types.js';
+import { composeSteeredPrompt } from '../../spec/prompts/steered-prompt.js';
 import type { RunnerCallContext, RunnerCallResult } from '../../calls/types.js';
 import { toTokenDelta } from '../../calls/projection.js';
 import { assertPathConfined } from '../../../lib/path-confinement.js';

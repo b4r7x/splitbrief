@@ -171,7 +171,7 @@ describe('visual manifest contracts', () => {
   it.each([
     [
       'top-level versus selection',
-      { profile: 'unicode-mono', selection: 'unicode-color', determinism: 'unicode-color' },
+      { profile: 'unicode-mono', selection: 'unicode-color', determinism: 'unicode-mono' },
     ],
     [
       'selection versus top-level',
@@ -179,7 +179,7 @@ describe('visual manifest contracts', () => {
     ],
     [
       'top-level versus determinism',
-      { profile: 'unicode-mono', selection: 'unicode-color', determinism: 'unicode-color' },
+      { profile: 'unicode-mono', selection: 'unicode-mono', determinism: 'unicode-color' },
     ],
     [
       'determinism versus top-level',
@@ -187,11 +187,11 @@ describe('visual manifest contracts', () => {
     ],
     [
       'selection versus determinism',
-      { profile: 'unicode-color', selection: 'unicode-mono', determinism: 'unicode-color' },
+      { profile: 'ascii-mono', selection: 'unicode-color', determinism: 'unicode-mono' },
     ],
     [
       'determinism versus selection',
-      { profile: 'unicode-color', selection: 'unicode-color', determinism: 'unicode-mono' },
+      { profile: 'ascii-mono', selection: 'unicode-mono', determinism: 'unicode-color' },
     ],
   ] as const)('rejects a %s pairwise profile mismatch', (_location, profiles) => {
     const manifest = makeManifest();

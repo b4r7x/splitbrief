@@ -12,8 +12,7 @@ import {
   sanitizeTerminalDisplayText,
   truncateTerminalDisplayText,
 } from '../../../../utils/display-text.js';
-import type { Task } from '../../../../core/schemas/task.js';
-import type { BriefRecoveryProjectionV1 } from '../../../../core/schemas/brief-recovery.js';
+import type { BriefRecoveryProjectionV1 } from '../../../../core/schemas/brief-recovery/document.js';
 import { reviewStore } from '../../../../stores/workflow/review.js';
 import { focusStore } from '../../../../stores/ui/focus.js';
 import { hoverStore } from '../../../../stores/ui/hover.js';
@@ -27,7 +26,7 @@ import {
 } from '../../layout/brief-review.js';
 import { PlanReviewHeader } from './header.js';
 import { TaskRow, type BriefReviewIssue } from './task-row.js';
-import { useBriefData } from './use-load-state.js';
+import { useBriefData, type BriefDataLoader } from './use-load-state.js';
 
 export interface BriefReviewViewProps {
   filePath: string;
@@ -35,6 +34,7 @@ export interface BriefReviewViewProps {
   width?: number;
   /** Optional injected projection for standalone review renders and deterministic fixtures. */
   recovery?: BriefRecoveryProjectionV1 | null | undefined;
+  load?: BriefDataLoader | undefined;
 }
 
 const RECOVERY_HEADER_EXTRA_ROWS = 5;
@@ -119,31 +119,15 @@ function EmptyBriefPanel({
   );
 }
 
-function getVisibleBriefTaskWindow(
-  tasks: Task[],
-  rowBudget: number,
-  scrollOffset: number,
-): {
-  visibleTasks: Task[];
-  previousCount: number;
-  nextCount: number;
-} {
-  const { visibleItems, previousCount, nextCount } = getSimpleBriefVisibleSlice({
-    items: tasks,
-    rowBudget,
-    scrollOffset,
-  });
-  return { visibleTasks: visibleItems, previousCount, nextCount };
-}
-
 export function BriefReviewView({
   filePath,
   height,
   width,
   recovery: recoveryProp,
+  load,
 }: BriefReviewViewProps) {
   const t = useTheme();
-  const briefData = useBriefData(filePath);
+  const briefData = useBriefData(filePath, load);
   const { status, tasks, quality, readiness, reviewMetadata, briefSources } = briefData;
   const recovery =
     status === 'loading' ? null : recoveryProp === undefined ? briefData.recovery : recoveryProp;
@@ -184,11 +168,15 @@ export function BriefReviewView({
     rowBudget: taskRowBudget,
     taskCount: tasks.length,
   });
-  const { visibleTasks, previousCount, nextCount } = getVisibleBriefTaskWindow(
-    tasks,
-    taskRowBudget,
-    reviewScrollOffset,
-  );
+  const {
+    visibleItems: visibleTasks,
+    previousCount,
+    nextCount,
+  } = getSimpleBriefVisibleSlice({
+    items: tasks,
+    rowBudget: taskRowBudget,
+    scrollOffset: reviewScrollOffset,
+  });
   useEffect(() => {
     reviewStore.setRenderedLineCount(tasks.length);
   }, [tasks.length]);

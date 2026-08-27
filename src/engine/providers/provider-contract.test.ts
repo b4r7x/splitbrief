@@ -1,28 +1,12 @@
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import {
-  API_PROVIDER_VERDICT_CANDIDATE_PATHS,
-  getApiProviderDescriptor,
-  PASS_API_PROVIDER_IDS,
-} from '../../core/providers/api-provider-catalog.js';
+import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
+import { PASS_API_PROVIDER_IDS } from '../../core/providers/api-provider-verdicts.js';
 import type { ProviderDef, ProviderOverrides } from './types.js';
 import { createGroqProvider } from './groq.js';
 import { createTogetherProvider } from './together.js';
 import { createLmStudioProvider } from './lm-studio.js';
 import { createOllamaCloudProvider, createOllamaProvider } from './ollama.js';
 import { createOpenRouterProvider } from './openrouter.js';
-import {
-  KNOWN_PROVIDERS,
-  REGISTRY_OMIT_CANDIDATE_IDS,
-  REGISTRY_PASS_CANDIDATE_IDS,
-} from './registry.js';
-
-const REPO_ROOT = join(import.meta.dirname, '../../..');
-
-function resolveRepoPath(relativePath: string): string {
-  return join(REPO_ROOT, relativePath);
-}
 
 /** A credential of the provider's own family; a foreign prefix fails admission. */
 function fixtureCredential(provider: string, suffix: string): string {
@@ -185,21 +169,6 @@ const FIXTURES: ProviderFixture[] = [
 ];
 
 describe('provider verdict admission contract', () => {
-  it('derives the retained PASS allowlist from T-044–T-053 verdicts', () => {
-    expect([...REGISTRY_PASS_CANDIDATE_IDS]).toEqual([...PASS_API_PROVIDER_IDS]);
-  });
-
-  it('keeps every OMIT verdict module absent from the registry', () => {
-    for (const id of REGISTRY_OMIT_CANDIDATE_IDS) {
-      expect(KNOWN_PROVIDERS).not.toHaveProperty(id);
-    }
-    for (const candidate of API_PROVIDER_VERDICT_CANDIDATE_PATHS) {
-      if ((PASS_API_PROVIDER_IDS as readonly string[]).includes(candidate.id)) continue;
-      expect(existsSync(resolveRepoPath(candidate.source))).toBe(false);
-      expect(existsSync(resolveRepoPath(candidate.test))).toBe(false);
-    }
-  });
-
   it('keeps provider-contract fixtures limited to retained existing factories', () => {
     const fixtureNames = FIXTURES.map((fixture) => fixture.name);
     for (const id of PASS_API_PROVIDER_IDS) {

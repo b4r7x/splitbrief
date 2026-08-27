@@ -62,7 +62,7 @@ function DeleteOnKeyProbe({ role, modelId }: { role: SeatPickerRole; modelId: st
   const actions = usePickerActions({ role, catalog });
 
   useInput(() => {
-    actions.deleteRight({ id: modelId, isCustom: true });
+    void actions.deleteRight({ id: modelId, isCustom: true });
   });
 
   return <Text>{catalog.roleLabel}</Text>;

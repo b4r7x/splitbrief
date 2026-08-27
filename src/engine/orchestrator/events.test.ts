@@ -451,7 +451,6 @@ describe('publish* payload forwarding', () => {
       uniqueOutOfBoundsFiles: ['src/a.ts', 'src/b.ts'],
       representativePath: 'src/a.ts',
       detectedAtTaskId: 'T003' as import('../../core/schemas/task.js').TaskId,
-      ts: Date.now(),
     };
     publishDriftChainDetected({ bus: bus, phase: 'implementing' }, chain, 0.6);
     expect(events).toHaveLength(1);

@@ -67,14 +67,8 @@ describe('lastCommand', () => {
     }
   });
 
-  it.each([
-    {
-      name: 'no sessions directory exists',
-      arrange: (_projectDir: string) => {},
-    },
-  ])('throws when $name', async ({ arrange }) => {
+  it('throws when no sessions directory exists', async () => {
     const projectDir = makeTmpProject();
-    arrange(projectDir);
     const { deps } = captureContinuation();
 
     await expect(lastCommand({ projectDir } as never, deps)).rejects.toThrow(/no sessions found/);

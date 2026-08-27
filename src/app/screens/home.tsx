@@ -30,7 +30,11 @@ import { getHomeLayout } from '../../features/home/layout.js';
 import { getLogo } from '../../features/home/logo.js';
 import { RECENT_SESSIONS_HINT } from '../../features/home/components/recent-sessions-list.js';
 import { useRecentSessionsFocus } from '../../features/home/use-recent-sessions-focus.js';
-import { interactivePreparationPolicy, sessionSelectDeps } from '../prepare-resume.js';
+import {
+  appPreparationError,
+  interactivePreparationPolicy,
+  sessionSelectDeps,
+} from '../prepare-resume.js';
 import { useStartPreparation } from '../../features/start-preparation/use-start-preparation.js';
 import { StartPreparationPanel } from '../../features/start-preparation/panel.js';
 import { observePreparationCleanup } from '../../features/start-preparation/observe-cleanup.js';
@@ -146,7 +150,7 @@ export function HomeScreen({
     prepare: async (feature, signal) => {
       const current = configStore.get();
       if (!current.config || !current.projectDir) {
-        return { kind: 'failed', error: new Error('Project configuration is not loaded.') };
+        return { kind: 'failed', error: appPreparationError.configNotLoaded() };
       }
       return deps.prepareExecution({
         projectDir: current.projectDir,
@@ -270,14 +274,14 @@ export function HomeScreen({
 
   return (
     <ScreenShell justifyContent="flex-start" alignItems="center">
-      <Box flexDirection="column" width={layout.inputWidth} height="100%">
+      <Box flexDirection="column" width={layout.width} height="100%">
         <Box flexDirection="column" flexGrow={1} overflowY="hidden" alignItems="center">
-          <Box flexDirection="column" width={layout.bodyWidth} gap={1} flexShrink={0}>
+          <Box flexDirection="column" width={layout.width} gap={1} flexShrink={0}>
             <Box flexDirection="column" alignItems="center" flexShrink={0}>
               <Text color={theme.accent}>{getLogo(layout.logoTier)}</Text>
             </Box>
 
-            <HomeSeatBlock rows={rows} width={layout.bodyWidth} />
+            <HomeSeatBlock rows={rows} width={layout.width} />
 
             {hasRoomForSessions && (
               <RecentSessions
@@ -323,7 +327,7 @@ export function HomeScreen({
             mode="normal"
             hint="Describe your feature…"
             currentScreen="home"
-            width={layout.inputWidth}
+            width={layout.width}
             homeHint={homeHint}
             draftRestore={startPreparation.draftRestore}
           />

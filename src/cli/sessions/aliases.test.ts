@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
+import { buildAliasedSessions, isNumericAlias, resolveNumericAlias } from './aliases.js';
 
 function makeTmpProject(): string {
   const dir = join(tmpdir(), `splitbrief-test-${randomUUID()}`);
@@ -36,15 +37,13 @@ function makeInteractiveSession(projectDir: string, sessionId: string, mtimeMs: 
 }
 
 describe('isNumericAlias', () => {
-  it('returns true for digit-only strings', async () => {
-    const { isNumericAlias } = await import('./aliases.js');
+  it('returns true for digit-only strings', () => {
     expect(isNumericAlias('1')).toBe(true);
     expect(isNumericAlias('42')).toBe(true);
     expect(isNumericAlias('007')).toBe(true);
   });
 
-  it('returns false for non-numeric strings', async () => {
-    const { isNumericAlias } = await import('./aliases.js');
+  it('returns false for non-numeric strings', () => {
     expect(isNumericAlias('abc')).toBe(false);
     expect(isNumericAlias('2025-04-01-feat')).toBe(false);
     expect(isNumericAlias('')).toBe(false);
@@ -54,7 +53,6 @@ describe('isNumericAlias', () => {
 
 describe('buildAliasedSessions', () => {
   it('returns empty array when no sessions directory exists', async () => {
-    const { buildAliasedSessions } = await import('./aliases.js');
     const projectDir = makeTmpProject();
 
     const result = await buildAliasedSessions(projectDir);
@@ -62,7 +60,6 @@ describe('buildAliasedSessions', () => {
   });
 
   it('assigns aliases in descending startTimeMs order', async () => {
-    const { buildAliasedSessions } = await import('./aliases.js');
     const projectDir = makeTmpProject();
 
     makeSessionWithLockfile(projectDir, 'old-session', 1000);
@@ -81,7 +78,6 @@ describe('buildAliasedSessions', () => {
   });
 
   it('skips sessions whose lockfile sessionId does not match the directory name', async () => {
-    const { buildAliasedSessions } = await import('./aliases.js');
     const projectDir = makeTmpProject();
 
     makeSessionWithLockfile(projectDir, 'valid-session', 2000);
@@ -107,7 +103,6 @@ describe('buildAliasedSessions', () => {
   });
 
   it('includes lockfile-less interactive sessions ordered by state mtime', async () => {
-    const { buildAliasedSessions } = await import('./aliases.js');
     const projectDir = makeTmpProject();
 
     makeInteractiveSession(projectDir, 'interactive-only', 9_000_000);
@@ -120,7 +115,6 @@ describe('buildAliasedSessions', () => {
   });
 
   it('skips empty session directories with neither lockfile nor state', async () => {
-    const { buildAliasedSessions } = await import('./aliases.js');
     const projectDir = makeTmpProject();
 
     makeSessionWithLockfile(projectDir, 'has-lockfile', 1000);
@@ -132,7 +126,6 @@ describe('buildAliasedSessions', () => {
   });
 
   it('orders a newer interactive session ahead of an older detached one', async () => {
-    const { buildAliasedSessions } = await import('./aliases.js');
     const projectDir = makeTmpProject();
 
     makeSessionWithLockfile(projectDir, 'old-detached', 1_000_000);
@@ -147,7 +140,6 @@ describe('buildAliasedSessions', () => {
 
 describe('resolveNumericAlias', () => {
   it('resolves alias 1 to the newest session', async () => {
-    const { resolveNumericAlias } = await import('./aliases.js');
     const projectDir = makeTmpProject();
 
     makeSessionWithLockfile(projectDir, 'older', 1000);
@@ -158,7 +150,6 @@ describe('resolveNumericAlias', () => {
   });
 
   it('resolves alias 2 to the second newest session', async () => {
-    const { resolveNumericAlias } = await import('./aliases.js');
     const projectDir = makeTmpProject();
 
     makeSessionWithLockfile(projectDir, 'older', 1000);
@@ -169,7 +160,6 @@ describe('resolveNumericAlias', () => {
   });
 
   it('ignores quarantine claim directories when resolving a numeric alias', async () => {
-    const { resolveNumericAlias } = await import('./aliases.js');
     const projectDir = makeTmpProject();
 
     makeSessionWithLockfile(projectDir, 'session', 1000);
@@ -187,7 +177,6 @@ describe('resolveNumericAlias', () => {
   });
 
   it('throws for out-of-range alias', async () => {
-    const { resolveNumericAlias } = await import('./aliases.js');
     const projectDir = makeTmpProject();
 
     makeSessionWithLockfile(projectDir, 'only-session', 1000);
@@ -196,14 +185,12 @@ describe('resolveNumericAlias', () => {
   });
 
   it('throws for alias 0', async () => {
-    const { resolveNumericAlias } = await import('./aliases.js');
     const projectDir = makeTmpProject();
 
     await expect(resolveNumericAlias('0', projectDir)).rejects.toThrow(/aliases start at 1/);
   });
 
   it('throws when no sessions exist', async () => {
-    const { resolveNumericAlias } = await import('./aliases.js');
     const projectDir = makeTmpProject();
 
     await expect(resolveNumericAlias('1', projectDir)).rejects.toThrow(/no sessions found/);

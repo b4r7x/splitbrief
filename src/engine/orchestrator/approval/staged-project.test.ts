@@ -1,9 +1,9 @@
-import { afterEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import { execFileSync, execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { SANDBOX_DIR, SPLITBRIEF_DIR, TREES_DIR } from '../../../core/paths.js';
 import { listTrackedAndUntrackedFiles } from '../../../lib/git/files.js';
+import { SANDBOX_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { collectTrackedFiles } from '../../snapshots/files.js';
 import { getChangedFilesSinceSnapshot } from './file-snapshots/capture.js';
 import { captureCurrentFileContents } from './file-snapshots/contents.js';
@@ -12,8 +12,6 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 
-vi.mock('../../../lib/git/files.js', { spy: true });
-
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
 const touchedEnvKeys: string[] = [];
@@ -21,7 +19,6 @@ const touchedEnvKeys: string[] = [];
 afterEach(() => {
   for (const key of touchedEnvKeys) delete process.env[key];
   touchedEnvKeys.length = 0;
-  vi.mocked(listTrackedAndUntrackedFiles).mockRestore();
 });
 
 describe('createStagedProject', () => {
@@ -390,11 +387,20 @@ describe('createStagedProject', () => {
     }
   });
 
-  it('falls back to a full recursive copy when the git file list is unavailable', async () => {
-    vi.mocked(listTrackedAndUntrackedFiles).mockResolvedValue(null);
+  itUnix('falls back to a full recursive copy when the git file list is unavailable', async () => {
     const dir = createTempDir('staged-gitlist-fallback-test');
+    const shimDir = createTempDir('staged-gitlist-shim');
+    const realGit = execFileSync('/usr/bin/env', ['which', 'git'], { encoding: 'utf-8' }).trim();
+    const originalPath = process.env.PATH ?? '';
     try {
+      writeFileSync(
+        join(shimDir, 'git'),
+        `#!/bin/sh\nfor arg in "$@"; do\n  if [ "$arg" = "ls-files" ]; then\n    echo "fatal: simulated ls-files failure" >&2\n    exit 128\n  fi\ndone\nexec ${realGit} "$@"\n`,
+        { mode: 0o755 },
+      );
+      process.env.PATH = `${shimDir}:${originalPath}`;
       createTestGitRepo(dir);
+      expect(await listTrackedAndUntrackedFiles(dir)).toBeNull();
       mkdirSync(join(dir, 'src'), { recursive: true });
       writeFileSync(join(dir, 'src', 'app.ts'), 'export const app = true;\n');
       mkdirSync(join(dir, 'node_modules', 'pkg'), { recursive: true });
@@ -412,6 +418,8 @@ describe('createStagedProject', () => {
         staged.cleanup();
       }
     } finally {
+      process.env.PATH = originalPath;
+      cleanupTempDir(shimDir);
       cleanupTempDir(dir);
     }
   });
@@ -611,202 +619,6 @@ describe('createStagedProject — sensitive file exclusion', () => {
       else process.env.HOME = originalHome;
       cleanupTempDir(hostHome);
       cleanupTempDir(dir);
-    }
-  });
-});
-
-describe('promoteStagedChanges', () => {
-  it('copies staged content only when the original file still matches the expected snapshot', async () => {
-    const projectDir = createTempDir('promote-project');
-    const stagedDir = createTempDir('promote-staged');
-    try {
-      mkdirSync(join(projectDir, 'src'), { recursive: true });
-      mkdirSync(join(stagedDir, 'src'), { recursive: true });
-      writeFileSync(join(projectDir, 'src', 'app.ts'), 'original\n');
-      writeFileSync(join(stagedDir, 'src', 'app.ts'), 'staged\n');
-
-      const promoted = await promoteStagedChanges({
-        targetProjectDir: projectDir,
-        stagedProjectDir: stagedDir,
-        files: ['src/app.ts'],
-        expectedCurrentContents: { 'src/app.ts': 'original\n' },
-      });
-
-      expect(promoted).toEqual({ promotedFiles: ['src/app.ts'], conflictedFiles: [] });
-      expect(readFileSync(join(projectDir, 'src', 'app.ts'), 'utf-8')).toBe('staged\n');
-    } finally {
-      cleanupTempDir(stagedDir);
-      cleanupTempDir(projectDir);
-    }
-  });
-
-  it('promotes a task edit to .gitignore without the isolation bookkeeping lines', async () => {
-    const projectDir = createTempDir('promote-project');
-    const stagedDir = createTempDir('promote-staged');
-    try {
-      const original = 'node_modules/\ndist/\n';
-      writeFileSync(join(projectDir, '.gitignore'), original);
-      writeFileSync(
-        join(stagedDir, '.gitignore'),
-        `${original}${SPLITBRIEF_DIR}/\n${TREES_DIR}/\ncoverage/\n`,
-      );
-
-      const promoted = await promoteStagedChanges({
-        targetProjectDir: projectDir,
-        stagedProjectDir: stagedDir,
-        files: ['.gitignore'],
-        expectedCurrentContents: { '.gitignore': original },
-      });
-
-      expect(promoted).toEqual({ promotedFiles: ['.gitignore'], conflictedFiles: [] });
-      expect(readFileSync(join(projectDir, '.gitignore'), 'utf-8')).toBe(`${original}coverage/\n`);
-    } finally {
-      cleanupTempDir(stagedDir);
-      cleanupTempDir(projectDir);
-    }
-  });
-
-  it('keeps a bookkeeping entry the project .gitignore already carried', async () => {
-    const projectDir = createTempDir('promote-project');
-    const stagedDir = createTempDir('promote-staged');
-    try {
-      const original = `node_modules/\n${SPLITBRIEF_DIR}/\n`;
-      writeFileSync(join(projectDir, '.gitignore'), original);
-      writeFileSync(join(stagedDir, '.gitignore'), `${original}${TREES_DIR}/\ncoverage/\n`);
-
-      await promoteStagedChanges({
-        targetProjectDir: projectDir,
-        stagedProjectDir: stagedDir,
-        files: ['.gitignore'],
-        expectedCurrentContents: { '.gitignore': original },
-      });
-
-      expect(readFileSync(join(projectDir, '.gitignore'), 'utf-8')).toBe(`${original}coverage/\n`);
-    } finally {
-      cleanupTempDir(stagedDir);
-      cleanupTempDir(projectDir);
-    }
-  });
-
-  it('drops a task-authored bookkeeping entry the project .gitignore did not already carry', async () => {
-    const projectDir = createTempDir('promote-project');
-    const stagedDir = createTempDir('promote-staged');
-    try {
-      // The strip cannot tell this line from the one isolation appended, so the
-      // task's own addition is dropped rather than risk writing SPLITBRIEF's
-      // bookkeeping into a tracked file. Adding it stays a manual step.
-      const original = 'node_modules/\n';
-      writeFileSync(join(projectDir, '.gitignore'), original);
-      writeFileSync(join(stagedDir, '.gitignore'), `${original}${TREES_DIR}/\n`);
-
-      await promoteStagedChanges({
-        targetProjectDir: projectDir,
-        stagedProjectDir: stagedDir,
-        files: ['.gitignore'],
-        expectedCurrentContents: { '.gitignore': original },
-      });
-
-      expect(readFileSync(join(projectDir, '.gitignore'), 'utf-8')).toBe(original);
-    } finally {
-      cleanupTempDir(stagedDir);
-      cleanupTempDir(projectDir);
-    }
-  });
-
-  it('promotes a file other than .gitignore verbatim when it lists the same entries', async () => {
-    const projectDir = createTempDir('promote-project');
-    const stagedDir = createTempDir('promote-staged');
-    try {
-      const body = `ignored:\n${SPLITBRIEF_DIR}/\n${TREES_DIR}/\n`;
-      writeFileSync(join(stagedDir, 'notes.md'), body);
-
-      await promoteStagedChanges({
-        targetProjectDir: projectDir,
-        stagedProjectDir: stagedDir,
-        files: ['notes.md'],
-        expectedCurrentContents: { 'notes.md': null },
-      });
-
-      expect(readFileSync(join(projectDir, 'notes.md'), 'utf-8')).toBe(body);
-    } finally {
-      cleanupTempDir(stagedDir);
-      cleanupTempDir(projectDir);
-    }
-  });
-
-  it('keeps local edits when promotion detects a conflict', async () => {
-    const projectDir = createTempDir('promote-project');
-    const stagedDir = createTempDir('promote-staged');
-    try {
-      mkdirSync(join(projectDir, 'src'), { recursive: true });
-      mkdirSync(join(stagedDir, 'src'), { recursive: true });
-      writeFileSync(join(projectDir, 'src', 'app.ts'), 'user edit\n');
-      writeFileSync(join(stagedDir, 'src', 'app.ts'), 'staged\n');
-
-      const promoted = await promoteStagedChanges({
-        targetProjectDir: projectDir,
-        stagedProjectDir: stagedDir,
-        files: ['src/app.ts'],
-        expectedCurrentContents: { 'src/app.ts': 'original\n' },
-      });
-
-      expect(promoted).toEqual({ promotedFiles: [], conflictedFiles: ['src/app.ts'] });
-      expect(readFileSync(join(projectDir, 'src', 'app.ts'), 'utf-8')).toBe('user edit\n');
-    } finally {
-      cleanupTempDir(stagedDir);
-      cleanupTempDir(projectDir);
-    }
-  });
-
-  it('rejects changed file paths that escape the target project', async () => {
-    const targetRoot = createTempDir('promote-target-root');
-    const stagedRoot = createTempDir('promote-staged-root');
-    const projectDir = join(targetRoot, 'project');
-    const stagedDir = join(stagedRoot, 'staged');
-    try {
-      mkdirSync(projectDir, { recursive: true });
-      mkdirSync(stagedDir, { recursive: true });
-      writeFileSync(join(stagedRoot, 'escape.ts'), 'staged escape\n');
-
-      await expect(
-        promoteStagedChanges({
-          targetProjectDir: projectDir,
-          stagedProjectDir: stagedDir,
-          files: ['../escape.ts'],
-          expectedCurrentContents: { '../escape.ts': null },
-        }),
-      ).rejects.toThrow(/unsafe path/);
-
-      expect(existsSync(join(targetRoot, 'escape.ts'))).toBe(false);
-    } finally {
-      cleanupTempDir(stagedRoot);
-      cleanupTempDir(targetRoot);
-    }
-  });
-
-  itUnix('does not promote through a symlinked target parent outside the project', async () => {
-    const projectDir = createTempDir('promote-project');
-    const stagedDir = createTempDir('promote-staged');
-    const outsideDir = createTempDir('promote-outside');
-    try {
-      mkdirSync(join(stagedDir, 'src'), { recursive: true });
-      writeFileSync(join(stagedDir, 'src', 'app.ts'), 'staged\n');
-      symlinkSync(outsideDir, join(projectDir, 'src'));
-
-      await expect(
-        promoteStagedChanges({
-          targetProjectDir: projectDir,
-          stagedProjectDir: stagedDir,
-          files: ['src/app.ts'],
-          expectedCurrentContents: { 'src/app.ts': null },
-        }),
-      ).rejects.toThrow(/unsafe path/);
-
-      expect(existsSync(join(outsideDir, 'app.ts'))).toBe(false);
-    } finally {
-      cleanupTempDir(outsideDir);
-      cleanupTempDir(stagedDir);
-      cleanupTempDir(projectDir);
     }
   });
 });

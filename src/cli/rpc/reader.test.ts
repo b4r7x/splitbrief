@@ -1,6 +1,6 @@
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { BriefRecoveryProjectionV1Schema } from '../../core/schemas/brief-recovery.js';
+import { BriefRecoveryProjectionV1Schema } from '../../core/schemas/brief-recovery/document.js';
 import { createCommandReader, createRpcOperationDeduper, type RpcEnvelopeError } from './reader.js';
 import { RPC_MAX_FRAME_BYTES, type RpcCommand } from './types.js';
 

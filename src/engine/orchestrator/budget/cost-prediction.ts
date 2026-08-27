@@ -124,39 +124,22 @@ export function predictCost(opts: PredictCostOptions): CostPrediction {
 
   const plannerCost = estimatePlannerCost(opts) + estimateReviewerCost(opts);
 
-  const lowImpl = estimateImplementerCost(
-    {
-      taskCount,
-      escalationRate: LOW_ESCALATION_RATE,
-      plannerTool,
-      implementerTool,
-      plannerModel,
-      implementerModel,
-    },
-    opts.cache,
-  );
-  const expectedImpl = estimateImplementerCost(
-    {
-      taskCount,
-      escalationRate: EXPECTED_ESCALATION_RATE,
-      plannerTool,
-      implementerTool,
-      plannerModel,
-      implementerModel,
-    },
-    opts.cache,
-  );
-  const highImpl = estimateImplementerCost(
-    {
-      taskCount,
-      escalationRate: HIGH_ESCALATION_RATE,
-      plannerTool,
-      implementerTool,
-      plannerModel,
-      implementerModel,
-    },
-    opts.cache,
-  );
+  const implementerCostAt = (escalationRate: number): number =>
+    estimateImplementerCost(
+      {
+        taskCount,
+        escalationRate,
+        plannerTool,
+        implementerTool,
+        plannerModel,
+        implementerModel,
+      },
+      opts.cache,
+    );
+
+  const lowImpl = implementerCostAt(LOW_ESCALATION_RATE);
+  const expectedImpl = implementerCostAt(EXPECTED_ESCALATION_RATE);
+  const highImpl = implementerCostAt(HIGH_ESCALATION_RATE);
 
   return {
     estimatedTasks: taskCount,

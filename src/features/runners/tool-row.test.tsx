@@ -140,7 +140,9 @@ describe('runner row grammar', () => {
       }),
     );
     await tick(20);
-    expect(ui.lastFrame() ?? '').toContain('Incompatible');
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain(glyph('check'));
+    expect(frame).toContain('Incompatible');
     ui.unmount();
   });
 

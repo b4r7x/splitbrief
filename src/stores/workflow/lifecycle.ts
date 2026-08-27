@@ -76,8 +76,8 @@ interface CompleteLifecycleState extends LifecycleBase {
   interruptParked: false;
   cancelled: false;
   startedAt: number | null;
-  endedAt: number;
-  durationMs: number;
+  endedAt: number | null;
+  durationMs: number | null;
   reason: null;
 }
 
@@ -313,7 +313,7 @@ function markLifecycleComplete(
   };
 }
 
-function durationFromStart(startedAt: number | null, endedAt: number): number {
+export function durationFromStart(startedAt: number | null, endedAt: number): number {
   return Math.max(0, endedAt - (startedAt ?? endedAt));
 }
 

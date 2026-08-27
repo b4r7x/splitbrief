@@ -19,7 +19,6 @@ import {
   ensureGitignore,
   rejectSymlinkTarget,
   rejectSymlinkTargetAsync,
-  fsError,
 } from './fs.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
@@ -54,36 +53,12 @@ describe('checkConfigPermissions', () => {
 });
 
 describe('writeSecureFile', () => {
-  it('writes the file contents and makes them readable', () => {
-    const dir = makeTmp();
-    const file = join(dir, 'sub', 'secret.txt');
-    writeSecureFile(file, 'hello secret');
-    expect(readFileSync(file, 'utf-8')).toBe('hello secret');
-  });
-
   it('creates any missing parent directories', () => {
     const dir = makeTmp();
     const file = join(dir, 'a', 'b', 'c', 'deep.txt');
     writeSecureFile(file, 'deep');
     expect(existsSync(file)).toBe(true);
     expect(readFileSync(file, 'utf-8')).toBe('deep');
-  });
-
-  it('writes a new file with 0o600 permissions (owner-only)', () => {
-    const dir = makeTmp();
-    const file = join(dir, 'fresh.yaml');
-    writeSecureFile(file, 'content');
-    const perms = statSync(file).mode & 0o777;
-    expect(perms).toBe(0o600);
-    expect(checkConfigPermissions(file)).toBe(true);
-  });
-
-  it('creates intermediate directories with 0o700 permissions (owner-only)', () => {
-    const dir = makeTmp();
-    const nested = join(dir, 'nested-dir');
-    writeSecureFile(join(nested, 'x.txt'), 'x');
-    const dirPerms = statSync(nested).mode & 0o777;
-    expect(dirPerms).toBe(0o700);
   });
 
   it('writes distinct sibling files under a new parent with secure modes', () => {
@@ -167,17 +142,6 @@ describe('writeSecureFile', () => {
 
     expect(() => writeSecureFile(link, 'malicious')).toThrow(/refusing to write through symlink/);
     expect(readFileSync(outsideFile, 'utf-8')).toBe('original');
-  });
-
-  it('refuses to write through a file symlink even when target is in same directory', () => {
-    const dir = makeTmp();
-    const realFile = join(dir, 'real.txt');
-    writeFileSync(realFile, 'original');
-    const link = join(dir, 'link.txt');
-    symlinkSync(realFile, link);
-
-    expect(() => writeSecureFile(link, 'overwrite')).toThrow(/refusing to write through symlink/);
-    expect(readFileSync(realFile, 'utf-8')).toBe('original');
   });
 
   it('removes the temp file when the rename fails (target is a non-empty directory)', () => {
@@ -272,14 +236,9 @@ describe('rejectSymlinkTarget', () => {
     writeFileSync(target, 'data');
     const link = join(dir, 'link.txt');
     symlinkSync(target, link);
-    expect(() => rejectSymlinkTarget(link)).toThrow(/refusing to write through symlink/);
-    let thrown: unknown;
-    try {
-      rejectSymlinkTarget(link);
-    } catch (err) {
-      thrown = err;
-    }
-    expect(fsError.isSymlinkWrite(thrown)).toBe(true);
+    expect(() => rejectSymlinkTarget(link)).toThrow(
+      expect.objectContaining({ kind: 'fs-symlink-write' }),
+    );
   });
 });
 

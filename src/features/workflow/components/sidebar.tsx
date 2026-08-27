@@ -249,7 +249,7 @@ export function Sidebar({ width, height }: SidebarProps) {
   const advisory = useAdvisory();
   const cost = useCostStats();
   const tasks = view.items;
-  const localCount = tasks.filter((tk) => tk.status === 'done').length;
+  const doneCount = tasks.filter((tk) => tk.status === 'done').length;
   const escalatedCount = tasks.filter((tk) => tk.status === 'escalated').length;
   const innerWidth = Math.max(0, width - 5);
 
@@ -311,11 +311,7 @@ export function Sidebar({ width, height }: SidebarProps) {
         overflow="hidden"
       >
         {tasks.length === 0 && <SidebarWaiting />}
-        {listWindow.showAbove && (
-          <Text color={t.textDim}>
-            {`${LIST_INDENT}${overflowLabel(hiddenAbove, 'done', 'done', 'above')}`}
-          </Text>
-        )}
+        {listWindow.showAbove && <Text color={t.textDim}>{`${LIST_INDENT}${aboveLabel}`}</Text>}
         {visible.map((task) => (
           <TaskRow key={task.id} task={task} width={width} statusCells={statusCells} />
         ))}
@@ -339,7 +335,7 @@ export function Sidebar({ width, height }: SidebarProps) {
           )}
           {escalatedCount > 0 && (
             <Text color={t.textDim}>
-              {localCount} done{SOFT_SEP}
+              {doneCount} done{SOFT_SEP}
               {escalatedCount} escalated
             </Text>
           )}

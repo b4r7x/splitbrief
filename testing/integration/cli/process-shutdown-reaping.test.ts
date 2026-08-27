@@ -201,12 +201,12 @@ describe('process shutdown reaping', () => {
     const fixture = await spawnStubbornProcessTree();
     const startedAt = Date.now();
 
-    const shutdown = shutdownWorkflow(
+    const shutdown = shutdownWorkflow({
       projectDir,
       sessionId,
-      () => trackedState,
-      () => ({ file: taskFile, action: 'create' }),
-    );
+      getTrackedState: () => trackedState,
+      getCurrentTask: () => ({ file: taskFile, action: 'create' }),
+    });
 
     await waitForMarker(fixture.descendantTermMarker);
     expect(isProcessAlive(fixture.descendantPid)).toBe(true);

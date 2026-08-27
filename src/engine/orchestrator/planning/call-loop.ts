@@ -1,13 +1,13 @@
 import { createBusTextHandler, publishRunnerCallEvent, publishWarning } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { createSessionExpiredHandler } from '../resume-context.js';
-import { workflowAuthority } from '../run/init.js';
+import { workflowAuthority } from '../run/authority.js';
 import { withContinuationLoop } from '../continuation.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { buildRejectionContext } from '../evidence/reporting.js';
 import { startPlannerHeartbeat } from './heartbeat.js';
 import { createQuestionMarkerStripper } from '../../parsers/question.js';
-import { composeSteeredPrompt } from '../../implementers/types.js';
+import { composeSteeredPrompt } from '../../spec/prompts/steered-prompt.js';
 import type { PlanResult, PlannerCallbacks } from '../../planners/types.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';

@@ -1,10 +1,8 @@
 import type { Readable, Writable } from 'node:stream';
 import type { Phase } from '../../../core/schemas/enums.js';
 import { defaultApprovalConfig } from '../../../core/schemas/config.js';
-import type {
-  BriefRecoveryProjectionV1,
-  RecoveryResultV1,
-} from '../../../core/schemas/brief-recovery.js';
+import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
+import type { RecoveryResultV1 } from '../../../core/schemas/brief-recovery.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { RewindEventSchema } from '../../../core/state/rewind-event.js';
@@ -35,7 +33,6 @@ import { createWorkflowCallbacks } from '../callbacks.js';
 import { attachmentsStore } from '../../../stores/workflow/attachments.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
 import { createCommandHandler } from '../dispatch.js';
-import { createRpcBriefReviewDraftSaver } from './brief-review.js';
 import { createRpcRecoveryHandlers } from './recovery.js';
 import { createRpcStatusProjection, pendingQueueDepth } from './status.js';
 import { projectBriefRecovery } from '../../../engine/orchestrator/planning/brief-recovery-controller.js';
@@ -291,16 +288,6 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
 
   const resolveSessionId = (): string => activeSessionId;
 
-  const saveBriefDraft = createRpcBriefReviewDraftSaver({
-    projectDir,
-    resolveSessionId,
-    readCurrentState,
-    bus,
-    setActiveSessionId: (id) => {
-      activeSessionId = id;
-    },
-  });
-
   const { writeStatus, waitForApproval, waitForMessage } = createRpcStatusProjection({
     readCurrentState,
     getActiveSessionId: () => activeSessionId,
@@ -312,7 +299,6 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     transportAborted: () => transportController.signal.aborted,
     writer,
     isRpcClosed: () => rpcClosed,
-    saveBriefDraft,
     getRecoveryProjection: () => readRecovery()?.projection ?? null,
     getRecoveryResult: () => readRecovery()?.result ?? null,
   });
@@ -375,7 +361,6 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     getQueueHandler: () => queueHandler,
     getClearQueueHandler: () => clearQueueHandler,
     abort: triggerAbort,
-    abortTurn: abortActiveTurn,
     bus,
     approvalGate,
     messageGate,
@@ -385,9 +370,6 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     pendingQueueDepth,
     requestRewind,
     requestTaskRedo,
-    setRewindFeedback: (feedback) => {
-      rewindFeedback = feedback;
-    },
   });
 
   const reader = createCommandReader({

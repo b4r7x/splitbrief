@@ -7,7 +7,7 @@ import {
   getFailedTaskIds,
 } from '../../core/state/selectors.js';
 import { canonicalizeProjectDir } from '../setup.js';
-import { readActive } from '../../core/sessions/lifecycle.js';
+import { readActive } from '../../core/sessions/active-pointer.js';
 import { listAllSessions, readSessionPersistTranscript } from '../../core/sessions/io.js';
 import { aggregateSessionCosts } from '../../core/sessions/analytics.js';
 import { formatCost } from '../../core/formatting.js';

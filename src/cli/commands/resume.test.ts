@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { registerResumeCommand, resumeCommand, type ResumeDeps } from './resume.js';
 import { resumeSavedSession } from './continue/resume.js';
-import { writeActive } from '../../core/sessions/lifecycle.js';
+import { writeActive } from '../../core/sessions/active-pointer.js';
 import { currentProcessStartTimeMs } from '../../lib/process/start-time.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
@@ -191,17 +191,19 @@ describe('resume command', () => {
         }),
     };
 
+    let resumeLine: string | undefined;
     try {
       await resumeCommand({ projectDir: tmp }, deps);
     } finally {
-      const resumeLine = logSpy.mock.calls
+      resumeLine = logSpy.mock.calls
         .map((call) => call.join(' '))
         .find((line) => line.includes('Resuming:'));
-      expect(resumeLine).toBeDefined();
-      expect(resumeLine).toContain(TRANSCRIPT_OMITTED_MESSAGE);
-      expect(resumeLine).not.toContain('secret');
       logSpy.mockRestore();
     }
+
+    expect(resumeLine).toBeDefined();
+    expect(resumeLine).toContain(TRANSCRIPT_OMITTED_MESSAGE);
+    expect(resumeLine).not.toContain('secret');
   });
 
   it('passes only prepared CLI identities into a resumed headless run', async () => {

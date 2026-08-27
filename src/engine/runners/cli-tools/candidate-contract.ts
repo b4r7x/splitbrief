@@ -95,10 +95,10 @@ type CliArgumentValidation =
 type UnregisteredCliAdapterCommon = Readonly<{
   descriptor: Readonly<{ id: string }>;
   promptTransport: CliPromptTransport;
-  validateArgs: (
-    invocationArgs: readonly string[],
-    baseArgs: readonly string[],
-  ) => CliArgumentValidation;
+  validateArgs: (input: {
+    invocationArgs: readonly string[];
+    baseArgs: readonly string[];
+  }) => CliArgumentValidation;
   environment: Readonly<Record<string, string>>;
   outputContract: CliOutputContract;
   parse: (line: string) => readonly CliProtocolEvent[];

@@ -14,7 +14,11 @@ describe('attributePhaseTokenDelta', () => {
       reviewerCacheCreate: 20,
     });
 
-    const { planner, reviewer } = attributePhaseTokenDelta(prev, curr, 'final-review');
+    const { planner, reviewer } = attributePhaseTokenDelta({
+      previous: prev,
+      current: curr,
+      phase: 'final-review',
+    });
 
     expect(reviewer).toEqual({ input: 900, output: 300, cacheRead: 40, cacheCreate: 20 });
     expect(planner).toEqual({ input: 0, output: 0, cacheRead: 0, cacheCreate: 0 });
@@ -24,7 +28,7 @@ describe('attributePhaseTokenDelta', () => {
     const prev = makeUsage();
     const curr = makeUsage({ reviewerInput: 900, reviewerOutput: 300 });
 
-    const { reviewer } = attributePhaseTokenDelta(prev, curr, 'idle');
+    const { reviewer } = attributePhaseTokenDelta({ previous: prev, current: curr, phase: 'idle' });
 
     expect(reviewer).toEqual({ input: 0, output: 0, cacheRead: 0, cacheCreate: 0 });
   });
@@ -33,7 +37,11 @@ describe('attributePhaseTokenDelta', () => {
     const prev = makeUsage({ reviewerInput: 900, reviewerOutput: 300 });
     const curr = makeUsage({ reviewerInput: 100, reviewerOutput: 50 });
 
-    const { reviewer } = attributePhaseTokenDelta(prev, curr, 'final-review');
+    const { reviewer } = attributePhaseTokenDelta({
+      previous: prev,
+      current: curr,
+      phase: 'final-review',
+    });
 
     expect(reviewer).toEqual({ input: 0, output: 0, cacheRead: 0, cacheCreate: 0 });
   });

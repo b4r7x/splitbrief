@@ -51,12 +51,24 @@ describe('modelSupportsImages', () => {
     ['openrouter', 'google/gemini-2.5-pro-preview', true],
     ['groq', 'llama-3.1-70b', false],
   ] as const)('%s / %s => %s', (provider, model, expected) => {
-    expect(modelSupportsImages(provider, model)).toBe(expected);
+    expect(modelSupportsImages({ provider, model })).toBe(expected);
   });
 
   it('takes the detected modality fact over the model-name guess', () => {
-    expect(modelSupportsImages('groq', 'llama-3.1-70b', { supportsImages: true })).toBe(true);
-    expect(modelSupportsImages('openai', 'gpt-4o', { supportsImages: false })).toBe(false);
+    expect(
+      modelSupportsImages({
+        provider: 'groq',
+        model: 'llama-3.1-70b',
+        detected: { supportsImages: true },
+      }),
+    ).toBe(true);
+    expect(
+      modelSupportsImages({
+        provider: 'openai',
+        model: 'gpt-4o',
+        detected: { supportsImages: false },
+      }),
+    ).toBe(false);
   });
 });
 

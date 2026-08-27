@@ -226,7 +226,6 @@ describe('runRetryStep', () => {
       outcome: 'usage-limit',
       runner: intermediateRunner,
     });
-    expect(outcome.lastFailure?.runner).not.toEqual(defaultImplementer);
   });
 
   it('uses an overridden implementer profile for retry execution and completion metadata', async () => {
@@ -240,16 +239,11 @@ describe('runRetryStep', () => {
     const defaultRetry = async () => {
       throw new Error('default implementer should not handle an overridden retry');
     };
-    const overrideRetry = async ({ config: retryConfig, error, attempt, kind }: RetryOptions) => {
-      const implementer = retryConfig.implementer;
+    let receivedRetry: RetryOptions | undefined;
+    const overrideRetry = async (opts: RetryOptions) => {
+      receivedRetry = opts;
       return {
-        success:
-          implementer.kind === 'api' &&
-          implementer.provider === 'deepseek' &&
-          implementer.model === 'deepseek-chat' &&
-          error === 'validation failed' &&
-          attempt === 1 &&
-          kind === 'local',
+        success: true,
         output: 'fixed',
         usage: { inputTokens: 12, outputTokens: 6 },
       };
@@ -307,6 +301,12 @@ describe('runRetryStep', () => {
         }),
     });
 
+    expect(receivedRetry).toMatchObject({
+      error: 'validation failed',
+      attempt: 1,
+      kind: 'local',
+      config: { implementer: { kind: 'api', provider: 'deepseek', model: 'deepseek-chat' } },
+    });
     expect(outcome.result).toEqual({
       completed: true,
       method: 'local',

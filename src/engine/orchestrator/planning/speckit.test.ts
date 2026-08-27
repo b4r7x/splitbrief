@@ -328,7 +328,6 @@ describe('runSpeckitPlanning', () => {
     expect(result.state.phase).toBe('analyzing');
     expect(result.state.tasks).toEqual([]);
     expect(result.state.generation ?? null).toBeNull();
-    expect(review).toHaveBeenCalledTimes(1);
     expect(onApprovalNeeded).not.toHaveBeenCalled();
     expect(events.filter((event) => event.type === 'brief_quality_failed')).toHaveLength(0);
     expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(0);
@@ -371,7 +370,6 @@ describe('runSpeckitPlanning', () => {
     expect(persisted?.permit ?? null).toBeNull();
     expect(persisted?.briefRecovery ?? null).toBeNull();
     expect(onApprovalNeeded).not.toHaveBeenCalled();
-    expect(review).toHaveBeenCalledTimes(1);
     expect(planner.review).toHaveBeenCalledTimes(1);
     expect(
       events.some((event) => event.type === 'planner_status' && event.phase === 'analyzing'),

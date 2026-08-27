@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { copilotParseLine } from './cli-tools/copilot.js';
+import { parseCopilotLine } from '../streaming/parse-copilot.js';
 
 describe('copilot planner — parses the {type, data} JSON envelope', () => {
-  const parse = (event: unknown) => copilotParseLine(JSON.stringify(event));
+  const parse = (event: unknown) => parseCopilotLine(JSON.stringify(event));
 
   it('extracts the session id from session.start', () => {
     const result = parse({
@@ -99,7 +99,7 @@ describe('copilot planner — parses the {type, data} JSON envelope', () => {
   });
 
   it('returns bounded warnings for unknown event types and empty for blank lines', () => {
-    expect(copilotParseLine('')).toEqual({});
+    expect(parseCopilotLine('')).toEqual({});
     expect(parse({ type: 'future.event', data: {} })).toEqual({
       warning: [expect.objectContaining({ code: 'unknown_copilot_record' })],
     });

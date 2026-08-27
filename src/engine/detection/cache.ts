@@ -37,7 +37,6 @@ const MAX_CACHE_ENTRIES = 100;
 // contexts; a PATH_MAX-sized path alone can expand beyond 12 KiB.
 const MAX_CACHE_CONTEXT_KEY_LENGTH = 16 * 1_024;
 const CACHE_RELATIVE_PATH = join(SPLITBRIEF_DIR, CACHE_FILENAME);
-const LEGACY_CONTEXT_KEY = 'legacy-detection-cache';
 
 function hasSensitiveCacheValue(value: string): boolean {
   return (
@@ -337,26 +336,6 @@ function snapshotFromCache(cache: DetectionCache): DetectionCacheSnapshot | null
   };
 }
 
-function legacySnapshot(
-  providers: ProviderDetection[],
-  cliTools: CliToolDetection[],
-): DetectionCacheSnapshot {
-  const observedAt = Date.now();
-  return {
-    contextKey: LEGACY_CONTEXT_KEY,
-    fetchedAt: observedAt,
-    validatedAt: observedAt,
-    generation: 0,
-    requestId: 0,
-    providers,
-    cliTools,
-  };
-}
-
-function isSaveInput(value: SaveDetectionCacheInput | string): value is SaveDetectionCacheInput {
-  return typeof value !== 'string';
-}
-
 async function readCacheRaw(projectDir: string): Promise<unknown | null> {
   try {
     const raw = await confinedReadFileAsync(projectDir, CACHE_RELATIVE_PATH);
@@ -431,48 +410,7 @@ export async function loadRememberedCliRuntime(
   return { installedVersion, fingerprint };
 }
 
-/**
- * Legacy projection reader retained for callers that only need the sanitized
- * readiness projection. Coordinator-backed callers use loadDetectionCacheSnapshot.
- */
-export async function loadDetectionCache(
-  projectDir: string,
-  ttlMs = DEFAULT_TTL_MS,
-): Promise<{ providers: ProviderDetection[]; cliTools: CliToolDetection[] } | null> {
-  const cache = await readCache(projectDir);
-  if (
-    cache === null ||
-    cache.contextKey !== LEGACY_CONTEXT_KEY ||
-    Date.now() - cache.fetchedAt >= ttlMs
-  ) {
-    return null;
-  }
-  const snapshot = snapshotFromCache(cache);
-  if (snapshot === null) return null;
-  return { providers: snapshot.providers, cliTools: snapshot.cliTools };
-}
-
-export function saveDetectionCache(input: SaveDetectionCacheInput): Promise<void>;
-export function saveDetectionCache(
-  projectDir: string,
-  providers: ProviderDetection[],
-  cliTools: CliToolDetection[],
-): Promise<void>;
-export async function saveDetectionCache(
-  inputOrProjectDir: SaveDetectionCacheInput | string,
-  providers?: ProviderDetection[],
-  cliTools?: CliToolDetection[],
-): Promise<void> {
-  const input = isSaveInput(inputOrProjectDir)
-    ? inputOrProjectDir
-    : providers === undefined || cliTools === undefined
-      ? null
-      : {
-          projectDir: inputOrProjectDir,
-          snapshot: legacySnapshot(providers, cliTools),
-        };
-  if (input === null) return;
-
+export async function saveDetectionCache(input: SaveDetectionCacheInput): Promise<void> {
   const cache = buildCache(input.snapshot);
   if (cache === null) return;
 

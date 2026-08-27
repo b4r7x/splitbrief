@@ -243,7 +243,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'overlay-command-palette-arg',
+      id: 'workflow-command-argument',
       title: 'Workflow · command argument completion',
       surface: screenSurface('workflow'),
       checkpoint: {

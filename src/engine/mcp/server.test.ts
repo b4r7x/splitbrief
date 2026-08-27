@@ -129,7 +129,6 @@ describe('Auth rejection', () => {
 
   it('returns 401 for an equal-length but different token', async () => {
     const wrong = `X${TOKEN.slice(1)}`;
-    expect(wrong.length).toBe(TOKEN.length);
     const h = await startServer();
     const res = await fetch(`${baseUrl(h.port)}/mcp`, {
       method: 'POST',
@@ -177,7 +176,8 @@ describe('Body limit', () => {
   it('returns 413 for body > 1 MB', async () => {
     const h = await startServer();
     const largeBody = 'x'.repeat(1024 * 1024 + 1);
-    let status: number;
+    let status: number | undefined;
+    let failure: unknown;
     try {
       const res = await fetch(`${baseUrl(h.port)}/mcp`, {
         method: 'POST',
@@ -185,11 +185,20 @@ describe('Body limit', () => {
         body: largeBody,
       });
       status = res.status;
-    } catch {
-      // Connection may be destroyed before response arrives — treat as expected
-      status = 413;
+    } catch (err) {
+      failure = err;
     }
-    expect(status).toBe(413);
+
+    if (failure === undefined) {
+      expect(status).toBe(413);
+      return;
+    }
+    // The server may destroy the connection before the response is flushed;
+    // only a premature close counts as the limit being enforced.
+    const cause = failure instanceof Error ? failure.cause : undefined;
+    expect(`${String(failure)} ${String(cause)}`).toMatch(
+      /terminated|ECONNRESET|socket hang up|EPIPE/,
+    );
   });
 });
 

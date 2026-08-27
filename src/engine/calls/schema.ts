@@ -50,10 +50,7 @@ export const RunnerCallActivityKindSchema = z.enum(RUNNER_CALL_ACTIVITY_KINDS);
 export const RunnerCallFailureStatusSchema = z.enum(RUNNER_CALL_FAILURE_STATUSES);
 export const RunnerCallTextSemanticsSchema = z.enum(['delta', 'final']);
 export const RunnerCallAttemptIdSchema = TaskCompilationAttemptIdSchema;
-export const RunnerCallTransportSchema = PlannerArtifactTransportSchema;
-export const RunnerCallSessionScopeSchema = PlannerSessionScopeSchema;
 export const RunnerCallEnvelopeSchema = CallEnvelopeSchema;
-export const RunnerCallOperationEnvelopeSchema = OperationEnvelopeSchema;
 
 export const CallIdSchema = boundedId;
 
@@ -65,10 +62,10 @@ export const runnerCallContextFields = {
   runnerName: boundedName.optional(),
   model: boundedName.optional(),
   attempt: nonnegativeInteger.optional(),
-  transport: RunnerCallTransportSchema.optional(),
-  sessionScope: RunnerCallSessionScopeSchema.optional(),
+  transport: PlannerArtifactTransportSchema.optional(),
+  sessionScope: PlannerSessionScopeSchema.optional(),
   envelope: RunnerCallEnvelopeSchema.optional(),
-  operationEnvelope: RunnerCallOperationEnvelopeSchema.optional(),
+  operationEnvelope: OperationEnvelopeSchema.optional(),
 } as const;
 
 export const RunnerCallContextSchema = z.strictObject(runnerCallContextFields);
@@ -203,17 +200,7 @@ export const RunnerCallEventSchema = z.discriminatedUnion('type', [
 ]);
 
 const runnerCallResultBaseFields = {
-  callId: CallIdSchema,
-  attemptId: RunnerCallAttemptIdSchema.optional(),
-  role: RunnerCallRoleSchema,
-  backendKind: RunnerCallBackendKindSchema,
-  runnerName: boundedName.optional(),
-  model: boundedName.optional(),
-  attempt: nonnegativeInteger.optional(),
-  transport: RunnerCallTransportSchema.optional(),
-  sessionScope: RunnerCallSessionScopeSchema.optional(),
-  envelope: RunnerCallEnvelopeSchema.optional(),
-  operationEnvelope: RunnerCallOperationEnvelopeSchema.optional(),
+  ...runnerCallContextFields,
   // RunnerCallStatusSchema is the peer event lifecycle vocabulary above. A
   // persisted result uses the canonical task-compilation terminal vocabulary.
   terminalStatus: TaskCompilationTerminalStatusSchema.nullable().optional(),

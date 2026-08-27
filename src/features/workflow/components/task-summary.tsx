@@ -114,8 +114,7 @@ export function TaskSummary({
           {leadingSlot}
           <Text color={t.textDim}>
             {skipped.head}
-            {TITLE_SEP}
-            {skipped.tail.join(SOFT_SEP)}
+            {skipped.tail.length > 0 && `${TITLE_SEP}${skipped.tail.join(SOFT_SEP)}`}
           </Text>
         </Text>
       </Box>

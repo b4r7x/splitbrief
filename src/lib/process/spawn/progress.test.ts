@@ -191,8 +191,24 @@ describe('spawnWithTimeout', () => {
         timeout: 5000,
         onProgress: () => {},
       }),
-    ).rejects.toThrow();
-  });
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 15_000);
+
+  it('rejects with the install hint when a non-existent command has a notFoundMessage', async () => {
+    await expect(
+      spawnWithTimeout({
+        command: 'nonexistent-cmd-xyz-99999',
+        args: [],
+        cwd: process.cwd(),
+        timeout: 5000,
+        onProgress: () => {},
+        notFoundMessage: 'Install it with: npm i -g nonexistent-cmd-xyz-99999',
+      }),
+    ).rejects.toMatchObject({
+      kind: 'command-not-found',
+      message: 'Install it with: npm i -g nonexistent-cmd-xyz-99999',
+    });
+  }, 15_000);
 
   it('reassembles multibyte stdout split across data chunks without corruption', async () => {
     // The child writes each UTF-8 byte of '日本語' in its own write, forcing the parent stream

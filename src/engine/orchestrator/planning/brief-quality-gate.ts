@@ -1,4 +1,4 @@
-import type * as BriefRecoverySchemas from '../../../core/schemas/brief-recovery.js';
+import type { BriefQualityIssue } from '../../../core/schemas/brief-recovery/primitives.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { EventBus } from '../../events/types.js';
 import type { Phase } from '../../../core/schemas/enums.js';
@@ -8,7 +8,7 @@ import { writeBriefQualityReport } from '../../spec/brief-quality-file.js';
 import type { BriefQualityCode, BriefQualityReport } from '../../spec/brief-quality.js';
 
 /** A bounded core issue that remains assignable to legacy engine consumers. */
-export type BriefQualityGateIssue = BriefRecoverySchemas.BriefQualityIssue & {
+export type BriefQualityGateIssue = BriefQualityIssue & {
   taskId: TaskId;
   code: BriefQualityCode;
 };

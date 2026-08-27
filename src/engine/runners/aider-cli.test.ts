@@ -2,11 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  aiderImplementerAdapter,
-  aiderPlannerAdapter,
-  aiderPromptArgs,
-} from './cli-tools/aider.js';
+import { aiderImplementerAdapter, aiderPlannerAdapter } from './cli-tools/aider.js';
 
 describe('aider implementer — keeps the staged working tree dirty for change detection', () => {
   it('disables aider self-commits so edits are observable as uncommitted changes', () => {
@@ -18,7 +14,9 @@ describe('aider implementer — keeps the staged working tree dirty for change d
     });
     expect(args).toContain('--no-auto-commits');
     expect(args).toContain('--no-dirty-commits');
-    expect(aiderImplementerAdapter.validateArgs(args, args)).toEqual({ valid: true });
+    expect(aiderImplementerAdapter.validateArgs({ invocationArgs: args, baseArgs: args })).toEqual({
+      valid: true,
+    });
   });
 });
 
@@ -78,10 +76,23 @@ describe('aider planner — only seeds --read src/ for projects that have a src/
 
   it('keeps the prompt sentinel as one standalone argv element', () => {
     expect(
-      aiderPromptArgs({ role: 'planner', projectDir: '', mode: 'plan', configuredArgs: [] }),
+      aiderPlannerAdapter.buildArgs({
+        prompt: '<PROMPT>',
+        model: undefined,
+        projectDir,
+        configuredArgs: [],
+        mode: 'plan',
+        sessionId: null,
+        effort: undefined,
+      }),
     ).toContain('<PROMPT>');
-    expect(aiderPromptArgs({ role: 'implementer', projectDir: '', configuredArgs: [] })).toContain(
-      '<PROMPT>',
-    );
+    expect(
+      aiderImplementerAdapter.buildArgs({
+        prompt: '<PROMPT>',
+        model: undefined,
+        projectDir,
+        configuredArgs: [],
+      }),
+    ).toContain('<PROMPT>');
   });
 });

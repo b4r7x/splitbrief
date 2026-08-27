@@ -79,14 +79,8 @@ function scanMarkerSpans(text: string): MarkerSpan[] {
   return spans;
 }
 
-interface ScanResult {
-  questions: ClarificationQuestion[];
-  consumed: number;
-}
-
-function scanQuestions(text: string): ScanResult {
+function scanQuestions(text: string): ClarificationQuestion[] {
   const questions: ClarificationQuestion[] = [];
-  let consumed = 0;
 
   for (const { start, end } of scanMarkerSpans(text)) {
     try {
@@ -97,10 +91,9 @@ function scanQuestions(text: string): ScanResult {
     } catch (err) {
       warnError('question: malformed marker', err);
     }
-    consumed = end;
   }
 
-  return { questions, consumed };
+  return questions;
 }
 
 function findPendingMarkerStart(text: string): number {
@@ -120,7 +113,7 @@ function findPendingMarkerStart(text: string): number {
 }
 
 export function extractQuestionsFromStream(text: string): ClarificationQuestion[] {
-  return scanQuestions(text).questions;
+  return scanQuestions(text);
 }
 
 export function createQuestionAccumulator() {

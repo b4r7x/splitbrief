@@ -23,6 +23,8 @@ import { CLI_COMPILER_EVIDENCE } from '../../core/runners/cli-tool-catalog.js';
 import { admitCliCompilerRuntime } from './cli-tools/registry.js';
 import { bindCompilerRuntimeEvidence } from './compiler-runtime-evidence.js';
 import { createPlanner, type RunnerFactoryAuthority } from './factory.js';
+import { installRunCompiler } from './compiler-seam.js';
+import { readPlannerCompilerRefusal, readPlannerCompilerSeam } from '../planners/base.js';
 import { executableReceipt } from '#testing/helpers/custom-command-based.js';
 
 const OPERATION_ID = TaskCompilationOperationIdSchema.parse('operation-unsupported-matrix');
@@ -39,15 +41,11 @@ function authorityFor(config: Config): RunnerFactoryAuthority {
 }
 
 describe('compiler backend support matrix', () => {
-  it('marks Copilot, Aider, and the legacy shell and agent planners typed-unsupported', () => {
-    for (const backend of ['copilot', 'aider', 'shell', 'agent'] as const) {
-      const row = COMPILER_SUPPORT_TABLE[backend];
-      expect(row.state).toBe('unsupported');
-      expect(row.transports).toEqual([]);
-      expect(row.unsupportedReason?.length ?? 0).toBeGreaterThan(0);
+  it('keeps the CLI compiler evidence in agreement with the unsupported support-table rows', () => {
+    for (const tool of ['copilot', 'aider'] as const) {
+      expect(CLI_COMPILER_EVIDENCE[tool].state).toBe('unsupported');
+      expect(CLI_COMPILER_EVIDENCE[tool].state).toBe(COMPILER_SUPPORT_TABLE[tool].state);
     }
-    expect(CLI_COMPILER_EVIDENCE.copilot.state).toBe('unsupported');
-    expect(CLI_COMPILER_EVIDENCE.aider.state).toBe('unsupported');
   });
 
   it('keeps conditional rows conformance-gated and the baseline row explicit', () => {
@@ -171,20 +169,18 @@ describe('conditional compiler paths stay inactive until conformance passes', ()
     }
   });
 
-  it('refuses unsupported capability tuples even with a verified-looking proof', () => {
-    for (const backend of ['copilot', 'aider', 'shell', 'agent'] as const) {
-      const admission = admitCompilerCapability(
-        capabilityTuple('opencode', {
-          backend,
-          version: '',
-          terminalContract: 'unsupported',
-          credentialChannel: 'api-key',
-        }),
-      );
-      expect(admission.kind, backend).toBe('refused');
-      if (admission.kind === 'refused') {
-        expect(admission.missing).toContain('backend');
-      }
-    }
-  });
+  it.each(['shell', 'agent'] as const)(
+    'installs a zero-dispatch compiler refusal for a legacy %s planner',
+    async (kind) => {
+      const config = makeConfig({ planner: { kind, command: 'echo', args: [] } });
+      const planner = await createPlanner(config, authorityFor(config));
+
+      await installRunCompiler({ planner, config, projectDir: undefined, trustedCli: undefined });
+
+      expect(readPlannerCompilerSeam(planner)).toBeNull();
+      expect(readPlannerCompilerRefusal(planner)).toMatchObject({
+        code: 'task_compiler_capability_unsupported',
+      });
+    },
+  );
 });

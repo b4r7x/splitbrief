@@ -4,11 +4,12 @@ import {
   CLI_CONFORMANCE_CANDIDATES,
   aiderImplementerAdapter,
   aiderPlannerAdapter,
-  aiderPromptArgs,
   aiderProtocolEvents,
 } from './aider.js';
+import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 
-const PROMPT = '<PROMPT>';
+const PROMPT = CLI_PROMPT_SENTINEL;
+const PROJECT_DIR = process.cwd();
 
 describe('Aider role adapters', () => {
   it('exports planner then implementer candidates with matching canonical hashes', () => {
@@ -55,12 +56,14 @@ describe('Aider role adapters', () => {
   });
 
   it('preserves planner ask flags, model placement, and optional source read', () => {
-    const args = aiderPromptArgs({
-      role: 'planner',
+    const args = aiderPlannerAdapter.buildArgs({
+      prompt: PROMPT,
       model: 'claude-sonnet-4-6',
-      projectDir: '',
-      mode: 'plan',
+      projectDir: PROJECT_DIR,
       configuredArgs: ['--verbose'],
+      mode: 'plan',
+      sessionId: null,
+      effort: undefined,
     });
     expect(args).toEqual([
       '--model',
@@ -72,15 +75,20 @@ describe('Aider role adapters', () => {
       '--no-pretty',
       '--message',
       PROMPT,
+      '--read',
+      'src/',
       '--verbose',
     ]);
-    expect(aiderPlannerAdapter.validateArgs(args, args.slice(0, -1))).toEqual({ valid: true });
+    expect(
+      aiderPlannerAdapter.validateArgs({ invocationArgs: args, baseArgs: args.slice(0, -1) }),
+    ).toEqual({ valid: true });
   });
 
   it('preserves implementer no-commit flags and appends an explicit model', () => {
-    const args = aiderPromptArgs({
-      role: 'implementer',
+    const args = aiderImplementerAdapter.buildArgs({
+      prompt: PROMPT,
       model: 'openai/gpt-5',
+      projectDir: PROJECT_DIR,
       configuredArgs: ['--verbose'],
     });
     expect(args).toEqual([
@@ -93,16 +101,20 @@ describe('Aider role adapters', () => {
       'openai/gpt-5',
       '--verbose',
     ]);
-    expect(args).not.toContain('--commit');
-    expect(aiderImplementerAdapter.validateArgs(args, args.slice(0, -1))).toEqual({ valid: true });
+    expect(
+      aiderImplementerAdapter.validateArgs({ invocationArgs: args, baseArgs: args.slice(0, -1) }),
+    ).toEqual({ valid: true });
   });
 
   it('overrides read-only and dry-run config defaults for full escalation', () => {
-    const args = aiderPromptArgs({
-      role: 'planner',
+    const args = aiderPlannerAdapter.buildArgs({
+      prompt: PROMPT,
       model: 'claude-sonnet-4-6',
-      projectDir: '',
+      projectDir: PROJECT_DIR,
+      configuredArgs: [],
       mode: 'escalate',
+      sessionId: null,
+      effort: undefined,
     });
 
     expect(args).toEqual([
@@ -119,19 +131,19 @@ describe('Aider role adapters', () => {
       '--message',
       PROMPT,
     ]);
-    expect(args).not.toContain('--chat-mode');
-    expect(args).not.toContain('ask');
     expect(
-      aiderPlannerAdapter.validateArgs(
-        aiderPromptArgs({
-          role: 'planner',
+      aiderPlannerAdapter.validateArgs({
+        invocationArgs: aiderPlannerAdapter.buildArgs({
+          prompt: PROMPT,
           model: 'claude-sonnet-4-6',
-          projectDir: '',
-          mode: 'escalate',
+          projectDir: PROJECT_DIR,
           configuredArgs: ['--architect', '--dry-run'],
+          mode: 'escalate',
+          sessionId: null,
+          effort: undefined,
         }),
-        args,
-      ),
+        baseArgs: args,
+      }),
     ).toEqual({ valid: false, conflicts: ['--architect', '--dry-run'] });
   });
 
@@ -144,41 +156,82 @@ describe('Aider role adapters', () => {
     { tail: ['--dirty-commits'], conflict: '--dirty-commits' },
     { tail: ['--commit'], conflict: '--commit' },
   ])('rejects the protected configured-tail bypass $conflict', ({ tail, conflict }) => {
-    const base = aiderPromptArgs({ role: 'implementer' });
+    const base = aiderImplementerAdapter.buildArgs({
+      prompt: PROMPT,
+      model: undefined,
+      projectDir: PROJECT_DIR,
+      configuredArgs: [],
+    });
 
-    expect(aiderImplementerAdapter.validateArgs([...base, ...tail], base)).toEqual({
+    expect(
+      aiderImplementerAdapter.validateArgs({ invocationArgs: [...base, ...tail], baseArgs: base }),
+    ).toEqual({
       valid: false,
       conflicts: [conflict],
     });
   });
 
   it('rejects reordered, protected, and alternate prompt arguments', () => {
-    const base = aiderPromptArgs({ role: 'implementer' });
-    expect(aiderImplementerAdapter.validateArgs([PROMPT, ...base], base)).toEqual({
+    const base = aiderImplementerAdapter.buildArgs({
+      prompt: PROMPT,
+      model: undefined,
+      projectDir: PROJECT_DIR,
+      configuredArgs: [],
+    });
+    expect(
+      aiderImplementerAdapter.validateArgs({ invocationArgs: [PROMPT, ...base], baseArgs: base }),
+    ).toEqual({
       valid: false,
       conflicts: ['argument-order', 'prompt-transport'],
     });
-    expect(aiderImplementerAdapter.validateArgs([...base, '--message', 'other'], base)).toEqual({
+    expect(
+      aiderImplementerAdapter.validateArgs({
+        invocationArgs: [...base, '--message', 'other'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['--message'],
     });
-    expect(aiderImplementerAdapter.validateArgs([...base, '--edit-format', 'diff'], base)).toEqual({
+    expect(
+      aiderImplementerAdapter.validateArgs({
+        invocationArgs: [...base, '--edit-format', 'diff'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['--edit-format'],
     });
-    expect(aiderImplementerAdapter.validateArgs([...base, '--dry-run'], base)).toEqual({
+    expect(
+      aiderImplementerAdapter.validateArgs({
+        invocationArgs: [...base, '--dry-run'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['--dry-run'],
     });
-    expect(aiderImplementerAdapter.validateArgs([...base, 'prefix-<PROMPT>'], base)).toEqual({
+    expect(
+      aiderImplementerAdapter.validateArgs({
+        invocationArgs: [...base, 'prefix-<PROMPT>'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });
-    expect(aiderImplementerAdapter.validateArgs([...base, '<OTHER>'], base)).toEqual({
+    expect(
+      aiderImplementerAdapter.validateArgs({
+        invocationArgs: [...base, '<OTHER>'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });
-    expect(aiderImplementerAdapter.validateArgs([...base, PROMPT], base)).toEqual({
+    expect(
+      aiderImplementerAdapter.validateArgs({ invocationArgs: [...base, PROMPT], baseArgs: base }),
+    ).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });
@@ -207,7 +260,6 @@ describe('Aider text adapter', () => {
             semantics: 'final',
           },
         ],
-        stdout: 'Aider response\n',
         stderr: 'Tokens: 100 sent, 50 received.\n',
         exitCode: 0,
         signal: null,

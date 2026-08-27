@@ -146,22 +146,22 @@ export function approvalLabelIndent(keyWidth: number): number {
   return 2 + keyWidth + 3;
 }
 
-export function approvalOptionLabelLines(
-  option: ApprovalOption,
-  keyWidth: number,
-  width: number,
-): string[] {
-  const indent = approvalLabelIndent(keyWidth);
-  return wrapHard(option.label, Math.max(MIN_TEXT_WIDTH, width - indent)).split('\n');
+export function approvalOptionLabelLines(input: {
+  option: ApprovalOption;
+  keyWidth: number;
+  width: number;
+}): string[] {
+  const indent = approvalLabelIndent(input.keyWidth);
+  return wrapHard(input.option.label, Math.max(MIN_TEXT_WIDTH, input.width - indent)).split('\n');
 }
 
-export function approvalOptionLabelText(
-  option: ApprovalOption,
-  keyWidth: number,
-  width: number,
-): string {
-  const indent = ' '.repeat(approvalLabelIndent(keyWidth));
-  return approvalOptionLabelLines(option, keyWidth, width).join(`\n${indent}`);
+export function approvalOptionLabelText(input: {
+  option: ApprovalOption;
+  keyWidth: number;
+  width: number;
+}): string {
+  const indent = ' '.repeat(approvalLabelIndent(input.keyWidth));
+  return approvalOptionLabelLines(input).join(`\n${indent}`);
 }
 
 export const APPROVAL_OPTION_FIRST_ROW_OFFSET = 4;
@@ -184,7 +184,7 @@ function approvalOptionRowCount(
   keyWidth: number,
 ): number {
   return options.reduce(
-    (rows, option) => rows + approvalOptionLabelLines(option, keyWidth, width).length,
+    (rows, option) => rows + approvalOptionLabelLines({ option, keyWidth, width }).length,
     0,
   );
 }
@@ -204,7 +204,7 @@ export function getApprovalOptionZones(input: {
   const zones: PromptOptionZone[] = [];
   let offset = APPROVAL_OPTION_FIRST_ROW_OFFSET + input.subjectRows;
   for (const option of input.options) {
-    const optionRows = approvalOptionLabelLines(option, keyWidth, width).length;
+    const optionRows = approvalOptionLabelLines({ option, keyWidth, width }).length;
     const top = input.boxTop + offset;
     const bottom = top + optionRows - 1;
     offset += optionRows;
@@ -229,11 +229,12 @@ export function getStickyOptionZones(input: {
   });
 }
 
-export function confirmSubjectRowCount(
-  actionClass: ActionClass,
-  actionDescription: string,
-  cols: number,
-): number {
+export function confirmSubjectRowCount(input: {
+  actionClass: ActionClass;
+  actionDescription: string;
+  cols: number;
+}): number {
+  const { actionClass, actionDescription, cols } = input;
   const width = approvalTextWidth(cols);
   return (
     wrappedRows(getApprovalConfirmLabel(actionClass), width) +
@@ -253,7 +254,11 @@ export function getConfirmOptionZones(input: {
     boxTop: input.boxTop,
     cols: input.cols,
     promptRows: input.promptRows,
-    subjectRows: confirmSubjectRowCount(input.actionClass, input.actionDescription, input.cols),
+    subjectRows: confirmSubjectRowCount({
+      actionClass: input.actionClass,
+      actionDescription: input.actionDescription,
+      cols: input.cols,
+    }),
     options: getConfirmOptions(input.actionClass),
   });
 }
@@ -279,7 +284,7 @@ function getConfirmRows(actionClass: ActionClass, actionDescription: string, col
   const subjectRows =
     wrappedRows(gateTitleLine(getApprovalSeverityWord(actionClass)), width) +
     1 +
-    confirmSubjectRowCount(actionClass, actionDescription, cols) +
+    confirmSubjectRowCount({ actionClass, actionDescription, cols }) +
     1;
   const chooseStepRows =
     subjectRows +

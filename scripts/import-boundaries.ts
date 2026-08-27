@@ -87,7 +87,7 @@ const SLICE_EXT_RE = /\.(?:ts|tsx|js|jsx)$/;
 function sliceRoot(srcRelPath: string): Slice | null {
   const parts = srcRelPath.split('/');
 
-  // Folder slice: src/features/<name>/** (behaviour identical to old featureName, no ext strip).
+  // Folder slice: the whole src/features/<name>/ subtree, no extension strip.
   if (parts[0] === 'features' && parts.length >= 2 && parts[1] !== undefined) {
     return { kind: 'feature', name: parts[1] };
   }
@@ -119,7 +119,6 @@ function sliceIsolationReason(from: Slice, to: Slice): string | null {
     return null;
   }
 
-  // PRESERVED byte-for-byte: existing cross-feature message format.
   if (from.kind === 'feature' && to.kind === 'feature') {
     return `src/features/${from.name}/** must not import from src/features/${to.name}/**`;
   }
@@ -168,7 +167,6 @@ function classify(opts: {
   const fromSlice = sliceRoot(fromSrcRel);
   const targetSlice = sliceRoot(targetSrcRel);
 
-  // src/components/** must not import a vertical feature slice (message preserved byte-for-byte).
   if (fromSrcRel.startsWith('components/') && targetSlice?.kind === 'feature') {
     return `src/components/** must not import from src/features/** (${targetSlice.name})`;
   }

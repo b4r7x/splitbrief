@@ -8,7 +8,9 @@ import {
   writeHeadlessConfigYaml,
 } from '#testing/helpers/headless-project.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
-import { beginSession } from '../../../src/core/sessions/lifecycle.js';
+import { writeActive } from '../../../src/core/sessions/active-pointer.js';
+import { generateSessionId } from '../../../src/core/sessions/session-id.js';
+import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { Implementer } from '../../../src/engine/implementers/types.js';
 import type { Planner } from '../../../src/engine/planners/types.js';
@@ -94,7 +96,9 @@ describe('runHeadless — budget pause behavior', () => {
   }, async () => {
     const projectDir = setupBudgetHeadlessProject(0.75);
     dirs.push(projectDir);
-    const sessionId = beginSession(projectDir, 'fix budget behavior');
+    const sessionId = generateSessionId({ projectDir, feature: 'fix budget behavior' });
+    ensureSessionDir(projectDir, sessionId);
+    writeActive({ projectDir, sessionId });
     const state = makeBudgetState();
 
     await expect(
@@ -118,23 +122,7 @@ describe('runHeadless — budget pause behavior', () => {
       .trim()
       .split('\n')
       .filter((line) => line.trim().startsWith('{'))
-      .map(
-        (line) =>
-          JSON.parse(line) as {
-            type?: string;
-            data?: {
-              type?: string;
-              currentCost?: number;
-              maxBudget?: number;
-              threshold?: number;
-            };
-            currentCost?: number;
-            maxBudget?: number;
-            threshold?: number;
-            reason?: string;
-            sessionId?: string;
-          },
-      );
+      .map((line) => JSON.parse(line) as { type?: string; message?: string });
     expect(jsonLines).toContainEqual(
       expect.objectContaining({
         type: 'error',
@@ -180,7 +168,9 @@ describe('runHeadless — budget pause behavior', () => {
       '  budget_pause_threshold: 0.85',
       '  task_review: every',
     ]);
-    const sessionId = beginSession(projectDir, 'fix budget behavior');
+    const sessionId = generateSessionId({ projectDir, feature: 'fix budget behavior' });
+    ensureSessionDir(projectDir, sessionId);
+    writeActive({ projectDir, sessionId });
     const state = makeBudgetState();
 
     await expect(

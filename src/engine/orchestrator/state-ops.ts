@@ -3,26 +3,22 @@ import { existsSync, readFileSync, realpathSync, statSync, type BigIntStats } fr
 import { join } from 'node:path';
 import type { StateAction, StateAuthorityReceipt } from '../../core/state/types.js';
 import { refreshStateAuthority } from '../../core/state/authority.js';
-import type { Task } from '../../core/schemas/task.js';
 import { transition } from '../../core/state/machine.js';
 import { loadState, serializedState } from '../../core/state/persistence.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { WorkflowStateSchema } from '../../core/schemas/workflow.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
-import { confinedExists, confinedReadFileAsync } from '../../lib/confined-fs.js';
-import { confinedAtomicWriteFileSync, type ConfigRevision } from '../../lib/confined-fs.js';
+import { confinedAtomicWriteFileSync, type ConfigRevision } from '../../lib/confined-fs-atomic.js';
 import { SECURE_FILE_MODE } from '../../lib/fs.js';
-import { assertPathConfined, pathConfinementError } from '../../lib/path-confinement.js';
 import { sessionDir } from '../../core/paths.js';
 import { assertSessionDirConfined } from '../../core/sessions/confinement.js';
-import { matches, error, type AppError } from '../../utils/error.js';
+import { error, type AppError } from '../../utils/error.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import { addUsage, type UsageCategory } from './tokens.js';
 import { publishCostUpdate, publishRecoveryPrompted } from './events.js';
 import type { WorkflowPersistenceContext } from './types.js';
 
-const isPathEscape = matches('path-confined-escape');
 const WORKFLOW_STATE_FILE = ['state', 'json'].join('.');
 
 export const MAX_STATE_CONFLICT_RETRIES = 3;
@@ -34,7 +30,6 @@ export type StateMutationOptions = Readonly<{
   expectedRevision?: StateOperationExpectedRevision | undefined;
   authority?: StateAuthorityReceipt | undefined;
   conflictRetries?: number | undefined;
-  maxConflictRetries?: number | undefined;
   maxRetries?: number | undefined;
 }>;
 
@@ -220,10 +215,6 @@ export function rebaseOnPersistedWorkflowState(
   return { ...persisted, messageQueue: mergeQueues(persisted.messageQueue, state.messageQueue) };
 }
 
-export function mergePersistedMessageQueue(ref: SessionRef, state: WorkflowState): WorkflowState {
-  return rebaseOnPersistedWorkflowState(ref, state);
-}
-
 function expectedIdentity(expected: StateOperationExpectedRevision | undefined): ExpectedIdentity {
   if (expected === undefined) {
     return {
@@ -313,7 +304,7 @@ function assertMutationAuthority(
 
 function retryLimit(options: StateMutationOptions | undefined, rederivable: boolean): number {
   if (!rederivable) return 0;
-  const requested = options?.conflictRetries ?? options?.maxConflictRetries ?? options?.maxRetries;
+  const requested = options?.conflictRetries ?? options?.maxRetries;
   if (
     (options?.expectedRevision !== undefined || options?.authority !== undefined) &&
     requested === undefined
@@ -342,10 +333,6 @@ function queueAction(action: StateAction): boolean {
     default:
       return false;
   }
-}
-
-function localMutation(action: StateAction): boolean {
-  return queueAction(action);
 }
 
 function preparedState(
@@ -519,7 +506,6 @@ function mutateState(input: MutationInput): WorkflowState {
                 messageQueue: mergeQueues(head.state.messageQueue, input.state.messageQueue),
               };
     const next = preparedState(base, input.derive(base), authority);
-    if (authority !== null) assertMutationAuthority(input.ref, authority, head);
     const committed = commitState(input.ref, head, next);
     if (committed === 'written') {
       if (authority !== null) {
@@ -546,27 +532,19 @@ function mutateState(input: MutationInput): WorkflowState {
   }
 }
 
-function transitionOptions(
-  options: StateMutationOptions | number | undefined,
-): StateMutationOptions | undefined {
-  if (typeof options === 'number') return { maxRetries: options };
-  return options;
-}
-
 export function transitionAndSave(
   ref: SessionRef,
   state: WorkflowState,
   action: StateAction,
-  options?: StateMutationOptions | number,
+  options?: StateMutationOptions,
 ): WorkflowState {
-  const mutationOptions = transitionOptions(options);
   const isQueueMutation = queueAction(action);
   return mutateState({
     ref,
     state,
     operation: isQueueMutation ? 'queue' : 'transition',
-    options: mutationOptions,
-    rederivable: localMutation(action),
+    options,
+    rederivable: isQueueMutation,
     mergeQueue: isQueueMutation,
     derive: (base) => {
       if (
@@ -575,7 +553,7 @@ export function transitionAndSave(
       ) {
         return base;
       }
-      return transition(base, action, { maxRetries: mutationOptions?.maxRetries });
+      return transition(base, action, { maxRetries: options?.maxRetries });
     },
   });
 }
@@ -590,49 +568,6 @@ export function raisePendingRecovery(
   publishRecoveryPrompted(scope.bus, issue);
   setTrackedState?.(next);
   return next;
-}
-
-async function refreshCurrentCode(task: Task, projectDir: string): Promise<Task> {
-  assertPathConfined(task.file, projectDir);
-  try {
-    if (!confinedExists(projectDir, task.file)) {
-      const { currentCode: _staleCurrentCode, ...taskWithoutCurrentCode } = task;
-      return taskWithoutCurrentCode;
-    }
-    const currentCode = await confinedReadFileAsync(projectDir, task.file);
-    if (currentCode === null) {
-      const { currentCode: _staleCurrentCode, ...taskWithoutCurrentCode } = task;
-      return taskWithoutCurrentCode;
-    }
-    return { ...task, currentCode };
-  } catch (err) {
-    if (pathConfinementError.isSymlinkRead(err) || isPathEscape(err)) {
-      const { currentCode: _staleCurrentCode, ...taskWithoutCurrentCode } = task;
-      return taskWithoutCurrentCode;
-    }
-    throw err;
-  }
-}
-
-export async function refreshAndPersistCode(
-  task: Task,
-  ref: SessionRef,
-  state: WorkflowState,
-): Promise<{ task: Task; state: WorkflowState }> {
-  const refreshed = await refreshCurrentCode(task, ref.projectDir);
-  if (refreshed.currentCode !== undefined) {
-    state = transitionAndSave(ref, state, {
-      type: 'UPDATE_TASK_CODE',
-      taskId: refreshed.id,
-      code: refreshed.currentCode,
-    });
-  } else if (task.currentCode !== undefined) {
-    state = transitionAndSave(ref, state, {
-      type: 'CLEAR_TASK_CODE',
-      taskId: refreshed.id,
-    });
-  }
-  return { task: refreshed, state };
 }
 
 export function addUsageAndSave(

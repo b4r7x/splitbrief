@@ -62,10 +62,6 @@ describe('Codex planner adapter — session resume', () => {
       '/project',
       PROMPT,
     ]);
-    expect(args.slice(args.indexOf('--sandbox'), args.indexOf('--sandbox') + 2)).toEqual([
-      '--sandbox',
-      'read-only',
-    ]);
   });
 
   it('uses global workspace-write escalation and skips the git repository check', () => {
@@ -127,11 +123,18 @@ describe('Codex implementer adapter — staged direct writes', () => {
       projectDir: '/staged',
       configuredArgs: [],
     });
-    expect(codexImplementerAdapter.validateArgs([...args, '--json'], args)).toEqual({
+    expect(
+      codexImplementerAdapter.validateArgs({ invocationArgs: [...args, '--json'], baseArgs: args }),
+    ).toEqual({
       valid: false,
       conflicts: ['--json'],
     });
-    expect(codexImplementerAdapter.validateArgs([...args, '--sandbox', 'danger'], args)).toEqual({
+    expect(
+      codexImplementerAdapter.validateArgs({
+        invocationArgs: [...args, '--sandbox', 'danger'],
+        baseArgs: args,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['--sandbox'],
     });
@@ -153,7 +156,6 @@ describe('Codex lossless prompt transport', () => {
       effort: undefined,
     });
     expect(args.at(-1)).toBe(oversizedPrompt);
-    expect(args.at(-1)).toContain(longTail);
   });
 
   it('does not alter multibyte prompt code points', () => {
@@ -168,7 +170,6 @@ describe('Codex lossless prompt transport', () => {
       effort: undefined,
     });
     expect(args.at(-1)).toBe(prompt);
-    expect(args.at(-1)).not.toContain('\uFFFD');
   });
 });
 

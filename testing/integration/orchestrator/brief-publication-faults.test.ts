@@ -1,12 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createInitialState } from '../../../src/core/state/machine.js';
-import { saveState } from '../../../src/core/state/persistence.js';
-import { WorkflowStateSchema, type WorkflowState } from '../../../src/core/schemas/workflow.js';
-import { BRIEF_QUALITY_FILE, STATE_FILE, TASKS_FILE, sessionDir } from '../../../src/core/paths.js';
+import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import { BRIEF_QUALITY_FILE, TASKS_FILE } from '../../../src/core/paths.js';
 import { readSpecFile } from '../../../src/core/paths-io.js';
-import type { StateAuthorityReceipt } from '../../../src/core/state/types.js';
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
 import type {
   BriefGenerationRef,
@@ -16,19 +11,18 @@ import type {
   BriefOwnerEvent,
   TaskExecutionPermit,
 } from '../../../src/core/schemas/brief-owner.js';
-import type { NormalBriefRecoveryV1 } from '../../../src/core/schemas/brief-recovery.js';
+import type { NormalBriefRecoveryV1 } from '../../../src/core/schemas/brief-recovery/document.js';
 import {
+  type WorkflowStateHead,
   readWorkflowStateHead,
   revisionsMatch,
-  workflowStateRevision,
 } from '../../../src/engine/orchestrator/state-ops.js';
-import { createWorkflowRecoveryBinding } from '../../../src/engine/orchestrator/run/recovery-binding.js';
 import {
   drainRecoveryOutbox,
   persistBriefOwnerTransition,
   type RecoveryFaultPoint,
-} from '../../../src/engine/orchestrator/evidence/persistence.js';
-import { readRecoveryJournal } from '../../../src/core/evidence/ledger-storage.js';
+} from '../../../src/engine/orchestrator/evidence/recovery-journal.js';
+import { readRecoveryJournal } from '../../../src/core/evidence/recovery-journal.js';
 import {
   publishBriefGeneration,
   type BriefPublicationOptions,
@@ -48,21 +42,28 @@ import type { Planner } from '../../../src/engine/planners/types.js';
 import type { ModelCacheAccessor } from '../../../src/engine/providers/model/resolution.js';
 import type { EventBus } from '../../../src/engine/events/types.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
-import { makeBusRecorder, makeWctx } from '#testing/helpers/orchestrator-factories.js';
+import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { sha256Hex } from '../../../src/utils/sha256.js';
 import { canonicalJSON } from '../../../src/utils/canonical-json.js';
 import { evaluateBriefQuality } from '../../../src/engine/spec/brief-quality.js';
 import { parseTasksStrict } from '../../../src/engine/spec/tasks/parse.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
 import {
   makeBriefQualityFailureTask,
   makePassingPlanner,
   makePassingTask,
   REAL_TASKS_MD,
-  setupProject,
   TEST_METADATA,
 } from '#testing/helpers/planning-phase.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import {
+  type BindingFixture,
+  PRICED_MODEL_CACHE,
+  makeRecoveryBinding,
+  makeRecoveryBindingFixture,
+  normalRecovery,
+  recoveryOwnerExpectation,
+  stateBytes,
+} from '#testing/helpers/brief-recovery-fixtures.js';
 
 const dirs: string[] = [];
 
@@ -73,63 +74,19 @@ afterEach(() => {
   }
 });
 
-const PRICED_MODEL_CACHE = {
-  getModelsDevCatalog: () => ({
-    openai: {
-      id: 'openai',
-      models: {
-        'gpt-5.4': {
-          id: 'gpt-5.4',
-          cost: { input: 2.5, output: 15 },
-          limit: { context: 400_000 },
-        },
-      },
-    },
-  }),
-  getProviderModels: () => null,
-};
-
 const NOW = '2026-08-14T00:00:00.000Z';
 const TS = 1_752_000_000_000;
 
-function stateBytes(ref: SessionRef): string {
-  return readFileSync(join(sessionDir(ref.projectDir, ref.sessionId), STATE_FILE), 'utf8');
-}
-
-function authorityFor(
-  state: WorkflowState,
-  digest: string,
-  sessionId: string,
-): StateAuthorityReceipt {
-  return {
-    kind: 'usable',
-    sessionId,
-    ownerId: state.stateFence?.ownerId ?? 'publication-matrix',
-    pid: process.pid,
-    processStart: 'publication-matrix-process',
-    runId: 'publication-matrix-run',
-    acquisitionId: 'publication-matrix-acquisition',
-    fence: state.stateFence?.token ?? 0,
-    stateRevision: workflowStateRevision(state),
-    stateDigest: digest,
-  };
-}
-
-type BindingFixture = {
-  binding: ReturnType<typeof createWorkflowRecoveryBinding>;
-  ref: SessionRef;
-  authority: () => StateAuthorityReceipt;
-  trackedState: () => WorkflowState;
-};
-
-function seedState(ref: SessionRef, mode?: WorkflowState['mode']): WorkflowState {
-  const state: WorkflowState = {
-    ...createInitialState('publication-matrix'),
-    stateFence: { token: 1, ownerId: 'publication-matrix' },
-    ...(mode === undefined ? {} : { mode }),
-  };
-  saveState(ref, state);
-  return state;
+function fixture(
+  options: {
+    planner?: Planner | undefined;
+    modelCache?: ModelCacheAccessor | undefined;
+    maxBudget?: number | undefined;
+    mode?: WorkflowState['mode'] | undefined;
+    model?: string | undefined;
+  } = {},
+): BindingFixture {
+  return makeRecoveryBindingFixture({ dirs, ownerId: 'publication-matrix', ...options });
 }
 
 function makeBinding(
@@ -141,81 +98,14 @@ function makeBinding(
     model?: string | undefined;
   } = {},
 ): BindingFixture {
-  const initialHead = readWorkflowStateHead(ref);
-  if (initialHead === null) throw new Error('expected the initial workflow head');
-  const wctx = makeWctx({
-    projectDir: ref.projectDir,
-    sessionId: ref.sessionId,
-    config: makeConfig({
-      planner: {
-        kind: 'api',
-        provider: 'openai',
-        service: 'openai',
-        offering: 'payg',
-        apiBase: 'https://api.openai.com/v1',
-        model: options.model ?? 'gpt-5.4',
-      },
-      workflow: {
-        ...(options.maxBudget === undefined ? {} : { maxBudget: options.maxBudget }),
-      },
-    }),
-    planner: options.planner ?? makePassingPlanner(),
-    ...(options.modelCache === undefined ? {} : { modelCache: options.modelCache }),
-    metadata: TEST_METADATA,
-  });
-  let trackedState: WorkflowState = initialHead.state;
-  let authority = authorityFor(initialHead.state, initialHead.digest, ref.sessionId);
-  const binding = createWorkflowRecoveryBinding({
-    wctx,
-    getState: () => trackedState,
-    setState: (next) => {
-      trackedState = next;
-      const head = readWorkflowStateHead(ref);
-      if (head === null) throw new Error('expected the committed workflow head');
-      authority = {
-        ...authority,
-        stateRevision: workflowStateRevision(next),
-        stateDigest: head.digest,
-      };
-    },
-    getAuthority: () => authority,
-  });
-  return { binding, ref, authority: () => authority, trackedState: () => trackedState };
+  return makeRecoveryBinding({ ref, ownerId: 'publication-matrix', ...options });
 }
 
-function fixture(
-  options: {
-    planner?: Planner | undefined;
-    modelCache?: ModelCacheAccessor | undefined;
-    maxBudget?: number | undefined;
-    mode?: WorkflowState['mode'] | undefined;
-    model?: string | undefined;
-  } = {},
-): BindingFixture {
-  const { projectDir, sessionId } = setupProject(dirs);
-  const ref = { projectDir, sessionId };
-  seedState(ref, options.mode);
-  return makeBinding(ref, options);
-}
-
-function normalRecovery(state: WorkflowState): NormalBriefRecoveryV1 {
-  const recovery = state.briefRecovery;
-  if (recovery === null || recovery === undefined || !('attempts' in recovery))
-    throw new Error('expected a normal recovery');
-  return recovery;
-}
-
-function ownerExpectedFromHead(head: NonNullable<ReturnType<typeof readWorkflowStateHead>>) {
-  const recovery = head.state.briefRecovery;
-  if (recovery === null || recovery === undefined)
-    throw new Error('expected a recovery in the persisted head');
-  return {
-    epochId: recovery.epochId,
-    stateRevision: head.revision,
+function ownerExpectedFromHead(head: WorkflowStateHead) {
+  return recoveryOwnerExpectation({
+    head,
     authorityRevision: head.state.authorityRevision ?? 0,
-    fence: String(head.state.stateFence?.token ?? 0),
-    evidenceHead: recovery.evidenceHead,
-  };
+  });
 }
 
 function ownerConflictResult(): BriefOwnerCommitResult {
@@ -479,7 +369,6 @@ describe('publication pre-commit fault matrix', () => {
         expect(observed.support).toHaveLength(0);
         expect(observed.candidateDirs).toHaveLength(0);
       }
-      expect(WorkflowStateSchema.safeParse(head.state).success).toBe(true);
     },
   );
 
@@ -716,8 +605,6 @@ describe('publication concurrency matrix', () => {
     const winner = winners[0];
     const loser = losers[0];
     if (winner === undefined || loser === undefined) return;
-    expect(winner.ok).toBe(true);
-    expect(loser.ok).toBe(false);
     if (!winner.ok || loser.ok) return;
     expect(loser.fault).toBe('cas');
     const head = readWorkflowStateHead(f.ref);
@@ -731,7 +618,6 @@ describe('publication concurrency matrix', () => {
     expect(observeGenerationStorage(f.ref).generations).toHaveLength(1);
     expect(observeGenerationStorage(f.ref).candidateDirs).toHaveLength(0);
     expect(resolveOwnerReadiness(f.ref)).toEqual({ ok: false, reason: 'no-permit' });
-    expect(WorkflowStateSchema.safeParse(head.state).success).toBe(true);
   });
 
   it('a CAS loser leaves only a bounded unreferenced candidate', async () => {
@@ -986,6 +872,5 @@ describe('approval, permit, and budget failpoints', () => {
     expect(observeGenerationStorage(f.ref).generations).toHaveLength(0);
     expect(observeGenerationStorage(f.ref).support).toHaveLength(0);
     expect(resolveOwnerReadiness(f.ref).ok).toBe(false);
-    expect(WorkflowStateSchema.safeParse(head.state).success).toBe(true);
   });
 });

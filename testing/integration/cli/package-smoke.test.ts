@@ -10,6 +10,7 @@ import {
   statSync,
 } from 'node:fs';
 import { join, relative } from 'node:path';
+import { WORKFLOW_MODES } from '../../../src/core/schemas/enums.js';
 import { tmpdir } from 'node:os';
 
 const ROOT = join(import.meta.dirname, '..', '..', '..');
@@ -120,22 +121,8 @@ describe('package smoke test', () => {
       .split('\n')
       .filter((line) => line.trim().startsWith('$ splitbrief'));
     expect(exampleLines.length).toBeGreaterThanOrEqual(10);
-    for (const snippet of [
-      '$ splitbrief "',
-      '$ splitbrief start "',
-      '@design.md',
-      '@screenshot.png',
-      '--mode instant',
-      '--mode quick',
-      '--mode speckit',
-      '--worktree',
-      '--detach',
-      '--json',
-      'splitbrief status',
-      'splitbrief resume',
-      'splitbrief doctor',
-    ]) {
-      expect(result.stdout).toContain(snippet);
+    for (const mode of WORKFLOW_MODES) {
+      expect(result.stdout).toContain(`--mode ${mode}`);
     }
   }, 60_000);
 

@@ -207,7 +207,7 @@ export function ConfirmApprovalPrompt({
               {index === 0 ? <Text color={t.text}>{cursorGlyph()}</Text> : NO_CURSOR}
               <Text color={t.textDim}>{approvalOptionKeyCell(option, keyWidth)}</Text>
               {'   '}
-              {approvalOptionLabelText(option, keyWidth, approvalTextWidth(cols))}
+              {approvalOptionLabelText({ option, keyWidth, width: approvalTextWidth(cols) })}
             </Text>
           ))}
           <Box flexGrow={1} minHeight={1} />

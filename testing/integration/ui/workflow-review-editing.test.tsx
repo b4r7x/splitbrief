@@ -39,7 +39,7 @@ async function waitForReviewPrompt(ui: { lastFrame: () => string | undefined }, 
   await vi.waitFor(() => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('approve');
-    expect(frame.includes('edit-file') || frame.includes('edit')).toBe(true);
+    expect(frame).toContain('e edit');
   }, timeout);
   await tick(20);
 }

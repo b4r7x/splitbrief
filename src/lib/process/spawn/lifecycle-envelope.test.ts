@@ -195,15 +195,19 @@ describe('spawnPipe lifecycle termination', () => {
       ].join(';'),
       onStdout: () => {
         stdoutChunks += 1;
-        return outputBudgetSignal;
+        return stdoutChunks === 1
+          ? outputBudgetSignal
+          : { state: 'protocol-failure', remediation: 'later signal must not win' };
       },
       onSpawned: (spawnedPid) => {
         pid = spawnedPid;
       },
     });
 
-    await expect(pending).rejects.toMatchObject({ state: 'output-budget-breach' });
-    expect(stdoutChunks).toBeGreaterThanOrEqual(1);
+    await expect(pending).rejects.toMatchObject({
+      state: 'output-budget-breach',
+      remediation: 'fixture limit reached',
+    });
     expect(processIsAbsent(pid)).toBe(true);
   });
 });

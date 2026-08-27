@@ -13,8 +13,6 @@ const CompletionTokensDetailsSchema = z.looseObject({
   reasoning_tokens: tokenCount.optional(),
 });
 
-export const RUNNER_CALL_REASONING_TOKEN_POLICY = 'preserve_reasoning_metadata' as const;
-
 export const BackendTokenUsageSchema = z.looseObject({
   input_tokens: tokenCount.optional(),
   output_tokens: tokenCount.optional(),

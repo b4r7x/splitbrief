@@ -5,7 +5,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { loadStateForResume } from '../../../core/state/persistence.js';
 import type { ResumeLoadAuthority, StateAuthorityReceipt } from '../../../core/state/types.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
-import type { ActiveSessionReceipt } from '../../../core/sessions/lifecycle.js';
+import type { ActiveSessionReceipt } from '../../../core/sessions/active-pointer.js';
 import {
   getRunnerDisplayName,
   getRunnerModelName,
@@ -15,7 +15,6 @@ import { resolveAutoModel } from '../../../core/providers/model-selection.js';
 import { createEventBus } from '../../events/bus.js';
 import type { EventBus, EventSink } from '../../events/types.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
-import { publishRecoveryPrompted } from '../events.js';
 import { applyRecoveryAction } from './actions.js';
 import type { ApplyRecoveryActionResult } from './actions.js';
 import { buildSummary } from '../summary/build.js';
@@ -43,14 +42,6 @@ export function createRecoveryBus(opts: {
     }),
   );
   return bus;
-}
-
-export function publishPendingRecoveryPrompt(
-  bus: EventBus,
-  issue: NonNullable<WorkflowState['pendingRecovery']>,
-  enabled: boolean,
-): void {
-  if (enabled) publishRecoveryPrompted(bus, issue);
 }
 
 export function loadPendingRecoveryState(

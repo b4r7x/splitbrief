@@ -7,6 +7,8 @@ import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
 import { calloutRowsBlock } from './callout-block.js';
 import { eventRowBlock } from './event-rows/dispatch.js';
+import { cardRowsBlock } from './row-block-compose.js';
+import { wrapWidthFor } from './row-markers.js';
 import { rowText } from './row-format/rows.js';
 import type { ConversationRow } from './types.js';
 
@@ -359,6 +361,27 @@ describe('eventRows colored left-rule callouts', () => {
       expect(rows.map(rowText).join('\n')).toContain(label);
       expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 80)).toBe(true);
       expect(rows.every((rowValue) => rowValue.kind.length > 0)).toBe(true);
+    }
+  });
+});
+
+describe('cardRowsBlock label wrapping', () => {
+  it('never paints a label wider than the wrapped line it sits on', () => {
+    const width = 20;
+    const block = cardRowsBlock({
+      keyPrefix: 'c',
+      label: 'attachments dropped',
+      value: '2 images dropped (too large)',
+      width,
+      labelTone: 'textDim',
+    });
+    expect(block).not.toBeNull();
+    if (block === null) return;
+
+    const rows = block.createRows(0, block.rowCount);
+    const wrapWidth = wrapWidthFor('card', width);
+    for (const rowValue of rows) {
+      expect(getTerminalCellWidth(rowText(rowValue))).toBeLessThanOrEqual(wrapWidth);
     }
   });
 });

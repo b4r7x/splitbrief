@@ -3,7 +3,7 @@ import type { Phase } from '../../../core/schemas/enums.js';
 import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
 import { isImplementerPhase, isLivePhase } from '../../../core/phases.js';
 import type { Planner } from '../../planners/types.js';
-import { mergePersistedMessageQueue, transitionAndSave } from '../state-ops.js';
+import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
 import { publishWarning } from '../events.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
 import { dispatchNativeInjection, type RecoveryQueueBinding } from './native-injection.js';
@@ -37,7 +37,7 @@ export function enqueueUserMessage({
   result: QueueSubmissionResult;
   message?: QueuedMessage | undefined;
 } {
-  const base = mergePersistedMessageQueue({ projectDir, sessionId }, state);
+  const base = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
   if (enforcePhasePolicy && !canQueueInPhase(phase)) {
     const message = `Queue is only available while the planner is running; current phase is ${phase}.`;
     publishWarning({

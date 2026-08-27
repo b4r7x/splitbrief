@@ -9,7 +9,7 @@ import {
   PlannerSessionScopeSchema,
   TaskCompilationFailureCodeSchema,
   TaskCompilationPolicySchema,
-  TaskCompilationTransportSchema,
+  PlannerArtifactTransportSchema,
   TASK_BRIEF_COMPILER_POLICY,
 } from './task-compilation.js';
 
@@ -94,14 +94,14 @@ describe('identity and transport schemas', () => {
   });
 
   it('admits only one explicit transport and detached session shape', () => {
-    expect(TaskCompilationTransportSchema.safeParse({ kind: 'stdout-final' }).success).toBe(true);
+    expect(PlannerArtifactTransportSchema.safeParse({ kind: 'stdout-final' }).success).toBe(true);
     expect(
-      TaskCompilationTransportSchema.safeParse({
+      PlannerArtifactTransportSchema.safeParse({
         kind: 'declared-file',
         lease: { leaseId: 'lease-1', attemptId },
       }).success,
     ).toBe(true);
-    expect(TaskCompilationTransportSchema.safeParse({ kind: 'auto' }).success).toBe(false);
+    expect(PlannerArtifactTransportSchema.safeParse({ kind: 'auto' }).success).toBe(false);
     expect(
       PlannerSessionScopeSchema.safeParse({
         kind: 'detached-fresh',

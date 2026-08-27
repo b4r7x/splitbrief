@@ -22,11 +22,11 @@ describe('markCancellationRequested', () => {
     expect(status && 'status' in status ? status.status : undefined).toBe('running');
   });
 
-  it('is a no-op on double cancel', () => {
+  it('leaves lifecycle state untouched on double cancel', () => {
     markCancellationRequested();
-    const after1 = eventsStore.get().events.length;
+    const before = lifecycleStore.get();
     markCancellationRequested();
-    expect(eventsStore.get().events.length).toBe(after1);
+    expect(lifecycleStore.get()).toBe(before);
   });
 
   it('returns true on first call and false on subsequent calls', () => {

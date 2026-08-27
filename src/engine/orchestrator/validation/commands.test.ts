@@ -20,7 +20,7 @@ function expectCommandRanInProject(runner: RecordingCommandRunner, projectDir: s
   expect(runner.calls.at(-1)?.options?.cwd).toBe(projectDir);
 }
 
-describe('layer priority', () => {
+describe('runValidation', () => {
   let tempDir: string;
 
   beforeEach(() => {

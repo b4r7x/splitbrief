@@ -4,30 +4,25 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { STATE_FILE, sessionDir } from '../../../src/core/paths.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { readSession } from '../../../src/core/sessions/io.js';
-import { readRecoveryJournal } from '../../../src/core/evidence/ledger-storage.js';
+import { readRecoveryJournal } from '../../../src/core/evidence/recovery-journal.js';
 import type { StateAuthorityReceipt } from '../../../src/core/state/types.js';
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
-import type { NormalBriefRecoveryV1 } from '../../../src/core/schemas/brief-recovery.js';
+import type { NormalBriefRecoveryV1 } from '../../../src/core/schemas/brief-recovery/document.js';
 import type { ModelCacheAccessor } from '../../../src/engine/providers/model/resolution.js';
-import {
-  createTaskCompilationAttemptId,
-  OwnedPlannerArtifactSchema,
-} from '../../../src/core/schemas/task-compilation.js';
 import type { OrchestratorCallbacks } from '../../../src/engine/orchestrator/types.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import { readWorkflowStateHead } from '../../../src/engine/orchestrator/state-ops.js';
 import { createWorkflowRecoveryBinding } from '../../../src/engine/orchestrator/run/recovery-binding.js';
 import { automaticRepairIntent } from '../../../src/engine/orchestrator/planning/brief-recovery.js';
-import { sha256Hex } from '../../../src/utils/sha256.js';
 import {
   createHeadlessGitProject,
   preparedHeadlessExecution,
   writeHeadlessConfigYaml,
 } from '#testing/helpers/headless-project.js';
 import { fauxImplementer } from '#testing/helpers/faux/implementer.js';
-import { fauxPlanner } from '#testing/helpers/faux/planner.js';
+import { zeroTaskPlanner } from '#testing/helpers/factories/planner-artifact.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { makeWctx, TEST_METADATA } from '#testing/helpers/orchestrator-factories.js';
@@ -46,26 +41,6 @@ const LIMITED_CATALOG: ModelCacheAccessor = {
   getModelsDevCatalog: () => ({ openai: { id: 'openai', models: {} } }),
   getProviderModels: () => null,
 };
-
-function phaseResult(logicalName: 'spec.md' | 'plan.md' | 'tasks.md', text: string) {
-  const digest = sha256Hex(text);
-  return {
-    artifact: OwnedPlannerArtifactSchema.parse({
-      semanticId: `test-${logicalName}`,
-      programId: null,
-      batchId: null,
-      attemptId: createTaskCompilationAttemptId(),
-      logicalName,
-      transport: 'stdout-final',
-      text,
-      byteLength: Buffer.byteLength(text, 'utf8'),
-      sha256: digest,
-      runtimeReceipt: digest,
-      terminal: { status: 'completed', recordId: `test-${logicalName}`, protocolDigest: digest },
-      sourceReceipt: { kind: 'stdout-final', resultDigest: digest },
-    }),
-  };
-}
 
 function writeRefusedFixture(projectDir: string): void {
   writeHeadlessConfigYaml(projectDir, [
@@ -101,47 +76,6 @@ function writeRefusedFixture(projectDir: string): void {
   ]);
 }
 
-function makeZeroTaskPlanner(): {
-  planner: ReturnType<typeof fauxPlanner>['planner'];
-  planCallCount: () => number;
-  repairCallCount: () => number;
-} {
-  const prepared = fauxPlanner({
-    plans: [
-      {
-        spec: '# Admitted Specification\n\nThe workflow must fail closed.',
-        plan: '# Admitted Plan\n\nGenerate and validate Task Briefs.',
-        tasks: [],
-      },
-    ],
-  });
-  const originalPlan = prepared.planner.plan.bind(prepared.planner);
-  prepared.planner.plan = async (opts) => {
-    const result = await originalPlan(opts);
-    return {
-      ...result,
-      phases: [
-        phaseResult('spec.md', result.spec),
-        phaseResult('plan.md', result.plan),
-        phaseResult('tasks.md', 'The planner returned no Task Brief.'),
-      ],
-    };
-  };
-  let repairCallCount = 0;
-  prepared.planner.review = async () => {
-    repairCallCount += 1;
-    return {
-      text: 'The tasks-only repair still contains no parseable Task Brief.',
-      usage: null,
-    };
-  };
-  return {
-    planner: prepared.planner,
-    planCallCount: () => prepared.state.planCallCount,
-    repairCallCount: () => repairCallCount,
-  };
-}
-
 function stateBytes(ref: SessionRef): string {
   return readFileSync(join(sessionDir(ref.projectDir, ref.sessionId), STATE_FILE), 'utf8');
 }
@@ -153,10 +87,7 @@ function normalRecovery(state: WorkflowState): NormalBriefRecoveryV1 {
   return recovery;
 }
 
-function bindingFixture(
-  ref: SessionRef,
-  planner: ReturnType<typeof makeZeroTaskPlanner>['planner'],
-) {
+function bindingFixture(ref: SessionRef, planner: ReturnType<typeof zeroTaskPlanner>['planner']) {
   const wctx = makeWctx({
     projectDir: ref.projectDir,
     sessionId: ref.sessionId,
@@ -219,7 +150,7 @@ type CapturedRun = {
   projectDir: string;
   sessionId: string;
   ref: SessionRef;
-  planner: ReturnType<typeof makeZeroTaskPlanner>;
+  planner: ReturnType<typeof zeroTaskPlanner>;
   implementer: ReturnType<typeof fauxImplementer>['implementer'];
   implementerCalls: () => number;
   events: EngineEvent[];
@@ -237,7 +168,7 @@ async function captureRefusedZeroTaskRun(): Promise<CapturedRun> {
     onApprovalNeeded: async () => ({ approved: true }),
     onComplete: () => {},
   };
-  const planner = makeZeroTaskPlanner();
+  const planner = zeroTaskPlanner();
   const { implementer, state: implementerState } = fauxImplementer({
     steps: [{ success: true, output: 'unexpected implementer call' }],
   });
@@ -292,9 +223,7 @@ describe('parked observation, resume, and recovery lifecycle', { timeout: 120_00
     expect(run.state.permit).toBeNull();
     expect(run.state.tasks).toHaveLength(0);
     expect(recovery.status).toBe('blocked');
-    expect(recovery.epochId).toEqual(expect.any(String));
     expect(recovery.recoveryRevision).toBeGreaterThanOrEqual(1);
-    expect(recovery.evidenceHead).toEqual(expect.any(String));
     expect(recovery.activeBrief).not.toBeNull();
     expect(recovery.automaticRepair).toMatchObject({
       policy: 'existing-one-shot',

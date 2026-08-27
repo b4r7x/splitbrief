@@ -1,19 +1,27 @@
 import { describe, it, expect } from 'vitest';
 import { parseTaskManifest } from '../tasks/manifest.js';
 import { buildLanguageContext } from './language-context.js';
-import { buildPlanPrompt, planPromptError, planPromptByteLength } from './plan.js';
+import { buildPlanPrompt } from './plan.js';
 
 const spec = { content: 'feature spec', hasClarifications: false };
 
 describe('buildPlanPrompt', () => {
   it('TypeScript plan prompt keeps TypeScript examples', () => {
-    const prompt = buildPlanPrompt(spec, 'project', undefined, buildLanguageContext('typescript'));
+    const prompt = buildPlanPrompt({
+      spec,
+      projectContext: 'project',
+      languageContext: buildLanguageContext('typescript'),
+    });
     expect(prompt).toContain('new-file.ts');
     expect(prompt).toContain('TypeScript type annotations');
   });
 
   it('Python plan prompt has no TypeScript references', () => {
-    const prompt = buildPlanPrompt(spec, 'project', undefined, buildLanguageContext('python'));
+    const prompt = buildPlanPrompt({
+      spec,
+      projectContext: 'project',
+      languageContext: buildLanguageContext('python'),
+    });
     expect(prompt).toContain('new-file.py');
     expect(prompt).toContain('Python type hints');
     expect(prompt).toContain('PEP 484');
@@ -21,7 +29,11 @@ describe('buildPlanPrompt', () => {
   });
 
   it('requests a finite host-owned manifest without provider-controlled artifacts', () => {
-    const prompt = buildPlanPrompt(spec, 'project', undefined, buildLanguageContext('typescript'));
+    const prompt = buildPlanPrompt({
+      spec,
+      projectContext: 'project',
+      languageContext: buildLanguageContext('typescript'),
+    });
     expect(prompt).toContain('### New Files');
     expect(prompt).toContain('### Modified Files');
     expect(prompt).toContain('project-relative file exactly once');
@@ -30,22 +42,20 @@ describe('buildPlanPrompt', () => {
     expect(prompt).toContain('artifact path');
   });
 
-  it('checks UTF-8 prompt bytes before dispatch', () => {
-    const prompt = buildPlanPrompt(spec, 'project', undefined, buildLanguageContext('typescript'));
-    expect(planPromptByteLength(prompt)).toBeGreaterThan(prompt.length - 1);
-    try {
-      buildPlanPrompt(spec, 'x'.repeat(500), undefined, undefined, { maxPromptBytes: 100 });
-      throw new Error('expected the operation to throw');
-    } catch (err) {
-      expect(err).toMatchObject({ kind: 'task_compiler_prompt_too_large' });
-    }
-    expect(planPromptError.isTooLarge).toBeTypeOf('function');
+  it('throws when the prompt exceeds the byte budget', () => {
+    expect(() =>
+      buildPlanPrompt({ spec, projectContext: 'x'.repeat(500), maxPromptBytes: 100 }),
+    ).toThrowError(expect.objectContaining({ kind: 'task_compiler_prompt_too_large' }));
   });
 });
 
 describe('plan prompt and manifest parser share one File Structure grammar', () => {
   it('prompt requires the exact h2/h3 headings the parser accepts', () => {
-    const prompt = buildPlanPrompt(spec, 'project', undefined, buildLanguageContext('typescript'));
+    const prompt = buildPlanPrompt({
+      spec,
+      projectContext: 'project',
+      languageContext: buildLanguageContext('typescript'),
+    });
     expect(prompt).toContain('## File Structure');
     expect(prompt).toContain('### New Files');
     expect(prompt).toContain('### Modified Files');

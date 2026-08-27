@@ -2,7 +2,10 @@ import type { Session } from '../../../core/schemas/session.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { CURRENT_STATE_VERSION } from '../../../core/state/machine.js';
-import { clearActiveReceipt, type ActiveSessionReceipt } from '../../../core/sessions/lifecycle.js';
+import {
+  clearActiveReceipt,
+  type ActiveSessionReceipt,
+} from '../../../core/sessions/active-pointer.js';
 import { saveSummary } from '../../../core/sessions/io.js';
 import { isResumable } from '../../../core/phases.js';
 import { updateStats } from '../../../core/stats/persistence.js';

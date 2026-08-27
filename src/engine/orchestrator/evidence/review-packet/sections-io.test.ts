@@ -7,10 +7,9 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import type { DriftReport } from '../../../../core/schemas/drift.js';
 import { REVIEW_FILE, sessionDir } from '../../../../core/paths.js';
 import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
-import { ReviewPacketSchema } from '../../../../core/schemas/review-packet.js';
 import { buildFinalReview, resolveChangedFiles } from './sections-io.js';
 import { renderReviewPacketMarkdown } from './render.js';
-import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
 
 let dirs: string[] = [];
 
@@ -249,145 +248,7 @@ fail
 });
 
 function packetWithFinalReview(finalReview: ReviewPacket['finalReview']): ReviewPacket {
-  return ReviewPacketSchema.parse({
-    version: 1,
-    sessionId: 's',
-    generatedAt: '2026-08-05T00:00:00.000Z',
-    run: {
-      sessionId: 's',
-      feature: 'feat',
-      mode: null,
-      phase: 'complete',
-      planner: { tool: null, model: null },
-      implementer: { tool: null, model: null },
-      startedAt: null,
-      completedAt: null,
-      totalTimeMs: null,
-      totalTasks: 1,
-      completedLocally: 1,
-      escalated: 0,
-      skipped: 0,
-      failed: 0,
-    },
-    readiness: {
-      path: 'readiness.json',
-      present: true,
-      status: null,
-      nextAction: null,
-      blockerCount: null,
-      warningCount: null,
-      checks: [],
-    },
-    changes: {
-      changedFiles: [],
-      expectedFiles: [],
-      outOfScopeFiles: [],
-      taskFiles: [],
-      diffReference: 'Review the working tree with `git diff`.',
-    },
-    checkpoints: {
-      items: [],
-      latestRunCheckpoint: null,
-      preFinalReview: null,
-      runLedger: {
-        path: 'checkpoint-run-ledger.json',
-        present: false,
-        accepted: null,
-        rejected: null,
-        runSnapshotIds: [],
-        runSnapshotKinds: {},
-        latestSnapshotId: null,
-      },
-      safety: {
-        hashGuarded: true,
-        conflictsSkippedByDefault: true,
-        forceOverwritesConflicts: true,
-        partialRestoreExpected: true,
-        excludedPaths: [],
-        text: {
-          hashGuarded: '',
-          conflictsSkippedByDefault: '',
-          forceOverwritesConflicts: '',
-          partialRestoreExpected: '',
-          excludedPaths: '',
-        },
-      },
-    },
-    recoveryDecisions: {
-      sourceArtifacts: [],
-      events: [],
-      currentIssue: null,
-      selectedActions: [],
-      outcomes: [],
-      unresolvedRisks: [],
-    },
-    validation: {
-      summary: { passed: 0, failed: 0, skipped: 0, escalated: 0 },
-      tasks: [],
-      finalReviewEvidenceStatus: null,
-      missingEvidenceWarnings: [],
-    },
-    evidence: {
-      path: null,
-      present: false,
-      briefHash: null,
-      finalReview: null,
-      approvals: [],
-      rejections: [],
-    },
-    drift: {
-      path: null,
-      present: false,
-      passed: null,
-      score: null,
-      errorCount: 0,
-      warningCount: 0,
-      changedFiles: [],
-      expectedFiles: [],
-      findings: [],
-      findingsBySeverity: { info: [], warning: [], error: [] },
-      briefHash: null,
-      chainSummary: {
-        path: 'drift-chains.json',
-        present: false,
-        emittedChainCount: 0,
-        topChain: null,
-        briefQuality: {
-          path: 'brief-quality.json',
-          present: false,
-          passed: null,
-          score: null,
-          errorCount: 0,
-          warningCount: 0,
-        },
-      },
-      briefQuality: {
-        path: 'brief-quality.json',
-        present: false,
-        passed: null,
-        score: null,
-        errorCount: 0,
-        warningCount: 0,
-      },
-    },
-    escalations: {
-      retries: [],
-      escalatedTasks: [],
-      skippedTasks: [],
-      failedTasks: [],
-      warnings: [],
-    },
-    cost: {
-      tokenUsage: makeUsage(),
-      costBreakdown: null,
-      estimatedCostSavings: null,
-      taskRouting: [],
-      routingWarnings: [],
-    },
-    finalReview,
-    reviewerChecklist: [],
-    missingArtifacts: [],
-  });
+  return makeReviewPacket({ finalReview });
 }
 
 describe('renderReviewPacketMarkdown final review block', () => {

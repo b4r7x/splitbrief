@@ -113,56 +113,6 @@ function writeSessionLog(projectDir: string, sessionId: string, entries: unknown
   writeFileSync(filePath, entries.map((e) => JSON.stringify(e)).join('\n') + '\n');
 }
 
-function configuredPlannerConfig(input: {
-  projectDir: string;
-  contract: 'output' | 'direct';
-}): Config {
-  const { projectDir, contract } = input;
-  const childEffect = join(projectDir, `configured-${contract}-planner-started`);
-  const declaredEnvironmentName = `COMPACTION_${contract.toUpperCase()}_DECLARED_ENV_MUST_NOT_BE_READ`;
-  const command = {
-    label: `Manual ${contract} planner`,
-    contract,
-    executable: process.execPath,
-    argv: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(childEffect)}, 'started')`],
-    outputFormat: 'text' as const,
-    idleWarnMs: 300_000,
-    idleKillMs: 1_800_000,
-    env: [declaredEnvironmentName],
-  };
-  return ConfigSchema.parse({
-    ...makeConfig(),
-    planner: {
-      kind: contract === 'output' ? 'shell' : 'agent',
-      command: command.executable,
-      args: command.argv,
-      outputFormat: command.outputFormat,
-      idleWarnMs: command.idleWarnMs,
-      idleKillMs: command.idleKillMs,
-      env: command.env,
-    },
-    customCommands: { [`manual-${contract}-planner`]: command },
-  });
-}
-
-function customRunnerSurface(projectDir: string, sessionId: string, contract: 'output' | 'direct') {
-  const sessionRoot = sessionDir(projectDir, sessionId);
-  const childEffect = join(projectDir, `configured-${contract}-planner-started`);
-  const approvalStore = approvalsFile(projectDir);
-  const artifactReviewRoot = join(sessionRoot, '.custom-runner-review');
-  const artifactCandidate = join(artifactReviewRoot, 'existing-call', 'result');
-  const sessionLog = join(sessionRoot, SESSION_LOG_FILE);
-  return {
-    approvalStore: existsSync(approvalStore) ? readFileSync(approvalStore, 'utf8') : null,
-    artifactCandidate: existsSync(artifactCandidate)
-      ? readFileSync(artifactCandidate, 'utf8')
-      : null,
-    artifactReviewRoot: existsSync(artifactReviewRoot),
-    childStarted: existsSync(childEffect),
-    sessionLog: existsSync(sessionLog) ? readFileSync(sessionLog, 'utf8') : null,
-  };
-}
-
 function seedCustomRunnerSurface(projectDir: string, sessionId: string): void {
   writeFileSync(approvalsFile(projectDir), '{"version":1,"grants":[]}\n');
   const artifactCandidate = join(
@@ -235,7 +185,7 @@ describe('compactResumeTranscript', () => {
 });
 
 describe('performManualCompaction', () => {
-  it('manual compaction uses the prepared planner snapshot and gate', async () => {
+  it('compacting a session with nothing to summarize is a no-op', async () => {
     const { projectDir, sessionId } = setupProject();
 
     await expect(
@@ -296,23 +246,7 @@ describe('performManualCompaction', () => {
   it.each(['output', 'direct'] as const)(
     'rejects configured %s planners before custom-runner setup can affect the session',
     async (contract) => {
-      const { projectDir, sessionId } = setupProject();
-      const declaredEnvironmentName = `COMPACTION_${contract.toUpperCase()}_DECLARED_ENV_MUST_NOT_BE_READ`;
-      expect(process.env[declaredEnvironmentName]).toBeUndefined();
-      seedCustomRunnerSurface(projectDir, sessionId);
-      const before = customRunnerSurface(projectDir, sessionId, contract);
-
-      await expect(
-        performManualCompaction({
-          config: configuredPlannerConfig({ projectDir, contract }),
-          ref: { projectDir, sessionId },
-        }),
-      ).resolves.toEqual({
-        status: 'unsupported',
-        plannerName: contract === 'output' ? 'shell' : 'agent',
-      });
-
-      expect(customRunnerSurface(projectDir, sessionId, contract)).toEqual(before);
+      await expectConfiguredManualCompactionHasNoEffects({ contract, seedTriggeringLog: false });
     },
   );
 });
@@ -467,7 +401,11 @@ function restoreEnvironmentValue(name: string, value: string | undefined): void 
   else process.env[name] = value;
 }
 
-async function expectConfiguredManualCompactionHasNoEffects(contract: 'output' | 'direct') {
+async function expectConfiguredManualCompactionHasNoEffects(input: {
+  contract: 'output' | 'direct';
+  seedTriggeringLog: boolean;
+}) {
+  const { contract, seedTriggeringLog } = input;
   const { projectDir, sessionId } = setupProject();
   const homeDir = createTempDir('transcript-compaction-home');
   dirs.push(homeDir);
@@ -483,7 +421,7 @@ async function expectConfiguredManualCompactionHasNoEffects(contract: 'output' |
   try {
     const trustReceipt = resolveCustomRunnerTrustFile();
     seedCustomRunnerSurface(projectDir, sessionId);
-    writeCompactionTriggeringLog(projectDir, sessionId);
+    if (seedTriggeringLog) writeCompactionTriggeringLog(projectDir, sessionId);
     const before = manualCompactionSurface(projectDir, sessionId, fixture.effects, trustReceipt);
 
     expect(before).toMatchObject({
@@ -515,11 +453,10 @@ async function expectConfiguredManualCompactionHasNoEffects(contract: 'output' |
 }
 
 describe('configured manual compaction side effects', () => {
-  it('returns unsupported before an output planner can create any custom-runner effect', async () => {
-    await expectConfiguredManualCompactionHasNoEffects('output');
-  });
-
-  it('returns unsupported before a direct planner can create any custom-runner effect', async () => {
-    await expectConfiguredManualCompactionHasNoEffects('direct');
-  });
+  it.each(['output', 'direct'] as const)(
+    'returns unsupported before a configured %s planner can create any custom-runner effect',
+    async (contract) => {
+      await expectConfiguredManualCompactionHasNoEffects({ contract, seedTriggeringLog: true });
+    },
+  );
 });

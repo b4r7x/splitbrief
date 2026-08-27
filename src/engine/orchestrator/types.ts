@@ -28,28 +28,6 @@ import type { Attachment } from '../../core/schemas/attachment.js';
 import type { StreamingSink } from './task/streaming-feed.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import type { ApprovalReviewInput } from '../runners/types.js';
-import {
-  WORKFLOW_CANCEL_REASONS,
-  WORKFLOW_CANCEL_REASON_USER,
-  WORKFLOW_USER_CANCELLED_ABORT_REASON,
-  isWorkflowCancelledAbortReason,
-  workflowCancelledReasonFromSignal,
-} from '../events/workflow-cancel.js';
-import type {
-  WorkflowCancelledAbortReason,
-  WorkflowCancelReason,
-} from '../events/workflow-cancel.js';
-
-export {
-  WORKFLOW_CANCEL_REASONS,
-  WORKFLOW_CANCEL_REASON_USER,
-  WORKFLOW_USER_CANCELLED_ABORT_REASON,
-  isWorkflowCancelledAbortReason,
-  workflowCancelledReasonFromSignal,
-};
-
-export type { WorkflowCancelledAbortReason, WorkflowCancelReason };
-
 export interface OrchestratorCallbacks {
   onApprovalNeeded: (
     type: BriefReviewPromptKind,

@@ -3,18 +3,16 @@ import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import type {
   BriefAdmissionInput,
-  BriefQualityIssue,
   BriefRecoveryController,
-  BriefRecoveryControllerDeps,
-  BudgetAccountingKey,
-  BudgetReservation,
-  RecoveryProviderRequest,
-  RecoveryProviderResult,
   RecoveryResultV1,
   StateAuthorityReceipt,
 } from '../../../core/schemas/brief-recovery.js';
+import type { BriefQualityIssue } from '../../../core/schemas/brief-recovery/primitives.js';
+import type {
+  RecoveryProviderRequest,
+  RecoveryProviderResult,
+} from '../../../core/schemas/brief-recovery/provider-call.js';
 import type { BriefQualityRecoveryBinding } from './brief-quality-preparation.js';
-import { makeTestOwnerCommit } from '#testing/helpers/brief-owner.js';
 import { error } from '../../../utils/error.js';
 import { addUsageAndSave } from '../state-ops.js';
 import {
@@ -32,10 +30,11 @@ import {
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { formatTasks } from '../../spec/formatter.js';
 import { createBriefRecoveryController } from './brief-recovery-controller.js';
+import { makeBriefRecoveryControllerDeps } from '#testing/helpers/factories/recovery.js';
 import { runBriefQuality } from './brief-quality-run.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery.js';
-import { BriefRecoveryProjectionV1Schema } from '../../../core/schemas/brief-recovery.js';
+import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
+import { BriefRecoveryProjectionV1Schema } from '../../../core/schemas/brief-recovery/document.js';
 
 const dirs: string[] = [];
 
@@ -101,17 +100,6 @@ function makeAdmission(
   };
 }
 
-function makeReservation(accountingKey: BudgetAccountingKey): BudgetReservation {
-  return {
-    accountingKey,
-    amount: 0.1,
-    state: 'reserved',
-    usageApplied: false,
-    appliedUsage: null,
-    history: [{ state: 'reserved', at: '2026-01-01T00:00:00.000Z', reason: 'accepted' }],
-  };
-}
-
 function makeController(
   options: {
     providerResult?: (input: RecoveryProviderRequest) => RecoveryProviderResult;
@@ -123,83 +111,20 @@ function makeController(
   providerCalls: RecoveryProviderRequest[];
   estimateCalls: number;
 } {
-  const providerCalls: RecoveryProviderRequest[] = [];
-  let estimateCalls = 0;
   let generatedId = 0;
-  const providerResult =
-    options.providerResult ??
-    ((input: RecoveryProviderRequest): RecoveryProviderResult => ({
-      kind: 'completed',
-      requestId: input.requestId,
-      dispatchPossibility: 'possible',
-      remoteObservation: 'confirmed-final',
-      text: 'corrected brief',
-      providerCode: null,
-      usage: null,
-    }));
-  const deps: BriefRecoveryControllerDeps = {
-    provider: {
-      async dispatch(input) {
-        providerCalls.push(input);
-        return providerResult(input);
-      },
-    },
-    budget: {
-      estimate: () => {
-        estimateCalls += 1;
-        return {
-          kind: 'finite',
-          budgetUnit: 'usd',
-          inputTokens: 1,
-          outputTokens: 1,
-          amount: 0.1,
-          pricingIdentity: 'test',
-        };
-      },
-      reserve: ({ accountingKey }) =>
-        options.budgetRefused
-          ? { kind: 'refused', code: 'brief_budget_exhausted', reason: 'budget refused' }
-          : { kind: 'reserved', reservation: makeReservation(accountingKey) },
-      reconcile: ({ reservation, remoteObservation, usage }) => ({
-        reservation: {
-          ...reservation,
-          state:
-            remoteObservation === 'not-dispatched'
-              ? 'released'
-              : remoteObservation === 'unknown'
-                ? 'held'
-                : 'reconciled',
-          usageApplied: usage !== null,
-          appliedUsage: usage,
-        },
-        usageApplied: usage !== null,
-        appliedAmount: 0,
-      }),
-      terminalCharge: ({ reservation }) => ({
-        reservation: { ...reservation, state: 'terminal-charged' },
-        usageApplied: reservation.usageApplied,
-        appliedAmount: reservation.amount,
-      }),
-    },
-    evaluateQuality: () => options.qualityIssues ?? [],
-    readRetryContext: () => ({
-      prompt: 'repair the original Task Briefs',
-      projectDir: '/tmp/original-project',
-      currentKnownSpend: 0,
-      maxBudget: 1,
-    }),
-    commit: makeTestOwnerCommit(),
+  const fake = makeBriefRecoveryControllerDeps({
+    ...options,
     now: () => '2026-01-01T00:00:00.000Z',
     nextId: () => {
       generatedId += 1;
       return `controller-id-${generatedId}`;
     },
-  };
+  });
   return {
-    controller: createBriefRecoveryController(deps),
-    providerCalls,
+    controller: createBriefRecoveryController(fake.deps),
+    providerCalls: fake.providerCalls,
     get estimateCalls() {
-      return estimateCalls;
+      return fake.estimateCalls;
     },
   };
 }
@@ -461,33 +386,28 @@ describe('runBriefQuality — contract readiness, not scalar score', () => {
     });
   }
 
-  function blockedBinding(projection: BriefRecoveryProjectionV1) {
+  function blockedBinding(projection: BriefRecoveryProjectionV1): BriefQualityRecoveryBinding {
+    type Controller = BriefQualityRecoveryBinding['controller'];
+    const controller: Controller = {
+      inspectBriefRecovery: (): BriefRecoveryProjectionV1 => projection,
+      enterBriefAdmission: async (): Promise<RecoveryResultV1> => ({
+        version: 1,
+        sessionId: CONTROLLER_AUTHORITY.sessionId,
+        epochId: projection.epochId,
+        kind: 'blocked',
+        code: 'brief_contract_blocked',
+        operationId: null,
+        projection,
+      }),
+      queueBriefInput: vi.fn<Controller['queueBriefInput']>(),
+      dispatchBriefAction: vi.fn<Controller['dispatchBriefAction']>(),
+      settlePlannerAttempt: vi.fn<Controller['settlePlannerAttempt']>(),
+    };
     return {
-      controller: {
-        inspectBriefRecovery: (): BriefRecoveryProjectionV1 => projection,
-        enterBriefAdmission: async (): Promise<RecoveryResultV1> => ({
-          version: 1,
-          sessionId: CONTROLLER_AUTHORITY.sessionId,
-          epochId: projection.epochId,
-          kind: 'blocked',
-          code: 'brief_contract_blocked',
-          operationId: null,
-          projection,
-        }),
-        queueBriefInput: vi.fn(),
-        dispatchBriefAction: vi.fn(),
-        settlePlannerAttempt: vi.fn(),
-      } as unknown as Pick<
-        BriefRecoveryController,
-        | 'inspectBriefRecovery'
-        | 'enterBriefAdmission'
-        | 'queueBriefInput'
-        | 'dispatchBriefAction'
-        | 'settlePlannerAttempt'
-      >,
+      controller,
       authority: CONTROLLER_AUTHORITY,
       createAdmissionInput: () => makeAdmission([]),
-    } satisfies BriefQualityRecoveryBinding;
+    };
   }
 
   it('readies a contract-clean brief whose score is below one; score is diagnostic only', async () => {

@@ -287,7 +287,13 @@ describe('ConversationRowView color-off degradation', () => {
     const row = makeTaskHeaderRow('task-header:T001');
 
     const focused = renderFeature(<ConversationRowView row={row} focused={true} />);
-    expect(focused.lastFrame() ?? '').toContain(FOCUS_MARK);
+    const focusedText = stripAnsiStyles(focused.lastFrame() ?? '');
     focused.unmount();
+
+    const unfocused = renderFeature(<ConversationRowView row={row} focused={false} />);
+    const unfocusedText = stripAnsiStyles(unfocused.lastFrame() ?? '');
+    unfocused.unmount();
+
+    expect(focusedText).not.toBe(unfocusedText);
   });
 });

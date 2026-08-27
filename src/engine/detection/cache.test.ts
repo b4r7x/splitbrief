@@ -13,7 +13,6 @@ import type { DetectionCacheSnapshot } from './cache.js';
 import type { ConfiguredProviderOutcome } from './provider-outcomes.js';
 import {
   invalidateCache,
-  loadDetectionCache,
   loadDetectionCacheSnapshot,
   loadRememberedCliRuntime,
   saveDetectionCache,
@@ -632,15 +631,22 @@ describe('detection cache', () => {
     }
   });
 
-  it('keeps the legacy projection reader bounded by its TTL', async () => {
+  it('keeps the remembered runtime reader bounded by its TTL', async () => {
     const cliTools: CliToolDetection[] = [cliDetectionFor('ready', 'claude-code')];
-    await saveDetectionCache(tempDir, [], cliTools);
+    await saveDetectionCache({ projectDir: tempDir, snapshot: cacheSnapshot({ cliTools }) });
 
-    await expect(loadDetectionCache(tempDir, 0)).resolves.toBeNull();
-    await expect(loadDetectionCache(tempDir, 60_000)).resolves.toMatchObject({
-      providers: [],
-      cliTools: [{ tool: 'claude-code' }],
+    await expect(
+      loadRememberedCliRuntime({ projectDir: tempDir, tool: 'claude-code' }),
+    ).resolves.toBeNull();
+
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({ fetchedAt: Date.now(), cliTools }),
     });
+
+    await expect(
+      loadRememberedCliRuntime({ projectDir: tempDir, tool: 'claude-code' }),
+    ).resolves.toMatchObject({ installedVersion: cliTools[0]?.installedVersion });
   });
 
   itUnix('does not follow a .splitbrief symlink outside the project', async () => {

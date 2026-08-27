@@ -104,8 +104,6 @@ describe('checkRunnerArgVector — recorded runner arg-vector failures', () => {
       ['exec', '--reasoning-effort', 'high'],
     ],
     ["unexpected argument '--quiet…'", '--quiet', ['exec', '--quiet']],
-    ["unexpected argument '--quiet…'", '--quiet', ['exec', '--quiet']],
-    ["unexpected argument '--quiet…'", '--quiet', ['exec', '--quiet']],
     ['unexpected stdin read', '--input-format', ['exec', '--input-format', 'json']],
     ['claude session-id error', '--session-id', ['-p', '--session-id', 'session-1']],
   ] as const)(

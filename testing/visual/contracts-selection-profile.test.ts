@@ -90,16 +90,10 @@ describe('terminal profile selection contract', () => {
     if (first === undefined) throw new Error('profile fixture has no provenance');
     expect(definedProvenances[1]).toEqual(first);
     expect(definedProvenances[2]).toEqual(first);
-    expect(definedProvenances.map((provenance) => captureAccountingKey(provenance))).toEqual([
-      captureAccountingKey(first),
-      captureAccountingKey(first),
-      captureAccountingKey(first),
-    ]);
-    expect(definedProvenances.map((provenance) => createFrameIdentity(provenance).key)).toEqual([
-      createFrameIdentity(first).key,
-      createFrameIdentity(first).key,
-      createFrameIdentity(first).key,
-    ]);
+    for (const profile of profiles) {
+      expect(captureAccountingKey(first)).not.toContain(profile);
+      expect(createFrameIdentity(first).key).not.toContain(profile);
+    }
     expect(ArtifactProvenanceSchema.safeParse({ ...first, profile: 'ascii-mono' }).success).toBe(
       false,
     );

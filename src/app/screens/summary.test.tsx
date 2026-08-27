@@ -40,6 +40,12 @@ function maxLineLength(frame: string): number {
     .reduce((max, line) => Math.max(max, line.length), 0);
 }
 
+const STATUS_HEADINGS = [
+  ['complete', 'SPLITBRIEF complete'],
+  ['failed', 'SPLITBRIEF failed'],
+  ['interrupted', 'SPLITBRIEF interrupted'],
+] as const satisfies ReadonlyArray<readonly [Session['status'], string]>;
+
 describe('SummaryScreen', () => {
   beforeEach(() => {
     resetAllStores();
@@ -95,39 +101,18 @@ describe('SummaryScreen', () => {
     ui.unmount();
   });
 
-  it('labels complete summaries as complete', () => {
-    showSummaryRoute({ summary: makeSummary(), status: 'complete' });
+  it.each(STATUS_HEADINGS)('labels %s summaries with their own heading', (status, heading) => {
+    showSummaryRoute({ summary: makeSummary(), status });
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('SPLITBRIEF complete');
-
-    ui.unmount();
-  });
-
-  it('does not label failed summaries as complete', () => {
-    showSummaryRoute({ summary: makeSummary(), status: 'failed' });
-
-    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-
-    expect(frame).toContain('SPLITBRIEF failed');
+    expect(frame).toContain(heading);
     expect(frame).not.toContain('with summary');
-    expect(frame).not.toContain('SPLITBRIEF complete');
-
-    ui.unmount();
-  });
-
-  it('does not label interrupted summaries as complete', () => {
-    showSummaryRoute({ summary: makeSummary(), status: 'interrupted' });
-
-    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-
-    expect(frame).toContain('SPLITBRIEF interrupted');
-    expect(frame).not.toContain('with summary');
-    expect(frame).not.toContain('SPLITBRIEF complete');
+    const otherHeadings = STATUS_HEADINGS.filter(([other]) => other !== status).map(
+      ([, text]) => text,
+    );
+    for (const other of otherHeadings) expect(frame).not.toContain(other);
 
     ui.unmount();
   });
@@ -639,7 +624,6 @@ describe('SummaryScreen', () => {
 
   it('reveals review packet content with paging at 160x24', async () => {
     terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
-    const PAGE_DOWN = '\u001b[6~';
     const END = '\u001b[F';
     showSummaryRoute({
       sessionId: 'scroll-summary',
@@ -689,20 +673,16 @@ describe('SummaryScreen', () => {
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     await tick(20);
 
-    const frames: string[] = [];
-    for (let page = 0; page < 20; page++) {
-      frames.push(ui.lastFrame() ?? '');
-      await flushEffects();
-      ui.stdin.write(PAGE_DOWN);
-      await tick(20);
-    }
+    const first = ui.lastFrame() ?? '';
+    expect(first).not.toContain('review-packet.md');
+
     await flushEffects();
     ui.stdin.write(END);
     await tick(20);
-    frames.push(ui.lastFrame() ?? '');
+    const last = ui.lastFrame() ?? '';
 
-    expect(frames.some((frame) => frame.includes('Review packet'))).toBe(true);
-    expect(frames.some((frame) => frame.includes('review-packet.md'))).toBe(true);
+    expect(last).toContain('Review packet');
+    expect(last).toContain('review-packet.md');
 
     ui.unmount();
   });

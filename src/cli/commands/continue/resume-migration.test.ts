@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
+import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution.js';
 import { assertResumableState } from '../../sessions/resolve.js';
 import { resumeSavedSession } from './resume.js';
 
@@ -25,7 +27,7 @@ describe('resume migration boundary', () => {
     );
   });
 
-  it('retains recovery identity fields without deriving them from artifacts', () => {
+  it('carries recovery identity fields into preparation instead of deriving them from artifacts', async () => {
     const recovery = {
       epochId: 'epoch-1',
       origin: { mode: 'standard', entry: 'initial' },
@@ -37,10 +39,39 @@ describe('resume migration boundary', () => {
       external: { recovery },
     });
 
-    assertResumableState(state, 'session-1');
+    expect(() => assertResumableState(state, 'session-1')).not.toThrow();
 
-    expect(state.external).toEqual({ recovery });
-    expect(state.external?.recovery).toBe(recovery);
+    const prepareExecution = vi.fn(
+      async (_input: PrepareExecutionInput) => ({ kind: 'aborted' }) as const,
+    );
+
+    await withTempDir('resume-migration-recovery', async (projectDir) => {
+      await expect(
+        resumeSavedSession({
+          projectDir,
+          sessionId: 'session-1',
+          state,
+          opts: {},
+          deps: {
+            prepareExecution,
+            initStores: async () => {},
+            renderApp: async () => {},
+            runHeadless: async () => {},
+            runRpc: async () => {},
+            setupWorkflow: async () => ({
+              projectDir,
+              useFullscreen: false,
+              useMouse: false,
+              useHover: false,
+            }),
+          },
+        }),
+      ).rejects.toThrow(/cancelled/);
+    });
+
+    expect(prepareExecution.mock.calls[0]?.[0]).toMatchObject({
+      resumeState: { external: { recovery } },
+    });
   });
 
   it('rejects an unmigrated v3 state before loading config or calling a provider', async () => {

@@ -6,6 +6,7 @@ import {
   ANTIGRAVITY_CLI_CANDIDATE_PATHS,
   CLI_COMPILER_EVIDENCE,
   CLI_TOOL_IDS,
+  type CliToolId,
   CURSOR_CLI_ADMISSION_VERDICT,
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
@@ -377,8 +378,13 @@ describe('admitted readiness probe contracts', () => {
   });
 
   it('rejects Cursor before a readiness probe can be resolved', () => {
-    expect(() => lookupCliPlannerAdapter('cursor')).toThrow(/has no planner configuration/);
-    expect(() => lookupCliImplementerAdapter('cursor')).toThrow(/has no implementer configuration/);
+    const cursor = 'cursor' as CliToolId;
+    expect(() => lookupCliReadinessProbe({ tool: cursor, role: 'planner' })).toThrow(
+      /has no planner configuration/,
+    );
+    expect(() => lookupCliReadinessProbe({ tool: cursor, role: 'implementer' })).toThrow(
+      /has no implementer configuration/,
+    );
   });
 });
 

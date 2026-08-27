@@ -1,9 +1,9 @@
+import type { RecoveryUsage } from '../../../core/schemas/brief-recovery/budget.js';
 import type {
   BriefRecoveryProviderPort,
   RecoveryProviderRequest,
   RecoveryProviderResult,
-  RecoveryUsage,
-} from '../../../core/schemas/brief-recovery.js';
+} from '../../../core/schemas/brief-recovery/provider-call.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { Planner } from '../../planners/types.js';
 import type {
@@ -422,7 +422,6 @@ function narrowAbortSignal(value: unknown): AbortSignal | undefined {
 function abortCode(signal: AbortSignal): typeof ABORTED_CODE | typeof TIMEOUT_CODE {
   const reason = signal.reason;
   if (isRecord(reason) && reason.name === 'TimeoutError') return TIMEOUT_CODE;
-  if (reason instanceof DOMException && reason.name === 'TimeoutError') return TIMEOUT_CODE;
   if (reason instanceof Error && /timeout|timed out/iu.test(reason.message)) return TIMEOUT_CODE;
   if (typeof reason === 'string' && /timeout|timed out/iu.test(reason)) return TIMEOUT_CODE;
   return ABORTED_CODE;

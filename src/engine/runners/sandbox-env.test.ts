@@ -131,7 +131,7 @@ describe('createSandboxEnv', () => {
     const projectDir = createTempDir('sandbox-env');
     dirs.push(projectDir);
 
-    const env = await createSandboxEnv(projectDir);
+    const env = await createSandboxEnv({ projectDir });
 
     const root = join(projectDir, SANDBOX_DIR);
     expect(env.HOME).toBe(join(root, 'home'));
@@ -153,7 +153,7 @@ describe('createSandboxEnv', () => {
 
     setEnv('HOME', fakeHome);
 
-    const env = await createSandboxEnv(projectDir);
+    const env = await createSandboxEnv({ projectDir });
 
     const sandboxHome = env.HOME as string;
     expect(existsSync(join(sandboxHome, '.claude'))).toBe(false);
@@ -171,24 +171,23 @@ describe('createSandboxEnv', () => {
 
     setEnv('HOME', fakeHome);
 
-    const env = await createSandboxEnv(projectDir);
+    const env = await createSandboxEnv({ projectDir });
 
     const sandboxHome = env.HOME as string;
     expect(existsSync(join(sandboxHome, '.npmrc'))).toBe(false);
     expect(existsSync(join(sandboxHome, '.netrc'))).toBe(false);
   });
 
-  itUnix('does not fail when the real HOME has no credential entries', async () => {
+  itUnix('bridges nothing when the real HOME has no credential entries', async () => {
     const fakeHome = createTempDir('sandbox-empty-home');
     const projectDir = createTempDir('sandbox-env-empty');
     dirs.push(fakeHome, projectDir);
     setEnv('HOME', fakeHome);
 
-    const env = await createSandboxEnv(projectDir);
+    const env = await createSandboxEnv({ projectDir, selectedCli: 'claude-code' });
 
-    const sandboxHome = env.HOME as string;
-    expect(existsSync(sandboxHome)).toBe(true);
-    expect(existsSync(join(sandboxHome, '.claude'))).toBe(false);
+    expect(await bridgedCliStatePresent(env, 'claude-code')).toBe(false);
+    expect(sandboxCredentialValues(env)).toEqual([]);
   });
 
   itUnix('hands a host-account channel the real HOME and USER and nothing else', async () => {
@@ -197,7 +196,11 @@ describe('createSandboxEnv', () => {
     dirs.push(hostHome, projectDir);
     setEnv('HOME', hostHome);
 
-    const env = await createSandboxEnv(projectDir, [], 'claude-code', 'host-account');
+    const env = await createSandboxEnv({
+      projectDir,
+      selectedCli: 'claude-code',
+      hostState: 'host-account',
+    });
 
     const root = join(projectDir, SANDBOX_DIR);
     expect(env.HOME).toBe(hostHome);
@@ -225,7 +228,11 @@ describe('createSandboxEnv', () => {
     );
     setEnv('HOME', hostHome);
 
-    const env = await createSandboxEnv(projectDir, [], 'claude-code', 'host-account');
+    const env = await createSandboxEnv({
+      projectDir,
+      selectedCli: 'claude-code',
+      hostState: 'host-account',
+    });
 
     // The keychain is what such a channel reads, so no snapshot is staged and
     // no credential value is registered for parent-side redaction.
@@ -268,7 +275,7 @@ describe('createSandboxEnv', () => {
     setEnv('AWS_SECRET_ACCESS_KEY', 'aws-secret');
     setEnv('SPLITBRIEF_PUBLIC_FLAG', 'keep-me');
 
-    const env = await createSandboxEnv(projectDir);
+    const env = await createSandboxEnv({ projectDir });
 
     expect(env.GITHUB_TOKEN).toBeUndefined();
     expect(env.XAI_API_KEY).toBeUndefined();
@@ -293,7 +300,7 @@ describe('createSandboxEnv', () => {
     setEnv('npm_config_userconfig', '/home/user/.npmrc');
     setEnv('CUSTOM_TOKEN_FILE', '/tmp/custom-token');
 
-    const env = await createSandboxEnv(projectDir, ['CUSTOM_TOKEN_FILE']);
+    const env = await createSandboxEnv({ projectDir, preserveEnvKeys: ['CUSTOM_TOKEN_FILE'] });
 
     expect(env.AWS_PROFILE).toBeUndefined();
     expect(env.AWS_SHARED_CREDENTIALS_FILE).toBeUndefined();
@@ -313,7 +320,7 @@ describe('createSandboxEnv', () => {
     setEnv('ANTHROPIC_API_KEY', 'sk-anthropic');
     setEnv('XAI_API_KEY', 'sk-xai');
 
-    const env = await createSandboxEnv(projectDir, ['OPENAI_API_KEY']);
+    const env = await createSandboxEnv({ projectDir, preserveEnvKeys: ['OPENAI_API_KEY'] });
 
     expect(env.OPENAI_API_KEY).toBe('sk-openai');
     expect(env.ANTHROPIC_API_KEY).toBeUndefined();
@@ -340,7 +347,7 @@ describe('createSandboxEnv', () => {
     setEnv('LANG', 'C.UTF-8');
     setEnv('TERM', 'xterm-256color');
 
-    const env = await createSandboxEnv(projectDir);
+    const env = await createSandboxEnv({ projectDir });
 
     expect(env.LANG).toBe('C.UTF-8');
     expect(env.TERM).toBe('xterm-256color');
@@ -366,7 +373,10 @@ describe('createSandboxEnv', () => {
     setEnv('NODE_OPTIONS', '--require=/tmp/canary-loader.js');
     setEnv('GIT_ASKPASS', '/tmp/canary-askpass');
 
-    const env = await createSandboxEnv(projectDir, ['NODE_OPTIONS', 'GIT_ASKPASS']);
+    const env = await createSandboxEnv({
+      projectDir,
+      preserveEnvKeys: ['NODE_OPTIONS', 'GIT_ASKPASS'],
+    });
 
     expect(env.NODE_OPTIONS).toBeUndefined();
     expect(env.GIT_ASKPASS).toBeUndefined();
@@ -382,7 +392,7 @@ describe('bridgedCliStatePresent', () => {
       dirs.push(fakeHome, projectDir);
       setEnv('HOME', fakeHome);
 
-      const env = await createSandboxEnv(projectDir, [], 'claude-code');
+      const env = await createSandboxEnv({ projectDir, selectedCli: 'claude-code' });
       expect(await bridgedCliStatePresent(env, 'claude-code')).toBe(false);
 
       // What the child itself writes during a probe — Claude Code drops
@@ -403,7 +413,7 @@ describe('bridgedCliStatePresent', () => {
     writeFileSync(join(fakeHome, '.claude', '.credentials.json'), '{"session":"fixture"}');
     setEnv('HOME', fakeHome);
 
-    const env = await createSandboxEnv(projectDir, [], 'claude-code');
+    const env = await createSandboxEnv({ projectDir, selectedCli: 'claude-code' });
 
     expect(await bridgedCliStatePresent(env, 'claude-code')).toBe(true);
     expect(await bridgedCliStatePresent(env, 'codex')).toBe(false);
@@ -417,7 +427,7 @@ describe('bridgedCliStatePresent', () => {
     const bait = join(fakeHome, 'host-credential.json');
     writeFileSync(bait, '{"token":"host"}');
 
-    const env = await createSandboxEnv(projectDir, [], 'claude-code');
+    const env = await createSandboxEnv({ projectDir, selectedCli: 'claude-code' });
     const destination = join(env.HOME as string, '.claude', '.credentials.json');
     mkdirSync(dirname(destination), { recursive: true });
     symlinkSync(bait, destination);
@@ -480,7 +490,7 @@ describe('runnerAuthEnvKeys', () => {
     dirs.push(projectDir);
     setEnv('OPENAI_API_KEY', 'sk-openai');
 
-    const implicit = await createSandboxEnv(projectDir);
+    const implicit = await createSandboxEnv({ projectDir });
     const session = await createRunnerSandboxEnv(
       projectDir,
       { kind: 'cli', tool: 'codex', authChannel: 'session' },
@@ -977,7 +987,11 @@ describe('runnerAuthEnvKeys', () => {
       writeFileSync(hostCredential, '{"session":"host-login"}');
       setEnv('HOME', hostHome);
 
-      const env = await createSandboxEnv(projectDir, [], 'claude-code', 'bridged-files');
+      const env = await createSandboxEnv({
+        projectDir,
+        selectedCli: 'claude-code',
+        hostState: 'bridged-files',
+      });
       // A child replaces its sandbox copy dir with a symlink into the real HOME.
       rmSync(join(env.HOME as string, '.claude'), { recursive: true, force: true });
       symlinkSync(join(hostHome, '.claude'), join(env.HOME as string, '.claude'));
@@ -988,7 +1002,11 @@ describe('runnerAuthEnvKeys', () => {
       expect(existsSync(join(env.HOME as string, '.claude'))).toBe(false);
 
       // Re-bridging afterwards must also refuse to write through a planted link.
-      const again = await createSandboxEnv(projectDir, [], 'claude-code', 'bridged-files');
+      const again = await createSandboxEnv({
+        projectDir,
+        selectedCli: 'claude-code',
+        hostState: 'bridged-files',
+      });
       expect(readFileSync(join(again.HOME as string, '.claude', '.credentials.json'), 'utf8')).toBe(
         '{"session":"host-login"}',
       );
@@ -1013,13 +1031,12 @@ describe('runnerAuthEnvKeys', () => {
     // The file bridge is asked for directly: on macOS this channel reads the
     // login keychain instead, and the value shapes under test are the ones a
     // bridged `.credentials.json` carries.
-    const env = await createSandboxEnv(
+    const env = await createSandboxEnv({
       projectDir,
-      [],
-      'claude-code',
-      'bridged-files',
-      'implementer',
-    );
+      selectedCli: 'claude-code',
+      hostState: 'bridged-files',
+      role: 'implementer',
+    });
     const values = sandboxCredentialValues(env);
     const redact = createRunnerCallCredentialRedactor(values);
 
@@ -1121,7 +1138,7 @@ describe('runnerAuthEnvKeys', () => {
     // No runner acquisition can reach the unscoped root any more — createRunnerSandboxEnv
     // requires a role — but a tree carrying one from an earlier build still has to be
     // swept, so teardown is asserted against a root only createSandboxEnv can write.
-    const unscoped = await createSandboxEnv(projectDir, [], 'codex');
+    const unscoped = await createSandboxEnv({ projectDir, selectedCli: 'codex' });
     const bridged = [
       join(planner.HOME as string, '.copilot', 'config.json'),
       join(implementer.HOME as string, '.codex', 'auth.json'),
@@ -1142,7 +1159,7 @@ describe('runnerAuthEnvKeys', () => {
     writeFileSync(join(hostHome, '.codex', 'auth.json'), 'not-bridged');
     setEnv('HOME', hostHome);
 
-    const env = await createSandboxEnv(projectDir, []);
+    const env = await createSandboxEnv({ projectDir });
 
     expect(env.HOME).toBe(join(projectDir, SANDBOX_DIR, 'home'));
     expect(existsSync(join(env.HOME as string, '.codex'))).toBe(false);

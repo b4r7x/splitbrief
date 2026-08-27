@@ -11,9 +11,9 @@ describe('buildInstantPrompt', () => {
     expect(prompt).not.toMatch(/^##\s+Plan\b/im);
   });
 
-  it('mentions trivial / small model constraint', () => {
+  it('requires each brief to be self-contained for a small local model', () => {
     const prompt = buildInstantPrompt('x', 'y');
-    expect(prompt.toLowerCase()).toContain('small');
+    expect(prompt).toContain('self-contained so a small local model can execute it');
   });
 
   it('requires Task Brief v1 scope, escalation, and evidence sections', () => {

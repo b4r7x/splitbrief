@@ -65,21 +65,13 @@ export function StickyApprovalPrompt({
   useInput(
     (input, key) => {
       if (Date.now() < graceUntil) return;
-      if (input === 'a' || input === 'A') {
-        closeApprovalPrompt({ decision: 'allow', scope: 'once' });
-        return;
-      }
-      if (input === 's' || input === 'S') {
-        closeApprovalPrompt({ decision: 'allow', scope: 'session' });
-        return;
-      }
-      if (input === 'w' || input === 'W') {
-        closeApprovalPrompt({ decision: 'allow', scope: 'always' });
-        return;
-      }
-      if (input === 'x' || input === 'X' || key.escape) {
+      if (key.escape) {
         closeApprovalPrompt();
         return;
+      }
+      const pressed = input.toLowerCase();
+      if (STICKY_OPTIONS.some((option) => option.key === pressed)) {
+        triggerStickyOption(pressed);
       }
     },
     { isActive },
@@ -135,7 +127,11 @@ export function StickyApprovalPrompt({
           {index === 0 ? <Text color={t.text}>{cursorGlyph()}</Text> : NO_CURSOR}
           <Text color={t.textDim}>{approvalOptionKeyCell(option, STICKY_KEY_WIDTH)}</Text>
           {'   '}
-          {approvalOptionLabelText(option, STICKY_KEY_WIDTH, approvalTextWidth(cols))}
+          {approvalOptionLabelText({
+            option,
+            keyWidth: STICKY_KEY_WIDTH,
+            width: approvalTextWidth(cols),
+          })}
         </Text>
       ))}
       <Text> </Text>

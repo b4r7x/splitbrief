@@ -78,7 +78,7 @@ function costScopeRows(summary: CostGateSummary, width: number): number {
 function costOptionRows(width: number): number {
   const keyWidth = approvalKeyColumnWidth(COST_OPTIONS);
   return COST_OPTIONS.reduce(
-    (rows, option) => rows + approvalOptionLabelLines(option, keyWidth, width).length,
+    (rows, option) => rows + approvalOptionLabelLines({ option, keyWidth, width }).length,
     0,
   );
 }

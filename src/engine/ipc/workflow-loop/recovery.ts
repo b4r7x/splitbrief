@@ -183,7 +183,15 @@ export async function resolveDetachedPendingRecovery(
     const action = pending.issue.selectedAction;
     if (!action) return { shouldRun: false, state: pending.state };
     const outcome = applyAction(action);
-    if (!outcome.ok) return { shouldRun: false, state: pending.state };
+    if (!outcome.ok) {
+      bus.publish({
+        type: 'warning',
+        ts: Date.now(),
+        phase: pending.issue.phase,
+        message: outcome.blockedMessage,
+      });
+      return { shouldRun: false, state: pending.state };
+    }
     return outcome.resolution;
   }
 
@@ -199,6 +207,12 @@ export async function resolveDetachedPendingRecovery(
     );
     const parsed = RecoveryActionSchema.safeParse(response.action);
     if (!parsed.success || !pending.issue.availableActions.includes(parsed.data)) {
+      bus.publish({
+        type: 'warning',
+        ts: Date.now(),
+        phase: pending.issue.phase,
+        message: `Recovery answer rejected; available actions: ${pending.issue.availableActions.join(', ')}.`,
+      });
       continue;
     }
     const outcome = applyAction(parsed.data);

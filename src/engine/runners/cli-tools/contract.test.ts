@@ -9,6 +9,9 @@ import type {
   CliPromptTransport,
   CliProtocolEvent,
 } from './contract.js';
+import { aiderPlannerAdapter } from './aider.js';
+import { claudeCodePlannerAdapter } from './claude-code.js';
+import { codexImplementerAdapter, codexPlannerAdapter } from './codex.js';
 import { admitCliRoleVector, type CliRoleAllowlist } from './contract.js';
 import { parseCliSemanticVector } from './validate-args.js';
 
@@ -77,28 +80,37 @@ const plannerAllowlist = {
 describe('CLI adapter contract', () => {
   it('models stdin, bounded lossless argv, and private-file prompt transports', () => {
     const transports = [
-      { kind: 'stdin' },
-      { kind: 'argv', maxBytes: 120_000, placement: 'positional' },
+      claudeCodePlannerAdapter.promptTransport,
+      codexPlannerAdapter.promptTransport,
       { kind: 'file', mode: 0o600 },
     ] as const satisfies readonly CliPromptTransport[];
 
-    expect(transports).toEqual([
-      { kind: 'stdin' },
-      { kind: 'argv', maxBytes: 120_000, placement: 'positional' },
-      { kind: 'file', mode: 0o600 },
-    ]);
+    expect(transports.map((transport) => transport.kind)).toEqual(['stdin', 'argv', 'file']);
+    expect(codexPlannerAdapter.promptTransport).toEqual({
+      kind: 'argv',
+      maxBytes: 120_000,
+      placement: 'positional',
+    });
   });
 
   it('distinguishes protocol-terminal output from process-exit text output', () => {
     const contracts = [
-      { kind: 'structured-terminal', terminalEvent: 'required' },
-      { kind: 'text-exit', successfulExitCodes: [0] },
+      codexImplementerAdapter.outputContract,
+      aiderPlannerAdapter.outputContract,
     ] as const satisfies readonly CliOutputContract[];
 
     expect(contracts.map((contract) => contract.kind)).toEqual([
       'structured-terminal',
       'text-exit',
     ]);
+    expect(codexImplementerAdapter.outputContract).toEqual({
+      kind: 'structured-terminal',
+      terminalEvent: 'required',
+    });
+    expect(aiderPlannerAdapter.outputContract).toEqual({
+      kind: 'text-exit',
+      successfulExitCodes: [0],
+    });
   });
 
   it('keeps invocation transport, environment, cancellation, and limits explicit', () => {
@@ -115,9 +127,7 @@ describe('CLI adapter contract', () => {
       signal: undefined,
     } satisfies CliInvocation;
 
-    expect(invocation.promptTransport.kind).toBe('stdin');
-    expect(invocation.executable.path).toBe('/usr/local/bin/fixture');
-    expect(invocation.timeoutMs).toBe(30_000);
+    expect(invocation.promptTransport.kind).toBe(claudeCodePlannerAdapter.promptTransport.kind);
   });
 
   it('requires role-specific adapters to own argument and process policies', () => {
@@ -132,25 +142,21 @@ describe('CLI adapter contract', () => {
   it('rejects adapters missing terminal, probe, or transport ownership', () => {
     const { terminal: _terminal, ...missingTerminal } = plannerAdapter;
     // @ts-expect-error Adapters must declare how a call reaches a terminal result.
-    const plannerWithoutTerminal: CliPlannerAdapter = missingTerminal;
+    const _plannerWithoutTerminal: CliPlannerAdapter = missingTerminal;
 
     const { probe: _probe, ...missingProbe } = implementerAdapter;
     // @ts-expect-error Adapters must own bounded version and authentication probes.
-    const implementerWithoutProbe: CliImplementerAdapter = missingProbe;
+    const _implementerWithoutProbe: CliImplementerAdapter = missingProbe;
 
     const { promptTransport: _promptTransport, ...missingTransport } = plannerAdapter;
     // @ts-expect-error Adapters must choose a lossless prompt transport.
-    const plannerWithoutTransport: CliPlannerAdapter = missingTransport;
+    const _plannerWithoutTransport: CliPlannerAdapter = missingTransport;
 
     const { descriptor: _descriptor, ...missingDescriptor } = implementerAdapter;
     // @ts-expect-error Adapters must bind to a real catalog descriptor.
-    const implementerWithoutDescriptor: CliImplementerAdapter = missingDescriptor;
+    const _implementerWithoutDescriptor: CliImplementerAdapter = missingDescriptor;
 
-    expect('terminal' in plannerWithoutTerminal).toBe(false);
-    expect('probe' in implementerWithoutProbe).toBe(false);
-    expect('promptTransport' in plannerWithoutTransport).toBe(false);
-    expect('descriptor' in implementerWithoutDescriptor).toBe(false);
-    expect(wrongDescriptorAdapter.descriptor.id).toBe('aider');
+    expect(wrongDescriptorAdapter.descriptor.id).toBe(aiderPlannerAdapter.descriptor.id);
   });
 });
 
@@ -200,36 +206,48 @@ describe('positive role allowlists (REQ-017, REQ-018)', () => {
     expect(verdict).toEqual({ valid: true });
   });
 
-  it('rejected vectors record zero spawn', () => {
-    let spawns = 0;
+  it('rejects an mcp-config vector while admitting the allowlisted agent vector', () => {
     const rejected = admitCliRoleVector({
       role: 'planner',
       vector: parseCliSemanticVector(['--mcp-config', 'x.json']),
       allowlist: plannerAllowlist,
     });
-    if (rejected.valid) spawns += 1;
     expect(rejected).toEqual({ valid: false, conflicts: ['--mcp-config'] });
-    expect(spawns).toBe(0);
 
     const admitted = admitCliRoleVector({
       role: 'planner',
       vector: parseCliSemanticVector(['--agent', 'plan']),
       allowlist: plannerAllowlist,
     });
-    if (admitted.valid) spawns += 1;
     expect(admitted).toEqual({ valid: true });
-    expect(spawns).toBe(1);
   });
 
   it('binds an adapter-declared allowlist to its role', () => {
-    const declared = { ...plannerAdapter, roleAllowlist: plannerAllowlist };
-    expect(declared.roleAllowlist).toBe(plannerAllowlist);
+    const declared = {
+      ...plannerAdapter,
+      roleAllowlist: plannerAllowlist,
+    } satisfies CliPlannerAdapter<'codex'>;
+
+    expect(
+      admitCliRoleVector({
+        role: 'planner',
+        vector: parseCliSemanticVector(['--sandbox', 'read-only']),
+        allowlist: declared.roleAllowlist,
+      }),
+    ).toEqual({ valid: false, conflicts: ['--sandbox'] });
 
     const mismatched: CliPlannerAdapter<'codex'> = {
       ...plannerAdapter,
       // @ts-expect-error An implementer allowlist cannot ride on a planner adapter.
       roleAllowlist: { role: 'implementer', owned: ['sandbox'] },
     };
-    expect(mismatched.roleAllowlist?.role).toBe('implementer');
+
+    expect(
+      admitCliRoleVector({
+        role: 'planner',
+        vector: parseCliSemanticVector(['--sandbox', 'read-only']),
+        allowlist: mismatched.roleAllowlist ?? plannerAllowlist,
+      }),
+    ).toEqual({ valid: false, conflicts: ['role'] });
   });
 });

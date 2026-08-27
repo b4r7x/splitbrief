@@ -45,7 +45,7 @@ afterEach(() => {
 });
 
 async function trustedClaudeExecutable(): Promise<CliExecutableIdentity> {
-  return resolveCliExecutable('claude', projectDir);
+  return resolveCliExecutable({ command: 'claude', projectDir: projectDir });
 }
 
 async function createTrustedClaudeCodePlanner(
@@ -57,7 +57,7 @@ async function createTrustedClaudeCodePlanner(
   });
 }
 
-function isolateHome(): () => void {
+function isolateHome(): { dir: string; restore: () => void } {
   const homeDir = createTempDir('claude-code-planner-home');
   const original = {
     HOME: process.env['HOME'],
@@ -67,12 +67,15 @@ function isolateHome(): () => void {
   process.env['HOME'] = homeDir;
   process.env['XDG_CONFIG_HOME'] = join(homeDir, '.config');
   process.env['XDG_DATA_HOME'] = join(homeDir, '.local', 'share');
-  return () => {
-    for (const [name, value] of Object.entries(original)) {
-      if (value === undefined) delete process.env[name];
-      else process.env[name] = value;
-    }
-    cleanupTempDir(homeDir);
+  return {
+    dir: homeDir,
+    restore: () => {
+      for (const [name, value] of Object.entries(original)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+      cleanupTempDir(homeDir);
+    },
   };
 }
 
@@ -139,11 +142,9 @@ describe('createClaudeCodePlanner planning', () => {
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
     process.env['ANTHROPIC_API_KEY'] = 'anthropic-canary';
     process.env['OPENAI_API_KEY'] = 'openai-canary';
-    const homeDir = createTempDir('claude-code-planner-home');
-    const originalHome = process.env['HOME'];
-    mkdirSync(join(homeDir, '.claude'), { recursive: true });
-    writeFileSync(join(homeDir, '.claude', '.credentials.json'), '{"session":"stub"}\n', 'utf8');
-    process.env['HOME'] = homeDir;
+    const home = isolateHome();
+    mkdirSync(join(home.dir, '.claude'), { recursive: true });
+    writeFileSync(join(home.dir, '.claude', '.credentials.json'), '{"session":"stub"}\n', 'utf8');
 
     try {
       const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
@@ -165,9 +166,7 @@ describe('createClaudeCodePlanner planning', () => {
         cliAuthChannelHostStateAccess(defaultCliAuthChannel('claude-code')) === 'bridged-files',
       );
     } finally {
-      if (originalHome === undefined) delete process.env['HOME'];
-      else process.env['HOME'] = originalHome;
-      cleanupTempDir(homeDir);
+      home.restore();
     }
   });
 
@@ -542,7 +541,6 @@ Create the Claude retry file.
     // REQ-013: only the authoritative final assistant response is content; the
     // divergent partial is evidence at most and never joins the Brief.
     expect(result.text).toBe('FINAL RESULT ONLY');
-    expect(result.text).not.toContain('PARTIAL');
     expect(result.usage).toMatchObject({ inputTokens: 2, outputTokens: 1 });
   });
 
@@ -590,7 +588,7 @@ Create the Claude retry file.
     );
     chmodSync(shimPath, 0o755);
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
-    const restoreHome = isolateHome();
+    const home = isolateHome();
 
     try {
       const planner = await createTrustedClaudeCodePlanner({
@@ -608,7 +606,7 @@ Create the Claude retry file.
       });
       expect(existsSync(spawnedMarker)).toBe(false);
     } finally {
-      restoreHome();
+      home.restore();
     }
   });
 
@@ -619,7 +617,7 @@ Create the Claude retry file.
       lines: [JSON.stringify({ type: 'result', result: 'never reached' })],
     });
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
-    const restoreHome = isolateHome();
+    const home = isolateHome();
 
     try {
       const planner = await createTrustedClaudeCodePlanner({
@@ -634,7 +632,7 @@ Create the Claude retry file.
         data: { conflicts: ['--permission-mode'] },
       });
     } finally {
-      restoreHome();
+      home.restore();
     }
   });
 });

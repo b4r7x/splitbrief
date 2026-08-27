@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { BriefRecoveryControllerDeps } from '../../../core/schemas/brief-owner.js';
 import type {
-  BriefRecoveryControllerDeps,
   RecoveryResultV1,
   StateAuthorityReceipt,
 } from '../../../core/schemas/brief-recovery.js';
@@ -22,8 +22,8 @@ import {
   reconcileBriefRecoveryCall,
   reserveBriefRecoveryCall,
   terminalChargeBriefRecoveryCall,
-} from '../budget/enforce.js';
-import { persistBriefOwnerTransition } from '../evidence/persistence.js';
+} from '../budget/recovery-reservation.js';
+import { persistBriefOwnerTransition } from '../evidence/recovery-journal.js';
 import { readWorkflowStateHead, workflowStateRevision } from '../state-ops.js';
 import type { WorkflowContext } from '../types.js';
 import type { PhaseRecoveryBinding } from './phases.js';
@@ -130,7 +130,7 @@ export function createWorkflowRecoveryBinding(opts: {
     readRetryContext: ({ recovery, frozenInputIds }) => {
       const state = opts.getState();
       return {
-        prompt: retryPrompt(opts.wctx, state, recovery, frozenInputIds, stagedPayloads),
+        prompt: retryPrompt({ wctx: opts.wctx, state, recovery, frozenInputIds, stagedPayloads }),
         projectDir: opts.wctx.projectDir,
         ...retryBudgetContext(opts.wctx, state),
       };

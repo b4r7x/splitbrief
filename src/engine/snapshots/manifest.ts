@@ -30,7 +30,7 @@ export async function writeManifest(
   sessionId: string,
   manifest: SnapshotManifest,
 ): Promise<void> {
-  const target = snapshotManifestPath(projectDir, sessionId, manifest.id);
+  const target = snapshotManifestPath({ projectDir, sessionId }, manifest.id);
   await writeConfinedSecureFileAsync(
     projectDir,
     relative(projectDir, target),
@@ -46,7 +46,7 @@ export async function readManifest(
   if (!isValidSnapshotId(snapshotId)) {
     throw error('snapshot-invalid-id', `Invalid snapshot ID: ${snapshotId}`, { snapshotId });
   }
-  const target = snapshotManifestPath(projectDir, sessionId, snapshotId);
+  const target = snapshotManifestPath({ projectDir, sessionId }, snapshotId);
   try {
     if (lstatSync(target).isSymbolicLink()) {
       throw error(
@@ -87,7 +87,7 @@ export async function readManifest(
 }
 
 export async function listSnapshotIds(projectDir: string, sessionId: string): Promise<string[]> {
-  const dir = snapshotsDir(projectDir, sessionId);
+  const dir = snapshotsDir({ projectDir, sessionId });
   let entries: Dirent[];
   try {
     entries = await readdir(dir, { withFileTypes: true, encoding: 'utf8' });
@@ -112,7 +112,7 @@ export async function listSnapshotIds(projectDir: string, sessionId: string): Pr
 }
 
 export async function hasBaseline(projectDir: string, sessionId: string): Promise<boolean> {
-  const manifestPath = snapshotManifestPath(projectDir, sessionId, 'baseline');
+  const manifestPath = snapshotManifestPath({ projectDir, sessionId }, 'baseline');
   try {
     await stat(manifestPath);
     return true;

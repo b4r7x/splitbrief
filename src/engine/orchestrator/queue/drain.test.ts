@@ -120,11 +120,10 @@ describe('drain', () => {
     expect(result.messages[1]?.text).toBe('second message');
     expect(result.state.messageQueue.every((m) => m.drainedAt)).toBe(true);
 
-    const drained = events.find((e) => e.type === 'queue_drained');
-    expect(drained).toBeDefined();
-    if (drained?.type === 'queue_drained') {
-      expect(drained.count).toBe(2);
-    }
+    expect(events.find((e) => e.type === 'queue_drained')).toMatchObject({
+      type: 'queue_drained',
+      count: 2,
+    });
   });
 
   it('ignores already-drained messages', () => {

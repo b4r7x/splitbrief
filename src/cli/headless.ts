@@ -1,16 +1,13 @@
 import type { Planner } from '../engine/planners/types.js';
 import type { Implementer } from '../engine/implementers/types.js';
 import type { PreparedExecution } from '../engine/runners/prepared-execution.js';
-import { loadStateForResume } from '../core/state/persistence.js';
-import { acquireStateAuthority, releaseStateAuthority } from '../core/state/authority.js';
-import type { StateAuthorityReceipt } from '../core/state/types.js';
+import { loadOwnerWorkflowState } from '../core/state/resume-hydration.js';
 import type { SessionRef } from '../core/types/session-ref.js';
 import {
-  BriefRecoveryProjectionV1Schema,
-  RecoveryResultV1Schema,
   type BriefRecoveryProjectionV1,
-  type RecoveryResultV1,
-} from '../core/schemas/brief-recovery.js';
+  BriefRecoveryProjectionV1Schema,
+} from '../core/schemas/brief-recovery/document.js';
+import { type RecoveryResultV1, RecoveryResultV1Schema } from '../core/schemas/brief-recovery.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import { createBriefRecoveryController } from '../engine/orchestrator/planning/brief-recovery-controller.js';
 import { readSession } from '../core/sessions/io.js';
@@ -51,11 +48,6 @@ export type HeadlessRecoveryOutcome = Readonly<{
   exitCode: 0 | 1;
 }>;
 
-type LoadedHeadlessState = Readonly<{
-  state: WorkflowState;
-  authority: StateAuthorityReceipt;
-}>;
-
 function headlessRecoveryReadOnlyError(action: string) {
   return error('headless-recovery-read-only', `Headless recovery projection cannot ${action}.`);
 }
@@ -91,23 +83,10 @@ const headlessRecoveryProjectionController = createBriefRecoveryController({
   },
 });
 
-function loadOwnedState(ref: SessionRef): LoadedHeadlessState | null {
-  let acquired: ReturnType<typeof acquireStateAuthority>;
-  try {
-    acquired = acquireStateAuthority({ ref, purpose: 'resume' });
-  } catch {
-    return null;
-  }
-
-  if (acquired.kind !== 'fenced') return null;
-  const authority = acquired.receipt;
-  try {
-    const result = loadStateForResume({ ref, authority: acquired });
-    if (result.kind !== 'loaded') return null;
-    return { state: result.state, authority };
-  } finally {
-    releaseStateAuthority(ref, authority);
-  }
+function loadOwnedState(ref: SessionRef): WorkflowState | null {
+  const hydrated = loadOwnerWorkflowState(ref);
+  if (!hydrated.fenced || hydrated.kind !== 'loaded') return null;
+  return hydrated.state;
 }
 
 export function headlessRecoveryStatus(
@@ -264,11 +243,15 @@ function recoveryResultForState(
   });
 }
 
-function emitBriefRecoveryAndFailIfNeeded(
-  state: WorkflowState,
-  sessionId: string,
-  persistTranscript: boolean,
-): boolean {
+function emitBriefRecoveryAndFailIfNeeded({
+  state,
+  sessionId,
+  persistTranscript,
+}: {
+  state: WorkflowState;
+  sessionId: string;
+  persistTranscript: boolean;
+}): boolean {
   const projection = briefRecoveryProjection(state, sessionId);
   if (projection === null) return false;
   writeHeadlessJsonRecord({ type: 'brief_recovery', projection }, process.stdout, {
@@ -283,11 +266,15 @@ function emitBriefRecoveryAndFailIfNeeded(
   throw cliError(`Brief recovery is ${outcome.status}.`, outcome.exitCode);
 }
 
-function emitRecoveryAndFailIfPending(
-  state: WorkflowState | null,
-  sessionId: string,
-  persistTranscript: boolean,
-): void {
+function emitRecoveryAndFailIfPending({
+  state,
+  sessionId,
+  persistTranscript,
+}: {
+  state: WorkflowState | null;
+  sessionId: string;
+  persistTranscript: boolean;
+}): void {
   const issue = state?.pendingRecovery;
   if (!issue) return;
   writeHeadlessJsonRecord(
@@ -373,23 +360,11 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
   if (prepared.purpose === 'resume') {
     const preflight = loadOwnedState({ projectDir, sessionId });
     if (preflight !== null) {
-      if (
-        emitBriefRecoveryAndFailIfNeeded(
-          preflight.state,
-          sessionId,
-          runConfig.workflow.persistTranscript,
-        )
-      ) {
+      const persistTranscript = runConfig.workflow.persistTranscript;
+      if (emitBriefRecoveryAndFailIfNeeded({ state: preflight, sessionId, persistTranscript })) {
         return;
       }
-      if (preflight.state.pendingRecovery !== undefined) {
-        emitRecoveryAndFailIfPending(
-          preflight.state,
-          sessionId,
-          runConfig.workflow.persistTranscript,
-        );
-        return;
-      }
+      emitRecoveryAndFailIfPending({ state: preflight, sessionId, persistTranscript });
     }
   }
 
@@ -423,14 +398,15 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
 
   if (abortController.signal.aborted) return;
 
-  const finalState = loadOwnedState({ projectDir, sessionId })?.state ?? null;
+  const finalState = loadOwnedState({ projectDir, sessionId });
+  const persistTranscript = runConfig.workflow.persistTranscript;
   if (
     finalState !== null &&
-    emitBriefRecoveryAndFailIfNeeded(finalState, sessionId, runConfig.workflow.persistTranscript)
+    emitBriefRecoveryAndFailIfNeeded({ state: finalState, sessionId, persistTranscript })
   ) {
     return;
   }
-  emitRecoveryAndFailIfPending(finalState, sessionId, runConfig.workflow.persistTranscript);
+  emitRecoveryAndFailIfPending({ state: finalState, sessionId, persistTranscript });
   failIfFinalReviewIncomplete(finalState, sessionId);
   failIfSessionFailed(projectDir, sessionId);
   failIfSessionInterrupted(projectDir, sessionId);

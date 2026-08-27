@@ -1,6 +1,6 @@
-import type { CredentialDomainIdentity } from '../../../core/config/accessors/runner-config.js';
+import type { CredentialDomainIdentity } from '../../../core/config/accessors/runner-discovery-context.js';
 
-import { isSameCredentialDomain } from '../../../core/config/accessors/runner-config.js';
+import { isSameCredentialDomain } from '../../../core/config/accessors/runner-discovery-context.js';
 import type { DetectedModel } from '../../../core/discovery/detection.js';
 import { AUTOMATIC_MODEL } from '../../../core/providers/automatic-model.js';
 import {
@@ -145,7 +145,7 @@ export function getBundledModels(providerId: ProviderId): readonly KnownModel[] 
 
 export function getRuntimeLookupProvider(
   providerId: ProviderId,
-  cache: ModelCacheAccessor = NULL_CACHE,
+  cache: ModelCacheAccessor,
 ): ProviderId | null {
   if (providerId !== 'agent-sdk') return providerId;
   return agentSdkCanReuseAnthropicMembership(cache) ? 'anthropic' : null;
@@ -291,48 +291,6 @@ export function lookupRuntimeModel(
     cache,
   });
   return outcome.kind === 'found' ? outcome.model : null;
-}
-
-function mergeExactMetadata(
-  runtime: DetectedModel,
-  modelsDev: DetectedModel | null,
-): DetectedModel {
-  if (modelsDev === null) return runtime;
-  return { ...modelsDev, ...runtime };
-}
-
-interface ModelMetadataLookupInput {
-  readonly providerId: ProviderId;
-  readonly selectionId: string;
-  readonly cache: ModelCacheAccessor;
-  readonly sourceProviderId?: string | undefined;
-  readonly role?: ActiveRunnerRole | undefined;
-}
-
-export function findModelMetadata(input: ModelMetadataLookupInput): DetectedModel | null;
-export function findModelMetadata(
-  providerId: ProviderId,
-  selectionId: string,
-  cache: ModelCacheAccessor,
-): DetectedModel | null;
-export function findModelMetadata(
-  inputOrProviderId: ModelMetadataLookupInput | ProviderId,
-  legacySelectionId?: string,
-  legacyCache?: ModelCacheAccessor,
-): DetectedModel | null {
-  const input: ModelMetadataLookupInput =
-    typeof inputOrProviderId === 'string'
-      ? {
-          providerId: inputOrProviderId,
-          selectionId: legacySelectionId ?? '',
-          cache: legacyCache ?? NULL_CACHE,
-        }
-      : inputOrProviderId;
-  const runtime = resolveExactRuntimeModel(input);
-  const modelsDev = resolveExactModelsDevModel(input);
-
-  if (runtime.kind !== 'found') return modelsDev.kind === 'found' ? modelsDev.model : null;
-  return mergeExactMetadata(runtime.model, modelsDev.kind === 'found' ? modelsDev.model : null);
 }
 
 export function findKnownModel(providerId: ProviderId, modelId: string): KnownModel | undefined {

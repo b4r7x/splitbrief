@@ -13,29 +13,12 @@ import {
   TEST_METADATA,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { REAL_TASKS_MD } from '#testing/helpers/planning-phase.js';
+import { createTestSinks, REAL_TASKS_MD } from '#testing/helpers/planning-phase.js';
 import { formatTasks } from '../../spec/formatter.js';
 import { createEventBus } from '../../events/bus.js';
 import { regeneratePlanAndTasks, regenerateTasks } from './regen.js';
-import type { WorkflowSinks } from '../types.js';
 
 let dirs: string[] = [];
-
-function makeSinks(): WorkflowSinks & { trigger: () => boolean; hasHandler: () => boolean } {
-  let abortHandler: (() => void) | null = null;
-  return {
-    setAbortHandler: (h) => {
-      abortHandler = h;
-    },
-    setQueueHandler: () => {},
-    hasHandler: () => abortHandler !== null,
-    trigger: () => {
-      if (!abortHandler) return false;
-      abortHandler();
-      return true;
-    },
-  };
-}
 
 function setupProjectDir(): { projectDir: string; sessionId: string } {
   const projectDir = createTempDir('regen-test');
@@ -404,7 +387,7 @@ This replacement must fail strict parsing.
   it('an abort during regeneration review parks the retry prompt instead of failing', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { bus, events } = makeBusRecorder();
-    const sinks = makeSinks();
+    const sinks = createTestSinks();
     const { callbacks } = makeCallbacks({
       onContinuationNeeded: async () => 'retry with more detail',
     });
@@ -415,7 +398,7 @@ This replacement must fail strict parsing.
       review: async (prompt: string) => {
         prompts.push(prompt);
         if (prompts.length === 1) {
-          sinks.trigger();
+          sinks.abortTurn();
           throw new Error('aborted');
         }
         return { text: formatTasks([regenerated]), usage: null };

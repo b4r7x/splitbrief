@@ -86,39 +86,42 @@ function normalizeLimit(value: number | undefined, fallback: number, allowZero =
   return value !== undefined && Number.isSafeInteger(value) && value >= minimum ? value : fallback;
 }
 
-function appendReplayLineSegment(
-  lineParts: Buffer[],
-  lineBytes: { value: number },
-  oversized: { value: boolean },
-  segment: Buffer,
-  maxLineBytes: number,
-): void {
-  if (oversized.value || segment.length === 0) return;
-  const remaining = maxLineBytes - lineBytes.value;
+type LineAccumulator = {
+  parts: Buffer[];
+  bytes: number;
+  oversized: boolean;
+};
+
+function appendReplayLineSegment(opts: {
+  accumulator: LineAccumulator;
+  segment: Buffer;
+  maxLineBytes: number;
+}): void {
+  const { accumulator, segment, maxLineBytes } = opts;
+  if (accumulator.oversized || segment.length === 0) return;
+  const remaining = maxLineBytes - accumulator.bytes;
   if (segment.length > remaining) {
-    if (remaining > 0) lineParts.push(segment.subarray(0, remaining));
-    lineBytes.value = maxLineBytes;
-    oversized.value = true;
+    if (remaining > 0) accumulator.parts.push(segment.subarray(0, remaining));
+    accumulator.bytes = maxLineBytes;
+    accumulator.oversized = true;
     return;
   }
-  lineParts.push(segment);
-  lineBytes.value += segment.length;
+  accumulator.parts.push(segment);
+  accumulator.bytes += segment.length;
 }
 
-function finishReplayLine(
-  lineParts: Buffer[],
-  lineBytes: { value: number },
-  oversized: { value: boolean },
-): BoundedReplayLine {
-  const result: BoundedReplayLine = oversized.value
+function finishReplayLine(accumulator: LineAccumulator): BoundedReplayLine {
+  const result: BoundedReplayLine = accumulator.oversized
     ? { kind: 'oversized' }
     : {
         kind: 'line',
-        line: Buffer.concat(lineParts, lineBytes.value).toString('utf8').replace(/\r$/, ''),
+        line: Buffer.concat(accumulator.parts, accumulator.bytes)
+          .toString('utf8')
+          .replace(/\r$/, ''),
       };
-  lineParts.length = 0;
-  lineBytes.value = 0;
-  oversized.value = false;
+  accumulator.parts.length = 0;
+  accumulator.bytes = 0;
+  accumulator.oversized = false;
   return result;
 }
 
@@ -134,9 +137,7 @@ async function* readBoundedReplayLines(
     return;
   }
 
-  const lineParts: Buffer[] = [];
-  const lineBytes = { value: 0 };
-  const oversized = { value: false };
+  const accumulator: LineAccumulator = { parts: [], bytes: 0, oversized: false };
   const stream = createReadStream(opts.sessionJsonlPath);
 
   try {
@@ -153,31 +154,29 @@ async function* readBoundedReplayLines(
         const segment = bytes.subarray(offset, segmentEnd);
         const remainingBudget = maxBytes - state.bytesRead;
         if (segment.length > remainingBudget) {
-          appendReplayLineSegment(
-            lineParts,
-            lineBytes,
-            oversized,
-            segment.subarray(0, remainingBudget),
+          appendReplayLineSegment({
+            accumulator,
+            segment: segment.subarray(0, remainingBudget),
             maxLineBytes,
-          );
+          });
           state.bytesRead = maxBytes;
           return;
         }
 
-        appendReplayLineSegment(lineParts, lineBytes, oversized, segment, maxLineBytes);
+        appendReplayLineSegment({ accumulator, segment, maxLineBytes });
         state.bytesRead += segment.length;
         if (newlineIndex === -1) break;
 
         if (state.bytesRead >= maxBytes) return;
         state.bytesRead += 1;
-        yield finishReplayLine(lineParts, lineBytes, oversized);
+        yield finishReplayLine(accumulator);
         if (state.bytesRead >= maxBytes) return;
         offset = newlineIndex + 1;
       }
     }
 
-    if (lineBytes.value > 0 || oversized.value) {
-      yield finishReplayLine(lineParts, lineBytes, oversized);
+    if (accumulator.bytes > 0 || accumulator.oversized) {
+      yield finishReplayLine(accumulator);
     }
   } finally {
     stream.destroy();

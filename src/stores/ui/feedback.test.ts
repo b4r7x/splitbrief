@@ -13,7 +13,6 @@ describe('feedbackStore', () => {
   });
 
   it('covers set/auto-clear/error/reset end-to-end', () => {
-    // setMessage sets informational (non-error) state.
     feedbackStore.setMessage('saved');
     expect(feedbackStore.get().message).toBe('saved');
     expect(feedbackStore.get().isError).toBe(false);
@@ -23,7 +22,6 @@ describe('feedbackStore', () => {
     expect(feedbackStore.get().message).toBeNull();
     expect(feedbackStore.get().isError).toBe(false);
 
-    // setError(null) clears the error.
     feedbackStore.setError('persistent');
     feedbackStore.setError(null);
     expect(feedbackStore.get().message).toBeNull();

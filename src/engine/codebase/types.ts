@@ -5,7 +5,6 @@ export interface SymbolRef {
   kind: SymbolKind;
   /** Stripped signature string, e.g. "export function foo(x: number): string" */
   signature: string;
-  /** true if exported */
   exported: boolean;
   /** Line number, 1-indexed */
   line: number;

@@ -26,10 +26,10 @@ import {
   type BriefReviewCommandAction,
 } from '../../core/schemas/brief-review-command.js';
 import {
-  BriefRecoveryProjectionV1Schema,
-  type BriefRecoveryAction,
   type BriefRecoveryProjectionV1,
-} from '../../core/schemas/brief-recovery.js';
+  BriefRecoveryProjectionV1Schema,
+} from '../../core/schemas/brief-recovery/document.js';
+import type { BriefRecoveryAction } from '../../core/schemas/brief-recovery/primitives.js';
 import { CostPredictionSchema } from '../../core/schemas/summary.js';
 import { IpcRecoveryIssueSchema } from '../../core/schemas/recovery/ipc.js';
 import { PLANNER_ARTIFACT_MAX_BYTES } from '../runners/types.js';

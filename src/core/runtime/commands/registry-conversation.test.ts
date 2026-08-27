@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createRuntimeCommands } from './registry.js';
-import { makeCtx, noop, executeRuntimeCommand } from '#testing/helpers/runtime-commands.js';
+import { makeCtx, noop, runCommandInTest } from '#testing/helpers/runtime-commands.js';
 import type { ScrollCommandTarget } from './types.js';
 
 describe('/scroll command', () => {
@@ -26,7 +26,7 @@ describe('/scroll command', () => {
       }),
     );
 
-    executeRuntimeCommand(commands, raw, 'workflow', noop);
+    runCommandInTest({ commands: commands, raw: raw, screen: 'workflow', onError: noop });
 
     expect(targets).toEqual([target]);
     expect(feedback).toMatch(feedbackPattern);
@@ -47,7 +47,7 @@ describe('/scroll command', () => {
       }),
     );
 
-    executeRuntimeCommand(commands, '/scroll', 'workflow', noop);
+    runCommandInTest({ commands: commands, raw: '/scroll', screen: 'workflow', onError: noop });
 
     expect(targets).toEqual([]);
     expect(error).toMatch(/usage: \/scroll <top\|bottom\|page-up\|page-down>/i);
@@ -68,7 +68,12 @@ describe('/scroll command', () => {
       }),
     );
 
-    executeRuntimeCommand(commands, '/scroll sideways', 'workflow', noop);
+    runCommandInTest({
+      commands: commands,
+      raw: '/scroll sideways',
+      screen: 'workflow',
+      onError: noop,
+    });
 
     expect(targets).toEqual([]);
     expect(error).toMatch(/invalid scroll target: sideways/i);
@@ -88,7 +93,7 @@ describe('/scroll command', () => {
       }),
     );
 
-    executeRuntimeCommand(commands, '/scroll top', 'workflow', noop);
+    runCommandInTest({ commands: commands, raw: '/scroll top', screen: 'workflow', onError: noop });
 
     expect(error).toBe('Conversation scrolling is not available here.');
   });
@@ -110,7 +115,7 @@ describe('/activity command', () => {
       }),
     );
 
-    executeRuntimeCommand(commands, '/activity', 'workflow', noop);
+    runCommandInTest({ commands: commands, raw: '/activity', screen: 'workflow', onError: noop });
 
     expect(toggled).toBe(true);
     expect(feedback).toMatch(/expanded latest activity batch/i);
@@ -130,7 +135,7 @@ describe('/activity command', () => {
       }),
     );
 
-    executeRuntimeCommand(commands, '/activity', 'workflow', noop);
+    runCommandInTest({ commands: commands, raw: '/activity', screen: 'workflow', onError: noop });
 
     expect(error).toBe('No expandable activity batch is available.');
   });
@@ -158,7 +163,7 @@ describe('/queue command', () => {
       }),
     );
 
-    executeRuntimeCommand(commands, '/queue show', 'workflow', noop);
+    runCommandInTest({ commands: commands, raw: '/queue show', screen: 'workflow', onError: noop });
 
     expect(feedback).toBe('Queue: 2 messages pending');
   });
@@ -174,7 +179,12 @@ describe('/queue command', () => {
       }),
     );
 
-    await executeRuntimeCommand(commands, '/queue clear', 'workflow', noop);
+    await runCommandInTest({
+      commands: commands,
+      raw: '/queue clear',
+      screen: 'workflow',
+      onError: noop,
+    });
 
     expect(feedback).toBe('Cleared 3 queued messages');
   });
@@ -194,7 +204,12 @@ describe('/queue command', () => {
       }),
     );
 
-    executeRuntimeCommand(commands, '/queue purge', 'workflow', noop);
+    runCommandInTest({
+      commands: commands,
+      raw: '/queue purge',
+      screen: 'workflow',
+      onError: noop,
+    });
 
     expect(cleared).toBe(false);
     expect(error).toBe('Unknown queue command: purge. Use: /queue show or /queue clear');
@@ -217,11 +232,11 @@ describe('/sidebar command', () => {
       }),
     );
 
-    executeRuntimeCommand(commands, '/sidebar', 'workflow', noop);
+    runCommandInTest({ commands: commands, raw: '/sidebar', screen: 'workflow', onError: noop });
     expect(visible).toBe(true);
     expect(feedback).toBe('Sidebar shown');
 
-    executeRuntimeCommand(commands, '/sidebar', 'workflow', noop);
+    runCommandInTest({ commands: commands, raw: '/sidebar', screen: 'workflow', onError: noop });
     expect(visible).toBe(false);
     expect(feedback).toBe('Sidebar hidden');
   });
@@ -240,7 +255,7 @@ describe('/sidebar command', () => {
       }),
     );
 
-    executeRuntimeCommand(commands, '/sidebar', 'workflow', noop);
+    runCommandInTest({ commands: commands, raw: '/sidebar', screen: 'workflow', onError: noop });
 
     expect(error).toBe('Sidebar is not available here.');
   });

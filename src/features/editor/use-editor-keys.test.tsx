@@ -1,5 +1,6 @@
 import { Text } from 'ink';
 import { afterEach, describe, expect, it } from 'vitest';
+import { makeCostPrediction } from '#testing/helpers/factories/cost-prediction.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { editorStore } from '../../stores/ui/editor.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -88,7 +89,7 @@ describe('useEditorKeys field surface stands down under overlays/prompts', () =>
     openFieldSession();
     costApprovalStore.__testReset({
       status: 'pending',
-      prediction: {} as never,
+      prediction: makeCostPrediction(),
       resolve: () => {},
     });
     const ui = renderFeature(<FieldHost />);

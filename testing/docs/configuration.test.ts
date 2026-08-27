@@ -7,9 +7,11 @@ import { loadConfig } from '../../src/core/config/load/io.js';
 import {
   ADMITTED_API_PROVIDER_IDS,
   API_PROVIDER_CATALOG,
+} from '../../src/core/providers/api-provider-catalog.js';
+import {
   API_PROVIDER_VERDICT_CANDIDATE_PATHS,
   FORBIDDEN_API_PROVIDER_IDS,
-} from '../../src/core/providers/api-provider-catalog.js';
+} from '../../src/core/providers/api-provider-verdicts.js';
 import { KNOWN_MODELS } from '../../src/core/providers/known-models.js';
 import { narrowRecord } from '../../src/utils/type-guards.js';
 import { writeConfigYamlText } from '#testing/helpers/config-io.js';
@@ -348,11 +350,13 @@ describe('configuration documentation', () => {
       expect(documentedCompatible).toContainEqual(entry);
     }
 
-    for (const row of rows) {
-      if (row[2] === 'compatible-only') {
-        expect(row[2]).not.toBe('recommended');
-      }
-    }
+    const recommendedKeys = new Set(
+      rows.filter((row) => row[2] === 'recommended').map((row) => `${row[0]}/${row[1]}`),
+    );
+    const collidingKeys = documentedCompatible
+      .map((entry) => `${entry.provider}/${entry.model}`)
+      .filter((key) => recommendedKeys.has(key));
+    expect(collidingKeys).toEqual([]);
   });
 
   it('documents auto as a working CLI model value, not a rejected one', () => {

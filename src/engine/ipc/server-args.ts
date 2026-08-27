@@ -6,15 +6,15 @@ import {
   RunnerOverrideSchema,
 } from '../../core/config/runtime/overrides/schema.js';
 import { writeSecureFile } from '../../lib/fs.js';
-import { error } from '../../utils/error.js';
-import { isRecord } from '../../utils/type-guards.js';
+import { warnStderr } from '../../lib/warn.js';
+import { error, matches } from '../../utils/error.js';
 import { detachedBootstrapRoot, isValidSessionId } from '../../core/paths.js';
 import { assertExistingPathConfined } from '../../lib/path-confinement.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type {
   ActiveSessionReceipt,
   SessionOwnershipReceipt,
-} from '../../core/sessions/lifecycle.js';
+} from '../../core/sessions/active-pointer.js';
 
 export const SERVER_ARGS_FILE = 'server-args.json';
 export const SERVER_RESULT_FILE = 'server-result.json';
@@ -89,7 +89,8 @@ export type DetachedPreparedResultV1 = Readonly<{
 }>;
 
 export const ipcServerArgsError = {
-  invalidServerArgs: () => error('ipc-invalid-server-args', 'invalid server-args.json'),
+  invalidServerArgs: (cause?: unknown) =>
+    error('ipc-invalid-server-args', 'invalid server-args.json', undefined, cause),
   symlinkRead: (path: string) =>
     error(
       'server-bootstrap-symlink-read',
@@ -148,10 +149,10 @@ function readJsonFileWithoutSymlink(filePath: string): unknown {
     }
     return JSON.parse(readFileSync(filePath, 'utf8'));
   } catch (err: unknown) {
-    if (err instanceof Error && isRecord(err) && err.kind === 'server-bootstrap-symlink-read') {
+    if (matches('server-bootstrap-symlink-read')(err)) {
       throw err;
     }
-    throw ipcServerArgsError.invalidServerArgs();
+    throw ipcServerArgsError.invalidServerArgs(err);
   }
 }
 
@@ -208,14 +209,14 @@ export function writeDetachedPreparedResultFile(
   return resultFile;
 }
 
-function materializeAttachment(record: IpcServerAttachment): Attachment {
-  let sizeBytes = 1;
+function materializeAttachment(record: IpcServerAttachment): Attachment | null {
+  let sizeBytes = 0;
   try {
-    const size = statSync(record.path).size;
-    if (size > 0) sizeBytes = size;
+    sizeBytes = statSync(record.path).size;
   } catch {
-    // File may have been removed since spawn; downstream only reads path + mimeType.
+    return null;
   }
+  if (sizeBytes <= 0) return null;
   return {
     id: record.id,
     kind: 'image',
@@ -231,7 +232,15 @@ export function createServerArgsAttachmentDrain(
   let pending = attachments ?? [];
   return () => {
     if (pending.length === 0) return [];
-    const drained = pending.map(materializeAttachment);
+    const drained: Attachment[] = [];
+    for (const record of pending) {
+      const attachment = materializeAttachment(record);
+      if (attachment === null) {
+        warnStderr(`attachment dropped: ${record.path} is missing or empty`);
+        continue;
+      }
+      drained.push(attachment);
+    }
     pending = [];
     return drained;
   };

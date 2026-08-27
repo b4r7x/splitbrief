@@ -173,7 +173,11 @@ export async function runMultiPhasePlanning(
     if (config.compiler === undefined) {
       const tasksMarkdown = await runPhase(
         'generating-tasks',
-        buildTasksPrompt(input.spec, input.plan, input.languageContext),
+        buildTasksPrompt({
+          spec: input.spec,
+          plan: input.plan,
+          languageContext: input.languageContext,
+        }),
         TASKS_FILE,
       );
       return { tasks: parseTasksStrict(tasksMarkdown, callbacks.onWarning) };
@@ -264,12 +268,12 @@ export async function runMultiPhasePlanning(
   );
   const plan = await runPhase(
     'planning',
-    buildPlanPrompt(
-      { content: spec, hasClarifications: spec.includes('## Clarifications') },
+    buildPlanPrompt({
+      spec: { content: spec, hasClarifications: spec.includes('## Clarifications') },
       projectContext,
       skillsContext,
       languageContext,
-    ),
+    }),
     PLAN_FILE,
   );
   const { tasks } = await runTasksPhase({ spec, plan, languageContext });

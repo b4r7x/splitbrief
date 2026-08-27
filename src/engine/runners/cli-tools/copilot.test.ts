@@ -6,10 +6,32 @@ import {
   copilotImplementerProtocolEvents,
   copilotPlannerAdapter,
   copilotPlannerProtocolEvents,
-  copilotPromptArgs,
 } from './copilot.js';
+import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 
-const PROMPT = '<PROMPT>';
+const PROMPT = CLI_PROMPT_SENTINEL;
+const PROJECT_DIR = process.cwd();
+
+function plannerArgs(mode: 'plan' | 'escalate', configuredArgs: readonly string[]) {
+  return copilotPlannerAdapter.buildArgs({
+    prompt: PROMPT,
+    model: undefined,
+    projectDir: PROJECT_DIR,
+    configuredArgs,
+    mode,
+    sessionId: null,
+    effort: undefined,
+  });
+}
+
+function implementerArgs() {
+  return copilotImplementerAdapter.buildArgs({
+    prompt: PROMPT,
+    model: undefined,
+    projectDir: PROJECT_DIR,
+    configuredArgs: [],
+  });
+}
 
 function terminalInput(
   adapter: typeof copilotPlannerAdapter,
@@ -18,7 +40,6 @@ function terminalInput(
   return adapter.terminal({
     outputContract: adapter.outputContract,
     events,
-    stdout: '',
     stderr: '',
     exitCode: 0,
     signal: null,
@@ -75,10 +96,14 @@ describe('Copilot role adapters', () => {
   });
 
   it('preserves planner JSON, model placement, and configured argument order', () => {
-    const args = copilotPromptArgs({
-      role: 'planner',
+    const args = copilotPlannerAdapter.buildArgs({
+      prompt: PROMPT,
       model: 'gpt-5.2',
+      projectDir: PROJECT_DIR,
       configuredArgs: ['--label', 'fixture'],
+      mode: 'plan',
+      sessionId: null,
+      effort: undefined,
     });
     expect(args).toEqual([
       '--model',
@@ -93,13 +118,16 @@ describe('Copilot role adapters', () => {
       '--label',
       'fixture',
     ]);
-    expect(copilotPlannerAdapter.validateArgs(args, args.slice(0, -2))).toEqual({ valid: true });
+    expect(
+      copilotPlannerAdapter.validateArgs({ invocationArgs: args, baseArgs: args.slice(0, -2) }),
+    ).toEqual({ valid: true });
   });
 
   it('preserves implementer --allow-all and model placement', () => {
-    const args = copilotPromptArgs({
-      role: 'implementer',
+    const args = copilotImplementerAdapter.buildArgs({
+      prompt: PROMPT,
       model: 'claude-sonnet-4-6',
+      projectDir: PROJECT_DIR,
       configuredArgs: ['--label', 'fixture'],
     });
     expect(args).toEqual([
@@ -111,14 +139,15 @@ describe('Copilot role adapters', () => {
       '--label',
       'fixture',
     ]);
-    expect(copilotImplementerAdapter.validateArgs(args, args.slice(0, -2))).toEqual({
+    expect(
+      copilotImplementerAdapter.validateArgs({ invocationArgs: args, baseArgs: args.slice(0, -2) }),
+    ).toEqual({
       valid: true,
     });
-    expect(args).toContain('--allow-all');
   });
 
   it('uses plan mode for read-only calls and direct-write approval for full escalation', () => {
-    const planArgs = copilotPromptArgs({ role: 'planner' });
+    const planArgs = plannerArgs('plan', []);
     expect(planArgs).toEqual([
       '-p',
       PROMPT,
@@ -128,9 +157,8 @@ describe('Copilot role adapters', () => {
       '--output-format',
       'json',
     ]);
-    expect(planArgs).not.toContain('--allow-all');
 
-    const escalationArgs = copilotPromptArgs({ role: 'planner', mode: 'escalate' });
+    const escalationArgs = plannerArgs('escalate', []);
     expect(escalationArgs).toEqual([
       '-p',
       PROMPT,
@@ -139,62 +167,106 @@ describe('Copilot role adapters', () => {
       '--output-format',
       'json',
     ]);
-    expect(escalationArgs).not.toContain('--plan');
     expect(
-      copilotPlannerAdapter.validateArgs(
-        copilotPromptArgs({
-          role: 'planner',
-          mode: 'escalate',
-          configuredArgs: ['--plan'],
-        }),
-        escalationArgs,
-      ),
+      copilotPlannerAdapter.validateArgs({
+        invocationArgs: plannerArgs('escalate', ['--plan']),
+        baseArgs: escalationArgs,
+      }),
     ).toEqual({ valid: false, conflicts: ['--plan'] });
   });
 
   it('rejects reordered, protected, duplicate, embedded, and alternate prompt arguments', () => {
-    const base = copilotPromptArgs({ role: 'implementer' });
-    expect(copilotImplementerAdapter.validateArgs([PROMPT, ...base], base)).toEqual({
+    const base = implementerArgs();
+    expect(
+      copilotImplementerAdapter.validateArgs({ invocationArgs: [PROMPT, ...base], baseArgs: base }),
+    ).toEqual({
       valid: false,
       conflicts: ['argument-order', 'prompt-transport'],
     });
-    expect(copilotImplementerAdapter.validateArgs([...base, '--allow-all'], base)).toEqual({
+    expect(
+      copilotImplementerAdapter.validateArgs({
+        invocationArgs: [...base, '--allow-all'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['--allow-all'],
     });
-    expect(copilotImplementerAdapter.validateArgs([...base, '--model', 'other'], base)).toEqual({
+    expect(
+      copilotImplementerAdapter.validateArgs({
+        invocationArgs: [...base, '--model', 'other'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['--model'],
     });
-    expect(copilotImplementerAdapter.validateArgs([...base, '--plan'], base)).toEqual({
+    expect(
+      copilotImplementerAdapter.validateArgs({
+        invocationArgs: [...base, '--plan'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['--plan'],
     });
-    expect(copilotImplementerAdapter.validateArgs([...base, '--agent', 'custom'], base)).toEqual({
+    expect(
+      copilotImplementerAdapter.validateArgs({
+        invocationArgs: [...base, '--agent', 'custom'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['--agent'],
     });
-    expect(copilotImplementerAdapter.validateArgs([...base, '--prompt', 'other'], base)).toEqual({
+    expect(
+      copilotImplementerAdapter.validateArgs({
+        invocationArgs: [...base, '--prompt', 'other'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['--prompt'],
     });
-    expect(copilotImplementerAdapter.validateArgs([...base, '-pPROMPT'], base)).toEqual({
+    expect(
+      copilotImplementerAdapter.validateArgs({
+        invocationArgs: [...base, '-pPROMPT'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['-p'],
     });
-    expect(copilotImplementerAdapter.validateArgs([...base, '--yolo'], base)).toEqual({
+    expect(
+      copilotImplementerAdapter.validateArgs({
+        invocationArgs: [...base, '--yolo'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['--yolo'],
     });
-    expect(copilotImplementerAdapter.validateArgs([...base, 'prefix-<PROMPT>'], base)).toEqual({
+    expect(
+      copilotImplementerAdapter.validateArgs({
+        invocationArgs: [...base, 'prefix-<PROMPT>'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });
-    expect(copilotImplementerAdapter.validateArgs([...base, '<OTHER>'], base)).toEqual({
+    expect(
+      copilotImplementerAdapter.validateArgs({
+        invocationArgs: [...base, '<OTHER>'],
+        baseArgs: base,
+      }),
+    ).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });
-    expect(copilotImplementerAdapter.validateArgs([...base, PROMPT], base)).toEqual({
+    expect(
+      copilotImplementerAdapter.validateArgs({ invocationArgs: [...base, PROMPT], baseArgs: base }),
+    ).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });
@@ -263,7 +335,6 @@ describe('Copilot JSON and text protocol adapters', () => {
     const terminal = copilotImplementerAdapter.terminal({
       outputContract: copilotImplementerAdapter.outputContract,
       events: copilotImplementerProtocolEvents('edited staged files'),
-      stdout: 'edited staged files\n',
       stderr: '',
       exitCode: 0,
       signal: null,

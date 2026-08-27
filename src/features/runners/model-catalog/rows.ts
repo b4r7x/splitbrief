@@ -8,7 +8,7 @@ import type {
 } from '../../../core/discovery/detection.js';
 import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { findProviderCredentialFact, modelProviderAuthKey } from './options.js';
+import { findProviderCredentialFact, modelProviderAuthKey } from './provider-axis.js';
 import type { ModelOption, ModelVariant } from './recency.js';
 
 /** What the tool's own credential listing says about one route's provider. */

@@ -128,5 +128,11 @@ describe('runtime-conformance-cache', () => {
     } finally {
       warn.mockRestore();
     }
+
+    const cache = readRuntimeConformance(testDir);
+    expect(cache).toBeNull();
+    expect(hasRuntimeConformance(cache, { backend: 'claude-code', version: '2.1.235' })).toBe(
+      false,
+    );
   });
 });

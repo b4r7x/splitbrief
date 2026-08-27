@@ -9,11 +9,16 @@ import type { PreparationOutcome } from '../engine/runners/prepared-execution.js
 import { closeApprovalPrompt, openApprovalPrompt } from '../stores/approval-prompt/prompt.js';
 import type { SessionSelectDeps } from '../stores/navigation/session-select.js';
 import { configStore } from '../stores/project/config.js';
+import { error } from '../utils/error.js';
 
 type InteractivePreparationPolicy = Pick<
   PreparationPolicy,
   'interaction' | 'allowHooks' | 'unverifiedAuth' | 'onTieredApproval'
 >;
+
+export const appPreparationError = {
+  configNotLoaded: () => error('app-config-not-loaded', 'Project configuration is not loaded.'),
+} as const;
 
 export const interactivePreparationPolicy = {
   interaction: 'interactive',
@@ -31,7 +36,7 @@ export async function prepareSessionResume(
 ): Promise<PreparationOutcome> {
   const config = configStore.get().config;
   if (config === null) {
-    return { kind: 'failed', error: new Error('project configuration is not loaded') };
+    return { kind: 'failed', error: appPreparationError.configNotLoaded() };
   }
 
   return prepareExecution({

@@ -10,40 +10,32 @@ import {
   hintStateSeverity,
   REVIEW_TYPING_HINT,
 } from './input-hints.js';
+import { REVIEW_HINT } from './review-commands.js';
 
 describe('resolveInputHint', () => {
-  it('uses a short composer hint for question-mode prompts', () => {
-    const hint = resolveInputHint({
-      inputHint: ['Task review: T001', 'Commands: continue, abort'].join('\n'),
-      inputMode: 'question',
-    });
-
-    expect(hint).toBe('answer prompt shown above');
-  });
-
-  it('gives every review phase one legend instead of two spellings of the same key', () => {
+  it('falls back to the one review legend only when the caller has no hint of its own', () => {
     expect(
       resolveInputHint({
         inputHint: '',
         inputMode: 'review',
       }),
-    ).toBe('y approve · c comment · q reject · e edit');
-    expect(
-      resolveInputHint({
-        inputHint: '',
-        inputMode: 'review',
-      }),
-    ).toBe('y approve · c comment · q reject · e edit');
-  });
-
-  it('prefers the question placeholder over review hints when awaiting a prompt answer', () => {
+    ).toBe(REVIEW_HINT);
     expect(
       resolveInputHint({
         inputHint: 'approve | reject',
-        inputMode: 'question',
+        inputMode: 'review',
       }),
-    ).toBe('answer prompt shown above');
+    ).toBe('approve | reject');
   });
+
+  it.each([['Task review: T001', 'Commands: continue, abort'].join('\n'), 'approve | reject'])(
+    'prefers the question placeholder over review hints when awaiting a prompt answer',
+    (inputHint) => {
+      expect(resolveInputHint({ inputHint, inputMode: 'question' })).toBe(
+        'answer prompt shown above',
+      );
+    },
+  );
 });
 
 describe('resolveReviewKeyLegend', () => {

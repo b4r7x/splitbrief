@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { findConfiguredCustomCommand } from '../../core/config/custom-commands.js';
+import { findConfiguredCustomCommand } from '../../core/config/custom-command-catalog.js';
 import type { Config } from '../../core/schemas/config.js';
 import {
   TaskCompilationOperationIdSchema,
@@ -15,11 +15,13 @@ import {
   type CompilerCredentialChannel,
   type CompilerSupportRow,
 } from './compiler-capability.js';
-import { platformContainmentProfile } from './planner-containment.js';
+import { platformContainmentProfile, type ContainmentProfileName } from './planner-containment.js';
+import { assertNever } from '../../utils/type-guards.js';
 
 export type DeriveCompilerClaimInput = Readonly<{
   config: Config;
   detectedVersion?: string | null | undefined;
+  _containmentProfile?: (() => Promise<ContainmentProfileName | 'unavailable'>) | undefined;
 }>;
 
 export type CompilerClaimDerivation =
@@ -33,7 +35,7 @@ export type CompilerClaimDerivation =
       failure: TaskCompilationFailure;
     }>;
 
-function resolvePlannerBackendId(config: Config): CompilerBackendId | undefined {
+function resolvePlannerBackendId(config: Config): CompilerBackendId {
   const custom = findConfiguredCustomCommand(config, config.planner);
   if (custom !== undefined) return 'custom-command';
   const runner = config.planner;
@@ -49,7 +51,7 @@ function resolvePlannerBackendId(config: Config): CompilerBackendId | undefined 
     case 'agent':
       return 'agent';
     default:
-      return undefined;
+      return assertNever(runner);
   }
 }
 
@@ -113,14 +115,6 @@ export async function deriveCompilerClaim(
 ): Promise<CompilerClaimDerivation> {
   const backend = resolvePlannerBackendId(input.config);
   const version = input.detectedVersion ?? '';
-  if (backend === undefined) {
-    return refuseDerivation({
-      backend: 'unknown-backend',
-      claimedVersion: version,
-      missing: ['backend'],
-      detail: 'unrecognized planner runner configuration',
-    });
-  }
   const row = COMPILER_SUPPORT_TABLE[backend];
   if (row.state === 'unsupported') {
     return refuseDerivation({
@@ -138,7 +132,7 @@ export async function deriveCompilerClaim(
       detail: 'no verified runtime version evidence',
     });
   }
-  const containmentProfile = await platformContainmentProfile();
+  const containmentProfile = await (input._containmentProfile ?? platformContainmentProfile)();
   const credentialChannel = selectCredentialChannel(row.credentialChannels, input.config);
   const transport = row.transports[0] ?? 'stdout-final';
   const operationId = TaskCompilationOperationIdSchema.parse(`operation-${randomUUID()}`);

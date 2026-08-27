@@ -1,10 +1,10 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { BriefAdmissionInput } from '../../../core/schemas/brief-recovery.js';
 import type {
-  BriefAdmissionInput,
   BriefContinuationV1,
   BriefQualityIssue,
   BriefRecoveryOrigin,
-} from '../../../core/schemas/brief-recovery.js';
+} from '../../../core/schemas/brief-recovery/primitives.js';
 import type { BriefOwnerCommitInput } from '../../../core/schemas/brief-owner.js';
 import { BRIEF_QUALITY_FILE, TASKS_FILE } from '../../../core/paths.js';
 import { sha256Hex } from '../../../utils/sha256.js';

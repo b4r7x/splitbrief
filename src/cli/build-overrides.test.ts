@@ -65,4 +65,30 @@ describe('resolveRunConfigWithBase', () => {
     expect(resolved.persistenceSnapshot.rawBytes).toEqual(Buffer.from(rawYaml));
     expect(resolved.persistenceSnapshot.revision).not.toBeNull();
   });
+
+  it('merges CLI overrides over the persisted config and falls back to defaultApprove', () => {
+    writeMinimalV3Config(tempDir);
+
+    const resolved = resolveRunConfigWithBase({
+      projectDir: tempDir,
+      opts: { mode: 'quick' },
+      defaultApprove: 'all',
+    });
+
+    expect(resolved.config.workflow.mode).toBe('quick');
+    expect(resolved.config.workflow.approve).toBe('all');
+    expect(resolved.persistedConfig.workflow.mode).toBe('standard');
+  });
+
+  it('prefers an explicit approve option over defaultApprove', () => {
+    writeMinimalV3Config(tempDir);
+
+    const resolved = resolveRunConfigWithBase({
+      projectDir: tempDir,
+      opts: { approve: 'none' },
+      defaultApprove: 'all',
+    });
+
+    expect(resolved.config.workflow.approve).toBe('none');
+  });
 });

@@ -6,7 +6,6 @@ import {
   isRunnerCallTerminalEvent,
   runnerCallCompletedEvent,
   runnerCallErrorEvent,
-  type RunnerCallCredentialRedactor,
 } from './status.js';
 import { error } from '../../utils/error.js';
 import { sanitizeTerminalDiagnosticText } from '../../utils/display-text.js';
@@ -27,6 +26,12 @@ import {
   type RunnerCallOutputLimit,
 } from './output-limit.js';
 import { normalizeRunnerCallWarning } from './warnings.js';
+import {
+  redactRunnerCallEventInput,
+  redactRunnerCallToolUse,
+  redactRunnerCallWarningInput,
+  type RunnerCallToolUse,
+} from './redact-event.js';
 import type {
   RunnerCallContext,
   RunnerCallError,
@@ -40,7 +45,6 @@ import type {
 } from './types.js';
 
 type RunnerCallTextChannel = Extract<RunnerCallEvent, { type: 'call_text_delta' }>['channel'];
-type RunnerCallToolUse = Extract<RunnerCallEvent, { type: 'call_tool_use_done' }>['toolUse'];
 type RunnerCallArtifact = Extract<RunnerCallEvent, { type: 'call_artifact' }>['artifact'];
 type RunnerCallUnknownUpstreamMetadata = Extract<
   RunnerCallEvent,
@@ -291,8 +295,11 @@ export function createRunnerCallRecorder(opts: {
 
   emit({ type: 'call_started', ts: startedAt, ...opts.context });
 
-  function noteLimit(limit: RunnerCallOutputLimit, resultIncomplete: boolean): void {
-    if (resultIncomplete && resultLimit === null) resultLimit = limit;
+  function noteLimit(
+    limit: RunnerCallOutputLimit,
+    disposition: 'truncates-result' | 'diagnostic-only',
+  ): void {
+    if (disposition === 'truncates-result' && resultLimit === null) resultLimit = limit;
     if (emittedLimitWarnings.has(limit.code)) return;
     emittedLimitWarnings.add(limit.code);
     emit({
@@ -306,7 +313,7 @@ export function createRunnerCallRecorder(opts: {
   function noteEnvelopeLatch(): void {
     if (envelopeLimiter === null) return;
     const limit = envelopeLimiter.limit;
-    if (limit !== null) noteLimit(limit, true);
+    if (limit !== null) noteLimit(limit, 'truncates-result');
   }
 
   function itemLimit(opts: {
@@ -389,7 +396,7 @@ export function createRunnerCallRecorder(opts: {
           ...(eventOpts.semantics !== undefined && { semantics: eventOpts.semantics }),
         });
       }
-      if (accepted.limit !== null) noteLimit(accepted.limit, true);
+      if (accepted.limit !== null) noteLimit(accepted.limit, 'truncates-result');
     },
     stderr: (eventOpts) => {
       const accepted = stderrLimiter.accept(redactCredential(eventOpts.text));
@@ -413,7 +420,7 @@ export function createRunnerCallRecorder(opts: {
           text: accepted.text,
         });
       }
-      if (accepted.limit !== null) noteLimit(accepted.limit, false);
+      if (accepted.limit !== null) noteLimit(accepted.limit, 'diagnostic-only');
     },
     toolUseDelta: (eventOpts) => {
       const accepted = toolDeltaLimiter.accept(redactCredential(eventOpts.inputDelta), {
@@ -435,7 +442,7 @@ export function createRunnerCallRecorder(opts: {
           inputDelta: accepted.text,
         });
       }
-      if (accepted.limit !== null) noteLimit(accepted.limit, true);
+      if (accepted.limit !== null) noteLimit(accepted.limit, 'truncates-result');
     },
     toolUseDone: (eventOpts) => {
       if (toolUseDoneCount >= RUNNER_CALL_TOOL_USE_MAX_ITEMS) {
@@ -446,7 +453,7 @@ export function createRunnerCallRecorder(opts: {
             maxItems: RUNNER_CALL_TOOL_USE_MAX_ITEMS,
             nextItemCount: toolUseDoneCount + 1,
           }),
-          true,
+          'truncates-result',
         );
         return;
       }
@@ -454,7 +461,7 @@ export function createRunnerCallRecorder(opts: {
         redactRunnerCallToolUse(eventOpts.toolUse, redactCredential),
       );
       toolUseDoneCount += 1;
-      if (bounded.limit !== null) noteLimit(bounded.limit, true);
+      if (bounded.limit !== null) noteLimit(bounded.limit, 'truncates-result');
       if (envelopeLimiter !== null) {
         envelopeLimiter.recordRaw(Buffer.byteLength(JSON.stringify(bounded.value), 'utf8'));
         noteEnvelopeLatch();
@@ -497,7 +504,7 @@ export function createRunnerCallRecorder(opts: {
             maxItems: RUNNER_CALL_ARTIFACT_MAX_ITEMS,
             nextItemCount: artifactCount + 1,
           }),
-          true,
+          'truncates-result',
         );
         return;
       }
@@ -513,7 +520,7 @@ export function createRunnerCallRecorder(opts: {
         text: eventOpts.artifact.text === null ? null : redactCredential(eventOpts.artifact.text),
       });
       artifactCount += 1;
-      if (bounded.limit !== null) noteLimit(bounded.limit, true);
+      if (bounded.limit !== null) noteLimit(bounded.limit, 'truncates-result');
       if (envelopeLimiter !== null && bounded.value.text !== null) {
         envelopeLimiter.recordRaw(Buffer.byteLength(bounded.value.text, 'utf8'));
         noteEnvelopeLatch();
@@ -534,7 +541,7 @@ export function createRunnerCallRecorder(opts: {
             maxItems: RUNNER_CALL_WARNING_MAX_ITEMS,
             nextItemCount: warningCount + 1,
           }),
-          false,
+          'diagnostic-only',
         );
         return;
       }
@@ -559,7 +566,7 @@ export function createRunnerCallRecorder(opts: {
             maxItems: RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS,
             nextItemCount: unknownUpstreamCount + 1,
           }),
-          false,
+          'diagnostic-only',
         );
         return;
       }
@@ -639,162 +646,4 @@ function hasPartialResult(result: RunnerCallResult): boolean {
     result.toolUses.length > 0 ||
     result.artifacts.length > 0
   );
-}
-
-function redactRunnerCallEventInput(
-  input: RunnerCallEventInput,
-  redact: RunnerCallCredentialRedactor,
-): RunnerCallEventInput {
-  switch (input.type) {
-    case 'call_text_delta':
-    case 'call_stderr_delta':
-      return { ...input, text: redact(input.text) };
-    case 'call_tool_use_delta':
-      return {
-        ...input,
-        toolUseId: input.toolUseId === null ? null : redact(input.toolUseId),
-        name: input.name === null ? null : redact(input.name),
-        inputDelta: redact(input.inputDelta),
-      };
-    case 'call_tool_use_done':
-      return { ...input, toolUse: redactRunnerCallToolUse(input.toolUse, redact) };
-    case 'call_session_id':
-      return { ...input, nativeSessionId: redact(input.nativeSessionId) };
-    case 'call_artifact':
-      return {
-        ...input,
-        artifact: {
-          ...input.artifact,
-          id: redact(input.artifact.id),
-          name: redact(input.artifact.name),
-          path: input.artifact.path === null ? null : redact(input.artifact.path),
-          mimeType: input.artifact.mimeType === null ? null : redact(input.artifact.mimeType),
-          text: input.artifact.text === null ? null : redact(input.artifact.text),
-        },
-      };
-    case 'call_warning':
-      return { ...input, warning: redactRunnerCallWarningInput(input.warning, redact) };
-    case 'call_error':
-      return {
-        ...input,
-        error: {
-          code: redact(input.error.code),
-          message: redact(input.error.message),
-        },
-        nativeSessionId: input.nativeSessionId === null ? null : redact(input.nativeSessionId),
-      };
-    case 'call_completed':
-      return {
-        ...input,
-        nativeSessionId: input.nativeSessionId === null ? null : redact(input.nativeSessionId),
-      };
-    case 'call_unknown_upstream':
-      return {
-        ...input,
-        rawPreview: redact(input.rawPreview),
-        backendMetadata: {
-          ...input.backendMetadata,
-          ...(input.backendMetadata.source !== undefined && {
-            source: redact(input.backendMetadata.source),
-          }),
-          ...(input.backendMetadata.parser !== undefined && {
-            parser: redact(input.backendMetadata.parser),
-          }),
-          ...(input.backendMetadata.upstreamType !== undefined && {
-            upstreamType: redact(input.backendMetadata.upstreamType),
-          }),
-        },
-      };
-    case 'call_started':
-    case 'call_usage':
-    case 'call_stalled':
-    case 'call_stall_cleared':
-      return input;
-  }
-}
-
-function redactRunnerCallWarningInput(
-  warning: RunnerCallWarningInput,
-  redact: RunnerCallCredentialRedactor,
-): RunnerCallWarningInput {
-  const code = redact(warning.code);
-  const message = redact(warning.message);
-  const source = warning.source === undefined ? undefined : redact(warning.source);
-  const parser = warning.parser === undefined ? undefined : redact(warning.parser);
-  const upstreamType =
-    warning.upstreamType === undefined ? undefined : redact(warning.upstreamType);
-  const fingerprint = warning.fingerprint === undefined ? undefined : redact(warning.fingerprint);
-  const rawRef = warning.rawRef === undefined ? undefined : redact(warning.rawRef);
-  const wasRedacted =
-    code !== warning.code ||
-    message !== warning.message ||
-    source !== warning.source ||
-    parser !== warning.parser ||
-    upstreamType !== warning.upstreamType ||
-    fingerprint !== warning.fingerprint ||
-    rawRef !== warning.rawRef;
-
-  return {
-    ...warning,
-    code,
-    message,
-    ...(source !== undefined && { source }),
-    ...(parser !== undefined && { parser }),
-    ...(upstreamType !== undefined && { upstreamType }),
-    ...(fingerprint !== undefined && { fingerprint }),
-    ...(rawRef !== undefined && { rawRef }),
-    ...(wasRedacted && { redacted: true }),
-  };
-}
-
-function redactRunnerCallToolUse(
-  toolUse: RunnerCallToolUse,
-  redact: RunnerCallCredentialRedactor,
-): RunnerCallToolUse {
-  return {
-    id: toolUse.id === null ? null : redact(toolUse.id),
-    name: redact(toolUse.name),
-    input: redactRunnerCallRecord(toolUse.input, redact),
-    ...(toolUse.output !== undefined && {
-      output: redactRunnerCallUnknown(toolUse.output, redact, new WeakSet<object>()),
-    }),
-  };
-}
-
-function redactRunnerCallRecord(
-  value: Readonly<Record<string, unknown>>,
-  redact: RunnerCallCredentialRedactor,
-): Record<string, unknown> {
-  const redacted: Record<string, unknown> = {};
-  const seen = new WeakSet<object>();
-  seen.add(value);
-  for (const [key, item] of Object.entries(value)) {
-    redacted[redact(key)] = redactRunnerCallUnknown(item, redact, seen);
-  }
-  return redacted;
-}
-
-function redactRunnerCallUnknown(
-  value: unknown,
-  redact: RunnerCallCredentialRedactor,
-  seen: WeakSet<object>,
-): unknown {
-  if (typeof value === 'string') return redact(value);
-  if (value === null || typeof value !== 'object') return value;
-  if (seen.has(value)) return '[Circular]';
-
-  seen.add(value);
-  try {
-    if (Array.isArray(value)) {
-      return value.map((item) => redactRunnerCallUnknown(item, redact, seen));
-    }
-    if (!isRecord(value)) return value;
-    const redacted: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value)) {
-      redacted[redact(key)] = redactRunnerCallUnknown(item, redact, seen);
-    }
-    return redacted;
-  } finally {
-    seen.delete(value);
-  }
 }

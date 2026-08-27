@@ -32,10 +32,9 @@ const OPENCODE_PROTECTED_SHORT_VALUE_FLAGS = new Set(['-m']);
 type OpenCodePlannerBuildInput = Parameters<CliPlannerAdapter<'opencode'>['buildArgs']>[0];
 type OpenCodeImplementerBuildInput = Parameters<CliImplementerAdapter<'opencode'>['buildArgs']>[0];
 
-function validateArgs(invocationArgs: readonly string[], baseArgs: readonly string[]) {
+function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: readonly string[] }) {
   return validateCliArgs({
-    invocationArgs,
-    baseArgs,
+    ...input,
     protectedFlags: OPENCODE_PROTECTED_FLAGS,
     protectedShortValueFlags: OPENCODE_PROTECTED_SHORT_VALUE_FLAGS,
     promptTransport: 'argv',
@@ -243,29 +242,3 @@ export const CLI_CONFORMANCE_CANDIDATES: readonly OpenCodeCliConformanceCandidat
     }),
   ],
 );
-
-export function opencodePromptArgs(opts: {
-  role: 'planner' | 'implementer';
-  model?: string | undefined;
-  mode?: 'plan' | 'escalate' | undefined;
-  configuredArgs?: readonly string[] | undefined;
-}): readonly string[] {
-  const configuredArgs = opts.configuredArgs ?? [];
-  if (opts.role === 'planner') {
-    return opencodePlannerAdapter.buildArgs({
-      prompt: CLI_PROMPT_SENTINEL,
-      model: opts.model,
-      projectDir: '',
-      configuredArgs,
-      mode: opts.mode ?? 'plan',
-      sessionId: null,
-      effort: undefined,
-    });
-  }
-  return opencodeImplementerAdapter.buildArgs({
-    prompt: CLI_PROMPT_SENTINEL,
-    model: opts.model,
-    projectDir: '',
-    configuredArgs,
-  });
-}

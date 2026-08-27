@@ -1,21 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import type {
   BudgetAccountingKey,
   BudgetReservation,
-  RecoveryOperationEnvelope,
+  RecoveryCallEstimate,
   RecoveryUsage,
-} from '../../../core/schemas/brief-recovery.js';
-import { estimateBriefRecoveryCall, type RecoveryFiniteEstimate } from './estimate.js';
+} from '../../../core/schemas/brief-recovery/budget.js';
+import { estimateBriefRecoveryCall } from './recovery-estimate.js';
 import {
   reconcileBriefRecoveryCall,
   reserveBriefRecoveryCall,
   reserveProviderDependentRecoveryCall,
   terminalChargeBriefRecoveryCall,
-} from './enforce.js';
+} from './recovery-reservation.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
+import {
+  makeBoundedOperationEnvelope as boundedEnvelope,
+  makePricedRecoveryEstimate,
+  makeRecoveryBudgetKey as key,
+} from '#testing/helpers/factories/recovery.js';
 
-const pricingCache: ModelCacheAccessor = {
-  getModelsDevCatalog: () => ({
+const pricingCache = makeModelCacheAccessor({
+  catalog: {
     openai: {
       id: 'openai',
       models: {
@@ -26,15 +31,7 @@ const pricingCache: ModelCacheAccessor = {
         },
       },
     },
-  }),
-  getProviderModels: () => null,
-};
-
-const key = (operationId: string, generation = 3): BudgetAccountingKey => ({
-  sessionId: 'session-1',
-  epochId: 'epoch-1',
-  operationId,
-  generation,
+  },
 });
 
 const usage: RecoveryUsage = {
@@ -44,53 +41,19 @@ const usage: RecoveryUsage = {
   estimated: false,
 };
 
-function pricedEstimate(): RecoveryFiniteEstimate {
-  const estimate = estimateBriefRecoveryCall({
-    prompt: 'Retry the frozen Brief once.',
-    plannerTool: 'openai',
-    plannerModel: 'gpt-5.4',
-    configuredOutputCap: 1_000,
-    pricingCache,
-  });
-  if (!isFiniteRecoveryEstimate(estimate)) {
-    throw new Error('expected a finite priced estimate');
-  }
-  return estimate;
-}
-
-function isFiniteRecoveryEstimate(
-  estimate: ReturnType<typeof estimateBriefRecoveryCall>,
-): estimate is RecoveryFiniteEstimate {
-  return estimate.kind === 'finite' && estimate.amount !== null;
-}
-
 function reserve(
   accountingKey: BudgetAccountingKey,
   activeReservations: readonly BudgetReservation[] = [],
 ): BudgetReservation {
   const decision = reserveBriefRecoveryCall({
     accountingKey,
-    estimate: pricedEstimate(),
+    estimate: makePricedRecoveryEstimate(pricingCache),
     currentKnownSpend: 0,
     activeReservations,
     maxBudget: 1,
   });
   if (decision.kind !== 'reserved') throw new Error(decision.reason);
   return decision.reservation;
-}
-
-function boundedEnvelope(): RecoveryOperationEnvelope {
-  return {
-    version: 1,
-    dispatchLimit: 64,
-    callCount: 1,
-    totalPromptBytes: 1_000,
-    totalInputTokensUpperBound: 8_000,
-    totalOutputTokensUpperBound: 8_192,
-    totalNormalizedOutputBytes: 96 * 1_024,
-    totalDeclaredArtifactBytes: 96 * 1_024,
-    callsDigest: 'calls'.padEnd(64, '0'),
-  };
 }
 
 describe('operation-scoped recovery budget', () => {
@@ -115,16 +78,16 @@ describe('operation-scoped recovery budget', () => {
     const first = reserve(key('operation-1'));
     const refused = reserveBriefRecoveryCall({
       accountingKey: key('operation-2'),
-      estimate: pricedEstimate(),
+      estimate: makePricedRecoveryEstimate(pricingCache),
       currentKnownSpend: 0,
       activeReservations: [first],
-      maxBudget: first.amount + pricedEstimate().amount - Number.EPSILON,
+      maxBudget: first.amount + makePricedRecoveryEstimate(pricingCache).amount - Number.EPSILON,
     });
     expect(refused).toMatchObject({ kind: 'refused', code: 'brief_budget_exhausted' });
 
     const replay = reserveBriefRecoveryCall({
       accountingKey: key('operation-1'),
-      estimate: pricedEstimate(),
+      estimate: makePricedRecoveryEstimate(pricingCache),
       currentKnownSpend: 100,
       activeReservations: [first],
       maxBudget: 0,
@@ -216,46 +179,35 @@ describe('operation-scoped recovery budget', () => {
 });
 
 describe('provider-dependent budget policy replaces the missing-price blanket refusal', () => {
-  it('admits a bounded unknown-price call once without a cap and refuses it with a cap', () => {
-    const unavailable = estimateBriefRecoveryCall({
+  function unavailableEstimate(): RecoveryCallEstimate {
+    const estimate = estimateBriefRecoveryCall({
       prompt: 'Retry the frozen Brief once.',
       plannerTool: 'opencode',
       plannerModel: 'auto',
       configuredOutputCap: 1_000,
       pricingCache,
     });
-    expect(unavailable).toMatchObject({ kind: 'unavailable', amount: null });
+    expect(estimate).toMatchObject({ kind: 'unavailable', amount: null });
+    return estimate;
+  }
 
-    const accountingKey = key('operation-provider-dependent');
-    const first = reserveProviderDependentRecoveryCall({
-      accountingKey,
-      estimate: unavailable,
-      envelope: boundedEnvelope(),
+  it('refuses an admission whose frozen envelope exceeds its own dispatch limit', () => {
+    const envelope = boundedEnvelope();
+    const decision = reserveProviderDependentRecoveryCall({
+      accountingKey: key('operation-over-dispatch'),
+      estimate: unavailableEstimate(),
+      envelope: { ...envelope, callCount: envelope.dispatchLimit + 1 },
     });
-    const replayed = reserveProviderDependentRecoveryCall({
-      accountingKey,
-      estimate: unavailable,
-      envelope: boundedEnvelope(),
-    });
-    expect(first).toEqual(replayed);
-    expect(first).toMatchObject({ kind: 'reserved' });
-    if (first.kind !== 'reserved') throw new Error(first.reason);
-    expect(first.resource).toMatchObject({
-      kind: 'provider-dependent',
-      accountingKey: 'session-1/epoch-1/operation-provider-dependent',
-      pricingIdentity: 'opencode/auto',
-      observedUsage: null,
-      resolvedPricing: null,
-    });
-    expect(first.resource).not.toHaveProperty('amount');
+    expect(decision).toMatchObject({ kind: 'refused', code: 'brief_budget_unknown' });
+  });
 
-    const capped = reserveBriefRecoveryCall({
-      accountingKey: key('operation-capped-unknown'),
-      estimate: unavailable,
-      currentKnownSpend: 0,
-      activeReservations: [],
-      maxBudget: 1,
-    });
-    expect(capped).toMatchObject({ kind: 'refused', code: 'brief_budget_unknown' });
+  it('rejects an admission whose accounting key is incomplete', () => {
+    expect(() =>
+      reserveProviderDependentRecoveryCall({
+        accountingKey: { ...key('operation-incomplete'), operationId: '' },
+        estimate: unavailableEstimate(),
+        envelope: boundedEnvelope(),
+      }),
+    ).toThrow('accounting key is invalid');
   });
 });

@@ -76,11 +76,8 @@ describe('findRuntimeCommand', () => {
 });
 
 describe('suggestRuntimeCommand', () => {
-  it.each([
-    { description: 'returns null for empty query', input: '', expected: null },
-    { description: 'returns null for empty query', input: '/', expected: null },
-  ])('$description', ({ input, expected }) => {
-    expect(suggestRuntimeCommand(COMMANDS, input)).toBe(expected);
+  it.each(['', '/'])('returns null for the empty query %j', (input) => {
+    expect(suggestRuntimeCommand(COMMANDS, input)).toBeNull();
   });
 
   it('returns null when the query has no resemblance to any command', () => {

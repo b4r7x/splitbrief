@@ -6,11 +6,12 @@ import {
   briefReviewCommandToApprovalReviewResult,
   type BriefReviewPromptKind,
 } from '../../../core/schemas/brief-review-command.js';
-import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery.js';
+import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
 import type { IpcServer } from '../server.js';
 
 export type IpcWorkflowPromptOptions = {
-  briefRecovery?: BriefRecoveryProjectionV1 | undefined;
+  /** Read at prompt time: the projection moves with the owner state between gates. */
+  readBriefRecovery?: (() => BriefRecoveryProjectionV1 | undefined) | undefined;
 };
 
 const ipcWorkflowLoopError = {
@@ -68,14 +69,13 @@ export function makeCallbacks(
         throw ipcWorkflowLoopError.invalidApprovalReviewInput(approvalType);
       }
 
+      const briefRecovery = approvalType === 'briefs' ? options.readBriefRecovery?.() : undefined;
       const response = assertPromptResponse(
         await ipcServer.requestClientPrompt({
           kind: 'approval_needed',
           approvalType,
           filePath: input,
-          ...(approvalType === 'briefs' && options.briefRecovery !== undefined
-            ? { briefRecovery: options.briefRecovery }
-            : {}),
+          ...(briefRecovery !== undefined ? { briefRecovery } : {}),
         }),
         'approval_needed',
       );

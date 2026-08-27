@@ -188,7 +188,6 @@ export function startMcpServer(config: McpServerConfig): Promise<McpServerHandle
         return;
       }
 
-      // Auth check for all other routes
       if (!isAuthorized(req, token)) {
         send401(res);
         return;
@@ -200,7 +199,6 @@ export function startMcpServer(config: McpServerConfig): Promise<McpServerHandle
         return;
       }
 
-      // POST /mcp
       if (req.method === 'POST' && req.url === '/mcp') {
         const clientVersion = req.headers['mcp-protocol-version'];
         const negotiatedVersion = negotiateProtocolVersion(clientVersion);
@@ -226,7 +224,6 @@ export function startMcpServer(config: McpServerConfig): Promise<McpServerHandle
           return;
         }
 
-        // kind === 'response' | 'error'
         writeResponse(
           res,
           200,

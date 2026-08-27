@@ -1,24 +1,16 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   API_PROVIDER_CATALOG,
-  API_PROVIDER_VERDICT_CANDIDATE_PATHS,
   ADMITTED_API_PROVIDER_IDS,
-  PASS_API_PROVIDER_IDS,
 } from '../../core/providers/api-provider-catalog.js';
-import { resolveRepoPath as productionResolveRepoPath } from '../../core/runners/candidate-admission.js';
 import {
-  KNOWN_PROVIDERS,
-  REGISTRY_OMIT_CANDIDATE_IDS,
-  REGISTRY_PASS_CANDIDATE_IDS,
-  REGISTRY_PASS_CANDIDATE_WIRING_COUNT,
-  detectProviderCatalog,
-  getProvider,
-  detectAvailableProviders,
-  providerDetectionFromOutcome,
-} from './registry.js';
-import { PROVIDER_CATALOG_FAILURE_KINDS } from './types.js';
+  API_PROVIDER_VERDICT_CANDIDATE_PATHS,
+  PASS_API_PROVIDER_IDS,
+} from '../../core/providers/api-provider-verdicts.js';
+import { resolveRepoPath as productionResolveRepoPath } from '../../core/runners/candidate-admission.js';
+import { KNOWN_PROVIDERS, REGISTRY_OMIT_CANDIDATE_IDS, getProvider } from './registry.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 
 const REPO_ROOT = join(import.meta.dirname, '../../..');
@@ -29,19 +21,6 @@ function resolveRepoPath(relativePath: string): string {
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200 });
-}
-
-function mockFetchRoutes(
-  routes: Readonly<Record<string, unknown>>,
-  fallback: () => Response = () => new Response('', { status: 404 }),
-): void {
-  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL | Request) => {
-    const urlStr = typeof url === 'string' ? url : url.toString();
-    for (const [needle, body] of Object.entries(routes)) {
-      if (urlStr.includes(needle)) return jsonResponse(body);
-    }
-    return fallback();
-  });
 }
 
 const ORIGINAL_ENV = { ...process.env };
@@ -64,12 +43,6 @@ describe('provider registry admission', () => {
   });
 
   it('derives the PASS allowlist from T-044–T-053 verdicts and keeps OMIT modules absent', () => {
-    expect([...REGISTRY_PASS_CANDIDATE_IDS]).toEqual([...PASS_API_PROVIDER_IDS]);
-    const expectedOmitIds = API_PROVIDER_VERDICT_CANDIDATE_PATHS.map((entry) => entry.id).filter(
-      (id) => !(PASS_API_PROVIDER_IDS as readonly string[]).includes(id),
-    );
-    expect([...REGISTRY_OMIT_CANDIDATE_IDS]).toEqual(expectedOmitIds);
-
     for (const id of REGISTRY_OMIT_CANDIDATE_IDS) {
       expect(KNOWN_PROVIDERS).not.toHaveProperty(id);
     }
@@ -80,22 +53,9 @@ describe('provider registry admission', () => {
     }
   });
 
-  it('statically imports each PASS candidate once and wires createUnregisteredOpenAICompatProvider', () => {
-    expect(REGISTRY_PASS_CANDIDATE_WIRING_COUNT).toBe(PASS_API_PROVIDER_IDS.length);
-
-    const source = readFileSync(join(import.meta.dirname, 'registry.ts'), 'utf8');
-    const candidateImports = source.match(/from '\.\/(?:candidates\/[^']+|llama-cpp)\.js'/g) ?? [];
-    expect(candidateImports.length).toBe(PASS_API_PROVIDER_IDS.length);
-
-    for (const id of PASS_API_PROVIDER_IDS) {
-      const entry = API_PROVIDER_VERDICT_CANDIDATE_PATHS.find((candidate) => candidate.id === id);
-      expect(entry).toBeDefined();
-      if (entry === undefined) continue;
-      const importPath = entry.source
-        .replace(/^src\/engine\/providers\//, './')
-        .replace(/\.ts$/, '.js');
-      expect(source).toContain(`from '${importPath}'`);
-      expect(source).toContain(`${entry.id}:`);
+  it('wires a factory for every catalog id', () => {
+    for (const id of Object.keys(API_PROVIDER_CATALOG)) {
+      expect(typeof KNOWN_PROVIDERS[id]).toBe('function');
     }
   });
 });
@@ -283,217 +243,5 @@ describe('known provider endpoint policies', () => {
     process.env.DEEPSEEK_API_KEY = 'sk-deep';
     const p = getProvider('deepseek');
     expect(p.name).toBe('deepseek');
-  });
-});
-
-describe('detectAvailableProviders', () => {
-  setupFetchMock();
-
-  it('returns results for ollama and lm-studio', async () => {
-    mockFetchRoutes({
-      '11434': { models: [{ name: 'qwen2.5-coder:7b' }, { name: 'llama3:8b' }] },
-      '1234': { models: [{ key: 'deepseek-coder-v2', type: 'llm' }] },
-    });
-
-    const results = await detectAvailableProviders();
-    const ollama = results.find((r) => r.provider === 'ollama');
-    expect(ollama).toMatchObject({
-      available: true,
-      models: [{ id: 'qwen2.5-coder:7b' }, { id: 'llama3:8b' }],
-    });
-    expect(ollama).not.toHaveProperty('failure');
-
-    const lmStudio = results.find((r) => r.provider === 'lm-studio');
-    expect(lmStudio).toMatchObject({ available: true, models: [{ id: 'deepseek-coder-v2' }] });
-  });
-
-  it('handles ollama running but lm-studio not running', async () => {
-    mockFetchRoutes({ '11434': { models: [{ name: 'codellama:7b' }] } }, () => {
-      throw new Error('Connection refused');
-    });
-
-    const results = await detectAvailableProviders();
-    const ollama = results.find((r) => r.provider === 'ollama');
-    const lmStudio = results.find((r) => r.provider === 'lm-studio');
-
-    expect(ollama).toMatchObject({ available: true, models: [{ id: 'codellama:7b' }] });
-    expect(lmStudio).toMatchObject({
-      available: false,
-      failure: 'offline',
-      error: 'Connection refused',
-    });
-    expect(lmStudio).not.toHaveProperty('models');
-  });
-
-  it('returns detection for each known provider', async () => {
-    mockFetchRoutes({ '11434': { models: [{ name: 'qwen:7b' }] } }, () => {
-      throw new Error('refused');
-    });
-
-    const results = await detectAvailableProviders();
-    expect(results.length).toBe(Object.keys(KNOWN_PROVIDERS).length);
-
-    const ollama = results.find((r) => r.provider === 'ollama');
-    expect(ollama).toMatchObject({ available: true, models: [{ id: 'qwen:7b' }], isLocal: true });
-
-    const deepseek = results.find((r) => r.provider === 'deepseek');
-    expect(deepseek).toMatchObject({ available: false });
-  });
-
-  it('keeps successful metadata and valid empty inventories distinct', async () => {
-    vi.mocked(globalThis.fetch)
-      .mockResolvedValueOnce(
-        jsonResponse({ models: [{ name: 'qwen3-coder:30b', details: { family: 'qwen3' } }] }),
-      )
-      .mockResolvedValueOnce(jsonResponse({ models: [] }));
-
-    const populated = await detectProviderCatalog({ provider: 'ollama' });
-    const empty = await detectProviderCatalog({ provider: 'ollama' });
-
-    expect(populated).toMatchObject({
-      kind: 'success',
-      source: 'provider-runtime',
-      provider: 'ollama',
-      catalog: 'populated',
-      models: [{ id: 'qwen3-coder:30b', providerId: 'ollama', capabilities: ['family:qwen3'] }],
-    });
-    expect(empty).toEqual({
-      kind: 'success',
-      source: 'provider-runtime',
-      provider: 'ollama',
-      isLocal: true,
-      credential: 'not-required',
-      catalog: 'empty',
-      models: [],
-    });
-  });
-
-  it('projects a valid empty inventory as reachable rather than a failed discovery', async () => {
-    mockFetchRoutes({ '11434': { models: [] }, '1234': { models: [] } });
-
-    const results = await detectAvailableProviders();
-    expect(results.find((result) => result.provider === 'ollama')).toEqual({
-      provider: 'ollama',
-      available: true,
-      isLocal: true,
-      models: [],
-    });
-  });
-
-  it('classifies exact sanitized HTTP 403 as policy denial instead of valid empty', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(new Response('', { status: 403 }));
-
-    const outcome = await detectProviderCatalog({
-      provider: 'openai',
-      configOverrides: { apiKey: 'sk-registry-policy-denied' },
-    });
-
-    expect(outcome).toEqual({
-      kind: 'failed',
-      source: 'provider-runtime',
-      provider: 'openai',
-      isLocal: false,
-      credential: 'present',
-      failure: 'policy-denied',
-      diagnostic: 'HTTP 403',
-    });
-  });
-
-  it.each([
-    ['privacy_data_collection_restricted', 'privacy-filtered'],
-    ['guardrail_rejected', 'guardrail-filtered'],
-  ] as const)('preserves OpenRouter %s as a typed %s catalog failure', async (code, failure) => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify({ error: { code } }), { status: 403 }),
-    );
-
-    const outcome = await detectProviderCatalog({
-      provider: 'openrouter',
-      configOverrides: { apiKey: 'sk-or-filtered' },
-    });
-
-    expect(outcome).toMatchObject({
-      kind: 'failed',
-      provider: 'openrouter',
-      failure,
-    });
-  });
-
-  it('validates a configured endpoint before attempting its credential reference', async () => {
-    const outcome = await detectProviderCatalog({
-      provider: 'openrouter',
-      configOverrides: {
-        apiBase: 'https://untrusted.example/api/v1',
-        apiKey: 'env:REGISTRY_MISSING_KEY',
-      },
-    });
-
-    expect(outcome).toMatchObject({
-      kind: 'failed',
-      provider: 'openrouter',
-      failure: 'endpoint-invalid',
-    });
-    expect(globalThis.fetch).not.toHaveBeenCalled();
-  });
-
-  it('handles all providers failing', async () => {
-    vi.mocked(globalThis.fetch).mockRejectedValue(new Error('refused'));
-
-    const results = await detectAvailableProviders();
-    for (const r of results) {
-      expect(r.available).toBe(false);
-    }
-  });
-
-  it('redacts configured credentials from typed catalog failures', async () => {
-    const canary = 'sk-canary-registry-credential-6e2a';
-    vi.mocked(globalThis.fetch).mockRejectedValue(
-      new Error(`upstream Authorization: Bearer ${canary}`),
-    );
-
-    const outcome = await detectProviderCatalog({
-      provider: 'openai',
-      configOverrides: { apiKey: canary },
-    });
-
-    expect(outcome).toMatchObject({
-      kind: 'failed',
-      provider: 'openai',
-      credential: 'present',
-      diagnostic: expect.stringContaining('***REDACTED***'),
-    });
-    expect(JSON.stringify(outcome)).not.toContain(canary);
-  });
-
-  it('handles timeout', { timeout: 30000 }, async () => {
-    vi.mocked(globalThis.fetch).mockReturnValue(new Promise<Response>(() => {}));
-
-    const results = await detectAvailableProviders();
-    for (const r of results) {
-      expect(r.available).toBe(false);
-    }
-  });
-});
-
-describe('providerDetectionFromOutcome', () => {
-  it.each(PROVIDER_CATALOG_FAILURE_KINDS)('carries a %s failure into the detection', (failure) => {
-    expect(
-      providerDetectionFromOutcome({
-        kind: 'failed',
-        source: 'provider-runtime',
-        provider: 'openai',
-        isLocal: false,
-        credential: 'present',
-        failure,
-        diagnostic: 'diagnostic under test',
-      }),
-    ).toEqual({
-      provider: 'openai',
-      available: false,
-      isLocal: false,
-      hasKey: true,
-      failure,
-      error: 'diagnostic under test',
-    });
   });
 });

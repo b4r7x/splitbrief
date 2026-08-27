@@ -4,13 +4,13 @@ import type { SessionRef } from '../../core/types/session-ref.js';
 import type {
   ActiveSessionReceipt,
   SessionOwnershipReceipt,
-} from '../../core/sessions/lifecycle.js';
+} from '../../core/sessions/active-pointer.js';
 import { releasePreparedSession, rollbackPreparedSession } from '../../core/sessions/prepare.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import type { CliExecutableReceipt } from '../../core/discovery/detection.js';
 import type { DeepReadonly, RunnerConfigSlot } from '../../core/config/accessors/runner-config.js';
-import type { AdmittedCustomRunnerInvocation } from './trust.js';
+import type { AdmittedCustomRunnerInvocation } from './custom-launchability.js';
 
 export type RunnerSlot = RunnerConfigSlot;
 

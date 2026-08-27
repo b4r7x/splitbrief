@@ -3,6 +3,7 @@ import {
   briefErrorMessages,
   evaluateBriefQuality,
   firstBriefError,
+  isBriefQualityCode,
 } from '../../spec/brief-quality.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import { TaskIdSchema, taskId } from '../../../core/schemas/task.js';
@@ -25,10 +26,12 @@ import {
   releaseQueueMessagesForPrompt,
 } from '../queue/drain.js';
 import type {
-  BriefAdmissionInput,
-  BriefRecoveryController,
   BriefRecoveryInspection,
   BriefRecoveryProjectionV1,
+} from '../../../core/schemas/brief-recovery/document.js';
+import type {
+  BriefAdmissionInput,
+  BriefRecoveryController,
   QueueBriefInput,
   QueueResultV1,
   RecoveryResultV1,
@@ -165,24 +168,6 @@ function inspectProjection(
   return binding.controller.inspectBriefRecovery(inspectionFor(opts.sessionId, opts.state));
 }
 
-function legacyCode(code: string): BriefQualityReport['issues'][number]['code'] | null {
-  switch (code) {
-    case 'missing_scope':
-    case 'missing_validation':
-    case 'vague_validation':
-    case 'missing_evidence':
-    case 'missing_escalation':
-    case 'missing_code_context':
-    case 'empty_task_list':
-    case 'multi_file_task':
-    case 'missing_type_definitions':
-    case 'missing_implementation_steps':
-      return code;
-    default:
-      return null;
-  }
-}
-
 function legacyTaskId(value: string | null): TaskId {
   const parsed = TaskIdSchema.safeParse(value ?? 'T000');
   return parsed.success ? parsed.data : taskId('T000');
@@ -193,12 +178,11 @@ export function briefQualityReportFromProjection(
 ): BriefQualityReport {
   const issues: BriefQualityReport['issues'] = [];
   for (const issue of projection.matchingReport?.issues ?? []) {
-    const code = legacyCode(issue.code);
-    if (code === null) continue;
+    if (!isBriefQualityCode(issue.code)) continue;
     issues.push({
       taskId: legacyTaskId(issue.taskId),
       severity: issue.severity,
-      code,
+      code: issue.code,
       message: issue.message,
     });
   }
@@ -235,19 +219,20 @@ function queueInputsFor(
   projection: BriefRecoveryProjectionV1,
 ): readonly QueueBriefInput[] {
   const messages = opts.queuedMessages ?? [];
-  if (messages.length === 0 || projection.epochId === null || projection.activeBrief === null) {
+  const { epochId, activeBrief } = projection;
+  if (messages.length === 0 || epochId === null || activeBrief === null) {
     return [];
   }
   const operationId = projection.activeOperation?.operationId ?? null;
   return messages.map((message, index) => ({
     sessionId: opts.sessionId,
-    epochId: projection.epochId ?? '',
+    epochId,
     inputId: message.id,
     sequence: projection.queuedInputs.count + index + 1,
     kind: 'feedback',
     source: 'typed',
     payload: message.text,
-    base: projection.activeBrief ?? { revision: 0, hash: '', path: '' },
+    base: activeBrief,
     operationId,
   }));
 }
@@ -305,21 +290,21 @@ async function prepareQueuedTasks(
 async function admitAndQueue(
   opts: BriefQualityPreparationOptions,
   binding: BriefQualityRecoveryBinding,
-  initialProjection: BriefRecoveryProjectionV1,
 ): Promise<{
   projection: BriefRecoveryProjectionV1;
-  recovery: BriefQualityControllerResult | null;
+  recovery: BriefQualityControllerResult;
 }> {
-  let projection = initialProjection;
-  let recovery: BriefQualityControllerResult | null = null;
   const admission = binding.createAdmissionInput({
     tasks: opts.tasks,
     state: opts.state,
     projectDir: opts.projectDir,
     sessionId: opts.sessionId,
   });
-  recovery = await binding.controller.enterBriefAdmission(admission, binding.authority);
-  projection = recovery.projection;
+  let recovery: BriefQualityControllerResult = await binding.controller.enterBriefAdmission(
+    admission,
+    binding.authority,
+  );
+  let projection = recovery.projection;
 
   for (const input of queueInputsFor(opts, projection)) {
     const queued = await binding.controller.queueBriefInput(input, binding.authority);
@@ -511,7 +496,7 @@ export async function prepareBriefQuality(
 
   let admitted: Awaited<ReturnType<typeof admitAndQueue>>;
   try {
-    admitted = await admitAndQueue(prepared, opts.recovery, initialProjection);
+    admitted = await admitAndQueue(prepared, opts.recovery);
   } catch (err) {
     releasePromptMessages(opts, queued.messages);
     throw err;

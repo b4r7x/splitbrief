@@ -68,3 +68,15 @@ export function makeImplStateWithMetadata(tasks: Task[]): WorkflowState {
     plannerTool: 'claude-code',
   });
 }
+
+export function makeLegacyV3State(feature = 'legacy-feature'): WorkflowState {
+  return {
+    ...createInitialState(feature),
+    stateVersion: 3,
+    phase: 'reviewing-briefs',
+    currentTaskIndex: 0,
+    tasks: [],
+    mode: 'standard',
+    messageQueue: [],
+  };
+}

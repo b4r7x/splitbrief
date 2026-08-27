@@ -130,7 +130,7 @@ describe('startIpcServer replay', () => {
     await harness.cleanup();
   });
 
-  it('replayed events arrive in order before replay_complete', async () => {
+  it('skips unknown future events and reports them in the replay diagnostics', async () => {
     const tmpDir = createTempDir('ipc-test');
     harness.tmpDirs.push(tmpDir);
     const sessionJsonlPath = join(tmpDir, 'session.jsonl');

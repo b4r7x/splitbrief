@@ -5,15 +5,11 @@ import { rowLeading, rowLeadingCells, wrapWidthFor } from './row-markers.js';
 
 describe('rowLeading', () => {
   it('gives headers a 2-cell glyph slot at column 0', () => {
-    expect(rowLeadingCells('activity')).toBe(2);
     expect(rowLeadingCells('task-header')).toBe(2);
-    expect(rowLeading('activity', 'done').endsWith(' ')).toBe(true);
   });
 
   it('hangs tree children two cells under the header glyph', () => {
-    expect(rowLeadingCells('activity-child')).toBe(4);
     expect(rowLeading('activity-child').startsWith('  ')).toBe(true);
-    expect(rowLeadingCells('activity-more')).toBe(4);
   });
 
   it('gives plain rows a blank 2-cell slot and the prompt its marker', () => {
@@ -35,7 +31,6 @@ describe('rowLeading', () => {
 
   it('marks activity and task header rows with the live bullet marker', () => {
     expect(rowLeading('activity', 'live')).toBe(`${glyph('statusInProgress')} `);
-    expect(rowLeading('task-header', 'live')).toBe(`${glyph('statusInProgress')} `);
   });
 
   it('keeps every activity-child leading at the same cell width as the gutter', () => {

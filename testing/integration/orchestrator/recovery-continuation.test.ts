@@ -73,10 +73,13 @@ afterEach(() => {
 
 describe('recovery continuation fence', () => {
   it.each([
-    ['abort', () => new Error('aborted')],
+    ['an untyped throw', () => new Error('aborted')],
     ['idle timeout', () => processError.idleTimeout({ command: 'fixture', idleMs: 1 })],
-    ['connection loss', () => new Error('connection lost')],
-    ['process death', () => new Error('process died')],
+    ['hard timeout', () => processError.timeout({ command: 'fixture', timeoutMs: 1, output: '' })],
+    [
+      'non-zero exit',
+      () => processError.exitCode({ command: 'fixture', code: 137, stderr: 'process died' }),
+    ],
   ])('does not retry the same operation after %s following dispatch', async (_label, failure) => {
     const { projectDir, sessionId } = setupProject();
     const sinks = makeSinks();

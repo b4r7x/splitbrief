@@ -2,9 +2,9 @@ import { chmod, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
-import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-config.js';
+import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
-import { detectRunnerEvidence } from './detect.js';
+import { detectRunnerEvidence } from './runner-evidence.js';
 
 const OLD_CEILING_BYTES = 64 * 1024;
 const CODEX_CATALOG_BUDGET_BYTES = 2 * 1024 * 1024;
@@ -39,7 +39,7 @@ async function installCodexShim(directory: string, catalogFile: string) {
     ].join('\n'),
   );
   await chmod(shim, 0o755);
-  return resolveCliExecutable(shim, '/neutral/project');
+  return resolveCliExecutable({ command: shim, projectDir: '/neutral/project' });
 }
 
 function promptPayload(model: string): string {

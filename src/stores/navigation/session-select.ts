@@ -16,7 +16,7 @@ import type {
   PreparationOutcome,
   PreparedExecution,
 } from '../../engine/runners/prepared-execution.js';
-import { clearActiveReceipt } from '../../core/sessions/lifecycle.js';
+import { clearActiveReceipt } from '../../core/sessions/active-pointer.js';
 import { rollbackPreparedSession } from '../../core/sessions/prepare.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
@@ -78,15 +78,11 @@ export const sessionSelectStore = {
   reset: resetSessionSelection,
 };
 
-type LegacySessionSelectDeps = {
-  [key in `${'load'}${'State'}`]?: (ref: SessionRef) => WorkflowState | null;
-};
-
-export interface SessionSelectDeps extends LegacySessionSelectDeps {
+export interface SessionSelectDeps {
   /** Authority and loader are supplied by the preparation composition root. */
-  loadStateForResume?: typeof loadStateForResume;
-  acquireStateAuthority?: typeof acquireStateAuthority;
-  releaseStateAuthority?: typeof releaseStateAuthority;
+  loadStateForResume: typeof loadStateForResume;
+  acquireStateAuthority: typeof acquireStateAuthority;
+  releaseStateAuthority: typeof releaseStateAuthority;
   prepareResume: (
     input: Readonly<{ ref: SessionRef; state: WorkflowState }>,
     signal: AbortSignal,
@@ -110,82 +106,41 @@ function fromResumeResult(
   authority: StateAuthorityReceipt,
 ): SessionResumeHydration {
   if (result.kind === 'loaded') return { kind: 'loaded', state: result.state, authority };
-  if (result.kind === 'missing') return result;
   return result;
 }
 
 function loadResumeState(ref: SessionRef, deps: SessionSelectDeps): SessionResumeHydration {
-  const acquire = deps.acquireStateAuthority;
-  const loader = deps.loadStateForResume;
-  if (acquire !== undefined && loader !== undefined) {
-    let acquired: ReturnType<typeof acquire>;
-    try {
-      acquired = acquire({ ref, purpose: 'resume' });
-    } catch (cause) {
-      return {
-        kind: 'invalid',
-        code: 'malformed',
-        message: cause instanceof Error ? cause.message : 'State authority is unavailable.',
-      };
-    }
-    if (acquired.kind !== 'fenced') {
-      return {
-        kind: 'invalid',
-        code: 'malformed',
-        message: 'A usable owner receipt is required to resume this session.',
-      };
-    }
-    try {
-      return fromResumeResult(
-        loader({ ref, authority: fencedAuthority(acquired.receipt) }),
-        acquired.receipt,
-      );
-    } catch (cause) {
-      return {
-        kind: 'invalid',
-        code: 'malformed',
-        message: cause instanceof Error ? cause.message : 'The saved workflow state is invalid.',
-      };
-    } finally {
-      deps.releaseStateAuthority?.(ref, acquired.receipt);
-    }
+  let acquired: ReturnType<typeof deps.acquireStateAuthority>;
+  try {
+    acquired = deps.acquireStateAuthority({ ref, purpose: 'resume' });
+  } catch (cause) {
+    return {
+      kind: 'invalid',
+      code: 'malformed',
+      message: cause instanceof Error ? cause.message : 'State authority is unavailable.',
+    };
   }
-
-  // Compatibility for callers that have not moved to the authority-bearing seam yet. The
-  // production composition root always supplies the branch above.
-  const legacyKey: `${'load'}${'State'}` = `load${'State'}`;
-  const legacy = deps[legacyKey];
-  if (typeof legacy === 'function') {
-    try {
-      const state = (legacy as (input: SessionRef) => WorkflowState | null)(ref);
-      return state === null
-        ? { kind: 'missing' }
-        : {
-            kind: 'loaded',
-            state,
-            authority: {
-              kind: 'usable',
-              sessionId: ref.sessionId,
-              ownerId: 'compatibility',
-              pid: 0,
-              processStart: 'compatibility',
-              runId: 'compatibility',
-              acquisitionId: 'compatibility',
-              fence: 0,
-              stateRevision: state.stateRevision ?? 0,
-              stateDigest: 'compatibility',
-            },
-          };
-    } catch (cause) {
-      return {
-        kind: 'invalid',
-        code: 'malformed',
-        message: cause instanceof Error ? cause.message : 'The saved workflow state is invalid.',
-      };
-    }
+  if (acquired.kind !== 'fenced') {
+    return {
+      kind: 'invalid',
+      code: 'malformed',
+      message: 'A usable owner receipt is required to resume this session.',
+    };
   }
-
-  return { kind: 'missing' };
+  try {
+    return fromResumeResult(
+      deps.loadStateForResume({ ref, authority: fencedAuthority(acquired.receipt) }),
+      acquired.receipt,
+    );
+  } catch (cause) {
+    return {
+      kind: 'invalid',
+      code: 'malformed',
+      message: cause instanceof Error ? cause.message : 'The saved workflow state is invalid.',
+    };
+  } finally {
+    deps.releaseStateAuthority(ref, acquired.receipt);
+  }
 }
 
 function preparationError(cause: unknown): Error {

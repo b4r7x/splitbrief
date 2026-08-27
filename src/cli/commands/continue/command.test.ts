@@ -200,12 +200,16 @@ function createDeps(overrides: Partial<ContinueDeps> = {}): ContinueDeps {
         sessionId: prepared.session.ref.sessionId,
       });
     },
-    setupWorkflow: async (opts) => ({
-      projectDir: opts.project ?? '',
-      useFullscreen: true,
-      useMouse: true,
-      useHover: false,
-    }),
+    setupWorkflow: async (opts) => {
+      const useFullscreen = opts.fullscreen !== false;
+      const useMouse = opts.mouse !== false && useFullscreen;
+      return {
+        projectDir: opts.project ?? '',
+        useFullscreen,
+        useMouse,
+        useHover: opts.hover === true && useMouse,
+      };
+    },
     prepareExecution: prepareResume,
     printCrashDiagnostic: async () => ({
       sessionId: 'test',
@@ -661,7 +665,7 @@ describe('continueCommand', () => {
 
     expect(renderRuns).toHaveLength(1);
     expect(renderRuns[0]?.route).toMatchObject({ screen: 'workflow' });
-    expect(renderRuns[0]?.options).toMatchObject({ fullscreen: true, mouse: true, hover: false });
+    expect(renderRuns[0]?.options).toMatchObject({ fullscreen: true, mouse: true, hover: true });
   });
 
   it('forwards --no-fullscreen and --no-mouse to the attach render', async () => {
@@ -684,8 +688,8 @@ describe('continueCommand', () => {
     }
 
     expect(renderRuns[0]?.options).toMatchObject({
-      fullscreen: true,
-      mouse: true,
+      fullscreen: false,
+      mouse: false,
       hover: false,
     });
   });

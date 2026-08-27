@@ -45,12 +45,12 @@ describe('shutdownWorkflow', () => {
       feature: 'shutdown-test',
     };
 
-    await shutdownWorkflow(
+    await shutdownWorkflow({
       projectDir,
       sessionId,
-      () => trackedState,
-      () => undefined,
-    );
+      getTrackedState: () => trackedState,
+      getCurrentTask: () => undefined,
+    });
 
     const statePath = join(sessionDir(projectDir, sessionId), 'state.json');
     expect(existsSync(statePath)).toBe(true);
@@ -60,14 +60,14 @@ describe('shutdownWorkflow', () => {
 
   it('is safe when there is no tracked state and no current task', async () => {
     const { projectDir, sessionId } = setupGitProject();
-    await expect(
-      shutdownWorkflow(
-        projectDir,
-        sessionId,
-        () => undefined,
-        () => undefined,
-      ),
-    ).resolves.toBeUndefined();
+    await shutdownWorkflow({
+      projectDir,
+      sessionId,
+      getTrackedState: () => undefined,
+      getCurrentTask: () => undefined,
+    });
+
+    expect(existsSync(join(sessionDir(projectDir, sessionId), 'state.json'))).toBe(false);
   });
 
   it('waits for current task rollback during shutdown', async () => {
@@ -77,12 +77,12 @@ describe('shutdownWorkflow', () => {
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(filePath, 'export const generated = true;\n');
 
-    await shutdownWorkflow(
+    await shutdownWorkflow({
       projectDir,
       sessionId,
-      () => undefined,
-      () => ({ file, action: 'create' }),
-    );
+      getTrackedState: () => undefined,
+      getCurrentTask: () => ({ file, action: 'create' }),
+    });
 
     expect(existsSync(filePath)).toBe(false);
   });
@@ -108,12 +108,12 @@ describe('shutdownWorkflow', () => {
     await new Promise<void>((resolve) => child.stdout?.once('data', () => resolve()));
     registerProcess(child);
 
-    const shutdown = shutdownWorkflow(
+    const shutdown = shutdownWorkflow({
       projectDir,
       sessionId,
-      () => trackedState,
-      () => ({ file, action: 'create' }),
-    );
+      getTrackedState: () => trackedState,
+      getCurrentTask: () => ({ file, action: 'create' }),
+    });
 
     const statePath = join(sessionDir(projectDir, sessionId), 'state.json');
     expect(existsSync(statePath)).toBe(false);
@@ -179,12 +179,12 @@ describe('shutdownWorkflow — interrupted-task rollback', () => {
     writeProjectFile(projectDir, 'src/a.ts', 'partial agent a\n');
     writeProjectFile(projectDir, 'src/b.ts', 'partial agent b\n');
 
-    await shutdownWorkflow(
+    await shutdownWorkflow({
       projectDir,
       sessionId,
-      () => trackedState,
-      () => ({ file: 'src/a.ts', action: 'modify' }),
-    );
+      getTrackedState: () => trackedState,
+      getCurrentTask: () => ({ file: 'src/a.ts', action: 'modify' }),
+    });
 
     expect(readFileSync(join(projectDir, 'src/a.ts'), 'utf-8')).toBe('committed a\n');
     expect(existsSync(join(projectDir, 'src/b.ts'))).toBe(false);
@@ -209,12 +209,12 @@ describe('shutdownWorkflow — interrupted-task rollback', () => {
     writeProjectFile(projectDir, 'src/a.ts', 'agent a\n');
     writeProjectFile(projectDir, 'src/generated.ts', 'agent generated\n');
 
-    await shutdownWorkflow(
+    await shutdownWorkflow({
       projectDir,
       sessionId,
-      () => trackedState,
-      () => ({ file: 'src/a.ts', action: 'modify' }),
-    );
+      getTrackedState: () => trackedState,
+      getCurrentTask: () => ({ file: 'src/a.ts', action: 'modify' }),
+    });
 
     expect(readFileSync(join(projectDir, 'src/a.ts'), 'utf-8')).toBe('user edit a\n');
     expect(existsSync(join(projectDir, 'src/generated.ts'))).toBe(false);
@@ -242,12 +242,12 @@ describe('shutdownWorkflow — interrupted-task rollback', () => {
     writeProjectFile(projectDir, 'src/a.ts', 'agent a\n');
     writeProjectFile(projectDir, 'src/generated.ts', 'agent generated\n');
 
-    await shutdownWorkflow(
+    await shutdownWorkflow({
       projectDir,
       sessionId,
-      () => reloaded,
-      () => ({ file: 'src/a.ts', action: 'modify' }),
-    );
+      getTrackedState: () => reloaded,
+      getCurrentTask: () => ({ file: 'src/a.ts', action: 'modify' }),
+    });
 
     expect(readFileSync(join(projectDir, 'src/a.ts'), 'utf-8')).toBe('user edit a\n');
     expect(existsSync(join(projectDir, 'src/generated.ts'))).toBe(false);

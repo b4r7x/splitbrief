@@ -13,8 +13,8 @@ import {
   readActiveRecord,
   reactivateExistingSession,
   writeActive,
-} from '../../core/sessions/lifecycle.js';
-import { runnerDiscoveryContextKey } from '../detection/detect.js';
+} from '../../core/sessions/active-pointer.js';
+import { runnerDiscoveryContextKey } from '../detection/runner-evidence.js';
 import { resolveCustomRunnerTrustFile } from './custom-trust.js';
 import { prepareCustomRunnerAdmission } from './custom-admission.js';
 import type { probeRunnerAvailability } from './probe-availability.js';

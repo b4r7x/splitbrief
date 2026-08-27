@@ -1330,9 +1330,17 @@ describe('modelCacheStore', () => {
       fetchedAt: 1,
       validatedAt: 1,
     };
-    modelCacheStore.setDetection({ providers: [], cliTools: [], providerOutcomes: [runtime] });
+    const leaked = {
+      ...runtime,
+      connection: {
+        ...runtime.connection,
+        apiKey: 'sk-should-never-serialize',
+        apiBase: 'https://secret.example/v1',
+      },
+    };
+    modelCacheStore.setDetection({ providers: [], cliTools: [], providerOutcomes: [leaked] });
 
-    const serialized = JSON.stringify(modelCacheStore.getDetection());
+    const serialized = JSON.stringify(modelCacheStore.get().configuredProviders);
     expect(serialized).not.toContain('apiKey');
     expect(serialized).not.toContain('apiBase');
     expect(serialized).toContain('safe-context');

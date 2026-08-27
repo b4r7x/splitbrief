@@ -24,7 +24,6 @@ describe('protectServerMessage', () => {
     for (const persistTranscript of [true, false]) {
       const protectedMsg = protectServerMessage(msg, { persistTranscript });
       expect(protectedMsg).toBe(msg);
-      expect(protectedMsg).toEqual(msg);
       expect(JSON.stringify(protectedMsg)).toContain('sk-artifact-secret-21893');
       expect(Buffer.byteLength(JSON.stringify(protectedMsg) + '\n', 'utf8')).toBeLessThanOrEqual(
         IPC_MAX_FRAME_BYTES,

@@ -15,18 +15,18 @@ import {
   type TaskCompilationProgram,
   type TaskCompilationProgramId,
   type TaskCompilationSemanticId,
-  type TaskCompilationSessionScope,
+  type PlannerSessionScope,
 } from '../../../core/schemas/task-compilation.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { TaskDispatchLedger } from '../../calls/dispatch-ledger.js';
 import type { PlannerInvokeResult } from '../../planners/types.js';
 import type { PreparedPlannerInvocation } from '../../runners/types.js';
 import { canonicalJSON } from '../../../utils/canonical-json.js';
-import { error, matches } from '../../../utils/error.js';
+import { error } from '../../../utils/error.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { buildLanguageContext } from '../prompts/language-context.js';
 import { buildTaskBatchPrompt } from '../prompts/tasks.js';
-import { admitTaskBatch } from './blocks.js';
+import { admitTaskBatch } from './batch-admission.js';
 import { parseTaskManifest, type TaskManifest } from './manifest.js';
 import { mergeTaskResult, type TaskMergeResult } from './merge.js';
 import { partitionManifest, type TaskManifestPartition } from './partition.js';
@@ -47,7 +47,7 @@ export type TaskCompilerBatchDispatch = (
   input: Readonly<{
     attemptId: TaskCompilationAttemptId;
     batch: TaskCompilationProgram['batches'][number];
-    sessionScope: TaskCompilationSessionScope;
+    sessionScope: PlannerSessionScope;
     ledger: TaskDispatchLedger;
   }>,
 ) => Promise<PlannerInvokeResult>;
@@ -122,11 +122,9 @@ export const compilerError = {
         detail,
         batchOrdinal,
       },
+      cause,
     );
   },
-  isDispatchLimit: matches('task_compiler_dispatch_limit'),
-  isProtocolInvalid: matches('task_compiler_protocol_invalid'),
-  isArtifactInvalid: matches('task_compiler_artifact_invalid'),
 } as const;
 
 export function tasksArtifactSemanticId(

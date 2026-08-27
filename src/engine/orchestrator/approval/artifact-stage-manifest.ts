@@ -15,6 +15,7 @@ import {
 } from '../../../core/schemas/task-compilation.js';
 import { SECURE_DIR_MODE, SECURE_FILE_MODE } from '../../../lib/fs.js';
 import { error } from '../../../utils/error.js';
+import { isRecord } from '../../../utils/type-guards.js';
 import type {
   DeclaredArtifactProvenance,
   DeclaredArtifactRead,
@@ -72,7 +73,6 @@ export type ArtifactStageLease = Readonly<{
     input: Readonly<{ declaredRedactionValues: readonly string[] }>,
   ) => Promise<ArtifactStageRead>;
   revalidateBeforePromotion: () => Promise<string>;
-  readonly receipt: ArtifactLeaseReceipt | undefined;
   getReceipt: () => ArtifactLeaseReceipt | undefined;
   dispose: () => Promise<void>;
 }>;
@@ -122,7 +122,7 @@ export async function prepareArtifactStageLease(
 ): Promise<ArtifactStageLease> {
   const preparation = normalizePreparation(input);
   await assertStageRoot(preparation.stagedProjectDir);
-  await createPreparationDirectories(preparation);
+  await createFreshMetadataDirectories(preparation);
 
   let handle: ArtifactFileHandle | undefined;
   try {
@@ -252,9 +252,6 @@ function createArtifactStageLease(input: {
       }
       return reviewed.text;
     },
-    get receipt() {
-      return reviewed?.receipt;
-    },
     getReceipt: () => reviewed?.receipt,
     dispose: async () => {
       if (disposed) return;
@@ -345,16 +342,15 @@ function parseNullableId<T>(
 }
 
 function parseArtifactBound(value: unknown): number {
-  const candidate = typeof value === 'number' ? value : undefined;
   if (
-    typeof candidate !== 'number' ||
-    !Number.isSafeInteger(candidate) ||
-    candidate <= 0 ||
-    candidate > DEFAULT_DECLARED_ARTIFACT_BOUND
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    value <= 0 ||
+    value > DEFAULT_DECLARED_ARTIFACT_BOUND
   ) {
     throw artifactStageError.invalid('declared artifact bound is invalid');
   }
-  return candidate;
+  return value;
 }
 
 function resolveDeclaredPath(input: {
@@ -406,10 +402,6 @@ function validateRelativeArtifactPath(path: string): string[] {
     throw artifactStageError.invalid('declared artifact path contains traversal');
   }
   return segments;
-}
-
-async function createPreparationDirectories(preparation: LeasePreparation): Promise<void> {
-  await createFreshMetadataDirectories(preparation);
 }
 
 async function createFreshMetadataDirectories(preparation: LeasePreparation): Promise<void> {
@@ -623,7 +615,7 @@ async function captureArtifactAncestry(
   const ancestry: ArtifactLeaseAncestryEntry[] = [];
   let currentPath = rootPath;
   for (const segment of segments.slice(0, -1)) {
-    const currentRelativePath = relative(rootPath, currentPath) || '';
+    const currentRelativePath = relative(rootPath, currentPath);
     const stat = await readPathStat(currentPath);
     if (!stat.isDirectory() || stat.isSymbolicLink()) {
       throw artifactStageError.invalid('declared artifact ancestry is not a real directory');
@@ -631,7 +623,7 @@ async function captureArtifactAncestry(
     ancestry.push({ path: currentRelativePath, entry: stageEntry(currentRelativePath, stat) });
     currentPath = join(currentPath, segment);
   }
-  const finalRelativePath = relative(rootPath, currentPath) || '';
+  const finalRelativePath = relative(rootPath, currentPath);
   const finalStat = await readPathStat(currentPath);
   if (!finalStat.isDirectory() || finalStat.isSymbolicLink()) {
     throw artifactStageError.invalid('declared artifact ancestry is not a real directory');
@@ -887,10 +879,6 @@ function artifactOpenFlags(): number {
 
 function isAlreadyExists(cause: unknown): boolean {
   return typeof cause === 'object' && cause !== null && 'code' in cause && cause.code === 'EEXIST';
-}
-
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === 'object' && value !== null;
 }
 
 function isArtifactStageError(err: unknown): boolean {

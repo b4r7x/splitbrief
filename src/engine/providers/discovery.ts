@@ -1,8 +1,11 @@
-import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-config.js';
+import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
 import { hasNativeCliCatalog, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import { throwIfAborted } from '../../utils/abort.js';
-import { detectRunnerEvidence, type DetectRunnerEvidenceOptions } from '../detection/detect.js';
+import {
+  detectRunnerEvidence,
+  type DetectRunnerEvidenceOptions,
+} from '../detection/runner-evidence.js';
 import {
   scopedCliCatalogConnection,
   type ScopedCliCatalogAttempt,

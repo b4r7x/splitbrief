@@ -13,15 +13,6 @@ function task(id: string, file: string, action: 'create' | 'modify', dependsOn: 
   return makeTask({ id, file, action, dependsOn, title: `Task ${id}` });
 }
 
-function expectErrorKind(run: () => unknown, kind: string): void {
-  try {
-    run();
-    throw new Error('expected the operation to throw');
-  } catch (err) {
-    expect(err).toMatchObject({ kind });
-  }
-}
-
 describe('stable task merge', () => {
   it('covers the frozen manifest exactly and orders by stable topological order', () => {
     const result = mergeTaskResult(manifest, [
@@ -70,7 +61,7 @@ describe('stable task merge', () => {
       'task_compiler_forward_dependency',
     ],
   ])('rejects %s', (_label, blocks, kind) => {
-    expectErrorKind(() => mergeTaskResult(manifest, blocks), kind);
+    expect(() => mergeTaskResult(manifest, blocks)).toThrow(expect.objectContaining({ kind }));
   });
 
   it('rejects a dependency cycle before publication', () => {
@@ -82,26 +73,24 @@ describe('stable task merge', () => {
       task('T001', 'src/a.ts', 'create', ['T002']),
       task('T002', 'src/b.ts', 'create', ['T001']),
     ];
-    expectErrorKind(() => mergeTaskResult(cyclicManifest, blocks), 'task_compiler_cycle');
+    expect(() => mergeTaskResult(cyclicManifest, blocks)).toThrow(
+      expect.objectContaining({ kind: 'task_compiler_cycle' }),
+    );
   });
 
   it('rejects missing and unexpected manifest coverage', () => {
-    expectErrorKind(
-      () =>
-        mergeTaskResult(manifest, [
-          task('T001', 'src/first.ts', 'create'),
-          task('T002', 'src/second.ts', 'modify'),
-        ]),
-      'task_compiler_manifest_mismatch',
-    );
-    expectErrorKind(
-      () =>
-        mergeTaskResult(manifest, [
-          task('T001', 'src/first.ts', 'create'),
-          task('T002', 'src/second.ts', 'modify'),
-          task('T004', 'src/other.ts', 'create'),
-        ]),
-      'task_compiler_manifest_mismatch',
-    );
+    expect(() =>
+      mergeTaskResult(manifest, [
+        task('T001', 'src/first.ts', 'create'),
+        task('T002', 'src/second.ts', 'modify'),
+      ]),
+    ).toThrow(expect.objectContaining({ kind: 'task_compiler_manifest_mismatch' }));
+    expect(() =>
+      mergeTaskResult(manifest, [
+        task('T001', 'src/first.ts', 'create'),
+        task('T002', 'src/second.ts', 'modify'),
+        task('T004', 'src/other.ts', 'create'),
+      ]),
+    ).toThrow(expect.objectContaining({ kind: 'task_compiler_manifest_mismatch' }));
   });
 });

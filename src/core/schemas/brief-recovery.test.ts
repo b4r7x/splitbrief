@@ -1,26 +1,32 @@
 import { describe, expect, it } from 'vitest';
+import { PlannerAttemptSettlementSchema, RecoveryReceiptSchema } from './brief-recovery/attempt.js';
+import {
+  BudgetReservationSchema,
+  RecoveryBudgetResourceSchema,
+  RecoveryReconciliationSchema,
+  RecoveryUsageSchema,
+} from './brief-recovery/budget.js';
+import {
+  BriefRecoveryProjectionV1Schema,
+  BriefRecoveryV1Schema,
+  RejectedStorageBriefRecoveryV1Schema,
+} from './brief-recovery/document.js';
 import {
   BriefAdmissionInputSchema,
   BriefRecoveryCommandSchema,
-  BriefRecoveryProjectionV1Schema,
-  BriefRecoveryV1Schema,
-  BudgetReservationSchema,
-  EvidenceRefSchema,
-  RECOVERY_REFUSAL_RETENTION,
-  RecoveryBudgetResourceSchema,
+  RecoveryResultV1Schema,
+} from './brief-recovery.js';
+import { EvidenceRefSchema } from './brief-recovery/primitives.js';
+import {
   RecoveryProviderAggregateRequestSchema,
   RecoveryProviderCallResultSchema,
+  createRecoveryProviderAggregateResultSchema,
+} from './brief-recovery/provider-call.js';
+import {
+  RECOVERY_REFUSAL_RETENTION,
   RecoveryRefusalReceiptSchema,
   RecoveryRefusalRetentionSchema,
-  PlannerAttemptSettlementSchema,
-  RecoveryReceiptSchema,
-  RecoveryReconciliationSchema,
-  RecoveryResultV1Schema,
-  RecoveryUsageSchema,
-  RejectedStorageBriefRecoveryV1Schema,
-  createRecoveryProviderAggregateResultSchema,
-  parseRecoveryProviderResultV1,
-} from './brief-recovery.js';
+} from './brief-recovery/refusal.js';
 import {
   TASK_BRIEF_COMPILER_POLICY,
   createTaskCompilationAttemptId,
@@ -453,10 +459,8 @@ describe('brief recovery schemas', () => {
           RecoveryProviderAggregateRequestSchema.parse(candidateRequest),
         ).safeParse(candidate).success,
       ).toBe(false);
-      expect(() => parseRecoveryProviderResultV1(candidateRequest, candidate)).toThrow();
     };
     expect(requestBoundSchema.parse(result)).toEqual(result);
-    expect(parseRecoveryProviderResultV1(request, result)).toEqual(result);
     expectRejectedByPublicPath(request, { ...result, operationId: 'other-operation' });
     expectRejectedByPublicPath(request, { ...result, programId: 'other-program' });
     expectRejectedByPublicPath(request, {
@@ -593,7 +597,6 @@ describe('brief recovery schemas', () => {
       usage: null,
     };
     expect(requestBoundSchema.parse(ambiguous)).toEqual(ambiguous);
-    expect(parseRecoveryProviderResultV1(request, ambiguous)).toEqual(ambiguous);
   });
 
   it('keeps provider-dependent resources distinct from finite USD resources', () => {
@@ -643,7 +646,7 @@ describe('brief recovery schemas', () => {
     ).toBe(false);
   });
 
-  it('loads legacy v4 recovery without authority and preserves retained replay identity', () => {
+  it('loads legacy v4 recovery without inventing authority', () => {
     const legacyV4 = {
       stateVersion: 4,
       stateRevision: 1,
@@ -662,13 +665,5 @@ describe('brief recovery schemas', () => {
     expect(parsed.data.generation).toBeUndefined();
     expect(parsed.data.permit).toBeUndefined();
     expect(parsed.data.briefRecovery).toBeNull();
-
-    const retained = RecoveryRefusalRetentionSchema.parse({
-      version: RECOVERY_REFUSAL_RETENTION.version,
-      currentEpochId: refusal.epochId,
-      refusals: { [refusal.operationId]: refusal },
-      closedEpochSummaries: [],
-    });
-    expect(retained.refusals[refusal.operationId]).toEqual(refusal);
   });
 });

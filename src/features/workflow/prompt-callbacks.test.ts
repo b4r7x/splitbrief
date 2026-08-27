@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ARTIFACT_REVIEW_HINT, buildPromptCallbacks } from './prompt-callbacks.js';
-import { REVIEW_HINT } from './review-parser.js';
+import { REVIEW_HINT } from './review-commands.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import {
   TASK_REVIEW_COMMANDS,
@@ -32,7 +32,7 @@ function makeCallbacks(answers: string | string[]) {
 }
 
 function makeCallbacksWithInputMode(inputMode: UseInputModeResult) {
-  return buildPromptCallbacks()({
+  return buildPromptCallbacks({
     inputMode,
     abortedRef: { current: false },
     controller: new AbortController(),
@@ -70,21 +70,7 @@ describe('buildPromptCallbacks onApprovalNeeded', () => {
     reviewStore.reset();
   });
 
-  it('uses the brief review hint for brief approvals', async () => {
-    const setReviewMode = vi
-      .fn<UseInputModeResult['setReviewMode']>()
-      .mockResolvedValue({ approved: false });
-    const callbacks = makeCallbacksWithInputMode({
-      ...makeInputMode(''),
-      setReviewMode,
-    });
-
-    await callbacks.onApprovalNeeded('briefs', '/tmp/tasks.md');
-
-    expect(setReviewMode).toHaveBeenCalledWith(REVIEW_HINT);
-  });
-
-  it.each(['spec', 'plan'] as const)(
+  it.each(['briefs', 'spec', 'plan'] as const)(
     'uses the generic review hint for %s approvals',
     async (type) => {
       const setReviewMode = vi
@@ -203,7 +189,7 @@ describe('buildPromptCallbacks onContinuationNeeded', () => {
     const controller = new AbortController();
     controller.abort();
     const setQuestionMode = vi.fn<UseInputModeResult['setQuestionMode']>();
-    const callbacks = buildPromptCallbacks()({
+    const callbacks = buildPromptCallbacks({
       inputMode: { ...makeInputMode(''), setQuestionMode },
       abortedRef: { current: false },
       controller,

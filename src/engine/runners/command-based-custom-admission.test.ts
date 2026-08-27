@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { invokeCustomCommandBasedRunner } from './command-based.js';
 import { customRunnerSecurityPosture } from './custom-trust.js';
-import { admitCustomRunner } from './trust.js';
+import { admitCustomRunner } from './custom-launchability.js';
 import {
   admittedCustomRunner,
   customRunner,

@@ -107,7 +107,11 @@ describe('phase roles', () => {
     expect(phaseCostRole('analyzing')).toBe('planner');
 
     const curr: TokenUsage = { ...EMPTY_USAGE, plannerInput: 800, plannerOutput: 200 };
-    const attribution = attributePhaseTokenDelta(EMPTY_USAGE, curr, 'analyzing');
+    const attribution = attributePhaseTokenDelta({
+      previous: EMPTY_USAGE,
+      current: curr,
+      phase: 'analyzing',
+    });
 
     expect(attribution.planner).toEqual({
       input: 800,

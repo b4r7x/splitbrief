@@ -1,4 +1,5 @@
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
+import { definedTaskUsageFields, TASK_USAGE_ATTEMPT_KEYS } from '../../../core/schemas/tokens.js';
 import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
 import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import { abortStore } from '../abort.js';
@@ -14,7 +15,12 @@ import {
   type TaskAttemptTokens,
   type TokensState,
 } from '../tokens.js';
-import { _lifecycleInternal, lifecycleStore, type LifecycleState } from '../lifecycle.js';
+import {
+  _lifecycleInternal,
+  durationFromStart,
+  lifecycleStore,
+  type LifecycleState,
+} from '../lifecycle.js';
 import { operationsStore } from '../operations/state.js';
 import { streamingOutputStore } from '../streaming-output.js';
 import { clearSectionsCache } from './sections.js';
@@ -42,7 +48,7 @@ function lifecycleStateFromResume(resume: WorkflowState): LifecycleState {
   const pendingMessages = pendingQueueMessages(resume.messageQueue);
   const queueDepth = pendingMessages.length;
   if (resume.phase === 'complete') {
-    const endedAt = startedAt ?? Date.now();
+    const endedAt = resume.completedAt === undefined ? null : timestampFromIso(resume.completedAt);
     return {
       phase: resume.phase,
       status: 'complete',
@@ -53,7 +59,7 @@ function lifecycleStateFromResume(resume: WorkflowState): LifecycleState {
       stall: null,
       startedAt,
       endedAt,
-      durationMs: Math.max(0, endedAt - (startedAt ?? endedAt)),
+      durationMs: endedAt === null ? null : durationFromStart(startedAt, endedAt),
       reason: null,
     };
   }
@@ -157,51 +163,14 @@ function completionCountsFromResume(resume: WorkflowState): { local: number; esc
 function perTaskFromResume(resume: WorkflowState): Record<string, PerTaskTokens> {
   const perTask: Record<string, PerTaskTokens> = {};
   for (const breakdown of resume.taskBreakdowns ?? []) {
-    const existing = perTask[breakdown.taskId] ?? {
-      totalTokens: 0,
-      title: breakdown.taskTitle,
-      attempts: [],
-    };
     const attempt: TaskAttemptTokens = {
       method: breakdown.method,
       implementerTokens: breakdown.implementerTokens,
       escalationTokens: breakdown.escalationTokens,
       retryCount: breakdown.retryCount,
-      ...(breakdown.implementerCacheReadTokens !== undefined && {
-        implementerCacheReadTokens: breakdown.implementerCacheReadTokens,
-      }),
-      ...(breakdown.implementerCacheCreateTokens !== undefined && {
-        implementerCacheCreateTokens: breakdown.implementerCacheCreateTokens,
-      }),
-      ...(breakdown.escalationCacheReadTokens !== undefined && {
-        escalationCacheReadTokens: breakdown.escalationCacheReadTokens,
-      }),
-      ...(breakdown.escalationCacheCreateTokens !== undefined && {
-        escalationCacheCreateTokens: breakdown.escalationCacheCreateTokens,
-      }),
-      ...(breakdown.tool !== undefined && { tool: breakdown.tool }),
-      ...(breakdown.model !== undefined && { model: breakdown.model }),
-      ...(breakdown.implementerProfile !== undefined && {
-        implementerProfile: breakdown.implementerProfile,
-      }),
-      ...(breakdown.contextFit !== undefined && { contextFit: breakdown.contextFit }),
-      ...(breakdown.estimatedTokens !== undefined && {
-        estimatedTokens: breakdown.estimatedTokens,
-      }),
-      ...(breakdown.untruncatedEstimatedTokens !== undefined && {
-        untruncatedEstimatedTokens: breakdown.untruncatedEstimatedTokens,
-      }),
-      ...(breakdown.contextLength !== undefined && { contextLength: breakdown.contextLength }),
-      ...(breakdown.currentCodeTruncated !== undefined && {
-        currentCodeTruncated: breakdown.currentCodeTruncated,
-      }),
-      ...(breakdown.currentCodeContextMode !== undefined && {
-        currentCodeContextMode: breakdown.currentCodeContextMode,
-      }),
-      ...(breakdown.costPosture !== undefined && { costPosture: breakdown.costPosture }),
-      ...(breakdown.routingReason !== undefined && { routingReason: breakdown.routingReason }),
+      ...definedTaskUsageFields(breakdown, TASK_USAGE_ATTEMPT_KEYS),
     };
-    const attempts = [...(existing.attempts ?? []), attempt];
+    const attempts = [...(perTask[breakdown.taskId]?.attempts ?? []), attempt];
     perTask[breakdown.taskId] = {
       title: breakdown.taskTitle,
       totalTokens: attempts.reduce((sum, a) => sum + taskAttemptTotalTokens(a), 0),

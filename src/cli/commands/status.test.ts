@@ -80,8 +80,7 @@ describe('status command', () => {
   it('reports no active workflow when .splitbrief has no active marker', async () => {
     await runStatus([]);
     const out = captureOutput();
-    expect(out.length).toBeGreaterThan(0);
-    expect(out.toLowerCase()).toMatch(/active|no.*workflow/);
+    expect(out).toContain('No active workflow');
   });
 
   it('reports the feature name and phase for a live session', async () => {
@@ -121,7 +120,7 @@ describe('status command', () => {
   it('triggers the cost-history path when --history is passed and suppresses the --history hint', async () => {
     await runStatus(['--history']);
     const out = captureOutput();
-    expect(out.length).toBeGreaterThan(0);
+    expect(out).toContain('No completed sessions with cost data.');
     expect(out).not.toMatch(/Run .*--history/);
   });
 

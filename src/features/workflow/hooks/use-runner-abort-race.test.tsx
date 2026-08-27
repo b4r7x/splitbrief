@@ -5,15 +5,10 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
-import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
-import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
-import {
-  parsePreparedConfig,
-  type PreparedExecution,
-  type RunnerGate,
-} from '../../../engine/runners/prepared-execution.js';
+import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
 import { useInputMode } from './use-input-mode.js';
 import { useWorkflowRunner, type RunWorkflowFn } from './use-runner.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
@@ -24,7 +19,10 @@ import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { configStore } from '../../../stores/project/config.js';
 import { clearAllHandlers, requestRewind } from '../handlers.js';
 import { ensureSplitbriefDir, ensureSessionDir } from '../../../core/paths-io.js';
-import { clearActiveReceipt, reactivateExistingSession } from '../../../core/sessions/lifecycle.js';
+import {
+  clearActiveReceipt,
+  reactivateExistingSession,
+} from '../../../core/sessions/active-pointer.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
@@ -70,42 +68,18 @@ function preparedExecution(input: {
 }): PreparedExecution {
   const ref = { projectDir: input.projectDir, sessionId: input.sessionId };
   ensureSessionDir(input.projectDir, input.sessionId);
-  const config = parsePreparedConfig(
-    makeConfig({
+  return makePreparedExecution({
+    projectDir: input.projectDir,
+    sessionId: input.sessionId,
+    feature: input.feature,
+    config: makeConfig({
       planner: input.planner,
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: { mode: 'quick', approve: 'none' },
     }),
-  );
-  const preparationId = `abort-race-${input.sessionId}`;
-  const gates: readonly RunnerGate[] = [
-    makeRunnerGate(config.planner, { role: 'planner' }, preparationId),
-    ...resolveImplementerProfiles(config).profiles.map((profile) =>
-      makeRunnerGate(profile.config, { role: 'implementer', profile: profile.name }, preparationId),
-    ),
-  ];
-  const active = reactivateExistingSession(ref);
-  return {
-    purpose: 'new-workflow',
-    config,
-    preparationId,
-    report: {
-      generatedAt: '2026-08-04T00:00:00.000Z',
-      projectDir: input.projectDir,
-      status: 'ready',
-      counts: { ok: gates.length, info: 0, warning: 0, blocker: 0 },
-      nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
-      sections: [],
-      metadata: {},
-    },
-    gates,
-    session: { kind: 'existing', ref, active },
-    runtime: {
-      feature: input.feature,
-      allowRepoRunners: false,
-      allowHooks: false,
-    },
-  };
+    preparationId: `abort-race-${input.sessionId}`,
+    active: reactivateExistingSession(ref),
+  });
 }
 
 let projectDir: string;

@@ -71,8 +71,8 @@ describe('mono legibility — the pipeline rail without colour', () => {
         .split('\n')
         .find((row) => row.includes('Spec')) ?? '';
 
-    const handoff = railConnectorString(true);
-    const sameRole = railConnectorString(false);
+    const handoff = railConnectorString({ handoff: true });
+    const sameRole = railConnectorString({ handoff: false });
     expect(handoff).not.toBe(sameRole);
     // Two role seams (briefs→build, build→verify), two same-role gaps — the cost handoff is the
     // arrow, and it stays the arrow once the hue that also marks it is stripped.
@@ -143,8 +143,6 @@ describe('mono legibility — the cost approval gate without colour (unicode ter
     // The approve action is the focused default: the ▸ cursor (not a hue) points at it.
     const cursor = glyph('cursor');
     expect(cursor).toBe('▸');
-    // The gate buttons moved to the `<key>   <Label>` shape every other approval panel uses, so
-    // the row is found by its label rather than by the old `approve?` question.
     const approveLine = frame.split('\n').find((row) => row.includes('Approve')) ?? '';
     expect(approveLine).toContain(cursor);
     expect(approveLine.indexOf(cursor)).toBeLessThan(approveLine.indexOf('Approve'));

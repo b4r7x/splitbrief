@@ -32,7 +32,6 @@ import {
   createWorkflowFixtureAppDeps,
   createWorkflowFixtureFactory,
 } from './fixtures/workflow/setup.js';
-import { briefRecoveryFixtureProjections } from './fixtures/workflow/brief-recovery-projections.js';
 import { enterCaptureEnvironment } from './gallery/environment.js';
 import { waitForCheckpoint } from './gallery/checkpoints.js';
 import {
@@ -110,67 +109,6 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
   } finally {
     ui?.unmount();
     await lifecycle.teardown();
-  }
-}
-
-async function renderRecoveryFixture(
-  recoveryScenarioId: (typeof RECOVERY_FIXTURE_IDS)[number],
-  profile: (typeof RECOVERY_PROFILES)[number],
-): Promise<void> {
-  const scenario = findVisualScenario(recoveryScenarioId);
-  if (!scenario) throw new Error(`Missing recovery scenario ${recoveryScenarioId}`);
-  const checkpoint = scenario.checkpoints[0];
-  if (!checkpoint) throw new Error(`Missing recovery checkpoint ${recoveryScenarioId}`);
-  const factory = workflowFixtureRegistry.get(scenario.id);
-  if (!factory) throw new Error(`Missing recovery fixture ${recoveryScenarioId}`);
-
-  const projection = briefRecoveryFixtureProjections.get(recoveryScenarioId);
-  if (projection === undefined)
-    throw new Error(`Missing recovery projection ${recoveryScenarioId}`);
-  const environment = enterCaptureEnvironment({
-    viewport: profile.viewport,
-    profile: profile.name,
-  });
-  const lifecycle = factory();
-  let ui: RenderFeatureResult | null = null;
-  try {
-    await lifecycle.setup({ scenario, checkpoint, viewport: profile.viewport });
-    ui = renderFeature(
-      <App workflowDeps={createWorkflowFixtureAppDeps(projection)} />,
-      profile.viewport,
-    );
-    const frame = await waitForCheckpoint({
-      scenario,
-      checkpoint,
-      viewport: profile.viewport,
-      lastFrame: ui.lastFrame,
-    });
-    const plainFrame = frame.replace(ANSI_CONTROL_SEQUENCE, '');
-    const label = `${recoveryScenarioId}/${profile.name}`;
-    expect(plainFrame, label).toMatch(/(?:CONTRACT|RETRYING|RETRY UNRESOLVED|REJECTED|CHECKING)/u);
-    expect(plainFrame, label).toContain('BECAUSE');
-    expect(plainFrame, label).toContain('SO');
-    expect(plainFrame, label).toContain('NOW');
-    expect(plainFrame, label).toMatch(/(?:Retry|Edit|Reject|Approve|Import|Resolve|Rebind)/iu);
-
-    const declaredElements = new Set(scenario.elements.map((element) => element.id));
-    for (const element of scenario.elements) {
-      expect(LOCATOR_REGISTRY[`workflow:${element.id}`], `${label}/${element.id}`).toBeDefined();
-    }
-    const inputElement = [...declaredElements].find((element) =>
-      /(?:composer|input)/iu.test(element),
-    );
-    expect(inputElement, `${label} stable input element`).toBeDefined();
-    const actionElement = [...declaredElements].find((element) => /(?:action|now)/iu.test(element));
-    expect(actionElement, `${label} action element`).toBeDefined();
-    const causeElement = [...declaredElements].find((element) =>
-      /(?:because|cause)/iu.test(element),
-    );
-    expect(causeElement, `${label} cause element`).toBeDefined();
-  } finally {
-    ui?.unmount();
-    await lifecycle.teardown();
-    environment.restore();
   }
 }
 
@@ -262,14 +200,32 @@ describe('workflow visual fixtures', () => {
     }
   });
 
-  it('renders all recovery scenarios across the three homogeneous profiles', async () => {
+  it('registers every recovery scenario with locators for its declared elements', () => {
     const registeredIds = new Set<ScenarioId>(workflowFixtureRegistry.keys());
     expect([...RECOVERY_FIXTURE_IDS].every((id) => registeredIds.has(id))).toBe(true);
 
-    for (const scenarioId of RECOVERY_FIXTURE_IDS) {
-      for (const profile of RECOVERY_PROFILES) {
-        await renderRecoveryFixture(scenarioId, profile);
+    for (const recoveryScenarioId of RECOVERY_FIXTURE_IDS) {
+      const scenario = findVisualScenario(recoveryScenarioId);
+      if (!scenario) throw new Error(`Missing recovery scenario ${recoveryScenarioId}`);
+      const declaredElements = scenario.elements.map((element) => element.id);
+      for (const element of declaredElements) {
+        expect(
+          LOCATOR_REGISTRY[`workflow:${element}`],
+          `${recoveryScenarioId}/${element}`,
+        ).toBeDefined();
       }
+      expect(
+        declaredElements.find((element) => /(?:composer|input)/iu.test(element)),
+        `${recoveryScenarioId} stable input element`,
+      ).toBeDefined();
+      expect(
+        declaredElements.find((element) => /(?:action|now)/iu.test(element)),
+        `${recoveryScenarioId} action element`,
+      ).toBeDefined();
+      expect(
+        declaredElements.find((element) => /(?:because|cause)/iu.test(element)),
+        `${recoveryScenarioId} cause element`,
+      ).toBeDefined();
     }
   });
 

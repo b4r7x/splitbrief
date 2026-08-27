@@ -27,15 +27,6 @@ import {
   PlannerApiProviderIdSchema,
   PlannerCliToolIdSchema,
 } from './enums.js';
-import type { ImplementerCliToolId, PlannerCliToolId } from './enums.js';
-
-function retainPlannerCliType(id: PlannerCliToolId): PlannerCliToolId {
-  return id;
-}
-
-function retainImplementerCliType(id: ImplementerCliToolId): ImplementerCliToolId {
-  return id;
-}
 
 function implementerOnlyApiProviderIds() {
   const plannerIds = new Set<string>(PLANNER_API_PROVIDER_IDS);
@@ -72,8 +63,6 @@ describe('runner role enums', () => {
     expect(CliToolIdSchema.options).toEqual(CATALOG_CLI_TOOL_IDS);
     expect(PlannerCliToolIdSchema.options).toEqual(PLANNER_CLI_TOOL_IDS);
     expect(ImplementerCliToolIdSchema.options).toEqual(IMPLEMENTER_CLI_TOOL_IDS);
-    expect(retainPlannerCliType('claude-code')).toBe('claude-code');
-    expect(retainImplementerCliType('codex')).toBe('codex');
   });
 
   it('builds API schemas from catalog-owned identities and roles', () => {

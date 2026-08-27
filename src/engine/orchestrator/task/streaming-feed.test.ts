@@ -124,49 +124,6 @@ describe('createStreamingFeed', () => {
     expect(sink.lines.at(-1)).toEqual(['short']);
   });
 
-  it('feeds text through the ring buffer to the sink for any runner kind', () => {
-    const sink = fakeSink();
-    const feed = createStreamingFeed(taskId('T001'), sink);
-
-    expect(sink.started).toBe(true);
-
-    feed.onText('line1\nline2\nline3\n');
-    flushThrottle();
-    expect(sink.lines.at(-1)).toEqual(['line1', 'line2', 'line3']);
-
-    feed.stop();
-    expect(sink.stopped).toBe(true);
-  });
-});
-
-describe('streaming feed without isApiRunner gate', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('feeds text through the ring buffer to the sink', () => {
-    const sink = fakeSink();
-    const feed = createStreamingFeed(taskId('T001'), sink);
-
-    expect(sink.started).toBe(true);
-
-    feed.onText('hello world\n');
-    flushThrottle();
-    expect(sink.lines.at(-1)).toEqual(['hello world']);
-
-    feed.onText('second line\n');
-    flushThrottle();
-    expect(sink.lines.at(-1)).toEqual(['hello world', 'second line']);
-
-    feed.stop();
-    expect(sink.stopped).toBe(true);
-    expect(sink.stop).toHaveBeenCalled();
-  });
-
   it('splits multi-line text and fills the ring buffer correctly', () => {
     const sink = fakeSink();
     const feed = createStreamingFeed(taskId('T002'), sink);

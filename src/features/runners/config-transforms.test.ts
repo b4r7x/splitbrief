@@ -5,7 +5,7 @@ import { describe, it, expect, vi } from 'vitest';
 import YAML from 'yaml';
 import { createDefaultConfig, writeConfig } from '../../core/config/load/io.js';
 import { apiKeyErrors } from '../../core/config/load/validation/credentials.js';
-import { readCustomCommandCatalog } from '../../core/config/custom-commands.js';
+import { readCustomCommandCatalog } from '../../core/config/custom-command-catalog.js';
 import { fromYaml } from '../../core/config/load/transform.js';
 import { getProviderDisplayName } from '../../core/providers/catalog.js';
 import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
@@ -235,8 +235,10 @@ describe('runner selection commits', () => {
   });
 
   it('commits implementer Agent SDK selections with the explicit kind', () => {
-    const { config: updated } = commitImplementerSelection(makeBaseConfig(), agentSdkSelection, {
-      id: 'claude-sonnet-4-6',
+    const { config: updated } = commitImplementerSelection({
+      config: makeBaseConfig(),
+      selection: agentSdkSelection,
+      model: { id: 'claude-sonnet-4-6' },
     });
 
     expect(updated.implementer.kind).toBe('agent-sdk');
@@ -268,13 +270,11 @@ describe('runner selection commits', () => {
       Object.entries(before ?? {}).filter(([name]) => name !== 'active-cloud'),
     );
 
-    const { config: updated } = commitImplementerSelection(
+    const { config: updated } = commitImplementerSelection({
       config,
-      realPickerOption('implementer', 'codex'),
-      {
-        id: 'AUTO',
-      },
-    );
+      selection: realPickerOption('implementer', 'codex'),
+      model: { id: 'AUTO' },
+    });
 
     // Stored exactly as chosen — the picker's own Auto row carries the lower-case
     // id, and nothing rewrites a user's spelling behind their back.
@@ -290,11 +290,11 @@ describe('runner selection commits', () => {
 
   it('switches a named API profile to CLI without parsing the API profile as model-less', () => {
     const config = namedImplementerProfileConfig();
-    const { config: updated } = commitImplementerSelection(
+    const { config: updated } = commitImplementerSelection({
       config,
-      realPickerOption('implementer', 'codex'),
-      null,
-    );
+      selection: realPickerOption('implementer', 'codex'),
+      model: null,
+    });
 
     expect(updated.implementerProfiles?.profiles['active-cloud']).toMatchObject({
       kind: 'cli',
@@ -305,11 +305,11 @@ describe('runner selection commits', () => {
 
   it('preserves an active API model when the API provider remains selected', () => {
     const config = namedImplementerProfileConfig();
-    const { config: updated } = commitImplementerSelection(
+    const { config: updated } = commitImplementerSelection({
       config,
-      realPickerOption('implementer', 'together'),
-      null,
-    );
+      selection: realPickerOption('implementer', 'together'),
+      model: null,
+    });
 
     expect(updated.implementerProfiles?.profiles['active-cloud']).toMatchObject({
       kind: 'api',
@@ -348,11 +348,11 @@ describe('runner selection commits', () => {
       },
     };
 
-    const { config: updated } = commitImplementerSelection(
+    const { config: updated } = commitImplementerSelection({
       config,
-      realPickerOption('implementer', 'codex'),
-      null,
-    );
+      selection: realPickerOption('implementer', 'codex'),
+      model: null,
+    });
 
     expect(updated.implementer).toEqual({ kind: 'cli', tool: 'codex' });
   });
@@ -372,7 +372,11 @@ describe('runner selection commits', () => {
     };
 
     expect(() =>
-      commitImplementerSelection(config, realPickerOption('implementer', 'anthropic'), null),
+      commitImplementerSelection({
+        config,
+        selection: realPickerOption('implementer', 'anthropic'),
+        model: null,
+      }),
     ).toThrow(/model/);
   });
 
@@ -415,11 +419,11 @@ describe('runner selection commits', () => {
     if (!profiles) return;
     const dormant = profiles.profiles['dormant-local'];
 
-    const { config: selectedModel } = commitImplementerSelection(
+    const { config: selectedModel } = commitImplementerSelection({
       config,
-      realPickerOption('implementer', 'together'),
-      { id: 'selected-model' },
-    );
+      selection: realPickerOption('implementer', 'together'),
+      model: { id: 'selected-model' },
+    });
     const selectedApi = selectedModel.implementerProfiles?.profiles['active-cloud'];
     expect(selectedApi).toMatchObject({
       kind: 'api',
@@ -429,11 +433,11 @@ describe('runner selection commits', () => {
       model: 'selected-model',
     });
 
-    const { config: selectedTool } = commitImplementerSelection(
+    const { config: selectedTool } = commitImplementerSelection({
       config,
-      realPickerOption('implementer', 'codex'),
-      { id: 'gpt-5.4-mini' },
-    );
+      selection: realPickerOption('implementer', 'codex'),
+      model: { id: 'gpt-5.4-mini' },
+    });
     expect(selectedTool.implementerProfiles?.profiles['active-cloud']).toMatchObject({
       kind: 'cli',
       tool: 'codex',
@@ -536,11 +540,11 @@ describe('effort across a seat switch', () => {
       implementer: { kind: 'cli', tool: 'claude-code', model: 'auto', effort: 'high' },
     });
 
-    const { config: updated, notice } = commitImplementerSelection(
+    const { config: updated, notice } = commitImplementerSelection({
       config,
-      realPickerOption('implementer', 'claude-code'),
-      { id: 'auto' },
-    );
+      selection: realPickerOption('implementer', 'claude-code'),
+      model: { id: 'auto' },
+    });
 
     expect(updated.implementer).not.toHaveProperty('effort');
     expect(notice).toBeDefined();

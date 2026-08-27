@@ -5,7 +5,7 @@ import {
   configRevisionsMatch,
   configPath,
 } from '../../core/config/load/io.js';
-import type { ConfigRevision, ExpectedConfigRevision } from '../../lib/confined-fs.js';
+import type { ConfigRevision, ExpectedConfigRevision } from '../../lib/confined-fs-atomic.js';
 import { toYaml } from '../../core/config/load/transform.js';
 import type { CLIOverrides } from '../../core/config/runtime/overrides/schema.js';
 import {

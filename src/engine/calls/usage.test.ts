@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   BackendTokenUsageSchema,
-  RUNNER_CALL_REASONING_TOKEN_POLICY,
   accumulateRunnerCallUsage,
   accumulateRunnerCallUsageSamples,
   applyRunnerCallUsageSample,
@@ -124,7 +123,6 @@ describe('normalizeRunnerCallUsage', () => {
   });
 
   it('preserves already-normalized reasoning tokens for call usage and legacy token deltas', () => {
-    expect(RUNNER_CALL_REASONING_TOKEN_POLICY).toBe('preserve_reasoning_metadata');
     const raw = {
       inputTokens: 1,
       outputTokens: 2,

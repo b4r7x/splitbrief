@@ -1,13 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Text } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { ListViewport } from './list-viewport.js';
 
 describe('ListViewport', () => {
-  it('renders an explicit row budget including section headers and gaps', async () => {
+  beforeEach(() => {
     resetAllStores();
+  });
 
+  afterEach(() => {
+    resetAllStores();
+  });
+
+  it('renders an explicit row budget including section headers and gaps', async () => {
     const items = [
       { id: 'p1', scope: 'project' },
       { id: 'p2', scope: 'project' },
@@ -39,12 +45,9 @@ describe('ListViewport', () => {
     expect(lines.some((line) => line.trim() === '')).toBe(true);
 
     ui.unmount();
-    resetAllStores();
   });
 
   it('caps terminal-budget lists at maxVisible display rows including headers', async () => {
-    resetAllStores();
-
     const items = [
       { id: 'p1', scope: 'project' },
       { id: 'p2', scope: 'project' },
@@ -75,12 +78,9 @@ describe('ListViewport', () => {
     expect(lines.map((line) => line.trim())).toEqual(['project', 'p1', 'p2', 'p3', '↓ more']);
 
     ui.unmount();
-    resetAllStores();
   });
 
   it('collapses list content when the viewport has no safe rows', async () => {
-    resetAllStores();
-
     const ui = renderFeature(
       <ListViewport
         items={[]}
@@ -98,12 +98,9 @@ describe('ListViewport', () => {
     expect(ui.lastFrame() ?? '').not.toContain('No rows');
 
     ui.unmount();
-    resetAllStores();
   });
 
   it('uses the terminal floor when chrome exceeds rows', async () => {
-    resetAllStores();
-
     const ui = renderFeature(
       <ListViewport
         items={['alpha', 'bravo']}
@@ -122,12 +119,9 @@ describe('ListViewport', () => {
     expect(frame).toContain('bravo');
 
     ui.unmount();
-    resetAllStores();
   });
 
   it('counts remaining sectioned items from the last visible global index', async () => {
-    resetAllStores();
-
     const items = [
       { id: 'p1', scope: 'project' },
       { id: 'p2', scope: 'project' },
@@ -157,6 +151,5 @@ describe('ListViewport', () => {
     expect(frame).toContain('↓ 2 more');
 
     ui.unmount();
-    resetAllStores();
   });
 });

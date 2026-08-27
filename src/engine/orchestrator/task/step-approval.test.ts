@@ -267,7 +267,10 @@ describe('runSingleTask — approval gates', () => {
     );
   });
 
-  it('blocks out-of-scope changes to an already-dirty file (dirty-at-start detection)', async () => {
+  async function runDirtyOutOfScopeTask(opts: {
+    mutate: (projectDir: string) => void;
+    runValidation?: ReturnType<typeof createValidator>['runValidation'];
+  }) {
     const { projectDir, sessionId } = setupProject({ 'src/existing.ts': 'export const v = 1;\n' });
 
     const userEdit = 'export const v = 2; // user edit\n';
@@ -283,11 +286,10 @@ describe('runSingleTask — approval gates', () => {
 
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async () => {
-        writeFileSync(join(projectDir, 'src/existing.ts'), 'export const v = 99; // implementer\n');
+        opts.mutate(projectDir);
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
     });
-    const runValidation = vi.fn().mockResolvedValue([]);
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
 
@@ -303,7 +305,9 @@ describe('runSingleTask — approval gates', () => {
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           workflow: { maxRetries: 2 },
         }),
-        validator: { ...createValidator(), runValidation },
+        ...(opts.runValidation === undefined
+          ? {}
+          : { validator: { ...createValidator(), runValidation: opts.runValidation } }),
       }),
       task,
       index: 0,
@@ -314,10 +318,20 @@ describe('runSingleTask — approval gates', () => {
       setCurrentTask: vi.fn(),
     });
 
+    return { projectDir, sessionId, userEdit, events, result };
+  }
+
+  it('blocks out-of-scope changes to an already-dirty file (dirty-at-start detection)', async () => {
+    const runValidation = vi.fn().mockResolvedValue([]);
+    const { projectDir, userEdit, events, result } = await runDirtyOutOfScopeTask({
+      mutate: (dir) =>
+        writeFileSync(join(dir, 'src/existing.ts'), 'export const v = 99; // implementer\n'),
+      runValidation,
+    });
+
     expect(runValidation).not.toHaveBeenCalled();
     expect(result.currentTaskIndex).toBe(0);
-    const rejected = events.find((e) => e.type === 'approval_rejected');
-    expect(rejected).toMatchObject({
+    expect(events.find((e) => e.type === 'approval_rejected')).toMatchObject({
       type: 'approval_rejected',
       taskId: 'T001',
       actionClass: 'write_out_of_scope',
@@ -325,97 +339,21 @@ describe('runSingleTask — approval gates', () => {
     expect(readFileSync(join(projectDir, 'src/existing.ts'), 'utf-8')).toBe(userEdit);
   });
 
-  it('denied out-of-scope write leaves a pre-existing user edit unchanged', async () => {
-    const { projectDir, sessionId } = setupProject({ 'src/existing.ts': 'export const v = 1;\n' });
-
-    const userEdit = 'export const v = 2; // user edit\n';
-    writeFileSync(join(projectDir, 'src/existing.ts'), userEdit);
-
-    const task = makeTask({
-      id: 'T001',
-      action: 'modify',
-      file: 'src/main.ts',
-      scope: { inBounds: ['src/main.ts'] },
-    });
-    const state = implementingState([task]);
-
-    const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async () => {
-        writeFileSync(join(projectDir, 'src/existing.ts'), 'export const v = 99; // implementer\n');
-        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
-      }),
-    });
-    const { callbacks } = makeCallbacks();
-    const { bus } = makeBusRecorder();
-
-    await runSingleTask({
-      wctx: makeWorkflowContext({
-        projectDir,
-        sessionId,
-        callbacks,
-        implementer,
-        bus,
-        config: makeConfig({
-          approval: { enabled: true, headless: true, feedRejectionsToPlanner: false },
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { maxRetries: 2 },
-        }),
-      }),
-      task,
-      index: 0,
-      totalTasks: 1,
-      state,
-      taskBreakdowns: [],
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
+  it('records the denied out-of-scope write in the evidence ledger', async () => {
+    const { projectDir, sessionId } = await runDirtyOutOfScopeTask({
+      mutate: (dir) =>
+        writeFileSync(join(dir, 'src/existing.ts'), 'export const v = 99; // implementer\n'),
     });
 
-    expect(readFileSync(join(projectDir, 'src/existing.ts'), 'utf-8')).toBe(userEdit);
+    const ledger = readEvidenceLedger({ projectDir, sessionId });
+    expect(ledger?.rejections).toContainEqual(
+      expect.objectContaining({ actionClass: 'write_out_of_scope' }),
+    );
   });
 
   it('blocks deletion of an already-dirty out-of-scope file', async () => {
-    const { projectDir, sessionId } = setupProject({ 'src/existing.ts': 'export const v = 1;\n' });
-
-    const userEdit = 'export const v = 2; // user edit\n';
-    writeFileSync(join(projectDir, 'src/existing.ts'), userEdit);
-
-    const task = makeTask({
-      id: 'T001',
-      action: 'modify',
-      file: 'src/main.ts',
-      scope: { inBounds: ['src/main.ts'] },
-    });
-    const state = implementingState([task]);
-
-    const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async () => {
-        unlinkSync(join(projectDir, 'src/existing.ts'));
-        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
-      }),
-    });
-    const { callbacks } = makeCallbacks();
-    const { bus, events } = makeBusRecorder();
-
-    await runSingleTask({
-      wctx: makeWorkflowContext({
-        projectDir,
-        sessionId,
-        callbacks,
-        implementer,
-        bus,
-        config: makeConfig({
-          approval: { enabled: true, headless: true, feedRejectionsToPlanner: false },
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { maxRetries: 2 },
-        }),
-      }),
-      task,
-      index: 0,
-      totalTasks: 1,
-      state,
-      taskBreakdowns: [],
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
+    const { projectDir, userEdit, events } = await runDirtyOutOfScopeTask({
+      mutate: (dir) => unlinkSync(join(dir, 'src/existing.ts')),
     });
 
     expect(events.find((event) => event.type === 'approval_rejected')).toMatchObject({

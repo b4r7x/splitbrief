@@ -3,7 +3,8 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
 import { runSingleTask } from './step.js';
-import { commitWorkflowState, raisePendingRecovery, refreshAndPersistCode } from '../state-ops.js';
+import { commitWorkflowState, raisePendingRecovery } from '../state-ops.js';
+import { refreshAndPersistCode } from './refresh-code.js';
 import {
   getRunnerDisplayName,
   getRunnerModelName,

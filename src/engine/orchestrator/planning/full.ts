@@ -4,7 +4,7 @@ import type { PlanResult } from '../../planners/types.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
-import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery.js';
+import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
 import { SPEC_FILE, PLAN_FILE, TASKS_FILE, sessionDir } from '../../../core/paths.js';
 import { getPlannerToolId } from '../../../core/config/accessors/runner-config.js';
 import { parseDiscoveredValidation } from './parse-validation.js';

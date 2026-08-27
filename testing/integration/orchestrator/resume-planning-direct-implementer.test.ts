@@ -57,7 +57,6 @@ describe('resume planning continuation with a direct-writing implementer', {
     const feature = 'resume a paused planning turn';
     const targetFile = 'src/resumed.ts';
     const implementation = 'export const resumed = "from-staged-agent";\n';
-    const implementerProjectDirs: string[] = [];
     const events: EngineEvent[] = [];
 
     const task = makeTask({
@@ -84,7 +83,6 @@ describe('resume planning continuation with a direct-writing implementer', {
     const implementer = makeImplementer({
       capabilities: { writesFiles: 'direct' },
       implement: vi.fn().mockImplementation(async (opts: ImplementerOptions) => {
-        implementerProjectDirs.push(opts.projectDir);
         expect(opts.projectDir).not.toBe(projectDir);
         expect(existsSync(join(projectDir, targetFile))).toBe(false);
         mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
@@ -171,8 +169,6 @@ describe('resume planning continuation with a direct-writing implementer', {
 
     expect(planner.plan).toHaveBeenCalledTimes(1);
     expect(implementer.implement).toHaveBeenCalledTimes(1);
-    expect(implementerProjectDirs).toHaveLength(1);
-    expect(implementerProjectDirs[0]).not.toBe(projectDir);
     expect(readFileSync(join(projectDir, targetFile), 'utf-8')).toBe(implementation);
     expect(summary.totalTasks).toBe(1);
     expect(summary.completedByLocal).toBe(1);

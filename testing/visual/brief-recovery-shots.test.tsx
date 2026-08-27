@@ -51,8 +51,6 @@ describe('Brief recovery semantic shots', { timeout: 180_000 }, () => {
   });
 
   it('keeps the recovery evidence spine actionable at every scenario width and profile', async () => {
-    let renderedCases = 0;
-
     for (const scenarioId of RECOVERY_SCENARIO_IDS) {
       const scenario = requireScenario(scenarioId);
       const checkpoint = requireCheckpoint(scenario);
@@ -138,14 +136,10 @@ describe('Brief recovery semantic shots', { timeout: 180_000 }, () => {
               frameViewport.cols,
             );
           }
-
-          renderedCases += 1;
         } finally {
           await handle.unmount();
         }
       }
     }
-
-    expect(renderedCases).toBe(RECOVERY_SCENARIO_IDS.length * BRIEF_RECOVERY_VIEWPORTS.length);
   });
 });

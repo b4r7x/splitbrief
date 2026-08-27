@@ -12,10 +12,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { CustomCommand } from '../../core/config/custom-commands.js';
 import type { CliExecutableReceipt } from '../../core/discovery/detection.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { buildCustomRunnerDisclosure } from './custom-runner-disclosure.js';
 import {
-  buildCustomRunnerDisclosure,
   customRunnerSecurityPosture,
-  formatCustomRunnerDisclosure,
   inlineRunnerSecurityPosture,
   markCustomRunnerTrusted,
   readCustomRunnerTrust,
@@ -38,50 +37,6 @@ const DISCLOSURE_EXECUTABLE = {
     resolvedAt: 5,
   },
 } satisfies CliExecutableReceipt;
-
-const PLANNER_OUTPUT_DISCLOSURE = `Executable: "/opt/splitbrief/bin/disclosure-runner"
-Arguments: "--input" "task.md"
-Contract: output
-Working directory: Disposable staged project
-Staging: Filtered disposable stage
-Environment names: "REVIEW_TOKEN"
-Environment access: Declared environment references only
-Filesystem: Not an OS sandbox; the process can access files available to the current user
-Network: Network access is not restricted
-Result: Parsed output only; stage-local writes are discarded`;
-
-const PLANNER_DIRECT_DISCLOSURE = `Executable: "/opt/splitbrief/bin/disclosure-runner"
-Arguments: "--input" "task.md"
-Contract: direct
-Working directory: Disposable staged project
-Staging: Filtered disposable stage
-Environment names: "REVIEW_TOKEN"
-Environment access: Declared environment references only
-Filesystem: Not an OS sandbox; the process can access files available to the current user
-Network: Network access is not restricted
-Result: Reviewed declared artifact for normal planner calls; reviewed workspace diff for full escalation only`;
-
-const IMPLEMENTER_OUTPUT_DISCLOSURE = `Executable: "/opt/splitbrief/bin/disclosure-runner"
-Arguments: "--input" "task.md"
-Contract: output
-Working directory: Disposable staged project
-Staging: Filtered disposable stage
-Environment names: "REVIEW_TOKEN"
-Environment access: Declared environment references only
-Filesystem: Not an OS sandbox; the process can access files available to the current user
-Network: Network access is not restricted
-Result: Parsed output only; stage-local writes are discarded`;
-
-const IMPLEMENTER_DIRECT_DISCLOSURE = `Executable: "/opt/splitbrief/bin/disclosure-runner"
-Arguments: "--input" "task.md"
-Contract: direct
-Working directory: Disposable staged project
-Staging: Filtered disposable stage
-Environment names: "REVIEW_TOKEN"
-Environment access: Declared environment references only
-Filesystem: Not an OS sandbox; the process can access files available to the current user
-Network: Network access is not restricted
-Result: Reviewed diff only`;
 
 function command(overrides: Partial<CustomCommand> = {}): CustomCommand {
   return {
@@ -353,7 +308,7 @@ describe('custom runner trust receipts', () => {
 });
 
 describe('custom runner security posture', () => {
-  it('renders the frozen disclosure contract for every role and invocation shape', async () => {
+  it('freezes the posture and definition digest for every role and invocation shape', async () => {
     const projectDir = createTempDir('custom-trust-posture-project');
     directories.push(projectDir);
     const rows = [
@@ -371,7 +326,6 @@ describe('custom runner security posture', () => {
           result: 'parsed-output-only',
         },
         definitionDigest: 'sha256:af1e547965278cc54ebe6a49a61099cb341bdca051ef91abd4d970d00a3caa93',
-        disclosure: PLANNER_OUTPUT_DISCLOSURE,
       },
       {
         role: 'planner',
@@ -387,7 +341,6 @@ describe('custom runner security posture', () => {
           result: 'reviewed-declared-artifact-or-workspace-diff-only',
         },
         definitionDigest: 'sha256:ffb803325c3a591ada4b1b42bc21ff67eb3a5512da6d7b6f9abb100b782b74c0',
-        disclosure: PLANNER_DIRECT_DISCLOSURE,
       },
       {
         role: 'implementer',
@@ -403,7 +356,6 @@ describe('custom runner security posture', () => {
           result: 'parsed-output-only',
         },
         definitionDigest: 'sha256:eaae5f48b91af309522e855faa82203ea9601ebb02acd490cc955dca3b4efea0',
-        disclosure: IMPLEMENTER_OUTPUT_DISCLOSURE,
       },
       {
         role: 'implementer',
@@ -419,7 +371,6 @@ describe('custom runner security posture', () => {
           result: 'reviewed-diff-only',
         },
         definitionDigest: 'sha256:9035a689b22fbcf8f50ec490cfcb77428fed1aca0c80d14061b5aa290f5ffc1a',
-        disclosure: IMPLEMENTER_DIRECT_DISCLOSURE,
       },
     ] as const;
     const definitionDigests: string[] = [];
@@ -434,11 +385,6 @@ describe('custom runner security posture', () => {
         }),
       );
       const posture = customRunnerSecurityPosture(row.role, row.contract);
-      const disclosure = buildCustomRunnerDisclosure({
-        runner: configuredRunner,
-        posture,
-        executable: DISCLOSURE_EXECUTABLE,
-      });
 
       expect(posture).toEqual(row.posture);
       const scope = await resolveCustomRunnerAdmissionScope({
@@ -451,9 +397,6 @@ describe('custom runner security posture', () => {
       expect(scope.definitionId).toBe('disclosure-fixture');
       expect(scope.definitionDigest).toBe(row.definitionDigest);
       definitionDigests.push(scope.definitionDigest);
-      expect(disclosure).not.toBeNull();
-      if (disclosure === null) throw new Error('Custom runner disclosure was rejected');
-      expect(formatCustomRunnerDisclosure(disclosure)).toBe(row.disclosure);
     }
 
     expect(new Set(definitionDigests)).toHaveLength(4);

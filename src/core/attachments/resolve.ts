@@ -4,8 +4,8 @@ import { realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, normalize, resolve, sep } from 'node:path';
 import { EXT_TO_MIME, MAX_ATTACHMENT_BYTES, SUPPORTED_IMAGE_EXTS } from '../schemas/attachment.js';
+import { truncateTerminalDisplayText } from '../../utils/display-text.js';
 import { includes } from '../../utils/type-guards.js';
-import { truncateWithEllipsis } from '../../utils/truncate.js';
 import type { Attachment } from '../schemas/attachment.js';
 
 export type ResolveAttachmentReason =
@@ -107,5 +107,5 @@ const ATTACHMENT_SHORT_NAME_MAX = 24;
 
 export function attachmentShortName(p: string): string {
   const base = p.split(/[\\/]/).pop() ?? p;
-  return truncateWithEllipsis(base, ATTACHMENT_SHORT_NAME_MAX);
+  return truncateTerminalDisplayText(base, ATTACHMENT_SHORT_NAME_MAX);
 }

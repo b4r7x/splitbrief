@@ -66,6 +66,7 @@ describe('runApprovalLoop', () => {
       persistTranscript: false,
     });
     expect(result.rejected).toBe(true);
+    expect(events.some((e) => e.type === 'spec_rejected')).toBe(true);
     expect(
       events.some((e) => e.type === 'planner_status' && 'status' in e && e.status === 'done'),
     ).toBe(true);
@@ -489,7 +490,7 @@ describe('runApprovalLoop', () => {
       sessionId,
       callbacks,
       bus,
-      state: prepareState(),
+      state: preparePlanState(),
       persistTranscript: false,
     });
 
@@ -592,7 +593,6 @@ describe('runApprovalLoop', () => {
       join(projectDir, '.splitbrief', 'sessions', sessionId, SPEC_FILE),
       'utf8',
     );
-    expect(onDisk).not.toContain('should-not-be-accepted');
     expect(onDisk).toContain('First draft.');
   });
 });

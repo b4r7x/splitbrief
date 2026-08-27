@@ -7,8 +7,7 @@ import { assertNotWindows } from '../../windows-guard.js';
 import { checkServerStatus } from '../../../engine/ipc/lockfile.js';
 import { printCrashDiagnostic } from '../../crash-diagnostic.js';
 import { sessionDir, IPC_SOCK_FILE } from '../../../core/paths.js';
-import { acquireStateAuthority, releaseStateAuthority } from '../../../core/state/authority.js';
-import { loadStateForResume } from '../../../core/state/persistence.js';
+import { loadOwnerWorkflowState } from '../../../core/state/resume-hydration.js';
 import { assertModeFlagsExclusive, assertWorktreeStartOnly } from '../../options.js';
 import { assertAttachOwner, assertServerIdentity, renderAttachClient } from '../attach.js';
 import { runHeadless } from '../../headless.js';
@@ -16,35 +15,12 @@ import { runRpc } from '../../rpc/run/host.js';
 import { resolveSessionAlias } from '../../sessions/aliases.js';
 import { findSingleRunningSession } from '../../sessions/single-running.js';
 import { assertSessionExists } from '../../sessions/resolve.js';
-import { readActive } from '../../../core/sessions/lifecycle.js';
+import { readActive } from '../../../core/sessions/active-pointer.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { assertStateAuthority, readStateAuthority } from '../../../core/state/authority.js';
 import { resumeSavedSession } from './resume.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution.js';
-
-type ResumeHydration = ReturnType<typeof loadStateForResume>;
-
-function loadOwnedResumeState(ref: SessionRef): ResumeHydration {
-  let acquired: ReturnType<typeof acquireStateAuthority>;
-  try {
-    acquired = acquireStateAuthority({ ref, purpose: 'resume' });
-  } catch (cause) {
-    return {
-      kind: 'invalid',
-      code: 'malformed',
-      message: cause instanceof Error ? cause.message : 'State authority is unavailable.',
-    };
-  }
-
-  if (acquired.kind === 'new-workflow') return { kind: 'missing' };
-  if (acquired.kind !== 'fenced') return loadStateForResume({ ref, authority: acquired });
-  try {
-    return loadStateForResume({ ref, authority: acquired });
-  } finally {
-    releaseStateAuthority(ref, acquired.receipt);
-  }
-}
 
 export interface ContinueDeps {
   checkServerStatus: typeof checkServerStatus;
@@ -147,7 +123,7 @@ export async function continueCommand(
     await deps.printCrashDiagnostic(sessDir, status);
   }
 
-  const hydrated = loadOwnedResumeState({ projectDir: opts.projectDir, sessionId });
+  const hydrated = loadOwnerWorkflowState({ projectDir: opts.projectDir, sessionId });
 
   if (hydrated.kind === 'invalid') {
     throw cliError(

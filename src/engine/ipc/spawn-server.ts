@@ -31,11 +31,9 @@ import {
 } from './server-args.js';
 import { readOtelExporterFromArgv } from '../../lib/otel.js';
 import type { CLIOverrides } from '../../core/config/runtime/overrides/schema.js';
-import {
-  rollbackPreparedSession,
-  transferPreparedSessionToDetached,
-} from '../../core/sessions/prepare.js';
-import type { SessionOwnershipReceipt } from '../../core/sessions/lifecycle.js';
+import { transferPreparedSessionToDetached } from '../../core/sessions/detached-handoff.js';
+import { rollbackPreparedSession } from '../../core/sessions/prepare.js';
+import type { SessionOwnershipReceipt } from '../../core/sessions/active-pointer.js';
 import { sessionDir } from '../../core/paths.js';
 import {
   assertExistingPathConfined,

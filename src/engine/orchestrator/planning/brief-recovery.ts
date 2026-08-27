@@ -1,33 +1,43 @@
-import { createHash } from 'node:crypto';
+import type {
+  AttemptBase,
+  InputLifecycleEvent,
+  InputReceipt,
+  InputState,
+  RecoveryReceipt,
+} from '../../../core/schemas/brief-recovery/attempt.js';
+import type {
+  BudgetReservation,
+  RecoveryUsage,
+} from '../../../core/schemas/brief-recovery/budget.js';
+import type {
+  BriefRecoveryV1,
+  NormalBriefRecoveryV1,
+  RecoveryBlocker,
+  RejectedStorageBriefRecoveryV1,
+  StorageBlockedBriefRecoveryV1,
+} from '../../../core/schemas/brief-recovery/document.js';
+import type {
+  BriefAdmissionInput,
+  BriefRecoveryController,
+} from '../../../core/schemas/brief-recovery.js';
+import type {
+  BriefContractStatus,
+  BriefQualityIssue,
+  BriefQualityReportEvidence,
+  BriefRecoveryAction,
+  BriefRecoveryOrigin,
+  DispatchPossibility,
+  EvidenceRef,
+} from '../../../core/schemas/brief-recovery/primitives.js';
 import {
   RECOVERY_REFUSAL_RETENTION,
-  RecoveryRefusalReceiptSchema,
-  type AttemptBase,
-  type BriefAdmissionInput,
-  type BriefContractStatus,
-  type BriefQualityIssue,
-  type BriefQualityReportEvidence,
-  type BriefRecoveryAction,
-  type BriefRecoveryController,
-  type BriefRecoveryOrigin,
-  type BriefRecoveryV1,
-  type BudgetReservation,
-  type DispatchPossibility,
-  type EvidenceRef,
-  type InputLifecycleEvent,
-  type InputReceipt,
-  type InputState,
-  type NormalBriefRecoveryV1,
-  type RecoveryBlocker,
-  type RecoveryReceipt,
   type RecoveryRefusalCode,
   type RecoveryRefusalReceipt,
+  RecoveryRefusalReceiptSchema,
   type RecoveryRefusalRetention,
   type RecoveryRefusalSummary,
-  type RecoveryUsage,
-  type RejectedStorageBriefRecoveryV1,
-  type StorageBlockedBriefRecoveryV1,
-} from '../../../core/schemas/brief-recovery.js';
+} from '../../../core/schemas/brief-recovery/refusal.js';
+import { sha256Hex } from '../../../utils/sha256.js';
 
 const NO_PROGRESS_LIMIT = 20;
 const SETTLED_ATTEMPT_RETENTION_LIMIT = 256;
@@ -35,8 +45,6 @@ const SETTLED_ATTEMPT_RETENTION_LIMIT = 256;
 type NormalRecovery = NormalBriefRecoveryV1;
 type RecoveryAttemptStatus = RecoveryReceipt['status'];
 type MutableAttempts = Record<string, RecoveryReceipt>;
-
-export type RecoveryClock = () => string;
 
 export type RecoveryMutation = {
   state: BriefRecoveryV1;
@@ -204,10 +212,6 @@ function isNormalRecovery(state: BriefRecoveryV1): state is NormalRecovery {
   return state.status !== 'storage-blocked' && state.status !== 'rejected';
 }
 
-function nowOr(clock: RecoveryClock | undefined, fallback = 'now'): string {
-  return clock === undefined ? fallback : clock();
-}
-
 function incrementRevision(state: NormalRecovery): NormalRecovery {
   return { ...state, recoveryRevision: state.recoveryRevision + 1 };
 }
@@ -287,20 +291,19 @@ function setAttempt(
 }
 
 function result(
-  state: BriefRecoveryV1,
-  kind: RecoveryMutation['kind'],
-  operationId: string | null,
-  receipt: RecoveryReceipt | null,
-  changed: boolean,
-  reason?: string,
+  options: Readonly<{
+    state: BriefRecoveryV1;
+    kind: RecoveryMutation['kind'];
+    operationId: string | null;
+    receipt: RecoveryReceipt | null;
+    changed: boolean;
+    reason?: string;
+  }>,
 ): RecoveryMutation {
+  const { state, kind, operationId, receipt, changed, reason } = options;
   return reason === undefined
     ? { state, kind, operationId, receipt, changed }
     : { state, kind, operationId, receipt, changed, reason };
-}
-
-function hashText(text: string): string {
-  return createHash('sha256').update(text).digest('hex');
 }
 
 function normalizedMessage(message: string): string {
@@ -324,7 +327,7 @@ export function briefRecoveryDiagnosticFingerprint(
       [issue.code, issue.taskId ?? '', normalizedMessage(issue.message)].join('\u001f'),
     )
     .sort();
-  return hashText([briefHash, qualityPolicyVersion, ...blocking].join('\n'));
+  return sha256Hex([briefHash, qualityPolicyVersion, ...blocking].join('\n'));
 }
 
 function automaticPolicy(input: BriefAdmissionInput): NormalRecovery['automaticRepair'] {
@@ -359,7 +362,7 @@ function matchingReport(report: BriefQualityReportEvidence): NormalRecovery['mat
 
 export function automaticRepairIntent(state: NormalRecovery): string {
   const codes = (state.matchingReport?.issues ?? []).map((issue) => issue.code).join(',');
-  return hashText(`${state.activeBrief.hash}:${state.qualityPolicyVersion}:${codes}`);
+  return sha256Hex(`${state.activeBrief.hash}:${state.qualityPolicyVersion}:${codes}`);
 }
 
 function utf8Bytes(value: unknown): number {
@@ -388,7 +391,7 @@ function refusalSetDigest(refusals: Readonly<Record<string, RecoveryRefusalRecei
       receipt.intentHash,
       receipt.evidence.hash,
     ]);
-  return hashText(JSON.stringify(entries));
+  return sha256Hex(JSON.stringify(entries));
 }
 
 function refusalCapacity(
@@ -586,21 +589,58 @@ function receiptMatchesOperation(
   const existing = attempt(state, operationId);
   if (existing === null) return null;
   if (existing.intentHash !== intentHash) {
-    return result(state, 'conflict', operationId, existing, false, 'operation ID is already bound');
+    return result({
+      state,
+      kind: 'conflict',
+      operationId,
+      receipt: existing,
+      changed: false,
+      reason: 'operation ID is already bound',
+    });
   }
   if (existing.status === 'accepted' || existing.status === 'started') {
-    return result(state, 'replayed', operationId, existing, false);
+    return result({
+      state,
+      kind: 'replayed',
+      operationId,
+      receipt: existing,
+      changed: false,
+    });
   }
   if (existing.status === 'interrupted-not-dispatched') {
-    return result(state, 'replayed', operationId, existing, false);
+    return result({
+      state,
+      kind: 'replayed',
+      operationId,
+      receipt: existing,
+      changed: false,
+    });
   }
   if (existing.status === 'unresolved') {
-    return result(state, 'unresolved', operationId, existing, false);
+    return result({
+      state,
+      kind: 'unresolved',
+      operationId,
+      receipt: existing,
+      changed: false,
+    });
   }
   if (existing.status === 'settled' && existing.outcome === 'ready') {
-    return result(state, 'ready', operationId, existing, false);
+    return result({
+      state,
+      kind: 'ready',
+      operationId,
+      receipt: existing,
+      changed: false,
+    });
   }
-  return result(state, 'replayed', operationId, existing, false);
+  return result({
+    state,
+    kind: 'replayed',
+    operationId,
+    receipt: existing,
+    changed: false,
+  });
 }
 
 export function refuseRecoveryOperation(
@@ -609,60 +649,67 @@ export function refuseRecoveryOperation(
   at = 'now',
 ): RecoveryMutation {
   if (!isNormalRecovery(state))
-    return result(state, 'refused', input.operationId, null, false, 'recovery is closed');
+    return result({
+      state,
+      kind: 'refused',
+      operationId: input.operationId,
+      receipt: null,
+      changed: false,
+      reason: 'recovery is closed',
+    });
   const existing = attempt(state, input.operationId);
   if (existing !== null) {
-    return result(
+    return result({
       state,
-      'conflict',
-      input.operationId,
-      existing,
-      false,
-      'operation ID already holds an attempt',
-    );
+      kind: 'conflict',
+      operationId: input.operationId,
+      receipt: existing,
+      changed: false,
+      reason: 'operation ID already holds an attempt',
+    });
   }
   const retained = refusalRetained(state, input.operationId);
   if (retained !== null) {
     if (retained.intentHash !== input.intentHash) {
-      return result(
+      return result({
         state,
-        'conflict',
-        input.operationId,
-        null,
-        false,
-        'operation ID is already bound',
-      );
+        kind: 'conflict',
+        operationId: input.operationId,
+        receipt: null,
+        changed: false,
+        reason: 'operation ID is already bound',
+      });
     }
-    return result(
+    return result({
       state,
-      'replayed',
-      input.operationId,
-      null,
-      false,
-      'retained refusal replays exactly',
-    );
+      kind: 'replayed',
+      operationId: input.operationId,
+      receipt: null,
+      changed: false,
+      reason: 'retained refusal replays exactly',
+    });
   }
   const retention = refusalRetention(state);
   if (retention === null) {
     if (input.epochId !== state.epochId) {
-      return result(
+      return result({
         state,
-        'conflict',
-        input.operationId,
-        null,
-        false,
-        'refusal epoch does not match',
-      );
+        kind: 'conflict',
+        operationId: input.operationId,
+        receipt: null,
+        changed: false,
+        reason: 'refusal epoch does not match',
+      });
     }
   } else if (input.epochId !== retention.currentEpochId) {
-    return result(
+    return result({
       state,
-      'conflict',
-      input.operationId,
-      null,
-      false,
-      'refusal epoch does not match current retention',
-    );
+      kind: 'conflict',
+      operationId: input.operationId,
+      receipt: null,
+      changed: false,
+      reason: 'refusal epoch does not match current retention',
+    });
   }
   const receipt: RecoveryRefusalReceipt = {
     epochId: input.epochId,
@@ -685,14 +732,14 @@ export function refuseRecoveryOperation(
   };
   const parsed = RecoveryRefusalReceiptSchema.safeParse(receipt);
   if (!parsed.success) {
-    return result(
+    return result({
       state,
-      'blocked',
-      input.operationId,
-      null,
-      false,
-      'the refusal receipt violates its bounded schema',
-    );
+      kind: 'blocked',
+      operationId: input.operationId,
+      receipt: null,
+      changed: false,
+      reason: 'the refusal receipt violates its bounded schema',
+    });
   }
   const capacity = refusalCapacity(
     retention ?? {
@@ -705,7 +752,14 @@ export function refuseRecoveryOperation(
   );
   if (!capacity.ok) {
     return {
-      ...result(state, 'blocked', input.operationId, null, false, capacity.reason),
+      ...result({
+        state,
+        kind: 'blocked',
+        operationId: input.operationId,
+        receipt: null,
+        changed: false,
+        reason: capacity.reason,
+      }),
       code: 'brief_storage_invalid',
     };
   }
@@ -721,7 +775,13 @@ export function refuseRecoveryOperation(
       : { ...retention, refusals };
   const next: NormalRecovery = { ...incrementRevision(state), refusalRetention: nextRetention };
   return {
-    ...result(next, 'refused', input.operationId, null, true),
+    ...result({
+      state: next,
+      kind: 'refused',
+      operationId: input.operationId,
+      receipt: null,
+      changed: true,
+    }),
     code: input.code,
   };
 }
@@ -740,98 +800,112 @@ export function acceptRecoveryOperation(
   at = 'now',
 ): RecoveryMutation {
   if (!isNormalRecovery(state))
-    return result(state, 'refused', input.operationId, null, false, 'recovery is closed');
+    return result({
+      state,
+      kind: 'refused',
+      operationId: input.operationId,
+      receipt: null,
+      changed: false,
+      reason: 'recovery is closed',
+    });
   const replay = receiptMatchesOperation(state, input.operationId, input.intentHash);
   if (replay !== null) return replay;
   const retained = refusalRetained(state, input.operationId);
   if (retained !== null) {
     if (retained.intentHash !== input.intentHash) {
-      return result(
+      return result({
         state,
-        'conflict',
-        input.operationId,
-        null,
-        false,
-        'operation ID is already bound',
-      );
+        kind: 'conflict',
+        operationId: input.operationId,
+        receipt: null,
+        changed: false,
+        reason: 'operation ID is already bound',
+      });
     }
     if (retained.epochId !== input.epochId) {
-      return result(
+      return result({
         state,
-        'conflict',
-        input.operationId,
-        null,
-        false,
-        'operation epoch does not match',
-      );
+        kind: 'conflict',
+        operationId: input.operationId,
+        receipt: null,
+        changed: false,
+        reason: 'operation epoch does not match',
+      });
     }
-    return result(
+    return result({
       state,
-      'replayed',
-      input.operationId,
-      null,
-      false,
-      'retained refusal replays exactly',
-    );
+      kind: 'replayed',
+      operationId: input.operationId,
+      receipt: null,
+      changed: false,
+      reason: 'retained refusal replays exactly',
+    });
   }
   if (state.activeOperationId !== null) {
     const active = attempt(state, state.activeOperationId);
-    return result(
+    return result({
       state,
-      'in-flight',
-      state.activeOperationId,
-      active,
-      false,
-      'another operation is active',
-    );
+      kind: 'in-flight',
+      operationId: state.activeOperationId,
+      receipt: active,
+      changed: false,
+      reason: 'another operation is active',
+    });
   }
   if (input.epochId !== state.epochId) {
-    return result(
+    return result({
       state,
-      'conflict',
-      input.operationId,
-      null,
-      false,
-      'operation epoch does not match',
-    );
+      kind: 'conflict',
+      operationId: input.operationId,
+      receipt: null,
+      changed: false,
+      reason: 'operation epoch does not match',
+    });
   }
   if (input.baseBrief.hash !== state.activeBrief.hash) {
-    return result(state, 'conflict', input.operationId, null, false, 'operation base is stale');
+    return result({
+      state,
+      kind: 'conflict',
+      operationId: input.operationId,
+      receipt: null,
+      changed: false,
+      reason: 'operation base is stale',
+    });
   }
   if (
     input.baseReport?.hash !== (state.matchingReport?.report.hash ?? null) &&
     !(input.baseReport === null && state.matchingReport === null)
   ) {
-    return result(
+    return result({
       state,
-      'conflict',
-      input.operationId,
-      null,
-      false,
-      'operation report base is stale',
-    );
+      kind: 'conflict',
+      operationId: input.operationId,
+      receipt: null,
+      changed: false,
+      reason: 'operation report base is stale',
+    });
   }
   if (input.kind === 'automatic') {
     if (!state.automaticRepair.eligible || state.automaticRepair.consumed) {
-      return result(
+      return result({
         state,
-        'refused',
-        input.operationId,
-        null,
-        false,
-        'automatic repair is exhausted',
-      );
+        kind: 'refused',
+        operationId: input.operationId,
+        receipt: null,
+        changed: false,
+        reason: 'automatic repair is exhausted',
+      });
     }
   }
   if (state.noProgress.count >= NO_PROGRESS_LIMIT) {
-    return result(
+    return result({
       state,
-      'refused',
-      input.operationId,
-      null,
-      false,
-      'brief no-progress threshold reached',
-    );
+      kind: 'refused',
+      operationId: input.operationId,
+      receipt: null,
+      changed: false,
+      reason: 'brief no-progress threshold reached',
+    });
   }
   const inputIds = new Set(input.frozenInputIds);
   if (
@@ -839,30 +913,37 @@ export function acceptRecoveryOperation(
       (inputId) => state.inputs.find((candidate) => candidate.inputId === inputId) === undefined,
     )
   ) {
-    return result(state, 'conflict', input.operationId, null, false, 'frozen input is missing');
+    return result({
+      state,
+      kind: 'conflict',
+      operationId: input.operationId,
+      receipt: null,
+      changed: false,
+      reason: 'frozen input is missing',
+    });
   }
   if (
     state.inputs.some((candidate) => inputIds.has(candidate.inputId) && !inputCanBind(candidate))
   ) {
-    return result(
+    return result({
       state,
-      'conflict',
-      input.operationId,
-      null,
-      false,
-      'frozen input is not reusable',
-    );
+      kind: 'conflict',
+      operationId: input.operationId,
+      receipt: null,
+      changed: false,
+      reason: 'frozen input is not reusable',
+    });
   }
   const accountingKey = input.reservation.accountingKey;
   if (accountingKey.epochId !== input.epochId || accountingKey.operationId !== input.operationId) {
-    return result(
+    return result({
       state,
-      'conflict',
-      input.operationId,
-      null,
-      false,
-      'accounting key does not match operation',
-    );
+      kind: 'conflict',
+      operationId: input.operationId,
+      receipt: null,
+      changed: false,
+      reason: 'accounting key does not match operation',
+    });
   }
   const reservation = reservationHasAcceptedEvent(input.reservation)
     ? input.reservation
@@ -886,7 +967,13 @@ export function acceptRecoveryOperation(
       ? { ...next.automaticRepair, consumed: true, operationId: input.operationId }
       : next.automaticRepair,
   };
-  return result(next, 'accepted', input.operationId, receipt, true);
+  return result({
+    state: next,
+    kind: 'accepted',
+    operationId: input.operationId,
+    receipt,
+    changed: true,
+  });
 }
 
 export function startRecoveryOperation(
@@ -894,14 +981,41 @@ export function startRecoveryOperation(
   input: RecoveryStartInput,
 ): RecoveryMutation {
   if (!isNormalRecovery(state))
-    return result(state, 'refused', input.operationId, null, false, 'recovery is closed');
+    return result({
+      state,
+      kind: 'refused',
+      operationId: input.operationId,
+      receipt: null,
+      changed: false,
+      reason: 'recovery is closed',
+    });
   const current = attempt(state, input.operationId);
   if (current === null)
-    return result(state, 'conflict', input.operationId, null, false, 'operation is unknown');
+    return result({
+      state,
+      kind: 'conflict',
+      operationId: input.operationId,
+      receipt: null,
+      changed: false,
+      reason: 'operation is unknown',
+    });
   if (current.status === 'started')
-    return result(state, 'replayed', input.operationId, current, false);
+    return result({
+      state,
+      kind: 'replayed',
+      operationId: input.operationId,
+      receipt: current,
+      changed: false,
+    });
   if (current.status !== 'accepted') {
-    return result(state, 'conflict', input.operationId, current, false, 'operation cannot start');
+    return result({
+      state,
+      kind: 'conflict',
+      operationId: input.operationId,
+      receipt: current,
+      changed: false,
+      reason: 'operation cannot start',
+    });
   }
   const started: RecoveryReceipt = {
     ...receiptBase(current),
@@ -911,7 +1025,13 @@ export function startRecoveryOperation(
     requestId: input.requestId,
   };
   const next = setAttempt(state, started);
-  return result(next, 'accepted', input.operationId, started, true);
+  return result({
+    state: next,
+    kind: 'accepted',
+    operationId: input.operationId,
+    receipt: started,
+    changed: true,
+  });
 }
 
 export function interruptRecoveryOperation(
@@ -920,21 +1040,41 @@ export function interruptRecoveryOperation(
   at = 'now',
 ): RecoveryMutation {
   if (!isNormalRecovery(state))
-    return result(state, 'refused', operationId, null, false, 'recovery is closed');
+    return result({
+      state,
+      kind: 'refused',
+      operationId,
+      receipt: null,
+      changed: false,
+      reason: 'recovery is closed',
+    });
   const current = attempt(state, operationId);
   if (current === null)
-    return result(state, 'conflict', operationId, null, false, 'operation is unknown');
-  if (current.status === 'interrupted-not-dispatched')
-    return result(state, 'replayed', operationId, current, false);
-  if (current.status !== 'accepted') {
-    return result(
+    return result({
       state,
-      'conflict',
+      kind: 'conflict',
       operationId,
-      current,
-      false,
-      'only accepted operations can be interrupted',
-    );
+      receipt: null,
+      changed: false,
+      reason: 'operation is unknown',
+    });
+  if (current.status === 'interrupted-not-dispatched')
+    return result({
+      state,
+      kind: 'replayed',
+      operationId,
+      receipt: current,
+      changed: false,
+    });
+  if (current.status !== 'accepted') {
+    return result({
+      state,
+      kind: 'conflict',
+      operationId,
+      receipt: current,
+      changed: false,
+      reason: 'only accepted operations can be interrupted',
+    });
   }
   const interrupted: RecoveryReceipt = {
     ...receiptBase(current),
@@ -946,7 +1086,13 @@ export function interruptRecoveryOperation(
   let next = setAttempt(state, interrupted, null);
   next = transitionInputs(next, receiptInputIds(current), 'released', null, at, 'not-dispatched');
   next = { ...next, status: 'blocked' };
-  return result(next, 'interrupted', operationId, interrupted, true);
+  return result({
+    state: next,
+    kind: 'interrupted',
+    operationId,
+    receipt: interrupted,
+    changed: true,
+  });
 }
 
 export function reconcileLostOwner(
@@ -955,22 +1101,42 @@ export function reconcileLostOwner(
   at = 'now',
 ): RecoveryMutation {
   if (!isNormalRecovery(state))
-    return result(state, 'refused', operationId, null, false, 'recovery is closed');
+    return result({
+      state,
+      kind: 'refused',
+      operationId,
+      receipt: null,
+      changed: false,
+      reason: 'recovery is closed',
+    });
   const current = attempt(state, operationId);
   if (current === null)
-    return result(state, 'conflict', operationId, null, false, 'operation is unknown');
+    return result({
+      state,
+      kind: 'conflict',
+      operationId,
+      receipt: null,
+      changed: false,
+      reason: 'operation is unknown',
+    });
   if (current.status === 'accepted') return interruptRecoveryOperation(state, operationId, at);
   if (current.status === 'unresolved')
-    return result(state, 'replayed', operationId, current, false);
-  if (current.status !== 'started') {
-    return result(
+    return result({
       state,
-      'conflict',
+      kind: 'replayed',
       operationId,
-      current,
-      false,
-      'operation is not owner-reconcilable',
-    );
+      receipt: current,
+      changed: false,
+    });
+  if (current.status !== 'started') {
+    return result({
+      state,
+      kind: 'conflict',
+      operationId,
+      receipt: current,
+      changed: false,
+      reason: 'operation is not owner-reconcilable',
+    });
   }
   const unresolved: RecoveryReceipt = {
     ...receiptBase(current),
@@ -984,7 +1150,13 @@ export function reconcileLostOwner(
   let next = setAttempt(state, unresolved);
   next = transitionInputs(next, receiptInputIds(current), 'held', operationId, at, 'possible');
   next = { ...next, status: 'unresolved' };
-  return result(next, 'unresolved', operationId, unresolved, true);
+  return result({
+    state: next,
+    kind: 'unresolved',
+    operationId,
+    receipt: unresolved,
+    changed: true,
+  });
 }
 
 function settlementMatches(receipt: RecoveryReceipt, settlement: RecoverySettlement): boolean {
@@ -1110,10 +1282,7 @@ function settleReceipt(
           usageApplied,
           settlement.usage,
         );
-  const outcome =
-    settlement.providerCode === null && settlement.outcome === 'provider-failed'
-      ? 'provider-failed'
-      : settlement.outcome;
+  const outcome = settlement.outcome;
   return {
     ...receiptBase(current),
     status: 'settled',
@@ -1150,7 +1319,14 @@ export function closeRecoveryRefusalEpoch(
   at = 'now',
 ): RecoveryMutation {
   if (!isNormalRecovery(state))
-    return result(state, 'refused', null, null, false, 'recovery is closed');
+    return result({
+      state,
+      kind: 'refused',
+      operationId: null,
+      receipt: null,
+      changed: false,
+      reason: 'recovery is closed',
+    });
   const retention = refusalRetention(state);
   if (retention === null) {
     const next: NormalRecovery = {
@@ -1162,41 +1338,64 @@ export function closeRecoveryRefusalEpoch(
         closedEpochSummaries: [],
       },
     };
-    return { ...result(next, 'epoch-closed', null, null, true) };
+    return {
+      ...result({
+        state: next,
+        kind: 'epoch-closed',
+        operationId: null,
+        receipt: null,
+        changed: true,
+      }),
+    };
   }
   if (input.newEpochId === retention.currentEpochId)
-    return result(state, 'replayed', null, null, false, 'refusal epoch is already current');
+    return result({
+      state,
+      kind: 'replayed',
+      operationId: null,
+      receipt: null,
+      changed: false,
+      reason: 'refusal epoch is already current',
+    });
   const closing = Object.entries(retention.refusals);
   if (
     state.activeOperationId !== null &&
     closing.some(([operationId]) => operationId === state.activeOperationId)
   ) {
-    return result(
+    return result({
       state,
-      'conflict',
-      state.activeOperationId,
-      null,
-      false,
-      'active operation refusal cannot be evicted',
-    );
+      kind: 'conflict',
+      operationId: state.activeOperationId,
+      receipt: null,
+      changed: false,
+      reason: 'active operation refusal cannot be evicted',
+    });
   }
   const automaticIntent = automaticRepairIntent(state);
   if (closing.some(([, receipt]) => receipt.intentHash === automaticIntent)) {
-    return result(
+    return result({
       state,
-      'conflict',
-      null,
-      null,
-      false,
-      'automatic repair refusal cannot be evicted',
-    );
+      kind: 'conflict',
+      operationId: null,
+      receipt: null,
+      changed: false,
+      reason: 'automatic repair refusal cannot be evicted',
+    });
   }
   if (closing.length === 0) {
     const next: NormalRecovery = {
       ...incrementRevision(state),
       refusalRetention: { ...retention, currentEpochId: input.newEpochId },
     };
-    return { ...result(next, 'epoch-closed', null, null, true) };
+    return {
+      ...result({
+        state: next,
+        kind: 'epoch-closed',
+        operationId: null,
+        receipt: null,
+        changed: true,
+      }),
+    };
   }
   const closedAt = input.closedAt ?? at;
   const summary: RecoveryRefusalSummary = {
@@ -1208,14 +1407,14 @@ export function closeRecoveryRefusalEpoch(
   };
   if (utf8Bytes(summary) > RECOVERY_REFUSAL_RETENTION.maxClosedEpochSummaryBytes) {
     return {
-      ...result(
+      ...result({
         state,
-        'blocked',
-        null,
-        null,
-        false,
-        'closed refusal summary exceeds its byte bound',
-      ),
+        kind: 'blocked',
+        operationId: null,
+        receipt: null,
+        changed: false,
+        reason: 'closed refusal summary exceeds its byte bound',
+      }),
       code: 'brief_storage_invalid',
     };
   }
@@ -1234,7 +1433,15 @@ export function closeRecoveryRefusalEpoch(
       closedEpochSummaries: summaries,
     },
   };
-  return { ...result(next, 'epoch-closed', null, null, true) };
+  return {
+    ...result({
+      state: next,
+      kind: 'epoch-closed',
+      operationId: null,
+      receipt: null,
+      changed: true,
+    }),
+  };
 }
 
 export function settleRecoveryOperation(
@@ -1242,103 +1449,122 @@ export function settleRecoveryOperation(
   settlement: RecoverySettlement,
 ): RecoveryMutation {
   if (!isNormalRecovery(state))
-    return result(state, 'stale-ignored', settlement.operationId, null, false);
+    return result({
+      state,
+      kind: 'stale-ignored',
+      operationId: settlement.operationId,
+      receipt: null,
+      changed: false,
+    });
   const current = attempt(state, settlement.operationId);
   if (current === null)
-    return result(state, 'conflict', settlement.operationId, null, false, 'operation is unknown');
-  if (settlement.sessionId !== current.reservation.accountingKey.sessionId) {
-    return result(
+    return result({
       state,
-      'conflict',
-      settlement.operationId,
-      current,
-      false,
-      'settlement session does not match',
-    );
+      kind: 'conflict',
+      operationId: settlement.operationId,
+      receipt: null,
+      changed: false,
+      reason: 'operation is unknown',
+    });
+  if (settlement.sessionId !== current.reservation.accountingKey.sessionId) {
+    return result({
+      state,
+      kind: 'conflict',
+      operationId: settlement.operationId,
+      receipt: current,
+      changed: false,
+      reason: 'settlement session does not match',
+    });
   }
   if (settlement.epochId !== state.epochId || settlement.epochId !== current.epochId) {
-    return result(
+    return result({
       state,
-      'conflict',
-      settlement.operationId,
-      current,
-      false,
-      'settlement epoch does not match',
-    );
+      kind: 'conflict',
+      operationId: settlement.operationId,
+      receipt: current,
+      changed: false,
+      reason: 'settlement epoch does not match',
+    });
   }
   if (current.status === 'settled') {
     return settlementReplayMatches(current, settlement)
-      ? result(
+      ? result({
           state,
-          current.outcome === 'ready' ? 'ready' : 'replayed',
-          settlement.operationId,
-          current,
-          false,
-        )
-      : result(
+          kind: current.outcome === 'ready' ? 'ready' : 'replayed',
+          operationId: settlement.operationId,
+          receipt: current,
+          changed: false,
+        })
+      : result({
           state,
-          'conflict',
-          settlement.operationId,
-          current,
-          false,
-          'settlement differs from replay',
-        );
+          kind: 'conflict',
+          operationId: settlement.operationId,
+          receipt: current,
+          changed: false,
+          reason: 'settlement differs from replay',
+        });
   }
   if (current.status === 'superseded' || current.status === 'abandoned') {
-    return result(
+    return result({
       state,
-      'stale-ignored',
-      settlement.operationId,
-      current,
-      false,
-      'operation has no settlement authority',
-    );
+      kind: 'stale-ignored',
+      operationId: settlement.operationId,
+      receipt: current,
+      changed: false,
+      reason: 'operation has no settlement authority',
+    });
   }
   if (!settlementMatches(current, settlement)) {
-    return result(
+    return result({
       state,
-      'conflict',
-      settlement.operationId,
-      current,
-      false,
-      'settlement request does not match',
-    );
+      kind: 'conflict',
+      operationId: settlement.operationId,
+      receipt: current,
+      changed: false,
+      reason: 'settlement request does not match',
+    });
   }
   if (current.status === 'unresolved' && settlement.remoteObservation === 'unknown') {
-    return result(state, 'unresolved', settlement.operationId, current, false);
+    return result({
+      state,
+      kind: 'unresolved',
+      operationId: settlement.operationId,
+      receipt: current,
+      changed: false,
+    });
   }
   if (
     (current.status === 'accepted' && settlement.dispatchPossibility !== 'none') ||
     (current.status === 'started' && settlement.dispatchPossibility !== 'possible') ||
     (current.status === 'unresolved' && settlement.dispatchPossibility !== 'possible')
   ) {
-    return result(
+    return result({
       state,
-      'conflict',
-      settlement.operationId,
-      current,
-      false,
-      'dispatch possibility is illegal for receipt',
-    );
+      kind: 'conflict',
+      operationId: settlement.operationId,
+      receipt: current,
+      changed: false,
+      reason: 'dispatch possibility is illegal for receipt',
+    });
   }
   const at = settlement.settledAt;
   if (settlement.remoteObservation === 'unknown') {
     if (current.status !== 'started' && current.status !== 'unresolved') {
-      return result(
+      return result({
         state,
-        'conflict',
-        settlement.operationId,
-        current,
-        false,
-        'unknown outcome requires a started operation',
-      );
+        kind: 'conflict',
+        operationId: settlement.operationId,
+        receipt: current,
+        changed: false,
+        reason: 'unknown outcome requires a started operation',
+      });
     }
     const unresolved: RecoveryReceipt = {
       ...receiptBase(current),
       status: 'unresolved',
       dispatchPossibility: 'possible',
       remoteObservation: 'unknown',
-      requestId: current.status === 'started' ? current.requestId : current.requestId,
+      requestId: current.requestId,
       unresolvedAt: at,
       reservation: reservationEvent(current.reservation, 'held', at, 'unresolved', false, null),
     };
@@ -1352,7 +1578,13 @@ export function settleRecoveryOperation(
       'possible',
     );
     next = { ...next, status: 'unresolved' };
-    return result(next, 'unresolved', settlement.operationId, unresolved, true);
+    return result({
+      state: next,
+      kind: 'unresolved',
+      operationId: settlement.operationId,
+      receipt: unresolved,
+      changed: true,
+    });
   }
   const staleBase =
     current.baseBrief.hash !== state.activeBrief.hash &&
@@ -1380,17 +1612,18 @@ export function settleRecoveryOperation(
     ...next,
     noProgress: updateNoProgress(next, finalOutcome, current, nextWithEvidence.changedReport),
   };
-  return result(
-    next,
-    finalOutcome === 'ready'
-      ? 'ready'
-      : finalOutcome === 'stale-ignored'
-        ? 'stale-ignored'
-        : 'settled',
-    settlement.operationId,
-    settled,
-    true,
-  );
+  return result({
+    state: next,
+    kind:
+      finalOutcome === 'ready'
+        ? 'ready'
+        : finalOutcome === 'stale-ignored'
+          ? 'stale-ignored'
+          : 'settled',
+    operationId: settlement.operationId,
+    receipt: settled,
+    changed: true,
+  });
 }
 
 export function supersedeRecoveryOperation(
@@ -1398,25 +1631,45 @@ export function supersedeRecoveryOperation(
   input: RecoverySupersedeInput,
 ): RecoveryMutation {
   if (!isNormalRecovery(state))
-    return result(state, 'refused', input.operationId, null, false, 'recovery is closed');
+    return result({
+      state,
+      kind: 'refused',
+      operationId: input.operationId,
+      receipt: null,
+      changed: false,
+      reason: 'recovery is closed',
+    });
   const current = attempt(state, input.operationId);
   if (current === null)
-    return result(state, 'conflict', input.operationId, null, false, 'operation is unknown');
+    return result({
+      state,
+      kind: 'conflict',
+      operationId: input.operationId,
+      receipt: null,
+      changed: false,
+      reason: 'operation is unknown',
+    });
   if (current.status === 'superseded')
-    return result(state, 'replayed', input.operationId, current, false);
+    return result({
+      state,
+      kind: 'replayed',
+      operationId: input.operationId,
+      receipt: current,
+      changed: false,
+    });
   if (
     current.status !== 'accepted' &&
     current.status !== 'started' &&
     current.status !== 'unresolved'
   ) {
-    return result(
+    return result({
       state,
-      'conflict',
-      input.operationId,
-      current,
-      false,
-      'operation cannot be superseded',
-    );
+      kind: 'conflict',
+      operationId: input.operationId,
+      receipt: current,
+      changed: false,
+      reason: 'operation cannot be superseded',
+    });
   }
   const at = input.at ?? 'now';
   const possible = current.status === 'started' || current.status === 'unresolved';
@@ -1441,7 +1694,13 @@ export function supersedeRecoveryOperation(
     possible ? 'possible' : 'not-dispatched',
   );
   next = { ...next, status: input.reason === 'reject' ? 'blocked' : 'checking' };
-  return result(next, 'superseded', input.operationId, superseded, true);
+  return result({
+    state: next,
+    kind: 'superseded',
+    operationId: input.operationId,
+    receipt: superseded,
+    changed: true,
+  });
 }
 
 export function resolveUnresolvedOperation(
@@ -1449,34 +1708,39 @@ export function resolveUnresolvedOperation(
   input: RecoveryResolveInput,
 ): RecoveryMutation {
   if (!isNormalRecovery(state))
-    return result(state, 'refused', input.operationId, null, false, 'recovery is closed');
+    return result({
+      state,
+      kind: 'refused',
+      operationId: input.operationId,
+      receipt: null,
+      changed: false,
+      reason: 'recovery is closed',
+    });
   const current = attempt(state, input.operationId);
   if (current === null || current.status !== 'unresolved') {
-    return result(
+    return result({
       state,
-      'conflict',
-      input.operationId,
-      current,
-      false,
-      'operation is not unresolved',
-    );
+      kind: 'conflict',
+      operationId: input.operationId,
+      receipt: current,
+      changed: false,
+      reason: 'operation is not unresolved',
+    });
   }
   const held = state.inputs.filter(
     (candidate) => candidate.operationId === input.operationId && candidate.state === 'held',
   );
   const heldIds = held.map((candidate) => candidate.inputId).sort();
-  if (
-    heldIds.length !== input.heldInputIds.length ||
-    heldIds.some((id, index) => id !== [...input.heldInputIds].sort()[index])
-  ) {
-    return result(
+  const wantedIds = [...input.heldInputIds].sort();
+  if (heldIds.length !== wantedIds.length || heldIds.some((id, index) => id !== wantedIds[index])) {
+    return result({
       state,
-      'conflict',
-      input.operationId,
-      current,
-      false,
-      'held input set does not match',
-    );
+      kind: 'conflict',
+      operationId: input.operationId,
+      receipt: current,
+      changed: false,
+      reason: 'held input set does not match',
+    });
   }
   const at = input.at ?? 'now';
   const target = input.resolution.kind === 'rebind' ? 'carried' : 'abandoned';
@@ -1489,13 +1753,13 @@ export function resolveUnresolvedOperation(
     'possible',
   );
   next = { ...next, activeOperationId: null, status: 'blocked' };
-  return result(
-    next,
-    input.resolution.kind === 'rebind' ? 'rebound' : 'abandoned',
-    input.operationId,
-    current,
-    true,
-  );
+  return result({
+    state: next,
+    kind: input.resolution.kind === 'rebind' ? 'rebound' : 'abandoned',
+    operationId: input.operationId,
+    receipt: current,
+    changed: true,
+  });
 }
 
 export function reconcileRecoveryReservation(
@@ -1505,21 +1769,41 @@ export function reconcileRecoveryReservation(
   at = 'now',
 ): RecoveryMutation {
   if (!isNormalRecovery(state))
-    return result(state, 'refused', operationId, null, false, 'recovery is closed');
+    return result({
+      state,
+      kind: 'refused',
+      operationId,
+      receipt: null,
+      changed: false,
+      reason: 'recovery is closed',
+    });
   const current = attempt(state, operationId);
   if (current === null)
-    return result(state, 'conflict', operationId, null, false, 'operation is unknown');
-  if (current.reservation.usageApplied)
-    return result(state, 'replayed', operationId, current, false);
-  if (current.dispatchPossibility !== 'possible') {
-    return result(
+    return result({
       state,
-      'conflict',
+      kind: 'conflict',
       operationId,
-      current,
-      false,
-      'only possible dispatch can reconcile',
-    );
+      receipt: null,
+      changed: false,
+      reason: 'operation is unknown',
+    });
+  if (current.reservation.usageApplied)
+    return result({
+      state,
+      kind: 'replayed',
+      operationId,
+      receipt: current,
+      changed: false,
+    });
+  if (current.dispatchPossibility !== 'possible') {
+    return result({
+      state,
+      kind: 'conflict',
+      operationId,
+      receipt: current,
+      changed: false,
+      reason: 'only possible dispatch can reconcile',
+    });
   }
   const nextReservation =
     usage === null
@@ -1527,13 +1811,13 @@ export function reconcileRecoveryReservation(
       : reservationEvent(current.reservation, 'reconciled', at, 'confirmed-final', true, usage);
   const nextReceipt = withReservation(current, nextReservation);
   const next = setAttempt(state, nextReceipt, state.activeOperationId);
-  return result(
-    next,
-    usage === null ? 'reconciled' : 'reconciled',
+  return result({
+    state: next,
+    kind: 'reconciled',
     operationId,
-    nextReceipt,
-    usage !== null,
-  );
+    receipt: nextReceipt,
+    changed: usage !== null,
+  });
 }
 
 export function terminalChargeRecoveryReservations(
@@ -1541,7 +1825,14 @@ export function terminalChargeRecoveryReservations(
   at = 'now',
 ): RecoveryMutation {
   if (!isNormalRecovery(state))
-    return result(state, 'refused', null, null, false, 'recovery is closed');
+    return result({
+      state,
+      kind: 'refused',
+      operationId: null,
+      receipt: null,
+      changed: false,
+      reason: 'recovery is closed',
+    });
   let next = state;
   let changed = false;
   const ids = Object.keys(state.attempts).sort();
@@ -1569,7 +1860,13 @@ export function terminalChargeRecoveryReservations(
     next = setAttempt(next, charged, next.activeOperationId);
     changed = true;
   }
-  return result(next, changed ? 'terminal-charged' : 'replayed', null, null, changed);
+  return result({
+    state: next,
+    kind: changed ? 'terminal-charged' : 'replayed',
+    operationId: null,
+    receipt: null,
+    changed,
+  });
 }
 
 export function queueRecoveryInput(
@@ -1592,7 +1889,7 @@ export function queueRecoveryInput(
   if (input.epochId !== state.epochId)
     return { state, input: null, kind: 'conflict', reason: 'input epoch does not match' };
   const existing = state.inputs.find((candidate) => candidate.inputId === input.inputId);
-  const textHash = hashText(input.payload);
+  const textHash = sha256Hex(input.payload);
   if (existing !== undefined) {
     return existing.textHash === textHash
       ? { state, input: existing, kind: 'replayed' }
@@ -1641,15 +1938,28 @@ function rejectedArchive(state: BriefRecoveryV1, at: string): RejectedStorageBri
       code: state.status === 'storage-blocked' ? state.storageEvidence.code : 'brief_rejected',
       artifactRef: state.status === 'storage-blocked' ? state.storageEvidence.artifactRef : null,
     },
-    evidenceHead: `${state.evidenceHead}:rejected:${hashText(at).slice(0, 12)}`,
+    evidenceHead: `${state.evidenceHead}:rejected:${sha256Hex(at).slice(0, 12)}`,
     outbox: state.outbox,
   };
 }
 
 export function rejectBriefRecovery(state: BriefRecoveryV1, at = 'now'): RecoveryMutation {
-  if (state.status === 'rejected') return result(state, 'replayed', null, null, false);
+  if (state.status === 'rejected')
+    return result({
+      state,
+      kind: 'replayed',
+      operationId: null,
+      receipt: null,
+      changed: false,
+    });
   if (state.status === 'storage-blocked')
-    return result(rejectedArchive(state, at), 'rejected', null, null, true);
+    return result({
+      state: rejectedArchive(state, at),
+      kind: 'rejected',
+      operationId: null,
+      receipt: null,
+      changed: true,
+    });
   let next = state;
   for (const operationId of Object.keys(state.attempts).sort()) {
     const current = attempt(next, operationId);
@@ -1664,7 +1974,13 @@ export function rejectBriefRecovery(state: BriefRecoveryV1, at = 'now'): Recover
   }
   const charged = terminalChargeRecoveryReservations(next, at);
   next = isNormalRecovery(charged.state) ? charged.state : next;
-  return result(rejectedArchive(next, at), 'rejected', null, null, true);
+  return result({
+    state: rejectedArchive(next, at),
+    kind: 'rejected',
+    operationId: null,
+    receipt: null,
+    changed: true,
+  });
 }
 
 export function editBriefRecovery(
@@ -1673,7 +1989,14 @@ export function editBriefRecovery(
 ): RecoveryMutation {
   const at = input.at ?? 'now';
   if (state.status === 'rejected')
-    return result(state, 'refused', null, null, false, 'recovery is closed');
+    return result({
+      state,
+      kind: 'refused',
+      operationId: null,
+      receipt: null,
+      changed: false,
+      reason: 'recovery is closed',
+    });
   if (state.status === 'storage-blocked') {
     const normal: NormalRecovery = {
       version: 1,
@@ -1695,7 +2018,13 @@ export function editBriefRecovery(
       evidenceHead: input.brief.hash,
       outbox: state.outbox,
     };
-    return result(normal, 'blocked', null, null, true);
+    return result({
+      state: normal,
+      kind: 'blocked',
+      operationId: null,
+      receipt: null,
+      changed: true,
+    });
   }
   let next = state;
   if (state.activeOperationId !== null) {
@@ -1739,7 +2068,13 @@ export function editBriefRecovery(
     nextInputSequence: next.nextInputSequence + 1,
     noProgress: { fingerprint: null, count: 0 },
   };
-  return result(next, next.status === 'ready' ? 'ready' : 'blocked', null, null, true);
+  return result({
+    state: next,
+    kind: next.status === 'ready' ? 'ready' : 'blocked',
+    operationId: null,
+    receipt: null,
+    changed: true,
+  });
 }
 
 export function deriveRecoveryBlocker(state: BriefRecoveryV1): RecoveryBlocker | null {
@@ -1871,11 +2206,11 @@ export function reduceBriefRecovery(
 ): RecoveryMutation | RecoveryInputTransition {
   switch (action.type) {
     case 'accept':
-      return acceptRecoveryOperation(state, action.input, action.at ?? nowOr(undefined));
+      return acceptRecoveryOperation(state, action.input, action.at ?? 'now');
     case 'start':
       return startRecoveryOperation(state, action.input);
     case 'interrupt':
-      return interruptRecoveryOperation(state, action.operationId, action.at ?? nowOr(undefined));
+      return interruptRecoveryOperation(state, action.operationId, action.at ?? 'now');
     case 'settle':
       return settleRecoveryOperation(state, action.input);
     case 'supersede':
@@ -1885,13 +2220,13 @@ export function reduceBriefRecovery(
     case 'edit':
       return editBriefRecovery(state, action.input);
     case 'reject':
-      return rejectBriefRecovery(state, action.at ?? nowOr(undefined));
+      return rejectBriefRecovery(state, action.at ?? 'now');
     case 'terminal-charge':
-      return terminalChargeRecoveryReservations(state, action.at ?? nowOr(undefined));
+      return terminalChargeRecoveryReservations(state, action.at ?? 'now');
     case 'refuse':
-      return refuseRecoveryOperation(state, action.input, action.at ?? nowOr(undefined));
+      return refuseRecoveryOperation(state, action.input, action.at ?? 'now');
     case 'close-epoch':
-      return closeRecoveryRefusalEpoch(state, action.input, action.at ?? nowOr(undefined));
+      return closeRecoveryRefusalEpoch(state, action.input, action.at ?? 'now');
     default: {
       const exhaustive: never = action;
       return exhaustive;

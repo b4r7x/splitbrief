@@ -12,30 +12,31 @@ import {
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { usePickerCatalog } from '../../features/runners/use-picker-catalog.js';
-import { usePickerActions } from '../../features/runners/use-picker-actions.js';
+import {
+  usePickerActions,
+  type PickerActionDeps,
+} from '../../features/runners/use-picker-actions.js';
 import { PickerView } from '../../features/runners/picker-view.js';
 import { TextInputOverlay } from '../../features/runners/text-input-overlay.js';
 import { ContractChoiceOverlay } from '../../features/runners/contract-choice-overlay.js';
 import { ProviderAuthOverlay } from '../../features/runners/provider-auth-overlay.js';
-import {
-  ContractRecap,
-  StepIndicator,
-  contractTierOf,
-} from '../../features/runners/contract-chip.js';
+import { ContractRecap, StepIndicator } from '../../features/runners/contract-chip.js';
+import { contractForRunnerKind } from '../../core/config/custom-commands.js';
 import { overlayAllowsPickerKeys } from '../../core/navigation/types.js';
 
 interface ToolModelPickerProps {
   role: SeatPickerRole;
+  deps?: Partial<PickerActionDeps> | undefined;
 }
 
-export function ToolModelPicker({ role }: ToolModelPickerProps) {
+export function ToolModelPicker({ role, deps }: ToolModelPickerProps) {
   const t = useTheme();
   const lane = seatPickerLane(role);
   const view = pickerViewStore.use((s) => s.view);
   const preservedLeftIndex = pickerViewStore.use((s) => s.preservedLeftIndex);
   const draft = pickerViewStore.use((s) => s.draft);
   const catalog = usePickerCatalog(role, preservedLeftIndex);
-  const actions = usePickerActions({ role, catalog });
+  const actions = usePickerActions({ role, catalog, deps });
   const isSubView = view.kind !== 'picker';
   const overlayAllowsKeys = overlayStore.use((s) => overlayAllowsPickerKeys(s.active));
   const coldDiscovery = catalog.discovery.cold && catalog.discovery.refreshing;
@@ -89,7 +90,7 @@ export function ToolModelPicker({ role }: ToolModelPickerProps) {
   }
 
   if (view.kind === 'custom-command') {
-    const tier = contractTierOf(view.intendedKind);
+    const tier = contractForRunnerKind(view.intendedKind);
     return (
       <TextInputOverlay
         title="Custom command"

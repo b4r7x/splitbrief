@@ -1,5 +1,7 @@
 import { createStore, storeBase } from '../create-store.js';
 import {
+  definedTaskUsageFields,
+  TASK_USAGE_METADATA_KEYS,
   ZERO_TOKEN_USAGE,
   type TaskTokenUsage,
   type TokenUsage,
@@ -136,35 +138,7 @@ export function taskAttemptTotalTokens(attempt: TaskAttemptTokens): number {
 }
 
 function preserveTaskAttemptMetadata(event: TaskTokensEvent): Partial<TaskAttemptTokens> {
-  return {
-    ...(event.implementerCacheReadTokens !== undefined && {
-      implementerCacheReadTokens: event.implementerCacheReadTokens,
-    }),
-    ...(event.implementerCacheCreateTokens !== undefined && {
-      implementerCacheCreateTokens: event.implementerCacheCreateTokens,
-    }),
-    ...(event.escalationCacheReadTokens !== undefined && {
-      escalationCacheReadTokens: event.escalationCacheReadTokens,
-    }),
-    ...(event.escalationCacheCreateTokens !== undefined && {
-      escalationCacheCreateTokens: event.escalationCacheCreateTokens,
-    }),
-    ...(event.implementerProfile !== undefined && { implementerProfile: event.implementerProfile }),
-    ...(event.contextFit !== undefined && { contextFit: event.contextFit }),
-    ...(event.estimatedTokens !== undefined && { estimatedTokens: event.estimatedTokens }),
-    ...(event.untruncatedEstimatedTokens !== undefined && {
-      untruncatedEstimatedTokens: event.untruncatedEstimatedTokens,
-    }),
-    ...(event.contextLength !== undefined && { contextLength: event.contextLength }),
-    ...(event.currentCodeTruncated !== undefined && {
-      currentCodeTruncated: event.currentCodeTruncated,
-    }),
-    ...(event.currentCodeContextMode !== undefined && {
-      currentCodeContextMode: event.currentCodeContextMode,
-    }),
-    ...(event.costPosture !== undefined && { costPosture: event.costPosture }),
-    ...(event.routingReason !== undefined && { routingReason: event.routingReason }),
-  };
+  return definedTaskUsageFields(event, TASK_USAGE_METADATA_KEYS);
 }
 
 export function updateTokens(state: TokensState, event: EngineEvent): TokensState {
@@ -193,7 +167,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
         planner: pd,
         implementer: id,
         reviewer: rd,
-      } = attributePhaseTokenDelta(prev, curr, phase);
+      } = attributePhaseTokenDelta({ previous: prev, current: curr, phase });
 
       const updatedPhase: PhaseTokens = {
         inputTokens: existingPhase.inputTokens + pd.input + id.input + rd.input,

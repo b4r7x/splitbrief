@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   API_PROVIDER_CATALOG,
-  FORBIDDEN_API_PROVIDER_IDS,
   IMPLEMENTER_API_PROVIDER_IDS,
   KNOWN_API_PROVIDER_IDS,
   PLANNER_API_PROVIDER_IDS,
 } from '../../../src/core/providers/api-provider-catalog.js';
+import { FORBIDDEN_API_PROVIDER_IDS } from '../../../src/core/providers/api-provider-verdicts.js';
 import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,

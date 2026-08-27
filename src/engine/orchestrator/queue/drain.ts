@@ -48,15 +48,12 @@ export function readQueueForPrompt({
 } {
   const ref = { projectDir, sessionId };
   const base = rebaseOnPersistedWorkflowState(ref, state);
-  return {
-    state: base,
-    messages: base.messageQueue.filter(
-      (message) =>
-        isQueuedMessagePendingDelivery(message) &&
-        ownerFor(ref, message.id) === undefined &&
-        claimQueuedMessage(ref, message.id, 'prompt'),
-    ),
-  };
+  const messages: QueuedMessage[] = [];
+  for (const message of base.messageQueue) {
+    if (!isQueuedMessagePendingDelivery(message)) continue;
+    if (claimQueuedMessage(ref, message.id, 'prompt')) messages.push(message);
+  }
+  return { state: base, messages };
 }
 
 export function releaseQueueMessagesForPrompt(

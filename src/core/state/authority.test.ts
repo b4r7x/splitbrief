@@ -4,8 +4,9 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ensureSessionDir } from '../paths-io.js';
 import { sessionDir, stateAuthorityDirectory, STATE_FILE } from '../paths.js';
+import { transitionAndSave } from '../../engine/orchestrator/state-ops.js';
 import { createInitialState } from './machine.js';
-import { saveState } from './persistence.js';
+import { loadState, saveState } from './persistence.js';
 import {
   acquireStateAuthority,
   assertStateAuthority,
@@ -93,9 +94,52 @@ describe('session state authority', () => {
     });
     expect(successor.kind).toBe('fenced');
     if (successor.kind !== 'fenced') return;
+
+    const current = loadState(ref);
+    expect(current).not.toBeNull();
+    if (current === null) return;
+    expect(() =>
+      transitionAndSave(
+        ref,
+        current,
+        { type: 'START' },
+        {
+          expectedRevision: current.stateRevision,
+          authority: old.receipt,
+        },
+      ),
+    ).toThrow();
+    expect(loadState(ref)).toEqual(current);
+
     expect(releaseStateAuthority(ref, old.receipt)).toBe(false);
     expect(readStateAuthority(ref)).toEqual(successor.receipt);
     expect(releaseStateAuthority(ref, successor.receipt)).toBe(true);
+  });
+
+  it('refuses a second acquisition while the current owner is live', () => {
+    const { ref } = fixture();
+    saveState(ref, createInitialState('live owner'));
+    const owner = acquireStateAuthority({
+      ref,
+      purpose: 'resume',
+      ownerId: 'live-owner',
+      runId: 'live-run',
+      acquisitionId: 'live-acquisition',
+    });
+    expect(owner.kind).toBe('fenced');
+    if (owner.kind !== 'fenced') return;
+    expect(() => assertStateAuthority({ ref, receipt: owner.receipt })).not.toThrow();
+
+    expect(() =>
+      acquireStateAuthority({
+        ref,
+        purpose: 'resume',
+        ownerId: 'second-owner',
+        runId: 'second-run',
+        acquisitionId: 'second-acquisition',
+      }),
+    ).toThrow(/live|proven dead|claimed/u);
+    expect(releaseStateAuthority(ref, owner.receipt)).toBe(true);
   });
 
   it('does not rewrite a malformed or future state head', () => {

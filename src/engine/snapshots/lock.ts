@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 import { snapshotLockPath, snapshotsDir } from '../../core/paths.js';
 import { ensureSecureDir } from '../../lib/fs.js';
 import { isNodeError } from '../../lib/process/errors.js';
+import { canSignalProcess } from '../../lib/process/liveness.js';
 import { error } from '../../utils/error.js';
 
 const STALE_LOCK_MS = 60_000;
@@ -32,12 +33,7 @@ function writeLockPayload(lockPath: string, payload: LockPayload): void {
 }
 
 async function isProcessAlive(pid: number, startedAt: number): Promise<boolean> {
-  try {
-    process.kill(pid, 0);
-  } catch (err: unknown) {
-    if (isNodeError(err) && err.code === 'EPERM') return true;
-    return false;
-  }
+  if (!canSignalProcess(pid)) return false;
 
   try {
     const { stdout } = await execFileAsync('ps', ['-o', 'lstart=', '-p', String(pid)]);
@@ -56,8 +52,8 @@ export async function acquireSnapshotLock(
   projectDir: string,
   sessionId: string,
 ): Promise<() => Promise<void>> {
-  const lockPath = snapshotLockPath(projectDir, sessionId);
-  const dir = snapshotsDir(projectDir, sessionId);
+  const lockPath = snapshotLockPath({ projectDir, sessionId });
+  const dir = snapshotsDir({ projectDir, sessionId });
   ensureSecureDir(dir);
 
   const ownPayload: LockPayload = { pid: process.pid, startedAt: processStartMs() };

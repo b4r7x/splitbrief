@@ -320,7 +320,7 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'unexpected' }) + 
         onOutput: () => {},
       }),
     ).rejects.toMatchObject({
-      kind: 'process-output',
+      kind: 'runner-call-failed',
       message: expect.stringContaining('Overloaded: please retry'),
     });
   });
@@ -365,7 +365,7 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'unexpected' }) + 
         onCallEvent: (event) => events.push(event),
       }),
     ).rejects.toMatchObject({
-      kind: 'process-output',
+      kind: 'runner-call-failed',
       message: expect.stringContaining('without a terminal event'),
     });
 
@@ -418,7 +418,6 @@ process.stdout.write(JSON.stringify({ type: "result", result }) + "\\n");
       status: 'truncated',
       error: { code: 'stdout_line_overflow' },
     });
-    expect(errors[0]?.error.code).not.toBe('missing_terminal_event');
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'call_warning',
@@ -458,7 +457,7 @@ process.stdout.write(JSON.stringify({
         onCallEvent: (event) => events.push(event),
       }),
     ).rejects.toMatchObject({
-      kind: 'process-output',
+      kind: 'runner-call-failed',
       message: expect.stringContaining('runner output text exceeded'),
     });
 

@@ -14,7 +14,7 @@ import {
   TREES_DIR,
 } from '../paths.js';
 import { createInitialState } from '../state/machine.js';
-import { writeActive } from '../sessions/lifecycle.js';
+import { writeActive } from '../sessions/active-pointer.js';
 import { HEARTBEAT_STALENESS_MS } from '../sessions/lockfile-status.js';
 import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
 import { applyRunnerPreparationChecks, collectReadiness } from './collect.js';

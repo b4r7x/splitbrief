@@ -4,9 +4,6 @@ import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { registerInitCommand } from './init.js';
 
-vi.mock('../init-stores.js', () => ({ initStores: vi.fn(async () => {}) }));
-vi.mock('../render/app.js', () => ({ renderApp: vi.fn(async () => {}) }));
-
 describe('splitbrief init', () => {
   const wasTty = process.stdin.isTTY;
 
@@ -24,7 +21,10 @@ describe('splitbrief init', () => {
     await withTempDir('init-routes-setup', async (projectDir) => {
       const program = new Command();
       program.exitOverride();
-      registerInitCommand(program);
+      registerInitCommand(program, {
+        initStores: vi.fn(async () => {}),
+        renderApp: vi.fn(async () => {}),
+      });
 
       await program.parseAsync(['init', '--project', projectDir], { from: 'user' });
 

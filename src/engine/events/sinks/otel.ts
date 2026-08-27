@@ -12,7 +12,7 @@ import {
 import type { EngineEvent, EventSink } from '../types.js';
 import { taskIdToString } from '../../../core/schemas/task.js';
 import { totalInputTokens, totalOutputTokens } from '../../../core/schemas/tokens.js';
-import { assertNever, includes } from '../../../utils/type-guards.js';
+import { assertNever } from '../../../utils/type-guards.js';
 import { error } from '../../../utils/error.js';
 import { protectConsumerPayload } from '../../../core/consumer-policy.js';
 import { projectEngineEventForTranscriptPolicy } from '../protection/protect.js';
@@ -352,9 +352,7 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       case 'brief_generation_published':
       case 'brief_execution_permit_issued': {
         const span = phaseSpan ?? workflowSpan;
-        if (span && isBriefRecoveryEvent(event)) {
-          recordBriefRecoveryEvent(span, event, namespace);
-        }
+        if (span) recordBriefRecoveryEvent(span, event, namespace);
         return;
       }
       case 'paused_external_changes':
@@ -445,28 +443,6 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
 }
 
 function recordBriefRecoveryEvent(span: Span, event: BriefRecoveryEvent, namespace: string): void {
-  switch (event.type) {
-    case 'brief_recovery_quality_reported':
-    case 'brief_recovery_auto_repair_exhausted':
-    case 'brief_recovery_attempt_accepted':
-    case 'brief_recovery_attempt_started':
-    case 'brief_recovery_attempt_settled':
-    case 'brief_recovery_attempt_unresolved':
-    case 'brief_recovery_provider_failed':
-    case 'brief_recovery_input_queued':
-    case 'brief_recovery_input_applied':
-    case 'brief_recovery_stale_ignored':
-    case 'brief_recovery_rejected':
-    case 'brief_recovery_refused':
-    case 'brief_recovery_transition':
-    case 'brief_recovery_accepted':
-    case 'brief_generation_published':
-    case 'brief_execution_permit_issued':
-      break;
-    default:
-      assertNever(event);
-  }
-
   const attributes: Attributes = {};
   for (const [name, value] of Object.entries(event)) {
     if (!RECOVERY_ATTRIBUTE_FIELDS.has(name)) continue;
@@ -476,10 +452,6 @@ function recordBriefRecoveryEvent(span: Span, event: BriefRecoveryEvent, namespa
     }
   }
   span.addEvent(`${namespace}.${event.type}`, attributes);
-}
-
-function isBriefRecoveryEvent(event: EngineEvent): event is BriefRecoveryEvent {
-  return includes(BRIEF_RECOVERY_EVENT_TYPES, event.type);
 }
 
 function recoveryAttributeValue(value: unknown): AttributeValue | undefined {

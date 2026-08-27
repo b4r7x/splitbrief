@@ -150,7 +150,7 @@ export interface PlannerCallbacks {
   signal?: AbortSignal | undefined;
   /** Normalized backend call lifecycle events. Orchestrator callbacks bind these to the EventBus. */
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
-  /** Emitted when a parsed Task Brief contains `###` sections outside the grammar and they are dropped. */
+  /** Non-fatal Task Brief parse diagnostics: dropped out-of-grammar sections and the zero-task reason. */
   onWarning?: ((message: string) => void) | undefined;
 }
 

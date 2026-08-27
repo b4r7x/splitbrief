@@ -375,12 +375,13 @@ function seedKiloMalformed(): void {
   });
 }
 
-function createOverlayFixture(
-  overlay: OverlayType,
-  seed: OverlaySeed = EMPTY_SEED,
-  underlyingScreen: OverlayUnderlyingScreen = 'home',
-  focus?: string,
-): FixtureLifecycle {
+function createOverlayFixture(options: {
+  readonly overlay: OverlayType;
+  readonly seed?: OverlaySeed;
+  readonly underlyingScreen?: OverlayUnderlyingScreen;
+  readonly focus?: string;
+}): FixtureLifecycle {
+  const { overlay, seed = EMPTY_SEED, underlyingScreen = 'home', focus } = options;
   let stopReseed: (() => void) | undefined;
   return {
     setup: (context) => {
@@ -449,134 +450,150 @@ const PLANNER_HIGH_EFFORT = {
 } as const;
 
 const createHelpFixture: FixtureFactory = () =>
-  createOverlayFixture('help', EMPTY_SEED, 'workflow');
+  createOverlayFixture({ overlay: 'help', underlyingScreen: 'workflow' });
 const createPaletteFixture: FixtureFactory = () =>
-  createOverlayFixture('command-palette', EMPTY_SEED, 'workflow');
-const createSkillsFixture: FixtureFactory = () => createOverlayFixture('skills', seedSkills);
-const createSettingsFixture: FixtureFactory = () => createOverlayFixture('settings');
+  createOverlayFixture({ overlay: 'command-palette', underlyingScreen: 'workflow' });
+const createSkillsFixture: FixtureFactory = () =>
+  createOverlayFixture({ overlay: 'skills', seed: seedSkills });
+const createSettingsFixture: FixtureFactory = () => createOverlayFixture({ overlay: 'settings' });
 const createSettingsCrewFullFixture: FixtureFactory = () =>
-  createOverlayFixture(
-    'settings',
-    seedConfig({
+  createOverlayFixture({
+    overlay: 'settings',
+    seed: seedConfig({
       planner: PLANNER_HIGH_EFFORT,
       implementer: BUILD_ANTHROPIC_SEAT,
       reviewer: REVIEWER_SEAT,
       escalation: ESCALATION_SEAT,
     }),
-    'home',
-    'escalate',
-  );
+    focus: 'escalate',
+  });
 const createSettingsInheritedEffortFixture: FixtureFactory = () =>
-  createOverlayFixture(
-    'settings',
-    seedConfig({ planner: PLANNER_HIGH_EFFORT }),
-    'home',
-    'effort:review',
-  );
+  createOverlayFixture({
+    overlay: 'settings',
+    seed: seedConfig({ planner: PLANNER_HIGH_EFFORT }),
+    focus: 'effort:review',
+  });
 const createSettingsFloorFullFixture: FixtureFactory = () =>
-  createOverlayFixture(
-    'settings',
-    seedConfig({
+  createOverlayFixture({
+    overlay: 'settings',
+    seed: seedConfig({
       planner: PLANNER_HIGH_EFFORT,
       reviewer: REVIEWER_API_SEAT,
       escalation: ESCALATION_SEAT,
     }),
-    'home',
-    'escalate',
-  );
+    focus: 'escalate',
+  });
 const createSettingsFilteredFixture: FixtureFactory = () =>
-  createOverlayFixture('settings', EMPTY_SEED, 'home', 'filter:temp');
+  createOverlayFixture({ overlay: 'settings', focus: 'filter:temp' });
 const createSettingsFilterPlanFixture: FixtureFactory = () =>
-  createOverlayFixture('settings', EMPTY_SEED, 'home', 'filter:plan');
-const createModeSelectorFixture: FixtureFactory = () => createOverlayFixture('mode-selector');
-const createPlannerPickerFixture: FixtureFactory = () => createOverlayFixture('planner-picker');
+  createOverlayFixture({ overlay: 'settings', focus: 'filter:plan' });
+const createModeSelectorFixture: FixtureFactory = () =>
+  createOverlayFixture({ overlay: 'mode-selector' });
+const createPlannerPickerFixture: FixtureFactory = () =>
+  createOverlayFixture({ overlay: 'planner-picker' });
 const createPlannerPickerCatalogFixture: FixtureFactory = () =>
-  createOverlayFixture('planner-picker', seedOpencodeCatalog, 'home', OPENCODE_FOCUS);
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: seedOpencodeCatalog,
+    focus: OPENCODE_FOCUS,
+  });
 const createProviderExpandedReadFixture: FixtureFactory = () =>
-  createOverlayFixture(
-    'planner-picker',
-    () => {
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
       seedProviderAuth('read');
       pickerViewStore.expand(OPENCODE_ROUTED_MODEL);
     },
-    'home',
-    OPENCODE_FOCUS,
-  );
+    focus: OPENCODE_FOCUS,
+  });
 const createProviderExpandedEmptyFixture: FixtureFactory = () =>
-  createOverlayFixture(
-    'planner-picker',
-    () => {
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
       seedProviderAuth('empty');
       pickerViewStore.expand(OPENCODE_ROUTED_MODEL);
     },
-    'home',
-    OPENCODE_FOCUS,
-  );
+    focus: OPENCODE_FOCUS,
+  });
 const createProviderExpandedUnreadableFixture: FixtureFactory = () =>
-  createOverlayFixture(
-    'planner-picker',
-    () => {
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
       seedProviderAuth('unreadable', 'parse-failure');
       pickerViewStore.expand(OPENCODE_ROUTED_MODEL);
     },
-    'home',
-    OPENCODE_FOCUS,
-  );
+    focus: OPENCODE_FOCUS,
+  });
 const createRoutesUncheckedFixture: FixtureFactory = () =>
-  createOverlayFixture(
-    'planner-picker',
-    () => {
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
       seedAiderMultiRoute();
       pickerViewStore.expand(AIDER_ROUTED_MODEL);
     },
-    'home',
-    'tool:aider',
-  );
+    focus: 'tool:aider',
+  });
 const createPlannerPickerColdFixture: FixtureFactory = () =>
-  createOverlayFixture('planner-picker', seedModelsDevLane('uninitialized'));
+  createOverlayFixture({ overlay: 'planner-picker', seed: seedModelsDevLane('uninitialized') });
 const createPlannerPickerNoListingFixture: FixtureFactory = () =>
-  createOverlayFixture('planner-picker', seedClaudeCodeUnsupported);
+  createOverlayFixture({ overlay: 'planner-picker', seed: seedClaudeCodeUnsupported });
 const createPlannerPickerKiloFixture: FixtureFactory = () =>
-  createOverlayFixture('planner-picker', seedKiloConfirmed, 'home', 'tool:kilo-code');
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: seedKiloConfirmed,
+    focus: 'tool:kilo-code',
+  });
 const createPlannerPickerMalformedFixture: FixtureFactory = () =>
-  createOverlayFixture('planner-picker', seedKiloMalformed, 'home', 'tool:kilo-code');
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: seedKiloMalformed,
+    focus: 'tool:kilo-code',
+  });
 const createContractChoiceFixture: FixtureFactory = () =>
-  createOverlayFixture('planner-picker', () => {
-    seedConfig({ planner: { kind: 'shell', command: 'my-planner --json' } })();
-    pickerViewStore.open({ kind: 'custom-command-contract' });
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedConfig({ planner: { kind: 'shell', command: 'my-planner --json' } })();
+      pickerViewStore.open({ kind: 'custom-command-contract' });
+    },
   });
 const createCustomCommandFixture: FixtureFactory = () =>
-  createOverlayFixture('planner-picker', () =>
-    pickerViewStore.open({ kind: 'custom-command', intendedKind: 'shell' }),
-  );
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => pickerViewStore.open({ kind: 'custom-command', intendedKind: 'shell' }),
+  });
 const createCustomModelFixture: FixtureFactory = () =>
-  createOverlayFixture(
-    'planner-picker',
-    () => pickerViewStore.open({ kind: 'custom-model' }),
-    'home',
-    'tool:ollama',
-  );
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => pickerViewStore.open({ kind: 'custom-model' }),
+    focus: 'tool:ollama',
+  });
 const createApiKeyFixture: FixtureFactory = () =>
-  createOverlayFixture(
-    'planner-picker',
-    () => pickerViewStore.open({ kind: 'provider-auth' }),
-    'home',
-    'tool:deepseek',
-  );
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => pickerViewStore.open({ kind: 'provider-auth' }),
+    focus: 'tool:deepseek',
+  });
 const createImplementerPickerFixture: FixtureFactory = () =>
-  createOverlayFixture('implementer-picker');
-const createReviewerPickerFixture: FixtureFactory = () => createOverlayFixture('reviewer-picker');
+  createOverlayFixture({ overlay: 'implementer-picker' });
+const createReviewerPickerFixture: FixtureFactory = () =>
+  createOverlayFixture({ overlay: 'reviewer-picker' });
 const createReviewerPickerToolFixture: FixtureFactory = () =>
-  createOverlayFixture('reviewer-picker', EMPTY_SEED, 'home', 'tool:codex');
+  createOverlayFixture({ overlay: 'reviewer-picker', focus: 'tool:codex' });
 const createEscalationPickerFixture: FixtureFactory = () =>
-  createOverlayFixture('escalation-picker');
+  createOverlayFixture({ overlay: 'escalation-picker' });
 const createEscalationPickerProviderFixture: FixtureFactory = () =>
-  createOverlayFixture('escalation-picker', EMPTY_SEED, 'home', 'tool:deepseek');
-const createSessionsFixture: FixtureFactory = () => createOverlayFixture('sessions', seedSessions);
+  createOverlayFixture({ overlay: 'escalation-picker', focus: 'tool:deepseek' });
+const createSessionsFixture: FixtureFactory = () =>
+  createOverlayFixture({ overlay: 'sessions', seed: seedSessions });
 const createEditorFixture: FixtureFactory = () =>
-  createOverlayFixture('editor', seedEditor, 'workflow');
+  createOverlayFixture({ overlay: 'editor', seed: seedEditor, underlyingScreen: 'workflow' });
 const createCostDrilldownFixture: FixtureFactory = () =>
-  createOverlayFixture('cost-drilldown', seedCostBreakdown, 'workflow');
+  createOverlayFixture({
+    overlay: 'cost-drilldown',
+    seed: seedCostBreakdown,
+    underlyingScreen: 'workflow',
+  });
 
 export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-help'), createHelpFixture],

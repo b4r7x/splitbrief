@@ -1,10 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import {
-  parseTaskBlock,
-  readTaskFrontmatter,
-  splitTaskBlocks,
-  unwrapFencedTaskDocument,
-} from './blocks.js';
+import { parseTaskBlock, splitTaskBlocks, unwrapFencedTaskDocument } from './blocks.js';
+import { readTaskFrontmatter } from './frontmatter.js';
 
 function taskBlock(id: string): string {
   return `---

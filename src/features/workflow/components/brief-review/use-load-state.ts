@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { dirname } from 'node:path';
 import type { Task } from '../../../../core/schemas/task.js';
 import type { PlanTaskReviewMetadata } from '../../../../core/plan-review/types.js';
-import type { BriefRecoveryProjectionV1 } from '../../../../core/schemas/brief-recovery.js';
+import type { BriefRecoveryProjectionV1 } from '../../../../core/schemas/brief-recovery/document.js';
 import type { BriefQualityReport } from '../../../../engine/spec/brief-quality.js';
 import type { BriefReadinessGateReport } from '../../../../engine/orchestrator/planning/brief-readiness-gate.js';
 import { briefQualityReportFromProjection } from '../../../../engine/orchestrator/planning/brief-quality-preparation.js';
@@ -48,7 +48,12 @@ const EMPTY_BRIEF_DATA: LoadingBriefData = {
   recovery: null,
 };
 
-export function useBriefData(filePath: string): BriefData {
+export type BriefDataLoader = typeof loadBriefReviewData;
+
+export function useBriefData(
+  filePath: string,
+  load: BriefDataLoader = loadBriefReviewData,
+): BriefData {
   const [loaded, setLoaded] = useState<LoadedBriefData | null>(null);
   const revision = reviewStore.use((state) => state.revision);
   const ownerToken = reviewStore.use((state) => state.ownerToken);
@@ -68,8 +73,8 @@ export function useBriefData(filePath: string): BriefData {
     };
     if (loadStillCurrent()) reviewStore.setLoadError(null);
 
-    async function load() {
-      const result = await loadBriefReviewData({
+    async function run() {
+      const result = await load({
         filePath,
         sessionDirPath: dirname(filePath),
         signal,
@@ -91,7 +96,7 @@ export function useBriefData(filePath: string): BriefData {
       reviewStore.setLoadError(null);
     }
 
-    load().catch((err) => {
+    run().catch((err) => {
       if (!loadStillCurrent()) return;
       setLoaded(null);
       reviewStore.setLoadError(toErrorMessage(err));
@@ -99,7 +104,7 @@ export function useBriefData(filePath: string): BriefData {
     return () => {
       controller.abort();
     };
-  }, [filePath, ownerToken, revision]);
+  }, [filePath, ownerToken, revision, load]);
 
   return loaded?.filePath === filePath &&
     loaded.ownerToken === ownerToken &&

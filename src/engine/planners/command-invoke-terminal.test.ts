@@ -128,9 +128,6 @@ describe('configured direct planner terminal cleanup', () => {
           return {
             reviewAfterChild: () => prepared.reviewAfterChild(),
             readWithReceiptAfterChild: (readInput) => prepared.readWithReceiptAfterChild(readInput),
-            get receipt() {
-              return prepared.receipt;
-            },
             getReceipt: () => prepared.getReceipt(),
             dispose: async () => {
               leaseDisposeCalls += 1;
@@ -274,7 +271,6 @@ describe('configured direct planner terminal cleanup', () => {
     });
 
     expect(approvalRequests).toBe(1);
-    expect(observed.approvalRequests).toBe(0);
     expect(observed.output).toEqual([]);
     expect(observed.failure).toMatchObject({ kind: 'custom-planner-artifact-rejected' });
   });

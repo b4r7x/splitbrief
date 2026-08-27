@@ -7,7 +7,8 @@ import { runMultiPhasePlanning } from './multi-phase.js';
 import { createPlannerCallContext } from './call-context.js';
 import { createTaskDispatchClaimPort, createTaskDispatchLedger } from '../calls/dispatch-ledger.js';
 import { materializeTaskCompilationProgram } from '../spec/tasks/compiler.js';
-import { COMPILER_SUPPORT_TABLE } from '../runners/compiler-capability.js';
+import { admitCompilerCapability } from '../runners/compiler-capability.js';
+import { capabilityTuple } from '#testing/helpers/factories/compiler-capability.js';
 import {
   TASK_BRIEF_COMPILER_POLICY,
   TaskCompilationBatchIdSchema,
@@ -104,11 +105,15 @@ describe('legacy agent planner compiler admission', () => {
     });
   });
 
-  it('reads the typed-unsupported agent row from the capability registry', () => {
-    const row = COMPILER_SUPPORT_TABLE.agent;
-    expect(row.state).toBe('unsupported');
-    expect(row.transports).toEqual([]);
-    expect(row.unsupportedReason).toContain('exact lease ownership');
+  it('refuses capability admission for the agent backend with the registry reason', () => {
+    const admission = admitCompilerCapability({ ...capabilityTuple('opencode'), backend: 'agent' });
+
+    expect(admission.kind).toBe('refused');
+    if (admission.kind !== 'refused') return;
+    expect(admission.failure.code).toBe('task_compiler_capability_unsupported');
+    expect(admission.failure.message).toContain(
+      'legacy agent planner ambient session-file behavior violates exact lease ownership',
+    );
   });
 
   it('refuses compiler batch dispatch with a typed capability failure and zero batch spawns', async () => {
@@ -268,7 +273,7 @@ describe('legacy agent planner compiler admission', () => {
 });
 
 describe('legacy agent planner attempt identity on refusal', () => {
-  it('carries the claimed batch attempt identity without claiming usage', async () => {
+  it('carries the claimed batch attempt identity on refusal', async () => {
     const projectDir = createTempDir('agent-admission-identity');
     const attemptId = createTaskCompilationAttemptId();
     const callContext = {

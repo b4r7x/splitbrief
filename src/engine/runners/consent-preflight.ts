@@ -1,9 +1,7 @@
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
-import {
-  findConfiguredCustomCommand,
-  inlineRunnerCommand,
-} from '../../core/config/custom-commands.js';
+import { inlineRunnerCommand } from '../../core/config/custom-commands.js';
+import { findConfiguredCustomCommand } from '../../core/config/custom-command-catalog.js';
 import type { ReadinessCheck } from '../../core/readiness/types.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
@@ -15,7 +13,8 @@ import {
   type ConfiguredCustomRunner,
 } from './custom-trust.js';
 import { inlineRunnerRefusal } from './prepare-execution.js';
-import { admitCustomRunner, checkRunnerTrust } from './trust.js';
+import { admitCustomRunner } from './custom-launchability.js';
+import { checkRunnerTrust } from './trust.js';
 
 type CommandRunner = Extract<PlannerConfig | ImplementerConfig, { kind: 'shell' | 'agent' }>;
 

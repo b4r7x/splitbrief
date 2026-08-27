@@ -27,21 +27,29 @@ function emptyStopStream(): MockStream {
   })();
 }
 
-describe('streamCompletion request body', () => {
-  it('uses max_completion_tokens for direct OpenAI o-series models', async () => {
-    let capturedBody: CreateBody | undefined;
-    const client: MockClient = {
-      chat: {
-        completions: {
-          create: async (body) => {
-            capturedBody = body;
-            return emptyStopStream();
-          },
+async function captureBody(
+  model: string,
+  messages: Parameters<typeof streamCompletion>[2],
+  options: Parameters<typeof streamCompletion>[3],
+): Promise<CreateBody | undefined> {
+  let capturedBody: CreateBody | undefined;
+  const client: MockClient = {
+    chat: {
+      completions: {
+        create: async (body) => {
+          capturedBody = body;
+          return emptyStopStream();
         },
       },
-    };
+    },
+  };
+  await streamCompletion(client, model, messages, options);
+  return capturedBody;
+}
 
-    await streamCompletion(client, 'o3', [{ role: 'user', content: 'hi' }], {
+describe('streamCompletion request body', () => {
+  it('uses max_completion_tokens for direct OpenAI o-series models', async () => {
+    const capturedBody = await captureBody('o3', [{ role: 'user', content: 'hi' }], {
       temperature: 0.2,
       onProgress: () => {},
       maxTokens: 4096,
@@ -53,19 +61,7 @@ describe('streamCompletion request body', () => {
   });
 
   it('keeps max_tokens for non-o-series OpenAI models', async () => {
-    let capturedBody: CreateBody | undefined;
-    const client: MockClient = {
-      chat: {
-        completions: {
-          create: async (body) => {
-            capturedBody = body;
-            return emptyStopStream();
-          },
-        },
-      },
-    };
-
-    await streamCompletion(client, 'gpt-4o', [{ role: 'user', content: 'hi' }], {
+    const capturedBody = await captureBody('gpt-4o', [{ role: 'user', content: 'hi' }], {
       temperature: 0.2,
       onProgress: () => {},
       maxTokens: 4096,
@@ -77,19 +73,7 @@ describe('streamCompletion request body', () => {
   });
 
   it('routes the gpt-5 family through max_completion_tokens and omits temperature', async () => {
-    let capturedBody: CreateBody | undefined;
-    const client: MockClient = {
-      chat: {
-        completions: {
-          create: async (body) => {
-            capturedBody = body;
-            return emptyStopStream();
-          },
-        },
-      },
-    };
-
-    await streamCompletion(client, 'gpt-5', [{ role: 'user', content: 'hi' }], {
+    const capturedBody = await captureBody('gpt-5', [{ role: 'user', content: 'hi' }], {
       temperature: 0.7,
       onProgress: () => {},
       maxTokens: 4096,
@@ -104,19 +88,7 @@ describe('streamCompletion request body', () => {
   });
 
   it('clamps xhigh reasoning_effort to high for direct OpenAI reasoning models', async () => {
-    let capturedBody: CreateBody | undefined;
-    const client: MockClient = {
-      chat: {
-        completions: {
-          create: async (body) => {
-            capturedBody = body;
-            return emptyStopStream();
-          },
-        },
-      },
-    };
-
-    await streamCompletion(client, 'o3', [{ role: 'user', content: 'hi' }], {
+    const capturedBody = await captureBody('o3', [{ role: 'user', content: 'hi' }], {
       temperature: 0.2,
       onProgress: () => {},
       effort: 'xhigh',
@@ -127,19 +99,7 @@ describe('streamCompletion request body', () => {
   });
 
   it('keeps temperature and verbatim effort for non-reasoning OpenAI models', async () => {
-    let capturedBody: CreateBody | undefined;
-    const client: MockClient = {
-      chat: {
-        completions: {
-          create: async (body) => {
-            capturedBody = body;
-            return emptyStopStream();
-          },
-        },
-      },
-    };
-
-    await streamCompletion(client, 'gpt-4o', [{ role: 'user', content: 'hi' }], {
+    const capturedBody = await captureBody('gpt-4o', [{ role: 'user', content: 'hi' }], {
       temperature: 0.2,
       onProgress: () => {},
       endpoint: { provider: 'openai', apiBase: 'https://api.openai.com/v1' },
@@ -149,20 +109,7 @@ describe('streamCompletion request body', () => {
   });
 
   it('uses developer messages for direct OpenAI reasoning model instructions', async () => {
-    let capturedBody: CreateBody | undefined;
-    const client: MockClient = {
-      chat: {
-        completions: {
-          create: async (body) => {
-            capturedBody = body;
-            return emptyStopStream();
-          },
-        },
-      },
-    };
-
-    await streamCompletion(
-      client,
+    const capturedBody = await captureBody(
       'o3',
       [
         { role: 'system', content: 'Follow the task brief.' },

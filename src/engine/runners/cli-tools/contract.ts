@@ -185,7 +185,6 @@ export function admitCliRoleVector(input: {
 export type CliTerminalInput = Readonly<{
   outputContract: CliOutputContract;
   events: readonly CliProtocolEvent[];
-  stdout: string;
   stderr: string;
   exitCode: number | null;
   signal: string | null;
@@ -201,10 +200,10 @@ type CliAdapterContract<
   promptTransport: CliPromptTransport;
   baseArgs: (input: BuildArgsInput) => readonly string[];
   buildArgs: (input: BuildArgsInput) => readonly string[];
-  validateArgs: (
-    invocationArgs: readonly string[],
-    baseArgs: readonly string[],
-  ) => CliArgumentValidation;
+  validateArgs: (input: {
+    invocationArgs: readonly string[];
+    baseArgs: readonly string[];
+  }) => CliArgumentValidation;
   environment: Readonly<Record<string, string>>;
   outputContract: CliOutputContract;
   parse: (line: string) => readonly CliProtocolEvent[];
@@ -251,10 +250,10 @@ export type CliProcessAdapter = Readonly<{
     auth: Readonly<{ channels: readonly Readonly<{ env: readonly string[] }>[] }>;
   }>;
   promptTransport: CliPromptTransport;
-  validateArgs: (
-    invocationArgs: readonly string[],
-    baseArgs: readonly string[],
-  ) => CliArgumentValidation;
+  validateArgs: (input: {
+    invocationArgs: readonly string[];
+    baseArgs: readonly string[];
+  }) => CliArgumentValidation;
   outputContract: CliOutputContract;
   parse: (line: string) => readonly CliProtocolEvent[];
   terminal: (input: CliTerminalInput) => CliProtocolTerminalEvent;

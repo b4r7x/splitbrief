@@ -133,7 +133,12 @@ export async function handleRetryAndEscalation(
     }),
   };
 
-  const retries = await runLocalRetries(ctx, task, currentState, initialError);
+  const retries = await runLocalRetries({
+    ctx,
+    task,
+    state: currentState,
+    lastError: initialError,
+  });
   if (retries.result) return { state: retries.state, result: retries.result };
 
   if (ctx.signal?.aborted)

@@ -2,6 +2,7 @@ import { FrameArtifactIdentitySchema, frameArtifactKey } from '../contracts/arti
 import { CellGridSchema } from '../contracts/cells.js';
 import { FailureSchema, type Failure } from '../contracts/failures.js';
 import { safeId, type RelativeArtifactPath } from '../contracts/identifiers.js';
+import { PersistedDiagnosticTextSchema } from '../contracts/persisted-data.js';
 import type { TerminalProfile, Warning } from '../contracts/manifest-fields.js';
 import {
   CaptureSelectionSchema,
@@ -10,6 +11,7 @@ import {
   type CaptureSelection,
   type CaptureTarget,
 } from '../contracts/selection.js';
+import { assertNever } from '../../../src/utils/type-guards.js';
 import { findVisualScenario, listVisualScenarios } from '../catalog.js';
 import { parseTerminalFrame } from '../terminal/parse.js';
 import { writeArtifactBundle, type WriteArtifactBundleOptions } from '../artifacts/write.js';
@@ -43,6 +45,8 @@ interface CaptureAttempt {
 }
 
 type CapturePhase = 'fixture' | 'checkpoint' | 'terminal';
+
+const CaptureFailureMessageSchema = PersistedDiagnosticTextSchema.min(1).max(2_048);
 
 export async function captureGallery(
   options: CaptureGalleryOptions,
@@ -91,11 +95,13 @@ export async function captureGallery(
             await writer(file);
           },
         });
-      } catch {
+      } catch (error) {
         const selectionIdentity =
           activeWritePath ??
           captureAccountingKey(targets[0]?.provenance ?? firstRequest.provenance);
-        throw new Error(`Visual capture publication failed while handling ${selectionIdentity}`);
+        throw new Error(`Visual capture publication failed while handling ${selectionIdentity}`, {
+          cause: error,
+        });
       }
     },
   );
@@ -181,15 +187,19 @@ async function captureTarget(options: {
       throw new Error('Parsed terminal frame does not match its selected capture identity');
     }
     capture = { scenario, checkpoint, grid };
-  } catch {
-    failure = createCaptureFailure({ stage: phase, provenance: target.provenance });
+  } catch (error) {
+    failure = createCaptureFailure({
+      stage: phase,
+      provenance: target.provenance,
+      detail: error instanceof Error ? error.message : String(error),
+    });
   } finally {
     if (handle !== undefined) {
       try {
         await handle.unmount();
       } catch {
         capture = null;
-        failure = createCleanupFailure(target.provenance);
+        if (failure === null) failure = createCleanupFailure(target.provenance);
       }
     }
   }
@@ -200,11 +210,12 @@ async function captureTarget(options: {
 function createCaptureFailure(options: {
   readonly stage: CapturePhase;
   readonly provenance: ArtifactProvenance;
+  readonly detail?: string;
 }): Failure {
   const fields = {
     stage: options.stage,
     code: safeId(`${options.stage}-capture-failed`),
-    message: captureFailureMessage(options.stage),
+    message: captureFailureMessage(options.stage, options.detail),
     provenance: options.provenance,
   };
   return FailureSchema.parse(fields);
@@ -219,7 +230,15 @@ function createCleanupFailure(provenance: ArtifactProvenance): Failure {
   });
 }
 
-function captureFailureMessage(stage: CapturePhase): string {
+function captureFailureMessage(stage: CapturePhase, detail?: string): string {
+  const base = captureStageMessage(stage);
+  if (detail === undefined || detail.length === 0) return base;
+  const candidate = `${base}: ${detail}`.slice(0, 2_048);
+  const parsed = CaptureFailureMessageSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : base;
+}
+
+function captureStageMessage(stage: CapturePhase): string {
   switch (stage) {
     case 'fixture':
       return 'Fixture mount failed for the selected scenario and viewport';
@@ -227,10 +246,8 @@ function captureFailureMessage(stage: CapturePhase): string {
       return 'Checkpoint was not reached for the selected scenario and viewport';
     case 'terminal':
       return 'Terminal parsing failed for the selected scenario and viewport';
-    default: {
-      const unhandled: never = stage;
-      return unhandled;
-    }
+    default:
+      return assertNever(stage);
   }
 }
 

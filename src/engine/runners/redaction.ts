@@ -3,7 +3,7 @@ import { isRecord } from '../../utils/type-guards.js';
 import {
   createSanitizedChildEnv,
   isSafePreservedChildEnvKey,
-} from '../../lib/process/spawn/lifecycle.js';
+} from '../../lib/process/spawn/child-env.js';
 import type { ParsedLine, ParsedWarningInfo, ToolUseDeltaInfo, ToolUseInfo } from './types.js';
 
 const CUSTOM_RUNNER_ENVIRONMENT_MAX_BYTES = 256 * 1024;

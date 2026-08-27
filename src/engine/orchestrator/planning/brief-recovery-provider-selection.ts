@@ -4,7 +4,7 @@ import type {
   RecoveryProviderAggregateResult,
   RecoveryProviderRequest,
   RecoveryProviderResult,
-} from '../../../core/schemas/brief-recovery.js';
+} from '../../../core/schemas/brief-recovery/provider-call.js';
 import { PLAN_FILE, SPEC_FILE } from '../../../core/paths.js';
 import { readSpecFile } from '../../../core/paths-io.js';
 import {

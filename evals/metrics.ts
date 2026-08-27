@@ -191,14 +191,18 @@ function collectOutcomeMetrics(
 }
 
 export function collectRunMetrics(
-  scenarioId: string,
-  mode: 'baseline' | 'routed',
-  summary: Summary,
-  events: EngineEvent[],
-  qualityResults: QualityCheckResult[],
-  durationMs: number,
-  sessionArtifactsDir: string | null,
+  input: Readonly<{
+    scenarioId: string;
+    mode: 'baseline' | 'routed';
+    summary: Summary;
+    events: EngineEvent[];
+    qualityResults: QualityCheckResult[];
+    durationMs: number;
+    sessionArtifactsDir: string | null;
+  }>,
 ): RunMetrics {
+  const { scenarioId, mode, summary, events, qualityResults, durationMs, sessionArtifactsDir } =
+    input;
   const retryEvents = events.filter((event) => event.type === 'task_retry');
   const escalateEvents = events.filter((event) => event.type === 'escalate');
   return {
@@ -240,11 +244,14 @@ export function collectGreenRunAggregates(comparisons: ScenarioComparison[]): Gr
 }
 
 export function compareScenario(
-  scenarioId: string,
-  scenarioName: string,
-  baseline: RunMetrics,
-  routed: RunMetrics,
+  input: Readonly<{
+    scenarioId: string;
+    scenarioName: string;
+    baseline: RunMetrics;
+    routed: RunMetrics;
+  }>,
 ): ScenarioComparison {
+  const { scenarioId, scenarioName, baseline, routed } = input;
   const baselineCost = baseline.cost.estimatedCostUSD;
   const routedCost = routed.cost.estimatedCostUSD;
   const savings = baselineCost - routedCost;

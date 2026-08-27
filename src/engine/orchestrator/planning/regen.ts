@@ -24,7 +24,7 @@ import {
 } from '../queue/drain.js';
 import { formatDrainedMessages } from '../queue/prompt.js';
 import { readPersistedTasks } from './io.js';
-import { composeSteeredPrompt } from '../../implementers/types.js';
+import { composeSteeredPrompt } from '../../spec/prompts/steered-prompt.js';
 import { withContinuationLoop } from '../continuation.js';
 
 type RegenerateFromFeedbackCtx = {
@@ -94,12 +94,12 @@ async function regenerateFromFeedback(
 
     if (kind === 'plan') {
       const projectContext = await buildProjectContextMarkdown(projectDir);
-      const basePrompt = buildPlanPrompt(
-        { content: spec, hasClarifications: spec.includes('## Clarifications') },
+      const basePrompt = buildPlanPrompt({
+        spec: { content: spec, hasClarifications: spec.includes('## Clarifications') },
         projectContext,
         skillsContext,
         languageContext,
-      );
+      });
       const result = await runRegenerationReview({
         kind,
         ctx,
@@ -118,7 +118,7 @@ async function regenerateFromFeedback(
       (message) => publishWarning({ bus, phase: state.phase, message }),
     );
     const currentTasks = persisted.ok ? persisted.tasks : state.tasks;
-    const basePrompt = buildTasksPrompt(spec, plan, languageContext, currentTasks);
+    const basePrompt = buildTasksPrompt({ spec, plan, languageContext, currentTasks });
     const result = await runRegenerationReview({
       kind,
       ctx,

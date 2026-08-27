@@ -12,7 +12,7 @@ import {
   withContinuationLoop,
   type ContinuationLoopCtx,
 } from './continuation.js';
-import { composeSteeredPrompt } from '../implementers/types.js';
+import { composeSteeredPrompt } from '../spec/prompts/steered-prompt.js';
 import { createEventBus } from '../events/bus.js';
 import { processError } from '../../lib/process/errors.js';
 import type { WorkflowSinks } from './types.js';

@@ -217,7 +217,6 @@ describe('runInstantPlanning', () => {
     });
 
     expect(result.disposition).toBe('parked');
-    expect(result.disposition).toBe('parked');
     expect(instantPlan).toHaveBeenCalledWith(
       expect.objectContaining({
         feature: expect.stringContaining(rawFeedback),
@@ -610,7 +609,7 @@ describe('runInstantPlanning', () => {
       feature: 'feature',
     });
 
-    expectBriefQualityBlocked(result, projectDir, sessionId, events);
+    expectBriefQualityBlocked({ result, ref: { projectDir, sessionId }, events });
   });
 
   it('strips markers from published text but keeps raw transcript', async () => {

@@ -22,10 +22,11 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
+import { briefGenerationRefFor } from '../planning/brief-generation-ref.js';
 import { planningResultForState } from '../planning/handoff.js';
 import { readWorkflowStateHead } from '../state-ops.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
-import { attachWorkflowAuthority } from './init.js';
+import { attachWorkflowAuthority } from './authority.js';
 import { runTasksAndReview } from './task-execution.js';
 
 type Fixture = {
@@ -107,22 +108,11 @@ function makeFixture(options: { warning?: boolean } = {}): Fixture {
     },
   };
   const authorityRevision = base.authorityRevision ?? 1;
-  const generation: BriefGenerationRef = {
-    generationId: `brief-${recovery.epochId}-${sha256Hex(JSON.stringify(persistedTasks)).slice(0, 16)}`,
-    manifestDigest: sha256Hex(
-      JSON.stringify(
-        persistedTasks.map((currentTask) => ({
-          id: currentTask.id,
-          file: currentTask.file,
-          action: currentTask.action,
-          dependsOn: currentTask.dependsOn,
-        })),
-      ),
-    ),
-    tasksDigest: sha256Hex(JSON.stringify(persistedTasks)),
+  const generation: BriefGenerationRef = briefGenerationRefFor({
+    epochId: recovery.epochId,
+    tasks: persistedTasks,
     qualityDigest,
-    programId: null,
-  };
+  });
   const permit: TaskExecutionPermit = {
     version: 1,
     epochId: recovery.epochId,

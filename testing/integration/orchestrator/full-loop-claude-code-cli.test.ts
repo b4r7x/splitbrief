@@ -12,10 +12,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { seedValidationProject } from '#testing/helpers/validation-project.js';
 import { executableReceipt } from '#testing/helpers/custom-command-based.js';
-import {
-  parsePreparedConfig,
-  type PreparedExecution,
-} from '../../../src/engine/runners/prepared-execution.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
 
 const dirs: string[] = [];
@@ -126,29 +123,27 @@ describe('full workflow Claude Code CLI implementer', { timeout: 90_000 }, () =>
     });
 
     const feature = 'run a Claude Code CLI implementer loop';
-    const config = parsePreparedConfig(
-      makeConfig({
-        implementer: {
-          kind: 'cli',
-          tool: 'claude-code',
-          model: 'claude-sonnet-4-20250514',
-          contextLength: 4096,
-          temperature: 0.1,
-        },
-        validation: {
-          typecheck: false,
-          lint: false,
-          test: true,
-          testCommand: 'node validate.mjs',
-        },
-        workflow: {
-          mode: 'standard',
-          approve: 'none',
-          maxRetries: 1,
-          persistTranscript: true,
-        },
-      }),
-    );
+    const config = makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'claude-sonnet-4-20250514',
+        contextLength: 4096,
+        temperature: 0.1,
+      },
+      validation: {
+        typecheck: false,
+        lint: false,
+        test: true,
+        testCommand: 'node validate.mjs',
+      },
+      workflow: {
+        mode: 'standard',
+        approve: 'none',
+        maxRetries: 1,
+        persistTranscript: true,
+      },
+    });
     const preparationId = 'full-loop-claude-code-preparation';
     const implementerResolution = await resolveCustomExecutable({ command: 'claude', projectDir });
     if (implementerResolution.kind !== 'resolved') {
@@ -159,20 +154,14 @@ describe('full workflow Claude Code CLI implementer', { timeout: 90_000 }, () =>
       sessionId,
       generation: '5c555555-5555-4555-8555-555555555555',
     };
-    const prepared: PreparedExecution = {
-      purpose: 'new-workflow',
+    const prepared = makePreparedExecution({
+      projectDir,
+      sessionId,
+      feature,
       config,
       preparationId,
-      report: {
-        generatedAt: '2026-08-04T00:00:00.000Z',
-        projectDir,
-        status: 'ready',
-        counts: { ok: 2, info: 0, warning: 0, blocker: 0 },
-        nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
-        sections: [],
-        metadata: {},
-      },
-      gates: [
+      active,
+      gates: () => [
         {
           kind: 'cli',
           slot: { role: 'planner' },
@@ -188,9 +177,7 @@ describe('full workflow Claude Code CLI implementer', { timeout: 90_000 }, () =>
           executable: implementerResolution.executable,
         },
       ],
-      session: { kind: 'existing', ref: { projectDir, sessionId }, active },
-      runtime: { feature, allowRepoRunners: false, allowHooks: false },
-    };
+    });
 
     const summary = await runWorkflow({
       prepared,

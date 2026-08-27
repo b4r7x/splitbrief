@@ -23,11 +23,41 @@ import type { ImplementerFactoryOptions } from '../implementers/types.js';
 import { resolveConfiguredCustomRunner } from './configured-custom.js';
 import { prepareCustomRunnerAdmission } from './custom-admission.js';
 import { customRunnerSecurityPosture } from './custom-trust.js';
-import { customRunnerAdmissionError } from './trust.js';
+import { customRunnerAdmissionError } from './custom-launchability.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
+import { prepareExecution } from './prepare-execution.js';
+import type { ReadinessReport } from '../../core/readiness/types.js';
 
 type CustomRunnerRole = 'planner' | 'implementer';
 type CustomCommandContract = 'output' | 'direct';
+
+const API_PLANNER = {
+  kind: 'api',
+  provider: 'anthropic',
+  service: 'anthropic',
+  offering: 'payg',
+  apiBase: 'https://api.anthropic.com',
+  model: 'claude-3-7-sonnet-latest',
+  apiKey: 'test-key',
+} as const;
+
+function readyReport(project: string): ReadinessReport {
+  return {
+    generatedAt: '2026-08-03T20:00:00.000Z',
+    projectDir: project,
+    status: 'ready',
+    counts: { ok: 1, info: 0, warning: 0, blocker: 0 },
+    nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+    sections: [
+      {
+        id: 'runners',
+        title: 'Runners',
+        checks: [{ id: 'runners.configured', severity: 'ok', summary: 'Configured' }],
+      },
+    ],
+    metadata: {},
+  };
+}
 
 const configuredRoutes = [
   ['planner', 'output'],
@@ -592,7 +622,7 @@ Preserve the declared-file receipt.
     'denies a configured %s %s child before it can start or fall back',
     async (role, contract) => {
       const fixture = createFixture(`denied-${role}-${contract}`);
-      const config = configuredFactoryBehaviorConfig({
+      const behaviorConfig = configuredFactoryBehaviorConfig({
         role,
         contract,
         sourceName: fixture.sourceName,
@@ -607,27 +637,46 @@ Preserve the declared-file receipt.
           "process.stdout.write('legacy');",
         ].join('\n'),
       });
-      const output: string[] = [];
+      const config =
+        role === 'planner'
+          ? behaviorConfig
+          : ConfigSchema.parse({ ...behaviorConfig, planner: API_PLANNER });
 
       expect(process.env[fixture.sourceName]).toBeUndefined();
 
-      if (role === 'planner') {
-        await expect(
-          createPlanner(config, undefined, {
-            customRuntime: factoryRuntime(fixture, 'headless'),
-          }),
-        ).rejects.toMatchObject({ kind: 'custom-runner-admission-denied' });
-        expect(existsSync(join(fixture.projectDir, '.splitbrief-runner'))).toBe(false);
-      } else {
-        await expect(
-          createImplementer(config, {
-            customRuntime: factoryRuntime(fixture, 'headless'),
-          }),
-        ).rejects.toMatchObject({ kind: 'custom-runner-admission-denied' });
-        expect(existsSync(join(fixture.projectDir, `src/denied-${contract}.ts`))).toBe(false);
-      }
+      const outcome = await prepareExecution({
+        projectDir: fixture.projectDir,
+        feature: `denied configured ${role} ${contract}`,
+        effectiveConfig: config,
+        signal: new AbortController().signal,
+        policy: {
+          purpose: 'new-workflow',
+          interaction: 'headless',
+          unverifiedAuth: 'denied',
+          allowRepoRunners: false,
+          allowHooks: true,
+          stateDir: fixture.stateDir,
+        },
+        deps: {
+          collectArgVectorPreflightChecks: async () => [],
+          collectReadiness: async () => ({ report: readyReport(fixture.projectDir), config }),
+          prepareNewSession: vi.fn(),
+        },
+      });
 
-      expect(output).toEqual([]);
+      expect(outcome.kind).toBe('blocked');
+      if (outcome.kind !== 'blocked') return;
+      const runnerChecks =
+        outcome.report.sections.find((section) => section.id === 'runners')?.checks ?? [];
+      expect(runnerChecks).toContainEqual(
+        expect.objectContaining({
+          severity: 'blocker',
+          details: ['Configured custom runner admission was denied.'],
+          metadata: expect.objectContaining({ role }),
+        }),
+      );
+      expect(existsSync(join(fixture.projectDir, '.splitbrief-runner'))).toBe(false);
+      expect(existsSync(join(fixture.projectDir, `src/denied-${contract}.ts`))).toBe(false);
       expect(existsSync(fixture.configuredMarker)).toBe(false);
       expect(existsSync(fixture.legacyMarker)).toBe(false);
       expect(existsSync(resolveCustomRunnerTrustFile(fixture.stateDir))).toBe(false);

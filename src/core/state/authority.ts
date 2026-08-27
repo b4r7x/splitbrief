@@ -419,42 +419,30 @@ function readAuthorityHead(ref: SessionRef): AuthorityHead {
     }
     const bytes = readFileSync(path);
     const digest = createHash('sha256').update(bytes).digest('hex');
+    const expectedRevision = {
+      rawSha256: digest,
+      fileIdentity: {
+        dev: stat.dev,
+        ino: stat.ino,
+        size: stat.size,
+        mtimeNs: stat.mtimeNs,
+      },
+    };
+    const malformed = {
+      kind: 'malformed',
+      stateRevision: 0,
+      fence: 0,
+      digest,
+      expectedRevision,
+    } as const;
     let value: unknown;
     try {
       value = JSON.parse(bytes.toString('utf8'));
     } catch {
-      return {
-        kind: 'malformed',
-        stateRevision: 0,
-        fence: 0,
-        digest,
-        expectedRevision: {
-          rawSha256: digest,
-          fileIdentity: {
-            dev: stat.dev,
-            ino: stat.ino,
-            size: stat.size,
-            mtimeNs: stat.mtimeNs,
-          },
-        },
-      };
+      return malformed;
     }
     if (!isRecord(value) || (value.stateVersion !== 3 && value.stateVersion !== 4)) {
-      return {
-        kind: 'malformed',
-        stateRevision: 0,
-        fence: 0,
-        digest,
-        expectedRevision: {
-          rawSha256: digest,
-          fileIdentity: {
-            dev: stat.dev,
-            ino: stat.ino,
-            size: stat.size,
-            mtimeNs: stat.mtimeNs,
-          },
-        },
-      };
+      return malformed;
     }
     const stateRevision =
       value.stateVersion === 4 && isNonNegativeInteger(value.stateRevision)
@@ -470,15 +458,7 @@ function readAuthorityHead(ref: SessionRef): AuthorityHead {
       stateRevision,
       fence,
       digest,
-      expectedRevision: {
-        rawSha256: digest,
-        fileIdentity: {
-          dev: stat.dev,
-          ino: stat.ino,
-          size: stat.size,
-          mtimeNs: stat.mtimeNs,
-        },
-      },
+      expectedRevision,
     };
   } catch (cause) {
     if (isAuthorityError(cause)) throw cause;
@@ -736,7 +716,7 @@ export function acquireStateAuthority(input: AcquireInput): StateAuthorityAcquis
       created = true;
     } catch (cause) {
       if (!isNodeError(cause) || cause.code !== 'EEXIST') throw cause;
-      if (lstatSync(directory).isSymbolicLink() || !lstatSync(directory).isDirectory()) {
+      if (!lstatSync(directory).isDirectory()) {
         throw authorityError.invalid('The state authority path is not a directory.');
       }
       if (!takeOverDeadAuthority(input.ref)) {
@@ -783,14 +763,16 @@ export function acquireStateAuthority(input: AcquireInput): StateAuthorityAcquis
   }
 }
 
-function assertStateAuthorityInternal(input: AssertInput, requireLive: boolean): void {
+function assertStateAuthorityInternal(
+  input: AssertInput & Readonly<{ ownerLiveness: 'required' | 'not-checked' }>,
+): void {
   assertAuthorityRoot(input.ref);
   assertReceiptIdentity(input.receipt, input.ref);
   const stored = readRecord(input.ref);
   if (stored === null || !sameReceipt(stored, input.receipt)) {
     throw authorityError.invalid('The state authority receipt does not own the current directory.');
   }
-  if (requireLive && processIdentityState(stored) !== 'live') {
+  if (input.ownerLiveness === 'required' && processIdentityState(stored) !== 'live') {
     throw authorityError.invalid(
       'The state authority owner is dead or its process identity changed.',
     );
@@ -808,21 +790,8 @@ function assertStateAuthorityInternal(input: AssertInput, requireLive: boolean):
   }
 }
 
-export function assertStateAuthority(input: AssertInput): void;
-export function assertStateAuthority(ref: SessionRef, receipt: StateAuthorityReceipt): void;
-export function assertStateAuthority(
-  inputOrRef: AssertInput | SessionRef,
-  positionalReceipt?: StateAuthorityReceipt,
-): void {
-  const input: AssertInput =
-    'ref' in inputOrRef
-      ? inputOrRef
-      : positionalReceipt === undefined
-        ? (() => {
-            throw authorityError.invalid('A state authority receipt is required.');
-          })()
-        : { ref: inputOrRef, receipt: positionalReceipt };
-  assertStateAuthorityInternal(input, true);
+export function assertStateAuthority(input: AssertInput): void {
+  assertStateAuthorityInternal({ ...input, ownerLiveness: 'required' });
 }
 
 export function readStateAuthority(ref: SessionRef): StateAuthorityReceipt | null {
@@ -830,7 +799,7 @@ export function readStateAuthority(ref: SessionRef): StateAuthorityReceipt | nul
   const record = readRecord(ref);
   if (record === null) return null;
   const receipt = receiptFromRecord(record);
-  assertStateAuthorityInternal({ ref, receipt }, false);
+  assertStateAuthorityInternal({ ref, receipt, ownerLiveness: 'not-checked' });
   return receipt;
 }
 
@@ -869,7 +838,7 @@ export function promoteCandidateAuthority(
   };
   assertReceiptIdentity(receipt, ref);
   replaceRecord(ref, authorityRecordFromReceipt(receipt));
-  assertStateAuthorityInternal({ ref, receipt }, true);
+  assertStateAuthorityInternal({ ref, receipt, ownerLiveness: 'required' });
   return receipt;
 }
 
@@ -903,7 +872,7 @@ export function refreshStateAuthority(
 
 export function releaseStateAuthority(ref: SessionRef, receipt: StateAuthorityReceipt): boolean {
   try {
-    assertStateAuthorityInternal({ ref, receipt }, false);
+    assertStateAuthorityInternal({ ref, receipt, ownerLiveness: 'not-checked' });
   } catch {
     return false;
   }

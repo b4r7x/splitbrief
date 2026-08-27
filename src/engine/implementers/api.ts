@@ -126,9 +126,8 @@ export function createApiImplementer(
     },
 
     retryTemperatureStep: 0.1,
-    // The probe fires only at the per-task availability gate (task/loop.ts:176
-    // constructs the implementer per task via createTaskImplementer); each gate
-    // call re-probes the model list, so a verdict is never cached across tasks.
+    // Each availability gate re-probes the model list, so a verdict is never
+    // cached across tasks.
     async isAvailable() {
       return (await availability?.isAvailable()) ?? false;
     },

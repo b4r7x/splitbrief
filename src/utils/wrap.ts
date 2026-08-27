@@ -56,7 +56,7 @@ export function wrapPathAware(text: string, width: number): string {
         place(word);
         return;
       }
-      for (const segment of word.match(PATH_SEGMENT) ?? [word]) place(segment);
+      for (const [segment] of word.matchAll(PATH_SEGMENT)) place(segment);
     });
 
     lines.push(current.join(''));

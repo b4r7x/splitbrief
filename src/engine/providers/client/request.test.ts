@@ -29,15 +29,9 @@ function recordRequest(input: RequestInfo | URL, init?: RequestInit): RequestRec
   };
 }
 
-function assertZeroAttackerHostCredentialObservations(
-  requests: readonly RequestRecord[],
-  credential: string,
-): void {
+function assertZeroAttackerHostCredentialObservations(requests: readonly RequestRecord[]): void {
   for (const request of requests) {
     const origin = new URL(request.url).origin;
-    if (origin === attackerOrigin) {
-      expect(request.authorization ?? '').not.toContain(credential);
-    }
     expect(origin).not.toBe(attackerOrigin);
   }
 }
@@ -394,7 +388,7 @@ describe('provider connection redirect enforcement', () => {
         apiKey: undefined,
       },
     ]);
-    assertZeroAttackerHostCredentialObservations(requests, credential);
+    assertZeroAttackerHostCredentialObservations(requests);
   });
 });
 

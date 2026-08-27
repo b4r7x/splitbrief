@@ -7,12 +7,6 @@ describe('canonicalJSON', () => {
     expect(canonicalJSON({ a: 2, b: 1 })).toBe('{"a":2,"b":1}');
   });
 
-  it('produces equal output regardless of insertion order', () => {
-    const result1 = canonicalJSON({ b: 1, a: 2 });
-    const result2 = canonicalJSON({ a: 2, b: 1 });
-    expect(result1).toBe(result2);
-  });
-
   it('sorts nested object keys', () => {
     expect(canonicalJSON({ z: { d: 1, c: 2 } })).toBe('{"z":{"c":2,"d":1}}');
   });
@@ -48,10 +42,5 @@ describe('canonicalJSON', () => {
 
   it('throws TypeError for symbol', () => {
     expect(() => canonicalJSON(Symbol('x'))).toThrow(TypeError);
-  });
-
-  it('is stable: same input produces identical string on repeated calls', () => {
-    const value = { z: [1, 2], a: { b: 3 } };
-    expect(canonicalJSON(value)).toBe(canonicalJSON(value));
   });
 });

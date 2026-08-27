@@ -161,7 +161,7 @@ describe('attachment actions', () => {
     expect(listAttachments().map((a) => a.path)).toEqual([real(secondPath)]);
   });
 
-  it('formats long attachment names without requiring workflow imports', () => {
+  it('truncates a long attachment name to 24 columns with an ellipsis', () => {
     expect(attachmentShortName('/tmp/averyveryveryverylongname.png')).toBe(
       'averyveryveryverylongna…',
     );

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
-import { writeActive } from '../../core/sessions/lifecycle.js';
+import { writeActive } from '../../core/sessions/active-pointer.js';
 import { saveSummary } from '../../core/sessions/io.js';
 import { resolveSessionIds } from './discovery.js';
 

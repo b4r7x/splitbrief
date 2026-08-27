@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { BriefRecoveryV1Schema } from './brief-recovery.js';
-import type { RejectedStorageBriefRecoveryV1 } from './brief-recovery.js';
-import { BriefGenerationRefSchema, TaskExecutionPermitSchema } from './brief-owner.js';
+import { BriefRecoveryV1Schema } from './brief-recovery/document.js';
+import type { RejectedStorageBriefRecoveryV1 } from './brief-recovery/document.js';
 import { ChangedFilesSnapshotSchema, WorkflowStateSchema } from './workflow.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 
@@ -337,9 +336,7 @@ describe('WorkflowStateSchema v4 Brief recovery contract', () => {
     }
   });
 
-  it('imports canonical generation and permit schemas and validates their tuple', () => {
-    expect(BriefGenerationRefSchema.parse(generation)).toEqual(generation);
-    expect(TaskExecutionPermitSchema.parse(permit)).toEqual(permit);
+  it('accepts a generation/permit tuple backed by ready recovery', () => {
     expect(
       WorkflowStateSchema.safeParse({
         ...state(),

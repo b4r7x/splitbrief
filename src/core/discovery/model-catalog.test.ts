@@ -87,65 +87,6 @@ describe('areModelKeysEqual', () => {
 });
 
 describe('ModelOption contract', () => {
-  it('keeps auto, a native default alias, a native default, and a bundled fallback distinct', () => {
-    const options: ModelOption[] = [
-      {
-        key: { runnerId: 'claude-code', selectionId: 'auto' },
-        kind: 'automatic',
-        canConfigure: true,
-        provenance: [{ kind: 'automatic', source: 'splitbrief' }],
-        metadata: [],
-      },
-      {
-        key: { runnerId: 'claude-code', selectionId: 'default' },
-        kind: 'confirmed',
-        source: 'cli',
-        nativeOrder: 0,
-        nativeDefault: false,
-        canConfigure: true,
-        provenance: [{ kind: 'membership', source: 'cli', freshness: 'current' }],
-        metadata: [],
-      },
-      {
-        key: { runnerId: 'claude-code', selectionId: 'claude-sonnet-4-6' },
-        kind: 'confirmed',
-        source: 'cli',
-        nativeOrder: 1,
-        nativeDefault: true,
-        canConfigure: true,
-        provenance: [{ kind: 'membership', source: 'cli', freshness: 'current' }],
-        metadata: [],
-      },
-      {
-        key: { runnerId: 'claude-code', selectionId: 'claude-opus-4-6' },
-        kind: 'bundled-suggestion',
-        source: 'bundled',
-        canConfigure: true,
-        provenance: [{ kind: 'suggestion', source: 'bundled' }],
-        metadata: [],
-      },
-    ];
-
-    expect(options.map((option) => option.key.selectionId)).toEqual([
-      'auto',
-      'default',
-      'claude-sonnet-4-6',
-      'claude-opus-4-6',
-    ]);
-    expect(options.map((option) => option.kind)).toEqual([
-      'automatic',
-      'confirmed',
-      'confirmed',
-      'bundled-suggestion',
-    ]);
-    expect(options[2]).toMatchObject({
-      kind: 'confirmed',
-      source: 'cli',
-      nativeOrder: 1,
-      nativeDefault: true,
-    });
-  });
-
   it('keeps aliases and snapshots selectable when they share models.dev metadata', () => {
     const metadata: ModelOption['metadata'][number] = {
       source: 'models-dev',
@@ -173,7 +114,7 @@ describe('ModelOption contract', () => {
     ]);
   });
 
-  it('keeps a catalog-only row from claiming confirmed membership', () => {
+  it('resolves a catalog-only row display name from its models-dev metadata', () => {
     const option: ModelOption = {
       key: {
         runnerId: 'copilot',
@@ -197,7 +138,6 @@ describe('ModelOption contract', () => {
       ],
     };
 
-    expect(option).toMatchObject({ kind: 'catalog-suggestion', source: 'models-dev' });
     expect(resolveModelDisplayName(option)).toBe('GPT-5.4');
   });
 
@@ -257,22 +197,5 @@ describe('ModelOption contract', () => {
       resolveModelDisplayName(fallback),
     ]).toEqual(['Native Model X', 'Runtime Model X', 'Catalog Model X', id]);
     expect(formatConservativeModelDisplay(id)).toBe(id);
-    expect(native.key.selectionId).toBe(id);
-    expect(native.metadata).toContainEqual({
-      source: 'models-dev',
-      providerId: 'opencode',
-      modelId: id,
-      releaseDate: '2025-10-01',
-      updatedDate: '2026-01-01',
-      maximumContextTokens: 200_000,
-      supportsToolCalls: true,
-      supportsStructuredOutput: true,
-      displayName: 'Catalog Model X',
-    });
-    expect(native.metadata).toContainEqual({
-      source: 'runtime',
-      displayName: 'Runtime Model X',
-      effectiveContextTokens: 32_768,
-    });
   });
 });

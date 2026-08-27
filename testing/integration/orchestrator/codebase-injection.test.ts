@@ -34,177 +34,114 @@ function seedSourceFile(projectDir: string): void {
   );
 }
 
+interface PlanRunOpts {
+  name: string;
+  feature: string;
+  enabled: boolean;
+  preseedContext?: string;
+  seedCache?: (projectDir: string) => void;
+}
+
+async function planWithCodebase(
+  opts: PlanRunOpts,
+): Promise<{ context: string | undefined; warnings: string[] }> {
+  const projectDir = createTempDir(`orch-int-${opts.name}`);
+  dirs.push(projectDir);
+  createTestGitRepo(projectDir);
+  seedSourceFile(projectDir);
+  const sessionId = `sess-${opts.name}`;
+  ensureSessionDir(projectDir, sessionId);
+  opts.seedCache?.(projectDir);
+
+  let context = opts.preseedContext;
+  const planner = makePlanner({
+    quickPlan: vi.fn().mockImplementation(({ codebaseContext }) => {
+      context = codebaseContext;
+      return {
+        spec: '',
+        plan: '',
+        tasks: [makeTask()],
+        usage: { inputTokens: 50, outputTokens: 25 },
+      };
+    }),
+  });
+  const { callbacks } = makeCallbacks();
+  const bus = createEventBus();
+  const warnings: string[] = [];
+  bus.subscribe((event) => {
+    if (event.type === 'warning') warnings.push(event.message);
+  });
+  const config = makeConfig({
+    workflow: {
+      mode: 'quick',
+      approve: 'none',
+      persistTranscript: false,
+    },
+    codebase: { enabled: opts.enabled, tokenBudget: 1000, cacheDir: '.splitbrief' },
+  });
+
+  let state = createInitialState(opts.feature);
+  state = transition(state, { type: 'START' });
+
+  await runPlanningPhase({
+    wctx: {
+      projectDir,
+      sessionId,
+      config,
+      callbacks,
+      bus,
+      metadata: META,
+      sinks: TEST_WORKFLOW_SINKS,
+    },
+    planner,
+    state,
+    feature: state.feature,
+  });
+
+  return { context, warnings };
+}
+
 describe('codebase context injection into planner', { timeout: 90_000 }, () => {
   it('passes codebaseContext to planner.quickPlan when codebase.enabled is true', async () => {
-    const projectDir = createTempDir('orch-int-codebase-inj');
-    dirs.push(projectDir);
-    createTestGitRepo(projectDir);
-    seedSourceFile(projectDir);
-    const sessionId = 'sess-codebase-inj';
-    ensureSessionDir(projectDir, sessionId);
-
-    let capturedContext: string | undefined;
-    const planner = makePlanner({
-      quickPlan: vi.fn().mockImplementation(({ codebaseContext }) => {
-        capturedContext = codebaseContext;
-        return {
-          spec: '',
-          plan: '',
-          tasks: [makeTask()],
-          usage: { inputTokens: 50, outputTokens: 25 },
-        };
-      }),
-    });
-    const { callbacks } = makeCallbacks();
-    const bus = createEventBus();
-    const config = makeConfig({
-      workflow: {
-        mode: 'quick',
-        approve: 'none',
-        persistTranscript: false,
-      },
-      codebase: { enabled: true, tokenBudget: 1000, cacheDir: '.splitbrief' },
+    const { context } = await planWithCodebase({
+      name: 'codebase-inj',
+      feature: 'add bar feature',
+      enabled: true,
     });
 
-    let state = createInitialState('add bar feature');
-    state = transition(state, { type: 'START' });
-
-    await runPlanningPhase({
-      wctx: {
-        projectDir,
-        sessionId,
-        config,
-        callbacks,
-        bus,
-        metadata: META,
-        sinks: TEST_WORKFLOW_SINKS,
-      },
-      planner,
-      state,
-      feature: state.feature,
-    });
-
-    expect(typeof capturedContext).toBe('string');
-    if (capturedContext === undefined)
-      throw new Error('expected planner to receive codebase context');
-    expect(capturedContext.length).toBeGreaterThan(0);
-    expect(capturedContext).toContain('sample.ts');
+    if (context === undefined) throw new Error('expected planner to receive codebase context');
+    expect(context.length).toBeGreaterThan(0);
+    expect(context).toContain('sample.ts');
   });
 
   it('passes undefined codebaseContext to planner.quickPlan when codebase.enabled is false', async () => {
-    const projectDir = createTempDir('orch-int-codebase-disabled');
-    dirs.push(projectDir);
-    createTestGitRepo(projectDir);
-    seedSourceFile(projectDir);
-    const sessionId = 'sess-codebase-disabled';
-    ensureSessionDir(projectDir, sessionId);
-
-    let capturedContext: string | undefined = 'SENTINEL';
-    const planner = makePlanner({
-      quickPlan: vi.fn().mockImplementation(({ codebaseContext }) => {
-        capturedContext = codebaseContext;
-        return {
-          spec: '',
-          plan: '',
-          tasks: [makeTask()],
-          usage: { inputTokens: 50, outputTokens: 25 },
-        };
-      }),
-    });
-    const { callbacks } = makeCallbacks();
-    const bus = createEventBus();
-    const config = makeConfig({
-      workflow: {
-        mode: 'quick',
-        approve: 'none',
-        persistTranscript: false,
-      },
-      codebase: { enabled: false, tokenBudget: 1000, cacheDir: '.splitbrief' },
+    const { context } = await planWithCodebase({
+      name: 'codebase-disabled',
+      feature: 'add baz feature',
+      enabled: false,
+      preseedContext: 'SENTINEL',
     });
 
-    let state = createInitialState('add baz feature');
-    state = transition(state, { type: 'START' });
-
-    await runPlanningPhase({
-      wctx: {
-        projectDir,
-        sessionId,
-        config,
-        callbacks,
-        bus,
-        metadata: META,
-        sinks: TEST_WORKFLOW_SINKS,
-      },
-      planner,
-      state,
-      feature: state.feature,
-    });
-
-    expect(capturedContext).toBeUndefined();
+    expect(context).toBeUndefined();
   });
 
   it('self-heals a corrupt repomap.sqlite and publishes a warning event instead of silently dropping it', async () => {
-    const projectDir = createTempDir('orch-int-codebase-corrupt');
-    dirs.push(projectDir);
-    createTestGitRepo(projectDir);
-    seedSourceFile(projectDir);
-    const sessionId = 'sess-codebase-corrupt';
-    ensureSessionDir(projectDir, sessionId);
-
-    mkdirSync(join(projectDir, '.splitbrief'), { recursive: true });
-    writeFileSync(
-      join(projectDir, '.splitbrief', 'repomap.sqlite'),
-      'not a sqlite database — torn header garbage'.repeat(8),
-    );
-
-    let capturedContext: string | undefined;
-    const planner = makePlanner({
-      quickPlan: vi.fn().mockImplementation(({ codebaseContext }) => {
-        capturedContext = codebaseContext;
-        return {
-          spec: '',
-          plan: '',
-          tasks: [makeTask()],
-          usage: { inputTokens: 50, outputTokens: 25 },
-        };
-      }),
-    });
-    const { callbacks } = makeCallbacks();
-    const bus = createEventBus();
-    const warnings: string[] = [];
-    bus.subscribe((event) => {
-      if (event.type === 'warning') warnings.push(event.message);
-    });
-    const config = makeConfig({
-      workflow: {
-        mode: 'quick',
-        approve: 'none',
-        persistTranscript: false,
+    const { context, warnings } = await planWithCodebase({
+      name: 'codebase-corrupt',
+      feature: 'add corrupt-cache feature',
+      enabled: true,
+      seedCache: (projectDir) => {
+        mkdirSync(join(projectDir, '.splitbrief'), { recursive: true });
+        writeFileSync(
+          join(projectDir, '.splitbrief', 'repomap.sqlite'),
+          'not a sqlite database — torn header garbage'.repeat(8),
+        );
       },
-      codebase: { enabled: true, tokenBudget: 1000, cacheDir: '.splitbrief' },
-    });
-
-    let state = createInitialState('add corrupt-cache feature');
-    state = transition(state, { type: 'START' });
-
-    await runPlanningPhase({
-      wctx: {
-        projectDir,
-        sessionId,
-        config,
-        callbacks,
-        bus,
-        metadata: META,
-        sinks: TEST_WORKFLOW_SINKS,
-      },
-      planner,
-      state,
-      feature: state.feature,
     });
 
     expect(warnings.some((m) => m.includes('corrupt'))).toBe(true);
-    if (capturedContext === undefined)
+    if (context === undefined)
       throw new Error('expected planner to receive codebase context after self-heal');
-    expect(capturedContext).toContain('sample.ts');
+    expect(context).toContain('sample.ts');
   });
 });

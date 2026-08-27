@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BriefRecoveryProjectionV1Schema,
   type BriefRecoveryProjectionV1,
-} from '../../core/schemas/brief-recovery.js';
+  BriefRecoveryProjectionV1Schema,
+} from '../../core/schemas/brief-recovery/document.js';
 import type { BriefQualityReport } from '../../engine/spec/brief-quality.js';
 import type { BriefReadinessGateReport } from '../../engine/orchestrator/planning/brief-readiness-gate.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
@@ -56,38 +56,22 @@ const readinessBlocked: BriefReadinessGateReport = {
 };
 
 describe('formatQualityDisplay', () => {
-  it('returns quality score formatted to 2 decimal places when report is present', () => {
+  it.each([
+    [0.91, 'quality 0.91'],
+    [1, 'quality 1.00'],
+    [0, 'quality 0.00'],
+  ])('formats a score of %s to two decimal places', (score, expected) => {
     const report: BriefQualityReport = {
       version: 1,
-      passed: true,
-      score: 0.91,
+      passed: score > 0,
+      score,
       issues: [],
     };
-    expect(formatQualityDisplay(report)).toBe('quality 0.91');
+    expect(formatQualityDisplay(report)).toBe(expected);
   });
 
   it('returns "quality n/a" when quality report is null', () => {
     expect(formatQualityDisplay(null)).toBe('quality n/a');
-  });
-
-  it('returns quality 1.00 for perfect score', () => {
-    const report: BriefQualityReport = {
-      version: 1,
-      passed: true,
-      score: 1,
-      issues: [],
-    };
-    expect(formatQualityDisplay(report)).toBe('quality 1.00');
-  });
-
-  it('returns quality 0.00 for zero score', () => {
-    const report: BriefQualityReport = {
-      version: 1,
-      passed: false,
-      score: 0,
-      issues: [],
-    };
-    expect(formatQualityDisplay(report)).toBe('quality 0.00');
   });
 });
 
@@ -231,7 +215,7 @@ describe('Evidence Spine formatter', () => {
         ],
       },
     });
-    const lines = formatEvidenceSpineLines({ projection }, 24);
+    const lines = formatEvidenceSpineLines({ projection, width: 24 });
 
     for (const line of lines) {
       expect(line).not.toContain('\u001b');

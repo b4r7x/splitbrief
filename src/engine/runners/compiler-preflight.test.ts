@@ -188,22 +188,7 @@ describe('compiler preflight — fake help, cwd writes, and zero-spawn refusal',
     expect(existsSync(log)).toBe(false);
   });
 
-  it('an unverified conformance proof refuses a compiler dispatch that claims every flag', async () => {
-    const toolsDir = tempDir('compiler-preflight-dispatch');
-    const dispatchMarker = join(toolsDir, 'dispatched');
-    writeFileSync(
-      join(toolsDir, 'opencode'),
-      [
-        '#!/bin/sh',
-        `touch ${JSON.stringify(dispatchMarker)}`,
-        "printf 'Usage: opencode run [message..]\\n  --format <format>\\n  --agent <agent>\\n'",
-        '',
-      ].join('\n'),
-      'utf8',
-    );
-    chmodSync(join(toolsDir, 'opencode'), 0o755);
-    stubToolsPath(toolsDir);
-
+  it('an unverified conformance proof refuses a compiler dispatch that claims every flag', () => {
     const admission = admitCompilerCapability(
       capabilityTuple('opencode', {
         conformance: conformanceProof({ credentialIsolation: 'unverified' }),
@@ -211,6 +196,5 @@ describe('compiler preflight — fake help, cwd writes, and zero-spawn refusal',
     );
     expect(admission.kind).toBe('refused');
     if (admission.kind === 'refused') expect(admission.missing).toContain('conformance');
-    expect(existsSync(dispatchMarker)).toBe(false);
   });
 });

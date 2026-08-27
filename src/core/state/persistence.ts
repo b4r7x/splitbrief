@@ -1,37 +1,15 @@
-import { createHash } from 'node:crypto';
-import {
-  existsSync,
-  lstatSync,
-  readFileSync,
-  realpathSync,
-  statSync,
-  type BigIntStats,
-} from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync, type BigIntStats } from 'node:fs';
 import { join } from 'node:path';
-import { z } from 'zod';
 import type { WorkflowState } from '../schemas/workflow.js';
-import {
-  ChangedFilesBaselineSchema,
-  DiscoveredValidationSchema,
-  QueuedMessageSchema,
-  WorkflowStateSchema,
-  WORKFLOW_STATE_VERSION,
-} from '../schemas/workflow.js';
-import { PhaseSchema, ApproveLevelSchema, WorkflowModeSchema } from '../schemas/enums.js';
-import { TaskSchema } from '../schemas/task.js';
-import { TaskTokenUsageSchema, TokenUsageSchema } from '../schemas/tokens.js';
-import { RecoveryIssueSchema } from '../schemas/recovery/schemas.js';
-import { topoSort } from './topo-sort.js';
-import {
-  type BriefQualityIssue,
-  type BriefRecoveryV1,
-  type EvidenceRef,
-  type NormalBriefRecoveryV1,
-  type StorageBlockedBriefRecoveryV1,
-  NormalBriefRecoveryV1Schema,
-  StorageBlockedBriefRecoveryV1Schema,
-} from '../schemas/brief-recovery.js';
+import { WorkflowStateSchema, WORKFLOW_STATE_VERSION } from '../schemas/workflow.js';
 import type { SessionRef } from '../types/session-ref.js';
+import {
+  LEGACY_STATE_VERSION,
+  legacyWorkflowStateSchema,
+  type LegacyWorkflowState,
+} from './migration/legacy-state.js';
+import { readMigrationArtifacts, type MigrationArtifacts } from './migration/artifacts.js';
+import { mapV3StateToV4 } from './migration/map-v3.js';
 import { SPLITBRIEF_DIR, SESSIONS_DIR, STATE_FILE, sessionDir } from '../paths.js';
 import type {
   ResumeLoadAuthority,
@@ -42,122 +20,24 @@ import type {
   StateAuthorityReceipt,
 } from './types.js';
 import { narrowRecord } from '../../utils/type-guards.js';
+import { sha256Hex } from '../../utils/sha256.js';
 import { error, matches } from '../../utils/error.js';
 import { rejectSymlinkTarget } from '../../lib/fs.js';
+import { confinedEnsureDir } from '../../lib/confined-fs.js';
 import {
   confinedAtomicWriteFileSync,
-  confinedEnsureDir,
   type ConfigRevision,
   type ExpectedConfigRevision,
-} from '../../lib/confined-fs.js';
+} from '../../lib/confined-fs-atomic.js';
 import { SECURE_FILE_MODE } from '../../lib/fs.js';
 import { assertExistingPathConfined } from '../../lib/path-confinement.js';
 import { warnStderr } from '../../lib/warn.js';
 import { assertSessionDirConfined } from '../sessions/confinement.js';
-import { isQueuedMessagePendingDelivery } from '../queue-state.js';
 
 type StateCacheEntry = { mtimeMs: number; size: number; state: WorkflowState };
 
 const STATE_CACHE_MAX_ENTRIES = 64;
 const stateCache = new Map<string, StateCacheEntry>();
-const LEGACY_STATE_VERSION = 3;
-const LEGACY_DEFAULT_RULE_VERSION = 'brief-quality-v1';
-const LEGACY_DEFAULT_TIMESTAMP = '1970-01-01T00:00:00.000Z';
-
-const legacyWorkflowStateSchema = z
-  .object({
-    stateVersion: z.literal(LEGACY_STATE_VERSION),
-    phase: PhaseSchema,
-    feature: z.string(),
-    currentTaskIndex: z.number().int().nonnegative(),
-    attempt: z.number().int().nonnegative(),
-    tasks: z.array(TaskSchema),
-    plannerSessionId: z.string().nullable().optional(),
-    startedAt: z.string(),
-    tokenUsage: TokenUsageSchema,
-    taskBreakdowns: z.array(TaskTokenUsageSchema).optional(),
-    plannerTool: z.string().optional(),
-    plannerModel: z.string().optional(),
-    implementerTool: z.string().optional(),
-    implementerModel: z.string().optional(),
-    mode: WorkflowModeSchema.optional(),
-    approve: ApproveLevelSchema.optional(),
-    selectedSkills: z.array(z.string()).optional(),
-    awaitingContinue: z.boolean().default(false),
-    budgetPauseAcknowledgedAtCost: z.number().optional(),
-    messageQueue: z.array(QueuedMessageSchema).default([]),
-    rewindPending: z
-      .object({
-        target: z.enum(['spec', 'plan']),
-        comment: z.string().optional(),
-      })
-      .optional(),
-    changedFilesBaseline: ChangedFilesBaselineSchema.optional(),
-    pendingRecovery: RecoveryIssueSchema.optional(),
-    discoveredValidation: DiscoveredValidationSchema.optional(),
-    external: z.record(z.string(), z.unknown()).optional(),
-  })
-  .superRefine((state, ctx) => {
-    try {
-      topoSort(state.tasks);
-    } catch (cause) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['tasks'],
-        message: cause instanceof Error ? cause.message : 'Invalid task graph',
-      });
-    }
-    const taskCount = state.tasks.length;
-    if (
-      (state.phase === 'validating-task' || state.phase === 'escalating') &&
-      state.currentTaskIndex >= taskCount
-    ) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['currentTaskIndex'],
-        message: 'currentTaskIndex must reference an existing task in active task phases',
-      });
-    }
-    if (taskCount > 0 && state.currentTaskIndex > taskCount) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['currentTaskIndex'],
-        message: 'currentTaskIndex must not exceed task count',
-      });
-    }
-  });
-
-export type LegacyWorkflowState = z.infer<typeof legacyWorkflowStateSchema>;
-
-export function parseLegacyWorkflowState(value: unknown): LegacyWorkflowState | null {
-  const parsed = legacyWorkflowStateSchema.safeParse(value);
-  return parsed.success ? parsed.data : null;
-}
-
-const legacyQualityIssueSchema = z
-  .object({
-    taskId: z.string().nullable(),
-    severity: z.enum(['error', 'warning']),
-    code: z.string().min(1),
-    message: z.string().min(1),
-  })
-  .strict();
-
-const legacyQualityReportSchema = z
-  .object({
-    version: z.literal(1),
-    passed: z.boolean(),
-    score: z.number().finite().min(0).max(1),
-    issues: z.array(legacyQualityIssueSchema),
-    // A future writer may include this identity. It is not part of the v3
-    // report, but accepting it lets migration detect a mismatched artifact
-    // rather than silently treating it as a new Brief.
-    briefHash: z.string().min(1).optional(),
-    ruleVersion: z.string().min(1).optional(),
-  })
-  .strict();
-
-type LegacyQualityReport = z.infer<typeof legacyQualityReportSchema>;
 
 type RawStateRevision = {
   readonly bytes: Buffer;
@@ -176,33 +56,9 @@ type RawStateRead =
     }
   | { readonly kind: 'present'; readonly raw: RawStateRevision };
 
-type MigrationArtifacts = {
-  readonly briefBytes: Buffer | null;
-  readonly reportBytes: Buffer | null;
-  readonly briefHash: string | null;
-  readonly reportHash: string | null;
-  readonly report: LegacyQualityReport | null;
-  readonly invalidArtifact: 'tasks.md' | 'brief-quality.json' | null;
-};
-
-export type LegacyStateMigrationInput = Readonly<{
-  ref: SessionRef;
-  state: LegacyWorkflowState;
-  briefBytes: Uint8Array | null;
-  reportBytes: Uint8Array | null;
-  ownerId: string;
-  fence: number;
-  stateRevision: number;
-}>;
-
 export type StateAuthorityFenceCommitInput = Readonly<{
   ref: SessionRef;
   candidate: StateAuthorityCandidate;
-  /** Freshly observed parsed state head. */
-  rawState?: unknown;
-  /** Aliases are accepted for the authority bridge's raw-head vocabulary. */
-  stateHead?: unknown;
-  head?: unknown;
   rawStateDigest?: string | null;
   expectedRevision?: ExpectedConfigRevision;
   nextFence: number;
@@ -242,13 +98,9 @@ function cacheState(filePath: string, entry: StateCacheEntry): void {
   }
 }
 
-function sha256(bytes: Uint8Array): string {
-  return createHash('sha256').update(bytes).digest('hex');
-}
-
 function revisionFromBytes(bytes: Uint8Array, stat: BigIntStats): ConfigRevision {
   return {
-    rawSha256: sha256(bytes),
+    rawSha256: sha256Hex(bytes),
     fileIdentity: {
       dev: stat.dev,
       ino: stat.ino,
@@ -324,369 +176,6 @@ function readRawState(ref: SessionRef): RawStateRead {
   }
 
   return { kind: 'present', raw: { bytes, value, revision, digest: revision.rawSha256 } };
-}
-
-function readArtifact(ref: SessionRef, name: 'tasks.md' | 'brief-quality.json'): Buffer | null {
-  const dir = sessionDir(ref.projectDir, ref.sessionId);
-  const path = join(dir, name);
-  try {
-    if (!existsSync(path)) return null;
-    rejectSymlinkTarget(path);
-    assertExistingPathConfined(
-      `${SPLITBRIEF_DIR}/${SESSIONS_DIR}/${ref.sessionId}/${name}`,
-      ref.projectDir,
-    );
-    const stat = lstatSync(path);
-    if (!stat.isFile()) return null;
-    return readFileSync(path);
-  } catch {
-    return null;
-  }
-}
-
-function readMigrationArtifacts(ref: SessionRef): MigrationArtifacts {
-  const briefBytes = readArtifact(ref, 'tasks.md');
-  if (briefBytes === null) {
-    return {
-      briefBytes: null,
-      reportBytes: null,
-      briefHash: null,
-      reportHash: null,
-      report: null,
-      invalidArtifact: 'tasks.md',
-    };
-  }
-
-  const reportBytes = readArtifact(ref, 'brief-quality.json');
-  if (reportBytes === null) {
-    return {
-      briefBytes,
-      reportBytes: null,
-      briefHash: sha256(briefBytes),
-      reportHash: null,
-      report: null,
-      invalidArtifact: 'brief-quality.json',
-    };
-  }
-
-  let reportValue: unknown;
-  try {
-    reportValue = JSON.parse(reportBytes.toString('utf8'));
-  } catch {
-    return {
-      briefBytes,
-      reportBytes,
-      briefHash: sha256(briefBytes),
-      reportHash: sha256(reportBytes),
-      report: null,
-      invalidArtifact: 'brief-quality.json',
-    };
-  }
-  const parsed = legacyQualityReportSchema.safeParse(reportValue);
-  if (!parsed.success) {
-    return {
-      briefBytes,
-      reportBytes,
-      briefHash: sha256(briefBytes),
-      reportHash: sha256(reportBytes),
-      report: null,
-      invalidArtifact: 'brief-quality.json',
-    };
-  }
-  const briefHash = sha256(briefBytes);
-  if (parsed.data.briefHash !== undefined && parsed.data.briefHash !== briefHash) {
-    return {
-      briefBytes,
-      reportBytes,
-      briefHash,
-      reportHash: sha256(reportBytes),
-      report: null,
-      invalidArtifact: 'brief-quality.json',
-    };
-  }
-  return {
-    briefBytes,
-    reportBytes,
-    briefHash,
-    reportHash: sha256(reportBytes),
-    report: parsed.data,
-    invalidArtifact: null,
-  };
-}
-
-function migrationEpoch(ref: SessionRef, state: LegacyWorkflowState): string {
-  const seed = `${ref.sessionId}\u0000${state.startedAt}\u0000${state.feature}`;
-  return `legacy-${sha256(Buffer.from(seed, 'utf8')).slice(0, 48)}`;
-}
-
-function migrationTimestamp(state: LegacyWorkflowState): string {
-  return state.startedAt.length > 0 ? state.startedAt : LEGACY_DEFAULT_TIMESTAMP;
-}
-
-function migrationMode(state: LegacyWorkflowState): 'standard' | 'speckit' | 'instant' | 'quick' {
-  return state.mode ?? 'standard';
-}
-
-function migrationEntry(state: LegacyWorkflowState): 'initial' | 'rewind' {
-  return state.rewindPending === undefined ? 'initial' : 'rewind';
-}
-
-function migrationContinuation(state: LegacyWorkflowState): NormalBriefRecoveryV1['continuation'] {
-  const mode = migrationMode(state);
-  const entry = migrationEntry(state);
-  if (mode === 'instant') return { version: 1, kind: 'instant-start', entry };
-  if (mode === 'quick') return { version: 1, kind: 'quick-start', entry };
-  return { version: 1, kind: 'approval', mode, entry };
-}
-
-function migrationOrigin(state: LegacyWorkflowState): NormalBriefRecoveryV1['origin'] {
-  return { mode: migrationMode(state), entry: migrationEntry(state) };
-}
-
-function migratedInputs(
-  state: LegacyWorkflowState,
-  epochId: string,
-): NormalBriefRecoveryV1['inputs'] {
-  return state.messageQueue.map((message, index) => {
-    const pending = isQueuedMessagePendingDelivery(message);
-    const delivered =
-      message.drainedAt !== undefined ||
-      message.deliveredViaNative ||
-      message.nativeDeliveryState === 'delivered';
-    const native =
-      message.deliveredViaNative ||
-      message.nativeDeliveryState === 'injecting' ||
-      message.nativeDeliveryState === 'delivered';
-    const inputState = pending ? 'queued' : delivered ? 'applied' : 'held';
-    const terminalAt = message.drainedAt ?? message.queuedAt;
-    const remoteObservation = inputState === 'held' ? 'possible' : null;
-    const textHash = sha256(Buffer.from(message.text, 'utf8'));
-    const payloadRef: EvidenceRef = {
-      revision: index + 1,
-      hash: textHash,
-      path: `state.json#messageQueue/${message.id}`,
-    };
-    return {
-      inputId: message.id,
-      epochId,
-      sequence: index + 1,
-      kind: native ? 'native-injection' : 'feedback',
-      source: native
-        ? 'native-injection'
-        : message.origin === 'clarification'
-          ? 'interactive'
-          : 'typed',
-      payloadRef,
-      textHash,
-      state: inputState,
-      operationId: null,
-      appliedRevision: inputState === 'applied' ? 1 : null,
-      remoteObservation,
-      history:
-        inputState === 'queued'
-          ? [
-              {
-                state: 'queued',
-                at: message.queuedAt,
-                operationId: null,
-                remoteObservation: null,
-              },
-            ]
-          : [
-              {
-                state: 'queued',
-                at: message.queuedAt,
-                operationId: null,
-                remoteObservation: null,
-              },
-              {
-                state: inputState,
-                at: terminalAt,
-                operationId: null,
-                remoteObservation,
-              },
-            ],
-    };
-  });
-}
-
-function mappedIssues(report: LegacyQualityReport): BriefQualityIssue[] {
-  return report.issues.map((issue) => ({
-    code: issue.code,
-    severity: issue.severity,
-    taskId: issue.taskId,
-    message: issue.message,
-  }));
-}
-
-function reportRef(reportBytes: Uint8Array, revision: number): EvidenceRef {
-  return { revision, hash: sha256(reportBytes), path: 'brief-quality.json' };
-}
-
-function briefRef(briefBytes: Uint8Array, revision: number): EvidenceRef {
-  return { revision, hash: sha256(briefBytes), path: 'tasks.md' };
-}
-
-function storageBlockedRecovery(
-  state: LegacyWorkflowState,
-  ref: SessionRef,
-  artifact: 'tasks.md' | 'brief-quality.json',
-  ownerId: string,
-  fence: number,
-  stateRevision: number,
-): StorageBlockedBriefRecoveryV1 {
-  const epochId = migrationEpoch(ref, state);
-  const timestamp = migrationTimestamp(state);
-  const recovery: StorageBlockedBriefRecoveryV1 = {
-    version: 1,
-    recoveryRevision: 1,
-    epochId,
-    origin: migrationOrigin(state),
-    continuation: migrationContinuation(state),
-    status: 'storage-blocked',
-    activeBrief: null,
-    storageEvidence: { code: 'brief_storage_invalid', artifactRef: artifact },
-    evidenceHead: sha256(
-      Buffer.from(
-        `${ref.sessionId}\u0000${stateRevision}\u0000${fence}\u0000${ownerId}\u0000${timestamp}\u0000${artifact}`,
-        'utf8',
-      ),
-    ),
-    outbox: [],
-  };
-  return StorageBlockedBriefRecoveryV1Schema.parse(recovery);
-}
-
-function normalRecovery(
-  state: LegacyWorkflowState,
-  ref: SessionRef,
-  artifacts: MigrationArtifacts,
-): NormalBriefRecoveryV1 {
-  if (
-    artifacts.briefBytes === null ||
-    artifacts.reportBytes === null ||
-    artifacts.report === null
-  ) {
-    throw error(
-      'state-persistence-invalid-recovery',
-      'normalRecovery requires valid Brief and report artifacts',
-    );
-  }
-  const epochId = migrationEpoch(ref, state);
-  const activeBrief = briefRef(artifacts.briefBytes, 1);
-  const report = artifacts.report;
-  const reportEvidence = reportRef(artifacts.reportBytes, 1);
-  const issues = mappedIssues(report);
-  const hasErrors = issues.some((issue) => issue.severity === 'error');
-  const mode = migrationMode(state);
-  const automaticPolicy = mode === 'standard' || mode === 'speckit' ? 'existing-one-shot' : 'none';
-  const recovery: NormalBriefRecoveryV1 = {
-    version: 1,
-    recoveryRevision: 1,
-    epochId,
-    origin: migrationOrigin(state),
-    continuation: migrationContinuation(state),
-    status: hasErrors ? 'blocked' : 'ready',
-    activeBrief,
-    matchingReport: {
-      briefHash: activeBrief.hash,
-      report: reportEvidence,
-      ruleVersion: report.ruleVersion ?? LEGACY_DEFAULT_RULE_VERSION,
-      issues,
-    },
-    qualityPolicyVersion: report.ruleVersion ?? LEGACY_DEFAULT_RULE_VERSION,
-    automaticRepair: {
-      policy: automaticPolicy,
-      eligible: automaticPolicy !== 'none',
-      // A legacy reviewing-briefs snapshot is already past the planner call.
-      // Consuming the allowance here prevents resume from inventing another
-      // automatic provider invocation.
-      consumed: automaticPolicy !== 'none',
-      operationId: null,
-    },
-    attempts: {},
-    activeOperationId: null,
-    inputs: migratedInputs(state, epochId),
-    nextInputSequence: state.messageQueue.length + 1,
-    noProgress: { fingerprint: null, count: 0 },
-    evidenceHead: sha256(Buffer.from(`${activeBrief.hash}\u0000${reportEvidence.hash}`, 'utf8')),
-    outbox: [],
-  };
-  return NormalBriefRecoveryV1Schema.parse(recovery);
-}
-
-/**
- * Pure v3 → v4 conversion. No authority acquisition, filesystem read, or
- * provider operation belongs here; callers provide the already-read legacy
- * state and evidence bytes plus the fence that will guard its replacement.
- */
-export function mapV3StateToV4(input: LegacyStateMigrationInput): WorkflowState {
-  const parsedState = legacyWorkflowStateSchema.parse(input.state);
-  const artifacts: MigrationArtifacts = {
-    briefBytes: input.briefBytes === null ? null : Buffer.from(input.briefBytes),
-    reportBytes: input.reportBytes === null ? null : Buffer.from(input.reportBytes),
-    briefHash: input.briefBytes === null ? null : sha256(input.briefBytes),
-    reportHash: input.reportBytes === null ? null : sha256(input.reportBytes),
-    report: null,
-    invalidArtifact: null,
-  };
-  let report: LegacyQualityReport | null = null;
-  if (artifacts.reportBytes !== null) {
-    try {
-      report = legacyQualityReportSchema.parse(JSON.parse(artifacts.reportBytes.toString('utf8')));
-    } catch {
-      report = null;
-    }
-  }
-  const completeArtifacts: MigrationArtifacts = {
-    ...artifacts,
-    report,
-    invalidArtifact:
-      artifacts.briefBytes === null
-        ? 'tasks.md'
-        : artifacts.reportBytes === null || report === null
-          ? 'brief-quality.json'
-          : report.briefHash !== undefined && report.briefHash !== artifacts.briefHash
-            ? 'brief-quality.json'
-            : null,
-  };
-  let recovery: BriefRecoveryV1 | null = null;
-  if (parsedState.phase === 'reviewing-briefs') {
-    if (completeArtifacts.invalidArtifact !== null) {
-      recovery = storageBlockedRecovery(
-        parsedState,
-        input.ref,
-        completeArtifacts.invalidArtifact,
-        input.ownerId,
-        input.fence,
-        input.stateRevision,
-      );
-    } else {
-      try {
-        recovery = normalRecovery(parsedState, input.ref, completeArtifacts);
-      } catch {
-        recovery = storageBlockedRecovery(
-          parsedState,
-          input.ref,
-          'brief-quality.json',
-          input.ownerId,
-          input.fence,
-          input.stateRevision,
-        );
-      }
-    }
-  }
-  const legacyQueue = parsedState.messageQueue;
-  const migrated = {
-    ...parsedState,
-    stateVersion: WORKFLOW_STATE_VERSION,
-    stateRevision: input.stateRevision,
-    stateFence: { token: input.fence, ownerId: input.ownerId },
-    messageQueue: recovery !== null && recovery.status !== 'storage-blocked' ? [] : legacyQueue,
-    briefRecovery: recovery,
-  };
-  const validated = WorkflowStateSchema.parse(migrated);
-  return validated;
 }
 
 function classifyStateVersion(
@@ -826,7 +315,7 @@ export function serializedState(state: unknown): Buffer {
 }
 
 export function workflowStateDigest(state: WorkflowState): string {
-  return createHash('sha256').update(serializedState(state)).digest('hex');
+  return sha256Hex(serializedState(state));
 }
 
 function cacheRevision(filePath: string, revision: ConfigRevision, state: WorkflowState): void {
@@ -835,43 +324,6 @@ function cacheRevision(filePath: string, revision: ConfigRevision, state: Workfl
     size: Number(revision.fileIdentity.size),
     state,
   });
-}
-
-function stableJson(value: unknown): string | null {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') {
-    return JSON.stringify(value);
-  }
-  if (typeof value === 'number') return Number.isFinite(value) ? JSON.stringify(value) : null;
-  if (Array.isArray(value)) {
-    const parts = value.map(stableJson);
-    return parts.every((part) => part !== null) ? `[${parts.join(',')}]` : null;
-  }
-  const record = narrowRecord(value);
-  if (record === null) return null;
-  const entries: string[] = [];
-  for (const key of Object.keys(record).sort()) {
-    const part = stableJson(record[key]);
-    if (part === null) return null;
-    entries.push(`${JSON.stringify(key)}:${part}`);
-  }
-  return `{${entries.join(',')}}`;
-}
-
-function rawHeadMatches(rawHead: unknown, raw: RawStateRevision): boolean {
-  if (rawHead instanceof Uint8Array) return sha256(rawHead) === raw.digest;
-  if (typeof rawHead === 'string') return sha256(Buffer.from(rawHead, 'utf8')) === raw.digest;
-  const record = narrowRecord(rawHead);
-  if (record !== null) {
-    const suppliedDigest = record.rawStateDigest ?? record.digest;
-    if (typeof suppliedDigest === 'string') return suppliedDigest === raw.digest;
-    const suppliedBytes = record.bytes;
-    if (suppliedBytes instanceof Uint8Array) return sha256(suppliedBytes) === raw.digest;
-    const suppliedValue = record.value ?? record.state ?? rawHead;
-    const expected = stableJson(raw.value);
-    const observed = stableJson(suppliedValue);
-    return expected !== null && observed !== null && expected === observed;
-  }
-  return false;
 }
 
 function cacheRawState(filePath: string, raw: RawStateRevision, state: WorkflowState): void {
@@ -1012,19 +464,6 @@ export function commitStateAuthorityFence(
       kind: 'conflict',
       observedRevision: raw.revision,
       message: 'Fresh state digest does not match the state head on disk.',
-    };
-  }
-  const suppliedHead =
-    input.rawState !== undefined
-      ? input.rawState
-      : input.stateHead !== undefined
-        ? input.stateHead
-        : input.head;
-  if (suppliedHead !== undefined && !rawHeadMatches(suppliedHead, raw)) {
-    return {
-      kind: 'conflict',
-      observedRevision: raw.revision,
-      message: 'Fresh state head does not match the state head on disk.',
     };
   }
   const classification = classifyStateVersion(raw.value);
@@ -1313,13 +752,14 @@ export function loadState(ref: SessionRef): WorkflowState | null {
     `${SPLITBRIEF_DIR}/${SESSIONS_DIR}/${ref.sessionId}/${STATE_FILE}`,
     ref.projectDir,
   );
+  const cacheKey = statePath(ref);
   let stat: ReturnType<typeof statSync>;
   let raw: unknown;
   try {
     stat = statSync(filePath);
-    const cached = stateCache.get(filePath);
+    const cached = stateCache.get(cacheKey);
     if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
-      cacheState(filePath, cached);
+      cacheState(cacheKey, cached);
       return cached.state;
     }
     raw = JSON.parse(readFileSync(filePath, 'utf-8'));
@@ -1344,6 +784,6 @@ export function loadState(ref: SessionRef): WorkflowState | null {
     return null;
   }
   const state = result.data;
-  cacheState(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, state });
+  cacheState(cacheKey, { mtimeMs: stat.mtimeMs, size: stat.size, state });
   return state;
 }

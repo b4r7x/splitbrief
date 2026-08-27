@@ -1,4 +1,4 @@
-import { getChromeHeight, getRailActiveIndex, selectRailForm } from './chrome-rows.js';
+import { getRailActiveIndex, selectRailForm } from './chrome-rows.js';
 import {
   briefListTopOffset,
   getRailStageZones,
@@ -11,6 +11,7 @@ import {
   getReviewContentLayout,
   getWorkflowContentRect,
   getWorkflowSidebarWidth,
+  getWorkflowViewportHeight,
   REVIEW_FRAME_ROWS,
 } from './rect.js';
 import {
@@ -80,10 +81,6 @@ function readRailFraction(): string {
   });
 }
 
-function readWorkflowChromeHeight(): number {
-  return getChromeHeight(inputHeightStore.get().rows);
-}
-
 function hasReviewLoadError(): boolean {
   return reviewStore.get().loadError !== null;
 }
@@ -106,10 +103,11 @@ export function readRailSnapshot(): RailSnapshot {
 }
 
 export function readReviewContentHeight(): number {
-  const viewportHeight = Math.max(
-    0,
-    terminalSizeStore.get().rows - readWorkflowChromeHeight() - readWorkflowPromptRows(),
-  );
+  const viewportHeight = getWorkflowViewportHeight({
+    rows: terminalSizeStore.get().rows,
+    inputRows: inputHeightStore.get().rows,
+    promptRows: readWorkflowPromptRows(),
+  });
   if (lifecycleStore.get().phase === 'reviewing-briefs') {
     const rowBudget = getSimpleBriefTaskRowBudget({
       containerHeight: viewportHeight,

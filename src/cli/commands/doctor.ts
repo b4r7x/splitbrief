@@ -56,13 +56,20 @@ const CLI_READINESS_CHECK_IDS: ReadonlySet<string> = new Set(
  * nothing — its CLI readiness checks are the live probe's verdict — so they are
  * re-supplied alongside the preflight's.
  */
-async function withPreparationPreflights(
-  collected: CollectedReadiness,
-  projectDir: string,
-  interaction: 'interactive' | 'headless',
-  runHelp: ArgVectorPreflightCheckInput['runHelp'],
-  collectAdmissionChecks: typeof collectRunnerAdmissionChecks = collectRunnerAdmissionChecks,
-): Promise<ReadinessReport> {
+async function withPreparationPreflights(options: {
+  readonly collected: CollectedReadiness;
+  readonly projectDir: string;
+  readonly interaction: 'interactive' | 'headless';
+  readonly runHelp?: ArgVectorPreflightCheckInput['runHelp'] | undefined;
+  readonly collectAdmissionChecks?: typeof collectRunnerAdmissionChecks | undefined;
+}): Promise<ReadinessReport> {
+  const {
+    collected,
+    projectDir,
+    interaction,
+    runHelp,
+    collectAdmissionChecks = collectRunnerAdmissionChecks,
+  } = options;
   const config = collected.config;
   if (config === undefined) return collected.report;
   const argVectorChecks = await collectArgVectorPreflightChecks({
@@ -122,13 +129,13 @@ export function registerDoctorCommand(program: Command, deps: DoctorDeps = {}): 
       // consent verdict is the headless one.
       const interaction =
         opts.json === true || process.stdin.isTTY !== true ? 'headless' : 'interactive';
-      const report = await withPreparationPreflights(
+      const report = await withPreparationPreflights({
         collected,
         projectDir,
         interaction,
-        deps.runArgVectorHelp,
-        deps.collectRunnerAdmissionChecks,
-      );
+        runHelp: deps.runArgVectorHelp,
+        collectAdmissionChecks: deps.collectRunnerAdmissionChecks,
+      });
 
       if (opts.json) {
         writeHeadlessJsonRecord({

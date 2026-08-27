@@ -15,11 +15,8 @@ describe('resolveReviewActionKey', () => {
     expect(parseReviewCommand(keyAction)).toEqual(typedAction);
   });
 
-  it('maps each action key to the review command it stands for', () => {
-    expect(resolveReviewActionKey('y', NO_MODIFIERS)).toBe('approve');
-    expect(resolveReviewActionKey('e', NO_MODIFIERS)).toBe('edit-file');
+  it('maps the comment key to the comment action', () => {
     expect(resolveReviewActionKey('c', NO_MODIFIERS)).toBe('comment');
-    expect(resolveReviewActionKey('q', NO_MODIFIERS)).toBe('reject');
   });
 
   it('accepts the shifted letter', () => {

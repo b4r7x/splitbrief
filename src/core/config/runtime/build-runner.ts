@@ -137,12 +137,11 @@ function resolveGenerationParams(opts: BuildRunnerOpts, target: RunnerTarget): G
   const state = targetState(opts, target);
 
   return {
-    model: state === 'changed' ? opts.model : (opts.model ?? sameTarget?.model),
+    model: opts.model ?? sameTarget?.model,
     contextLength: opts.contextLength ?? sameTarget?.contextLength,
     temperature: opts.temperature ?? sameTarget?.temperature,
     timeout: opts.timeout ?? ex?.timeout,
-    customModels:
-      state === 'changed' ? opts.customModels : (opts.customModels ?? sameTarget?.customModels),
+    customModels: opts.customModels ?? sameTarget?.customModels,
     effort: state === 'changed' ? undefined : (opts.effort ?? sameTarget?.effort),
   };
 }
@@ -272,7 +271,7 @@ function buildCliConfig(
   opts: BuildRunnerOpts,
 ): PlannerConfig | ImplementerConfig {
   const tool = opts.tool ?? (opts.existing?.kind === 'cli' ? opts.existing.tool : undefined);
-  if (!tool) throw configError.runnerMissingField(role, 'cli', 'tool');
+  if (!tool) throw configError.runnerMissingField({ role, kind: 'cli', field: 'tool' });
   if (!includes(CLI_TOOL_IDS, tool)) {
     throw configError.unknownCliTool(tool, CLI_TOOL_IDS);
   }
@@ -378,7 +377,7 @@ function buildCommandConfig(
 ): PlannerConfig | ImplementerConfig {
   const command =
     opts.command ?? (opts.existing?.kind === kind ? opts.existing.command : undefined);
-  if (!command) throw configError.runnerMissingField(role, kind, 'command');
+  if (!command) throw configError.runnerMissingField({ role, kind, field: 'command' });
 
   const target = { kind, id: command };
   const existing = existingAtTarget(opts, target);

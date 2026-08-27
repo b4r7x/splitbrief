@@ -108,7 +108,7 @@ export async function createStagedProject(
     });
     const sandboxEnv = config
       ? await createRunnerSandboxEnv(stagedProjectDir, config[role], role)
-      : await createSandboxEnv(stagedProjectDir);
+      : await createSandboxEnv({ projectDir: stagedProjectDir });
     return {
       projectDir: stagedProjectDir,
       sandboxEnv,
