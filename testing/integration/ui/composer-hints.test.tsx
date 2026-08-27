@@ -101,7 +101,7 @@ describe('composer in-box footer hints', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain(cost);
-    expectFrameUsesThemeColor(frame, getTheme('terminal').warning, cost);
+    expectFrameUsesThemeColor(frame, getTheme().warning, cost);
 
     ui.unmount();
   });

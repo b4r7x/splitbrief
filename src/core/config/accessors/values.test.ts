@@ -5,7 +5,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 const mockConfig = makeConfig({
   planner: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
   implementer: { temperature: 0.3 },
-  theme: 'terminal',
+  plannerEstimateReview: true,
   sessions: { scope: 'project' },
 });
 
@@ -17,7 +17,7 @@ describe('getConfigValue', () => {
   });
 
   it('reads top-level values', () => {
-    expect(getConfigValue(mockConfig, 'theme')).toBe('terminal');
+    expect(getConfigValue(mockConfig, 'plannerEstimateReview')).toBe(true);
     expect(getConfigValue(mockConfig, 'sessions.scope')).toBe('project');
   });
 
@@ -27,7 +27,7 @@ describe('getConfigValue', () => {
   });
 
   it('returns undefined when traversing through a non-object', () => {
-    expect(getConfigValue(mockConfig, 'theme.nested')).toBeUndefined();
+    expect(getConfigValue(mockConfig, 'plannerEstimateReview.nested')).toBeUndefined();
   });
 });
 
@@ -77,7 +77,7 @@ describe('applyEdits', () => {
 
   it('does not mutate the original config', () => {
     const original = structuredClone(mockConfig);
-    applyEdits(mockConfig, { theme: 'mono' });
+    applyEdits(mockConfig, { 'workflow.mode': 'quick' });
     expect(mockConfig).toEqual(original);
   });
 

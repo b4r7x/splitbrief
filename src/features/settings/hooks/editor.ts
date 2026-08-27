@@ -59,6 +59,9 @@ export function hintFor(item: SettingsItem): string {
     case 'seat':
       return '⏎ change seat';
     case 'effort':
+      if (item.row.inherited || !item.row.deliverable || !item.row.editable) {
+        return '';
+      }
       return 'space cycle';
     default:
       return assertNever(item.row);
@@ -190,6 +193,7 @@ export function useSettingsEditor({
       feedbackStore.setMessage(settingsItemDescription({ item, config }));
       return;
     }
+    if (!row.deliverable || !row.editable) return;
     cycleEffort(row.seatId);
   };
 

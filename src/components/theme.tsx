@@ -61,7 +61,7 @@ export interface Theme {
   };
 }
 
-const terminalTheme: Theme = {
+export const terminalTheme: Theme = {
   text: 'white',
   textDim: 'gray',
   // Cyan is the link, and nothing else on a document or chrome surface may take it.
@@ -69,7 +69,7 @@ const terminalTheme: Theme = {
   success: 'green',
   error: 'red',
   warning: 'yellow',
-  dimError: 'red', // 16-color named ANSI collapses dim to base error/success; mono separates them.
+  dimError: 'red', // 16-color named ANSI collapses dim to base error/success.
   dimSuccess: 'green',
   // Five tokens co-occur in the activity label column — accent, planner, info, implementer,
   // reviewer. Of the three brights this palette leaves unspent, blackBright is gray under
@@ -137,88 +137,22 @@ const terminalTheme: Theme = {
   },
 };
 
-const monoTheme: Theme = {
-  text: '#c0c0c0',
-  textDim: '#666666',
-  accent: '#7aa2f7',
-  success: '#9ece6a',
-  error: '#f7768e',
-  warning: '#e0af68',
-  dimError: '#a85561',
-  dimSuccess: '#6e8f4a',
-  info: '#666666',
-  planner: '#bb9af7',
-  implementer: '#7dcfff',
-  reviewer: '#e57bc4',
-  validator: '#c0c0c0',
-  border: '#3b3b3b',
-  panelBg: '#1a1a1a',
-  suggestionPanelBg: '#1a1a1a',
-  selectionBg: '#2a2a3a',
-  scrollIndicator: '#666666',
-  diff: {
-    added: '#4fd6be',
-    removed: '#c53b53',
-    context: '#828bb8',
-  },
-  markdown: {
-    heading: '#e8e8e8',
-    bold: '#c0c0c0',
-    italic: '#828bb8',
-    // Not #e0af68: that is warning, and inline code appears in ordinary prose.
-    code: '#ff9e64',
-    codeBg: '#24283b',
-    codeGutter: '#6272a4',
-    blockquote: '#828bb8',
-    list: '#565f89',
-    rule: '#3b3b3b',
-    // Not #7aa2f7: that is accent here, so anything emphasised looked exactly like a link. The
-    // reservation attaches to the link token, and in this preset the link token is not cyan.
-    link: '#2ac3de',
-    strike: '#666666',
-    tableBorder: '#3b3b3b',
-  },
-  syntax: {
-    keyword: '#bb9af7',
-    string: '#9ece6a',
-    comment: '#565f89',
-    number: '#ff9e64',
-    literal: '#ff9e64',
-    type: '#2ac3de',
-    function: '#7aa2f7',
-    punctuation: '#828bb8',
-  },
-  cursor: {
-    fg: '#1a1a1a',
-    bg: '#c0c0c0',
-  },
-  review: {
-    file: '#2ac3de', // a file path that is also a link takes the link tone
-  },
-  highlight: {
-    bg: '#2a2a3a',
-    fg: '#c0c0c0',
-  },
-};
-
 // What the code frame becomes once chalk downsamples it to the 16-color set (ansi-styles
 // rgbToAnsi): #24283b lands on bgBlack, which on a dark profile is the terminal's own ground,
 // so the painted block stops framing anything; #6272a4 lands on blue, the same bucket the
 // terminal preset already spends on syntax.function, so the rail takes the color of the code it
 // encloses. No named background frames without shouting, so at 16 colors the rail, the padding
 // and the right-flush language tag carry the frame on their own.
-const ansiTerminalTheme: Theme = {
+export const ansiTerminalTheme: Theme = {
   ...terminalTheme,
   markdown: { ...terminalTheme.markdown, codeBg: undefined, codeGutter: 'gray' },
 };
 
-export function getTheme(mode: 'terminal' | 'mono' = 'terminal'): Theme {
-  return mode === 'mono' ? monoTheme : terminalTheme;
+export function getTheme(): Theme {
+  return terminalTheme;
 }
 
-// The mono preset is truecolor/256 hex. On a 16-color terminal those hexes are downsampled to the
-// nearest ANSI bucket, where slate textDim (#666) and accent (#7aa2f7) can collapse together and
-// break the dim-vs-accent separation. Only offer it when the terminal advertises hi-color support;
+// Only offer hi-color when the terminal advertises hi-color support;
 // otherwise fall back to the named-ANSI preset, which stays legible everywhere.
 export function supportsHexColors(env: NodeJS.ProcessEnv = process.env): boolean {
   if (env.NO_COLOR !== undefined && env.NO_COLOR !== '') return false;
@@ -227,12 +161,9 @@ export function supportsHexColors(env: NodeJS.ProcessEnv = process.env): boolean
   return /256/.test(env.TERM ?? '');
 }
 
-export function resolveTheme(
-  mode: 'terminal' | 'mono' = 'terminal',
-  env?: NodeJS.ProcessEnv,
-): Theme {
+export function resolveTheme(env?: NodeJS.ProcessEnv): Theme {
   if (!supportsHexColors(env)) return ansiTerminalTheme;
-  return getTheme(mode);
+  return terminalTheme;
 }
 
 const ThemeContext = createContext<Theme>(terminalTheme);

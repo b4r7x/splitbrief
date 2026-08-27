@@ -186,7 +186,7 @@ describe('SingleColumnPicker row zones', () => {
   it('renders an overflow thumb with the muted scrollbar color, not the accent color', async () => {
     const originalColorLevel = chalk.level;
     chalk.level = 1;
-    const theme = { ...getTheme('terminal'), accent: 'red', scrollIndicator: 'green' };
+    const theme = { ...getTheme(), accent: 'red', scrollIndicator: 'green' };
     const ui = renderFeature(
       <ThemeProvider theme={theme}>
         <SingleColumnPicker

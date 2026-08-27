@@ -1,10 +1,5 @@
 import type { Config } from '../schemas/config.js';
-import {
-  APPROVE_LEVELS,
-  COMMIT_STRATEGIES,
-  THEME_MODES,
-  WORKFLOW_MODES,
-} from '../schemas/enums.js';
+import { APPROVE_LEVELS, COMMIT_STRATEGIES, WORKFLOW_MODES } from '../schemas/enums.js';
 import { CompactionFormatSchema } from '../schemas/compaction.js';
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import { RUNNER_IDLE_KILL_MS } from '../schemas/runner-fields.js';
@@ -14,13 +9,7 @@ const MAX_RETRIES_LIMIT = 10;
 const isApiImplementer = (config: Config): boolean =>
   resolveImplementerProfiles(config).defaultProfile.config.kind === 'api';
 
-export const SETTINGS_SECTIONS = [
-  'Crew',
-  'Tuning',
-  'Validation',
-  'Workflow',
-  'Appearance',
-] as const;
+export const SETTINGS_SECTIONS = ['Crew', 'Tuning', 'Workflow', 'Validation'] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
@@ -83,34 +72,6 @@ export const SETTINGS_DEFS: SettingDef[] = [
     unsetLabel: `auto (idle kill ${RUNNER_IDLE_KILL_MS / 60_000}m)`,
   },
   {
-    id: 'validation.typecheck',
-    label: 'Type check',
-    section: 'Validation',
-    description: 'Run tsc type checking',
-    kind: 'boolean',
-  },
-  {
-    id: 'validation.lint',
-    label: 'Lint',
-    section: 'Validation',
-    description: 'Run linter',
-    kind: 'boolean',
-  },
-  {
-    id: 'validation.test',
-    label: 'Test',
-    section: 'Validation',
-    description: 'Run test suite',
-    kind: 'boolean',
-  },
-  {
-    id: 'validation.testCommand',
-    label: 'Test command',
-    section: 'Validation',
-    description: 'Argv-style test runner command',
-    kind: 'string',
-  },
-  {
     id: 'workflow.mode',
     label: 'Mode',
     section: 'Workflow',
@@ -162,11 +123,31 @@ export const SETTINGS_DEFS: SettingDef[] = [
     readValue: (config) => config.workflow.git?.createBranch ?? false,
   },
   {
-    id: 'theme',
-    label: 'Theme',
-    section: 'Appearance',
-    description: 'Color palette mode',
-    kind: 'enum',
-    options: [...THEME_MODES],
+    id: 'validation.typecheck',
+    label: 'Type check',
+    section: 'Validation',
+    description: 'Run tsc type checking',
+    kind: 'boolean',
+  },
+  {
+    id: 'validation.lint',
+    label: 'Lint',
+    section: 'Validation',
+    description: 'Run linter',
+    kind: 'boolean',
+  },
+  {
+    id: 'validation.test',
+    label: 'Test',
+    section: 'Validation',
+    description: 'Run test suite',
+    kind: 'boolean',
+  },
+  {
+    id: 'validation.testCommand',
+    label: 'Test command',
+    section: 'Validation',
+    description: 'Argv-style test runner command',
+    kind: 'string',
   },
 ];

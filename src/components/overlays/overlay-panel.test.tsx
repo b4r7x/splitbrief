@@ -49,7 +49,7 @@ describe('OverlayPanel title', () => {
   // §1.1 accent budget: surface titles are quiet dim metadata; the lone accent per region is the
   // focused row's `▌` bar. A `·`-separated title must never accent its head (the prior regression).
   it.each(['help · commands & shortcuts'])('renders "%s" dim with no accent head', (title) => {
-    const theme = getTheme('terminal');
+    const theme = getTheme();
     const accentOpen = colorOpen(theme.accent);
     const dimOpen = colorOpen(theme.textDim);
 

@@ -41,6 +41,7 @@ import {
   modelCacheStore,
   type DiscoverySourceRefresh,
 } from '../../stores/discovery/model-cache.js';
+import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
 
 export interface PickerCatalog {
   items: PickerOption[];
@@ -285,7 +286,11 @@ export function usePickerCatalog(
     resolveRightIndex,
     focusModels: focusedIndex >= 0,
     roleLabel: ROLE_LABELS[role],
-    plannerIdentity: formatSeatIdentity(readActiveRunner({ config, role: 'planner' })),
+    plannerIdentity: (() => {
+      const plannerRunner = readActiveRunner({ config, role: 'planner' });
+      const displayName = resolveSeatDisplayName(plannerRunner, 'planner', modelCacheStore);
+      return formatSeatIdentity(plannerRunner, displayName);
+    })(),
     currentModel,
     persistedModel,
     modelCounts,

@@ -34,7 +34,6 @@ function writeConfigYaml(extras: Record<string, unknown> = {}) {
       max_retries: 3,
       mode: 'standard',
     },
-    theme: 'terminal',
     sessions: { scope: 'project' },
     ...extras,
   };
@@ -196,14 +195,14 @@ describe('configStore.save', () => {
   it('writes config to disk and updates store', async () => {
     writeConfigYaml();
     configStore.load(tmpDir);
-    const updated = { ...loadedConfig(), theme: 'mono' as const };
+    const updated = { ...loadedConfig(), plannerEstimateReview: true };
     const result = await configStore.save(updated);
 
     expect(result.ok).toBe(true);
     expect(result.kind).toBe('saved');
-    expect(loadedConfig().theme).toBe('mono');
+    expect(loadedConfig().plannerEstimateReview).toBe(true);
     const written = YAML.parse(readFileSync(join(tmpDir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'));
-    expect(written.theme).toBe('mono');
+    expect(written.planner_estimate_review).toBe(true);
   });
 
   it('does not persist an implementer model override when saving an unrelated setting', async () => {
@@ -212,13 +211,13 @@ describe('configStore.save', () => {
     expect(loadedConfig().implementer.model).toBe('cli-override');
 
     const result = await configStore.save(
-      structuredClone({ ...loadedConfig(), theme: 'mono' as const }),
+      structuredClone({ ...loadedConfig(), plannerEstimateReview: true }),
     );
 
     expect(result.ok).toBe(true);
     expect(loadedConfig().implementer.model).toBe('cli-override');
     const { config: diskConfig } = loadConfig(tmpDir);
-    expect(diskConfig.theme).toBe('mono');
+    expect(diskConfig.plannerEstimateReview).toBe(true);
     expect(diskConfig.implementer.model).toBe('qwen2.5-coder:7b');
   });
 
@@ -267,12 +266,12 @@ describe('configStore.save', () => {
     expect(loadedConfig().implementer.contextLength).toBe(8192);
     configStore.setContextLength(16384);
 
-    const result = await configStore.save({ ...loadedConfig(), theme: 'mono' as const });
+    const result = await configStore.save({ ...loadedConfig(), plannerEstimateReview: true });
 
     expect(result.ok).toBe(true);
     expect(loadedConfig().implementer.contextLength).toBe(16384);
     const { config: diskConfig } = loadConfig(tmpDir);
-    expect(diskConfig.theme).toBe('mono');
+    expect(diskConfig.plannerEstimateReview).toBe(true);
     expect(diskConfig.implementer.contextLength).toBe(8192);
   });
 
@@ -300,7 +299,7 @@ describe('configStore.save', () => {
       projectDir: '/tmp/\0invalid',
       overrides: loaded.overrides,
     });
-    const result = await configStore.save({ ...loadedConfig(), theme: 'mono' });
+    const result = await configStore.save({ ...loadedConfig(), plannerEstimateReview: true });
     expect(result.ok).toBe(false);
     expect(result.kind).toBe('failure');
     if (result.kind === 'failure') expect(result.error).toBeInstanceOf(Error);
@@ -318,16 +317,16 @@ describe('configStore.save', () => {
 
   it('writes a complete versioned config when saving with no existing file', async () => {
     configStore.load(tmpDir);
-    const updated = { ...loadedConfig(), theme: 'mono' as const };
+    const updated = { ...loadedConfig(), plannerEstimateReview: true };
 
     const result = await configStore.save(updated);
 
     expect(result.ok).toBe(true);
     const written = YAML.parse(readFileSync(join(tmpDir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'));
-    expect(written.theme).toBe('mono');
+    expect(written.planner_estimate_review).toBe(true);
     expect(written.version).toBe(3);
     const { config: diskConfig, warnings } = loadConfig(tmpDir);
-    expect(diskConfig.theme).toBe('mono');
+    expect(diskConfig.plannerEstimateReview).toBe(true);
     expect(diskConfig.version).toBe(3);
     expect(warnings.some((w) => w.includes('config.version is missing'))).toBe(false);
   });
@@ -336,13 +335,13 @@ describe('configStore.save', () => {
     writeConfigYaml();
     configStore.load(tmpDir);
     const beforeRaw = readFileSync(join(tmpDir, SPLITBRIEF_DIR, CONFIG_FILE), 'utf8');
-    const save = configStore.save({ ...loadedConfig(), theme: 'mono' });
+    const save = configStore.save({ ...loadedConfig(), plannerEstimateReview: true });
 
-    expect(loadedConfig().theme).toBe('terminal');
+    expect(loadedConfig().plannerEstimateReview).toBe(false);
     expect(readFileSync(join(tmpDir, SPLITBRIEF_DIR, CONFIG_FILE), 'utf8')).toBe(beforeRaw);
 
     await expect(save).resolves.toMatchObject({ kind: 'saved', ok: true });
-    expect(loadedConfig().theme).toBe('mono');
+    expect(loadedConfig().plannerEstimateReview).toBe(true);
   });
 
   it('returns conflict without publishing stale attempted config or replacing external bytes', async () => {
@@ -352,10 +351,10 @@ describe('configStore.save', () => {
     const external = readFileSync(path, 'utf8').replace('max_retries: 3', 'max_retries: 7');
     writeFileSync(path, external);
 
-    const result = await configStore.save({ ...loadedConfig(), theme: 'mono' });
+    const result = await configStore.save({ ...loadedConfig(), plannerEstimateReview: true });
 
     expect(result).toMatchObject({ kind: 'conflict', ok: false });
-    expect(loadedConfig().theme).toBe('terminal');
+    expect(loadedConfig().plannerEstimateReview).toBe(false);
     expect(readFileSync(path, 'utf8')).toBe(external);
   });
 
@@ -364,7 +363,7 @@ describe('configStore.save', () => {
     configStore.load(tmpDir);
     const initial = loadedConfig();
 
-    const first = configStore.save({ ...initial, theme: 'mono' });
+    const first = configStore.save({ ...initial, plannerEstimateReview: true });
     const second = configStore.save({
       ...initial,
       workflow: { ...initial.workflow, maxRetries: 9 },
@@ -374,7 +373,7 @@ describe('configStore.save', () => {
     expect(firstResult.kind).toBe('saved');
     expect(secondResult.kind).toBe('conflict');
     const disk = loadConfig(tmpDir).config;
-    expect(disk.theme).toBe('mono');
+    expect(disk.plannerEstimateReview).toBe(true);
     expect(disk.workflow.maxRetries).toBe(3);
   });
 });
@@ -398,7 +397,7 @@ describe('config persistence semantic diff', () => {
     };
     const after: Config = {
       ...before,
-      theme: 'mono',
+      plannerEstimateReview: true,
       implementerProfiles: {
         default: 'fast',
         profiles: {
@@ -418,7 +417,7 @@ describe('config persistence semantic diff', () => {
     expect(edits).toHaveLength(2);
     expect(edits).toEqual(
       expect.arrayContaining([
-        { path: ['theme'], value: 'mono' },
+        { path: ['planner_estimate_review'], value: true },
         {
           path: ['implementer_profiles', 'profiles', 'fast', 'cost_tier'],
           value: 'cheap',
@@ -460,7 +459,7 @@ version: 3
 implementer:
   model: qwen2.5-coder:7b # my favourite model
   context_length: 8192
-theme: terminal
+planner_estimate_review: false
 my_custom_key: keep-this-too
 `;
 
@@ -476,7 +475,7 @@ implementer_profiles:
       model: "gpt-5.4-mini" # keep quoting and comment
       label: 'Fast profile'
       cost_tier: standard
-theme: terminal
+planner_estimate_review: false
 my_custom_key: "keep: this # exactly"
 `;
     writeRawConfig(beforeRaw);
@@ -487,7 +486,7 @@ my_custom_key: "keep: this # exactly"
     if (!fastProfile) throw new Error('Expected the fast implementer profile');
     const updated: Config = {
       ...before,
-      theme: 'mono',
+      plannerEstimateReview: true,
       implementerProfiles: {
         default: 'fast',
         profiles: {
@@ -502,10 +501,10 @@ my_custom_key: "keep: this # exactly"
     expect(
       afterRaw
         .replace('cost_tier: cheap', 'cost_tier: standard')
-        .replace('theme: mono', 'theme: terminal'),
+        .replace('planner_estimate_review: true', 'planner_estimate_review: false'),
     ).toBe(beforeRaw);
     const reloaded = loadConfig(tmpDir).config;
-    expect(reloaded.theme).toBe('mono');
+    expect(reloaded.plannerEstimateReview).toBe(true);
     expect(reloaded.implementerProfiles?.profiles.fast?.costTier).toBe('cheap');
     expect(reloaded.implementerProfiles?.profiles.fast?.model).toBe('gpt-5.4-mini');
   });
@@ -515,7 +514,7 @@ my_custom_key: "keep: this # exactly"
     writeRawConfig(HAND_EDITED);
     configStore.load(tmpDir);
 
-    const updated = { ...loadedConfig(), theme: 'mono' as const };
+    const updated = { ...loadedConfig(), plannerEstimateReview: true };
     const result = await configStore.save(updated);
 
     expect(result.ok).toBe(true);
@@ -523,7 +522,7 @@ my_custom_key: "keep: this # exactly"
     expect(raw).toContain('# splitbrief config — hand edited, keep me');
     expect(raw).toContain('# my favourite model');
     expect(raw).toContain('my_custom_key: keep-this-too');
-    expect(raw).toMatch(/theme: mono/);
+    expect(raw).toMatch(/planner_estimate_review: true/);
     const gitignore = readFileSync(join(tmpDir, '.gitignore'), 'utf-8');
     expect(gitignore.split('\n').filter((line) => line === `${SPLITBRIEF_DIR}/`)).toHaveLength(1);
     expect(gitignore.split('\n').filter((line) => line === `${TREES_DIR}/`)).toHaveLength(1);
@@ -533,7 +532,7 @@ my_custom_key: "keep: this # exactly"
     writeRawConfig(HAND_EDITED);
     configStore.load(tmpDir);
 
-    const updated = { ...loadedConfig(), theme: 'mono' as const };
+    const updated = { ...loadedConfig(), plannerEstimateReview: true };
     const result = await configStore.save(updated);
 
     expect(result.ok).toBe(true);
@@ -541,15 +540,15 @@ my_custom_key: "keep: this # exactly"
     expect(raw).toContain('# splitbrief config — hand edited, keep me');
     expect(raw).toContain('# my favourite model');
     expect(raw).toContain('my_custom_key: keep-this-too');
-    expect(raw).toMatch(/theme: mono/);
-    expect(raw.indexOf('implementer:')).toBeLessThan(raw.indexOf('theme:'));
+    expect(raw).toMatch(/planner_estimate_review: true/);
+    expect(raw.indexOf('implementer:')).toBeLessThan(raw.indexOf('planner_estimate_review:'));
   });
 
   it('does not bake default-merged values into the file on save', async () => {
     writeRawConfig(HAND_EDITED);
     configStore.load(tmpDir);
 
-    await configStore.save({ ...loadedConfig(), theme: 'mono' as const });
+    await configStore.save({ ...loadedConfig(), plannerEstimateReview: true });
 
     const raw = readRawConfig();
     expect(raw).not.toContain('planner:');
@@ -558,7 +557,7 @@ my_custom_key: "keep: this # exactly"
     expect(raw).not.toContain('max_retries');
     const parsed = YAML.parse(raw) as Record<string, unknown>;
     expect(Object.keys(parsed).sort()).toEqual(
-      ['implementer', 'my_custom_key', 'theme', 'version'].sort(),
+      ['implementer', 'my_custom_key', 'planner_estimate_review', 'version'].sort(),
     );
   });
 

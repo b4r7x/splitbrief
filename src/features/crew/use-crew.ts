@@ -3,6 +3,7 @@ import { computeCrewPresets, type CrewPreset } from '../../core/crew/presets.js'
 import { deriveCrewRows, type CrewRow } from '../../core/crew/rows.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
+import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { crewVerdict } from './rows.js';
 
 export interface Crew {
@@ -17,7 +18,8 @@ export function useCrew(): Crew {
   const readyTools = cliTools
     .filter((detection) => detection.diagnostic.state === 'ready')
     .map((detection) => detection.tool);
-  const rows = deriveCrewRows({ config });
+  const displayNames = useCrewDisplayNames(config);
+  const rows = deriveCrewRows({ config, displayNames });
 
   return {
     rows,

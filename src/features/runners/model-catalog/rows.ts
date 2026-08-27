@@ -1,4 +1,3 @@
-import { SOFT_SEP } from '../../../components/separators.js';
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import type { ProvenanceWord } from '../../../core/providers/provenance.js';
@@ -105,8 +104,14 @@ function providerKeyOf(model: ModelOption): string {
 }
 
 function providerDisplayName(key: string): string {
+  if (key === 'opencode-go') return 'OpenCode Go';
+  if (key === 'opencode') return 'OpenCode';
   const named = getProviderDisplayName(key);
-  return named === key ? key.charAt(0).toUpperCase() + key.slice(1) : named;
+  if (named !== key) return named;
+  return key
+    .split('-')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 interface Placement {
@@ -141,13 +146,14 @@ function groupRank(key: string): number {
   return 3;
 }
 
-function sectionLabel(key: string, count: number): string {
+function sectionLabel(key: string): string {
   if (key === 'configured') return 'Configured';
-  if (key === 'known') return ['Known aliases', String(count)].join(SOFT_SEP);
+  if (key === 'known') return 'Suggestions';
   const [lead, providerKey = ''] = key.split(':');
-  const word = lead === 'detected' ? 'Detected' : 'Catalog';
-  if (providerKey === '') return [word, String(count)].join(SOFT_SEP);
-  return [word, providerDisplayName(providerKey), String(count)].join(SOFT_SEP);
+  if (lead === 'detected') {
+    return providerKey === '' ? 'Detected' : `On ${providerDisplayName(providerKey)}`;
+  }
+  return 'Catalog (models.dev)';
 }
 
 function byReleaseDateDesc(a: Placement, b: Placement): number {
@@ -226,7 +232,7 @@ export function buildRightRows(input: {
   } else {
     for (const key of order) {
       const members = placements.filter((placement) => placement.group === key);
-      const section = sectionLabel(key, members.length);
+      const section = sectionLabel(key);
       const ordered = key === 'configured' ? members : members.toSorted(byReleaseDateDesc);
       for (const placement of ordered) pushModel(placement, section);
     }

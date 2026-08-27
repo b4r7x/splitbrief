@@ -380,7 +380,7 @@ describe('config document transaction safety', () => {
       writeFileSync(configPath(dir), external);
 
       const result = await transactConfigDocument(dir, before.revision, [
-        { path: ['theme'], value: 'mono' },
+        { path: ['workflow', 'mode'], value: 'quick' },
       ]);
 
       expect(result).toMatchObject({ kind: 'conflict' });
@@ -398,7 +398,7 @@ describe('config document transaction safety', () => {
       const result = await transactConfigDocumentForTest(
         dir,
         before.revision,
-        [{ path: ['theme'], value: 'mono' }],
+        [{ path: ['workflow', 'mode'], value: 'quick' }],
         (path, bytes, options) =>
           confinedAtomicWriteFileForTest(path, bytes, options, {
             fsync: async (handle, target) => {
@@ -410,7 +410,7 @@ describe('config document transaction safety', () => {
       );
 
       expect(result).toMatchObject({ kind: 'durability-uncertain' });
-      expect(loadConfig(dir).config.theme).toBe('mono');
+      expect(loadConfig(dir).config.workflow.mode).toBe('quick');
     } finally {
       cleanupTempDir(dir);
     }
@@ -424,14 +424,14 @@ describe('config document transaction safety', () => {
       const result = await transactConfigDocumentForTest(
         dir,
         before.revision,
-        [{ path: ['theme'], value: 'mono' }],
+        [{ path: ['workflow', 'mode'], value: 'quick' }],
         (path, bytes, options) =>
           confinedAtomicWriteFileForTest(path, bytes, options, {
             fsync: async (handle, target) => {
               if (target === 'directory') {
                 writeFileSync(
                   path,
-                  Buffer.from(bytes).toString('utf8').replace('theme: mono', 'theme: terminal'),
+                  Buffer.from(bytes).toString('utf8').replace('mode: quick', 'mode: standard'),
                 );
                 throw Object.assign(new Error('sync failed'), { code: 'EIO' });
               }
@@ -441,7 +441,7 @@ describe('config document transaction safety', () => {
       );
 
       expect(result).toMatchObject({ kind: 'durability-uncertain' });
-      expect(loadConfig(dir).config.theme).toBe('terminal');
+      expect(loadConfig(dir).config.workflow.mode).toBe('standard');
     } finally {
       cleanupTempDir(dir);
     }
@@ -457,7 +457,7 @@ describe('config document transaction safety', () => {
         transactConfigDocumentForTest(
           dir,
           before.revision,
-          [{ path: ['theme'], value: 'mono' }],
+          [{ path: ['workflow', 'mode'], value: 'quick' }],
           (path, bytes, options) =>
             confinedAtomicWriteFileForTest(path, bytes, options, {
               fsync: async (handle, target) => {

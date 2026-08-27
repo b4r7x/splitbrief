@@ -63,7 +63,6 @@ type ConfigInput = {
   reviewer?: unknown;
   validation: Config['validation'];
   workflow: Config['workflow'];
-  theme?: Config['theme'];
   sessions?: Config['sessions'];
   escalation?: Config['escalation'];
   codebase?: Config['codebase'];
@@ -135,7 +134,6 @@ export function makeConfig(overrides?: ConfigOverrides): Config {
     },
   };
   if (overrides?.reviewer !== undefined) base.reviewer = makePlannerConfig(overrides.reviewer);
-  if (overrides?.theme !== undefined) base.theme = overrides.theme;
   if (overrides?.sessions !== undefined) base.sessions = overrides.sessions;
   if (overrides?.escalation !== undefined) base.escalation = overrides.escalation;
   if (overrides?.codebase !== undefined) base.codebase = overrides.codebase;

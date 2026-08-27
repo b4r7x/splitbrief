@@ -90,7 +90,7 @@ export function renderModelRow({
   if (row.kind === 'notice') return <NoticeRow row={row} isCursor={isCursor} />;
   if (row.kind === 'route') return <RouteRow row={row} isCursor={isCursor} width={maxWidth} />;
 
-  const name = formatModelName(row.model.id);
+  const name = row.model.displayName ?? formatModelName(row.model.id);
   const routeCount = row.model.variants?.length ?? 0;
   const contextStr = row.model.contextLength ? formatContextLength(row.model.contextLength) : '';
   const carriesWord = row.provenance === 'Default' || !sectioned;

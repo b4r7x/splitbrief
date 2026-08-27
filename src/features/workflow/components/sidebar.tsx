@@ -19,6 +19,7 @@ import {
   PLANNER_INHERITANCE,
 } from '../../../core/crew/identity.js';
 import { CREW_SEAT_ROLES, deriveCrewSeats, type CrewSeat } from '../../../core/crew/seats.js';
+import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import { formatStageLabel } from '../../../core/phase-display.js';
 import { formatStageElapsed } from '../display/live-activity.js';
 import { getActiveRailStage } from '../layout/chrome-rows.js';
@@ -230,9 +231,9 @@ function combinedOverflowLabel(above: string, below: string, width: number): str
 
 // The seat row spends its whole budget on the full identity; an inherited review seat says so
 // instead of repeating the planner's words a row above it.
-function seatIdentity(seat: CrewSeat, budget: number): string {
+function seatIdentity(seat: CrewSeat, budget: number, displayName?: string | undefined): string {
   if (seat.id === 'review' && seat.source === 'planner') return PLANNER_INHERITANCE.mark;
-  return fitSeatIdentity({ runner: seat.runner, budget });
+  return fitSeatIdentity({ runner: seat.runner, budget, displayName });
 }
 
 function taskHasStatusTail(task: WorkflowTask): boolean {
@@ -244,8 +245,9 @@ export function Sidebar({ width, height }: SidebarProps) {
   const t = useTheme();
   const view = tasksStore.use(selectTaskListView);
   const config = configStore.use((s) => s.config);
+  const displayNames = useCrewDisplayNames(config);
   const mode = config?.workflow?.mode;
-  const seats = config ? deriveCrewSeats({ config }) : [];
+  const seats = config ? deriveCrewSeats({ config, displayNames }) : [];
   const advisory = useAdvisory();
   const cost = useCostStats();
   const tasks = view.items;
@@ -345,7 +347,7 @@ export function Sidebar({ width, height }: SidebarProps) {
                 {seat.label.padEnd(CREW_LABEL_WIDTH)}
               </Text>
               <Text color={t[CREW_SEAT_ROLES[seat.id]]}>
-                {seatIdentity(seat, innerWidth - CREW_LABEL_WIDTH)}
+                {seatIdentity(seat, innerWidth - CREW_LABEL_WIDTH, displayNames?.[seat.id])}
               </Text>
             </Text>
           ))}

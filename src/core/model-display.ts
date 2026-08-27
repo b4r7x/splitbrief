@@ -58,6 +58,7 @@ const SIZE_RE = /^\d+(?:\.\d+)?b$/i;
 const VERSION_RE = /^[\d.]+$/;
 const VERSION_PREFIX_RE = /^v\d/i;
 const O_SERIES_RE = /^o\d/;
+const DATE_STAMP_RE = /^\d{8}$/;
 
 export function stripVendorPrefix(id: string): string {
   const slash = id.indexOf('/');
@@ -99,7 +100,11 @@ function parseModelName(rawId: string): string {
   }
 
   const tag = formatTag(tagStr);
-  const tokens = base.split('-');
+  const rawTokens = base.split('-');
+  const tokens =
+    rawTokens.length > 1 && DATE_STAMP_RE.test(rawTokens[rawTokens.length - 1] ?? '')
+      ? rawTokens.slice(0, -1)
+      : rawTokens;
   const parts: string[] = [];
   let isGpt = false;
 

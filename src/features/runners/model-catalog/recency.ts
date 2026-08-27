@@ -5,6 +5,7 @@ export interface ModelVariant {
   fullId: string;
   providerPrefix: string;
   tag: string;
+  displayName?: string | undefined;
   /** Pre-merge enumeration facts so counting can restate per-variant truth. */
   membership?: ResolvedModelMembership | undefined;
   isCustom?: boolean | undefined;
@@ -12,6 +13,7 @@ export interface ModelVariant {
 
 export interface ModelOption {
   id: string;
+  displayName?: string | undefined;
   isDefault?: boolean | undefined;
   isDetected?: boolean | undefined;
   /** Membership remains visible after engine catalog projection. */

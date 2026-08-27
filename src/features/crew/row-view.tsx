@@ -68,6 +68,7 @@ export function CrewRowView({ row, layout, isCursor, width, planner }: CrewRowVi
     formatted.posture === undefined
       ? formatted.content
       : padTerminalDisplayTextEnd(formatted.content, layout.identityWidth);
+  const isDimmed = row.kind === 'effort' && !row.deliverable && !row.inherited;
 
   return (
     <Box>
@@ -75,10 +76,10 @@ export function CrewRowView({ row, layout, isCursor, width, planner }: CrewRowVi
         {isCursor ? `${glyph('liveBar')} ` : ' '.repeat(CREW_MARKER_GUTTER)}
       </Text>
       <Text color={t.border}>{`${glyph(RAIL_GLYPHS[formatted.branch])} `}</Text>
-      <Text color={seatHue(t, row)} bold>
+      <Text color={isDimmed ? t.textDim : seatHue(t, row)} bold={!isDimmed}>
         {formatted.label}
       </Text>
-      <Text color={t.text}>{`${CREW_COLUMN_GAP}${content}`}</Text>
+      <Text color={isDimmed ? t.textDim : t.text}>{`${CREW_COLUMN_GAP}${content}`}</Text>
       {formatted.posture !== undefined && (
         <Text color={t.textDim}>
           {`${CREW_COLUMN_GAP}${padStartToCells(formatted.posture, postureWidth)}`}

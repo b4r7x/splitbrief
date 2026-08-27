@@ -1,14 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import type { Theme } from './theme.js';
-import { getTheme, resolveTheme, supportsHexColors } from './theme.js';
+import {
+  ansiTerminalTheme,
+  getTheme,
+  resolveTheme,
+  supportsHexColors,
+  terminalTheme,
+} from './theme.js';
 
-// Every palette the app can hand out: the two presets plus the named-ANSI fallback resolveTheme
+// Every palette the app can hand out: terminalTheme plus the named-ANSI fallback resolveTheme
 // substitutes when the terminal cannot render hex.
-const PALETTES = [
-  getTheme('terminal'),
-  getTheme('mono'),
-  resolveTheme('terminal', { TERM: 'xterm' }),
-];
+const PALETTES = [terminalTheme, ansiTerminalTheme];
 
 const isString = (value: unknown): value is string => typeof value === 'string';
 
@@ -46,34 +48,19 @@ describe('supportsHexColors', () => {
 });
 
 describe('resolveTheme', () => {
-  // chalk downsamples a hex to the 16-color set through ansi-styles rgbToAnsi: the themed
-  // code ground #24283b lands on bgBlack, which is the terminal's own ground on a dark
-  // profile, and the rail #6272a4 lands on blue, the bucket syntax.function already holds.
-  // Neither survives, so a terminal without hex support is handed a preset that frames code
-  // with the rail alone.
-  it.each([
-    ['mono' as const, { TERM: 'xterm' }],
-    ['terminal' as const, { TERM: 'xterm' }],
-    ['terminal' as const, {}],
-  ])('drops the hex code frame for %s mode without hi-color support', (mode, env) => {
-    const resolved = resolveTheme(mode, env);
+  it.each([{ TERM: 'xterm' }, {}])('drops the hex code frame without hi-color support', (env) => {
+    const resolved = resolveTheme(env);
 
     expect(resolved.markdown.codeBg).toBeUndefined();
     expect(resolved.markdown.codeGutter).toBe('gray');
-    expect(resolved.markdown.heading).toBe(getTheme('terminal').markdown.heading);
+    expect(resolved.markdown.heading).toBe(getTheme().markdown.heading);
   });
 
-  it('keeps the hex code frame for terminal mode when the terminal advertises truecolor', () => {
-    const resolved = resolveTheme('terminal', { COLORTERM: 'truecolor' });
+  it('keeps the hex code frame when the terminal advertises truecolor', () => {
+    const resolved = resolveTheme({ COLORTERM: 'truecolor' });
 
-    expect(resolved).toBe(getTheme('terminal'));
+    expect(resolved).toBe(getTheme());
     expect(resolved.markdown.codeBg).toBe('#24283b');
-  });
-
-  it('keeps the mono hex preset when the terminal advertises truecolor', () => {
-    const resolved = resolveTheme('mono', { COLORTERM: 'truecolor' });
-    expect(resolved).toEqual(getTheme('mono'));
-    expect(resolved.accent).toBe('#7aa2f7');
   });
 
   it('leaves cyan to paths and links in every preset it can hand out', () => {

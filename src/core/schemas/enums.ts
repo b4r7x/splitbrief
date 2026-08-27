@@ -191,9 +191,6 @@ export const ISOLATION_STRATEGIES = ['worktree', 'staged-copy'] as const;
 export const IsolationStrategySchema = z.enum(ISOLATION_STRATEGIES);
 export type IsolationStrategy = z.infer<typeof IsolationStrategySchema>;
 
-export const THEME_MODES = ['terminal', 'mono'] as const;
-export const ThemeModeSchema = z.enum(THEME_MODES);
-
 export const SESSION_SCOPES = ['project', 'global'] as const;
 export const SessionScopeSchema = z.enum(SESSION_SCOPES);
 

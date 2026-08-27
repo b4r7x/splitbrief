@@ -12,6 +12,7 @@ import { useStores } from '../../../stores/use-stores.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { formatCollapsedSeatLine } from '../../../core/crew/identity.js';
+import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import { getChromeContentWidth, type RailForm } from '../layout/chrome-rows.js';
 import { measureRailCells, Rail } from './rail.js';
 
@@ -105,6 +106,7 @@ export function Header({ startedAt, railForm }: HeaderProps) {
   const { startedAt: lifecycleStartedAt, endedAt, durationMs, phase, cancelled } = lifecycle;
   const t = useTheme();
   const config = configStore.use((s) => s.config);
+  const displayNames = useCrewDisplayNames(config);
   const railCells = measureRailCells({
     phase,
     cancelled,
@@ -120,6 +122,7 @@ export function Header({ startedAt, railForm }: HeaderProps) {
         planner: config.planner,
         build: resolveImplementerProfiles(config).defaultProfile.config,
         reviewer: configuredReviewerRunner(config),
+        displayNames,
       })
     : '';
   const layout = getHeaderLayout({

@@ -206,9 +206,9 @@ describe('ConversationRowView code background', () => {
   }
 
   it('paints a code row with the themed background', () => {
-    const theme = getTheme('mono');
+    const theme = getTheme();
     const codeBg = theme.markdown.codeBg;
-    if (codeBg === undefined) throw new Error('the mono theme must define markdown.codeBg');
+    if (codeBg === undefined) throw new Error('the theme must define markdown.codeBg');
 
     const ui = renderFeature(
       <ThemeProvider theme={theme}>
@@ -226,7 +226,7 @@ describe('ConversationRowView code background', () => {
   // bgBlack, which is that terminal's own ground. resolveTheme hands such a terminal a preset
   // with no codeBg at all, and the rail has to carry the frame on its own.
   it('renders a code row unpainted on a terminal without hex color, leaving the rail to frame it', () => {
-    const theme = resolveTheme('terminal', { TERM: 'xterm' });
+    const theme = resolveTheme({ TERM: 'xterm' });
     const ui = renderFeature(
       <ThemeProvider theme={theme}>
         <ConversationRowView row={codeRow} />
@@ -241,7 +241,7 @@ describe('ConversationRowView code background', () => {
   });
 
   it('leaves a row without the flag unpainted under the same theme', () => {
-    const theme = getTheme('mono');
+    const theme = getTheme();
     const plainRow: ConversationRow = {
       key: 'markdown-code-1',
       kind: 'message',

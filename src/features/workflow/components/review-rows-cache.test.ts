@@ -3,7 +3,7 @@ import { getTheme } from '../../../components/theme.js';
 import { workflowMarkdownRenderSegments } from '../conversation-rows/markdown-rows/review-segments.js';
 import { renderReviewRows } from './review-rows-cache.js';
 
-const theme = getTheme('terminal');
+const theme = getTheme();
 const source = '# Title\n\nSome **bold** body text.\n\n- one\n- two\n\n```ts\nconst a = 1;\n```\n';
 
 function options(overrides: Partial<Parameters<typeof renderReviewRows>[0]> = {}) {
@@ -49,10 +49,11 @@ describe('renderReviewRows', () => {
   });
 
   it('re-renders when the theme changes', () => {
-    const terminal = renderReviewRows(options({ theme: getTheme('terminal') }));
-    const mono = renderReviewRows(options({ theme: getTheme('mono') }));
+    const first = renderReviewRows(options({ theme: getTheme() }));
+    const modifiedTheme = { ...getTheme(), accent: 'magenta' };
+    const second = renderReviewRows(options({ theme: modifiedTheme }));
 
-    expect(mono).not.toBe(terminal);
+    expect(second).not.toBe(first);
   });
 
   it('re-renders when the project directory changes', () => {

@@ -280,8 +280,8 @@ describe('settings overlay integration', () => {
     ui.stdin.write(PAGE_DOWN);
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Lint');
-      expect(frame).toContain('Test command');
+      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Spec/plan gates');
+      expect(frame).toContain('Max retries');
     });
     ui.unmount();
   });

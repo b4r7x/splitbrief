@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
@@ -22,8 +23,11 @@ const OPENAI_REVIEWER = {
   model: 'o3',
   apiBase: 'https://api.openai.com/v1',
 } as const;
+
+let projectDir = '';
+
 function seed(overrides?: Parameters<typeof makeConfig>[0]): void {
-  configStore.__testReset({ projectDir: '/tmp/project', config: makeConfig(overrides) });
+  configStore.__testReset({ projectDir, config: makeConfig(overrides) });
 }
 
 function renderAt(cols: number, rows: number) {
@@ -51,9 +55,14 @@ function indexOfLine(lines: string[], needle: string): number {
 
 describe('SettingsOverlay', () => {
   beforeEach(() => {
+    projectDir = createTempDir('settings-overlay');
     seed({ validation: { testCommand: RAW_TEST_COMMAND } });
     overlayStore.reset();
     feedbackStore.reset();
+  });
+
+  afterEach(() => {
+    cleanupTempDir(projectDir);
   });
 
   it('opens on the crew rail, above every tuning row', async () => {
@@ -70,6 +79,22 @@ describe('SettingsOverlay', () => {
     expect(rail).toEqual([...rail].toSorted((a, b) => a - b));
     expect(rail[0]).toBeGreaterThan(indexOfLine(lines, 'Crew'));
     for (const index of rail) expect(index).toBeLessThan(indexOfLine(lines, 'Temperature'));
+
+    ui.unmount();
+  });
+
+  it('renders the Workflow section above the Validation section', async () => {
+    overlayStore.open('settings', 'validation.lint');
+    const ui = renderAt(120, 40);
+    await flushEffects();
+    const lines = frameLines(ui);
+
+    const workflowRowIndex = indexOfLine(lines, 'Commit strategy');
+    const validationRowIndex = indexOfLine(lines, 'Lint');
+
+    expect(workflowRowIndex).toBeGreaterThan(-1);
+    expect(validationRowIndex).toBeGreaterThan(-1);
+    expect(workflowRowIndex).toBeLessThan(validationRowIndex);
 
     ui.unmount();
   });
@@ -104,9 +129,55 @@ describe('SettingsOverlay', () => {
     await flushEffects();
     const lines = frameLines(ui);
 
-    expect(lines.filter((line) => line.includes('effort'))).toHaveLength(2);
+    expect(lines.filter((line) => line.includes('effort'))).toHaveLength(3);
     expect(lineWith(lines, 'escalate')).toBeUndefined();
     expect(lineWith(lines, 'REVIEW')).toBeDefined();
+
+    ui.unmount();
+  });
+
+  it('renders 6 crew rows and cycling effort changes only that row with zero geometry jumps', async () => {
+    seed({
+      planner: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4' },
+      reviewer: OPENAI_REVIEWER,
+    });
+    overlayStore.open('settings', 'effort:plan');
+    const ui = renderAt(120, 40);
+    await flushEffects();
+
+    const beforeLines = stripAnsiStyles(ui.lastFrame()).split('\n');
+    const crewLinesBefore = beforeLines.filter(
+      (line) =>
+        line.includes('PLAN') ||
+        line.includes('BUILD') ||
+        line.includes('REVIEW') ||
+        line.includes('effort'),
+    );
+    expect(crewLinesBefore).toHaveLength(6);
+
+    ui.stdin.write(' ');
+    await vi.waitFor(() => {
+      const p = configStore.get().config?.planner;
+      expect(p && 'effort' in p ? p.effort : undefined).toBe('low');
+    });
+    await flushEffects();
+
+    const afterLines = stripAnsiStyles(ui.lastFrame()).split('\n');
+    expect(afterLines).toHaveLength(beforeLines.length);
+
+    const changedIndices: number[] = [];
+    for (let i = 0; i < beforeLines.length; i++) {
+      if (beforeLines[i] !== afterLines[i]) {
+        changedIndices.push(i);
+      }
+    }
+    expect(changedIndices).toHaveLength(1);
+    const changedIndex = changedIndices[0] ?? -1;
+    expect(changedIndex).toBeGreaterThanOrEqual(0);
+    expect(beforeLines[changedIndex]).toContain('effort');
+    expect(afterLines[changedIndex]).toContain('effort');
+    expect(beforeLines[changedIndex]).toContain('auto');
+    expect(afterLines[changedIndex]).toContain('low');
 
     ui.unmount();
   });

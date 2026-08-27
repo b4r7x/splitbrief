@@ -28,34 +28,52 @@ export type CrewSeat =
   | (CrewSeatRunner & Readonly<{ id: 'build'; label: string }>)
   | (CrewSeatRunner & Readonly<{ id: 'review'; label: string; source: 'configured' | 'planner' }>);
 
-function seatRunner(runner: RunnerConfig, id: CrewSeatId): CrewSeatRunner {
+function seatRunner(
+  runner: RunnerConfig,
+  id: CrewSeatId,
+  displayName?: string | undefined,
+): CrewSeatRunner {
   const effort = 'effort' in runner ? runner.effort : undefined;
   return {
     runner,
-    model: formatSeatIdentity(runner),
+    model: formatSeatIdentity(runner, displayName),
     posture: runnerBillingPosture(runner),
     ...(effort !== undefined && { effort }),
     supportsEffort: seatSupportsEffort({ runner, role: CREW_SEAT_ROLES[id] }),
   };
 }
 
-export function deriveCrewSeats(input: Readonly<{ config: Config }>): readonly CrewSeat[] {
+export function deriveCrewSeats(
+  input: Readonly<{
+    config: Config;
+    displayNames?: Partial<Record<CrewSeatId, string>> | undefined;
+  }>,
+): readonly CrewSeat[] {
   const config = input.config;
   const implementer = resolveImplementerProfiles(config).defaultProfile.config;
   const reviewer = resolveReviewerRunner(config);
+  const displayNames = input.displayNames;
 
   return [
-    { id: 'plan', label: CREW_SEAT_LABELS.plan, ...seatRunner(config.planner, 'plan') },
+    {
+      id: 'plan',
+      label: CREW_SEAT_LABELS.plan,
+      ...seatRunner(config.planner, 'plan', displayNames?.plan),
+    },
     {
       id: 'build',
       label: CREW_SEAT_LABELS.build,
-      ...seatRunner(implementer, 'build'),
+      ...seatRunner(implementer, 'build', displayNames?.build),
     },
     {
       id: 'review',
       label: CREW_SEAT_LABELS.review,
       source: reviewer.source,
-      ...seatRunner(reviewer.runner, 'review'),
+      ...seatRunner(
+        reviewer.runner,
+        'review',
+        displayNames?.review ?? (reviewer.source === 'planner' ? displayNames?.plan : undefined),
+      ),
     },
   ];
 }

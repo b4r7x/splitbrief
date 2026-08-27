@@ -31,7 +31,6 @@ implementerProfiles:
   profiles: { local-qwen: { kind: api, ... }, cheap-cloud: { kind: api, ... } }
 validation:     { typecheck, lint, test, testCommand }
 workflow:       { mode, approve, maxRetries, git, isolation, maxBudget, ... }
-theme:          terminal | mono
 sessions:       { scope: project | global }
 escalation:     { enabled, intermediateProvider, intermediateModel }
 codebase:       { enabled, tokenBudget, cacheDir, include, exclude }
@@ -1076,19 +1075,17 @@ palette:
 
 ---
 
-## 14. `theme`, `sessions`, `plannerEstimateReview`, `autoSplitOverflow`
+## 14. `sessions`, `plannerEstimateReview`, `autoSplitOverflow`
 
 These are top-level fields (siblings of `workflow`, not nested under it).
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `theme` | enum | `terminal` | `terminal` (uses your terminal's color scheme) \| `mono` (no color) |
 | `sessions.scope` | enum | `project` | Accepted by the schema for future session backends. Current workflow commands write session state under `<projectDir>/.splitbrief`. |
 | `plannerEstimateReview` | boolean | `false` | Spend one extra planner call to sanity-check the deterministic per-task prompt-input estimate before implementation. The planner classifies it (`ok` / `split-suggested` / `risk` / `needs-user-decision`), flags affected task ids, and the verdict is surfaced in the cost-prediction chrome. Skipped on resume; requires a deterministic estimate. |
 | `autoSplitOverflow` | boolean | `false` | After the cost gate, automatically split tasks that overflow the implementer's context budget (or that the planner review flags as too large) into smaller child tasks before implementation. Splits that would drop acceptance criteria, dependencies, or produce too many children are skipped with a warning. |
 
 ```yaml
-theme: mono
 sessions:
   scope: global
 plannerEstimateReview: true
@@ -1353,8 +1350,7 @@ palette:
       label: "Accept current run"
       command: /accept-run
 
-# ---------- Theme + sessions ----------
-theme: terminal
+# ---------- Sessions ----------
 sessions:
   scope: project
 ```

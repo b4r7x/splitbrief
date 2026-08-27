@@ -29,6 +29,7 @@ import { attachImage, attachmentsStore } from '../../stores/workflow/attachments
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { CREW_SEAT_LABELS, formatSeatIdentity } from '../../core/crew/identity.js';
+import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
 import { detectedModelFact, seatSupportsImages } from '../../core/runners/capabilities.js';
 import { computeCompletionOverlayRows, computeCompletionCap } from './completion/layout.js';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
@@ -236,8 +237,9 @@ export function Composer({
       return;
     }
     if (result.reason === 'no-vision' && config !== null) {
+      const displayName = resolveSeatDisplayName(config.planner, 'planner', modelCacheStore);
       feedbackStore.setError(
-        `${NO_VISION_PREFIX}${formatSeatIdentity(config.planner)}${NO_VISION_SUFFIX}`,
+        `${NO_VISION_PREFIX}${formatSeatIdentity(config.planner, displayName)}${NO_VISION_SUFFIX}`,
       );
       return;
     }

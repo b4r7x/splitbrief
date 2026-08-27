@@ -8,6 +8,7 @@ import {
   resolveModelCatalog,
   type ResolvedModelMembership,
 } from '../../../engine/providers/model/catalog.js';
+import { resolveModelDisplayName } from '../../../core/discovery/model-catalog.js';
 import { NULL_CACHE, type ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
 import type { PickerOption } from './options.js';
 import {
@@ -103,6 +104,7 @@ function toVariant(source: ProviderVariantSource): ModelVariant {
     fullId: source.row.id,
     providerPrefix: source.prefix,
     tag: compactProviderTag(source.prefix),
+    ...(source.row.displayName !== undefined ? { displayName: source.row.displayName } : {}),
     ...(source.row.membership === undefined ? {} : { membership: source.row.membership }),
     ...(source.row.isCustom ? { isCustom: true } : {}),
   };
@@ -167,8 +169,12 @@ function mergeGroupRows(
     }
   }
 
+  const displayName =
+    representative.displayName ?? rows.find((row) => row.displayName !== undefined)?.displayName;
+
   return {
     id: representative.id,
+    ...(displayName !== undefined ? { displayName } : {}),
     ...(rows.some((row) => row.isDefault) ? { isDefault: true } : {}),
     ...(membership === undefined ? {} : { membership }),
     ...(membership !== undefined && membership !== 'custom'
@@ -244,8 +250,10 @@ function mergeModelOptions(custom: ModelOption[], known: ModelOption[]): ModelOp
 }
 
 function toModelOption(entry: ReturnType<typeof resolveModelCatalog>[number]): ModelOption {
+  const displayName = resolveModelDisplayName(entry);
   return {
     id: entry.id,
+    ...(displayName !== entry.id ? { displayName } : {}),
     isDefault: entry.isDefault,
     isDetected: entry.membership === 'confirmed',
     membership: entry.membership,

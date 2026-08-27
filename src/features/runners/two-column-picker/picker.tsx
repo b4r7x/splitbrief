@@ -10,7 +10,7 @@ import { overlayWidth } from '../../../core/navigation/overlay-rect.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { SingleColumnPicker } from '../../../components/pickers/single-column.js';
 import { ROW_ZONE_Z_OVERLAY } from '../../../components/pickers/row-zone.js';
-import { borderStyleFor } from '../../../lib/glyphs.js';
+import { borderStyleFor, glyph } from '../../../lib/glyphs.js';
 import {
   useTwoColumnState,
   type LeftColumnProps,
@@ -131,6 +131,7 @@ function TerminalPaneCard({
 }
 
 type RightDisplaySlot<R> =
+  | { kind: 'spacer'; key: string }
   | { kind: 'header'; key: string; section: string }
   | { kind: 'guidance'; key: string }
   | { kind: 'row'; key: string; item: RightItemOrVirtual<R>; navIndex: number };
@@ -142,12 +143,17 @@ function buildRightDisplay<R extends { id: string }>(
 ): RightDisplaySlot<R>[] {
   const slots: RightDisplaySlot<R>[] = [];
   let previous: string | null = null;
+  let sectionCount = 0;
   items.forEach((item, navIndex) => {
     const key = isVirtualCustomItem(item) ? CUSTOM_ROW_ID : getKey(item);
     if (section && isRealRightItem(item)) {
       const current = section.by(item);
       if (current !== '' && current !== previous && (section.headerFor?.(current) ?? true)) {
+        if (sectionCount > 0) {
+          slots.push({ kind: 'spacer', key: `spacer:${current}` });
+        }
         slots.push({ kind: 'header', key: `section:${current}`, section: current });
+        sectionCount++;
       }
       previous = current;
     }
@@ -300,10 +306,13 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
               rowZonePrefix="runner-right"
               rowZoneZ={ROW_ZONE_Z_OVERLAY}
               renderRow={(slot, isCursor, maxWidth) => {
+                if (slot.kind === 'spacer') {
+                  return <Text color={t.textDim}> </Text>;
+                }
                 if (slot.kind === 'header') {
                   return (
                     <Text color={t.textDim} wrap="truncate-end">
-                      {`  ${slot.section}`}
+                      {`  ${glyph('divider')}${glyph('divider')} ${slot.section.toUpperCase()}`}
                     </Text>
                   );
                 }

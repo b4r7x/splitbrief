@@ -123,6 +123,25 @@ describe('useSettingsEditor', () => {
     expect(JSON.stringify(configStore.get().config)).toBe(before);
     ui.unmount();
   });
+
+  it('leaves the config untouched when space lands on an undeliverable effort row', async () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'opencode' },
+    });
+    seed(config);
+    const items = crewItems(config);
+    const before = JSON.stringify(configStore.get().config);
+
+    const ui = renderFeature(
+      createElement(Harness, { config, items, initialKey: 'effort:build', activated: [] }),
+    );
+    await flushEffects();
+    ui.stdin.write(' ');
+    await tick(30);
+
+    expect(JSON.stringify(configStore.get().config)).toBe(before);
+    ui.unmount();
+  });
 });
 
 describe('hintFor', () => {

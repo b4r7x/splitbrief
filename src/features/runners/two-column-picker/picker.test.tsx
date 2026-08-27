@@ -931,4 +931,64 @@ describe('TwoColumnPicker', () => {
 
     ui.unmount();
   });
+
+  it('renders styled uppercase headers with leading horizontal rule and spacer rows, and skips them during cursor navigation', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const sectionedModels: Array<Model & { section: string }> = [
+      { id: 'm-1', displayName: 'Model 1', section: 'First Section' },
+      { id: 'm-2', displayName: 'Model 2', section: 'First Section' },
+      { id: 'm-3', displayName: 'Model 3', section: 'Second Section' },
+      { id: 'm-4', displayName: 'Model 4', section: 'Second Section' },
+    ];
+    const confirms: Array<{ l: string; r: string | null }> = [];
+
+    const ui = renderFeature(
+      <TwoColumnPicker<Tool, Model & { section: string }>
+        title="Picker"
+        initialColumn="right"
+        leftProps={{
+          items: TOOLS,
+          getKey: (t) => t.id,
+          renderRow: (t) => <Text>{t.displayName}</Text>,
+        }}
+        rightProps={{
+          items: sectionedModels,
+          getKey: (m) => m.id,
+          section: { by: (m) => m.section },
+          renderRow: (m) => <Text>{m.displayName}</Text>,
+        }}
+        onConfirm={(l, r) => {
+          confirms.push({ l: l.id, r: r?.id ?? null });
+        }}
+        onCancel={() => {}}
+      />,
+      { cols: 120, rows: 40 },
+    );
+    await flushEffects();
+
+    const rule = `${glyph('divider')}${glyph('divider')}`;
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain(`${rule} FIRST SECTION`);
+    expect(frame).toContain(`${rule} SECOND SECTION`);
+
+    // Navigating down from Model 2 to Model 3 skips the spacer and header
+    ui.stdin.write('\u001B[B'); // down to m-2
+    await flushEffects();
+    ui.stdin.write('\u001B[B'); // down to m-3 (skips spacer + header)
+    await flushEffects();
+    ui.stdin.write('\r'); // confirm
+    await tick(20);
+
+    expect(confirms).toEqual([{ l: 'alpha', r: 'm-3' }]);
+
+    // Navigating up from Model 3 to Model 2 skips header and spacer
+    ui.stdin.write('\u001B[A'); // up to m-2 (skips header + spacer)
+    await flushEffects();
+    ui.stdin.write('\r');
+    await tick(20);
+
+    expect(confirms.at(-1)).toEqual({ l: 'alpha', r: 'm-2' });
+
+    ui.unmount();
+  });
 });

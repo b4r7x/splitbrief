@@ -353,8 +353,9 @@ describe('SetupScreen', () => {
       .filter((line) => line.trim() !== '');
     ui.unmount();
 
-    // Two ready tools and no escalation: the panel is the whole 18-row viewport, frame included.
-    expect(lines).toHaveLength(18);
+    // Two ready tools and no escalation: the panel fits inside the 18-row viewport, frame included.
+    expect(lines.length).toBeLessThanOrEqual(18);
+    expect(lines).toHaveLength(17);
   });
 
   it('says what escape does and does it', async () => {
