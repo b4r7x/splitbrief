@@ -38,8 +38,6 @@ function seatOf(row: CrewRow): CrewSeatId {
       return row.id;
     case 'effort':
       return row.seatId;
-    case 'escalate':
-      return 'build';
     default:
       return assertNever(row);
   }

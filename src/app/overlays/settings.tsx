@@ -59,8 +59,8 @@ export function SettingsOverlay() {
     chromeRows: BASE_CHROME_ROWS + (showDescription ? DESCRIPTION_ROWS : 0),
   });
 
-  const allItems = buildSettingsItems({ config, defs: SETTINGS_DEFS });
-  const crewRows = allItems.filter((item) => item.kind === 'crew').map((item) => item.row);
+  const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });
+  const crewRows = items.filter((item) => item.kind === 'crew').map((item) => item.row);
   const verdict = crewVerdict(crewRows);
   const layout = planSeatBlock({
     rows: crewRows,
@@ -68,9 +68,6 @@ export function SettingsOverlay() {
     innerWidth: rect.innerWidth,
     rowBudget: listBudget - CREW_BLOCK_RESERVED_ROWS,
   });
-  const items = layout.foldEscalate
-    ? allItems.filter((item) => item.kind !== 'crew' || item.row.kind !== 'escalate')
-    : allItems;
   const planner = readActiveRunner({ config, role: 'planner' });
   /** The rail never scrolls out from under a seat row that matches. */
   const pinnedHead = items.filter((item) => item.kind === 'crew').length;

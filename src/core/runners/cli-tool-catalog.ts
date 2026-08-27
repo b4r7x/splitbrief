@@ -12,15 +12,14 @@ export type PlannerTierRole = 'planner' | 'reviewer';
 
 export type ActiveRunnerRole = PlannerTierRole | 'implementer';
 
-export const SEAT_PICKER_ROLES = ['planner', 'implementer', 'reviewer', 'escalation'] as const;
+export const SEAT_PICKER_ROLES = ['planner', 'implementer', 'reviewer'] as const;
 
-/** The seats the tool/model picker can edit: the config seats plus the escalate seat. */
+/** The config seats the tool/model picker can edit. */
 export type SeatPickerRole = (typeof SEAT_PICKER_ROLES)[number];
 
 /** The config seat a picker role reads its catalog and policies from. */
 export function seatPickerLane(role: SeatPickerRole): ActiveRunnerRole {
   switch (role) {
-    case 'escalation':
     case 'planner':
       return 'planner';
     case 'reviewer':

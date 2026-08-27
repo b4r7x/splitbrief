@@ -13,7 +13,6 @@ import { formatModelName } from '../../core/model-display.js';
 import type { CustomCommandRunnerKind } from '../../core/config/custom-commands.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { clearReviewerSeat } from '../../core/config/accessors/active-runner.js';
-import { clearEscalation, writeEscalationRunner } from '../../core/config/accessors/escalation.js';
 
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
@@ -25,7 +24,6 @@ import {
   type ActiveRunnerRole,
   type SeatPickerRole,
 } from '../../core/runners/cli-tool-catalog.js';
-import { isProviderId } from '../../core/schemas/enums.js';
 import type { Config } from '../../core/schemas/config.js';
 import { getDefaultDetectionService } from '../../engine/detection/service.js';
 import { refreshDetectionForCurrentConfig } from '../../engine/detection/store-publication.js';
@@ -109,11 +107,7 @@ async function defaultReadGitignore(projectDir: string): Promise<string | null> 
 /** The seat rows that can carry a model; the terminal rows never reach a commit. */
 function runnerItemOf(item: PickerOption | undefined): RunnerPickerOption | undefined {
   if (item === undefined) return undefined;
-  if (
-    item.kind === 'custom-command' ||
-    item.kind === 'inherit-planner' ||
-    item.kind === 'escalation-off'
-  ) {
+  if (item.kind === 'custom-command' || item.kind === 'inherit-planner') {
     return undefined;
   }
   return item;
@@ -201,8 +195,6 @@ export function usePickerActions(opts: {
     pickerViewStore.open(subView, index >= 0 ? index : 0);
   };
 
-  // The escalate seat is not a runner block: it writes the intermediate model
-  // in one save instead of going through the seat commit transforms.
   const saveModelSelection = async (
     selection: RunnerPickerOption,
     modelId: string | null,
@@ -213,15 +205,6 @@ export function usePickerActions(opts: {
         ? selection.displayName
         : `${selection.displayName}${SOFT_SEP}${formatModelName(modelId)}`;
     const message = `${catalog.roleLabel} set to: ${label}`;
-    if (role === 'escalation') {
-      if (modelId === null || !isProviderId(selection.id)) return;
-      await commit(
-        writeEscalationRunner(config, { provider: selection.id, model: modelId }),
-        message,
-      );
-      reportNotice(note);
-      return;
-    }
     const seat = commitSelection(selection, modelId === null ? null : { id: modelId });
     await commit(seat.config, message);
     // Both notices are news the save does not carry: neither may overwrite the
@@ -240,10 +223,6 @@ export function usePickerActions(opts: {
             { kind: 'custom-command-contract' },
             selectionIndex >= 0 ? selectionIndex : launcherIndex >= 0 ? launcherIndex : 0,
           );
-          return;
-        }
-        if (selection.kind === 'escalation-off') {
-          await commit(clearEscalation(config), `${catalog.roleLabel} set to: none`);
           return;
         }
         if (selection.kind === 'inherit-planner') {
@@ -321,14 +300,6 @@ export function usePickerActions(opts: {
     },
     openProviderAuth(item: PickerOption) {
       if (item.kind !== 'api') return;
-      // The escalate seat names a provider and a model; it has no key of its
-      // own, so a key typed here could only land on another seat's block.
-      if (role === 'escalation') {
-        feedbackStore.setError(
-          item.status.remediation ?? `Set the ${item.displayName} API key, then press ctrl+r.`,
-        );
-        return;
-      }
       openSubView({ kind: 'provider-auth' }, item);
     },
     async submitProviderKey(value: string) {

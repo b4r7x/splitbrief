@@ -22,7 +22,6 @@ import {
   CREW_RAIL_WIDTH,
   planSeatBlock,
   type SeatBlockLayout,
-  visibleCrewRows,
 } from '../../features/crew/format.js';
 import { crewActivate } from '../../features/crew/rows.js';
 import { PresetRowView } from '../../features/crew/preset-row.js';
@@ -66,8 +65,7 @@ type SetupItem =
 /**
  * The panel yields in one order until it fits: the cross-lab verdict and the rail spines first
  * (inside `planSeatBlock`), then the section headers, then the blank rows between blocks, then the
- * ready-made crews. Folding escalate into BUILD is not on Setup's ladder, so a stage that only fits
- * by folding is passed over; the last stage takes it rather than drop a seat row.
+ * ready-made crews.
  */
 const LADDER = [
   { headers: true, gaps: true, presets: true },
@@ -118,7 +116,7 @@ function planStage(
 function planSetupList(input: SetupListInput): SetupListPlan {
   let staged = planStage(input, LADDER[0]);
   for (const stage of LADDER.slice(1)) {
-    if (staged.rows <= input.budget && !staged.plan.layout.foldEscalate) return staged.plan;
+    if (staged.rows <= input.budget) return staged.plan;
     staged = planStage(input, stage);
   }
   return staged.plan;
@@ -239,9 +237,7 @@ function CrewStep({ note, onContinue, onExit }: CrewStepProps) {
     ...(showPresets
       ? presets.map((preset): SetupItem => ({ kind: 'preset', preset, key: `preset:${preset.id}` }))
       : []),
-    ...visibleCrewRows(crewRows, layout).map(
-      (row): SetupItem => ({ kind: 'crew', row, key: crewRowKey(row) }),
-    ),
+    ...crewRows.map((row): SetupItem => ({ kind: 'crew', row, key: crewRowKey(row) })),
     { kind: 'continue', key: 'continue' },
   ];
   const presetLabelWidth = Math.max(

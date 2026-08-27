@@ -1,7 +1,6 @@
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../config/accessors/reviewer-runner.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
-import { getApiProviderDescriptor } from '../providers/api-provider-catalog.js';
 import { seatSupportsEffort } from '../runners/capabilities.js';
 import type { ActiveRunnerRole } from '../runners/cli-tool-catalog.js';
 import { runnerBillingPosture, type RunnerBillingPosture } from '../runners/runner-billing.js';
@@ -24,17 +23,9 @@ export type CrewSeatRunner = Readonly<{
   supportsEffort: boolean;
 }>;
 
-export type CrewEscalateEntry = Readonly<{
-  label: string;
-  displayName: string;
-  model: string;
-  posture: RunnerBillingPosture;
-}>;
-
 export type CrewSeat =
   | (CrewSeatRunner & Readonly<{ id: 'plan'; label: string }>)
-  | (CrewSeatRunner &
-      Readonly<{ id: 'build'; label: string; escalate?: CrewEscalateEntry | undefined }>)
+  | (CrewSeatRunner & Readonly<{ id: 'build'; label: string }>)
   | (CrewSeatRunner & Readonly<{ id: 'review'; label: string; source: 'configured' | 'planner' }>);
 
 function seatRunner(runner: RunnerConfig, id: CrewSeatId): CrewSeatRunner {
@@ -48,28 +39,10 @@ function seatRunner(runner: RunnerConfig, id: CrewSeatId): CrewSeatRunner {
   };
 }
 
-function escalateEntry(config: Config): CrewEscalateEntry | undefined {
-  const escalation = config.escalation;
-  if (escalation?.enabled === false) return undefined;
-
-  const provider = escalation?.intermediateProvider;
-  const model = escalation?.intermediateModel;
-  if (provider === undefined || model === undefined) return undefined;
-
-  const descriptor = getApiProviderDescriptor(provider);
-  return {
-    label: 'escalate',
-    displayName: descriptor?.displayName ?? provider,
-    model,
-    posture: descriptor?.billing ?? 'unknown',
-  };
-}
-
 export function deriveCrewSeats(input: Readonly<{ config: Config }>): readonly CrewSeat[] {
   const config = input.config;
   const implementer = resolveImplementerProfiles(config).defaultProfile.config;
   const reviewer = resolveReviewerRunner(config);
-  const escalate = escalateEntry(config);
 
   return [
     { id: 'plan', label: CREW_SEAT_LABELS.plan, ...seatRunner(config.planner, 'plan') },
@@ -77,7 +50,6 @@ export function deriveCrewSeats(input: Readonly<{ config: Config }>): readonly C
       id: 'build',
       label: CREW_SEAT_LABELS.build,
       ...seatRunner(implementer, 'build'),
-      ...(escalate !== undefined && { escalate }),
     },
     {
       id: 'review',

@@ -10,7 +10,6 @@ export const SEAT_PICKER_OVERLAYS = [
   'planner-picker',
   'implementer-picker',
   'reviewer-picker',
-  'escalation-picker',
 ] as const;
 
 export function seatPickerOverlayFor(role: SeatPickerRole): (typeof SEAT_PICKER_OVERLAYS)[number] {

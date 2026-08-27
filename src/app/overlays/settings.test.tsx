@@ -22,17 +22,6 @@ const OPENAI_REVIEWER = {
   model: 'o3',
   apiBase: 'https://api.openai.com/v1',
 } as const;
-const ANTHROPIC_BUILD = {
-  kind: 'api',
-  provider: 'anthropic',
-  model: 'claude-opus-4',
-  apiBase: 'https://api.anthropic.com/v1',
-} as const;
-const DEEPSEEK_ESCALATION = {
-  intermediateProvider: 'deepseek',
-  intermediateModel: 'deepseek-chat',
-} as const;
-
 function seed(overrides?: Parameters<typeof makeConfig>[0]): void {
   configStore.__testReset({ projectDir: '/tmp/project', config: makeConfig(overrides) });
 }
@@ -76,7 +65,6 @@ describe('SettingsOverlay', () => {
       indexOfLine(lines, 'PLAN'),
       indexOfLine(lines, 'effort'),
       indexOfLine(lines, 'BUILD'),
-      indexOfLine(lines, 'escalate'),
       indexOfLine(lines, 'REVIEW'),
     ];
     expect(rail).toEqual([...rail].toSorted((a, b) => a - b));
@@ -86,7 +74,7 @@ describe('SettingsOverlay', () => {
     ui.unmount();
   });
 
-  it.each(['seat:plan', 'effort:plan', 'seat:build', 'escalate', 'seat:review'])(
+  it.each(['seat:plan', 'effort:plan', 'seat:build', 'seat:review'])(
     'keeps all three seat rows on screen at 60x18 with the cursor on %s',
     async (focus) => {
       seed({ planner: PLANNER_WITH_EFFORT });
@@ -103,36 +91,22 @@ describe('SettingsOverlay', () => {
     },
   );
 
-  it('keeps the effort and escalate rows as items for a six-row crew at 60x18', async () => {
+  it('keeps the effort rows while hiding the YAML-only escalation tier at 60x18', async () => {
     seed({
       planner: PLANNER_WITH_EFFORT,
       reviewer: OPENAI_REVIEWER,
-      escalation: DEEPSEEK_ESCALATION,
+      escalation: {
+        intermediateProvider: 'deepseek',
+        intermediateModel: 'deepseek-chat',
+      },
     });
     const ui = renderAt(60, 18);
     await flushEffects();
     const lines = frameLines(ui);
 
     expect(lines.filter((line) => line.includes('effort'))).toHaveLength(2);
-    expect(lineWith(lines, 'escalate')).toContain('DeepSeek');
-    expect(lineWith(lines, 'REVIEW')).toBeDefined();
-
-    ui.unmount();
-  });
-
-  it('folds escalate into the BUILD row when a seventh crew row appears at 60x18', async () => {
-    seed({
-      planner: PLANNER_WITH_EFFORT,
-      implementer: ANTHROPIC_BUILD,
-      reviewer: OPENAI_REVIEWER,
-      escalation: DEEPSEEK_ESCALATION,
-    });
-    const ui = renderAt(60, 18);
-    await flushEffects();
-    const lines = frameLines(ui);
-
-    expect(lineWith(lines, 'BUILD')).toContain('DeepSeek');
     expect(lineWith(lines, 'escalate')).toBeUndefined();
+    expect(lineWith(lines, 'REVIEW')).toBeDefined();
 
     ui.unmount();
   });
@@ -166,14 +140,11 @@ describe('SettingsOverlay', () => {
     ui.unmount();
   });
 
-  it('opens the escalation picker from the escalate row', async () => {
-    overlayStore.open('settings', 'escalate');
+  it('does not offer an escalation row or picker', async () => {
     const ui = renderAt(120, 40);
     await flushEffects();
-    ui.stdin.write(ENTER);
-    await tick(20);
 
-    expect(overlayStore.get().active).toBe('escalation-picker');
+    expect(lineWith(frameLines(ui), 'escalate')).toBeUndefined();
 
     ui.unmount();
   });

@@ -465,7 +465,7 @@ const createSettingsCrewFullFixture: FixtureFactory = () =>
       reviewer: REVIEWER_SEAT,
       escalation: ESCALATION_SEAT,
     }),
-    focus: 'escalate',
+    focus: 'seat:build',
   });
 const createSettingsInheritedEffortFixture: FixtureFactory = () =>
   createOverlayFixture({
@@ -481,7 +481,7 @@ const createSettingsFloorFullFixture: FixtureFactory = () =>
       reviewer: REVIEWER_API_SEAT,
       escalation: ESCALATION_SEAT,
     }),
-    focus: 'escalate',
+    focus: 'seat:build',
   });
 const createSettingsFilteredFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'settings', focus: 'filter:temp' });
@@ -580,10 +580,6 @@ const createReviewerPickerFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'reviewer-picker' });
 const createReviewerPickerToolFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'reviewer-picker', focus: 'tool:codex' });
-const createEscalationPickerFixture: FixtureFactory = () =>
-  createOverlayFixture({ overlay: 'escalation-picker' });
-const createEscalationPickerProviderFixture: FixtureFactory = () =>
-  createOverlayFixture({ overlay: 'escalation-picker', focus: 'tool:deepseek' });
 const createSessionsFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'sessions', seed: seedSessions });
 const createEditorFixture: FixtureFactory = () =>
@@ -626,8 +622,6 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-implementer-picker'), createImplementerPickerFixture],
   [scenarioId('overlay-reviewer-picker-inherited'), createReviewerPickerFixture],
   [scenarioId('overlay-reviewer-picker-tool'), createReviewerPickerToolFixture],
-  [scenarioId('overlay-escalation-picker'), createEscalationPickerFixture],
-  [scenarioId('overlay-escalation-picker-provider'), createEscalationPickerProviderFixture],
   [scenarioId('overlay-sessions'), createSessionsFixture],
   [scenarioId('overlay-editor'), createEditorFixture],
   [scenarioId('overlay-cost-drilldown'), createCostDrilldownFixture],

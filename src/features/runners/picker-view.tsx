@@ -110,7 +110,6 @@ interface PickerViewProps {
 
 function subtitleFor(role: SeatPickerRole): string {
   if (role === 'implementer') return 'Model';
-  if (role === 'escalation') return 'Provider & model';
   return 'Tool & model';
 }
 
@@ -127,10 +126,7 @@ function keyRows(rows: readonly RightRow[]): KeyedRightRow[] {
 export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProps) {
   const projectDir = configStore.use((s) => s.projectDir);
   const providers = detectionStore.use((s) => s.providers);
-  // The escalate seat keeps a provider and a model, not a custom-model list, so
-  // adding or deleting one there could only touch another seat's list.
-  const allowsCustom =
-    role !== 'escalation' && (catalog.currentItem?.modelCapability.allowsCustom ?? false);
+  const allowsCustom = catalog.currentItem?.modelCapability.allowsCustom ?? false;
 
   const toolId =
     catalog.currentItem !== undefined && includes(CLI_TOOL_IDS, catalog.currentItem.id)
@@ -159,20 +155,6 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
           postureLine(item),
           '',
           'Pick a tool on the left to give the review seat its own setup.',
-        ],
-      };
-    }
-    if (item.kind === 'escalation-off') {
-      return {
-        label: 'Escalation off',
-        verb: 'disable escalation',
-        lines: [
-          'No intermediate model.',
-          '',
-          'A stuck task goes straight to the planner:',
-          catalog.plannerIdentity,
-          '',
-          'Pick a provider on the left to add a stronger API model in between.',
         ],
       };
     }
@@ -315,7 +297,7 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
       preview={resolvePreview}
       leftProps={{
         items: catalog.items,
-        label: role === 'escalation' ? 'Providers' : 'Tools',
+        label: 'Tools',
         getKey: (item) => item.id,
         // The launcher stays visible under any filter query so adding a custom
         // command is always reachable.

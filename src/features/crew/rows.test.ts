@@ -56,15 +56,6 @@ describe('crew row activation', () => {
     expect(overlayStore.get().focus).toBeUndefined();
   });
 
-  it('opens the escalation picker from the escalate row', () => {
-    const config = makeConfig();
-
-    expect(
-      crewActivate({ target: { kind: 'crew', row: rowOfKind(config, 'escalate') }, config }),
-    ).toEqual({ kind: 'opened' });
-    expect(overlayStore.get()).toMatchObject({ active: 'escalation-picker' });
-  });
-
   it('does nothing on an effort row, which its list cycles in place', () => {
     const config = makeConfig();
 

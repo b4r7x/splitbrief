@@ -6,7 +6,6 @@ import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { useStores } from '../../stores/use-stores.js';
 import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 import { formatSeatIdentity } from '../../core/crew/identity.js';
-import { readEscalationRunner } from '../../core/config/accessors/escalation.js';
 import {
   getRunnerCommand,
   getRunnerDisplayName,
@@ -32,7 +31,6 @@ import {
 import {
   assemblePickerDescriptors,
   buildPickerOptions,
-  escalationOffOption,
   inheritPlannerOption,
   type PickerOption,
 } from './model-catalog/options.js';
@@ -82,7 +80,6 @@ const ROLE_LABELS: Record<SeatPickerRole, string> = {
   planner: 'Planner',
   implementer: 'Implementer',
   reviewer: 'Reviewer',
-  escalation: 'Escalate',
 };
 
 const FOCUS_TOOL_PREFIX = 'tool:';
@@ -123,27 +120,12 @@ function rowIndexForModel(rows: readonly RightRow[], persistedModel: string | un
   return configured >= 0 ? configured : 0;
 }
 
-/**
- * The escalation seat has no tool axis: it is an API model that sits between
- * the implementer and the planner, so its left column is providers plus the
- * row that turns it off.
- */
 function buildLeftItems(input: {
   role: SeatPickerRole;
   rawItems: PickerOption[];
   config: Config;
-  escalationProvider: string | undefined;
 }): PickerOption[] {
   const { role, rawItems, config } = input;
-  if (role === 'escalation') {
-    const providers = rawItems.flatMap((item) =>
-      item.kind === 'api' ? [{ ...item, isCurrent: item.id === input.escalationProvider }] : [],
-    );
-    return [
-      escalationOffOption({ isCurrent: input.escalationProvider === undefined }),
-      ...providers,
-    ];
-  }
   const lane = seatPickerLane(role);
   // An inherited review seat has no tool of its own: flagging the planner's row
   // as current would make Enter on the pre-selected row fork the seat silently.
@@ -176,7 +158,6 @@ export function usePickerCatalog(
   const [uncontrolledItemId, setUncontrolledItemId] = useState<string | null>(null);
 
   const runnerConfig = readActiveRunner({ config, role: lane });
-  const escalation = readEscalationRunner(config);
 
   const rawItems = buildPickerOptions(
     role,
@@ -189,7 +170,6 @@ export function usePickerCatalog(
     role,
     rawItems,
     config,
-    escalationProvider: escalation?.provider,
   });
 
   const configItemIndex = items.findIndex((item) => item.isCurrent);
@@ -203,7 +183,7 @@ export function usePickerCatalog(
   const initialLeftIdx =
     focusedIndex >= 0 ? focusedIndex : configItemIndex >= 0 ? configItemIndex : preservedIndex;
 
-  const customModels = role === 'escalation' ? [] : (runnerConfig.customModels ?? []);
+  const customModels = runnerConfig.customModels ?? [];
 
   const defaultItemId = items[initialLeftIdx]?.id ?? items[0]?.id;
   const ownedItemId =
@@ -214,8 +194,7 @@ export function usePickerCatalog(
 
   // Both spellings of automatic selection — `auto` and model absence — collapse
   // onto the single synthesized Auto row, so there is one highlighted identity.
-  const configuredModel =
-    role === 'escalation' ? escalation?.model : normalizeConfiguredModel(runnerConfig.model);
+  const configuredModel = normalizeConfiguredModel(runnerConfig.model);
   const persistedModel =
     configuredModel ??
     (configuredItem?.modelCapability.allowsAutomatic ? AUTOMATIC_MODEL : undefined);
@@ -292,11 +271,9 @@ export function usePickerCatalog(
 
   const isCurrentTool = currentItem?.isCurrent ?? false;
   const currentModel = isCurrentTool ? persistedModel : undefined;
-  const currentCommand = role === 'escalation' ? undefined : getRunnerCommand(runnerConfig);
+  const currentCommand = getRunnerCommand(runnerConfig);
   const currentCommandKind =
-    role !== 'escalation' && (runnerConfig.kind === 'shell' || runnerConfig.kind === 'agent')
-      ? runnerConfig.kind
-      : undefined;
+    runnerConfig.kind === 'shell' || runnerConfig.kind === 'agent' ? runnerConfig.kind : undefined;
 
   return {
     items,

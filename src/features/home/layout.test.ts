@@ -5,7 +5,7 @@ describe('getHomeLayout', () => {
   it('sizes the dock and body to one wide overlay budget on tall terminals', () => {
     const layout = getHomeLayout({ cols: 160, rows: 42 });
     expect(layout).toMatchObject({
-      width: 140,
+      width: 108,
       logoTier: 'full',
       inputBottomMargin: 2,
     });

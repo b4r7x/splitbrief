@@ -23,7 +23,6 @@ import {
 } from '../../../core/schemas/implementer-config.js';
 import { EFFORT_LEVELS, type EffortLevel } from '../../../core/schemas/enums.js';
 import { isTextEntryInput } from '../../../lib/terminal/text-entry.js';
-import { SOFT_SEP } from '../../../components/separators.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
 export type CrewSettingsItem = Extract<SettingsItem, { kind: 'crew' }>;
@@ -61,8 +60,6 @@ export function hintFor(item: SettingsItem): string {
       return '⏎ change seat';
     case 'effort':
       return 'space cycle';
-    case 'escalate':
-      return `⏎ change${SOFT_SEP}choose none to disable`;
     default:
       return assertNever(item.row);
   }

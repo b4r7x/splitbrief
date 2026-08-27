@@ -14,11 +14,7 @@ import { realPickerOption } from '#testing/helpers/runner-picker.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import type { SeatPickerRole } from '../../core/runners/cli-tool-catalog.js';
 import type { Config } from '../../core/schemas/config.js';
-import {
-  ESCALATION_OFF_OPTION_ID,
-  INHERIT_PLANNER_OPTION_ID,
-  type RunnerPickerOption,
-} from './model-catalog/options.js';
+import { INHERIT_PLANNER_OPTION_ID, type RunnerPickerOption } from './model-catalog/options.js';
 import { usePickerActions } from './use-picker-actions.js';
 import { usePickerCatalog } from './use-picker-catalog.js';
 
@@ -63,18 +59,6 @@ function DeleteOnKeyProbe({ role, modelId }: { role: SeatPickerRole; modelId: st
 
   useInput(() => {
     void actions.deleteRight({ id: modelId, isCustom: true });
-  });
-
-  return <Text>{catalog.roleLabel}</Text>;
-}
-
-function OpenAuthProbe({ role, providerId }: { role: SeatPickerRole; providerId: string }) {
-  const catalog = usePickerCatalog(role, 0);
-  const actions = usePickerActions({ role, catalog });
-
-  useInput(() => {
-    const row = catalog.items.find((item) => item.id === providerId);
-    if (row !== undefined) actions.openProviderAuth(row);
   });
 
   return <Text>{catalog.roleLabel}</Text>;
@@ -200,72 +184,6 @@ describe('usePickerActions', () => {
     expect(configStore.get().config?.planner).toMatchObject({
       customModels: ['inherited-custom'],
     });
-    ui.unmount();
-  });
-  it('writes the escalation provider and model in one save', async () => {
-    vi.stubEnv('DEEPSEEK_API_KEY', 'sk-deepseek-test');
-    seed(makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } }));
-
-    const ui = renderFeature(
-      <ConfirmOnKeyProbe
-        role="escalation"
-        selection={realPickerOption('planner', 'deepseek')}
-        model="deepseek-chat"
-      />,
-    );
-    await flushEffects();
-    ui.stdin.write('\r');
-
-    await vi.waitFor(() => {
-      expect(configStore.get().config?.escalation).toMatchObject({
-        intermediateProvider: 'deepseek',
-        intermediateModel: 'deepseek-chat',
-        enabled: true,
-      });
-    });
-    ui.unmount();
-  });
-
-  it('refuses to bank a provider key from the escalate picker instead of rewriting the planner', async () => {
-    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } });
-    seed(config);
-    const plannerBefore = JSON.stringify(config.planner);
-
-    const ui = renderFeature(<OpenAuthProbe role="escalation" providerId="deepseek" />);
-    await flushEffects();
-    ui.stdin.write('\r');
-
-    await vi.waitFor(() => {
-      expect(feedbackStore.get().isError).toBe(true);
-    });
-    expect(pickerViewStore.get().view.kind).toBe('picker');
-    expect(JSON.stringify(configStore.get().config?.planner)).toBe(plannerBefore);
-    ui.unmount();
-  });
-
-  it('clears the intermediate model when the None row is confirmed', async () => {
-    vi.stubEnv('DEEPSEEK_API_KEY', 'sk-deepseek-test');
-    seed(
-      makeConfig({
-        planner: { kind: 'cli', tool: 'claude-code', model: 'auto' },
-        escalation: {
-          enabled: true,
-          intermediateProvider: 'deepseek',
-          intermediateModel: 'deepseek-chat',
-        },
-      }),
-    );
-
-    const ui = renderFeature(
-      <ConfirmRowProbe role="escalation" itemId={ESCALATION_OFF_OPTION_ID} />,
-    );
-    await flushEffects();
-    ui.stdin.write('\r');
-
-    await vi.waitFor(() => {
-      expect(configStore.get().config?.escalation?.intermediateProvider).toBeUndefined();
-    });
-    expect(configStore.get().config?.escalation?.intermediateModel).toBeUndefined();
     ui.unmount();
   });
 

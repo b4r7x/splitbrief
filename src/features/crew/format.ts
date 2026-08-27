@@ -1,19 +1,10 @@
 import type { RunnerConfig } from '../../core/config/accessors/runner-config.js';
-import {
-  CREW_IDENTITY_SEPARATOR,
-  CREW_LABEL_WIDTH,
-  formatInheritedIdentity,
-} from '../../core/crew/identity.js';
+import { CREW_LABEL_WIDTH, formatInheritedIdentity } from '../../core/crew/identity.js';
 import type { CrewLabVerdict } from '../../core/crew/labs.js';
-import { NO_ESCALATION_WORD, UNSET_EFFORT_WORD, type CrewRow } from '../../core/crew/rows.js';
-import type { CrewEscalateEntry, CrewSeat } from '../../core/crew/seats.js';
+import { UNSET_EFFORT_WORD, type CrewRow } from '../../core/crew/rows.js';
+import type { CrewSeat } from '../../core/crew/seats.js';
 import type { RunnerBillingPosture } from '../../core/runners/runner-billing.js';
-import { glyph } from '../../lib/glyphs.js';
-import {
-  getTerminalCellWidth,
-  sanitizeTerminalDisplayText,
-  truncateTerminalDisplayText,
-} from '../../utils/display-text.js';
+import { truncateTerminalDisplayText } from '../../utils/display-text.js';
 import { assertNever } from '../../utils/type-guards.js';
 
 export const CREW_COLUMN_GAP = '  ';
@@ -35,7 +26,6 @@ export interface SeatBlockLayout {
   posture: boolean;
   spines: boolean;
   verdict: boolean;
-  foldEscalate: boolean;
   rows: number;
 }
 
@@ -61,59 +51,29 @@ export function planSeatBlock(
   const identityWidth =
     input.innerWidth - CREW_IDENTITY_COLUMN - (posture ? CREW_POSTURE_COLUMN : 0);
   const spineRows = Math.max(0, input.rows.filter((row) => row.kind === 'seat').length - 1);
-  const foldable = input.rows.some((row) => row.kind === 'escalate');
 
   let verdict = input.verdict !== undefined;
   let spines = true;
-  let foldEscalate = false;
-  const rowCount = (): number =>
-    input.rows.length - (foldEscalate ? 1 : 0) + (spines ? spineRows : 0) + (verdict ? 1 : 0);
+  const rowCount = (): number => input.rows.length + (spines ? spineRows : 0) + (verdict ? 1 : 0);
 
   if (rowCount() > input.rowBudget && verdict) verdict = false;
   if (rowCount() > input.rowBudget) spines = false;
-  if (rowCount() > input.rowBudget && foldable) foldEscalate = true;
 
-  return { identityWidth, posture, spines, verdict, foldEscalate, rows: rowCount() };
+  return { identityWidth, posture, spines, verdict, rows: rowCount() };
 }
 
-/** The fold marker is the remedy, so the identity yields room for it; it is never cut in half. */
-function foldEscalateInto(
-  identity: string,
-  escalate: CrewEscalateEntry,
-  identityWidth: number,
-): string {
-  const short = sanitizeTerminalDisplayText(escalate.displayName);
-  const marker = `${CREW_IDENTITY_SEPARATOR}${glyph('foldMarker')} ${short}`;
-  const room = identityWidth - getTerminalCellWidth(marker);
-  if (room <= 0) return identity;
-  return `${truncateTerminalDisplayText(identity, room)}${marker}`;
+function seatContent(seat: CrewSeat, planner: RunnerConfig): string {
+  return seat.id === 'review' && seat.source === 'planner'
+    ? formatInheritedIdentity(planner)
+    : seat.model;
 }
 
-function seatContent(seat: CrewSeat, planner: RunnerConfig, layout: SeatBlockLayout): string {
-  const identity =
-    seat.id === 'review' && seat.source === 'planner'
-      ? formatInheritedIdentity(planner)
-      : seat.model;
-  if (!layout.foldEscalate || seat.id !== 'build' || seat.escalate === undefined) return identity;
-  return foldEscalateInto(identity, seat.escalate, layout.identityWidth);
-}
-
-/** The filter matches the escalate row on its raw model id, so the row prints that same id. */
-function escalateContent(entry: CrewEscalateEntry | undefined): string {
-  if (entry === undefined) return NO_ESCALATION_WORD;
-  return sanitizeTerminalDisplayText(
-    `${entry.displayName}${CREW_IDENTITY_SEPARATOR}${entry.model}`,
-  );
-}
-
-function rowContent(row: CrewRow, planner: RunnerConfig, layout: SeatBlockLayout): string {
+function rowContent(row: CrewRow, planner: RunnerConfig): string {
   switch (row.kind) {
     case 'seat':
-      return seatContent(row.seat, planner, layout);
+      return seatContent(row.seat, planner);
     case 'effort':
       return `${row.value ?? UNSET_EFFORT_WORD}${row.inherited ? INHERITED_EFFORT_SUFFIX : ''}`;
-    case 'escalate':
-      return escalateContent(row.entry);
     default:
       return assertNever(row);
   }
@@ -125,8 +85,6 @@ function rowLabel(row: CrewRow): string {
       return row.seat.label;
     case 'effort':
       return 'effort';
-    case 'escalate':
-      return 'escalate';
     default:
       return assertNever(row);
   }
@@ -138,8 +96,6 @@ function rowPosture(row: CrewRow): string | undefined {
       return POSTURE_TAGS[row.seat.posture];
     case 'effort':
       return undefined;
-    case 'escalate':
-      return row.entry === undefined ? undefined : POSTURE_TAGS[row.entry.posture];
     default:
       return assertNever(row);
   }
@@ -155,15 +111,6 @@ function rowBranch(row: CrewRow, spines: boolean): 'node' | 'mid' | 'last' {
   return row.kind === 'effort' && row.seatId === 'review' ? 'last' : 'mid';
 }
 
-/** A folded escalate row is spoken for by the BUILD row, so the block must not render it twice. */
-export function visibleCrewRows(
-  rows: readonly CrewRow[],
-  layout: SeatBlockLayout,
-): readonly CrewRow[] {
-  if (!layout.foldEscalate) return rows;
-  return rows.filter((row) => row.kind !== 'escalate');
-}
-
 export function formatCrewRow(
   input: Readonly<{ row: CrewRow; layout: SeatBlockLayout; planner: RunnerConfig }>,
 ): Readonly<{
@@ -176,10 +123,7 @@ export function formatCrewRow(
   const posture = layout.posture ? rowPosture(row) : undefined;
   return {
     label: rowLabel(row).padEnd(CREW_LABEL_WIDTH),
-    content: truncateTerminalDisplayText(
-      rowContent(row, input.planner, layout),
-      layout.identityWidth,
-    ),
+    content: truncateTerminalDisplayText(rowContent(row, input.planner), layout.identityWidth),
     ...(posture !== undefined && { posture }),
     branch: rowBranch(row, layout.spines),
   };
