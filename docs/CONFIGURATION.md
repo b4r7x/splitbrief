@@ -87,7 +87,7 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 
 ### Pricing metadata
 
-Pricing is resolved from cached `models.dev` metadata first when available, then from runtime provider metadata or the bundled catalog. `models.dev` context pricing tiers are preserved: flat base rates apply below the tier threshold, and the highest matching context tier applies when prompt/cache context reaches that threshold. Local-only unpriced runners are displayed as local/unpriced rather than dollar-priced.
+Pricing is resolved from cached `models.dev` metadata first when available, then from runtime provider metadata or the bundled catalog. `models.dev` context pricing tiers are preserved: flat base rates apply below the tier threshold, and the highest matching context tier applies when prompt/cache context reaches that threshold. Local-only unpriced runners are displayed as local/unpriced rather than dollar-priced. Picker lane order is separate from this ladder — native CLI, then models.dev, then bundled `KNOWN_MODELS` as an offline fallback — and does not reorder pricing or context lookup; see [Model catalog lanes](./PLANNERS-AND-IMPLEMENTERS.md#model-catalog-lanes).
 
 If an API-billed or otherwise paid runner has unknown model pricing and `workflow.maxBudget` is set, runtime budget tracking pauses instead of treating that usage as `$0`. Continue only after acknowledging unknown spend or configuring pricing.
 
@@ -260,7 +260,7 @@ In-process call into the Anthropic Agent SDK (`@anthropic-ai/claude-agent-sdk`).
 | Field | Type | Required | Description |
 |---|---|:---:|---|
 | `apiKey` | string | no | Per-call key. Falls back to `ANTHROPIC_API_KEY`. Never mutates global env (`src/engine/runners/agent-sdk/backend.ts`). |
-| `model` | string | planner: no; implementer: yes | Planner defaults to `claude-sonnet-4-6` when omitted. Implementer config must include a model; `auto` resolves to the same default. |
+| `model` | string | planner: no; implementer: yes | Planner defaults to `claude-sonnet-5` when omitted. Implementer config must include a model; `auto` resolves to the same default. |
 
 ```yaml
 implementer:
@@ -352,7 +352,7 @@ reviewer:
 
 The implementer is the weaker of the two models. What makes a runner the implementer is the model behind it, not the transport SPLITBRIEF uses to reach it: a coding-agent CLI pointed at a cheaper model and an OpenAI-compatible API endpoint are equally first-class here, and SPLITBRIEF favors neither. They differ mechanically in one place — a `cli`, `agent`, or `agent-sdk` implementer writes files itself (`writesFiles: direct`), while an `api` or `shell` implementer returns file contents that SPLITBRIEF writes (`writesFiles: extracted-code`). Where a direct writer works before its changes reach your checkout is set by `workflow.isolation` (§5).
 
-Same discriminated union as `planner`, with two schema differences: `model` is required on the `api`, `shell`, `agent`, and `agent-sdk` implementer variants, and the `shell`/`agent` variants do **not** accept the planner-only `capabilities` field. The `cli` variant leaves `model` optional — omit it or write `model: auto` to delegate to the tool's own configured default; the two spellings behave identically and neither is rewritten on save. On an `api` runner, `auto` resolves to that provider's catalog default model (for example `anthropic` → `claude-sonnet-4-6`), and a custom provider with no catalog default rejects `auto` — and model absence — at config load. Implementer write behavior (`extracted-code` vs `direct`) is not a choice: `capabilities.writesFiles` may be declared per profile under `implementerProfiles`, but it must match the runner kind's write mode, and config load rejects a mismatch.
+Same discriminated union as `planner`, with two schema differences: `model` is required on the `api`, `shell`, `agent`, and `agent-sdk` implementer variants, and the `shell`/`agent` variants do **not** accept the planner-only `capabilities` field. The `cli` variant leaves `model` optional — omit it or write `model: auto` to delegate to the tool's own configured default; the two spellings behave identically and neither is rewritten on save. On an `api` runner, `auto` resolves to that provider's catalog default model (for example `anthropic` → `claude-sonnet-5`), and a custom provider with no catalog default rejects `auto` — and model absence — at config load. Implementer write behavior (`extracted-code` vs `direct`) is not a choice: `capabilities.writesFiles` may be declared per profile under `implementerProfiles`, but it must match the runner kind's write mode, and config load rejects a mismatch.
 
 YAML — minimal (local Ollama):
 
@@ -1413,21 +1413,23 @@ Credential prefix or env presence validates the configured offering but **never 
 
 ### Bundled model catalog (T-081 runtime state)
 
+`KNOWN_MODELS` (`src/core/providers/known-models.ts`) is the offline picker fallback. Live native CLI or models.dev rows hide `bundled-suggestion` placements in the picker (`buildRightRows`); `resolveModelCatalog` still emits them. Pricing and context stay on models.dev first, as in [Pricing metadata](#pricing-metadata).
+
 Recommendation labels mirror `src/core/providers/known-models.ts`. A row becomes **`recommended`** only after T-080 records five-scenario evaluation metrics for it. No credentialed evaluation run exists, so every bundled row is **`compatible-only`** — selectable, with no SPLITBRIEF quality claim.
 
 <!-- api-model-catalog -->
 | Provider | Model | Recommendation | Notes |
 |---|---|---|---|
-| openrouter | anthropic/claude-sonnet-4.6 | compatible-only | Bundled cloud default. T-080: OMIT-NOT-APPLICABLE — no evaluation metrics recorded. |
+| openrouter | anthropic/claude-sonnet-5 | compatible-only | Bundled cloud default. T-080: OMIT-NOT-APPLICABLE — no evaluation metrics recorded. |
 | groq | openai/gpt-oss-120b | compatible-only | Cheap hosted implementer; uses Groq `max_completion_tokens` contract. T-080: OMIT-NOT-APPLICABLE. |
 | ollama | qwen3-coder:30b | compatible-only | Local default; context limit discovered from the daemon — not hard-coded. T-080: OMIT-NOT-APPLICABLE. |
 | ollama-cloud | kimi-k2.7-code | compatible-only | Cloud fallback; the authenticated `/api/tags` account inventory is authoritative. |
 | lm-studio | qwen2.5-coder-7b | compatible-only | Local default; context limit discovered from the daemon. T-080: OMIT-NOT-APPLICABLE. |
 | openrouter | openrouter/free | compatible-only | Opportunistic free pool — not a reproducible default. |
-| anthropic | claude-sonnet-4-6 | compatible-only | Direct API default; priced via models.dev / bundled metadata. |
+| anthropic | claude-sonnet-5 | compatible-only | Direct API default; priced via models.dev / bundled metadata. |
 | deepseek | deepseek-v4-flash | compatible-only | Default V4 model; `deepseek-chat` / `deepseek-reasoner` retired from selectable defaults. |
 | together | zai-org/GLM-5.1 | compatible-only | Bundled Together default. |
-| openai | gpt-5.4 | compatible-only | Bundled OpenAI default; `model: auto` resolves to it. |
+| openai | gpt-5.6-sol | compatible-only | Bundled OpenAI default; `model: auto` resolves to it. |
 
 ### Minimal YAML per admitted provider
 
@@ -1441,7 +1443,7 @@ implementer:
   service: anthropic
   offering: payg
   apiBase: https://api.anthropic.com/v1
-  model: claude-sonnet-4-6
+  model: claude-sonnet-5
 ```
 
 <!-- config-api-minimal: openrouter -->
@@ -1452,7 +1454,7 @@ implementer:
   service: openrouter
   offering: payg
   apiBase: https://openrouter.ai/api/v1
-  model: anthropic/claude-sonnet-4.6
+  model: anthropic/claude-sonnet-5
 ```
 
 <!-- config-api-minimal: deepseek -->
@@ -1474,7 +1476,7 @@ implementer:
   service: openai
   offering: payg
   apiBase: https://api.openai.com/v1
-  model: gpt-5.4
+  model: gpt-5.6-sol
 ```
 
 <!-- config-api-minimal: groq -->

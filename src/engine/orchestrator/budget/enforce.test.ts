@@ -229,7 +229,7 @@ describe('enforceBudget', () => {
       ...baseOpts,
       tokenUsage: usage,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
     });
     const unknownCost = currentKnownCost({
       ...baseOpts,
@@ -243,7 +243,7 @@ describe('enforceBudget', () => {
     const sonnetResult = await enforceBudget({
       ...baseOpts,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       tokenUsage: usage,
       maxBudget: sonnetCost / 0.9,
       bus: busSonnet,
@@ -334,7 +334,7 @@ describe('checkBudgetAfterTask', () => {
       plannerTool: 'ollama',
       implementerTool: 'ollama',
       reviewerTool: 'anthropic',
-      reviewerModel: 'claude-sonnet-4-6',
+      reviewerModel: 'claude-sonnet-5',
     };
     const spent = currentKnownCost({ ...pinned, tokenUsage, totalTasks: 1, escalatedCount: 0 });
     expect(spent).toBeGreaterThan(0);

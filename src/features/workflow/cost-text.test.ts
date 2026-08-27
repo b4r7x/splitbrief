@@ -223,7 +223,7 @@ describe('computeCostBreakdownStats reviewer pricing', () => {
       ...inputs,
       pricingContext: {
         plannerTool: 'anthropic',
-        plannerModel: 'claude-sonnet-4-6',
+        plannerModel: 'claude-sonnet-5',
         implementerTool: 'ollama',
       },
     });
@@ -231,7 +231,7 @@ describe('computeCostBreakdownStats reviewer pricing', () => {
       ...inputs,
       pricingContext: {
         plannerTool: 'anthropic',
-        plannerModel: 'claude-sonnet-4-6',
+        plannerModel: 'claude-sonnet-5',
         implementerTool: 'ollama',
         reviewerTool: 'deepseek',
         reviewerModel: 'deepseek-v4-flash',

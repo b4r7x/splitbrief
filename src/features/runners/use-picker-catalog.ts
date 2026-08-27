@@ -49,7 +49,7 @@ export interface PickerCatalog {
   currentItem: PickerOption | undefined;
   selectedItemId: string | undefined;
   initialLeftIdx: number;
-  /** Index into `rightRows` of the persisted route, or the first `Configured` row. */
+  /** Index into `rightRows` of the persisted route, or the first `Current` row. */
   initialRightIndex: number;
   /** The same entry row for a left item the cursor is moving onto. */
   resolveRightIndex: (item: PickerOption | undefined) => number | undefined;
@@ -117,8 +117,8 @@ function rowIndexForModel(rows: readonly RightRow[], persistedModel: string | un
     );
     if (exact >= 0) return exact;
   }
-  const configured = rows.findIndex((row) => row.kind === 'model' && row.section === 'Configured');
-  return configured >= 0 ? configured : 0;
+  const current = rows.findIndex((row) => row.kind === 'model' && row.section === 'Current');
+  return current >= 0 ? current : 0;
 }
 
 function buildLeftItems(input: {

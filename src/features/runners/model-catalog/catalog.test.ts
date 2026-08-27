@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { KNOWN_MODELS } from '../../../core/providers/known-models.js';
+import {
+  KNOWN_MODELS,
+  PENDING_EVALUATION_CANDIDATE_IDS,
+} from '../../../core/providers/known-models.js';
 import { buildRightModels, countModelOptions, resolveAndSort } from './catalog.js';
 import type { PickerOption } from './options.js';
 import { deriveModelCatalogCapability } from './posture.js';
@@ -153,7 +156,9 @@ describe('right column models', () => {
       }),
     });
 
-    expect(models.map((model) => model.id)).toContain('claude-sonnet-4-6');
+    expect(models.map((model) => model.id)).toEqual(
+      expect.arrayContaining(['claude-sonnet-5', 'claude-opus-5']),
+    );
   });
 
   it('keeps buildRightModels deterministic unless a cache is passed', () => {
@@ -442,13 +447,6 @@ describe('auto is a selection policy, never catalog data', () => {
   });
 });
 
-const T080_UNEVALUATED_COMPATIBLE_ONLY = [
-  { provider: 'openrouter', model: 'anthropic/claude-sonnet-4.6' },
-  { provider: 'groq', model: 'openai/gpt-oss-120b' },
-  { provider: 'ollama', model: 'qwen3-coder:30b' },
-  { provider: 'lm-studio', model: 'qwen2.5-coder-7b' },
-] as const;
-
 function collectRuntimeRecommended() {
   return Object.entries(KNOWN_MODELS).flatMap(([provider, models]) =>
     (models ?? [])
@@ -483,7 +481,7 @@ describe('runtime recommendation quality', () => {
   });
 
   it('keeps every unevaluated T-080 candidate selectable as a compatible-only bundled model', () => {
-    for (const { provider, model } of T080_UNEVALUATED_COMPATIBLE_ONLY) {
+    for (const { provider, model } of PENDING_EVALUATION_CANDIDATE_IDS) {
       const bundled = KNOWN_MODELS[provider]?.find((entry) => entry.name === model);
       expect(bundled?.recommendation).toBe('compatible-only');
       expect(resolveAndSort(provider, 'implementer').map((entry) => entry.id)).toContain(model);
@@ -491,7 +489,7 @@ describe('runtime recommendation quality', () => {
   });
 
   it('projects compatible-only models through buildRightModels', () => {
-    for (const { provider, model } of T080_UNEVALUATED_COMPATIBLE_ONLY) {
+    for (const { provider, model } of PENDING_EVALUATION_CANDIDATE_IDS) {
       const models = buildRightModels({
         role: 'implementer',
         customModels: [],

@@ -67,7 +67,7 @@ describe('CostDrilldownOverlay', () => {
     tokensStore.__testReset({
       pricingContext: {
         plannerTool: 'anthropic',
-        plannerModel: 'claude-sonnet-4-6',
+        plannerModel: 'claude-sonnet-5',
         implementerTool: 'ollama',
         implementerModel: 'qwen2.5',
       },
@@ -84,7 +84,7 @@ describe('CostDrilldownOverlay', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('planning');
-    expect(frame).toContain('$18.00');
+    expect(frame).toContain('$12.00');
     ui.unmount();
   });
 
@@ -92,7 +92,7 @@ describe('CostDrilldownOverlay', () => {
     tokensStore.__testReset({
       pricingContext: {
         plannerTool: 'anthropic',
-        plannerModel: 'claude-sonnet-4-6',
+        plannerModel: 'claude-sonnet-5',
         implementerTool: 'ollama',
         implementerModel: 'qwen2.5',
       },
@@ -117,7 +117,7 @@ describe('CostDrilldownOverlay', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('implementing');
-    expect(frame).toContain('$18.00');
+    expect(frame).toContain('$12.00');
     ui.unmount();
   });
 
@@ -125,11 +125,11 @@ describe('CostDrilldownOverlay', () => {
     tokensStore.__testReset({
       pricingContext: {
         plannerTool: 'anthropic',
-        plannerModel: 'claude-sonnet-4-6',
+        plannerModel: 'claude-sonnet-5',
         implementerTool: 'ollama',
         implementerModel: 'qwen2.5',
         reviewerTool: 'anthropic',
-        reviewerModel: 'claude-sonnet-4-6',
+        reviewerModel: 'claude-sonnet-5',
       },
       perPhase: {
         'final-review': {
@@ -156,7 +156,7 @@ describe('CostDrilldownOverlay', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('final-review');
-    expect(frame).toContain('$18.00');
+    expect(frame).toContain('$12.00');
     ui.unmount();
   });
 });

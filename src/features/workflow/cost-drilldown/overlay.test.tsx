@@ -286,9 +286,9 @@ describe('CostDrilldownOverlay task metadata', () => {
 describe('CostDrilldownOverlay seat breakdown', () => {
   const pricedSeats = {
     plannerTool: 'anthropic',
-    plannerModel: 'claude-sonnet-4-6',
+    plannerModel: 'claude-sonnet-5',
     implementerTool: 'anthropic',
-    implementerModel: 'claude-sonnet-4-6',
+    implementerModel: 'claude-sonnet-5',
   };
 
   beforeEach(() => {

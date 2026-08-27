@@ -156,25 +156,31 @@ describe('provider variant merge', () => {
   });
 
   it('reconciles membership best-wins across variants', () => {
+    const nativeId = 'openrouter/claude-sonnet-5';
     const staleModels = buildRightModels({
       role: 'planner',
       customModels: [],
       currentItem: tool('opencode', { providerDependent: true }),
-      cache: cliCache('opencode', [{ id: 'openrouter/claude-sonnet-4.6' }], 'stale'),
+      cache: cliCache('opencode', [{ id: nativeId }], 'stale'),
     });
     const staleRow = findMergedRow(staleModels);
-    expect(staleRow).toMatchObject({ membership: 'stale', isStale: true, isDetected: false });
+    expect(staleRow).toMatchObject({
+      id: nativeId,
+      membership: 'stale',
+      isStale: true,
+      isDetected: false,
+    });
     expect(countModelOptions(staleModels)).toMatchObject({ confirmed: 0, stale: 1, bundled: 2 });
 
     const freshModels = buildRightModels({
       role: 'planner',
       customModels: [],
       currentItem: tool('opencode', { providerDependent: true }),
-      cache: cliCache('opencode', [{ id: 'openrouter/claude-sonnet-4.6' }]),
+      cache: cliCache('opencode', [{ id: nativeId }]),
     });
     const freshRow = findMergedRow(freshModels);
     expect(freshRow).toMatchObject({
-      id: 'openrouter/claude-sonnet-4.6',
+      id: nativeId,
       membership: 'confirmed',
       isDetected: true,
       contextLength: 1_000_000,

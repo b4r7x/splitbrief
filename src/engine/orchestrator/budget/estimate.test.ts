@@ -138,7 +138,7 @@ describe('estimateDeterministicCost', () => {
           service: 'anthropic',
           offering: 'payg',
           apiBase: 'https://api.anthropic.com/v1',
-          model: 'claude-opus-4-6',
+          model: 'claude-opus-5',
         },
       }),
       {
@@ -269,7 +269,7 @@ describe('estimateDeterministicCost', () => {
           service: 'anthropic',
           offering: 'payg',
           apiBase: 'https://api.anthropic.com/v1',
-          model: 'claude-opus-4-6',
+          model: 'claude-opus-5',
         },
       }),
       {
@@ -322,7 +322,7 @@ describe('estimateDeterministicCost', () => {
           service: 'anthropic',
           offering: 'payg',
           apiBase: 'https://api.anthropic.com/v1',
-          model: 'claude-opus-4-6',
+          model: 'claude-opus-5',
         },
       }),
       {

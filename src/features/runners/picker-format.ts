@@ -177,11 +177,19 @@ function readyModelGuidance(
     return { headline: DETECTING_MODELS_COPY, detail: undefined };
   }
 
+  const liveLane = hasLiveCatalogLane(counts);
+  const bundledOffered = counts.bundled > 0 && !liveLane;
   return zeroConfirmedGuidance({
     diagnostic,
     toolName: item.displayName,
-    offersRows: counts.suggestions + counts.bundled + counts.custom > 0,
+    offersRows:
+      counts.suggestions + counts.stale + counts.custom + (liveLane ? 0 : counts.bundled) > 0,
+    aliasesOffered: bundledOffered,
   });
+}
+
+function hasLiveCatalogLane(counts: PickerModelCounts): boolean {
+  return counts.confirmed > 0 || counts.stale > 0 || counts.suggestions > 0;
 }
 
 /** No confirmed model: the real diagnostic leads, and its remedy never over-promises. */
@@ -189,6 +197,7 @@ function zeroConfirmedGuidance(input: {
   diagnostic: ModelCatalogDiagnostic | undefined;
   toolName: string;
   offersRows: boolean;
+  aliasesOffered: boolean;
 }): { headline: string; detail: string | undefined } {
   if (input.diagnostic === undefined) {
     return input.offersRows
@@ -198,7 +207,7 @@ function zeroConfirmedGuidance(input: {
   if (input.diagnostic.kind === 'unsupported') {
     return {
       headline: noListingSentence(input.toolName),
-      detail: input.offersRows ? 'aliases and models.dev ids are offered' : undefined,
+      detail: input.aliasesOffered ? 'aliases and models.dev ids are offered' : undefined,
     };
   }
   return {
@@ -314,7 +323,7 @@ export function formatPickerByline(input: {
   const parts = [input.toolName];
   if (input.version !== undefined) parts.push(input.version);
   if (input.diagnostic?.kind === 'unsupported') parts.push('no listing command');
-  if (input.counts.bundled > 0) {
+  if (input.counts.bundled > 0 && !hasLiveCatalogLane(input.counts)) {
     parts.push(countNoun(input.counts.bundled, 'known alias', 'known aliases'));
   }
   if (input.counts.suggestions > 0) parts.push(`${input.counts.suggestions} from models.dev`);

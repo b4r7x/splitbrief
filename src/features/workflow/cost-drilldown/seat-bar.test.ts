@@ -6,7 +6,7 @@ import { resolvePricing } from '../../../engine/providers/pricing-resolver.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 
-const priced = resolvePricing('anthropic', undefined, 'claude-sonnet-4-6');
+const priced = resolvePricing('anthropic', undefined, 'claude-sonnet-5');
 
 const usage = makeUsage({
   plannerInput: 20_000,

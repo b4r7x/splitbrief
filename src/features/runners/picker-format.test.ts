@@ -86,7 +86,19 @@ describe('formatModelCatalogGuidance', () => {
     } satisfies ModelCatalogDiagnostic);
 
     expect(guidance.headline).toContain('does not support model listing');
+    expect(guidance.detail).toBe('aliases and models.dev ids are offered');
     expect(guidance.detail).not.toContain('ctrl+r');
+  });
+
+  it('does not claim aliases are offered when a live catalog lane hides bundled rows', () => {
+    const guidance = formatModelCatalogGuidance(
+      readyCliTool(),
+      { ...zeroCounts, confirmed: 0, suggestions: 4, bundled: 3 },
+      { kind: 'unsupported' } satisfies ModelCatalogDiagnostic,
+    );
+
+    expect(guidance.headline).toContain('does not support model listing');
+    expect(guidance.detail ?? '').not.toContain('aliases');
   });
 
   it('does not promise a different result after a malformed listing', () => {
@@ -330,12 +342,28 @@ describe('formatPickerByline', () => {
     });
 
   it('keeps every count ahead of the capability strip that truncation cuts', () => {
-    const line = byline();
+    const aliases = byline({
+      counts: { ...zeroCounts, bundled: 3 },
+      diagnostic: undefined,
+    });
+    const catalog = byline({ counts: { ...zeroCounts, suggestions: 10, confirmed: 126 } });
 
-    expect(line.indexOf('3 known aliases')).toBeGreaterThan(-1);
-    expect(line.indexOf('10 from models.dev')).toBeGreaterThan(-1);
-    expect(line.indexOf('10 from models.dev')).toBeLessThan(line.indexOf('Network'));
-    expect(line.indexOf('3 known aliases')).toBeLessThan(line.indexOf('10 from models.dev'));
+    expect(aliases.indexOf('3 known aliases')).toBeGreaterThan(-1);
+    expect(aliases.indexOf('3 known aliases')).toBeLessThan(aliases.indexOf('Network'));
+    expect(catalog.indexOf('10 from models.dev')).toBeGreaterThan(-1);
+    expect(catalog.indexOf('10 from models.dev')).toBeLessThan(catalog.indexOf('Network'));
+    expect(catalog.indexOf('126 detected')).toBeLessThan(catalog.indexOf('Network'));
+  });
+
+  it('never counts hidden bundled rows among the models the byline offers', () => {
+    const line = byline({
+      counts: { ...zeroCounts, confirmed: 3, bundled: 5 },
+      diagnostic: undefined,
+    });
+
+    expect(line).toContain('3 detected');
+    expect(line).not.toMatch(/\b8\b/);
+    expect(line).not.toContain('5 known aliases');
   });
 
   it('separates counts by provenance instead of summing them', () => {

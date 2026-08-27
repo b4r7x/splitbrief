@@ -67,7 +67,7 @@ describe('buildRightRows', () => {
     expect(first?.kind).toBe('model');
     expect(first?.kind === 'model' && first.model.id).toBe(AUTOMATIC_MODEL);
     expect(first === undefined ? undefined : sectionOf(first)).toBeUndefined();
-    expect(sections(rows)).toEqual(['Suggestions', 'Catalog (models.dev)']);
+    expect(sections(rows)).toEqual(['Catalog (models.dev)']);
   });
 
   it('opens a kilo-shaped list on the configured section and groups the rest by provider', () => {
@@ -90,7 +90,7 @@ describe('buildRightRows', () => {
     const openai = 'On OpenAI';
 
     expect(models).toHaveLength(126);
-    expect(seen[0]).toBe('Configured');
+    expect(seen[0]).toBe('Current');
     expect(seen).toContain(kilo);
     expect(seen).toContain(openai);
     expect(seen.indexOf(kilo)).toBeLessThan(seen.indexOf(openai));
@@ -132,6 +132,79 @@ describe('buildRightRows', () => {
     const failed = buildRightRows({ ...BASE, models: [auto], catalogLane: 'failed' });
     const failure = failed.find((row) => row.kind === 'notice');
     expect(failure?.kind === 'notice' && failure.action).toBe('refresh');
+  });
+
+  it('custom section is absent with no custom rows', () => {
+    const persisted = 'openai/gpt-current';
+    const catalog = Array.from({ length: 12 }, (_, index) =>
+      catalogModel(`anthropic/claude-catalog-${index}`, `2026-01-${String(index + 10)}`),
+    );
+    const rows = buildRightRows({
+      ...BASE,
+      persistedModel: persisted,
+      models: [{ id: persisted, membership: 'confirmed' }, ...catalog],
+    });
+
+    expect(sections(rows)[0]).toBe('Current');
+    expect(sections(rows)).not.toContain('Custom');
+  });
+
+  it('sections order current, detected, catalog, custom, fallback', () => {
+    const persisted = 'openai/current';
+    const catalog = Array.from({ length: 9 }, (_, index) =>
+      catalogModel(`anthropic/claude-catalog-${index}`, `2026-01-${String(index + 10)}`),
+    );
+    const rows = buildRightRows({
+      ...BASE,
+      persistedModel: persisted,
+      customModels: ['mine'],
+      models: [
+        { id: persisted, membership: 'confirmed' },
+        { id: 'openai/detected', membership: 'confirmed' },
+        ...catalog,
+        { id: 'mine', membership: 'custom', isCustom: true },
+        { id: 'xai/offline' },
+      ],
+    });
+
+    expect(sections(rows)).toEqual([
+      'Current',
+      'On OpenAI',
+      'Catalog (models.dev)',
+      'Custom',
+      'Fallback',
+    ]);
+  });
+
+  it('bundled rows hidden when a live lane exists', () => {
+    const rows = buildRightRows({
+      ...BASE,
+      models: [
+        { id: 'openai/live', membership: 'confirmed' },
+        catalogModel('anthropic/catalog'),
+        alias('Opus'),
+        alias('Sonnet'),
+      ],
+    });
+
+    expect(modelRows(rows).map((row) => row.model.id)).toEqual([
+      'openai/live',
+      'anthropic/catalog',
+    ]);
+  });
+
+  it('persisted bundled row survives the filter', () => {
+    const persisted = 'Opus';
+    const rows = buildRightRows({
+      ...BASE,
+      persistedModel: persisted,
+      models: [alias('Opus'), alias('Sonnet'), catalogModel('anthropic/catalog')],
+    });
+    const ids = modelRows(rows).map((row) => row.model.id);
+
+    expect(ids).toContain(persisted);
+    expect(ids).not.toContain('Sonnet');
+    expect(ids).toContain('anthropic/catalog');
   });
 });
 

@@ -302,14 +302,14 @@ describe('ToolModelPicker provider routes', () => {
     await vi.waitFor(() => {
       expect(frameText(ui)).toContain('DeepSeek V4 Flash');
     });
-    // Auto → GPT-5.4 → Claude Sonnet 4.6 → the merged DeepSeek row. Filtering
+    // Auto is focused first; one down is the merged DeepSeek row. Filtering
     // there instead would hide the route rows the expansion has to reveal.
-    for (let i = 0; i < 3; i += 1) {
-      await flushEffects();
-      ui.stdin.write(ARROW_DOWN);
-    }
+    await flushEffects();
+    ui.stdin.write(ARROW_DOWN);
     await vi.waitFor(() => {
-      expect(frameText(ui)).toContain(`${listRowLead('active')}DeepSeek V4 Flash`);
+      const frame = frameText(ui);
+      expect(frame).toContain(`${listRowLead('active')}DeepSeek V4 Flash`);
+      expect(frame).not.toContain(`${listRowLead('active')}DeepSeek V4 Flash Free`);
     });
     await flushEffects();
   }

@@ -386,6 +386,14 @@ The 25% reserve is for output. The remaining budget goes to `currentCode`. If th
 
 ---
 
+## Model catalog lanes
+
+Seat pickers prefer the native CLI catalog (`confirmed` / `stale`), then models.dev (`catalog-suggestion`). Bundled `KNOWN_MODELS` (`bundled-suggestion`) is an offline fallback only: `buildRightRows` (`src/features/runners/model-catalog/rows.ts`) hides those rows when any live lane is present, except the persisted model and custom rows. `resolveModelCatalog` (`src/engine/providers/model/catalog.ts`) still classifies bundled membership — the hide is a picker filter, not an engine-catalog drop.
+
+Pricing and context-window lookup stay on the existing ladder: cached models.dev first, then runtime metadata, then the bundled catalog (`resolvePricing` in `src/engine/providers/pricing-resolver.ts`, `resolveRunnerContextWindow` in `src/engine/providers/model/context-window.ts`).
+
+---
+
 ## Five runner kinds in practice
 
 ### cli

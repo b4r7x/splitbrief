@@ -21,7 +21,7 @@ describe('predictCost', () => {
     const result = predictCost({
       taskCount: 10,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerTool: 'deepseek',
     });
     expect(result.lowCost).toBeLessThan(result.expectedCost);
@@ -62,14 +62,14 @@ describe('predictCost', () => {
       taskCount: 5,
       plannerTool: 'anthropic',
       implementerTool: 'ollama',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       tokenUsage,
     });
     const withoutUsage = predictCost({
       taskCount: 5,
       plannerTool: 'anthropic',
       implementerTool: 'ollama',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
     });
 
     expect(withUsage.lowCost).not.toBe(withoutUsage.lowCost);
@@ -93,7 +93,7 @@ describe('predictCost', () => {
     const baseOpts: PredictCostOptions = {
       taskCount: 5,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-opus-4-6',
+      plannerModel: 'claude-opus-5',
       implementerTool: 'ollama',
     };
 
@@ -102,8 +102,8 @@ describe('predictCost', () => {
         anthropic: {
           id: 'anthropic',
           models: {
-            'claude-opus-4-6': {
-              id: 'claude-opus-4-6',
+            'claude-opus-5': {
+              id: 'claude-opus-5',
               cost: { input: 99, output: 199 },
               limit: { context: 1_000_000 },
             },
@@ -137,7 +137,7 @@ describe('predictCost', () => {
     const base = {
       taskCount: 5,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
     } satisfies PredictCostOptions;
 
@@ -163,7 +163,7 @@ describe('predictCost', () => {
     const base = {
       taskCount: 5,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
     } satisfies PredictCostOptions;
     const usage = makeUsage({
@@ -199,7 +199,7 @@ describe('predictCost', () => {
     const opts = {
       taskCount: 5,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerTool: 'deepseek',
       tokenUsage: makeUsage({ plannerInput: 10_000, plannerOutput: 5_000 }),
     } satisfies PredictCostOptions;

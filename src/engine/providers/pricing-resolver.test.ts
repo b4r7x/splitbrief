@@ -61,15 +61,15 @@ describe('pricing-resolver', () => {
   });
 
   describe('cache pricing in bundled catalog', () => {
-    it('resolvePricing for claude-sonnet-4-6 returns verified cache prices', () => {
-      const result = resolvePricing('anthropic', NULL_CACHE, 'claude-sonnet-4-6');
+    it('resolvePricing for claude-sonnet-5 returns verified cache prices', () => {
+      const result = resolvePricing('anthropic', NULL_CACHE, 'claude-sonnet-5');
       expect(result.isPriced).toBe(true);
-      expect(result.cacheReadPer1M).toBe(0.3);
-      expect(result.cacheWritePer1M).toBe(3.75);
+      expect(result.cacheReadPer1M).toBe(0.2);
+      expect(result.cacheWritePer1M).toBe(2.5);
     });
 
-    it('resolvePricing for claude-opus-4-6 returns verified cache prices', () => {
-      const result = resolvePricing('anthropic', NULL_CACHE, 'claude-opus-4-6');
+    it('resolvePricing for claude-opus-5 returns verified cache prices', () => {
+      const result = resolvePricing('anthropic', NULL_CACHE, 'claude-opus-5');
       expect(result.isPriced).toBe(true);
       expect(result.cacheReadPer1M).toBe(0.5);
       expect(result.cacheWritePer1M).toBe(6.25);
@@ -85,19 +85,19 @@ describe('pricing-resolver', () => {
     });
 
     it('merges bundled cache pricing when runtime catalog provides pricing without cache fields', () => {
-      // Simulate a runtime model cache entry for anthropic/claude-sonnet-4-6 with pricing
+      // Simulate a runtime model cache entry for anthropic/claude-sonnet-5 with pricing
       // but no cache rates. We expect resolvePricing to merge the bundled fallback's verified
       // cache rates so cost math stays cache-aware.
       const cache = makeModelCacheAccessor({
         providerModels: {
-          anthropic: [{ id: 'claude-sonnet-4-6', pricingInput: 3, pricingOutput: 15 }],
+          anthropic: [{ id: 'claude-sonnet-5', pricingInput: 3, pricingOutput: 15 }],
         },
       });
-      const result = resolvePricing('anthropic', cache, 'claude-sonnet-4-6');
+      const result = resolvePricing('anthropic', cache, 'claude-sonnet-5');
       expect(result.isPriced).toBe(true);
       expect(result.source).toBe('runtime');
-      expect(result.cacheReadPer1M).toBe(0.3);
-      expect(result.cacheWritePer1M).toBe(3.75);
+      expect(result.cacheReadPer1M).toBe(0.2);
+      expect(result.cacheWritePer1M).toBe(2.5);
     });
 
     it('prefers models.dev catalog cache rates over the bundled fallback', () => {
@@ -159,7 +159,7 @@ describe('pricing-resolver', () => {
     });
 
     it('uses bundled fallback pricing for anthropic', () => {
-      const pricing = resolvePricing('anthropic', undefined, 'claude-opus-4-6');
+      const pricing = resolvePricing('anthropic', undefined, 'claude-opus-5');
       expect(pricing.isPriced).toBe(true);
       expect(pricing.inputPer1M).toBe(5);
       expect(pricing.outputPer1M).toBe(25);
@@ -169,9 +169,9 @@ describe('pricing-resolver', () => {
     it('resolves API auto to bundled default model when available', () => {
       const pricing = resolvePricing('openai', undefined, 'auto');
       expect(pricing.isPriced).toBe(true);
-      expect(pricing.name).toBe('gpt-5.4');
-      expect(pricing.inputPer1M).toBe(2.5);
-      expect(pricing.outputPer1M).toBe(15);
+      expect(pricing.name).toBe('gpt-5.6-sol');
+      expect(pricing.inputPer1M).toBe(4);
+      expect(pricing.outputPer1M).toBe(20);
     });
 
     it('prefers models.dev pricing over bundled fallback', () => {

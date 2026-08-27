@@ -138,7 +138,7 @@ describe('getBudgetCostKnownness', () => {
         implementerCacheCreateTokens: 0,
         retryCount: 0,
         tool: 'anthropic',
-        model: 'claude-sonnet-4-6',
+        model: 'claude-sonnet-5',
       },
     ];
 
@@ -159,7 +159,7 @@ describe('getBudgetCostKnownness', () => {
       taskBreakdowns,
     });
 
-    expect(cost).toBeCloseTo(0.3, 10);
+    expect(cost).toBeCloseTo(0.2, 10);
     expect(knownness).toMatchObject({
       currentKnownCost: cost,
       isKnown: true,
@@ -347,7 +347,7 @@ describe('getBudgetCostKnownness', () => {
       totalTasks: 2,
       escalatedCount: 1,
       plannerTool: 'anthropic',
-      plannerModel: 'claude-sonnet-4-6',
+      plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
     };
 

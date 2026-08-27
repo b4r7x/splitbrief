@@ -125,30 +125,31 @@ function groupKeyFor(input: {
   provenance: ProvenanceWord;
   persistedModel: string | undefined;
 }): string {
-  if (input.provenance === 'Custom' || input.model.id === input.persistedModel) {
-    return 'configured';
-  }
+  if (input.model.id === input.persistedModel) return 'current';
+  if (input.provenance === 'Custom') return 'custom';
   switch (input.provenance) {
     case 'Detected':
     case 'Stale':
       return `detected:${providerKeyOf(input.model)}`;
     case 'Known':
-      return 'known';
+      return 'fallback';
     default:
       return `catalog:${providerKeyOf(input.model)}`;
   }
 }
 
 function groupRank(key: string): number {
-  if (key === 'configured') return 0;
+  if (key === 'current') return 0;
   if (key.startsWith('detected:')) return 1;
-  if (key === 'known') return 2;
-  return 3;
+  if (key.startsWith('catalog:')) return 2;
+  if (key === 'custom') return 3;
+  return 4;
 }
 
 function sectionLabel(key: string): string {
-  if (key === 'configured') return 'Configured';
-  if (key === 'known') return 'Suggestions';
+  if (key === 'current') return 'Current';
+  if (key === 'custom') return 'Custom';
+  if (key === 'fallback') return 'Fallback';
   const [lead, providerKey = ''] = key.split(':');
   if (lead === 'detected') {
     return providerKey === '' ? 'Detected' : `On ${providerDisplayName(providerKey)}`;
@@ -171,7 +172,7 @@ export function buildRightRows(input: {
 }): RightRow[] {
   const sectioned = input.models.length > SECTION_THRESHOLD;
   const automatic: ModelOption[] = [];
-  const placements: Placement[] = [];
+  let placements: Placement[] = [];
   for (const model of input.models) {
     if (isAutomaticModel(model.id)) {
       automatic.push(model);
@@ -183,6 +184,21 @@ export function buildRightRows(input: {
       provenance,
       group: groupKeyFor({ model, provenance, persistedModel: input.persistedModel }),
     });
+  }
+
+  const hasLiveLane = placements.some(
+    (placement) =>
+      placement.model.membership === 'confirmed' ||
+      placement.model.membership === 'stale' ||
+      placement.model.membership === 'catalog-suggestion',
+  );
+  if (hasLiveLane) {
+    placements = placements.filter(
+      (placement) =>
+        placement.model.membership !== 'bundled-suggestion' ||
+        placement.model.id === input.persistedModel ||
+        placement.provenance === 'Custom',
+    );
   }
 
   const order: string[] = [];
@@ -233,7 +249,7 @@ export function buildRightRows(input: {
     for (const key of order) {
       const members = placements.filter((placement) => placement.group === key);
       const section = sectionLabel(key);
-      const ordered = key === 'configured' ? members : members.toSorted(byReleaseDateDesc);
+      const ordered = key === 'current' ? members : members.toSorted(byReleaseDateDesc);
       for (const placement of ordered) pushModel(placement, section);
     }
   }
