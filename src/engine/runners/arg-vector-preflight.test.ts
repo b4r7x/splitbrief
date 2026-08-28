@@ -428,6 +428,26 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     ]);
   });
 
+  it('emits --effort on the Claude Code implementer argv when config sets it', async () => {
+    const checks = await collectArgVectorPreflightChecks({
+      config: makeConfig({
+        implementer: { kind: 'cli', tool: 'claude-code', model: 'sonnet', effort: 'high' },
+      }),
+      projectDir: '/project',
+      roles: ['implementer'],
+      runHelp: async () =>
+        claudeHelp('  --effort <level>               Effort level for the session'),
+    });
+
+    expect(checks[0]).toMatchObject({
+      id: 'runners.cli.claude-code.arg-vector.implementer',
+      severity: 'ok',
+    });
+    expect(checks[0]?.details).toEqual([
+      'Emitted argv: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode acceptEdits',
+    ]);
+  });
+
   it('refuses a configured added-roots override before any help probe (REQ-018)', async () => {
     const configuredArgs = ['--add-dir', '/srv/shared-context'];
     let helpSpawns = 0;

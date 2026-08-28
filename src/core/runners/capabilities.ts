@@ -55,7 +55,7 @@ export function seatSupportsEffort(
   const runner = input.runner;
   switch (runner.kind) {
     case 'cli':
-      return CLI_TOOL_CATALOG[runner.tool].supportsEffort && input.role !== 'implementer';
+      return CLI_TOOL_CATALOG[runner.tool].supportsEffort;
     case 'api':
       return (
         isProviderId(runner.provider) &&

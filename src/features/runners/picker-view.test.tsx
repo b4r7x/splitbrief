@@ -238,7 +238,7 @@ describe('PickerView previews', () => {
     const frame = ui.lastFrame() ?? '';
     // The byline counts what the rows actually are; the suggestions are named
     // as suggestions instead of being passed off as a detected catalog.
-    expect(frame).toContain('3 from models.dev');
+    expect(frame).toContain('3 models');
     expect(frame).not.toContain('detected');
     ui.unmount();
   });

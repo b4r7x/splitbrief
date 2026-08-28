@@ -7,7 +7,11 @@ import type { PickerModelCounts } from './model-catalog/catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
 import type { RunnerPermissionPosture } from './model-catalog/posture.js';
 import type { PickerOptionStatus } from './model-catalog/status.js';
-import { MODELS_DEV_FETCH_FAILED, type RouteAuthState } from './model-catalog/rows.js';
+import {
+  CATALOG_FETCH_FAILED,
+  CATALOG_LANE_PENDING,
+  type RouteAuthState,
+} from './model-catalog/rows.js';
 import type { ProviderAuthAction } from './provider-auth.js';
 import { assertNever } from '../../utils/type-guards.js';
 
@@ -207,7 +211,7 @@ function zeroConfirmedGuidance(input: {
   if (input.diagnostic.kind === 'unsupported') {
     return {
       headline: noListingSentence(input.toolName),
-      detail: input.aliasesOffered ? 'aliases and models.dev ids are offered' : undefined,
+      detail: input.aliasesOffered ? 'aliases are offered' : undefined,
     };
   }
   return {
@@ -326,10 +330,10 @@ export function formatPickerByline(input: {
   if (input.counts.bundled > 0 && !hasLiveCatalogLane(input.counts)) {
     parts.push(countNoun(input.counts.bundled, 'known alias', 'known aliases'));
   }
-  if (input.counts.suggestions > 0) parts.push(`${input.counts.suggestions} from models.dev`);
+  if (input.counts.suggestions > 0) parts.push(countNoun(input.counts.suggestions, 'model'));
   if (input.counts.confirmed > 0) parts.push(`${input.counts.confirmed} detected`);
-  if (input.lane === 'pending') parts.push('models.dev catalog loading');
-  if (input.lane === 'failed') parts.push(`${MODELS_DEV_FETCH_FAILED}${SOFT_SEP}ctrl+r`);
+  if (input.lane === 'pending') parts.push(CATALOG_LANE_PENDING);
+  if (input.lane === 'failed') parts.push(`${CATALOG_FETCH_FAILED}${SOFT_SEP}ctrl+r`);
   parts.push(...input.capabilities);
   return parts.join(SOFT_SEP);
 }

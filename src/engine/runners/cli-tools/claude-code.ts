@@ -54,6 +54,7 @@ type ClaudeImplementerBuild = Readonly<{
   model: string | undefined;
   projectDir: string;
   configuredArgs: readonly string[];
+  effort?: EffortLevel | undefined;
 }>;
 
 function buildBaseArgs(opts: ClaudeBuildCommon): string[] {
@@ -78,7 +79,7 @@ function plannerBaseArgs(opts: ClaudePlannerBuild): string[] {
 
 function implementerBaseArgs(opts: ClaudeImplementerBuild): string[] {
   return [
-    ...buildBaseArgs({ model: opts.model, effort: undefined }),
+    ...buildBaseArgs({ model: opts.model, effort: opts.effort }),
     '--permission-mode',
     'acceptEdits',
   ];

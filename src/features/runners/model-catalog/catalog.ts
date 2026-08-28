@@ -11,6 +11,7 @@ import {
 import { resolveModelDisplayName } from '../../../core/discovery/model-catalog.js';
 import { NULL_CACHE, type ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
 import type { PickerOption } from './options.js';
+import { mergeOptionFamilies } from './option-axis.js';
 import {
   compactProviderTag,
   modelBareId,
@@ -308,7 +309,7 @@ export function buildRightModels(params: {
     : [];
 
   const merged = mergeModelOptions(customOptions, knownModels);
-  const rows =
+  const afterProviders =
     params.currentItem.providerDependent === true
       ? mergeProviderVariants(merged, {
           persistedModel: params.persistedModel,
@@ -316,6 +317,10 @@ export function buildRightModels(params: {
           providerAuth: params.providerAuth,
         })
       : merged;
+  const rows = mergeOptionFamilies(afterProviders, {
+    persistedModel: params.persistedModel,
+    customModels: params.customModels,
+  });
   return capability.allowsAutomatic ? [AUTOMATIC_MODEL_OPTION, ...rows] : rows;
 }
 

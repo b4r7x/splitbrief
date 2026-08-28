@@ -85,11 +85,20 @@ describe('deriveCrewSeats', () => {
 
   it('refuses effort on a build seat no implementer adapter can deliver it to', () => {
     const config = makeConfig({
-      implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4' },
+      implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' },
     });
     const build = seatOf(deriveCrewSeats({ config }), 'build');
 
     expect(build.supportsEffort).toBe(false);
+  });
+
+  it('offers effort on a Claude Code build seat', () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4' },
+    });
+    const build = seatOf(deriveCrewSeats({ config }), 'build');
+
+    expect(build.supportsEffort).toBe(true);
   });
 
   it('offers effort on a build seat whose api model reasons', () => {

@@ -86,7 +86,7 @@ describe('formatModelCatalogGuidance', () => {
     } satisfies ModelCatalogDiagnostic);
 
     expect(guidance.headline).toContain('does not support model listing');
-    expect(guidance.detail).toBe('aliases and models.dev ids are offered');
+    expect(guidance.detail).toBe('aliases are offered');
     expect(guidance.detail).not.toContain('ctrl+r');
   });
 
@@ -350,8 +350,8 @@ describe('formatPickerByline', () => {
 
     expect(aliases.indexOf('3 known aliases')).toBeGreaterThan(-1);
     expect(aliases.indexOf('3 known aliases')).toBeLessThan(aliases.indexOf('Network'));
-    expect(catalog.indexOf('10 from models.dev')).toBeGreaterThan(-1);
-    expect(catalog.indexOf('10 from models.dev')).toBeLessThan(catalog.indexOf('Network'));
+    expect(catalog.indexOf('10 models')).toBeGreaterThan(-1);
+    expect(catalog.indexOf('10 models')).toBeLessThan(catalog.indexOf('Network'));
     expect(catalog.indexOf('126 detected')).toBeLessThan(catalog.indexOf('Network'));
   });
 
@@ -378,14 +378,15 @@ describe('formatPickerByline', () => {
     expect(byline({ diagnostic: undefined })).not.toContain('no listing command');
   });
 
-  it('reports the models.dev lane with its retry key, ahead of the capabilities', () => {
+  it('reports the catalog lane with its retry key, ahead of the capabilities', () => {
     const pending = byline({ lane: 'pending' });
     const failed = byline({ lane: 'failed' });
 
-    expect(pending).toContain('models.dev catalog loading');
+    expect(pending).toContain('Loading models…');
+    expect(failed).toContain('Could not load models');
     expect(failed).toContain('ctrl+r');
     expect(failed.indexOf('ctrl+r')).toBeLessThan(failed.indexOf('Network'));
-    expect(byline()).not.toContain('models.dev catalog loading');
+    expect(byline()).not.toContain('Loading models…');
   });
 
   it('omits the version when the tool did not report one', () => {

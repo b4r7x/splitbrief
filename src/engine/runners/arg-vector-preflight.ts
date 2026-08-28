@@ -261,7 +261,7 @@ export async function collectArgVectorPreflightChecks(
           role: 'implementer',
           model: profile.config.model,
           args: profile.config.args,
-          effort: undefined,
+          effort: profile.config.effort,
         });
       }
     }
@@ -368,6 +368,7 @@ function emittedArgVectors(runner: PreflightRunner): readonly (readonly string[]
           model: runner.model,
           projectDir: '.',
           configuredArgs: runner.args ?? [],
+          effort: runner.effort,
         }),
       ];
     case 'reviewer': {

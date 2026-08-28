@@ -15,7 +15,7 @@ import { inheritPlannerOption, type PickerOption } from './model-catalog/options
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
 import type { ModelVariant } from './model-catalog/recency.js';
 import type { RightRow } from './model-catalog/rows.js';
-import { PickerView } from './picker-view.js';
+import { PickerView, rightRowActivation } from './picker-view.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import type { PickerActions } from './use-picker-actions.js';
 
@@ -53,6 +53,8 @@ function makeCatalog(input: {
   rightRows?: RightRow[];
   roleLabel?: string;
   hasOracle?: boolean;
+  focusModels?: boolean;
+  initialRightIndex?: number;
 }): PickerCatalog {
   return {
     items: input.items,
@@ -60,9 +62,9 @@ function makeCatalog(input: {
     currentItem: input.currentItem,
     selectedItemId: input.currentItem.id,
     initialLeftIdx: 0,
-    initialRightIndex: 0,
+    initialRightIndex: input.initialRightIndex ?? 0,
     resolveRightIndex: () => 0,
-    focusModels: false,
+    focusModels: input.focusModels ?? false,
     roleLabel: input.roleLabel ?? 'Reviewer',
     plannerIdentity: 'Claude Code CLI · Claude Sonnet 4',
     currentModel: undefined,
@@ -241,6 +243,163 @@ describe('PickerView terminal panes', () => {
     await flushEffects();
 
     expect(frameText(ui)).toContain('sign in: kilo auth login openrouter');
+    ui.unmount();
+  });
+
+  it('does not treat option-axis children as unsigned provider routes', async () => {
+    const cursor = { ...cliTool('cursor', 'Cursor Agent CLI'), providerDependent: false };
+    const variants: ModelVariant[] = [
+      { fullId: 'gpt-5.6-luna-high', providerPrefix: '', tag: '1M High' },
+      { fullId: 'gpt-5.6-luna-high-fast', providerPrefix: '', tag: 'High Fast' },
+    ];
+    const model = { id: 'gpt-5.6-luna-high', displayName: 'GPT-5.6 Luna', variants };
+    const rows: RightRow[] = [
+      { kind: 'model', model, provenance: 'Detected', section: '', expanded: true },
+      { kind: 'axis', model, axis: 'effort', value: 'High' },
+      { kind: 'axis', model, axis: 'speed', value: 'Fast' },
+    ];
+    const ui = renderFeature(
+      <PickerView
+        role="planner"
+        catalog={makeCatalog({
+          items: [cursor],
+          currentItem: cursor,
+          rightRows: rows,
+          roleLabel: 'Planner',
+          hasOracle: false,
+        })}
+        actions={makeActions()}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write(RIGHT);
+    await flushEffects();
+
+    expect(frameText(ui)).not.toContain('sign-in state is not readable');
+    expect(frameText(ui)).not.toContain('choose route');
+    expect(frameText(ui)).toContain('Cursor Agent CLI');
+    ui.unmount();
+  });
+});
+
+describe('rightRowActivation', () => {
+  const lunaVariants: ModelVariant[] = [
+    { fullId: 'gpt-5.6-luna-high', providerPrefix: '', tag: '1M High' },
+    { fullId: 'gpt-5.6-luna-high-fast', providerPrefix: '', tag: 'High Fast' },
+  ];
+  const luna = { id: 'gpt-5.6-luna-high', displayName: 'GPT-5.6 Luna', variants: lunaVariants };
+  const openaiVariants: ModelVariant[] = [
+    { fullId: 'openai/gpt-5.6', providerPrefix: 'openai', tag: 'openai' },
+    { fullId: 'opencode-go/gpt-5.6', providerPrefix: 'opencode-go', tag: 'opencode-go' },
+  ];
+  const openai = { id: 'gpt-5.6', variants: openaiVariants };
+
+  it('cycles an axis, confirms an expanded option parent, and collapses an expanded provider parent', () => {
+    expect(
+      rightRowActivation({ kind: 'axis', model: luna, axis: 'effort', value: 'High' }, undefined),
+    ).toBe('cycle');
+    expect(
+      rightRowActivation(
+        { kind: 'model', model: luna, provenance: 'Detected', section: '', expanded: true },
+        undefined,
+      ),
+    ).toBe('confirm');
+    expect(
+      rightRowActivation(
+        { kind: 'model', model: openai, provenance: 'Detected', section: '', expanded: true },
+        undefined,
+      ),
+    ).toBe('collapse');
+    expect(
+      rightRowActivation(
+        { kind: 'model', model: luna, provenance: 'Detected', section: '', expanded: false },
+        lunaVariants[0],
+      ),
+    ).toBe('expand');
+  });
+});
+
+describe('PickerView option-axis confirm and cycle', () => {
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+    resetAllStores();
+    _resetMouseZones();
+    terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } }),
+    });
+    detectionStore.setDetection({
+      providers: [],
+      cliTools: [cliDetectionFor('ready', 'claude-code')],
+    });
+  });
+
+  const lunaVariants: ModelVariant[] = [
+    { fullId: 'gpt-5.6-luna-high', providerPrefix: '', tag: '1M High' },
+    { fullId: 'gpt-5.6-luna-high-fast', providerPrefix: '', tag: 'High Fast' },
+  ];
+  const luna = { id: 'gpt-5.6-luna-high', displayName: 'GPT-5.6 Luna', variants: lunaVariants };
+
+  it('confirms the composed optionDraftId on the expanded option parent', async () => {
+    const cursor = { ...cliTool('cursor', 'Cursor Agent CLI'), providerDependent: false };
+    const confirmed: string[] = [];
+    const actions = makeActions();
+    actions.confirmProviderVariant = async (fullId: string) => {
+      confirmed.push(fullId);
+    };
+    pickerViewStore.expand(luna.id, 'gpt-5.6-luna-high-fast');
+    const ui = renderFeature(
+      <PickerView
+        role="planner"
+        catalog={makeCatalog({
+          items: [cursor],
+          currentItem: cursor,
+          rightRows: [
+            { kind: 'model', model: luna, provenance: 'Detected', section: '', expanded: true },
+            { kind: 'axis', model: luna, axis: 'effort', value: 'High' },
+            { kind: 'axis', model: luna, axis: 'speed', value: 'Fast' },
+          ],
+          roleLabel: 'Planner',
+          focusModels: true,
+        })}
+        actions={actions}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(confirmed).toEqual(['gpt-5.6-luna-high-fast']);
+    ui.unmount();
+  });
+
+  it('cycles the speed axis onto the next legal native id', async () => {
+    const cursor = { ...cliTool('cursor', 'Cursor Agent CLI'), providerDependent: false };
+    pickerViewStore.expand(luna.id, 'gpt-5.6-luna-high');
+    const ui = renderFeature(
+      <PickerView
+        role="planner"
+        catalog={makeCatalog({
+          items: [cursor],
+          currentItem: cursor,
+          rightRows: [
+            { kind: 'model', model: luna, provenance: 'Detected', section: '', expanded: true },
+            { kind: 'axis', model: luna, axis: 'effort', value: 'High' },
+            { kind: 'axis', model: luna, axis: 'speed', value: 'Standard' },
+          ],
+          roleLabel: 'Planner',
+          focusModels: true,
+          initialRightIndex: 2,
+        })}
+        actions={makeActions()}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(pickerViewStore.get().optionDraftId).toBe('gpt-5.6-luna-high-fast');
     ui.unmount();
   });
 });

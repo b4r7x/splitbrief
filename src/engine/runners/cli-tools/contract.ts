@@ -228,6 +228,7 @@ export type CliImplementerBuildArgsInput = Readonly<{
   model: string | undefined;
   projectDir: string;
   configuredArgs: readonly string[];
+  effort?: EffortLevel | undefined;
 }>;
 
 export type CliPlannerAdapter<Tool extends CliToolId = CliToolId> = CliAdapterContract<

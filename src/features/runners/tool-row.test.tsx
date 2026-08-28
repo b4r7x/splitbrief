@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import type { PickerOption } from './model-catalog/options.js';
@@ -9,8 +10,20 @@ import type { ProvenanceWord } from '../../core/providers/provenance.js';
 import type { RightRow, RouteAuthState } from './model-catalog/rows.js';
 import { renderModelRow, renderToolRow } from './tool-row.js';
 
-function modelRow(model: ModelOption, provenance: ProvenanceWord, section = ''): RightRow {
+function modelRow(
+  model: ModelOption,
+  provenance: ProvenanceWord,
+  section = '',
+): Extract<RightRow, { kind: 'model' }> {
   return { kind: 'model', model, provenance, section, expanded: false };
+}
+
+function axisRow(
+  model: ModelOption,
+  axis: 'effort' | 'speed' | 'thinking',
+  value: string,
+): RightRow {
+  return { kind: 'axis', model, axis, value };
 }
 
 function routeRow(auth: RouteAuthState): RightRow {
@@ -204,8 +217,10 @@ describe('runner row grammar', () => {
     );
     await tick(20);
     const defaultFrame = defaultUi.lastFrame() ?? '';
-    expect(defaultFrame).toContain('Known');
-    expect(defaultFrame).not.toContain('(Known)');
+    expect(defaultFrame).toContain('GPT-5.4');
+    expect(defaultFrame).not.toContain('Known');
+    expect(defaultFrame).not.toContain('Catalog');
+    expect(defaultFrame).not.toContain('Detected');
     defaultUi.unmount();
   });
 
@@ -371,6 +386,128 @@ describe('runner row grammar', () => {
       expect(frame).not.toContain('●');
       expect(frame).not.toContain('○');
       ui.unmount();
+    });
+
+    it('signposts a multi-option family with the composed summary, not an options count', async () => {
+      const luna: ModelOption = {
+        id: 'gpt-5.6-luna-high-fast',
+        displayName: 'GPT-5.6 Luna',
+        variants: [
+          { fullId: 'gpt-5.6-luna-high', providerPrefix: '', tag: '1M High' },
+          { fullId: 'gpt-5.6-luna-high-fast', providerPrefix: '', tag: 'High Fast' },
+          { fullId: 'gpt-5.6-luna-max-fast', providerPrefix: '', tag: 'Max Fast' },
+        ],
+      };
+      const ui = renderFeature(
+        renderModelRow({
+          row: modelRow(luna, 'Detected'),
+          isCursor: false,
+          maxWidth: 60,
+          currentModel: 'gpt-5.6-luna-high-fast',
+          sectioned: false,
+        }),
+      );
+      await tick(20);
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('GPT-5.6 Luna');
+      expect(frame).toMatch(/High · Fast/);
+      expect(frame).not.toMatch(/12 options/);
+      expect(frame).not.toContain('options');
+      expect(frame).not.toContain('providers');
+      expect(frame).not.toContain('Detected');
+      ui.unmount();
+    });
+
+    it('right-aligns axis values under the summary text, not under the disclosure', async () => {
+      const luna: ModelOption = {
+        id: 'gpt-5.6-luna-high',
+        displayName: 'GPT-5.6 Luna',
+        variants: [
+          { fullId: 'gpt-5.6-luna-high', providerPrefix: '', tag: '1M High' },
+          { fullId: 'gpt-5.6-luna-high-fast', providerPrefix: '', tag: 'High Fast' },
+        ],
+      };
+      const width = 60;
+      const parent = renderFeature(
+        renderModelRow({
+          row: { ...modelRow(luna, 'Detected'), expanded: true },
+          isCursor: false,
+          maxWidth: width,
+          currentModel: 'gpt-5.6-luna-high',
+          sectioned: false,
+        }),
+      );
+      const effort = renderFeature(
+        renderModelRow({
+          row: axisRow(luna, 'effort', 'High'),
+          isCursor: false,
+          maxWidth: width,
+          currentModel: undefined,
+          sectioned: false,
+        }),
+      );
+      const speed = renderFeature(
+        renderModelRow({
+          row: axisRow(luna, 'speed', 'Standard'),
+          isCursor: false,
+          maxWidth: width,
+          currentModel: undefined,
+          sectioned: false,
+        }),
+      );
+      await tick(20);
+      const parentLine = stripAnsiStyles(parent.lastFrame() ?? '').split('\n')[0] ?? '';
+      const effortLine = stripAnsiStyles(effort.lastFrame() ?? '').split('\n')[0] ?? '';
+      const speedLine = stripAnsiStyles(speed.lastFrame() ?? '').split('\n')[0] ?? '';
+      const tokenEnd = (line: string, token: string): number => {
+        const at = line.lastIndexOf(token);
+        return at + token.length;
+      };
+      const textEnd = tokenEnd(parentLine, 'Standard');
+      expect(tokenEnd(effortLine, 'High')).toBe(textEnd);
+      expect(tokenEnd(speedLine, 'Standard')).toBe(textEnd);
+      expect(parentLine.indexOf(glyph('disclosureOpen'))).toBeGreaterThan(textEnd);
+      parent.unmount();
+      effort.unmount();
+      speed.unmount();
+    });
+
+    it('renders axis rows with the axis label and current value', async () => {
+      const luna: ModelOption = {
+        id: 'gpt-5.6-luna-high-fast',
+        displayName: 'GPT-5.6 Luna',
+        variants: [
+          { fullId: 'gpt-5.6-luna-high', providerPrefix: '', tag: '1M High' },
+          { fullId: 'gpt-5.6-luna-high-fast', providerPrefix: '', tag: 'High Fast' },
+        ],
+      };
+      const effort = renderFeature(
+        renderModelRow({
+          row: axisRow(luna, 'effort', 'High'),
+          isCursor: false,
+          maxWidth: 60,
+          currentModel: undefined,
+          sectioned: false,
+        }),
+      );
+      await tick(20);
+      expect(effort.lastFrame() ?? '').toContain('effort');
+      expect(effort.lastFrame() ?? '').toContain('High');
+      effort.unmount();
+
+      const speed = renderFeature(
+        renderModelRow({
+          row: axisRow(luna, 'speed', 'Fast'),
+          isCursor: false,
+          maxWidth: 60,
+          currentModel: undefined,
+          sectioned: false,
+        }),
+      );
+      await tick(20);
+      expect(speed.lastFrame() ?? '').toContain('speed');
+      expect(speed.lastFrame() ?? '').toContain('Fast');
+      speed.unmount();
     });
 
     it('renders a single-variant row without any provider annotation', async () => {

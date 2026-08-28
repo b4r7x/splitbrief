@@ -8,6 +8,7 @@ import { glyph, spinnerFrames } from '../../lib/glyphs.js';
 import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import { modelRowMatchesId } from './model-catalog/catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
+import { formatOptionSummary, isOptionFamily, optionDraftOf } from './model-catalog/option-axis.js';
 import type { RightRow } from './model-catalog/rows.js';
 import { formatPickerStatusLabel, formatRouteAuth } from './picker-format.js';
 
@@ -64,11 +65,29 @@ const ROUTE_GLYPHS = {
   unknown: 'statusWarning',
 } as const;
 
-function providerChip(count: number, expanded: boolean, maxWidth: number): string {
-  const disclosure = glyph(expanded ? 'disclosureOpen' : 'disclosureClosed');
+function disclosureGlyph(expanded: boolean): string {
+  return glyph(expanded ? 'disclosureOpen' : 'disclosureClosed');
+}
+
+function disclosureChip(count: number, expanded: boolean, maxWidth: number): string {
+  const disclosure = disclosureGlyph(expanded);
   const full = `${count} providers ${disclosure}`;
   const fits = maxWidth - getTerminalCellWidth(full) >= CHIP_NAME_FLOOR;
   return fits ? full : `${count} ${disclosure}`;
+}
+
+function optionChip(
+  summary: string,
+  expanded: boolean,
+  maxWidth: number,
+): { text: string; trailing: string } {
+  const trailing = disclosureGlyph(expanded);
+  const fits = maxWidth - getTerminalCellWidth(`${summary} ${trailing}`) >= CHIP_NAME_FLOOR;
+  return { text: fits ? summary : '', trailing };
+}
+
+function disclosureColumnPad(): string {
+  return ' '.repeat(getTerminalCellWidth(disclosureGlyph(true)));
 }
 
 interface ModelRowParams {
@@ -78,6 +97,7 @@ interface ModelRowParams {
   currentModel: string | undefined;
   /** The section header already names the provenance, so the row must not repeat it. */
   sectioned: boolean;
+  optionDraftId?: string | null;
 }
 
 export function renderModelRow({
@@ -86,22 +106,46 @@ export function renderModelRow({
   maxWidth,
   currentModel,
   sectioned,
+  optionDraftId,
 }: ModelRowParams) {
   if (row.kind === 'notice') return <NoticeRow row={row} isCursor={isCursor} />;
   if (row.kind === 'route') return <RouteRow row={row} isCursor={isCursor} width={maxWidth} />;
+  if (row.kind === 'axis') {
+    return (
+      <ListRow
+        label={row.axis}
+        state={isCursor ? 'active' : 'default'}
+        defaultLead="dot"
+        metadata={row.value}
+        trailing={disclosureColumnPad()}
+        selected={false}
+        width={maxWidth}
+      />
+    );
+  }
 
   const name = row.model.displayName ?? formatModelName(row.model.id);
-  const routeCount = row.model.variants?.length ?? 0;
+  const variants = row.model.variants ?? [];
+  const routeCount = variants.length;
+  const provenance =
+    row.provenance === 'Default' || row.provenance === 'Stale'
+      ? row.provenance
+      : row.provenance === 'Custom' && !sectioned
+        ? row.provenance
+        : '';
+  const optionFamily = isOptionFamily(row.model);
+  const summary = optionFamily
+    ? formatOptionSummary(optionDraftOf(row.model, optionDraftId ?? currentModel), variants)
+    : '';
+  const chip =
+    optionFamily && summary !== '' ? optionChip(summary, row.expanded, maxWidth) : undefined;
   const contextStr = row.model.contextLength ? formatContextLength(row.model.contextLength) : '';
-  const carriesWord = row.provenance === 'Default' || !sectioned;
-  const metadata =
-    [
-      routeCount > 1 ? providerChip(routeCount, row.expanded, maxWidth) : '',
-      carriesWord ? row.provenance : '',
-      contextStr,
-    ]
-      .filter(Boolean)
-      .join(' ') || undefined;
+  const disclosure = optionFamily
+    ? (chip?.text ?? '')
+    : routeCount > 1
+      ? disclosureChip(routeCount, row.expanded, maxWidth)
+      : '';
+  const metadata = [disclosure, provenance, contextStr].filter(Boolean).join(' ') || undefined;
 
   return (
     <ListRow
@@ -109,6 +153,7 @@ export function renderModelRow({
       state={isCursor ? 'active' : 'default'}
       defaultLead="dot"
       metadata={metadata}
+      trailing={chip?.trailing}
       selected={currentModel !== undefined && modelRowMatchesId(row.model, currentModel)}
       width={maxWidth}
     />
