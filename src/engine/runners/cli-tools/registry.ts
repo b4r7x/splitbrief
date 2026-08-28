@@ -4,6 +4,7 @@ import {
   nativeCliCatalogToDetectedModels,
   parseAiderNativeModelCatalog,
   parseCodexNativeModelCatalog,
+  parseCursorNativeModelCatalog,
   parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
   type NativeCliModelCatalog,
@@ -11,6 +12,7 @@ import {
 import {
   ANTIGRAVITY_CLI_CANDIDATE_PATHS,
   CLI_COMPILER_EVIDENCE,
+  CLI_TOOL_CATALOG,
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
   type CliCompilerEvidence,
@@ -27,6 +29,7 @@ import { claudeCodeImplementerAdapter, claudeCodePlannerAdapter } from './claude
 import { codexImplementerAdapter, codexPlannerAdapter } from './codex.js';
 import { CODEX_NATIVE_MODEL_CATALOG_PROBE } from './codex.js';
 import { copilotImplementerAdapter, copilotPlannerAdapter } from './copilot.js';
+import { cursorImplementerAdapter, cursorPlannerAdapter } from './cursor.js';
 import { kiloImplementerAdapter, kiloPlannerAdapter } from './kilo-code.js';
 import { opencodeImplementerAdapter, opencodePlannerAdapter } from './opencode.js';
 import { providerOracleAuthFact, providerOracleCommand } from './provider-oracle.js';
@@ -48,6 +51,9 @@ const PROVIDER_ORACLE_TIMEOUT_MS = 10_000;
 const PROVIDER_ORACLE_OUTPUT_MAX_BYTES = 16_384;
 const SEMVER_PATTERN =
   '(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?';
+const CALVER_PATTERN = '\\d{4}\\.\\d{2}\\.\\d{2}(?:-[A-Za-z0-9]+)?';
+const BARE_CALVER = new RegExp(`^${CALVER_PATTERN}$`);
+const ANY_CALVER = new RegExp(CALVER_PATTERN, 'g');
 
 type VersionOutputFormat =
   | Readonly<{ kind: 'bare' }>
@@ -73,6 +79,8 @@ function versionOutputFormat(tool: CliToolId, command: string): VersionOutputFor
     case 'opencode':
     case 'kilo-code':
       return { kind: 'bare' };
+    case 'cursor':
+      return { kind: 'bare' };
     case 'claude-code':
       return {
         kind: 'labeled',
@@ -90,7 +98,27 @@ function versionOutputFormat(tool: CliToolId, command: string): VersionOutputFor
   }
 }
 
+function parseCalverVersion(output: CliProbeOutput) {
+  const outputText = `${output.stdout}\n${output.stderr}`;
+  const lineMatches = outputText
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .flatMap((line) => {
+      const match = BARE_CALVER.exec(line);
+      return match === null ? [] : [match[0]];
+    });
+  const allCalverCandidates = [...outputText.matchAll(ANY_CALVER)];
+  const candidate = lineMatches[0];
+  return lineMatches.length === 1 && allCalverCandidates.length === 1 && candidate !== undefined
+    ? { kind: 'success' as const, value: candidate }
+    : { kind: 'malformed' as const };
+}
+
 function parseVersion(tool: CliToolId, command: string, output: CliProbeOutput) {
+  if (CLI_TOOL_CATALOG[tool].compatibility.versionScheme === 'calver') {
+    return parseCalverVersion(output);
+  }
   const format = versionOutputFormat(tool, command);
   const matchers =
     format.kind === 'bare'
@@ -162,6 +190,14 @@ function authFactFromText(value: string) {
     return 'missing' as const;
   }
   if (
+    text.includes('logged in') ||
+    text.includes('logged_in') ||
+    text.includes('authenticated') ||
+    text.includes('auth mode')
+  ) {
+    return 'verified' as const;
+  }
+  if (
     text.includes('invalid') ||
     text.includes('expired') ||
     text.includes('unauthorized') ||
@@ -179,14 +215,6 @@ function authFactFromText(value: string) {
     text.includes('dns')
   ) {
     return 'offline' as const;
-  }
-  if (
-    text.includes('logged in') ||
-    text.includes('logged_in') ||
-    text.includes('authenticated') ||
-    text.includes('auth mode')
-  ) {
-    return 'verified' as const;
   }
   return undefined;
 }
@@ -236,6 +264,15 @@ function declaredAuthProbe(tool: CliToolId, command: string): CliAuthProbe {
         parse: providerOracleAuthFact,
       };
     }
+    case 'cursor':
+      return {
+        kind: 'auth-status',
+        command: [command, 'status'],
+        cwd: 'neutral',
+        timeoutMs: PROBE_TIMEOUT_MS,
+        maxOutputBytes: PROBE_OUTPUT_MAX_BYTES,
+        parse: parseStatusAuth,
+      };
     case 'aider':
     case 'copilot':
       return { kind: 'not-run' };
@@ -363,6 +400,11 @@ function declaredCatalogProbe(tool: CliToolId): CliCatalogProbe {
         manualCommand: ['kilo', 'models', '--refresh'],
         parser: parseKiloNativeModelCatalog,
       });
+    case 'cursor':
+      return structuralCatalogProbe({
+        command: ['cursor-agent', '--list-models'],
+        parser: parseCursorNativeModelCatalog,
+      });
     case 'claude-code':
     case 'copilot':
       return { kind: 'not-run' };
@@ -411,6 +453,7 @@ function assembleImplementerAdapters(): Record<ImplementerCliToolId, CliImplemen
     aider: withDeclaredImplementerProbe(aiderImplementerAdapter),
     copilot: withDeclaredImplementerProbe(copilotImplementerAdapter),
     'kilo-code': withDeclaredImplementerProbe(kiloImplementerAdapter),
+    cursor: withDeclaredImplementerProbe(cursorImplementerAdapter),
   } satisfies Record<ImplementerCliToolId, CliImplementerAdapter>;
 
   assertCandidateFilesAbsent(
@@ -429,6 +472,7 @@ function assemblePlannerAdapters(): Record<PlannerCliToolId, CliPlannerAdapter> 
     aider: withDeclaredPlannerProbe(aiderPlannerAdapter),
     copilot: withDeclaredPlannerProbe(copilotPlannerAdapter),
     'kilo-code': withDeclaredPlannerProbe(kiloPlannerAdapter),
+    cursor: withDeclaredPlannerProbe(cursorPlannerAdapter),
   });
 }
 

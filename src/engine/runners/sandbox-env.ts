@@ -98,6 +98,15 @@ export function withPrependedPathDirectory(
   return result;
 }
 
+const CURSOR_CLI_CONFIG_DESTINATION = '.cursor/cli-config.json';
+const CURSOR_SANDBOX_CLI_CONFIG = JSON.stringify({
+  version: 1,
+  editor: { vimMode: false },
+  permissions: { allow: [], deny: [] },
+  approvalMode: 'allowlist',
+  sandbox: { mode: 'enabled' },
+});
+
 /**
  * The allowlisted host state a file-bridged session channel may reach — never
  * the host HOME itself. Keep this list explicit: adding a path here is an
@@ -105,7 +114,8 @@ export function withPrependedPathDirectory(
  * A channel whose credential is an OS keychain item has no entry here at all —
  * see `hostAccountState`. How an entry reaches the child is decided per tool
  * by `CLI_CREDENTIAL_MODELS`: a static secret is copied as a sealed read-only
- * snapshot, a rotating credential is passed through live.
+ * snapshot, a rotating credential is passed through live. Cursor splits by
+ * path: the session file is live, the policy file is sandbox-owned.
  */
 const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]>> = {
   'claude-code': [
@@ -269,6 +279,20 @@ const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]>> = {
       destinationPath: 'kilo/auth.json',
     },
   ],
+  cursor: [
+    {
+      source: 'HOME',
+      relativePath: CURSOR_CLI_CONFIG_DESTINATION,
+      destination: 'home',
+      destinationPath: CURSOR_CLI_CONFIG_DESTINATION,
+    },
+    {
+      source: 'HOME',
+      relativePath: '.cursor/agent-cli-state.json',
+      destination: 'home',
+      destinationPath: '.cursor/agent-cli-state.json',
+    },
+  ],
 };
 
 /**
@@ -286,18 +310,25 @@ const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]>> = {
  * is left holding a refresh token the server has already burned. Measured
  * first-hand against codex on 2026-08-06: a 0o400 snapshot turned one expired
  * access token into an unrecoverable signed-out host. These tools read their
- * state directory through a live passthrough instead — see
- * `passthroughStateEntry`.
+ * state through a live passthrough instead — a directory link
+ * (`passthroughStateEntry`) when that directory is tool-private, or a per-file
+ * link (`passthroughStateFile`) when it is not.
  *
  * Classification is per tool and evidence-driven: codex rotates its ChatGPT
  * refresh token on every refresh (measured); opencode stores the same rotating
  * OAuth family in its auth.json (`"type": "oauth"` entries with refresh
  * tokens, observed on a live install); kilo-code stores kilo.ai session state
- * the same way. Copilot's `oauth_token` is a long-lived GitHub token that does
- * not rotate on use, and Claude Code's file store has shown no rotation —
- * both stay on the sealed snapshot. Misclassification is asymmetric: passing
- * a static credential through costs only that directory's default privacy,
- * while snapshotting a rotating one destroys the login.
+ * the same way. Cursor's session file also rotates, but `~/.cursor` is the Cursor
+ * IDE home — not a tool-private directory like `~/.codex` — so only
+ * `agent-cli-state.json` is passed through live (`passthroughStateFile`);
+ * linking the parent would admit every other file there. `cli-config.json` is
+ * policy (`approvalMode`, sandbox), not a credential: a live link would hand
+ * the child the host's `unrestricted` / yolo setting and write-enable a planner
+ * that was not given `--force`. Copilot's `oauth_token` is a long-lived GitHub
+ * token that does not rotate on use, and Claude Code's file store has shown no
+ * rotation — both stay on the sealed snapshot. Misclassification is asymmetric:
+ * passing a static credential through costs only that directory's default
+ * privacy, while snapshotting a rotating one destroys the login.
  */
 type CliCredentialModel = 'static-secret' | 'rotating-oauth';
 
@@ -308,6 +339,7 @@ const CLI_CREDENTIAL_MODELS: Readonly<Record<CliToolId, CliCredentialModel>> = {
   aider: 'static-secret',
   copilot: 'static-secret',
   'kilo-code': 'rotating-oauth',
+  cursor: 'rotating-oauth',
 };
 
 const READONLY_STATE_FILE_MODE = 0o400;
@@ -497,14 +529,81 @@ async function passthroughCredentialValues(
 }
 
 /**
- * Live passthrough for a `rotating-oauth` tool: the sandbox path to the tool's
- * state directory is a symlink to the real host directory, so the tool itself
- * persists a refreshed token to the host file with its own write path. That is
- * the only shape that survives every way a rotation can land — in-place write,
- * tempfile-and-rename inside the directory, a run killed before any teardown —
- * because there is no copy to go stale and no copy-back step to miss. The
- * directory, not the credential file, is linked: a file symlink is silently
- * replaced by a rename-persisting tool and the rotation is lost again.
+ * Sandbox-owned Cursor policy. `cli-config.json` is not a rotating credential;
+ * live-linking the host file would copy `approvalMode: unrestricted` into the
+ * planner child. The destination still exists so the child sees the path.
+ * Host content is never read.
+ */
+async function seedCursorCliConfig(
+  destination: string,
+  tool: CliToolId,
+): Promise<readonly string[]> {
+  const destDir = dirname(destination);
+  const destDirKind = await existingPath(destDir);
+  if (destDirKind !== null && destDirKind !== 'directory') {
+    throw stateBridgeFailure(tool);
+  }
+  await mkdir(destDir, { recursive: true });
+
+  const destKind = await existingPath(destination);
+  if (destKind === 'directory' || destKind === 'other') throw stateBridgeFailure(tool);
+  if (destKind !== null) await rm(destination, { force: true });
+  await writeFile(destination, CURSOR_SANDBOX_CLI_CONFIG, { mode: 0o600, flag: 'wx' });
+  return [];
+}
+
+/**
+ * Live file passthrough for a rotating credential whose parent directory is
+ * not tool-private. Cursor's `~/.cursor` is the IDE home; linking it would
+ * admit every file there. The sandbox parent is a real directory and only
+ * the rotating session file is a symlink to the host file, so in-place
+ * rotation still lands on the host without exposing sibling paths.
+ */
+async function passthroughStateFile(
+  source: string,
+  destination: string,
+  tool: CliToolId,
+): Promise<readonly string[]> {
+  const sourceKind = await existingPath(source);
+  if (sourceKind === null) return [];
+  if (sourceKind === 'directory' || sourceKind === 'other') throw stateBridgeFailure(tool);
+
+  let resolvedSource: string;
+  try {
+    resolvedSource = await realpath(source);
+  } catch (err) {
+    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return [];
+    throw err;
+  }
+  if ((await existingPath(resolvedSource)) !== 'file') throw stateBridgeFailure(tool);
+
+  const destDir = dirname(destination);
+  const destDirKind = await existingPath(destDir);
+  if (destDirKind !== null && destDirKind !== 'directory') {
+    throw stateBridgeFailure(tool);
+  }
+  await mkdir(destDir, { recursive: true });
+
+  const destKind = await existingPath(destination);
+  if (destKind === 'symlink' && (await readlink(destination)) === resolvedSource) {
+    return passthroughCredentialValues(resolvedSource, tool);
+  }
+  if (destKind === 'directory' || destKind === 'other') throw stateBridgeFailure(tool);
+  if (destKind !== null) await rm(destination, { force: true });
+  await symlink(resolvedSource, destination, 'file');
+  return passthroughCredentialValues(resolvedSource, tool);
+}
+
+/**
+ * Live passthrough for a `rotating-oauth` tool whose state directory is
+ * tool-private: the sandbox path to that directory is a symlink to the real
+ * host directory, so the tool itself persists a refreshed token to the host
+ * file with its own write path. That is the only shape that survives every
+ * way a rotation can land — in-place write, tempfile-and-rename inside the
+ * directory, a run killed before any teardown — because there is no copy to
+ * go stale and no copy-back step to miss. The directory, not the credential
+ * file, is linked: a file symlink is silently replaced by a rename-persisting
+ * tool and the rotation is lost again.
  *
  * The host directory must be a real directory; anything else fails the bridge
  * closed rather than guessing at what the link would expose. An absent host
@@ -568,10 +667,17 @@ async function bridgeCliState(
         if ((await existingPath(root)) !== 'directory') throw stateBridgeFailure(tool);
         verifiedRoots.add(root);
       }
-      const values =
-        model === 'rotating-oauth'
-          ? await passthroughStateEntry(source, destination, root, tool)
-          : await copyReadOnlyStateEntry(source, destination, tool);
+      let values: readonly string[];
+      if (tool === 'cursor' && statePath.destinationPath === CURSOR_CLI_CONFIG_DESTINATION) {
+        values = await seedCursorCliConfig(destination, tool);
+      } else if (model === 'rotating-oauth') {
+        values =
+          tool === 'cursor'
+            ? await passthroughStateFile(source, destination, tool)
+            : await passthroughStateEntry(source, destination, root, tool);
+      } else {
+        values = await copyReadOnlyStateEntry(source, destination, tool);
+      }
       for (const value of values) {
         credentialValues.add(value);
       }
@@ -610,9 +716,30 @@ export async function bridgedCliStatePresent(
     data: env.XDG_DATA_HOME,
   };
   for (const statePath of CLI_STATE_PATHS[tool]) {
+    // Sandbox-owned policy is not a credential; the session file is.
+    if (tool === 'cursor' && statePath.destinationPath === CURSOR_CLI_CONFIG_DESTINATION) {
+      continue;
+    }
     const root = roots[statePath.destination];
     if (root === undefined) continue;
-    if ((await existingPath(join(root, statePath.destinationPath))) === 'file') return true;
+    const destination = join(root, statePath.destinationPath);
+    const kind = await existingPath(destination);
+    if (kind === 'file') return true;
+    if (
+      kind !== 'symlink' ||
+      CLI_CREDENTIAL_MODELS[tool] !== 'rotating-oauth' ||
+      (await existingPath(dirname(destination))) !== 'directory'
+    ) {
+      continue;
+    }
+    let resolved: string;
+    try {
+      resolved = await realpath(destination);
+    } catch (err) {
+      if (err instanceof Error && 'code' in err && err.code === 'ENOENT') continue;
+      throw err;
+    }
+    if ((await existingPath(resolved)) === 'file') return true;
   }
   return false;
 }
@@ -782,12 +909,13 @@ export function runnerSandboxIdentity(runner: RunnerLike): string {
 
 /**
  * The host account state a `host-account` channel's child keeps. macOS resolves
- * the login keychain through `HOME` and keys the Claude Code session item on the
- * account name in `USER`; measured against `claude auth status` on 2026-08-06, a
- * child given the real `HOME` but not `USER` still reports `"loggedIn": false`.
- * Nothing else the sandbox redirects is handed back, so temp, cache and XDG
- * state stay isolated — but this child does read and write the real home
- * directory. See docs/WORKTREES.md.
+ * the login keychain through `HOME` and keys the session item on the account
+ * name in `USER` for keychain-backed session channels (Claude Code and Cursor).
+ * Measured against `claude auth status` on 2026-08-06, a child given the real
+ * `HOME` but not `USER` still reports `"loggedIn": false`. Nothing else the
+ * sandbox redirects is handed back, so temp, cache and XDG state stay isolated
+ * — but this child does read and write the real home directory. See
+ * docs/WORKTREES.md.
  */
 function hostAccountState(): Readonly<Record<string, string>> {
   const home = homedir();

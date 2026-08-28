@@ -193,6 +193,7 @@ function compatibilityFromVersion(
     classifyCliAdmittedVersion({
       installedVersion: input.version.value,
       minimumAdmittedVersion: input.compatibility.minimumAdmittedVersion,
+      versionScheme: input.compatibility.versionScheme,
     })
   ) {
     case 'compatible':
@@ -487,6 +488,7 @@ export async function detectRunnerEvidence(
             installedVersion,
             minimumAdmittedVersion:
               CLI_TOOL_CATALOG[context.id].compatibility.minimumAdmittedVersion,
+            versionScheme: CLI_TOOL_CATALOG[context.id].compatibility.versionScheme,
           }),
       });
       return evidenceFromLegacyReadiness(context, observedAt, readiness);

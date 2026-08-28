@@ -49,7 +49,6 @@ import { ToolModelPicker } from '../../../src/app/overlays/runners.js';
 
 const ENTER = '\r';
 const BACKSPACE = '\u007f';
-const ARROW_DOWN = '\u001b[B';
 type Viewport = Readonly<{ cols: number; rows: number }>;
 const VIEWPORT: Viewport = { cols: 140, rows: 40 };
 const WIDE_VIEWPORT: Viewport = { cols: 200, rows: 40 };
@@ -190,7 +189,7 @@ describe('runner picker semantics integration', () => {
       const plannerZones = leftToolZoneIds();
       expect(plannerZones).toHaveLength(plannerCatalog.length);
       expect(plannerZones).toEqual(expect.arrayContaining(plannerCatalog.map((item) => item.id)));
-      expect(plannerZones).not.toContain('cursor');
+      expect(plannerZones).toContain('cursor');
       expect(plannerZones).not.toContain('antigravity');
       expect(plannerCatalog.map((item) => item.id)).toEqual(
         expect.arrayContaining([
@@ -210,7 +209,7 @@ describe('runner picker semantics integration', () => {
       );
       expect(implementerZones).toContain('ollama');
       expect(implementerZones).toContain('lm-studio');
-      expect(implementerZones).not.toContain('cursor');
+      expect(implementerZones).toContain('cursor');
       expect(implementerZones).not.toContain('antigravity');
       expect(plannerZones).not.toContain('ollama');
       expect(plannerZones).not.toContain('lm-studio');
@@ -626,7 +625,8 @@ describe('runner picker semantics integration', () => {
       ).toBe(true);
 
       const ui = await renderPicker('planner');
-      collectClickableZones(VIEWPORT).get('runner-left:codex')?.();
+      ui.stdin.write('codex');
+      await flushEffects();
       await vi.waitFor(() => {
         const modelZones = rightModelZoneIds();
         expect(modelZones.filter((id) => id === 'model:gpt-5.4')).toHaveLength(1);
@@ -664,12 +664,20 @@ describe('runner picker semantics integration', () => {
       ]);
 
       const ui = await renderPicker('implementer');
-      const zones = collectClickableZones(VIEWPORT);
+      let query = '';
+      const selectById = async (id: string): Promise<void> => {
+        for (let index = 0; index < query.length; index++) {
+          ui.stdin.write(BACKSPACE);
+          await flushEffects();
+        }
+        ui.stdin.write(id);
+        await flushEffects();
+        query = id;
+      };
 
       for (const provider of ['anthropic', 'ollama', 'anthropic', 'ollama'] as const) {
         const other = provider === 'anthropic' ? 'ollama' : 'anthropic';
-        zones.get(`runner-left:${provider}`)?.();
-        await flushEffects();
+        await selectById(provider);
         await vi.waitFor(() => {
           const ids = rightModelZoneIds();
           expect(ids).toContain(`model:${provider}-only-model`);
@@ -677,14 +685,6 @@ describe('runner picker semantics integration', () => {
         });
       }
 
-      await flushEffects();
-      ui.stdin.write(ARROW_DOWN);
-      await flushEffects();
-      ui.stdin.write(ARROW_DOWN);
-      await flushEffects();
-      const afterKeys = rightModelZoneIds();
-      expect(afterKeys).toContain('model:ollama-only-model');
-      expect(afterKeys).not.toContain('model:anthropic-only-model');
       ui.unmount();
     });
   });

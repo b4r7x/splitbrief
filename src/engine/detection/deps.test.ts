@@ -278,6 +278,8 @@ const SEEDED_SESSION_STATE_PATHS = [
   '.config/opencode/auth.json',
   '.copilot/config.json',
   '.config/kilo/auth.json',
+  '.cursor/cli-config.json',
+  '.cursor/agent-cli-state.json',
 ] as const;
 
 const CLI_VERSION_LABELS: Record<CliToolId, string> = {
@@ -287,6 +289,7 @@ const CLI_VERSION_LABELS: Record<CliToolId, string> = {
   aider: 'aider ',
   copilot: 'copilot version ',
   'kilo-code': '',
+  cursor: '',
 };
 
 const CLI_AUTH_STATUS_RESPONSES: Partial<Record<CliToolId, readonly string[]>> = {
@@ -299,6 +302,12 @@ const CLI_AUTH_STATUS_RESPONSES: Partial<Record<CliToolId, readonly string[]>> =
   codex: [
     'if [ "$1" = "login" ] && [ "$2" = "status" ]; then',
     "  printf '%s\\n' 'Logged in using ChatGPT'",
+    '  exit 0',
+    'fi',
+  ],
+  cursor: [
+    'if [ "$1" = "status" ]; then',
+    `  printf '%s\\n' '{"loggedIn": true}'`,
     '  exit 0',
     'fi',
   ],
@@ -396,6 +405,7 @@ describe('all-admitted-tools auth channels', () => {
               aider: 'not-checked',
               copilot: 'authenticated',
               'kilo-code': 'authenticated',
+              cursor: 'authenticated',
             },
           );
           const copilot = result.cliTools.find((detection) => detection.tool === 'copilot');

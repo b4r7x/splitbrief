@@ -1,0 +1,17 @@
+cursor-agent --workspace /tmp/cursor-fixture-CQyXZw --trust --print --output-format stream-json --mode plan "say hello"
+# version: 2026.08.25-3e8eec8
+{"type":"system","subtype":"init","apiKeySource":"login","cwd":"/private/tmp/cursor-fixture-CQyXZw","session_id":"2e9f4f6e-784f-453b-bf0f-3163f1b4ec29","model":"Cursor Grok 4.6 Extra High","permissionMode":"default"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"say hello"}]},"session_id":"2e9f4f6e-784f-453b-bf0f-3163f1b4ec29"}
+{"type":"thinking","subtype":"delta","text":"Preparing to say hello.","session_id":"2e9f4f6e-784f-453b-bf0f-3163f1b4ec29","timestamp_ms":1787902321051}
+{"type":"thinking","subtype":"delta","text":"\n\nPlan mode requires","session_id":"2e9f4f6e-784f-453b-bf0f-3163f1b4ec29","timestamp_ms":1787902325539}
+{"type":"thinking","subtype":"delta","text":" creating a plan for","session_id":"2e9f4f6e-784f-453b-bf0f-3163f1b4ec29","timestamp_ms":1787902325740}
+{"type":"thinking","subtype":"delta","text":" any query. A greeting","session_id":"2e9f4f6e-784f-453b-bf0f-3163f1b4ec29","timestamp_ms":1787902325904}
+{"type":"thinking","subtype":"delta","text":" is not a software task.","session_id":"2e9f4f6e-784f-453b-bf0f-3163f1b4ec29","timestamp_ms":1787902326077}
+{"type":"thinking","subtype":"delta","text":" This creates a conflict.","session_id":"2e9f4f6e-784f-453b-bf0f-3163f1b4ec29","timestamp_ms":1787902326233}
+{"type":"thinking","subtype":"delta","text":"\n\nDecided against invoking","session_id":"2e9f4f6e-784f-453b-bf0f-3163f1b4ec29","timestamp_ms":1787902327577}
+{"type":"thinking","subtype":"delta","text":" any skills or creating","session_id":"2e9f4f6e-784f-453b-bf0f-3163f1b4ec29","timestamp_ms":1787902327577}
+{"type":"thinking","subtype":"delta","text":" a plan. Will simply","session_id":"2e9f4f6e-784f-453b-bf0f-3163f1b4ec29","timestamp_ms":1787902327577}
+{"type":"thinking","subtype":"delta","text":" greet the user warmly.","session_id":"2e9f4f6e-784f-453b-bf0f-3163f1b4ec29","timestamp_ms":1787902327577}
+{"type":"thinking","subtype":"completed","session_id":"2e9f4f6e-784f-453b-bf0f-3163f1b4ec29","timestamp_ms":1787902327577}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello. How can I help you today?"}]},"session_id":"2e9f4f6e-784f-453b-bf0f-3163f1b4ec29"}
+{"type":"result","subtype":"success","duration_ms":36025,"duration_api_ms":36025,"is_error":false,"result":"Hello. How can I help you today?","session_id":"2e9f4f6e-784f-453b-bf0f-3163f1b4ec29","request_id":"767cd8d1-d45c-4535-b83b-c3151ba7b7bf","usage":{"inputTokens":18821,"outputTokens":391,"cacheReadTokens":4224,"cacheWriteTokens":0}}

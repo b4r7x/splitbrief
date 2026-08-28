@@ -12,6 +12,7 @@ import { CLI_CONFORMANCE_CANDIDATES as opencodeCandidates } from './opencode.js'
 import { CLI_CONFORMANCE_CANDIDATES as aiderCandidates } from './aider.js';
 import { CLI_CONFORMANCE_CANDIDATES as copilotCandidates } from './copilot.js';
 import { CLI_CONFORMANCE_CANDIDATES as kiloCodeCandidates } from './kilo-code.js';
+import { CLI_CONFORMANCE_CANDIDATES as cursorCandidates } from './cursor.js';
 import type { RawCliCandidateContract, UnregisteredCliCandidate } from './candidate-contract.js';
 import { CLI_CONFORMANCE_EXIT_CODES, type CliConformanceRole } from './contract-harness.js';
 import { runProductionCliConformance } from './contract-harness-production.js';
@@ -32,6 +33,7 @@ const CONFORMANCE_MODULES: readonly ConformanceModule[] = [
   { modulePath: join(here, 'aider.ts'), candidates: aiderCandidates },
   { modulePath: join(here, 'copilot.ts'), candidates: copilotCandidates },
   { modulePath: join(here, 'kilo-code.ts'), candidates: kiloCodeCandidates },
+  { modulePath: join(here, 'cursor.ts'), candidates: cursorCandidates },
 ];
 
 const CONFORMANCE_ROWS = CONFORMANCE_MODULES.flatMap((module) =>
@@ -78,12 +80,18 @@ const SHIM_PROFILES: Readonly<Record<string, ShimProfile>> = {
     transport: 'argv',
     terminal: 'process-exit',
   },
+  'cursor-agent': {
+    versionLine: '2026.08.25-3e8eec8',
+    transport: 'argv',
+    terminal: 'result',
+  },
 };
 
 const CREDENTIAL_ENV: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   'claude-code': { ANTHROPIC_API_KEY: 'sk-ant-conformance-canary' },
   codex: { OPENAI_API_KEY: 'sk-openai-conformance-canary' },
   copilot: { GITHUB_TOKEN: 'ghp-conformance-canary' },
+  cursor: { CURSOR_API_KEY: 'sk-cursor-conformance-canary' },
 };
 
 function rawContractForHarness(contract: RawCliCandidateContract): RawCliCandidateContract {
@@ -131,6 +139,16 @@ function writeConformanceShim(
     result: 'done',
     session_id: 'sess-conformance',
   });
+  const cursorNdjson = [
+    JSON.stringify({ type: 'system', subtype: 'init', session_id: 'contract-session' }),
+    JSON.stringify({
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'done' }] },
+    }),
+    JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'done' }),
+  ]
+    .map((line) => `printf '%s\\n' '${line.replace(/'/g, "'\\''")}'`)
+    .join('\n');
   const codexLine = JSON.stringify({ type: 'turn.completed' });
   const bashFirstArg = '$' + '{1:-}';
   const body = [
@@ -150,7 +168,9 @@ function writeConformanceShim(
       : profile.terminal === 'turn.completed'
         ? `printf '%s\\n' '${codexLine.replace(/'/g, "'\\''")}'`
         : profile.terminal === 'result'
-          ? `printf '%s\\n' '${resultLine.replace(/'/g, "'\\''")}'`
+          ? command === 'cursor-agent'
+            ? cursorNdjson
+            : `printf '%s\\n' '${resultLine.replace(/'/g, "'\\''")}'`
           : "printf '%s\\n' 'ok'",
     role === 'implementer' ? 'printf changed > "$MARKER"' : '',
     'exit 0',
@@ -225,10 +245,10 @@ describe('existing CLI prompt argv transport contract', () => {
 });
 
 describe('existing CLI common contract', () => {
-  it('imports exactly 12 unique planner-then-implementer conformance rows', () => {
-    expect(CONFORMANCE_ROWS).toHaveLength(12);
+  it('imports exactly 14 unique planner-then-implementer conformance rows', () => {
+    expect(CONFORMANCE_ROWS).toHaveLength(14);
     const keys = CONFORMANCE_ROWS.map((row) => rowKey(row.id, row.role));
-    expect(new Set(keys).size).toBe(12);
+    expect(new Set(keys).size).toBe(14);
     for (const module of CONFORMANCE_MODULES) {
       expect(module.candidates).toHaveLength(2);
       expect(module.candidates.map((candidate) => candidate.role)).toEqual([

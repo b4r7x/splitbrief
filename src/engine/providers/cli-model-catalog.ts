@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { DetectedModel } from '../../core/discovery/detection.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 
-export type NativeCliCatalogTool = 'codex' | 'opencode' | 'aider' | 'kilo-code';
+export type NativeCliCatalogTool = 'codex' | 'opencode' | 'aider' | 'kilo-code' | 'cursor';
 
 export interface NativeCliModelCatalogEntry {
   readonly selectionId: string;
@@ -23,6 +23,7 @@ const PROVIDER_QUALIFIED_SELECTION_ID_PATTERN = /^[^\s/][^\s]*(?:\/[^\s/][^\s]*)
 const CATALOG_HEADING_PATTERN = /^(?:available\s+)?models?\s*:?$/i;
 const AIDER_DASHED_ROW_PATTERN = /^-\s+(.+)$/;
 const AIDER_PARENTHESES_PATTERN = /\(([^\s()]+(?:\/[^\s()]+)+)\)$/;
+const CURSOR_MODEL_LINE = /^(\S+) - (.+)$/;
 
 const CodexReasoningEffortSchema: z.ZodType<string> = z
   .union([
@@ -220,6 +221,20 @@ export function parseAiderNativeModelCatalog(stdout: string): NativeCliModelCata
   return catalogFromEntries({ tool: 'aider', entries });
 }
 
+export function parseCursorNativeModelCatalog(stdout: string): NativeCliModelCatalog | null {
+  const entries: Omit<NativeCliModelCatalogEntry, 'nativeOrder'>[] = [];
+  for (const line of cleanCatalogLines(stdout)) {
+    if (isCatalogHeading(line)) continue;
+    const match = CURSOR_MODEL_LINE.exec(line);
+    if (match === null) continue;
+    const selectionId = match[1];
+    const displayName = match[2];
+    if (selectionId === undefined || displayName === undefined) continue;
+    entries.push({ selectionId, displayName });
+  }
+  return entries.length === 0 ? null : catalogFromEntries({ tool: 'cursor', entries });
+}
+
 export function nativeCliCatalogToDetectedModels(catalog: NativeCliModelCatalog): DetectedModel[] {
   return catalog.models.map((model) => ({
     id: model.selectionId,
@@ -235,4 +250,9 @@ export function nativeCliCatalogToDetectedModels(catalog: NativeCliModelCatalog)
           supportsReasoning: model.nativeReasoningEfforts.length > 0,
         }),
   }));
+}
+
+export function parseCursorModels(stdout: string): DetectedModel[] | null {
+  const catalog = parseCursorNativeModelCatalog(stdout);
+  return catalog === null ? null : nativeCliCatalogToDetectedModels(catalog);
 }

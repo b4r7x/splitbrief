@@ -199,6 +199,7 @@ function admitCatalogOperation(
       installedVersion: input.version.value,
       minimumAdmittedVersion:
         CLI_TOOL_CATALOG[input.context.id].compatibility.minimumAdmittedVersion,
+      versionScheme: CLI_TOOL_CATALOG[input.context.id].compatibility.versionScheme,
     }) !== 'compatible'
   ) {
     return undefined;
@@ -388,6 +389,7 @@ export async function probeContextCatalog(
       installedVersion: operation.installedVersion,
       minimumAdmittedVersion:
         CLI_TOOL_CATALOG[operation.context.id].compatibility.minimumAdmittedVersion,
+      versionScheme: CLI_TOOL_CATALOG[operation.context.id].compatibility.versionScheme,
     }) !== 'compatible'
   ) {
     return { kind: 'unsupported' };

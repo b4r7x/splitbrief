@@ -40,11 +40,11 @@ type RunnerRole = 'planner' | 'implementer';
 // which a filter over the same catalog could never do.
 const ADMITTED_IDS: Readonly<Record<RunnerRole, Readonly<{ cli: string[]; api: string[] }>>> = {
   planner: {
-    cli: ['claude-code', 'codex', 'opencode', 'aider', 'copilot', 'kilo-code'],
+    cli: ['claude-code', 'codex', 'opencode', 'aider', 'copilot', 'kilo-code', 'cursor'],
     api: ['ollama-cloud', 'anthropic', 'openrouter', 'deepseek', 'openai', 'groq', 'together'],
   },
   implementer: {
-    cli: ['claude-code', 'codex', 'opencode', 'aider', 'copilot', 'kilo-code'],
+    cli: ['claude-code', 'codex', 'opencode', 'aider', 'copilot', 'kilo-code', 'cursor'],
     api: [
       'ollama',
       'ollama-cloud',
@@ -278,18 +278,29 @@ describe('first-class exclusion guard', () => {
     }
   });
 
-  it('keeps Cursor and Antigravity out of first-class surfaces', () => {
+  it('keeps Cursor in first-class surfaces', () => {
     const admittedIds = admittedFirstClassIds();
 
-    for (const id of ['cursor', 'antigravity']) {
-      expect(admittedIds.has(id)).toBe(false);
-      expect(id in CLI_TOOL_CATALOG).toBe(false);
-      expect(id in CLI_PLANNER_ADAPTERS).toBe(false);
-      expect(id in CLI_IMPLEMENTER_ADAPTERS).toBe(false);
-      expect(PlannerCliToolIdSchema.safeParse(id).success).toBe(false);
-      expect(ImplementerCliToolIdSchema.safeParse(id).success).toBe(false);
-      expect(pickerIdsForRole('planner')).not.toContain(id);
-      expect(pickerIdsForRole('implementer')).not.toContain(id);
-    }
+    expect(admittedIds.has('cursor')).toBe(true);
+    expect('cursor' in CLI_TOOL_CATALOG).toBe(true);
+    expect('cursor' in CLI_PLANNER_ADAPTERS).toBe(true);
+    expect('cursor' in CLI_IMPLEMENTER_ADAPTERS).toBe(true);
+    expect(PlannerCliToolIdSchema.safeParse('cursor').success).toBe(true);
+    expect(ImplementerCliToolIdSchema.safeParse('cursor').success).toBe(true);
+    expect(pickerIdsForRole('planner')).toContain('cursor');
+    expect(pickerIdsForRole('implementer')).toContain('cursor');
+  });
+
+  it('keeps Antigravity out of first-class surfaces', () => {
+    const admittedIds = admittedFirstClassIds();
+
+    expect(admittedIds.has('antigravity')).toBe(false);
+    expect('antigravity' in CLI_TOOL_CATALOG).toBe(false);
+    expect('antigravity' in CLI_PLANNER_ADAPTERS).toBe(false);
+    expect('antigravity' in CLI_IMPLEMENTER_ADAPTERS).toBe(false);
+    expect(PlannerCliToolIdSchema.safeParse('antigravity').success).toBe(false);
+    expect(ImplementerCliToolIdSchema.safeParse('antigravity').success).toBe(false);
+    expect(pickerIdsForRole('planner')).not.toContain('antigravity');
+    expect(pickerIdsForRole('implementer')).not.toContain('antigravity');
   });
 });

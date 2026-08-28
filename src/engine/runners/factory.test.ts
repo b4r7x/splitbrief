@@ -540,7 +540,7 @@ describe('CLI role enforcement', () => {
   it('rejects CLI tools outside the planner tuple before planner construction', async () => {
     const config = withPlanner({
       kind: 'cli',
-      tool: 'cursor' as Config['planner'] extends { kind: 'cli'; tool: infer T } ? T : never,
+      tool: 'antigravity' as Config['planner'] extends { kind: 'cli'; tool: infer T } ? T : never,
       authChannel: 'session',
       model: 'test',
     });

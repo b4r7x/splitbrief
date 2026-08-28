@@ -196,12 +196,12 @@ const claims = [
   [
     'support-conformance-gated-inactive',
     'configuration',
-    'Conformance-gated rows stay inactive until their complete row passes; unsupported rows (Copilot, Aider, shell, agent) refuse with typed fail-closed zero dispatches regardless of what a candidate claims.',
+    'Conformance-gated rows stay inactive until their complete row passes; unsupported rows (Copilot, Aider, Cursor, shell, agent) refuse with typed fail-closed zero dispatches regardless of what a candidate claims.',
   ],
   [
     'support-copilot-aider-refused',
     'configuration',
-    'Copilot and Aider stay implementer-side in V1: their planner rows are compiler-unsupported and refuse with a typed zero-dispatch error',
+    'Copilot, Aider, and Cursor stay implementer-side in V1: their planner rows are compiler-unsupported and refuse with a typed zero-dispatch error',
   ],
   [
     'support-shell-planner-refused',

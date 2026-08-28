@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -6,7 +6,6 @@ import {
   ANTIGRAVITY_CLI_CANDIDATE_PATHS,
   CLI_COMPILER_EVIDENCE,
   CLI_TOOL_IDS,
-  type CliToolId,
   CURSOR_CLI_ADMISSION_VERDICT,
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
@@ -28,9 +27,17 @@ import {
 } from './registry.js';
 import { CODEX_NATIVE_MODEL_CATALOG_PROBE, codexPlannerAdapter } from './codex.js';
 import { isDeclaredCliProbeContract } from './contract.js';
+import { parseCursorModels } from '../../providers/cli-model-catalog.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 
 const REPO_ROOT = join(import.meta.dirname, '../../../..');
+const CURSOR_LIST_MODELS_FIXTURE = readFileSync(
+  join(REPO_ROOT, 'testing/fixtures/cursor/list-models.txt'),
+  'utf8',
+);
+const CURSOR_LIST_MODELS_COUNT = CURSOR_LIST_MODELS_FIXTURE.split(/\r?\n/u).filter((line) =>
+  /^\S+ - .+$/.test(line.trim()),
+).length;
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 let dirs: string[] = [];
@@ -90,17 +97,16 @@ describe('CLI role registries', () => {
     }
   });
 
-  it('keeps Cursor outside both active role registries until R7-008', () => {
-    expect(CURSOR_CLI_ADMISSION_VERDICT).toBe('OMIT');
+  it('keeps Cursor admitted in the catalog and Antigravity omitted until its adapter lands', () => {
+    expect(CURSOR_CLI_ADMISSION_VERDICT).toBe('PASS');
     expect(ANTIGRAVITY_CLI_ADMISSION_VERDICT).toBe('OMIT');
 
     for (const relativePath of ANTIGRAVITY_CLI_CANDIDATE_PATHS) {
       expect(existsSync(resolveRepoPath(relativePath))).toBe(false);
     }
 
-    expect('cursor' in CLI_PLANNER_ADAPTERS).toBe(false);
+    expect(CLI_TOOL_IDS).toContain('cursor');
     expect('antigravity' in CLI_PLANNER_ADAPTERS).toBe(false);
-    expect('cursor' in CLI_IMPLEMENTER_ADAPTERS).toBe(false);
     expect('antigravity' in CLI_IMPLEMENTER_ADAPTERS).toBe(false);
   });
 });
@@ -114,14 +120,14 @@ describe('CLI registry lookup', () => {
     expect(lookupCliImplementerAdapter('aider')).toBe(CLI_IMPLEMENTER_ADAPTERS.aider);
   });
 
-  it.each(['cursor', 'antigravity', 'kiro', 'unknown-cli'])(
+  it.each(['antigravity', 'kiro', 'unknown-cli'])(
     'rejects unsupported planner lookup for %s before spawn',
     (toolId) => {
       expect(() => lookupCliPlannerAdapter(toolId)).toThrow(/has no planner configuration/);
     },
   );
 
-  it.each(['cursor', 'antigravity', 'kiro', 'unknown-cli'])(
+  it.each(['antigravity', 'kiro', 'unknown-cli'])(
     'rejects unsupported implementer lookup for %s before spawn',
     (toolId) => {
       expect(() => lookupCliImplementerAdapter(toolId)).toThrow(/has no implementer configuration/);
@@ -289,6 +295,10 @@ describe('admitted readiness probe contracts', () => {
     ['aider', 'aider 0.86.0\naider 99.0.0', { kind: 'malformed' }],
     ['opencode', '0.5.0\n99.0.0', { kind: 'malformed' }],
     ['kilo-code', '0.1.0\n99.0.0', { kind: 'malformed' }],
+    ['cursor', '2026.08.25-3e8eec8', { kind: 'success', value: '2026.08.25-3e8eec8' }],
+    ['cursor', '1.2.3', { kind: 'malformed' }],
+    ['cursor', 'node 2026.08.25-3e8eec8', { kind: 'malformed' }],
+    ['cursor', '2026.08.25-3e8eec8\n2026.09.01-abc', { kind: 'malformed' }],
   ] as const)('parses only one canonical %s version descriptor', (tool, stdout, expected) => {
     const probe = lookupCliReadinessProbe({ tool, role: 'planner' });
     expect(isDeclaredCliProbeContract(probe)).toBe(true);
@@ -397,14 +407,88 @@ describe('admitted readiness probe contracts', () => {
     );
   });
 
-  it('rejects Cursor before a readiness probe can be resolved', () => {
-    const cursor = 'cursor' as CliToolId;
-    expect(() => lookupCliReadinessProbe({ tool: cursor, role: 'planner' })).toThrow(
-      /has no planner configuration/,
-    );
-    expect(() => lookupCliReadinessProbe({ tool: cursor, role: 'implementer' })).toThrow(
-      /has no implementer configuration/,
-    );
+  it('binds Cursor to declared version, auth, and catalog probes', () => {
+    const planner = lookupCliReadinessProbe({ tool: 'cursor', role: 'planner' });
+    const implementer = lookupCliReadinessProbe({ tool: 'cursor', role: 'implementer' });
+
+    expect(planner).toBe(CLI_PLANNER_ADAPTERS.cursor.probe);
+    expect(implementer).toBe(CLI_IMPLEMENTER_ADAPTERS.cursor.probe);
+    expect(isDeclaredCliProbeContract(planner)).toBe(true);
+    if (!isDeclaredCliProbeContract(planner)) throw new Error('expected declared Cursor probe');
+
+    expect(planner.declared.version.command).toEqual(['cursor-agent', '--version']);
+    expect(planner.declared.auth).toMatchObject({
+      kind: 'auth-status',
+      command: ['cursor-agent', 'status'],
+      cwd: 'neutral',
+    });
+    expect(planner.declared.catalog).toMatchObject({
+      kind: 'catalog',
+      command: ['cursor-agent', '--list-models'],
+    });
+    if (planner.declared.auth.kind === 'not-run' || planner.declared.catalog.kind === 'not-run') {
+      throw new Error('expected Cursor auth and catalog probes');
+    }
+
+    expect(
+      planner.declared.auth.parse({
+        stdout: '✓ Logged in as operator@example.com',
+        stderr: '',
+        exitCode: 0,
+        timedOut: false,
+        outputExceeded: false,
+      }),
+    ).toBe('verified');
+    expect(
+      planner.declared.catalog.parse({
+        stdout: CURSOR_LIST_MODELS_FIXTURE,
+        stderr: '',
+        exitCode: 0,
+        timedOut: false,
+        outputExceeded: false,
+      }),
+    ).toEqual({ kind: 'success', value: parseCursorModels(CURSOR_LIST_MODELS_FIXTURE) });
+  });
+
+  it.each([
+    {
+      name: '✓ Logged in as invalid@x.com → verified',
+      stdout: '✓ Logged in as invalid@x.com',
+      expected: 'verified',
+    },
+    { name: 'signed-out → missing', stdout: 'Not logged in', expected: 'missing' },
+  ] as const)('$name', ({ stdout, expected }) => {
+    const planner = lookupCliReadinessProbe({ tool: 'cursor', role: 'planner' });
+    expect(isDeclaredCliProbeContract(planner)).toBe(true);
+    if (!isDeclaredCliProbeContract(planner)) throw new Error('expected declared Cursor probe');
+    if (planner.declared.auth.kind === 'not-run') {
+      throw new Error('expected Cursor auth probe');
+    }
+
+    expect(
+      planner.declared.auth.parse({
+        stdout,
+        stderr: '',
+        exitCode: 0,
+        timedOut: false,
+        outputExceeded: false,
+      }),
+    ).toBe(expected);
+  });
+
+  it(`cursor model list fixture parses to ${CURSOR_LIST_MODELS_COUNT} models`, () => {
+    const models = parseCursorModels(CURSOR_LIST_MODELS_FIXTURE);
+    expect(models).not.toBeNull();
+    expect(models).toHaveLength(CURSOR_LIST_MODELS_COUNT);
+    expect(
+      models?.some((model) => model.id === 'Available models' || model.id.startsWith('Tip')),
+    ).toBe(false);
+  });
+
+  it('unrecognisable model output returns null', () => {
+    expect(parseCursorModels('Usage: cursor-agent --list-models')).toBeNull();
+    expect(parseCursorModels('Available models\n\n')).toBeNull();
+    expect(parseCursorModels('')).toBeNull();
   });
 });
 

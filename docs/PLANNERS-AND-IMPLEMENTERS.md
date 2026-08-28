@@ -400,7 +400,7 @@ Pricing and context-window lookup stay on the existing ladder: cached models.dev
 
 `src/engine/planners/cli.ts`, `src/engine/implementers/cli.ts`
 
-Spawns a CLI tool as a subprocess. Supported tools: `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`.
+Spawns a CLI tool as a subprocess. Supported tools: `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `cursor`.
 
 Every planner call declares its transport before dispatch: the current call's final response (`stdout-final`) or an exact declared-file lease. The candidate is that call's authoritative final output; session files, project-root artifacts, markdown-linked paths, prose mentions, stderr, and earlier attempts are evidence at most, never content (see [Compiler capability and planner conformance](#compiler-capability-and-planner-conformance)). The compiler path never resumes the workflow session. Claude Code continues a session it already minted with `--resume`. Output is parsed line by line via each tool's protocol parser; a configured `outputFormat` cannot replace a structured terminal contract.
 
@@ -416,14 +416,17 @@ When you adjust a tool's adapter to track an upstream CLI change, bump that tool
 
 ##### Admitted support summary
 
-| `tool` | command | roles | tested version | evidence as-of | model policy (planner / implementer) | billing |
-|---|---|---|---|---|---|---|
-| `claude-code` | `claude` | planner, implementer | 2.0.0 | 2026-07-31 | optional / optional | subscription-included |
-| `codex` | `codex` | planner, implementer | 0.40.0 | 2026-07-31 | optional / optional | subscription-included |
-| `opencode` | `opencode` | planner, implementer | 0.5.0 | 2026-07-31 | optional / optional | provider-dependent |
-| `aider` | `aider` | planner, implementer | 0.86.0 | 2026-07-31 | optional / optional | provider-dependent |
-| `copilot` | `copilot` | planner, implementer | 0.3.0 | 2026-07-31 | optional / optional | subscription-included |
-| `kilo-code` | `kilo` | planner, implementer | 0.1.0 | 2026-07-31 | optional / optional | provider-dependent |
+| `tool` | command | roles | tested version | version scheme | evidence as-of | model policy (planner / implementer) | model discovery | billing |
+|---|---|---|---|---|---|---|---|---|
+| `claude-code` | `claude` | planner, implementer | 2.0.0 | `semver` | 2026-07-31 | optional / optional | `native-aliases-and-custom` | subscription-included |
+| `codex` | `codex` | planner, implementer | 0.40.0 | `semver` | 2026-07-31 | optional / optional | `capability-gated-native` | subscription-included |
+| `opencode` | `opencode` | planner, implementer | 0.5.0 | `semver` | 2026-07-31 | optional / optional | `native-cli` | provider-dependent |
+| `aider` | `aider` | planner, implementer | 0.86.0 | `semver` | 2026-07-31 | optional / optional | `static-catalog-unverified` | provider-dependent |
+| `copilot` | `copilot` | planner, implementer | 0.3.0 | `semver` | 2026-07-31 | optional / optional | `static-catalog-unverified` | subscription-included |
+| `kilo-code` | `kilo` | planner, implementer | 0.1.0 | `semver` | 2026-07-31 | optional / optional | `native-cli` | provider-dependent |
+| `cursor` | `cursor-agent` | planner, implementer | 2026.08.25-3e8eec8 | `calver` | 2026-08-27 | optional / optional | `native-cli` (`--list-models`) | subscription-included |
+
+`cursor` executable aliases are `cursor-agent` / `agent`. The reviewer seat uses planner backends (the same admission set).
 
 ##### Posture, trust, and auth
 
@@ -435,10 +438,11 @@ When you adjust a tool's adapter to track an upstream CLI change, bump that tool
 | `aider` | no / yes | yes / yes | yes / yes | `--yes-always` | none / none | provider-dependent | inherited from provider config |
 | `copilot` | no / yes | yes / yes | yes / yes | `--allow-all` | none / none | session | `GH_TOKEN`, `GITHUB_TOKEN` |
 | `kilo-code` | no / yes | yes / yes | yes / yes | `--auto` | none / none | provider-dependent | inherited from provider config |
+| `cursor` | no / yes | yes / yes | yes / yes | `--force` | none / none | `api-key-or-session`: session (host-cli-state), api-key | `CURSOR_API_KEY` (api-key channel) |
 
 Session channels use `host-cli-state` bridging where noted in the catalog. SPLITBRIEF never copies credentials into argv. Subscription-included tools bill through the vendor login; provider-dependent tools inherit the upstream model provider's billing posture.
 
-The bridge copies files, so a channel whose credential is an OS keychain item reaches a staged runner another way. A channel declares those platforms in `hostKeychainPlatforms` (`src/core/runners/cli-tool-catalog.ts`), which today names macOS for the Claude Code `session` channel: the subscription session lives in the login keychain, whose search list resolves through `HOME` and whose item is keyed on `USER`. `cliAuthChannelHostStateAccess()` maps that to `host-account`, and `createSandboxEnv()` then leaves `HOME`/`USER` at their host values and bridges no file — every other redirect stays. Readiness never infers such a credential from files: it runs the tool's own status command and reports what the child answers. See [docs/API-KEYS.md](./API-KEYS.md) and [docs/WORKTREES.md](./WORKTREES.md).
+The bridge copies files, so a channel whose credential is an OS keychain item reaches a staged runner another way. A channel declares those platforms in `hostKeychainPlatforms` (`src/core/runners/cli-tool-catalog.ts`), which today names macOS for the Claude Code and Cursor Agent CLI `session` channels: the subscription session lives in the login keychain, whose search list resolves through `HOME` and whose item is keyed on `USER`. `cliAuthChannelHostStateAccess()` maps that to `host-account`, and `createSandboxEnv()` then leaves `HOME`/`USER` at their host values and bridges no file — every other redirect stays. Readiness never infers such a credential from files: it runs the tool's own status command and reports what the child answers. See [docs/API-KEYS.md](./API-KEYS.md) and [docs/WORKTREES.md](./WORKTREES.md).
 
 ##### Readiness states
 
@@ -484,10 +488,9 @@ These researched CLIs have **blocked verdicts** — they do not appear in the ad
 
 | candidate | verdict | as-of | evidence | route when gate passes |
 |---|---|---|---|---|
-| `cursor` | OMIT | 2026-08-02 | Candidate metadata only. R7-008 must prove an exact build-pinned protocol in a fresh filtered workspace; the prior project-cwd invocation, broad semver, synthetic fixtures, `--mode agent`, and invented JSON flags are not evidence. | No planner/implementer adapter, provider row, auth channel, catalog, run path, or picker row until R7-008 is accepted. |
 | `antigravity` | OMIT | 2026-07-31 | `.nuke/release-evidence/antigravity.json` | implementer-only `agy`; conditional consumer route replacing legacy Gemini CLI |
 
-`CURSOR_CLI_ADMISSION_VERDICT` and `ANTIGRAVITY_CLI_ADMISSION_VERDICT` are `OMIT` in `cli-tool-catalog.ts`. Candidate runtime adapter sources must remain absent while the verdict is OMIT. Cursor records `agent` as a primary candidate and `cursor-agent` as a fallback only for later, safe resolution testing; those aliases do not configure a runnable tool. No unverified-auth override can promote Cursor. `agent status --format json` is a current-build fact, but no model JSON flag, model catalog, or run protocol is admitted; planner `plan` mode and an implementer invocation without `--mode` remain R7-008 work, not active configuration.
+`CURSOR_CLI_ADMISSION_VERDICT` is `PASS` in `cli-tool-catalog.ts`. `ANTIGRAVITY_CLI_ADMISSION_VERDICT` remains `OMIT`. Candidate runtime adapter sources must remain absent while a verdict is OMIT. No unverified-auth override can promote an omitted candidate.
 
 ##### Excluded researched candidates
 
@@ -548,7 +551,7 @@ The implementer writes files directly with git-based change detection.
 
 The Task Brief compiler (`src/engine/spec/tasks/compiler.ts`) compiles the manifest in deterministic four-item batches, at most 64 real dispatches per operation, each batch in a fresh detached session scope that cannot read, replace, expire, resume, or report into the workflow planner session. Every planner mode crosses the same admission boundary: standard and speckit run the compiler's detached batches, and quick and instant stay single-call while accepting only a current-call result.
 
-`admitCompilerCapability` (`src/engine/runners/compiler-capability.ts`) admits a backend only on the exact tuple: runtime identity, effective role vector, declared transport, terminal contract, containment profile, credential channel, envelope version, and a verified conformance proof. Admission fails closed (REQ-016): a missing or unverified property returns the typed zero-dispatch refusal `task_compiler_capability_unsupported`, and no combination is downgraded to a weaker mode. Tiered capability admission applies: the tested version yields a full capability receipt; other detected versions of a supported backend are admitted with runtime-drift evidence and a run warning; unsupported candidates (`copilot`, `aider`, `shell`, `agent`) receive a typed fail-closed refusal. Versionless rows (`api`, `agent-sdk`, `custom-command`) admit only an empty version claim, and the verified conformance proof carries the identity evidence. Runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) are the enforcement surface.
+`admitCompilerCapability` (`src/engine/runners/compiler-capability.ts`) admits a backend only on the exact tuple: runtime identity, effective role vector, declared transport, terminal contract, containment profile, credential channel, envelope version, and a verified conformance proof. Admission fails closed (REQ-016): a missing or unverified property returns the typed zero-dispatch refusal `task_compiler_capability_unsupported`, and no combination is downgraded to a weaker mode. Tiered capability admission applies: the tested version yields a full capability receipt; other detected versions of a supported backend are admitted with runtime-drift evidence and a run warning; unsupported candidates (`copilot`, `aider`, `cursor`, `shell`, `agent`) receive a typed fail-closed refusal. Versionless rows (`api`, `agent-sdk`, `custom-command`) admit only an empty version claim, and the verified conformance proof carries the identity evidence. Runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) are the enforcement surface.
 
 Planner mode does not grant artifact authority. A `--agent plan`, `--permission-mode plan`, or `--sandbox read-only` flag bounds what the tool may do; it does not prove what the process could reach, what its output means, or that an artifact is fresh. The production-factory conformance harness (`src/engine/runners/cli-tools/contract-harness.ts`, driven by `scripts/cli-conformance.ts`) is what can prove the effective role, containment, and final-response contract, but its verdicts do not reach admission on their own: they are recorded by hand into `COMPILER_SUPPORT_TABLE`, and nothing reads a harness record when a claim is admitted. A run's claim carries that row's recorded vector plus two live host observations — the detected runtime version and containment-launcher availability — and those two are what a running host can still refuse on.
 
@@ -567,10 +570,11 @@ Source: `COMPILER_SUPPORT_TABLE` in `src/engine/runners/compiler-capability.ts`,
 | `custom-command` | (versionless) | conformance-gated | `stdout-final`, `declared-file` | `custom-command-final-response-v1` | `api-key` |
 | `copilot` | — | unsupported | — | — | — |
 | `aider` | — | unsupported | — | — | — |
+| `cursor` | — | unsupported | — | — | — |
 | `shell` | — | unsupported | — | — | — |
 | `agent` | — | unsupported | — | — | — |
 
-`required-baseline` means OpenCode 1.18.15 is the production planner once its full factory-path conformance passes. `conformance-gated` means the row admits only when the complete conformance row passes and fails closed otherwise: Kilo, the OpenAI-compatible API, the Agent SDK, and configured custom commands stay inactive until that happens. `unsupported` means a typed zero-dispatch refusal no matter what a candidate claims: Copilot has no proven non-writing programmatic planner posture in V1, Aider has no proven read-only planner contract, the legacy shell planner lacks compiler containment and final-response conformance, and the legacy agent planner's ambient session-file behavior violates exact lease ownership.
+`required-baseline` means OpenCode 1.18.15 is the production planner once its full factory-path conformance passes. `conformance-gated` means the row admits only when the complete conformance row passes and fails closed otherwise: Kilo, the OpenAI-compatible API, the Agent SDK, and configured custom commands stay inactive until that happens. `unsupported` means a typed zero-dispatch refusal no matter what a candidate claims: Copilot has no proven non-writing programmatic planner posture in V1, Aider has no proven read-only planner contract, Cursor has no proven compiler planner contract in V1, the legacy shell planner lacks compiler containment and final-response conformance, and the legacy agent planner's ambient session-file behavior violates exact lease ownership.
 
 ### Transports and containment
 
@@ -580,7 +584,7 @@ The containment profile in a capability tuple records which OS-level write-denia
 
 ### Credential channels
 
-`api-key` passes the provider's environment variable into the sanitized child environment. `session-copy` bridges exactly the tool's allowlisted credential files into the disposable HOME/XDG roots, with one exception on the shipping dispatch path: a channel whose credential is an OS keychain item — the Claude Code `session` channel on macOS — has no file to copy, so its child is handed the host `HOME` and `USER` the login keychain resolves through and does read and write the real home directory. Compiler calls take the same `createRunnerSandboxEnv` (`src/engine/runners/sandbox-env.ts`) as every other planner call; there is no stricter compiler-only credential isolation, so a keychain channel is as wide for a compiler batch as it is for a workflow planner call. Bridged values are redacted from diagnostics, and the capability receipt records no secret value.
+`api-key` passes the provider's environment variable into the sanitized child environment. `session-copy` bridges exactly the tool's allowlisted credential files into the disposable HOME/XDG roots, with one exception on the shipping dispatch path: a channel whose credential is an OS keychain item — the Claude Code and Cursor Agent CLI `session` channels on macOS — has no file to copy, so its child is handed the host `HOME` and `USER` the login keychain resolves through and does read and write the real home directory. Compiler calls take the same `createRunnerSandboxEnv` (`src/engine/runners/sandbox-env.ts`) as every other planner call; there is no stricter compiler-only credential isolation, so a keychain channel is as wide for a compiler batch as it is for a workflow planner call. Bridged values are redacted from diagnostics, and the capability receipt records no secret value.
 
 ### Effective roles by backend
 
@@ -592,6 +596,7 @@ The role vector is pinned and effect-verified per backend (REQ-017). A role that
 | `kilo-code` | `--agent plan` | `--agent code --auto` |
 | `claude-code` | `--permission-mode plan` (Read, Glob, Grep, Plan only) | `--permission-mode acceptEdits` |
 | `codex` | `--sandbox read-only --ask-for-approval never` exec, ambient config and rules ignored, ephemeral detached | `--sandbox workspace-write --ask-for-approval never` in the staged checkout |
+| `cursor` | `--print --output-format stream-json --mode plan --trust` | `--print --output-format stream-json --force --trust` |
 
 A planner never gains canonical write authority. Candidates stay non-canonical until the authoritative generation commit; the fixed `tasks.md`, `brief-quality.json`, `spec.md`, and `plan.md` files are compatibility projections of that generation. See [WORKFLOW.md](./WORKFLOW.md) for the generation, permit, and disposition flow.
 

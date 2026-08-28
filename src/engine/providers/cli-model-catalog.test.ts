@@ -5,6 +5,7 @@ import {
   nativeCliCatalogToDetectedModels,
   parseAiderNativeModelCatalog,
   parseCodexNativeModelCatalog,
+  parseCursorNativeModelCatalog,
   parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
 } from './cli-model-catalog.js';
@@ -166,6 +167,30 @@ describe('native CLI model catalogs', () => {
     });
     expect(parseAiderNativeModelCatalog('openai/gpt-4o')).toBeNull();
     expect(parseAiderNativeModelCatalog('- GPT-4o')).toBeNull();
+  });
+
+  it('parses Cursor id-dash-name rows from the admitted listing fixture', () => {
+    const stdout = readFileSync(
+      join(import.meta.dirname, '../../../testing/fixtures/cursor/list-models.txt'),
+      'utf-8',
+    );
+    const catalog = parseCursorNativeModelCatalog(stdout);
+    if (catalog === null) throw new Error('Expected admitted Cursor fixture to parse');
+
+    expect(catalog.tool).toBe('cursor');
+    expect(catalog.models[0]).toEqual({
+      selectionId: 'auto',
+      displayName: 'Auto (default)',
+      nativeOrder: 0,
+    });
+    expect(catalog.models.some((model) => model.selectionId.startsWith('Tip'))).toBe(false);
+    expect(nativeCliCatalogToDetectedModels(catalog)[0]).toEqual({
+      id: 'auto',
+      displayName: 'Auto (default)',
+      nativeOrder: 0,
+    });
+    expect(parseCursorNativeModelCatalog('Usage: cursor-agent --list-models')).toBeNull();
+    expect(parseCursorNativeModelCatalog('Available models\n\n')).toBeNull();
   });
 
   it("a cataloged codex model's contextLength equals its context_window; routing does not use the 32768 fallback for it", () => {

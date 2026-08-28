@@ -149,21 +149,18 @@ describe('canonical CLI runner matrix docs', () => {
     expect(readiness).toContain('deriveCliReadiness()');
   });
 
-  it('records Cursor and Antigravity as non-admitted candidates without support rows', () => {
-    expect(CURSOR_CLI_ADMISSION_VERDICT).toBe('OMIT');
+  it('records Cursor as admitted and Antigravity as a blocked OMIT candidate', () => {
+    expect(CURSOR_CLI_ADMISSION_VERDICT).toBe('PASS');
     expect(ANTIGRAVITY_CLI_ADMISSION_VERDICT).toBe('OMIT');
 
     const support = admittedSupportSection();
     const omit = omitSection();
 
-    expect(support).not.toMatch(/\| `cursor` \|/);
-    expect(omit).toContain('| `cursor` |');
+    expect(support).toMatch(/\| `cursor` \|/);
+    expect(omit).not.toContain('| `cursor` |');
     expect(omit).toContain('| `antigravity` |');
     expect(omit).toContain('OMIT');
-    expect(omit).toContain('2026-08-02');
     expect(omit).toContain('2026-07-31');
-    expect(omit).toContain('R7-008');
-    expect(omit).toContain('fresh filtered workspace');
     expect(omit).toContain('Candidate runtime adapter sources must remain absent');
 
     expect(omit).toContain('.nuke/release-evidence/antigravity.json');
