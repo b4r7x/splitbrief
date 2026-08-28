@@ -9,6 +9,7 @@ import {
 import {
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
+  SEAT_PICKER_ROLES,
 } from '../../../core/runners/cli-tool-catalog.js';
 import { isCurrentConfig } from './catalog.js';
 import { assemblePickerDescriptors, buildPickerOptions, type PickerOption } from './options.js';
@@ -508,5 +509,26 @@ describe('reviewer seat', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
     expect(isCurrentConfig(reviewerRow('claude-code'), config, 'reviewer')).toBe(true);
+  });
+});
+
+describe('launcher sort order', () => {
+  const descriptors = assemblePickerDescriptors();
+  const detections = { cliTools: [], providers: [] };
+
+  it('launcher first when filter is empty', () => {
+    for (const role of SEAT_PICKER_ROLES) {
+      const options = buildPickerOptions(role, descriptors, detections, undefined);
+      expect(options[0]?.kind).toBe('custom-command');
+    }
+  });
+
+  it('launcher last while filtering', () => {
+    for (const role of SEAT_PICKER_ROLES) {
+      const options = buildPickerOptions(role, descriptors, detections, undefined, undefined, {
+        filterActive: true,
+      });
+      expect(options.at(-1)?.kind).toBe('custom-command');
+    }
   });
 });

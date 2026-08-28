@@ -12,7 +12,7 @@ import { glyph } from '../../../lib/glyphs.js';
 import { overlayWidth } from '../../../core/navigation/overlay-rect.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { TwoColumnPicker } from './picker.js';
+import { TwoColumnPicker, buildRightDisplay } from './picker.js';
 
 interface Tool {
   id: string;
@@ -670,8 +670,10 @@ describe('TwoColumnPicker', () => {
     await tick(20);
     const emptyFrame = empty.lastFrame() ?? '';
     expect(emptyFrame).toContain('No tools match');
-    expect(emptyFrame).toContain(glyph('scrollTrack'));
     expect(emptyFrame).not.toContain(glyph('scrollThumb'));
+    const placeholderLine =
+      emptyFrame.split('\n').find((line) => line.includes('No tools match')) ?? '';
+    expect(placeholderLine.endsWith(`${glyph('scrollTrack')} ${glyph('scrollTrack')}`)).toBe(false);
     empty.unmount();
   });
 
@@ -990,5 +992,17 @@ describe('TwoColumnPicker', () => {
     expect(confirms.at(-1)).toEqual({ l: 'alpha', r: 'm-2' });
 
     ui.unmount();
+  });
+
+  it('precedes the first section header with a spacer when a row already occupies a slot', () => {
+    const withPreceding = buildRightDisplay([{ id: 'auto' }, { id: 'm-1' }], (item) => item.id, {
+      by: (item) => (item.id === 'auto' ? '' : 'Catalog'),
+    });
+    expect(withPreceding.map((slot) => slot.kind)).toEqual(['row', 'spacer', 'header', 'row']);
+
+    const headerFirst = buildRightDisplay([{ id: 'm-1' }], (item) => item.id, {
+      by: () => 'Catalog',
+    });
+    expect(headerFirst.map((slot) => slot.kind)).toEqual(['header', 'row']);
   });
 });

@@ -225,12 +225,15 @@ function projectMetaOption(
   return kind === 'custom-command' ? { ...common, kind } : { ...common, kind };
 }
 
-function sortPickerOptions(a: PickerOption, b: PickerOption): number {
-  // The launcher stays last so a typed filter always puts real matches under
-  // the cursor; it is exempt from filtering and would otherwise outrank them.
+export function sortPickerOptions(
+  a: PickerOption,
+  b: PickerOption,
+  { filterActive }: { filterActive: boolean },
+): number {
+  // The launcher is filter-exempt, so it leads when idle and trails while filtering so matches sit under the cursor.
   const aLauncher = a.kind === 'custom-command';
   const bLauncher = b.kind === 'custom-command';
-  if (aLauncher !== bLauncher) return aLauncher ? 1 : -1;
+  if (aLauncher !== bLauncher) return aLauncher === filterActive ? 1 : -1;
   if (a.isCurrent && !b.isCurrent) return -1;
   if (!a.isCurrent && b.isCurrent) return 1;
   if (a.available && !b.available) return -1;
@@ -257,6 +260,7 @@ export function buildPickerOptions(
   detections: PickerDetectionSnapshot,
   currentConfig: PlannerConfig | ImplementerConfig | undefined,
   statusLens?: PickerStatusLens | undefined,
+  sort?: { filterActive: boolean } | undefined,
 ): PickerOption[] {
   const lane = seatPickerLane(role);
   const currentId = currentConfig !== undefined ? getRunnerDisplayName(currentConfig) : undefined;
@@ -284,5 +288,7 @@ export function buildPickerOptions(
     ];
   });
 
-  return options.toSorted(sortPickerOptions);
+  return options.toSorted((a, b) =>
+    sortPickerOptions(a, b, { filterActive: sort?.filterActive ?? false }),
+  );
 }

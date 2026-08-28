@@ -27,10 +27,21 @@ interface SingleColumnPickerProps<T> {
   lineCountOf?: ((item: T) => number) | undefined;
 }
 
-function ScrollbarGutter({ onThumb, color }: { onThumb: boolean; color: string }) {
+function ScrollbarGutter({
+  onThumb,
+  visible,
+  color,
+}: {
+  onThumb: boolean;
+  visible: boolean;
+  color: string;
+}) {
+  let mark = ' ';
+  if (onThumb) mark = glyph('scrollThumb');
+  else if (visible) mark = glyph('scrollTrack');
   return (
     <Box marginLeft={1}>
-      <Text color={color}>{onThumb ? glyph('scrollThumb') : glyph('scrollTrack')}</Text>
+      <Text color={color}>{mark}</Text>
     </Box>
   );
 }
@@ -58,11 +69,11 @@ function FilterRow({
   );
 }
 
-function FillerRows({ count, color }: { count: number; color: string }) {
+function FillerRows({ count, color, visible }: { count: number; color: string; visible: boolean }) {
   return Array.from({ length: count }, (_, index) => (
     <Box key={`scrollbar-filler-${index}`}>
       <Box flexGrow={1} />
-      <ScrollbarGutter onThumb={false} color={color} />
+      <ScrollbarGutter onThumb={false} visible={visible} color={color} />
     </Box>
   ));
 }
@@ -109,9 +120,9 @@ function PickerRows<T>({
           <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
             {placeholderWhenEmpty ?? <Text color={t.textDim}>{emptyText}</Text>}
           </Box>
-          <ScrollbarGutter onThumb={false} color={t.scrollIndicator} />
+          <ScrollbarGutter onThumb={false} visible={false} color={t.scrollIndicator} />
         </Box>
-        <FillerRows count={visibleRows - 1} color={t.scrollIndicator} />
+        <FillerRows count={visibleRows - 1} color={t.scrollIndicator} visible={false} />
       </>
     );
   }
@@ -149,6 +160,7 @@ function PickerRows<T>({
             </Box>
             <ScrollbarGutter
               onThumb={overflow && scrollbarCell(index, thumb)}
+              visible={overflow}
               color={t.scrollIndicator}
             />
           </Box>
@@ -165,7 +177,11 @@ function PickerRows<T>({
           </RowZone>
         );
       })}
-      <FillerRows count={Math.max(0, visibleRows - renderedLineCount)} color={t.scrollIndicator} />
+      <FillerRows
+        count={Math.max(0, visibleRows - renderedLineCount)}
+        color={t.scrollIndicator}
+        visible={overflow}
+      />
     </>
   );
 }

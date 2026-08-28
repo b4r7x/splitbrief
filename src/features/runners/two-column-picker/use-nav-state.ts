@@ -47,6 +47,7 @@ export interface LeftColumnProps<L> {
   terminalPane?: ((item: L) => TerminalPane | undefined) | undefined;
   isDisabled?: ((item: L) => boolean) | undefined;
   initialIndex?: number | undefined;
+  compare?: ((a: L, b: L) => number) | undefined;
 }
 
 export interface CustomRowOptions<L, R> {
@@ -162,6 +163,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
     filterFn: leftProps.filterBy ?? defaultLeftFilter,
     getKey: leftGetKey,
     initialIndex: initialLeftIndex,
+    compare: leftProps.compare,
     onCurrentItemChange: (item) => {
       if (item) onLeftChange(item);
     },

@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { pickerCatalog } from '#testing/helpers/runner-picker.js';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { SOFT_SEP } from '../../components/separators.js';
+import { glyph } from '../../lib/glyphs.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -436,5 +438,80 @@ describe('PickerView previews', () => {
     await flushEffects();
     expect(implementerUi.lastFrame() ?? '').not.toContain('Tool & model');
     implementerUi.unmount();
+  });
+});
+
+describe('PickerView initial left highlight', () => {
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+    terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
+    overlayStore.reset();
+  });
+
+  it('highlights the configured tool when the launcher occupies index 0 with an empty filter', async () => {
+    const launcher = pickerItem({
+      id: 'custom-command',
+      displayName: 'Custom command',
+      kind: 'custom-command',
+      roles: ['planner', 'implementer'],
+      modelPolicy: 'none',
+      billing: 'unknown',
+      permissions: readyPermissions,
+      status: { state: 'ready', remediation: null },
+      available: true,
+    });
+    const configured = pickerItem(
+      {
+        id: 'codex',
+        displayName: 'OpenAI Codex CLI',
+        kind: 'cli',
+        roles: ['planner', 'implementer'],
+        modelPolicy: 'optional',
+        billing: 'subscription-included',
+        permissions: readyPermissions,
+        status: { state: 'ready', remediation: null },
+        available: true,
+        isCurrent: true,
+      },
+      true,
+    );
+    const other = pickerItem(
+      {
+        id: 'claude-code',
+        displayName: 'Claude Code',
+        kind: 'cli',
+        roles: ['planner', 'implementer'],
+        modelPolicy: 'optional',
+        billing: 'subscription-included',
+        permissions: readyPermissions,
+        status: { state: 'ready', remediation: null },
+        available: true,
+      },
+      true,
+    );
+
+    const catalog: PickerCatalog = pickerCatalog({
+      items: [launcher, other, configured],
+      rightModels: [],
+      currentItem: configured,
+      selectedItemId: configured.id,
+      initialLeftIdx: 2,
+      roleLabel: 'Planner',
+      modelCounts: zeroCounts,
+    });
+
+    const ui = renderFeature(
+      <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
+    );
+    await flushEffects();
+
+    const liveBar = glyph('liveBar', 'unicode');
+    const lines = (ui.lastFrame() ?? '').split('\n');
+    const launcherLine = lines.find((line) => line.includes('+ Add custom command')) ?? '';
+    const configuredLine = lines.find((line) => line.includes('OpenAI Codex CLI')) ?? '';
+
+    expect(configuredLine).toContain(liveBar);
+    expect(launcherLine).not.toContain(liveBar);
+    ui.unmount();
   });
 });
