@@ -127,7 +127,7 @@ describe('runner role enums', () => {
     }
   });
 
-  it('keeps excluded and not-admitted CLI IDs out of every runtime tuple', () => {
+  it('keeps excluded CLI IDs out of every runtime tuple', () => {
     const admittedIds = new Set<string>([
       ...CATALOG_CLI_TOOL_IDS,
       ...PLANNER_CLI_TOOL_IDS,
@@ -139,12 +139,11 @@ describe('runner role enums', () => {
     for (const id of EXCLUDED_CLI_TOOL_IDS) {
       expect(admittedIds.has(id)).toBe(false);
     }
-    expect('cursor' in CLI_TOOL_CATALOG).toBe(false);
     expect('antigravity' in CLI_TOOL_CATALOG).toBe(false);
-    expect(admittedIds.has('cursor')).toBe(false);
+    expect(admittedIds.has('cursor')).toBe(true);
     expect(admittedIds.has('antigravity')).toBe(false);
-    expect(PlannerCliToolIdSchema.safeParse('cursor').success).toBe(false);
-    expect(ImplementerCliToolIdSchema.safeParse('cursor').success).toBe(false);
+    expect(PlannerCliToolIdSchema.safeParse('cursor').success).toBe(true);
+    expect(ImplementerCliToolIdSchema.safeParse('cursor').success).toBe(true);
   });
 
   it('rejects every admitted implementer-only ID at the planner schema boundary', () => {

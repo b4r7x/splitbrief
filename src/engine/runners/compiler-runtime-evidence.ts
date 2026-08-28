@@ -1,6 +1,10 @@
 import { CliExecutableReceiptSchema } from '../../core/discovery/detection.js';
 import type { CliExecutableReceipt } from '../../core/discovery/detection.js';
-import { classifyCliCompilerVersion } from '../../core/runners/cli-tool-catalog.js';
+import {
+  CLI_TOOL_CATALOG,
+  classifyCliCompilerVersion,
+  isCliToolId,
+} from '../../core/runners/cli-tool-catalog.js';
 import type { PlannerArtifactTransport } from '../../core/schemas/task-compilation.js';
 import { canonicalJSON } from '../../utils/canonical-json.js';
 import { sha256Hex } from '../../utils/sha256.js';
@@ -99,6 +103,9 @@ export function bindCompilerRuntimeEvidence(
   const classification = classifyCliCompilerVersion({
     installedVersion: input.version,
     exactAdmittedVersion: row.version,
+    ...(isCliToolId(row.backend)
+      ? { versionScheme: CLI_TOOL_CATALOG[row.backend].compatibility.versionScheme }
+      : {}),
   });
   const versionObservation: 'tested' | 'drifted' =
     classification === 'exact' ? 'tested' : 'drifted';

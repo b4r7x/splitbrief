@@ -81,7 +81,7 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 | `timeout` | ms (≤ 600000) | unset → no total-call cap (output silence is guarded separately: the 60s `api` stream-idle guard or `idleWarnMs`/`idleKillMs` below — see Troubleshooting) | Total wall-clock budget for a single planner, reviewer, or implementer call; aborts the call when exceeded. Raise for long planner thinks; lower for cheap probe calls. |
 | `idleWarnMs` | ms (≤ 3600000) | `300000` | Inactivity watchdog warn threshold: after this much output silence on a running call, the byline shows a "still working" warning; any stdout/stderr output clears it and resets the timer. |
 | `idleKillMs` | ms (≤ 3600000) | `1800000` | Inactivity watchdog kill threshold: at this much output silence the runner's process group is terminated (SIGTERM, then SIGKILL after a grace window; the in-process `agent-sdk` stream is aborted instead) and the call is marked failed. For planner calls a retry prompt is offered; a failed implementer call feeds the task's retry/escalation ladder instead, whose retry prompts rebuild the full Task Brief per attempt. |
-| `effort` | `low\|medium\|high\|xhigh` | unset | Reasoning-effort hint, delivered only where the backend has a channel for it. `cli` `claude-code`: delivered on the planner and reviewer seats (its own `--effort` flag), never on the implementer seat (`src/engine/runners/cli-tools/claude-code.ts` builds implementer args with `effort: undefined`); `cli` `codex`, `opencode`, `aider`, `copilot`, `kilo-code`: never. `api`: per model, via `modelSupportsEffort` (`src/core/runners/capabilities.ts`) — anthropic `claude-(opus\|sonnet)-[4-9]` (mapped to `thinking.budget_tokens`, 2k / 8k / 24k / 48k), openai and openrouter models matching `^(o[1345]\|gpt-[5-9])` or carrying `r1`/`reasoner`, deepseek `r1`/`reasoner`/`deepseek-v4`; every other provider false. `agent-sdk`: on the planner and review seats (the Agent SDK's first-class `effort` option); the implementer backend (`src/engine/implementers/agent-sdk.ts`) does not forward it today. `shell` and `agent`: never. An undeliverable value is not sent: changing a seat in the TUI clears it and says so (`Effort <level> cleared: <tool> has no effort channel`) on every seat `seatSupportsEffort` rejects — an `agent-sdk` implementer seat is the one case where the value is kept and simply not forwarded — and a headless run drops it, with a `planner-effort`/`reviewer-effort: dropped` stderr warning on the planner and review seats, silently on the implementer seat. |
+| `effort` | `low\|medium\|high\|xhigh` | unset | Reasoning-effort hint, delivered only where the backend has a channel for it. `cli` `claude-code`: delivered on the planner and reviewer seats (its own `--effort` flag), never on the implementer seat (`src/engine/runners/cli-tools/claude-code.ts` builds implementer args with `effort: undefined`); `cli` `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `cursor`: never. `api`: per model, via `modelSupportsEffort` (`src/core/runners/capabilities.ts`) — anthropic `claude-(opus\|sonnet)-[4-9]` (mapped to `thinking.budget_tokens`, 2k / 8k / 24k / 48k), openai and openrouter models matching `^(o[1345]\|gpt-[5-9])` or carrying `r1`/`reasoner`, deepseek `r1`/`reasoner`/`deepseek-v4`; every other provider false. `agent-sdk`: on the planner and review seats (the Agent SDK's first-class `effort` option); the implementer backend (`src/engine/implementers/agent-sdk.ts`) does not forward it today. `shell` and `agent`: never. An undeliverable value is not sent: changing a seat in the TUI clears it and says so (`Effort <level> cleared: <tool> has no effort channel`) on every seat `seatSupportsEffort` rejects — an `agent-sdk` implementer seat is the one case where the value is kept and simply not forwarded — and a headless run drops it, with a `planner-effort`/`reviewer-effort: dropped` stderr warning on the planner and review seats, silently on the implementer seat. |
 
 `idleWarnMs` and `idleKillMs` apply to the `cli`, `shell`, `agent`, and `agent-sdk` kinds only — `api` runners keep the 60s stream-idle guard, and their strict schema rejects both fields. The planner's optional estimate-review call is the one exception to the retry prompt above: an idle-kill there degrades gracefully to an unavailable review instead of parking one.
 
@@ -105,15 +105,16 @@ The V1 planner rows:
 | `kind: cli` tool `claude-code` | 2.1.232 | conformance-gated | current final response | api-key, session-copy |
 | `kind: cli` tool `codex` | 0.147.0 | conformance-gated | exact declared-file lease | api-key, session-copy |
 | `kind: cli` tool `kilo-code` | 7.0.49 | conformance-gated | current final response | session-copy |
+| `kind: cli` tool `cursor` | — | unsupported | — | — |
 | `kind: cli` tool `aider` / `copilot` | — | unsupported | — | — |
 | `kind: api` | (versionless) | conformance-gated | current final response | api-key |
 | `kind: agent-sdk` | (versionless) | conformance-gated | current final response | api-key |
 | configured custom command | (versionless) | conformance-gated | staged stdout or exact declared-file lease | api-key |
 | `kind: shell` / `kind: agent` planner | — | unsupported | — | — |
 
-For supported backends, the tested version yields a full capability receipt, while other detected versions are admitted with runtime-drift evidence and a run warning. Versionless rows admit only an empty version claim, and the verified conformance proof carries the identity evidence. Conformance-gated rows stay inactive until their complete row passes; unsupported rows (Copilot, Aider, shell, agent) refuse with typed fail-closed zero dispatches regardless of what a candidate claims. Runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) are the enforcement surface. Authority-bearing options are adapter-owned and cannot be overridden.
+For supported backends, the tested version yields a full capability receipt, while other detected versions are admitted with runtime-drift evidence and a run warning. Versionless rows admit only an empty version claim, and the verified conformance proof carries the identity evidence. Conformance-gated rows stay inactive until their complete row passes; unsupported rows (Copilot, Aider, Cursor, shell, agent) refuse with typed fail-closed zero dispatches regardless of what a candidate claims. Runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) are the enforcement surface. Authority-bearing options are adapter-owned and cannot be overridden.
 
-The two credential channels are `api-key` (the provider env var) and `session-copy` (exactly the tool's allowlisted credential files bridged into the disposable HOME/XDG roots — except for a keychain-backed channel, the Claude Code `session` channel on macOS, whose child keeps the host `HOME` and `USER` because the login keychain resolves through them, on compiler calls as much as on any other planner call). See [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) for the full support table, terminal contracts, and role vectors.
+The two credential channels are `api-key` (the provider env var) and `session-copy` (exactly the tool's allowlisted credential files bridged into the disposable HOME/XDG roots — except for a keychain-backed channel, the Claude Code and Cursor Agent CLI `session` channels on macOS, whose child keeps the host `HOME` and `USER` because the login keychain resolves through them, on compiler calls as much as on any other planner call). See [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) for the full support table, terminal contracts, and role vectors.
 
 ### `kind: cli`
 
@@ -121,7 +122,7 @@ Subprocess of a known coding-agent CLI. The wrapper handles auth, model selectio
 
 | Field | Type | Required | Description |
 |---|---|:---:|---|
-| `tool` | enum | yes | `claude-code` \| `codex` \| `opencode` \| `aider` \| `copilot` \| `kilo-code` |
+| `tool` | enum | yes | `claude-code` \| `codex` \| `opencode` \| `aider` \| `copilot` \| `kilo-code` \| `cursor` |
 | `model` | string | no | A model ID, or `auto`. Omitting `model` and writing `model: auto` are equivalent: SPLITBRIEF passes no `--model` flag, so the tool uses whatever model its own configuration selects. |
 | `args` | string[] | no | Extra argv appended to the tool invocation. Every token is validated against the adapter-owned authority set: a flag that would override role, permissions, sandbox, cwd or added roots, config sources, tools, hooks/plugins/MCP, session selection, prompt transport, output format, terminal protocol, final-output path, updates, or approval behavior is refused before spawn. |
 | `outputFormat` | enum | no | `stream-json` \| `jsonl` \| `text` \| `opencode`. Selects the parser for the configured-command and legacy command paths. An admitted CLI's parser and terminal protocol are adapter-owned: the compiler path keeps the backend's native parser, and an implementer `outputFormat` that would replace a structured terminal contract refuses before spawn. |
@@ -147,7 +148,7 @@ planner:
   effort: high
 ```
 
-**When to use:** you already pay for a Claude Code / Codex / OpenCode license and want SPLITBRIEF to drive it as a planner without separate API billing. Copilot and Aider stay implementer-side in V1: their planner rows are compiler-unsupported and refuse with a typed zero-dispatch error (see [Compiler capability](#compiler-capability)).
+**When to use:** you already pay for a Claude Code / Codex / OpenCode license and want SPLITBRIEF to drive it as a planner without separate API billing. Copilot, Aider, and Cursor stay implementer-side in V1: their planner rows are compiler-unsupported and refuse with a typed zero-dispatch error (see [Compiler capability](#compiler-capability)).
 
 ### `kind: api`
 
@@ -305,7 +306,7 @@ Same discriminated union as `planner` — the five kinds, the same [common gener
 
 | `kind` | Write the same fields as | Notes |
 |---|---|---|
-| `cli` | [`kind: cli`](#kind-cli) | `tool` must be a planner-side CLI: `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`. |
+| `cli` | [`kind: cli`](#kind-cli) | `tool` must be a planner-side CLI: `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `cursor`. |
 | `api` | [`kind: api`](#kind-api) | `provider` must be admitted for the planner role (`ollama-cloud`, `anthropic`, `openrouter`, `deepseek`, `openai`, `groq`, `together`, or a custom provider). The identity triple `service` / `offering` / `apiBase` is required here too. |
 | `shell` | [`kind: shell`](#kind-shell) | Needs the same [runner command trust](#runner-command-trust) grant as a `shell` planner. |
 | `agent` | [`kind: agent`](#kind-agent) | Same trust grant. |

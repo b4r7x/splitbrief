@@ -101,6 +101,7 @@ const CLI_COMPILER_CAPABILITY: Readonly<Record<CliToolId, CliCompilerCapability>
   },
   copilot: { containmentProfiles: [], credentialChannels: [] },
   aider: { containmentProfiles: [], credentialChannels: [] },
+  cursor: { containmentProfiles: [], credentialChannels: [] },
 });
 
 function cliSupportRow(backend: CliToolId): CompilerSupportRow {
@@ -124,10 +125,10 @@ function cliSupportRow(backend: CliToolId): CompilerSupportRow {
 }
 
 /**
- * The locked V1 support table. The six CLI rows are built from the catalog's
+ * The locked V1 support table. The seven CLI rows are built from the catalog's
  * `CLI_COMPILER_EVIDENCE`, which owns their identity evidence; only the
  * non-CLI backends are declared here in full. Supported rows are admitted on valid tuple
- * conformance with tested or drifted version observation; Copilot, Aider, and the legacy
+ * conformance with tested or drifted version observation; Copilot, Aider, Cursor, and the legacy
  * shell and agent planners are typed-unsupported in V1 and refuse with zero
  * dispatches no matter what a candidate claims. The record has a null
  * prototype, so a lookup by an arbitrary claimed backend id is total: an
@@ -142,6 +143,7 @@ export const COMPILER_SUPPORT_TABLE: Readonly<Record<CompilerBackendId, Compiler
     'kilo-code': cliSupportRow('kilo-code'),
     copilot: cliSupportRow('copilot'),
     aider: cliSupportRow('aider'),
+    cursor: cliSupportRow('cursor'),
     shell: supportRow({
       backend: 'shell',
       version: '',

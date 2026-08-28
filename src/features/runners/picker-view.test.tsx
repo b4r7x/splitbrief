@@ -7,9 +7,14 @@ import { glyph } from '../../lib/glyphs.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
+import { CLI_TOOL_CATALOG, SEAT_PICKER_ROLES } from '../../core/runners/cli-tool-catalog.js';
 import { buildRightModels, countModelOptions } from './model-catalog/catalog.js';
 import { PickerView } from './picker-view.js';
-import type { PickerOption } from './model-catalog/options.js';
+import {
+  assemblePickerDescriptors,
+  buildPickerOptions,
+  type PickerOption,
+} from './model-catalog/options.js';
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
 import type { ModelOption } from './model-catalog/recency.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
@@ -513,5 +518,40 @@ describe('PickerView initial left highlight', () => {
     expect(configuredLine).toContain(liveBar);
     expect(launcherLine).not.toContain(liveBar);
     ui.unmount();
+  });
+});
+
+describe('PickerView Cursor row', () => {
+  beforeEach(() => {
+    terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
+  });
+
+  it('offers a Cursor row in all three seat roles', async () => {
+    const descriptors = assemblePickerDescriptors();
+    const detections = { cliTools: [], providers: [] };
+
+    for (const role of SEAT_PICKER_ROLES) {
+      const items = buildPickerOptions(role, descriptors, detections, undefined);
+      const cursor = items.find((item) => item.id === 'cursor');
+      if (cursor === undefined) throw new Error(`no ${role} picker row for cursor`);
+      expect(cursor.displayName).toBe(CLI_TOOL_CATALOG.cursor.displayName);
+
+      const catalog: PickerCatalog = pickerCatalog({
+        items: [cursor],
+        rightModels: [],
+        currentItem: cursor,
+        selectedItemId: cursor.id,
+        roleLabel:
+          role === 'planner' ? 'Planner' : role === 'reviewer' ? 'Reviewer' : 'Implementer',
+        modelCounts: zeroCounts,
+      });
+
+      const ui = renderFeature(
+        <PickerView role={role} catalog={catalog} actions={makeActions()} />,
+      );
+      await flushEffects();
+      expect(ui.lastFrame() ?? '').toContain(CLI_TOOL_CATALOG.cursor.displayName);
+      ui.unmount();
+    }
   });
 });

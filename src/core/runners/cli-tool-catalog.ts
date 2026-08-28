@@ -90,9 +90,10 @@ export type CliAuthChannel = Readonly<{
   /**
    * Platforms where this channel's credential is an OS keychain item rather
    * than a file, so the file-copying state bridge has nothing to carry. macOS
-   * keeps the Claude Code session in the login keychain, whose default search
-   * list resolves through `HOME` and whose item is keyed on the account name in
-   * `USER`; a staged child reaches it only when both keep their host values.
+   * keeps the Claude Code and Cursor Agent CLI sessions in the login keychain,
+   * whose default search list resolves through `HOME` and whose item is keyed
+   * on the account name in `USER`; a staged child reaches it only when both
+   * keep their host values.
    */
   hostKeychainPlatforms: readonly NodeJS.Platform[];
 }>;
@@ -172,8 +173,77 @@ function compareCanonicalSemver(
   return 0;
 }
 
+export type CliVersionScheme = 'semver' | 'calver';
+
+type CanonicalCalver = Readonly<{
+  year: number;
+  month: number;
+  day: number;
+}>;
+
+const CANONICAL_CALVER = /^(\d{4})\.(\d{2})\.(\d{2})(?:-[A-Za-z0-9]+)?$/;
+
+function parseCanonicalCalver(version: string): CanonicalCalver | null {
+  const match = CANONICAL_CALVER.exec(version);
+  if (match === null) return null;
+
+  const [yearPart, monthPart, dayPart] = match.slice(1);
+  if (yearPart === undefined || monthPart === undefined || dayPart === undefined) return null;
+
+  const parsed = {
+    year: Number(yearPart),
+    month: Number(monthPart),
+    day: Number(dayPart),
+  };
+  return Number.isSafeInteger(parsed.year) &&
+    Number.isSafeInteger(parsed.month) &&
+    Number.isSafeInteger(parsed.day)
+    ? parsed
+    : null;
+}
+
+function compareCanonicalCalver(
+  input: Readonly<{ left: CanonicalCalver; right: CanonicalCalver }>,
+): number {
+  if (input.left.year !== input.right.year) {
+    return input.left.year < input.right.year ? -1 : 1;
+  }
+  if (input.left.month !== input.right.month) {
+    return input.left.month < input.right.month ? -1 : 1;
+  }
+  if (input.left.day !== input.right.day) {
+    return input.left.day < input.right.day ? -1 : 1;
+  }
+  return 0;
+}
+
+function compareCliVersions(
+  input: Readonly<{
+    installedVersion: string;
+    baselineVersion: string;
+    versionScheme: CliVersionScheme;
+  }>,
+): number | null {
+  switch (input.versionScheme) {
+    case 'semver': {
+      const installed = parseCanonicalSemver(input.installedVersion);
+      const baseline = parseCanonicalSemver(input.baselineVersion);
+      if (installed === null || baseline === null) return null;
+      return compareCanonicalSemver({ left: installed, right: baseline });
+    }
+    case 'calver': {
+      const installed = parseCanonicalCalver(input.installedVersion);
+      const baseline = parseCanonicalCalver(input.baselineVersion);
+      if (installed === null || baseline === null) return null;
+      return compareCanonicalCalver({ left: installed, right: baseline });
+    }
+    default:
+      return assertNever(input.versionScheme);
+  }
+}
+
 /**
- * The sole descriptor-owned semantic-version compatibility decision.
+ * The sole descriptor-owned version compatibility decision.
  * Forward-compatible: releases at or above the minimum admitted version are
  * compatible; only older releases fail closed as incompatible. An unparseable
  * version stays unverified.
@@ -182,14 +252,16 @@ export function classifyCliAdmittedVersion(
   input: Readonly<{
     installedVersion: string;
     minimumAdmittedVersion: string;
+    versionScheme?: CliVersionScheme;
   }>,
 ): CliVersionCompatibility {
-  const installed = parseCanonicalSemver(input.installedVersion);
-  const minimum = parseCanonicalSemver(input.minimumAdmittedVersion);
-  if (installed === null || minimum === null) return 'unverified';
-  return compareCanonicalSemver({ left: installed, right: minimum }) < 0
-    ? 'incompatible'
-    : 'compatible';
+  const order = compareCliVersions({
+    installedVersion: input.installedVersion,
+    baselineVersion: input.minimumAdmittedVersion,
+    versionScheme: input.versionScheme ?? 'semver',
+  });
+  if (order === null) return 'unverified';
+  return order < 0 ? 'incompatible' : 'compatible';
 }
 
 export type CliCompilerVersionClassification = 'exact' | 'older' | 'newer' | 'mismatch';
@@ -204,12 +276,15 @@ export function classifyCliCompilerVersion(
   input: Readonly<{
     installedVersion: string;
     exactAdmittedVersion: string;
+    versionScheme?: CliVersionScheme;
   }>,
 ): CliCompilerVersionClassification {
-  const installed = parseCanonicalSemver(input.installedVersion);
-  const exact = parseCanonicalSemver(input.exactAdmittedVersion);
-  if (installed === null || exact === null) return 'mismatch';
-  const order = compareCanonicalSemver({ left: installed, right: exact });
+  const order = compareCliVersions({
+    installedVersion: input.installedVersion,
+    baselineVersion: input.exactAdmittedVersion,
+    versionScheme: input.versionScheme ?? 'semver',
+  });
+  if (order === null) return 'mismatch';
   if (order === 0) return 'exact';
   return order < 0 ? 'older' : 'newer';
 }
@@ -218,6 +293,7 @@ export type CliCompatibility = Readonly<{
   installUrl: string;
   testedVersion: string;
   minimumAdmittedVersion: string;
+  versionScheme: CliVersionScheme;
   evidence: Readonly<{ asOf: string }>;
 }>;
 
@@ -254,7 +330,14 @@ export type CliPreflightFact = (typeof CLI_PREFLIGHT_FACTS)[number];
 
 type RolePolicy<T> = Readonly<Record<RunnerRole, T>>;
 type CliSandboxPosture = 'none' | 'cli-managed' | 'mode-dependent';
-type ExistingCliToolId = 'claude-code' | 'codex' | 'opencode' | 'aider' | 'copilot' | 'kilo-code';
+type ExistingCliToolId =
+  | 'claude-code'
+  | 'codex'
+  | 'opencode'
+  | 'aider'
+  | 'copilot'
+  | 'kilo-code'
+  | 'cursor';
 
 export type CliToolId = ExistingCliToolId;
 
@@ -315,36 +398,9 @@ export type CliToolDescriptor<Id extends string = CliToolId> = Readonly<
 
 export type CliAdmissionVerdict = 'PASS' | 'OMIT';
 
-export const CURSOR_CLI_ADMISSION_VERDICT = 'OMIT' satisfies CliAdmissionVerdict;
+export const CURSOR_CLI_ADMISSION_VERDICT = 'PASS' satisfies CliAdmissionVerdict;
 
 export const ANTIGRAVITY_CLI_ADMISSION_VERDICT = 'OMIT' satisfies CliAdmissionVerdict;
-
-export type CursorCliCandidate = Readonly<{
-  id: 'cursor';
-  displayName: 'Cursor Agent CLI';
-  command: 'agent';
-  executableAliases: readonly ['agent', 'cursor-agent'];
-  category: 'cli';
-  admission: Readonly<{
-    state: 'not-admitted';
-    prerequisite: 'R7-008';
-    remediation: string;
-  }>;
-}>;
-
-export const CURSOR_CLI_CANDIDATE: CursorCliCandidate = Object.freeze({
-  id: 'cursor',
-  displayName: 'Cursor Agent CLI',
-  command: 'agent',
-  executableAliases: Object.freeze(['agent', 'cursor-agent'] as const),
-  category: 'cli',
-  admission: Object.freeze({
-    state: 'not-admitted',
-    prerequisite: 'R7-008',
-    remediation:
-      'Cursor Agent CLI is unavailable until R7-008 verifies an exact build-pinned protocol and a fresh filtered workspace.',
-  }),
-});
 
 const ALL_ROLES = Object.freeze(['planner', 'implementer'] as const);
 const CLI_REQUIRED_PREFLIGHT_FACTS = Object.freeze([
@@ -434,6 +490,7 @@ function compatibility(
     installUrl: string;
     testedVersion: string;
     minimumAdmittedVersion: string;
+    versionScheme: CliVersionScheme;
     asOf: string;
   }>,
 ): CliCompatibility {
@@ -441,6 +498,7 @@ function compatibility(
     installUrl: input.installUrl,
     testedVersion: input.testedVersion,
     minimumAdmittedVersion: input.minimumAdmittedVersion,
+    versionScheme: input.versionScheme,
     evidence: Object.freeze({ asOf: input.asOf }),
   });
 }
@@ -491,6 +549,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       installUrl: 'https://claude.ai/code',
       testedVersion: '2.0.0',
       minimumAdmittedVersion: '2.0.0',
+      versionScheme: 'semver',
       asOf: '2026-07-31',
     }),
     authDiscoveryMode: 'selected-channel',
@@ -528,6 +587,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       installUrl: 'https://github.com/openai/codex',
       testedVersion: '0.40.0',
       minimumAdmittedVersion: '0.40.0',
+      versionScheme: 'semver',
       asOf: '2026-07-31',
     }),
     authDiscoveryMode: 'selected-channel',
@@ -563,6 +623,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       installUrl: 'https://opencode.ai',
       testedVersion: '0.5.0',
       minimumAdmittedVersion: '0.5.0',
+      versionScheme: 'semver',
       asOf: '2026-07-31',
     }),
     authDiscoveryMode: 'provider-dependent-unverified',
@@ -594,6 +655,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       installUrl: 'https://aider.chat',
       testedVersion: '0.86.0',
       minimumAdmittedVersion: '0.86.0',
+      versionScheme: 'semver',
       asOf: '2026-07-31',
     }),
     authDiscoveryMode: 'static-unverified',
@@ -625,6 +687,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       installUrl: 'https://github.com/github/copilot-cli',
       testedVersion: '0.3.0',
       minimumAdmittedVersion: '0.3.0',
+      versionScheme: 'semver',
       asOf: '2026-07-31',
     }),
     authDiscoveryMode: 'static-unverified',
@@ -656,9 +719,49 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       installUrl: 'https://kilo.ai',
       testedVersion: '0.1.0',
       minimumAdmittedVersion: '0.1.0',
+      versionScheme: 'semver',
       asOf: '2026-07-31',
     }),
     authDiscoveryMode: 'provider-dependent-unverified',
+    modelDiscoveryMode: 'native-cli',
+    mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
+  }),
+  cursor: activeCliToolDeclaration({
+    id: 'cursor',
+    displayName: 'Cursor Agent CLI',
+    command: 'cursor-agent',
+    executableAliases: ['cursor-agent', 'agent'],
+    category: 'cli',
+    roles: ALL_ROLES,
+    modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
+    supportsEffort: false,
+    auth: authPolicy('api-key-or-session', [
+      authChannel({
+        id: 'session',
+        env: [],
+        stateBridge: 'host-cli-state',
+        billing: 'subscription-included',
+        hostKeychainPlatforms: ['darwin'],
+      }),
+      authChannel({
+        id: 'api-key',
+        env: ['CURSOR_API_KEY'],
+        stateBridge: 'none',
+        billing: 'api-metered',
+      }),
+    ]),
+    billing: 'subscription-included',
+    isSubscription: false,
+    sandbox: rolePolicy({ planner: 'none', implementer: 'none' }),
+    internalStatePaths: [],
+    compatibility: compatibility({
+      installUrl: 'https://cursor.com/cli',
+      testedVersion: '2026.08.25-3e8eec8',
+      minimumAdmittedVersion: '2026.08.25-3e8eec8',
+      versionScheme: 'calver',
+      asOf: '2026-08-27',
+    }),
+    authDiscoveryMode: 'selected-channel',
     modelDiscoveryMode: 'native-cli',
     mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
   }),
@@ -736,10 +839,6 @@ export const ANTIGRAVITY_CLI_CANDIDATE_PATHS = Object.freeze([
   'src/engine/runners/cli-tools/antigravity.test.ts',
 ] as const);
 
-export const CURSOR_CLI_RUNTIME_ADAPTER_PATHS = Object.freeze([
-  'src/engine/runners/cli-tools/cursor.ts',
-] as const);
-
 const BASE_CLI_TOOL_TRUST = Object.freeze({
   'claude-code': cliToolTrust({
     implementerAutoAllowFlags: ['--permission-mode acceptEdits'],
@@ -761,6 +860,10 @@ const BASE_CLI_TOOL_TRUST = Object.freeze({
   'kilo-code': cliToolTrust({
     implementerAutoAllowFlags: ['--auto'],
     tier2AutoAllowFlags: ['--auto'],
+  }),
+  cursor: cliToolTrust({
+    implementerAutoAllowFlags: ['--force'],
+    tier2AutoAllowFlags: ['--force'],
   }),
 } satisfies Record<CliToolId, CliToolTrustMetadata>);
 
@@ -790,7 +893,7 @@ function descriptor<Id extends CliToolId>(
 
 function assertOmittedCandidatesAbsent(): void {
   assertCandidateFilesAbsent(
-    [...CURSOR_CLI_RUNTIME_ADAPTER_PATHS, ...ANTIGRAVITY_CLI_CANDIDATE_PATHS],
+    [...ANTIGRAVITY_CLI_CANDIDATE_PATHS],
     cliAdmissionError.omitRequiresAbsentSource,
   );
 }
@@ -810,6 +913,7 @@ function assembleCliToolCatalog(
     aider: descriptor(trust.aider, CLI_TOOL_DECLARATIONS.aider),
     copilot: descriptor(trust.copilot, CLI_TOOL_DECLARATIONS.copilot),
     'kilo-code': descriptor(trust['kilo-code'], CLI_TOOL_DECLARATIONS['kilo-code']),
+    cursor: descriptor(trust.cursor, CLI_TOOL_DECLARATIONS.cursor),
   } satisfies Record<CliToolId, CliToolDescriptor>;
   return Object.freeze(catalog);
 }
@@ -839,7 +943,7 @@ function compilerEvidence(evidence: CliCompilerEvidence): CliCompilerEvidence {
 
 /**
  * The single owner of the CLI rows of the compiler support table: the engine
- * table (`src/engine/runners/compiler-capability.ts`) builds its six CLI rows
+ * table (`src/engine/runners/compiler-capability.ts`) builds its seven CLI rows
  * from this record and adds only the capability-only fields, so the identity
  * evidence cannot diverge. The compiler path admits only the exact tested
  * runtime (REQ-019, REQ-049), so this evidence never carries a minimum, a
@@ -891,6 +995,14 @@ export const CLI_COMPILER_EVIDENCE: Readonly<Record<CliToolId, CliCompilerEviden
       terminalContract: 'kilo-final-message-v1',
       fixtureDate: '2026-08-15',
     }),
+    cursor: compilerEvidence({
+      state: 'unsupported',
+      version: '',
+      transports: Object.freeze([]),
+      terminalContract: 'unsupported',
+      fixtureDate: '2026-08-15',
+      unsupportedReason: 'no proven compiler planner contract in V1',
+    }),
   });
 
 /**
@@ -903,6 +1015,7 @@ export const NATIVE_CLI_CATALOG_TOOL_IDS = Object.freeze([
   'opencode',
   'aider',
   'kilo-code',
+  'cursor',
 ] as const satisfies readonly CliToolId[]);
 
 export function hasNativeCliCatalog(tool: string): boolean {

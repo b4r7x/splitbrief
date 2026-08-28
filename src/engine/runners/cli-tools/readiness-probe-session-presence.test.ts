@@ -70,10 +70,15 @@ function sessionProbe(
   };
 }
 
-const HOST_CREDENTIAL = join('.claude', '.credentials.json');
-
-async function seedHostClaudeCredential(hostHome: string): Promise<string> {
-  const path = join(hostHome, HOST_CREDENTIAL);
+async function seedHostSessionState(
+  hostHome: string,
+  tool: 'claude-code' | 'cursor',
+): Promise<string> {
+  const relative =
+    tool === 'claude-code'
+      ? join('.claude', '.credentials.json')
+      : join('.cursor', 'agent-cli-state.json');
+  const path = join(hostHome, relative);
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, '{"session":"fixture"}');
   return path;
@@ -81,9 +86,10 @@ async function seedHostClaudeCredential(hostHome: string): Promise<string> {
 
 /**
  * Reports a session only when the staged child kept the host account. macOS
- * resolves the login keychain through `HOME` and keys the Claude Code item on
- * `USER`, so a fixture that answers `verified` under a replaced home would let
- * a sandbox that broke the keychain still pass for a working subscription.
+ * resolves the login keychain through `HOME` and keys the Claude Code and
+ * Cursor session items on `USER`, so a fixture that answers `verified` under a
+ * replaced home would let a sandbox that broke the keychain still pass for a
+ * working subscription.
  */
 function hostAccountAuthScript(hostHome: string): string {
   return `console.log(process.env.HOME === ${JSON.stringify(hostHome)} && (process.env.USER ?? '').length > 0 ? 'verified' : 'missing')`;
@@ -94,11 +100,11 @@ describe('session-state presence readiness', () => {
     vi.unstubAllEnvs();
   });
 
-  // On macOS the Claude Code session credential is a keychain item, so no file
-  // in the staged environment can answer for it. The tool's own status command
-  // is the only authority — in both directions.
+  // On macOS the Claude Code and Cursor session credentials are keychain
+  // items, so no file in the staged environment can answer for them. The
+  // tool's own status command is the only authority — in both directions.
   //
-  // That channel is host-account on darwin alone, so the platform is forced
+  // Those channels are host-account on darwin alone, so the platform is forced
   // rather than the block skipped: the probe target is a node fixture and the
   // host home is a temporary directory, so nothing here consults a real
   // keychain and every machine running the suite enforces the contract.
@@ -115,91 +121,103 @@ describe('session-state presence readiness', () => {
       setPlatform(hostPlatform);
     });
 
-    it('asks the tool itself, under the host account its keychain resolves through', async () => {
-      await withTempDir('readiness-session-keychain-verified', async (hostHome) => {
-        const executable = await nodeExecutable();
-        vi.stubEnv('HOME', hostHome);
+    it.each(['claude-code', 'cursor'] as const)(
+      'asks %s itself, under the host account its keychain resolves through',
+      async (tool) => {
+        await withTempDir(`readiness-session-keychain-verified-${tool}`, async (hostHome) => {
+          const executable = await nodeExecutable();
+          vi.stubEnv('HOME', hostHome);
 
-        const result = await probeCliReadiness({
-          tool: 'claude-code',
-          executable,
-          authChannel: 'session',
-          // Nothing on disk says "authenticated" here, so a directory-reading
-          // verdict could only be `missing`. Only the tool's own answer, given
-          // the host account, produces this one.
-          probe: sessionProbe({ authScript: hostAccountAuthScript(hostHome) }),
-          classifyVersion: () => 'compatible',
+          const result = await probeCliReadiness({
+            tool,
+            executable,
+            authChannel: 'session',
+            // Nothing on disk says "authenticated" here, so a directory-reading
+            // verdict could only be `missing`. Only the tool's own answer, given
+            // the host account, produces this one.
+            probe: sessionProbe({ authScript: hostAccountAuthScript(hostHome) }),
+            classifyVersion: () => 'compatible',
+          });
+
+          expect(result).toMatchObject({ auth: 'authenticated', status: 'ready' });
         });
+      },
+    );
 
-        expect(result).toMatchObject({ auth: 'authenticated', status: 'ready' });
-      });
-    });
+    it.each(['claude-code', 'cursor'] as const)(
+      'stays unauthenticated when %s reports no session, whatever the host home holds',
+      async (tool) => {
+        await withTempDir(`readiness-session-keychain-absent-${tool}`, async (hostHome) => {
+          const executable = await nodeExecutable();
+          // The host home now holds the file a file-bridged channel would carry.
+          // It is not this channel's credential, and it must not outvote the tool.
+          await seedHostSessionState(hostHome, tool);
+          vi.stubEnv('HOME', hostHome);
 
-    it('stays unauthenticated when the tool reports no session, whatever the host home holds', async () => {
-      await withTempDir('readiness-session-keychain-absent', async (hostHome) => {
-        const executable = await nodeExecutable();
-        // The host home now holds the file a file-bridged channel would carry.
-        // It is not this channel's credential, and it must not outvote the tool.
-        await seedHostClaudeCredential(hostHome);
-        vi.stubEnv('HOME', hostHome);
+          const result = await probeCliReadiness({
+            tool,
+            executable,
+            authChannel: 'session',
+            probe: sessionProbe({ authScript: "console.log('missing')" }),
+            classifyVersion: () => 'compatible',
+          });
 
-        const result = await probeCliReadiness({
-          tool: 'claude-code',
-          executable,
-          authChannel: 'session',
-          probe: sessionProbe({ authScript: "console.log('missing')" }),
-          classifyVersion: () => 'compatible',
+          expect(result).toMatchObject({ auth: 'unauthenticated', status: 'unauthenticated' });
+          expect(result.remediation).toContain('macOS');
+          expect(result.remediation).toContain('keychain');
+          expect(result.remediation).toContain(`Sign in to ${tool}`);
         });
+      },
+    );
 
-        expect(result).toMatchObject({ auth: 'unauthenticated', status: 'unauthenticated' });
-        expect(result.remediation).toContain('macOS');
-        expect(result.remediation).toContain('keychain');
-        expect(result.remediation).toContain('Sign in to claude-code');
-      });
-    });
+    it.each(['claude-code', 'cursor'] as const)(
+      'refuses to guess %s when there is no status command to ask',
+      async (tool) => {
+        await withTempDir(`readiness-session-keychain-unknown-${tool}`, async (hostHome) => {
+          const executable = await nodeExecutable();
+          // A credential file in the host HOME is not the credential this channel
+          // uses, and the sandbox roots hold only probe litter. With no status
+          // command either, the only honest verdict is that nothing is known.
+          await seedHostSessionState(hostHome, tool);
+          vi.stubEnv('HOME', hostHome);
 
-    it('refuses to guess when there is no status command to ask', async () => {
-      await withTempDir('readiness-session-keychain-unknown', async (hostHome) => {
-        const executable = await nodeExecutable();
-        // A credential file in the host HOME is not the credential this channel
-        // uses, and the sandbox roots hold only probe litter. With no status
-        // command either, the only honest verdict is that nothing is known.
-        await seedHostClaudeCredential(hostHome);
-        vi.stubEnv('HOME', hostHome);
+          const result = await probeCliReadiness({
+            tool,
+            executable,
+            authChannel: 'session',
+            probe: sessionProbe({ authNotRun: true }),
+            classifyVersion: () => 'compatible',
+          });
 
-        const result = await probeCliReadiness({
-          tool: 'claude-code',
-          executable,
-          authChannel: 'session',
-          probe: sessionProbe({ authNotRun: true }),
-          classifyVersion: () => 'compatible',
+          expect(result).toMatchObject({ auth: 'unknown', status: 'unverified' });
         });
+      },
+    );
 
-        expect(result).toMatchObject({ auth: 'unknown', status: 'unverified' });
-      });
-    });
+    it.each(['claude-code', 'cursor'] as const)(
+      'leaves the host %s credential file the probe now runs beside untouched',
+      async (tool) => {
+        await withTempDir(`readiness-session-keychain-host-state-${tool}`, async (hostHome) => {
+          const executable = await nodeExecutable();
+          // This channel hands the child the real home, and the sandbox clears
+          // this exact relative path before every run. The clear is confined to
+          // the sandbox roots; if it ever followed the staged HOME instead, a
+          // readiness probe would delete the user's own login.
+          const credential = await seedHostSessionState(hostHome, tool);
+          vi.stubEnv('HOME', hostHome);
 
-    it('leaves the host credential file the probe now runs beside untouched', async () => {
-      await withTempDir('readiness-session-keychain-host-state', async (hostHome) => {
-        const executable = await nodeExecutable();
-        // This channel hands the child the real home, and the sandbox clears
-        // this exact relative path before every run. The clear is confined to
-        // the sandbox roots; if it ever followed the staged HOME instead, a
-        // readiness probe would delete the user's own login.
-        const credential = await seedHostClaudeCredential(hostHome);
-        vi.stubEnv('HOME', hostHome);
+          await probeCliReadiness({
+            tool,
+            executable,
+            authChannel: 'session',
+            probe: sessionProbe({ authScript: hostAccountAuthScript(hostHome) }),
+            classifyVersion: () => 'compatible',
+          });
 
-        await probeCliReadiness({
-          tool: 'claude-code',
-          executable,
-          authChannel: 'session',
-          probe: sessionProbe({ authScript: hostAccountAuthScript(hostHome) }),
-          classifyVersion: () => 'compatible',
+          expect(await readFile(credential, 'utf8')).toBe('{"session":"fixture"}');
         });
-
-        expect(await readFile(credential, 'utf8')).toBe('{"session":"fixture"}');
-      });
-    });
+      },
+    );
   });
 
   it('never lets a bridged session file outvote the tool’s own status command', async () => {
@@ -310,14 +328,14 @@ const ORACLE_TOOLS = {
     argv: ['opencode', 'providers', 'list'],
     stateFile: join('.local', 'share', 'opencode', 'auth.json'),
     report:
-      '┌  Credentials \u001b[90m~/.local/share/opencode/auth.json\n│\n●  OpenAI \u001b[90moauth\n│\n└  1 credentials\n',
+      '┌  Credentials \u001b[90m~/.local/share/opencode/auth.json\n│\n◝  OpenAI \u001b[90moauth\n│\n└  1 credentials\n',
     facts: [{ provider: 'OpenAI', source: 'oauth' }],
   },
   'kilo-code': {
     argv: ['kilo', 'auth', 'list'],
     stateFile: join('.local', 'share', 'kilo', 'auth.json'),
     report:
-      '┌  Credentials \u001b[90m~/.local/share/kilo/auth.json\n│\n●  GitHub Copilot \u001b[90moauth\n│\n└  1 credentials\n',
+      '┌  Credentials \u001b[90m~/.local/share/kilo/auth.json\n│\n◝  GitHub Copilot \u001b[90moauth\n│\n└  1 credentials\n',
     facts: [{ provider: 'GitHub Copilot', source: 'oauth' }],
   },
 } as const satisfies Record<

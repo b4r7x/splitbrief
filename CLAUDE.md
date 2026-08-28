@@ -113,7 +113,7 @@ Planner, reviewer, and implementer all accept five runner kinds. The reviewer is
 
 | `kind` | What it is | Example |
 |---|---|---|
-| `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code` |
+| `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `cursor` |
 | `api` | OpenAI-compatible HTTP endpoint | Ollama, LM Studio, OpenRouter, DeepSeek, Groq, Together, Anthropic |
 | `shell` | Arbitrary command (stdin → stdout; no shell/network sandbox) | Custom scripts |
 | `agent` | Subprocess that writes files directly (no stdout extraction; no shell/network sandbox) | Custom file-writing tools |

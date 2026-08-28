@@ -58,6 +58,7 @@ function canonicalVersionLine(toolId: ImplementerCliToolId, version: string): st
       return `codex-cli ${version}`;
     case 'opencode':
     case 'kilo-code':
+    case 'cursor':
       return version;
     case 'aider':
       return `aider ${version}`;
@@ -103,6 +104,16 @@ const SHIM_PROFILES: Record<ImplementerCliToolId, ContractShimProfile> = {
     successLines: ['ok'],
     authArgv: ['auth'],
   },
+  cursor: {
+    transport: 'argv',
+    versionLine: canonicalVersionLine('cursor', '2026.08.25-3e8eec8'),
+    successLines: [
+      '{"type":"system","subtype":"init","session_id":"contract-session"}',
+      '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}',
+      '{"type":"result","subtype":"success","is_error":false,"result":"done"}',
+    ],
+    authArgv: ['status'],
+  },
 };
 
 const AUTH_CHANNELS: Record<ImplementerCliToolId, CliImplementerConfig['authChannel']> = {
@@ -112,6 +123,7 @@ const AUTH_CHANNELS: Record<ImplementerCliToolId, CliImplementerConfig['authChan
   aider: 'provider-dependent',
   copilot: 'session',
   'kilo-code': 'provider-dependent',
+  cursor: 'session',
 };
 
 // With session state seeded, every probe-bearing adapter runs its declared
@@ -130,6 +142,7 @@ const AUTH_FAILURE_FACTS_BY_PROBE_CONTRACT = {
   aider: 'not-checked',
   copilot: 'authenticated',
   'kilo-code': 'authenticated',
+  cursor: 'unknown',
 } as const satisfies Record<ImplementerCliToolId, 'authenticated' | 'not-checked' | 'unknown'>;
 
 const HOME_SESSION_STATE_PATHS: Partial<Record<ImplementerCliToolId, string>> = {
@@ -138,6 +151,7 @@ const HOME_SESSION_STATE_PATHS: Partial<Record<ImplementerCliToolId, string>> = 
   opencode: '.config/opencode/auth.json',
   copilot: '.copilot/config.json',
   'kilo-code': '.config/kilo/auth.json',
+  cursor: '.cursor/agent-cli-state.json',
 };
 
 const STATE_SOURCE_ENV = [
@@ -186,6 +200,7 @@ const CONFLICTING_ARGS: Record<ImplementerCliToolId, readonly string[]> = {
   aider: ['--message', 'blocked'],
   copilot: ['--output-format', 'text'],
   'kilo-code': ['--output-format', 'text'],
+  cursor: ['--force'],
 };
 
 const CREDENTIAL_ENV: Partial<Record<ImplementerCliToolId, Readonly<Record<string, string>>>> = {
@@ -415,14 +430,12 @@ afterEach(() => {
 });
 
 describe('Cursor and Antigravity admission', () => {
-  it('keeps Cursor and Antigravity outside admitted implementer execution', () => {
-    expect(CURSOR_CLI_ADMISSION_VERDICT).toBe('OMIT');
+  it('admits Cursor and keeps Antigravity outside implementer execution', () => {
+    expect(CURSOR_CLI_ADMISSION_VERDICT).toBe('PASS');
     expect(ANTIGRAVITY_CLI_ADMISSION_VERDICT).toBe('OMIT');
-    expect(IMPLEMENTER_CLI_TOOL_IDS).not.toContain('cursor');
-    expect('cursor' in CLI_TOOL_CATALOG).toBe(false);
-    expect('cursor' in CLI_IMPLEMENTER_ADAPTERS).toBe(false);
+    expect(IMPLEMENTER_CLI_TOOL_IDS).toContain('cursor');
+    expect(CLI_TOOL_CATALOG.cursor.admission.state).toBe('active');
     expect('antigravity' in CLI_IMPLEMENTER_ADAPTERS).toBe(false);
-    expect(() => lookupCliPlannerAdapter('cursor')).toThrow(/planner configuration/);
     expect(() => lookupCliPlannerAdapter('antigravity')).toThrow(/planner configuration/);
   });
 });
@@ -547,7 +560,10 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
     expect(missing.error?.code).toBe('spawn-not-found');
 
     installShim(fixture, 'success-direct', {
-      versionLine: canonicalVersionLine(toolId, '0.0.1'),
+      versionLine: canonicalVersionLine(
+        toolId,
+        toolId === 'cursor' ? '2020.01.01-incompatible' : '0.0.1',
+      ),
     });
     const incompatibleExecutable = await resolveFixtureExecutable(fixture);
     const incompatible = await probeCliReadiness({

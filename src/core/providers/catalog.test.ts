@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { CURSOR_CLI_CANDIDATE } from '../runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../runners/cli-tool-catalog.js';
+import { API_PROVIDER_CATALOG } from './api-provider-catalog.js';
 import { PROVIDER_IDS } from '../schemas/enums.js';
 import { PROVIDER_CATALOG, getProviderBaseURL, getProviderDisplayName } from './catalog.js';
 
 describe('provider catalog', () => {
-  it('does not project the non-admitted Cursor candidate as a provider', () => {
+  it('projects admitted Cursor as a CLI, not an API provider', () => {
     expect(Object.keys(PROVIDER_CATALOG).sort()).toEqual([...PROVIDER_IDS].sort());
-    expect(PROVIDER_CATALOG).not.toHaveProperty(CURSOR_CLI_CANDIDATE.id);
-    expect(getProviderDisplayName(CURSOR_CLI_CANDIDATE.id)).toBe(CURSOR_CLI_CANDIDATE.id);
-    expect(getProviderBaseURL(CURSOR_CLI_CANDIDATE.id)).toBe('');
+    expect(PROVIDER_CATALOG.cursor).toMatchObject({
+      id: 'cursor',
+      displayName: CLI_TOOL_CATALOG.cursor.displayName,
+      category: 'cli',
+    });
+    expect(API_PROVIDER_CATALOG).not.toHaveProperty('cursor');
+    expect(getProviderDisplayName('cursor')).toBe(CLI_TOOL_CATALOG.cursor.displayName);
+    expect(getProviderBaseURL('cursor')).toBe('');
   });
 });

@@ -109,6 +109,7 @@ export const PROVIDER_CATALOG: Readonly<Record<ProviderId, ProviderInfo>> = Obje
   aider: providerInfoFromCliDescriptor(CLI_TOOL_CATALOG.aider),
   copilot: providerInfoFromCliDescriptor(CLI_TOOL_CATALOG.copilot),
   'kilo-code': providerInfoFromCliDescriptor(CLI_TOOL_CATALOG['kilo-code']),
+  cursor: providerInfoFromCliDescriptor(CLI_TOOL_CATALOG.cursor),
   ...apiProviderInfoCatalog(),
   ...META_PROVIDER_INFO,
 });

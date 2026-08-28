@@ -4,6 +4,7 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   realpathSync,
@@ -260,6 +261,29 @@ describe('createSandboxEnv', () => {
       expect(env.HOME).toBe(roleHome);
       expect(existsSync(staged)).toBe(true);
       expect(await bridgedCliStatePresent(env, 'claude-code')).toBe(true);
+    }
+  });
+
+  itUnix('routes a Cursor session runner by the channel the catalog declares', async () => {
+    const hostHome = createTempDir('sandbox-cursor-session-route-home');
+    const projectDir = createTempDir('sandbox-cursor-session-route');
+    dirs.push(hostHome, projectDir);
+    mkdirSync(join(hostHome, '.cursor'), { recursive: true });
+    writeFileSync(join(hostHome, '.cursor', 'agent-cli-state.json'), '{"session":"fixture"}');
+    setEnv('HOME', hostHome);
+
+    const runner = { kind: 'cli', tool: 'cursor', authChannel: 'session' } as const;
+    const env = await createRunnerSandboxEnv(projectDir, runner, 'planner');
+
+    const roleHome = join(projectDir, SANDBOX_DIR, 'planner', 'cursor', 'home');
+    const staged = join(roleHome, '.cursor', 'agent-cli-state.json');
+    if (cliAuthChannelHostStateAccess(resolveCliRunnerAuth(runner)) === 'host-account') {
+      expect(env.HOME).toBe(hostHome);
+      expect(existsSync(staged)).toBe(false);
+    } else {
+      expect(env.HOME).toBe(roleHome);
+      expect(existsSync(staged)).toBe(true);
+      expect(await bridgedCliStatePresent(env, 'cursor')).toBe(true);
     }
   });
 
@@ -1251,6 +1275,77 @@ describe('backend compatibility fixtures', () => {
     expect(readFileSync(join(linkDir, 'auth.json'), 'utf8')).toBe(JSON.stringify({ token }));
     expect(sandboxCredentialValues(env)).toContain(token);
   });
+
+  itUnix(
+    'a bridged cursor env exposes exactly the two declared paths and nothing else from ~/.cursor',
+    async () => {
+      const hostHome = createTempDir('sandbox-cursor-host');
+      const projectDir = createTempDir('sandbox-cursor-project');
+      dirs.push(hostHome, projectDir);
+      const agentStateToken = 'cursor-agent-state-canary-9f1b';
+      const hostCliConfig = JSON.stringify({
+        approvalMode: 'unrestricted',
+        sandbox: { mode: 'disabled' },
+      });
+      mkdirSync(join(hostHome, '.cursor'), { recursive: true });
+      writeFileSync(join(hostHome, '.cursor', 'cli-config.json'), hostCliConfig);
+      writeFileSync(
+        join(hostHome, '.cursor', 'agent-cli-state.json'),
+        JSON.stringify({ token: agentStateToken }),
+      );
+      writeFileSync(join(hostHome, '.cursor', 'unrelated.json'), '{"not":"admitted"}');
+      setEnv('HOME', hostHome);
+
+      // The file bridge is asked for directly: on macOS this channel is
+      // host-account, and the two-path isolation under test is the
+      // bridged-files contract.
+      const env = await createSandboxEnv({
+        projectDir,
+        selectedCli: 'cursor',
+        hostState: 'bridged-files',
+        role: 'planner',
+      });
+
+      const sandboxCursor = join(env.HOME as string, '.cursor');
+      const hostCursor = join(hostHome, '.cursor');
+      const childCliConfigPath = join(sandboxCursor, 'cli-config.json');
+      const childCliConfig = readFileSync(childCliConfigPath, 'utf8');
+      expect(lstatSync(sandboxCursor).isSymbolicLink()).toBe(false);
+      expect(lstatSync(childCliConfigPath).isSymbolicLink()).toBe(false);
+      expect(childCliConfig).not.toBe(hostCliConfig);
+      expect(childCliConfig).not.toContain('"approvalMode":"unrestricted"');
+      expect(JSON.parse(childCliConfig)).toEqual(
+        expect.objectContaining({
+          approvalMode: 'allowlist',
+          sandbox: { mode: 'enabled' },
+        }),
+      );
+      expect(readFileSync(join(sandboxCursor, 'agent-cli-state.json'), 'utf8')).toBe(
+        JSON.stringify({ token: agentStateToken }),
+      );
+      expect(readdirSync(sandboxCursor).toSorted()).toEqual([
+        'agent-cli-state.json',
+        'cli-config.json',
+      ]);
+      expect(existsSync(join(sandboxCursor, 'unrelated.json'))).toBe(false);
+      expect(await bridgedCliStatePresent(env, 'cursor')).toBe(true);
+      writeFileSync(
+        join(sandboxCursor, 'cli-config.json'),
+        JSON.stringify({ token: 'rotated-cli' }),
+      );
+      writeFileSync(
+        join(sandboxCursor, 'agent-cli-state.json'),
+        JSON.stringify({ token: 'rotated-agent' }),
+      );
+      expect(readFileSync(join(hostCursor, 'cli-config.json'), 'utf8')).toBe(hostCliConfig);
+      expect(readFileSync(join(hostCursor, 'agent-cli-state.json'), 'utf8')).toBe(
+        JSON.stringify({ token: 'rotated-agent' }),
+      );
+      expect(readFileSync(join(hostCursor, 'unrelated.json'), 'utf8')).toBe('{"not":"admitted"}');
+      expect(sandboxCredentialValues(env)).toContain(agentStateToken);
+      expect(sandboxCredentialValues(env)).not.toContain('unrestricted');
+    },
+  );
 
   itUnix('bridges the Kilo auth entries as live passthrough links', async () => {
     const hostHome = createTempDir('sandbox-kilo-host');

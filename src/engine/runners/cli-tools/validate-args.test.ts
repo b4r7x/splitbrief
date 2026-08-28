@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CURSOR_PROTECTED_FLAGS, CURSOR_PROTECTED_SHORT_VALUE_FLAGS } from './cursor.js';
 import { parseCliSemanticVector, validateCliArgs } from './validate-args.js';
 
 const BASE_ARGS = ['run', '<PROMPT>'];
@@ -98,6 +99,99 @@ describe('validateCliArgs', () => {
   it('leaves ordinary configured flags alone', () => {
     expect(validateWithTail(['--verbose', '--max-turns', '5'])).toEqual({ valid: true });
     expect(validateWithTail([])).toEqual({ valid: true });
+  });
+
+  it('cursor user args cannot inject a protected flag', () => {
+    const base = ['--print', '--output-format', 'stream-json', '--mode', 'plan', '<PROMPT>'];
+    expect(
+      validateCliArgs({
+        invocationArgs: [...base, '--force'],
+        baseArgs: base,
+        protectedFlags: CURSOR_PROTECTED_FLAGS,
+        promptTransport: 'argv',
+      }),
+    ).toEqual({ valid: false, conflicts: ['--force'] });
+    expect(
+      validateCliArgs({
+        invocationArgs: [...base, '--yolo'],
+        baseArgs: base,
+        protectedFlags: CURSOR_PROTECTED_FLAGS,
+        promptTransport: 'argv',
+      }),
+    ).toEqual({ valid: false, conflicts: ['--yolo'] });
+    expect(
+      validateCliArgs({
+        invocationArgs: [...base, '--trust'],
+        baseArgs: base,
+        protectedFlags: CURSOR_PROTECTED_FLAGS,
+        promptTransport: 'argv',
+      }),
+    ).toEqual({ valid: false, conflicts: ['--trust'] });
+    expect(
+      validateCliArgs({
+        invocationArgs: [...base, '-f'],
+        baseArgs: base,
+        protectedFlags: CURSOR_PROTECTED_FLAGS,
+        promptTransport: 'argv',
+      }),
+    ).toEqual({ valid: false, conflicts: ['-f'] });
+    expect(
+      validateCliArgs({
+        invocationArgs: [...base, '--workspace', '/tmp/other'],
+        baseArgs: base,
+        protectedFlags: CURSOR_PROTECTED_FLAGS,
+        promptTransport: 'argv',
+      }),
+    ).toEqual({ valid: false, conflicts: ['--workspace'] });
+    expect(
+      validateCliArgs({
+        invocationArgs: [...base, '--worktree', '/tmp/other'],
+        baseArgs: base,
+        protectedFlags: CURSOR_PROTECTED_FLAGS,
+        promptTransport: 'argv',
+      }),
+    ).toEqual({ valid: false, conflicts: ['--worktree'] });
+    expect(
+      validateCliArgs({
+        invocationArgs: [...base, '--auto-review'],
+        baseArgs: base,
+        protectedFlags: CURSOR_PROTECTED_FLAGS,
+        promptTransport: 'argv',
+      }),
+    ).toEqual({ valid: false, conflicts: ['--auto-review'] });
+    expect(
+      validateCliArgs({
+        invocationArgs: [...base, '--header', 'X-Test: 1'],
+        baseArgs: base,
+        protectedFlags: CURSOR_PROTECTED_FLAGS,
+        promptTransport: 'argv',
+      }),
+    ).toEqual({ valid: false, conflicts: ['--header'] });
+    expect(
+      validateCliArgs({
+        invocationArgs: [...base, '-H', 'X-Test: 1'],
+        baseArgs: base,
+        protectedFlags: CURSOR_PROTECTED_FLAGS,
+        promptTransport: 'argv',
+      }),
+    ).toEqual({ valid: false, conflicts: ['-H'] });
+    expect(
+      validateCliArgs({
+        invocationArgs: [...base, '-HX-Test:1'],
+        baseArgs: base,
+        protectedFlags: CURSOR_PROTECTED_FLAGS,
+        protectedShortValueFlags: CURSOR_PROTECTED_SHORT_VALUE_FLAGS,
+        promptTransport: 'argv',
+      }),
+    ).toEqual({ valid: false, conflicts: ['-H'] });
+    expect(
+      validateCliArgs({
+        invocationArgs: base,
+        baseArgs: base,
+        protectedFlags: CURSOR_PROTECTED_FLAGS,
+        promptTransport: 'argv',
+      }),
+    ).toEqual({ valid: true });
   });
 });
 

@@ -170,6 +170,7 @@ async function detectCliToolReadiness(
         classifyCliAdmittedVersion({
           installedVersion,
           minimumAdmittedVersion: descriptor.compatibility.minimumAdmittedVersion,
+          versionScheme: descriptor.compatibility.versionScheme,
         }),
     });
     return deriveCliReadiness({

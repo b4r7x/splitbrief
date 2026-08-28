@@ -12,7 +12,7 @@ import { delimiter, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
 import type { ExecutableIdentity } from '../../core/discovery/runner-evidence.js';
-import { CURSOR_CLI_CANDIDATE } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
 import {
   resolveCliExecutable,
   resolveCliExecutableAliases,
@@ -21,8 +21,8 @@ import {
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
-const [CURSOR_PRIMARY_EXECUTABLE, CURSOR_FALLBACK_EXECUTABLE] =
-  CURSOR_CLI_CANDIDATE.executableAliases;
+const CURSOR_PRIMARY_EXECUTABLE = 'cursor-agent';
+const CURSOR_FALLBACK_EXECUTABLE = 'agent';
 
 let dirs: string[] = [];
 const originalEnvValues = new Map<string, string | undefined>();
@@ -351,48 +351,42 @@ describe('resolveCliExecutable', () => {
 });
 
 describe('resolveCliExecutableAliases', () => {
-  itUnix(
-    'prefers the non-admitted Cursor candidate primary alias without admitting a runner',
-    async () => {
-      const projectDir = createTempDir('resolver-alias-primary-project');
-      const binDir = createTempDir('resolver-alias-primary-bin');
-      dirs.push(projectDir, binDir);
-      makeExecutable(join(binDir, CURSOR_PRIMARY_EXECUTABLE));
-      makeExecutable(join(binDir, CURSOR_FALLBACK_EXECUTABLE));
-      setEnv('PATH', binDir);
+  itUnix('prefers the Cursor primary alias without falling back', async () => {
+    const projectDir = createTempDir('resolver-alias-primary-project');
+    const binDir = createTempDir('resolver-alias-primary-bin');
+    dirs.push(projectDir, binDir);
+    makeExecutable(join(binDir, CURSOR_PRIMARY_EXECUTABLE));
+    makeExecutable(join(binDir, CURSOR_FALLBACK_EXECUTABLE));
+    setEnv('PATH', binDir);
 
-      const resolved = await resolveCliExecutableAliases({
-        commands: CURSOR_CLI_CANDIDATE.executableAliases,
-        projectDir,
-      });
+    const resolved = await resolveCliExecutableAliases({
+      commands: CLI_TOOL_CATALOG.cursor.executableAliases,
+      projectDir,
+    });
 
-      expect(resolved.command).toBe(CURSOR_PRIMARY_EXECUTABLE);
-      expect(resolved.usedFallback).toBe(false);
-      expect(resolved.executable.path).toBe(realpathSync(join(binDir, CURSOR_PRIMARY_EXECUTABLE)));
-    },
-  );
+    expect(resolved.command).toBe(CURSOR_PRIMARY_EXECUTABLE);
+    expect(resolved.usedFallback).toBe(false);
+    expect(resolved.executable.path).toBe(realpathSync(join(binDir, CURSOR_PRIMARY_EXECUTABLE)));
+  });
 
-  itUnix(
-    'uses the non-admitted Cursor candidate fallback only after its primary is absent',
-    async () => {
-      const projectDir = createTempDir('resolver-alias-fallback-project');
-      const binDir = createTempDir('resolver-alias-fallback-bin');
-      dirs.push(projectDir, binDir);
-      makeExecutable(join(binDir, CURSOR_FALLBACK_EXECUTABLE));
-      setEnv('PATH', binDir);
+  itUnix('uses the Cursor fallback alias only after its primary is absent', async () => {
+    const projectDir = createTempDir('resolver-alias-fallback-project');
+    const binDir = createTempDir('resolver-alias-fallback-bin');
+    dirs.push(projectDir, binDir);
+    makeExecutable(join(binDir, CURSOR_FALLBACK_EXECUTABLE));
+    setEnv('PATH', binDir);
 
-      const resolved = await resolveCliExecutableAliases({
-        commands: CURSOR_CLI_CANDIDATE.executableAliases,
-        projectDir,
-      });
+    const resolved = await resolveCliExecutableAliases({
+      commands: CLI_TOOL_CATALOG.cursor.executableAliases,
+      projectDir,
+    });
 
-      expect(resolved.command).toBe(CURSOR_FALLBACK_EXECUTABLE);
-      expect(resolved.usedFallback).toBe(true);
-      expect(resolved.executable.path).toBe(realpathSync(join(binDir, CURSOR_FALLBACK_EXECUTABLE)));
-    },
-  );
+    expect(resolved.command).toBe(CURSOR_FALLBACK_EXECUTABLE);
+    expect(resolved.usedFallback).toBe(true);
+    expect(resolved.executable.path).toBe(realpathSync(join(binDir, CURSOR_FALLBACK_EXECUTABLE)));
+  });
 
-  itUnix('keeps a candidate fallback trust valid while its primary remains absent', async () => {
+  itUnix('keeps a fallback trust valid while its primary remains absent', async () => {
     const projectDir = createTempDir('resolver-alias-trusted-fallback-project');
     const binDir = createTempDir('resolver-alias-trusted-fallback-bin');
     dirs.push(projectDir, binDir);
@@ -404,7 +398,7 @@ describe('resolveCliExecutableAliases', () => {
     });
 
     const resolved = await resolveCliExecutableAliases({
-      commands: CURSOR_CLI_CANDIDATE.executableAliases,
+      commands: CLI_TOOL_CATALOG.cursor.executableAliases,
       projectDir,
       trust,
     });
@@ -414,29 +408,26 @@ describe('resolveCliExecutableAliases', () => {
     expect(resolved.executable.path).toBe(trust.path);
   });
 
-  itUnix(
-    'does not switch a candidate to its fallback when a newly present primary fails trust',
-    async () => {
-      const projectDir = createTempDir('resolver-alias-primary-drift-project');
-      const binDir = createTempDir('resolver-alias-primary-drift-bin');
-      dirs.push(projectDir, binDir);
-      makeExecutable(join(binDir, CURSOR_FALLBACK_EXECUTABLE));
-      setEnv('PATH', binDir);
-      const trust = await resolveCliExecutable({
-        command: CURSOR_FALLBACK_EXECUTABLE,
-        projectDir: projectDir,
-      });
-      makeExecutable(join(binDir, CURSOR_PRIMARY_EXECUTABLE));
+  itUnix('does not switch to its fallback when a newly present primary fails trust', async () => {
+    const projectDir = createTempDir('resolver-alias-primary-drift-project');
+    const binDir = createTempDir('resolver-alias-primary-drift-bin');
+    dirs.push(projectDir, binDir);
+    makeExecutable(join(binDir, CURSOR_FALLBACK_EXECUTABLE));
+    setEnv('PATH', binDir);
+    const trust = await resolveCliExecutable({
+      command: CURSOR_FALLBACK_EXECUTABLE,
+      projectDir: projectDir,
+    });
+    makeExecutable(join(binDir, CURSOR_PRIMARY_EXECUTABLE));
 
-      await expect(
-        resolveCliExecutableAliases({
-          commands: CURSOR_CLI_CANDIDATE.executableAliases,
-          projectDir,
-          trust,
-        }),
-      ).rejects.toMatchObject({ kind: 'cli-executable-identity-drift' });
-    },
-  );
+    await expect(
+      resolveCliExecutableAliases({
+        commands: CLI_TOOL_CATALOG.cursor.executableAliases,
+        projectDir,
+        trust,
+      }),
+    ).rejects.toMatchObject({ kind: 'cli-executable-identity-drift' });
+  });
 });
 
 describe('resolveCustomExecutable', () => {

@@ -39,7 +39,7 @@ afterEach(() => {
 });
 
 describe('API provider catalog', () => {
-  it('projects every admitted CLI into the combined provider catalog while keeping Cursor unadmitted', () => {
+  it('projects every admitted CLI into the combined provider catalog', () => {
     for (const id of CLI_TOOL_IDS) {
       expect(PROVIDER_CATALOG[id]).toMatchObject({
         id,
@@ -47,7 +47,6 @@ describe('API provider catalog', () => {
         category: 'cli',
       });
     }
-    expect(PROVIDER_CATALOG).not.toHaveProperty('cursor');
     expect(API_PROVIDER_CATALOG).not.toHaveProperty('cursor');
   });
 

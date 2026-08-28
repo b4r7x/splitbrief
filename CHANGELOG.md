@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Cursor Agent CLI (`cursor`) is an admitted `kind: cli` tool.
+
 ### Changed
 
 - Crew is no longer a surface of its own: it is the first section of Settings, one labelled row per seat (`PLAN`, `BUILD` with its `escalate` branch, `REVIEW`), and the same rows build the first-run Setup screen. The Settings seat sections that showed the same three facts in a second vocabulary are gone; ready-made crews are offered in Setup only, where choosing one is still a single save.
@@ -19,6 +23,10 @@
 
 - The commands `/effort`, `/repomap`, `/resume`, `/planner`, `/implementer`, `/reviewer`, `/accept-run`, `/reject-run`, `/attach`, and `/detach`. The last seven live on for one release as alias rows for `/crew <seat>`, `/run accept|reject`, and `/image`; `/effort`, `/repomap`, and `/resume` are gone outright — effort is edited on the seat's row in Crew.
 - The standalone Crew overlay, `SubPanel`, the per-seat Settings sections, and the pinned overlay widths.
+
+### Fixed
+
+- The Cursor Agent CLI subscription `session` channel works on macOS, where the credential is a login-keychain item the file bridge cannot carry. `hostKeychainPlatforms` now includes that channel, and a channel that resolves to `host-account` there keeps the host `HOME` and `USER` — the two values the keychain's search list and item account are keyed on — while `TMPDIR`, `XDG_*`, `npm_config_cache`, `PIP_CACHE_DIR` and `CARGO_HOME` stay redirected into `.splitbrief/sandbox/` and nothing is copied to disk. Linux and Windows still file-bridge. The security cost of that channel — `~`-relative reads and Cursor Agent CLI's own state writes land in the real home, and the login keychain resolves by default — is stated in `docs/WORKTREES.md` and `docs/API-KEYS.md`.
 
 ## [0.1.0] - 2026-08-07
 

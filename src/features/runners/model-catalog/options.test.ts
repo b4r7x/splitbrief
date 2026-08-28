@@ -7,6 +7,7 @@ import {
   PLANNER_API_PROVIDER_IDS,
 } from '../../../core/providers/api-provider-catalog.js';
 import {
+  CLI_TOOL_CATALOG,
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
   SEAT_PICKER_ROLES,
@@ -86,6 +87,21 @@ describe('role membership', () => {
     expect(implementerIds).toContain('lm-studio');
     expect(plannerItems.every((item) => item.roles.includes('planner'))).toBe(true);
     expect(implementerItems.every((item) => item.roles.includes('implementer'))).toBe(true);
+  });
+
+  it('offers a Cursor row in all three seat roles', () => {
+    const descriptors = assemblePickerDescriptors();
+    const detections = { cliTools: [], providers: [] };
+
+    for (const role of SEAT_PICKER_ROLES) {
+      const cursor = buildPickerOptions(role, descriptors, detections, undefined).find(
+        (item) => item.id === 'cursor',
+      );
+      if (cursor === undefined) throw new Error(`no ${role} picker row for cursor`);
+      expect(cursor.kind).toBe('cli');
+      expect(cursor.displayName).toBe(CLI_TOOL_CATALOG.cursor.displayName);
+      expect(cursor.modelCapability.showsDiscovered).toBe(true);
+    }
   });
 
   it('includes exactly one custom-command launcher in both picker catalogs', () => {

@@ -9,9 +9,7 @@ import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
   CLI_TOOL_TRUST,
-  CURSOR_CLI_CANDIDATE,
   CURSOR_CLI_ADMISSION_VERDICT,
-  CURSOR_CLI_RUNTIME_ADAPTER_PATHS,
   CUSTOM_ONLY_CLI_TOOL_DEFINITIONS,
   EXCLUDED_CLI_TOOL_IDS,
   IMPLEMENTER_CLI_TOOL_IDS,
@@ -42,6 +40,7 @@ const EXISTING_CLI_TOOL_IDS = [
   'aider',
   'copilot',
   'kilo-code',
+  'cursor',
 ] as const;
 
 function resolveRepoPath(relativePath: string): string {
@@ -49,22 +48,10 @@ function resolveRepoPath(relativePath: string): string {
 }
 
 describe('CLI tool catalog', () => {
-  it('keeps Cursor as a non-executable candidate outside active registries', () => {
-    expect(CURSOR_CLI_ADMISSION_VERDICT).toBe('OMIT');
+  it('admits Cursor as an active CLI tool', () => {
+    expect(CURSOR_CLI_ADMISSION_VERDICT).toBe('PASS');
     expect(ANTIGRAVITY_CLI_ADMISSION_VERDICT).toBe('OMIT');
-    expect(CURSOR_CLI_CANDIDATE).toEqual({
-      id: 'cursor',
-      displayName: 'Cursor Agent CLI',
-      command: 'agent',
-      category: 'cli',
-      executableAliases: ['agent', 'cursor-agent'],
-      admission: {
-        state: 'not-admitted',
-        prerequisite: 'R7-008',
-        remediation:
-          'Cursor Agent CLI is unavailable until R7-008 verifies an exact build-pinned protocol and a fresh filtered workspace.',
-      },
-    });
+    expect(CLI_TOOL_CATALOG.cursor.admission.state).toBe('active');
     expect(Object.keys(CLI_TOOL_CATALOG)).toEqual(EXISTING_CLI_TOOL_IDS);
     expect(Object.keys(CLI_TOOL_TRUST)).toEqual(EXISTING_CLI_TOOL_IDS);
     expect(CLI_TOOL_IDS).toEqual(EXISTING_CLI_TOOL_IDS);
@@ -101,9 +88,16 @@ describe('CLI tool catalog', () => {
       expect(descriptor.network).toEqual({ planner: true, implementer: true });
       expect(descriptor.directWrite).toEqual({ planner: false, implementer: true });
       expect(descriptor.compatibility.installUrl).toMatch(/^https:\/\//);
-      expect(descriptor.compatibility.testedVersion).toMatch(/^\d+\.\d+\.\d+$/);
-      expect(descriptor.compatibility.minimumAdmittedVersion).toMatch(/^\d+\.\d+\.\d+$/);
       expect(descriptor.compatibility.evidence.asOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      if (id === 'cursor') {
+        expect(descriptor.compatibility.testedVersion).toBe('2026.08.25-3e8eec8');
+        expect(descriptor.compatibility.minimumAdmittedVersion).toBe('2026.08.25-3e8eec8');
+        expect(descriptor.compatibility.versionScheme).toBe('calver');
+      } else {
+        expect(descriptor.compatibility.testedVersion).toMatch(/^\d+\.\d+\.\d+$/);
+        expect(descriptor.compatibility.minimumAdmittedVersion).toMatch(/^\d+\.\d+\.\d+$/);
+        expect(descriptor.compatibility.versionScheme).toBe('semver');
+      }
     }
   });
 
@@ -119,11 +113,18 @@ describe('CLI tool catalog', () => {
       aider: '0.86.0',
       copilot: '0.3.0',
       'kilo-code': '0.1.0',
+      cursor: '2026.08.25-3e8eec8',
     });
   });
 
-  it('admits native catalog execution only for the four structurally declared CLIs', () => {
-    expect(NATIVE_CLI_CATALOG_TOOL_IDS).toEqual(['codex', 'opencode', 'aider', 'kilo-code']);
+  it('admits native catalog execution only for the five structurally declared CLIs', () => {
+    expect(NATIVE_CLI_CATALOG_TOOL_IDS).toEqual([
+      'codex',
+      'opencode',
+      'aider',
+      'kilo-code',
+      'cursor',
+    ]);
   });
 
   it('declares project-internal state prefixes only for tools proven to rewrite them', () => {
@@ -140,6 +141,7 @@ describe('CLI tool catalog', () => {
       aider: [],
       copilot: [],
       'kilo-code': [],
+      cursor: [],
     });
   });
 
@@ -151,6 +153,7 @@ describe('CLI tool catalog', () => {
       aider: ['--yes-always'],
       copilot: ['--allow-all', '--no-ask-user'],
       'kilo-code': ['--auto'],
+      cursor: ['--force'],
     } as const;
 
     for (const id of EXISTING_CLI_TOOL_IDS) {
@@ -211,6 +214,84 @@ describe('CLI tool catalog', () => {
       ).toBe(expected);
     },
   );
+
+  it('calver newer than minimum is compatible', () => {
+    expect(
+      classifyCliAdmittedVersion({
+        installedVersion: '2026.09.01',
+        minimumAdmittedVersion: '2026.08.25',
+        versionScheme: 'calver',
+      }),
+    ).toBe('compatible');
+  });
+
+  it('calver older than minimum is incompatible', () => {
+    expect(
+      classifyCliAdmittedVersion({
+        installedVersion: '2026.08.24',
+        minimumAdmittedVersion: '2026.08.25',
+        versionScheme: 'calver',
+      }),
+    ).toBe('incompatible');
+  });
+
+  it('calver with build suffix parses', () => {
+    expect(
+      classifyCliAdmittedVersion({
+        installedVersion: '2026.08.25-3e8eec8',
+        minimumAdmittedVersion: '2026.08.25',
+        versionScheme: 'calver',
+      }),
+    ).toBe('compatible');
+  });
+
+  it('semver behaviour unchanged', () => {
+    const cases = [
+      ['0.40.0', 'compatible'],
+      ['0.40.7', 'compatible'],
+      ['0.41.0', 'compatible'],
+      ['0.146.0', 'compatible'],
+      ['0.39.9', 'incompatible'],
+      ['0.40.0-rc.1', 'unverified'],
+      ['0.40', 'unverified'],
+    ] as const;
+    const minimumAdmittedVersion = CLI_TOOL_CATALOG.codex.compatibility.minimumAdmittedVersion;
+
+    for (const [version, expected] of cases) {
+      const input = { installedVersion: version, minimumAdmittedVersion };
+      expect(classifyCliAdmittedVersion(input)).toBe(expected);
+      expect(classifyCliAdmittedVersion({ ...input, versionScheme: 'semver' })).toBe(expected);
+    }
+
+    expect(
+      classifyCliCompilerVersion({
+        installedVersion: '1.18.15',
+        exactAdmittedVersion: '1.18.15',
+        versionScheme: 'semver',
+      }),
+    ).toBe('exact');
+    expect(
+      classifyCliCompilerVersion({
+        installedVersion: '1.18.14',
+        exactAdmittedVersion: '1.18.15',
+        versionScheme: 'semver',
+      }),
+    ).toBe('older');
+    expect(
+      classifyCliCompilerVersion({
+        installedVersion: '1.18.16',
+        exactAdmittedVersion: '1.18.15',
+        versionScheme: 'semver',
+      }),
+    ).toBe('newer');
+    expect(
+      classifyCliCompilerVersion({
+        installedVersion: '1.18.15-beta.1',
+        exactAdmittedVersion: '1.18.15',
+        versionScheme: 'semver',
+      }),
+    ).toBe('mismatch');
+  });
 
   it('keeps compiler evidence exact-version-only and immutable', () => {
     expect(Object.keys(CLI_COMPILER_EVIDENCE)).toEqual(EXISTING_CLI_TOOL_IDS);
@@ -275,13 +356,10 @@ describe('CLI tool catalog', () => {
   });
 
   it('keeps omitted candidate runtime adapter sources absent', () => {
-    for (const relativePath of [
-      ...CURSOR_CLI_RUNTIME_ADAPTER_PATHS,
-      ...ANTIGRAVITY_CLI_CANDIDATE_PATHS,
-    ]) {
+    for (const relativePath of ANTIGRAVITY_CLI_CANDIDATE_PATHS) {
       expect(existsSync(resolveRepoPath(relativePath))).toBe(false);
     }
-    expect('cursor' in CLI_TOOL_CATALOG).toBe(false);
+    expect('cursor' in CLI_TOOL_CATALOG).toBe(true);
     expect('antigravity' in CLI_TOOL_CATALOG).toBe(false);
   });
 
@@ -465,13 +543,16 @@ describe('CLI tool catalog', () => {
     expect(defaultCliAuthChannel('kilo-code').id).toBe('provider-dependent');
   });
 
-  it('declares the Claude Code session credential a keychain item on macOS and nowhere else', () => {
+  it('declares Claude Code and Cursor Agent CLI session credentials keychain items on macOS and nowhere else', () => {
     for (const tool of CLI_TOOL_IDS) {
       for (const channel of CLI_TOOL_CATALOG[tool].auth.channels) {
         expect({ tool, channel: channel.id, platforms: channel.hostKeychainPlatforms }).toEqual({
           tool,
           channel: channel.id,
-          platforms: tool === 'claude-code' && channel.id === 'session' ? ['darwin'] : [],
+          platforms:
+            (tool === 'claude-code' || tool === 'cursor') && channel.id === 'session'
+              ? ['darwin']
+              : [],
         });
       }
     }
@@ -488,10 +569,21 @@ describe('CLI tool catalog', () => {
     expect(cliAuthChannelHostStateAccess(apiKey, 'darwin')).toBe('none');
   });
 
+  it('routes the Cursor Agent CLI session channel through the host account only on macOS', () => {
+    const session = selectCliAuthChannel('cursor', { channel: 'session' });
+    const apiKey = selectCliAuthChannel('cursor', { channel: 'api-key' });
+    if (session === undefined || apiKey === undefined) throw new Error('missing Cursor channel');
+
+    expect(cliAuthChannelHostStateAccess(session, 'darwin')).toBe('host-account');
+    expect(cliAuthChannelHostStateAccess(session, 'linux')).toBe('bridged-files');
+    expect(cliAuthChannelHostStateAccess(session, 'win32')).toBe('bridged-files');
+    expect(cliAuthChannelHostStateAccess(apiKey, 'darwin')).toBe('none');
+  });
+
   it('keeps every other session channel on the file bridge, including on macOS', () => {
     for (const tool of CLI_TOOL_IDS) {
       for (const channel of CLI_TOOL_CATALOG[tool].auth.channels) {
-        if (tool === 'claude-code' && channel.id === 'session') continue;
+        if ((tool === 'claude-code' || tool === 'cursor') && channel.id === 'session') continue;
         expect({
           tool,
           channel: channel.id,
@@ -530,7 +622,11 @@ describe('effort support', () => {
 
   it('states the same effort fact the planner adapter actually invokes with', () => {
     for (const tool of PLANNER_CLI_TOOL_IDS) {
-      expect({ tool, supportsEffort: CLI_PLANNER_ADAPTERS[tool].supportsEffort }).toEqual({
+      const adapter = Object.hasOwn(CLI_PLANNER_ADAPTERS, tool)
+        ? CLI_PLANNER_ADAPTERS[tool]
+        : undefined;
+      if (adapter === undefined) continue;
+      expect({ tool, supportsEffort: adapter.supportsEffort }).toEqual({
         tool,
         supportsEffort: CLI_TOOL_CATALOG[tool].supportsEffort,
       });
