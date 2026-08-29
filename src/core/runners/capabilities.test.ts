@@ -73,10 +73,12 @@ describe('modelSupportsImages', () => {
 });
 
 describe('seatSupportsEffort', () => {
-  it('offers effort on a Claude Code planner seat but never on the implementer seat', () => {
+  it('offers effort on every Claude Code seat and never on Codex', () => {
     expect(seatSupportsEffort({ runner: claudeCode, role: 'planner' })).toBe(true);
     expect(seatSupportsEffort({ runner: claudeCode, role: 'reviewer' })).toBe(true);
-    expect(seatSupportsEffort({ runner: claudeCode, role: 'implementer' })).toBe(false);
+    expect(seatSupportsEffort({ runner: claudeCode, role: 'implementer' })).toBe(true);
+    expect(seatSupportsEffort({ runner: codex, role: 'planner' })).toBe(false);
+    expect(seatSupportsEffort({ runner: codex, role: 'implementer' })).toBe(false);
   });
 
   it('refuses effort for a CLI tool with no effort flag', () => {

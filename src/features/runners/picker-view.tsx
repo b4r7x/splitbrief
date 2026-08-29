@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 import { TwoColumnPicker, type PreviewContext } from './two-column-picker/picker.js';
-import type { TerminalPane } from './two-column-picker/use-nav-state.js';
+import type { RightActivation, TerminalPane } from './two-column-picker/use-nav-state.js';
 import { arrowSep, SOFT_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -15,9 +15,10 @@ import {
   type SeatPickerRole,
 } from '../../core/runners/cli-tool-catalog.js';
 import type { RunnerBillingPosture } from '../../core/runners/runner-billing.js';
-import { includes } from '../../utils/type-guards.js';
+import { includes, assertNever } from '../../utils/type-guards.js';
 import { sortPickerOptions, type PickerOption } from './model-catalog/options.js';
-import { isCustomModel, type ModelVariant } from './model-catalog/recency.js';
+import { isCustomModel, type ModelOption, type ModelVariant } from './model-catalog/recency.js';
+import { cycleOptionAxis, isOptionFamily, optionDraftOf } from './model-catalog/option-axis.js';
 import {
   rightRowKey,
   routeAuthStateFor,
@@ -123,9 +124,32 @@ function keyRows(rows: readonly RightRow[]): KeyedRightRow[] {
   return rows.map((row) => ({ ...row, id: rightRowKey(row) }));
 }
 
+export function rightRowActivation(
+  row: RightRow,
+  soleConfigured: ModelVariant | undefined,
+): RightActivation {
+  switch (row.kind) {
+    case 'notice':
+      return row.action === 'refresh' ? 'refresh' : 'none';
+    case 'route':
+      return 'confirm';
+    case 'axis':
+      return 'cycle';
+    case 'model':
+      if (row.expanded) return isOptionFamily(row.model) ? 'confirm' : 'collapse';
+      if (isOptionFamily(row.model)) return 'expand';
+      return (row.model.variants?.length ?? 0) > 1 && soleConfigured === undefined
+        ? 'expand'
+        : 'confirm';
+    default:
+      return assertNever(row);
+  }
+}
+
 export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProps) {
   const projectDir = configStore.use((s) => s.projectDir);
   const providers = detectionStore.use((s) => s.providers);
+  const optionDraftId = pickerViewStore.use((s) => s.optionDraftId);
   const allowsCustom = catalog.currentItem?.modelCapability.allowsCustom ?? false;
 
   const toolId =
@@ -218,6 +242,12 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
       return;
     }
     if (row.kind !== 'model') return;
+    if (row.expanded && isOptionFamily(row.model)) {
+      void actions.confirmProviderVariant(
+        optionDraftOf(row.model, pickerViewStore.get().optionDraftId),
+      );
+      return;
+    }
     const sole = soleConfiguredRoute(row);
     if (sole !== undefined) {
       void actions.confirmProviderVariant(sole.fullId);
@@ -231,14 +261,17 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
     if (!tool) return undefined;
     // A signed-in route needs no remedy, so the byline is what the row falls
     // back to rather than an empty preview line.
-    const remedyFor = (auth: RouteAuthState, variant: ModelVariant): string | undefined =>
-      formatRouteRemedy({
+    const remedyFor = (auth: RouteAuthState, variant: ModelVariant): string | undefined => {
+      // Option-axis children have no provider to sign into; their prefix is empty.
+      if (variant.providerPrefix === '') return undefined;
+      return formatRouteRemedy({
         auth,
         toolName: tool.displayName,
         oracleCommand: oracleCommand ?? '',
         provider: variant.providerPrefix,
         versions,
       });
+    };
     const row = ctx.rightItem;
     if (row?.kind === 'route') {
       const remedy = remedyFor(row.auth, row.variant);
@@ -246,11 +279,12 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
     }
     if (row?.kind === 'model' && row.expanded) {
       // The route that still needs the user is the one worth naming, not the
-      // first one the model happens to list.
+      // first one the model happens to list. Option-axis children have no provider.
       const pending = catalog.rightRows.find(
         (candidate) =>
           candidate.kind === 'route' &&
           candidate.model.id === row.model.id &&
+          candidate.variant.providerPrefix !== '' &&
           candidate.auth.kind !== 'configured',
       );
       if (pending?.kind === 'route') {
@@ -321,35 +355,66 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
         items: rightRows,
         label: 'Models',
         getKey: (row) => row.id,
-        // A merged row answers for every provider spelling it folded, so typing
-        // a provider name ("openrouter") still finds it.
+        // A merged row answers for every spelling it folded — provider prefixes
+        // and option tags — so typing "openrouter" or "luna" still finds it.
         filterBy: (row, query) => {
-          if (row.kind === 'notice') return true;
-          if (row.kind !== 'model') return false;
-          return (
-            filterByFields(row.model, query, ['id']) ||
-            (row.model.variants?.some((variant) =>
-              variant.fullId.toLowerCase().includes(query.toLowerCase()),
+          const q = query.toLowerCase();
+          const hits = (value: string | undefined): boolean =>
+            value?.toLowerCase().includes(q) === true;
+          const hitsModel = (model: ModelOption): boolean =>
+            hits(model.id) ||
+            hits(model.displayName) ||
+            (model.variants?.some(
+              (variant) => hits(variant.fullId) || hits(variant.tag) || hits(variant.displayName),
             ) ??
-              false)
-          );
+              false);
+          switch (row.kind) {
+            case 'notice':
+              return true;
+            case 'route':
+              return (
+                hits(row.variant.fullId) || hits(row.variant.tag) || hits(row.variant.displayName)
+              );
+            case 'axis':
+              return hits(row.axis) || hits(row.value) || hitsModel(row.model);
+            case 'model':
+              return hitsModel(row.model);
+            default:
+              return assertNever(row);
+          }
         },
         initialIndex: catalog.initialRightIndex,
         resolveInitialIndex: catalog.resolveRightIndex,
         onLeftChange: actions.leftChange,
         section: { by: (row) => sectionOf(row) ?? '' },
-        activationOf: (row) => {
-          if (row.kind === 'notice') return row.action === 'refresh' ? 'refresh' : 'none';
-          if (row.kind === 'route') return 'confirm';
-          if (row.expanded) return 'collapse';
-          return (row.model.variants?.length ?? 0) > 1 && soleConfiguredRoute(row) === undefined
-            ? 'expand'
-            : 'confirm';
-        },
+        activationOf: (row) =>
+          rightRowActivation(row, row.kind === 'model' ? soleConfiguredRoute(row) : undefined),
         onExpand: (row) => {
-          if (row.kind === 'model') pickerViewStore.expand(row.model.id);
+          if (row.kind !== 'model') return;
+          if (isOptionFamily(row.model)) {
+            pickerViewStore.expand(
+              row.model.id,
+              optionDraftOf(row.model, catalog.currentModel ?? catalog.persistedModel),
+            );
+            return;
+          }
+          pickerViewStore.expand(row.model.id);
         },
         onCollapse: () => pickerViewStore.collapse(),
+        onCycle: (row) => {
+          if (row.kind !== 'axis') return;
+          const next = cycleOptionAxis(
+            row.model.variants ?? [],
+            optionDraftOf(row.model, pickerViewStore.get().optionDraftId),
+            row.axis,
+          );
+          if (next !== undefined) pickerViewStore.setOptionDraftId(next);
+        },
+        expandedHint: catalog.rightRows.some(
+          (row) => row.kind === 'model' && row.expanded && isOptionFamily(row.model),
+        )
+          ? `⏎ cycle${SOFT_SEP}⏎ on model confirms`
+          : undefined,
         // The store's id survives a move to another tool, whose rows carry no
         // expansion; only the rows on screen can say whether Escape collapses.
         isExpanded: catalog.rightRows.some((row) => row.kind === 'model' && row.expanded),
@@ -380,6 +445,7 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
             maxWidth,
             currentModel: catalog.currentModel,
             sectioned: sectionOf(row) !== undefined,
+            optionDraftId,
           }),
       }}
     />

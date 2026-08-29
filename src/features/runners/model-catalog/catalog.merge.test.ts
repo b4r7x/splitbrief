@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { cursorDetectedModels } from '#testing/helpers/factories/cursor-models.js';
 import type { CliProviderAuthFact, DetectedModel } from '../../../core/discovery/detection.js';
 import type { ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
 import { buildRightModels, countModelOptions, modelRowMatchesId } from './catalog.js';
+import { isOptionFamily } from './option-axis.js';
 import type { PickerOption } from './options.js';
 import { deriveModelCatalogCapability } from './posture.js';
 import type { ModelOption } from './recency.js';
@@ -176,7 +178,10 @@ describe('provider variant merge', () => {
       role: 'planner',
       customModels: [],
       currentItem: tool('opencode', { providerDependent: true }),
-      cache: cliCache('opencode', [{ id: nativeId }]),
+      cache: cliCache('opencode', [
+        { id: nativeId, contextLength: 1_000_000 },
+        { id: 'anthropic/claude-sonnet-5' },
+      ]),
     });
     const freshRow = findMergedRow(freshModels);
     expect(freshRow).toMatchObject({
@@ -186,7 +191,7 @@ describe('provider variant merge', () => {
       contextLength: 1_000_000,
     });
     expect(freshRow?.isStale).toBeUndefined();
-    expect(countModelOptions(freshModels)).toMatchObject({ confirmed: 1, stale: 0, bundled: 2 });
+    expect(countModelOptions(freshModels)).toMatchObject({ confirmed: 2, stale: 0, bundled: 0 });
   });
 
   it('sorts merged variants with configured-auth providers first', () => {
@@ -255,5 +260,46 @@ describe('provider variant merge', () => {
     expect(modelRowMatchesId(merged, 'kilo/openrouter/deepseek-v4-flash-free')).toBe(false);
     expect(modelRowMatchesId({ id: 'auto' }, 'auto')).toBe(true);
     expect(modelRowMatchesId({ id: 'auto' }, 'kilo/openrouter/auto')).toBe(false);
+  });
+});
+
+describe('option family merge', () => {
+  it('collapses the full cursor listing into families, not sibling SKU rows', () => {
+    const models = buildRightModels({
+      role: 'planner',
+      customModels: [],
+      currentItem: tool('cursor'),
+      cache: cliCache('cursor', cursorDetectedModels()),
+    });
+
+    const families = models.filter(isOptionFamily);
+    expect(families.length).toBeGreaterThan(1);
+
+    const luna = families.filter((model) =>
+      model.variants?.some((variant) => variant.fullId.startsWith('gpt-5.6-luna')),
+    );
+    expect(luna).toHaveLength(1);
+    expect(luna[0]?.variants).toHaveLength(12);
+    expect(luna[0]?.displayName).toBe('GPT-5.6 Luna');
+    expect(luna[0]?.variants?.map((variant) => variant.fullId)).toEqual(
+      expect.arrayContaining(['gpt-5.6-luna-high', 'gpt-5.6-luna-max-fast']),
+    );
+    expect(luna[0]?.variants?.every((variant) => variant.providerPrefix === '')).toBe(true);
+    expect(luna[0]?.variants?.every((variant) => variant.fullId.startsWith('gpt-5.6-luna'))).toBe(
+      true,
+    );
+    expect(
+      families.some((model) =>
+        model.variants?.some((variant) => variant.fullId.startsWith('cursor-grok-4.6')),
+      ),
+    ).toBe(true);
+
+    for (const family of families) {
+      for (const variant of family.variants ?? []) {
+        const owners = models.filter((model) => modelRowMatchesId(model, variant.fullId));
+        expect(owners).toHaveLength(1);
+        expect(owners[0]?.id).toBe(family.id);
+      }
+    }
   });
 });

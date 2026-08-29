@@ -28,7 +28,7 @@ export interface TerminalPane {
 }
 
 /** What Enter does on the highlighted right row. */
-export type RightActivation = 'confirm' | 'expand' | 'collapse' | 'refresh' | 'none';
+export type RightActivation = 'confirm' | 'expand' | 'collapse' | 'cycle' | 'refresh' | 'none';
 
 export interface RightSectionProps<R> {
   by: (item: R) => string;
@@ -72,7 +72,10 @@ export interface RightColumnProps<L, R> {
   activationOf?: ((item: R) => RightActivation) | undefined;
   onExpand?: ((item: R) => void) | undefined;
   onCollapse?: (() => void) | undefined;
+  onCycle?: ((item: R) => void) | undefined;
   isExpanded?: boolean | undefined;
+  /** Replaces the expanded-column Enter verb when set (`⏎ choose route` otherwise). */
+  expandedHint?: string | undefined;
 }
 
 export interface ColumnState<T> {
@@ -142,6 +145,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const activationOf = rightProps.activationOf;
   const onExpand = rightProps.onExpand;
   const onCollapse = rightProps.onCollapse;
+  const onCycle = rightProps.onCycle;
 
   const initialLeftItem = leftItems[initialLeftIndex];
   const initialLeftTerminal =
@@ -206,7 +210,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
     virtualCount > 0 ||
     rightItems.some((item) => {
       const activation = activationOf?.(item) ?? 'confirm';
-      return activation === 'confirm' || activation === 'expand';
+      return activation === 'confirm' || activation === 'expand' || activation === 'cycle';
     });
 
   // The row that opened the routes keeps the cursor until the routes are in the
@@ -265,6 +269,9 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
         return;
       case 'collapse':
         onCollapse?.();
+        return;
+      case 'cycle':
+        onCycle?.(item);
         return;
       case 'refresh':
         params.onRefresh?.();

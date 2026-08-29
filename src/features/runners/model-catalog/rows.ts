@@ -1,5 +1,4 @@
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
-import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import type { ProvenanceWord } from '../../../core/providers/provenance.js';
 import type {
   CliProviderAuth,
@@ -7,6 +6,14 @@ import type {
 } from '../../../core/discovery/detection.js';
 import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import {
+  formatAxisValue,
+  isOptionFamily,
+  optionAxesOf,
+  optionDraftOf,
+  parseOptionSelection,
+  type OptionAxisName,
+} from './option-axis.js';
 import { findProviderCredentialFact, modelProviderAuthKey } from './provider-axis.js';
 import type { ModelOption, ModelVariant } from './recency.js';
 
@@ -33,20 +40,29 @@ export type RightRow =
       /** Widest tag among the sibling routes, so their auth words share one column. */
       tagWidth: number;
     }
+  | {
+      kind: 'axis';
+      model: ModelOption;
+      axis: OptionAxisName;
+      value: string;
+    }
   | { kind: 'notice'; lane: 'pending' | 'failed'; text: string; action?: 'refresh' };
 
-/** Whether the models.dev catalog behind the suggestion rows has landed. */
+/** Whether the catalog fetch that feeds suggestion rows has landed. */
 export type CatalogLane = 'ready' | 'pending' | 'failed';
 
 /** Below this many rows the list reads fine flat, so no section carries its weight. */
 const SECTION_THRESHOLD = 12;
 
+/** One wording for the pending catalog lane; the picker byline reuses it. */
+export const CATALOG_LANE_PENDING = 'Loading models…';
+
 /** One wording for the failed lane; the picker byline appends its retry key to it. */
-export const MODELS_DEV_FETCH_FAILED = 'models.dev fetch failed';
+export const CATALOG_FETCH_FAILED = 'Could not load models';
 
 const NOTICE_TEXT: Readonly<Record<'pending' | 'failed', string>> = {
-  pending: 'Fetching the models.dev catalog…',
-  failed: MODELS_DEV_FETCH_FAILED,
+  pending: CATALOG_LANE_PENDING,
+  failed: CATALOG_FETCH_FAILED,
 };
 
 export function routeAuthStateFor(input: {
@@ -98,63 +114,22 @@ function provenanceFor(model: ModelOption, customModels: readonly string[]): Pro
   }
 }
 
-/** The account that gates the row: the first path segment of its id. */
-function providerKeyOf(model: ModelOption): string {
-  return modelProviderAuthKey(model.id) ?? '';
-}
-
-function providerDisplayName(key: string): string {
-  if (key === 'opencode-go') return 'OpenCode Go';
-  if (key === 'opencode') return 'OpenCode';
-  const named = getProviderDisplayName(key);
-  if (named !== key) return named;
-  return key
-    .split('-')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
-
 interface Placement {
   readonly model: ModelOption;
   readonly provenance: ProvenanceWord;
   readonly group: string;
 }
 
-function groupKeyFor(input: {
-  model: ModelOption;
-  provenance: ProvenanceWord;
-  persistedModel: string | undefined;
-}): string {
-  if (input.model.id === input.persistedModel) return 'current';
-  if (input.provenance === 'Custom') return 'custom';
-  switch (input.provenance) {
-    case 'Detected':
-    case 'Stale':
-      return `detected:${providerKeyOf(input.model)}`;
-    case 'Known':
-      return 'fallback';
-    default:
-      return `catalog:${providerKeyOf(input.model)}`;
-  }
+function groupKeyFor(provenance: ProvenanceWord): string {
+  return provenance === 'Custom' ? 'custom' : 'list';
 }
 
 function groupRank(key: string): number {
-  if (key === 'current') return 0;
-  if (key.startsWith('detected:')) return 1;
-  if (key.startsWith('catalog:')) return 2;
-  if (key === 'custom') return 3;
-  return 4;
+  return key === 'custom' ? 1 : 0;
 }
 
 function sectionLabel(key: string): string {
-  if (key === 'current') return 'Current';
-  if (key === 'custom') return 'Custom';
-  if (key === 'fallback') return 'Fallback';
-  const [lead, providerKey = ''] = key.split(':');
-  if (lead === 'detected') {
-    return providerKey === '' ? 'Detected' : `On ${providerDisplayName(providerKey)}`;
-  }
-  return 'Catalog (models.dev)';
+  return key === 'custom' ? 'Custom' : '';
 }
 
 function byReleaseDateDesc(a: Placement, b: Placement): number {
@@ -169,6 +144,7 @@ export function buildRightRows(input: {
   catalogLane: CatalogLane;
   persistedModel: string | undefined;
   customModels: readonly string[];
+  optionDraftId?: string | null;
 }): RightRow[] {
   const sectioned = input.models.length > SECTION_THRESHOLD;
   const automatic: ModelOption[] = [];
@@ -182,7 +158,7 @@ export function buildRightRows(input: {
     placements.push({
       model,
       provenance,
-      group: groupKeyFor({ model, provenance, persistedModel: input.persistedModel }),
+      group: groupKeyFor(provenance),
     });
   }
 
@@ -219,6 +195,18 @@ export function buildRightRows(input: {
     });
     if (!expanded) return;
     const variants = placement.model.variants ?? [];
+    if (isOptionFamily(placement.model)) {
+      const selection = parseOptionSelection(optionDraftOf(placement.model, input.optionDraftId));
+      for (const axis of optionAxesOf(variants)) {
+        rows.push({
+          kind: 'axis',
+          model: placement.model,
+          axis: axis.axis,
+          value: formatAxisValue(axis.axis, selection),
+        });
+      }
+      return;
+    }
     const tagWidth = variants.reduce(
       (widest, variant) =>
         Math.max(widest, getTerminalCellWidth(sanitizeTerminalDisplayText(variant.tag))),
@@ -249,7 +237,7 @@ export function buildRightRows(input: {
     for (const key of order) {
       const members = placements.filter((placement) => placement.group === key);
       const section = sectionLabel(key);
-      const ordered = key === 'current' ? members : members.toSorted(byReleaseDateDesc);
+      const ordered = members.toSorted(byReleaseDateDesc);
       for (const placement of ordered) pushModel(placement, section);
     }
   }
@@ -272,6 +260,8 @@ export function rightRowKey(row: RightRow): string {
       return `model:${row.model.id}`;
     case 'route':
       return `route:${row.model.id}:${row.variant.fullId}`;
+    case 'axis':
+      return `axis:${row.model.id}:${row.axis}`;
     case 'notice':
       return `notice:${row.lane}`;
     default:

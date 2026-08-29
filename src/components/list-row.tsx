@@ -105,7 +105,7 @@ export function ListRow({
       ) : null}
       {labelWidth !== undefined ? <Box flexGrow={1} backgroundColor={backgroundColor} /> : null}
       {hasTrailing ? (
-        <Box flexShrink={0} backgroundColor={backgroundColor}>
+        <Box width={trailW} flexShrink={0} backgroundColor={backgroundColor}>
           <Text color={trailingColor ?? t.textDim} wrap="truncate-end">
             {' '}
             {cleanTrailing}

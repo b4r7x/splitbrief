@@ -1,8 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { cursorModelOptions } from '#testing/helpers/factories/cursor-models.js';
 import { AUTOMATIC_MODEL } from '../../../core/providers/automatic-model.js';
 import type { ModelOption, ModelVariant } from './recency.js';
+import { mergeOptionFamilies } from './option-axis.js';
 import type { RightRow } from './rows.js';
 import { buildRightRows, rightRowKey, routeAuthStateFor, sectionOf } from './rows.js';
 
@@ -54,7 +56,7 @@ describe('buildRightRows', () => {
     ]);
   });
 
-  it('sections a long list with the automatic row pinned above every section', () => {
+  it('pins the automatic row above a long unsectioned list', () => {
     const catalog = Array.from({ length: 10 }, (_, index) =>
       catalogModel(`anthropic/claude-catalog-${index}`, `2026-01-${String(index + 10)}`),
     );
@@ -67,10 +69,10 @@ describe('buildRightRows', () => {
     expect(first?.kind).toBe('model');
     expect(first?.kind === 'model' && first.model.id).toBe(AUTOMATIC_MODEL);
     expect(first === undefined ? undefined : sectionOf(first)).toBeUndefined();
-    expect(sections(rows)).toEqual(['Catalog (models.dev)']);
+    expect(sections(rows)).toEqual([]);
   });
 
-  it('opens a kilo-shaped list on the configured section and groups the rest by provider', () => {
+  it('keeps every kilo-shaped row in one unsectioned list', () => {
     const ids = readFileSync(
       join(import.meta.dirname, '../../../../testing/fixtures/kilo-models-7.0.49.txt'),
       'utf8',
@@ -86,14 +88,9 @@ describe('buildRightRows', () => {
 
     const rows = buildRightRows({ ...BASE, models, persistedModel });
     const seen = sections(rows);
-    const kilo = 'On Kilo';
-    const openai = 'On OpenAI';
 
     expect(models).toHaveLength(126);
-    expect(seen[0]).toBe('Current');
-    expect(seen).toContain(kilo);
-    expect(seen).toContain(openai);
-    expect(seen.indexOf(kilo)).toBeLessThan(seen.indexOf(openai));
+    expect(seen).toEqual([]);
 
     const placed = modelRows(rows);
     expect(placed).toHaveLength(126);
@@ -119,6 +116,45 @@ describe('buildRightRows', () => {
       'route:openai/gpt-5.6:openai/gpt-5.6',
       'route:openai/gpt-5.6:opencode-go/gpt-5.6',
     ]);
+    expect(rows.some((row) => row.kind === 'axis')).toBe(false);
+  });
+
+  it('expands a luna-shaped option family into axis rows, not routes', () => {
+    const luna = mergeOptionFamilies(
+      cursorModelOptions().filter((row) => row.id.startsWith('gpt-5.6-luna')),
+    )[0];
+    if (luna === undefined) throw new Error('expected luna family');
+
+    const rows = buildRightRows({
+      ...BASE,
+      models: [luna],
+      expandedModelId: luna.id,
+    });
+
+    expect(rows.map((row) => row.kind)).toEqual(['model', 'axis', 'axis']);
+    expect(rows.filter((row) => row.kind === 'route')).toHaveLength(0);
+    expect(
+      rows.filter((row) => row.kind === 'axis').map((row) => row.kind === 'axis' && row.axis),
+    ).toEqual(['effort', 'speed']);
+  });
+
+  it('expands a grok option family into axis rows, not routes', () => {
+    const grok = mergeOptionFamilies(
+      cursorModelOptions().filter((row) => row.id.startsWith('cursor-grok-4.6')),
+    )[0];
+    if (grok === undefined) throw new Error('expected grok family');
+
+    const rows = buildRightRows({
+      ...BASE,
+      models: [grok],
+      expandedModelId: grok.id,
+    });
+
+    expect(rows.map((row) => row.kind)).toEqual(['model', 'axis', 'axis']);
+    expect(rows.filter((row) => row.kind === 'route')).toHaveLength(0);
+    expect(
+      rows.filter((row) => row.kind === 'axis').map((row) => row.kind === 'axis' && row.axis),
+    ).toEqual(['effort', 'speed']);
   });
 
   it('appends one notice row while the catalog lane is not ready', () => {
@@ -127,11 +163,13 @@ describe('buildRightRows', () => {
 
     expect(notices).toHaveLength(1);
     expect(notices[0]?.kind === 'notice' && notices[0].lane).toBe('pending');
+    expect(notices[0]?.kind === 'notice' && notices[0].text).toBe('Loading models…');
     expect(pending[pending.length - 1]).toBe(notices[0]);
 
     const failed = buildRightRows({ ...BASE, models: [auto], catalogLane: 'failed' });
     const failure = failed.find((row) => row.kind === 'notice');
     expect(failure?.kind === 'notice' && failure.action).toBe('refresh');
+    expect(failure?.kind === 'notice' && failure.text).toBe('Could not load models');
   });
 
   it('custom section is absent with no custom rows', () => {
@@ -145,11 +183,11 @@ describe('buildRightRows', () => {
       models: [{ id: persisted, membership: 'confirmed' }, ...catalog],
     });
 
-    expect(sections(rows)[0]).toBe('Current');
+    expect(sections(rows)).toEqual([]);
     expect(sections(rows)).not.toContain('Custom');
   });
 
-  it('sections order current, detected, catalog, custom, fallback', () => {
+  it('sections only Custom when custom rows exist in a long list', () => {
     const persisted = 'openai/current';
     const catalog = Array.from({ length: 9 }, (_, index) =>
       catalogModel(`anthropic/claude-catalog-${index}`, `2026-01-${String(index + 10)}`),
@@ -167,13 +205,7 @@ describe('buildRightRows', () => {
       ],
     });
 
-    expect(sections(rows)).toEqual([
-      'Current',
-      'On OpenAI',
-      'Catalog (models.dev)',
-      'Custom',
-      'Fallback',
-    ]);
+    expect(sections(rows)).toEqual(['Custom']);
   });
 
   it('bundled rows hidden when a live lane exists', () => {

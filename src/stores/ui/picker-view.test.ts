@@ -11,6 +11,7 @@ describe('pickerViewStore', () => {
       view: { kind: 'picker' },
       preservedLeftIndex: 0,
       expandedModelId: null,
+      optionDraftId: null,
       draft: null,
     });
   });
@@ -48,6 +49,18 @@ describe('pickerViewStore', () => {
 
     pickerViewStore.collapse();
     expect(pickerViewStore.get().expandedModelId).toBeNull();
+    expect(pickerViewStore.get().optionDraftId).toBeNull();
+  });
+
+  it('sets optionDraftId on expand and clears it on collapse', () => {
+    pickerViewStore.expand('gpt-5.6-luna', 'gpt-5.6-luna-high-fast');
+    expect(pickerViewStore.get().optionDraftId).toBe('gpt-5.6-luna-high-fast');
+
+    pickerViewStore.setOptionDraftId('gpt-5.6-luna-max');
+    expect(pickerViewStore.get().optionDraftId).toBe('gpt-5.6-luna-max');
+
+    pickerViewStore.collapse();
+    expect(pickerViewStore.get().optionDraftId).toBeNull();
   });
 
   it('keeps an expanded model while a sub-view opens and closes', () => {
@@ -78,6 +91,7 @@ describe('pickerViewStore', () => {
       view: { kind: 'picker' },
       preservedLeftIndex: 0,
       expandedModelId: null,
+      optionDraftId: null,
       draft: null,
     });
   });

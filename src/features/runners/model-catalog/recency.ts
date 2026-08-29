@@ -23,7 +23,7 @@ export interface ModelOption {
   isCustom?: boolean | undefined;
   contextLength?: number | undefined;
   releaseDate?: string | undefined;
-  /** Present only on provider-merged rows of provider-dependent tools. */
+  /** Present on provider-merged rows and option-family rows (≥2 members). */
   variants?: readonly ModelVariant[] | undefined;
 }
 

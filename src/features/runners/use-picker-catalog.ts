@@ -49,7 +49,7 @@ export interface PickerCatalog {
   currentItem: PickerOption | undefined;
   selectedItemId: string | undefined;
   initialLeftIdx: number;
-  /** Index into `rightRows` of the persisted route, or the first `Current` row. */
+  /** Index into `rightRows` of the persisted model, or the first row. */
   initialRightIndex: number;
   /** The same entry row for a left item the cursor is moving onto. */
   resolveRightIndex: (item: PickerOption | undefined) => number | undefined;
@@ -63,7 +63,7 @@ export interface PickerCatalog {
   modelCounts: PickerModelCounts;
   /** Why the native CLI catalog holds no confirmed models; undefined when confirmed or inapplicable. */
   catalogDiagnostic: ModelCatalogDiagnostic | undefined;
-  /** Whether the models.dev catalog behind the suggestion rows has landed. */
+  /** Whether the catalog fetch that feeds suggestion rows has landed. */
   catalogLane: CatalogLane;
   /** The highlighted tool's own credential listing, tri-state at the source. */
   providerAuth: CliProviderAuth | undefined;
@@ -117,8 +117,7 @@ function rowIndexForModel(rows: readonly RightRow[], persistedModel: string | un
     );
     if (exact >= 0) return exact;
   }
-  const current = rows.findIndex((row) => row.kind === 'model' && row.section === 'Current');
-  return current >= 0 ? current : 0;
+  return 0;
 }
 
 function buildLeftItems(input: {
@@ -152,6 +151,7 @@ export function usePickerCatalog(
   const lane = seatPickerLane(role);
   const focus = overlayStore.use((s) => s.focus);
   const expandedModelId = pickerViewStore.use((s) => s.expandedModelId);
+  const optionDraftId = pickerViewStore.use((s) => s.optionDraftId);
 
   const [{ cliTools, providers, providerOutcomes, cliCatalogOutcomes, refresh }] =
     useStores(detectionStore);
@@ -233,6 +233,7 @@ export function usePickerCatalog(
     catalogLane,
     persistedModel,
     customModels,
+    optionDraftId,
   });
 
   // Every reset of the model column must land on the configured model, or
@@ -259,6 +260,7 @@ export function usePickerCatalog(
         catalogLane,
         persistedModel,
         customModels,
+        optionDraftId,
       }),
       persistedModel,
     );

@@ -116,6 +116,48 @@ describe('Claude Code role adapters', () => {
     ).toEqual({ valid: false, conflicts: ['--permission-mode'] });
   });
 
+  it('places implementer --effort after the model pair and omits it when unset', () => {
+    const withEffort = claudeCodeImplementerAdapter.buildArgs({
+      prompt: '<brief>',
+      model: 'claude-sonnet-4-6',
+      projectDir: '/project',
+      configuredArgs: [],
+      effort: 'high',
+    });
+    expect(withEffort).toEqual([
+      '-p',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--include-partial-messages',
+      '--model',
+      'claude-sonnet-4-6',
+      '--effort',
+      'high',
+      '--permission-mode',
+      'acceptEdits',
+    ]);
+
+    const unset = claudeCodeImplementerAdapter.buildArgs({
+      prompt: '<brief>',
+      model: 'claude-sonnet-4-6',
+      projectDir: '/project',
+      configuredArgs: [],
+    });
+    expect(unset).not.toContain('--effort');
+    expect(unset).toEqual([
+      '-p',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--include-partial-messages',
+      '--model',
+      'claude-sonnet-4-6',
+      '--permission-mode',
+      'acceptEdits',
+    ]);
+  });
+
   it('never re-sends a consumed session id: fresh calls carry no session flag, continuations resume', () => {
     const common = {
       prompt: '<brief>',

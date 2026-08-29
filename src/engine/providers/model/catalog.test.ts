@@ -299,9 +299,77 @@ describe('runner-owned catalog resolution', () => {
     expect(rows.filter((row) => row.source === 'runtime')).toMatchObject([
       { selectionId: 'claude-sonnet-4-6', contextLength: 32_768 },
     ]);
-    expect(rows.filter((row) => row.source === 'models-dev')).toMatchObject([
-      { selectionId: 'claude-sonnet-4.6', displayName: 'Different Punctuation' },
+    expect(rows.find((row) => row.source === 'runtime')?.displayName).not.toBe(
+      'Different Punctuation',
+    );
+    expect(rows.some((row) => row.membership === 'catalog-suggestion')).toBe(false);
+    expect(rows.find((row) => row.selectionId === 'claude-sonnet-4.6')).toBeUndefined();
+  });
+
+  it('does not append catalog suggestions when a non-native-cli runner has a fresh runtime list', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        openai: {
+          id: 'openai',
+          models: {
+            'gpt-4o': { id: 'gpt-4o', name: 'GPT-4o' },
+            'gpt-4.1': { id: 'gpt-4.1', name: 'GPT-4.1' },
+            'gpt-5': { id: 'gpt-5', name: 'GPT-5' },
+          },
+        },
+      },
+      providerModels: {
+        codex: [{ id: 'gpt-5.6-codex', displayName: 'GPT-5.6 Codex' }],
+      },
+    });
+
+    const rows = resolveModelCatalog('codex', { cache });
+
+    expect(rows.filter((row) => row.membership === 'catalog-suggestion')).toEqual([]);
+    expect(rows.filter((row) => row.membership === 'bundled-suggestion')).toEqual([]);
+    expect(rows).toMatchObject([
+      {
+        selectionId: 'gpt-5.6-codex',
+        source: 'runtime',
+        membership: 'confirmed',
+        displayName: 'GPT-5.6 Codex',
+      },
     ]);
+  });
+
+  it('still appends catalog suggestions when the runtime snapshot is stale', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => ({
+        openai: {
+          id: 'openai',
+          models: {
+            'gpt-suggestion': { id: 'gpt-suggestion', name: 'Suggestion' },
+          },
+        },
+      }),
+      getProviderModels: () => null,
+      getScopedProviderRuntime: () => ({
+        connection: { role: 'planner', provider: 'openai', contextKey: 'planner-context' },
+        state: 'stale',
+        catalog: 'populated',
+        models: [{ id: 'last-confirmed-model' }],
+        fetchedAt: 1,
+        validatedAt: 2,
+        failure: 'timeout',
+        diagnostic: 'Configured provider catalog refresh did not complete.',
+      }),
+    };
+
+    const rows = resolveModelCatalog('openai', { cache, role: 'planner' });
+
+    expect(rows.find((row) => row.selectionId === 'last-confirmed-model')).toMatchObject({
+      membership: 'stale',
+      source: 'runtime',
+    });
+    expect(rows.find((row) => row.selectionId === 'gpt-suggestion')).toMatchObject({
+      membership: 'catalog-suggestion',
+      source: 'models-dev',
+    });
   });
 
   it('demotes a bundled default when a fresh authoritative snapshot omits it', () => {

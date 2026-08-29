@@ -65,6 +65,7 @@ function getHint(input: {
   nav: { isOnCustomItem: boolean; currentRightIsCustom: boolean };
   hasRefresh: boolean;
   maxVisible: number;
+  expandedHint?: string | undefined;
 }): string {
   const { kind, nav, hasRefresh, maxVisible } = input;
   if (maxVisible <= 0) {
@@ -76,7 +77,8 @@ function getHint(input: {
     return `↑↓ select${SOFT_SEP}⏎ ${verb}${SOFT_SEP}esc cancel${refreshHint}`;
   }
   if (kind === 'expanded') {
-    return `⏎ choose route${SOFT_SEP}esc collapse${SOFT_SEP}←→ column${SOFT_SEP}↑↓ select${refreshHint}`;
+    const lead = input.expandedHint ?? '⏎ choose route';
+    return `${lead}${SOFT_SEP}esc collapse${SOFT_SEP}←→ column${SOFT_SEP}↑↓ select${refreshHint}`;
   }
   if (nav.isOnCustomItem) {
     return `←→ column${SOFT_SEP}↑↓ select${SOFT_SEP}⏎ add custom${SOFT_SEP}esc cancel${refreshHint}`;
@@ -221,6 +223,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
     nav,
     hasRefresh: !!onRefresh,
     maxVisible,
+    expandedHint: rightProps.expandedHint,
   });
 
   const rightCurrent = nav.right.currentItem;

@@ -342,10 +342,7 @@ function resolveCatalogEntries(
   const runtime = runtimeSnapshot?.entries ?? [];
   const runtimeRows: ResolvedModelCatalogEntry[] = [];
   const runtimeKeys = new Set<string>();
-  const nativeCliConfirmed =
-    usesNativeCliModelDiscovery(providerId) &&
-    runtime.length > 0 &&
-    runtimeSnapshot?.isStale !== true;
+  const runtimeConfirmed = runtime.length > 0 && runtimeSnapshot?.isStale !== true;
 
   runtime.forEach((model, nativeOrder) => {
     const owner = ownerFor(model, runtimeSnapshot?.providerId ?? providerId);
@@ -360,38 +357,38 @@ function resolveCatalogEntries(
         nativeOrder,
         isStale: runtimeSnapshot?.isStale ?? false,
         modelsDevEntries,
-        matchMetadataAcrossOwners: nativeCliConfirmed,
+        matchMetadataAcrossOwners: usesNativeCliModelDiscovery(providerId) && runtimeConfirmed,
       }),
     );
   });
 
   const modelsDevRows: ResolvedModelCatalogEntry[] = [];
   const modelsDevKeys = new Set<string>();
-  if (!nativeCliConfirmed) {
+  const bundledRows: ResolvedModelCatalogEntry[] = [];
+  const bundledKeys = new Set<string>();
+  if (!runtimeConfirmed) {
     for (const model of modelsDevEntries) {
       const key = entryKey({ owner: ownerFor(model, providerId), selectionId: model.id });
       if (runtimeKeys.has(key) || modelsDevKeys.has(key)) continue;
       modelsDevKeys.add(key);
       modelsDevRows.push(modelsDevSuggestion({ runnerId: providerId, model }));
     }
-  }
 
-  const bundledRows: ResolvedModelCatalogEntry[] = [];
-  const bundledKeys = new Set<string>();
-  const keepBundledDefault = runtimeSnapshot === null;
-  for (const model of getBundledModels(providerId)) {
-    const owner = providerId;
-    const key = entryKey({ owner, selectionId: model.name });
-    if (runtimeKeys.has(key) || modelsDevKeys.has(key) || bundledKeys.has(key)) continue;
-    bundledKeys.add(key);
-    bundledRows.push(
-      bundledSuggestion({
-        runnerId: providerId,
-        model,
-        modelsDevEntries,
-        keepBundledDefault,
-      }),
-    );
+    const keepBundledDefault = runtimeSnapshot === null;
+    for (const model of getBundledModels(providerId)) {
+      const owner = providerId;
+      const key = entryKey({ owner, selectionId: model.name });
+      if (runtimeKeys.has(key) || modelsDevKeys.has(key) || bundledKeys.has(key)) continue;
+      bundledKeys.add(key);
+      bundledRows.push(
+        bundledSuggestion({
+          runnerId: providerId,
+          model,
+          modelsDevEntries,
+          keepBundledDefault,
+        }),
+      );
+    }
   }
 
   const catalogRows = [

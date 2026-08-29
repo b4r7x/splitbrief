@@ -12,6 +12,7 @@ export interface PickerViewState {
   view: PickerSubView;
   preservedLeftIndex: number;
   expandedModelId: string | null;
+  optionDraftId: string | null;
   draft: string | null;
 }
 
@@ -19,6 +20,7 @@ const initial: PickerViewState = {
   view: { kind: 'picker' },
   preservedLeftIndex: 0,
   expandedModelId: null,
+  optionDraftId: null,
   draft: null,
 };
 
@@ -40,12 +42,24 @@ function close() {
   );
 }
 
-function expand(modelId: string) {
-  store.set((s) => (s.expandedModelId === modelId ? s : { ...s, expandedModelId: modelId }));
+function expand(modelId: string, optionDraftId?: string) {
+  store.set((s) => {
+    const nextDraft = optionDraftId === undefined ? s.optionDraftId : optionDraftId;
+    if (s.expandedModelId === modelId && s.optionDraftId === nextDraft) return s;
+    return { ...s, expandedModelId: modelId, optionDraftId: nextDraft };
+  });
 }
 
 function collapse() {
-  store.set((s) => (s.expandedModelId === null ? s : { ...s, expandedModelId: null }));
+  store.set((s) =>
+    s.expandedModelId === null && s.optionDraftId === null
+      ? s
+      : { ...s, expandedModelId: null, optionDraftId: null },
+  );
+}
+
+function setOptionDraftId(optionDraftId: string) {
+  store.set((s) => (s.optionDraftId === optionDraftId ? s : { ...s, optionDraftId }));
 }
 
 function setDraft(draft: string) {
@@ -58,5 +72,6 @@ export const pickerViewStore = {
   close,
   expand,
   collapse,
+  setOptionDraftId,
   setDraft,
 };

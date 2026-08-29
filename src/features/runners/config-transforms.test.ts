@@ -537,6 +537,21 @@ describe('effort across a seat switch', () => {
 
   it('clears effort on the implementer seat, where a CLI tool has no effort channel', () => {
     const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'codex', model: 'auto', effort: 'high' },
+    });
+
+    const { config: updated, notice } = commitImplementerSelection({
+      config,
+      selection: realPickerOption('implementer', 'codex'),
+      model: { id: 'auto' },
+    });
+
+    expect(updated.implementer).not.toHaveProperty('effort');
+    expect(notice).toBeDefined();
+  });
+
+  it('keeps effort on a Claude Code implementer seat', () => {
+    const config = makeConfig({
       implementer: { kind: 'cli', tool: 'claude-code', model: 'auto', effort: 'high' },
     });
 
@@ -546,8 +561,12 @@ describe('effort across a seat switch', () => {
       model: { id: 'auto' },
     });
 
-    expect(updated.implementer).not.toHaveProperty('effort');
-    expect(notice).toBeDefined();
+    expect(updated.implementer).toMatchObject({
+      kind: 'cli',
+      tool: 'claude-code',
+      effort: 'high',
+    });
+    expect(notice).toBeUndefined();
   });
 });
 
