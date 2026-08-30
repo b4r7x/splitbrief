@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import type { CliAuthChannelId } from '../../../core/runners/cli-tool-catalog.js';
 import {
@@ -278,17 +278,28 @@ describe('Claude compiler envelope transport', () => {
       const pidFile = join(shimDir, 'descendant.pid');
       installClaudeNodeShim(shimDir, descendantPidShim({ pidFile, body: '' }));
       const events: RunnerCallEvent[] = [];
+      const startedAt = Date.now();
 
-      await expect(
-        runClaude({
-          attemptId: createTaskCompilationAttemptId(),
-          envelope: envelope({ deadlineMs: 400 }),
-          onCallEvent: (event) => events.push(event),
-        }),
-      ).rejects.toThrow('envelope deadline');
+      // Trust resolution and the shim's own boot run inside the deadline window, so a
+      // budget near their cost races the shim's pid publication against the reaper.
+      const pending = runClaude({
+        attemptId: createTaskCompilationAttemptId(),
+        envelope: envelope({ deadlineMs: 2_000 }),
+        onCallEvent: (event) => events.push(event),
+      });
+      const [descendantPid] = await Promise.all([
+        vi.waitFor(
+          () => {
+            const pid = Number.parseInt(readFileSync(pidFile, 'utf8'), 10);
+            expect(pid).toBeGreaterThan(1);
+            return pid;
+          },
+          { timeout: 5_000, interval: 10 },
+        ),
+        expect(pending).rejects.toThrow('envelope deadline'),
+      ]);
 
-      const descendantPid = Number.parseInt(readFileSync(pidFile, 'utf8'), 10);
-      expect(descendantPid).toBeGreaterThan(1);
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(2_000);
       expect(processIsAbsent(descendantPid)).toBe(true);
       const errors = runnerCallErrors(events);
       expect(errors).toHaveLength(1);

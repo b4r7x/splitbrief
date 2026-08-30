@@ -285,7 +285,7 @@ Linear sessions lose context on recovery. When an agent attempt fails and we try
 
 These are conscious anti-goals, not TODO items:
 
-- **Custom TUI framework** — Ink 6.x with incremental rendering is sufficient. Custom differential rendering is a multi-month effort with no user-visible gain.
+- **Custom TUI framework** — Ink 6.x is sufficient; the whole-frame rewrite at the 30fps cap is fast enough, and `incrementalRendering` stays off until ink >= 7.0.0. Custom differential rendering is a multi-month effort with no user-visible gain.
 - **Extension/plugin system** — Our hook system (allow/deny/warn/crash) is the right abstraction for an orchestrator. Extensions are for tools that own the agent loop; we don't.
 - **Model registry** — We delegate model management to the providers (ollama, LM Studio, OpenRouter). No model catalog, no download management.
 - **OAuth/login flows** — Authentication belongs to the child agents (claude-code, codex). We pass API keys in config.

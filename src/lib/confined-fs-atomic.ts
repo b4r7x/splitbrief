@@ -94,11 +94,9 @@ type AtomicLockObservation = Readonly<{
 
 const ATOMIC_LOCK_SUFFIX = '.cas.lock';
 const ATOMIC_LOCK_RETRY_MS = 5;
-function normalizeProcessStartTimeMs(startTimeMs: number): number {
-  return Math.floor(startTimeMs / 1000) * 1000;
-}
+const PROCESS_START_TOLERANCE_MS = 2000;
 
-const CURRENT_PROCESS_START_TIME_MS = normalizeProcessStartTimeMs(
+const CURRENT_PROCESS_START_TIME_MS = Math.round(
   readProcessStartTimeMs(process.pid) ?? Date.now() - process.uptime() * 1000,
 );
 
@@ -324,7 +322,9 @@ function atomicLockOwnerState(owner: AtomicLockOwner): 'live' | 'dead' | 'unknow
   const observedStartTimeMs =
     owner.pid === process.pid ? CURRENT_PROCESS_START_TIME_MS : readProcessStartTimeMs(owner.pid);
   if (observedStartTimeMs !== null) {
-    return normalizeProcessStartTimeMs(observedStartTimeMs) === owner.startTimeMs ? 'live' : 'dead';
+    return Math.abs(observedStartTimeMs - owner.startTimeMs) <= PROCESS_START_TOLERANCE_MS
+      ? 'live'
+      : 'dead';
   }
   try {
     process.kill(owner.pid, 0);

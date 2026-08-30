@@ -1,4 +1,5 @@
 import type { FilterableItem } from '../../../components/pickers/filtering.js';
+import type { CycleOutcome } from './use-nav-state.js';
 import { isVirtualCustomItem, type RightItemOrVirtual } from './virtual-items.js';
 
 function stepIndex<T>(items: T[], from: number, direction: 1 | -1): number {
@@ -40,6 +41,8 @@ export interface KeyboardContext<L extends FilterableItem, R extends { id: strin
   /** The two activation paths; Enter never re-implements either. */
   activateLeft: (index: number) => void;
   activateRight: (index: number) => void;
+  /** Steps the right row in place; `none` leaves the key to the query. */
+  cycleRight: (index: number) => CycleOutcome;
   isExpanded: boolean;
   onCollapse?: (() => void) | undefined;
 }
@@ -156,6 +159,9 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
   }
 
   if (input && !key.ctrl && !key.meta && !key.tab) {
+    if (input === ' ' && ctx.rightActive && ctx.cycleRight(ctx.rightEffectiveIndex) !== 'none') {
+      return;
+    }
     if (ctx.isExpanded) ctx.onCollapse?.();
     if (ctx.leftActive) {
       ctx.setLeftFilter((prev) => prev + input);

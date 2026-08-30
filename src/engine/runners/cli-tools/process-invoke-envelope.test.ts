@@ -16,7 +16,7 @@ import {
   createTaskDispatchLedger,
   type TaskDispatchLedger,
 } from '../../calls/dispatch-ledger.js';
-import type { RunnerCallContext } from '../../calls/types.js';
+import type { RunnerCallContext, RunnerCallEvent } from '../../calls/types.js';
 import { killAllProcesses } from '../../../lib/process/registry.js';
 import { claudeCodeImplementerAdapter } from './claude-code.js';
 import type { CliInvocation, CliImplementerAdapter } from './contract.js';
@@ -147,6 +147,18 @@ const silentWithDescendantScript = [
   'setInterval(()=>{},5000)',
 ].join(';');
 
+const chattyWithDescendantScript = [
+  "const {spawn}=require('node:child_process')",
+  "const child=spawn(process.execPath,['-e','setInterval(()=>{},5000)'],{stdio:'ignore'})",
+  "process.stdout.write('PID:'+child.pid+'\\n')",
+  "const line='TEXT:'+Buffer.from('tick').toString('base64')+'\\n'",
+  'setInterval(()=>process.stdout.write(line),10)',
+].join(';');
+
+function blockEventLoop(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 describe('process-invoke envelope enforcement', () => {
   const dirs: string[] = [];
   function markerDir(): string {
@@ -186,14 +198,61 @@ describe('process-invoke envelope enforcement', () => {
     'kills the silent process tree at the envelope deadline and classifies it as a timeout',
     async () => {
       const descendantPid = { current: 0 };
-      const env = envelope({ deadlineMs: 400 });
+      const env = envelope({ deadlineMs: 5_000 });
+      const startedAt = Date.now();
       const result = await invokeProcessCli(fixtureAdapter(descendantPid), {
-        invocation: invocation(silentWithDescendantScript),
+        invocation: invocation(silentWithDescendantScript, 20_000),
         prompt: '',
         callContext: contextWith(env),
       });
+      const elapsedMs = Date.now() - startedAt;
 
       expect(result).toMatchObject({ status: 'timeout', error: { code: 'timeout' } });
+      expect(elapsedMs).toBeGreaterThanOrEqual(5_000);
+      expect(elapsedMs).toBeLessThan(20_000);
+      expect(descendantPid.current).toBeGreaterThan(1);
+      expect(processIsAbsent(descendantPid.current)).toBe(true);
+    },
+    30_000,
+  );
+
+  itUnix(
+    'classifies a chatty process tree at the envelope deadline as a timeout, not an output limit',
+    async () => {
+      const descendantPid = { current: 0 };
+      const events: RunnerCallEvent[] = [];
+      const env = envelope({ deadlineMs: 1_000 });
+      const adapter: CliImplementerAdapter = {
+        ...fixtureAdapter(descendantPid),
+        // Pre-launch work runs after the recorder starts the envelope clock and
+        // before the invocation timer is armed, so the child's post-deadline
+        // lines reach the recorder's deadline latch this many ms before the
+        // abort — the window a chatty runner hits and a silent one cannot.
+        validateArgs: () => {
+          blockEventLoop(500);
+          return { valid: true };
+        },
+      };
+      const startedAt = Date.now();
+      const result = await invokeProcessCli(adapter, {
+        invocation: invocation(chattyWithDescendantScript, 20_000),
+        prompt: '',
+        callContext: contextWith(env),
+        onEvent: (event) => {
+          events.push(event);
+        },
+      });
+      const elapsedMs = Date.now() - startedAt;
+
+      expect(
+        events.some(
+          (event) =>
+            event.type === 'call_warning' && event.warning.code === 'task_compiler_timeout',
+        ),
+      ).toBe(true);
+      expect(result).toMatchObject({ status: 'timeout', error: { code: 'timeout' } });
+      expect(elapsedMs).toBeGreaterThanOrEqual(1_000);
+      expect(elapsedMs).toBeLessThan(20_000);
       expect(descendantPid.current).toBeGreaterThan(1);
       expect(processIsAbsent(descendantPid.current)).toBe(true);
     },

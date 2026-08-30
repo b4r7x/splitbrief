@@ -690,12 +690,21 @@ describe('compiler dispatch matrix — production spawn path with a shim executa
     });
 
     it('the deadline reaps the process tree and classifies the call as a timeout', async () => {
+      // The deadline arms before the shim's own node boot, so it has to outlast
+      // that boot or the tree is reaped before the child publishes its marker
+      // and the reaping this test is about never gets to happen. The elapsed
+      // bounds keep the constant load-bearing: a deadline that stops ending the
+      // call fails them.
+      const startedAt = Date.now();
       const run = await runCompile({
         count: 4,
         modes: ['hang'],
-        envelope: envelopeFixture({ deadlineMs: 800 }),
+        envelope: envelopeFixture({ deadlineMs: 5_000 }),
       });
+      const elapsedMs = Date.now() - startedAt;
       expectFailure(run, 'task_compiler_timeout');
+      expect(elapsedMs).toBeGreaterThanOrEqual(5_000);
+      expect(elapsedMs).toBeLessThan(20_000);
       expect(markerCount()).toBe(1);
       expect(requireLedger(run).snapshot().dispatchCount).toBe(1);
       const marker = readMarker(1);

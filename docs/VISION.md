@@ -80,15 +80,14 @@ The TUI visual language uses opencode as a reference point. Key principles:
 - **Markdown rendering** in planner text — headings in accent, code blocks highlighted, bold in warning
 
 **What we CAN'T replicate** (and don't need to):
-- opencode uses OpenTUI (Zig native core, 60fps, GPU). We use Ink 6 with full-screen redraw via react-reconciler + Yoga layout (30fps cap). Ink erases and rewrites the entire output on each state change — it does NOT render line-by-line. Mitigated by `incrementalRendering` (Ink 6.5+) which diffs output and only rewrites changed lines, and `synchronizedOutput` (Ink 6.7+) which prevents flicker in multiplexers.
-- opencode has mouse support. Ink doesn't.
+- opencode uses OpenTUI (Zig native core, 60fps, GPU). We use Ink 6 with full-screen redraw via react-reconciler + Yoga layout (30fps cap). Ink erases and rewrites the entire output on each state change — it does NOT render line-by-line. `incrementalRendering` (Ink 6.5+) would diff the output and rewrite only the changed lines, but Ink 6.8's incremental writer mis-positions the cursor for a frame shorter than the terminal, so the inline render path stays on Ink's standard writer; the DEC 2026 synchronized-output brackets Ink writes around every frame on a TTY outside CI (Ink 6.7+) are what prevent flicker in multiplexers.
 - opencode has smooth animations. Ink's full-redraw architecture means animations are limited to spinners and progress bars.
 
 **What we GAINED over previous approach**:
-- Ink 6.5+ has native `incrementalRendering` — only changed lines redraw
-- Ink 6.7+ has `synchronizedOutput` — no flicker in tmux/Zellij
+- Ink 6.7+ brackets every frame in DEC 2026 synchronized output on a TTY outside CI — no flicker in tmux/Zellij
 - `<Static>` for completed events — zero re-render cost
 - `backgroundColor` on `<Box>` (Ink 6.1+) — the depth effect that makes opencode look good
+- Mouse zones Ink has no notion of — click, hover and scroll, on by default in fullscreen, off entirely under `--no-fullscreen` or `--no-mouse`, with hover opt-in via `--hover`
 
 ### 7. Clean architecture: engine + feature slices
 
@@ -103,7 +102,7 @@ Evaluated alternatives:
 - **Bubbletea** (Go) — not applicable (wrong language)
 - **neo-blessed** — semi-maintained, not React
 
-Ink works, we know React, incremental rendering is good enough. Migrate to OpenTUI later if needed.
+Ink works, we know React, and the whole-frame rewrite at the 30fps cap is fast enough — `incrementalRendering` stays off until ink >= 7.0.0 (see the render note above). Migrate to OpenTUI later if needed.
 
 ## Competitive Landscape (August 2026)
 

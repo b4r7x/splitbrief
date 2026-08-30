@@ -21,6 +21,11 @@ export function currentProcessStartTimeMs(): number {
   return Date.now() - process.uptime() * 1000;
 }
 
+/**
+ * The self path returns the node baseline while the `ps` path returns the
+ * kernel's whole-second start time, so the two are not comparable below a
+ * second: callers must judge identity with a tolerance, never with equality.
+ */
 export function readProcessStartTimeMs(pid: number): number | null {
   if (pid === process.pid) return currentProcessStartTimeMs();
 

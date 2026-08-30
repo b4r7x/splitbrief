@@ -77,8 +77,13 @@ function getHint(input: {
     return `↑↓ select${SOFT_SEP}⏎ ${verb}${SOFT_SEP}esc cancel${refreshHint}`;
   }
   if (kind === 'expanded') {
-    const lead = input.expandedHint ?? '⏎ choose route';
-    return `${lead}${SOFT_SEP}esc collapse${SOFT_SEP}←→ column${SOFT_SEP}↑↓ select${refreshHint}`;
+    // The launcher is pinned above the expansion and answers for itself, so the
+    // expansion's verb never speaks for it.
+    const lead = nav.isOnCustomItem ? '⏎ add custom' : (input.expandedHint ?? '⏎ choose route');
+    // An empty lead is a row with no verb of its own; it drops its slot rather
+    // than opening the line with a separator that reads as a missing key.
+    const parts = [lead, 'esc collapse', '←→ column', '↑↓ select'].filter((part) => part !== '');
+    return `${parts.join(SOFT_SEP)}${refreshHint}`;
   }
   if (nav.isOnCustomItem) {
     return `←→ column${SOFT_SEP}↑↓ select${SOFT_SEP}⏎ add custom${SOFT_SEP}esc cancel${refreshHint}`;
@@ -149,13 +154,17 @@ export function buildRightDisplay<R extends { id: string }>(
     const key = isVirtualCustomItem(item) ? CUSTOM_ROW_ID : getKey(item);
     if (section && isRealRightItem(item)) {
       const current = section.by(item);
-      if (current !== '' && current !== previous && (section.headerFor?.(current) ?? true)) {
-        if (slots.length > 0) {
-          slots.push({ kind: 'spacer', key: `spacer:${current}` });
+      // A row that opens no section of its own — the children of an expansion —
+      // leaves the open section standing, or the next row of it repeats its header.
+      if (current !== '') {
+        if (current !== previous && (section.headerFor?.(current) ?? true)) {
+          if (slots.length > 0) {
+            slots.push({ kind: 'spacer', key: `spacer:${current}` });
+          }
+          slots.push({ kind: 'header', key: `section:${current}`, section: current });
         }
-        slots.push({ kind: 'header', key: `section:${current}`, section: current });
+        previous = current;
       }
-      previous = current;
     }
     slots.push({ kind: 'row', key, item, navIndex });
   });
@@ -211,6 +220,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
     display.findIndex((slot) => slot.kind === 'row' && slot.navIndex === nav.right.index),
   );
 
+  const rightCurrent = nav.right.currentItem;
   const hintKind: PickerHintKind =
     terminalPane !== undefined
       ? 'terminal'
@@ -223,10 +233,11 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
     nav,
     hasRefresh: !!onRefresh,
     maxVisible,
-    expandedHint: rightProps.expandedHint,
+    expandedHint: rightProps.expandedHint?.(
+      rightCurrent && isRealRightItem(rightCurrent) ? rightCurrent : undefined,
+    ),
   });
 
-  const rightCurrent = nav.right.currentItem;
   const rawPreview =
     terminalPane !== undefined
       ? undefined
@@ -302,7 +313,12 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
               contentMaxWidth={rightContentWidth}
               onRowActivate={(displayIndex) => {
                 const slot = display[displayIndex];
-                if (slot?.kind === 'row') nav.activateRight(slot.navIndex);
+                if (slot?.kind !== 'row') return;
+                // A row that steps its own value is a control, not a choice: a
+                // click on it must not confirm the picker and dismiss it. A row that
+                // only holds the space key is still a choice, so it stays clickable.
+                if (nav.cycleRight(slot.navIndex) === 'stepped') return;
+                nav.activateRight(slot.navIndex);
               }}
               rowZonePrefix="runner-right"
               rowZoneZ={ROW_ZONE_Z_OVERLAY}

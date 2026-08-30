@@ -59,9 +59,9 @@ You: "add user authentication with JWT"
                 │
                 ▼
 ┌──────────────────────┐
-│  PLANNER (review)     │  Reads the result against the brief and the
-│                       │  evidence — code it did not write, except on
-│                       │  tasks it took over at the last tier
+│  REVIEWER             │  Reads the result against the brief and the
+│  (planner by default) │  evidence — code it did not write, unless it
+│                       │  took a task over at the last tier
 └──────────────────────┘
 ```
 
@@ -87,6 +87,7 @@ Then bring a planner — the stronger of the two:
 
 ```bash
 # Claude Code (default planner): install from https://claude.ai/code — uses your existing subscription, $0 extra
+# Cursor Agent CLI: install from https://cursor.com/cli
 npm install -g @openai/codex      # Codex
 npm install -g @github/copilot    # Copilot
 npm install -g @kilocode/cli      # Kilo Code
@@ -167,6 +168,8 @@ Those are the ones you need first. The full set — `ps`, `stats`, `export`, `ex
 | `/queue show` | Show queued messages |
 | `/queue clear` | Clear the message queue |
 
+Those are the ones you reach for mid-run. The full set — `/crew`, `/mode`, `/approval`, `/diff`, `/cost`, `/export`, `/handoff`, `/yolo` — is in [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md).
+
 ## Configuration
 
 `splitbrief init` writes `.splitbrief/config.yaml`. Keys are accepted in `camelCase` or `snake_case`; `init` writes `snake_case`:
@@ -177,7 +180,7 @@ version: 3
 
 planner:
   kind: cli
-  tool: claude-code          # claude-code | codex | opencode | aider | copilot | kilo-code
+  tool: claude-code          # claude-code | codex | opencode | aider | copilot | kilo-code | cursor
 
 implementer:
   kind: api                  # or `kind: cli` with a `tool:`, to run a CLI tool on a cheaper model
@@ -209,7 +212,7 @@ Git commit strategies are opt-in. The default (`commitStrategy: none`) leaves ch
 
 ### Planner backends
 
-Sixteen admitted planner IDs — six CLI tools, seven API providers, plus `agent-sdk`, `shell`, and `agent`:
+Seventeen admitted planner IDs — seven CLI tools, seven API providers, plus `agent-sdk`, `shell`, and `agent`:
 
 | Tool | Kind | Output Format | Notes |
 |------|------|---------------|-------|
@@ -219,6 +222,7 @@ Sixteen admitted planner IDs — six CLI tools, seven API providers, plus `agent
 | `aider` | cli | text | Parses `Tokens: Xk sent, Yk received` |
 | `copilot` | cli | json | GitHub Copilot CLI |
 | `kilo-code` | cli | json | Kilo Code CLI |
+| `cursor` | cli | stream-json | Cursor Agent CLI |
 | `anthropic` | api | — | Endpoints and keys in the Implementer providers table below |
 | `openrouter` | api | — | |
 | `deepseek` | api | — | |
@@ -230,7 +234,7 @@ Sixteen admitted planner IDs — six CLI tools, seven API providers, plus `agent
 | `shell` | shell | configurable | Any stdin/stdout command, see below |
 | `agent` | agent | configurable | Subprocess that writes files directly |
 
-Any of these is valid as `--planner <tool>`, for example `splitbrief start "add tests" --planner anthropic --implementer ollama`. The local-only providers `ollama` and `lm-studio` are implementer-only.
+Any of these is valid as `--planner <tool>` or `--reviewer <tool>`, for example `splitbrief start "add tests" --planner anthropic --implementer ollama`. The local-only providers `ollama` and `lm-studio` are implementer-only.
 
 #### Shell planner
 
@@ -245,6 +249,19 @@ planner:
 ```
 
 Planner backends vary in supported features. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the complete capability matrix.
+
+### Reviewer
+
+The planner reads the run diff unless an optional top-level `reviewer:` block names its own runner. It is the same discriminated union as `planner:` — the five kinds, the same generation fields, an optional `model` — and it draws from the planner roster above, so a backend the planner may not use is rejected here too.
+
+```yaml
+reviewer:
+  kind: cli
+  tool: codex
+  model: auto
+```
+
+The reviewer only reviews: planning, Task Brief compilation, and escalation stay on the planner whatever this block says. Without it, review tokens are priced at the planner's rates and folded into the planner line. Full reference in [docs/CONFIGURATION.md](./docs/CONFIGURATION.md).
 
 ### Implementer providers
 
@@ -288,7 +305,7 @@ Any planner CLI tool can also be used as an implementer:
 ```yaml
 implementer:
   kind: cli
-  tool: claude-code           # or codex, opencode, aider, copilot, kilo-code
+  tool: claude-code           # or codex, opencode, aider, copilot, kilo-code, cursor
                               # omit model to let the tool pick its own default
 ```
 
@@ -311,7 +328,7 @@ SPLITBRIEF loads model metadata from [models.dev](https://models.dev) first. Run
 
 ### Catalog notes
 
-- Claude Code offers `auto`, `sonnet`, `opus`, and `opusplan` in the picker. Picking `auto` stores `model: auto`, which means the same thing as omitting `model`: no `--model` flag is passed and the tool uses its own default. Claude Code's older `default` spelling is read the same way.
+- Claude Code offers `auto`, `sonnet`, `opus`, `opusplan`, and `haiku` in the picker. Picking `auto` stores `model: auto`, which means the same thing as omitting `model`: no `--model` flag is passed and the tool uses its own default. Claude Code's older `default` spelling is read the same way.
 - For `opencode` and `kilo-code`, prefer automatic selection — leave `model` unset and configure the real default model in the tool itself before launching SPLITBRIEF.
 - Dollar pricing is shown only for real API providers. CLI tools, subscriptions, and local backends are intentionally unpriced.
 

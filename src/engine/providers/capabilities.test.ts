@@ -39,7 +39,7 @@ describe('detectCapabilities', () => {
     } as Config;
 
     const result = await detectCapabilities(config);
-    expect(result.contextLength).toBe(1_050_000);
+    expect(result.contextLength).toBe(272_000);
     expect(result.origin).toBe('catalog');
   });
 

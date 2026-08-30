@@ -18,7 +18,7 @@ import type { RunnerBillingPosture } from '../../core/runners/runner-billing.js'
 import { includes, assertNever } from '../../utils/type-guards.js';
 import { sortPickerOptions, type PickerOption } from './model-catalog/options.js';
 import { isCustomModel, type ModelOption, type ModelVariant } from './model-catalog/recency.js';
-import { cycleOptionAxis, isOptionFamily, optionDraftOf } from './model-catalog/option-axis.js';
+import { isOptionFamily, optionDraftOf, stepOptionAxis } from './model-catalog/option-axis.js';
 import {
   rightRowKey,
   routeAuthStateFor,
@@ -132,9 +132,8 @@ export function rightRowActivation(
     case 'notice':
       return row.action === 'refresh' ? 'refresh' : 'none';
     case 'route':
-      return 'confirm';
     case 'axis':
-      return 'cycle';
+      return 'confirm';
     case 'model':
       if (row.expanded) return isOptionFamily(row.model) ? 'confirm' : 'collapse';
       if (isOptionFamily(row.model)) return 'expand';
@@ -230,6 +229,28 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
     return configured.length === 1 ? configured[0] : undefined;
   };
 
+  // The expanded column's Enter verb belongs to the highlighted row: space steps an
+  // axis in place, and a row outside the expansion still confirms or expands there.
+  // Only a provider expansion's own rows keep the column-wide `⏎ choose route`.
+  const expandedRowHint = (row: RightRow | undefined): string | undefined => {
+    if (row === undefined || row.kind === 'route') return undefined;
+    // A notice sits outside the expansion and must not borrow its verb: a picker of
+    // option families holds no route to choose. The failed lane retries on Enter; the
+    // pending one has no key at all, and repeating the row's own text in the key slot
+    // would read as an affordance, so it contributes nothing.
+    if (row.kind === 'notice') return row.action === 'refresh' ? '⏎ retry' : '';
+    if (row.kind === 'axis') {
+      // A sparse variant grid leaves an axis with nowhere to step, and the byline
+      // must not promise a key that cannot move.
+      const steps = stepOptionAxis(row.model, row.axis, optionDraftId) !== undefined;
+      return steps ? `space cycle${SOFT_SEP}⏎ confirm` : '⏎ confirm';
+    }
+    if (row.expanded) return isOptionFamily(row.model) ? '⏎ confirm' : '⏎ collapse';
+    return rightRowActivation(row, soleConfiguredRoute(row)) === 'expand'
+      ? '⏎ expand'
+      : '⏎ confirm';
+  };
+
   const rightRows = keyRows(catalog.rightRows);
 
   const confirmRow = (left: PickerOption, row: RightRow | null) => {
@@ -241,8 +262,9 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
       void actions.confirmProviderVariant(row.variant.fullId);
       return;
     }
-    if (row.kind !== 'model') return;
-    if (row.expanded && isOptionFamily(row.model)) {
+    if (row.kind === 'notice') return;
+    // An axis row confirms the family's drafted variant, not its own axis value.
+    if (row.kind === 'axis' || (row.expanded && isOptionFamily(row.model))) {
       void actions.confirmProviderVariant(
         optionDraftOf(row.model, pickerViewStore.get().optionDraftId),
       );
@@ -375,8 +397,9 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
               return (
                 hits(row.variant.fullId) || hits(row.variant.tag) || hits(row.variant.displayName)
               );
+            // An axis row is a child of its model row, so it follows the parent
+            // through the filter; a lone child would draw a tree that hangs off nothing.
             case 'axis':
-              return hits(row.axis) || hits(row.value) || hitsModel(row.model);
             case 'model':
               return hitsModel(row.model);
             default:
@@ -401,20 +424,22 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
           pickerViewStore.expand(row.model.id);
         },
         onCollapse: () => pickerViewStore.collapse(),
+        // Space belongs to the expanded family: an axis row steps it, and takes the key
+        // even where its ladder has nowhere to go — but only a row that moved owns the
+        // click, so a dead axis confirms under the mouse the way its byline says. The
+        // parent holds the key rather than collapsing the family the user is steering.
         onCycle: (row) => {
-          if (row.kind !== 'axis') return;
-          const next = cycleOptionAxis(
-            row.model.variants ?? [],
-            optionDraftOf(row.model, pickerViewStore.get().optionDraftId),
-            row.axis,
-          );
-          if (next !== undefined) pickerViewStore.setOptionDraftId(next);
+          if (row.kind !== 'axis') {
+            return row.kind === 'model' && row.expanded && isOptionFamily(row.model)
+              ? 'held'
+              : 'none';
+          }
+          const next = stepOptionAxis(row.model, row.axis, pickerViewStore.get().optionDraftId);
+          if (next === undefined) return 'held';
+          pickerViewStore.setOptionDraftId(next);
+          return 'stepped';
         },
-        expandedHint: catalog.rightRows.some(
-          (row) => row.kind === 'model' && row.expanded && isOptionFamily(row.model),
-        )
-          ? `⏎ cycle${SOFT_SEP}⏎ on model confirms`
-          : undefined,
+        expandedHint: expandedRowHint,
         // The store's id survives a move to another tool, whose rows carry no
         // expansion; only the rows on screen can say whether Escape collapses.
         isExpanded: catalog.rightRows.some((row) => row.kind === 'model' && row.expanded),

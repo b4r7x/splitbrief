@@ -105,7 +105,7 @@ Built-in hook source lives under `src/engine/hooks/builtins/`. Adding a new buil
 
 ## Release process
 
-Version lives in [`package.json`](./package.json); notable changes are recorded in [CHANGELOG.md](./CHANGELOG.md). The `prepack` script triggers `npm run build`, so `npm pack`/`npm publish` rebuild `dist/` automatically. Maintainers handle the tag + publish.
+Version lives in [`package.json`](./package.json); notable changes are recorded in [CHANGELOG.md](./CHANGELOG.md). The `prepare` script triggers `npm run build`, so `npm pack`/`npm publish` rebuild `dist/` automatically. It is npm's only pre-pack hook that also installs devDependencies for a git install, so `npm install <git-url>` builds `dist/` too — as does a plain `npm install`/`npm ci` in a clone. Maintainers handle the tag + publish.
 
 ## Getting help
 

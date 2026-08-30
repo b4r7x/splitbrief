@@ -106,11 +106,19 @@ export async function invokeProcessCli(
       context: context.callContext,
       credentialValues,
       onEvent: (event) => {
-        // A canonical envelope breach latches in the recorder and surfaces as
-        // this warning; tear the process tree down immediately so the hard
+        // A canonical envelope byte breach latches in the recorder and surfaces
+        // as this warning; tear the process tree down immediately so the hard
         // bound is enforced at spawn, not only recorded. The catch below
         // classifies the awaited abort as truncated with the latch code.
-        if (event.type === 'call_warning' && isCanonicalEnvelopeLimitWarning(event.warning.code)) {
+        // `task_compiler_timeout` is deliberately absent: the envelope deadline
+        // already clamps the invocation timer and its idle bound clamps the
+        // watchdog kill, so both own their teardown and classify as `timeout`.
+        // Latching here would only race them and report a deadline breach as an
+        // output limit.
+        if (
+          event.type === 'call_warning' &&
+          event.warning.code === TASK_COMPILATION_FAILURE_CODE.task_compiler_output_limited
+        ) {
           envelopeLimit = { code: event.warning.code, message: event.warning.message };
           timeoutController?.abort(
             new DOMException('CLI invocation envelope limit reached', 'TimeoutError'),
@@ -687,13 +695,6 @@ function isFailureExit(contract: CliOutputContract, exitCode: number | null): bo
     default:
       return assertNever(contract);
   }
-}
-
-function isCanonicalEnvelopeLimitWarning(code: string): boolean {
-  return (
-    code === TASK_COMPILATION_FAILURE_CODE.task_compiler_output_limited ||
-    code === TASK_COMPILATION_FAILURE_CODE.task_compiler_timeout
-  );
 }
 
 function fatal(state: 'output-budget-breach' | 'protocol-failure', message: string): Error {

@@ -433,6 +433,17 @@ export function cycleOptionAxis(
   }
 }
 
+/** The id one step of `axis` lands on, or undefined where the ladder has nowhere to move. */
+export function stepOptionAxis(
+  model: Pick<ModelOption, 'id' | 'variants'>,
+  axis: OptionAxisName,
+  optionDraftId: string | null | undefined,
+): string | undefined {
+  const current = optionDraftOf(model, optionDraftId);
+  const next = cycleOptionAxis(model.variants ?? [], current, axis);
+  return next === current ? undefined : next;
+}
+
 export function formatAxisValue(axis: OptionAxisName, selection: OptionSelection): string {
   switch (axis) {
     case 'effort':

@@ -209,10 +209,17 @@ export async function renderApp(
   suspendListener.install();
   process.on('SIGCONT', onResume);
 
+  // No `incrementalRendering`: Ink 6.8's incremental writer assumes the cursor rests on the
+  // last rendered line, but Ink writes a frame shorter than the terminal with a trailing
+  // newline and the cursor a row below it (log-update.js:164 against ink.js:320-321), so every
+  // repaint of a short frame lands one row low. Ink 7.0.0 fixed that arithmetic, but the
+  // manifest pins `^6.8.0`, so restoring this needs a major bump the repo has not taken. The
+  // cost is a whole-frame rewrite per repaint, which Ink brackets in DEC 2026 synchronized
+  // output on a TTY outside CI (ink/build/write-synchronized.js) and leaves unbracketed on a
+  // pipe. Under CI there is no cost at all: Ink drops every non-static redraw (ink.js:262).
   const renderFallback = (stdin?: NodeJS.ReadStream) => {
     return render(appElement, {
       exitOnCtrlC: false,
-      incrementalRendering: true,
       maxFps: 30,
       kittyKeyboard,
       ...(stdin ? { stdin } : {}),

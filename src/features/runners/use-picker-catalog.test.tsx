@@ -7,6 +7,7 @@ import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
+import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
@@ -144,6 +145,7 @@ describe('usePickerCatalog', () => {
     detectionStore.reset();
     modelCacheStore.reset();
     overlayStore.reset();
+    pickerViewStore.reset();
     _resetMouseZones();
   });
 
@@ -496,6 +498,57 @@ describe('usePickerCatalog', () => {
       expect(ui.lastFrame()).toContain('ollama-only-model');
       expect(ui.lastFrame()).not.toContain('anthropic-only-model');
     });
+    ui.unmount();
+  });
+
+  it('re-derives the axis values from the option draft the store is holding', async () => {
+    // The hook is the only path from the store's draft to a rendered axis value:
+    // the rows come back from `buildRightRows`, not from a fixture.
+    const zeta = [
+      { id: 'zeta-low' },
+      { id: 'zeta-high' },
+      { id: 'zeta-max' },
+      { id: 'zeta-low-fast' },
+      { id: 'zeta-high-fast' },
+      { id: 'zeta-max-fast' },
+    ];
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        implementer: {
+          kind: 'api',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'zeta-high',
+        },
+      }),
+    });
+    detectionStore.setDetection({
+      cliTools: [],
+      providers: [{ provider: 'ollama', available: true, isLocal: true, models: zeta }],
+    });
+    modelCacheStore.setProviderModels('ollama', zeta);
+    pickerViewStore.expand('zeta-high', 'zeta-high');
+
+    function AxisProbe() {
+      const catalog = usePickerCatalog('implementer', 0, 'ollama');
+      return (
+        <Text>
+          {catalog.rightRows
+            .filter((row) => row.kind === 'axis')
+            .map((row) => `${row.axis}=${row.value}`)
+            .join(',') || 'no-axis-rows'}
+        </Text>
+      );
+    }
+
+    const ui = renderFeature(<AxisProbe />);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('effort=High,speed=Standard');
+
+    pickerViewStore.setOptionDraftId('zeta-max-fast');
+    await tick(20);
+    expect(ui.lastFrame()).toContain('effort=Max,speed=Fast');
     ui.unmount();
   });
 
