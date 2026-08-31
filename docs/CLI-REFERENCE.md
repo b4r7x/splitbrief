@@ -123,7 +123,7 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
 | `--worktree [name]` | string \| boolean | — | Run inside a new linked git worktree at `.trees/<name>` on branch `splitbrief/<name>`. If `name` is omitted, the feature slug is used only when `workflow.persistTranscript` is true; otherwise an opaque `session-<hex>` slug is used. |
 | `--detach` | boolean | `false` | Spawn the workflow as a background server and exit. Requires a `feature` argument and is mutually exclusive with `--json` and `--rpc`. |
 | `--no-fullscreen` | boolean | fullscreen on | Disable the alternate screen buffer. Useful when piping or debugging. |
-| `--no-mouse` | boolean | mouse on | Disable Ink mouse tracking. |
+| `--no-mouse` | boolean | mouse on | Disable Ink mouse tracking — click, hover and scroll. Tracking runs only in fullscreen, so `--no-fullscreen` disables it too and leaves this flag a no-op. |
 | `--hover` | boolean | `false` | Opt in to hover highlighting under the mouse. Requires both mouse tracking and fullscreen; a no-op with `--no-mouse` or `--no-fullscreen`. |
 | `--allow-hooks` | boolean | `false` | Trust the hook config without prompting (CI). |
 | `--allow-repo-runners` | boolean | `false` | Grant this run every `shell`/`agent` runner command the project config declares, including profile runners, package-manager script indirection, and project-local PATH resolution. Headless runs have no other way past the trust prompt; the grant is not persisted. Command strings containing `{prompt}` are rejected by config validation; pass prompts through stdin or args. |
@@ -1487,7 +1487,7 @@ splitbrief attach [session-id] [--project <dir>] [--no-fullscreen] [--no-mouse] 
 | `<session-id>` | string (positional) | auto-resolved | Specific session to attach to. Optional when exactly one session is running. |
 | `--project <dir>` | path | cwd | Project directory. |
 | `--no-fullscreen` | boolean | fullscreen on | Disable the alternate screen buffer. |
-| `--no-mouse` | boolean | mouse on | Disable Ink mouse tracking. |
+| `--no-mouse` | boolean | mouse on | Disable Ink mouse tracking — click, hover and scroll; already off under `--no-fullscreen`. |
 | `--hover` | boolean | `false` | Opt in to hover highlighting; requires mouse + fullscreen. |
 
 ### Examples

@@ -22,8 +22,9 @@ function axisRow(
   model: ModelOption,
   axis: 'effort' | 'speed' | 'thinking',
   value: string,
+  last = false,
 ): RightRow {
-  return { kind: 'axis', model, axis, value };
+  return { kind: 'axis', model, axis, value, last };
 }
 
 function routeRow(auth: RouteAuthState): RightRow {
@@ -418,13 +419,214 @@ describe('runner row grammar', () => {
       ui.unmount();
     });
 
-    it('right-aligns axis values under the summary text, not under the disclosure', async () => {
+    it('drops the summary from an expanded family and keeps it on a collapsed one', async () => {
       const luna: ModelOption = {
         id: 'gpt-5.6-luna-high',
         displayName: 'GPT-5.6 Luna',
         variants: [
           { fullId: 'gpt-5.6-luna-high', providerPrefix: '', tag: '1M High' },
           { fullId: 'gpt-5.6-luna-high-fast', providerPrefix: '', tag: 'High Fast' },
+        ],
+      };
+      const expanded = renderFeature(
+        renderModelRow({
+          row: { ...modelRow(luna, 'Detected'), expanded: true },
+          isCursor: false,
+          maxWidth: 60,
+          currentModel: 'gpt-5.6-luna-high',
+          sectioned: false,
+        }),
+      );
+      await tick(20);
+      const expandedFrame = expanded.lastFrame() ?? '';
+      expect(expandedFrame).toContain('GPT-5.6 Luna');
+      expect(expandedFrame).not.toContain('Standard');
+      expect(expandedFrame).toContain(glyph('disclosureOpen'));
+      expanded.unmount();
+
+      const collapsed = renderFeature(
+        renderModelRow({
+          row: modelRow(luna, 'Detected'),
+          isCursor: false,
+          maxWidth: 60,
+          currentModel: 'gpt-5.6-luna-high',
+          sectioned: false,
+        }),
+      );
+      await tick(20);
+      const collapsedFrame = collapsed.lastFrame() ?? '';
+      expect(collapsedFrame).toContain('Standard');
+      expect(collapsedFrame).toContain(glyph('disclosureClosed'));
+      collapsed.unmount();
+    });
+
+    it('keeps the model name whole by dropping the context length, then the summary', async () => {
+      const opus: ModelOption = {
+        id: 'claude-opus-5-low',
+        displayName: 'Claude Opus 5',
+        contextLength: 1_000_000,
+        variants: [
+          { fullId: 'claude-opus-5-low', providerPrefix: '', tag: 'Low' },
+          { fullId: 'claude-opus-5-low-fast', providerPrefix: '', tag: 'Low Fast' },
+          { fullId: 'claude-opus-5-thinking-high', providerPrefix: '', tag: 'Thinking' },
+          { fullId: 'claude-opus-5-thinking-high-fast', providerPrefix: '', tag: 'Thinking Fast' },
+        ],
+      };
+      const frameAt = async (maxWidth: number): Promise<string> => {
+        const ui = renderFeature(
+          renderModelRow({
+            row: modelRow(opus, 'Detected'),
+            isCursor: false,
+            maxWidth,
+            currentModel: 'claude-opus-5-low',
+            sectioned: false,
+          }),
+        );
+        await tick(20);
+        const frame = ui.lastFrame() ?? '';
+        ui.unmount();
+        return frame;
+      };
+
+      // The three-axis summary and the context length together push the name under
+      // its floor, so the context goes first and the name stays whole.
+      const tight = await frameAt(40);
+      expect(tight).toContain('Claude Opus 5');
+      expect(tight).toContain('Low · Standard · Off');
+      expect(tight).not.toContain('1M');
+
+      // Narrower still, the summary cannot buy its place either.
+      const tighter = await frameAt(38);
+      expect(tighter).toContain('Claude Opus 5');
+      expect(tighter).not.toContain('Standard');
+      expect(tighter).toContain('1M');
+    });
+
+    it('sheds the context length, then the summary, and clips the Stale word rather than drop it', async () => {
+      // A collapsed family carries no other staleness signal, and the disclosure
+      // spells the summary out again one keypress away, so the tail sheds in that order.
+      const grok: ModelOption = {
+        id: 'cursor-grok-4.6-low',
+        displayName: 'Cursor Grok 4.6',
+        contextLength: 272_000,
+        variants: [
+          { fullId: 'cursor-grok-4.6-low', providerPrefix: '', tag: 'Low' },
+          { fullId: 'cursor-grok-4.6-low-fast', providerPrefix: '', tag: 'Low Fast' },
+          { fullId: 'cursor-grok-4.6-thinking-high', providerPrefix: '', tag: 'Thinking' },
+        ],
+      };
+      const frameAt = async (maxWidth: number): Promise<string> => {
+        const ui = renderFeature(
+          renderModelRow({
+            row: modelRow(grok, 'Stale'),
+            isCursor: false,
+            maxWidth,
+            currentModel: 'cursor-grok-4.6-low',
+            sectioned: false,
+          }),
+        );
+        await tick(20);
+        const frame = ui.lastFrame() ?? '';
+        ui.unmount();
+        return frame;
+      };
+
+      const wide = await frameAt(48);
+      expect(wide).toContain('Low · Standard · Off');
+      expect(wide).toContain('Stale');
+      expect(wide).not.toContain('272K');
+
+      const tight = await frameAt(26);
+      expect(tight).toContain('Stale');
+      expect(tight).not.toContain('272K');
+      expect(tight).not.toContain('Standard');
+
+      // Below the name floor the word still goes out: it costs the name cells, but
+      // an empty column would leave the row with nothing to say it is stale.
+      const floored = await frameAt(21);
+      expect(floored).toContain('Stale');
+      expect(floored).not.toContain('Cursor Grok 4.6');
+
+      // Narrower still, ListRow clips it. A flagged row reads as flagged either way.
+      const clipped = await frameAt(18);
+      expect(clipped).toContain('St…');
+      expect(clipped).not.toContain('Stale');
+    });
+
+    it('keeps the provenance word rather than fall back to a summary that would fit', async () => {
+      // One axis, so the summary is narrower than the word beside it: the only shape
+      // where a summary-only tail would fit a room the provenance word cannot.
+      const grok: ModelOption = {
+        id: 'cursor-grok-4.6-low',
+        displayName: 'Cursor Grok 4.6',
+        contextLength: 272_000,
+        variants: [
+          { fullId: 'cursor-grok-4.6-low', providerPrefix: '', tag: 'Low' },
+          { fullId: 'cursor-grok-4.6-max', providerPrefix: '', tag: 'Max' },
+        ],
+      };
+      const frameAt = async (maxWidth: number): Promise<string> => {
+        const ui = renderFeature(
+          renderModelRow({
+            row: modelRow(grok, 'Stale'),
+            isCursor: false,
+            maxWidth,
+            currentModel: 'cursor-grok-4.6-low',
+            sectioned: false,
+          }),
+        );
+        await tick(20);
+        const frame = ui.lastFrame() ?? '';
+        ui.unmount();
+        return frame;
+      };
+
+      // Room for one of them: the word the row cannot recover elsewhere wins.
+      const word = await frameAt(26);
+      expect(word).toContain('Stale');
+      expect(word).not.toContain('Low');
+
+      // Room for neither, though the summary alone would have fit: the word still goes
+      // out, paid for out of the name's cells.
+      const floored = await frameAt(23);
+      expect(floored).toContain('Stale');
+      expect(floored).not.toContain('Low');
+      expect(floored).not.toContain('Cursor Grok');
+    });
+
+    it('leaves a non-family row to ListRow at a width that clips the family chip', async () => {
+      const retained: ModelOption = {
+        id: 'retained-model',
+        membership: 'stale',
+        contextLength: 272_000,
+      };
+      const ui = renderFeature(
+        renderModelRow({
+          row: modelRow(retained, 'Stale'),
+          isCursor: false,
+          maxWidth: 21,
+          currentModel: undefined,
+          sectioned: false,
+        }),
+      );
+      await tick(20);
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('Stale 2…');
+      expect(frame).not.toContain(glyph('disclosureClosed'));
+      ui.unmount();
+    });
+
+    it('hangs axis rows off the parent and closes the block with the last-child glyph', async () => {
+      // The grid is full both ways, so effort and speed are both axes the row builder
+      // would emit and both ladders have somewhere to step.
+      const luna: ModelOption = {
+        id: 'gpt-5.6-luna-high',
+        displayName: 'GPT-5.6 Luna',
+        variants: [
+          { fullId: 'gpt-5.6-luna-high', providerPrefix: '', tag: '1M High' },
+          { fullId: 'gpt-5.6-luna-high-fast', providerPrefix: '', tag: 'High Fast' },
+          { fullId: 'gpt-5.6-luna-low', providerPrefix: '', tag: 'Low' },
+          { fullId: 'gpt-5.6-luna-low-fast', providerPrefix: '', tag: 'Low Fast' },
         ],
       };
       const width = 60;
@@ -448,7 +650,7 @@ describe('runner row grammar', () => {
       );
       const speed = renderFeature(
         renderModelRow({
-          row: axisRow(luna, 'speed', 'Standard'),
+          row: axisRow(luna, 'speed', 'Standard', true),
           isCursor: false,
           maxWidth: width,
           currentModel: undefined,
@@ -459,17 +661,115 @@ describe('runner row grammar', () => {
       const parentLine = stripAnsiStyles(parent.lastFrame() ?? '').split('\n')[0] ?? '';
       const effortLine = stripAnsiStyles(effort.lastFrame() ?? '').split('\n')[0] ?? '';
       const speedLine = stripAnsiStyles(speed.lastFrame() ?? '').split('\n')[0] ?? '';
-      const tokenEnd = (line: string, token: string): number => {
-        const at = line.lastIndexOf(token);
-        return at + token.length;
-      };
-      const textEnd = tokenEnd(parentLine, 'Standard');
-      expect(tokenEnd(effortLine, 'High')).toBe(textEnd);
-      expect(tokenEnd(speedLine, 'Standard')).toBe(textEnd);
-      expect(parentLine.indexOf(glyph('disclosureOpen'))).toBeGreaterThan(textEnd);
+
+      expect(effortLine.startsWith(`  ${glyph('treeBranch')}${glyph('divider')} effort`)).toBe(
+        true,
+      );
+      expect(speedLine.startsWith(`  ${glyph('treeLast')}${glyph('divider')} speed`)).toBe(true);
+      expect(effortLine).not.toContain(glyph('treeLast'));
+
+      // The cycle affordance stands in the parent's disclosure column, so nothing shifts.
+      expect(effortLine).toContain(glyph('connectorSame'));
+      expect(speedLine).toContain(glyph('connectorSame'));
+      expect(effortLine.indexOf(glyph('connectorSame'))).toBe(
+        parentLine.indexOf(glyph('disclosureOpen')),
+      );
+      expect(speedLine.indexOf(glyph('connectorSame'))).toBe(
+        effortLine.indexOf(glyph('connectorSame')),
+      );
       parent.unmount();
       effort.unmount();
       speed.unmount();
+    });
+
+    it('keeps the axis value whole in a column too narrow to also hold the cycle glyph', async () => {
+      const luna: ModelOption = {
+        id: 'gpt-5.6-luna-high',
+        displayName: 'GPT-5.6 Luna',
+        variants: [
+          { fullId: 'gpt-5.6-luna-high', providerPrefix: '', tag: '1M High' },
+          { fullId: 'gpt-5.6-luna-high-fast', providerPrefix: '', tag: 'High Fast' },
+        ],
+      };
+      const lineAt = async (maxWidth: number): Promise<string> => {
+        const ui = renderFeature(
+          renderModelRow({
+            row: axisRow(luna, 'speed', 'Standard', true),
+            isCursor: false,
+            maxWidth,
+            currentModel: undefined,
+            sectioned: false,
+          }),
+        );
+        await tick(20);
+        const line = stripAnsiStyles(ui.lastFrame() ?? '').split('\n')[0] ?? '';
+        ui.unmount();
+        return line;
+      };
+
+      // A value the column truncated away is a value space cannot be seen to cycle.
+      const floored = await lineAt(22);
+      expect(floored).toContain('Standard');
+      expect(floored).toContain(glyph('treeLast'));
+      expect(floored).not.toContain(glyph('connectorSame'));
+
+      // 20 is the widest column where the check cells the floor gives back are the
+      // only thing keeping the value whole.
+      const narrow = await lineAt(20);
+      expect(narrow).toContain('Standard');
+      expect(narrow).not.toContain(glyph('connectorSame'));
+
+      const roomy = await lineAt(23);
+      expect(roomy).toContain('Standard');
+      expect(roomy).toContain(glyph('connectorSame'));
+    });
+
+    it('drops the cycle mark on an axis with nowhere to step and holds its cells', async () => {
+      // Nothing makes a catalog list a full grid: `gpt-5-high` has no fast twin, so the
+      // speed axis cannot move while the draft sits on it, while effort still can.
+      const sparse: ModelOption = {
+        id: 'gpt-5',
+        displayName: 'GPT-5',
+        variants: [
+          { fullId: 'gpt-5', providerPrefix: '', tag: 'Medium' },
+          { fullId: 'gpt-5-fast', providerPrefix: '', tag: 'Medium Fast' },
+          { fullId: 'gpt-5-high', providerPrefix: '', tag: 'High' },
+        ],
+      };
+      const full: ModelOption = {
+        id: 'gpt-5',
+        displayName: 'GPT-5',
+        variants: [
+          ...(sparse.variants ?? []),
+          { fullId: 'gpt-5-high-fast', providerPrefix: '', tag: 'High Fast' },
+        ],
+      };
+      const lineFor = async (model: ModelOption, axis: 'effort' | 'speed'): Promise<string> => {
+        const ui = renderFeature(
+          renderModelRow({
+            row: axisRow(model, axis, axis === 'speed' ? 'Standard' : 'High', axis === 'speed'),
+            isCursor: false,
+            maxWidth: 60,
+            currentModel: undefined,
+            sectioned: false,
+            optionDraftId: 'gpt-5-high',
+          }),
+        );
+        await tick(20);
+        const line = stripAnsiStyles(ui.lastFrame() ?? '').split('\n')[0] ?? '';
+        ui.unmount();
+        return line;
+      };
+
+      const deadSpeed = await lineFor(sparse, 'speed');
+      const liveSpeed = await lineFor(full, 'speed');
+      const liveEffort = await lineFor(sparse, 'effort');
+
+      expect(deadSpeed).not.toContain(glyph('connectorSame'));
+      expect(liveSpeed).toContain(glyph('connectorSame'));
+      expect(liveEffort).toContain(glyph('connectorSame'));
+      // The mark goes but its cells stay, so the value column does not slide right.
+      expect(deadSpeed.indexOf('Standard')).toBe(liveSpeed.indexOf('Standard'));
     });
 
     it('renders axis rows with the axis label and current value', async () => {

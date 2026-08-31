@@ -306,6 +306,55 @@ describe('estimateDeterministicCost', () => {
     expect(estimate.totals.unknownCostReason).toContain('implementer-price-unknown');
   });
 
+  it('flags an unpriced planner without nulling the known implementer estimate', () => {
+    const pricingCache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: (providerId) =>
+        providerId === 'deepseek'
+          ? [{ id: 'priced-model', contextLength: 20_000, pricingInput: 1, pricingOutput: 2 }]
+          : null,
+    };
+    const config = withProfiles(
+      makeConfig({
+        planner: { kind: 'shell', command: 'missing-planner-command', model: 'planner-model' },
+      }),
+      {
+        default: 'priced-worker',
+        profiles: {
+          'priced-worker': {
+            kind: 'api',
+            provider: 'deepseek',
+            service: 'deepseek',
+            offering: 'payg',
+            apiBase: 'https://api.deepseek.com/v1',
+            apiKey: 'test-key',
+            model: 'priced-model',
+            contextLength: 20_000,
+            costTier: 'cheap',
+          },
+        },
+      },
+    );
+
+    const estimate = estimateDeterministicCost({
+      tasks: [makeTask()],
+      context,
+      config,
+      pricingCache,
+    });
+
+    expect(estimate.tasks[0]).toMatchObject({
+      selectedProfileId: 'priced-worker',
+      priceConfidence: 'price-unknown',
+      hypotheticalPlannerCost: null,
+    });
+    expect(estimate.tasks[0]?.estimatedImplementerCost).toBeGreaterThan(0);
+    expect(estimate.totals.unknownCostReason).toEqual(['planner-price-unknown']);
+    expect(estimate.totals.knownActualEstimate).toBe(estimate.tasks[0]?.estimatedImplementerCost);
+    expect(estimate.totals.hypotheticalAllPlanner).toBeNull();
+    expect(estimate.totals.estimatedSavings).toBeNull();
+  });
+
   it('uses cached provider context length metadata when profile context length is omitted', () => {
     const pricingCache: ModelCacheAccessor = {
       getModelsDevCatalog: () => null,

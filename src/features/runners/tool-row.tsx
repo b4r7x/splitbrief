@@ -8,7 +8,12 @@ import { glyph, spinnerFrames } from '../../lib/glyphs.js';
 import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import { modelRowMatchesId } from './model-catalog/catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
-import { formatOptionSummary, isOptionFamily, optionDraftOf } from './model-catalog/option-axis.js';
+import {
+  formatOptionSummary,
+  isOptionFamily,
+  optionDraftOf,
+  stepOptionAxis,
+} from './model-catalog/option-axis.js';
 import type { RightRow } from './model-catalog/rows.js';
 import { formatPickerStatusLabel, formatRouteAuth } from './picker-format.js';
 
@@ -56,8 +61,12 @@ export function renderToolRow({
 
 /** Below this the route row drops its glyph and its indent; the tag never goes. */
 const ROUTE_FLOOR_WIDTH = 26;
+/** Below this the value truncates beside the cycle glyph, so it takes those cells instead. */
+const AXIS_FLOOR_WIDTH = 23;
 /** Below this many cells left for the name the chip loses its word. */
 const CHIP_NAME_FLOOR = 12;
+/** What a model row spends beside its two columns: lead, metadata gap, disclosure, check. */
+const MODEL_ROW_CHROME = 7;
 
 const ROUTE_GLYPHS = {
   configured: 'stageDone',
@@ -76,18 +85,30 @@ function disclosureChip(count: number, expanded: boolean, maxWidth: number): str
   return fits ? full : `${count} ${disclosure}`;
 }
 
+// The summary is the cheap thing to lose: the disclosure spells it out again one keypress
+// away. A family row's provenance word is only ever "Stale", the row's one signal that the
+// model may no longer exist, so when no tail fits whole it goes out anyway for ListRow to
+// truncate — a clipped "Stal…" still flags the row, an empty column flags nothing.
 function optionChip(
-  summary: string,
+  parts: { summary: string; provenance: string; context: string },
   expanded: boolean,
   maxWidth: number,
-): { text: string; trailing: string } {
+): { text: string; rest: string; trailing: string } | undefined {
+  const { summary, provenance, context } = parts;
   const trailing = disclosureGlyph(expanded);
-  const fits = maxWidth - getTerminalCellWidth(`${summary} ${trailing}`) >= CHIP_NAME_FLOOR;
-  return { text: fits ? summary : '', trailing };
-}
-
-function disclosureColumnPad(): string {
-  return ' '.repeat(getTerminalCellWidth(disclosureGlyph(true)));
+  const tail = (...items: string[]): string => items.filter(Boolean).join(' ');
+  if (expanded) return { text: '', rest: tail(provenance, context), trailing };
+  if (summary === '') return undefined;
+  const room = maxWidth - CHIP_NAME_FLOOR - MODEL_ROW_CHROME;
+  const cells = (chip: { text: string; rest: string }): number =>
+    getTerminalCellWidth(tail(chip.text, chip.rest));
+  const whole = [
+    { text: summary, rest: tail(provenance, context) },
+    { text: summary, rest: provenance },
+    { text: '', rest: tail(provenance, context) },
+    { text: '', rest: provenance },
+  ].find((chip) => cells(chip) <= room);
+  return { ...(whole ?? { text: '', rest: provenance }), trailing };
 }
 
 interface ModelRowParams {
@@ -111,14 +132,19 @@ export function renderModelRow({
   if (row.kind === 'notice') return <NoticeRow row={row} isCursor={isCursor} />;
   if (row.kind === 'route') return <RouteRow row={row} isCursor={isCursor} width={maxWidth} />;
   if (row.kind === 'axis') {
+    const floor = maxWidth < AXIS_FLOOR_WIDTH;
+    // The row's value was composed from this same draft, so the affordance reads it the
+    // same way. A ladder with nowhere to step drops the mark but keeps its cells, or the
+    // sibling rows' trailing column shifts under it.
+    const steps = stepOptionAxis(row.model, row.axis, optionDraftId) !== undefined;
     return (
       <ListRow
-        label={row.axis}
+        label={`${glyph(row.last ? 'treeLast' : 'treeBranch')}${glyph('divider')} ${row.axis}`}
         state={isCursor ? 'active' : 'default'}
-        defaultLead="dot"
+        defaultLead="blank"
         metadata={row.value}
-        trailing={disclosureColumnPad()}
-        selected={false}
+        trailing={floor ? undefined : steps ? glyph('connectorSame') : ' '}
+        selected={floor ? undefined : false}
         width={maxWidth}
       />
     );
@@ -137,15 +163,17 @@ export function renderModelRow({
   const summary = optionFamily
     ? formatOptionSummary(optionDraftOf(row.model, optionDraftId ?? currentModel), variants)
     : '';
-  const chip =
-    optionFamily && summary !== '' ? optionChip(summary, row.expanded, maxWidth) : undefined;
   const contextStr = row.model.contextLength ? formatContextLength(row.model.contextLength) : '';
+  const rest = [provenance, contextStr].filter(Boolean).join(' ');
+  const chip = optionFamily
+    ? optionChip({ summary, provenance, context: contextStr }, row.expanded, maxWidth)
+    : undefined;
   const disclosure = optionFamily
     ? (chip?.text ?? '')
     : routeCount > 1
       ? disclosureChip(routeCount, row.expanded, maxWidth)
       : '';
-  const metadata = [disclosure, provenance, contextStr].filter(Boolean).join(' ') || undefined;
+  const metadata = [disclosure, chip?.rest ?? rest].filter(Boolean).join(' ') || undefined;
 
   return (
     <ListRow

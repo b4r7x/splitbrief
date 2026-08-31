@@ -225,7 +225,7 @@ describe('SettingsOverlay', () => {
     const ui = renderAt(120, 40);
     await flushEffects();
     ui.stdin.write(ENTER);
-    await tick(20);
+    await flushEffects();
 
     expect(overlayStore.get().active).toBe('implementer-picker');
 

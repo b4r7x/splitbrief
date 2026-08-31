@@ -751,13 +751,15 @@ Sessions are execution records scoped to one workflow each. The brief review gat
 
 **What it does.** The crew section is a rail, not a list of settings rows: one labelled row per seat — `PLAN`, `BUILD`, `REVIEW` — each carrying the seat identity (`Claude Code CLI · Claude Sonnet 4`) and a right-aligned posture word, joined by a tree rail (`●` for a seat, `├`/`└` for its branches). A REVIEW seat with no `reviewer:` block shows the planner's identity with the inheritance mark.
 
-**Branches.** Effort lives on the seat that honours it: a seat whose runner supports effort gets an effort branch under it, cycled in place, and an inherited REVIEW seat shows the planner's effort read-only. The `escalate` branch under `BUILD` is editable — Enter opens the escalation picker. Enter on a seat row opens that seat's tool/model picker.
+**Branches.** Effort lives on the seat that honours it: a seat whose runner supports effort gets an effort branch under it, cycled in place, and an inherited REVIEW seat shows the planner's effort read-only. Enter on a seat row opens that seat's tool/model picker. The escalation tier is YAML-only (`config.escalation`) and has no crew row.
 
-**How to use.** `/crew` opens Settings on the crew section; `/crew plan`, `/crew build` and `/crew review` land the cursor on that seat directly. Ready-made crew presets are offered only on the first-run Setup screen, never here. At small viewports the section yields in a fixed order — the lab verdict line first, then the rail spine gaps, then the escalate branch folding into the `BUILD` row, then the posture column — so all three seat rows stay visible down to the 60x18 floor.
+**How to use.** `/crew` opens Settings on the crew section; `/crew plan`, `/crew build` and `/crew review` land the cursor on that seat directly. Ready-made crew presets are offered only on the first-run Setup screen, never here. At small viewports the section yields in a fixed order — the lab verdict line first, then the rail spine gaps, then the posture column — so all three seat rows stay visible down to the 60x18 floor.
 
 ### Mode and seat pickers
 
 **What it does.** Two-column pickers for workflow mode (`/mode` with no argument) and for a seat's tool and model (Enter on a seat row in Settings ∋ Crew). Filtered to detected/available tools.
+
+**Option families.** Detected models whose ids differ only by effort, speed or thinking fold into one row that expands into an axis row per axis; custom models and provider-routed (`provider/model`) ids keep their own rows. `space` cycles the axis under the cursor in place — the key Settings ∋ Crew already uses for effort — and `⏎` confirms the drafted variant from any row of the family, parent or child.
 
 ### Input footer
 

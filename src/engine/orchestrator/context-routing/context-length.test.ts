@@ -96,7 +96,7 @@ describe('resolveProfileContextLength', () => {
     const result = resolveProfileContextLength(cliAuto, DEFAULT_UNKNOWN_CONTEXT_LENGTH);
 
     expect(result).toEqual({
-      contextLength: 1_050_000,
+      contextLength: 272_000,
       source: 'automatic-catalog',
       usedConservativeContextLength: false,
     });

@@ -821,6 +821,82 @@ describe('TwoColumnPicker', () => {
     ui.unmount();
   });
 
+  it('keeps the custom launcher naming its own verb while a row is expanded', async () => {
+    const ui = renderFeature(
+      <TwoColumnPicker<Tool, Model>
+        title="Picker"
+        initialColumn="right"
+        leftProps={{
+          items: TOOLS,
+          getKey: (t) => t.id,
+          renderRow: (t) => <Text>{t.displayName}</Text>,
+        }}
+        rightProps={{
+          items: MODELS_BY_TOOL.alpha ?? [],
+          getKey: (m) => m.id,
+          renderRow: (m) => <Text>{m.displayName}</Text>,
+          isExpanded: true,
+          expandedHint: () => undefined,
+          customRow: { onSelect: () => {} },
+        }}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    await flushEffects();
+
+    ui.stdin.write('\u001B[A'); // onto the pinned launcher
+    await flushEffects();
+    const hint = (ui.lastFrame() ?? '').split('\n').find((line) => line.includes('esc collapse'));
+
+    expect(hint).toContain('⏎ add custom');
+    expect(hint).not.toContain('choose route');
+    ui.unmount();
+  });
+
+  it('keeps the expanded axis hint on one row at 60 columns', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+    const ui = renderFeature(
+      <TwoColumnPicker<Tool, Model>
+        title="Picker"
+        initialColumn="right"
+        leftProps={{
+          items: TOOLS,
+          getKey: (t) => t.id,
+          renderRow: (t) => <Text>{t.displayName}</Text>,
+        }}
+        rightProps={{
+          items: MODELS_BY_TOOL.alpha ?? [],
+          getKey: (m) => m.id,
+          renderRow: (m) => <Text>{m.displayName}</Text>,
+          isExpanded: true,
+          expandedHint: () => 'space cycle · ⏎ confirm',
+        }}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+        onRefresh={() => {}}
+      />,
+      { cols: 60, rows: 18 },
+    );
+    await tick(20);
+
+    const lines = (ui.lastFrame() ?? '').split('\n');
+    let end = lines.length;
+    while (end > 0 && (lines[end - 1] ?? '').trim() === '') end -= 1;
+    let start = end;
+    while (start > 0 && (lines[start - 1] ?? '').trim() !== '') start -= 1;
+    const hintRows = lines.slice(start, end);
+    expect(hintRows).toHaveLength(1);
+    const hint = (hintRows[0] ?? '').trim();
+    expect(getTerminalCellWidth(hint)).toBeLessThanOrEqual(
+      overlayWidth({ cols: 60, density: 'wide' }),
+    );
+    // Truncation eats the tail, so both keys have to be written before the verbs.
+    expect(hint).toContain('space cycle');
+    expect(hint).toContain('⏎ confirm');
+    ui.unmount();
+  });
+
   it('yields byte-identical column-frame height when mounted with a 5-model tool vs a 40-model tool at the same terminal size', async () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     const models5: Model[] = Array.from({ length: 5 }, (_, i) => ({
@@ -1004,5 +1080,13 @@ describe('TwoColumnPicker', () => {
       by: () => 'Catalog',
     });
     expect(headerFirst.map((slot) => slot.kind)).toEqual(['header', 'row']);
+  });
+
+  it('keeps one header for a section an expansion interrupts', () => {
+    const rows = [{ id: 'm-1' }, { id: 'm-1:route-a' }, { id: 'm-1:route-b' }, { id: 'm-2' }];
+    const display = buildRightDisplay(rows, (item) => item.id, {
+      by: (item) => (item.id.includes(':') ? '' : 'Custom'),
+    });
+    expect(display.map((slot) => slot.kind)).toEqual(['header', 'row', 'row', 'row', 'row']);
   });
 });

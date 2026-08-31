@@ -161,9 +161,9 @@ describe('TwoColumnPicker terminal rows', () => {
     await flushEffects();
 
     ui.stdin.write('\u001B[C'); // right arrow is inert on a terminal row
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('\r');
-    await tick(20);
+    await flushEffects();
     expect(confirms).toEqual([{ l: 'inherit', r: null }]);
 
     // Focus never left the tool column: ↓ still moves the left cursor.

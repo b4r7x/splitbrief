@@ -39,8 +39,20 @@ function invocation(opts: { script: string; lines: readonly string[] }): CliInvo
   };
 }
 
+/**
+ * The watchdog is armed at spawn, so the first silence it measures is the
+ * child's own startup — high hundreds of milliseconds under fork contention,
+ * with no fixed ceiling — not the fixture's inter-frame gap, which stayed under
+ * 50 ms in every sample. The stream is sized from the bound so it always
+ * outlives it: a watchdog that stopped counting stdout as liveness still has a
+ * window to warn.
+ */
+const IDLE_WARN_MS = 1_000;
+const FRAME_INTERVAL_MS = 40;
+const SILENT_FRAME_COUNT = Math.ceil((IDLE_WARN_MS * 1.5) / FRAME_INTERVAL_MS);
+
 const EMIT_ALL = `const lines=JSON.parse(Buffer.from(process.argv[1],'base64').toString('utf8'));for(const line of lines)process.stdout.write(line+'\\n');`;
-const EMIT_SLOWLY = `const lines=JSON.parse(Buffer.from(process.argv[1],'base64').toString('utf8'));let i=0;const tick=()=>{if(i>=lines.length)return;process.stdout.write(lines[i++]+'\\n');setTimeout(tick,40);};tick();`;
+const EMIT_SLOWLY = `const lines=JSON.parse(Buffer.from(process.argv[1],'base64').toString('utf8'));let i=0;const tick=()=>{if(i>=lines.length)return;process.stdout.write(lines[i++]+'\\n');setTimeout(tick,${FRAME_INTERVAL_MS});};tick();`;
 
 function streamEvent(event: Record<string, unknown>): string {
   return JSON.stringify({ type: 'stream_event', session_id: SESSION_ID, event });
@@ -139,14 +151,18 @@ describe('invokeCliAdapter streaming a Claude Code capture', () => {
   });
 
   itUnix('stays live while the runner emits only session-bearing thinking frames', async () => {
-    const silent = Array.from({ length: 12 }, (_, index) => thinkingDelta(`step ${index}`));
+    const silent = Array.from({ length: SILENT_FRAME_COUNT }, (_, index) =>
+      thinkingDelta(`step ${index}`),
+    );
+    const started = Date.now();
     const { result, events } = await run({
       script: EMIT_SLOWLY,
       lines: [...silent, JSON.stringify({ type: 'result', session_id: SESSION_ID, result: 'ok' })],
-      idle: { warnMs: 150, killMs: 20_000 },
+      idle: { warnMs: IDLE_WARN_MS, killMs: 20_000 },
     });
 
     expect(result).toMatchObject({ status: 'completed', nativeSessionId: SESSION_ID });
+    expect(Date.now() - started).toBeGreaterThan(IDLE_WARN_MS);
     expect(events.filter((event) => event.type === 'call_stalled')).toEqual([]);
   });
 

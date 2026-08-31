@@ -21,6 +21,10 @@ function modelRows(rows: readonly RightRow[]) {
   return rows.filter((row) => row.kind === 'model');
 }
 
+function axisValues(rows: readonly RightRow[]): string[] {
+  return rows.filter((row) => row.kind === 'axis').map((row) => row.value);
+}
+
 function sections(rows: readonly RightRow[]): string[] {
   const seen: string[] = [];
   for (const row of rows) {
@@ -136,6 +140,20 @@ describe('buildRightRows', () => {
     expect(
       rows.filter((row) => row.kind === 'axis').map((row) => row.kind === 'axis' && row.axis),
     ).toEqual(['effort', 'speed']);
+    expect(
+      rows.filter((row) => row.kind === 'axis').map((row) => row.kind === 'axis' && row.last),
+    ).toEqual([false, true]);
+
+    // The value column is the only place a cycled draft becomes visible, so it
+    // follows the draft rather than the family's own id.
+    expect(axisValues(rows)).toEqual(['High', 'Standard']);
+    const cycled = buildRightRows({
+      ...BASE,
+      models: [luna],
+      expandedModelId: luna.id,
+      optionDraftId: 'gpt-5.6-luna-max-fast',
+    });
+    expect(axisValues(cycled)).toEqual(['Max', 'Fast']);
   });
 
   it('expands a grok option family into axis rows, not routes', () => {

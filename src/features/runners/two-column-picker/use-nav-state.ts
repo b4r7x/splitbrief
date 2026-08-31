@@ -28,7 +28,15 @@ export interface TerminalPane {
 }
 
 /** What Enter does on the highlighted right row. */
-export type RightActivation = 'confirm' | 'expand' | 'collapse' | 'cycle' | 'refresh' | 'none';
+export type RightActivation = 'confirm' | 'expand' | 'collapse' | 'refresh' | 'none';
+
+/**
+ * What a right row does with a value-stepping gesture. `stepped` marks the row as
+ * the value control: it takes the space key, and a click on it steps instead of
+ * activating. `held` takes the key without owning the click, which is how a row
+ * inside an expansion refuses to collapse it.
+ */
+export type CycleOutcome = 'stepped' | 'held' | 'none';
 
 export interface RightSectionProps<R> {
   by: (item: R) => string;
@@ -72,10 +80,10 @@ export interface RightColumnProps<L, R> {
   activationOf?: ((item: R) => RightActivation) | undefined;
   onExpand?: ((item: R) => void) | undefined;
   onCollapse?: (() => void) | undefined;
-  onCycle?: ((item: R) => void) | undefined;
+  onCycle?: ((item: R) => CycleOutcome) | undefined;
   isExpanded?: boolean | undefined;
-  /** Replaces the expanded-column Enter verb when set (`⏎ choose route` otherwise). */
-  expandedHint?: string | undefined;
+  /** Replaces the expanded-column Enter verb for the highlighted row (`⏎ choose route` otherwise). */
+  expandedHint?: ((item: R | undefined) => string | undefined) | undefined;
 }
 
 export interface ColumnState<T> {
@@ -95,6 +103,7 @@ export interface TwoColumnNavState<L, R> {
   currentRightIsCustom: boolean;
   activateLeft: (index: number) => void;
   activateRight: (index: number) => void;
+  cycleRight: (index: number) => CycleOutcome;
 }
 
 interface UseTwoColumnStateParams<L extends FilterableItem, R extends { id: string }> {
@@ -160,7 +169,8 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
 
   const [activeColumn, setActiveColumn] = useState<'left' | 'right'>(effectiveInitialColumn);
   const [selectedLeftKey, setSelectedLeftKey] = useState<string | null>(null);
-  const [pendingExpand, setPendingExpand] = useState<{ key: string; length: number } | null>(null);
+  const [pendingExpand, setPendingExpand] = useState<string | null>(null);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const leftCol = useColumnState<L>({
     source: leftItems,
@@ -210,22 +220,22 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
     virtualCount > 0 ||
     rightItems.some((item) => {
       const activation = activationOf?.(item) ?? 'confirm';
-      return activation === 'confirm' || activation === 'expand' || activation === 'cycle';
+      return activation === 'confirm' || activation === 'expand';
     });
 
-  // The row that opened the routes keeps the cursor until the routes are in the
-  // list; then the cursor lands on the first of them, even when the expanded row
-  // was the last one, where an index computed against the old list clamps back.
+  const rightIndexOfKey = (key: string) =>
+    filteredRight.findIndex((row) => isRealRightItem(row) && rightProps.getKey(row) === key);
+
+  // The expansion reaches this hook as props on a later render, so the cursor
+  // move waits for it: an index computed when the key was pressed is measured
+  // against the pre-expansion list and clamps back when the parent was last.
   useLayoutEffect(() => {
     if (pendingExpand === null) return;
     if (!(rightProps.isExpanded ?? false)) {
       setPendingExpand(null);
       return;
     }
-    if (filteredRight.length <= pendingExpand.length) return;
-    const at = filteredRight.findIndex(
-      (row) => isRealRightItem(row) && rightProps.getKey(row) === pendingExpand.key,
-    );
+    const at = rightIndexOfKey(pendingExpand);
     setPendingExpand(null);
     if (at >= 0 && at + 1 < filteredRight.length) rightCol.setIndex(at + 1);
   });
@@ -248,6 +258,26 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
     if (hasSelectableRight) setActiveColumn('right');
   };
 
+  const cycleRight = (index: number): CycleOutcome => {
+    if (params.maxVisible <= 0) return 'none';
+    const item = filteredRight[index];
+    if (item === undefined || !isRealRightItem(item)) return 'none';
+    const outcome = onCycle?.(item) ?? 'none';
+    if (outcome === 'none') return 'none';
+    rightCol.setIndex(index);
+    setActiveColumn('right');
+    return outcome;
+  };
+
+  // Collapsing takes the rows under the cursor out of the list, so the highlight
+  // goes back to the row that opened them instead of to whatever slid up into it.
+  const collapseRight = () => {
+    const at = expandedKey === null ? -1 : rightIndexOfKey(expandedKey);
+    if (at >= 0) rightCol.setIndex(at);
+    setExpandedKey(null);
+    onCollapse?.();
+  };
+
   const activateRight = (index: number) => {
     if (params.maxVisible <= 0) return;
     const item = filteredRight[index];
@@ -261,17 +291,15 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
     if (!isRealRightItem(item)) return;
     const activation = activationOf?.(item) ?? 'confirm';
     switch (activation) {
-      case 'expand':
+      case 'expand': {
+        const key = rightProps.getKey(item);
         onExpand?.(item);
-        // The routes are not in `items` yet — the expansion reaches this hook as
-        // props on the next render — so the cursor moves once they are there.
-        setPendingExpand({ key: rightProps.getKey(item), length: filteredRight.length });
+        setPendingExpand(key);
+        setExpandedKey(key);
         return;
+      }
       case 'collapse':
-        onCollapse?.();
-        return;
-      case 'cycle':
-        onCycle?.(item);
+        collapseRight();
         return;
       case 'refresh':
         params.onRefresh?.();
@@ -321,8 +349,9 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
         resetRight,
         activateLeft,
         activateRight,
+        cycleRight,
         isExpanded: rightProps.isExpanded ?? false,
-        onCollapse,
+        onCollapse: collapseRight,
       });
     },
     { isActive },
@@ -348,5 +377,6 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
     currentRightIsCustom,
     activateLeft,
     activateRight,
+    cycleRight,
   };
 }

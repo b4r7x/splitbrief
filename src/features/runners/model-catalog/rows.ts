@@ -45,6 +45,8 @@ export type RightRow =
       model: ModelOption;
       axis: OptionAxisName;
       value: string;
+      /** Picks the tree glyph that closes the parent's child block. */
+      last: boolean;
     }
   | { kind: 'notice'; lane: 'pending' | 'failed'; text: string; action?: 'refresh' };
 
@@ -197,12 +199,14 @@ export function buildRightRows(input: {
     const variants = placement.model.variants ?? [];
     if (isOptionFamily(placement.model)) {
       const selection = parseOptionSelection(optionDraftOf(placement.model, input.optionDraftId));
-      for (const axis of optionAxesOf(variants)) {
+      const axes = optionAxesOf(variants);
+      for (const [index, axis] of axes.entries()) {
         rows.push({
           kind: 'axis',
           model: placement.model,
           axis: axis.axis,
           value: formatAxisValue(axis.axis, selection),
+          last: index === axes.length - 1,
         });
       }
       return;

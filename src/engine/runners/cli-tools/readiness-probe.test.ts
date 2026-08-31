@@ -33,18 +33,19 @@ async function nodeExecutable(): Promise<CliExecutableIdentity> {
 function probe(
   versionScript = "console.log('codex 0.40.0')",
   authScript = 'process.exit(0)',
+  timeoutMs = 1_000,
 ): CliProbeContract {
   return {
     version: {
       command: ['node', '-e', versionScript],
       cwd: 'neutral',
-      timeoutMs: 1_000,
+      timeoutMs,
       maxOutputBytes: 1_024,
     },
     auth: {
       command: ['node', '-e', authScript],
       cwd: 'neutral',
-      timeoutMs: 1_000,
+      timeoutMs,
       maxOutputBytes: 1_024,
     },
   };
@@ -55,6 +56,7 @@ function declaredProbe(
     versionScript?: string;
     authScript?: string;
     authCommand?: readonly [string, ...string[]];
+    authTimeoutMs?: number;
     catalogScript?: string;
     parseAuth?: (input: CliProbeOutput) => AuthFact;
     authNotRun?: boolean;
@@ -71,7 +73,7 @@ function declaredProbe(
       options.authCommand ??
       (['node', '-e', options.authScript ?? "console.log('verified')"] as const),
     cwd: 'neutral' as const,
-    timeoutMs: 1_000,
+    timeoutMs: options.authTimeoutMs ?? 1_000,
     maxOutputBytes: 1_024,
   };
   const catalog = {
@@ -419,7 +421,7 @@ describe('CLI readiness probe', () => {
 
     expect(result.status).toBe('unverified');
     expect(Date.now() - startedAt).toBeGreaterThanOrEqual(1_900);
-  }, 5_000);
+  });
 
   it.runIf(process.platform !== 'win32')(
     'reaps a caller-cancelled probe group and its descendant',
@@ -439,10 +441,17 @@ describe('CLI readiness probe', () => {
               'child.unref();',
               'setInterval(() => {}, 1_000);',
             ].join(' '),
+            undefined,
+            10_000,
           ),
         });
 
-        await vi.waitFor(() => expect(existsSync(descendantPidFile)).toBe(true));
+        await vi.waitFor(
+          () => {
+            expect(readFileSync(descendantPidFile, 'utf8').trim()).not.toBe('');
+          },
+          { timeout: 6_000, interval: 25 },
+        );
         controller.abort();
 
         await expect(pending).rejects.toThrow(/abort/i);
@@ -452,7 +461,6 @@ describe('CLI readiness probe', () => {
         );
       });
     },
-    5_000,
   );
 
   it.runIf(process.platform !== 'win32')(
@@ -476,7 +484,6 @@ describe('CLI readiness probe', () => {
 
       expect(result.status).toBe('unverified');
     },
-    10_000,
   );
 
   it.runIf(process.platform !== 'win32')(
@@ -549,6 +556,7 @@ describe('CLI readiness probe', () => {
           executable,
           authChannel: 'api-key',
           probe: declaredProbe({
+            authTimeoutMs: 3_000,
             authScript: [
               'const { spawn } = require("node:child_process");',
               `const descendant = spawn(process.execPath, ["-e", ${JSON.stringify(`require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); process.on("SIGTERM", () => {}); setInterval(() => {}, 1_000)`)}], { stdio: "ignore" });`,
@@ -567,7 +575,6 @@ describe('CLI readiness probe', () => {
         );
       });
     },
-    5_000,
   );
 
   it('does not promote ambient credentials without a selected auth channel', async () => {

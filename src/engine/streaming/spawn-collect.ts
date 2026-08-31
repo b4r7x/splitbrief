@@ -89,11 +89,11 @@ export const spawnCollectError = {
   isInvalidHardDeadline: matches('runner-invalid-timeout'),
 } as const;
 
-const ENVELOPE_LATCH_CODES: Set<string> = new Set([
-  TASK_COMPILATION_FAILURE_CODE.task_compiler_output_limited,
-  TASK_COMPILATION_FAILURE_CODE.task_compiler_timeout,
-]);
-
+// `task_compiler_timeout` is deliberately not a teardown trigger: an envelope
+// that can latch it has already clamped the hard deadline and the idle kill to
+// the same bounds, so the cancellation is due before the latch can fire and it
+// owns both the teardown and the terminal. Latching here as well would only
+// race that cancellation and classify one deadline two ways.
 function fatalLimitFromEvent(
   event: RunnerCallEvent,
   abortOnOutputLimits: boolean,
@@ -101,7 +101,7 @@ function fatalLimitFromEvent(
   if (!abortOnOutputLimits || event.type !== 'call_warning') return null;
   const { code, message } = event.warning;
   if (
-    ENVELOPE_LATCH_CODES.has(code) ||
+    code === TASK_COMPILATION_FAILURE_CODE.task_compiler_output_limited ||
     code === 'runner_output_text_limit' ||
     code === 'stdout_line_overflow' ||
     code === 'stderr_line_overflow' ||

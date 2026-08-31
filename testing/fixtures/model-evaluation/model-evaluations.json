@@ -28,7 +28,7 @@
       "resolution": "OMIT-NOT-APPLICABLE",
       "taskId": "T-080",
       "provider": "openrouter",
-      "model": "anthropic/claude-sonnet-4.6",
+      "model": "anthropic/claude-sonnet-5",
       "reason": "no credentialed five-scenario extracted-code run was executed; runtime recommendation stays compatible-only"
     },
     {

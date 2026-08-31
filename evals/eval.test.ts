@@ -698,7 +698,7 @@ describe('eval harness', () => {
 
   it('discovers pending-evaluation candidates for OpenRouter, Groq, Ollama, and LM Studio', () => {
     expect(discoverPendingEvaluationCandidates()).toEqual([
-      { provider: 'openrouter', model: 'anthropic/claude-sonnet-4.6' },
+      { provider: 'openrouter', model: 'anthropic/claude-sonnet-5' },
       { provider: 'groq', model: 'openai/gpt-oss-120b' },
       { provider: 'ollama', model: 'qwen3-coder:30b' },
       { provider: 'lm-studio', model: 'qwen2.5-coder-7b' },

@@ -434,7 +434,7 @@ async function runLiveOwnerProbe(mode: 'async' | 'sync'): Promise<void> {
     lockPath,
     JSON.stringify({
       pid: process.pid,
-      startTimeMs: Math.floor(startTimeMs / 1000) * 1000,
+      startTimeMs: Math.round(startTimeMs),
       token: 'a'.repeat(32),
     }),
     { mode: 0o600 },
@@ -455,6 +455,7 @@ async function runLiveOwnerProbe(mode: 'async' | 'sync'): Promise<void> {
   try {
     await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 300));
     expect(existsSync(resultPath)).toBe(false);
+    expect(readyCount(readyPath)).toBe(0);
     expect(child.exitCode).toBeNull();
     unlinkSync(lockPath);
     writeFileSync(releasePath, 'release', { mode: 0o600 });
@@ -509,6 +510,44 @@ describe('confinedAtomicWriteFile', () => {
 
   itUnix('does not reclaim a lock owned by a live process', async () => {
     await runLiveOwnerProbe('async');
+  });
+
+  itUnix('does not reclaim a lock whose owner start time trails the platform clock', async () => {
+    const { path, revision } = makeFile('skewed owner base');
+    const lockPath = casLockPath(path);
+    // A lock records its owner's node-baseline estimate while another process
+    // reads that owner back from `ps`, which reports whole seconds, so a live
+    // owner reads back up to a second earlier than the record it wrote.
+    const ownerStartTimeMs = readProcessStartTimeMs(process.ppid);
+    if (ownerStartTimeMs === null) throw fault('Parent process start time unavailable');
+    writeFileSync(
+      lockPath,
+      JSON.stringify({
+        pid: process.ppid,
+        startTimeMs: ownerStartTimeMs + 999,
+        token: 'f'.repeat(32),
+      }),
+      { mode: 0o600 },
+    );
+    let settled = false;
+    const pending = confinedAtomicWriteFile(path, Buffer.from('after skewed owner'), {
+      expectedRevision: revision,
+      mode: 0o600,
+    }).then((result) => {
+      settled = true;
+      return result;
+    });
+
+    try {
+      await new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 200));
+      expect(settled).toBe(false);
+      expect(readFileSync(path, 'utf8')).toBe('skewed owner base');
+    } finally {
+      if (existsSync(lockPath)) unlinkSync(lockPath);
+    }
+
+    expect((await pending).kind).toBe('written');
+    expect(readFileSync(path, 'utf8')).toBe('after skewed owner');
   });
 
   itUnix('does not remove a successor during stale unlock', async () => {

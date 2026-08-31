@@ -1,10 +1,13 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   TASK_BRIEF_COMPILER_POLICY,
   type TaskCompilationCallEnvelope,
 } from '../../core/schemas/task-compilation.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
 import { killAllProcesses } from '../../lib/process/registry.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { runnerCallErrors } from '#testing/helpers/runner-call-events.js';
 import { invokeCommandBasedRunner } from './command-based.js';
 
@@ -48,6 +51,9 @@ function contextWith(env: TaskCompilationCallEnvelope): RunnerCallContext {
   };
 }
 
+// A teardown pauses stdout before the pipe drains, so a pid written there can be lost;
+// the wall-clock teardown tests publish it to a file, and their bound has to clear this
+// script's own node boot to reach that write.
 const descendantScript = (body: string) =>
   [
     "const { spawn } = require('node:child_process');",
@@ -56,9 +62,16 @@ const descendantScript = (body: string) =>
     'setInterval(() => {}, 60_000);',
   ].join('');
 
+let pidDir: string;
+
 describe('command-based envelope enforcement', () => {
+  beforeEach(() => {
+    pidDir = createTempDir('command-based-envelope');
+  });
+
   afterEach(async () => {
     await killAllProcesses();
+    cleanupTempDir(pidDir);
   });
 
   itUnix(
@@ -172,12 +185,13 @@ describe('command-based envelope enforcement', () => {
   itUnix(
     'clamps the hard deadline to the envelope and reaps the tree',
     async () => {
-      const descendantPid = { current: 0 };
+      const pidFile = join(pidDir, 'deadline-descendant.pid');
       const events: RunnerCallEvent[] = [];
       const program = descendantScript(
-        `process.stdout.write('descendant:' + child.pid + '\\n');setInterval(() => process.stdout.write('chatty\\n'), 2);`,
+        `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));setInterval(() => process.stdout.write('chatty\\n'), 2);`,
       );
-      const env = envelope({ deadlineMs: 500 });
+      const env = envelope({ deadlineMs: 2_000 });
+      const startedAt = Date.now();
 
       await expect(
         invokeCommandBasedRunner({
@@ -186,17 +200,15 @@ describe('command-based envelope enforcement', () => {
           prompt: '',
           projectDir: process.cwd(),
           callContext: contextWith(env),
-          onOutput: (text) => {
-            const match = /descendant:(\d+)/.exec(text);
-            if (match?.[1] !== undefined) descendantPid.current = Number.parseInt(match[1], 10);
-          },
           onCallEvent: (event) => events.push(event),
         }),
       ).rejects.toMatchObject({ kind: 'command-timeout' });
 
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(2_000);
       expect(runnerCallErrors(events)).toEqual([expect.objectContaining({ status: 'timeout' })]);
-      expect(descendantPid.current).toBeGreaterThan(1);
-      expect(processIsAbsent(descendantPid.current)).toBe(true);
+      const descendantPid = Number.parseInt(readFileSync(pidFile, 'utf8'), 10);
+      expect(descendantPid).toBeGreaterThan(1);
+      expect(processIsAbsent(descendantPid)).toBe(true);
     },
     30_000,
   );
@@ -204,12 +216,13 @@ describe('command-based envelope enforcement', () => {
   itUnix(
     'clamps the idle watchdog to the envelope idle bound and reaps the tree',
     async () => {
-      const descendantPid = { current: 0 };
+      const pidFile = join(pidDir, 'descendant.pid');
       const events: RunnerCallEvent[] = [];
       const program = descendantScript(
-        `process.stdout.write('descendant:' + child.pid + '\\n');setInterval(() => {}, 60_000);`,
+        `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));`,
       );
-      const env = envelope({ idleTimeoutMs: 250 });
+      const env = envelope({ idleTimeoutMs: 2_000 });
+      const startedAt = Date.now();
 
       await expect(
         invokeCommandBasedRunner({
@@ -218,22 +231,20 @@ describe('command-based envelope enforcement', () => {
           prompt: '',
           projectDir: process.cwd(),
           callContext: contextWith(env),
-          onOutput: (text) => {
-            const match = /descendant:(\d+)/.exec(text);
-            if (match?.[1] !== undefined) descendantPid.current = Number.parseInt(match[1], 10);
-          },
           onCallEvent: (event) => events.push(event),
         }),
       ).rejects.toMatchObject({ kind: 'command-idle-timeout' });
 
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(2_000);
       expect(runnerCallErrors(events)).toEqual([
         expect.objectContaining({
           status: 'failed',
           error: expect.objectContaining({ code: 'runner_idle_timeout' }),
         }),
       ]);
-      expect(descendantPid.current).toBeGreaterThan(1);
-      expect(processIsAbsent(descendantPid.current)).toBe(true);
+      const descendantPid = Number.parseInt(readFileSync(pidFile, 'utf8'), 10);
+      expect(descendantPid).toBeGreaterThan(1);
+      expect(processIsAbsent(descendantPid)).toBe(true);
     },
     30_000,
   );

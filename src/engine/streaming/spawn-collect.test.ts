@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach } from 'vitest';
+import { afterEach, beforeEach } from 'vitest';
 import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
 import { runnerCallEventToSessionLogEntry } from '../calls/session-log.js';
@@ -14,7 +14,7 @@ import {
   createCustomRunnerRedactor,
 } from '../runners/redaction.js';
 import { createRunnerSandboxEnv } from '../runners/sandbox-env.js';
-import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { cleanupTempDir, createTempDir, withTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
 import {
   replayRunnerCallEventsIntoOperations,
@@ -879,32 +879,33 @@ describe('spawnAndCollect', () => {
         return true;
       }
     };
+    const pidDir = createTempDir('spawn-collect-deadline');
+    const pidFile = join(pidDir, 'tree.pid');
     const program = [
       "const { spawn } = require('node:child_process');",
       "const child = spawn(process.execPath, ['-e', 'process.on(\"SIGTERM\", () => {}); setInterval(() => {}, 60_000)'], { stdio: 'ignore' });",
-      'process.stdout.write(String(process.pid) + ":" + String(child.pid) + "|" + process.env.CUSTOM_PUBLIC_VALUE + "\\n");',
+      `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid) + ':' + String(child.pid));`,
+      'process.stdout.write(process.env.CUSTOM_PUBLIC_VALUE + "\\n");',
       'setInterval(() => process.stdout.write("chatty\\n"), 5);',
     ].join('');
+    const startedAt = Date.now();
     const pending = spawnAndCollect({
       command: process.execPath,
       args: ['-e', program],
       cwd: process.cwd(),
-      timeoutMs: 500,
-      idle: { warnMs: 1_000, killMs: 2_000 },
+      timeoutMs: 2_000,
+      idle: { warnMs: 4_000, killMs: 8_000 },
       env: { CUSTOM_PUBLIC_VALUE: declaredValue },
       credentialValues: [declaredValue],
       redact: createCustomRunnerRedactor([declaredValue]),
-      onText: (text) => {
-        callbacks.push(text);
-        const match = /(\d+):(\d+)/.exec(text);
-        if (match?.[1] === undefined || match[2] === undefined) return;
-        leaderPid = Number.parseInt(match[1], 10);
-        descendantPid = Number.parseInt(match[2], 10);
-      },
+      onText: (text) => callbacks.push(text),
       onCallEvent: (event) => events.push(event),
     });
     const observedRejection = pending.catch((error: unknown) => {
       failure = error;
+      const [leader = '', descendant = ''] = readFileSync(pidFile, 'utf8').split(':');
+      leaderPid = Number.parseInt(leader, 10);
+      descendantPid = Number.parseInt(descendant, 10);
       absentAtRejection = {
         leader: processIsAbsent(leaderPid),
         descendant: processIsAbsent(descendantPid),
@@ -915,6 +916,7 @@ describe('spawnAndCollect', () => {
     try {
       await expect(observedRejection).rejects.toMatchObject({ kind: 'command-timeout' });
 
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(2_000);
       expect(leaderPid).toBeGreaterThan(1);
       expect(descendantPid).toBeGreaterThan(1);
       expect(absentAtRejection).toEqual({ leader: true, descendant: true });
@@ -940,8 +942,9 @@ describe('spawnAndCollect', () => {
         if (pid <= 1 || processIsAbsent(pid)) continue;
         process.kill(pid, 'SIGKILL');
       }
+      cleanupTempDir(pidDir);
     }
-  });
+  }, 30_000);
 
   it('clears hard-deadline timers after a successful collection', async () => {
     vi.useFakeTimers();
@@ -1136,6 +1139,9 @@ describe('spawnAndCollect envelope enforcement', () => {
     };
   }
 
+  // A teardown pauses stdout before the pipe drains, so a pid written there can be lost;
+  // the wall-clock teardown tests publish it to a file, and their bound has to clear this
+  // script's own node boot to reach that write.
   function descendantScript(body: string): string {
     return [
       "const { spawn } = require('node:child_process');",
@@ -1154,8 +1160,15 @@ describe('spawnAndCollect envelope enforcement', () => {
     }
   }
 
+  let pidDir: string;
+
+  beforeEach(() => {
+    pidDir = createTempDir('spawn-collect-envelope');
+  });
+
   afterEach(async () => {
     await killAllProcesses();
+    cleanupTempDir(pidDir);
   });
 
   itUnix(
@@ -1195,12 +1208,13 @@ describe('spawnAndCollect envelope enforcement', () => {
   itUnix(
     'clamps the hard deadline to the canonical envelope and reaps the tree',
     async () => {
-      const descendantPid = { current: 0 };
+      const pidFile = join(pidDir, 'deadline-descendant.pid');
       const events: RunnerCallEvent[] = [];
-      const env = envelope({ deadlineMs: 400 });
+      const env = envelope({ deadlineMs: 2_000 });
       const program = descendantScript(
-        `process.stdout.write('descendant:' + child.pid + '\\n');setInterval(() => process.stdout.write('chatty\\n'), 2);`,
+        `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));setInterval(() => process.stdout.write('chatty\\n'), 2);`,
       );
+      const startedAt = Date.now();
 
       await expect(
         spawnAndCollect({
@@ -1208,17 +1222,15 @@ describe('spawnAndCollect envelope enforcement', () => {
           args: ['-e', program],
           cwd: process.cwd(),
           callContext: contextWith(env),
-          onText: (text) => {
-            const match = /descendant:(\d+)/.exec(text);
-            if (match?.[1] !== undefined) descendantPid.current = Number.parseInt(match[1], 10);
-          },
           onCallEvent: (event) => events.push(event),
         }),
       ).rejects.toMatchObject({ kind: 'command-timeout' });
 
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(2_000);
       expect(runnerCallErrors(events)).toEqual([expect.objectContaining({ status: 'timeout' })]);
-      expect(descendantPid.current).toBeGreaterThan(1);
-      expect(processIsAbsent(descendantPid.current)).toBe(true);
+      const descendantPid = Number.parseInt(readFileSync(pidFile, 'utf8'), 10);
+      expect(descendantPid).toBeGreaterThan(1);
+      expect(processIsAbsent(descendantPid)).toBe(true);
     },
     30_000,
   );
@@ -1226,12 +1238,13 @@ describe('spawnAndCollect envelope enforcement', () => {
   itUnix(
     'clamps the idle watchdog to the canonical envelope idle bound',
     async () => {
-      const descendantPid = { current: 0 };
+      const pidFile = join(pidDir, 'idle-descendant.pid');
       const events: RunnerCallEvent[] = [];
-      const env = envelope({ idleTimeoutMs: 250 });
+      const env = envelope({ idleTimeoutMs: 2_000 });
       const program = descendantScript(
-        `process.stdout.write('descendant:' + child.pid + '\\n');setInterval(() => {}, 60_000);`,
+        `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));`,
       );
+      const startedAt = Date.now();
 
       await expect(
         spawnAndCollect({
@@ -1239,22 +1252,20 @@ describe('spawnAndCollect envelope enforcement', () => {
           args: ['-e', program],
           cwd: process.cwd(),
           callContext: contextWith(env),
-          onText: (text) => {
-            const match = /descendant:(\d+)/.exec(text);
-            if (match?.[1] !== undefined) descendantPid.current = Number.parseInt(match[1], 10);
-          },
           onCallEvent: (event) => events.push(event),
         }),
       ).rejects.toMatchObject({ kind: 'command-idle-timeout' });
 
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(2_000);
       expect(runnerCallErrors(events)).toEqual([
         expect.objectContaining({
           status: 'failed',
           error: expect.objectContaining({ code: 'runner_idle_timeout' }),
         }),
       ]);
-      expect(descendantPid.current).toBeGreaterThan(1);
-      expect(processIsAbsent(descendantPid.current)).toBe(true);
+      const descendantPid = Number.parseInt(readFileSync(pidFile, 'utf8'), 10);
+      expect(descendantPid).toBeGreaterThan(1);
+      expect(processIsAbsent(descendantPid)).toBe(true);
     },
     30_000,
   );

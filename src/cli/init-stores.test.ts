@@ -477,8 +477,8 @@ Skill body for bootstrap proof.
 
     await initStores(dir);
 
-    expect(requireConfig().implementer.contextLength).toBe(1_050_000);
-    expect(configStore.getDetectedContextLength()).toBe(1_050_000);
+    expect(requireConfig().implementer.contextLength).toBe(272_000);
+    expect(configStore.getDetectedContextLength()).toBe(272_000);
     expect(readFileSync(configPath, 'utf-8')).toBe(before);
   }, 30_000);
 

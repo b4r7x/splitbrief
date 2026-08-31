@@ -1222,7 +1222,10 @@ describe('runWorkflow — smoke', () => {
       'T001',
       'T002',
     ]);
-  }, 20_000);
+    // Two full runWorkflow passes over a real git repo — the slowest case in this
+    // file. 20_000 undercut the coverage budget vitest.config.ts already grants
+    // every other test, so the coverage run reaped it; this matches that budget.
+  }, 40_000);
 
   it('task review abort publishes workflow_cancelled and skips final review', async () => {
     const projectDir = setupProject();
@@ -1406,7 +1409,7 @@ describe('runWorkflow — smoke', () => {
       { type: 'runner_call_started', runnerName: 'test-planner' },
       { type: 'runner_call_completed', runnerName: 'test-planner' },
     ]);
-  });
+  }, 40_000);
 
   it('publishes the final review runner_call events naming the configured reviewer', async () => {
     const projectDir = setupProject();
@@ -1456,7 +1459,7 @@ describe('runWorkflow — smoke', () => {
       { type: 'runner_call_completed', runnerName: 'test-reviewer' },
     ]);
     expect(planner.review).not.toHaveBeenCalled();
-  });
+  }, 40_000);
 
   it('runs auto-discovered pre_task module hooks without hooks config', async () => {
     const projectDir = setupProject();
@@ -1508,7 +1511,7 @@ describe('runWorkflow — smoke', () => {
         reason: 'auto blocked',
       }),
     );
-  });
+  }, 40_000);
 
   it('builds the run isolation handle once per run and disposes it once, including on the abort path', async () => {
     const projectDir = setupProject();
