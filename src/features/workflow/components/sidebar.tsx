@@ -31,7 +31,7 @@ import {
 } from '../layout/rect.js';
 import { useAdvisory } from '../hooks/use-advisory.js';
 import { useCostStats } from '../hooks/use-cost-stats.js';
-import { useSpinnerFrame } from '../hooks/use-spinner-frame.js';
+import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
 import { formatCostDisplay } from '../cost-text.js';
 import { Divider } from './divider.js';
 

@@ -303,3 +303,82 @@ describe('option family merge', () => {
     }
   });
 });
+
+describe('catalog suggestions and confirmed merge', () => {
+  it('tallies a model present in both confirmed runtime and catalog suggestions once in countModelOptions', () => {
+    const codexCatalog = {
+      openai: {
+        id: 'openai',
+        name: 'OpenAI',
+        models: {
+          'gpt-5-codex': { id: 'gpt-5-codex', name: 'GPT-5 Codex' },
+          'gpt-4o': { id: 'gpt-4o', name: 'GPT-4o' },
+          'o3-mini': { id: 'o3-mini', name: 'o3 Mini' },
+        },
+      },
+    };
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => codexCatalog,
+      getProviderModels: () => null,
+      getScopedCliCatalogRuntime: (input) =>
+        input.tool === 'codex'
+          ? {
+              connection: { role: 'planner', tool: 'codex', contextKey: 'merge-test' },
+              state: 'fresh',
+              models: [{ id: 'gpt-5-codex' }],
+              fetchedAt: 1,
+              validatedAt: 2,
+            }
+          : null,
+    };
+
+    const models = buildRightModels({
+      role: 'planner',
+      customModels: [],
+      currentItem: tool('codex'),
+      cache,
+    });
+
+    const distinctModelIds = models.filter((m) => m.id !== 'auto').map((m) => m.id);
+    const counts = countModelOptions(models);
+
+    expect(counts.confirmed).toBe(1);
+    expect(counts.suggestions).toBe(2);
+    expect(counts.confirmed + counts.suggestions).toBe(distinctModelIds.length);
+    expect(new Set(distinctModelIds).size).toBe(distinctModelIds.length);
+  });
+
+  it('collapses an aider provider-qualified runtime id with its unqualified catalog twin', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => ({
+        anthropic: {
+          id: 'anthropic',
+          name: 'Anthropic',
+          models: { 'claude-x': { id: 'claude-x', name: 'Claude X' } },
+        },
+      }),
+      getProviderModels: () => null,
+      getScopedCliCatalogRuntime: (input) =>
+        input.tool === 'aider'
+          ? {
+              connection: { role: 'planner', tool: 'aider', contextKey: 'merge-test' },
+              state: 'fresh',
+              models: [{ id: 'anthropic/claude-x' }],
+              fetchedAt: 1,
+              validatedAt: 2,
+            }
+          : null,
+    };
+
+    const models = buildRightModels({
+      role: 'planner',
+      customModels: [],
+      currentItem: tool('aider'),
+      cache,
+    });
+
+    expect(models.map((model) => model.id)).toEqual(['anthropic/claude-x']);
+    expect(models[0]).toMatchObject({ membership: 'confirmed', isDetected: true });
+    expect(countModelOptions(models)).toMatchObject({ confirmed: 1, suggestions: 0 });
+  });
+});

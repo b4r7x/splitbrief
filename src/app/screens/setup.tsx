@@ -11,11 +11,8 @@ import type { CrewPreset } from '../../core/crew/presets.js';
 import { type CrewRow, crewRowKey } from '../../core/crew/rows.js';
 import type { Config } from '../../core/schemas/config.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
-import {
-  INITIALIZING_TOOLS_BODY,
-  INITIALIZING_TOOLS_TITLE,
-  REFRESHING_TOOLS_TITLE,
-} from '../../core/discovery/copy.js';
+import { BOOT_MANIFEST_TITLE, REFRESHING_TOOLS_TITLE } from '../../core/discovery/copy.js';
+import { BootManifest } from '../../features/runners/boot-manifest.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution.js';
 import {
   CREW_MARKER_GUTTER,
@@ -181,8 +178,8 @@ function DiscoveryPanel({ state, onBack, onRetry, onOpenSettings }: DiscoveryPan
 
   if (state === 'initializing') {
     return (
-      <OverlayPanel title={INITIALIZING_TOOLS_TITLE} density="compact" hint="esc quit">
-        <Text color={t.textDim}>{INITIALIZING_TOOLS_BODY}</Text>
+      <OverlayPanel title={BOOT_MANIFEST_TITLE} density="compact" hint="esc quit">
+        <BootManifest />
       </OverlayPanel>
     );
   }

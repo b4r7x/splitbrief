@@ -67,7 +67,7 @@ const PRIOR_BRANCHES = [
 
 it('runtime hard-cut matrix has exactly 8 labeled cases', async () => {
   const root = await mkdtemp(join(tmpdir(), `${SPLITBRIEF_IDENTITY.slug}-runtime-hard-cut-`));
-  const canonicalContextEnv = `${SPLITBRIEF_IDENTITY.envPrefix}CONTEXT_LENGTH`;
+  const canonicalContextEnv = 'SPLITBRIEF_CONTEXT_LENGTH';
   const touchedEnvKeys = [canonicalContextEnv, ...PRIOR_CONTEXT_ENV_KEYS];
   const originalEnv = new Map(touchedEnvKeys.map((key) => [key, process.env[key]]));
 

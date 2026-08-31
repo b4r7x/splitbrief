@@ -8,7 +8,7 @@ import type { Config } from '../../schemas/config.js';
 import type { ImplementerConfig } from '../../schemas/implementer-config.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
 import type { ReviewerConfig } from '../../schemas/reviewer-config.js';
-import { createOpaqueIdFactory } from '../../../utils/opaque-id.js';
+import { contentIdentityId } from './content-identity.js';
 
 export type ActiveRunnerConfig = PlannerConfig | ImplementerConfig;
 
@@ -44,7 +44,7 @@ export type UpdateActiveRunnerInput =
       readonly updater: (existing: ReviewerConfig) => ReviewerConfig;
     };
 
-const sourceNodeId = createOpaqueIdFactory('active-runner-source');
+const sourceNodeId = (node: object): string => contentIdentityId('active-runner-source', node);
 
 function resolveActiveRunnerSource(input: ReadActiveRunnerInput): ActiveRunnerSource {
   if (input.role === 'planner') {

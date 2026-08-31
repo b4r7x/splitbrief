@@ -24,6 +24,7 @@ interface ToolRowParams {
   maxWidth: number;
   currentCommand: string | undefined;
   currentCommandKind: 'shell' | 'agent' | undefined;
+  isContext: boolean;
 }
 
 const ADD_COMMAND_LABEL = '+ Add custom command…';
@@ -35,6 +36,7 @@ export function renderToolRow({
   maxWidth,
   currentCommand,
   currentCommandKind,
+  isContext,
 }: ToolRowParams) {
   const isCommandBased = item.kind === 'custom-command';
   const showConfiguredCommand = isCommandBased && currentCommandKind && currentCommand;
@@ -47,10 +49,12 @@ export function renderToolRow({
   const metadata =
     statusLabel ?? (!isCommandBased && item.available && item.version ? item.version : undefined);
 
+  const state = isCursor ? 'active' : isContext ? 'context' : 'default';
+
   return (
     <ListRow
       label={label}
-      state={isCursor ? 'active' : 'default'}
+      state={state}
       defaultLead="dot"
       metadata={metadata}
       selected={isSelected || !!item.isCurrent}

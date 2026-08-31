@@ -116,22 +116,31 @@ function provenanceFor(model: ModelOption, customModels: readonly string[]): Pro
   }
 }
 
+type PlacementGroup = 'list' | 'suggestions' | 'custom';
+
 interface Placement {
   readonly model: ModelOption;
   readonly provenance: ProvenanceWord;
-  readonly group: string;
+  readonly group: PlacementGroup;
 }
 
-function groupKeyFor(provenance: ProvenanceWord): string {
-  return provenance === 'Custom' ? 'custom' : 'list';
+function groupKeyFor(model: ModelOption, provenance: ProvenanceWord): PlacementGroup {
+  if (provenance === 'Custom') return 'custom';
+  if (model.membership === 'catalog-suggestion') return 'suggestions';
+  return 'list';
 }
 
-function groupRank(key: string): number {
-  return key === 'custom' ? 1 : 0;
-}
-
-function sectionLabel(key: string): string {
-  return key === 'custom' ? 'Custom' : '';
+function groupRank(key: PlacementGroup): number {
+  switch (key) {
+    case 'list':
+      return 0;
+    case 'suggestions':
+      return 1;
+    case 'custom':
+      return 2;
+    default:
+      return assertNever(key);
+  }
 }
 
 function byReleaseDateDesc(a: Placement, b: Placement): number {
@@ -160,7 +169,7 @@ export function buildRightRows(input: {
     placements.push({
       model,
       provenance,
-      group: groupKeyFor(provenance),
+      group: groupKeyFor(model, provenance),
     });
   }
 
@@ -179,7 +188,13 @@ export function buildRightRows(input: {
     );
   }
 
-  const order: string[] = [];
+  const hasConfirmedOrStale = placements.some(
+    (placement) => placement.provenance === 'Detected' || placement.provenance === 'Stale',
+  );
+  const hasCatalogSuggestions = placements.some((placement) => placement.group === 'suggestions');
+  const showSuggestionsSection = hasConfirmedOrStale && hasCatalogSuggestions;
+
+  const order: PlacementGroup[] = [];
   for (const placement of placements) {
     if (!order.includes(placement.group)) order.push(placement.group);
   }
@@ -235,15 +250,16 @@ export function buildRightRows(input: {
     rows.push({ kind: 'model', model, provenance: 'Default', section: '', expanded: false });
   }
 
-  if (!sectioned) {
-    for (const placement of placements) pushModel(placement, '');
-  } else {
-    for (const key of order) {
-      const members = placements.filter((placement) => placement.group === key);
-      const section = sectionLabel(key);
-      const ordered = members.toSorted(byReleaseDateDesc);
-      for (const placement of ordered) pushModel(placement, section);
-    }
+  for (const key of order) {
+    const members = placements.filter((placement) => placement.group === key);
+    const section =
+      key === 'custom' && sectioned
+        ? 'Custom'
+        : key === 'suggestions' && showSuggestionsSection
+          ? 'suggestions'
+          : '';
+    const ordered = sectioned ? members.toSorted(byReleaseDateDesc) : members;
+    for (const placement of ordered) pushModel(placement, section);
   }
 
   if (input.catalogLane !== 'ready') {

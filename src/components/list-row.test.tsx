@@ -1,10 +1,21 @@
 import type { ReactElement } from 'react';
 import { Box } from 'ink';
 import { render } from 'ink-testing-library';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { glyph } from '../lib/glyphs.js';
 import { ListGroupHeader, ListRow, listRowLead } from './list-row.js';
+
+const originalForceColor = vi.hoisted(() => {
+  const saved = process.env['FORCE_COLOR'];
+  process.env['FORCE_COLOR'] = '3';
+  return saved;
+});
+
+afterAll(() => {
+  if (originalForceColor === undefined) delete process.env['FORCE_COLOR'];
+  else process.env['FORCE_COLOR'] = originalForceColor;
+});
 
 const envSnapshot = { ...process.env };
 let ttyDescriptor: PropertyDescriptor | undefined;
@@ -30,6 +41,12 @@ function withAsciiTier(run: () => void): void {
   }
 }
 
+/** The SGR parameters a run of text is painted with, read from the escape that opens it. */
+function colorOf(frame: string, text: string): string | undefined {
+  const before = frame.split(text)[0];
+  return before?.split('\u001B[').at(-1)?.split('m')[0];
+}
+
 function frameOf(node: ReactElement, width = 40): string {
   const ui = render(
     <Box width={width} flexDirection="column">
@@ -48,6 +65,7 @@ describe('ListRow', () => {
 
   it('exports listRowLead', () => {
     expect(listRowLead('active')).toBe(`${glyph('liveBar')} `);
+    expect(listRowLead('context')).toBe(`${glyph('liveBar')} `);
     expect(listRowLead('default')).toBe('  ');
   });
 
@@ -56,6 +74,39 @@ describe('ListRow', () => {
     expect(frame).toContain('claude code');
     expect(frame).not.toContain('▌');
     expect(frame).not.toContain('▸');
+  });
+
+  it('renders state context with the liveBar glyph in dim lead and default text colors', () => {
+    const activeFrame = frameOf(
+      <ListRow label="claude code" state="active" metadata="active-meta" />,
+    );
+    const contextFrame = frameOf(
+      <ListRow label="claude code" state="context" metadata="active-meta" />,
+    );
+
+    // ANSI-stripped equality of glyph and structure between context and active
+    expect(stripAnsiStyles(contextFrame)).toContain(glyph('liveBar'));
+    expect(stripAnsiStyles(contextFrame)).toBe(stripAnsiStyles(activeFrame));
+
+    // Differing color codes between context and active
+    expect(contextFrame).not.toBe(activeFrame);
+
+    // The active row paints its lead and its label with one accent; the context
+    // row dims the lead to the metadata's ink and leaves the label alone.
+    const activeLead = colorOf(activeFrame, glyph('liveBar'));
+    const contextLead = colorOf(contextFrame, glyph('liveBar'));
+    expect(contextLead).not.toBe(activeLead);
+    expect(colorOf(activeFrame, 'claude code')).toBe(activeLead);
+    expect(colorOf(contextFrame, 'active-meta')).toBe(contextLead);
+    expect(colorOf(contextFrame, 'claude code')).not.toBe(contextLead);
+  });
+
+  it('uses the ascii live bar for state context when the glyph tier is ascii', () => {
+    withAsciiTier(() => {
+      const frame = frameOf(<ListRow label="codex" state="context" />);
+      expect(stripAnsiStyles(frame)).toContain(`${glyph('liveBar', 'ascii')} `);
+      expect(frame).not.toContain('▌');
+    });
   });
 
   it('renders a · middot lead for the dot default variant', () => {

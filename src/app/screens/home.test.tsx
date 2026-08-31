@@ -276,7 +276,7 @@ describe('HomeScreen', () => {
     const ui = renderHome();
     await flushEffects();
     const coldFrame = ui.lastFrame() ?? '';
-    expect(coldFrame).toContain('Initializing your tools…');
+    expect(coldFrame).toContain('Waking your crew…');
     const anchorRow = coldFrame.split('\n').findIndex((line) => line.includes('Recent sessions'));
 
     detectionStore.hydrate({
@@ -290,7 +290,7 @@ describe('HomeScreen', () => {
     });
     await flushEffects();
     const settledFrame = ui.lastFrame() ?? '';
-    expect(settledFrame).not.toContain('Initializing your tools…');
+    expect(settledFrame).not.toContain('Waking your crew…');
     expect(settledFrame).not.toContain('Tools ready');
     // The box floats in the slack between content and the bottom-anchored
     // composer: neither the recent-sessions block nor the input may move when
@@ -321,7 +321,7 @@ describe('HomeScreen', () => {
     await flushEffects();
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Refreshing your tools…');
-    expect(frame).not.toContain('Initializing your tools…');
+    expect(frame).not.toContain('Waking your crew…');
     ui.unmount();
   });
 
@@ -369,7 +369,7 @@ describe('HomeScreen', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('Tool check failed');
     expect(frame).toContain('Open /settings to retry.');
-    expect(frame).not.toContain('Initializing your tools…');
+    expect(frame).not.toContain('Waking your crew…');
     ui.unmount();
   });
 
@@ -759,14 +759,14 @@ describe('HomeScreen', () => {
     await flushEffects();
     const submittedFrame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(submittedFrame).toContain('background preparation');
-    expect(submittedFrame).not.toContain('Initializing your tools…');
+    expect(submittedFrame).not.toContain('Waking your crew…');
 
     await tick(500);
     const settledFrame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(settledFrame).toContain('|____/| .__/');
     expect(settledFrame).toContain('background preparation');
     expect(settledFrame).toContain(DEFAULT_HOME_HINT);
-    expect(settledFrame).not.toContain('Initializing your tools…');
+    expect(settledFrame).not.toContain('Waking your crew…');
     ui.unmount();
   });
 
@@ -787,7 +787,7 @@ describe('HomeScreen', () => {
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('restore this draft');
-      expect(frame).not.toContain('Initializing your tools…');
+      expect(frame).not.toContain('Waking your crew…');
     }, SESSION_FILTER_WAIT_MS);
 
     ui.stdin.write(ESC);
@@ -795,7 +795,7 @@ describe('HomeScreen', () => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('restore this draft');
       expect(frame).toContain(DEFAULT_HOME_HINT);
-      expect(frame).not.toContain('Initializing your tools…');
+      expect(frame).not.toContain('Waking your crew…');
     }, SESSION_FILTER_WAIT_MS);
     expect(routerStore.get()).toEqual({ screen: 'home' });
     ui.unmount();
@@ -813,7 +813,7 @@ describe('HomeScreen', () => {
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
       expect(frame).toContain('keep this draft');
-      expect(frame).not.toContain('Initializing your tools…');
+      expect(frame).not.toContain('Waking your crew…');
     }, SESSION_FILTER_WAIT_MS);
 
     await flushEffects();
@@ -857,7 +857,7 @@ describe('HomeScreen', () => {
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('cancel preparation');
-      expect(frame).not.toContain('Initializing your tools…');
+      expect(frame).not.toContain('Waking your crew…');
     }, SESSION_FILTER_WAIT_MS);
 
     ui.stdin.write(ESC);

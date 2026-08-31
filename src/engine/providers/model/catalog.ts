@@ -328,6 +328,20 @@ function hasExactSelection(
   );
 }
 
+/**
+ * A provider-qualified runtime id (`anthropic/claude-x`) names the same
+ * selection as its owner's unqualified catalog id (`claude-x`).
+ */
+function runtimeCoversSelection(
+  runtimeRows: readonly ResolvedModelCatalogEntry[],
+  input: Readonly<{ owner: string; selectionId: string }>,
+): boolean {
+  return (
+    hasExactSelection(runtimeRows, input.selectionId) ||
+    hasExactSelection(runtimeRows, `${input.owner}/${input.selectionId}`)
+  );
+}
+
 function resolveCatalogEntries(
   input: Readonly<{
     providerId: ProviderId;
@@ -364,21 +378,25 @@ function resolveCatalogEntries(
 
   const modelsDevRows: ResolvedModelCatalogEntry[] = [];
   const modelsDevKeys = new Set<string>();
+  for (const model of modelsDevEntries) {
+    const owner = ownerFor(model, providerId);
+    const key = entryKey({ owner, selectionId: model.id });
+    if (modelsDevKeys.has(key)) continue;
+    if (runtimeCoversSelection(runtimeRows, { owner, selectionId: model.id })) continue;
+    modelsDevKeys.add(key);
+    modelsDevRows.push(modelsDevSuggestion({ runnerId: providerId, model }));
+  }
+
   const bundledRows: ResolvedModelCatalogEntry[] = [];
   const bundledKeys = new Set<string>();
   if (!runtimeConfirmed) {
-    for (const model of modelsDevEntries) {
-      const key = entryKey({ owner: ownerFor(model, providerId), selectionId: model.id });
-      if (runtimeKeys.has(key) || modelsDevKeys.has(key)) continue;
-      modelsDevKeys.add(key);
-      modelsDevRows.push(modelsDevSuggestion({ runnerId: providerId, model }));
-    }
-
     const keepBundledDefault = runtimeSnapshot === null;
     for (const model of getBundledModels(providerId)) {
-      const owner = providerId;
-      const key = entryKey({ owner, selectionId: model.name });
-      if (runtimeKeys.has(key) || modelsDevKeys.has(key) || bundledKeys.has(key)) continue;
+      const key = entryKey({ owner: providerId, selectionId: model.name });
+      if (modelsDevKeys.has(key) || bundledKeys.has(key)) continue;
+      if (runtimeCoversSelection(runtimeRows, { owner: providerId, selectionId: model.name })) {
+        continue;
+      }
       bundledKeys.add(key);
       bundledRows.push(
         bundledSuggestion({

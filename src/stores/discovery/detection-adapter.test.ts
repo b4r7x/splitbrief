@@ -28,10 +28,11 @@ describe('hydrateDetectionIntoStores', () => {
     modelCacheStore.reset();
   });
 
-  it('hydrates only cache data and preserves its original stale observation metadata', () => {
+  it('hydrates only cache data and preserves its original stale observation timestamps', () => {
     hydrateDetectionIntoStores({
       detection: detectionStore,
       contexts,
+      foreignContext: false,
       snapshot: {
         contextKey: contexts.readiness,
         fetchedAt: 100,
@@ -47,15 +48,62 @@ describe('hydrateDetectionIntoStores', () => {
       providers: [{ provider: 'ollama' }],
       cliTools: [{ tool: 'codex' }],
       refresh: {
-        generation: 3,
+        generation: 0,
         readiness: {
           outcome: 'stale',
           fetchedAt: 100,
           validatedAt: 200,
-          requestId: 4,
+          requestId: 0,
         },
       },
     });
+  });
+
+  it('drops lane authority for a matching-context record too', () => {
+    // The context matches, but the persisted generation still belongs to the
+    // process that wrote it, and this one counts its own lanes from 1.
+    hydrateDetectionIntoStores({
+      detection: detectionStore,
+      contexts,
+      foreignContext: false,
+      snapshot: {
+        contextKey: contexts.readiness,
+        fetchedAt: 100,
+        validatedAt: 200,
+        generation: 3,
+        requestId: 4,
+        providers: [],
+        cliTools: [cliDetectionFor('ready', 'codex', { installedVersion: '0.40.0' })],
+      },
+    });
+
+    const request = detectionStore.beginRefresh({ contexts });
+    const landed = detectionStore.publishLane({
+      request,
+      lane: {
+        lane: 'readiness',
+        outcome: {
+          kind: 'fresh',
+          origin: 'request',
+          snapshot: {
+            source: 'readiness',
+            contextKey: contexts.readiness,
+            generation: 1,
+            requestId: 1,
+            fetchedAt: 300,
+            validatedAt: 300,
+            stale: false,
+            value: {
+              providers: [],
+              cliTools: [cliDetectionFor('ready', 'codex', { installedVersion: '9.9.9' })],
+            },
+          },
+        },
+      },
+    });
+
+    expect(landed).toBe(true);
+    expect(detectionStore.get().cliTools).toMatchObject([{ installedVersion: '9.9.9' }]);
   });
 
   it('does not hydrate cache data under a different active context', () => {
@@ -68,6 +116,7 @@ describe('hydrateDetectionIntoStores', () => {
         modelsDev: 'foreign:models-dev',
         cliModels: 'foreign:cli-models',
       },
+      foreignContext: true,
       snapshot: {
         contextKey: 'foreign:readiness',
         fetchedAt: 100,
@@ -80,6 +129,63 @@ describe('hydrateDetectionIntoStores', () => {
     });
 
     expect(detectionStore.get().providers).toEqual([]);
+  });
+
+  it('drops lane authority for a record written under a foreign config context', () => {
+    // A fresh process counts its lanes from 1, so a remembered generation of 3
+    // would outrank every lane the startup refresh lands.
+    hydrateDetectionIntoStores({
+      detection: detectionStore,
+      contexts,
+      foreignContext: true,
+      snapshot: {
+        contextKey: 'someone-elses-context',
+        fetchedAt: 100,
+        validatedAt: 200,
+        generation: 3,
+        requestId: 4,
+        providers: [{ provider: 'ollama', available: true, isLocal: true }],
+        cliTools: [cliDetectionFor('ready', 'codex', { installedVersion: '0.40.0' })],
+      },
+    });
+
+    expect(detectionStore.get().refresh).toMatchObject({
+      generation: 0,
+      readiness: { outcome: 'stale', generation: 0, requestId: 0, fetchedAt: 100 },
+    });
+
+    const request = detectionStore.beginRefresh({ contexts });
+    const landed = detectionStore.publishLane({
+      request,
+      lane: {
+        lane: 'readiness',
+        outcome: {
+          kind: 'fresh',
+          origin: 'request',
+          snapshot: {
+            source: 'readiness',
+            contextKey: contexts.readiness,
+            generation: 1,
+            requestId: 1,
+            fetchedAt: 300,
+            validatedAt: 300,
+            stale: false,
+            value: {
+              providers: [],
+              cliTools: [cliDetectionFor('ready', 'codex', { installedVersion: '9.9.9' })],
+            },
+          },
+        },
+      },
+    });
+
+    expect(landed).toBe(true);
+    expect(detectionStore.get().cliTools).toMatchObject([{ installedVersion: '9.9.9' }]);
+    expect(detectionStore.get().refresh.readiness).toMatchObject({
+      outcome: 'fresh',
+      refreshing: false,
+      generation: 1,
+    });
   });
 });
 

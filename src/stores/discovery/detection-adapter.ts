@@ -1,4 +1,4 @@
-import type { DetectionCacheSnapshot } from '../../engine/detection/cache.js';
+import type { RememberedPresentation } from '../../engine/detection/cache.js';
 import type { ModelsDevCatalogSnapshot } from '../../engine/providers/models-dev-cache.js';
 import type { DiscoverySourceContexts, modelCacheStore } from './model-cache.js';
 import type { detectionStore } from '../project/detection.js';
@@ -8,20 +8,27 @@ export type DetectionStoreHydrator = Pick<typeof detectionStore, 'hydrate'>;
 
 export type ModelsDevCatalogHydrator = Pick<typeof modelCacheStore, 'hydrateModelsDevCatalog'>;
 
+/**
+ * A record read back from disk is presentation-only, whatever context wrote it.
+ * Its persisted generation belongs to the coordinator run that wrote it, and a
+ * fresh process counts its own lanes from 1, so carrying that generation in
+ * would let the hydrated rows outrank every lane the startup refresh lands —
+ * stale rows would stay forever and the refresh indicator would never settle.
+ */
 export function hydrateDetectionIntoStores(
   input: Readonly<{
     detection: DetectionStoreHydrator;
-    snapshot: DetectionCacheSnapshot;
     contexts: DiscoverySourceContexts;
-  }>,
+  }> &
+    RememberedPresentation,
 ): void {
   input.detection.hydrate({
     providers: input.snapshot.providers,
     cliTools: input.snapshot.cliTools,
     fetchedAt: input.snapshot.fetchedAt,
     validatedAt: input.snapshot.validatedAt,
-    generation: input.snapshot.generation,
-    requestId: input.snapshot.requestId,
+    generation: 0,
+    requestId: 0,
     contexts: input.contexts,
     ...(input.snapshot.cliCatalogs === undefined
       ? {}

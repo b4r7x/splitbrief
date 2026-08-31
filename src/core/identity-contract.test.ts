@@ -71,7 +71,6 @@ describe('SPLITBRIEF identity', () => {
       slug: 'splitbrief',
       executable: 'splitbrief',
       stateDir: '.splitbrief',
-      envPrefix: 'SPLITBRIEF_',
       branchPrefix: 'splitbrief/',
     });
   });

@@ -20,7 +20,7 @@ import {
   PAUSED_LIVE_STATUS_VERB,
 } from '../display/live-activity.js';
 import { colorForTone } from '../display/tone-color.js';
-import { useSpinnerFrame } from '../hooks/use-spinner-frame.js';
+import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { formatStageLabel } from '../../../core/phase-display.js';
