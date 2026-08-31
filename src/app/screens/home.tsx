@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { INITIALIZING_TOOLS_TITLE, REFRESHING_TOOLS_TITLE } from '../../core/discovery/copy.js';
+import { BOOT_MANIFEST_TITLE, REFRESHING_TOOLS_TITLE } from '../../core/discovery/copy.js';
 import { CREW_SEAT_LABELS, formatShortSeatIdentity } from '../../core/crew/identity.js';
 import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
@@ -12,7 +12,7 @@ import { ScreenShell } from '../../components/screen-shell.js';
 import { SOFT_SEP } from '../../components/separators.js';
 import { HomeSeatBlock } from '../../features/home/components/seat-block.js';
 import { RecentSessions } from '../../features/home/components/recent-sessions.js';
-import { useSpinnerFrame } from '../../features/workflow/hooks/use-spinner-frame.js';
+import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -114,7 +114,7 @@ function DiscoveryPanel() {
         <Fragment>
           <Text>
             <Text color={theme.accent} bold>
-              {frame} {INITIALIZING_TOOLS_TITLE}
+              {frame} {BOOT_MANIFEST_TITLE}
             </Text>
           </Text>
           <Text>
@@ -256,7 +256,7 @@ export function HomeScreen({
     // never moves the layout.
     if (hintNotice) {
       homeHint = `${refreshFrame} ${
-        discoveryNotice === 'cold' ? INITIALIZING_TOOLS_TITLE : REFRESHING_TOOLS_TITLE
+        discoveryNotice === 'cold' ? BOOT_MANIFEST_TITLE : REFRESHING_TOOLS_TITLE
       }`;
     }
     if (sessionsActive) homeHint = RECENT_SESSIONS_HINT;

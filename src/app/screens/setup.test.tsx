@@ -233,9 +233,9 @@ describe('SetupScreen', () => {
     await flushEffects();
 
     const cold = ui.lastFrame() ?? '';
-    expect(cold).toContain('Initializing your tools…');
-    expect(cold).toContain('Checking your configured tools for the first time. Results will be');
-    expect(cold).toContain('remembered locally.');
+    expect(cold).toContain('Waking your crew…');
+    expect(cold).toContain('first run — results are remembered');
+
     expect(cold).not.toContain('No planner');
 
     const request = beginDiscovery();

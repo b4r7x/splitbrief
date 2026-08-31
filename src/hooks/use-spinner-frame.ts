@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { spinnerFrames } from '../../../lib/glyphs.js';
-import { prefersReducedMotion } from '../display/reduce-motion.js';
+import { spinnerFrames } from '../lib/glyphs.js';
+import { prefersReducedMotion } from '../lib/terminal/reduce-motion.js';
 
 const SPINNER_INTERVAL_MS = 120;
 const REDUCED_MOTION_INTERVAL_MS = 1000;

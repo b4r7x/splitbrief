@@ -5,9 +5,67 @@ import {
   type PickerOption,
   type RunnerPickerOption,
 } from '../../src/features/runners/model-catalog/options.js';
+import type { PickerModelCounts } from '../../src/features/runners/model-catalog/catalog.js';
+import {
+  deriveModelCatalogCapability,
+  type RunnerPermissionPosture,
+} from '../../src/features/runners/model-catalog/posture.js';
 import { buildRightRows } from '../../src/features/runners/model-catalog/rows.js';
 import type { ModelOption } from '../../src/features/runners/model-catalog/recency.js';
+import type { PickerActions } from '../../src/features/runners/use-picker-actions.js';
 import type { PickerCatalog } from '../../src/features/runners/use-picker-catalog.js';
+
+/** A tool with nothing to warn about: the baseline a permission test varies from. */
+export const readyPermissions: RunnerPermissionPosture = {
+  directWrite: false,
+  network: true,
+  shell: false,
+  automaticApproval: false,
+  sandbox: 'none',
+};
+
+export const zeroCounts: PickerModelCounts = {
+  confirmed: 0,
+  stale: 0,
+  suggestions: 0,
+  bundled: 0,
+  custom: 0,
+};
+
+export function cliTool(
+  input: Readonly<{ id: string; displayName: string; isCurrent?: boolean }>,
+): PickerOption {
+  return {
+    id: input.id,
+    displayName: input.displayName,
+    kind: 'cli',
+    roles: ['planner', 'implementer'],
+    modelPolicy: 'optional',
+    modelCapability: deriveModelCatalogCapability('optional', true),
+    billing: 'subscription-included',
+    permissions: readyPermissions,
+    status: { state: 'ready', remediation: null },
+    available: true,
+    isCurrent: input.isCurrent ?? false,
+  };
+}
+
+/** Every picker action as a no-op: a view test asserts on the frame, not the wiring. */
+export function makeActions(): PickerActions {
+  return {
+    confirm: async () => {},
+    confirmProviderVariant: async () => {},
+    leftChange: () => {},
+    deleteRight: async () => {},
+    chooseContract: () => {},
+    customCommand: async () => {},
+    customModel: async () => {},
+    openCustomModel: () => {},
+    openProviderAuth: () => {},
+    submitProviderKey: async () => {},
+    closeOverlay: () => {},
+  };
+}
 
 /**
  * The option the picker would actually emit for `id`, built by the real

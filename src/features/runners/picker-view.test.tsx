@@ -555,3 +555,44 @@ describe('PickerView Cursor row', () => {
     }
   });
 });
+
+describe('PickerView refreshing discovery', () => {
+  beforeEach(() => {
+    terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
+  });
+
+  it('renders a spinner and refreshing label in the header while columns remain populated', async () => {
+    const tool = pickerItem({
+      id: 'claude-code',
+      displayName: 'Claude Code',
+      kind: 'cli',
+      roles: ['planner', 'implementer'],
+      modelPolicy: 'optional',
+      billing: 'subscription-included',
+      permissions: readyPermissions,
+      status: { state: 'ready', remediation: null },
+      available: true,
+    });
+    const model: ModelOption = { id: 'claude-3-7-sonnet', displayName: 'Claude 3.7 Sonnet' };
+
+    const catalog: PickerCatalog = pickerCatalog({
+      items: [tool],
+      rightModels: [model],
+      currentItem: tool,
+      selectedItemId: tool.id,
+      roleLabel: 'Planner',
+      modelCounts: { ...zeroCounts, confirmed: 1 },
+      discovery: { cold: false, refreshing: true },
+    });
+
+    const ui = renderFeature(
+      <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
+    );
+    await flushEffects();
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('refreshing…');
+    expect(frame).toContain('Claude Code');
+    expect(frame).toContain('Claude 3.7 Sonnet');
+    ui.unmount();
+  });
+});

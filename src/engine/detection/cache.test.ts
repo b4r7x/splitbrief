@@ -15,6 +15,7 @@ import {
   invalidateCache,
   loadDetectionCacheSnapshot,
   loadRememberedCliRuntime,
+  loadRememberedPresentationSnapshot,
   saveDetectionCache,
 } from './cache.js';
 
@@ -355,6 +356,34 @@ describe('detection cache', () => {
       projectDir: tempDir,
     }).readiness;
     expect(contextKey).toContain('api-key');
+
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({ contextKey, cliTools: [cliDetectionFor('ready', 'claude-code')] }),
+    });
+
+    await expect(
+      loadDetectionCacheSnapshot({ projectDir: tempDir, contextKey }),
+    ).resolves.toMatchObject({ contextKey });
+  });
+
+  it('caches a context naming the OPENAI_API_KEY environment variable', async () => {
+    const contextKey = detectionContextsForCurrentConfig({
+      config: {
+        ...createDefaultConfig(),
+        planner: {
+          kind: 'api',
+          provider: 'openai',
+          service: 'openai',
+          offering: 'payg',
+          apiBase: 'https://api.openai.com/v1',
+          apiKey: 'env:OPENAI_API_KEY',
+          model: 'gpt-5-mini',
+        },
+      },
+      projectDir: tempDir,
+    }).readiness;
+    expect(contextKey).toContain('OPENAI_API_KEY');
 
     await saveDetectionCache({
       projectDir: tempDir,
@@ -762,6 +791,96 @@ describe('detection cache', () => {
       await expect(
         loadRememberedCliRuntime({ projectDir: tempDir, tool: 'claude-code' }),
       ).resolves.toBeNull();
+    });
+  });
+
+  describe('remembered presentation snapshot', () => {
+    it('returns null when no cache exists', async () => {
+      await expect(
+        loadRememberedPresentationSnapshot({ projectDir: tempDir, contextKey: CACHE_CONTEXT }),
+      ).resolves.toBeNull();
+    });
+
+    it('returns the snapshot with foreignContext: false when contextKey matches', async () => {
+      const cliTools: CliToolDetection[] = [cliDetectionFor('ready', 'claude-code')];
+      await saveDetectionCache({
+        projectDir: tempDir,
+        snapshot: cacheSnapshot({ contextKey: CACHE_CONTEXT, cliTools }),
+      });
+
+      const result = await loadRememberedPresentationSnapshot({
+        projectDir: tempDir,
+        contextKey: CACHE_CONTEXT,
+      });
+
+      expect(result).not.toBeNull();
+      expect(result?.foreignContext).toBe(false);
+      expect(result?.snapshot).toMatchObject({
+        contextKey: CACHE_CONTEXT,
+        cliTools: [{ tool: 'claude-code' }],
+      });
+    });
+
+    it('returns the snapshot with foreignContext: true when contextKey differs', async () => {
+      const cliTools: CliToolDetection[] = [cliDetectionFor('ready', 'claude-code')];
+      await saveDetectionCache({
+        projectDir: tempDir,
+        snapshot: cacheSnapshot({ contextKey: CACHE_CONTEXT, cliTools }),
+      });
+
+      const result = await loadRememberedPresentationSnapshot({
+        projectDir: tempDir,
+        contextKey: 'other-context-v2',
+      });
+
+      expect(result).not.toBeNull();
+      expect(result?.foreignContext).toBe(true);
+      expect(result?.snapshot).toMatchObject({
+        contextKey: CACHE_CONTEXT,
+        cliTools: [{ tool: 'claude-code' }],
+      });
+    });
+
+    it('returns null for legacy v1 or v2 cache records and scrubs them', async () => {
+      const dir = join(tempDir, SPLITBRIEF_DIR);
+      await mkdir(dir, { recursive: true });
+      const cachePath = join(dir, 'detection-cache.json');
+
+      for (const version of [1, 2] as const) {
+        await writeFile(cachePath, legacyPrivateCache(version), 'utf8');
+        await expect(
+          loadRememberedPresentationSnapshot({ projectDir: tempDir, contextKey: CACHE_CONTEXT }),
+        ).resolves.toBeNull();
+        await expect(readFile(cachePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+      }
+    });
+
+    it('returns null for malformed or schema-invalid cache records without deleting them', async () => {
+      const dir = join(tempDir, SPLITBRIEF_DIR);
+      await mkdir(dir, { recursive: true });
+      const cachePath = join(dir, 'detection-cache.json');
+
+      await writeFile(cachePath, 'not valid json', 'utf8');
+      await expect(
+        loadRememberedPresentationSnapshot({ projectDir: tempDir, contextKey: CACHE_CONTEXT }),
+      ).resolves.toBeNull();
+      await expect(readFile(cachePath, 'utf8')).resolves.toBe('not valid json');
+
+      const v3Payload = JSON.stringify({
+        version: 3,
+        contextKey: CACHE_CONTEXT,
+        fetchedAt: 1_786_000_000_000,
+        validatedAt: 1_786_000_001_000,
+        generation: 12,
+        requestId: 27,
+        providers: [],
+        cliTools: [],
+      });
+      await writeFile(cachePath, v3Payload, 'utf8');
+      await expect(
+        loadRememberedPresentationSnapshot({ projectDir: tempDir, contextKey: CACHE_CONTEXT }),
+      ).resolves.toBeNull();
+      await expect(readFile(cachePath, 'utf8')).resolves.toBe(v3Payload);
     });
   });
 });

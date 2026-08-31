@@ -2,7 +2,7 @@ import { parseApiKeyEnvRef } from '../credentials.js';
 import { readActiveRunnerLens } from './active-runner.js';
 import { API_PROVIDER_CATALOG } from '../../providers/api-provider-catalog.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { createOpaqueIdFactory } from '../../../utils/opaque-id.js';
+import { contentIdentityId } from './content-identity.js';
 import type { Config } from '../../schemas/config.js';
 import type { ActiveRunnerConfig } from './active-runner.js';
 import {
@@ -42,7 +42,7 @@ export interface ProjectRunnerDiscoveryContextInput {
   readonly role: ActiveRunnerRole;
 }
 
-const configGenerationId = createOpaqueIdFactory('config');
+const configGenerationId = (config: Config): string => contentIdentityId('config', config);
 
 function endpointOrigin(apiBase: string): string {
   return new URL(apiBase).origin;

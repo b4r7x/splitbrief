@@ -3,6 +3,5 @@ export const SPLITBRIEF_IDENTITY = {
   slug: 'splitbrief',
   executable: 'splitbrief',
   stateDir: '.splitbrief',
-  envPrefix: 'SPLITBRIEF_',
   branchPrefix: 'splitbrief/',
 } as const;

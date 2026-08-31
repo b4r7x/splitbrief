@@ -216,6 +216,91 @@ describe('initStores', () => {
     await vi.waitFor(() => expect(detectionStore.get().refresh.readiness.outcome).toBe('fresh'));
   }, 30_000);
 
+  it('replaces a foreign-context snapshot when the live readiness lane lands', async () => {
+    const dir = makeProjectDir();
+    writeConfigYaml(
+      dir,
+      toYaml({
+        ...createDefaultConfig(),
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
+      }),
+    );
+
+    const remembered = cliDetectionFor('ready', 'claude-code', { installedVersion: '0.40.0' });
+    const live = cliDetectionFor('ready', 'claude-code', { installedVersion: '9.9.9' });
+    const capabilities = Promise.withResolvers<Awaited<ReturnType<typeof detectCapabilities>>>();
+    vi.spyOn(capabilitiesModule, 'detectCapabilities').mockReturnValue(capabilities.promise);
+
+    const laneGate = Promise.withResolvers<void>();
+    const loadDetection = vi.fn(
+      async ({ deps, onLane }: detectionServiceModule.DetectionLoadInput) => {
+        await laneGate.promise;
+        // A fresh process counts its own lanes from 1, well below the
+        // generation the remembered record carries.
+        onLane?.({
+          lane: 'readiness',
+          outcome: {
+            kind: 'fresh',
+            origin: 'request',
+            snapshot: {
+              source: 'readiness',
+              contextKey: deps.sourceContexts?.readiness ?? 'missing-readiness-context',
+              generation: 1,
+              requestId: 1,
+              fetchedAt: 300,
+              validatedAt: 300,
+              stale: false,
+              value: { providers: [], cliTools: [live] },
+            },
+          },
+        });
+        return { providers: [], cliTools: [live], catalog: null, cliModels: [] };
+      },
+    );
+    vi.spyOn(detectionServiceModule, 'getDefaultDetectionService').mockReturnValue({
+      loadDetection,
+      refreshDetection: vi.fn(),
+    });
+
+    const initialization = initStores(dir);
+    await vi.waitFor(() => expect(configStore.get().config).not.toBeNull());
+    await saveDetectionCache({
+      projectDir: dir,
+      snapshot: {
+        contextKey: 'written-under-another-config',
+        fetchedAt: 100,
+        validatedAt: 110,
+        generation: 3,
+        requestId: 3,
+        providers: [],
+        cliTools: [remembered],
+      },
+    });
+    capabilities.resolve({ contextLength: 32_768, origin: 'fallback' });
+    await vi.waitFor(() => expect(loadDetection).toHaveBeenCalledOnce());
+
+    // Warm start: the foreign record renders as stale rows while lanes refresh.
+    const hydrated = detectionStore.get();
+    expect(hydrated.cliTools).toMatchObject([{ installedVersion: '0.40.0' }]);
+    expect(hydrated.refresh.readiness).toMatchObject({
+      outcome: 'stale',
+      refreshing: true,
+      fetchedAt: 100,
+    });
+
+    laneGate.resolve();
+    await initialization;
+
+    await vi.waitFor(() => {
+      expect(detectionStore.get().cliTools).toMatchObject([{ installedVersion: '9.9.9' }]);
+      expect(detectionStore.get().refresh.readiness).toMatchObject({
+        outcome: 'fresh',
+        refreshing: false,
+      });
+    });
+  }, 30_000);
+
   it('loads config from disk into configStore (cli planner / cli implementer)', async () => {
     const dir = makeProjectDir();
     writeConfigYaml(

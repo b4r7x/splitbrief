@@ -1,14 +1,10 @@
 import { useEffect } from 'react';
-import { Text, useInput } from 'ink';
+import { useInput } from 'ink';
 import { seatPickerLane, type SeatPickerRole } from '../../core/runners/cli-tool-catalog.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { arrowSep, SOFT_SEP } from '../../components/separators.js';
-import { useTheme } from '../../components/theme.js';
-import {
-  INITIALIZING_TOOLS_BODY,
-  INITIALIZING_TOOLS_TITLE,
-  REFRESHING_TOOLS_TITLE,
-} from '../../core/discovery/copy.js';
+import { BOOT_MANIFEST_TITLE } from '../../core/discovery/copy.js';
+import { BootManifest } from '../../features/runners/boot-manifest.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { usePickerCatalog } from '../../features/runners/use-picker-catalog.js';
@@ -30,7 +26,6 @@ interface ToolModelPickerProps {
 }
 
 export function ToolModelPicker({ role, deps }: ToolModelPickerProps) {
-  const t = useTheme();
   const lane = seatPickerLane(role);
   const view = pickerViewStore.use((s) => s.view);
   const preservedLeftIndex = pickerViewStore.use((s) => s.preservedLeftIndex);
@@ -72,8 +67,8 @@ export function ToolModelPicker({ role, deps }: ToolModelPickerProps) {
 
   if (coldDiscovery) {
     return (
-      <OverlayPanel title={INITIALIZING_TOOLS_TITLE} density="compact" hint="esc close">
-        <Text color={t.textDim}>{INITIALIZING_TOOLS_BODY}</Text>
+      <OverlayPanel title={BOOT_MANIFEST_TITLE} density="compact" hint="esc close">
+        <BootManifest />
       </OverlayPanel>
     );
   }
@@ -142,12 +137,5 @@ export function ToolModelPicker({ role, deps }: ToolModelPickerProps) {
     );
   }
 
-  return (
-    <PickerView
-      role={role}
-      stepLabel={catalog.discovery.refreshing ? REFRESHING_TOOLS_TITLE : undefined}
-      catalog={catalog}
-      actions={actions}
-    />
-  );
+  return <PickerView role={role} catalog={catalog} actions={actions} />;
 }

@@ -58,14 +58,19 @@ function hasPrivateContextIdentifier(value: string): boolean {
 }
 
 /**
- * A generated context key names the selected auth channel, and one channel is
- * literally called `api-key` — enough to trip the credential heuristic and
- * silently disable the cache for every runner on that channel. Channel ids come
- * from a closed catalog, never from user text, so they are removed before the
- * scan instead of widening the pattern the scan uses. Version strings and model
- * ids keep the unmodified check.
+ * A generated context key names the selected auth channel — one channel is
+ * literally called `api-key` — and, for an env-referenced credential, the
+ * variable's name, which is `OPENAI_API_KEY` for most users. Both are names of
+ * credentials rather than credentials, yet either is enough to trip the
+ * heuristic and silently disable the cache for the runners that carry them. The
+ * vocabulary is closed, so it is removed before the scan instead of widening the
+ * pattern the scan uses; what survives the strip is still checked for real key
+ * material. Version strings and model ids keep the unmodified check.
  */
-const CACHE_CONTEXT_CHANNEL_TOKENS = new RegExp(CLI_AUTH_CHANNEL_IDS.join('|'), 'gi');
+const CACHE_CONTEXT_NAME_TOKENS = new RegExp(
+  [...CLI_AUTH_CHANNEL_IDS, 'api[-_]?key', 'bearer', 'password', 'secret', 'token'].join('|'),
+  'gi',
+);
 
 const CacheContextKeySchema = z
   .string()
@@ -73,7 +78,7 @@ const CacheContextKeySchema = z
   .max(MAX_CACHE_CONTEXT_KEY_LENGTH)
   .regex(/^[A-Za-z0-9._~|%=-]+$/)
   .refine((value) => {
-    const scanned = value.replace(CACHE_CONTEXT_CHANNEL_TOKENS, '');
+    const scanned = value.replace(CACHE_CONTEXT_NAME_TOKENS, '');
     return !hasSensitiveCacheValue(scanned) && !hasPrivateContextIdentifier(scanned);
   }, 'Cache context must not include credential material, hashes, or private identifiers');
 
@@ -384,6 +389,26 @@ export async function loadDetectionCacheSnapshot(
   return snapshotFromCache(cache);
 }
 
+export interface RememberedPresentation {
+  readonly snapshot: DetectionCacheSnapshot;
+  readonly foreignContext: boolean;
+}
+
+/**
+ * Reads a cache record for presentation purposes regardless of whether the
+ * caller's contextKey matches the cached record. Flags `foreignContext` when
+ * the contextKey differs.
+ */
+export async function loadRememberedPresentationSnapshot(
+  input: Readonly<{ projectDir: string; contextKey: string }>,
+): Promise<RememberedPresentation | null> {
+  const cache = await readCache(input.projectDir);
+  if (cache === null) return null;
+  const snapshot = snapshotFromCache(cache);
+  if (snapshot === null) return null;
+  return { snapshot, foreignContext: cache.contextKey !== input.contextKey };
+}
+
 export interface RememberedCliRuntime {
   readonly installedVersion: string;
   readonly fingerprint: CliExecutableFingerprint;
@@ -392,11 +417,11 @@ export interface RememberedCliRuntime {
 /**
  * Answers the single question a runner construction asks of the remembered
  * record: which version did the last readiness pass observe for this tool. The
- * context-keyed reader cannot answer it across processes — the generated key
- * embeds a per-process config identity — so the record's own executable
- * fingerprint travels back with the version instead, and the caller binds the
- * answer to the binary it is about to start. Records past the readiness
- * freshness bound are withheld.
+ * caller holds a tool id and the executable it is about to start, never the
+ * discovery context that pass ran under, so the lookup is keyed by tool alone;
+ * the record's own executable fingerprint travels back with the version and
+ * binds the answer to that binary instead. Records past the readiness freshness
+ * bound are withheld.
  */
 export async function loadRememberedCliRuntime(
   input: Readonly<{ projectDir: string; tool: CliToolId }>,

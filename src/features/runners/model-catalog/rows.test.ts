@@ -190,6 +190,61 @@ describe('buildRightRows', () => {
     expect(failure?.kind === 'notice' && failure.text).toBe('Could not load models');
   });
 
+  it('renders rows for [2 confirmed, 3 suggestions] with a single suggestions section boundary before row 3', () => {
+    const confirmed1: ModelOption = { id: 'openai/gpt-4o', membership: 'confirmed' };
+    const confirmed2: ModelOption = { id: 'anthropic/claude-3-5-sonnet', membership: 'confirmed' };
+    const sugg1 = catalogModel('openai/gpt-4o-mini');
+    const sugg2 = catalogModel('anthropic/claude-3-5-haiku');
+    const sugg3 = catalogModel('google/gemini-2.0-flash');
+
+    const rows = buildRightRows({
+      ...BASE,
+      models: [confirmed1, confirmed2, sugg1, sugg2, sugg3],
+    });
+
+    const placed = modelRows(rows);
+    expect(placed).toHaveLength(5);
+    expect(sections(rows)).toEqual(['suggestions']);
+    expect(rows[0]?.kind === 'model' ? sectionOf(rows[0]) : null).toBeUndefined();
+    expect(rows[1]?.kind === 'model' ? sectionOf(rows[1]) : null).toBeUndefined();
+    expect(rows[2]?.kind === 'model' ? sectionOf(rows[2]) : null).toBe('suggestions');
+    expect(rows[3]?.kind === 'model' ? sectionOf(rows[3]) : null).toBe('suggestions');
+    expect(rows[4]?.kind === 'model' ? sectionOf(rows[4]) : null).toBe('suggestions');
+  });
+
+  it('renders rows for [0 confirmed, 3 suggestions] with no suggestions header', () => {
+    const sugg1 = catalogModel('openai/gpt-4o-mini');
+    const sugg2 = catalogModel('anthropic/claude-3-5-haiku');
+    const sugg3 = catalogModel('google/gemini-2.0-flash');
+
+    const rows = buildRightRows({
+      ...BASE,
+      models: [sugg1, sugg2, sugg3],
+    });
+
+    const placed = modelRows(rows);
+    expect(placed).toHaveLength(3);
+    expect(sections(rows)).toEqual([]);
+    for (const row of rows) {
+      expect(sectionOf(row)).toBeUndefined();
+    }
+  });
+
+  it('emits suggestions header when stale rows and catalog suggestions coexist', () => {
+    const stale: ModelOption = { id: 'openai/gpt-4o-prev', membership: 'stale', isStale: true };
+    const sugg1 = catalogModel('openai/gpt-4o');
+    const sugg2 = catalogModel('anthropic/claude-3-5-sonnet');
+
+    const rows = buildRightRows({
+      ...BASE,
+      models: [stale, sugg1, sugg2],
+    });
+
+    expect(sections(rows)).toEqual(['suggestions']);
+    expect(rows[0]?.kind === 'model' ? sectionOf(rows[0]) : null).toBeUndefined();
+    expect(rows[1]?.kind === 'model' ? sectionOf(rows[1]) : null).toBe('suggestions');
+  });
+
   it('custom section is absent with no custom rows', () => {
     const persisted = 'openai/gpt-current';
     const catalog = Array.from({ length: 12 }, (_, index) =>
@@ -201,11 +256,11 @@ describe('buildRightRows', () => {
       models: [{ id: persisted, membership: 'confirmed' }, ...catalog],
     });
 
-    expect(sections(rows)).toEqual([]);
+    expect(sections(rows)).toEqual(['suggestions']);
     expect(sections(rows)).not.toContain('Custom');
   });
 
-  it('sections only Custom when custom rows exist in a long list', () => {
+  it('sections both suggestions and Custom when custom rows exist in a long list', () => {
     const persisted = 'openai/current';
     const catalog = Array.from({ length: 9 }, (_, index) =>
       catalogModel(`anthropic/claude-catalog-${index}`, `2026-01-${String(index + 10)}`),
@@ -223,7 +278,7 @@ describe('buildRightRows', () => {
       ],
     });
 
-    expect(sections(rows)).toEqual(['Custom']);
+    expect(sections(rows)).toEqual(['suggestions', 'Custom']);
   });
 
   it('bundled rows hidden when a live lane exists', () => {

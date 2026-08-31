@@ -518,6 +518,100 @@ describe('TwoColumnPicker', () => {
     ui.unmount();
   });
 
+  it('shows dim liveBar on the previously-cursored left row while right column has active cursor, and returns to active on left arrow', async () => {
+    const leftCalls: Array<{ id: string; isCursor: boolean; isSelected: boolean; state: string }> =
+      [];
+    const rightCalls: Array<{ id: string; isCursor: boolean; state: string }> = [];
+
+    function Consumer() {
+      const [leftId, setLeftId] = useState('alpha');
+      return (
+        <TwoColumnPicker<Tool, Model>
+          title="Picker"
+          leftProps={{
+            items: TOOLS,
+            getKey: (t) => t.id,
+            isDisabled: (t) => !!t.disabled,
+            renderRow: (t, { isCursor, isSelected, isContext }) => {
+              // The state comes from the meta the picker passes, never re-derived
+              // here — a fixture that recomputes it cannot fail when the picker
+              // stops forwarding the flag.
+              const state = isCursor ? 'active' : isContext === true ? 'context' : 'default';
+              leftCalls.push({ id: t.id, isCursor, isSelected, state });
+              return <ListRow label={t.displayName} state={state} defaultLead="dot" />;
+            },
+          }}
+          rightProps={{
+            items: MODELS_BY_TOOL[leftId] ?? [],
+            getKey: (m) => m.id,
+            renderRow: (m, { isCursor }) => {
+              const state = isCursor ? 'active' : 'default';
+              rightCalls.push({ id: m.id, isCursor, state });
+              return <ListRow label={m.displayName} state={state} defaultLead="dot" />;
+            },
+            onLeftChange: (t) => {
+              setLeftId(t.id);
+            },
+          }}
+          onConfirm={() => {}}
+          onCancel={() => {}}
+        />
+      );
+    }
+    const ui = renderFeature(<Consumer />);
+    await flushEffects();
+
+    const liveBar = glyph('liveBar', 'unicode');
+
+    // Initial state: left column is active, 'Alpha' has active liveBar, 'alpha-1' is default
+    let frame = ui.lastFrame() ?? '';
+    expect(frame).toContain(`${liveBar} Alpha`);
+    expect(frame).toContain('· alpha-1');
+    expect(frame).not.toContain(`${liveBar} alpha-1`);
+    expect(leftCalls.findLast((call) => call.id === 'alpha')).toEqual({
+      id: 'alpha',
+      isCursor: true,
+      isSelected: false,
+      state: 'active',
+    });
+
+    // Press right arrow into the models column
+    ui.stdin.write('\u001B[C');
+    await flushEffects();
+
+    frame = ui.lastFrame() ?? '';
+    // Previously-cursored left row still shows the liveBar glyph (dim variant: state 'context')
+    expect(frame).toContain(`${liveBar} Alpha`);
+    expect(leftCalls.findLast((call) => call.id === 'alpha')).toEqual({
+      id: 'alpha',
+      isCursor: false,
+      isSelected: false,
+      state: 'context',
+    });
+
+    // Right column shows its active cursor
+    expect(frame).toContain(`${liveBar} alpha-1`);
+    expect(frame).not.toContain('· alpha-1');
+
+    // Press left arrow to return to the tools column
+    ui.stdin.write('\u001B[D');
+    await flushEffects();
+
+    frame = ui.lastFrame() ?? '';
+    // Left row returns to active-bar state and right row drops its cursor
+    expect(frame).toContain(`${liveBar} Alpha`);
+    expect(frame).toContain('· alpha-1');
+    expect(frame).not.toContain(`${liveBar} alpha-1`);
+    expect(leftCalls.findLast((call) => call.id === 'alpha')).toEqual({
+      id: 'alpha',
+      isCursor: true,
+      isSelected: false,
+      state: 'active',
+    });
+
+    ui.unmount();
+  });
+
   it('fills the panel with 18 list rows at 30 terminal rows (capped by VISIBLE_ROWS_CAP)', async () => {
     terminalSizeStore.__testReset({ cols: 140, rows: 30, isSmall: false });
     const items: Tool[] = Array.from({ length: 30 }, (_, i) => ({

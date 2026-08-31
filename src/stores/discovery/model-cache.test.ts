@@ -1345,4 +1345,121 @@ describe('modelCacheStore', () => {
     expect(serialized).not.toContain('apiBase');
     expect(serialized).toContain('safe-context');
   });
+
+  it('hydrates a presentation-only snapshot with non-null fetchedAt and unconfirmed catalogs, preserving fetchedAt through refresh and publish', () => {
+    // Startup hydrates and refreshes under one set of contexts, and a record
+    // written under a foreign config context arrives stripped of lane
+    // authority (generation 0), so the first live lane of this process
+    // outranks it.
+    const currentContexts = scopedContexts;
+
+    const rememberedSnapshot = {
+      providers: [rememberedProvider],
+      cliTools: [rememberedCliTool],
+      fetchedAt: 50,
+      validatedAt: 60,
+      generation: 0,
+      requestId: 0,
+      contexts: currentContexts,
+      cliCatalogs: [
+        {
+          role: 'planner' as const,
+          tool: 'codex' as const,
+          models: [{ id: 'remembered-codex-model' }],
+          probedAt: 90,
+        },
+      ],
+    };
+
+    const hydrated = modelCacheStore.hydrateDetection(rememberedSnapshot);
+    expect(hydrated).toBe(true);
+
+    const stateAfterHydrate = modelCacheStore.get();
+    expect(stateAfterHydrate.refresh.readiness.fetchedAt).toBe(50);
+    expect(stateAfterHydrate.cliCatalogsLoaded).toBe(false);
+    expect(modelCacheStore.getDetection().providers).toEqual([rememberedProvider]);
+    expect(
+      modelCacheStore.getScopedCliCatalogRuntime({ role: 'planner', tool: 'codex' }),
+    ).toMatchObject({ state: 'stale', models: [{ id: 'remembered-codex-model' }] });
+
+    const observedFetchedAts: (number | null)[] = [];
+    const unsubscribe = modelCacheStore.subscribe(() => {
+      observedFetchedAts.push(modelCacheStore.get().refresh.readiness.fetchedAt);
+    });
+
+    const request = modelCacheStore.beginRefresh({ contexts: currentContexts });
+    const stateAfterBegin = modelCacheStore.get();
+    expect(stateAfterBegin.refresh.readiness.fetchedAt).toBe(50);
+    expect(stateAfterBegin.cliCatalogsLoaded).toBe(false);
+
+    const freshProvider: ProviderDetection = {
+      provider: 'openai',
+      available: true,
+      isLocal: false,
+      models: [{ id: 'fresh-openai-model' }],
+    };
+    const freshCliTool: CliToolDetection = {
+      ...rememberedCliTool,
+      installedVersion: '0.41.0',
+    };
+    const freshAttempts = [
+      cliCatalogAttempt({
+        role: 'planner',
+        tool: 'codex',
+        contextKey: 'fresh-context',
+        models: ['fresh-codex-model'],
+      }),
+    ];
+    const freshResult: DetectionServiceResult = {
+      ...configuredResult([], 1, currentContexts),
+      providers: [freshProvider],
+      cliTools: [freshCliTool],
+      cliModels: freshAttempts,
+      outcomes: {
+        readiness: {
+          kind: 'fresh',
+          origin: 'request',
+          snapshot: freshSnapshot({
+            source: 'readiness',
+            contextKey: currentContexts.readiness,
+            generation: 1,
+            value: { providers: [freshProvider], cliTools: [freshCliTool] },
+          }),
+        },
+        modelsDev: {
+          kind: 'not-run',
+          source: 'models-dev',
+          contextKey: currentContexts.modelsDev,
+          reason: 'uninitialized',
+        },
+        cliModels: {
+          kind: 'fresh',
+          origin: 'request',
+          snapshot: freshSnapshot({
+            source: 'cli-models',
+            contextKey: currentContexts.cliModels,
+            generation: 1,
+            value: freshAttempts,
+          }),
+        },
+      },
+    };
+
+    const published = modelCacheStore.publish({ result: freshResult, request });
+    expect(published).toBe(true);
+
+    const stateAfterPublish = modelCacheStore.get();
+    expect(stateAfterPublish.refresh.readiness.fetchedAt).toBe(100);
+    expect(stateAfterPublish.refresh.readiness.refreshing).toBe(false);
+    expect(stateAfterPublish.cliCatalogsLoaded).toBe(true);
+    expect(modelCacheStore.getDetection().providers).toEqual([freshProvider]);
+    expect(modelCacheStore.getDetection().cliTools).toEqual([freshCliTool]);
+    expect(
+      modelCacheStore.getScopedCliCatalogRuntime({ role: 'planner', tool: 'codex' }),
+    ).toMatchObject({ state: 'fresh', models: [{ id: 'fresh-codex-model' }] });
+
+    unsubscribe();
+    expect(observedFetchedAts.length).toBeGreaterThan(0);
+    expect(observedFetchedAts.every((ts) => ts !== null)).toBe(true);
+  });
 });

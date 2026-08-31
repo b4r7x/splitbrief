@@ -19,7 +19,7 @@ import {
   hydrateModelsDevCatalogIntoStores,
 } from '../stores/discovery/detection-adapter.js';
 import { modelCacheStore } from '../stores/discovery/model-cache.js';
-import { loadDetectionCacheSnapshot } from '../engine/detection/cache.js';
+import { loadRememberedPresentationSnapshot } from '../engine/detection/cache.js';
 import { loadModelsDevCatalogCache } from '../engine/providers/models-dev-cache.js';
 import { discoverSkills } from '../engine/skill-discovery.js';
 import { initLogger } from '../core/logger.js';
@@ -104,12 +104,17 @@ async function loadDiscovery(projectDir: string): Promise<void> {
 
   const current = { config: storeConfig, projectDir };
   const contexts = detectionContextsForCurrentConfig(current);
-  const snapshot = await loadDetectionCacheSnapshot({
+  const remembered = await loadRememberedPresentationSnapshot({
     projectDir,
     contextKey: contexts.readiness,
   });
-  if (snapshot !== null) {
-    hydrateDetectionIntoStores({ detection: detectionStore, snapshot, contexts });
+  if (remembered !== null) {
+    hydrateDetectionIntoStores({
+      detection: detectionStore,
+      snapshot: remembered.snapshot,
+      contexts,
+      foreignContext: remembered.foreignContext,
+    });
   }
 
   // For a tool with no native catalog — claude-code, the default planner —
@@ -117,7 +122,7 @@ async function loadDiscovery(projectDir: string): Promise<void> {
   // fallbacks until this lands. Nothing awaits it and it yields to any catalog
   // a live lane already delivered, so it races the refresh below safely.
   void seedModelsDevCatalog().catch((err: unknown) => {
-    warnError('Could not read the remembered models.dev catalog', err);
+    warnError('Could not read the remembered model catalog', err);
   });
 
   void loadDetectionForCurrentConfig({

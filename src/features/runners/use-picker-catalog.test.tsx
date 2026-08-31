@@ -569,6 +569,116 @@ describe('usePickerCatalog', () => {
     expect(next).not.toContain('ollama-only-model');
     ui.unmount();
   });
+
+  it('preserves models.dev suggestions when a shorter native cli-models probe lands and sorts confirmed rows first', async () => {
+    const codexCatalog = {
+      openai: {
+        id: 'openai',
+        name: 'OpenAI',
+        models: {
+          'gpt-5-codex': {
+            id: 'gpt-5-codex',
+            name: 'GPT-5 Codex',
+            release_date: '2026-01-01',
+          },
+          'gpt-4o': {
+            id: 'gpt-4o',
+            name: 'GPT-4o',
+            release_date: '2025-11-01',
+          },
+          'gpt-4.5-preview': {
+            id: 'gpt-4.5-preview',
+            name: 'GPT-4.5 Preview',
+            release_date: '2025-09-01',
+          },
+          'o3-mini': {
+            id: 'o3-mini',
+            name: 'o3 Mini',
+            release_date: '2025-08-01',
+          },
+        },
+      },
+    };
+    modelCacheStore.hydrateModelsDevCatalog({
+      catalog: codexCatalog,
+      fetchedAt: 100,
+      validatedAt: 100,
+    });
+    detectionStore.setDetection({
+      cliTools: [cliDetectionFor('ready', 'codex')],
+      providers: [],
+    });
+
+    let catalogSnapshot: ReturnType<typeof usePickerCatalog> | undefined;
+    function CodexCatalogProbe() {
+      catalogSnapshot = usePickerCatalog('planner', 0, 'codex');
+      return (
+        <Text>
+          {rowModels(catalogSnapshot.rightRows)
+            .map((m) => m.id)
+            .join(',')}
+        </Text>
+      );
+    }
+
+    const ui = renderFeature(<CodexCatalogProbe />);
+    await tick(20);
+
+    const preProbeRows = rowModels(catalogSnapshot?.rightRows ?? []);
+    const preProbeIds = preProbeRows.map((model) => model.id);
+    expect(preProbeIds).toContain('gpt-5-codex');
+    expect(preProbeIds).toContain('gpt-4o');
+    expect(preProbeIds).toContain('gpt-4.5-preview');
+    expect(preProbeIds).toContain('o3-mini');
+    expect(preProbeRows.filter((m) => m.membership === 'confirmed')).toHaveLength(0);
+
+    const request = detectionStore.beginRefresh({
+      contexts: { readiness: 'r', modelsDev: 'm', cliModels: 'c' },
+    });
+    detectionStore.publish({
+      request,
+      result: {
+        providers: [],
+        cliTools: [cliDetectionFor('ready', 'codex')],
+        catalog: null,
+        cliModels: [
+          {
+            connection: { role: 'planner', tool: 'codex', contextKey: 'c' },
+            outcome: { kind: 'success', value: [{ id: 'gpt-5-codex' }] },
+          },
+        ],
+        generation: 1,
+      },
+    });
+    await tick(20);
+
+    const postProbeRows = rowModels(catalogSnapshot?.rightRows ?? []);
+    const postProbeIds = postProbeRows.map((model) => model.id);
+
+    for (const id of preProbeIds) {
+      expect(postProbeIds).toContain(id);
+    }
+    expect(postProbeIds.length).toBeGreaterThanOrEqual(preProbeIds.length);
+
+    const confirmedRows = postProbeRows.filter((row) => row.membership === 'confirmed');
+    const suggestionRows = postProbeRows.filter((row) => row.membership === 'catalog-suggestion');
+    expect(confirmedRows).toHaveLength(1);
+    expect(confirmedRows[0]?.id).toBe('gpt-5-codex');
+    expect(confirmedRows[0]?.isDetected).toBe(true);
+    expect(suggestionRows).toHaveLength(3);
+
+    const firstConfirmedIndex = postProbeRows.findIndex((row) => row.membership === 'confirmed');
+    const firstSuggestionIndex = postProbeRows.findIndex(
+      (row) => row.membership === 'catalog-suggestion',
+    );
+    const lastConfirmedIndex = postProbeRows.findLastIndex((row) => row.membership === 'confirmed');
+
+    expect(firstConfirmedIndex).toBeGreaterThan(-1);
+    expect(firstSuggestionIndex).toBeGreaterThan(-1);
+    expect(lastConfirmedIndex).toBeLessThan(firstSuggestionIndex);
+
+    ui.unmount();
+  });
 });
 
 describe('usePickerCatalog right-column entry point', () => {

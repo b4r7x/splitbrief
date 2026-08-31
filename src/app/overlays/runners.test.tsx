@@ -18,6 +18,9 @@ import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { listRowLead } from '../../components/list-row.js';
+import { glyph } from '../../lib/glyphs.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache.js';
+import { hydrateDetectionIntoStores } from '../../stores/discovery/detection-adapter.js';
 import { ToolModelPicker } from './runners.js';
 
 // The merged row is expanded only while both of its route ids are on screen;
@@ -27,6 +30,7 @@ const showsBothRoutes = (frame: string) =>
 
 const ESC = '\u001B';
 const ARROW_DOWN = `${ESC}[B`;
+const ARROW_UP = `${ESC}[A`;
 
 async function openContractChoice(ui: ReturnType<typeof renderFeature>) {
   await vi.waitFor(() => {
@@ -250,6 +254,24 @@ function frameText(ui: ReturnType<typeof renderFeature>): string {
   return stripAnsiStyles(ui.lastFrame() ?? '');
 }
 
+const CHECK = glyph('check', 'unicode');
+
+/** The model rows live in the panel cell the Models header opens. */
+function modelColumnLines(frame: string): string[] {
+  const cellRows = frame.split('\n').map((line) => line.split('│'));
+  const column = cellRows
+    .find((cells) => cells.some((cell) => cell.trim() === 'Models'))
+    ?.findIndex((cell) => cell.trim() === 'Models');
+  if (column === undefined || column < 0) return [];
+  return cellRows
+    .map((cells) => cells[column] ?? '')
+    .filter((cell) => cell.trimStart().startsWith('· '));
+}
+
+function checkedModelLines(frame: string): string[] {
+  return modelColumnLines(frame).filter((line) => line.includes(CHECK));
+}
+
 describe('ToolModelPicker provider routes', () => {
   let projectDir: string;
   let initialPlanner: Config['planner'];
@@ -414,13 +436,13 @@ describe('ToolModelPicker discovery state', () => {
     detectionStore.beginRefresh({ contexts: catalogContexts });
     const ui = renderFeature(<ToolModelPicker role="planner" />);
     await tick(20);
-    expect(frameText(ui)).toContain('Initializing your tools…');
+    expect(frameText(ui)).toContain('Waking your crew…');
     expect(frameText(ui)).not.toContain('Tools');
 
     publishOpenCodePlannerModels(['openrouter/deepseek-v4-flash']);
     await vi.waitFor(() => {
       const frame = frameText(ui);
-      expect(frame).not.toContain('Initializing your tools…');
+      expect(frame).not.toContain('Waking your crew…');
       expect(frame).toContain('Tools');
       expect(frame).toContain('Models');
     });
@@ -433,9 +455,197 @@ describe('ToolModelPicker discovery state', () => {
     const ui = renderFeature(<ToolModelPicker role="planner" />);
     await tick(20);
     const frame = frameText(ui);
-    expect(frame).toContain('Refreshing your tools…');
+    expect(frame).toContain('refreshing…');
     expect(frame).toContain('Tools');
-    expect(frame).not.toContain('Initializing your tools…');
+    expect(frame).not.toContain('Waking your crew…');
+    ui.unmount();
+  });
+
+  it('replaces the stale rows of a hydrated foreign-context snapshot when the live lanes land', async () => {
+    forceUnicodeGlyphs();
+    const configB = makeConfig({
+      planner: { kind: 'cli', tool: 'codex', model: 'gpt-6-codex' },
+    });
+    configStore.__testReset({ projectDir: '/tmp/project', config: configB });
+
+    // Startup hydrates and refreshes under one set of contexts — the ones
+    // derived from the config now loaded — while the record on disk was
+    // written under another config's context and carries that run's
+    // generation.
+    const currentContexts = {
+      readiness: 'config-b-readiness',
+      modelsDev: 'config-b-models-dev',
+      cliModels: 'config-b-cli-models',
+    };
+    const tools = [cliDetectionFor('ready', 'codex'), cliDetectionFor('ready', 'opencode')];
+
+    hydrateDetectionIntoStores({
+      detection: detectionStore,
+      contexts: currentContexts,
+      foreignContext: true,
+      snapshot: {
+        contextKey: 'config-a-readiness',
+        fetchedAt: 100,
+        validatedAt: 100,
+        generation: 3,
+        requestId: 3,
+        providers: [],
+        cliTools: tools,
+        cliCatalogs: [
+          { role: 'planner', tool: 'codex', models: [{ id: 'gpt-5-codex' }], probedAt: 100 },
+        ],
+      },
+    });
+
+    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    await tick(20);
+
+    // Warm start: the foreign record's rows are on screen, marked stale.
+    const frameBefore = frameText(ui);
+    expect(frameBefore).not.toContain('Waking your crew…');
+    expect(frameBefore).toContain('Tools');
+    expect(frameBefore).toContain('Codex CLI');
+    expect(frameBefore).toContain('OpenCode CLI');
+    expect(frameBefore).toContain('GPT-5 Codex');
+
+    await flushEffects();
+    ui.stdin.write(ARROW_DOWN);
+    await flushEffects();
+
+    await vi.waitFor(() => {
+      expect(frameText(ui)).toContain(`${listRowLead('active')}OpenCode CLI`);
+    });
+
+    const request = detectionStore.beginRefresh({ contexts: currentContexts });
+    await flushEffects();
+    await tick(20);
+
+    const frameDuring = frameText(ui);
+    expect(frameDuring).not.toContain('Waking your crew…');
+    expect(frameDuring).toContain('refreshing…');
+    expect(frameDuring).toContain(`${listRowLead('active')}OpenCode CLI`);
+
+    const freshAttempts: ScopedCliCatalogAttempt[] = [
+      {
+        connection: { role: 'planner', tool: 'codex', contextKey: 'config-b-codex' },
+        outcome: { kind: 'success', value: [{ id: 'gpt-6-codex' }] },
+      },
+    ];
+    // A fresh process counts its own lanes from 1 — below the generation the
+    // remembered record was written under.
+    const freshResult: DetectionServiceResult = {
+      providers: [],
+      cliTools: tools,
+      catalog: null,
+      cliModels: freshAttempts,
+      generation: 1,
+      outcomes: {
+        readiness: {
+          kind: 'fresh',
+          origin: 'request',
+          snapshot: {
+            source: 'readiness',
+            contextKey: currentContexts.readiness,
+            generation: 1,
+            requestId: 1,
+            fetchedAt: 200,
+            validatedAt: 200,
+            stale: false,
+            value: { providers: [], cliTools: tools },
+          },
+        },
+        modelsDev: {
+          kind: 'not-run',
+          source: 'models-dev',
+          contextKey: currentContexts.modelsDev,
+          reason: 'uninitialized',
+        },
+        cliModels: {
+          kind: 'fresh',
+          origin: 'request',
+          snapshot: {
+            source: 'cli-models',
+            contextKey: currentContexts.cliModels,
+            generation: 1,
+            requestId: 1,
+            fetchedAt: 200,
+            validatedAt: 200,
+            stale: false,
+            value: freshAttempts,
+          },
+        },
+      },
+    };
+    expect(detectionStore.publish({ result: freshResult, request })).toBe(true);
+
+    await vi.waitFor(() => {
+      const frameAfter = frameText(ui);
+      expect(frameAfter).not.toContain('Waking your crew…');
+      expect(frameAfter).not.toContain('refreshing…');
+      // The cursor never moved and the picker never remounted.
+      expect(frameAfter).toContain(`${listRowLead('active')}OpenCode CLI`);
+    });
+
+    // Back on the browsed tool, the landed lane has replaced its stale models.
+    await flushEffects();
+    ui.stdin.write(ARROW_UP);
+    await vi.waitFor(() => {
+      const frameAfter = frameText(ui);
+      expect(frameAfter).toContain(`${listRowLead('active')}OpenAI Codex CLI`);
+      expect(frameAfter).toContain('GPT-6 Codex');
+      expect(frameAfter).not.toContain('GPT-5 Codex');
+    });
+
+    ui.unmount();
+  });
+});
+
+describe('ToolModelPicker model catalog', () => {
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 120, rows: 36, isSmall: false });
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'opus' } }),
+    });
+    detectionStore.setDetection({
+      providers: [],
+      cliTools: [cliDetectionFor('ready', 'claude-code')],
+    });
+  });
+
+  it('keeps the configured model row and its check when the models.dev lane lands', async () => {
+    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    await tick(20);
+
+    const before = checkedModelLines(frameText(ui));
+    expect(before).toHaveLength(1);
+    expect(before.join('')).toContain('Opus');
+
+    modelCacheStore.hydrateModelsDevCatalog({
+      catalog: {
+        anthropic: {
+          id: 'anthropic',
+          name: 'Anthropic',
+          models: {
+            'claude-opus-5': { id: 'claude-opus-5', name: 'Claude Opus 5' },
+            'claude-sonnet-5': { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' },
+          },
+        },
+      },
+      fetchedAt: 100,
+      validatedAt: 100,
+    });
+
+    await vi.waitFor(() => {
+      expect(frameText(ui)).toContain('Claude Sonnet 5');
+    });
+
+    // The suggestions arrive next to the configured row, never in place of it.
+    const after = checkedModelLines(frameText(ui));
+    expect(after).toHaveLength(1);
+    expect(after.join('')).toContain('Opus');
     ui.unmount();
   });
 });

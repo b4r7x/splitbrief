@@ -7,7 +7,7 @@ import {
   truncateTerminalDisplayText,
 } from '../utils/display-text.js';
 
-export type ListRowState = 'default' | 'active';
+export type ListRowState = 'default' | 'active' | 'context';
 export type ListRowDefaultLead = 'blank' | 'dot';
 
 interface ListRowProps {
@@ -26,7 +26,7 @@ interface ListRowProps {
 const LEAD_BLANK = '  ';
 
 export function listRowLead(state: ListRowState): string {
-  return state === 'active' ? `${glyph('liveBar')} ` : LEAD_BLANK;
+  return state === 'active' || state === 'context' ? `${glyph('liveBar')} ` : LEAD_BLANK;
 }
 
 export function ListRow({
@@ -42,7 +42,7 @@ export function ListRow({
   labelWidth,
 }: ListRowProps) {
   const t = useTheme();
-  const accentRow = state !== 'default';
+  const accentRow = state === 'active';
   const leadColor = accentRow ? t.accent : t.textDim;
   const lead = state === 'default' && defaultLead === 'dot' ? '· ' : listRowLead(state);
   const labelColor = accentRow ? t.accent : t.text;

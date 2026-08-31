@@ -72,6 +72,7 @@ describe('runner row grammar', () => {
         item: unavailable,
         isCursor: false,
         isSelected: false,
+        isContext: false,
         maxWidth: 40,
         currentCommand: undefined,
         currentCommandKind: undefined,
@@ -117,6 +118,7 @@ describe('runner row grammar', () => {
           item,
           isCursor: false,
           isSelected: false,
+          isContext: false,
           maxWidth: 60,
           currentCommand: undefined,
           currentCommandKind: undefined,
@@ -148,6 +150,7 @@ describe('runner row grammar', () => {
         item: brokenCurrent,
         isCursor: false,
         isSelected: false,
+        isContext: false,
         maxWidth: 50,
         currentCommand: undefined,
         currentCommandKind: undefined,
@@ -178,6 +181,7 @@ describe('runner row grammar', () => {
         item: tool,
         isCursor: false,
         isSelected: false,
+        isContext: false,
         maxWidth: 40,
         currentCommand: undefined,
         currentCommandKind: undefined,
@@ -342,6 +346,7 @@ describe('runner row grammar', () => {
         item: launcher,
         isCursor: false,
         isSelected: false,
+        isContext: false,
         maxWidth: 40,
         currentCommand: undefined,
         currentCommandKind: undefined,
@@ -877,6 +882,7 @@ describe('runner row grammar', () => {
           item: launcher,
           isCursor: false,
           isSelected: false,
+          isContext: false,
           maxWidth: 40,
           currentCommand: 'my-tool --json',
           currentCommandKind: kind,
@@ -914,5 +920,58 @@ describe('runner row grammar', () => {
     await tick(20);
     expect(withoutName.lastFrame() ?? '').toContain('Custom Coder V1');
     withoutName.unmount();
+  });
+
+  it('renders context state with dim liveBar and keeps the checkmark column unchanged when isContext is true and isCursor is false', async () => {
+    const item = pickerItem({
+      id: 'claude-code',
+      displayName: 'Claude Code',
+      kind: 'cli',
+      roles: ['planner', 'implementer'],
+      modelPolicy: 'optional',
+      billing: 'subscription-included',
+      permissions: readyPermissions,
+      status: { state: 'ready', remediation: null },
+      available: true,
+      isCurrent: true,
+    });
+
+    const contextUi = renderFeature(
+      renderToolRow({
+        item,
+        isCursor: false,
+        isSelected: false,
+        isContext: true,
+        maxWidth: 50,
+        currentCommand: undefined,
+        currentCommandKind: undefined,
+      }),
+    );
+    await tick(20);
+    const contextFrame = contextUi.lastFrame() ?? '';
+    expect(stripAnsiStyles(contextFrame)).toContain(glyph('liveBar'));
+    expect(stripAnsiStyles(contextFrame)).toContain(glyph('check'));
+    expect(stripAnsiStyles(contextFrame)).toContain('Claude Code');
+    expect(stripAnsiStyles(contextFrame)).not.toContain('·');
+    contextUi.unmount();
+
+    const defaultUi = renderFeature(
+      renderToolRow({
+        item,
+        isCursor: false,
+        isSelected: false,
+        isContext: false,
+        maxWidth: 50,
+        currentCommand: undefined,
+        currentCommandKind: undefined,
+      }),
+    );
+    await tick(20);
+    const defaultFrame = defaultUi.lastFrame() ?? '';
+    expect(stripAnsiStyles(defaultFrame)).not.toContain(glyph('liveBar'));
+    expect(stripAnsiStyles(defaultFrame)).toContain('·');
+    expect(stripAnsiStyles(defaultFrame)).toContain(glyph('check'));
+    expect(stripAnsiStyles(defaultFrame)).toContain('Claude Code');
+    defaultUi.unmount();
   });
 });

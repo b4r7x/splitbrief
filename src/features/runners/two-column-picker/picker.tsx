@@ -288,7 +288,11 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
               const isSelected = nav.selectedLeftKey
                 ? nav.selectedLeftKey === key
                 : !!('isCurrent' in item && item.isCurrent);
-              return leftProps.renderRow(item, { isCursor, isSelected, maxWidth });
+              const isContext =
+                nav.activeColumn === 'right' &&
+                nav.left.currentItem !== undefined &&
+                leftProps.getKey(item) === leftProps.getKey(nav.left.currentItem);
+              return leftProps.renderRow(item, { isCursor, isSelected, isContext, maxWidth });
             }}
           />
         </Box>

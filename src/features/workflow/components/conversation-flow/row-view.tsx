@@ -11,7 +11,7 @@ import {
   type RowMarkerStatus,
 } from '../../conversation-rows/row-markers.js';
 import { colorForTone } from '../../display/tone-color.js';
-import { prefersReducedMotion } from '../../display/reduce-motion.js';
+import { prefersReducedMotion } from '../../../../lib/terminal/reduce-motion.js';
 
 function RowSegment({ segment }: { segment: ConversationRowSegment }) {
   const t = useTheme();

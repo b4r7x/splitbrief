@@ -61,10 +61,15 @@ function rememberedClaudeCode(
   };
 }
 
-/** The readiness contextKey a writer in another process would have produced. */
+/**
+ * The readiness contextKey a writer with a genuinely different config identity
+ * would have produced. Generations are content-derived, so a mere clone keys
+ * identically; an unrelated setting change is what moves the identity.
+ */
 function foreignReadinessContextKey(config: Config, projectDir: string): string {
+  const foreign = ConfigSchema.parse(structuredClone(config));
   return detectionContextsForCurrentConfig({
-    config: ConfigSchema.parse(structuredClone(config)),
+    config: { ...foreign, implementer: { ...foreign.implementer, temperature: 0.35 } },
     projectDir,
   }).readiness;
 }

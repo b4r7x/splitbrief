@@ -308,12 +308,24 @@ describe('projectRunnerDiscoveryContext', () => {
       }),
     ).toBe(false);
 
-    const nextGeneration = structuredClone(config);
+    // Generation is content-derived: a structural clone keeps the domain, and
+    // only a real config change breaks it — that stability is what lets a
+    // restarted process read the detection cache its predecessor wrote.
+    const clone = structuredClone(config);
     expect(
       isSameCredentialDomain({
         left: planner.credentialDomain,
-        right: projectRunnerDiscoveryContext({ config: nextGeneration, role: 'planner' })
-          .credentialDomain,
+        right: projectRunnerDiscoveryContext({ config: clone, role: 'planner' }).credentialDomain,
+      }),
+    ).toBe(true);
+    const changed: Config = {
+      ...config,
+      planner: { ...config.planner, model: 'claude-opus-4-5' },
+    };
+    expect(
+      isSameCredentialDomain({
+        left: planner.credentialDomain,
+        right: projectRunnerDiscoveryContext({ config: changed, role: 'planner' }).credentialDomain,
       }),
     ).toBe(false);
   });
@@ -344,7 +356,8 @@ describe('projectRunnerDiscoveryContext', () => {
 
     config.implementerProfiles.default = 'secondary';
     const secondary = projectRunnerDiscoveryContext({ config, role: 'implementer' });
-    expect(primary.configGeneration).toBe(secondary.configGeneration);
+    // Switching the default profile is a content change, so the generation moves.
+    expect(primary.configGeneration).not.toBe(secondary.configGeneration);
     expect(
       isSameCredentialDomain({
         left: primary.credentialDomain,
@@ -352,14 +365,15 @@ describe('projectRunnerDiscoveryContext', () => {
       }),
     ).toBe(false);
 
-    const nextGeneration = structuredClone(config);
+    // A structural clone carries the same content-derived identity forward.
+    const clone = structuredClone(config);
     expect(
       isSameCredentialDomain({
         left: secondary.credentialDomain,
-        right: projectRunnerDiscoveryContext({ config: nextGeneration, role: 'implementer' })
+        right: projectRunnerDiscoveryContext({ config: clone, role: 'implementer' })
           .credentialDomain,
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 

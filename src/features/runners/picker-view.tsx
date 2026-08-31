@@ -3,6 +3,7 @@ import { TwoColumnPicker, type PreviewContext } from './two-column-picker/picker
 import type { RightActivation, TerminalPane } from './two-column-picker/use-nav-state.js';
 import { arrowSep, SOFT_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
+import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { detectionStore } from '../../stores/project/detection.js';
@@ -104,7 +105,6 @@ function ModelGuidance({
 
 interface PickerViewProps {
   role: SeatPickerRole;
-  stepLabel?: string | undefined;
   catalog: PickerCatalog;
   actions: PickerActions;
 }
@@ -145,7 +145,10 @@ export function rightRowActivation(
   }
 }
 
-export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProps) {
+export function PickerView({ role, catalog, actions }: PickerViewProps) {
+  const isRefreshing = catalog.discovery.refreshing;
+  const { frame } = useSpinnerFrame(isRefreshing);
+  const resolvedStepLabel = isRefreshing ? `${frame} refreshing…` : undefined;
   const projectDir = configStore.use((s) => s.projectDir);
   const providers = detectionStore.use((s) => s.providers);
   const optionDraftId = pickerViewStore.use((s) => s.optionDraftId);
@@ -342,7 +345,7 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
     <TwoColumnPicker<PickerOption, KeyedRightRow>
       title={catalog.roleLabel}
       subtitle={subtitleFor(role)}
-      stepLabel={stepLabel}
+      stepLabel={resolvedStepLabel}
       initialColumn={catalog.focusModels ? 'right' : 'left'}
       onConfirm={confirmRow}
       onCancel={() => overlayStore.close()}
@@ -363,11 +366,12 @@ export function PickerView({ role, stepLabel, catalog, actions }: PickerViewProp
         terminalPane: terminalPaneFor,
         isDisabled: isPickerItemDisabled,
         initialIndex: catalog.initialLeftIdx,
-        renderRow: (item, { isCursor, isSelected, maxWidth }) =>
+        renderRow: (item, { isCursor, isSelected, isContext, maxWidth }) =>
           renderToolRow({
             item,
             isCursor,
             isSelected,
+            isContext,
             maxWidth,
             currentCommand: catalog.currentCommand,
             currentCommandKind: catalog.currentCommandKind,

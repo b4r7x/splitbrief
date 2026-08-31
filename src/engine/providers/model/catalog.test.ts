@@ -217,7 +217,7 @@ describe('runner-owned catalog resolution', () => {
     ]);
   });
 
-  it('keeps a native CLI catalog confirmed-only while taking metadata from the public catalog', () => {
+  it('enriches native CLI catalog confirmed rows with public metadata while appending catalog suggestions', () => {
     const models = Object.fromEntries(
       Array.from({ length: 367 }, (_, index) => {
         const id = `kilo/model-${index}`;
@@ -237,11 +237,17 @@ describe('runner-owned catalog resolution', () => {
 
     const rows = resolveModelCatalog('kilo-code', { cache });
 
-    expect(rows.map((row) => [row.selectionId, row.membership])).toEqual([
+    expect(
+      rows
+        .filter((row) => row.membership === 'confirmed')
+        .map((row) => [row.selectionId, row.membership]),
+    ).toEqual([
       ['kilo/model-1', 'confirmed'],
       ['alibaba-coding-plan/glm-4.7', 'confirmed'],
       ['openai/gpt-5.6', 'confirmed'],
     ]);
+    expect(rows.filter((row) => row.membership === 'catalog-suggestion')).toHaveLength(366);
+    expect(rows.filter((row) => row.selectionId === 'kilo/model-1')).toHaveLength(1);
     expect(rows[0]).toMatchObject({ contextLength: 100_001, releaseDate: '2026-02-02' });
   });
 
@@ -302,11 +308,13 @@ describe('runner-owned catalog resolution', () => {
     expect(rows.find((row) => row.source === 'runtime')?.displayName).not.toBe(
       'Different Punctuation',
     );
-    expect(rows.some((row) => row.membership === 'catalog-suggestion')).toBe(false);
-    expect(rows.find((row) => row.selectionId === 'claude-sonnet-4.6')).toBeUndefined();
+    expect(rows.find((row) => row.selectionId === 'claude-sonnet-4.6')).toMatchObject({
+      membership: 'catalog-suggestion',
+      source: 'models-dev',
+    });
   });
 
-  it('does not append catalog suggestions when a non-native-cli runner has a fresh runtime list', () => {
+  it('appends catalog suggestions when a non-native-cli runner has a fresh runtime list while omitting bundled suggestions', () => {
     const cache = makeModelCacheAccessor({
       catalog: {
         openai: {
@@ -325,9 +333,13 @@ describe('runner-owned catalog resolution', () => {
 
     const rows = resolveModelCatalog('codex', { cache });
 
-    expect(rows.filter((row) => row.membership === 'catalog-suggestion')).toEqual([]);
+    expect(rows.filter((row) => row.membership === 'catalog-suggestion')).toMatchObject([
+      { selectionId: 'gpt-4.1', membership: 'catalog-suggestion', source: 'models-dev' },
+      { selectionId: 'gpt-4o', membership: 'catalog-suggestion', source: 'models-dev' },
+      { selectionId: 'gpt-5', membership: 'catalog-suggestion', source: 'models-dev' },
+    ]);
     expect(rows.filter((row) => row.membership === 'bundled-suggestion')).toEqual([]);
-    expect(rows).toMatchObject([
+    expect(rows.filter((row) => row.membership === 'confirmed')).toMatchObject([
       {
         selectionId: 'gpt-5.6-codex',
         source: 'runtime',
@@ -561,5 +573,55 @@ describe('runner-owned catalog resolution', () => {
       ['vendor-b', 'runtime', 'confirmed'],
     ]);
     expect(rows.some((row) => row.source === 'configured-recovery')).toBe(false);
+  });
+
+  it('resolves confirmed runtime models and models.dev entries unconditionally with deduplication and zero bundled suggestions', () => {
+    const catalogModels = Object.fromEntries(
+      Array.from({ length: 10 }, (_, index) => {
+        const id = `model-${index + 2}`;
+        return [id, { id, name: `Model ${index + 2}` }];
+      }),
+    );
+    const cache = makeModelCacheAccessor({
+      catalog: { anthropic: { id: 'anthropic', models: catalogModels } },
+      providerModels: {
+        anthropic: [{ id: 'model-1' }, { id: 'model-2' }, { id: 'model-3' }],
+      },
+    });
+
+    const rows = resolveModelCatalog('anthropic', { cache });
+    const confirmedRows = rows.filter((row) => row.membership === 'confirmed');
+    const catalogRows = rows.filter((row) => row.membership === 'catalog-suggestion');
+    const bundledRows = rows.filter((row) => row.membership === 'bundled-suggestion');
+
+    expect(confirmedRows).toHaveLength(3);
+    expect(confirmedRows.map((row) => row.selectionId)).toEqual(['model-1', 'model-2', 'model-3']);
+    expect(catalogRows).toHaveLength(8);
+    expect(bundledRows).toHaveLength(0);
+    expect(rows).toHaveLength(11);
+  });
+
+  it('deduplicates a confirmed model that models.dev publishes under a different provider', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        openai: {
+          id: 'openai',
+          models: {
+            'gpt-5-codex': { id: 'gpt-5-codex', name: 'GPT-5 Codex' },
+            'gpt-4o': { id: 'gpt-4o', name: 'GPT-4o' },
+          },
+        },
+      },
+      providerModels: {
+        codex: [{ id: 'gpt-5-codex' }],
+      },
+    });
+
+    const rows = resolveModelCatalog('codex', { cache });
+
+    expect(rows.map((row) => [row.selectionId, row.membership])).toEqual([
+      ['gpt-5-codex', 'confirmed'],
+      ['gpt-4o', 'catalog-suggestion'],
+    ]);
   });
 });

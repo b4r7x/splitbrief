@@ -43,14 +43,19 @@ export interface RightSectionProps<R> {
   headerFor?: ((section: string) => boolean) | undefined;
 }
 
+export interface LeftRowMeta {
+  isCursor: boolean;
+  isSelected: boolean;
+  /** The left row the right column is showing while the cursor sits in it. */
+  isContext: boolean;
+  maxWidth: number;
+}
+
 export interface LeftColumnProps<L> {
   items: L[];
   label?: string | undefined;
   filterBy?: ((item: L, query: string) => boolean) | undefined;
-  renderRow: (
-    item: L,
-    meta: { isCursor: boolean; isSelected: boolean; maxWidth: number },
-  ) => ReactNode;
+  renderRow: (item: L, meta: LeftRowMeta) => ReactNode;
   getKey: (item: L) => string;
   terminalPane?: ((item: L) => TerminalPane | undefined) | undefined;
   isDisabled?: ((item: L) => boolean) | undefined;
