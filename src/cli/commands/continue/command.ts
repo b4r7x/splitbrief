@@ -20,7 +20,7 @@ import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { assertStateAuthority, readStateAuthority } from '../../../core/state/authority.js';
 import { resumeSavedSession } from './resume.js';
-import { prepareExecution } from '../../../engine/runners/prepare-execution.js';
+import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 
 export interface ContinueDeps {
   checkServerStatus: typeof checkServerStatus;

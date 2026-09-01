@@ -4,14 +4,6 @@ import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { rowLeading, rowLeadingCells, wrapWidthFor } from './row-markers.js';
 
 describe('rowLeading', () => {
-  it('gives headers a 2-cell glyph slot at column 0', () => {
-    expect(rowLeadingCells('task-header')).toBe(2);
-  });
-
-  it('hangs tree children two cells under the header glyph', () => {
-    expect(rowLeading('activity-child').startsWith('  ')).toBe(true);
-  });
-
   it('gives plain rows a blank 2-cell slot and the prompt its marker', () => {
     expect(rowLeadingCells('message')).toBe(2);
     expect(rowLeading('message')).toBe('  ');
@@ -27,10 +19,6 @@ describe('rowLeading', () => {
   it('derives wrap width from the row leading width', () => {
     expect(wrapWidthFor('message', 10)).toBe(8);
     expect(wrapWidthFor('activity-child', 2)).toBe(1);
-  });
-
-  it('marks activity and task header rows with the live bullet marker', () => {
-    expect(rowLeading('activity', 'live')).toBe(`${glyph('statusInProgress')} `);
   });
 
   it('keeps every activity-child leading at the same cell width as the gutter', () => {

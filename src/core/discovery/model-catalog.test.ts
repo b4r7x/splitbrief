@@ -35,9 +35,9 @@ function confirmedCliOption(opts: {
 describe('areModelKeysEqual', () => {
   it('keeps provider-qualified twins, aliases, snapshots, and same-text runner IDs distinct', () => {
     const apiModel: ModelKey = {
-      runnerId: 'openai-api',
-      sourceProviderId: 'openrouter',
-      selectionId: 'openrouter/acme/model-x',
+      runnerId: 'custom-endpoint',
+      sourceProviderId: 'custom-endpoint',
+      selectionId: 'custom-endpoint/acme/model-x',
     };
     const floating: ModelKey = {
       runnerId: 'opencode',
@@ -65,7 +65,7 @@ describe('areModelKeysEqual', () => {
         left: apiModel,
         right: {
           ...apiModel,
-          selectionId: 'openrouter/acme/model-x-20260101',
+          selectionId: 'custom-endpoint/acme/model-x-20260101',
         },
       }),
       areModelKeysEqual({

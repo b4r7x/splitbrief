@@ -59,9 +59,8 @@ function canonicalVersionLine(toolId: ImplementerCliToolId, version: string): st
     case 'opencode':
     case 'kilo-code':
     case 'cursor':
+    case 'command-code':
       return version;
-    case 'aider':
-      return `aider ${version}`;
     case 'copilot':
       return `GitHub Copilot CLI ${version}.`;
   }
@@ -86,12 +85,6 @@ const SHIM_PROFILES: Record<ImplementerCliToolId, ContractShimProfile> = {
     successLines: ['{"type":"text","part":{"type":"text","text":"ok"}}'],
     authArgv: ['auth'],
   },
-  aider: {
-    transport: 'argv',
-    versionLine: canonicalVersionLine('aider', '0.86.0'),
-    successLines: ['ok'],
-    authArgv: ['auth'],
-  },
   copilot: {
     transport: 'argv',
     versionLine: canonicalVersionLine('copilot', '0.3.0'),
@@ -114,16 +107,25 @@ const SHIM_PROFILES: Record<ImplementerCliToolId, ContractShimProfile> = {
     ],
     authArgv: ['status'],
   },
+  'command-code': {
+    transport: 'argv',
+    versionLine: canonicalVersionLine('command-code', '1.39.2'),
+    successLines: [
+      '{"type":"event","event":{"type":"tool_running","toolCallId":"call_1","toolName":"read_file"}}',
+      '{"type":"result","subtype":"success","sessionId":"contract-session","stopReason":"end_turn","finalText":"done","usage":{"inputTokens":10,"outputTokens":2}}',
+    ],
+    authArgv: ['status', '--json'],
+  },
 };
 
 const AUTH_CHANNELS: Record<ImplementerCliToolId, CliImplementerConfig['authChannel']> = {
   'claude-code': 'session',
   codex: 'session',
   opencode: 'provider-dependent',
-  aider: 'provider-dependent',
   copilot: 'session',
   'kilo-code': 'provider-dependent',
   cursor: 'session',
+  'command-code': 'session',
 };
 
 // With session state seeded, every probe-bearing adapter runs its declared
@@ -133,16 +135,18 @@ const AUTH_CHANNELS: Record<ImplementerCliToolId, CliImplementerConfig['authChan
 // Opencode and kilo-code declare the provider credential oracle
 // (`providers list` / `auth list`); these shims cannot print oracle-format
 // output, which is a parse failure, so their fact falls back to bridged
-// session-state presence. The clean oracle paths and the absent-state
+// session-state presence. Command Code declares `status --json`, so like
+// claude-code, codex and cursor its exit-1 shim resolves to 'unknown'.
+// The clean oracle paths and the absent-state
 // 'missing' path are pinned by readiness-probe-session-presence.test.ts.
 const AUTH_FAILURE_FACTS_BY_PROBE_CONTRACT = {
   'claude-code': 'unknown',
   codex: 'unknown',
   opencode: 'authenticated',
-  aider: 'not-checked',
   copilot: 'authenticated',
   'kilo-code': 'authenticated',
   cursor: 'unknown',
+  'command-code': 'unknown',
 } as const satisfies Record<ImplementerCliToolId, 'authenticated' | 'not-checked' | 'unknown'>;
 
 const HOME_SESSION_STATE_PATHS: Partial<Record<ImplementerCliToolId, string>> = {
@@ -152,6 +156,7 @@ const HOME_SESSION_STATE_PATHS: Partial<Record<ImplementerCliToolId, string>> = 
   copilot: '.copilot/config.json',
   'kilo-code': '.config/kilo/auth.json',
   cursor: '.cursor/agent-cli-state.json',
+  'command-code': '.commandcode/auth.json',
 };
 
 const STATE_SOURCE_ENV = [
@@ -197,10 +202,10 @@ const CONFLICTING_ARGS: Record<ImplementerCliToolId, readonly string[]> = {
   'claude-code': ['--output-format', 'text'],
   codex: ['--json'],
   opencode: ['--format', 'json'],
-  aider: ['--message', 'blocked'],
   copilot: ['--output-format', 'text'],
   'kilo-code': ['--output-format', 'text'],
   cursor: ['--force'],
+  'command-code': ['--permission-mode', 'plan'],
 };
 
 const CREDENTIAL_ENV: Partial<Record<ImplementerCliToolId, Readonly<Record<string, string>>>> = {

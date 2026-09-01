@@ -6,13 +6,14 @@ import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
 import { createApiImplementer } from './api.js';
-import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../core/schemas/runner-fields.js';
 
-const temperatureCapableImplementer = {
-  provider: 'deepseek',
-  apiBase: 'https://api.deepseek.com/v1',
-  apiKey: 'sk-test-key',
-  model: 'deepseek-chat',
+const remoteImplementerSeat = {
+  provider: 'custom-endpoint',
+  service: 'custom-endpoint',
+  offering: 'payg',
+  apiBase: 'https://custom-endpoint.example/v1',
+  apiKey: 'custom-inline-key',
+  model: 'custom/test',
 } as const;
 
 let projectDir: string;
@@ -89,15 +90,15 @@ describe('api implementer — OpenAI-compatible path', () => {
   });
 
   it('reports unavailable when a referenced remote API key is missing', async () => {
-    const original = process.env['OPENROUTER_API_KEY'];
-    delete process.env['OPENROUTER_API_KEY'];
+    const original = process.env['CUSTOM_PROVIDER_KEY'];
+    delete process.env['CUSTOM_PROVIDER_KEY'];
     try {
       const cfg = makeConfig({
         implementer: {
-          provider: 'openrouter',
-          apiBase: 'https://openrouter.ai/api/v1',
-          apiKey: 'env:OPENROUTER_API_KEY',
-          model: 'openrouter/test',
+          provider: 'custom-endpoint',
+          apiBase: 'https://example.com/v1',
+          apiKey: 'env:CUSTOM_PROVIDER_KEY',
+          model: 'custom/test',
         },
       });
       const implementer = createApiImplementer(cfg);
@@ -105,8 +106,8 @@ describe('api implementer — OpenAI-compatible path', () => {
       expect(await implementer.isAvailable()).toBe(false);
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
-      if (original === undefined) delete process.env['OPENROUTER_API_KEY'];
-      else process.env['OPENROUTER_API_KEY'] = original;
+      if (original === undefined) delete process.env['CUSTOM_PROVIDER_KEY'];
+      else process.env['CUSTOM_PROVIDER_KEY'] = original;
     }
   });
 
@@ -219,12 +220,12 @@ describe('api implementer — OpenAI-compatible path', () => {
     expect(existsSync(join(projectDir, 'src/failed.ts'))).toBe(false);
   }, 20_000);
 
-  it('unset implementer temperature sends DEFAULT_IMPLEMENTER_TEMPERATURE', async () => {
+  it('keeps temperature off the wire for an api seat, declared or not', async () => {
     const code = '```ts\nexport const x = 1;\n```';
     fetchMock.mockResolvedValue(makeOpenAiSseResponse([{ content: code }]));
 
     const cfg = makeConfig({
-      implementer: { ...temperatureCapableImplementer, temperature: undefined },
+      implementer: { ...remoteImplementerSeat, temperature: undefined },
     });
     const implementer = createApiImplementer(cfg);
     const task = makeTask({ id: 'T016', file: 'src/temperature.ts', action: 'create' });
@@ -239,7 +240,7 @@ describe('api implementer — OpenAI-compatible path', () => {
 
     const init = fetchMock.mock.calls.at(-1)?.[1] as { body?: string } | undefined;
     const body = JSON.parse(String(init?.body)) as { temperature?: number };
-    expect(body.temperature).toBe(DEFAULT_IMPLEMENTER_TEMPERATURE);
+    expect(body.temperature).toBeUndefined();
   });
 
   async function reasoningEffortSent(
@@ -260,29 +261,14 @@ describe('api implementer — OpenAI-compatible path', () => {
     return (JSON.parse(String(init?.body)) as { reasoning_effort?: string }).reasoning_effort;
   }
 
-  const deepseekSeat = (model: string) => ({ ...temperatureCapableImplementer, model });
+  const apiSeat = (model: string) => ({ ...remoteImplementerSeat, model });
 
-  it('sends the configured effort only when the implementer model reasons', async () => {
-    expect(await reasoningEffortSent(deepseekSeat('deepseek-chat'))).toBeUndefined();
-    expect(await reasoningEffortSent(deepseekSeat('deepseek-reasoner'))).toBe('high');
+  it('never puts effort on the wire from an api seat, reasoning model or not', async () => {
+    expect(await reasoningEffortSent(apiSeat('gpt-4o-mini'))).toBeUndefined();
+    expect(await reasoningEffortSent(apiSeat('o3-mini'))).toBeUndefined();
   });
 
-  it('withholds effort from a model the seat has no effort channel for, even where the provider would forward it', async () => {
-    // OpenRouter's request policy forwards reasoning_effort for any deepseek-r*
-    // id, so only the seat capability check in the implementer keeps it off the
-    // wire for a model that does not claim the channel.
-    const openRouterSeat = (model: string) => ({
-      provider: 'openrouter',
-      apiBase: 'https://openrouter.ai/api/v1',
-      apiKey: 'sk-or-v1-test-key',
-      model,
-    });
-
-    expect(await reasoningEffortSent(openRouterSeat('deepseek/deepseek-r2'))).toBeUndefined();
-    expect(await reasoningEffortSent(openRouterSeat('deepseek/deepseek-r1'))).toBe('high');
-  });
-
-  it('retry() adjusts temperature by retry kind (local bumps, hint unchanged)', async () => {
+  it('retry() succeeds for both retry kinds without putting temperature on the wire', async () => {
     const code = '```ts\nexport const x = 1;\n```';
     fetchMock.mockResolvedValue(
       makeOpenAiSseResponse([
@@ -292,7 +278,7 @@ describe('api implementer — OpenAI-compatible path', () => {
     );
 
     const cfg = makeConfig({
-      implementer: { ...temperatureCapableImplementer, temperature: 0.2 },
+      implementer: { ...remoteImplementerSeat, temperature: 0.2 },
     });
     const implementer = createApiImplementer(cfg);
     const task = makeTask({ id: 'T005', file: 'src/retry.ts', action: 'create' });
@@ -311,7 +297,7 @@ describe('api implementer — OpenAI-compatible path', () => {
     const localBody = JSON.parse(
       String((fetchMock.mock.calls.at(-1)?.[1] as { body?: string } | undefined)?.body),
     ) as { temperature?: number };
-    expect(localBody.temperature).toBe(0.4);
+    expect(localBody.temperature).toBeUndefined();
 
     fetchMock.mockClear();
     fetchMock.mockResolvedValue(
@@ -326,7 +312,7 @@ describe('api implementer — OpenAI-compatible path', () => {
     const hintBody = JSON.parse(
       String((fetchMock.mock.calls.at(-1)?.[1] as { body?: string } | undefined)?.body),
     ) as { temperature?: number };
-    expect(hintBody.temperature).toBe(0.2);
+    expect(hintBody.temperature).toBeUndefined();
   });
 
   // The schema rejects this config at load (a custom provider has no catalog
@@ -337,7 +323,7 @@ describe('api implementer — OpenAI-compatible path', () => {
     const cfg = makeConfig({
       implementer: {
         model: 'placeholder-model',
-        provider: 'custom-unknown-provider' as never,
+        provider: 'custom-unknown-provider',
         apiBase: 'http://localhost:9999',
         apiKey: 'x',
       },
@@ -392,7 +378,7 @@ describe('api implementer — OpenAI-compatible path', () => {
     fetchMock.mockResolvedValue(makeOpenAiSseResponse([{ content: code }]));
 
     const cfg = makeConfig({
-      implementer: { ...temperatureCapableImplementer, contextLength: undefined },
+      implementer: { ...remoteImplementerSeat, contextLength: undefined },
     });
     const implementer = createApiImplementer(cfg);
     const task = makeTask({ id: 'T018', file: 'src/shared-default.ts', action: 'create' });
@@ -412,39 +398,31 @@ describe('api implementer — OpenAI-compatible path', () => {
     expect(body.max_tokens).toBe(8192);
   });
 
-  it('uses provider-specific env var for API key fallback (OPENROUTER_API_KEY)', async () => {
+  it('sends the configured inline apiKey as the Authorization bearer token', async () => {
     const code = '```ts\nexport const x = 1;\n```';
     fetchMock.mockResolvedValue(makeOpenAiSseResponse([{ content: code }]));
 
-    const origOr = process.env['OPENROUTER_API_KEY'];
-    process.env['OPENROUTER_API_KEY'] = 'sk-or-env-key';
-    try {
-      const cfg = makeConfig({
-        implementer: {
-          provider: 'openrouter',
-          model: 'openrouter/claude-3.5-sonnet',
-          apiBase: 'https://openrouter.ai/api/v1',
-        },
-      });
-      const implementer = createApiImplementer(cfg);
-      const task = makeTask({ id: 'T008', file: 'src/or.ts', action: 'create' });
+    const cfg = makeConfig({
+      implementer: {
+        provider: 'custom-endpoint',
+        model: 'custom/test',
+        apiBase: 'https://example.com/v1',
+        apiKey: 'custom-inline-key',
+      },
+    });
+    const implementer = createApiImplementer(cfg);
+    const task = makeTask({ id: 'T008', file: 'src/or.ts', action: 'create' });
 
-      const result = await implementer.implement({
-        task,
-        projectDir,
-        config: cfg,
-        context: defaultContext,
-        onOutput: vi.fn(),
-      });
+    const result = await implementer.implement({
+      task,
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
 
-      const fetchInput = fetchMock.mock.calls.at(0)?.[0];
-      const fetchInit = fetchMock.mock.calls.at(0)?.[1];
-      const request = new Request(fetchInput, fetchInit);
-      expect(request.headers.get('Authorization')).toBe('Bearer sk-or-env-key');
-      expect(result.success).toBe(true);
-    } finally {
-      if (origOr === undefined) delete process.env['OPENROUTER_API_KEY'];
-      else process.env['OPENROUTER_API_KEY'] = origOr;
-    }
+    const request = new Request(fetchMock.mock.calls.at(0)?.[0], fetchMock.mock.calls.at(0)?.[1]);
+    expect(request.headers.get('Authorization')).toBe('Bearer custom-inline-key');
+    expect(result.success).toBe(true);
   });
 });

@@ -13,7 +13,7 @@ import type { Config } from '../../core/schemas/config.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
 import { BOOT_MANIFEST_TITLE, REFRESHING_TOOLS_TITLE } from '../../core/discovery/copy.js';
 import { BootManifest } from '../../features/runners/boot-manifest.js';
-import { prepareExecution } from '../../engine/runners/prepare-execution.js';
+import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import {
   CREW_MARKER_GUTTER,
   CREW_RAIL_WIDTH,

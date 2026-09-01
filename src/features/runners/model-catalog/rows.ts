@@ -10,8 +10,10 @@ import {
   formatAxisValue,
   isOptionFamily,
   optionAxesOf,
-  optionDraftOf,
   parseOptionSelection,
+  routeDraftOf,
+  routePrefixesOf,
+  stepOptionAxis,
   type OptionAxisName,
 } from './option-axis.js';
 import { findProviderCredentialFact, modelProviderAuthKey } from './provider-axis.js';
@@ -23,6 +25,9 @@ export type RouteAuthState =
   | { kind: 'needs-sign-in' }
   | { kind: 'unknown'; reason: CliProviderAuthUnreadableReason | 'empty' }
   | { kind: 'unchecked' };
+
+/** A steppable dimension of an expanded model: spelled by the id, or by the tool's variant flag. */
+export type RightAxisName = OptionAxisName | 'variant';
 
 export type RightRow =
   | {
@@ -43,12 +48,21 @@ export type RightRow =
   | {
       kind: 'axis';
       model: ModelOption;
-      axis: OptionAxisName;
+      axis: RightAxisName;
+      /** The provider route the axis steps inside; empty on an option family. */
+      providerPrefix: string;
       value: string;
+      /** The presets a variant axis cycles through; empty on an id-spelled axis. */
+      choices: readonly string[];
+      /** Whether the ladder has anywhere to step; the cycle mark and the byline read this one value. */
+      steps: boolean;
       /** Picks the tree glyph that closes the parent's child block. */
       last: boolean;
     }
-  | { kind: 'notice'; lane: 'pending' | 'failed'; text: string; action?: 'refresh' };
+  | { kind: 'notice'; lane: 'pending' | 'failed'; text: string; action?: 'refresh' }
+  | { kind: 'action'; action: 'browse-catalog'; text: string };
+
+type AxisRow = Extract<RightRow, { kind: 'axis' }>;
 
 /** Whether the catalog fetch that feeds suggestion rows has landed. */
 export type CatalogLane = 'ready' | 'pending' | 'failed';
@@ -61,6 +75,12 @@ export const CATALOG_LANE_PENDING = 'Loading models…';
 
 /** One wording for the failed lane; the picker byline appends its retry key to it. */
 export const CATALOG_FETCH_FAILED = 'Could not load models';
+
+/** One wording for the escape row that opens the unfiltered catalog. */
+export const BROWSE_CATALOG_TEXT = 'Browse the full catalog';
+
+/** One wording for a variant axis nobody has drafted yet. */
+export const UNSET_VARIANT_WORD = '—';
 
 const NOTICE_TEXT: Readonly<Record<'pending' | 'failed', string>> = {
   pending: CATALOG_LANE_PENDING,
@@ -94,6 +114,58 @@ export function routeAuthStateFor(input: {
   }
 }
 
+/** True when any route of the row carries the tool's own preset ladder. */
+export function offersVariantLadder(model: ModelOption): boolean {
+  return (model.variants ?? []).some((variant) => (variant.variantChoices ?? []).length > 0);
+}
+
+/**
+ * The steppable dimensions of one route, closing with the tool's preset ladder
+ * where that route spells one. A single draft serves every route, so it reads as
+ * set only under the route whose vocabulary contains it.
+ */
+function axisRowsFor(input: {
+  model: ModelOption;
+  providerPrefix: string;
+  optionDraftId: string | null | undefined;
+  variantDraft: string | null | undefined;
+}): AxisRow[] {
+  const { model, providerPrefix } = input;
+  const variants = model.variants ?? [];
+  const drafted = routeDraftOf(model, providerPrefix, input.optionDraftId);
+  const selection = parseOptionSelection(drafted);
+  const axisRows: AxisRow[] = [];
+  for (const axis of optionAxesOf(variants, providerPrefix)) {
+    axisRows.push({
+      kind: 'axis',
+      model,
+      axis: axis.axis,
+      providerPrefix,
+      value: formatAxisValue(axis.axis, selection),
+      choices: [],
+      steps: stepOptionAxis(model, axis.axis, drafted, providerPrefix) !== undefined,
+      last: false,
+    });
+  }
+  const choices = variants.find((variant) => variant.fullId === drafted)?.variantChoices ?? [];
+  if (choices.length > 0) {
+    const draft = input.variantDraft ?? '';
+    axisRows.push({
+      kind: 'axis',
+      model,
+      axis: 'variant',
+      providerPrefix,
+      value: choices.includes(draft) ? draft : UNSET_VARIANT_WORD,
+      choices,
+      // The ladder the picker walks is `[null, ...choices]`, so even a lone preset
+      // steps — between unset and itself.
+      steps: true,
+      last: false,
+    });
+  }
+  return axisRows.map((row, index) => ({ ...row, last: index === axisRows.length - 1 }));
+}
+
 function provenanceFor(model: ModelOption, customModels: readonly string[]): ProvenanceWord {
   if (model.isCustom === true || customModels.includes(model.id)) return 'Custom';
   switch (model.membership) {
@@ -116,7 +188,7 @@ function provenanceFor(model: ModelOption, customModels: readonly string[]): Pro
   }
 }
 
-type PlacementGroup = 'list' | 'suggestions' | 'custom';
+type PlacementGroup = 'list' | 'custom';
 
 interface Placement {
   readonly model: ModelOption;
@@ -124,27 +196,19 @@ interface Placement {
   readonly group: PlacementGroup;
 }
 
-function groupKeyFor(model: ModelOption, provenance: ProvenanceWord): PlacementGroup {
-  if (provenance === 'Custom') return 'custom';
-  if (model.membership === 'catalog-suggestion') return 'suggestions';
-  return 'list';
+function groupKeyFor(provenance: ProvenanceWord): PlacementGroup {
+  return provenance === 'Custom' ? 'custom' : 'list';
 }
 
 function groupRank(key: PlacementGroup): number {
   switch (key) {
     case 'list':
       return 0;
-    case 'suggestions':
-      return 1;
     case 'custom':
-      return 2;
+      return 1;
     default:
       return assertNever(key);
   }
-}
-
-function byReleaseDateDesc(a: Placement, b: Placement): number {
-  return (b.model.releaseDate ?? '').localeCompare(a.model.releaseDate ?? '');
 }
 
 export function buildRightRows(input: {
@@ -155,7 +219,9 @@ export function buildRightRows(input: {
   catalogLane: CatalogLane;
   persistedModel: string | undefined;
   customModels: readonly string[];
+  browseCatalog: boolean;
   optionDraftId?: string | null;
+  variantDraft?: string | null;
 }): RightRow[] {
   const sectioned = input.models.length > SECTION_THRESHOLD;
   const automatic: ModelOption[] = [];
@@ -169,7 +235,7 @@ export function buildRightRows(input: {
     placements.push({
       model,
       provenance,
-      group: groupKeyFor(model, provenance),
+      group: groupKeyFor(provenance),
     });
   }
 
@@ -179,7 +245,10 @@ export function buildRightRows(input: {
       placement.model.membership === 'stale' ||
       placement.model.membership === 'catalog-suggestion',
   );
-  if (hasLiveLane) {
+  // Browsing widens the list. For claude-code and copilot the authoritative list
+  // is itself bundled, so subtracting it here would delete what the escape was
+  // opened from.
+  if (hasLiveLane && !input.browseCatalog) {
     placements = placements.filter(
       (placement) =>
         placement.model.membership !== 'bundled-suggestion' ||
@@ -187,12 +256,6 @@ export function buildRightRows(input: {
         placement.provenance === 'Custom',
     );
   }
-
-  const hasConfirmedOrStale = placements.some(
-    (placement) => placement.provenance === 'Detected' || placement.provenance === 'Stale',
-  );
-  const hasCatalogSuggestions = placements.some((placement) => placement.group === 'suggestions');
-  const showSuggestionsSection = hasConfirmedOrStale && hasCatalogSuggestions;
 
   const order: PlacementGroup[] = [];
   for (const placement of placements) {
@@ -202,39 +265,42 @@ export function buildRightRows(input: {
 
   const rows: RightRow[] = [];
   const pushModel = (placement: Placement, section: string): void => {
-    const expanded = placement.model.id === input.expandedModelId;
+    const model = placement.model;
+    const expanded = model.id === input.expandedModelId;
     rows.push({
       kind: 'model',
-      model: placement.model,
+      model,
       provenance: placement.provenance,
       section,
       expanded,
     });
     if (!expanded) return;
-    const variants = placement.model.variants ?? [];
-    if (isOptionFamily(placement.model)) {
-      const selection = parseOptionSelection(optionDraftOf(placement.model, input.optionDraftId));
-      const axes = optionAxesOf(variants);
-      for (const [index, axis] of axes.entries()) {
-        rows.push({
-          kind: 'axis',
-          model: placement.model,
-          axis: axis.axis,
-          value: formatAxisValue(axis.axis, selection),
-          last: index === axes.length - 1,
-        });
-      }
+    const variants = model.variants ?? [];
+    const axesOf = (providerPrefix: string): AxisRow[] =>
+      axisRowsFor({
+        model,
+        providerPrefix,
+        optionDraftId: input.optionDraftId,
+        variantDraft: input.variantDraft,
+      });
+    if (isOptionFamily(model)) {
+      rows.push(...axesOf(''));
       return;
     }
+    if (variants.length === 0) return;
     const tagWidth = variants.reduce(
       (widest, variant) =>
         Math.max(widest, getTerminalCellWidth(sanitizeTerminalDisplayText(variant.tag))),
       0,
     );
-    for (const variant of variants) {
+    // Each route carries its own axes: a row that spans two providers offers
+    // every spelling of both, not just the drafted one's.
+    for (const prefix of routePrefixesOf(variants)) {
+      const variant = variants.find((entry) => entry.providerPrefix === prefix);
+      if (variant === undefined) continue;
       rows.push({
         kind: 'route',
-        model: placement.model,
+        model,
         variant,
         tagWidth,
         auth: routeAuthStateFor({
@@ -243,6 +309,7 @@ export function buildRightRows(input: {
           providerAuth: input.providerAuth,
         }),
       });
+      rows.push(...axesOf(prefix));
     }
   };
 
@@ -252,14 +319,12 @@ export function buildRightRows(input: {
 
   for (const key of order) {
     const members = placements.filter((placement) => placement.group === key);
-    const section =
-      key === 'custom' && sectioned
-        ? 'Custom'
-        : key === 'suggestions' && showSuggestionsSection
-          ? 'suggestions'
-          : '';
-    const ordered = sectioned ? members.toSorted(byReleaseDateDesc) : members;
-    for (const placement of ordered) pushModel(placement, section);
+    const section = key === 'custom' && sectioned ? 'Custom' : '';
+    for (const placement of members) pushModel(placement, section);
+  }
+
+  if (!input.browseCatalog && placements.some((placement) => placement.model.isRecovery === true)) {
+    rows.push({ kind: 'action', action: 'browse-catalog', text: BROWSE_CATALOG_TEXT });
   }
 
   if (input.catalogLane !== 'ready') {
@@ -281,9 +346,11 @@ export function rightRowKey(row: RightRow): string {
     case 'route':
       return `route:${row.model.id}:${row.variant.fullId}`;
     case 'axis':
-      return `axis:${row.model.id}:${row.axis}`;
+      return `axis:${row.model.id}:${row.providerPrefix}:${row.axis}`;
     case 'notice':
       return `notice:${row.lane}`;
+    case 'action':
+      return 'action:browse-catalog';
     default:
       return assertNever(row);
   }

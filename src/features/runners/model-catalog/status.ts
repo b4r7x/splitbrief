@@ -6,12 +6,12 @@ import {
 import type { CliReadinessState } from '../../../core/discovery/detection.js';
 import type { ApiProviderDescriptor } from '../../../core/providers/api-provider-catalog.js';
 import { hasApiKey } from '../../../core/providers/catalog.js';
+import type { CliToolDescriptor } from '../../../core/runners/cli-tool-catalog.js';
 import {
   seatPickerLane,
   type ActiveRunnerRole,
-  type CliToolDescriptor,
   type SeatPickerRole,
-} from '../../../core/runners/cli-tool-catalog.js';
+} from '../../../core/runners/seat-roles.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
 import type { ConfiguredProviderRuntime } from '../../../engine/detection/provider-outcomes.js';
 
@@ -278,39 +278,6 @@ function configuredProviderStatus(
         remediation: runtime.diagnostic ?? `${descriptor.service} is not currently reachable.`,
       };
   }
-}
-
-export function deriveMetaStatus(
-  input: Readonly<{
-    kind: 'custom-command' | 'agent-sdk';
-    detections: PickerDetectionSnapshot;
-    role?: SeatPickerRole | undefined;
-    useConfiguredProviderOutcome: boolean;
-  }>,
-): PickerOptionStatus {
-  const { kind, detections, role } = input;
-  if (kind === 'custom-command') {
-    return { state: 'ready', remediation: null };
-  }
-  const configured =
-    !input.useConfiguredProviderOutcome || role === undefined
-      ? undefined
-      : findConfiguredProviderRuntime(detections, {
-          role: seatPickerLane(role),
-          provider: 'anthropic',
-        });
-  if (configured !== undefined && configured !== null) {
-    return configuredProviderStatus({
-      descriptor: { service: 'Agent SDK', credentialEnv: 'ANTHROPIC_API_KEY' },
-      runtime: configured,
-      fallbackCredential: () => resolveHasApiKey(detections, 'agent-sdk'),
-    });
-  }
-  if (resolveHasApiKey(detections, 'agent-sdk')) return { state: 'ready', remediation: null };
-  return {
-    state: 'unauthenticated',
-    remediation: 'Set ANTHROPIC_API_KEY or configure an inline apiKey for Agent SDK.',
-  };
 }
 
 export function isSelectable(

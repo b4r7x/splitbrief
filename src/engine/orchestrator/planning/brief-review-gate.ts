@@ -314,7 +314,7 @@ export type BriefReviewExitOutcome =
 
 /**
  * The sole review-exit orchestration seam.  Approval continuations are sent
- * through the recovery controller first; instant/quick continuations reuse
+ * through the recovery controller first; quick continuations reuse
  * their admitted result and never manufacture an approval command.  The
  * materializer is deliberately one callback so its caller can perform the
  * task/continuation/hash CAS atomically.

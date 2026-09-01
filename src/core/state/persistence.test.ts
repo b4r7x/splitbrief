@@ -2,12 +2,8 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { existsSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-  commitStateAuthorityFence,
-  loadStateForResume,
-  saveState,
-  loadState,
-} from './persistence.js';
+import { saveState, loadState } from './persistence.js';
+import { commitStateAuthorityFence, loadStateForResume } from './resume-authority.js';
 import { createInitialState } from './machine.js';
 import { taskId } from '../schemas/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
@@ -82,7 +78,7 @@ describe('saveState / loadState roundtrip', () => {
     const dir = makeTmp();
     const state = {
       ...createInitialState('model-test'),
-      plannerTool: 'openrouter',
+      plannerTool: 'custom-endpoint',
       plannerModel: 'claude-sonnet-4-20250514',
       implementerTool: 'ollama',
       implementerModel: 'qwen2.5-coder:14b',
@@ -90,7 +86,7 @@ describe('saveState / loadState roundtrip', () => {
     saveState({ projectDir: dir, sessionId: SESSION_ID }, state);
     const loaded = loadState({ projectDir: dir, sessionId: SESSION_ID });
     if (!loaded) throw new Error('expected loadState to return saved state');
-    expect(loaded.plannerTool).toBe('openrouter');
+    expect(loaded.plannerTool).toBe('custom-endpoint');
     expect(loaded.plannerModel).toBe('claude-sonnet-4-20250514');
     expect(loaded.implementerTool).toBe('ollama');
     expect(loaded.implementerModel).toBe('qwen2.5-coder:14b');

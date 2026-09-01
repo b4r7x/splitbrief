@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { createEvidenceLedger } from './ledger-state.js';
 import { mutateEvidenceLedger, writeEvidenceLedger, readEvidenceLedger } from './ledger-storage.js';
-import { persistRecoveryBudgetResource, readRecoveryBudgetResources } from './recovery-journal.js';
+import {
+  persistRecoveryBudgetResource,
+  readRecoveryBudgetResources,
+} from './recovery-journal/budget-resources.js';
 import { evidenceError } from './errors.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { setupEvidenceTmpDir } from '#testing/helpers/evidence-test-setup.js';

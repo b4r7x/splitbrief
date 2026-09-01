@@ -1,7 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { calculateTaskUsageCost, isTaskUsageCostKnown } from './task-usage.js';
+import {
+  calculateTaskUsageCost,
+  isTaskUsageCostKnown,
+  type CalculateTaskUsageCostOptions,
+} from './task-usage.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { ZERO_TOKEN_USAGE } from '../../../core/schemas/tokens.js';
+import { makePricedModelCache } from '#testing/helpers/factories/model-cache.js';
+
+// Pricing follows the model, so a metered seat needs a catalog to rate against.
+// The worker endpoint's model prices input/output but carries no cache rate,
+// which is the contrast several cases below depend on.
+const cache = makePricedModelCache();
+
+function taskCost(opts: CalculateTaskUsageCostOptions): number {
+  return calculateTaskUsageCost({ ...opts, cache });
+}
+
+function taskCostKnown(opts: CalculateTaskUsageCostOptions): boolean {
+  return isTaskUsageCostKnown({ ...opts, cache });
+}
 
 describe('calculateTaskUsageCost', () => {
   it('returns 0 for local implementer with no escalation', () => {
@@ -20,7 +38,7 @@ describe('calculateTaskUsageCost', () => {
       escalationInput: 0,
       escalationOutput: 0,
     };
-    const cost = calculateTaskUsageCost({
+    const cost = taskCost({
       task: task,
       tokenUsage: globalUsage,
       implementerTool: 'ollama',
@@ -45,10 +63,11 @@ describe('calculateTaskUsageCost', () => {
       escalationInput: 0,
       escalationOutput: 0,
     };
-    const cost = calculateTaskUsageCost({
+    const cost = taskCost({
       task: task,
       tokenUsage: globalUsage,
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
+      implementerModel: 'deepseek-v4-flash',
       plannerTool: 'claude-code',
     });
     expect(cost).toBeCloseTo((0.14 * 200_000) / 1_000_000 + (0.28 * 100_000) / 1_000_000, 6);
@@ -70,11 +89,12 @@ describe('calculateTaskUsageCost', () => {
       escalationInput: 100_000,
       escalationOutput: 50_000,
     };
-    const cost = calculateTaskUsageCost({
+    const cost = taskCost({
       task: task,
       tokenUsage: globalUsage,
       implementerTool: 'ollama',
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
+      plannerModel: 'claude-sonnet-5',
     });
     expect(cost).toBeGreaterThan(0);
   });
@@ -100,11 +120,11 @@ describe('calculateTaskUsageCost', () => {
       plannerCacheCreate: 1_000_000,
     };
 
-    const cost = calculateTaskUsageCost({
+    const cost = taskCost({
       task,
       tokenUsage: globalUsage,
       implementerTool: 'ollama',
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
     });
 
@@ -132,11 +152,11 @@ describe('calculateTaskUsageCost', () => {
       plannerCacheCreate: 1_000_000,
     };
 
-    const cost = calculateTaskUsageCost({
+    const cost = taskCost({
       task,
       tokenUsage: globalUsage,
       implementerTool: 'ollama',
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
     });
 
@@ -161,18 +181,18 @@ describe('calculateTaskUsageCost', () => {
       escalationOutput: 50_000,
     };
 
-    const sonnetCost = calculateTaskUsageCost({
+    const sonnetCost = taskCost({
       task: task,
       tokenUsage: globalUsage,
       implementerTool: 'ollama',
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
     });
-    const opusCost = calculateTaskUsageCost({
+    const opusCost = taskCost({
       task: task,
       tokenUsage: globalUsage,
       implementerTool: 'ollama',
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-opus-5',
     });
 
@@ -216,12 +236,12 @@ describe('calculateTaskUsageCost', () => {
 
     const args = {
       tokenUsage: globalUsage,
-      implementerTool: 'anthropic',
+      implementerTool: 'custom-planner-api',
       plannerTool: 'claude-code',
       implementerModel: 'claude-sonnet-5',
     };
-    const noCacheCost = calculateTaskUsageCost({ ...args, task: noCacheTask });
-    const fullCacheCost = calculateTaskUsageCost({ ...args, task: fullCacheTask });
+    const noCacheCost = taskCost({ ...args, task: noCacheTask });
+    const fullCacheCost = taskCost({ ...args, task: fullCacheTask });
 
     // Base each leg: 300k input @ $2/MTok ($0.60) + 200k output @ $10/MTok ($2.00) = $2.60.
     // Exact attribution: exact-zero leg = $2.60, exact-1M leg = $2.60 + 1M @ $0.20/MTok = $2.80.
@@ -247,7 +267,7 @@ describe('calculateTaskUsageCost', () => {
       escalationInput: 0,
       escalationOutput: 0,
     };
-    const cost = calculateTaskUsageCost({
+    const cost = taskCost({
       task: task,
       tokenUsage: globalUsage,
       implementerTool: 'ollama',
@@ -281,16 +301,18 @@ describe('calculateTaskUsageCost', () => {
       retryCount: 0,
     };
 
-    const heavyCost = calculateTaskUsageCost({
+    const heavyCost = taskCost({
       task: heavyTask,
       tokenUsage: globalUsage,
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
+      implementerModel: 'deepseek-v4-flash',
       plannerTool: 'claude-code',
     });
-    const lightCost = calculateTaskUsageCost({
+    const lightCost = taskCost({
       task: lightTask,
       tokenUsage: globalUsage,
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
+      implementerModel: 'deepseek-v4-flash',
       plannerTool: 'claude-code',
     });
 
@@ -323,16 +345,16 @@ describe('isTaskUsageCostKnown — cache alignment with calculateTaskUsageCost',
     const args = {
       task,
       tokenUsage: globalUsage,
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
       plannerTool: 'claude-code',
       implementerModel: 'deepseek-v4-flash',
     };
 
-    // deepseek prices input/output but has no cache rate, so calculateTaskUsageCost silently drops
+    // The worker endpoint's model prices input/output but has no cache rate, so calculateTaskUsageCost silently drops
     // the allocated cache-read cost — a finite, partial number. isTaskUsageCostKnown must surface
     // that the figure is incomplete by pricing the SAME allocated cache tokens.
-    expect(calculateTaskUsageCost(args)).toBeGreaterThan(0);
-    expect(isTaskUsageCostKnown(args)).toBe(false);
+    expect(taskCost(args)).toBeGreaterThan(0);
+    expect(taskCostKnown(args)).toBe(false);
   });
 
   it('reports known when an implementer record carries explicit-zero cache fields (no cache to price)', () => {
@@ -356,10 +378,10 @@ describe('isTaskUsageCostKnown — cache alignment with calculateTaskUsageCost',
     };
 
     expect(
-      isTaskUsageCostKnown({
+      taskCostKnown({
         task,
         tokenUsage: globalUsage,
-        implementerTool: 'deepseek',
+        implementerTool: 'custom-worker-api',
         plannerTool: 'claude-code',
         implementerModel: 'deepseek-v4-flash',
       }),
@@ -385,11 +407,11 @@ describe('isTaskUsageCostKnown — cache alignment with calculateTaskUsageCost',
     };
 
     expect(
-      isTaskUsageCostKnown({
+      taskCostKnown({
         task,
         tokenUsage: globalUsage,
         implementerTool: 'ollama',
-        plannerTool: 'deepseek',
+        plannerTool: 'custom-worker-api',
         plannerModel: 'deepseek-v4-flash',
       }),
     ).toBe(false);
@@ -416,11 +438,11 @@ describe('isTaskUsageCostKnown — cache alignment with calculateTaskUsageCost',
     };
 
     expect(
-      isTaskUsageCostKnown({
+      taskCostKnown({
         task,
         tokenUsage: globalUsage,
         implementerTool: 'ollama',
-        plannerTool: 'anthropic',
+        plannerTool: 'custom-planner-api',
         plannerModel: 'claude-sonnet-5',
       }),
     ).toBe(true);
@@ -439,7 +461,7 @@ describe('reviewer cache fold', () => {
   const args = {
     task: escalatedTask,
     implementerTool: 'ollama',
-    plannerTool: 'anthropic',
+    plannerTool: 'custom-planner-api',
     plannerModel: 'claude-sonnet-5',
   };
   const baseUsage = {
@@ -451,7 +473,7 @@ describe('reviewer cache fold', () => {
   };
 
   it('allocates escalation cache from the same pool as before the reviewer bucket existed', () => {
-    const withReviewerBucket = calculateTaskUsageCost({
+    const withReviewerBucket = taskCost({
       ...args,
       tokenUsage: {
         ...baseUsage,
@@ -461,7 +483,7 @@ describe('reviewer cache fold', () => {
         reviewerCacheCreate: 25_000,
       },
     });
-    const preChange = calculateTaskUsageCost({
+    const preChange = taskCost({
       ...args,
       tokenUsage: {
         ...baseUsage,
@@ -474,7 +496,7 @@ describe('reviewer cache fold', () => {
   });
 
   it('keeps a configured reviewer cache out of the escalation allocation', () => {
-    const configuredReviewer = calculateTaskUsageCost({
+    const configuredReviewer = taskCost({
       ...args,
       tokenUsage: {
         ...baseUsage,
@@ -483,9 +505,9 @@ describe('reviewer cache fold', () => {
         reviewerCacheRead: 300_000,
         reviewerCacheCreate: 25_000,
       },
-      reviewerTool: 'deepseek',
+      reviewerTool: 'custom-worker-api',
     });
-    const plannerCacheOnly = calculateTaskUsageCost({
+    const plannerCacheOnly = taskCost({
       ...args,
       tokenUsage: { ...baseUsage, plannerCacheRead: 200_000, plannerCacheCreate: 50_000 },
     });

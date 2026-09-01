@@ -2,8 +2,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Config } from '../../core/schemas/config.js';
-import { getProviderBaseURL } from '../../core/providers/catalog.js';
-import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
 import { createApiPlanner } from './api.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
@@ -44,11 +42,6 @@ Create the example file.
 - Follow project conventions.
 `;
 
-function admittedPlannerApiBase(provider: string): string {
-  if (provider === 'ollama') return `http://127.0.0.1:${port}/v1`;
-  return getProviderBaseURL(provider) ?? `http://127.0.0.1:${port}/v1`;
-}
-
 function proxyFetchToLocalServer(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const requestUrl =
     typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -83,10 +76,8 @@ function makeApiPlannerConfig(provider: string): Config {
       service,
       offering,
       model: 'test-model',
-      apiBase: admittedPlannerApiBase(provider),
-      ...(provider === 'ollama'
-        ? {}
-        : { apiKey: `${getApiProviderDescriptor(provider)?.credentialPrefix ?? ''}test-key` }),
+      apiBase: `http://127.0.0.1:${port}/v1`,
+      ...(provider === 'ollama' ? {} : { apiKey: 'test-key' }),
     },
     implementer: {
       kind: 'api',
@@ -134,31 +125,6 @@ function streamSseChunks(
   res.end();
 }
 
-function streamAnthropicChunks(
-  res: http.ServerResponse,
-  chunks: string[],
-  usage: { input_tokens: number; output_tokens: number },
-) {
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-  });
-  res.write(
-    `event: message_start\ndata: ${JSON.stringify({ type: 'message_start', message: { usage: { input_tokens: usage.input_tokens, output_tokens: 0 } } })}\n\n`,
-  );
-  for (const text of chunks) {
-    res.write(
-      `event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', delta: { type: 'text_delta', text } })}\n\n`,
-    );
-  }
-  res.write(
-    `event: message_delta\ndata: ${JSON.stringify({ type: 'message_delta', usage: { output_tokens: usage.output_tokens } })}\n\n`,
-  );
-  res.write('event: message_stop\ndata: {"type":"message_stop"}\n\n');
-  res.end();
-}
-
 beforeEach(async () => {
   receivedBodies = [];
   receivedHeaders = [];
@@ -194,17 +160,6 @@ beforeEach(async () => {
           prompt_tokens: 42,
           completion_tokens: 17,
         });
-      });
-      return;
-    }
-
-    if (req.method === 'POST' && req.url === '/v1/messages') {
-      const chunks: Buffer[] = [];
-      req.on('data', (c) => chunks.push(c));
-      req.on('end', () => {
-        receivedBodies.push(JSON.parse(Buffer.concat(chunks).toString('utf-8')));
-        receivedHeaders.push(req.headers);
-        streamAnthropicChunks(res, ['Hello ', 'Claude'], { input_tokens: 42, output_tokens: 17 });
       });
       return;
     }
@@ -248,55 +203,7 @@ describe('createApiPlanner', () => {
     expect(receivedBodies[0]!.messages[0]).toMatchObject({ role: 'user', content: 'the prompt' });
   });
 
-  it('uses Anthropic messages API for Anthropic planner selections', async () => {
-    const planner = createApiPlanner(makeApiPlannerConfig('anthropic'));
-    const collected: string[] = [];
-
-    const result = await planner.regenerate({
-      prompt: 'the prompt',
-      projectDir,
-      callbacks: { onOutput: (text) => collected.push(text) },
-    });
-
-    expect(result.text).toBe('Hello Claude');
-    expect(result.usage).toEqual({ inputTokens: 42, outputTokens: 17 });
-    expect(collected.join('')).toBe('Hello Claude');
-
-    expect(receivedBodies).toHaveLength(1);
-    expect(receivedBodies[0]).toMatchObject({
-      model: 'test-model',
-      stream: true,
-      messages: [{ role: 'user', content: 'the prompt' }],
-    });
-    expect(receivedHeaders[0]).toMatchObject({
-      'anthropic-version': '2023-06-01',
-      'x-api-key': 'sk-ant-test-key',
-    });
-  });
-
-  it('sends a coordinated thinking + max_tokens body for an effort-capable Anthropic planner', async () => {
-    const cfg = makeApiPlannerConfig('anthropic');
-    cfg.planner.model = 'claude-sonnet-4-6';
-    cfg.planner.effort = 'high';
-    const planner = createApiPlanner(cfg);
-
-    await planner.regenerate({
-      prompt: 'the prompt',
-      projectDir,
-      callbacks: { onOutput: () => {} },
-    });
-
-    expect(receivedBodies).toHaveLength(1);
-    const body = receivedBodies[0] as unknown as {
-      thinking?: { type: string; budget_tokens: number };
-      max_tokens?: number;
-    };
-    expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 24000 });
-    expect(typeof body.max_tokens).toBe('number');
-    expect(body.max_tokens!).toBeGreaterThan(body.thinking!.budget_tokens);
-  });
-
-  it.each([['anthropic'], ['ollama']] as const)(
+  it.each([['custom-endpoint'], ['ollama']] as const)(
     'planner.contextLength drives the derived max_tokens for the %s api kind',
     async (provider) => {
       const cfg = makeApiPlannerConfig(provider);
@@ -318,8 +225,8 @@ describe('createApiPlanner', () => {
     },
   );
 
-  it('strips effort for an Anthropic model that does not support reasoning', async () => {
-    const cfg = makeApiPlannerConfig('anthropic');
+  it('strips effort for a model that does not support reasoning', async () => {
+    const cfg = makeApiPlannerConfig('custom-endpoint');
     cfg.planner.effort = 'high';
     const planner = createApiPlanner(cfg);
 
@@ -330,7 +237,7 @@ describe('createApiPlanner', () => {
     });
 
     expect(receivedBodies).toHaveLength(1);
-    expect(receivedBodies[0]).not.toHaveProperty('thinking');
+    expect(receivedBodies[0]).not.toHaveProperty('reasoning_effort');
   });
 
   it('plan() runs four phases and accumulates token usage across them', async () => {
@@ -382,7 +289,7 @@ describe('createApiPlanner', () => {
     expect(hasAssistantPrior).toBe(false);
   });
 
-  it.each([['ollama'], ['anthropic']] as const)(
+  it.each([['ollama'], ['custom-endpoint']] as const)(
     'isAvailable returns true for %s when endpoint responds',
     async (provider) => {
       const planner = createApiPlanner(makeApiPlannerConfig(provider));
@@ -390,11 +297,11 @@ describe('createApiPlanner', () => {
     },
   );
 
-  it('probes the anthropic model catalog with limit=1000 during isAvailable', async () => {
-    const planner = createApiPlanner(makeApiPlannerConfig('anthropic'));
+  it('probes the remote model catalog during isAvailable', async () => {
+    const planner = createApiPlanner(makeApiPlannerConfig('custom-endpoint'));
 
     expect(await planner.isAvailable()).toBe(true);
-    expect(receivedCatalogRequests).toContainEqual({ pathname: '/v1/models', limit: '1000' });
+    expect(receivedCatalogRequests.map((request) => request.pathname)).toContain('/v1/models');
   });
 
   it('isAvailable returns false when endpoint is unreachable', async () => {
@@ -409,23 +316,20 @@ describe('createApiPlanner', () => {
     expect(() => createApiPlanner(cfg)).toThrow(/API planner requires an explicit model/);
   });
 
-  it('unavailabilityReason reports a missing key for a remote provider with no key configured', async () => {
-    delete process.env['OPENROUTER_API_KEY'];
+  it('refuses a remote provider with no key configured', () => {
     const cfg: Config = {
-      ...makeApiPlannerConfig('openrouter'),
+      ...makeApiPlannerConfig('custom-endpoint'),
       planner: {
         kind: 'api',
-        provider: 'openrouter',
-        service: 'openrouter',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
         offering: 'payg',
         model: 'test-model',
-        apiBase: 'https://openrouter.ai/api/v1',
+        apiBase: `http://127.0.0.1:${port}/v1`,
       },
     };
-    const planner = createApiPlanner(cfg);
 
-    expect(await planner.isAvailable()).toBe(false);
-    expect(planner.unavailabilityReason?.()).toBe('no API key is configured');
+    expect(() => createApiPlanner(cfg)).toThrow(/requires an overrides.apiKey/);
   });
 
   it('rejects over-context calls before dispatching upstream', async () => {
@@ -451,11 +355,11 @@ describe('createApiPlanner', () => {
       res.writeHead(401);
       res.end();
     });
-    const cfg = makeApiPlannerConfig('openrouter');
+    const cfg = makeApiPlannerConfig('custom-endpoint');
     const planner = createApiPlanner(cfg);
 
     expect(await planner.isAvailable()).toBe(false);
-    expect(planner.unavailabilityReason?.()).toBe('catalog-authentication-rejected');
+    expect(planner.unavailabilityReason?.()).toBe('HTTP 401');
   });
 
   it('unavailabilityReason surfaces a cause when the endpoint is unreachable', async () => {

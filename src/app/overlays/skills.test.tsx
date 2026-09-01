@@ -5,6 +5,10 @@ import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import type { SkillMeta } from '../../core/skills/types.js';
+import {
+  GLOBAL_SKILL_SCAN_PATH_LABELS,
+  PROJECT_SKILL_SCAN_PATH_LABELS,
+} from '../../core/skills/scan-paths.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { glyph } from '../../lib/glyphs.js';
@@ -188,6 +192,16 @@ describe('SkillsPicker', () => {
     ui.unmount();
   });
 
+  it('renders the description column at the default terminal width', async () => {
+    skillsStore.setAvailable([{ ...skill('alpha'), description: 'formats frontmatter' }]);
+
+    const ui = renderFeature(<SkillsPicker />);
+    await tick(20);
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('formats frontmatter');
+    ui.unmount();
+  });
+
   it('treats Home and End as navigation before Space toggles', async () => {
     const skills = Array.from({ length: 4 }, (_, i) => skill(`skill-${i}`));
     skillsStore.setAvailable(skills);
@@ -244,6 +258,85 @@ describe('SkillsPicker', () => {
       .find((line) => line.includes('bravo'));
     expect(selectedLine).toBeDefined();
     expect((selectedLine ?? '').replace(/[\s|│]+$/u, '').endsWith(glyph('check'))).toBe(true);
+    ui.unmount();
+  });
+
+  it('sizes the panel at roomy density rather than wide', async () => {
+    terminalSizeStore.__testReset({ cols: 160, rows: 40, isSmall: false });
+    skillsStore.setAvailable([skill('alpha'), skill('bravo')]);
+
+    const ui = renderFeature(<SkillsPicker />);
+    await tick(20);
+
+    const widest = Math.max(
+      ...stripAnsiStyles(ui.lastFrame() ?? '')
+        .split('\n')
+        .map((line) => line.trim().length),
+    );
+    expect(widest).toBeLessThanOrEqual(96);
+    expect(widest).toBeGreaterThan(76);
+    ui.unmount();
+  });
+
+  it.each([80, 100, 120, 160])(
+    'gives every scanned path its own labelled row in the empty state at %i cols',
+    async (cols) => {
+      terminalSizeStore.__testReset({ cols, rows: 40, isSmall: cols < 120 });
+      skillsStore.setAvailable([]);
+
+      const ui = renderFeature(<SkillsPicker />);
+      await tick(20);
+
+      const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+      const allLabels = [...PROJECT_SKILL_SCAN_PATH_LABELS, ...GLOBAL_SKILL_SCAN_PATH_LABELS];
+      for (const label of allLabels) {
+        const hosts = lines.filter((line) => line.includes(label));
+        expect(hosts).toHaveLength(1);
+        expect(allLabels.filter((other) => (hosts[0] ?? '').includes(other))).toEqual([label]);
+      }
+
+      const lineOf = (needle: string) => lines.findIndex((line) => line.includes(needle));
+      expect(lineOf(PROJECT_SKILL_SCAN_PATH_LABELS[0] ?? '')).toBe(lineOf('Project'));
+      expect(lineOf(GLOBAL_SKILL_SCAN_PATH_LABELS[0] ?? '')).toBe(lineOf('Global'));
+
+      for (const line of lines) {
+        expect(line.replace(/[\s│]+$/u, '').endsWith('·')).toBe(false);
+      }
+      ui.unmount();
+    },
+  );
+
+  it('lists project skills before global skills under their section headers', async () => {
+    skillsStore.setAvailable([skill('gamma', 'global'), skill('delta', 'project')]);
+
+    const ui = renderFeature(<SkillsPicker />);
+    await tick(20);
+
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const lineOf = (needle: string) => lines.findIndex((line) => line.includes(needle));
+    expect(lineOf('Project')).toBeGreaterThanOrEqual(0);
+    expect(lineOf('Project')).toBeLessThan(lineOf('delta'));
+    expect(lineOf('delta')).toBeLessThan(lineOf('Global'));
+    expect(lineOf('Global')).toBeLessThan(lineOf('gamma'));
+    ui.unmount();
+  });
+
+  it('filters across name and description', async () => {
+    skillsStore.setAvailable([
+      { ...skill('alpha'), description: 'formats yaml frontmatter' },
+      { ...skill('bravo'), description: 'unrelated helper' },
+    ]);
+
+    const ui = renderFeature(<SkillsPicker />);
+    await flushEffects();
+
+    ui.stdin.write('frontmatter');
+    await tick(20);
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('alpha');
+    expect(frame).not.toContain('bravo');
+    expect(frame).not.toContain('No matching skills');
     ui.unmount();
   });
 

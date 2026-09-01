@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { breakdownEntry, makeRunMetrics, makeSummary } from './eval-factories.js';
 import {
+  aggregateComparisons,
   collectGreenRunAggregates,
   collectRunMetrics,
   compareScenario,
   type ReviewMetrics,
 } from './metrics.js';
-import { aggregateComparisons } from './runner.js';
 import { ReviewVerdictSchema, type Summary } from '../src/core/schemas/summary.js';
 import { taskId } from '../src/core/schemas/task.js';
 import type { EngineEvent } from '../src/engine/events/types.js';

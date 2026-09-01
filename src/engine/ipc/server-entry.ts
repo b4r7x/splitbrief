@@ -1,10 +1,9 @@
-import { randomBytes } from 'node:crypto';
-import { existsSync, rmSync, unlinkSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { loadConfig } from '../../core/config/load/io.js';
 import { sessionDir, SESSION_LOG_FILE } from '../../core/paths.js';
-import { writeLockfile, markExited, markCrashed, markSignaled } from './lockfile.js';
+import { markExited, markCrashed, markSignaled } from './lockfile.js';
 import { startHeartbeat } from './heartbeat.js';
 import { startIpcServer } from './server.js';
 import type { IpcServer } from './server.js';
@@ -14,24 +13,26 @@ import {
   emitEffectiveConfigWarnings,
   resolveEffectiveConfig,
 } from '../../core/config/runtime/effective-config.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { writeDetachedPreparedResultFile, type IpcServerArgs } from './server-args.js';
+import { createParentAcceptanceBarrier, detachedServerEntryError } from './server-acceptance.js';
+import { getArgv, writeStartupLockfile } from './server-bootstrap.js';
 import {
-  readIpcServerArgsFileConfined,
-  writeDetachedPreparedResultFile,
-  type IpcServerArgs,
-} from './server-args.js';
-import {
-  clearActiveReceipt,
-  type SessionOwnershipReceipt,
-} from '../../core/sessions/active-pointer.js';
-import { featureForTranscriptPolicy } from '../../core/sessions/session-id.js';
+  cleanupBeforeParentAcceptance,
+  cleanupBeforeServe,
+  createServerCleanup,
+  createServerExitHandlers,
+  createServerProcessCleanup,
+  type ServerTermination,
+} from './server-cleanup.js';
+import { clearActiveReceipt } from '../../core/sessions/active-pointer.js';
 import {
   acceptDetachedSessionHandoff,
   rollbackDetachedSessionHandoff,
   settleDetachedSessionHandoff,
 } from '../../core/sessions/detached-handoff.js';
 import { rollbackPreparedSession } from '../../core/sessions/prepare.js';
-import { loadState, loadStateForResume } from '../../core/state/persistence.js';
+import { loadState } from '../../core/state/persistence.js';
+import { loadStateForResume } from '../../core/state/resume-authority.js';
 import {
   acquireStateAuthority,
   assertStateAuthority,
@@ -42,30 +43,11 @@ import type {
   StateAuthorityReceipt,
 } from '../../core/state/types.js';
 import { shouldPreserveActiveState } from '../orchestrator/session-lifecycle/finalize.js';
-import { canSignalProcess } from '../../lib/process/liveness.js';
-import { killAllProcesses } from '../../lib/process/registry.js';
 import { bootstrapOtel, flushOtel } from '../../lib/otel.js';
 import { runWorkflowLoop } from './workflow-loop/run.js';
-import { prepareExecution } from '../runners/prepare-execution.js';
+import { prepareExecution } from '../runners/prepare-execution/prepare-execution.js';
 import { error } from '../../utils/error.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../core/schemas/config.js';
-
-type ServerTermination =
-  | { kind: 'exit'; exitCode: number }
-  | { kind: 'signal'; signal: string }
-  | { kind: 'crash'; cause: string };
-
-type ServerCleanupOptions = {
-  cleanupProcesses: () => Promise<void>;
-  stopHeartbeat: () => void;
-  closeBridge: () => void;
-  closeServer: () => Promise<void>;
-  terminalize: (termination: ServerTermination) => Promise<void>;
-  flushTelemetry: () => Promise<void>;
-  releaseAuthority?: (() => boolean | undefined | Promise<boolean | undefined>) | undefined;
-};
-
-type ExitProcess = (code: number) => void;
 
 type ServerMainDependencies = Readonly<{
   prepare: typeof prepareExecution;
@@ -96,379 +78,6 @@ const DEFAULT_SERVER_MAIN_DEPENDENCIES: ServerMainDependencies = {
   hydrateState: loadStateForResume,
   releaseAuthority: releaseStateAuthority,
 };
-
-type ParentAcceptance = Readonly<{
-  version: 1;
-  sessionId: string;
-  generation: string;
-  childPid: number;
-}>;
-
-export const detachedServerEntryError = {
-  parentExited: (parentPid: number) =>
-    error('detached-parent-exited', 'Detached parent exited before accepting startup.', {
-      parentPid,
-    }),
-  parentAcceptanceTimeout: (timeoutMs: number) =>
-    error(
-      'detached-parent-acceptance-timeout',
-      'Timed out waiting for detached parent acceptance.',
-      { timeoutMs },
-    ),
-  authorityUnavailable: (kind: StateAuthorityAcquisitionResult['kind']) =>
-    error(
-      'detached-state-authority-unavailable',
-      `Detached startup requires a usable state authority; acquisition returned ${kind}.`,
-      { kind },
-    ),
-  authorityHydration: (kind: string) =>
-    error(
-      'detached-state-authority-hydration-failed',
-      `Detached startup could not hydrate the owner state (${kind}).`,
-      { kind },
-    ),
-  startupCleanup: (failureCount: number, cause: unknown) =>
-    error(
-      'detached-startup-cleanup-failed',
-      `Detached startup cleanup failed in ${failureCount} step${failureCount === 1 ? '' : 's'}.`,
-      { failureCount },
-      cause,
-    ),
-} as const;
-
-export function createParentAcceptanceBarrier(
-  input: Readonly<{
-    candidate: SessionOwnershipReceipt;
-    authority?: StateAuthorityReceipt | undefined;
-    assertAuthority?: (() => void) | undefined;
-    parentPid: number;
-    childPid: number;
-    timeoutMs: number;
-    acceptHandoff: () => boolean;
-    settleHandoff: () => 'accepted' | 'rolled-back';
-  }>,
-): Readonly<{
-  accept: (acceptance: ParentAcceptance) => boolean;
-  wait: () => Promise<void>;
-}> {
-  let accepted = false;
-  let closed = false;
-  const acceptanceDeadline = Date.now() + input.timeoutMs;
-  let handoffDeadline = acceptanceDeadline;
-  let waitPromise: Promise<void> | undefined;
-
-  return {
-    accept: (acceptance) => {
-      if (
-        closed ||
-        accepted ||
-        Date.now() >= acceptanceDeadline ||
-        acceptance.version !== input.candidate.version ||
-        acceptance.sessionId !== input.candidate.sessionId ||
-        acceptance.generation !== input.candidate.generation ||
-        acceptance.childPid !== input.childPid
-      ) {
-        return false;
-      }
-      if (input.assertAuthority !== undefined) {
-        try {
-          input.assertAuthority();
-        } catch {
-          return false;
-        }
-      }
-      accepted = true;
-      handoffDeadline = Date.now() + input.timeoutMs;
-      return true;
-    },
-    wait: () => {
-      waitPromise ??= new Promise<void>((resolve, reject) => {
-        const succeed = () => {
-          closed = true;
-          resolve();
-        };
-        const fail = (cause: unknown) => {
-          closed = true;
-          reject(cause);
-        };
-        const poll = () => {
-          const parentAlive = canSignalProcess(input.parentPid);
-          const now = Date.now();
-          if (accepted) {
-            try {
-              input.assertAuthority?.();
-              if (input.acceptHandoff()) {
-                succeed();
-                return;
-              }
-              if (!parentAlive || now >= handoffDeadline) {
-                if (input.settleHandoff() === 'accepted') {
-                  succeed();
-                  return;
-                }
-                fail(
-                  parentAlive
-                    ? detachedServerEntryError.parentAcceptanceTimeout(input.timeoutMs)
-                    : detachedServerEntryError.parentExited(input.parentPid),
-                );
-                return;
-              }
-            } catch (cause) {
-              fail(cause);
-              return;
-            }
-          } else {
-            if (!parentAlive) {
-              fail(detachedServerEntryError.parentExited(input.parentPid));
-              return;
-            }
-            if (now >= acceptanceDeadline) {
-              fail(detachedServerEntryError.parentAcceptanceTimeout(input.timeoutMs));
-              return;
-            }
-          }
-          setTimeout(poll, 100);
-        };
-        poll();
-      });
-      return waitPromise;
-    },
-  };
-}
-
-export function createServerProcessCleanup(): () => Promise<void> {
-  let cleanupPromise: Promise<void> | null = null;
-  return () => {
-    cleanupPromise ??= (async () => {
-      await killAllProcesses();
-    })();
-    return cleanupPromise;
-  };
-}
-
-// A runner group that survives reaping is reported to the caller, but it must not cost the session
-// its terminal state or leave the IPC socket bound: the remaining owners run first, then the
-// failure is surfaced.
-export function createServerCleanup(
-  options: ServerCleanupOptions,
-): (termination: ServerTermination) => Promise<void> {
-  let cleanupPromise: Promise<void> | null = null;
-  return (termination) => {
-    if (cleanupPromise !== null) return cleanupPromise;
-    options.stopHeartbeat();
-    cleanupPromise = (async () => {
-      let reaping: { error: unknown } | undefined;
-      try {
-        await options.cleanupProcesses();
-      } catch (cause) {
-        reaping = { error: cause };
-      }
-      options.closeBridge();
-      await options.closeServer();
-      await options.terminalize(termination);
-      if (termination.kind !== 'crash' && options.releaseAuthority !== undefined) {
-        await options.releaseAuthority();
-      }
-      await options.flushTelemetry();
-      if (reaping !== undefined) throw reaping.error;
-    })();
-    return cleanupPromise;
-  };
-}
-
-export function createServerExitHandlers(options: {
-  cleanup: (termination: ServerTermination) => Promise<void>;
-  exitProcess?: ExitProcess;
-}): {
-  signal: (signal: string) => Promise<void>;
-  crash: (reason: unknown) => Promise<void>;
-} {
-  const exitProcess = options.exitProcess ?? process.exit;
-  // The process must reach an exit on every termination path: a failed cleanup is reported and
-  // exits non-zero. A rejection here would instead be re-entered by the next signal or by the
-  // `unhandledRejection` handler — which receives the same memoized rejection — and leave an
-  // orphaned server bound to its socket, so even the report cannot throw.
-  const exitAfterCleanup = async (termination: ServerTermination, successCode: number) => {
-    try {
-      await options.cleanup(termination);
-    } catch (err) {
-      try {
-        process.stderr.write(`server-entry: cleanup failed: ${toErrorMessage(err)}\n`);
-      } catch {
-        // An unwritable stderr must not keep a terminating server alive.
-      }
-      exitProcess(1);
-      return;
-    }
-    exitProcess(successCode);
-  };
-  return {
-    signal: (signal) => exitAfterCleanup({ kind: 'signal', signal }, 0),
-    crash: (reason) => exitAfterCleanup({ kind: 'crash', cause: toErrorMessage(reason) }, 1),
-  };
-}
-
-function exitInvalidArgs(message: string): never {
-  process.stderr.write(`server-entry: ${message}\n`);
-  process.exit(1);
-}
-
-function readConfinedArgsFileOrExit(argsFile: string): IpcServerArgs {
-  try {
-    return readIpcServerArgsFileConfined({ argsFile });
-  } catch (err) {
-    exitInvalidArgs(toErrorMessage(err));
-  }
-}
-
-export function getArgv(processArgv: string[]): { args: IpcServerArgs; bootstrapDir: string } {
-  const argsFile = processArgv[2];
-  if (!argsFile) {
-    exitInvalidArgs('missing required argv');
-  }
-  const args = readConfinedArgsFileOrExit(argsFile);
-  try {
-    unlinkSync(argsFile);
-  } catch {
-    exitInvalidArgs('could not consume detached bootstrap request');
-  }
-  return { args, bootstrapDir: dirname(argsFile) };
-}
-
-export async function writeStartupLockfile(
-  dir: string,
-  input: Readonly<{
-    argv: IpcServerArgs;
-    mode: Parameters<typeof writeLockfile>[1]['mode'];
-    persistTranscript: boolean;
-  }>,
-): Promise<{ authToken: string; startedAt: number }> {
-  const now = Date.now();
-  const authToken = randomBytes(32).toString('hex');
-  await writeLockfile(dir, {
-    pid: process.pid,
-    startTimeMs: now,
-    lastAliveMs: now,
-    sessionId: input.argv.candidate.sessionId,
-    mode: input.mode,
-    // `splitbrief ps` prints this field, so it is a consumer surface: redact it under
-    // persistTranscript:false. The raw feature still reaches the planner via argv.feature.
-    feature: featureForTranscriptPolicy(input.argv.feature, input.persistTranscript),
-    authToken,
-  });
-  return { authToken, startedAt: now };
-}
-
-async function cleanupBeforeParentAcceptance(
-  input: Readonly<{
-    cleanup: (termination: ServerTermination) => Promise<void>;
-    rollback: (session: Parameters<typeof rollbackPreparedSession>[0]) => void;
-    session: Parameters<typeof rollbackPreparedSession>[0];
-    active: Parameters<typeof clearActiveReceipt>[1];
-    bootstrapDir: string;
-    cause: unknown;
-  }>,
-): Promise<void> {
-  const failures: unknown[] = [];
-  try {
-    await input.cleanup({ kind: 'exit', exitCode: 1 });
-  } catch (err) {
-    failures.push(err);
-  }
-  try {
-    input.rollback(input.session);
-  } catch (err) {
-    failures.push(err);
-    try {
-      clearActiveReceipt(input.session.ref, input.active);
-    } catch (clearErr) {
-      failures.push(clearErr);
-    }
-  }
-  try {
-    rmSync(input.bootstrapDir, { recursive: true, force: true });
-  } catch (err) {
-    failures.push(err);
-  }
-  if (failures.length > 0) {
-    throw detachedServerEntryError.startupCleanup(failures.length, {
-      startupCause: input.cause,
-      failures,
-    });
-  }
-}
-
-async function cleanupBeforeServe(
-  input: Readonly<{
-    rollback: (session: Parameters<typeof rollbackPreparedSession>[0]) => void;
-    rollbackHandoff: (session: Parameters<typeof rollbackDetachedSessionHandoff>[0]) => void;
-    session: Parameters<typeof rollbackPreparedSession>[0];
-    ref: Parameters<typeof releaseStateAuthority>[0];
-    receipt: StateAuthorityReceipt | undefined;
-    releaseAuthority: typeof releaseStateAuthority;
-    stopHeartbeat?: (() => void) | undefined;
-    closeBridge?: (() => void) | undefined;
-    closeServer?: (() => Promise<void>) | undefined;
-    terminalize?: ((termination: ServerTermination) => Promise<void>) | undefined;
-    bootstrapDir: string;
-    cause: unknown;
-  }>,
-): Promise<void> {
-  const failures: unknown[] = [];
-  try {
-    input.stopHeartbeat?.();
-  } catch (err) {
-    failures.push(err);
-  }
-  try {
-    input.closeBridge?.();
-  } catch (err) {
-    failures.push(err);
-  }
-  try {
-    await input.closeServer?.();
-  } catch (err) {
-    failures.push(err);
-  }
-  try {
-    await input.terminalize?.({ kind: 'exit', exitCode: 1 });
-  } catch (err) {
-    failures.push(err);
-  }
-  if (input.receipt !== undefined) {
-    try {
-      input.releaseAuthority(input.ref, input.receipt);
-    } catch (err) {
-      failures.push(err);
-    }
-  }
-  try {
-    input.rollback(input.session);
-  } catch (err) {
-    failures.push(err);
-    try {
-      input.rollbackHandoff(input.session);
-    } catch (handoffErr) {
-      failures.push(handoffErr);
-    }
-    try {
-      clearActiveReceipt(input.session.ref, input.session.ownership);
-    } catch (clearErr) {
-      failures.push(clearErr);
-    }
-  }
-  try {
-    rmSync(input.bootstrapDir, { recursive: true, force: true });
-  } catch (err) {
-    failures.push(err);
-  }
-  if (failures.length > 0) {
-    throw detachedServerEntryError.startupCleanup(failures.length, {
-      startupCause: input.cause,
-      failures,
-    });
-  }
-}
 
 export async function main(
   input: Readonly<{

@@ -11,8 +11,8 @@ Examples:
     $ splitbrief "fix this bug" @error-log.txt @repro-steps.md
 
   Workflow modes:
-    $ splitbrief "rename variable" --mode instant
-    $ splitbrief "add caching layer" --mode quick
+    $ splitbrief "rename variable" --mode quick
+    $ splitbrief "add caching layer" --mode standard
     $ splitbrief "rebuild auth system" --mode speckit
     $ splitbrief spec "planning only" --mode quick
 

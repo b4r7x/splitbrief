@@ -32,7 +32,7 @@ import {
   parsePreparedConfig,
   type PreparedExecution,
 } from '../../../../src/engine/runners/prepared-execution.js';
-import { WORKFLOW_REWIND_ABORT_REASON } from '../../../../src/engine/orchestrator/run/workflow.js';
+import { WORKFLOW_REWIND_ABORT_REASON } from '../../../../src/engine/orchestrator/run/rewind-authority.js';
 import { runRpc } from '../../../../src/cli/rpc/run/host.js';
 import { matches } from '../../../../src/utils/error.js';
 

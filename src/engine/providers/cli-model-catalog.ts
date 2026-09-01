@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { DetectedModel } from '../../core/discovery/detection.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 
-export type NativeCliCatalogTool = 'codex' | 'opencode' | 'aider' | 'kilo-code' | 'cursor';
+export type NativeCliCatalogTool = 'codex' | 'opencode' | 'kilo-code' | 'cursor' | 'command-code';
 
 export interface NativeCliModelCatalogEntry {
   readonly selectionId: string;
@@ -21,9 +21,13 @@ export interface NativeCliModelCatalog {
 
 const PROVIDER_QUALIFIED_SELECTION_ID_PATTERN = /^[^\s/][^\s]*(?:\/[^\s/][^\s]*)+$/;
 const CATALOG_HEADING_PATTERN = /^(?:available\s+)?models?\s*:?$/i;
-const AIDER_DASHED_ROW_PATTERN = /^-\s+(.+)$/;
-const AIDER_PARENTHESES_PATTERN = /\(([^\s()]+(?:\/[^\s()]+)+)\)$/;
 const CURSOR_MODEL_LINE = /^(\S+) - (.+)$/;
+// `cmd --list-models` aligns a bare selection id against a capability blurb with
+// a run of spaces, and only first-party ids drop the `provider/` prefix. The id
+// shape rejects the provider headings, the `cmd --model …` usage examples and
+// the trailing `Docs:` line, none of which are selectable.
+const COMMAND_CODE_MODEL_LINE = /^([a-z0-9][a-z0-9.-]*(?:\/[a-z0-9][a-z0-9.-]*)*) {2,}(.+)$/i;
+const NATIVE_DEFAULT_SUFFIX = /\s*\(default\)$/i;
 
 const CodexReasoningEffortSchema: z.ZodType<string> = z
   .union([
@@ -161,25 +165,30 @@ function parseProviderQualifiedLines(
   return catalogFromEntries({ tool: input.tool, entries });
 }
 
-function aiderModelSelectionId(line: string): string | null | undefined {
-  const dashed = AIDER_DASHED_ROW_PATTERN.exec(line);
-  if (dashed === null || dashed[1] === undefined) return null;
-  const content = dashed[1].trim();
-  if (isAiderBanner(content)) return undefined;
-  if (isProviderQualifiedSelectionId(content)) return content;
-  const parenthesized = AIDER_PARENTHESES_PATTERN.exec(content);
-  const selectionId = parenthesized?.[1];
-  return selectionId !== undefined && isProviderQualifiedSelectionId(selectionId)
-    ? selectionId
-    : null;
-}
-
-function isAiderBanner(line: string): boolean {
-  return (
-    isCatalogHeading(line) ||
-    /^[-=]{3,}$/.test(line) ||
-    /^={3,}\s*(?:available\s+)?models?\s*={3,}:?$/i.test(line)
-  );
+function parseDashSeparatedLines(
+  input: Readonly<{
+    tool: 'cursor';
+    stdout: string;
+    pattern: RegExp;
+  }>,
+): NativeCliModelCatalog | null {
+  const entries: Omit<NativeCliModelCatalogEntry, 'nativeOrder'>[] = [];
+  for (const line of cleanCatalogLines(input.stdout)) {
+    if (isCatalogHeading(line)) continue;
+    const match = input.pattern.exec(line);
+    if (match === null) continue;
+    const selectionId = match[1];
+    const listedName = match[2];
+    if (selectionId === undefined || listedName === undefined) continue;
+    const nativeDefault = NATIVE_DEFAULT_SUFFIX.test(listedName);
+    const stripped = listedName.replace(NATIVE_DEFAULT_SUFFIX, '').trimEnd();
+    entries.push({
+      selectionId,
+      displayName: nativeDefault && stripped.length > 0 ? stripped : listedName,
+      ...(nativeDefault ? { nativeDefault: true } : {}),
+    });
+  }
+  return entries.length === 0 ? null : catalogFromEntries({ tool: input.tool, entries });
 }
 
 export function parseCodexNativeModelCatalog(stdout: string): NativeCliModelCatalog | null {
@@ -209,30 +218,26 @@ export function parseKiloNativeModelCatalog(stdout: string): NativeCliModelCatal
   return parseProviderQualifiedLines({ tool: 'kilo-code', stdout });
 }
 
-export function parseAiderNativeModelCatalog(stdout: string): NativeCliModelCatalog | null {
-  const entries: Omit<NativeCliModelCatalogEntry, 'nativeOrder'>[] = [];
-  for (const line of cleanCatalogLines(stdout)) {
-    if (line.length === 0 || isAiderBanner(line)) continue;
-    const selectionId = aiderModelSelectionId(line);
-    if (selectionId === undefined) continue;
-    if (selectionId === null) return null;
-    entries.push({ selectionId });
-  }
-  return catalogFromEntries({ tool: 'aider', entries });
+export function parseCursorNativeModelCatalog(stdout: string): NativeCliModelCatalog | null {
+  return parseDashSeparatedLines({ tool: 'cursor', stdout, pattern: CURSOR_MODEL_LINE });
 }
 
-export function parseCursorNativeModelCatalog(stdout: string): NativeCliModelCatalog | null {
+export function parseCommandCodeNativeModelCatalog(stdout: string): NativeCliModelCatalog | null {
   const entries: Omit<NativeCliModelCatalogEntry, 'nativeOrder'>[] = [];
   for (const line of cleanCatalogLines(stdout)) {
     if (isCatalogHeading(line)) continue;
-    const match = CURSOR_MODEL_LINE.exec(line);
-    if (match === null) continue;
-    const selectionId = match[1];
-    const displayName = match[2];
-    if (selectionId === undefined || displayName === undefined) continue;
-    entries.push({ selectionId, displayName });
+    const match = COMMAND_CODE_MODEL_LINE.exec(line);
+    const selectionId = match?.[1];
+    const blurb = match?.[2];
+    if (selectionId === undefined || blurb === undefined) continue;
+    // The second column is a capability blurb, not a display name, so the row
+    // contributes no displayName and the picker falls back to the id.
+    entries.push({
+      selectionId,
+      ...(NATIVE_DEFAULT_SUFFIX.test(blurb) ? { nativeDefault: true } : {}),
+    });
   }
-  return entries.length === 0 ? null : catalogFromEntries({ tool: 'cursor', entries });
+  return entries.length === 0 ? null : catalogFromEntries({ tool: 'command-code', entries });
 }
 
 export function nativeCliCatalogToDetectedModels(catalog: NativeCliModelCatalog): DetectedModel[] {

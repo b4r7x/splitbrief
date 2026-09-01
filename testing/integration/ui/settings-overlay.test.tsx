@@ -120,7 +120,7 @@ describe('settings overlay integration', () => {
     ui.stdin.write(' ');
     ui.stdin.write(' ');
     await vi.waitFor(() => {
-      expect(loadConfig(dir).config.workflow.mode).toBe('instant');
+      expect(loadConfig(dir).config.workflow.mode).toBe('quick');
     });
 
     ui.unmount();

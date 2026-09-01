@@ -1,5 +1,5 @@
 import type { StateAuthorityReceipt } from '../../../core/state/types.js';
-import { loadStateForResume } from '../../../core/state/persistence.js';
+import { loadStateForResume } from '../../../core/state/resume-authority.js';
 import { BRIEF_QUALITY_FILE, TASKS_FILE } from '../../../core/paths.js';
 import { readSpecFile } from '../../../core/paths-io.js';
 import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
@@ -20,7 +20,7 @@ import { sha256Hex } from '../../../utils/sha256.js';
 import { narrowRecord } from '../../../utils/type-guards.js';
 import { evaluateBriefQuality } from '../../spec/brief-quality.js';
 import { parseTasksStrict } from '../../spec/tasks/parse.js';
-import { fallbackBriefRecoveryProjection } from './brief-quality-preparation.js';
+import { fallbackBriefRecoveryProjection } from './brief-quality-queue.js';
 import { briefGenerationRefFor } from './brief-generation-ref.js';
 import type { PlanningPhaseResult } from './types.js';
 

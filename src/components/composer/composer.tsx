@@ -1,9 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Box, Text, useInput, type Key } from 'ink';
 import { MultilineInput } from '../input/multiline-input.js';
-import { isTextEntryInput, isUnmodifiedYInput } from '../../lib/terminal/text-entry.js';
-import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
-import { REVIEW_COMMENT_DRAFT, resolveReviewActionKey } from '../../core/keybindings/review.js';
 import { CommandCompletionMenu } from './completion/command/menu.js';
 import { ReferenceCompletionMenu } from './completion/reference/menu.js';
 import { AttachmentChips, attachmentChipRows, expandPastes } from './attachments.js';
@@ -14,41 +11,30 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { completionStore } from '../../stores/ui/completion.js';
-import { reviewKeysStore } from '../../stores/ui/review-keys.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { focusStore } from '../../stores/ui/focus.js';
 import { configStore } from '../../stores/project/config.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { useStores } from '../../stores/use-stores.js';
-import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { InputMode } from '../../core/navigation/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { useHistory } from './use-history.js';
-import { attachImage, attachmentsStore } from '../../stores/workflow/attachments.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache.js';
-import { composerDraftStore } from '../../stores/ui/composer-draft.js';
-import { CREW_SEAT_LABELS, formatSeatIdentity } from '../../core/crew/identity.js';
+import { attachImage, attachmentsStore, detachImage } from '../../stores/workflow/attachments.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
+import { formatSeatIdentity } from '../../core/crew/identity.js';
 import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
 import { detectedModelFact, seatSupportsImages } from '../../core/runners/capabilities.js';
 import { computeCompletionOverlayRows, computeCompletionCap } from './completion/layout.js';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
-import {
-  fitFeedbackMessage,
-  matchKnownFeedbackMessage,
-  type FeedbackMessageInput,
-} from './feedback-fit.js';
+import { deriveHomeHintLines, noVisionFeedbackMessage } from './home-hint.js';
 import { useProjectFiles } from './use-project-files.js';
 import { usePasteDrafts } from './use-paste-drafts.js';
 import { useHintZones } from './use-hint-zones.js';
+import { useReviewKeys } from './use-review-keys.js';
+import { useDraftSync } from './use-draft-sync.js';
 
 const MAX_REFERENCE_SUGGESTIONS = 8;
-const RESUME_INTERRUPTED_PREFIX = 'Cannot resume "';
-const RESUME_INTERRUPTED_SUFFIX = '": interrupted before it made progress \u2014 start it again.';
-const SESSION_FAILED_PREFIX = 'Session "';
-const SESSION_FAILED_SUFFIX = '" failed without a summary to display';
-const NO_VISION_PREFIX = `Cannot attach: ${CREW_SEAT_LABELS.plan} seat `;
-const NO_VISION_SUFFIX = ' cannot see images \u2014 /crew plan';
 
 // The prompt glyph is structure: it marks where typing goes, it does not name a category. Weight
 // and position carry it, never hue — so normal and review draw the same mark. Question mode keeps
@@ -64,33 +50,6 @@ function placeholderForMode(mode: InputMode, hint?: string): string {
   if (mode === 'review') return 'approve, comment, or edit…';
   if (mode === 'question') return 'type your answer…';
   return 'Describe a change…';
-}
-
-function structureKnownFeedbackMessage(message: string): FeedbackMessageInput {
-  return (
-    matchKnownFeedbackMessage(message, RESUME_INTERRUPTED_PREFIX, RESUME_INTERRUPTED_SUFFIX) ??
-    matchKnownFeedbackMessage(message, SESSION_FAILED_PREFIX, SESSION_FAILED_SUFFIX) ??
-    matchKnownFeedbackMessage(message, NO_VISION_PREFIX, NO_VISION_SUFFIX) ??
-    message
-  );
-}
-
-interface ComposerDraftActions {
-  setValue: (value: string) => void;
-  clearPastes: () => void;
-  resetHistory: () => void;
-  bumpEpoch: () => void;
-}
-
-function applyComposerDraft(value: string, actions: ComposerDraftActions): void {
-  actions.setValue(value);
-  actions.clearPastes();
-  actions.resetHistory();
-  actions.bumpEpoch();
-}
-
-function resetComposerDraft(actions: ComposerDraftActions): void {
-  applyComposerDraft('', actions);
 }
 
 export interface ComposerBoxHints {
@@ -160,14 +119,9 @@ export function Composer({
   const [{ projectDir, config }] = useStores(configStore);
   const [{ message: feedbackMessage, isError: feedbackIsError }] = useStores(feedbackStore);
   const [{ pending: pendingAttachments }] = useStores(attachmentsStore);
-  const [{ request: draftRequest }] = useStores(composerDraftStore);
   const inputColumns = Math.max(1, (width ?? cols) - 4 - inputPaddingX * 2);
   const [value, setValue] = useState('');
   const [visibleRows, setVisibleRows] = useState(1);
-  const previousModeRef = useRef(mode);
-  // The workflow screen remounts this composer when a review gate opens, so mount time
-  // is gate time — keystrokes buffered before the gate cannot settle it.
-  const reviewActionGraceUntilRef = useRef(Date.now() + PROMPT_TYPEAHEAD_GRACE_MS);
   const persistTranscript = config?.workflow.persistTranscript ?? true;
 
   const briefFocusHeld =
@@ -190,9 +144,12 @@ export function Composer({
     value,
     onChange: handleDraftChange,
   });
-  const clearDraft = (): void => {
-    resetComposerDraft({ setValue, clearPastes, resetHistory, bumpEpoch });
-  };
+  const { clearDraft } = useDraftSync({
+    mode,
+    questionEpoch,
+    draftRestore,
+    actions: { setValue, clearPastes, resetHistory, bumpEpoch },
+  });
   const chipRows = attachmentChipRows(pastes, pendingAttachments, cols);
   const projectFiles = useProjectFiles(projectDir);
 
@@ -218,19 +175,21 @@ export function Composer({
   const showCommandSuggestions = command.showSuggestions;
   const showReferenceSuggestions = reference.showSuggestions && !showCommandSuggestions;
 
+  const detectionProviders = modelCacheStore.use((cache) => cache.detection.providers);
+  const plannerSupportsImages =
+    config !== null &&
+    seatSupportsImages({
+      runner: config.planner,
+      detected: detectedModelFact(detectionProviders, config.planner),
+    });
+
   const handleFileDrop = (path: string) => {
     const route = routerStore.get();
     if (route.screen === 'workflow' && route.execution.kind === 'attached') {
       feedbackStore.setError('Attachments are unavailable while attached.');
       return;
     }
-    const supportsImages =
-      config !== null &&
-      seatSupportsImages({
-        runner: config.planner,
-        detected: detectedModelFact(modelCacheStore.getDetection().providers, config.planner),
-      });
-    const result = attachImage({ path, projectDir, supportsImages });
+    const result = attachImage({ path, projectDir, supportsImages: plannerSupportsImages });
     if (result.ok) {
       onReviewInteraction?.();
       feedbackStore.setMessage(`Attached: ${result.path}`);
@@ -239,7 +198,7 @@ export function Composer({
     if (result.reason === 'no-vision' && config !== null) {
       const displayName = resolveSeatDisplayName(config.planner, 'planner', modelCacheStore);
       feedbackStore.setError(
-        `${NO_VISION_PREFIX}${formatSeatIdentity(config.planner, displayName)}${NO_VISION_SUFFIX}`,
+        noVisionFeedbackMessage(formatSeatIdentity(config.planner, displayName)),
       );
       return;
     }
@@ -272,47 +231,38 @@ export function Composer({
     if (!submitKeepsDraft) clearDraft();
   };
 
-  // A review gate settles on one key only while the draft is empty; the moment the
-  // user types anything the same letters go back to being text.
-  const reviewActionKeysArmed =
-    mode === 'review' &&
+  const textDraftEmpty = value.length === 0 && pastes.length === 0;
+
+  const { shouldHandleComposerInput } = useReviewKeys({
+    mode,
+    disabled,
+    briefFocusHeld,
+    draftEmpty: textDraftEmpty && pendingAttachments.length === 0,
+    reviewYankActive,
+    onDraft: (text) => {
+      handleDraftChange(text);
+      bumpEpoch();
+    },
+    onCommand: onSubmit,
+  });
+
+  // Same discipline as the review keys: the chip pop only owns Backspace while there is
+  // nothing typed for it to delete, so the moment the user types the key is text again.
+  const attachmentPopArmed =
+    mode === 'normal' &&
     !disabled &&
     !briefFocusHeld &&
-    value.length === 0 &&
-    pastes.length === 0 &&
-    pendingAttachments.length === 0;
-
-  // The legend that advertises these keys renders in a sibling row, so the armed flag is
-  // published rather than recomputed there: one condition, one writer, no drift.
-  useEffect(() => {
-    reviewKeysStore.setArmed(reviewActionKeysArmed);
-    return () => reviewKeysStore.setArmed(false);
-  }, [reviewActionKeysArmed]);
-
-  const reviewActionKey = (input: string, key: Key) =>
-    reviewActionKeysArmed && Date.now() >= reviewActionGraceUntilRef.current
-      ? resolveReviewActionKey(input, key)
-      : null;
-
-  const shouldHandleComposerInput = (input: string, key: Key): boolean =>
-    reviewActionKey(input, key) === null &&
-    (!briefFocusHeld ||
-      (mode === 'review' &&
-        (!reviewYankActive || !isUnmodifiedYInput(input, key)) &&
-        isTextEntryInput(input, key)));
+    textDraftEmpty &&
+    pendingAttachments.length > 0;
 
   useInput(
-    (input, key) => {
-      const command = reviewActionKey(input, key);
-      if (command === null) return;
-      if (command === 'comment') {
-        handleDraftChange(REVIEW_COMMENT_DRAFT);
-        bumpEpoch();
-        return;
-      }
-      onSubmit(command);
+    (_input, key) => {
+      if (!key.backspace && !key.delete) return;
+      const last = pendingAttachments.at(-1);
+      if (last === undefined || !detachImage()) return;
+      feedbackStore.setMessage(`Detached: ${last.path}`);
     },
-    { isActive: reviewActionKeysArmed },
+    { isActive: attachmentPopArmed },
   );
 
   const isEditShortcut = (input: string, key: Key): boolean =>
@@ -364,42 +314,17 @@ export function Composer({
       })
     : 0;
   const reserveHomeHint = currentScreen === 'home';
-  const showHomeHint =
-    reserveHomeHint &&
-    homeHint !== undefined &&
-    !showCommandSuggestions &&
-    !showReferenceSuggestions;
-  const showHomeFeedback = showHomeHint && feedbackMessage !== null;
-  const feedbackLine =
-    showHomeFeedback && feedbackMessage !== null
-      ? fitFeedbackMessage(
-          structureKnownFeedbackMessage(sanitizeTerminalDisplayText(feedbackMessage)),
-          Math.max(1, width ?? cols),
-        )
-      : null;
+  const { feedbackLine, homeHintLine } = deriveHomeHintLines({
+    active: reserveHomeHint && !showCommandSuggestions && !showReferenceSuggestions,
+    homeHint,
+    feedbackMessage,
+    width: width ?? cols,
+    dropEnabled: !disabled && plannerSupportsImages,
+  });
 
   useEffect(() => {
     inputHeightStore.setRows(visibleRows + 2 + chipRows);
   }, [visibleRows, chipRows]);
-
-  useEffect(() => {
-    const leavingQuestion = previousModeRef.current === 'question' && mode !== 'question';
-    previousModeRef.current = mode;
-    if (mode !== 'question' && !leavingQuestion) return;
-    resetComposerDraft({ setValue, clearPastes, resetHistory, bumpEpoch });
-  }, [mode, questionEpoch]);
-
-  useEffect(() => {
-    if (!draftRestore) return;
-    applyComposerDraft(draftRestore.value, { setValue, clearPastes, resetHistory, bumpEpoch });
-  }, [draftRestore?.epoch]);
-
-  useEffect(() => {
-    if (!draftRequest) return;
-    applyComposerDraft(draftRequest.value, { setValue, clearPastes, resetHistory, bumpEpoch });
-    // Consuming the request keeps it from replaying into the composer of the next screen.
-    composerDraftStore.clear();
-  }, [draftRequest?.epoch]);
 
   const completionOpen = showCommandSuggestions || showReferenceSuggestions;
   useEffect(() => {
@@ -415,9 +340,9 @@ export function Composer({
             <Text color={feedbackIsError ? theme.error : theme.textDim} wrap="truncate-end">
               {feedbackLine}
             </Text>
-          ) : showHomeHint ? (
+          ) : homeHintLine !== null ? (
             <Text color={theme.textDim} wrap="truncate-end">
-              {homeHint}
+              {homeHintLine}
             </Text>
           ) : (
             <Text> </Text>

@@ -1,17 +1,15 @@
 import { parseApiKeyEnvRef } from '../credentials.js';
 import { readActiveRunnerLens } from './active-runner.js';
-import { API_PROVIDER_CATALOG } from '../../providers/api-provider-catalog.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { contentIdentityId } from './content-identity.js';
 import type { Config } from '../../schemas/config.js';
 import type { ActiveRunnerConfig } from './active-runner.js';
+import { defaultCliAuthChannel, type CliAuthChannelId } from '../../runners/cli-tool-catalog.js';
 import {
-  defaultCliAuthChannel,
   runnerRoleForActiveRole,
   type ActiveRunnerRole,
-  type CliAuthChannelId,
   type RunnerRole,
-} from '../../runners/cli-tool-catalog.js';
+} from '../../runners/seat-roles.js';
 
 export type CredentialSourceIdentity =
   | { readonly kind: 'env'; readonly name: string }
@@ -48,18 +46,6 @@ function endpointOrigin(apiBase: string): string {
   return new URL(apiBase).origin;
 }
 
-function anthropicEndpointOrigin(): string | undefined {
-  const policy = API_PROVIDER_CATALOG.anthropic.endpointPolicy;
-  switch (policy.kind) {
-    case 'fixed-origin':
-      return endpointOrigin(policy.baseURL);
-    case 'loopback':
-      return endpointOrigin(policy.defaultBaseURL);
-    case 'allowed-https':
-      return undefined;
-  }
-}
-
 function runnerId(runner: ActiveRunnerConfig): string {
   switch (runner.kind) {
     case 'cli':
@@ -68,7 +54,6 @@ function runnerId(runner: ActiveRunnerConfig): string {
       return runner.provider;
     case 'shell':
     case 'agent':
-    case 'agent-sdk':
       return runner.kind;
     default:
       return assertNever(runner);
@@ -111,28 +96,6 @@ function apiCredentialDomain({
   };
 }
 
-function agentSdkCredentialDomain({
-  runner,
-  sourceNodeId,
-  configGeneration,
-}: Readonly<{
-  runner: Extract<ActiveRunnerConfig, { kind: 'agent-sdk' }>;
-  sourceNodeId: string;
-  configGeneration: string;
-}>): CredentialDomainIdentity | undefined {
-  const source = credentialSource(runner.apiKey, sourceNodeId);
-  const origin = anthropicEndpointOrigin();
-  if (source === undefined || origin === undefined) return undefined;
-
-  return {
-    providerId: 'anthropic',
-    endpointOrigin: origin,
-    authChannel: 'api-key',
-    credentialSource: source,
-    configGeneration,
-  };
-}
-
 function credentialDomain({
   runner,
   sourceNodeId,
@@ -145,8 +108,6 @@ function credentialDomain({
   switch (runner.kind) {
     case 'api':
       return apiCredentialDomain({ runner, sourceNodeId, configGeneration });
-    case 'agent-sdk':
-      return agentSdkCredentialDomain({ runner, sourceNodeId, configGeneration });
     case 'cli':
     case 'shell':
     case 'agent':
@@ -158,43 +119,13 @@ function credentialDomain({
 
 function contextAuthChannel(runner: ActiveRunnerConfig): CliAuthChannelId | undefined {
   if (runner.kind === 'cli') return runner.authChannel ?? defaultCliAuthChannel(runner.tool).id;
-  if (runner.kind === 'api' || runner.kind === 'agent-sdk') return 'api-key';
+  if (runner.kind === 'api') return 'api-key';
   return undefined;
 }
 
 function contextEndpointOrigin(runner: ActiveRunnerConfig): string | undefined {
   if (runner.kind === 'api') return endpointOrigin(runner.apiBase);
-  if (runner.kind === 'agent-sdk') return anthropicEndpointOrigin();
   return undefined;
-}
-
-export function isSameCredentialDomain({
-  left,
-  right,
-}: Readonly<{
-  left: CredentialDomainIdentity | undefined;
-  right: CredentialDomainIdentity | undefined;
-}>): boolean {
-  if (left === undefined || right === undefined) return false;
-  if (
-    left.providerId !== right.providerId ||
-    left.endpointOrigin !== right.endpointOrigin ||
-    left.authChannel !== right.authChannel ||
-    left.configGeneration !== right.configGeneration ||
-    left.credentialSource.kind !== right.credentialSource.kind
-  ) {
-    return false;
-  }
-
-  if (left.credentialSource.kind === 'env' && right.credentialSource.kind === 'env') {
-    return left.credentialSource.name === right.credentialSource.name;
-  }
-
-  if (left.credentialSource.kind === 'inline' && right.credentialSource.kind === 'inline') {
-    return left.credentialSource.configNodeId === right.credentialSource.configNodeId;
-  }
-
-  return false;
 }
 
 export function projectRunnerDiscoveryContext(

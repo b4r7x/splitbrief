@@ -13,15 +13,21 @@ const TRAILING_GAP = 1;
 // §Target frames: two cells separate a description from a right-aligned shortcut.
 const SHORTCUT_GAP = 2;
 
-// One label column for every row on every screen: the registry's widest name, not the widest
-// row that happens to be on screen, so the description column does not jump between screens.
+// A bare alias rides on its command's row rather than claiming one of its own; an alias carrying
+// an argument stays off the label, because it is one option of the command rather than another
+// name for it — the palette shows and matches it from the row's description instead.
+export function commandDisplayName(command: RuntimeCommandDef): string {
+  const bare = (command.aliases ?? []).filter((alias) => alias.args === undefined);
+  if (bare.length === 0) return command.name;
+  return `${command.name} (${bare.map((alias) => alias.name).join(' ')})`;
+}
+
+// One label column for every row on every screen: the registry's widest display name, not the
+// widest row that happens to be on screen, so the description column does not jump between screens.
 export function commandLabelWidth(commands: RuntimeCommandDef[]): number {
   let width = 0;
   for (const command of commands) {
-    width = Math.max(width, getTerminalCellWidth(command.name));
-    for (const alias of command.aliases ?? []) {
-      width = Math.max(width, getTerminalCellWidth(alias.name));
-    }
+    width = Math.max(width, getTerminalCellWidth(commandDisplayName(command)));
   }
   return width;
 }

@@ -1,4 +1,4 @@
-import type { RunnerRole } from '../../src/core/runners/cli-tool-catalog.js';
+import type { RunnerRole } from '../../src/core/runners/seat-roles.js';
 import {
   assemblePickerDescriptors,
   buildPickerOptions,
@@ -61,8 +61,7 @@ export function makeActions(): PickerActions {
     customCommand: async () => {},
     customModel: async () => {},
     openCustomModel: () => {},
-    openProviderAuth: () => {},
-    submitProviderKey: async () => {},
+    browseCatalog: () => {},
     closeOverlay: () => {},
   };
 }
@@ -108,6 +107,8 @@ type DerivedCatalogField =
   | 'currentCommandKind'
   | 'customModels'
   | 'discovery'
+  | 'browseCatalog'
+  | 'variantDraft'
   | 'setCurrentItem';
 
 type CatalogFixture = Omit<PickerCatalog, DerivedCatalogField> &
@@ -134,6 +135,8 @@ export function pickerCatalog(fixture: CatalogFixture): PickerCatalog {
       catalogLane: base.catalogLane ?? 'ready',
       persistedModel: base.persistedModel,
       customModels: base.customModels ?? [],
+      browseCatalog: base.browseCatalog ?? false,
+      variantDraft: base.variantDraft ?? null,
     });
   const persisted = base.persistedModel;
   const initialRightIndex =
@@ -162,6 +165,8 @@ export function pickerCatalog(fixture: CatalogFixture): PickerCatalog {
     currentCommandKind: base.currentCommandKind,
     customModels: base.customModels ?? [],
     discovery: base.discovery ?? { cold: false, refreshing: false },
+    browseCatalog: base.browseCatalog ?? false,
+    variantDraft: base.variantDraft ?? null,
     setCurrentItem: base.setCurrentItem ?? (() => {}),
   };
 }

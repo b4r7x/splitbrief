@@ -16,7 +16,7 @@ import {
   createServerCleanup,
   createServerExitHandlers,
   createServerProcessCleanup,
-} from '../../../src/engine/ipc/server-entry.js';
+} from '../../../src/engine/ipc/server-cleanup.js';
 import { shutdownWorkflow } from '../../../src/engine/orchestrator/session-lifecycle/shutdown.js';
 import {
   killAllProcesses,

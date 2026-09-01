@@ -5,7 +5,7 @@ import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { SOFT_SEP } from '../../../components/separators.js';
 import { resolveTaskPricingModel } from '../../../engine/providers/cost-math.js';
 import { resolvePricing, type PricingMode } from '../../../engine/providers/pricing-resolver.js';
-import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 
 type PricingContext = NonNullable<ReturnType<typeof tokensStore.get>['pricingContext']>;
 

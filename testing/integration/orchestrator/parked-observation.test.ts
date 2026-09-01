@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { STATE_FILE, sessionDir } from '../../../src/core/paths.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { readSession } from '../../../src/core/sessions/io.js';
-import { readRecoveryJournal } from '../../../src/core/evidence/recovery-journal.js';
+import { readRecoveryJournal } from '../../../src/core/evidence/recovery-journal/journal.js';
 import type { StateAuthorityReceipt } from '../../../src/core/state/types.js';
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
@@ -47,10 +47,10 @@ function writeRefusedFixture(projectDir: string): void {
     'version: 3',
     'planner:',
     '  kind: api',
-    '  provider: anthropic',
-    '  service: anthropic',
+    '  provider: custom-endpoint',
+    '  service: custom-endpoint',
     '  offering: payg',
-    '  api_base: https://api.anthropic.com/v1',
+    '  api_base: https://api.example.test/v1',
     '  api_key: test-key',
     '  model: not-in-catalog-model',
     'implementer:',
@@ -94,10 +94,10 @@ function bindingFixture(ref: SessionRef, planner: ReturnType<typeof zeroTaskPlan
     config: makeConfig({
       planner: {
         kind: 'api',
-        provider: 'anthropic',
-        service: 'anthropic',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
         offering: 'payg',
-        apiBase: 'https://api.anthropic.com/v1',
+        apiBase: 'https://api.example.test/v1',
         model: 'not-in-catalog-model',
       },
       workflow: { maxBudget: 1 },

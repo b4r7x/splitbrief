@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { seedPricedRuntimeCost } from '#testing/helpers/seed-priced-cost.js';
 import { configStore } from '../../../stores/project/config.js';
-import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
@@ -23,6 +23,7 @@ beforeEach(() => {
 
 function seedVisibleBriefs(sources: string[], visibleCount = sources.length) {
   reviewStore.setBriefSources(sources);
+  reviewStore.setBriefPaths(sources.map((_, index) => `src/b${index}.ts`));
   reviewStore.setRenderedLineCount(sources.length);
   reviewStore.setVisibleBriefCount(visibleCount);
 }
@@ -66,41 +67,40 @@ describe('resolveCopyValue', () => {
 
     expect(resolveCopyValue('brief')).toBe('second');
   });
-
-  it('returns null for the brief target with no compiled briefs', () => {
-    expect(resolveCopyValue('brief')).toBeNull();
-  });
 });
 
 describe('brief copy negative visibility matrix', () => {
-  it.each([
-    {
-      label: 'no compiled briefs',
-      seed: () => {},
-      focusIndex: 0,
-    },
-    {
-      label: 'focused brief index out of range',
-      seed: () => seedVisibleBriefs(['only one']),
-      focusIndex: 5,
-    },
-    {
-      label: 'brief sources exist but no row is rendered',
-      seed: () => seedVisibleBriefs(['hidden brief'], 0),
-      focusIndex: 0,
-    },
-    {
-      label: 'focused brief outside the visible window',
-      seed: () => seedVisibleBriefs(['b0', 'b1', 'b2', 'b3', 'b4'], 2),
-      focusIndex: 4,
-    },
-  ])('$label blocks resolvable brief copy', ({ seed, focusIndex }) => {
+  it.each(
+    [
+      {
+        label: 'no compiled briefs',
+        seed: () => {},
+        focusIndex: 0,
+      },
+      {
+        label: 'focused brief index out of range',
+        seed: () => seedVisibleBriefs(['only one']),
+        focusIndex: 5,
+      },
+      {
+        label: 'brief sources exist but no row is rendered',
+        seed: () => seedVisibleBriefs(['hidden brief'], 0),
+        focusIndex: 0,
+      },
+      {
+        label: 'focused brief outside the visible window',
+        seed: () => seedVisibleBriefs(['b0', 'b1', 'b2', 'b3', 'b4'], 2),
+        focusIndex: 4,
+      },
+    ].flatMap((testCase) =>
+      (['brief', 'path'] as const).map((target) => ({ ...testCase, target })),
+    ),
+  )('$label blocks resolvable $target copy', ({ seed, focusIndex, target }) => {
     seed();
     focusStore.set('brief', focusIndex);
-    const focus = focusStore.get();
 
-    expect(focusHasResolvableCopy(focus)).toBe(false);
-    expect(resolveCopyValue('brief')).toBeNull();
+    expect(focusHasResolvableCopy(focusStore.get())).toBe(false);
+    expect(resolveCopyValue(target)).toBeNull();
   });
 });
 
@@ -133,27 +133,6 @@ describe('resolveCopyValue path target', () => {
     reviewStore.setScrollOffset(1);
 
     expect(resolveCopyValue('path')).toBe('src/b.ts');
-  });
-
-  it('returns null when there are no brief rows', () => {
-    expect(resolveCopyValue('path')).toBeNull();
-  });
-
-  it('returns null when brief paths exist but no row is rendered', () => {
-    reviewStore.setBriefPaths(['src/a.ts']);
-    reviewStore.setRenderedLineCount(1);
-    reviewStore.setVisibleBriefCount(0);
-
-    expect(resolveCopyValue('path')).toBeNull();
-  });
-
-  it('returns null when the focused brief index is out of range', () => {
-    reviewStore.setBriefPaths(['src/a.ts']);
-    reviewStore.setRenderedLineCount(1);
-    reviewStore.setVisibleBriefCount(1);
-    focusStore.set('brief', 5);
-
-    expect(resolveCopyValue('path')).toBeNull();
   });
 });
 

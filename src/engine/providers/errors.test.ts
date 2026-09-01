@@ -23,24 +23,11 @@ describe('providerError factories', () => {
     expect(err.data).toEqual({ kind: 'cli' });
   });
 
-  test('anthropicNotOpenAICompat has no data payload', () => {
-    const err = providerError.anthropicNotOpenAICompat();
-    expect(err.kind).toBe('provider-anthropic-not-openai-compat');
-    expect(err.message).toContain('Anthropic');
-    expect(err.data).toBeUndefined();
-  });
-
   test('missingModel records role', () => {
     const err = providerError.missingModel('planner');
     expect(err.kind).toBe('provider-missing-model');
     expect(err.message).toContain('planner');
     expect(err.data).toEqual({ role: 'planner' });
-  });
-
-  test('expectedOpenAIClient records provider', () => {
-    const err = providerError.expectedOpenAIClient('ollama');
-    expect(err.kind).toBe('provider-expected-openai-client');
-    expect(err.data).toEqual({ provider: 'ollama' });
   });
 
   test('httpFailure carries status + url', () => {

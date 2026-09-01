@@ -71,8 +71,6 @@ function plannerGate(config: Config, preparationId: string): RunnerGate {
         provider: runner.provider,
         endpointOrigin: new URL(runner.apiBase).origin,
       };
-    case 'agent-sdk':
-      return { kind: 'agent-sdk', slot, preparationId, provider: 'anthropic' };
     case 'shell':
       return { kind: 'shell', slot, preparationId, command: { kind: 'validated-config' } };
     case 'agent':
@@ -242,13 +240,6 @@ describe('performManualCompaction', () => {
       }),
     ).resolves.toEqual({ status: 'unsupported', plannerName: 'shell' });
   });
-
-  it.each(['output', 'direct'] as const)(
-    'rejects configured %s planners before custom-runner setup can affect the session',
-    async (contract) => {
-      await expectConfiguredManualCompactionHasNoEffects({ contract, seedTriggeringLog: false });
-    },
-  );
 });
 
 type ManualCompactionEffects = Readonly<{
@@ -403,9 +394,8 @@ function restoreEnvironmentValue(name: string, value: string | undefined): void 
 
 async function expectConfiguredManualCompactionHasNoEffects(input: {
   contract: 'output' | 'direct';
-  seedTriggeringLog: boolean;
 }) {
-  const { contract, seedTriggeringLog } = input;
+  const { contract } = input;
   const { projectDir, sessionId } = setupProject();
   const homeDir = createTempDir('transcript-compaction-home');
   dirs.push(homeDir);
@@ -421,7 +411,7 @@ async function expectConfiguredManualCompactionHasNoEffects(input: {
   try {
     const trustReceipt = resolveCustomRunnerTrustFile();
     seedCustomRunnerSurface(projectDir, sessionId);
-    if (seedTriggeringLog) writeCompactionTriggeringLog(projectDir, sessionId);
+    writeCompactionTriggeringLog(projectDir, sessionId);
     const before = manualCompactionSurface(projectDir, sessionId, fixture.effects, trustReceipt);
 
     expect(before).toMatchObject({
@@ -456,7 +446,7 @@ describe('configured manual compaction side effects', () => {
   it.each(['output', 'direct'] as const)(
     'returns unsupported before a configured %s planner can create any custom-runner effect',
     async (contract) => {
-      await expectConfiguredManualCompactionHasNoEffects({ contract, seedTriggeringLog: true });
+      await expectConfiguredManualCompactionHasNoEffects({ contract });
     },
   );
 });

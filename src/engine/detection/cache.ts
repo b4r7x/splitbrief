@@ -23,11 +23,8 @@ import type { DetectedModel } from '../../core/discovery/detection.js';
 import { getSplitbriefPath, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { CacheVersionStringBaseSchema } from '../../core/schemas/cache-version.js';
 import { CliToolIdSchema } from '../../core/schemas/enums.js';
-import {
-  CLI_AUTH_CHANNEL_IDS,
-  type CliToolId,
-  type RunnerRole,
-} from '../../core/runners/cli-tool-catalog.js';
+import { CLI_AUTH_CHANNEL_IDS, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import type { RunnerRole } from '../../core/runners/seat-roles.js';
 
 const CACHE_FILENAME = 'detection-cache.json';
 const DEFAULT_TTL_MS = 5 * 60 * 1_000;

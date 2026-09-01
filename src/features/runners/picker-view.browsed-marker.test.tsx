@@ -32,6 +32,7 @@ const models: ModelOption[] = [
 
 function browsableCatalog(): PickerCatalog {
   return pickerCatalog({
+    browseCatalog: false,
     items: [codex, claudeCode],
     rightModels: models,
     currentItem: codex,

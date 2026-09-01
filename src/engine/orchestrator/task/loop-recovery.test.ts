@@ -3,6 +3,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import {
   makeCallbacks,
   makeImplementer,
@@ -32,6 +33,30 @@ function setupProject(): { projectDir: string; sessionId: string } {
   dirs.push(projectDir);
   return { projectDir, sessionId };
 }
+
+// A custom endpoint carries no catalog vendor, so its rates come from the
+// models.dev catalog keyed by model id.
+const BUDGET_IMPLEMENTER = {
+  provider: 'custom-endpoint',
+  apiBase: 'https://api.example.com/v1',
+  apiKey: 'test-key',
+  model: 'deepseek-v4-flash',
+};
+
+const BUDGET_MODEL_CACHE = makeModelCacheAccessor({
+  catalog: {
+    'test-vendor': {
+      id: 'test-vendor',
+      models: {
+        'deepseek-v4-flash': {
+          id: 'deepseek-v4-flash',
+          cost: { input: 0.3, output: 0.6 },
+          limit: { context: 128_000 },
+        },
+      },
+    },
+  },
+});
 
 function setupSessionOnly(): { projectDir: string; sessionId: string } {
   const projectDir = createTempDir('task-loop-test');
@@ -109,7 +134,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       implementerTokens: 500_000,
       escalationTokens: 0,
       retryCount: 0,
-      tool: 'deepseek',
+      tool: 'ollama',
       model: 'deepseek-chat',
     };
     let state = makeImplState([completed, blocked], {
@@ -363,15 +388,11 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
         projectDir,
         sessionId,
         config: makeNoValidationConfig({
-          implementer: {
-            provider: 'deepseek',
-            apiBase: 'https://api.deepseek.com/v1',
-            apiKey: 'test-key',
-            model: 'deepseek-v4-flash',
-          },
+          implementer: BUDGET_IMPLEMENTER,
           workflow: { ...defaultWorkflow, maxBudget: 1.5, budgetPauseThreshold: 0.25 },
         }),
         implementer,
+        modelCache: BUDGET_MODEL_CACHE,
       }),
       initialState: state,
       setTrackedState: vi.fn(),
@@ -404,15 +425,11 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
         projectDir,
         sessionId,
         config: makeNoValidationConfig({
-          implementer: {
-            provider: 'deepseek',
-            apiBase: 'https://api.deepseek.com/v1',
-            apiKey: 'test-key',
-            model: 'deepseek-v4-flash',
-          },
+          implementer: BUDGET_IMPLEMENTER,
           workflow: { ...defaultWorkflow, maxBudget: 1.5, budgetPauseThreshold: 0.25 },
         }),
         implementer,
+        modelCache: BUDGET_MODEL_CACHE,
       }),
       initialState: state,
       setTrackedState: vi.fn(),
@@ -442,15 +459,11 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
         projectDir,
         sessionId,
         config: makeNoValidationConfig({
-          implementer: {
-            provider: 'deepseek',
-            apiBase: 'https://api.deepseek.com/v1',
-            apiKey: 'test-key',
-            model: 'deepseek-v4-flash',
-          },
+          implementer: BUDGET_IMPLEMENTER,
           workflow: { ...defaultWorkflow, maxBudget: 0.1 },
         }),
         implementer,
+        modelCache: BUDGET_MODEL_CACHE,
       }),
       initialState: state,
       setTrackedState: vi.fn(),

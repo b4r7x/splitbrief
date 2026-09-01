@@ -6,7 +6,7 @@ import type { WorkflowState } from '../../src/core/schemas/workflow.js';
 import type { BriefAdmissionInput } from '../../src/core/schemas/brief-recovery.js';
 import { saveState } from '../../src/core/state/persistence.js';
 import { createBriefRecoveryState } from '../../src/engine/orchestrator/planning/brief-recovery.js';
-import { settleApprovedAdmission } from '../../src/engine/orchestrator/planning/brief-publication.js';
+import { settleApprovedAdmission } from '../../src/engine/orchestrator/planning/approved-admission.js';
 import { createEventBus } from '../../src/engine/events/bus.js';
 import { evaluateBriefQuality } from '../../src/engine/spec/brief-quality.js';
 import { formatTasks } from '../../src/engine/spec/formatter.js';

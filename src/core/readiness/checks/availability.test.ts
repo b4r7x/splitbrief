@@ -57,17 +57,17 @@ describe('runner availability checks', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
-        provider: 'openrouter',
+        provider: 'custom-endpoint',
         model: 'some-model',
-        apiBase: 'https://openrouter.ai/api/v1',
+        apiBase: 'https://api.example.test/v1',
       },
     });
 
     const [check] = availabilityChecks(config, [
       {
         slot: { role: 'planner' },
-        provider: 'openrouter',
-        endpoint: 'https://openrouter.ai/api/v1',
+        provider: 'custom-endpoint',
+        endpoint: 'https://api.example.test/v1',
         verdict: { state: 'unavailable', diagnostic: 'HTTP 503' },
       },
     ]);
@@ -75,8 +75,9 @@ describe('runner availability checks', () => {
     expect(check).toMatchObject({
       id: 'runners.availability.planner',
       severity: 'blocker',
-      summary: 'Planner openrouter (some-model) is not reachable at https://openrouter.ai/api/v1.',
-      fix: 'Check the openrouter endpoint and network, or configure a different planner, then run `splitbrief doctor` again.',
+      summary:
+        'Planner custom-endpoint (some-model) is not reachable at https://api.example.test/v1.',
+      fix: 'Check the custom-endpoint endpoint and network, or configure a different planner, then run `splitbrief doctor` again.',
     });
   });
 
@@ -85,16 +86,16 @@ describe('runner availability checks', () => {
       {
         ...defaultImplementerFact({
           state: 'missing-credential',
-          credentialEnv: 'OPENROUTER_API_KEY',
+          credentialEnv: 'CUSTOM_ENDPOINT_API_KEY',
         }),
-        provider: 'openrouter',
+        provider: 'custom-endpoint',
       },
     ]);
 
     expect(check).toMatchObject({
       severity: 'blocker',
       summary: 'Default implementer ollama (qwen3-coder:30b) has no credential configured.',
-      fix: 'Export OPENROUTER_API_KEY, or configure a different implementer, then run `splitbrief doctor` again.',
+      fix: 'Export CUSTOM_ENDPOINT_API_KEY, or configure a different implementer, then run `splitbrief doctor` again.',
     });
   });
 
@@ -183,17 +184,17 @@ describe('runner availability checks', () => {
       planner: { kind: 'cli', tool: 'claude-code' },
       reviewer: {
         kind: 'api',
-        provider: 'openrouter',
+        provider: 'custom-endpoint',
         model: 'some-model',
-        apiBase: 'https://openrouter.ai/api/v1',
+        apiBase: 'https://api.example.test/v1',
       },
     });
 
     const checks = availabilityChecks(config, [
       {
         slot: { role: 'reviewer' },
-        provider: 'openrouter',
-        endpoint: 'https://openrouter.ai/api/v1',
+        provider: 'custom-endpoint',
+        endpoint: 'https://api.example.test/v1',
         verdict: { state: 'unavailable', diagnostic: 'fetch failed' },
       },
     ]);
@@ -202,32 +203,12 @@ describe('runner availability checks', () => {
       id: 'runners.availability.reviewer',
       severity: 'blocker',
       nextAction: 'prepare-runner',
-      summary: 'Reviewer openrouter (some-model) is not reachable at https://openrouter.ai/api/v1.',
+      summary:
+        'Reviewer custom-endpoint (some-model) is not reachable at https://api.example.test/v1.',
       metadata: { role: 'reviewer' },
     });
     // The reviewer seat names its own runner and never borrows the planner's.
     expect(checks[0]?.summary).not.toContain('claude-code');
-  });
-
-  it('reports an agent-sdk runner without an endpoint', () => {
-    const config = makeConfig({ implementer: { kind: 'agent-sdk', model: 'claude-opus-4' } });
-
-    const [check] = availabilityChecks(config, [
-      {
-        slot: { role: 'implementer', profile: 'default' },
-        provider: 'anthropic',
-        verdict: {
-          state: 'unavailable',
-          diagnostic: 'Agent SDK not installed (npm install @anthropic-ai/claude-agent-sdk)',
-        },
-      },
-    ]);
-
-    expect(check).toMatchObject({
-      severity: 'blocker',
-      summary: 'Default implementer agent-sdk (claude-opus-4) is not reachable.',
-      metadata: { endpoint: null },
-    });
   });
 
   it('keeps the no-claim notice when no probe ran', () => {

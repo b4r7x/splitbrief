@@ -4,7 +4,7 @@ import {
   hydrateDetectionIntoStores,
   hydrateModelsDevCatalogIntoStores,
 } from './detection-adapter.js';
-import { modelCacheStore } from './model-cache.js';
+import { modelCacheStore } from './model-cache/state.js';
 import { detectionStore } from '../project/detection.js';
 import type { ModelsDevCatalogSnapshot } from '../../engine/providers/models-dev-cache.js';
 

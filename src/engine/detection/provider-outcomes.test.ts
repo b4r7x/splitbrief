@@ -7,13 +7,13 @@ import {
 
 function outcome(input: {
   role: 'planner' | 'implementer';
-  provider?: 'openai' | 'openrouter';
+  provider?: 'ollama' | 'lm-studio';
   contextKey: string;
   kind?: 'success' | 'failed';
   models?: readonly string[];
   failure?: 'privacy-filtered' | 'guardrail-filtered' | 'offline';
 }): ConfiguredProviderOutcome {
-  const provider = input.provider ?? 'openai';
+  const provider = input.provider ?? 'ollama';
   return {
     connection: { role: input.role, provider, contextKey: input.contextKey },
     outcome:
@@ -22,7 +22,7 @@ function outcome(input: {
             kind: 'failed',
             source: 'provider-runtime',
             provider,
-            isLocal: false,
+            isLocal: true,
             credential: 'present',
             failure: input.failure ?? 'offline',
             diagnostic: 'Sanitized provider discovery failure.',
@@ -67,7 +67,7 @@ describe('configured provider outcome reconciliation', () => {
     });
 
     expect(
-      findConfiguredProviderRuntime(next, { role: 'planner', provider: 'openai' }),
+      findConfiguredProviderRuntime(next, { role: 'planner', provider: 'ollama' }),
     ).toMatchObject({
       state: 'fresh',
       catalog: 'empty',
@@ -75,7 +75,7 @@ describe('configured provider outcome reconciliation', () => {
       fetchedAt: 200,
     });
     expect(
-      findConfiguredProviderRuntime(next, { role: 'implementer', provider: 'openai' }),
+      findConfiguredProviderRuntime(next, { role: 'implementer', provider: 'ollama' }),
     ).toMatchObject({
       state: 'fresh',
       catalog: 'populated',
@@ -110,7 +110,7 @@ describe('configured provider outcome reconciliation', () => {
     });
 
     expect(
-      findConfiguredProviderRuntime(stale, { role: 'planner', provider: 'openai' }),
+      findConfiguredProviderRuntime(stale, { role: 'planner', provider: 'ollama' }),
     ).toMatchObject({
       state: 'stale',
       models: [{ id: 'last-good' }],
@@ -119,7 +119,7 @@ describe('configured provider outcome reconciliation', () => {
       failure: 'privacy-filtered',
     });
     expect(
-      findConfiguredProviderRuntime(stale, { role: 'implementer', provider: 'openai' }),
+      findConfiguredProviderRuntime(stale, { role: 'implementer', provider: 'ollama' }),
     ).toMatchObject({
       state: 'failed',
       models: null,
@@ -151,7 +151,7 @@ describe('configured provider outcome reconciliation', () => {
     });
 
     expect(
-      findConfiguredProviderRuntime(next, { role: 'planner', provider: 'openai' }),
+      findConfiguredProviderRuntime(next, { role: 'planner', provider: 'ollama' }),
     ).toMatchObject({
       connection: { contextKey: 'planner-bravo' },
       state: 'failed',

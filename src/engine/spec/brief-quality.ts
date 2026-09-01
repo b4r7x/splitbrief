@@ -98,7 +98,7 @@ function isRisky(task: Task): boolean {
  * `src/api.ts`"); paths that are referenced — a pattern exemplar to follow, an
  * import source, a negated "do not modify" — do not. A path with no verdict
  * defaults to reference: a missed multi-file brief is caught downstream by
- * scope enforcement, while a false positive kills quick/instant runs outright.
+ * scope enforcement, while a false positive kills quick runs outright.
  */
 const WRITE_VERB_PATTERN =
   /^(?:add(?:s|ing)?|append(?:s|ing)?|chang(?:e|es|ing)|creat(?:e|es|ing)|delet(?:e|es|ing)|edit(?:s|ing)?|extend(?:s|ing)?|implement(?:s|ing)?|insert(?:s|ing)?|introduc(?:e|es|ing)|modif(?:y|ies|ying)|mov(?:e|es|ing)|refactor(?:s|ing)?|remov(?:e|es|ing)|renam(?:e|es|ing)|rewrit(?:e|es|ing)|updat(?:e|es|ing)|writ(?:e|es|ing))$/i;

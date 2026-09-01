@@ -27,7 +27,7 @@ import {
 import { runPlanningPhase } from './run.js';
 import { readWorkflowStateHead } from '../state-ops.js';
 import { runBriefQuality } from './brief-quality-run.js';
-import { publishProducerGeneration } from './brief-publication.js';
+import { publishProducerGeneration } from './producer-publication.js';
 import { createWorkflowRecoveryBinding } from '../run/recovery-binding.js';
 import { formatTasks } from '../../spec/formatter.js';
 import type { Planner, PlanResult } from '../../planners/types.js';
@@ -430,10 +430,11 @@ describe('runSpeckitPlanning', () => {
       workflow: { mode: 'speckit', approve: 'none' },
       planner: {
         kind: 'api',
-        provider: 'openai',
-        service: 'openai',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
         offering: 'payg',
-        apiBase: 'https://api.openai.com/v1',
+        apiBase: 'https://api.example.com/v1',
+        apiKey: 'test-key',
         model: 'gpt-5.4',
       },
     });

@@ -12,7 +12,7 @@ import {
   loadPendingRecoveryState,
 } from '../../../engine/orchestrator/recovery/driver.js';
 import { publishRecoveryPrompted } from '../../../engine/orchestrator/events.js';
-import { WORKFLOW_REWIND_ABORT_REASON } from '../../../engine/orchestrator/run/workflow.js';
+import { WORKFLOW_REWIND_ABORT_REASON } from '../../../engine/orchestrator/run/rewind-authority.js';
 import { matches } from '../../../utils/error.js';
 import type { createGate } from '../gates.js';
 import { rpcError } from '../errors.js';

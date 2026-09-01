@@ -2,7 +2,6 @@ import { createElement } from 'react';
 import { App } from '../../../app/root.js';
 import { initStores } from '../../init-stores.js';
 import { renderApp } from '../../render/app.js';
-import { loadConfig } from '../../../core/config/load/io.js';
 import { consoleWorkflowFeature } from '../../../core/transcript-policy.js';
 import {
   configForSessionTranscriptPolicy,
@@ -14,14 +13,13 @@ import { assertHeadlessTaskReviewDisabled, runHeadless } from '../../headless.js
 import { runRpc } from '../../rpc/run/host.js';
 import { assertResumableState } from '../../sessions/resolve.js';
 import { setupWorkflow } from '../../setup.js';
-import { workflowOptsToCLIOverrides } from '../../../core/config/runtime/overrides/from-options.js';
-import { resolveEffectiveConfig } from '../../../core/config/runtime/effective-config.js';
+import { resolveRunConfig } from '../../build-overrides.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type { WorkflowMode } from '../../../core/schemas/enums.js';
+import { normalizeWorkflowMode, type WorkflowMode } from '../../../core/schemas/enums.js';
 import type { ContinueDeps } from './command.js';
 import { cliPreparationPolicy, preparedExecutionOrThrow } from '../start/readiness.js';
-import { prepareExecution } from '../../../engine/runners/prepare-execution.js';
+import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 
 export type ResumeTailDeps = Pick<
   ContinueDeps,
@@ -41,11 +39,13 @@ function reconcileResumeMode(
   state: WorkflowState,
   cliMode: WorkflowMode | undefined,
 ): WorkflowState {
-  if (cliMode === undefined || state.mode === undefined || cliMode === state.mode) return state;
+  const mode = normalizeWorkflowMode(cliMode);
+  if (mode === undefined || state.mode === undefined || mode === state.mode) return state;
+  const resolved = mode === cliMode ? '' : ` (resolves to ${mode})`;
   console.warn(
-    `Overriding saved workflow mode '${state.mode}' with --mode ${cliMode} for this resume.`,
+    `Overriding saved workflow mode '${state.mode}' with --mode ${cliMode}${resolved} for this resume.`,
   );
-  return { ...state, mode: cliMode };
+  return { ...state, mode };
 }
 
 export async function resumeSavedSession(args: {
@@ -64,10 +64,7 @@ export async function resumeSavedSession(args: {
   assertResumableState(args.state, sessionId);
   const state = reconcileResumeMode(args.state, opts.mode);
 
-  const currentConfig = resolveEffectiveConfig({
-    base: loadConfig(projectDir).config,
-    overrides: workflowOptsToCLIOverrides(opts),
-  }).config;
+  const currentConfig = resolveRunConfig({ projectDir, opts });
   const ref = { projectDir, sessionId };
   const config = configForSessionTranscriptPolicy(currentConfig, ref);
   const interaction = opts.json || opts.rpc ? 'headless' : 'interactive';

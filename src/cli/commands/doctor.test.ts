@@ -26,7 +26,7 @@ import { toErrorMessage } from '../../utils/format-errors.js';
 import { CliExecutableReceiptSchema } from '../../core/discovery/detection.js';
 import type { RunnerEvidence } from '../../core/discovery/runner-evidence.js';
 import { runnerDiscoveryContextKey } from '../../engine/detection/runner-evidence.js';
-import { collectRunnerAdmissionChecks } from '../../engine/runners/prepare-execution.js';
+import { collectRunnerAdmissionChecks } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import { registerDoctorCommand } from './doctor.js';
 
 const EXECUTABLE_DIGEST = 'a'.repeat(64);

@@ -5,7 +5,13 @@ import { getBudgetCostKnownness } from './knownness.js';
 import { makeBusRecorder, makeWctx } from '#testing/helpers/orchestrator-factories.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { createInitialState } from '../../../core/state/machine.js';
+import { ensureSessionDir } from '../../../core/paths-io.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { makePricedModelCache } from '#testing/helpers/factories/model-cache.js';
+
+// Pricing follows the model, so a metered seat needs a catalog to rate against.
+const pricedCache = makePricedModelCache();
 
 const emptyPricingCache: ModelCacheAccessor = {
   getModelsDevCatalog: () => null,
@@ -13,7 +19,11 @@ const emptyPricingCache: ModelCacheAccessor = {
 };
 
 function currentKnownCost(opts: Parameters<typeof getBudgetCostKnownness>[0]): number {
-  return getBudgetCostKnownness(opts).currentKnownCost;
+  return getBudgetCostKnownness({ pricingCache: pricedCache, ...opts }).currentKnownCost;
+}
+
+function budgetGate(opts: Parameters<typeof enforceBudget>[0]) {
+  return enforceBudget({ pricingCache: pricedCache, ...opts });
 }
 
 describe('enforceBudget', () => {
@@ -26,7 +36,7 @@ describe('enforceBudget', () => {
 
   it('returns stop=false for cost under threshold', async () => {
     const { bus } = makeBusRecorder();
-    const result = await enforceBudget({
+    const result = await budgetGate({
       ...baseOpts,
       tokenUsage: makeUsage(),
       maxBudget: 1.0,
@@ -44,13 +54,15 @@ describe('enforceBudget', () => {
     const cost = currentKnownCost({
       ...baseOpts,
       tokenUsage: usage,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
+      plannerModel: 'claude-sonnet-5',
     });
     const budget = cost / 0.82;
 
-    const result = await enforceBudget({
+    const result = await budgetGate({
       ...baseOpts,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
+      plannerModel: 'claude-sonnet-5',
       tokenUsage: usage,
       maxBudget: budget,
       bus,
@@ -77,13 +89,15 @@ describe('enforceBudget', () => {
     const cost = currentKnownCost({
       ...baseOpts,
       tokenUsage: usage,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
+      plannerModel: 'claude-sonnet-5',
     });
     const budget = cost / 0.82;
 
-    const result = await enforceBudget({
+    const result = await budgetGate({
       ...baseOpts,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
+      plannerModel: 'claude-sonnet-5',
       tokenUsage: usage,
       maxBudget: budget,
       bus,
@@ -100,14 +114,16 @@ describe('enforceBudget', () => {
     const cost = currentKnownCost({
       ...baseOpts,
       tokenUsage: usage,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
+      plannerModel: 'claude-sonnet-5',
     });
     const budget = cost * 0.5;
     const { bus, events } = makeBusRecorder();
 
-    const result = await enforceBudget({
+    const result = await budgetGate({
       ...baseOpts,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
+      plannerModel: 'claude-sonnet-5',
       tokenUsage: usage,
       maxBudget: budget,
       bus,
@@ -129,14 +145,16 @@ describe('enforceBudget', () => {
     const cost = currentKnownCost({
       ...baseOpts,
       tokenUsage: usage,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
+      plannerModel: 'claude-sonnet-5',
     });
     const budget = cost / 0.87;
     const { bus, events } = makeBusRecorder();
 
-    const result = await enforceBudget({
+    const result = await budgetGate({
       ...baseOpts,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
+      plannerModel: 'claude-sonnet-5',
       tokenUsage: usage,
       maxBudget: budget,
       bus,
@@ -157,13 +175,15 @@ describe('enforceBudget', () => {
     const cost = currentKnownCost({
       ...baseOpts,
       tokenUsage: usage,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
+      plannerModel: 'claude-sonnet-5',
     });
     const budget = cost / 0.87;
 
-    const result = await enforceBudget({
+    const result = await budgetGate({
       ...baseOpts,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
+      plannerModel: 'claude-sonnet-5',
       tokenUsage: usage,
       maxBudget: budget,
       bus,
@@ -178,12 +198,18 @@ describe('enforceBudget', () => {
   it('emits budget_warning before budget_paused when crossing past 80% straight into pause zone', async () => {
     const { bus, events } = makeBusRecorder();
     const usage = makeUsage({ plannerInput: 200_000, plannerOutput: 20_000 });
-    const cost = currentKnownCost({ ...baseOpts, tokenUsage: usage, plannerTool: 'anthropic' });
+    const cost = currentKnownCost({
+      ...baseOpts,
+      tokenUsage: usage,
+      plannerTool: 'custom-planner-api',
+      plannerModel: 'claude-sonnet-5',
+    });
     const budget = cost / 0.9;
 
-    await enforceBudget({
+    await budgetGate({
       ...baseOpts,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
+      plannerModel: 'claude-sonnet-5',
       tokenUsage: usage,
       maxBudget: budget,
       bus,
@@ -201,12 +227,18 @@ describe('enforceBudget', () => {
   it('emits budget_warning before budget_exceeded when crossing past 80% straight into exceeded zone', async () => {
     const { bus, events } = makeBusRecorder();
     const usage = makeUsage({ plannerInput: 1_000_000, plannerOutput: 100_000 });
-    const cost = currentKnownCost({ ...baseOpts, tokenUsage: usage, plannerTool: 'anthropic' });
+    const cost = currentKnownCost({
+      ...baseOpts,
+      tokenUsage: usage,
+      plannerTool: 'custom-planner-api',
+      plannerModel: 'claude-sonnet-5',
+    });
     const budget = cost * 0.5;
 
-    await enforceBudget({
+    await budgetGate({
       ...baseOpts,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
+      plannerModel: 'claude-sonnet-5',
       tokenUsage: usage,
       maxBudget: budget,
       bus,
@@ -228,21 +260,21 @@ describe('enforceBudget', () => {
     const sonnetCost = currentKnownCost({
       ...baseOpts,
       tokenUsage: usage,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
     });
     const unknownCost = currentKnownCost({
       ...baseOpts,
       tokenUsage: usage,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'definitely-not-a-real-model-xyz',
     });
     expect(sonnetCost).toBeGreaterThan(0);
     expect(unknownCost).toBe(0);
 
-    const sonnetResult = await enforceBudget({
+    const sonnetResult = await budgetGate({
       ...baseOpts,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
       tokenUsage: usage,
       maxBudget: sonnetCost / 0.9,
@@ -250,9 +282,9 @@ describe('enforceBudget', () => {
       warningEmitted: false,
       pauseEmitted: false,
     });
-    const unknownResult = await enforceBudget({
+    const unknownResult = await budgetGate({
       ...baseOpts,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'definitely-not-a-real-model-xyz',
       tokenUsage: usage,
       maxBudget: sonnetCost / 0.9,
@@ -270,13 +302,13 @@ describe('enforceBudget', () => {
       category: 'budget',
       code: 'tracking_paused',
       transcriptSafe: true,
-      message: expect.stringContaining('anthropic/definitely-not-a-real-model-xyz'),
+      message: expect.stringContaining('custom-planner-api/definitely-not-a-real-model-xyz'),
     });
   });
 
   it('does not pause local-only usage purely because it is unpriced', async () => {
     const { bus, events } = makeBusRecorder();
-    const result = await enforceBudget({
+    const result = await budgetGate({
       ...baseOpts,
       tokenUsage: makeUsage({ plannerInput: 100_000, implementerInput: 1_000_000 }),
       maxBudget: 1,
@@ -290,27 +322,25 @@ describe('enforceBudget', () => {
     expect(events.some((e) => e.type === 'budget_paused')).toBe(false);
   });
 
-  it('pauses for a priced runtime-only selected model from the pricing cache', async () => {
+  it('pauses for a selected model the pricing cache rates', async () => {
     const { bus, events } = makeBusRecorder();
     const pricingCache: ModelCacheAccessor = {
       ...emptyPricingCache,
-      getProviderModels: (providerId) =>
-        providerId === 'anthropic'
-          ? [
-              {
-                id: 'claude-runtime-budget-only',
-                pricingInput: 10,
-                pricingOutput: 30,
-              },
-            ]
-          : null,
+      getModelsDevCatalog: () => ({
+        vendor: {
+          id: 'vendor',
+          models: {
+            'budget-only-model': { id: 'budget-only-model', cost: { input: 10, output: 30 } },
+          },
+        },
+      }),
     };
     const usage = makeUsage({ plannerInput: 1_000_000, plannerOutput: 1_000_000 });
 
-    const result = await enforceBudget({
+    const result = await budgetGate({
       ...baseOpts,
-      plannerTool: 'anthropic',
-      plannerModel: 'claude-runtime-budget-only',
+      plannerTool: 'custom-planner-api',
+      plannerModel: 'budget-only-model',
       tokenUsage: usage,
       maxBudget: 40 / 0.9,
       pricingCache,
@@ -333,7 +363,7 @@ describe('checkBudgetAfterTask', () => {
     const pinned = {
       plannerTool: 'ollama',
       implementerTool: 'ollama',
-      reviewerTool: 'anthropic',
+      reviewerTool: 'custom-planner-api',
       reviewerModel: 'claude-sonnet-5',
     };
     const spent = currentKnownCost({ ...pinned, tokenUsage, totalTasks: 1, escalatedCount: 0 });
@@ -341,10 +371,14 @@ describe('checkBudgetAfterTask', () => {
 
     const { bus, events } = makeBusRecorder();
     const state = { ...createInitialState('feat'), ...pinned, tokenUsage };
+    // The gate persists a recovery record, so the session dir has to be real.
+    const projectDir = createTempDir('budget-reviewer-identity');
+    ensureSessionDir(projectDir, 'session');
     const wctx = makeWctx({
-      projectDir: '/tmp/budget-reviewer-identity',
+      projectDir,
       sessionId: 'session',
       bus,
+      modelCache: pricedCache,
       config: makeNoValidationConfig({
         planner: { kind: 'cli', tool: 'opencode' },
         workflow: { maxBudget: spent / 0.82 },
@@ -363,5 +397,6 @@ describe('checkBudgetAfterTask', () => {
     expect(result.warningEmitted).toBe(true);
     const warning = events.find((event) => event.type === 'budget_warning');
     expect(warning).toMatchObject({ currentCost: spent });
+    cleanupTempDir(projectDir);
   });
 });

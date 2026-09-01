@@ -5,7 +5,7 @@ import {
   promoteCandidateAuthority,
   refreshStateAuthority,
 } from '../../../core/state/authority.js';
-import { workflowStateDigest } from '../../../core/state/persistence.js';
+import { workflowStateDigest } from '../../../core/state/state-file.js';
 import type { StateAuthorityCandidate, StateAuthorityReceipt } from '../../../core/state/types.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { error } from '../../../utils/error.js';

@@ -3,6 +3,7 @@ import { linkSync } from 'node:fs';
 import { assertWritablePathConfined } from '../../lib/path-confinement.js';
 import { sessionDir } from '../paths.js';
 import { withSessionMutationLock, type NewSessionOwnership } from './active-pointer.js';
+import { sessionPreparationError } from './errors.js';
 import {
   assertExactActiveReceipt,
   assertHandedOffDirectory,
@@ -14,7 +15,6 @@ import {
   pathExists,
   removeExactMarkerPathLocked,
   removeOwnershipProofLocked,
-  sessionPreparationError,
   sessionRelativePath,
   type SessionOwnershipMutationOptions,
 } from './ownership-marker.js';

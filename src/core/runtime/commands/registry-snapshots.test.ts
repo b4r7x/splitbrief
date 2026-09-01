@@ -43,7 +43,10 @@ describe('/handoff command', () => {
     expect(error).toContain('spec-kit');
   });
 
-  it('writes a spec-kit handoff with no taskId', async () => {
+  it.each([
+    ['/handoff spec-kit', { target: 'spec-kit', taskId: undefined }],
+    ['/handoff claude-code T003', { target: 'claude-code', taskId: 'T003' }],
+  ])('forwards %s to writeHandoff', async (raw, expected) => {
     const calls: Array<{ target: string; taskId: string | undefined }> = [];
     const commands = createRuntimeCommands(
       makeCtx({
@@ -53,32 +56,8 @@ describe('/handoff command', () => {
         },
       }),
     );
-    await runCommandInTest({
-      commands: commands,
-      raw: '/handoff spec-kit',
-      screen: 'workflow',
-      onError: noop,
-    });
-    expect(calls).toEqual([{ target: 'spec-kit', taskId: undefined }]);
-  });
-
-  it('writes a claude-code handoff for task id T003', async () => {
-    const calls: Array<{ target: string; taskId: string | undefined }> = [];
-    const commands = createRuntimeCommands(
-      makeCtx({
-        writeHandoff: async (target, taskId) => {
-          calls.push({ target, taskId });
-          return { outputDir: '/fake' };
-        },
-      }),
-    );
-    await runCommandInTest({
-      commands: commands,
-      raw: '/handoff claude-code T003',
-      screen: 'workflow',
-      onError: noop,
-    });
-    expect(calls).toEqual([{ target: 'claude-code', taskId: 'T003' }]);
+    await runCommandInTest({ commands: commands, raw: raw, screen: 'workflow', onError: noop });
+    expect(calls).toEqual([expected]);
   });
 
   it('reports the output path on success', async () => {

@@ -36,26 +36,18 @@ import {
 
 type RunnerRole = 'planner' | 'implementer';
 
-// Written out rather than derived: a catalog `roles` edit must break this file,
-// which a filter over the same catalog could never do.
+// CLI ids are written out rather than derived: a catalog `roles` edit must break
+// this file, which a filter over the same catalog could never do. The API sets
+// follow the catalog itself — every admitted provider is a local implementer-only
+// service, so a written-out list would only ever record that same fact twice.
 const ADMITTED_IDS: Readonly<Record<RunnerRole, Readonly<{ cli: string[]; api: string[] }>>> = {
   planner: {
-    cli: ['claude-code', 'codex', 'opencode', 'aider', 'copilot', 'kilo-code', 'cursor'],
-    api: ['ollama-cloud', 'anthropic', 'openrouter', 'deepseek', 'openai', 'groq', 'together'],
+    cli: ['claude-code', 'codex', 'opencode', 'copilot', 'kilo-code', 'cursor', 'command-code'],
+    api: [],
   },
   implementer: {
-    cli: ['claude-code', 'codex', 'opencode', 'aider', 'copilot', 'kilo-code', 'cursor'],
-    api: [
-      'ollama',
-      'ollama-cloud',
-      'lm-studio',
-      'anthropic',
-      'openrouter',
-      'deepseek',
-      'openai',
-      'groq',
-      'together',
-    ],
+    cli: ['claude-code', 'codex', 'opencode', 'copilot', 'kilo-code', 'cursor', 'command-code'],
+    api: [...KNOWN_API_PROVIDER_IDS],
   },
 };
 
@@ -184,7 +176,7 @@ describe('runner catalog parity by role', () => {
 
       const expectedCliIds = ADMITTED_IDS[role].cli;
       const expectedApiIds = ADMITTED_IDS[role].api;
-      const expectedMetaIds = ['custom-command', 'agent-sdk'];
+      const expectedMetaIds = ['custom-command'];
 
       for (const id of expectedCliIds) {
         expect(pickerIds).toContain(id);
@@ -289,6 +281,19 @@ describe('first-class exclusion guard', () => {
     expect(ImplementerCliToolIdSchema.safeParse('cursor').success).toBe(true);
     expect(pickerIdsForRole('planner')).toContain('cursor');
     expect(pickerIdsForRole('implementer')).toContain('cursor');
+  });
+
+  it('keeps Command Code in first-class surfaces', () => {
+    const admittedIds = admittedFirstClassIds();
+
+    expect(admittedIds.has('command-code')).toBe(true);
+    expect('command-code' in CLI_TOOL_CATALOG).toBe(true);
+    expect('command-code' in CLI_PLANNER_ADAPTERS).toBe(true);
+    expect('command-code' in CLI_IMPLEMENTER_ADAPTERS).toBe(true);
+    expect(PlannerCliToolIdSchema.safeParse('command-code').success).toBe(true);
+    expect(ImplementerCliToolIdSchema.safeParse('command-code').success).toBe(true);
+    expect(pickerIdsForRole('planner')).toContain('command-code');
+    expect(pickerIdsForRole('implementer')).toContain('command-code');
   });
 
   it('keeps Antigravity out of first-class surfaces', () => {

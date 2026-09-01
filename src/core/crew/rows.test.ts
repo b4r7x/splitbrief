@@ -40,22 +40,100 @@ describe('deriveCrewRows', () => {
     });
   });
 
-  it('gives the build seat an effort row when its api model reasons', () => {
+  it('keeps the build effort row in place but undeliverable on an api seat', () => {
     const config = makeConfig({
-      implementer: { kind: 'api', provider: 'anthropic', model: 'claude-sonnet-4' },
+      implementer: { kind: 'api', provider: 'ollama', model: 'llama3.1' },
     });
 
     expect(keysOf(config)).toEqual(STABLE_SIX_KEYS);
     expect(rowAt(deriveCrewRows({ config }), 'effort:build')).toMatchObject({
+      deliverable: false,
+      editable: false,
+    });
+  });
+
+  it('says the variant, not n/a, on an opencode seat', () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'openai/gpt-5.6-luna',
+        variant: 'xhigh',
+      },
+    });
+    const row = rowAt(deriveCrewRows({ config }), 'effort:build');
+
+    expect(row).toMatchObject({
+      channel: 'variant',
+      value: 'xhigh',
       deliverable: true,
       editable: true,
+    });
+    expect(crewRowFilterText(row)).not.toContain('n/a');
+  });
+
+  // A variant channel delivers only what its provider spells, so a seat with no
+  // ladder to walk must not read as editable.
+  it.each([
+    ['no model at all', undefined],
+    ['a provider outside the preset table', 'opencode-go/gpt-5.6-luna'],
+  ])('marks an opencode seat with %s uneditable', (_name, model) => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'opencode', ...(model === undefined ? {} : { model }) },
+    });
+
+    expect(rowAt(deriveCrewRows({ config }), 'effort:build')).toMatchObject({
+      channel: 'variant',
+      deliverable: true,
+      editable: false,
+    });
+  });
+
+  it('shows a cursor seat its id-spelled effort read-only', () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'cursor', model: 'gpt-5.6-luna-high-fast' },
+    });
+
+    expect(rowAt(deriveCrewRows({ config }), 'effort:build')).toMatchObject({
+      channel: 'model-id',
+      value: 'high',
+      deliverable: true,
+      editable: false,
+    });
+  });
+
+  it('still says n/a on a channel-less tool', () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' },
+    });
+    const row = rowAt(deriveCrewRows({ config }), 'effort:build');
+
+    expect(row).toMatchObject({ channel: 'none', deliverable: false });
+    expect(crewRowFilterText(row)).toBe('effort n/a');
+  });
+
+  it('mirrors the planner channel onto an inherited review row', () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'openai/gpt-5.6-luna',
+        variant: 'xhigh',
+      },
+    });
+
+    expect(rowAt(deriveCrewRows({ config }), 'effort:review')).toMatchObject({
+      inherited: true,
+      editable: false,
+      channel: 'variant',
+      value: 'xhigh',
     });
   });
 
   it('keeps the YAML-only escalation config out of the crew rows', () => {
     const rows = deriveCrewRows({
       config: makeConfig({
-        escalation: { intermediateProvider: 'deepseek', intermediateModel: 'deepseek-chat' },
+        escalation: { intermediateProvider: 'ollama', intermediateModel: 'llama3.1' },
       }),
     });
 
@@ -68,17 +146,10 @@ describe('deriveCrewRows', () => {
       { kind: 'cli' as const, tool: 'opencode' as const, model: 'qwen2.5-coder' },
       {
         kind: 'api' as const,
-        provider: 'openai' as const,
-        model: 'o3',
-        apiBase: 'https://api.openai.com/v1',
+        provider: 'custom-endpoint' as const,
+        model: 'acme/reasoner-1',
+        apiBase: 'https://api.example.test/v1',
       },
-      {
-        kind: 'api' as const,
-        provider: 'anthropic' as const,
-        model: 'claude-sonnet-4',
-        apiBase: 'https://api.anthropic.com/v1',
-      },
-      { kind: 'agent-sdk' as const, model: 'claude-sonnet-4' },
       { kind: 'shell' as const, command: 'echo test', model: 'custom-model' },
       { kind: 'agent' as const, command: 'agent', model: 'custom-model' },
     ];

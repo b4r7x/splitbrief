@@ -2,7 +2,8 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readPackageJson } from '../project-meta.js';
 import { configErrorDiagnosticState } from '../config/errors.js';
-import { configPath, loadConfig } from '../config/load/io.js';
+import { loadConfig } from '../config/load/io.js';
+import { configPath } from '../config/load/document.js';
 import { workflowOptsToCLIOverrides } from '../config/runtime/overrides/from-options.js';
 import { resolveEffectiveConfig } from '../config/runtime/effective-config.js';
 import { readActive } from '../sessions/active-pointer.js';
@@ -61,7 +62,7 @@ export interface CollectReadinessOptions {
       }) => Promise<readonly CliReadinessResult[]>)
     | undefined;
   /**
-   * Live reachability probe for the `api` and `agent-sdk` runners a run will
+   * Live reachability probe for the `api` runners a run will
    * actually call. Without it readiness makes no availability claim, and an
    * unreachable implementer only surfaces after the planning phase is paid for.
    */

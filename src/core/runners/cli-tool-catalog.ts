@@ -1,47 +1,12 @@
 import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../providers/automatic-model.js';
 import type { PlannerArtifactTransport } from '../schemas/task-compilation.js';
-import { assertNever, typedEntries } from '../../utils/type-guards.js';
+import { typedEntries } from '../../utils/type-guards.js';
 import { assertCandidateFilesAbsent } from './candidate-admission.js';
 import { cliAdmissionError } from './cli-admission-error.js';
+import type { CliVersionScheme } from './cli-version.js';
+import type { CliEffortChannel } from './effort-channel.js';
 import type { RunnerBillingPosture } from './runner-billing.js';
-
-export type RunnerRole = 'planner' | 'implementer';
-
-/** The reviewer is a planner-tier seat: it shares the planner's admission set and policies. */
-export type PlannerTierRole = 'planner' | 'reviewer';
-
-export type ActiveRunnerRole = PlannerTierRole | 'implementer';
-
-export const SEAT_PICKER_ROLES = ['planner', 'implementer', 'reviewer'] as const;
-
-/** The config seats the tool/model picker can edit. */
-export type SeatPickerRole = (typeof SEAT_PICKER_ROLES)[number];
-
-/** The config seat a picker role reads its catalog and policies from. */
-export function seatPickerLane(role: SeatPickerRole): ActiveRunnerRole {
-  switch (role) {
-    case 'planner':
-      return 'planner';
-    case 'reviewer':
-      return 'reviewer';
-    case 'implementer':
-      return 'implementer';
-    default:
-      return assertNever(role);
-  }
-}
-
-export function runnerRoleForActiveRole(role: ActiveRunnerRole): RunnerRole {
-  switch (role) {
-    case 'planner':
-    case 'reviewer':
-      return 'planner';
-    case 'implementer':
-      return 'implementer';
-    default:
-      return assertNever(role);
-  }
-}
+import type { RunnerRole } from './seat-roles.js';
 
 export type RunnerTrustMetadata = Readonly<{
   executesLocalCommand: boolean;
@@ -129,166 +94,6 @@ export type CliAuthPolicy = Readonly<{
   channels: CliAuthChannels;
 }>;
 
-export type CliVersionCompatibility = 'compatible' | 'incompatible' | 'unverified';
-
-type CanonicalSemver = Readonly<{
-  major: number;
-  minor: number;
-  patch: number;
-}>;
-
-const CANONICAL_SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
-
-function parseCanonicalSemver(version: string): CanonicalSemver | null {
-  const match = CANONICAL_SEMVER.exec(version);
-  if (match === null) return null;
-
-  const [majorPart, minorPart, patchPart] = match.slice(1);
-  if (majorPart === undefined || minorPart === undefined || patchPart === undefined) return null;
-
-  const parsed = {
-    major: Number(majorPart),
-    minor: Number(minorPart),
-    patch: Number(patchPart),
-  };
-  return Number.isSafeInteger(parsed.major) &&
-    Number.isSafeInteger(parsed.minor) &&
-    Number.isSafeInteger(parsed.patch)
-    ? parsed
-    : null;
-}
-
-function compareCanonicalSemver(
-  input: Readonly<{ left: CanonicalSemver; right: CanonicalSemver }>,
-): number {
-  if (input.left.major !== input.right.major) {
-    return input.left.major < input.right.major ? -1 : 1;
-  }
-  if (input.left.minor !== input.right.minor) {
-    return input.left.minor < input.right.minor ? -1 : 1;
-  }
-  if (input.left.patch !== input.right.patch) {
-    return input.left.patch < input.right.patch ? -1 : 1;
-  }
-  return 0;
-}
-
-export type CliVersionScheme = 'semver' | 'calver';
-
-type CanonicalCalver = Readonly<{
-  year: number;
-  month: number;
-  day: number;
-}>;
-
-const CANONICAL_CALVER = /^(\d{4})\.(\d{2})\.(\d{2})(?:-[A-Za-z0-9]+)?$/;
-
-function parseCanonicalCalver(version: string): CanonicalCalver | null {
-  const match = CANONICAL_CALVER.exec(version);
-  if (match === null) return null;
-
-  const [yearPart, monthPart, dayPart] = match.slice(1);
-  if (yearPart === undefined || monthPart === undefined || dayPart === undefined) return null;
-
-  const parsed = {
-    year: Number(yearPart),
-    month: Number(monthPart),
-    day: Number(dayPart),
-  };
-  return Number.isSafeInteger(parsed.year) &&
-    Number.isSafeInteger(parsed.month) &&
-    Number.isSafeInteger(parsed.day)
-    ? parsed
-    : null;
-}
-
-function compareCanonicalCalver(
-  input: Readonly<{ left: CanonicalCalver; right: CanonicalCalver }>,
-): number {
-  if (input.left.year !== input.right.year) {
-    return input.left.year < input.right.year ? -1 : 1;
-  }
-  if (input.left.month !== input.right.month) {
-    return input.left.month < input.right.month ? -1 : 1;
-  }
-  if (input.left.day !== input.right.day) {
-    return input.left.day < input.right.day ? -1 : 1;
-  }
-  return 0;
-}
-
-function compareCliVersions(
-  input: Readonly<{
-    installedVersion: string;
-    baselineVersion: string;
-    versionScheme: CliVersionScheme;
-  }>,
-): number | null {
-  switch (input.versionScheme) {
-    case 'semver': {
-      const installed = parseCanonicalSemver(input.installedVersion);
-      const baseline = parseCanonicalSemver(input.baselineVersion);
-      if (installed === null || baseline === null) return null;
-      return compareCanonicalSemver({ left: installed, right: baseline });
-    }
-    case 'calver': {
-      const installed = parseCanonicalCalver(input.installedVersion);
-      const baseline = parseCanonicalCalver(input.baselineVersion);
-      if (installed === null || baseline === null) return null;
-      return compareCanonicalCalver({ left: installed, right: baseline });
-    }
-    default:
-      return assertNever(input.versionScheme);
-  }
-}
-
-/**
- * The sole descriptor-owned version compatibility decision.
- * Forward-compatible: releases at or above the minimum admitted version are
- * compatible; only older releases fail closed as incompatible. An unparseable
- * version stays unverified.
- */
-export function classifyCliAdmittedVersion(
-  input: Readonly<{
-    installedVersion: string;
-    minimumAdmittedVersion: string;
-    versionScheme?: CliVersionScheme;
-  }>,
-): CliVersionCompatibility {
-  const order = compareCliVersions({
-    installedVersion: input.installedVersion,
-    baselineVersion: input.minimumAdmittedVersion,
-    versionScheme: input.versionScheme ?? 'semver',
-  });
-  if (order === null) return 'unverified';
-  return order < 0 ? 'incompatible' : 'compatible';
-}
-
-export type CliCompilerVersionClassification = 'exact' | 'older' | 'newer' | 'mismatch';
-
-/**
- * The compiler path admits exactly the tested runtime version (REQ-049).
- * Older releases, newer releases, and unparseable claims are never ready —
- * unlike the forward-compatible `classifyCliAdmittedVersion` used by the
- * implementer path, this classifier has no compatibility arm to borrow.
- */
-export function classifyCliCompilerVersion(
-  input: Readonly<{
-    installedVersion: string;
-    exactAdmittedVersion: string;
-    versionScheme?: CliVersionScheme;
-  }>,
-): CliCompilerVersionClassification {
-  const order = compareCliVersions({
-    installedVersion: input.installedVersion,
-    baselineVersion: input.exactAdmittedVersion,
-    versionScheme: input.versionScheme ?? 'semver',
-  });
-  if (order === null) return 'mismatch';
-  if (order === 0) return 'exact';
-  return order < 0 ? 'older' : 'newer';
-}
-
 export type CliCompatibility = Readonly<{
   installUrl: string;
   testedVersion: string;
@@ -334,10 +139,10 @@ type ExistingCliToolId =
   | 'claude-code'
   | 'codex'
   | 'opencode'
-  | 'aider'
   | 'copilot'
   | 'kilo-code'
-  | 'cursor';
+  | 'cursor'
+  | 'command-code';
 
 export type CliToolId = ExistingCliToolId;
 
@@ -351,6 +156,8 @@ export type CliToolDeclarationBase<Id extends string = string> = Readonly<{
   modelPolicy: RolePolicy<CliModelPolicy>;
   /** Whether the tool accepts a per-call effort level on its own command line. */
   supportsEffort: boolean;
+  /** How the tool's effort intent reaches it, when it has a channel at all. */
+  effortChannel: CliEffortChannel;
   auth: CliAuthPolicy;
   billing: RunnerBillingPosture;
   isSubscription: boolean;
@@ -399,6 +206,8 @@ export type CliToolDescriptor<Id extends string = CliToolId> = Readonly<
 export type CliAdmissionVerdict = 'PASS' | 'OMIT';
 
 export const CURSOR_CLI_ADMISSION_VERDICT = 'PASS' satisfies CliAdmissionVerdict;
+
+export const COMMAND_CODE_CLI_ADMISSION_VERDICT = 'PASS' satisfies CliAdmissionVerdict;
 
 export const ANTIGRAVITY_CLI_ADMISSION_VERDICT = 'OMIT' satisfies CliAdmissionVerdict;
 
@@ -526,6 +335,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     roles: ALL_ROLES,
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: true,
+    effortChannel: 'effort-flag',
     auth: authPolicy('api-key-or-session', [
       authChannel({
         id: 'session',
@@ -565,6 +375,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     roles: ALL_ROLES,
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: false,
+    effortChannel: 'none',
     auth: authPolicy('api-key-or-session', [
       authChannel({
         id: 'session',
@@ -603,6 +414,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     roles: ALL_ROLES,
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: false,
+    effortChannel: 'variant',
     auth: authPolicy('provider-dependent', [
       authChannel({
         id: 'provider-dependent',
@@ -630,38 +442,6 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     modelDiscoveryMode: 'native-cli',
     mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
   }),
-  aider: activeCliToolDeclaration({
-    id: 'aider',
-    displayName: 'Aider CLI',
-    command: 'aider',
-    executableAliases: ['aider'],
-    category: 'cli',
-    roles: ALL_ROLES,
-    modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
-    supportsEffort: false,
-    auth: authPolicy('provider-dependent', [
-      authChannel({
-        id: 'provider-dependent',
-        env: [],
-        stateBridge: 'none',
-        billing: 'provider-dependent',
-      }),
-    ]),
-    billing: 'provider-dependent',
-    isSubscription: false,
-    sandbox: rolePolicy({ planner: 'none', implementer: 'none' }),
-    internalStatePaths: [],
-    compatibility: compatibility({
-      installUrl: 'https://aider.chat',
-      testedVersion: '0.86.0',
-      minimumAdmittedVersion: '0.86.0',
-      versionScheme: 'semver',
-      asOf: '2026-07-31',
-    }),
-    authDiscoveryMode: 'static-unverified',
-    modelDiscoveryMode: 'static-catalog-unverified',
-    mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
-  }),
   copilot: activeCliToolDeclaration({
     id: 'copilot',
     displayName: 'GitHub Copilot CLI',
@@ -671,6 +451,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     roles: ALL_ROLES,
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: false,
+    effortChannel: 'none',
     auth: authPolicy('session', [
       authChannel({
         id: 'session',
@@ -703,6 +484,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     roles: ALL_ROLES,
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: false,
+    effortChannel: 'none',
     auth: authPolicy('provider-dependent', [
       authChannel({
         id: 'provider-dependent',
@@ -735,6 +517,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     roles: ALL_ROLES,
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: false,
+    effortChannel: 'model-id',
     auth: authPolicy('api-key-or-session', [
       authChannel({
         id: 'session',
@@ -762,6 +545,42 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       asOf: '2026-08-27',
     }),
     authDiscoveryMode: 'selected-channel',
+    modelDiscoveryMode: 'native-cli',
+    mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
+  }),
+  'command-code': activeCliToolDeclaration({
+    id: 'command-code',
+    displayName: 'Command Code CLI',
+    command: 'cmd',
+    executableAliases: ['cmd'],
+    category: 'cli',
+    roles: ALL_ROLES,
+    modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
+    supportsEffort: true,
+    effortChannel: 'effort-flag',
+    // `cmd --help` names no API-key environment variable — only `CMD_LOCAL_ONLY`,
+    // a BYOK routing switch and not a credential — so declaring an api-key
+    // channel would fabricate a credential channel that does not exist.
+    auth: authPolicy('session', [
+      authChannel({
+        id: 'session',
+        env: [],
+        stateBridge: 'host-cli-state',
+        billing: 'subscription-included',
+      }),
+    ]),
+    billing: 'subscription-included',
+    isSubscription: false,
+    sandbox: rolePolicy({ planner: 'none', implementer: 'none' }),
+    internalStatePaths: [],
+    compatibility: compatibility({
+      installUrl: 'https://commandcode.ai/',
+      testedVersion: '1.39.2',
+      minimumAdmittedVersion: '1.39.2',
+      versionScheme: 'semver',
+      asOf: '2026-09-01',
+    }),
+    authDiscoveryMode: 'status-unverified',
     modelDiscoveryMode: 'native-cli',
     mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
   }),
@@ -849,10 +668,6 @@ const BASE_CLI_TOOL_TRUST = Object.freeze({
     tier2AutoAllowFlags: ['--sandbox workspace-write'],
   }),
   opencode: cliToolTrust({ implementerAutoAllowFlags: [], tier2AutoAllowFlags: [] }),
-  aider: cliToolTrust({
-    implementerAutoAllowFlags: ['--yes-always'],
-    tier2AutoAllowFlags: ['--yes-always'],
-  }),
   copilot: cliToolTrust({
     implementerAutoAllowFlags: ['--allow-all'],
     tier2AutoAllowFlags: ['--allow-all', '--no-ask-user'],
@@ -864,6 +679,10 @@ const BASE_CLI_TOOL_TRUST = Object.freeze({
   cursor: cliToolTrust({
     implementerAutoAllowFlags: ['--force'],
     tier2AutoAllowFlags: ['--force'],
+  }),
+  'command-code': cliToolTrust({
+    implementerAutoAllowFlags: ['--permission-mode auto-accept'],
+    tier2AutoAllowFlags: ['--permission-mode auto-accept'],
   }),
 } satisfies Record<CliToolId, CliToolTrustMetadata>);
 
@@ -910,10 +729,10 @@ function assembleCliToolCatalog(
     'claude-code': descriptor(trust['claude-code'], CLI_TOOL_DECLARATIONS['claude-code']),
     codex: descriptor(trust.codex, CLI_TOOL_DECLARATIONS.codex),
     opencode: descriptor(trust.opencode, CLI_TOOL_DECLARATIONS.opencode),
-    aider: descriptor(trust.aider, CLI_TOOL_DECLARATIONS.aider),
     copilot: descriptor(trust.copilot, CLI_TOOL_DECLARATIONS.copilot),
     'kilo-code': descriptor(trust['kilo-code'], CLI_TOOL_DECLARATIONS['kilo-code']),
     cursor: descriptor(trust.cursor, CLI_TOOL_DECLARATIONS.cursor),
+    'command-code': descriptor(trust['command-code'], CLI_TOOL_DECLARATIONS['command-code']),
   } satisfies Record<CliToolId, CliToolDescriptor>;
   return Object.freeze(catalog);
 }
@@ -972,14 +791,6 @@ export const CLI_COMPILER_EVIDENCE: Readonly<Record<CliToolId, CliCompilerEviden
       terminalContract: 'opencode-final-message-v1',
       fixtureDate: '2026-08-15',
     }),
-    aider: compilerEvidence({
-      state: 'unsupported',
-      version: '',
-      transports: Object.freeze([]),
-      terminalContract: 'unsupported',
-      fixtureDate: '2026-08-15',
-      unsupportedReason: 'no proven read-only planner contract in V1',
-    }),
     copilot: compilerEvidence({
       state: 'unsupported',
       version: '',
@@ -1003,6 +814,14 @@ export const CLI_COMPILER_EVIDENCE: Readonly<Record<CliToolId, CliCompilerEviden
       fixtureDate: '2026-08-15',
       unsupportedReason: 'no proven compiler planner contract in V1',
     }),
+    'command-code': compilerEvidence({
+      state: 'unsupported',
+      version: '',
+      transports: Object.freeze([]),
+      terminalContract: 'unsupported',
+      fixtureDate: '2026-09-01',
+      unsupportedReason: 'no proven compiler planner contract in V1',
+    }),
   });
 
 /**
@@ -1013,9 +832,9 @@ export const CLI_COMPILER_EVIDENCE: Readonly<Record<CliToolId, CliCompilerEviden
 export const NATIVE_CLI_CATALOG_TOOL_IDS = Object.freeze([
   'codex',
   'opencode',
-  'aider',
   'kilo-code',
   'cursor',
+  'command-code',
 ] as const satisfies readonly CliToolId[]);
 
 export function hasNativeCliCatalog(tool: string): boolean {

@@ -8,11 +8,9 @@ import type {
   RunnerAvailabilityVerdict,
 } from '../../core/readiness/checks/availability.js';
 import type { Config } from '../../core/schemas/config.js';
-import { resolveApiKeyOverride } from '../providers/client/api-key.js';
 import { sanitizeProviderDiagnostic } from '../providers/client/request.js';
 import { getProvider } from '../providers/registry.js';
 import type { ProviderDef } from '../providers/types.js';
-import { isAgentSdkAvailable } from './agent-sdk/availability.js';
 import { composeAbortSignal } from '../../utils/abort.js';
 import { assertNever } from '../../utils/type-guards.js';
 
@@ -32,14 +30,14 @@ const ALL_AVAILABILITY_ROLES = [
   'reviewer',
 ] as const satisfies readonly RunnerAvailabilityRole[];
 
-type ProbeableRunner = Extract<RunnerConfig, { kind: 'api' | 'agent-sdk' }>;
+type ProbeableRunner = Extract<RunnerConfig, { kind: 'api' }>;
 
 type ProbeTarget = Readonly<{ slot: RunnerAvailabilitySlot; runner: ProbeableRunner }>;
 
 type ProbedRunner = Omit<RunnerAvailabilityFact, 'slot'>;
 
 function isProbeableRunner(runner: RunnerConfig): runner is ProbeableRunner {
-  return runner.kind === 'api' || runner.kind === 'agent-sdk';
+  return runner.kind === 'api';
 }
 
 function targetsForRole(config: Config, role: RunnerAvailabilityRole): ProbeTarget[] {
@@ -149,38 +147,11 @@ async function probeApiRunner(
   }
 }
 
-async function probeAgentSdkRunner(
-  runner: Extract<RunnerConfig, { kind: 'agent-sdk' }>,
-): Promise<ProbedRunner> {
-  let apiKey: string | undefined;
-  try {
-    apiKey = resolveApiKeyOverride(runner.apiKey) ?? process.env.ANTHROPIC_API_KEY;
-  } catch {
-    apiKey = undefined;
-  }
-  if (apiKey === undefined || apiKey.length === 0) {
-    return { provider: 'anthropic', verdict: missingCredentialVerdict('anthropic') };
-  }
-  const installed = await isAgentSdkAvailable(apiKey);
-  return {
-    provider: 'anthropic',
-    verdict: installed
-      ? { state: 'available' }
-      : {
-          state: 'unavailable',
-          diagnostic: 'Agent SDK not installed (npm install @anthropic-ai/claude-agent-sdk)',
-        },
-  };
-}
-
 async function probeTarget(
   target: ProbeTarget,
   signal: AbortSignal | undefined,
 ): Promise<RunnerAvailabilityFact> {
-  const probed =
-    target.runner.kind === 'api'
-      ? await probeApiRunner(target.runner, signal)
-      : await probeAgentSdkRunner(target.runner);
+  const probed = await probeApiRunner(target.runner, signal);
   return { slot: target.slot, ...probed };
 }
 

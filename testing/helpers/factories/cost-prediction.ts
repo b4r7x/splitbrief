@@ -6,8 +6,8 @@ export function makeCostPrediction(overrides: Partial<CostPrediction> = {}): Cos
     lowCost: 0.08,
     expectedCost: 0.14,
     highCost: 0.35,
-    plannerTool: 'anthropic',
-    implementerTool: 'anthropic',
+    plannerTool: 'claude-code',
+    implementerTool: 'ollama',
     deterministic: {
       estimateScope: 'prompt-input-only',
       taskCount: 12,

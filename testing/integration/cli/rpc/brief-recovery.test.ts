@@ -44,7 +44,8 @@ import type {
 import { loadState, saveState } from '../../../../src/core/state/persistence.js';
 import { PhaseSchema } from '../../../../src/core/schemas/enums.js';
 import { createBriefRecoveryController } from '../../../../src/engine/orchestrator/planning/brief-recovery-controller.js';
-import { createCommandReader, createRpcOperationDeduper } from '../../../../src/cli/rpc/reader.js';
+import { createRpcOperationDeduper } from '../../../../src/cli/rpc/operation-dedupe.js';
+import { createCommandReader } from '../../../../src/cli/rpc/reader.js';
 import { createResponseWriter } from '../../../../src/cli/rpc/writer.js';
 import type { RpcCommand, RpcResponse } from '../../../../src/cli/rpc/types.js';
 import type { BriefReviewCommand } from '../../../../src/core/schemas/brief-review-command.js';

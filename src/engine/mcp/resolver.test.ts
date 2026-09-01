@@ -396,17 +396,6 @@ describe('readResource - file resources', () => {
     expect(result?.text).toBe('# My Spec\nHello');
   });
 
-  it('returns null for evidence.json when file does not exist', async () => {
-    const id = 'sess-f';
-    ensureSessionDir(projectDir, id);
-    saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
-
-    const resolver = makeResolver(projectDir, id);
-    const result = await resolver.readResource(`mcp://splitbrief/sessions/${id}/evidence.json`);
-
-    expect(result).toBeNull();
-  });
-
   it('returns concrete summary.json and state.json when present', async () => {
     const id = 'sess-concrete';
     ensureSessionDir(projectDir, id);
@@ -515,12 +504,13 @@ describe('readResource - file resources', () => {
     expect(state!.text).not.toContain('secret task prose');
   });
 
-  it('returns null for missing concrete summary.json and state.json', async () => {
+  it('returns null for file resources with no backing file', async () => {
     const id = 'sess-missing-concrete';
     ensureSessionDir(projectDir, id);
 
     const resolver = makeResolver(projectDir, id);
 
+    expect(await resolver.readResource(`mcp://splitbrief/sessions/${id}/evidence.json`)).toBeNull();
     expect(await resolver.readResource(`mcp://splitbrief/sessions/${id}/summary.json`)).toBeNull();
     expect(await resolver.readResource(`mcp://splitbrief/sessions/${id}/state.json`)).toBeNull();
   });

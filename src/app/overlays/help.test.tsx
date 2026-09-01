@@ -23,6 +23,15 @@ function command(name: string, validScreens: Screen[]): RuntimeCommandDef {
   };
 }
 
+// The panel is the only thing the overlay draws, so its framed silhouette is the span between the
+// first and last non-blank line of the frame.
+function panelHeight(frame: string): number {
+  const lines = frame.split('\n');
+  const first = lines.findIndex((line) => line.trim() !== '');
+  const last = lines.findLastIndex((line) => line.trim() !== '');
+  return first < 0 ? 0 : last - first + 1;
+}
+
 describe('HelpOverlay', () => {
   beforeEach(() => {
     resetAllStores();
@@ -72,7 +81,7 @@ describe('HelpOverlay', () => {
     allowed.unmount();
   });
 
-  it('lists aliases as their own rows pointing at the command they run', async () => {
+  it('shows a bare alias on its command row and never as its own row', async () => {
     const settings: RuntimeCommandDef = {
       ...command('/settings', ['home']),
       aliases: [{ name: '/config' }],
@@ -82,10 +91,30 @@ describe('HelpOverlay', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('/config');
-    expect(frame).toContain('Alias for /settings');
+    expect(frame).toContain('/settings (/config)');
+    expect(frame).not.toContain('Alias for');
 
     ui.unmount();
+  });
+
+  it('renders the same number of rows whether the document fits or overflows', async () => {
+    const short = renderFeature(<HelpOverlay currentScreen="home" commands={[]} />);
+    await tick(20);
+    const shortHeight = panelHeight(short.lastFrame() ?? '');
+    short.unmount();
+
+    const overflow = renderFeature(
+      <HelpOverlay
+        currentScreen="home"
+        commands={Array.from({ length: 40 }, (_, i) => command(`/cmd-${i}`, ['home']))}
+      />,
+    );
+    await tick(20);
+    const overflowHeight = panelHeight(overflow.lastFrame() ?? '');
+    overflow.unmount();
+
+    expect(shortHeight).toBeGreaterThan(0);
+    expect(shortHeight).toBe(overflowHeight);
   });
 
   it('shows category headers when there is room and drops them at the floor', async () => {
@@ -101,7 +130,7 @@ describe('HelpOverlay', () => {
     expect(roomyFrame).toContain('Keyboard shortcuts');
     roomy.unmount();
 
-    // 60x18: 18 rows - 0 gutter - 8 chrome = 10 list slots, below the 12-slot header threshold.
+    // 60x18: 18 rows - 0 gutter - 7 chrome = 11 list slots, below the 12-slot header threshold.
     terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
     const floorCommands = Array.from({ length: 12 }, (_, i) => command(`/cmd-${i}`, ['home']));
     const floor = renderFeature(<HelpOverlay currentScreen="home" commands={floorCommands} />);
@@ -110,7 +139,7 @@ describe('HelpOverlay', () => {
     const floorFrame = floor.lastFrame() ?? '';
     expect(floorFrame).not.toContain('Navigate');
     expect(floorFrame).not.toContain('Keyboard shortcuts');
-    // 10 slots minus the single "N more" indicator row leaves 9 command rows.
+    // 11 slots minus the single "N more" indicator row leaves 10 command rows.
     expect((floorFrame.match(/\/cmd-/g) ?? []).length).toBeGreaterThanOrEqual(7);
     floor.unmount();
   });

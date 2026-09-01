@@ -89,16 +89,17 @@ describe('HomeSeatBlock', () => {
       makeConfig({
         reviewer: {
           kind: 'api',
-          provider: 'deepseek',
-          apiBase: 'https://api.deepseek.com/v1',
-          model: 'deepseek-reasoner',
+          provider: 'custom-endpoint',
+          apiBase: 'https://api.example.test/v1',
+          apiKey: 'test-key',
+          model: 'custom-reasoner',
         },
       }),
     );
 
     const { lines, unmount } = await renderBlock(40);
 
-    expect(lines[2]).toContain('DeepSeek');
+    expect(lines[2]).toContain('custom-endpoint');
     expect(lines[2]).not.toContain('same as planner');
     unmount();
   });

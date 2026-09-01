@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { createDefaultConfig } from '../../core/config/load/io.js';
+import { createDefaultConfig } from '../../core/config/load/defaults.js';
 import { resolveRunnerConfigContext } from '../../core/config/accessors/runner-config.js';
 import { sessionDir } from '../../core/paths.js';
 import type { Config } from '../../core/schemas/config.js';
@@ -103,10 +103,10 @@ describe('prepared execution', () => {
       ...createDefaultConfig(),
       planner: {
         kind: 'api',
-        provider: 'anthropic',
-        service: 'anthropic',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
         offering: 'payg',
-        apiBase: 'https://api.anthropic.com/v1',
+        apiBase: 'https://api.example.test/v1',
         apiKey: secret,
         model: 'claude-opus-4-6',
       },

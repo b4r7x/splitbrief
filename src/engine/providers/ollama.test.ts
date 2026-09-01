@@ -1,8 +1,6 @@
 import http from 'node:http';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { API_PROVIDER_CATALOG } from '../../core/providers/api-provider-catalog.js';
-import { createOllamaCloudProvider, createOllamaProvider } from './ollama.js';
-import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
+import { afterEach, describe, expect, it } from 'vitest';
+import { createOllamaProvider } from './ollama.js';
 
 type RequestRecord = Readonly<{
   method: string;
@@ -201,51 +199,5 @@ describe('createOllamaProvider native inventory', () => {
         ]);
       },
     );
-  });
-});
-
-describe('createOllamaCloudProvider', () => {
-  setupFetchMock();
-
-  afterEach(() => {
-    delete process.env.OLLAMA_API_KEY;
-  });
-
-  it('is a distinct remote provider that sends the cloud key only to the fixed Ollama origin', async () => {
-    const cloudKey = 'ollama-cloud-key';
-    process.env.OLLAMA_API_KEY = cloudKey;
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify({ models: [{ name: 'cloud-model' }] }), { status: 200 }),
-    );
-
-    const provider = createOllamaCloudProvider();
-    const endpointPolicy = API_PROVIDER_CATALOG['ollama-cloud'].endpointPolicy;
-    if (endpointPolicy.kind !== 'fixed-origin') {
-      throw new Error('Expected the active Ollama Cloud descriptor to use a fixed origin.');
-    }
-    expect(provider.name).toBe('ollama-cloud');
-    expect(provider.isLocal).toBe(false);
-    expect(provider.baseURL).toBe(endpointPolicy.baseURL);
-    expect(await provider.listModelsWithMetadata()).toEqual([
-      { id: 'cloud-model', providerId: 'ollama-cloud' },
-    ]);
-
-    const request = new Request(
-      vi.mocked(globalThis.fetch).mock.calls[0]?.[0] ?? '',
-      vi.mocked(globalThis.fetch).mock.calls[0]?.[1],
-    );
-    expect(request.url).toBe(`${endpointPolicy.baseURL}/api/tags`);
-    expect(request.headers.get('authorization')).toBe(`Bearer ${cloudKey}`);
-  });
-
-  it('does not infer direct-cloud readiness from key presence and rejects alternate origins', async () => {
-    expect(await createOllamaCloudProvider().listModels()).toEqual([]);
-    expect(globalThis.fetch).not.toHaveBeenCalled();
-    expect(() =>
-      createOllamaCloudProvider({
-        apiBase: 'https://lookalike.ollama.com',
-        apiKey: 'env:OLLAMA_CLOUD_NEVER_RESOLVE',
-      }),
-    ).toThrow(expect.objectContaining({ kind: 'provider-endpoint-invalid' }));
   });
 });

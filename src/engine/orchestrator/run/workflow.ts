@@ -5,9 +5,8 @@ import type { Session } from '../../../core/schemas/session.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import { createInitialState } from '../../../core/state/machine.js';
-import type { StateAuthorityReceipt, ResumeLoadAuthority } from '../../../core/state/types.js';
+import type { StateAuthorityReceipt } from '../../../core/state/types.js';
 import { releaseStateAuthority } from '../../../core/state/authority.js';
-import { loadStateForResume } from '../../../core/state/persistence.js';
 import { featureForTranscriptPolicy } from '../../../core/sessions/session-id.js';
 import { pruneOrphanSessions } from '../../../core/sessions/orphans.js';
 import { recordRunnerPid, releaseRunnerPid } from '../../../core/sessions/runner-pids.js';
@@ -40,7 +39,7 @@ import {
   type WorkflowAuthorityHolder,
 } from './authority.js';
 import { type RunWorkflowOptions, initializeWorkflow } from './init.js';
-import { clearBridgedCliState } from '../../runners/sandbox-env.js';
+import { clearBridgedCliState } from '../../runners/sandbox-state-bridge.js';
 import { getIsolationStrategy } from '../../../core/config/accessors/values.js';
 import { reapOrphanRunners } from './orphan-reaper.js';
 import { runPlanningPhases } from './phases.js';
@@ -53,10 +52,8 @@ import {
 } from './call-publishing.js';
 import { acquireLiveness } from './liveness.js';
 import { createWorkflowRecoveryBinding } from './recovery-binding.js';
-import { readWorkflowStateHead } from '../state-ops.js';
+import { WORKFLOW_REWIND_ABORT_REASON, reconcileRewindAuthority } from './rewind-authority.js';
 import { matchesPersistedExecutionPermit, parkedPlanningResult } from '../planning/handoff.js';
-
-export const WORKFLOW_REWIND_ABORT_REASON = 'workflow-rewind';
 
 function shouldPreserveActiveSession(
   state: WorkflowState | undefined,
@@ -65,27 +62,6 @@ function shouldPreserveActiveSession(
   return (
     signal?.reason === WORKFLOW_REWIND_ABORT_REASON || shouldPreserveActiveState(state ?? null)
   );
-}
-
-function loadPersistedRewindState(opts: {
-  projectDir: string;
-  sessionId: string;
-  signal: AbortSignal | undefined;
-  authority: StateAuthorityReceipt | undefined;
-}): WorkflowState | null {
-  if (opts.signal?.reason !== WORKFLOW_REWIND_ABORT_REASON || opts.authority === undefined)
-    return null;
-  const authority: ResumeLoadAuthority = {
-    kind: 'fenced',
-    receipt: opts.authority,
-    promotedFromVersion: null,
-  };
-  const loaded = loadStateForResume({
-    ref: { projectDir: opts.projectDir, sessionId: opts.sessionId },
-    authority,
-  });
-  if (loaded.kind !== 'loaded') return null;
-  return loaded.state.rewindPending !== undefined ? loaded.state : null;
 }
 
 function resolveSessionStart(savedState: WorkflowState | undefined): number {
@@ -417,56 +393,15 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
           }
         } catch (err) {
           await killAllProcesses();
-          let rewindAuthorityRefreshed = false;
-          if (
-            opts.signal?.reason === WORKFLOW_REWIND_ABORT_REASON &&
-            stateAuthority !== undefined &&
-            authorityHolder !== undefined
-          ) {
-            const persisted = (() => {
-              try {
-                return readWorkflowStateHead({ projectDir, sessionId });
-              } catch {
-                return null;
-              }
-            })();
-            const persistedFence = persisted?.state.stateFence;
-            if (
-              persisted?.state.rewindPending !== undefined &&
-              (persisted.state.stateRevision ?? 0) >= stateAuthority.stateRevision &&
-              persistedFence?.token === stateAuthority.fence &&
-              persistedFence.ownerId === stateAuthority.ownerId
-            ) {
-              authorityHolder.current = refreshWorkflowAuthority(
-                { projectDir, sessionId },
-                authorityHolder.current,
-                persisted.state,
-              );
-              stateAuthority = authorityHolder.current;
-              rewindAuthorityRefreshed = true;
-            }
-          }
-          const persistedRewindState = loadPersistedRewindState({
+          const rewind = reconcileRewindAuthority({
             projectDir,
             sessionId,
             signal: opts.signal,
             authority: stateAuthority,
+            holder: authorityHolder,
           });
-          if (persistedRewindState) {
-            trackedState = persistedRewindState;
-            if (
-              !rewindAuthorityRefreshed &&
-              stateAuthority !== undefined &&
-              authorityHolder !== undefined
-            ) {
-              authorityHolder.current = refreshWorkflowAuthority(
-                { projectDir, sessionId },
-                authorityHolder.current,
-                persistedRewindState,
-              );
-              stateAuthority = authorityHolder.current;
-            }
-          }
+          if (rewind.authority !== undefined) stateAuthority = rewind.authority;
+          if (rewind.state !== undefined) trackedState = rewind.state;
           if (opts.signal?.aborted) {
             sessionStatus = 'interrupted';
           } else {

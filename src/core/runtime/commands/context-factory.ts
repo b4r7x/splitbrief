@@ -31,6 +31,9 @@ interface CommandContextFactoryOptions {
   setFeedbackError: (message: string) => void;
   refreshDetection: () => Promise<DiscoveryRefreshSummary>;
   refreshProjectFiles: RuntimeCommandContext['refreshProjectFiles'];
+  listSkills: RuntimeCommandContext['listSkills'];
+  toggleSkill: RuntimeCommandContext['toggleSkill'];
+  refreshSkills: RuntimeCommandContext['refreshSkills'];
   getCurrentPhase: () => Phase;
   requestRewind: (request: CommandRewindRequest) => boolean;
   requestTaskRedo: (taskId: string) => boolean;
@@ -101,6 +104,9 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     setFeedbackError: opts.setFeedbackError,
     refreshDetection: opts.refreshDetection,
     refreshProjectFiles: opts.refreshProjectFiles,
+    listSkills: opts.listSkills,
+    toggleSkill: opts.toggleSkill,
+    refreshSkills: opts.refreshSkills,
     getCurrentPhase: opts.getCurrentPhase,
     requestRewind: (target, comment) => {
       const request: CommandRewindRequest = { target, ...(comment ? { comment } : {}) };

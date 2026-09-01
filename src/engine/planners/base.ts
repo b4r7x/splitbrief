@@ -32,7 +32,6 @@ import type { PreparedPlannerInvocation } from '../runners/types.js';
 import { error } from '../../utils/error.js';
 import { TASKS_FILE } from '../../core/paths.js';
 import { buildQuickPlanPrompt } from '../spec/prompts/quick-plan.js';
-import { buildInstantPrompt } from '../spec/prompts/instant.js';
 import { DEFAULT_AVAILABILITY } from '../availability.js';
 import { escalateFull, escalateHint } from './escalation.js';
 import { runSinglePhasePlanning } from './single-phase.js';
@@ -187,10 +186,12 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       return runMultiPhasePlanning({ ...config, ...(seam !== null && { compiler: seam }) }, opts);
     },
     async quickPlan(opts: PlanOptions): Promise<PlanResult> {
-      return runSinglePhasePlanning(config, buildQuickPlanPrompt, opts);
-    },
-    async instantPlan(opts: PlanOptions): Promise<PlanResult> {
-      return runSinglePhasePlanning(config, buildInstantPrompt, opts);
+      return runSinglePhasePlanning(
+        config,
+        (feature, projectContext, languageContext) =>
+          buildQuickPlanPrompt({ feature, projectContext, languageContext, trivial: opts.trivial }),
+        opts,
+      );
     },
 
     async regenerate(opts: RegenerateOptions): Promise<RegenerateResult> {

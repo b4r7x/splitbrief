@@ -1,30 +1,18 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { Divider } from './divider.js';
 
-const envSnapshot = { ...process.env };
-let ttyDescriptor: PropertyDescriptor | undefined;
-
-function forceUnicodeGlyphs(): void {
-  process.env.TERM = 'xterm-256color';
-  process.env.LANG = 'en_US.UTF-8';
-  ttyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
-  Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
-}
-
 function withAsciiTier(run: () => void): void {
+  const previousTerm = process.env.TERM;
   process.env.TERM = 'dumb';
   try {
     run();
   } finally {
-    process.env = { ...envSnapshot };
-    if (ttyDescriptor) {
-      Object.defineProperty(process.stdout, 'isTTY', ttyDescriptor);
-    } else {
-      forceUnicodeGlyphs();
-    }
+    if (previousTerm === undefined) delete process.env.TERM;
+    else process.env.TERM = previousTerm;
   }
 }
 

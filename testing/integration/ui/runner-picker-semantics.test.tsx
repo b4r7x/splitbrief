@@ -11,7 +11,7 @@ import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { _resetMouseZones } from '../../../src/lib/terminal/mouse-zones.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';
-import { modelCacheStore } from '../../../src/stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
@@ -73,8 +73,7 @@ function makeActions(overrides: Partial<PickerActions> = {}): PickerActions {
     customCommand: async () => {},
     customModel: async () => {},
     openCustomModel: () => {},
-    openProviderAuth: () => {},
-    submitProviderKey: async () => {},
+    browseCatalog: () => {},
     closeOverlay: () => {},
     ...overrides,
   };
@@ -194,7 +193,6 @@ describe('runner picker semantics integration', () => {
       expect(plannerCatalog.map((item) => item.id)).toEqual(
         expect.arrayContaining([
           'custom-command',
-          'agent-sdk',
           ...PLANNER_CLI_TOOL_IDS,
           ...PLANNER_API_PROVIDER_IDS,
         ]),
@@ -255,21 +253,15 @@ describe('runner picker semantics integration', () => {
       });
     }
 
-    it('renders API auth and offline semantics from detection-backed picker state', async () => {
+    it('renders API offline semantics from detection-backed picker state', async () => {
       detectionStore.setDetection({
         cliTools: [],
         providers: [
           {
-            provider: 'groq',
+            provider: 'lm-studio',
             available: false,
-            isLocal: false,
+            isLocal: true,
             hasKey: false,
-          },
-          {
-            provider: 'deepseek',
-            available: true,
-            isLocal: false,
-            hasKey: true,
           },
           {
             provider: 'ollama',
@@ -296,12 +288,9 @@ describe('runner picker semantics integration', () => {
         return frameText(ui);
       };
 
-      const groqFrame = await cursorOnto('groq');
-      expect(groqFrame).toContain('Auth required');
-      expect(groqFrame).toContain('GROQ_API_KEY');
-      const deepseekFrame = await cursorOnto('deepseek');
-      expect(deepseekFrame).toContain('Unverified');
-      expect(deepseekFrame).toContain('has no passing provider');
+      const lmStudioFrame = await cursorOnto('lm-studio');
+      expect(lmStudioFrame).toContain('Unavailable');
+      expect(lmStudioFrame).toContain('Start lm-studio and refresh detection.');
       const ollamaFrame = await cursorOnto('ollama');
       expect(ollamaFrame).toContain('Unavailable');
       expect(ollamaFrame).toContain('Ollama is not running');
@@ -402,8 +391,8 @@ describe('runner picker semantics integration', () => {
         },
         {
           item: pickerItem({
-            id: 'aider',
-            displayName: 'Aider CLI',
+            id: 'copilot',
+            displayName: 'GitHub Copilot CLI',
             kind: 'cli',
             roles: ['planner', 'implementer'],
             modelPolicy: 'none',
@@ -514,9 +503,9 @@ describe('runner picker semantics integration', () => {
     });
 
     it('shows custom-capable empty guidance and discovered model counts independently', async () => {
-      const openai = pickerItem({
-        id: 'openai',
-        displayName: 'OpenAI',
+      const customEndpoint = pickerItem({
+        id: 'custom-endpoint',
+        displayName: 'Custom endpoint',
         kind: 'api',
         roles: ['planner', 'implementer'],
         modelPolicy: 'per-call',
@@ -534,7 +523,7 @@ describe('runner picker semantics integration', () => {
       const emptyUi = renderFeature(
         <PickerView
           role="planner"
-          catalog={catalogForItem('planner', [openai], openai, [], true)}
+          catalog={catalogForItem('planner', [customEndpoint], customEndpoint, [], true)}
           actions={makeActions()}
         />,
       );
@@ -556,7 +545,7 @@ describe('runner picker semantics integration', () => {
       const discoveredUi = renderFeature(
         <PickerView
           role="planner"
-          catalog={catalogForItem('planner', [openai], openai, discovered, false)}
+          catalog={catalogForItem('planner', [customEndpoint], customEndpoint, discovered, false)}
           actions={makeActions()}
         />,
       );
@@ -648,19 +637,18 @@ describe('runner picker semantics integration', () => {
             models: [{ id: 'ollama-only-model', contextLength: 8192 }],
           },
           {
-            provider: 'anthropic',
+            provider: 'lm-studio',
             available: true,
-            isLocal: false,
-            hasKey: true,
-            models: [{ id: 'anthropic-only-model', contextLength: 200_000 }],
+            isLocal: true,
+            models: [{ id: 'lm-studio-only-model', contextLength: 200_000 }],
           },
         ],
       });
       modelCacheStore.setProviderModels('ollama', [
         { id: 'ollama-only-model', contextLength: 8192 },
       ]);
-      modelCacheStore.setProviderModels('anthropic', [
-        { id: 'anthropic-only-model', contextLength: 200_000 },
+      modelCacheStore.setProviderModels('lm-studio', [
+        { id: 'lm-studio-only-model', contextLength: 200_000 },
       ]);
 
       const ui = await renderPicker('implementer');
@@ -675,8 +663,8 @@ describe('runner picker semantics integration', () => {
         query = id;
       };
 
-      for (const provider of ['anthropic', 'ollama', 'anthropic', 'ollama'] as const) {
-        const other = provider === 'anthropic' ? 'ollama' : 'anthropic';
+      for (const provider of ['lm-studio', 'ollama', 'lm-studio', 'ollama'] as const) {
+        const other = provider === 'lm-studio' ? 'ollama' : 'lm-studio';
         await selectById(provider);
         await vi.waitFor(() => {
           const ids = rightModelZoneIds();

@@ -157,6 +157,91 @@ function listenerFailureCapability(failure: 'data' | 'exit'): {
   return { capability: { kind: 'available', spawn }, state };
 }
 
+function postSpawnBoundaryCapability(): {
+  readonly capability: PtyCapability;
+  readonly state: { active: boolean; kills: Array<string | undefined> };
+} {
+  const state = { active: true, kills: [] as Array<string | undefined> };
+  let exitListener: ((event: PtyExitEvent) => void) | undefined;
+  const spawn = resolvePtySpawn({
+    spawn: () => ({
+      pid: 999_998,
+      onExit: (listener: (event: PtyExitEvent) => void) => {
+        exitListener = listener;
+        return {
+          dispose: () => {
+            exitListener = undefined;
+          },
+        };
+      },
+      kill: (signal?: string) => {
+        state.kills.push(signal);
+        state.active = false;
+        exitListener?.({ exitCode: 143, signal: 15 });
+      },
+    }),
+  });
+  if (!spawn) throw new Error('expected an adapted PTY spawn');
+  return { capability: { kind: 'available', spawn }, state };
+}
+
+function unobservableBoundaryCapability(): {
+  readonly capability: PtyCapability;
+  readonly state: { environmentRoot: string; kills: Array<string | undefined> };
+} {
+  const state = { environmentRoot: '', kills: [] as Array<string | undefined> };
+  const spawn = resolvePtySpawn({
+    spawn: (
+      _executable: string,
+      _argv: readonly string[],
+      options: { env: Record<string, string> },
+    ) => {
+      state.environmentRoot = options.env.HOME ?? '';
+      return {
+        pid: 999_996,
+        onExit: () => {
+          throw new Error('exit listener registration failed');
+        },
+        kill: (signal?: string) => {
+          state.kills.push(signal);
+        },
+      };
+    },
+  });
+  if (!spawn) throw new Error('expected an adapted PTY spawn');
+  return { capability: { kind: 'available', spawn }, state };
+}
+
+function invalidDisposableBoundaryCapability(): {
+  readonly capability: PtyCapability;
+  readonly state: { environmentRoot: string; kills: Array<string | undefined> };
+} {
+  const state = { environmentRoot: '', kills: [] as Array<string | undefined> };
+  let exitListener: ((event: PtyExitEvent) => void) | undefined;
+  const spawn = resolvePtySpawn({
+    spawn: (
+      _executable: string,
+      _argv: readonly string[],
+      options: { env: Record<string, string> },
+    ) => {
+      state.environmentRoot = options.env.HOME ?? '';
+      return {
+        pid: 999_994,
+        onExit: (listener: (event: PtyExitEvent) => void) => {
+          exitListener = listener;
+          return {};
+        },
+        kill: (signal?: string) => {
+          state.kills.push(signal);
+          exitListener?.({ exitCode: 143, signal: 15 });
+        },
+      };
+    },
+  });
+  if (!spawn) throw new Error('expected an adapted PTY spawn');
+  return { capability: { kind: 'available', spawn }, state };
+}
+
 function invalidDisposableCapability(failure: 'data' | 'exit'): {
   readonly capability: PtyCapability;
   readonly state: ListenerFailureState;
@@ -367,105 +452,49 @@ describe('PTY behavior smoke', () => {
     ).rejects.toMatchObject({ name: 'pty-setup-spawn-failed' });
   });
 
-  it('makes every post-spawn failure fatal and reaps the child in optional mode', async () => {
-    let active = true;
-    const kills: Array<string | undefined> = [];
-    let exitListener: ((event: PtyExitEvent) => void) | undefined;
-    const postSpawnBoundary = {
-      pid: 999_998,
-      onExit: (listener: (event: PtyExitEvent) => void) => {
-        exitListener = listener;
-        return {
-          dispose: () => {
-            exitListener = undefined;
-          },
-        };
-      },
-      kill: (signal?: string) => {
-        kills.push(signal);
-        active = false;
-        exitListener?.({ exitCode: 143, signal: 15 });
-      },
-    };
-    const adaptedSpawn = resolvePtySpawn({ spawn: () => postSpawnBoundary });
-    if (!adaptedSpawn) throw new Error('expected an adapted PTY spawn');
+  it('reaps the child when the spawned process omits the data and write API', async () => {
+    const failed = postSpawnBoundaryCapability();
     await expect(
       runPtySmoke(
         { timeoutMs: 100, requirement: 'optional' },
-        { loadCapability: async () => ({ kind: 'available', spawn: adaptedSpawn }) },
+        { loadCapability: async () => failed.capability },
       ),
     ).rejects.toMatchObject({ name: 'pty-contract-api-incompatible' });
-    expect(kills).toEqual(['SIGTERM']);
-    expect(active).toBe(false);
 
-    const unobservableKills: Array<string | undefined> = [];
-    let unobservableEnvironmentRoot = '';
-    const unobservableBoundary = {
-      pid: 999_996,
-      onExit: () => {
-        throw new Error('exit listener registration failed');
-      },
-      kill: (signal?: string) => {
-        unobservableKills.push(signal);
-      },
-    };
-    const unobservableSpawn = resolvePtySpawn({
-      spawn: (
-        _executable: string,
-        _argv: readonly string[],
-        options: { env: Record<string, string> },
-      ) => {
-        unobservableEnvironmentRoot = options.env.HOME ?? '';
-        return unobservableBoundary;
-      },
-    });
-    if (!unobservableSpawn) throw new Error('expected an adapted PTY spawn');
+    expect(failed.state.kills).toEqual(['SIGTERM']);
+    expect(failed.state.active).toBe(false);
+  });
+
+  it('hard-kills and reports unobservable cleanup when the boundary cannot register an exit listener', async () => {
+    const failed = unobservableBoundaryCapability();
     await expect(
       runPtySmoke(
         { timeoutMs: 100, requirement: 'optional' },
-        { loadCapability: async () => ({ kind: 'available', spawn: unobservableSpawn }) },
+        { loadCapability: async () => failed.capability },
       ),
     ).rejects.toMatchObject({
       name: 'pty-contract-cleanup',
       cause: { name: 'pty-contract-listener' },
     });
-    expect(unobservableKills).toEqual(['SIGTERM', 'SIGKILL']);
-    expect(existsSync(unobservableEnvironmentRoot)).toBe(false);
 
-    const invalidDisposableKills: Array<string | undefined> = [];
-    let invalidDisposableEnvironmentRoot = '';
-    let invalidDisposableExitListener: ((event: PtyExitEvent) => void) | undefined;
-    const invalidDisposableBoundary = {
-      pid: 999_994,
-      onExit: (listener: (event: PtyExitEvent) => void) => {
-        invalidDisposableExitListener = listener;
-        return {};
-      },
-      kill: (signal?: string) => {
-        invalidDisposableKills.push(signal);
-        invalidDisposableExitListener?.({ exitCode: 143, signal: 15 });
-      },
-    };
-    const invalidBoundarySpawn = resolvePtySpawn({
-      spawn: (
-        _executable: string,
-        _argv: readonly string[],
-        options: { env: Record<string, string> },
-      ) => {
-        invalidDisposableEnvironmentRoot = options.env.HOME ?? '';
-        return invalidDisposableBoundary;
-      },
-    });
-    if (!invalidBoundarySpawn) throw new Error('expected an adapted PTY spawn');
+    expect(failed.state.kills).toEqual(['SIGTERM', 'SIGKILL']);
+    expect(existsSync(failed.state.environmentRoot)).toBe(false);
+  });
+
+  it('rejects an invalid exit disposable from the boundary and reaps the child', async () => {
+    const failed = invalidDisposableBoundaryCapability();
     await expect(
       runPtySmoke(
         { timeoutMs: 100, requirement: 'optional' },
-        { loadCapability: async () => ({ kind: 'available', spawn: invalidBoundarySpawn }) },
+        { loadCapability: async () => failed.capability },
       ),
     ).rejects.toMatchObject({ name: 'pty-contract-listener' });
-    expect(invalidDisposableKills).toEqual(['SIGTERM']);
-    expect(existsSync(invalidDisposableEnvironmentRoot)).toBe(false);
 
+    expect(failed.state.kills).toEqual(['SIGTERM']);
+    expect(existsSync(failed.state.environmentRoot)).toBe(false);
+  });
+
+  it('times out and reaps a child that never speaks', async () => {
     const timedOut = fakeCapability('silent');
     await expect(
       runPtySmoke(
@@ -473,9 +502,12 @@ describe('PTY behavior smoke', () => {
         { loadCapability: async () => timedOut.capability },
       ),
     ).rejects.toMatchObject({ name: 'pty-contract-timeout' });
+
     expect(timedOut.state.kills).toEqual(['SIGTERM']);
     expect(timedOut.state.active).toBe(false);
+  });
 
+  it('reports an incomplete contract when the child exits before the review starts', async () => {
     const earlyExit = fakeCapability('early-exit');
     await expect(
       runPtySmoke(
@@ -483,6 +515,7 @@ describe('PTY behavior smoke', () => {
         { loadCapability: async () => earlyExit.capability },
       ),
     ).rejects.toMatchObject({ name: 'pty-contract-incomplete' });
+
     expect(earlyExit.state.active).toBe(false);
   });
 

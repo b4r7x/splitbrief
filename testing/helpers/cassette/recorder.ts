@@ -13,12 +13,14 @@ function redactHeaders(headers: Record<string, string>): Record<string, string> 
   return redacted;
 }
 
-function detectProvider(url: string, headers: Record<string, string>): string {
-  const headerKeys = new Set(Object.keys(headers).map((key) => key.toLowerCase()));
-  if (url.includes('anthropic') || headerKeys.has('x-api-key')) return 'anthropic';
-  if (url.includes('openai') || url.includes('openrouter') || headerKeys.has('authorization'))
-    return 'openai';
-  return 'unknown';
+const OPENAI_COMPATIBLE_PATHS = ['/chat/completions', '/completions', '/models'];
+
+// Only OpenAI-compatible endpoints hold an API seat, so the label records the
+// dialect the entry was recorded over rather than guessing a vendor from a host.
+function detectProvider(url: string): string {
+  return OPENAI_COMPATIBLE_PATHS.some((path) => url.includes(path))
+    ? 'openai-compatible'
+    : 'unknown';
 }
 
 export function createCassetteRecorder(
@@ -63,7 +65,7 @@ export function createCassetteRecorder(
           headers: responseHeaders,
           body: responseBody,
         },
-        provider: detectProvider(request.url, recordedRequestHeaders),
+        provider: detectProvider(request.url),
         durationMs,
       });
 

@@ -69,13 +69,6 @@ const CONFORMANCE_GATED_ROWS = [
     credentialChannel: 'api-key',
   },
   {
-    backend: 'agent-sdk',
-    version: '',
-    transport: 'stdout-final',
-    terminalContract: 'agent-sdk-final-assistant-turn-v1',
-    credentialChannel: 'api-key',
-  },
-  {
     backend: 'custom-command',
     version: '',
     transport: 'stdout-final',
@@ -178,15 +171,14 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
           versionObservation: 'drifted',
         },
       });
-      expect(admitCompilerCapability(opencodeTuple({ transport: 'declared-file' }))).toMatchObject({
-        kind: 'refused',
-        missing: ['transport'],
-      });
-      expect(
-        admitCompilerCapability(
-          opencodeTuple({ conformance: { ...conformanceProof(), roleVector: 'unverified' } }),
-        ),
-      ).toMatchObject({ kind: 'refused', missing: ['conformance'] });
+      const refusedTransport = admitCompilerCapability(
+        opencodeTuple({ transport: 'declared-file' }),
+      );
+      expect(refusedTransport).toMatchObject({ kind: 'refused', missing: ['transport'] });
+      const refusedConformance = admitCompilerCapability(
+        opencodeTuple({ conformance: { ...conformanceProof(), roleVector: 'unverified' } }),
+      );
+      expect(refusedConformance).toMatchObject({ kind: 'refused', missing: ['conformance'] });
       expect(admitCompilerCapability(opencodeTuple({ version: '1.19.0' }))).toMatchObject({
         kind: 'admitted',
         receipt: {
@@ -196,15 +188,9 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
           versionObservation: 'drifted',
         },
       });
-      const refusedTransport = admitCompilerCapability(
-        opencodeTuple({ transport: 'declared-file' }),
-      );
       if (refusedTransport.kind === 'refused') {
         expect(refusedTransport.failure.code).toBe('task_compiler_capability_unsupported');
       }
-      const refusedConformance = admitCompilerCapability(
-        opencodeTuple({ conformance: { ...conformanceProof(), roleVector: 'unverified' } }),
-      );
       if (refusedConformance.kind === 'refused') {
         expect(refusedConformance.failure.code).toBe('task_compiler_capability_unsupported');
       }
@@ -291,8 +277,8 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
   });
 
   describe('zero-dispatch unsupported rows (REQ-016, REQ-018)', () => {
-    it('copilot and aider planner rows refuse through the production factory with zero spawns', async () => {
-      for (const tool of ['copilot', 'aider'] as const) {
+    it('copilot and cursor planner rows refuse through the production factory with zero spawns', async () => {
+      for (const tool of ['copilot', 'cursor'] as const) {
         const scenario = await effectScenario(`capability-matrix-unsupported-${tool}`);
         try {
           vi.stubEnv('PATH', `${scenario.toolsDir}${delimiter}${process.env.PATH ?? ''}`);

@@ -7,16 +7,19 @@ import {
 } from '../../../core/providers/api-provider-catalog.js';
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import { hasAutomaticModelDefault } from '../../../core/providers/model-selection.js';
+import type { CliEffortChannel } from '../../../core/runners/effort-channel.js';
 import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
+  type CliToolDescriptor,
+} from '../../../core/runners/cli-tool-catalog.js';
+import {
   runnerRoleForActiveRole,
   seatPickerLane,
-  type CliToolDescriptor,
   type RunnerRole,
   type ActiveRunnerRole,
   type SeatPickerRole,
-} from '../../../core/runners/cli-tool-catalog.js';
+} from '../../../core/runners/seat-roles.js';
 import type { RunnerBillingPosture } from '../../../core/runners/runner-billing.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
 import type { ImplementerConfig } from '../../../core/schemas/implementer-config.js';
@@ -24,8 +27,6 @@ import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
 import {
   cliPermissions,
   deriveModelCatalogCapability,
-  metaBilling,
-  metaModelPolicy,
   trustPermissions,
   type ModelCatalogCapability,
   type PickerModelPolicy,
@@ -34,7 +35,6 @@ import {
 import {
   deriveApiStatus,
   deriveCliStatus,
-  deriveMetaStatus,
   isSelectable,
   resolveCliVersion,
   type PickerDetectionSnapshot,
@@ -44,7 +44,7 @@ import {
 export type RunnerPickerDescriptor =
   | Readonly<{ kind: 'cli'; descriptor: CliToolDescriptor }>
   | Readonly<{ kind: 'api'; descriptor: ApiProviderDescriptor }>
-  | Readonly<{ kind: 'custom-command' | 'agent-sdk' }>;
+  | Readonly<{ kind: 'custom-command' }>;
 
 interface PickerOptionBase {
   id: string;
@@ -65,6 +65,8 @@ interface PickerOptionBase {
    * axis (row tags, auth glyphs, sticky token) in the model column.
    */
   providerDependent?: boolean;
+  /** How the seat's tool delivers effort; absent when it has no channel at all. */
+  effortChannel?: CliEffortChannel;
 }
 
 export interface RunnerPickerOption extends PickerOptionBase {
@@ -106,14 +108,6 @@ export function inheritPlannerOption(
     available: true,
     ...(input.isCurrent ? { isCurrent: true } : {}),
   };
-}
-
-/**
- * The active runner identity needed to derive availability. This intentionally
- * excludes the runner config so picker status never receives credentials.
- */
-export interface PickerStatusLens {
-  readonly activeRunnerId: string | undefined;
 }
 
 function pickerDescriptorId(entry: RunnerPickerDescriptor): string {
@@ -160,6 +154,7 @@ function projectCliOption(
     ...(version ? { version } : {}),
     ...(isCurrent ? { isCurrent: true } : {}),
     ...(providerDependent ? { providerDependent: true } : {}),
+    ...(descriptor.effortChannel === 'none' ? {} : { effortChannel: descriptor.effortChannel }),
   };
 }
 
@@ -192,37 +187,29 @@ function projectApiOption(
 
 function projectMetaOption(
   input: Readonly<{
-    kind: 'custom-command' | 'agent-sdk';
+    kind: 'custom-command';
     role: ActiveRunnerRole;
-    detections: PickerDetectionSnapshot;
     isCurrent: boolean;
-    useConfiguredProviderOutcome: boolean;
   }>,
 ): PickerOption {
-  const { kind, role, detections, isCurrent } = input;
-  const status = deriveMetaStatus({
-    kind,
-    detections,
-    role,
-    useConfiguredProviderOutcome: input.useConfiguredProviderOutcome,
-  });
+  const { kind, role, isCurrent } = input;
+  // The launcher runs whatever command the user types: it names no model and
+  // its billing belongs to whatever that command calls.
+  const status: PickerOptionStatus = { state: 'ready', remediation: null };
 
-  const common = {
+  return {
     id: kind,
-    displayName: kind === 'custom-command' ? 'Custom command' : getProviderDisplayName(kind),
+    kind,
+    displayName: 'Custom command',
     roles: ['planner', 'implementer'] satisfies readonly RunnerRole[],
-    modelPolicy: metaModelPolicy(kind),
-    modelCapability: deriveModelCatalogCapability(metaModelPolicy(kind), kind === 'agent-sdk'),
-    billing: metaBilling(kind),
-    permissions: trustPermissions(
-      kind === 'custom-command' ? 'shell' : kind,
-      runnerRoleForActiveRole(role),
-    ),
+    modelPolicy: 'none',
+    modelCapability: deriveModelCatalogCapability('none', false),
+    billing: 'unknown',
+    permissions: trustPermissions('shell', runnerRoleForActiveRole(role)),
     status,
     available: isSelectable(status, kind),
     ...(isCurrent ? { isCurrent: true } : {}),
   };
-  return kind === 'custom-command' ? { ...common, kind } : { ...common, kind };
 }
 
 export function sortPickerOptions(
@@ -242,7 +229,7 @@ export function sortPickerOptions(
 }
 
 export function assemblePickerDescriptors(): readonly RunnerPickerDescriptor[] {
-  const meta: RunnerPickerDescriptor[] = [{ kind: 'custom-command' }, { kind: 'agent-sdk' }];
+  const meta: RunnerPickerDescriptor[] = [{ kind: 'custom-command' }];
   const cli: RunnerPickerDescriptor[] = CLI_TOOL_IDS.map((id) => ({
     kind: 'cli',
     descriptor: CLI_TOOL_CATALOG[id],
@@ -259,7 +246,6 @@ export function buildPickerOptions(
   descriptors: readonly RunnerPickerDescriptor[],
   detections: PickerDetectionSnapshot,
   currentConfig: PlannerConfig | ImplementerConfig | undefined,
-  statusLens?: PickerStatusLens | undefined,
   sort?: { filterActive: boolean } | undefined,
 ): PickerOption[] {
   const lane = seatPickerLane(role);
@@ -269,23 +255,13 @@ export function buildPickerOptions(
     if (!descriptorSupportsRole(entry, lane)) return [];
 
     const isCurrent = currentId === pickerDescriptorId(entry);
-    const useConfiguredProviderOutcome =
-      isCurrent || statusLens?.activeRunnerId === pickerDescriptorId(entry);
     if (entry.kind === 'cli') {
       return [projectCliOption(entry.descriptor, lane, detections, isCurrent)];
     }
     if (entry.kind === 'api') {
       return [projectApiOption(entry.descriptor, lane, detections, isCurrent)];
     }
-    return [
-      projectMetaOption({
-        kind: entry.kind,
-        role: lane,
-        detections,
-        isCurrent,
-        useConfiguredProviderOutcome,
-      }),
-    ];
+    return [projectMetaOption({ kind: entry.kind, role: lane, isCurrent })];
   });
 
   return options.toSorted((a, b) =>

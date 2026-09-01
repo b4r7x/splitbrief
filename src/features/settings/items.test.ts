@@ -88,6 +88,28 @@ describe('settingsItemDescription', () => {
     );
   });
 
+  it("names the tool's own variant vocabulary on a variant-channel effort row", () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6-luna' },
+    });
+    const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });
+
+    expect(settingsItemDescription({ item: itemAt(items, 'effort:build'), config })).toContain(
+      'opencode run --variant',
+    );
+  });
+
+  it('sends a model-id effort row to the seat picker', () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'cursor', model: 'gpt-5.6-luna-high' },
+    });
+    const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });
+
+    expect(settingsItemDescription({ item: itemAt(items, 'effort:build'), config })).toContain(
+      'spelled by the model id',
+    );
+  });
+
   it('reads a setting row straight off its definition', () => {
     const config = makeConfig();
     const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });

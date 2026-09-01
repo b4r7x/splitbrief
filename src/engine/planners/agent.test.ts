@@ -75,25 +75,6 @@ describe('createAgentPlanner', () => {
     expect(result.code).toBe(null);
   });
 
-  it('supports escalateFull — success when agent writes files', async () => {
-    const outFile = join(projectDir, 'full-out.ts');
-    const config = makeConfig({
-      planner: { kind: 'agent', command: 'bash', args: ['-c', `echo "// full" > ${outFile}`] },
-    });
-    const planner = createAgentPlanner(config);
-    const task = makeTask();
-    const callbacks = { onOutput: vi.fn() };
-
-    const result = await planner.escalateFull({
-      task,
-      error: 'error message',
-      projectDir,
-      callbacks,
-    });
-    expect(result.success).toBe(true);
-    expect(result.code).toBe(null);
-  });
-
   it('supports review', async () => {
     const config = defaultAgentConfig();
     const planner = createAgentPlanner(config);
@@ -219,6 +200,7 @@ Create the main feature.
       callbacks,
     });
     expect(result.success).toBe(true);
+    expect(result.code).toBe(null);
     expect(readFileSync(preExistingFile, 'utf-8')).toBe('// pre-existing');
     expect(readFileSync(newFile, 'utf-8')).toBe('// escalated\n');
   });

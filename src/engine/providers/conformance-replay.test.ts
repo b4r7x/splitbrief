@@ -5,10 +5,6 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { API_PROVIDER_CATALOG } from '../../core/providers/api-provider-catalog.js';
-import {
-  API_PROVIDER_VERDICT_CANDIDATE_PATHS,
-  PASS_API_PROVIDER_IDS,
-} from '../../core/providers/api-provider-verdicts.js';
 import { assemblePickerDescriptors } from '../../features/runners/model-catalog/options.js';
 import {
   CandidateEvidence,
@@ -18,11 +14,9 @@ import {
 } from './candidate-contract.js';
 import type { OpenAICompatPolicy } from './openai-compat-policy.js';
 import { resolveOpenAICompatPolicy } from './openai-compat-policy.js';
-import {
-  PROVIDER_CONFORMANCE_EXIT_CODES,
-  createUnregisteredOpenAICompatProvider,
-  runProductionProviderConformance,
-} from './conformance.js';
+import { PROVIDER_CONFORMANCE_EXIT_CODES } from './conformance.js';
+import { runProductionProviderConformance } from './conformance-production.js';
+import { createUnregisteredOpenAICompatProvider } from './unregistered-provider.js';
 import { KNOWN_PROVIDERS, getProvider } from './registry.js';
 
 const REPO_ROOT = join(import.meta.dirname, '../../..');
@@ -50,7 +44,6 @@ const PRODUCTION_REPLAY_CAPTURED_FIELDS = [
 ] as const;
 
 type VerdictTaskId =
-  | 'T-043'
   | 'T-044'
   | 'T-045'
   | 'T-046'
@@ -81,8 +74,8 @@ function parseContract(value: unknown): RawProviderCandidateContract {
   return RawProviderCandidateContract.parse(value);
 }
 
-function isPassCandidateId(id: string): boolean {
-  return (PASS_API_PROVIDER_IDS as readonly string[]).includes(id);
+function isPassCandidateId(row: ProviderReplayRow): boolean {
+  return readEvidenceJson(row.evidencePath).verdict === 'PASS';
 }
 
 function assertPickerAbsent(candidateId: string): void {
@@ -197,32 +190,6 @@ function assertCapturedProductionShape(stdout: string): void {
 }
 
 const REPLAY_ROWS: readonly ProviderReplayRow[] = [
-  {
-    taskId: 'T-043',
-    candidateId: 'deepseek',
-    contract: parseContract({
-      id: 'deepseek',
-      service: 'deepseek',
-      offering: 'payg',
-      roles: ['planner'],
-      endpointPolicy: { kind: 'fixed-origin', baseURL: 'https://api.deepseek.com/v1' },
-      credentialEnv: 'DEEPSEEK_API_KEY',
-      credentialPrefix: 'sk-',
-      modelIds: ['deepseek-v4-flash'],
-      rawRequest: {
-        stream: true,
-        includeUsage: true,
-        tokenField: 'max_tokens',
-        max: 8192,
-      },
-      expectedRawTerminal: 'finish_reason',
-      asOf: '2026-07-31',
-    }),
-    capturedContractSha256: 'c77204fd3e80949bcb568581efc955e6cde7b7d77f4c3b5afda1a25b0ef591d2',
-    evidencePath: 'testing/fixtures/provider-conformance/deepseek.json',
-    candidateSource: '.nuke/release-evidence/deepseek-candidate.ts',
-    omitFromCatalog: false,
-  },
   {
     taskId: 'T-044',
     candidateId: 'mistral',
@@ -672,11 +639,10 @@ async function replayPassEvidence(row: ProviderReplayRow): Promise<void> {
 }
 
 describe('provider conformance replay', () => {
-  it('defines one replay row per T-043–T-053 verdict candidate', () => {
-    expect(REPLAY_ROWS).toHaveLength(11);
+  it('defines one replay row per T-044–T-053 verdict candidate', () => {
+    expect(REPLAY_ROWS).toHaveLength(10);
     expect(REPLAY_ROWS.map((row) => row.taskId).toSorted()).toEqual(
       [
-        'T-043',
         'T-044',
         'T-045',
         'T-046',
@@ -691,8 +657,16 @@ describe('provider conformance replay', () => {
     );
     const candidateIds = REPLAY_ROWS.map((row) => row.candidateId);
     expect(candidateIds).toEqual([
-      'deepseek',
-      ...API_PROVIDER_VERDICT_CANDIDATE_PATHS.map((entry) => entry.id),
+      'mistral',
+      'gemini',
+      'cerebras',
+      'zai',
+      'mimo',
+      'mimo-token-plan',
+      'minimax',
+      'moonshot',
+      'dashscope',
+      'llama-cpp',
     ]);
   });
 
@@ -711,7 +685,7 @@ describe('provider conformance replay', () => {
     '$taskId replays PASS evidence or executes OMIT-NOT-APPLICABLE without network',
     async (row) => {
       vi.stubGlobal('fetch', vi.fn());
-      if (isPassCandidateId(row.candidateId)) {
+      if (isPassCandidateId(row)) {
         await replayPassEvidence(row);
       } else {
         executeOmitNotApplicable(row);
@@ -720,7 +694,7 @@ describe('provider conformance replay', () => {
     },
   );
 
-  it('gives every T-043–T-053 verdict row its own evidence fixture on disk', () => {
+  it('gives every T-044–T-053 verdict row its own evidence fixture on disk', () => {
     const evidencePaths = REPLAY_ROWS.map((row) => row.evidencePath);
     expect(new Set(evidencePaths).size).toBe(evidencePaths.length);
     for (const evidencePath of evidencePaths) {

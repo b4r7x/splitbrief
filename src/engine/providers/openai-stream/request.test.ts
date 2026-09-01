@@ -47,38 +47,34 @@ async function captureBody(
   return capturedBody;
 }
 
+const reasoningPolicy: OpenAICompatPolicy = {
+  tokenField: 'max_completion_tokens',
+  streamUsage: true,
+  temperature: 'omit',
+  effort: 'clamp-xhigh',
+  reasoning: 'reasoning_effort',
+  extraBody: undefined,
+  finishReasons: OPENAI_COMPAT_STANDARD_FINISH_REASONS,
+};
+
+const samplingPolicy: OpenAICompatPolicy = {
+  tokenField: 'max_tokens',
+  streamUsage: true,
+  temperature: 'verbatim',
+  effort: 'omit',
+  reasoning: 'omit',
+  extraBody: undefined,
+  finishReasons: OPENAI_COMPAT_STANDARD_FINISH_REASONS,
+};
+
 describe('streamCompletion request body', () => {
-  it('uses max_completion_tokens for direct OpenAI o-series models', async () => {
-    const capturedBody = await captureBody('o3', [{ role: 'user', content: 'hi' }], {
-      temperature: 0.2,
-      onProgress: () => {},
-      maxTokens: 4096,
-      endpoint: { provider: 'openai', apiBase: 'https://api.openai.com/v1' },
-    });
-
-    expect(capturedBody?.max_completion_tokens).toBe(4096);
-    expect(capturedBody).not.toHaveProperty('max_tokens');
-  });
-
-  it('keeps max_tokens for non-o-series OpenAI models', async () => {
-    const capturedBody = await captureBody('gpt-4o', [{ role: 'user', content: 'hi' }], {
-      temperature: 0.2,
-      onProgress: () => {},
-      maxTokens: 4096,
-      endpoint: { provider: 'openai', apiBase: 'https://api.openai.com/v1' },
-    });
-
-    expect(capturedBody?.max_tokens).toBe(4096);
-    expect(capturedBody).not.toHaveProperty('max_completion_tokens');
-  });
-
-  it('routes the gpt-5 family through max_completion_tokens and omits temperature', async () => {
-    const capturedBody = await captureBody('gpt-5', [{ role: 'user', content: 'hi' }], {
+  it('uses max_completion_tokens under a reasoning policy', async () => {
+    const capturedBody = await captureBody('reasoning-model', [{ role: 'user', content: 'hi' }], {
       temperature: 0.7,
       onProgress: () => {},
       maxTokens: 4096,
       effort: 'high',
-      endpoint: { provider: 'openai', apiBase: 'https://api.openai.com/v1' },
+      policy: reasoningPolicy,
     });
 
     expect(capturedBody?.max_completion_tokens).toBe(4096);
@@ -87,28 +83,51 @@ describe('streamCompletion request body', () => {
     expect(capturedBody?.reasoning_effort).toBe('high');
   });
 
-  it('clamps xhigh reasoning_effort to high for direct OpenAI reasoning models', async () => {
-    const capturedBody = await captureBody('o3', [{ role: 'user', content: 'hi' }], {
+  it('keeps max_tokens and temperature under a sampling policy', async () => {
+    const capturedBody = await captureBody('sampling-model', [{ role: 'user', content: 'hi' }], {
+      temperature: 0.2,
+      onProgress: () => {},
+      maxTokens: 4096,
+      policy: samplingPolicy,
+    });
+
+    expect(capturedBody?.max_tokens).toBe(4096);
+    expect(capturedBody).not.toHaveProperty('max_completion_tokens');
+    expect(capturedBody?.temperature).toBe(0.2);
+  });
+
+  it('clamps xhigh reasoning_effort to high under a clamping policy', async () => {
+    const capturedBody = await captureBody('reasoning-model', [{ role: 'user', content: 'hi' }], {
       temperature: 0.2,
       onProgress: () => {},
       effort: 'xhigh',
-      endpoint: { provider: 'openai', apiBase: 'https://api.openai.com/v1' },
+      policy: reasoningPolicy,
     });
 
     expect(capturedBody?.reasoning_effort).toBe('high');
   });
 
-  it('keeps temperature and verbatim effort for non-reasoning OpenAI models', async () => {
-    const capturedBody = await captureBody('gpt-4o', [{ role: 'user', content: 'hi' }], {
-      temperature: 0.2,
-      onProgress: () => {},
-      endpoint: { provider: 'openai', apiBase: 'https://api.openai.com/v1' },
-    });
+  it('uses developer messages under a reasoning policy', async () => {
+    const capturedBody = await captureBody(
+      'reasoning-model',
+      [
+        { role: 'system', content: 'Follow the task brief.' },
+        { role: 'user', content: 'Implement T001.' },
+      ],
+      {
+        temperature: 0.2,
+        onProgress: () => {},
+        policy: reasoningPolicy,
+      },
+    );
 
-    expect(capturedBody?.temperature).toBe(0.2);
+    expect(capturedBody?.messages).toEqual([
+      { role: 'developer', content: 'Follow the task brief.' },
+      { role: 'user', content: 'Implement T001.' },
+    ]);
   });
 
-  it('uses developer messages for direct OpenAI reasoning model instructions', async () => {
+  it('fails closed for an unproved endpoint that names itself openai', async () => {
     const capturedBody = await captureBody(
       'o3',
       [
@@ -118,12 +137,18 @@ describe('streamCompletion request body', () => {
       {
         temperature: 0.2,
         onProgress: () => {},
+        maxTokens: 4096,
+        effort: 'high',
         endpoint: { provider: 'openai', apiBase: 'https://api.openai.com/v1' },
       },
     );
 
+    expect(capturedBody?.max_tokens).toBe(4096);
+    expect(capturedBody).not.toHaveProperty('max_completion_tokens');
+    expect(capturedBody).not.toHaveProperty('temperature');
+    expect(capturedBody).not.toHaveProperty('reasoning_effort');
     expect(capturedBody?.messages).toEqual([
-      { role: 'developer', content: 'Follow the task brief.' },
+      { role: 'system', content: 'Follow the task brief.' },
       { role: 'user', content: 'Implement T001.' },
     ]);
   });

@@ -5,6 +5,7 @@ import { dedupeConfigWarnings, formatConfigLoaderDiagnostic } from '../load/io.j
 import type { ConfigLoaderDiagnostic } from '../load/io.js';
 import { configError } from '../errors.js';
 import { warnStderr } from '../../../lib/warn.js';
+import { RETIRED_WORKFLOW_MODE, RETIRED_WORKFLOW_MODE_NOTICE } from '../../schemas/enums.js';
 import { applyCLIOverrides } from './overrides/apply.js';
 import type { CLIOverrides } from './overrides/schema.js';
 
@@ -61,6 +62,11 @@ export function resolveEffectiveConfig(opts: {
     ]);
   }
 
+  const retiredModeFlag =
+    opts.overrides?.mode?.trim().toLowerCase() === RETIRED_WORKFLOW_MODE
+      ? [{ source: 'validation', message: RETIRED_WORKFLOW_MODE_NOTICE } as const]
+      : [];
+
   return {
     config: data,
     warnings: [
@@ -70,6 +76,7 @@ export function resolveEffectiveConfig(opts: {
       ...validationWarnings.map(
         (message): EffectiveConfigWarning => ({ source: 'validation', message }),
       ),
+      ...retiredModeFlag,
     ],
   };
 }

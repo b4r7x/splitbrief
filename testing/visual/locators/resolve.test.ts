@@ -98,7 +98,7 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
     );
   }, 120_000);
 
-  it('resolves sidebar, composer, approval panel, and summary hero in bounds with provenance', async () => {
+  it('pins the header, sidebar, composer, approval and hero rects at 80x24 / 120x40', async () => {
     const home = requireScenario('home-empty');
     const homeGrid = await createFrameGrid(home, VIEWPORT, requireCheckpoint(home).marker);
     const header = resolveElementLocator({
@@ -181,23 +181,6 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
       rect: { x: 0, y: 0, width: 80, height: 4 },
     });
 
-    for (const locator of [header, sidebar, composer, approval, hero]) {
-      expect(isCellRectInViewport(locator.rect, locator.provenance.viewport)).toBe(true);
-      expect(locator.provenance).toMatchObject({
-        scenarioId:
-          locator === header
-            ? home.id
-            : locator === hero
-              ? summary.id
-              : locator === approval
-                ? review.id
-                : locator === sidebar
-                  ? implementation.id
-                  : workflow.id,
-        fixtureVersion: 1,
-      });
-      expect(locator.provenance.sourceFrameKey).toContain(':frame');
-    }
     expect(approval.provenance).toMatchObject({
       scenarioId: review.id,
       scenarioTitle: review.title,

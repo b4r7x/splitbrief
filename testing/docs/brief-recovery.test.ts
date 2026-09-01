@@ -50,11 +50,6 @@ const claims = [
     'approval',
     'standard / Speckit initial and their continuations',
   ],
-  [
-    'approval-instant-zero-task-policy',
-    'approval',
-    'one shot only for its existing zero-task failure case; otherwise none',
-  ],
   ['approval-quick-policy', 'approval', 'Quick | none | retry, edit, reject'],
   [
     'approval-resume-observes-without-calls',
@@ -171,7 +166,7 @@ const claims = [
   [
     'compiler-mode-boundary',
     'planners',
-    "standard and speckit run the compiler's detached batches, and quick and instant stay single-call while accepting only a current-call result.",
+    "standard and speckit run the compiler's detached batches, and quick stays single-call while accepting only a current-call result.",
   ],
   [
     'compiler-fails-closed',
@@ -196,12 +191,12 @@ const claims = [
   [
     'support-conformance-gated-inactive',
     'configuration',
-    'Conformance-gated rows stay inactive until their complete row passes; unsupported rows (Copilot, Aider, Cursor, shell, agent) refuse with typed fail-closed zero dispatches regardless of what a candidate claims.',
+    'Conformance-gated rows stay inactive until their complete row passes; unsupported rows (Copilot, Cursor, Command Code, shell, agent) refuse with typed fail-closed zero dispatches regardless of what a candidate claims.',
   ],
   [
-    'support-copilot-aider-refused',
+    'support-copilot-cursor-command-code-refused',
     'configuration',
-    'Copilot, Aider, and Cursor stay implementer-side in V1: their planner rows are compiler-unsupported and refuse with a typed zero-dispatch error',
+    'Copilot, Cursor, and Command Code stay implementer-side in V1: their planner rows are compiler-unsupported and refuse with a typed zero-dispatch error',
   ],
   [
     'support-shell-planner-refused',
@@ -391,8 +386,8 @@ const REQ_050_DIMENSIONS = [
 const ALL_DOCS = Object.values(docs).join('\n');
 
 describe('Brief Recovery documentation contract', () => {
-  it('keeps the canonical claim matrix at 90 behaviors', () => {
-    expect(claims).toHaveLength(90);
+  it('keeps the canonical claim matrix at 89 behaviors', () => {
+    expect(claims).toHaveLength(89);
   });
 
   it.each(REQ_050_DIMENSIONS)('names at least one REQ-050 claim in dimension %s', (dimension) => {

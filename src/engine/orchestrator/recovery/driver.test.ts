@@ -30,32 +30,28 @@ afterEach(() => {
   dirs = [];
 });
 
-function setupSession(pendingStatus: 'awaiting-user' | 'paused' | 'applying'): {
-  projectDir: string;
-  sessionId: string;
-  state: WorkflowState;
-} {
+function newSession(sessionId: string): { projectDir: string; sessionId: string } {
   const projectDir = createTempDir('recovery-driver-test');
   dirs.push(projectDir);
-  const sessionId = 'sess-recovery';
   ensureSessionDir(projectDir, sessionId);
-  const task = makeTask({ id: 'T001' });
-  const issue = buildContextOverflowRecoveryIssue({
-    task,
-    phase: 'implementing',
-    createdAt: '2026-04-28T12:00:00.000Z',
-  });
-  const state: WorkflowState = {
-    ...makeImplState([task]),
-    pendingRecovery: { ...issue, status: pendingStatus },
-  };
-  saveState({ projectDir, sessionId }, state);
-  return { projectDir, sessionId, state };
+  return { projectDir, sessionId };
 }
 
 describe('loadPendingRecoveryState', () => {
   it('returns a persisted recovery issue as pending', () => {
-    const { projectDir, sessionId, state } = setupSession('awaiting-user');
+    const { projectDir, sessionId } = newSession('sess-recovery');
+    const task = makeTask({ id: 'T001' });
+    const issue = buildContextOverflowRecoveryIssue({
+      task,
+      phase: 'implementing',
+      createdAt: '2026-04-28T12:00:00.000Z',
+    });
+    const state: WorkflowState = {
+      ...makeImplState([task]),
+      pendingRecovery: { ...issue, status: 'awaiting-user' },
+    };
+    saveState({ projectDir, sessionId }, state);
+
     const loaded = loadPendingRecoveryState({ projectDir, sessionId }, state);
     expect(loaded.pending).toBe(true);
     if (loaded.pending) {
@@ -64,10 +60,7 @@ describe('loadPendingRecoveryState', () => {
   });
 
   it('reports no pending recovery when state has none', () => {
-    const projectDir = createTempDir('recovery-driver-test');
-    dirs.push(projectDir);
-    const sessionId = 'sess-clean';
-    ensureSessionDir(projectDir, sessionId);
+    const { projectDir, sessionId } = newSession('sess-clean');
     const state = makeImplState([makeTask({ id: 'T001' })]);
     saveState({ projectDir, sessionId }, state);
     const loaded = loadPendingRecoveryState({ projectDir, sessionId }, state);
@@ -77,10 +70,7 @@ describe('loadPendingRecoveryState', () => {
 
 describe('finalizeRecoveryResult — detached abort', () => {
   it('finalizes the aborted session summary from the pre-CANCEL work, not the gutted idle state', () => {
-    const projectDir = createTempDir('recovery-driver-test');
-    dirs.push(projectDir);
-    const sessionId = 'sess-aborted';
-    ensureSessionDir(projectDir, sessionId);
+    const { projectDir, sessionId } = newSession('sess-aborted');
     const active = reactivateExistingSession({ projectDir, sessionId });
 
     // Pre-CANCEL state: the work the detached server completed before the abort answer.
@@ -123,10 +113,7 @@ describe('finalizeRecoveryResult — detached abort', () => {
   });
 
   it('finalizes the abort summary with the reviewer seat the run was pinned to', () => {
-    const projectDir = createTempDir('recovery-driver-test');
-    dirs.push(projectDir);
-    const sessionId = 'sess-aborted-reviewer';
-    ensureSessionDir(projectDir, sessionId);
+    const { projectDir, sessionId } = newSession('sess-aborted-reviewer');
 
     finalizeRecoveryResult({
       projectDir,
@@ -135,30 +122,28 @@ describe('finalizeRecoveryResult — detached abort', () => {
       state: {
         ...makeImplState([makeTask({ id: 'T001', status: 'done' })]),
         feature: 'aborted-reviewer-feature',
-        reviewerTool: 'deepseek',
+        reviewerTool: 'custom-reviewer',
         reviewerModel: 'deepseek-v4-flash',
       },
       config: makeConfig({
         reviewer: {
           kind: 'api',
-          provider: 'openrouter',
+          provider: 'custom-endpoint',
           model: 'swapped-after-the-run',
-          apiBase: 'https://openrouter.ai/api/v1',
+          apiBase: 'https://api.example.com/v1',
+          apiKey: 'test-key',
         },
       }),
       status: 'aborted',
     });
 
     const session = listSessions(projectDir).find((s) => s.id === sessionId);
-    expect(session?.summary?.reviewerTool).toBe('deepseek');
+    expect(session?.summary?.reviewerTool).toBe('custom-reviewer');
     expect(session?.summary?.reviewerModel).toBe('deepseek-v4-flash');
   });
 
   it('redacts feature text from the finalized abort summary when persistTranscript is false', () => {
-    const projectDir = createTempDir('recovery-driver-test');
-    dirs.push(projectDir);
-    const sessionId = 'sess-aborted-redacted';
-    ensureSessionDir(projectDir, sessionId);
+    const { projectDir, sessionId } = newSession('sess-aborted-redacted');
 
     const secretFeature = 'wire up the unreleased acquisition pricing endpoint';
     finalizeRecoveryResult({
@@ -181,10 +166,7 @@ describe('finalizeRecoveryResult — detached abort', () => {
   });
 
   it('does not double-book lifetime stats for an aborted session', () => {
-    const projectDir = createTempDir('recovery-driver-test');
-    dirs.push(projectDir);
-    const sessionId = 'sess-aborted-stats';
-    ensureSessionDir(projectDir, sessionId);
+    const { projectDir, sessionId } = newSession('sess-aborted-stats');
 
     finalizeRecoveryResult({
       projectDir,
@@ -209,10 +191,7 @@ describe('finalizeRecoveryResult — detached abort', () => {
   });
 
   it('does nothing for a non-aborted status', () => {
-    const projectDir = createTempDir('recovery-driver-test');
-    dirs.push(projectDir);
-    const sessionId = 'sess-not-aborted';
-    ensureSessionDir(projectDir, sessionId);
+    const { projectDir, sessionId } = newSession('sess-not-aborted');
 
     finalizeRecoveryResult({
       projectDir,

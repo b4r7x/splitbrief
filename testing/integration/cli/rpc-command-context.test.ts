@@ -7,11 +7,8 @@ import {
   type ResolvedRunConfig,
 } from '../../../src/cli/build-overrides.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
-import {
-  createDefaultConfig,
-  loadConfig,
-  writeConfig as writeProjectConfig,
-} from '../../../src/core/config/load/io.js';
+import { loadConfig, writeConfig as writeProjectConfig } from '../../../src/core/config/load/io.js';
+import { createDefaultConfig } from '../../../src/core/config/load/defaults.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { WorkflowOpts } from '../../../src/core/types/config-options.js';
 import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ConfigRevision } from '../../lib/confined-fs-atomic.js';
-import type { RecoveryEvidenceRef } from '../evidence/recovery-journal.js';
+import type { RecoveryEvidenceRef } from '../evidence/recovery-journal/schema.js';
 import { PhaseSchema } from './enums.js';
 import {
   BriefRecoveryStateViewSchema,

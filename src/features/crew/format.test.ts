@@ -3,6 +3,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { RunnerConfig } from '../../core/config/accessors/runner-config.js';
 import { formatInheritedIdentity } from '../../core/crew/identity.js';
 import { deriveCrewRows, type CrewRow as CrewBlockRow } from '../../core/crew/rows.js';
+import type { CliEffortChannel } from '../../core/runners/effort-channel.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { formatCrewRow, planSeatBlock, type SeatBlockLayout } from './format.js';
 
@@ -21,19 +22,31 @@ function crewOf(overrides: Parameters<typeof makeConfig>[0]): readonly CrewBlock
 /** Three seats and one effort row: the catalogued config. */
 const CATALOGUED_CREW = crewOf({});
 /** Three seats and two effort rows. */
-const DEEP_CREW = crewOf({
-  implementer: { kind: 'api', provider: 'anthropic', model: 'claude-sonnet-4' },
-});
+const CUSTOM_ENDPOINT = {
+  kind: 'api',
+  provider: 'custom-endpoint',
+  model: 'claude-sonnet-4',
+  apiBase: 'https://api.example.test/v1',
+  apiKey: 'test-key',
+} as const;
+
+const DEEP_CREW = crewOf({ implementer: CUSTOM_ENDPOINT });
 /** Every row a crew can have: three seats and three effort rows. */
-const FULL_CREW = crewOf({
-  implementer: { kind: 'api', provider: 'anthropic', model: 'claude-sonnet-4' },
-  reviewer: {
-    kind: 'api',
-    provider: 'anthropic',
-    model: 'claude-sonnet-4',
-    apiBase: 'https://api.anthropic.com/v1',
-  },
-});
+const FULL_CREW = crewOf({ implementer: CUSTOM_ENDPOINT, reviewer: CUSTOM_ENDPOINT });
+
+function effortContent(channel: CliEffortChannel, value: string | undefined): string {
+  const row: CrewBlockRow = {
+    kind: 'effort',
+    seatId: 'build',
+    channel,
+    value,
+    editable: channel === 'effort-flag' || channel === 'variant',
+    inherited: false,
+    deliverable: channel !== 'none',
+  };
+  const layout = planSeatBlock({ rows: [row], verdict: undefined, innerWidth: 78, rowBudget: 12 });
+  return formatCrewRow({ row, layout, planner: PLANNER }).content;
+}
 
 function blockRows(
   rows: readonly CrewBlockRow[],
@@ -148,8 +161,8 @@ describe('formatCrewRow', () => {
     );
   });
 
-  it('renders n/a for an undeliverable non-inherited effort row', () => {
-    const rows = crewOf({ implementer: { kind: 'cli', tool: 'opencode' } });
+  it('still prints n/a for a tool with no effort channel', () => {
+    const rows = crewOf({ implementer: { kind: 'cli', tool: 'codex' } });
     const row = rows.find(
       (candidate) => candidate.kind === 'effort' && candidate.seatId === 'build',
     );
@@ -158,6 +171,18 @@ describe('formatCrewRow', () => {
     const formatted = formatCrewRow({ row, layout, planner: PLANNER });
 
     expect(formatted.content).toBe('n/a');
+  });
+
+  it('prints an opencode seat its saved variant instead of n/a', () => {
+    expect(effortContent('variant', 'xhigh')).toBe('xhigh');
+  });
+
+  it('prints a cursor seat the effort its model id spells', () => {
+    expect(effortContent('model-id', 'high')).toBe('high');
+  });
+
+  it('prints auto for a deliverable channel with no value yet', () => {
+    expect(effortContent('variant', undefined)).toBe('auto');
   });
 
   it('renders inherited review effort with from planner suffix', () => {

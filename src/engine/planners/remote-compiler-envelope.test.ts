@@ -169,7 +169,7 @@ afterEach(async () => {
 });
 
 function makeTransport(provider: string): {
-  client: StreamClient | null;
+  client: StreamClient;
   apiKey: string;
   apiBase: string;
 } {
@@ -178,7 +178,7 @@ function makeTransport(provider: string): {
     apiKey: provider === 'ollama' ? undefined : 'sk-test-key',
   });
   return {
-    client: provider === 'anthropic' ? null : toStreamClient(createClientFromProvider(resolved)),
+    client: toStreamClient(createClientFromProvider(resolved)),
     apiKey: resolved.apiKey(),
     apiBase: resolved.baseURL,
   };

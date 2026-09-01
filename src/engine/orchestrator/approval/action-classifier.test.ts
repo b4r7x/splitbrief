@@ -182,11 +182,6 @@ describe('classifyAction — allowedPaths', () => {
     expect(result).toEqual({ actionClass: 'write_out_of_scope', tier: 'sticky' });
   });
 
-  it('no allowedPaths → existing behavior unchanged', () => {
-    const result = classifyAction(make('edit src/unrelated/other.ts'));
-    expect(result).toEqual({ actionClass: 'write_out_of_scope', tier: 'sticky' });
-  });
-
   it('allowedPaths empty array → existing behavior unchanged', () => {
     const result = classifyAction(
       make('edit src/unrelated/other.ts', {

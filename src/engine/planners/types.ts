@@ -64,7 +64,7 @@ export type PlannerCapabilities = {
   supportsSelfSummarisation: boolean;
 };
 
-/** Preset for session-based conversational planners (Claude Code, Agent SDK, codex). */
+/** Preset for session-based conversational planners (Claude Code). */
 export const CONVERSATIONAL_CAPS: PlannerCapabilities = {
   supportsConversationalPlanning: true,
   supportsHintEscalation: false,
@@ -205,7 +205,7 @@ export function isOwnedPlannerArtifactFor(
  * Result of a planner run. The durable contract handed to the implementer is the
  * `tasks` array — each entry is the persisted form of a Product Task Brief v1
  * (see `docs/TASK-CONTRACT.md`). `spec` and `plan` are optional support documents
- * that may be empty for instant/quick modes; they exist to feed brief compilation,
+ * that may be empty for quick mode; they exist to feed brief compilation,
  * not as the primary handoff artifact.
  */
 export interface PlanResult {
@@ -235,6 +235,8 @@ export interface PlanOptions {
   callbacks: PlannerCallbacks;
   skillsContext?: string | undefined;
   codebaseContext?: string | undefined;
+  /** The advisor classified this prompt as a trivial edit, so a single-call planner drops its codebase-review step and caps the brief count. */
+  trivial?: boolean | undefined;
 }
 
 export interface EscalateOptions {
@@ -265,15 +267,6 @@ export interface Planner extends RunnerRuntime {
   escalateFull(opts: EscalateOptions): Promise<EscalationResult>;
 
   quickPlan(opts: PlanOptions): Promise<PlanResult>;
-
-  /**
-   * One-shot planner call for `instant` mode. Mirrors {@link Planner.quickPlan}
-   * but uses the instant prompt: emits the narrowest useful Task Brief set with
-   * no spec/plan support documents (a single brief is acceptable). Optional:
-   * backends that don't implement it fall back to `quickPlan ?? plan` via the
-   * dispatcher in `runInstantPlanning`. Ignores `skillsContext`.
-   */
-  instantPlan?: (opts: PlanOptions) => Promise<PlanResult>;
 
   review(
     prompt: string,

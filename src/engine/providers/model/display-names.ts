@@ -1,7 +1,7 @@
 import type { Config } from '../../../core/schemas/config.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
-import type { ActiveRunnerRole } from '../../../core/runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { resolveModelCatalog } from './catalog.js';
@@ -15,13 +15,7 @@ export function resolveSeatDisplayName(
   if (!('model' in runner) || !runner.model || runner.model === 'auto') return undefined;
 
   const providerId =
-    runner.kind === 'api'
-      ? runner.provider
-      : runner.kind === 'cli'
-        ? runner.tool
-        : runner.kind === 'agent-sdk'
-          ? 'agent-sdk'
-          : undefined;
+    runner.kind === 'api' ? runner.provider : runner.kind === 'cli' ? runner.tool : undefined;
 
   if (!providerId) return undefined;
 

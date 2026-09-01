@@ -1,5 +1,5 @@
 import type { FilterableItem } from '../../../components/pickers/filtering.js';
-import type { CycleOutcome } from './use-nav-state.js';
+import type { CycleOutcome } from './types.js';
 import { isVirtualCustomItem, type RightItemOrVirtual } from './virtual-items.js';
 
 function stepIndex<T>(items: T[], from: number, direction: 1 | -1): number {

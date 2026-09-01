@@ -254,28 +254,27 @@ describe('createInitialState', () => {
   });
 });
 describe('transition', () => {
-  it('throws when an action is not valid for the current phase', () => {
-    const state = createInitialState('feat');
+  it.each([
+    ['idle', 'VALIDATION_PASS'],
+    ['implementing', 'VALIDATION_FAIL'],
+    ['implementing', 'ESCALATE'],
+  ] as const)('rejects %s -> %s outside its phase', (phase, type) => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase };
 
-    expect(() => transition(state, { type: 'VALIDATION_PASS' })).toThrow(
-      'Cannot apply VALIDATION_PASS',
-    );
+    expect(() => transition(state, { type })).toThrow(`Cannot apply ${type}`);
   });
 
-  it('does not expose a legacy direct path into implementation', () => {
-    const tasks = [makeTask({ id: 'T001' })];
-    const state = createInitialState('feat');
-    const legacyActions = [
-      { type: 'START_QUICK', tasks },
-      { type: 'START_INSTANT', tasks },
-    ] as const;
+  it.each(['START_QUICK', 'START_INSTANT'] as const)(
+    'does not expose the legacy %s path into implementation',
+    (type) => {
+      const state = createInitialState('feat');
+      const action = { type, tasks: [makeTask({ id: 'T001' })] };
 
-    for (const action of legacyActions) {
       expect(() => transition(state, action as never)).toThrow(
-        `Cannot apply ${action.type} while workflow is in idle.`,
+        `Cannot apply ${type} while workflow is in idle.`,
       );
-    }
-  });
+    },
+  );
 
   it('REJECT_SPEC -> idle', () => {
     const tasks = [makeTask({ id: 'T001' })];
@@ -293,19 +292,28 @@ describe('transition', () => {
     expect(next.attempt).toBe(0);
   });
 
-  it('VALIDATION_FAIL with attempt < 3 -> implementing with attempt incremented', () => {
-    const tasks = [makeTask({ id: 'T001' })];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'validating-task',
-      tasks,
-      currentTaskIndex: 0,
-      attempt: 1,
-    };
-    const next = transition(state, { type: 'VALIDATION_FAIL' });
-    expect(next.phase).toBe('implementing');
-    expect(next.attempt).toBe(2);
-  });
+  it.each([
+    [1, undefined, 'implementing', 2],
+    [3, undefined, 'escalating', 3],
+    [4, 5, 'implementing', 5],
+    [5, 5, 'escalating', 5],
+  ] as const)(
+    'VALIDATION_FAIL at attempt %i of max %s -> %s',
+    (attempt, maxRetries, phase, nextAttempt) => {
+      const state: WorkflowState = {
+        ...createInitialState('feat'),
+        phase: 'validating-task',
+        tasks: [makeTask({ id: 'T001' })],
+        currentTaskIndex: 0,
+        attempt,
+      };
+
+      const next = transition(state, { type: 'VALIDATION_FAIL' }, { maxRetries });
+
+      expect(next.phase).toBe(phase);
+      expect(next.attempt).toBe(nextAttempt);
+    },
+  );
 
   it('ESCALATE -> escalating', () => {
     const state: WorkflowState = {
@@ -314,24 +322,6 @@ describe('transition', () => {
     };
     const next = transition(state, { type: 'ESCALATE' });
     expect(next.phase).toBe('escalating');
-  });
-
-  it('VALIDATION_FAIL is rejected from implementing phase', () => {
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'implementing',
-    };
-    expect(() => transition(state, { type: 'VALIDATION_FAIL' })).toThrow(
-      'Cannot apply VALIDATION_FAIL',
-    );
-  });
-
-  it('ESCALATE is rejected from implementing phase', () => {
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'implementing',
-    };
-    expect(() => transition(state, { type: 'ESCALATE' })).toThrow('Cannot apply ESCALATE');
   });
 
   it('HINT_SUCCESS -> implementing with index advanced', () => {
@@ -520,46 +510,6 @@ describe('transition', () => {
 
     expect(next.tasks[0]?.currentCode).toBeUndefined();
     expect(next.tasks[1]?.currentCode).toBe('keep code');
-  });
-
-  it('configurable maxRetries: attempt < custom max stays in implementing', () => {
-    const tasks = [makeTask({ id: 'T001' })];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'validating-task',
-      tasks,
-      currentTaskIndex: 0,
-      attempt: 4,
-    };
-    const next = transition(state, { type: 'VALIDATION_FAIL' }, { maxRetries: 5 });
-    expect(next.phase).toBe('implementing');
-    expect(next.attempt).toBe(5);
-  });
-
-  it('configurable maxRetries: attempt >= custom max transitions to escalating', () => {
-    const tasks = [makeTask({ id: 'T001' })];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'validating-task',
-      tasks,
-      currentTaskIndex: 0,
-      attempt: 5,
-    };
-    const next = transition(state, { type: 'VALIDATION_FAIL' }, { maxRetries: 5 });
-    expect(next.phase).toBe('escalating');
-  });
-
-  it('VALIDATION_FAIL at default max transitions to escalating', () => {
-    const tasks = [makeTask({ id: 'T001' })];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'validating-task',
-      tasks,
-      currentTaskIndex: 0,
-      attempt: 3,
-    };
-    const next = transition(state, { type: 'VALIDATION_FAIL' });
-    expect(next.phase).toBe('escalating');
   });
 
   it('full workflow: START through REVIEW_DONE', () => {
@@ -975,31 +925,29 @@ describe('transition', () => {
     },
   );
 
-  it('opens each non-terminal recovery status under reviewing-briefs', () => {
-    const statuses = [
-      'checking',
-      'auto-repairing',
-      'blocked',
-      'retrying',
-      'unresolved',
-      'ready',
-      'readiness-blocked',
-    ] as const;
+  it.each([
+    'checking',
+    'auto-repairing',
+    'blocked',
+    'retrying',
+    'unresolved',
+    'ready',
+    'readiness-blocked',
+  ] as const)('opens %s under reviewing-briefs', (status) => {
+    const recovery = makeBriefRecovery(status);
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'reviewing-plan',
+    };
 
-    for (const status of statuses) {
-      const recovery = makeBriefRecovery(status);
-      const state: WorkflowState = {
-        ...createInitialState('feat'),
-        phase: 'reviewing-plan',
-      };
-      const next = transition(state, {
-        type: 'BRIEF_ADMISSION_OPENED',
-        briefRecovery: recovery,
-      });
-      expect(next.phase).toBe('reviewing-briefs');
-      expect(next.briefRecovery).toEqual(recovery);
-      expectPersistedState(next);
-    }
+    const next = transition(state, {
+      type: 'BRIEF_ADMISSION_OPENED',
+      briefRecovery: recovery,
+    });
+
+    expect(next.phase).toBe('reviewing-briefs');
+    expect(next.briefRecovery).toEqual(recovery);
+    expectPersistedState(next);
   });
 
   it('rejects a stale recovery epoch and a rejected archive cannot reopen', () => {

@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { getApiProviderDescriptor } from '../src/core/providers/api-provider-catalog.js';
 import { getKnownProviderBaseURL } from '../src/core/providers/catalog.js';
 import { ConfigSchema } from '../src/core/schemas/config.js';
 import { resolveEvalConnection } from './connection.js';
@@ -7,18 +6,18 @@ import { resolveEvalConnection } from './connection.js';
 describe('eval connection resolution', () => {
   it('fills an empty base URL from the provider catalog', () => {
     const resolved = resolveEvalConnection({
-      provider: 'openai',
+      provider: 'ollama',
       baseUrl: '',
       apiKey: '',
       replay: true,
     });
 
-    expect(resolved.baseUrl).toBe(getKnownProviderBaseURL('openai'));
+    expect(resolved.baseUrl).toBe(getKnownProviderBaseURL('ollama'));
   });
 
   it('keeps an explicitly given base URL instead of filling from the catalog', () => {
     const resolved = resolveEvalConnection({
-      provider: 'openai',
+      provider: 'custom-endpoint',
       baseUrl: 'https://api.example.test/v1',
       apiKey: '',
       replay: true,
@@ -27,21 +26,15 @@ describe('eval connection resolution', () => {
     expect(resolved.baseUrl).toBe('https://api.example.test/v1');
   });
 
-  it('fills a prefix-correct placeholder credential in replay mode so admission is not blocked', () => {
-    for (const provider of ['openai', 'groq', 'anthropic']) {
-      const prefix = getApiProviderDescriptor(provider)?.credentialPrefix;
-      expect(prefix).toBeTruthy();
-      const resolved = resolveEvalConnection({ provider, baseUrl: '', apiKey: '', replay: true });
-      expect(resolved.apiKey).toBe(`${prefix}eval-replay`);
-    }
-
-    const noPrefix = resolveEvalConnection({
-      provider: 'together',
-      baseUrl: '',
+  it('fills a bare placeholder credential in replay mode for a provider the catalog does not describe', () => {
+    const resolved = resolveEvalConnection({
+      provider: 'custom-endpoint',
+      baseUrl: 'https://api.example.test/v1',
       apiKey: '',
       replay: true,
     });
-    expect(noPrefix.apiKey).toBe('eval-replay');
+
+    expect(resolved.apiKey).toBe('eval-replay');
   });
 
   it('fills a loopback provider with a credential the config schema accepts, inventing none', () => {
@@ -68,7 +61,7 @@ describe('eval connection resolution', () => {
 
   it('requires a real credential outside replay mode', () => {
     expect(() =>
-      resolveEvalConnection({ provider: 'openai', baseUrl: '', apiKey: '', replay: false }),
+      resolveEvalConnection({ provider: 'ollama', baseUrl: '', apiKey: '', replay: false }),
     ).toThrow(expect.objectContaining({ kind: 'eval-api-key-required' }));
   });
 
@@ -87,8 +80,8 @@ function localImplementerConfig(
     version: 3,
     planner: {
       kind: 'api',
-      provider: 'openai',
-      service: 'openai',
+      provider: 'custom-endpoint',
+      service: 'custom-endpoint',
       offering: 'payg',
       apiBase: 'https://api.example.test/v1',
       model: 'planner-model',

@@ -1,6 +1,6 @@
 import { error } from '../../utils/error.js';
 import { sanitizeTerminalDiagnosticText } from '../../utils/display-text.js';
-import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 
 export const RUNNER_OUTCOME_STATES = [
   'spawn-not-found',

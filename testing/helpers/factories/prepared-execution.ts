@@ -29,6 +29,7 @@ export function makePreparedExecution(input: {
   resumeState?: WorkflowState | undefined;
   purpose?: PreparedExecution['purpose'] | undefined;
   allowHooks?: boolean | undefined;
+  worktreeName?: string | undefined;
 }): PreparedExecution {
   const config = parsePreparedConfig(input.config);
   const preparationId = input.preparationId ?? `${input.sessionId}-preparation`;
@@ -59,6 +60,7 @@ export function makePreparedExecution(input: {
     runtime: {
       feature: input.feature,
       ...(input.resumeState !== undefined && { resumeState: input.resumeState }),
+      ...(input.worktreeName !== undefined && { worktreeName: input.worktreeName }),
       allowRepoRunners: false,
       allowHooks: input.allowHooks ?? false,
     },

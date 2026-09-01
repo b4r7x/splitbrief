@@ -3,13 +3,13 @@ import type {
   DiscoveryRefreshLaneSummary,
   DiscoveryRefreshSummary,
 } from '../../core/runtime/commands/types.js';
-import type { DetectionSourceOutcome } from './coordinator.js';
+import type { DetectionSourceOutcome } from './types.js';
 import { createProductionDetectionDeps } from './deps.js';
+import type { DetectionLanePublication } from './lane-channel.js';
+import type { ModelsDevRefreshOutcome } from './models-dev-lane.js';
 import type {
-  DetectionLanePublication,
   DetectionService,
   DetectionServiceResult,
-  ModelsDevRefreshOutcome,
   ResolvedDetectionSourceContexts,
 } from './service.js';
 

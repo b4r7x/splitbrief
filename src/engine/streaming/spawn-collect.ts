@@ -32,7 +32,7 @@ import {
 import { getLineParser } from './output-parsers.js';
 import { createParsedLineRecorder } from './parsed-line-recorder.js';
 import { createRunnerCallStderrBuffer } from './stderr-lines.js';
-import { sandboxCredentialValues } from '../runners/sandbox-env.js';
+import { sandboxCredentialValues } from '../runners/sandbox-credential-values.js';
 import { TASK_COMPILATION_FAILURE_CODE } from '../spec/tasks/task-compilation-codes.js';
 
 interface SpawnAndCollectOptions {

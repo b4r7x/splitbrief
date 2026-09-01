@@ -11,13 +11,13 @@ import { useStores } from '../../../stores/use-stores.js';
 import { SingleColumnPicker } from '../../../components/pickers/single-column.js';
 import { ROW_ZONE_Z_OVERLAY } from '../../../components/pickers/row-zone.js';
 import { borderStyleFor, glyph } from '../../../lib/glyphs.js';
-import {
-  useTwoColumnState,
-  type LeftColumnProps,
-  type RightColumnProps,
-  type RightSectionProps,
-  type TerminalPane,
-} from './use-nav-state.js';
+import type {
+  LeftColumnProps,
+  RightColumnProps,
+  RightSectionProps,
+  TerminalPane,
+} from './types.js';
+import { useTwoColumnState } from './use-nav-state.js';
 import {
   CUSTOM_ROW_ID,
   isRealRightItem,
@@ -42,8 +42,6 @@ export interface TwoColumnPickerProps<L extends FilterableItem, R extends { id: 
   onConfirm: (left: L, right: R | null) => void;
   onCancel: () => void;
   onRefresh?: (() => void) | undefined;
-  /** Enter on a disabled left row; without it that keypress stays a no-op. */
-  onDisabledSelect?: ((item: L) => void) | undefined;
   preview?: ((ctx: PreviewContext<L, R>) => string | undefined) | undefined;
 }
 
@@ -184,7 +182,6 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
   onConfirm,
   onCancel,
   onRefresh,
-  onDisabledSelect,
   preview,
 }: TwoColumnPickerProps<L, R>) {
   const t = useTheme();
@@ -209,7 +206,6 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
     onConfirm,
     onCancel,
     onRefresh,
-    onDisabledSelect,
     maxVisible,
   });
 

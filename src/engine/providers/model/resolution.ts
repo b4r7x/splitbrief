@@ -1,6 +1,3 @@
-import type { CredentialDomainIdentity } from '../../../core/config/accessors/runner-discovery-context.js';
-
-import { isSameCredentialDomain } from '../../../core/config/accessors/runner-discovery-context.js';
 import type { DetectedModel } from '../../../core/discovery/detection.js';
 import { AUTOMATIC_MODEL } from '../../../core/providers/automatic-model.js';
 import {
@@ -11,21 +8,18 @@ import type { KnownModel } from '../../../core/providers/known-models.js';
 import { KNOWN_MODELS } from '../../../core/providers/known-models.js';
 import type { ProviderId } from '../../../core/schemas/enums.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
-import {
-  CLI_TOOL_IDS,
-  type CliToolId,
-  type ActiveRunnerRole,
-} from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_IDS, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import type { ConfiguredProviderRuntime } from '../../detection/provider-outcomes.js';
 import type { ScopedCliCatalogRuntime } from '../../detection/cli-catalog-outcomes.js';
-import { getModelsForProvider } from '../models-dev.js';
-import { areExactModelSelectionIdsEqual } from './parsing.js';
+import {
+  findCatalogModelByIdentity,
+  getModelsForProvider,
+  type ModelsDevProviderId,
+} from '../models-dev.js';
+import type { ClaudeCodeModelOption } from '../../../core/providers/claude-code-options.js';
+import { areExactModelSelectionIdsEqual, splitModelVendorPrefix } from './parsing.js';
 import { includes } from '../../../utils/type-guards.js';
-
-export interface RuntimeMembershipAccess {
-  readonly runnerCredentialDomain: CredentialDomainIdentity | undefined;
-  readonly sourceCredentialDomain: CredentialDomainIdentity | undefined;
-}
 
 export interface ModelCacheAccessor {
   getModelsDevCatalog(): ModelsDevCatalog | null;
@@ -34,7 +28,7 @@ export interface ModelCacheAccessor {
   isProviderModelCacheStale?(providerId: ProviderId): boolean;
   /**
    * Current role-scoped API membership. When present, this is authoritative
-   * for API and Agent SDK model lookup and prevents ambiguous generic reuse.
+   * for API model lookup and prevents ambiguous generic reuse.
    */
   getScopedProviderRuntime?(
     input: Readonly<{ role: ActiveRunnerRole; provider: ApiProviderId }>,
@@ -43,9 +37,8 @@ export interface ModelCacheAccessor {
   getScopedCliCatalogRuntime?(
     input: Readonly<{ role: ActiveRunnerRole; tool: CliToolId }>,
   ): ScopedCliCatalogRuntime | null | undefined;
-  getRuntimeMembershipAccess?(
-    input: Readonly<{ runnerId: ProviderId; sourceProviderId: ProviderId }>,
-  ): RuntimeMembershipAccess | null;
+  /** Claude Code's local `~/.claude.json` option cache; absent means no options. */
+  getClaudeCodeModelOptions?(): readonly ClaudeCodeModelOption[];
 }
 
 export const NULL_CACHE: ModelCacheAccessor = {
@@ -65,15 +58,14 @@ export interface RuntimeModelSnapshot {
 }
 
 interface ModelsDevCatalogSource {
-  readonly provider: ProviderId;
+  readonly provider: ModelsDevProviderId;
   readonly include?: (modelId: string) => boolean;
 }
 
 const OPENAI_TOOL_MODEL_RE = /^(gpt-|o\d|codex)/i;
 const OPENAI_NON_TOOL_MODEL_RE =
   /^(text-embedding|gpt-image|whisper|tts-|omni-moderation|text-moderation|dall-e)/i;
-const CLAUDE_CODE_MODEL_RE = /^claude-(sonnet|opus)-/i;
-const ANTHROPIC_MODEL_RE = /^claude-/i;
+const CLAUDE_CODE_MODEL_RE = /^claude-(sonnet|opus|haiku|fable)-/i;
 
 const TOOL_MODELS_DEV_SOURCES: Partial<Record<ProviderId, readonly ModelsDevCatalogSource[]>> = {
   'claude-code': [
@@ -86,18 +78,9 @@ const TOOL_MODELS_DEV_SOURCES: Partial<Record<ProviderId, readonly ModelsDevCata
         OPENAI_TOOL_MODEL_RE.test(modelId) && !OPENAI_NON_TOOL_MODEL_RE.test(modelId),
     },
   ],
-  aider: [
-    { provider: 'anthropic', include: (modelId) => ANTHROPIC_MODEL_RE.test(modelId) },
-    {
-      provider: 'openai',
-      include: (modelId) =>
-        OPENAI_TOOL_MODEL_RE.test(modelId) && !OPENAI_NON_TOOL_MODEL_RE.test(modelId),
-    },
-  ],
   copilot: [{ provider: 'copilot' }],
   opencode: [{ provider: 'opencode' }],
   'kilo-code': [{ provider: 'kilo-code' }],
-  'agent-sdk': [{ provider: 'anthropic', include: (modelId) => ANTHROPIC_MODEL_RE.test(modelId) }],
 };
 
 function getModelsDevSources(providerId: ProviderId): readonly ModelsDevCatalogSource[] {
@@ -124,35 +107,11 @@ function exactLookup(
   return { kind: 'ambiguous', models: matches };
 }
 
-function agentSdkCanReuseAnthropicMembership(cache: ModelCacheAccessor): boolean {
-  const access = cache.getRuntimeMembershipAccess?.({
-    runnerId: 'agent-sdk',
-    sourceProviderId: 'anthropic',
-  });
-  return (
-    access !== null &&
-    access !== undefined &&
-    isSameCredentialDomain({
-      left: access.runnerCredentialDomain,
-      right: access.sourceCredentialDomain,
-    })
-  );
-}
-
 export function getBundledModels(providerId: ProviderId): readonly KnownModel[] {
   return KNOWN_MODELS[providerId] ?? [];
 }
 
-export function getRuntimeLookupProvider(
-  providerId: ProviderId,
-  cache: ModelCacheAccessor,
-): ProviderId | null {
-  if (providerId !== 'agent-sdk') return providerId;
-  return agentSdkCanReuseAnthropicMembership(cache) ? 'anthropic' : null;
-}
-
 function scopedRuntimeProvider(providerId: ProviderId): ApiProviderId | null {
-  if (providerId === 'agent-sdk') return 'anthropic';
   return isApiProviderId(providerId) ? providerId : null;
 }
 
@@ -205,8 +164,7 @@ export function getRuntimeModelSnapshot(
 ): RuntimeModelSnapshot | null {
   const scoped = getScopedRuntimeSnapshot(input);
   if (scoped !== undefined) return scoped;
-  const runtimeProviderId = getRuntimeLookupProvider(input.providerId, input.cache);
-  if (runtimeProviderId === null) return null;
+  const runtimeProviderId = input.providerId;
   const entries = input.cache.getProviderModels(runtimeProviderId);
   if (entries === null) return null;
   return {
@@ -293,16 +251,46 @@ export function lookupRuntimeModel(
   return outcome.kind === 'found' ? outcome.model : null;
 }
 
-export function findKnownModel(providerId: ProviderId, modelId: string): KnownModel | undefined {
-  return getBundledModels(providerId).find(
-    (entry) =>
-      areExactModelSelectionIdsEqual({ left: entry.name, right: modelId }) ||
-      entry.aliases?.some((alias) =>
-        areExactModelSelectionIdsEqual({ left: alias, right: modelId }),
-      ) ||
-      (entry.catalogModelId !== undefined &&
-        areExactModelSelectionIdsEqual({ left: entry.catalogModelId, right: modelId })),
+function knownModelAnswersTo(entry: KnownModel, modelId: string): boolean {
+  return (
+    areExactModelSelectionIdsEqual({ left: entry.name, right: modelId }) ||
+    (entry.aliases?.some((alias) =>
+      areExactModelSelectionIdsEqual({ left: alias, right: modelId }),
+    ) ??
+      false) ||
+    (entry.catalogModelId !== undefined &&
+      areExactModelSelectionIdsEqual({ left: entry.catalogModelId, right: modelId }))
   );
+}
+
+export function findKnownModel(providerId: ProviderId, modelId: string): KnownModel | undefined {
+  return getBundledModels(providerId).find((entry) => knownModelAnswersTo(entry, modelId));
+}
+
+/**
+ * Bundled lookup for a runner with no bundled provider of its own. KNOWN_MODELS
+ * is provider-keyed, so a custom endpoint's model can only be found by scanning
+ * every provider for a row that answers to the model id — with or without a
+ * `vendor/` prefix.
+ */
+export function findKnownModelByModelId(modelId: string): KnownModel | undefined {
+  const { bareId } = splitModelVendorPrefix(modelId);
+  for (const models of Object.values(KNOWN_MODELS)) {
+    const match = models.find(
+      (entry) => knownModelAnswersTo(entry, modelId) || knownModelAnswersTo(entry, bareId),
+    );
+    if (match !== undefined) return match;
+  }
+  return undefined;
+}
+
+export function lookupCatalogModelByModelId(
+  modelId: string,
+  cache: ModelCacheAccessor,
+): DetectedModel | null {
+  const catalog = cache.getModelsDevCatalog();
+  if (catalog === null) return null;
+  return findCatalogModelByIdentity(catalog, splitModelVendorPrefix(modelId));
 }
 
 function getDefaultKnownModel(providerId: ProviderId): KnownModel | undefined {

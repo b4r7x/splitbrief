@@ -4,7 +4,7 @@ import {
   READINESS_DIAGNOSTIC_STATE_IDS,
   type ReadinessDiagnosticStateId,
 } from '../schemas/readiness.js';
-import type { ActiveRunnerRole } from '../runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole } from '../runners/seat-roles.js';
 
 const SENSITIVE_KEY_PATTERN = /(?:api[-_]?key|token|secret|password|credential)/i;
 const REDACTED = '[REDACTED]';

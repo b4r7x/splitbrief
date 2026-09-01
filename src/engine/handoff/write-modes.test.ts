@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { writeHandoffWriterSessionState } from '#testing/helpers/handoff-writer-fixture.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
@@ -9,6 +9,12 @@ import { writeHandoffPack } from './write.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 let tmp: string;
+
+function listFiles(dir: string): string[] {
+  return readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => relative(dir, join(entry.parentPath, entry.name)));
+}
 
 beforeEach(() => {
   tmp = createTempDir('write-handoff-test');
@@ -53,9 +59,7 @@ describe('writeHandoffPack — basic output', () => {
     });
 
     expect(result.files.length).toBeGreaterThan(0);
-    for (const relPath of result.files) {
-      expect(existsSync(join(outDir, relPath))).toBe(true);
-    }
+    expect(new Set(listFiles(outDir))).toEqual(new Set([...result.files, 'manifest.json']));
   });
 });
 

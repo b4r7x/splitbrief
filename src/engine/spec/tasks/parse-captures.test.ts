@@ -34,25 +34,8 @@ describe('parseTasks — real planner captures', () => {
       expect(strict.map((t) => t.id)).toEqual(ids);
       expect(lenientWarnings).toEqual([]);
       expect(strictWarnings).toEqual([]);
+      expect(parseTaskSourceBlocks(fixture).map((b) => b.id)).toEqual(ids);
     }
-  });
-
-  it('parses the codex standard-phase-separators capture to T001 and T002 in strict mode', () => {
-    const warnings: string[] = [];
-    const tasks = parseTasksStrict(codexFixture, (message) => warnings.push(message));
-
-    expect(tasks.map((t) => t.id)).toEqual(['T001', 'T002']);
-    expect(warnings).toEqual([]);
-    expect(parseTaskSourceBlocks(codexFixture).map((b) => b.id)).toEqual(['T001', 'T002']);
-  });
-
-  it('parses the opencode trailing-separator-prose capture with trailing --- and prose ignored in strict mode', () => {
-    const warnings: string[] = [];
-    const tasks = parseTasksStrict(opencodeFixture, (message) => warnings.push(message));
-
-    expect(tasks.map((t) => t.id)).toEqual(['T001']);
-    expect(warnings).toEqual([]);
-    expect(opencodeFixture).toContain('Note: per the "Output" instruction');
   });
 });
 

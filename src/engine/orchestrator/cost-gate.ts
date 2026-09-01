@@ -11,7 +11,7 @@ export type CostGateDecision = 'gate' | 'skip' | 'skip-unknown-cost';
 
 export function decideCostGate(input: CostGateInput): CostGateDecision {
   if (!input.costGateEnabled) return 'skip';
-  if (input.mode === 'instant' || input.mode === 'quick') return 'skip';
+  if (input.mode === 'quick') return 'skip';
   if (!input.prediction) return 'skip';
   const deterministic = input.prediction.deterministic;
   if (!deterministic) return 'skip';

@@ -33,8 +33,8 @@ import { clamp01 } from '../../../utils/math.js';
 import { runPlannerReview } from '../planner-review.js';
 import { withContinuationLoop } from '../continuation.js';
 import { composeSteeredPrompt } from '../../spec/prompts/steered-prompt.js';
-import { fallbackBriefRecoveryProjection } from './brief-quality-preparation.js';
-import { publishProducerGeneration } from './brief-publication.js';
+import { fallbackBriefRecoveryProjection } from './brief-quality-queue.js';
+import { publishProducerGeneration } from './producer-publication.js';
 
 const DEFAULT_MIN_COVERAGE = 0.9;
 

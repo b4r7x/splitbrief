@@ -35,7 +35,7 @@ describe('EngineEvent alias colocation with EngineEventSchema', () => {
 });
 
 describe('parseEngineEvent', () => {
-  it('pins the type-level contract for operational warning safety metadata', () => {
+  it('pins the type-level contract for operational message safety metadata', () => {
     const complete = {
       type: 'warning',
       ts: 1,
@@ -58,21 +58,17 @@ describe('parseEngineEvent', () => {
 
     expect(parseEngineEvent(complete)).toMatchObject({ transcriptSafe: true });
     expect(parseEngineEvent(invalid)).toBeNull();
-  });
-
-  it('accepts known events with required variant fields', () => {
     expect(
       parseEngineEvent({
-        type: 'task_completed',
+        type: 'error',
         ts: 1,
         phase: 'implementing',
-        taskId: 'T001',
-        title: 'Finish task',
-        method: 'local',
-        retries: 0,
-        duration: 10,
+        message: 'safe by claim only',
+        category: 'queue',
+        code: 'queue_full',
+        transcriptSafe: false,
       }),
-    ).toEqual(expect.objectContaining({ type: 'task_completed' }));
+    ).toBeNull();
   });
 
   it('accepts explicit cache fields on task token events', () => {
@@ -132,65 +128,6 @@ describe('parseEngineEvent', () => {
       forwardCompatField: { nested: true },
     });
     expect(parsed).toMatchObject({ forwardCompatField: { nested: true } });
-  });
-
-  it('requires operational warning safety metadata to be complete', () => {
-    expect(
-      parseEngineEvent({
-        type: 'warning',
-        ts: 1,
-        phase: 'implementing',
-        message: 'Queue full (50 messages).',
-        category: 'queue',
-        code: 'queue_full',
-        transcriptSafe: true,
-      }),
-    ).toEqual(expect.objectContaining({ type: 'warning', category: 'queue' }));
-    expect(
-      parseEngineEvent({
-        type: 'warning',
-        ts: 1,
-        phase: 'implementing',
-        message: 'Queue full (50 messages).',
-        category: 'queue',
-      }),
-    ).toBeNull();
-    expect(
-      parseEngineEvent({
-        type: 'error',
-        ts: 1,
-        phase: 'implementing',
-        message: 'safe by claim only',
-        category: 'queue',
-        code: 'queue_full',
-        transcriptSafe: false,
-      }),
-    ).toBeNull();
-  });
-
-  it('parses operational warning and error events through their type-indexed schemas', () => {
-    expect(
-      parseEngineEvent({
-        type: 'warning',
-        ts: 1,
-        phase: 'implementing',
-        message: 'Queue full (50 messages).',
-        category: 'queue',
-        code: 'queue_full',
-        transcriptSafe: true,
-      }),
-    ).toEqual(expect.objectContaining({ type: 'warning', code: 'queue_full' }));
-    expect(
-      parseEngineEvent({
-        type: 'error',
-        ts: 1,
-        phase: 'implementing',
-        message: 'safe by claim only',
-        category: 'queue',
-        code: 'queue_full',
-        transcriptSafe: false,
-      }),
-    ).toBeNull();
   });
 
   it('parses core-owned rewind event variants with the same schemas used by rewind persistence', () => {

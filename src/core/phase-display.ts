@@ -1,4 +1,4 @@
-import type { ActiveRunnerRole } from './runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole } from './runners/seat-roles.js';
 import { capitalize } from '../utils/capitalize.js';
 
 export function formatStageLabel(stage: string): string {

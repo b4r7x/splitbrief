@@ -131,7 +131,7 @@ describe('bindCompilerRuntimeEvidence', () => {
     },
   );
 
-  itUnix.each(['copilot', 'aider', 'shell', 'agent'] as const)(
+  itUnix.each(['copilot', 'cursor', 'shell', 'agent'] as const)(
     'refuses unsupported backend %s even with the claimed exact version',
     async (backend) => {
       const projectDir = createTempDir('compiler-bind-backend-project');

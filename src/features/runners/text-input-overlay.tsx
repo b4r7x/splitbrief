@@ -5,7 +5,7 @@ import { MultilineInput } from '../../components/input/multiline-input.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { SOFT_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
-import type { SeatPickerRole } from '../../core/runners/cli-tool-catalog.js';
+import type { SeatPickerRole } from '../../core/runners/seat-roles.js';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';

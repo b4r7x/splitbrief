@@ -483,9 +483,10 @@ describe('runPlanningPhase — rewindPending', () => {
     return makeConfig({
       planner: {
         kind: 'api',
-        provider: 'anthropic',
+        provider: 'custom-endpoint',
         model: 'claude-sonnet-4-6',
-        apiBase: 'https://api.anthropic.com/v1',
+        apiBase: 'https://api.example.com/v1',
+        apiKey: 'test-key',
       },
       workflow: auto(),
     });

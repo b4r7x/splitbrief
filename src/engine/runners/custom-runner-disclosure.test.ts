@@ -7,7 +7,6 @@ import {
   formatCustomRunnerDisclosure,
 } from './custom-runner-disclosure.js';
 import { customRunnerSecurityPosture, inlineRunnerSecurityPosture } from './custom-trust.js';
-import { escapeTrustLiteral } from '../../core/trust/literal.js';
 import { resolveCustomExecutable } from './resolve-cli-executable.js';
 
 const LITERAL_DISCLOSURE_EXECUTABLE = {
@@ -204,9 +203,5 @@ describe('custom runner disclosure', () => {
       if (previousCredential === undefined) delete process.env.REVIEW_TOKEN;
       else process.env.REVIEW_TOKEN = previousCredential;
     }
-  });
-
-  it('escapes C1 and Unicode line-separator controls as visible literals', () => {
-    expect(escapeTrustLiteral(`a\u0085b\u2028c\u202ed`)).toBe('"a\\u0085b\\u2028c\\u202ed"');
   });
 });

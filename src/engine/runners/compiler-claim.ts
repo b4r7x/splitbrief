@@ -44,8 +44,6 @@ function resolvePlannerBackendId(config: Config): CompilerBackendId {
       return runner.tool;
     case 'api':
       return 'api';
-    case 'agent-sdk':
-      return 'agent-sdk';
     case 'shell':
       return 'shell';
     case 'agent':

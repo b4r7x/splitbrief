@@ -5,7 +5,7 @@ import { CREW_SEAT_LABELS, formatShortSeatIdentity } from '../../core/crew/ident
 import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
-import { prepareExecution } from '../../engine/runners/prepare-execution.js';
+import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import { useTheme } from '../../components/theme.js';
 import { Composer } from '../../components/composer/composer.js';
 import { ScreenShell } from '../../components/screen-shell.js';

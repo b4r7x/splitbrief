@@ -8,10 +8,7 @@ import {
   ADMITTED_API_PROVIDER_IDS,
   API_PROVIDER_CATALOG,
 } from '../../src/core/providers/api-provider-catalog.js';
-import {
-  API_PROVIDER_VERDICT_CANDIDATE_PATHS,
-  FORBIDDEN_API_PROVIDER_IDS,
-} from '../../src/core/providers/api-provider-verdicts.js';
+import { FORBIDDEN_API_PROVIDER_IDS } from '../../src/core/providers/api-provider-verdicts.js';
 import { KNOWN_MODELS } from '../../src/core/providers/known-models.js';
 import { narrowRecord } from '../../src/utils/type-guards.js';
 import { writeConfigYamlText } from '#testing/helpers/config-io.js';
@@ -71,10 +68,7 @@ afterAll(() => {
   vi.unstubAllEnvs();
 });
 
-const EXCLUDED_DOC_IDS = [
-  ...FORBIDDEN_API_PROVIDER_IDS,
-  ...API_PROVIDER_VERDICT_CANDIDATE_PATHS.map((candidate) => candidate.id),
-] as const;
+const EXCLUDED_DOC_IDS = FORBIDDEN_API_PROVIDER_IDS;
 
 const EXCLUDED_OFFERINGS_HEADING = '### Excluded API offerings';
 
@@ -114,7 +108,7 @@ const CLI_AUTO_DENIALS = [
 
 // The denial family above guards how `auto` is described; this one guards how
 // `model` requiredness is scoped. `model` is required for `api`, `shell`,
-// `agent` and `agent-sdk` implementers and optional for `cli` ones, so a
+// `agent` implementers and optional for `cli` ones, so a
 // sentence promoting that to every runner kind is a doc-only claim the loader
 // contradicts — the exact regression the `auto` patterns do not see.
 const MODEL_REQUIREDNESS_OVERCLAIMS = [
@@ -458,16 +452,15 @@ describe('configuration documentation', () => {
     }
   });
 
-  it('distinguishes local Ollama credentials from Ollama Cloud credentials', () => {
+  it('keeps OLLAMA_API_KEY off the local Ollama credential row', () => {
     expect(configurationDoc).toContain(
       '`OLLAMA_API_KEY` is never resolved or sent to local Ollama',
     );
     expect(configurationDoc).toContain('`apiKey: env:OLLAMA_LOCAL_API_KEY`');
-    expect(configurationDoc).toContain('`ollama-cloud`');
     expect(apiKeysDoc).toContain('| Local Ollama | `OLLAMA_LOCAL_API_KEY` |');
     expect(apiKeysDoc).toContain('`apiKey: env:OLLAMA_LOCAL_API_KEY`');
     expect(apiKeysDoc).toContain('`OLLAMA_API_KEY` is never accepted or sent locally');
-    expect(apiKeysDoc).toContain('| Ollama Cloud | `OLLAMA_API_KEY` |');
+    expect(apiKeysDoc).not.toContain('| Ollama Cloud | `OLLAMA_API_KEY` |');
     expect(apiKeysDoc).not.toContain('Optional for secured local/proxy deployments');
     expect(apiKeysDoc).not.toContain('| Ollama | `OLLAMA_API_KEY` |');
   });

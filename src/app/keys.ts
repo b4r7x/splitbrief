@@ -20,6 +20,7 @@ import { assertNever } from '../utils/type-guards.js';
 import { SEAT_PICKER_OVERLAYS, type OverlayType } from '../core/navigation/types.js';
 import type { InterruptResult } from '../features/workflow/handlers.js';
 import { sessionSelectStore } from '../stores/navigation/session-select.js';
+import { refreshSkills } from './refresh-skills.js';
 
 type AppKeyAction =
   | { type: 'none' }
@@ -54,6 +55,10 @@ function applyAction(action: AppKeyAction, exit: () => void) {
       exit();
       return;
     case 'open-overlay':
+      // Discovery otherwise runs only at startup, so a skill directory added mid-session would
+      // stay invisible until a restart. Rescanning here rather than on the picker's mount keeps
+      // the scan off the render path the visual fixtures drive.
+      if (action.overlay === 'skills') refreshSkills();
       overlayStore.open(action.overlay);
       return;
     default:

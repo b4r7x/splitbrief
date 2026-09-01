@@ -32,12 +32,12 @@ describe('createOpenAICompatProvider', () => {
     expect(provider.isLocal).toBe(false);
   });
 
-  it('rejects a DeepSeek override outside its declared fixed origin', () => {
+  it('rejects a known provider override outside its declared endpoint policy', () => {
     expect(() =>
       createOpenAICompatProvider({
-        name: 'deepseek',
-        defaultBaseURL: 'https://api.deepseek.com/v1',
-        envKeyName: 'DEEPSEEK_API_KEY',
+        name: 'lm-studio',
+        defaultBaseURL: 'http://localhost:1234/v1',
+        envKeyName: '',
         overrides: { apiBase: 'https://custom.example.com/v1' },
       }),
     ).toThrow(expect.objectContaining({ kind: 'provider-endpoint-invalid' }));

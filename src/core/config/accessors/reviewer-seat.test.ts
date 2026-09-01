@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { configuredReviewerSeat } from './reviewer-seat.js';
-import { createDefaultConfig } from '../load/io.js';
+import { createDefaultConfig } from '../load/defaults.js';
 import type { Config } from '../../schemas/config.js';
 import type { ReviewerConfig } from '../../schemas/reviewer-config.js';
 

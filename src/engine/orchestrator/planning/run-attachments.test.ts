@@ -42,7 +42,7 @@ describe('runPlanningPhase — attachments capability gate (F-123 seam)', () => 
     sizeBytes: 1024,
   };
 
-  async function runInstantWithAttachment(supportsImages: boolean) {
+  async function runQuickWithAttachment(supportsImages: boolean) {
     const { projectDir, sessionId } = setupProject(dirs);
     let seenImages: Attachment[] | undefined;
     const planner = createPlannerBase({
@@ -60,7 +60,7 @@ describe('runPlanningPhase — attachments capability gate (F-123 seam)', () => 
     const result = await runPlanningPhase({
       wctx: {
         projectDir,
-        config: makeConfig({ workflow: { mode: 'instant' } }),
+        config: makeConfig({ workflow: { mode: 'quick' } }),
         callbacks,
         metadata: TEST_METADATA,
         sessionId,
@@ -76,7 +76,7 @@ describe('runPlanningPhase — attachments capability gate (F-123 seam)', () => 
   }
 
   it('supportsImages false → emits planner_attachments_dropped and strips before the backend call', async () => {
-    const { result, events, getSeenImages } = await runInstantWithAttachment(false);
+    const { result, events, getSeenImages } = await runQuickWithAttachment(false);
 
     expect(result.disposition).toBe('parked');
     const dropped = events.find((e) => e.type === 'planner_attachments_dropped');
@@ -87,7 +87,7 @@ describe('runPlanningPhase — attachments capability gate (F-123 seam)', () => 
   });
 
   it('supportsImages true → forwards attachments verbatim to the backend, no drop event', async () => {
-    const { result, events, getSeenImages } = await runInstantWithAttachment(true);
+    const { result, events, getSeenImages } = await runQuickWithAttachment(true);
 
     expect(result.disposition).toBe('parked');
     expect(events.find((e) => e.type === 'planner_attachments_dropped')).toBeUndefined();

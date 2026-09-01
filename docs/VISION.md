@@ -57,7 +57,7 @@ Interactive model/provider selection in `start` command. Auto-detect available p
 
 ### 4. Tool calls in implementer — the anti-goal is retired, nothing replaces it yet
 
-The old rationale was that 7B–27B models cannot produce strict tool-call payloads. That premise expired: 2026 local coder models (Qwen3-Coder 30B, Devstral Small 2 24B) are credible tool-callers ([RunLocalModel](https://runlocalmodel.com/best-local-coding-llm-2026.html)). Half the pipeline already runs on tools anyway — a `direct` implementer (`kind: cli`, `agent`, `agent-sdk`) edits files with its own tooling and SPLITBRIEF never sees the call protocol, only the resulting diff.
+The old rationale was that 7B–27B models cannot produce strict tool-call payloads. That premise expired: 2026 local coder models (Qwen3-Coder 30B, Devstral Small 2 24B) are credible tool-callers ([RunLocalModel](https://runlocalmodel.com/best-local-coding-llm-2026.html)). Half the pipeline already runs on tools anyway — a `direct` implementer (`kind: cli`, `agent`) edits files with its own tooling and SPLITBRIEF never sees the call protocol, only the resulting diff.
 
 What replaces the anti-goal is open. A SPLITBRIEF-owned tool-call protocol on the `extracted-code` path (`kind: api`, `shell`) would add a second control and approval surface, and nothing yet shows it earns that. The blanket "never" is gone; the case for "yes" has not been made.
 

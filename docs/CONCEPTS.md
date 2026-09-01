@@ -9,7 +9,7 @@ Shared vocabulary for anyone (human or AI agent) reading the codebase. All terms
 SPLITBRIEF is a CLI that splits AI coding work across two roles:
 
 - A **planner** — an expensive, high-quality model (Claude Code, Codex, GPT-4-class, …) does the *thinking*: researches the codebase and compiles the request into a Task Brief, with optional supporting spec/plan artifacts when the work needs more structure.
-- An **implementer** — a weaker **model**, reached either as a CLI tool running a cheap model or as an API model (Ollama, LM Studio, DeepSeek, …) — does the *typing*: turns each task from the list into code, one task at a time. Both transports are first-class; SPLITBRIEF favours neither.
+- An **implementer** — a weaker **model**, reached either as a CLI tool running a cheap model or as an API model (Ollama, LM Studio, a custom endpoint) — does the *typing*: turns each task from the list into code, one task at a time. Both transports are first-class; SPLITBRIEF favours neither.
 
 The orchestrator in the middle owns the workflow: it runs the planner, persists the Task Brief transport and supporting artifacts, walks through tasks, validates each one (`typecheck → lint → tests`), records evidence and checkpoint boundaries, and escalates back to the planner when the implementer gets stuck. Git commit strategies are optional and off by default; the default leaves changes unstaged for manual review.
 
@@ -38,7 +38,7 @@ The "typing" side. Responsibilities:
 
 1. Receive a self-contained task prompt (signature, types, tests, constraints, implementation steps, code context).
 2. Produce code: either whole-file write or search/replace markers.
-3. Return code to the orchestrator for extraction-based runners (`api`, `shell`), or write files directly in an isolated directory for `cli` / `agent` / `agent-sdk`; SPLITBRIEF inspects filesystem changes afterward and promotes them into the project under a hash guard.
+3. Return code to the orchestrator for extraction-based runners (`api`, `shell`), or write files directly in an isolated directory for `cli` / `agent`; SPLITBRIEF inspects filesystem changes afterward and promotes them into the project under a hash guard.
 
 The implementer is *stateless per task*. No conversation is maintained between tasks. This is deliberate: atomic tasks keep the context small enough to fit in an 8K model.
 
@@ -56,19 +56,18 @@ The middle layer. Zero React, zero Ink — pure logic in `src/engine/orchestrato
 
 ## Runner kinds
 
-Both the planner and the implementer are configured with a `kind` field. There are five kinds — each corresponds to a different way of invoking a model. The factory in `src/engine/runners/factory.ts` dispatches on this field.
+Both the planner and the implementer are configured with a `kind` field. There are four kinds — each corresponds to a different way of invoking a model. The factory in `src/engine/runners/factory.ts` dispatches on this field.
 
 | Kind | What it is | Example | Write mode as implementer | When to use |
 |------|-----------|---------|---------------------------|-------------|
-| `cli` | A known CLI tool invoked as a subprocess (stream-json or jsonl parsed) | `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code` | `direct` | Default planner path; uses existing subscriptions. As an implementer, one of the two first-class transports — a known tool pointed at a cheaper model |
-| `api` | Any OpenAI-compatible HTTP endpoint | Ollama, LM Studio, DeepSeek, OpenRouter, Together | `extracted-code` | The other first-class implementer transport — a weaker model behind an endpoint, local or remote |
+| `cli` | A known CLI tool invoked as a subprocess (stream-json or jsonl parsed) | `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor` | `direct` | Default planner path; uses existing subscriptions. As an implementer, one of the two first-class transports — a known tool pointed at a cheaper model |
+| `api` | Any OpenAI-compatible HTTP endpoint | Ollama, LM Studio, custom endpoint | `extracted-code` | The other first-class implementer transport — a weaker model behind an endpoint, local or remote |
 | `shell` | An arbitrary command. Prompt → stdin, code → stdout. No shell/network sandbox | Any custom script | `extracted-code` | Users who want to plug in a tool we don't know |
 | `agent` | A command that writes files directly to disk. No stdout extraction or shell/network sandbox | A complete coding agent used as an implementer | `direct` | When the tool handles file writing itself |
-| `agent-sdk` | Programmatic call into the Anthropic Agent SDK (no subprocess) | `@anthropic-ai/claude-agent-sdk` | `direct` | When you want SDK-level control and already have `ANTHROPIC_API_KEY` |
 
 Write mode follows mechanically from the kind and cannot be chosen: `capabilities.writesFiles` may be restated per profile, but config load rejects any value that differs from the kind's mode. See [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#write-modes) for what each mode means for isolation and promotion.
 
-All five kinds implement the same `Planner` / `Implementer` interface (`src/engine/planners/types.ts`, `src/engine/implementers/types.ts`). The orchestrator doesn't care which kind is active.
+All four kinds implement the same `Planner` / `Implementer` interface (`src/engine/planners/types.ts`, `src/engine/implementers/types.ts`). The orchestrator doesn't care which kind is active.
 
 ---
 
@@ -78,8 +77,7 @@ The `workflow.mode` config field controls how many planner calls run before impl
 
 | Mode | Planner calls | Approval gates | Best for |
 |------|:---:|:---:|---|
-| `instant` | 1 (minimal Task Brief + task transport) | 0 | Tiny fixes, obvious one-step changes |
-| `quick` | 1 (small Task Brief + task transport) | 0 | Small work that still needs a little structure |
+| `quick` | 1 (small Task Brief + task transport) | 0 | Tiny fixes and small work that still needs a little structure |
 | `standard` (default) | 4 (research → supporting spec → plan → Task Brief transport) | 2 (supporting spec + briefs) | Normal features |
 | `speckit` | 7 (research → supporting spec → clarify → constitution-check → plan → analyze → Task Brief transport) | 3 (supporting spec + plan + briefs) | Large, risky, or audited work |
 
@@ -197,7 +195,7 @@ Since spec 008, clarification answers also route through the same queue as user-
 
 ## Skills
 
-Optional markdown files that provide extra context to the planner (coding standards, domain knowledge, architectural notes). `src/engine/skill-discovery.ts` discovers Claude Code skills from `.claude/skills/` and `~/.claude/skills/`, default runner skills from `.splitbrief/skills/` and `~/.splitbrief/skills/`, Codex instructions from `AGENTS.md` plus `~/.codex/skills/`, and Aider conventions from `CONVENTIONS.md`. User picks which skills to include for a given run; selected skills are concatenated into a `skills_context` block and passed to the planner alongside the feature prompt.
+Optional markdown files that provide extra context to the planner (coding standards, domain knowledge, architectural notes). `src/engine/skill-discovery.ts` scans one fixed union of roots, regardless of which tool holds the PLAN seat: project `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, then global `~/.splitbrief/skills/`, `~/.claude/skills/`, `~/.agents/skills/`, `~/.codex/skills/`, `~/.config/opencode/skills/` (the list lives in `src/core/skills/scan-paths.ts`). That order is the precedence order — a skill id found in an earlier root wins, so project skills always outrank global ones. `<project>/AGENTS.md` is added as the `agents-root` entry when it exists. User picks which skills to include for a given run; selected skills are concatenated into a `skills_context` block and passed to the planner alongside the feature prompt.
 
 Skills are planner-only. The implementer never sees them — its prompts are derived from the resolved Task Brief transport and any supporting artifacts.
 
@@ -280,7 +278,7 @@ Workflow lifecycle hooks let users run custom commands or in-process modules at 
 
 ## Hook trust
 
-First-time trust gate for hook configs. `src/core/hooks/trust.ts` computes a hash from the hook section plus module hook file digests; `src/cli/hook-trust-prompt.ts` prompts in a TTY the first time, showing each hook's executable, the absolute path it resolves to here, and its argv, then asking `Trust these hooks for this project? [y/N]`. Answering `y` writes a receipt to `~/.splitbrief/trust/hooks.json` keyed by the canonical path of this checkout, so the grant belongs to this machine and this checkout and a repository can neither ship nor forge one. Any edit to the hooks section or module hook files invalidates the hash and re-prompts. In CI (non-TTY), `--allow-hooks` is required — otherwise SPLITBRIEF refuses to start. This prevents silent RCE via a config or hook-file edit.
+First-time trust gate for hook configs. `src/core/hooks/trust-digest.ts` computes a hash from the hook section plus module hook file digests and `src/core/hooks/trust.ts` holds the grant against that hash; `src/cli/hook-trust-prompt.ts` prompts in a TTY the first time, showing each hook's executable, the absolute path it resolves to here, and its argv, then asking `Trust these hooks for this project? [y/N]`. Answering `y` writes a receipt to `~/.splitbrief/trust/hooks.json` keyed by the canonical path of this checkout, so the grant belongs to this machine and this checkout and a repository can neither ship nor forge one. Any edit to the hooks section or module hook files invalidates the hash and re-prompts. In CI (non-TTY), `--allow-hooks` is required — otherwise SPLITBRIEF refuses to start. This prevents silent RCE via a config or hook-file edit.
 
 ## Repo-map
 
@@ -357,12 +355,12 @@ Typed event schema: `src/engine/events/schema.ts` (`EngineEventSchema`; the `Eng
 
 ```yaml
 version: 3
-planner:     # discriminated union on `kind` — cli | api | shell | agent | agent-sdk
+planner:     # discriminated union on `kind` — cli | api | shell | agent
   kind: cli
   tool: claude-code
   model: claude-opus-4-5
 
-implementer: # same five kinds
+implementer: # same four kinds
   kind: api
   provider: ollama
   service: ollama

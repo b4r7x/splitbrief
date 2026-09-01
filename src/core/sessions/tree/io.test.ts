@@ -22,7 +22,7 @@ import {
   persistAppend,
 } from './io.js';
 import { entryId, nextEntryId } from './schemas.js';
-import { createEmptyTree, appendEntry, branchFrom } from './store.js';
+import { createEmptyTree, appendEntry, branchFrom, type SessionTree } from './store.js';
 
 describe('treeJsonlPath', () => {
   it('returns the correct jsonl file path', () => {
@@ -266,19 +266,20 @@ describe('reconstructTree', () => {
     });
   });
 
-  it('reconstructs with meta file when present', async () => {
+  it('keeps meta fields the jsonl cannot derive', async () => {
     await withTempDir('tree-io-test', async (dir) => {
       const tree = createEmptyTree(1000);
       const r1 = appendEntry(tree, { type: 'a', payload: {}, timestamp: 2000 });
 
       appendTreeEntry(dir, tree.entries.get(entryId('E0001'))!);
       appendTreeEntry(dir, r1.entry);
-      writeTreeMeta(dir, r1.tree.meta);
+      writeTreeMeta(dir, { ...r1.tree.meta, createdAt: 500 });
 
       const reconstructed = reconstructTree(dir);
       expect(reconstructed).not.toBeNull();
+      // Derivation from the jsonl alone would report the first entry's 1000.
+      expect(reconstructed!.meta.createdAt).toBe(500);
       expect(reconstructed!.meta.leafId).toBe(r1.tree.meta.leafId);
-      expect(reconstructed!.meta.entryCount).toBe(r1.tree.meta.entryCount);
     });
   });
 
@@ -374,38 +375,26 @@ describe('reconstructTree', () => {
 });
 
 describe('persistAppend', () => {
-  it('writes entry and meta atomically', async () => {
+  it.each([
+    [
+      'append',
+      (tree: SessionTree) => appendEntry(tree, { type: 'a', payload: {}, timestamp: 2000 }),
+      { leafId: entryId('E0002') },
+    ],
+    [
+      'branch',
+      (tree: SessionTree) =>
+        branchFrom(tree, { fromId: entryId('E0001'), type: 'fork', payload: {}, timestamp: 2000 }),
+      { branchCount: 1 },
+    ],
+  ])('persists the entry and its meta together on %s', async (_kind, mutate, expected) => {
     await withTempDir('tree-io-test', async (dir) => {
-      const tree = createEmptyTree(1000);
-      const r1 = appendEntry(tree, { type: 'a', payload: {}, timestamp: 2000 });
+      const result = mutate(createEmptyTree(1000));
 
-      persistAppend(dir, r1.entry, r1.tree.meta);
+      persistAppend(dir, result.entry, result.tree.meta);
 
       expect(readTreeEntries(dir)).toHaveLength(1);
-      const meta = readTreeMeta(dir);
-      expect(meta).not.toBeNull();
-      expect(meta!.leafId).toBe(entryId('E0002'));
-    });
-  });
-});
-
-describe('persistAppend (branch)', () => {
-  it('writes entry and meta atomically for branches', async () => {
-    await withTempDir('tree-io-test', async (dir) => {
-      const tree = createEmptyTree(1000);
-      const r1 = branchFrom(tree, {
-        fromId: entryId('E0001'),
-        type: 'fork',
-        payload: {},
-        timestamp: 2000,
-      });
-
-      persistAppend(dir, r1.entry, r1.tree.meta);
-
-      expect(readTreeEntries(dir)).toHaveLength(1);
-      const meta = readTreeMeta(dir);
-      expect(meta).not.toBeNull();
-      expect(meta!.branchCount).toBe(1);
+      expect(readTreeMeta(dir)).toMatchObject(expected);
     });
   });
 });

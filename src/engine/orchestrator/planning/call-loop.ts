@@ -12,11 +12,10 @@ import type { PlanResult, PlannerCallbacks } from '../../planners/types.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import type { PlannerCallRunResult, PlannerCallOptions } from './types.js';
-import { zeroTaskRetryPrompt } from '../../spec/prompts/zero-task-retry.js';
 
 const MAX_CLARIFICATION_QUESTIONS = 5;
 
-export function createClarificationQuestionCollector(
+function createClarificationQuestionCollector(
   questions: ClarificationQuestion[],
 ): (incoming: ClarificationQuestion[]) => void {
   const seenIds = new Set(questions.map((question) => question.id));
@@ -38,12 +37,12 @@ export async function runPlannerCallInContinuationLoop(
     wctx,
     planner,
     feature,
-    mode,
     skillsContext,
     codebaseContext,
     priorMessages,
     collectedQuestions,
     attachments,
+    trivial,
   } = opts;
   const { projectDir, sessionId, config, callbacks, resumeHolder, sinks, signal } = wctx;
   let state = opts.state;
@@ -129,40 +128,13 @@ export async function runPlannerCallInContinuationLoop(
         };
 
         try {
-          if (mode === 'quick') {
-            const quickPlanFn = planner.quickPlan ?? planner.plan;
-            const runQuickCall = (callPrompt: string, callCallbacks: PlannerCallbacks) =>
-              quickPlanFn.call(planner, {
-                feature: callPrompt,
-                projectDir,
-                callbacks: callCallbacks,
-                codebaseContext,
-              });
-            const parseDiagnostics: string[] = [];
-            let result = await runQuickCall(prompt, {
-              ...plannerCallbacks,
-              onWarning: (message) => {
-                parseDiagnostics.push(message);
-                plannerCallbacks.onWarning?.(message);
-              },
-            });
-            heartbeat.updateTokens(plannerCallTokens(result.usage));
-            if (result.tasks.length === 0) {
-              const retry = await runQuickCall(
-                zeroTaskRetryPrompt(prompt, parseDiagnostics),
-                plannerCallbacks,
-              );
-              heartbeat.updateTokens(plannerCallTokens(retry.usage));
-              result = mergePlannerAttempts(result, retry);
-            }
-            return result;
-          }
           const result = await planner.plan({
             feature: prompt,
             projectDir,
             callbacks: plannerCallbacks,
             skillsContext,
             codebaseContext,
+            ...(trivial === true ? { trivial: true } : {}),
           });
           heartbeat.updateTokens(plannerCallTokens(result.usage));
           return result;
@@ -185,37 +157,4 @@ export async function runPlannerCallInContinuationLoop(
 function plannerCallTokens(usage: TokenDelta | null): number {
   if (usage === null) return 0;
   return usage.inputTokens + usage.outputTokens;
-}
-
-/**
- * Folds the zero-task retry into one result the caller can book once: tokens are summed
- * (bounded evidence aggregation) but the retry is the terminal accepted attempt, so it is
- * the sole phase owner — the earlier zero-task attempt contributes no promotable phase.
- */
-export function mergePlannerAttempts(first: PlanResult, retry: PlanResult): PlanResult {
-  return {
-    ...retry,
-    usage: sumTokenDeltas(first.usage, retry.usage),
-    phases: retry.phases,
-  };
-}
-
-function sumTokenDeltas(first: TokenDelta | null, retry: TokenDelta | null): TokenDelta | null {
-  if (first === null) return retry;
-  if (retry === null) return first;
-  const cacheReadTokens = sumOptional(first.cacheReadTokens, retry.cacheReadTokens);
-  const cacheCreateTokens = sumOptional(first.cacheCreateTokens, retry.cacheCreateTokens);
-  const reasoningTokens = sumOptional(first.reasoningTokens, retry.reasoningTokens);
-  return {
-    inputTokens: first.inputTokens + retry.inputTokens,
-    outputTokens: first.outputTokens + retry.outputTokens,
-    ...(cacheReadTokens !== undefined && { cacheReadTokens }),
-    ...(cacheCreateTokens !== undefined && { cacheCreateTokens }),
-    ...(reasoningTokens !== undefined && { reasoningTokens }),
-  };
-}
-
-function sumOptional(first: number | undefined, retry: number | undefined): number | undefined {
-  if (first === undefined && retry === undefined) return undefined;
-  return (first ?? 0) + (retry ?? 0);
 }

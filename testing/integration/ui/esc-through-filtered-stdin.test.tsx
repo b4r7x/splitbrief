@@ -33,7 +33,7 @@ const CTRL_C = '\x03';
 // Wide margin so the deferred escape + navigation completes even under full-suite event-loop load.
 const AFTER_PRESS_MS = 200;
 
-function InstantWorkflowApp({
+function WorkflowApp({
   exit = () => {},
   interruptWorkflow = handlers.interruptTurn,
 }: {
@@ -58,7 +58,7 @@ function InstantWorkflowApp({
   );
 }
 
-describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', () => {
+describe('ESC through the real FilteredStdin pipeline (live workflow)', () => {
   let projectDir = '';
 
   beforeEach(() => {
@@ -68,7 +68,7 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
     projectDir = createTempDir('filtered-stdin-workflow');
     const prepared = prepareWorkflowExecution({
       projectDir,
-      feature: 'instant feature',
+      feature: 'esc ladder feature',
       config: makeConfig(),
       sessionId: 'filtered-stdin-session',
     });
@@ -76,8 +76,7 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
       to: 'workflow',
       execution: { kind: 'local', prepared },
     });
-    // Instant mode runs planning under the 'researching' live phase (init.ts dispatches
-    // START before runInstantPlanning, and 'researching' is a live phase).
+    // 'researching' is a live phase, which is what gates the ESC arming ladder.
     lifecycleStore.__testReset({ phase: 'researching' });
   });
 
@@ -92,7 +91,7 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
   });
 
   it('arms interrupt and renders a feedback hint on the FIRST lone ESC during a live phase', async () => {
-    const harness = renderThroughFilteredStdin(<InstantWorkflowApp />);
+    const harness = renderThroughFilteredStdin(<WorkflowApp />);
     await tick(30);
     const idleFrame = harness.lastFrame() ?? '';
 
@@ -110,7 +109,7 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
   it('a batched double ESC (\\x1b\\x1b in one chunk) interrupts immediately', async () => {
     const abort = vi.fn();
     handlers.createAbortHandlerScope()(abort);
-    const harness = renderThroughFilteredStdin(<InstantWorkflowApp />);
+    const harness = renderThroughFilteredStdin(<WorkflowApp />);
     await tick(30);
 
     // Terminals can batch two fast ESC keystrokes into a single chunk; the filter passes
@@ -128,7 +127,7 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
     const abort = vi.fn();
     handlers.createAbortHandlerScope()(abort);
     const exit = vi.fn();
-    const harness = renderThroughFilteredStdin(<InstantWorkflowApp exit={exit} />);
+    const harness = renderThroughFilteredStdin(<WorkflowApp exit={exit} />);
     await tick(30);
 
     harness.pressBytes(ESC);
@@ -163,12 +162,12 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
     harness.unmount();
   });
 
-  it('stops on the second ESC (instant-planning fallback, no abort handler) and stays on the workflow screen', async () => {
-    // Instant planning registers no abort handler, so interruptTurn falls back to
-    // requestCancel(), which synchronously marks the lifecycle cancelled. With both the app
-    // keys and the workflow-screen keys mounted (the real workflow view), that single press
-    // must do exactly one thing: stop the run. Navigating home is a separate, later decision.
-    const harness = renderThroughFilteredStdin(<InstantWorkflowApp />);
+  it('stops on the second ESC (no abort handler registered) and stays on the workflow screen', async () => {
+    // With no abort handler registered, interruptTurn falls back to requestCancel(), which
+    // synchronously marks the lifecycle cancelled. With both the app keys and the
+    // workflow-screen keys mounted (the real workflow view), that single press must do exactly
+    // one thing: stop the run. Navigating home is a separate, later decision.
+    const harness = renderThroughFilteredStdin(<WorkflowApp />);
     await tick(30);
 
     harness.pressBytes(ESC);
@@ -197,7 +196,7 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
     // \x1b[27u (which Ink decodes to key.escape, passed through the filter intact) or as a
     // bare \x1b. Both encodings must arm the interrupt hint on the first press, so neither
     // path can be swallowed by FilteredStdin.
-    const kitty = renderThroughFilteredStdin(<InstantWorkflowApp />);
+    const kitty = renderThroughFilteredStdin(<WorkflowApp />);
     await tick(30);
     kitty.pressBytes('\x1b[27u');
     await tick(AFTER_PRESS_MS);
@@ -206,7 +205,7 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
     abortStore.clear();
     await tick(10);
 
-    const bare = renderThroughFilteredStdin(<InstantWorkflowApp />);
+    const bare = renderThroughFilteredStdin(<WorkflowApp />);
     await tick(30);
     bare.pressBytes('\x1b');
     await tick(AFTER_PRESS_MS);
@@ -222,7 +221,7 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
     const abort = vi.fn();
     handlers.createAbortHandlerScope()(abort);
     const exit = vi.fn();
-    const harness = renderThroughFilteredStdin(<InstantWorkflowApp exit={exit} />);
+    const harness = renderThroughFilteredStdin(<WorkflowApp exit={exit} />);
     await tick(30);
 
     // Press 1: Ctrl+C reaches Ink through the filter, interrupts the live turn, and arms
@@ -242,7 +241,7 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
   });
 
   it('does not arm for a lone ESC inside a bracketed paste; the pasted text reaches the app', async () => {
-    const harness = renderThroughFilteredStdin(<InstantWorkflowApp />);
+    const harness = renderThroughFilteredStdin(<WorkflowApp />);
     const delivered: string[] = [];
     harness.filtered.stdin.on('data', (chunk: Buffer) => delivered.push(chunk.toString('utf8')));
     await tick(30);
@@ -268,7 +267,7 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
   });
 
   it('does not deliver a bare carriage return to the app for a CR inside a bracketed paste', async () => {
-    const harness = renderThroughFilteredStdin(<InstantWorkflowApp />);
+    const harness = renderThroughFilteredStdin(<WorkflowApp />);
     const delivered: string[] = [];
     harness.filtered.stdin.on('data', (chunk: Buffer) => delivered.push(chunk.toString('utf8')));
     await tick(30);
@@ -290,7 +289,7 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
 
   it('closes an open overlay on ESC and does not arm the interrupt', async () => {
     overlayStore.open('settings');
-    const harness = renderThroughFilteredStdin(<InstantWorkflowApp />);
+    const harness = renderThroughFilteredStdin(<WorkflowApp />);
     await tick(30);
     expect(overlayStore.get().active).toBe('settings');
 

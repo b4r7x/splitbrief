@@ -1,7 +1,3 @@
-export function perTokenToPerMillion(perToken: number): number {
-  return perToken * 1_000_000;
-}
-
 export function isModelFree(input?: number, output?: number): boolean {
   return (input ?? 0) === 0 && (output ?? 0) === 0;
 }

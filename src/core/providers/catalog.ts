@@ -9,7 +9,7 @@ import {
 } from './api-provider-catalog.js';
 import { endpointPolicyError } from './endpoint-policy.js';
 
-export type ProviderCategory = 'cli' | 'remote-api' | 'local-service' | 'sdk' | 'custom';
+export type ProviderCategory = 'cli' | 'remote-api' | 'local-service' | 'custom';
 
 export interface ProviderInfo {
   id: string;
@@ -84,12 +84,6 @@ export function getKnownProviderBaseURL(providerId: ApiProviderId): string {
 }
 
 const META_PROVIDER_INFO = Object.freeze({
-  'agent-sdk': Object.freeze({
-    id: 'agent-sdk',
-    displayName: 'Agent SDK',
-    category: 'sdk',
-    apiKeyEnv: 'ANTHROPIC_API_KEY',
-  }),
   shell: Object.freeze({
     id: 'shell',
     displayName: 'Custom Shell',
@@ -106,10 +100,10 @@ export const PROVIDER_CATALOG: Readonly<Record<ProviderId, ProviderInfo>> = Obje
   'claude-code': providerInfoFromCliDescriptor(CLI_TOOL_CATALOG['claude-code']),
   codex: providerInfoFromCliDescriptor(CLI_TOOL_CATALOG.codex),
   opencode: providerInfoFromCliDescriptor(CLI_TOOL_CATALOG.opencode),
-  aider: providerInfoFromCliDescriptor(CLI_TOOL_CATALOG.aider),
   copilot: providerInfoFromCliDescriptor(CLI_TOOL_CATALOG.copilot),
   'kilo-code': providerInfoFromCliDescriptor(CLI_TOOL_CATALOG['kilo-code']),
   cursor: providerInfoFromCliDescriptor(CLI_TOOL_CATALOG.cursor),
+  'command-code': providerInfoFromCliDescriptor(CLI_TOOL_CATALOG['command-code']),
   ...apiProviderInfoCatalog(),
   ...META_PROVIDER_INFO,
 });

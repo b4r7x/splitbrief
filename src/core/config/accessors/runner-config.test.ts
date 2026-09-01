@@ -5,28 +5,29 @@ import {
   getRunnerDisplayName,
   resolveRunnerConfigContext,
 } from './runner-config.js';
-import {
-  isSameCredentialDomain,
-  projectRunnerDiscoveryContext,
-} from './runner-discovery-context.js';
-import { createDefaultConfig } from '../load/io.js';
+import { projectRunnerDiscoveryContext } from './runner-discovery-context.js';
+import { createDefaultConfig } from '../load/defaults.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
 import type { Config } from '../../schemas/config.js';
 
-function anthropicConfig(input: { plannerApiKey: string; implementerApiKey: string }): Config {
+function keyedEndpointConfig(input: { plannerApiKey: string; implementerApiKey: string }): Config {
   return {
     ...createDefaultConfig(),
     planner: {
       kind: 'api',
-      provider: 'anthropic',
-      service: 'anthropic',
+      provider: 'custom-endpoint',
+      service: 'custom-endpoint',
       offering: 'payg',
-      apiBase: 'https://API.ANTHROPIC.COM:443/v1/',
+      apiBase: 'https://API.EXAMPLE.TEST:443/v1/',
       apiKey: input.plannerApiKey,
       model: 'claude-opus-4-6',
     },
     implementer: {
-      kind: 'agent-sdk',
+      kind: 'api',
+      provider: 'custom-endpoint',
+      service: 'custom-endpoint',
+      offering: 'payg',
+      apiBase: 'https://API.EXAMPLE.TEST:443/v1/',
       apiKey: input.implementerApiKey,
       model: 'claude-sonnet-4-6',
     },
@@ -39,25 +40,25 @@ type ProfiledConfig = Config & {
 
 function inlineProfileConfig(apiKey: string): ProfiledConfig {
   return {
-    ...anthropicConfig({ plannerApiKey: apiKey, implementerApiKey: apiKey }),
+    ...keyedEndpointConfig({ plannerApiKey: apiKey, implementerApiKey: apiKey }),
     implementerProfiles: {
       default: 'primary',
       profiles: {
         primary: {
           kind: 'api',
-          provider: 'anthropic',
-          service: 'anthropic',
+          provider: 'custom-endpoint',
+          service: 'custom-endpoint',
           offering: 'payg',
-          apiBase: 'https://api.anthropic.com/v1',
+          apiBase: 'https://api.example.test/v1',
           apiKey,
           model: 'claude-sonnet-4-6',
         },
         secondary: {
           kind: 'api',
-          provider: 'anthropic',
-          service: 'anthropic',
+          provider: 'custom-endpoint',
+          service: 'custom-endpoint',
           offering: 'payg',
-          apiBase: 'https://api.anthropic.com/v1',
+          apiBase: 'https://api.example.test/v1',
           apiKey,
           model: 'claude-haiku-4-5',
         },
@@ -72,19 +73,7 @@ describe('getPlannerToolId', () => {
     expect(getPlannerToolId(config)).toBe('claude-code');
   });
 
-  it('returns the provider for api kind when it is a valid PlannerToolId', () => {
-    const config: PlannerConfig = {
-      kind: 'api',
-      provider: 'anthropic',
-      service: 'anthropic',
-      offering: 'payg',
-      apiBase: 'https://api.anthropic.com/v1',
-      model: 'claude-opus-4-5',
-    };
-    expect(getPlannerToolId(config)).toBe('anthropic');
-  });
-
-  it('falls back to anthropic for api kind with unknown provider', () => {
+  it('falls back to shell for api kind, which names no planner tool', () => {
     const config: PlannerConfig = {
       kind: 'api',
       provider: 'my-custom',
@@ -93,7 +82,7 @@ describe('getPlannerToolId', () => {
       apiBase: 'http://localhost:9999/v1',
       model: 'my-model',
     };
-    expect(getPlannerToolId(config)).toBe('anthropic');
+    expect(getPlannerToolId(config)).toBe('shell');
   });
 
   it('returns shell for shell kind', () => {
@@ -105,11 +94,6 @@ describe('getPlannerToolId', () => {
     const config: PlannerConfig = { kind: 'agent', command: 'my-agent' };
     expect(getPlannerToolId(config)).toBe('agent');
   });
-
-  it('returns agent-sdk for agent-sdk kind', () => {
-    const config: PlannerConfig = { kind: 'agent-sdk' };
-    expect(getPlannerToolId(config)).toBe('agent-sdk');
-  });
 });
 
 describe('getRunnerCatalogDisplayName maps runners to catalog display names', () => {
@@ -118,16 +102,16 @@ describe('getRunnerCatalogDisplayName maps runners to catalog display names', ()
     expect(getRunnerCatalogDisplayName(config)).toBe('OpenCode CLI');
   });
 
-  it('api anthropic → Anthropic', () => {
+  it('api ollama → Ollama', () => {
     const config: PlannerConfig = {
       kind: 'api',
-      provider: 'anthropic',
-      service: 'anthropic',
-      offering: 'payg',
-      apiBase: 'https://api.anthropic.com/v1',
-      model: 'claude-opus-4-5',
+      provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
+      apiBase: 'http://localhost:11434/v1',
+      model: 'qwen3-coder:30b',
     };
-    expect(getRunnerCatalogDisplayName(config)).toBe('Anthropic');
+    expect(getRunnerCatalogDisplayName(config)).toBe('Ollama');
   });
 
   it('shell → Custom Shell', () => {
@@ -139,11 +123,6 @@ describe('getRunnerCatalogDisplayName maps runners to catalog display names', ()
     const config: PlannerConfig = { kind: 'agent', command: 'my-agent' };
     expect(getRunnerCatalogDisplayName(config)).toBe('Agent');
   });
-
-  it('agent-sdk → Agent SDK', () => {
-    const config: PlannerConfig = { kind: 'agent-sdk' };
-    expect(getRunnerCatalogDisplayName(config)).toBe('Agent SDK');
-  });
 });
 
 describe('getRunnerDisplayName still returns raw lowercase ids', () => {
@@ -154,6 +133,13 @@ describe('getRunnerDisplayName still returns raw lowercase ids', () => {
 });
 
 describe('projectRunnerDiscoveryContext', () => {
+  it('is reproducible across processes: equal content yields an equal context', () => {
+    const left = projectRunnerDiscoveryContext({ config: createDefaultConfig(), role: 'planner' });
+    const right = projectRunnerDiscoveryContext({ config: createDefaultConfig(), role: 'planner' });
+    expect(left.configGeneration).toBe(right.configGeneration);
+    expect(left).toEqual(right);
+  });
+
   it('keys the reviewer seat as the planner so detection evidence is shared', () => {
     const config: Config = {
       ...createDefaultConfig(),
@@ -248,86 +234,62 @@ describe('projectRunnerDiscoveryContext', () => {
   });
 
   it('keeps credential-domain equality exact and generation-scoped', () => {
-    const config = anthropicConfig({
-      plannerApiKey: 'env:ANTHROPIC_API_KEY',
-      implementerApiKey: 'env:ANTHROPIC_API_KEY',
+    const config = keyedEndpointConfig({
+      plannerApiKey: 'env:CUSTOM_ENDPOINT_API_KEY',
+      implementerApiKey: 'env:CUSTOM_ENDPOINT_API_KEY',
     });
     const planner = projectRunnerDiscoveryContext({ config, role: 'planner' });
     const implementer = projectRunnerDiscoveryContext({ config, role: 'implementer' });
 
-    expect(planner.credentialDomain?.endpointOrigin).toBe('https://api.anthropic.com');
-    expect(
-      isSameCredentialDomain({
-        left: planner.credentialDomain,
-        right: implementer.credentialDomain,
-      }),
-    ).toBe(true);
+    expect(planner.credentialDomain?.endpointOrigin).toBe('https://api.example.test');
+    expect(planner.credentialDomain).toEqual(implementer.credentialDomain);
 
-    const differentEnv = anthropicConfig({
-      plannerApiKey: 'env:ANTHROPIC_API_KEY',
-      implementerApiKey: 'env:OTHER_ANTHROPIC_KEY',
+    const differentEnv = keyedEndpointConfig({
+      plannerApiKey: 'env:CUSTOM_ENDPOINT_API_KEY',
+      implementerApiKey: 'env:OTHER_CUSTOM_ENDPOINT_KEY',
     });
     expect(
-      isSameCredentialDomain({
-        left: projectRunnerDiscoveryContext({ config: differentEnv, role: 'planner' })
-          .credentialDomain,
-        right: projectRunnerDiscoveryContext({ config: differentEnv, role: 'implementer' })
-          .credentialDomain,
-      }),
-    ).toBe(false);
+      projectRunnerDiscoveryContext({ config: differentEnv, role: 'planner' }).credentialDomain,
+    ).not.toEqual(
+      projectRunnerDiscoveryContext({ config: differentEnv, role: 'implementer' }).credentialDomain,
+    );
 
-    const inline = anthropicConfig({
+    const inline = keyedEndpointConfig({
       plannerApiKey: 'sk-test-planner',
       implementerApiKey: 'sk-test-implementer',
     });
     const inlinePlanner = projectRunnerDiscoveryContext({ config: inline, role: 'planner' });
-    expect(
-      isSameCredentialDomain({
-        left: inlinePlanner.credentialDomain,
-        right: projectRunnerDiscoveryContext({ config: inline, role: 'planner' }).credentialDomain,
-      }),
-    ).toBe(true);
-    expect(
-      isSameCredentialDomain({
-        left: inlinePlanner.credentialDomain,
-        right: projectRunnerDiscoveryContext({ config: inline, role: 'implementer' })
-          .credentialDomain,
-      }),
-    ).toBe(false);
+    expect(inlinePlanner.credentialDomain).toEqual(
+      projectRunnerDiscoveryContext({ config: inline, role: 'planner' }).credentialDomain,
+    );
+    expect(inlinePlanner.credentialDomain).not.toEqual(
+      projectRunnerDiscoveryContext({ config: inline, role: 'implementer' }).credentialDomain,
+    );
 
     const sessionConfig: Config = {
       ...config,
       planner: { kind: 'cli', tool: 'claude-code', authChannel: 'session' },
     };
+    // A session-authenticated CLI seat carries no credential domain at all, so
+    // it can never share one with the keyed implementer beside it.
     expect(
-      isSameCredentialDomain({
-        left: projectRunnerDiscoveryContext({ config: sessionConfig, role: 'planner' })
-          .credentialDomain,
-        right: projectRunnerDiscoveryContext({ config: sessionConfig, role: 'implementer' })
-          .credentialDomain,
-      }),
-    ).toBe(false);
+      projectRunnerDiscoveryContext({ config: sessionConfig, role: 'planner' }).credentialDomain,
+    ).toBeUndefined();
 
     // Generation is content-derived: a structural clone keeps the domain, and
     // only a real config change breaks it — that stability is what lets a
     // restarted process read the detection cache its predecessor wrote.
     const clone = structuredClone(config);
-    expect(
-      isSameCredentialDomain({
-        left: planner.credentialDomain,
-        right: projectRunnerDiscoveryContext({ config: clone, role: 'planner' }).credentialDomain,
-      }),
-    ).toBe(true);
+    expect(planner.credentialDomain).toEqual(
+      projectRunnerDiscoveryContext({ config: clone, role: 'planner' }).credentialDomain,
+    );
     const changed: Config = {
       ...config,
       planner: { ...config.planner, model: 'claude-opus-4-5' },
     };
-    expect(
-      isSameCredentialDomain({
-        left: planner.credentialDomain,
-        right: projectRunnerDiscoveryContext({ config: changed, role: 'planner' }).credentialDomain,
-      }),
-    ).toBe(false);
+    expect(planner.credentialDomain).not.toEqual(
+      projectRunnerDiscoveryContext({ config: changed, role: 'planner' }).credentialDomain,
+    );
   });
 
   it('keeps resolved profile inline credential identity stable and source-specific', () => {
@@ -337,43 +299,24 @@ describe('projectRunnerDiscoveryContext', () => {
     const primary = projectRunnerDiscoveryContext({ config, role: 'implementer' });
     const primaryAgain = projectRunnerDiscoveryContext({ config, role: 'implementer' });
 
-    expect(primary).toMatchObject({ kind: 'api', id: 'anthropic', credentialPresent: true });
-    expect(
-      isSameCredentialDomain({
-        left: primary.credentialDomain,
-        right: primaryAgain.credentialDomain,
-      }),
-    ).toBe(true);
+    expect(primary).toMatchObject({ kind: 'api', id: 'custom-endpoint', credentialPresent: true });
+    expect(primary.credentialDomain).toEqual(primaryAgain.credentialDomain);
     expect(JSON.stringify(primary)).not.toContain(rawInlineCredential);
 
     const planner = projectRunnerDiscoveryContext({ config, role: 'planner' });
-    expect(
-      isSameCredentialDomain({
-        left: planner.credentialDomain,
-        right: primary.credentialDomain,
-      }),
-    ).toBe(false);
+    expect(planner.credentialDomain).not.toEqual(primary.credentialDomain);
 
     config.implementerProfiles.default = 'secondary';
     const secondary = projectRunnerDiscoveryContext({ config, role: 'implementer' });
     // Switching the default profile is a content change, so the generation moves.
     expect(primary.configGeneration).not.toBe(secondary.configGeneration);
-    expect(
-      isSameCredentialDomain({
-        left: primary.credentialDomain,
-        right: secondary.credentialDomain,
-      }),
-    ).toBe(false);
+    expect(primary.credentialDomain).not.toEqual(secondary.credentialDomain);
 
     // A structural clone carries the same content-derived identity forward.
     const clone = structuredClone(config);
-    expect(
-      isSameCredentialDomain({
-        left: secondary.credentialDomain,
-        right: projectRunnerDiscoveryContext({ config: clone, role: 'implementer' })
-          .credentialDomain,
-      }),
-    ).toBe(true);
+    expect(secondary.credentialDomain).toEqual(
+      projectRunnerDiscoveryContext({ config: clone, role: 'implementer' }).credentialDomain,
+    );
   });
 });
 
@@ -383,11 +326,12 @@ describe('resolveRunnerConfigContext', () => {
     const implementer = { kind: 'cli', tool: 'codex' } as const;
     const intermediate = {
       kind: 'api',
-      provider: 'openrouter',
-      service: 'openrouter',
+      provider: 'custom-endpoint',
+      service: 'custom-endpoint',
       offering: 'payg',
-      apiBase: 'https://openrouter.ai/api/v1',
-      model: 'openrouter/model',
+      apiBase: 'https://api.example.test/v1',
+      apiKey: 'test-key',
+      model: 'custom-model',
     } as const;
 
     expect(resolveRunnerConfigContext({ role: 'planner', runner: planner })).toEqual({

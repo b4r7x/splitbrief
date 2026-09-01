@@ -12,9 +12,9 @@ import type {
 import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
-  classifyCliAdmittedVersion,
   type CliCompatibility,
 } from '../../core/runners/cli-tool-catalog.js';
+import { classifyCliAdmittedVersion } from '../../core/runners/cli-version.js';
 import type { CliReadinessResult } from '../../core/schemas/readiness.js';
 import { matches } from '../../utils/error.js';
 import { throwIfAborted } from '../../utils/abort.js';
@@ -136,7 +136,6 @@ function nonCliRunnerEvidence(context: RunnerDiscoveryContext, observedAt: numbe
   const base = runnerEvidenceBase(context, observedAt);
   switch (context.kind) {
     case 'api':
-    case 'agent-sdk':
       return {
         ...base,
         installation: 'not-applicable',

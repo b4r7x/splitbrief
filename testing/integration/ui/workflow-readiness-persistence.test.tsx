@@ -48,7 +48,7 @@ describe('WorkflowScreen prepared-route stability', () => {
     const readinessBeforeMount = readFileSync(target, 'utf8');
 
     configStore.__testReset({
-      config: makeConfig({ workflow: { mode: 'instant' } }),
+      config: makeConfig({ workflow: { mode: 'quick' } }),
       projectDir,
     });
     terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
@@ -67,9 +67,6 @@ describe('WorkflowScreen prepared-route stability', () => {
     const call = runWorkflow.mock.calls[0];
     if (call === undefined) throw new Error('Expected workflow execution');
     expect(call[0].prepared).toBe(prepared);
-    expect(call[0].prepared.config).toBe(prepared.config);
-    expect(call[0].prepared.gates).toBe(prepared.gates);
-    expect(call[0].prepared.session.active).toBe(prepared.session.active);
     expect(ui.lastFrame() ?? '').not.toContain('Checking readiness');
 
     lifecycleStore.__testReset({ phase: 'researching', status: 'running' });

@@ -1,20 +1,26 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
-import { pickerCatalog } from '#testing/helpers/runner-picker.js';
+import {
+  makeActions,
+  pickerCatalog,
+  readyPermissions,
+  zeroCounts,
+} from '#testing/helpers/runner-picker.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
 import { SOFT_SEP } from '../../components/separators.js';
 import { glyph } from '../../lib/glyphs.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { CLI_TOOL_CATALOG, SEAT_PICKER_ROLES } from '../../core/runners/cli-tool-catalog.js';
+import { configStore } from '../../stores/project/config.js';
+import { pickerViewStore } from '../../stores/ui/picker-view.js';
+import { variantChoicesForModelId } from '../../core/runners/variant-vocabulary.js';
 import { buildRightModels, countModelOptions } from './model-catalog/catalog.js';
+import { BROWSE_CATALOG_TEXT, type RightRow } from './model-catalog/rows.js';
 import { PickerView } from './picker-view.js';
-import {
-  assemblePickerDescriptors,
-  buildPickerOptions,
-  type PickerOption,
-} from './model-catalog/options.js';
+import type { PickerOption } from './model-catalog/options.js';
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
 import type { ModelOption } from './model-catalog/recency.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
@@ -27,32 +33,6 @@ function pickerItem(
   return {
     ...item,
     modelCapability: deriveModelCatalogCapability(item.modelPolicy, automatic),
-  };
-}
-
-const readyPermissions = {
-  directWrite: false,
-  network: true,
-  shell: false,
-  automaticApproval: false,
-  sandbox: 'none' as const,
-};
-
-const zeroCounts = { confirmed: 0, stale: 0, suggestions: 0, bundled: 0, custom: 0 };
-
-function makeActions(): PickerActions {
-  return {
-    confirm: async () => {},
-    confirmProviderVariant: async () => {},
-    leftChange: () => {},
-    deleteRight: async () => {},
-    chooseContract: () => {},
-    customCommand: async () => {},
-    customModel: async () => {},
-    openCustomModel: () => {},
-    openProviderAuth: () => {},
-    submitProviderKey: async () => {},
-    closeOverlay: () => {},
   };
 }
 
@@ -97,6 +77,7 @@ describe('PickerView model confirmation', () => {
     const modelCounts = countModelOptions(rightModels);
 
     return pickerCatalog({
+      browseCatalog: false,
       items: [codex, claudeCode],
       rightModels,
       currentItem: codex,
@@ -163,6 +144,7 @@ describe('PickerView previews', () => {
     const model: ModelOption = { id: 'gpt-4o', contextLength: 128_000 };
 
     const catalog: PickerCatalog = pickerCatalog({
+      browseCatalog: false,
       items: [tool],
       rightModels: [model],
       currentItem: tool,
@@ -222,6 +204,7 @@ describe('PickerView previews', () => {
     }));
 
     const catalog: PickerCatalog = pickerCatalog({
+      browseCatalog: false,
       items: [tool],
       rightModels: suggestions,
       currentItem: tool,
@@ -260,6 +243,7 @@ describe('PickerView previews', () => {
       available: false,
     });
     const catalog: PickerCatalog = pickerCatalog({
+      browseCatalog: false,
       items: [tool],
       rightModels: [
         {
@@ -321,6 +305,7 @@ describe('PickerView previews', () => {
     });
 
     const catalog: PickerCatalog = pickerCatalog({
+      browseCatalog: false,
       items: [tool],
       rightModels: [],
       currentItem: tool,
@@ -355,6 +340,7 @@ describe('PickerView previews', () => {
     });
 
     const catalog: PickerCatalog = pickerCatalog({
+      browseCatalog: false,
       items: [tool],
       rightModels: [],
       currentItem: tool,
@@ -388,6 +374,7 @@ describe('PickerView previews', () => {
     });
 
     const catalog: PickerCatalog = pickerCatalog({
+      browseCatalog: false,
       items: [tool],
       rightModels: [],
       currentItem: tool,
@@ -422,6 +409,7 @@ describe('PickerView previews', () => {
     });
 
     const catalog: PickerCatalog = pickerCatalog({
+      browseCatalog: false,
       items: [tool],
       rightModels: [],
       currentItem: tool,
@@ -496,6 +484,7 @@ describe('PickerView initial left highlight', () => {
     );
 
     const catalog: PickerCatalog = pickerCatalog({
+      browseCatalog: false,
       items: [launcher, other, configured],
       rightModels: [],
       currentItem: configured,
@@ -521,41 +510,6 @@ describe('PickerView initial left highlight', () => {
   });
 });
 
-describe('PickerView Cursor row', () => {
-  beforeEach(() => {
-    terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
-  });
-
-  it('offers a Cursor row in all three seat roles', async () => {
-    const descriptors = assemblePickerDescriptors();
-    const detections = { cliTools: [], providers: [] };
-
-    for (const role of SEAT_PICKER_ROLES) {
-      const items = buildPickerOptions(role, descriptors, detections, undefined);
-      const cursor = items.find((item) => item.id === 'cursor');
-      if (cursor === undefined) throw new Error(`no ${role} picker row for cursor`);
-      expect(cursor.displayName).toBe(CLI_TOOL_CATALOG.cursor.displayName);
-
-      const catalog: PickerCatalog = pickerCatalog({
-        items: [cursor],
-        rightModels: [],
-        currentItem: cursor,
-        selectedItemId: cursor.id,
-        roleLabel:
-          role === 'planner' ? 'Planner' : role === 'reviewer' ? 'Reviewer' : 'Implementer',
-        modelCounts: zeroCounts,
-      });
-
-      const ui = renderFeature(
-        <PickerView role={role} catalog={catalog} actions={makeActions()} />,
-      );
-      await flushEffects();
-      expect(ui.lastFrame() ?? '').toContain(CLI_TOOL_CATALOG.cursor.displayName);
-      ui.unmount();
-    }
-  });
-});
-
 describe('PickerView refreshing discovery', () => {
   beforeEach(() => {
     terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
@@ -576,6 +530,7 @@ describe('PickerView refreshing discovery', () => {
     const model: ModelOption = { id: 'claude-3-7-sonnet', displayName: 'Claude 3.7 Sonnet' };
 
     const catalog: PickerCatalog = pickerCatalog({
+      browseCatalog: false,
       items: [tool],
       rightModels: [model],
       currentItem: tool,
@@ -593,6 +548,434 @@ describe('PickerView refreshing discovery', () => {
     expect(frame).toContain('refreshing…');
     expect(frame).toContain('Claude Code');
     expect(frame).toContain('Claude 3.7 Sonnet');
+    ui.unmount();
+  });
+});
+
+describe('PickerView browse-catalog escape', () => {
+  const tool = pickerItem(
+    {
+      id: 'codex',
+      displayName: 'OpenAI Codex CLI',
+      kind: 'cli',
+      roles: ['planner', 'implementer'],
+      modelPolicy: 'optional',
+      billing: 'subscription-included',
+      permissions: readyPermissions,
+      status: { state: 'ready', remediation: null },
+      available: true,
+      isCurrent: true,
+    },
+    true,
+  );
+
+  function escapeRows(expanded: boolean): RightRow[] {
+    return [
+      {
+        kind: 'model',
+        model: { id: 'gpt-9-turbo', displayName: 'GPT-9 Turbo', isRecovery: true },
+        provenance: 'Known',
+        section: '',
+        expanded,
+      },
+      { kind: 'action', action: 'browse-catalog', text: BROWSE_CATALOG_TEXT },
+    ];
+  }
+
+  function escapeCatalog(expanded: boolean): PickerCatalog {
+    return pickerCatalog({
+      browseCatalog: false,
+      items: [tool],
+      rightModels: [],
+      rightRows: escapeRows(expanded),
+      currentItem: tool,
+      selectedItemId: tool.id,
+      focusModels: true,
+      initialRightIndex: 1,
+      roleLabel: 'Planner',
+      modelCounts: { ...zeroCounts, bundled: 1 },
+    });
+  }
+
+  beforeEach(() => {
+    terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
+    overlayStore.reset();
+  });
+
+  it('confirms the browse-catalog row into a catalog browse rather than a save', async () => {
+    const saved: string[] = [];
+    let browsed = 0;
+    const actions = makeActions();
+    actions.browseCatalog = () => {
+      browsed += 1;
+    };
+    actions.confirm = async (_selection, model) => {
+      saved.push(model?.id ?? 'none');
+    };
+    actions.confirmProviderVariant = async (fullId) => {
+      saved.push(fullId);
+    };
+
+    const ui = renderFeature(
+      <PickerView role="planner" catalog={escapeCatalog(false)} actions={actions} />,
+    );
+    await flushEffects();
+    expect(ui.lastFrame() ?? '').toContain(BROWSE_CATALOG_TEXT);
+
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(browsed).toBe(1);
+    expect(saved).toEqual([]);
+    ui.unmount();
+  });
+
+  it('keeps the browse-catalog row visible under a filter query', async () => {
+    const ui = renderFeature(
+      <PickerView role="planner" catalog={escapeCatalog(false)} actions={makeActions()} />,
+    );
+    await flushEffects();
+
+    ui.stdin.write('z');
+    await flushEffects();
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).not.toContain('GPT-9 Turbo');
+    expect(frame).toContain(BROWSE_CATALOG_TEXT);
+    ui.unmount();
+  });
+
+  it('offers the browse verb on the browse-catalog row', async () => {
+    const ui = renderFeature(
+      <PickerView role="planner" catalog={escapeCatalog(true)} actions={makeActions()} />,
+    );
+    await flushEffects();
+
+    expect(ui.lastFrame() ?? '').toContain('⏎ browse');
+    ui.unmount();
+  });
+});
+
+describe('PickerView variant axis', () => {
+  const opencode = pickerItem({
+    id: 'opencode',
+    displayName: 'OpenCode',
+    kind: 'cli',
+    roles: ['planner', 'implementer'],
+    modelPolicy: 'optional',
+    billing: 'subscription-included',
+    permissions: readyPermissions,
+    status: { state: 'ready', remediation: null },
+    available: true,
+    providerDependent: true,
+  });
+  const cursor = pickerItem({
+    id: 'cursor',
+    displayName: 'Cursor Agent CLI',
+    kind: 'cli',
+    roles: ['planner', 'implementer'],
+    modelPolicy: 'optional',
+    billing: 'subscription-included',
+    permissions: readyPermissions,
+    status: { state: 'ready', remediation: null },
+    available: true,
+  });
+
+  // The ladder under test is the tool's own vocabulary, not a fixture's copy of it.
+  const openaiPresets = variantChoicesForModelId('openai/gpt-5.6');
+
+  function opencodeModel(variantChoices: readonly string[]): ModelOption {
+    return {
+      id: 'openai/gpt-5.6',
+      displayName: 'GPT-5.6',
+      variants: [
+        { fullId: 'openai/gpt-5.6', providerPrefix: 'openai', tag: 'openai', variantChoices },
+      ],
+    };
+  }
+
+  function renderOpencode(input: {
+    actions: PickerActions;
+    model: ModelOption;
+    expanded: boolean;
+    initialRightIndex: number;
+  }) {
+    return renderFeature(
+      <PickerView
+        role="planner"
+        catalog={pickerCatalog({
+          items: [opencode],
+          rightModels: [input.model],
+          expandedModelId: input.expanded ? input.model.id : null,
+          currentItem: opencode,
+          selectedItemId: opencode.id,
+          focusModels: true,
+          initialRightIndex: input.initialRightIndex,
+          roleLabel: 'Planner',
+          modelCounts: { ...zeroCounts, confirmed: 1 },
+          browseCatalog: false,
+          variantDraft: null,
+        })}
+        actions={input.actions}
+      />,
+    );
+  }
+
+  function bylineOf(ui: ReturnType<typeof renderFeature>): string {
+    return (ui.lastFrame() ?? '').split('\n').find((line) => line.includes('esc collapse')) ?? '';
+  }
+
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6', variant: 'high' },
+      }),
+    });
+  });
+
+  it("cycles the variant axis through the provider's verbatim ladder", async () => {
+    pickerViewStore.expand('openai/gpt-5.6');
+    const ui = renderOpencode({
+      actions: makeActions(),
+      model: opencodeModel(openaiPresets),
+      expanded: true,
+      initialRightIndex: 2,
+    });
+    await flushEffects();
+
+    const walked: Array<string | null> = [];
+    for (let step = 0; step <= openaiPresets.length; step++) {
+      ui.stdin.write(' ');
+      await flushEffects();
+      walked.push(pickerViewStore.get().variantDraft);
+    }
+
+    // Unset heads the ladder and the walk returns to it, so a draft is never a trap.
+    expect(walked).toEqual([...openaiPresets, null]);
+    expect(pickerViewStore.get().expandedModelId).toBe('openai/gpt-5.6');
+    ui.unmount();
+  });
+
+  it('confirms model and variant together', async () => {
+    const confirmed: Array<[string, string | undefined]> = [];
+    const actions = makeActions();
+    actions.confirmProviderVariant = async (fullId, variant) => {
+      confirmed.push([fullId, variant]);
+    };
+    pickerViewStore.expand('openai/gpt-5.6');
+    const ui = renderOpencode({
+      actions,
+      model: opencodeModel(openaiPresets),
+      expanded: true,
+      initialRightIndex: 2,
+    });
+    await flushEffects();
+
+    ui.stdin.write(' ');
+    await flushEffects();
+    ui.stdin.write(' ');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(confirmed).toEqual([['openai/gpt-5.6', 'minimal']]);
+    ui.unmount();
+  });
+
+  it('cycles a one-preset ladder between unset and its preset', async () => {
+    pickerViewStore.expand('openai/gpt-5.6');
+    const ui = renderOpencode({
+      actions: makeActions(),
+      model: opencodeModel(['high']),
+      expanded: true,
+      initialRightIndex: 2,
+    });
+    await flushEffects();
+
+    expect(bylineOf(ui)).toContain('⏎ confirm');
+    // Unset heads the ladder, so one preset still has two rungs to walk.
+    expect(bylineOf(ui)).toContain('space cycle');
+
+    ui.stdin.write(' ');
+    await flushEffects();
+    expect(pickerViewStore.get().variantDraft).toBe('high');
+
+    ui.stdin.write(' ');
+    await flushEffects();
+    // The preset can be taken back the way the byline says.
+    expect(pickerViewStore.get().variantDraft).toBeNull();
+    expect(pickerViewStore.get().expandedModelId).toBe('openai/gpt-5.6');
+    ui.unmount();
+  });
+
+  it('expands a single-variant model that offers presets', async () => {
+    const confirmed: string[] = [];
+    const actions = makeActions();
+    actions.confirmProviderVariant = async (fullId) => {
+      confirmed.push(fullId);
+    };
+    const ui = renderOpencode({
+      actions,
+      model: opencodeModel(openaiPresets),
+      expanded: false,
+      initialRightIndex: 0,
+    });
+    await flushEffects();
+
+    expect(pickerViewStore.get().expandedModelId).toBeNull();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    // One route would otherwise confirm on the spot, taking the ladder with it.
+    expect(confirmed).toEqual([]);
+    expect(pickerViewStore.get().expandedModelId).toBe('openai/gpt-5.6');
+    // The ladder opens where the seat already stands, so a confirm that never
+    // touches it saves the variant that was there.
+    expect(pickerViewStore.get().variantDraft).toBe('high');
+    ui.unmount();
+  });
+
+  // REQ-022: the ladder is per provider, so a preset drafted on one route is not
+  // saved against another — and the route that spells none shows none.
+  function mergedRoutes(): ModelOption {
+    return {
+      id: 'openai/gpt-5.6',
+      displayName: 'GPT-5.6',
+      variants: [
+        {
+          fullId: 'openai/gpt-5.6',
+          providerPrefix: 'openai',
+          tag: 'openai',
+          variantChoices: openaiPresets,
+        },
+        { fullId: 'openrouter/gpt-5.6', providerPrefix: 'openrouter', tag: 'openrouter' },
+      ],
+    };
+  }
+
+  it('drops a drafted preset when confirming a route that spells none', async () => {
+    const confirmed: Array<[string, string | undefined]> = [];
+    const actions = makeActions();
+    actions.confirmProviderVariant = async (fullId, variant) => {
+      confirmed.push([fullId, variant]);
+    };
+    const model = mergedRoutes();
+    pickerViewStore.expand(model.id);
+    pickerViewStore.setVariantDraft('minimal');
+    const ui = renderFeature(
+      <PickerView
+        role="planner"
+        catalog={pickerCatalog({
+          items: [opencode],
+          rightModels: [model],
+          expandedModelId: model.id,
+          currentItem: opencode,
+          selectedItemId: opencode.id,
+          focusModels: true,
+          // rows: model, openai, openai variant, openrouter
+          initialRightIndex: 3,
+          roleLabel: 'Planner',
+          modelCounts: { ...zeroCounts, confirmed: 1 },
+          browseCatalog: false,
+          variantDraft: 'minimal',
+        })}
+        actions={actions}
+      />,
+    );
+    await flushEffects();
+
+    // The ladder belongs to the openai block; the openrouter route grows none.
+    const lines = (ui.lastFrame() ?? '').split('\n');
+    expect(lines.filter((line) => line.includes('─ variant'))).toHaveLength(1);
+    expect(lines.findIndex((line) => line.includes('─ variant'))).toBeLessThan(
+      lines.findIndex((line) => line.includes('openrouter')),
+    );
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(confirmed).toEqual([['openrouter/gpt-5.6', undefined]]);
+    ui.unmount();
+  });
+
+  it('seeds no preset when the expanded route spells none', async () => {
+    const model: ModelOption = {
+      id: 'openrouter/gpt-5.6',
+      displayName: 'GPT-5.6',
+      variants: [
+        { fullId: 'openrouter/gpt-5.6', providerPrefix: 'openrouter', tag: 'openrouter' },
+        { fullId: 'opencode-go/gpt-5.6', providerPrefix: 'opencode-go', tag: 'opencode-go' },
+      ],
+    };
+    const ui = renderFeature(
+      <PickerView
+        role="planner"
+        catalog={pickerCatalog({
+          items: [opencode],
+          rightModels: [model],
+          currentItem: opencode,
+          selectedItemId: opencode.id,
+          focusModels: true,
+          initialRightIndex: 0,
+          roleLabel: 'Planner',
+          modelCounts: { ...zeroCounts, confirmed: 1 },
+          browseCatalog: false,
+          variantDraft: null,
+        })}
+        actions={makeActions()}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    // The seat runs `variant: high`, but this row has no ladder to open it on.
+    expect(pickerViewStore.get().expandedModelId).toBe(model.id);
+    expect(pickerViewStore.get().variantDraft).toBeNull();
+    ui.unmount();
+  });
+
+  it("leaves a cursor model's expansion exactly as it was", async () => {
+    const luna: ModelOption = {
+      id: 'gpt-5.6-luna',
+      displayName: 'GPT-5.6 Luna',
+      variants: [
+        { fullId: 'gpt-5.6-luna', providerPrefix: '', tag: 'Standard' },
+        { fullId: 'gpt-5.6-luna-fast', providerPrefix: '', tag: 'Fast' },
+      ],
+    };
+    pickerViewStore.expand(luna.id, 'gpt-5.6-luna');
+    const ui = renderFeature(
+      <PickerView
+        role="planner"
+        catalog={pickerCatalog({
+          items: [cursor],
+          rightModels: [luna],
+          expandedModelId: luna.id,
+          currentItem: cursor,
+          selectedItemId: cursor.id,
+          focusModels: true,
+          initialRightIndex: 1,
+          roleLabel: 'Planner',
+          modelCounts: { ...zeroCounts, confirmed: 1 },
+          browseCatalog: false,
+          variantDraft: null,
+        })}
+        actions={makeActions()}
+      />,
+    );
+    await flushEffects();
+
+    const frame = ui.lastFrame() ?? '';
+    const lines = frame.split('\n');
+    const parent = lines.findIndex((line) => line.includes('GPT-5.6 Luna'));
+
+    expect(frame).not.toContain('variant');
+    expect(lines.findIndex((line) => line.includes('─ speed'))).toBe(parent + 1);
+    expect(bylineOf(ui)).toContain(`space cycle${SOFT_SEP}⏎ confirm`);
     ui.unmount();
   });
 });

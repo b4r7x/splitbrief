@@ -3,8 +3,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   nativeCliCatalogToDetectedModels,
-  parseAiderNativeModelCatalog,
   parseCodexNativeModelCatalog,
+  parseCommandCodeNativeModelCatalog,
   parseCursorNativeModelCatalog,
   parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
@@ -147,28 +147,6 @@ describe('native CLI model catalogs', () => {
     );
   });
 
-  it('parses only canonical dashed Aider rows and ignores catalog headings', () => {
-    expect(
-      parseAiderNativeModelCatalog(
-        [
-          '=== Available Models ===',
-          '- Available Models',
-          '- GPT-4o (openai/gpt-4o)',
-          '- anthropic/claude-sonnet-4-6',
-          '---',
-        ].join('\n'),
-      ),
-    ).toEqual({
-      tool: 'aider',
-      models: [
-        { selectionId: 'openai/gpt-4o', nativeOrder: 0 },
-        { selectionId: 'anthropic/claude-sonnet-4-6', nativeOrder: 1 },
-      ],
-    });
-    expect(parseAiderNativeModelCatalog('openai/gpt-4o')).toBeNull();
-    expect(parseAiderNativeModelCatalog('- GPT-4o')).toBeNull();
-  });
-
   it('parses Cursor id-dash-name rows from the admitted listing fixture', () => {
     const stdout = readFileSync(
       join(import.meta.dirname, '../../../testing/fixtures/cursor/list-models.txt'),
@@ -180,17 +158,99 @@ describe('native CLI model catalogs', () => {
     expect(catalog.tool).toBe('cursor');
     expect(catalog.models[0]).toEqual({
       selectionId: 'auto',
-      displayName: 'Auto (default)',
+      displayName: 'Auto',
       nativeOrder: 0,
+      nativeDefault: true,
     });
     expect(catalog.models.some((model) => model.selectionId.startsWith('Tip'))).toBe(false);
     expect(nativeCliCatalogToDetectedModels(catalog)[0]).toEqual({
       id: 'auto',
-      displayName: 'Auto (default)',
+      displayName: 'Auto',
       nativeOrder: 0,
+      nativeDefault: true,
     });
     expect(parseCursorNativeModelCatalog('Usage: cursor-agent --list-models')).toBeNull();
     expect(parseCursorNativeModelCatalog('Available models\n\n')).toBeNull();
+  });
+
+  it('parses Command Code rows from the recorded listing fixture', () => {
+    const stdout = readFileSync(
+      join(import.meta.dirname, '../../../testing/fixtures/command-code/list-models.txt'),
+      'utf-8',
+    );
+    const catalog = parseCommandCodeNativeModelCatalog(stdout);
+    if (catalog === null) throw new Error('Expected the Command Code fixture to parse');
+
+    expect(catalog.tool).toBe('command-code');
+    // The listing states its own count, so the row total is checked against it.
+    expect(catalog.models).toHaveLength(61);
+    expect(catalog.models[0]).toEqual({
+      selectionId: 'deepseek/deepseek-v4-pro',
+      nativeOrder: 0,
+    });
+    // First-party ids drop the `provider/` prefix; both shapes are selectable.
+    expect(catalog.models.some((model) => model.selectionId === 'claude-sonnet-5')).toBe(true);
+    // Provider headings, the `cmd --model …` usage examples and the trailing
+    // `Docs:` line are not rows.
+    expect(
+      catalog.models.some((model) =>
+        ['Open', 'Anthropic', 'cmd', 'Docs:'].includes(model.selectionId),
+      ),
+    ).toBe(false);
+    expect(
+      catalog.models.find((model) => model.selectionId === 'deepseek/deepseek-v4-flash'),
+    ).toEqual({
+      selectionId: 'deepseek/deepseek-v4-flash',
+      nativeOrder: 1,
+      nativeDefault: true,
+    });
+    expect(
+      catalog.models
+        .filter((model) => model.selectionId !== 'deepseek/deepseek-v4-flash')
+        .every((model) => model.nativeDefault === undefined),
+    ).toBe(true);
+    expect(nativeCliCatalogToDetectedModels(catalog)[0]).toEqual({
+      id: 'deepseek/deepseek-v4-pro',
+      nativeOrder: 0,
+    });
+    expect(parseCommandCodeNativeModelCatalog('Usage: cmd --list-models')).toBeNull();
+    expect(parseCommandCodeNativeModelCatalog('Available models\n\n')).toBeNull();
+  });
+
+  it('leaves an unrelated trailing parenthetical on the display name', () => {
+    const stdout = readFileSync(
+      join(import.meta.dirname, '../../../testing/fixtures/cursor/list-models.txt'),
+      'utf-8',
+    );
+    const catalog = parseCursorNativeModelCatalog(stdout);
+    if (catalog === null) throw new Error('Expected admitted Cursor fixture to parse');
+
+    const row = catalog.models.find(
+      (model) => model.selectionId === 'claude-fable-5-thinking-high',
+    );
+    if (row === undefined) throw new Error('Expected the Claude Fable row in the Cursor fixture');
+
+    expect(row.displayName).toBe('Claude Fable 5 1M Thinking (NO ZDR)');
+    expect(row.nativeDefault).toBeUndefined();
+  });
+
+  it('marks at most one row as the native default per listing', () => {
+    const cursor = parseCursorNativeModelCatalog(
+      readFileSync(
+        join(import.meta.dirname, '../../../testing/fixtures/cursor/list-models.txt'),
+        'utf-8',
+      ),
+    );
+    const commandCode = parseCommandCodeNativeModelCatalog(
+      readFileSync(
+        join(import.meta.dirname, '../../../testing/fixtures/command-code/list-models.txt'),
+        'utf-8',
+      ),
+    );
+    if (cursor === null || commandCode === null) throw new Error('Expected both fixtures to parse');
+
+    expect(cursor.models.filter((model) => model.nativeDefault === true)).toHaveLength(1);
+    expect(commandCode.models.filter((model) => model.nativeDefault === true)).toHaveLength(1);
   });
 
   it("a cataloged codex model's contextLength equals its context_window; routing does not use the 32768 fallback for it", () => {

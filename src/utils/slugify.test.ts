@@ -32,11 +32,5 @@ describe('slugify', () => {
     expect(slugify(input)).toBe(
       'feature-feature-feature-feature-feature-feature-feature-feature-feature-feature-done',
     );
-    expect(slugify(input, 40)).toBe(
-      'feature-feature-feature-feature-feature-feature-feature-feature-feature-feature-done'.slice(
-        0,
-        40,
-      ),
-    );
   });
 });

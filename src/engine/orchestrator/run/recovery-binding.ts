@@ -23,7 +23,7 @@ import {
   reserveBriefRecoveryCall,
   terminalChargeBriefRecoveryCall,
 } from '../budget/recovery-reservation.js';
-import { persistBriefOwnerTransition } from '../evidence/recovery-journal.js';
+import { persistBriefOwnerTransition } from '../evidence/brief-owner-journal.js';
 import { readWorkflowStateHead, workflowStateRevision } from '../state-ops.js';
 import type { WorkflowContext } from '../types.js';
 import type { PhaseRecoveryBinding } from './phases.js';

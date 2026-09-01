@@ -8,7 +8,6 @@ describe('hashTaskBrief', () => {
     ['an empty task array', []],
   ])('returns a 64-char hex digest for %s', (_name, tasks) => {
     const hash = hashTaskBrief(tasks);
-    expect(hash).toHaveLength(64);
     expect(hash).toMatch(/^[0-9a-f]{64}$/);
   });
 

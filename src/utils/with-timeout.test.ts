@@ -35,10 +35,7 @@ describe('timeoutError.isIdle predicate', () => {
 
 describe('withTimeout', () => {
   test('resolves when promise completes before timeout', async () => {
-    vi.useFakeTimers();
-    const result = withTimeout(Promise.resolve(42), 100);
-    await vi.runAllTimersAsync();
-    await expect(result).resolves.toBe(42);
+    await expect(withTimeout(Promise.resolve(42), 100)).resolves.toBe(42);
   });
 
   test('rejects with a timeout-elapsed error carrying the elapsed ms', async () => {

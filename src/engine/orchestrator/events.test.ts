@@ -14,8 +14,11 @@ import {
   createImplementerPublisher,
 } from './events.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { taskId } from '../../core/schemas/task.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { protectEngineEventForConsumer } from '../events/protection/protect.js';
+
+const TASK = taskId('T001');
 
 describe('createBusTextHandler', () => {
   it('stamps an implementer role so streamed implementer output is not attributed to the planner', () => {
@@ -95,9 +98,9 @@ describe('publishPlannerStatus', () => {
       plannerModel: 'opus-4',
     };
 
-    publishPlannerStatus(bus, state, 'done', { tool: 'agent-sdk', model: 'sonnet-4' });
+    publishPlannerStatus(bus, state, 'done', { tool: 'codex', model: 'sonnet-4' });
 
-    expect(events[0]).toMatchObject({ tool: 'agent-sdk', model: 'sonnet-4' });
+    expect(events[0]).toMatchObject({ tool: 'codex', model: 'sonnet-4' });
   });
 });
 
@@ -118,19 +121,15 @@ describe('createImplementerPublisher', () => {
 describe('publishValidation — result phase aggregates stage outcomes', () => {
   it('passed=true only when every stage passed', () => {
     const { bus, events } = makeBusRecorder();
-    publishValidation(
-      { bus: bus, phase: 'implementing' },
-      'T001' as import('../../core/schemas/task.js').TaskId,
-      {
-        phase: 'result',
-        results: [
-          { stage: 'typecheck', passed: true },
-          { stage: 'lint', passed: true },
-          { stage: 'test', passed: true },
-        ],
-        startTime: Date.now() - 100,
-      },
-    );
+    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
+      phase: 'result',
+      results: [
+        { stage: 'typecheck', passed: true },
+        { stage: 'lint', passed: true },
+        { stage: 'test', passed: true },
+      ],
+      startTime: Date.now() - 100,
+    });
 
     expect(events[0]).toMatchObject({
       type: 'validate',
@@ -144,18 +143,14 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
 
   it('passed=false with first failing stage error on partial failure', () => {
     const { bus, events } = makeBusRecorder();
-    publishValidation(
-      { bus: bus, phase: 'implementing' },
-      'T001' as import('../../core/schemas/task.js').TaskId,
-      {
-        phase: 'result',
-        results: [
-          { stage: 'typecheck', passed: true },
-          { stage: 'lint', passed: false, error: 'lint error' },
-        ],
-        startTime: Date.now(),
-      },
-    );
+    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
+      phase: 'result',
+      results: [
+        { stage: 'typecheck', passed: true },
+        { stage: 'lint', passed: false, error: 'lint error' },
+      ],
+      startTime: Date.now(),
+    });
 
     expect(events[0]).toMatchObject({
       type: 'validate',
@@ -168,15 +163,11 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
 
   it('marks only stages present in validation results as attempted', () => {
     const { bus, events } = makeBusRecorder();
-    publishValidation(
-      { bus: bus, phase: 'implementing' },
-      'T001' as import('../../core/schemas/task.js').TaskId,
-      {
-        phase: 'result',
-        results: [{ stage: 'test', passed: false, error: 'test error' }],
-        startTime: Date.now(),
-      },
-    );
+    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
+      phase: 'result',
+      results: [{ stage: 'test', passed: false, error: 'test error' }],
+      startTime: Date.now(),
+    });
 
     expect(events[0]).toMatchObject({
       type: 'validate',
@@ -189,16 +180,14 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
 
   it('forwards validation command metadata on progress and result events', () => {
     const { bus, events } = makeBusRecorder();
-    const taskId = 'T001' as import('../../core/schemas/task.js').TaskId;
-
-    publishValidation({ bus: bus, phase: 'implementing' }, taskId, {
+    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
       phase: 'progress',
       stages: { typecheck: false, lint: false, test: false },
       activeStage: 'typecheck',
       commands: { typecheck: 'npm run typecheck' },
       startTime: Date.now(),
     });
-    publishValidation({ bus: bus, phase: 'implementing' }, taskId, {
+    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
       phase: 'result',
       results: [{ stage: 'typecheck', passed: true, command: 'npm run typecheck' }],
       startTime: Date.now(),
@@ -221,34 +210,26 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
     const { bus, events } = makeBusRecorder();
     const startTime = Date.now() - 500;
 
-    publishValidation(
-      { bus: bus, phase: 'implementing' },
-      'T001' as import('../../core/schemas/task.js').TaskId,
-      {
-        phase: 'result',
-        results: [{ stage: 'typecheck', passed: true }],
-        startTime,
-      },
-    );
+    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
+      phase: 'result',
+      results: [{ stage: 'typecheck', passed: true }],
+      startTime,
+    });
 
     expect((events[0] as Record<string, unknown>)['duration']).toBeGreaterThanOrEqual(400);
   });
 
   it('a skipped stage is reported via the skipped channel, not as a passing stage', () => {
     const { bus, events } = makeBusRecorder();
-    publishValidation(
-      { bus: bus, phase: 'implementing' },
-      'T001' as import('../../core/schemas/task.js').TaskId,
-      {
-        phase: 'result',
-        results: [
-          { stage: 'typecheck', passed: true },
-          { stage: 'lint', passed: true, skipped: true },
-          { stage: 'test', passed: true },
-        ],
-        startTime: Date.now(),
-      },
-    );
+    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
+      phase: 'result',
+      results: [
+        { stage: 'typecheck', passed: true },
+        { stage: 'lint', passed: true, skipped: true },
+        { stage: 'test', passed: true },
+      ],
+      startTime: Date.now(),
+    });
 
     expect(events[0]).toMatchObject({
       type: 'validate',
@@ -261,15 +242,11 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
 
   it('omits the skipped channel when no stage was skipped', () => {
     const { bus, events } = makeBusRecorder();
-    publishValidation(
-      { bus: bus, phase: 'implementing' },
-      'T001' as import('../../core/schemas/task.js').TaskId,
-      {
-        phase: 'result',
-        results: [{ stage: 'typecheck', passed: true }],
-        startTime: Date.now(),
-      },
-    );
+    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
+      phase: 'result',
+      results: [{ stage: 'typecheck', passed: true }],
+      startTime: Date.now(),
+    });
 
     expect('skipped' in (events[0] as Record<string, unknown>)).toBe(false);
   });
@@ -417,12 +394,7 @@ describe('publish* payload forwarding', () => {
 
   it('publishGitCommit — includes file when provided', () => {
     const { bus, events } = makeBusRecorder();
-    publishGitCommit(
-      { bus: bus, phase: 'implementing' },
-      'T001' as import('../../core/schemas/task.js').TaskId,
-      'chore: commit',
-      'src/a.ts',
-    );
+    publishGitCommit({ bus: bus, phase: 'implementing' }, TASK, 'chore: commit', 'src/a.ts');
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       type: 'git_commit',
@@ -433,11 +405,7 @@ describe('publish* payload forwarding', () => {
 
   it('publishGitCommit — omits file when not provided', () => {
     const { bus, events } = makeBusRecorder();
-    publishGitCommit(
-      { bus: bus, phase: 'implementing' },
-      'T001' as import('../../core/schemas/task.js').TaskId,
-      'chore: commit',
-    );
+    publishGitCommit({ bus: bus, phase: 'implementing' }, TASK, 'chore: commit');
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ type: 'git_commit', message: 'chore: commit' });
     expect('file' in (events[0] as Record<string, unknown>)).toBe(false);
@@ -450,7 +418,7 @@ describe('publish* payload forwarding', () => {
       score: 0.75,
       uniqueOutOfBoundsFiles: ['src/a.ts', 'src/b.ts'],
       representativePath: 'src/a.ts',
-      detectedAtTaskId: 'T003' as import('../../core/schemas/task.js').TaskId,
+      detectedAtTaskId: taskId('T003'),
     };
     publishDriftChainDetected({ bus: bus, phase: 'implementing' }, chain, 0.6);
     expect(events).toHaveLength(1);

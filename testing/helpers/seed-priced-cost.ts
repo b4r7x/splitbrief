@@ -1,6 +1,6 @@
 import { makeConfig } from './factories/config.js';
 import { configStore } from '../../src/stores/project/config.js';
-import { modelCacheStore } from '../../src/stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../src/stores/discovery/model-cache/state.js';
 import { tokensStore } from '../../src/stores/workflow/tokens.js';
 import { tasksStore } from '../../src/stores/workflow/tasks.js';
 import { makeUsage } from './factories/summary.js';
@@ -21,13 +21,22 @@ export function seedPricedRuntimeCost(projectDir = '/tmp/priced-cost-test'): voi
     config: makeConfig({
       implementer: {
         kind: 'api',
-        provider: 'openai',
+        provider: 'custom-endpoint',
         model: PRICED_MODEL,
-        apiBase: 'https://api.openai.test/v1',
+        apiBase: 'https://api.example.test/v1',
+        apiKey: 'test-key',
       },
     }),
   });
-  modelCacheStore.setProviderModels('openai', [
-    { id: PRICED_MODEL, pricingInput: 1, pricingOutput: 2 },
-  ]);
+  modelCacheStore.reset();
+  modelCacheStore.hydrateModelsDevCatalog({
+    catalog: {
+      vendor: {
+        id: 'vendor',
+        models: { [PRICED_MODEL]: { id: PRICED_MODEL, cost: { input: 1, output: 2 } } },
+      },
+    },
+    fetchedAt: 1,
+    validatedAt: 1,
+  });
 }

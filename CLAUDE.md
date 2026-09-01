@@ -15,19 +15,20 @@ Do **NOT** run `git commit`, `git add`, `git stage`, or any command that creates
 - **TUI:** Ink 6.x (React 19) + `fullscreen-ink`
 - **Testing:** Vitest 4.x, colocated (`foo.test.ts` next to `foo.ts`)
 - **Lint/format:** Biome 2.x
-- **Validation:** Zod 4.x. **Config:** `yaml`. **Git:** `simple-git`. **CLI:** `commander`. **Agent SDK:** `@anthropic-ai/claude-agent-sdk` (optional peer dep)
+- **Validation:** Zod 4.x. **Config:** `yaml`. **Git:** `simple-git`. **CLI:** `commander`
 
 ## Commands
 
 ```bash
 npm run dev -- start "feature"   # Full workflow with TUI
-npm run dev -- start --mode instant|quick|standard|speckit "..."
+npm run dev -- start --mode quick|standard|speckit "..."
 npm run dev -- spec|init|status|resume
 npm run typecheck                # tsc --noEmit (src + test configs)
 npm run lint                     # Biome check
 npm run format                   # Biome format --write
 npm test                         # vitest run
-npm run test-ci                  # format && typecheck && lint && test:coverage && test:e2e && invariants
+npm run release-check            # PR gate: format:check && typecheck && lint && test && test:e2e && invariants
+npm run test-ci                  # exhaustive form: same, with test:coverage thresholds
 ```
 
 ## Documentation map
@@ -91,7 +92,19 @@ These are the rules that apply everywhere; deeper specifications live in the lin
 - **Zero memoization.** No `useMemo`, `useCallback`, or `React.memo`. Store selectors make them unnecessary. See [STORES.md](./docs/STORES.md).
 - **No imperative handles.** No `forwardRef` / `useImperativeHandle`. Extract state to a store instead.
 - **Zero engine → React imports.** `src/engine/` must not import from `ink`, `react`, or `src/features/`, `src/components/`, `src/hooks/`.
-- **Zero failing gates.** `npm run test-ci` (format → typecheck → lint → test:coverage → invariants) must pass before any PR.
+- **Zero failing gates.** `npm run release-check` (format:check → typecheck → lint → test → e2e → invariants) must pass before any PR; `npm run test-ci` is the exhaustive form that additionally enforces the coverage thresholds.
+- **Targeted edits only.** Do not rewrite entire files or modules. Provide targeted patches or unified diffs showing only the modified lines with 3 lines of context.
+
+## Look-and-logic verification (binding for every user-visible change)
+
+A change to anything a user sees — a screen, an overlay, a row, a byline, a picker, copy — is not done when tests pass. It is done when the agent has looked at the rendered result, critiqued it the way the owner would, fixed what it found, and can say "a paying user would call this finished". This loop is mandatory for implementers, reviewers and verifiers alike; a hand-back that skips it is invalid.
+
+1. **Render it, then look at it.** After every visual change run `npm run tui-shots -- --scenario <id>` for every gallery scenario that covers the touched surface (`npm run tui-shots -- --list`; picker work → the `overlay-*-picker*` and `overlay-settings*` scenarios, crew work → `setup-initial` too) and open the PNG under `.test-artifacts/ui/` with the Read tool. No scenario covers the surface → add one to `testing/visual/catalog.ts` first. Surfaces fed by real data (model catalogs, detection, tool listings) are additionally checked against real output (`npm run dev`, the PTY harness, or the tool's own `--list-models` / `--help`), never only against fixtures.
+2. **Critique before fixing.** Write the defect list from the render before touching code: glyphs that do not connect (a bullet beside a box-drawing branch), columns that do not align, a chevron or marker used two ways, a label a first-time user cannot decode ("variant"), a value with no vocabulary ("—"), a row rendered twice, copy that differs from the neighbouring surface. "It renders" and "tests pass" are not verdicts. Anything short of "I would ship this to a paying user" is an open list, not a result.
+3. **Iterate until it looks designed.** Fix → re-render → re-critique. Stop only at zero open items. Report the final render's critique, not just that a render happened.
+4. **One concept, one home.** Before adding any control or column, grep for where that concept is already chosen or displayed. Model, effort, speed, thinking, variant, tool: each is *selected* in exactly one place; every other surface shows it read-only, derived from that selection. Two editable homes for one value is a defect regardless of which came first.
+5. **Data completeness is a visual check.** A list that paints is not a list that is right. Compare the rendered rows against the source of truth (the tool's own listing, the documented alias table, the provider's vocabulary) and name every missing, extra, duplicated or orphaned entry. "2 static models" for a tool that serves more, a model listed four times, or a bare alias with no metadata row are bugs even when the panel looks tidy.
+6. **Cross-surface consistency.** The same value must read identically on every surface that shows it (home, Settings, Setup, picker mirror, workflow header/sidebar). When a shared formatter or row model changes, render the neighbours too.
 
 ## Current TUI architecture
 
@@ -109,15 +122,14 @@ These are the rules that apply everywhere; deeper specifications live in the lin
 
 ## Runner kinds
 
-Planner, reviewer, and implementer all accept five runner kinds. The reviewer is optional — with no `reviewer:` block the planner holds the review seat (`resolveReviewerRunner`, the only module that branches on `config.reviewer`). The `kind` field is the discriminant and is always required. Configs declare `version: 3` — the only accepted version; any other value fails the load.
+Planner, reviewer, and implementer all accept four runner kinds. The reviewer is optional — with no `reviewer:` block the planner holds the review seat (`resolveReviewerRunner`, the only module that branches on `config.reviewer`). The `kind` field is the discriminant and is always required. Configs declare `version: 3` — the only accepted version; any other value fails the load.
 
 | `kind` | What it is | Example |
 |---|---|---|
-| `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `cursor` |
-| `api` | OpenAI-compatible HTTP endpoint | Ollama, LM Studio, OpenRouter, DeepSeek, Groq, Together, Anthropic |
+| `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code` |
+| `api` | OpenAI-compatible HTTP endpoint | Ollama, LM Studio, or any OpenAI-compatible custom endpoint |
 | `shell` | Arbitrary command (stdin → stdout; no shell/network sandbox) | Custom scripts |
 | `agent` | Subprocess that writes files directly (no stdout extraction; no shell/network sandbox) | Custom file-writing tools |
-| `agent-sdk` | Anthropic Agent SDK library call | Via `@anthropic-ai/claude-agent-sdk` |
 
 Factory: `src/engine/runners/factory.ts` — `createPlanner(config)` / `createReviewer(config)` / `createImplementer(config)` dispatch by `kind`.
 
@@ -127,12 +139,11 @@ Full config schemas and YAML examples: [docs/CONFIGURATION.md](./docs/CONFIGURAT
 
 | Mode | Planner calls | Approval gates | Best for |
 |---|:---:|:---:|---|
-| `instant` | 1 | none | Trivial edits that need almost no ceremony |
-| `quick` | 1 | none | Small tasks that still need a brief |
+| `quick` | 1 | none | Trivial edits and small tasks that still need a brief |
 | `standard` (default) | 4 | supporting spec + briefs | Ordinary feature work |
 | `speckit` | 6–7 | supporting spec + plan + briefs | Large, risky, or externally visible work |
 
-Set via `--mode`, config `workflow.mode`, or `/mode` at runtime. Detailed semantics: [docs/WORKFLOW.md](./docs/WORKFLOW.md).
+Set via `--mode`, config `workflow.mode`, or `/mode` at runtime. The retired `instant` mode was merged into `quick`; the string still parses everywhere it was persisted — normalized to `quick` with a deprecation notice, except in a few back-compatibility-only wire formats that keep it literally. Detailed semantics: [docs/WORKFLOW.md](./docs/WORKFLOW.md).
 
 ## Known limitations
 

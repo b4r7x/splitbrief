@@ -1,7 +1,7 @@
 import type { Config } from '../core/schemas/config.js';
 import type { CrewSeatId } from '../core/crew/identity.js';
 import { resolveCrewDisplayNames } from '../engine/providers/model/display-names.js';
-import { modelCacheStore } from '../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 
 export function useCrewDisplayNames(
   config: Config | null | undefined,

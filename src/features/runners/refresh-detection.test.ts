@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { feedbackStore } from '../../stores/ui/feedback.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 import { refreshPickerDetection } from './refresh-detection.js';
 import type {
   DiscoveryRefreshStatus,
@@ -85,7 +84,6 @@ function refreshSummary(status: DiscoveryRefreshStatus): DiscoveryRefreshSummary
 describe('refreshPickerDetection', () => {
   beforeEach(() => {
     feedbackStore.reset();
-    modelCacheStore.reset();
   });
 
   it('replaces the in-progress refresh message after refresh succeeds', async () => {
@@ -118,7 +116,8 @@ describe('refreshPickerDetection', () => {
 
   it('reports a first-ever all-lane failure without claiming that prior results were retained', async () => {
     await refreshPickerDetection('/tmp/project', async () => refreshSummary('failed'));
-    expect(modelCacheStore.getModelsDevCatalog()).toBeNull();
+
+    expect(feedbackStore.get()).toEqual({ message: 'Models refresh failed', isError: true });
   });
 
   it('reports a same-context overlapping refresh as superseded without inventing a settings change', async () => {

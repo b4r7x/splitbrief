@@ -1,28 +1,15 @@
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
-import {
-  createTaskCompilationAttemptId,
-  type TaskCompilationAttemptId,
-  type TaskCompilationCallEnvelope,
-} from '../../../core/schemas/task-compilation.js';
-import { RUNNER_IDLE_KILL_MS, RUNNER_IDLE_WARN_MS } from '../../../core/schemas/runner-fields.js';
 import { spawnWithStdin } from '../../../lib/process/spawn/line-stream.js';
-import { createSanitizedChildEnv } from '../../../lib/process/spawn/child-env.js';
-import { processError } from '../../../lib/process/errors.js';
 import type { CliAuthChannelId } from '../../../core/runners/cli-tool-catalog.js';
-import { resolveCliExecutable, sanitizedRuntimePath } from '../resolve-cli-executable.js';
-import { CLI_PROMPT_SENTINEL } from '../cli-tools/candidate-contract.js';
-import { claudeCodePlannerAdapter } from '../cli-tools/claude-code.js';
-import { sandboxCredentialValues } from '../sandbox-env.js';
+import { resolveCliExecutable } from '../resolve-cli-executable.js';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../../calls/types.js';
 import {
   finishRunnerCallOutputLimit,
   runnerCallLineOutputLimit,
-  type RunnerCallOutputLimit,
 } from '../../calls/output-limit.js';
-import type { TaskDispatchLedger } from '../../calls/dispatch-ledger.js';
 import { error } from '../../../utils/error.js';
 import {
   buildClaudeIdleOptions,
@@ -34,228 +21,19 @@ import {
   markInterruptedClaudeStream,
   throwForClaudeCallFailure,
 } from './stream.js';
-import { CLI_RAW_OUTPUT_MAX_BYTES } from '../cli-tools/process-invoke.js';
+import { buildClaudeArgs } from './args.js';
+import {
+  claudeCredentialValues,
+  defaultClaudeEnv,
+  normalizeClaudeProcessOutputError,
+} from './child-env.js';
+import {
+  type ClaudeEnvelopeCallOptions,
+  claimClaudeDispatch,
+  prepareClaudeEnvelopeCall,
+} from './envelope-guard.js';
 
 const CLAUDE_NOT_FOUND = 'Claude Code CLI not found. Install it from https://claude.ai/code';
-
-let claudeCallSequence = 0;
-
-function createClaudeCallContext(opts: {
-  role: RunnerCallContext['role'];
-  model?: string | undefined;
-}): RunnerCallContext {
-  return {
-    callId: `claude-${++claudeCallSequence}`,
-    role: opts.role,
-    backendKind: 'cli',
-    runnerName: 'claude',
-    ...(opts.model !== undefined && { model: opts.model }),
-  };
-}
-
-const ENVELOPE_LIMIT_WARNING_CODES: ReadonlySet<string> = new Set([
-  'task_compiler_output_limited',
-  'task_compiler_timeout',
-]);
-
-type ClaudeEnvelopeGuard = Readonly<{
-  signal: AbortSignal | undefined;
-  idleWarnMs: number;
-  idleKillMs: number;
-  outputBudgetBytes: number | undefined;
-  outputMaxBytes: number | undefined;
-  onEvent: (event: RunnerCallEvent) => void;
-  limit: () => RunnerCallOutputLimit | null;
-  cleanup: () => void;
-}>;
-
-/**
- * The canonical call envelope is the hard ceiling at the Claude spawn
- * boundary: its deadline drives the cancellation timer, its idle bound clamps
- * the watchdog kill, and its raw bound clamps the spawn byte budget. A breach
- * the recorder latches surfaces as a canonical limit warning; aborting here
- * reaps the tree so the terminal stays truncated instead of only recorded.
- */
-function createClaudeEnvelopeGuard(opts: {
-  envelope: TaskCompilationCallEnvelope | undefined;
-  signal: AbortSignal | undefined;
-  idleWarnMs: number | undefined;
-  idleKillMs: number | undefined;
-}): ClaudeEnvelopeGuard {
-  if (opts.envelope === undefined) {
-    return {
-      signal: opts.signal,
-      idleWarnMs: opts.idleWarnMs ?? RUNNER_IDLE_WARN_MS,
-      idleKillMs: opts.idleKillMs ?? RUNNER_IDLE_KILL_MS,
-      outputBudgetBytes: undefined,
-      outputMaxBytes: undefined,
-      onEvent: () => undefined,
-      limit: () => null,
-      cleanup: () => undefined,
-    };
-  }
-  const controller = new AbortController();
-  let envelopeLimit: RunnerCallOutputLimit | null = null;
-  const deadlineTimer = setTimeout(() => {
-    controller.abort(
-      new DOMException('Claude call exceeded its envelope deadline', 'TimeoutError'),
-    );
-  }, opts.envelope.deadlineMs);
-  deadlineTimer.unref?.();
-  return {
-    signal:
-      opts.signal === undefined
-        ? controller.signal
-        : AbortSignal.any([opts.signal, controller.signal]),
-    idleWarnMs: Math.min(opts.idleWarnMs ?? RUNNER_IDLE_WARN_MS, opts.envelope.idleTimeoutMs),
-    idleKillMs: Math.min(opts.idleKillMs ?? RUNNER_IDLE_KILL_MS, opts.envelope.idleTimeoutMs),
-    outputBudgetBytes: Math.min(CLI_RAW_OUTPUT_MAX_BYTES, opts.envelope.maxRawProtocolBytes),
-    outputMaxBytes: Math.min(CLI_RAW_OUTPUT_MAX_BYTES, opts.envelope.maxRawProtocolBytes),
-    onEvent(event) {
-      if (envelopeLimit !== null) return;
-      if (event.type !== 'call_warning') return;
-      if (!ENVELOPE_LIMIT_WARNING_CODES.has(event.warning.code)) return;
-      envelopeLimit = { code: event.warning.code, message: event.warning.message };
-      controller.abort(new DOMException(event.warning.message, 'TimeoutError'));
-    },
-    limit: () => envelopeLimit,
-    cleanup: () => clearTimeout(deadlineTimer),
-  };
-}
-
-interface ClaudeEnvelopeCallOptions {
-  ledger?: TaskDispatchLedger | undefined;
-  attemptId?: TaskCompilationAttemptId | undefined;
-  envelope?: TaskCompilationCallEnvelope | undefined;
-}
-
-function prepareClaudeEnvelopeCall(opts: {
-  callContext: RunnerCallContext | undefined;
-  role: RunnerCallContext['role'];
-  model: string | undefined;
-  signal: AbortSignal | undefined;
-  idleWarnMs: number | undefined;
-  idleKillMs: number | undefined;
-  ledger: TaskDispatchLedger | undefined;
-  attemptId: TaskCompilationAttemptId | undefined;
-  envelope: TaskCompilationCallEnvelope | undefined;
-}): {
-  context: RunnerCallContext;
-  attemptId: TaskCompilationAttemptId | undefined;
-  guard: ClaudeEnvelopeGuard;
-} {
-  const baseContext =
-    opts.callContext ?? createClaudeCallContext({ role: opts.role, model: opts.model });
-  const envelope = opts.envelope ?? baseContext.envelope;
-  const compiled =
-    opts.ledger !== undefined || opts.attemptId !== undefined || opts.envelope !== undefined;
-  const attemptId = compiled
-    ? (opts.attemptId ?? baseContext.attemptId ?? createTaskCompilationAttemptId())
-    : undefined;
-  return {
-    context: {
-      ...baseContext,
-      ...(attemptId !== undefined && { attemptId }),
-      ...(envelope !== undefined && { envelope }),
-    },
-    attemptId,
-    guard: createClaudeEnvelopeGuard({
-      envelope,
-      signal: opts.signal,
-      idleWarnMs: opts.idleWarnMs,
-      idleKillMs: opts.idleKillMs,
-    }),
-  };
-}
-
-function claimClaudeDispatch(
-  state: ReturnType<typeof createStreamHandler>['state'],
-  ledger: TaskDispatchLedger,
-  attemptId: TaskCompilationAttemptId | undefined,
-): void {
-  if (attemptId === undefined) {
-    throw error('task_compiler_dispatch_limit', 'Claude dispatch has no attempt identity');
-  }
-  const claim = ledger.claimDispatch(attemptId);
-  if (claim.kind === 'refused') {
-    const message = `operation dispatch limit reached (${claim.dispatchCount}/${claim.dispatchLimit})`;
-    state.recorder.finishFailed({
-      status: 'refused',
-      error: { code: 'task_compiler_dispatch_limit', message },
-      partial: false,
-    });
-    throw error('task_compiler_dispatch_limit', message, {
-      dispatchCount: claim.dispatchCount,
-      dispatchLimit: claim.dispatchLimit,
-    });
-  }
-}
-
-interface BuildArgsOpts {
-  projectDir: string;
-  mode: 'plan' | 'escalate';
-  sessionId?: string | null;
-  model?: string | undefined;
-  effort?: EffortLevel | undefined;
-  configuredArgs?: readonly string[] | undefined;
-}
-
-async function defaultClaudeEnv(
-  projectDir: string,
-  authChannel: CliAuthChannelId | undefined,
-): Promise<NodeJS.ProcessEnv> {
-  const preserveKeys = authChannel === 'api-key' ? ['ANTHROPIC_API_KEY'] : [];
-  const env = createSanitizedChildEnv(process.env, preserveKeys);
-  env.PATH = await sanitizedRuntimePath(projectDir);
-  return env;
-}
-
-function claudeCredentialValues(
-  authChannel: CliAuthChannelId | undefined,
-  env: NodeJS.ProcessEnv,
-): readonly string[] {
-  const apiKey = authChannel === 'api-key' ? env.ANTHROPIC_API_KEY : undefined;
-  return [...(apiKey === undefined ? [] : [apiKey]), ...sandboxCredentialValues(env)];
-}
-
-function redactClaudeExecutablePath(value: string, executablePath: string): string {
-  if (executablePath.length === 0 || !value.includes(executablePath)) return value;
-  return value.split(executablePath).join('claude');
-}
-
-function normalizeClaudeProcessOutputError(
-  err: unknown,
-  executablePath: string | undefined,
-  redactCredential?: (value: string) => string,
-): unknown {
-  if (!processError.isExitCode(err)) return err;
-
-  const knownPaths = [err.data.command, executablePath].filter(
-    (path, index, paths): path is string =>
-      typeof path === 'string' && path.length > 0 && paths.indexOf(path) === index,
-  );
-  const redact = (value: string): string =>
-    redactCredential?.(
-      knownPaths.reduce((current, path) => redactClaudeExecutablePath(current, path), value),
-    ) ?? value;
-  const stderr = redact(err.data.stderr);
-  const output = redact(err.data.output);
-  const detailPrefix = ` exited with code ${err.data.code}`;
-  const detailStart = err.message.indexOf(detailPrefix);
-  const originalDetail =
-    detailStart < 0
-      ? undefined
-      : err.message.slice(detailStart + detailPrefix.length).replace(/^: /, '');
-
-  return processError.exitCode({
-    command: 'claude',
-    ...(err.data.label !== undefined && { label: redact(err.data.label) }),
-    code: err.data.code,
-    stderr,
-    output,
-    ...(originalDetail !== undefined && { detail: redact(originalDetail) }),
-  });
-}
 
 async function resolveTrustedClaudeExecutable(
   projectDir: string,
@@ -275,40 +53,6 @@ function applyImageRefs(prompt: string, images: Attachment[] | undefined): strin
   if (!images || images.length === 0) return prompt;
   const refs = images.map((img) => `[image attachment: ${img.path}]`).join('\n');
   return `${refs}\n\n${prompt}`;
-}
-
-/**
- * The claude-code adapter owns this argv, so the run, the readiness arg-vector
- * preflight and the protected-flag guard all read one vector: configured
- * `planner.args` ride behind the adapter's base args, and the adapter's own
- * validation rejects a configured flag that fights that base.
- */
-export function buildClaudeArgs(opts: BuildArgsOpts): string[] {
-  const configuredArgs = opts.configuredArgs ?? [];
-  const baseArgs = [
-    ...claudeCodePlannerAdapter.baseArgs({
-      prompt: CLI_PROMPT_SENTINEL,
-      model: opts.model,
-      projectDir: opts.projectDir,
-      configuredArgs,
-      mode: opts.mode,
-      sessionId: opts.sessionId ?? null,
-      effort: opts.effort,
-    }),
-  ];
-  const args = [...baseArgs, ...configuredArgs];
-  const validation = claudeCodePlannerAdapter.validateArgs({
-    invocationArgs: args,
-    baseArgs: baseArgs,
-  });
-  if (!validation.valid) {
-    throw error(
-      'cli-argument-conflict',
-      `Configured Claude Code arguments conflict with the invocation SPLITBRIEF owns: ${validation.conflicts.join(', ')}`,
-      { tool: 'claude-code', conflicts: validation.conflicts },
-    );
-  }
-  return args;
 }
 
 interface ClaudeCallRunOptions extends ClaudeEnvelopeCallOptions {

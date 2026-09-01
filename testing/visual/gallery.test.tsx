@@ -84,8 +84,6 @@ describe('production App gallery mount', () => {
 });
 
 describe('workflow chrome spans the declared viewport', () => {
-  const NARROWEST_COLS = Math.min(...REQUIRED_VIEWPORTS.map((candidate) => candidate.cols));
-
   it.each(REQUIRED_VIEWPORTS)(
     'workflow-implementation chrome spans the declared $cols x $rows viewport',
     async (renderViewport) => {
@@ -102,11 +100,10 @@ describe('workflow chrome spans the declared viewport', () => {
         const headerDivider = findFullWidthRuleRow(rows, renderViewport.cols, 'first');
         const footerDivider = findFullWidthRuleRow(rows, renderViewport.cols, 'last');
         const composerFrame = findComposerFrameRow(rows, footerDivider);
-        const narrowest = renderViewport.cols === NARROWEST_COLS;
 
-        assertChromeRowWidth('header divider', rows, headerDivider, renderViewport, narrowest);
-        assertChromeRowWidth('footer divider', rows, footerDivider, renderViewport, narrowest);
-        assertChromeRowWidth('composer frame', rows, composerFrame, renderViewport, narrowest);
+        assertChromeRowWidth('header divider', rows, headerDivider, renderViewport);
+        assertChromeRowWidth('footer divider', rows, footerDivider, renderViewport);
+        assertChromeRowWidth('composer frame', rows, composerFrame, renderViewport);
       } finally {
         await handle.unmount();
       }
@@ -119,16 +116,12 @@ function assertChromeRowWidth(
   rows: readonly string[],
   rowIndex: number | undefined,
   renderViewport: Viewport,
-  narrowest: boolean,
 ): void {
-  if (rowIndex === undefined) {
-    expect(
-      narrowest,
-      `${label} row not found at ${renderViewport.cols}x${renderViewport.rows}`,
-    ).toBe(true);
-    return;
-  }
-  const measured = rowCellWidth(rows[rowIndex] ?? '');
+  expect(
+    rowIndex,
+    `${label} row not found at ${renderViewport.cols}x${renderViewport.rows}`,
+  ).not.toBeUndefined();
+  const measured = rowCellWidth(rows[rowIndex ?? -1] ?? '');
   expect(
     measured,
     `${label} row measures ${measured} cells at ${renderViewport.cols}x${renderViewport.rows}, expected ${renderViewport.cols}`,

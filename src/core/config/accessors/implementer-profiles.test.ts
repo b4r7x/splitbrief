@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveImplementerProfiles } from './implementer-profiles.js';
-import { createDefaultConfig } from '../load/io.js';
+import { createDefaultConfig } from '../load/defaults.js';
 import type { Config } from '../../schemas/config.js';
 
 function configWithProfiles(profiles: NonNullable<Config['implementerProfiles']>): Config {
@@ -33,11 +33,11 @@ describe('resolveImplementerProfiles', () => {
       profiles: {
         'cloud-cheap': {
           kind: 'api',
-          provider: 'openrouter',
-          service: 'openrouter',
+          provider: 'custom-endpoint',
+          service: 'custom-endpoint',
           offering: 'payg',
-          apiBase: 'https://openrouter.ai/api/v1',
-          apiKey: 'sk-or-test',
+          apiBase: 'https://api.example.test/v1',
+          apiKey: 'test-key',
           model: 'qwen/qwen3-coder',
           contextLength: 131072,
           label: 'Cheap cloud',

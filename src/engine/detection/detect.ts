@@ -2,12 +2,12 @@ import type { CliToolDetection, ProviderDetection } from '../../core/discovery/d
 import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
-  classifyCliAdmittedVersion,
   selectCliAuthChannel,
   type CliAuthChannelId,
   type CliToolId,
-  type RunnerRole,
 } from '../../core/runners/cli-tool-catalog.js';
+import { classifyCliAdmittedVersion } from '../../core/runners/cli-version.js';
+import type { RunnerRole } from '../../core/runners/seat-roles.js';
 import type { CliReadinessResult } from '../../core/schemas/readiness.js';
 import { cliReadinessCheckId, deriveCliReadiness } from '../../core/schemas/readiness.js';
 import { matches } from '../../utils/error.js';

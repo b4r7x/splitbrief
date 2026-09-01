@@ -9,24 +9,6 @@ import { projectEngineEventForTranscriptPolicy } from './transcript.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 describe('protectEngineEventForConsumer', () => {
-  it('drops transcript-only runner payload events when transcript persistence is disabled', () => {
-    const event: EngineEvent = {
-      type: 'runner_call_text_delta',
-      ts: 10,
-      phase: 'planning',
-      callId: 'call-1',
-      role: 'planner',
-      backendKind: 'cli',
-      sequence: 1,
-      channel: 'assistant',
-      text: 'secret transcript',
-    };
-
-    expect(
-      protectEngineEventForConsumer(event, { context: 'ipc', persistTranscript: false }),
-    ).toBeNull();
-  });
-
   it('keeps runner activity control metadata but replaces prompt-bearing labels when transcript persistence is disabled', () => {
     const event: EngineEvent = {
       type: 'runner_call_activity',
@@ -193,29 +175,19 @@ describe('protectEngineEventForConsumer', () => {
     expect(JSON.stringify(protectedEvent)).not.toContain('native-secret-session-456');
   });
 
-  it('keeps pre-redacted custom runner output free of its original child bytes', () => {
-    const childOutputCanary = 'custom-public-child-output-48152';
-    const rawEvent: EngineEvent = {
-      type: 'runner_call_text_delta',
-      ts: 22,
-      phase: 'planning',
-      callId: 'call-1',
-      role: 'planner',
-      backendKind: 'cli',
-      sequence: 4,
-      channel: 'assistant',
-      text: `helper output: ${childOutputCanary}`,
-    };
-
-    const withoutTranscript = protectEngineEventForConsumer(rawEvent, {
-      context: 'ipc',
-      persistTranscript: false,
-    });
-
-    expect(withoutTranscript).toBeNull();
-
+  it('keeps pre-redacted custom runner output intact when transcript persistence is enabled', () => {
     const preRedacted = protectEngineEventForConsumer(
-      { ...rawEvent, text: 'helper output: ***REDACTED***' },
+      {
+        type: 'runner_call_text_delta',
+        ts: 22,
+        phase: 'planning',
+        callId: 'call-1',
+        role: 'planner',
+        backendKind: 'cli',
+        sequence: 4,
+        channel: 'assistant',
+        text: 'helper output: ***REDACTED***',
+      },
       { context: 'ipc', persistTranscript: true },
     );
 

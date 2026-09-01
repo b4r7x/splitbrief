@@ -1,11 +1,11 @@
 import type { Config } from '../../../schemas/config.js';
 import type { WorkflowOpts } from '../../../types/config-options.js';
-import type { WorkflowMode } from '../../../schemas/enums.js';
+import { normalizeWorkflowMode, type WorkflowMode } from '../../../schemas/enums.js';
 import { getWorkflowMode } from '../../accessors/values.js';
 import type { CLIOverrides } from './schema.js';
 
 export function resolveCliWorkflowMode(opts: WorkflowOpts, config: Config): WorkflowMode {
-  return opts.mode ?? getWorkflowMode(config);
+  return normalizeWorkflowMode(opts.mode) ?? getWorkflowMode(config);
 }
 
 export function workflowOptsToCLIOverrides(opts: WorkflowOpts): CLIOverrides {

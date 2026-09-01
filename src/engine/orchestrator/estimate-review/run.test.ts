@@ -93,10 +93,10 @@ describe('planner estimate review packet', () => {
         profiles: {
           'cheap-worker': {
             kind: 'api' as const,
-            provider: 'deepseek',
-            service: 'deepseek' as const,
-            offering: 'payg' as const,
-            apiBase: 'https://api.deepseek.com/v1',
+            provider: 'ollama',
+            service: 'ollama' as const,
+            offering: 'local' as const,
+            apiBase: 'http://localhost:11434/v1',
             model: 'deepseek-chat',
             contextLength: 20_000,
             costTier: 'cheap' as const,

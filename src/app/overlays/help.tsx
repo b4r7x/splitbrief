@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useInput } from 'ink';
+import { Box, useInput } from 'ink';
 import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/overlay-panel.js';
 import { ListGroupHeader, ListRow } from '../../components/list-row.js';
 import { commandLabelWidth, descriptionColumn } from '../../components/list-columns.js';
@@ -17,7 +17,7 @@ import type { Screen } from '../../core/navigation/types.js';
 import { detectedModelFact, seatSupportsImages } from '../../core/runners/capabilities.js';
 import { COMMAND_CATEGORIES, COMMAND_CATEGORY_LABELS } from '../../core/runtime/commands/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { configStore } from '../../stores/project/config.js';
 import { controlsStore } from '../../stores/ui/controls.js';
@@ -28,8 +28,9 @@ import { clamp } from '../../utils/math.js';
 import { assertNever } from '../../utils/type-guards.js';
 
 const PANEL_DENSITY: OverlayDensity = 'roomy';
-// border, pad, title, blank, blank, hint, pad, border.
-const HELP_CHROME_ROWS = 8;
+// border, pad, title, blank, hint, pad, border — the panel is asked for a tight title, so the
+// blank row it would otherwise spend under the title goes to the list instead.
+const HELP_CHROME_ROWS = 7;
 // Below this budget a header costs more rows than it organises, so the 60x18 help keeps the
 // category order but drops the labels (§Target frames).
 const SECTION_HEADER_MIN_ROWS = 12;
@@ -143,40 +144,43 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
     <OverlayPanel
       title="Help · commands & shortcuts"
       hint={`↑↓ scroll${SOFT_SEP}esc close`}
+      titleSpacing="tight"
       density={PANEL_DENSITY}
     >
-      <ListViewport
-        items={helpRows}
-        selectedIndex={cursor}
-        getKey={(row) => row.key}
-        rowBudget={listBudget}
-        showRemainingCount
-        section={{
-          by: (row) => row.section,
-          headerFor: () => listBudget >= SECTION_HEADER_MIN_ROWS,
-          renderHeader: (label) => <ListGroupHeader label={label} />,
-        }}
-        renderItem={(row) => {
-          // Command names all fit the column, so it never moves for them. A keyboard chord is
-          // spelled out (`shift+↑/↓, pgup/pgdn, home/end`) and teaching it is the whole point of
-          // the row, so a chord past the column pushes its own description right instead of
-          // being cut.
-          const rowLabelWidth = Math.max(labelWidth, getTerminalCellWidth(row.label));
-          return (
-            <ListRow
-              label={row.label}
-              metadata={descriptionColumn({
-                description: row.description,
-                shortcut: row.shortcut,
-                innerWidth,
-                labelWidth: rowLabelWidth,
-              })}
-              {...(row.shortcut ? { trailing: row.shortcut } : {})}
-              labelWidth={rowLabelWidth}
-            />
-          );
-        }}
-      />
+      <Box flexDirection="column" height={listBudget}>
+        <ListViewport
+          items={helpRows}
+          selectedIndex={cursor}
+          getKey={(row) => row.key}
+          rowBudget={listBudget}
+          showRemainingCount
+          section={{
+            by: (row) => row.section,
+            headerFor: () => listBudget >= SECTION_HEADER_MIN_ROWS,
+            renderHeader: (label) => <ListGroupHeader label={label} />,
+          }}
+          renderItem={(row) => {
+            // Command names all fit the column, so it never moves for them. A keyboard chord is
+            // spelled out (`shift+↑/↓, pgup/pgdn, home/end`) and teaching it is the whole point of
+            // the row, so a chord past the column pushes its own description right instead of
+            // being cut.
+            const rowLabelWidth = Math.max(labelWidth, getTerminalCellWidth(row.label));
+            return (
+              <ListRow
+                label={row.label}
+                metadata={descriptionColumn({
+                  description: row.description,
+                  shortcut: row.shortcut,
+                  innerWidth,
+                  labelWidth: rowLabelWidth,
+                })}
+                {...(row.shortcut ? { trailing: row.shortcut } : {})}
+                labelWidth={rowLabelWidth}
+              />
+            );
+          }}
+        />
+      </Box>
     </OverlayPanel>
   );
 }

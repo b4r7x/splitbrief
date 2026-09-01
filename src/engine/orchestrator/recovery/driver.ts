@@ -2,7 +2,7 @@ import { DEFAULT_WORKFLOW_MODE, type Config } from '../../../core/schemas/config
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { loadStateForResume } from '../../../core/state/persistence.js';
+import { loadStateForResume } from '../../../core/state/resume-authority.js';
 import type { ResumeLoadAuthority, StateAuthorityReceipt } from '../../../core/state/types.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { ActiveSessionReceipt } from '../../../core/sessions/active-pointer.js';

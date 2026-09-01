@@ -1,5 +1,5 @@
 import { findConfiguredCustomCommand } from '../../core/config/custom-command-catalog.js';
-import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { ConfiguredCustomRunner } from './custom-trust.js';

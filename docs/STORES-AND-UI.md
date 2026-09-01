@@ -183,7 +183,7 @@ Conversation scrolling is row-based. `planner_text` events with `content: 'markd
 
 The projection and per-event row blocks are cached by identity, not content. `getConversationRowsProjection` (`conversation-rows/projection-cache.ts`) hits its cache when all six inputs — sections, expanded-diff/activity sets, cols, viewport height, streaming state — are reference-equal to the prior call, so a cache hit costs a handful of `===` checks regardless of transcript size; this replaces the old content-key hashing, which re-serialized every event on every lookup. `conversation-rows/block-cache.ts` memoizes per-event row blocks in a `WeakMap<EngineEvent, …>`, so appending one event reuses every unchanged event's block instead of rebuilding the transcript. Both caches lean on the store layer never mutating events or sections in place (`mergeEvent` and `computeSections` re-allocate on change) and both reset at workflow start. The composer-byline live status derives from `lifecycleStore`'s `phaseFirstSeenTs` map — one timestamp recorded the first time each phase is seen — instead of rescanning the full events array on every spinner tick.
 
-Clarification-question prompts now fire in every workflow mode, not just `speckit`: the same bordered `QuestionPrompt` panel above the composer collects answers in `instant`, `quick`, `standard`, and `speckit` alike, and answers persist under the run's `## Clarifications` section regardless of mode.
+Clarification-question prompts now fire in every workflow mode, not just `speckit`: the same bordered `QuestionPrompt` panel above the composer collects answers in `quick`, `standard`, and `speckit` alike, and answers persist under the run's `## Clarifications` section regardless of mode.
 
 Brief review has one text-editing path. `workflow.briefReview: rich` is deprecated and maps to simple review. Pressing `Ctrl+E` or typing `e`, `edit`, `E`, or `edit-file` opens the persisted `.splitbrief/sessions/<id>/tasks.md` in the external editor. Resolution uses explicit `VISUAL` first, then non-terminal `EDITOR`, then detected GUI editors (`cursor`, `code`, `zed`, `subl`, `mate`, `bbedit`) with wait flags, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`. Implicit GUI auto-detection probes only safe absolute `PATH` segments (empty, `.`, and relative segments are skipped) and spawns the resolved absolute executable path; on Windows it also honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` suffixes. After the editor exits, SPLITBRIEF re-reads `tasks.md`, re-runs brief-quality validation, and keeps the gate open on parse or quality errors. The brief review overlay loads `brief-readiness.json` alongside `brief-quality.json` (defensively: a missing or malformed readiness artifact is treated as absent). The review header folds a `readiness N blocked` slot into its existing width budget while a blocking report is loaded, and appends the override instruction `approve again overrides` in the same header line — the confirm-by-repeat affordance for the readiness override is carried there and only there, because the header is the one surface that holds the loaded report. The composer briefs hint stays fixed at the four review commands. Per-task state words stay first-match-wins: `overflow`, `conflict`, `no worker` (a task no configured profile can run), `failed`, then `stale`. The brief readiness gate renders the same way as the quality gate: `brief_readiness_passed` shows a `brief readiness` card (`passed · N tasks`), and `brief_readiness_blocked` shows an error-toned `brief readiness` card (`blocked · N of M`) in the conversation row stream.
 
@@ -304,7 +304,7 @@ zero-height and prompt-clamped bodies cannot introduce a second breakpoint or hi
 
 Overlay types: `help`, `command-palette`, `skills`, `settings`, `mode-selector`, `planner-picker`, `implementer-picker`, `reviewer-picker`, `sessions`, `editor`, `cost-drilldown` — the `ACTIVE_OVERLAYS` tuple in `src/core/navigation/types.ts`, which spreads `SEAT_PICKER_OVERLAYS` (one picker overlay per seat picker role). There is no `crew` overlay: crew is the first section of `settings`.
 
-Each type maps to a component in `renderOverlay()` in `src/app/router.tsx`. The three picker overlays all render the same component parameterised by role: `<ToolModelPicker role="planner" | "implementer" | "reviewer" />` (`src/app/overlays/runners.tsx`). `role` is `SeatPickerRole` — the three members of `SEAT_PICKER_ROLES` (`src/core/runners/cli-tool-catalog.ts`); confirming a `reviewer` selection writes the `reviewer` block in project config.
+Each type maps to a component in `renderOverlay()` in `src/app/router.tsx`. The three picker overlays all render the same component parameterised by role: `<ToolModelPicker role="planner" | "implementer" | "reviewer" />` (`src/app/overlays/runners.tsx`). `role` is `SeatPickerRole` — the three members of `SEAT_PICKER_ROLES` (`src/core/runners/seat-roles.ts`); confirming a `reviewer` selection writes the `reviewer` block in project config.
 
 ### Settings ∋ Crew
 
@@ -327,14 +327,14 @@ The first-run setup screen (`src/app/screens/setup.tsx`) composes the same featu
 | density | share | min | max | who |
 |---|---|---|---|---|
 | `compact` | 0.60 | 56 | 72 | mode selector, start preparation, the picker's "initializing tools" panel |
-| `roomy` | 0.70 | 76 | 96 | settings (crew included), help, palette, the summary screen, the picker's sub-steps |
-| `wide` | 0.90 | 76 | 140 | the seat picker, setup, sessions, skills, the cost drilldown, the home body and composer (capped locally at 108) |
+| `roomy` | 0.70 | 76 | 96 | settings (crew included), help, palette, skills, the summary screen, the picker's sub-steps |
+| `wide` | 0.90 | 76 | 140 | the seat picker, setup, sessions, the cost drilldown, the home body and composer (capped locally at 108) |
 
 `width = min(cols - 4, max(min, floor(cols * share)), max)`; the frame costs 6 columns and 4 rows, and `overlayGutterRows` gives back one row of vertical air per 6 rows above the 18-row floor, capped at 2 (the first at 24 rows, the second at 30). Every panel passes a `density` to `OverlayPanel`; `maxWidth` no longer exists, so nothing renders byte-identical at 80 and 120 columns.
 
 ### Picker view state
 
-`pickerViewStore` (`src/stores/ui/picker-view.ts`) holds the seat picker's sub-view: which step is showing (`picker`, the two custom-command steps, custom model, provider auth), the left index preserved across a step, the expanded model (provider routes or an option family), the drafted option-family variant its axis rows spell out, and the in-flight text draft. It replaces the picker's component-local `useReducer`. The move buys two things a component-local reducer cannot: the state survives the picker unmounting and remounting, and a test or a visual fixture can seed a step directly (`pickerViewStore.open(...)`, `pickerViewStore.expand(id, draftId)`) instead of driving keystrokes into it.
+`pickerViewStore` (`src/stores/ui/picker-view.ts`) holds the seat picker's sub-view: which step is showing (`picker`, the two custom-command steps, custom model), the left index preserved across a step, the expanded model (provider routes or an option family), the drafted option-family variant its axis rows spell out, and the in-flight text draft. It replaces the picker's component-local `useReducer`. The move buys two things a component-local reducer cannot: the state survives the picker unmounting and remounting, and a test or a visual fixture can seed a step directly (`pickerViewStore.open(...)`, `pickerViewStore.expand(id, draftId)`) instead of driving keystrokes into it.
 
 ---
 
@@ -451,8 +451,7 @@ type PickerSubView =
   | { kind: 'picker' }
   | { kind: 'custom-command-contract'; refocusKind?: 'shell' | 'agent' }
   | { kind: 'custom-command'; intendedKind: 'shell' | 'agent' }
-  | { kind: 'custom-model' }
-  | { kind: 'provider-auth' };
+  | { kind: 'custom-model' };
 interface PickerViewState {
   view: PickerSubView;
   preservedLeftIndex: number;    // left column index restored when a step closes

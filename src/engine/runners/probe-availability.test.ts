@@ -14,8 +14,6 @@ afterEach(async () => {
     server.closeAllConnections();
     if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
   }
-  delete process.env.OPENROUTER_API_KEY;
-  delete process.env.ANTHROPIC_API_KEY;
 });
 
 async function listen(handler: http.RequestListener): Promise<number> {
@@ -99,38 +97,25 @@ describe('probeRunnerAvailability', () => {
     expect(elapsed).toBeLessThan(RUNNER_AVAILABILITY_PROBE_TIMEOUT_MS * 2);
   });
 
-  it('names the credential a remote provider is missing without contacting it', async () => {
+  it('reports a custom provider with no credential as not-probed without contacting it', async () => {
     const config = makeConfig({
       planner: { kind: 'cli', tool: 'claude-code' },
       implementer: {
         kind: 'api',
-        provider: 'openrouter',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
+        offering: 'payg',
         model: 'some-model',
-        apiBase: 'https://openrouter.ai/api/v1',
+        apiBase: 'https://example.com/v1',
       },
     });
 
     const facts = await probeRunnerAvailability({ config });
 
     expect(facts[0]).toMatchObject({
-      provider: 'openrouter',
-      verdict: { state: 'missing-credential', credentialEnv: 'OPENROUTER_API_KEY' },
+      provider: 'custom-endpoint',
+      verdict: { state: 'not-probed' },
     });
-  });
-
-  it('reports an agent-sdk runner with no credential', async () => {
-    const config = makeConfig({
-      planner: { kind: 'cli', tool: 'claude-code' },
-      implementer: { kind: 'agent-sdk', model: 'claude-opus-4' },
-    });
-
-    const facts = await probeRunnerAvailability({ config });
-
-    expect(facts[0]).toMatchObject({
-      provider: 'anthropic',
-      verdict: { state: 'missing-credential', credentialEnv: 'ANTHROPIC_API_KEY' },
-    });
-    expect(facts[0]?.endpoint).toBeUndefined();
   });
 
   it('probes only the planner when the implementer role is out of scope', async () => {
@@ -145,14 +130,18 @@ describe('probeRunnerAvailability', () => {
   });
 
   it('probes a configured api reviewer and leaves a cli reviewer alone', async () => {
+    const port = await closedPort();
     const apiReviewer = makeConfig({
       planner: { kind: 'cli', tool: 'claude-code' },
       implementer: { kind: 'cli', tool: 'claude-code' },
       reviewer: {
         kind: 'api',
-        provider: 'openrouter',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
+        offering: 'payg',
         model: 'some-model',
-        apiBase: 'https://openrouter.ai/api/v1',
+        apiBase: `http://127.0.0.1:${port}/v1`,
+        apiKey: 'test-key',
       },
     });
     const cliReviewer = makeConfig({
@@ -164,8 +153,8 @@ describe('probeRunnerAvailability', () => {
     await expect(probeRunnerAvailability({ config: apiReviewer })).resolves.toMatchObject([
       {
         slot: { role: 'reviewer' },
-        provider: 'openrouter',
-        verdict: { state: 'missing-credential' },
+        provider: 'custom-endpoint',
+        verdict: { state: 'unavailable' },
       },
     ]);
     await expect(probeRunnerAvailability({ config: cliReviewer })).resolves.toEqual([]);

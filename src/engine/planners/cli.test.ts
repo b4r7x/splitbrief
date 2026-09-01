@@ -410,30 +410,6 @@ Create the mismatch fallback file.
     );
   });
 
-  it('applies the aider postProcess hook: pulls usage from stderr when present', async () => {
-    // Aider parses stdout as text-lines and uses postProcess to extract token counts from stderr.
-    // The shim writes a usage line to stderr; postProcess should find it and populate result.usage.
-    const shimPath = join(shimDir, 'aider');
-    writeFileSync(
-      shimPath,
-      [
-        '#!/bin/bash',
-        "printf '%s\\n' 'Aider response text'",
-        "printf '%s\\n' 'Tokens: 100 sent, 50 received.' >&2",
-        '',
-      ].join('\n'),
-      'utf8',
-    );
-    chmodSync(shimPath, 0o755);
-
-    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'aider' } }));
-
-    const result = await planner.review('prompt', projectDir, { onOutput: vi.fn() });
-
-    expect(result.text).toContain('Aider response text');
-    expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
-  });
-
   it('runs Codex write-files full escalation once without replacing the planning session', async () => {
     const spawnLog = join(shimDir, 'codex-spawns.txt');
     const writerArgvFile = join(shimDir, 'codex-writer-argv.txt');
@@ -510,13 +486,6 @@ Create the mismatch fallback file.
       }),
       requiredArgs: ['run', '--format', 'json', '--agent', 'build'],
       forbiddenArgs: ['plan'],
-    },
-    {
-      tool: 'aider',
-      command: 'aider',
-      output: 'Wrote src/hello.ts.',
-      requiredArgs: ['--yes-always', '--no-auto-commits', '--no-dirty-commits'],
-      forbiddenArgs: ['--chat-mode', 'ask'],
     },
     {
       tool: 'copilot',
@@ -651,7 +620,7 @@ Create the mismatch fallback file.
     },
   );
 
-  it.each(['normal', 'quick', 'instant'] as const)(
+  it.each(['normal', 'quick'] as const)(
     'returns %s planning output for session persistence without project mutation',
     async (operation) => {
       const tasksMarkdown = `---
@@ -685,12 +654,6 @@ Create the session-output file.
         case 'quick':
           result = await planner.quickPlan({ feature: 'plan a change', projectDir, callbacks });
           break;
-        case 'instant':
-          if (planner.instantPlan === undefined) {
-            throw new Error('CLI planner must support instant planning');
-          }
-          result = await planner.instantPlan({ feature: 'plan a change', projectDir, callbacks });
-          break;
       }
 
       expect(result.tasks).toHaveLength(1);
@@ -711,7 +674,7 @@ Create the session-output file.
     },
   );
 
-  it.each(['normal', 'quick', 'instant'] as const)(
+  it.each(['normal', 'quick'] as const)(
     'keeps %s planning read-only and rejects source mutations',
     async (operation) => {
       const output = JSON.stringify({
@@ -731,12 +694,6 @@ Create the session-output file.
         case 'quick':
           invocation = planner.quickPlan({ feature: 'plan a change', projectDir, callbacks });
           break;
-        case 'instant':
-          if (planner.instantPlan === undefined) {
-            throw new Error('CLI planner must support instant planning');
-          }
-          invocation = planner.instantPlan({ feature: 'plan a change', projectDir, callbacks });
-          break;
       }
 
       await expect(invocation).rejects.toMatchObject({
@@ -748,6 +705,57 @@ Create the session-output file.
       );
     },
   );
+
+  it('sends the narrow-brief instruction only when the plan options mark the work trivial', async () => {
+    const tasksMarkdown = `---
+id: T001
+title: Trivial-hint task
+action: create
+file: src/trivial-hint.ts
+depends_on: []
+---
+
+### Description
+Create the trivial-hint file.
+
+### Tests
+- verifies the returned task
+`;
+    const { argvFile } = installRecordingShim('opencode', [
+      JSON.stringify({
+        type: 'text',
+        sessionID: 'ses-open',
+        part: { type: 'text', text: tasksMarkdown },
+      }),
+    ]);
+    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
+    const callbacks = { onOutput: () => {} };
+    const plannerPrompt = (): string => {
+      const argv = readArgv(argvFile).join('\n');
+      if (!argv.includes('Return the complete tasks.md')) {
+        throw new Error('planner prompt was not captured');
+      }
+      return argv;
+    };
+
+    await planner.quickPlan({
+      feature: 'rename foo to bar',
+      projectDir,
+      callbacks,
+      trivial: true,
+    });
+    const trivialPrompt = plannerPrompt();
+
+    await planner.quickPlan({ feature: 'rename foo to bar', projectDir, callbacks });
+    const ordinaryPrompt = plannerPrompt();
+
+    expect(trivialPrompt).toContain(
+      'A single Task Brief is fine; do not over-engineer. 1-5 briefs max.',
+    );
+    expect(trivialPrompt).not.toContain('Briefly review the codebase structure');
+    expect(ordinaryPrompt).toContain('Briefly review the codebase structure');
+    expect(ordinaryPrompt).not.toContain('1-5 briefs max');
+  });
 
   it('completes planning when OpenCode regenerates its own .opencode plugin state', async () => {
     const tasksMarkdown = `---
@@ -797,16 +805,16 @@ Create the internal-state file.
     });
   });
 
-  it('rejects a typed truncated call and reaps Aider when stdout exceeds its budget', async () => {
-    const pidFile = join(shimDir, 'aider-pids.json');
-    const shimPath = join(shimDir, 'aider');
+  it('rejects a typed truncated call and reaps OpenCode when stdout exceeds its budget', async () => {
+    const pidFile = join(shimDir, 'opencode-pids.json');
+    const shimPath = join(shimDir, 'opencode');
     const script = [
       '#!/usr/bin/env node',
       "const { spawn } = require('node:child_process');",
       "const { writeFileSync } = require('node:fs');",
       "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 60_000)'], { stdio: 'ignore' });",
       `writeFileSync(${JSON.stringify(pidFile)}, JSON.stringify([process.pid, child.pid]));`,
-      "process.stdout.write('Aider response text\\n');",
+      "process.stdout.write('OpenCode response text\\n');",
       "const frame = 'x'.repeat(999_999) + '\\n';",
       `setTimeout(() => { for (let i = 0; i < ${Math.ceil(CLI_RAW_OUTPUT_MAX_BYTES / 1_000_000) + 2}; i += 1) process.stdout.write(frame); }, 25);`,
       'setInterval(() => {}, 60_000);',
@@ -814,7 +822,7 @@ Create the internal-state file.
     writeFileSync(shimPath, `${script}\n`, 'utf8');
     chmodSync(shimPath, 0o755);
 
-    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'aider' } }));
+    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
     const events: RunnerCallEvent[] = [];
 
     await expect(
@@ -1099,6 +1107,57 @@ Outside task content.
 
     const argv = readArgv(argvFile);
     expect(argv.slice(-2)).toEqual(['--reasoning', 'high']);
+  });
+
+  it('passes a configured variant through to the opencode planner argv', async () => {
+    const { argvFile } = installRecordingShim('opencode', [
+      JSON.stringify({
+        type: 'text',
+        sessionID: 'ses-open',
+        part: { type: 'text', text: 'response' },
+      }),
+    ]);
+
+    const planner = createCliPlanner(
+      makeConfig({
+        planner: {
+          kind: 'cli',
+          tool: 'opencode',
+          model: 'openai/gpt-5.6-luna',
+          variant: 'xhigh',
+        },
+      }),
+    );
+
+    await planner.review('prompt', projectDir, { onOutput: vi.fn() });
+
+    const argv = readArgv(argvFile);
+    expect(argv.slice(argv.indexOf('--variant'), argv.indexOf('--variant') + 2)).toEqual([
+      '--variant',
+      'xhigh',
+    ]);
+  });
+
+  it('a claude-code planner ignores a stray variant', async () => {
+    const { argvFile } = installRecordingShim('claude', [
+      JSON.stringify({ type: 'result', result: 'response' }),
+    ]);
+
+    const withoutVariant = createCliPlanner(
+      makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'sonnet' } }),
+    );
+    await withoutVariant.review('prompt', projectDir, { onOutput: vi.fn() });
+    const baseline = readArgv(argvFile);
+
+    const withVariant = createCliPlanner(
+      makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', model: 'sonnet', variant: 'xhigh' },
+      }),
+    );
+    await withVariant.review('prompt', projectDir, { onOutput: vi.fn() });
+
+    expect(readArgv(argvFile)).toEqual(baseline);
+    expect(baseline).not.toContain('--variant');
   });
 
   it.each([

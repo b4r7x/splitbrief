@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterAll, afterEach, beforeAll } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
@@ -118,6 +118,23 @@ function ownerRecoveryBinding(
 }
 
 describe('runFullPlanning — skill rehydration', () => {
+  // Discovery scans global roots under homedir(); a real HOME would pull the
+  // developer's own ~/.claude/skills into these assertions.
+  let fakeHome: string;
+  let savedHome: string | undefined;
+
+  beforeAll(() => {
+    fakeHome = createTempDir('full-skill-home');
+    savedHome = process.env.HOME;
+    process.env.HOME = fakeHome;
+  });
+
+  afterAll(() => {
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
+    cleanupTempDir(fakeHome);
+  });
+
   it('rebuilds skills context from persisted state ids when no live skills are supplied', async () => {
     const projectDir = createTempDir('full-skill-rehydrate');
     dirs.push(projectDir);

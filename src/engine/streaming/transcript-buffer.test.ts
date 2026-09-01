@@ -22,15 +22,22 @@ function readEntries(projectDir: string, sessionId: string): unknown[] {
     .map((line) => JSON.parse(line));
 }
 
+type Options = Parameters<typeof createTranscriptBuffer>[0];
+
+function bufferFor(overrides: Partial<Options> = {}) {
+  tmp = createTempDir('transcript-buffer');
+  return createTranscriptBuffer({
+    projectDir: tmp,
+    sessionId: SESSION_ID,
+    phase: 'planning',
+    persistTranscript: true,
+    ...overrides,
+  });
+}
+
 describe('createTranscriptBuffer', () => {
   it('flush() persists buffered text as an assistant message entry', () => {
-    tmp = createTempDir('transcript-buffer');
-    const buf = createTranscriptBuffer({
-      projectDir: tmp,
-      sessionId: SESSION_ID,
-      phase: 'planning',
-      persistTranscript: true,
-    });
+    const buf = bufferFor();
 
     buf.append('hello ');
     buf.append('world');
@@ -49,13 +56,7 @@ describe('createTranscriptBuffer', () => {
   });
 
   it('writes nothing when persistTranscript is false', () => {
-    tmp = createTempDir('transcript-buffer');
-    const buf = createTranscriptBuffer({
-      projectDir: tmp,
-      sessionId: SESSION_ID,
-      phase: 'planning',
-      persistTranscript: false,
-    });
+    const buf = bufferFor({ persistTranscript: false });
 
     buf.append('ignored');
     buf.flush();
@@ -66,13 +67,7 @@ describe('createTranscriptBuffer', () => {
   });
 
   it('writes nothing when sessionId is empty', () => {
-    tmp = createTempDir('transcript-buffer');
-    const buf = createTranscriptBuffer({
-      projectDir: tmp,
-      sessionId: '',
-      phase: 'planning',
-      persistTranscript: true,
-    });
+    const buf = bufferFor({ sessionId: '' });
 
     buf.append('still no persistence');
     buf.flush();
@@ -81,13 +76,7 @@ describe('createTranscriptBuffer', () => {
   });
 
   it('flushInterrupted() marks the entry as interrupted', () => {
-    tmp = createTempDir('transcript-buffer');
-    const buf = createTranscriptBuffer({
-      projectDir: tmp,
-      sessionId: SESSION_ID,
-      phase: 'implementing',
-      persistTranscript: true,
-    });
+    const buf = bufferFor({ phase: 'implementing' });
 
     buf.append('partial output');
     buf.flushInterrupted();
@@ -106,13 +95,7 @@ describe('createTranscriptBuffer', () => {
   });
 
   it('auto-persists when the buffer grows beyond the threshold', () => {
-    tmp = createTempDir('transcript-buffer');
-    const buf = createTranscriptBuffer({
-      projectDir: tmp,
-      sessionId: SESSION_ID,
-      phase: undefined,
-      persistTranscript: true,
-    });
+    const buf = bufferFor({ phase: undefined });
 
     const blob = 'x'.repeat(17_000);
     buf.append(blob);
@@ -130,13 +113,7 @@ describe('createTranscriptBuffer', () => {
   });
 
   it('auto-persists multibyte text by byte size, not UTF-16 code-unit count', () => {
-    tmp = createTempDir('transcript-buffer');
-    const buf = createTranscriptBuffer({
-      projectDir: tmp,
-      sessionId: SESSION_ID,
-      phase: undefined,
-      persistTranscript: true,
-    });
+    const buf = bufferFor({ phase: undefined });
 
     // Each '한' is one UTF-16 code unit but three UTF-8 bytes. 6000 chars is well under the
     // 16 KiB code-unit count yet ~18 KiB of bytes, so byte-aware flushing must persist it.
@@ -157,13 +134,7 @@ describe('createTranscriptBuffer', () => {
   });
 
   it('flush() on an empty buffer is a no-op', () => {
-    tmp = createTempDir('transcript-buffer');
-    const buf = createTranscriptBuffer({
-      projectDir: tmp,
-      sessionId: SESSION_ID,
-      phase: 'planning',
-      persistTranscript: true,
-    });
+    const buf = bufferFor();
 
     buf.flush();
     buf.flushInterrupted();

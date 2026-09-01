@@ -1,4 +1,3 @@
-import { error, matches } from '../../utils/error.js';
 import { sanitizeTerminalDiagnosticText } from '../../utils/display-text.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { protectConsumerPayload } from '../../core/consumer-policy.js';
@@ -24,8 +23,6 @@ export const RUNNER_CALL_TOOL_USE_MAX_ITEMS = 256;
 export const RUNNER_CALL_ARTIFACT_MAX_ITEMS = 64;
 export const RUNNER_CALL_WARNING_MAX_ITEMS = 256;
 export const RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS = 128;
-export const RUNNER_CALL_HTTP_ERROR_BODY_MAX_BYTES = 256 * 1024;
-export const RUNNER_CALL_SSE_EVENT_MAX_BYTES = 1024 * 1024;
 export const RUNNER_CALL_PAYLOAD_TRUNCATED_KEY = '_truncated';
 
 const ENVELOPE_OUTPUT_LIMITED_CODE: TaskCompilationFailureCode = 'task_compiler_output_limited';
@@ -283,28 +280,6 @@ export function boundRunnerCallArtifact(
   return {
     value: { ...artifact, text: bounded.value },
     limit: bounded.limit,
-  };
-}
-
-export function runnerCallOutputLimitError(limit: RunnerCallOutputLimit): Error {
-  return error('runner-output-limit', limit.message, limit);
-}
-
-export const isRunnerCallOutputLimitError = matches('runner-output-limit');
-
-export function runnerCallOutputLimitFromError(err: unknown): RunnerCallOutputLimit | null {
-  if (!isRunnerCallOutputLimitError(err)) return null;
-  const data = err.data;
-  if (!isRecord(data) || typeof data.code !== 'string' || typeof data.message !== 'string') {
-    return null;
-  }
-  return {
-    code: data.code,
-    message: data.message,
-    ...(typeof data.bytesSeen === 'number' && { bytesSeen: data.bytesSeen }),
-    ...(typeof data.maxBytes === 'number' && { maxBytes: data.maxBytes }),
-    ...(typeof data.eventsSeen === 'number' && { eventsSeen: data.eventsSeen }),
-    ...(typeof data.maxEvents === 'number' && { maxEvents: data.maxEvents }),
   };
 }
 

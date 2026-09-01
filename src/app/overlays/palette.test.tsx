@@ -68,6 +68,9 @@ function createTestCommands(opts: { isAttached?: boolean } = {}): RuntimeCommand
       },
     }),
     refreshProjectFiles: () => {},
+    listSkills: () => [],
+    toggleSkill: () => ({ status: 'unknown' }),
+    refreshSkills: () => {},
     getCurrentPhase: () => lifecycleStore.get().phase,
     requestRewind: () => true,
     requestTaskRedo: () => true,
@@ -198,6 +201,26 @@ function rowContaining(rows: string[], text: string): string {
   const row = rows.find((line) => line.includes(text));
   expect(row).toBeDefined();
   return row ?? '';
+}
+
+// The column the description column opens at: the first ink past the row's label, whatever the
+// label happens to be. A row whose label column is wider pushes this further right.
+function descriptionStart(row: string, label: string): number {
+  const plain = stripAnsiStyles(row);
+  const afterLabel = plain.indexOf(label) + label.length;
+  return afterLabel + plain.slice(afterLabel).search(/\S/u);
+}
+
+// The bordered panel's own height. The overlay's outer box always fills the terminal, so the
+// frame's line count never moves; the silhouette that jumps as a query narrows is this one.
+function panelHeight(frame: string): number {
+  const lines = stripAnsiStyles(frame).split('\n');
+  const rules = lines.flatMap((line, index) =>
+    /^\s*[+\u256d\u2570][-\u2500]+/u.test(line) ? [index] : [],
+  );
+  const first = rules.at(0) ?? -1;
+  const last = rules.at(-1) ?? -1;
+  return last - first + 1;
 }
 
 function promptLine(frame: string): string {
@@ -810,5 +833,89 @@ describe('CommandPaletteOverlay', () => {
       expect(feedbackStore.get().isError, label).toBe(false);
       instance.unmount();
     }
+  });
+
+  it('gives a long session title the full row instead of the command-name column', async () => {
+    const feature = 'refactor the authentication middleware and session store';
+    const session = makeSession({
+      id: 'sess-long-title',
+      feature,
+      status: 'interrupted',
+      summary: null,
+    });
+    saveSummary({ projectDir, sessionId: session.id }, session);
+
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const instance = renderCommandPalette();
+    await tick(1);
+    await tick(1);
+
+    await write(instance, 'session');
+    await tick(1);
+    await tick(1);
+
+    const frame = instance.lastFrame() ?? '';
+    const sessionRow = rowContaining(paletteResultRows(frame), feature);
+    expect(stripAnsiStyles(sessionRow)).toContain(feature);
+    expect(sessionRow).toContain('interrupted');
+    expect(sessionRow).not.toContain('…');
+    instance.unmount();
+  });
+
+  it('keeps command rows in one aligned column while a session row widens', async () => {
+    const feature = 'refactor the authentication middleware and session store';
+    const session = makeSession({
+      id: 'sess-widening',
+      feature,
+      status: 'interrupted',
+      summary: null,
+    });
+    saveSummary({ projectDir, sessionId: session.id }, session);
+
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const instance = renderCommandPalette();
+    await tick(1);
+    await tick(1);
+
+    await write(instance, 'session');
+    await tick(1);
+    await tick(1);
+
+    const rows = paletteResultRows(instance.lastFrame() ?? '');
+    const sessionsColumn = descriptionStart(rowContaining(rows, '/sessions'), '/sessions');
+    const skillsColumn = descriptionStart(rowContaining(rows, '/skills'), '/skills');
+    const sessionRowColumn = descriptionStart(rowContaining(rows, feature), feature);
+
+    expect(sessionsColumn).toBe(skillsColumn);
+    expect(sessionRowColumn).toBeGreaterThan(sessionsColumn);
+    instance.unmount();
+  });
+
+  it('renders the same number of rows for an empty query and a one-match query', async () => {
+    const feature = 'zzzuniquesessionfeature';
+    const session = makeSession({
+      id: 'sess-height',
+      feature,
+      status: 'interrupted',
+      summary: null,
+    });
+    saveSummary({ projectDir, sessionId: session.id }, session);
+
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const instance = renderCommandPalette();
+    await tick(1);
+    await tick(1);
+
+    const browsing = panelHeight(instance.lastFrame() ?? '');
+    expect(paletteResultRows(instance.lastFrame() ?? '').length).toBeGreaterThan(1);
+
+    await write(instance, feature);
+    await tick(1);
+    await tick(1);
+
+    const narrowed = panelHeight(instance.lastFrame() ?? '');
+    expect(paletteResultRows(instance.lastFrame() ?? '')).toHaveLength(1);
+    expect(narrowed).toBe(browsing);
+    instance.unmount();
   });
 });

@@ -117,7 +117,7 @@ The sink handles the event types below. Other `EngineEvent` variants are no-ops 
 | Attribute | Description |
 |---|---|
 | `splitbrief.feature` | Feature description passed to SPLITBRIEF. Omitted or replaced with a transcript placeholder when `workflow.persistTranscript: false`. |
-| `splitbrief.mode` | Workflow mode: `instant`, `quick`, `standard`, or `speckit` |
+| `splitbrief.mode` | Workflow mode: `quick`, `standard`, or `speckit` |
 | `splitbrief.planner.tool` | Planner runner identifier |
 | `splitbrief.planner.model` | Planner model name (if applicable) |
 | `splitbrief.implementer.tool` | Implementer runner identifier |
@@ -147,10 +147,10 @@ The sink carries its own `Context` chain (workflow → phase → task) via `trac
 
 ### Current limitations
 
-- **No runner propagation.** Subprocess runners (`cli`, `shell`, `agent`) do not currently receive `traceparent` environment variables. In-process/network runners (`api`, `agent-sdk`) also do not receive propagated OTel context from the sink.
-- **Runner spans are not children of the workflow span.** Calls into Claude Code, local CLIs, provider HTTP APIs, or the Agent SDK appear as opaque windows inside the phase span. If a runner emits its own spans, they land in a separate trace with no parent link.
+- **No runner propagation.** Subprocess runners (`cli`, `shell`, `agent`) do not currently receive `traceparent` environment variables. Network runners (`api`) also do not receive propagated OTel context from the sink.
+- **Runner spans are not children of the workflow span.** Calls into Claude Code, local CLIs, or provider HTTP APIs appear as opaque windows inside the phase span. If a runner emits its own spans, they land in a separate trace with no parent link.
 - **Workaround.** Users who want end-to-end traces can configure their own tracer inside the subprocess (e.g. wrap a planner CLI in a script that registers a provider and honors `TRACEPARENT` manually). The `splitbrief.task.duration_ms` attribute remains accurate regardless.
-- **Planned.** Threading a `TraceContextPropagator` through the runner adapters — env var for `cli` / `shell` / `agent` kinds, request headers for `api` kinds, SDK context for `agent-sdk` — is on the roadmap.
+- **Planned.** Threading a `TraceContextPropagator` through the runner adapters — env var for `cli` / `shell` / `agent` kinds, request headers for `api` kinds — is on the roadmap.
 
 ## Design decisions
 

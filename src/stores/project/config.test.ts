@@ -8,7 +8,8 @@ import { feedbackStore } from '../ui/feedback.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { expectApi, expectCli } from '#testing/helpers/config-narrowing.js';
 import { SPLITBRIEF_DIR, TREES_DIR, CONFIG_FILE } from '../../core/paths.js';
-import { createDefaultConfig, loadConfig } from '../../core/config/load/io.js';
+import { loadConfig } from '../../core/config/load/io.js';
+import { createDefaultConfig } from '../../core/config/load/defaults.js';
 import type { Config } from '../../core/schemas/config.js';
 import { deriveConfigEdits, editsForSave } from './config-persistence.js';
 
@@ -93,11 +94,10 @@ describe('configStore.load', () => {
 
   it('applies implementer override to provider and model', () => {
     writeConfigYaml();
-    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key');
-    configStore.load(tmpDir, { implementer: { tool: 'deepseek', model: 'deepseek-r1' } });
+    configStore.load(tmpDir, { implementer: { tool: 'lm-studio', model: 'qwen3-coder-30b' } });
     const config = loadedConfig();
-    expect(expectApi(config.implementer).provider).toBe('deepseek');
-    expect(config.implementer.model).toBe('deepseek-r1');
+    expect(expectApi(config.implementer).provider).toBe('lm-studio');
+    expect(config.implementer.model).toBe('qwen3-coder-30b');
   });
 
   itUnix('prints stable loader warnings once after resolveEffectiveConfig', () => {

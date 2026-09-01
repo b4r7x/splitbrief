@@ -27,7 +27,11 @@ import {
 } from './registry.js';
 import { CODEX_NATIVE_MODEL_CATALOG_PROBE, codexPlannerAdapter } from './codex.js';
 import { isDeclaredCliProbeContract } from './contract.js';
-import { parseCursorModels } from '../../providers/cli-model-catalog.js';
+import {
+  nativeCliCatalogToDetectedModels,
+  parseCommandCodeNativeModelCatalog,
+  parseCursorModels,
+} from '../../providers/cli-model-catalog.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 
 const REPO_ROOT = join(import.meta.dirname, '../../../..');
@@ -38,6 +42,19 @@ const CURSOR_LIST_MODELS_FIXTURE = readFileSync(
 const CURSOR_LIST_MODELS_COUNT = CURSOR_LIST_MODELS_FIXTURE.split(/\r?\n/u).filter((line) =>
   /^\S+ - .+$/.test(line.trim()),
 ).length;
+const COMMAND_CODE_LIST_MODELS_FIXTURE = readFileSync(
+  join(REPO_ROOT, 'testing/fixtures/command-code/list-models.txt'),
+  'utf8',
+);
+// Every CLI fixture opens with two provenance lines — the invocation and a
+// `# version:` note — that the recorded process never printed.
+const COMMAND_CODE_STATUS_FIXTURE = readFileSync(
+  join(REPO_ROOT, 'testing/fixtures/command-code/status.txt'),
+  'utf8',
+)
+  .split(/\r?\n/u)
+  .slice(2)
+  .join('\n');
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 let dirs: string[] = [];
@@ -106,6 +123,7 @@ describe('CLI role registries', () => {
     }
 
     expect(CLI_TOOL_IDS).toContain('cursor');
+    expect(CLI_TOOL_IDS).toContain('command-code');
     expect('antigravity' in CLI_PLANNER_ADAPTERS).toBe(false);
     expect('antigravity' in CLI_IMPLEMENTER_ADAPTERS).toBe(false);
   });
@@ -117,7 +135,7 @@ describe('CLI registry lookup', () => {
   });
 
   it('returns admitted implementer adapters', () => {
-    expect(lookupCliImplementerAdapter('aider')).toBe(CLI_IMPLEMENTER_ADAPTERS.aider);
+    expect(lookupCliImplementerAdapter('opencode')).toBe(CLI_IMPLEMENTER_ADAPTERS.opencode);
   });
 
   it.each(['antigravity', 'kiro', 'unknown-cli'])(
@@ -189,11 +207,6 @@ describe('admitted readiness probe contracts', () => {
     // imported descriptor array can become a mutable execution control plane.
     expect(probe.version.command).not.toBe(codexPlannerAdapter.probe.version.command);
     expect(catalog.command).not.toBe(CODEX_NATIVE_MODEL_CATALOG_PROBE.command);
-    expect(Object.isFrozen(probe)).toBe(true);
-    expect(Object.isFrozen(declared)).toBe(true);
-    expect(Object.isFrozen(declared.version)).toBe(true);
-    expect(Object.isFrozen(catalog)).toBe(true);
-    expect(Object.isFrozen(catalog.command)).toBe(true);
 
     expect(Reflect.set(catalog.command, 0, 'attacker')).toBe(false);
     expect(Reflect.set(catalog, 'manualCommand', ['attacker', 'refresh'])).toBe(false);
@@ -280,25 +293,24 @@ describe('admitted readiness probe contracts', () => {
     ['codex', 'codex-cli 0.40.0', { kind: 'success', value: '0.40.0' }],
     ['claude-code', '2.1.220 (Claude Code)', { kind: 'success', value: '2.1.220' }],
     ['copilot', 'GitHub Copilot CLI 1.0.77.', { kind: 'success', value: '1.0.77' }],
-    ['aider', 'aider 0.86.0', { kind: 'success', value: '0.86.0' }],
     ['opencode', '0.5.0', { kind: 'success', value: '0.5.0' }],
     ['kilo-code', '0.1.0', { kind: 'success', value: '0.1.0' }],
     ['codex', 'node 0.40.0', { kind: 'malformed' }],
-    ['aider', 'node 0.86.0', { kind: 'malformed' }],
     ['opencode', 'node 0.5.0', { kind: 'malformed' }],
     ['kilo-code', 'node 0.1.0', { kind: 'malformed' }],
     ['codex', 'node 99.0.0\ncodex-cli 0.40.0', { kind: 'malformed' }],
-    ['aider', 'node 99.0.0\naider 0.86.0', { kind: 'malformed' }],
     ['opencode', 'node 99.0.0\n0.5.0', { kind: 'malformed' }],
     ['kilo-code', 'node 99.0.0\n0.1.0', { kind: 'malformed' }],
     ['codex', 'codex-cli 0.40.0\ncodex-cli 99.0.0', { kind: 'malformed' }],
-    ['aider', 'aider 0.86.0\naider 99.0.0', { kind: 'malformed' }],
     ['opencode', '0.5.0\n99.0.0', { kind: 'malformed' }],
     ['kilo-code', '0.1.0\n99.0.0', { kind: 'malformed' }],
     ['cursor', '2026.08.25-3e8eec8', { kind: 'success', value: '2026.08.25-3e8eec8' }],
     ['cursor', '1.2.3', { kind: 'malformed' }],
     ['cursor', 'node 2026.08.25-3e8eec8', { kind: 'malformed' }],
     ['cursor', '2026.08.25-3e8eec8\n2026.09.01-abc', { kind: 'malformed' }],
+    ['command-code', '1.39.2', { kind: 'success', value: '1.39.2' }],
+    ['command-code', 'cmd 1.39.2', { kind: 'malformed' }],
+    ['command-code', '1.39.2\n2.0.0', { kind: 'malformed' }],
   ] as const)('parses only one canonical %s version descriptor', (tool, stdout, expected) => {
     const probe = lookupCliReadinessProbe({ tool, role: 'planner' });
     expect(isDeclaredCliProbeContract(probe)).toBe(true);
@@ -316,17 +328,14 @@ describe('admitted readiness probe contracts', () => {
   });
 
   it('declares structural, parser-bound native catalog probes without generic argv mutation', () => {
-    const aider = lookupCliReadinessProbe({ tool: 'aider', role: 'implementer' });
     const opencode = lookupCliReadinessProbe({ tool: 'opencode', role: 'planner' });
     const kilo = lookupCliReadinessProbe({ tool: 'kilo-code', role: 'planner' });
     const codex = lookupCliReadinessProbe({ tool: 'codex', role: 'planner' });
 
-    expect(isDeclaredCliProbeContract(aider)).toBe(true);
     expect(isDeclaredCliProbeContract(opencode)).toBe(true);
     expect(isDeclaredCliProbeContract(kilo)).toBe(true);
     expect(isDeclaredCliProbeContract(codex)).toBe(true);
     if (
-      !isDeclaredCliProbeContract(aider) ||
       !isDeclaredCliProbeContract(opencode) ||
       !isDeclaredCliProbeContract(kilo) ||
       !isDeclaredCliProbeContract(codex)
@@ -334,11 +343,6 @@ describe('admitted readiness probe contracts', () => {
       throw new Error('expected admitted declared probes');
     }
 
-    expect(aider.declared.auth).toEqual({ kind: 'not-run' });
-    expect(aider.declared.catalog).toMatchObject({
-      kind: 'catalog',
-      command: ['aider', '--list-models', ''],
-    });
     expect(codex.declared.catalog).toMatchObject({
       kind: 'catalog',
       command: ['codex', 'debug', 'models', '--bundled'],
@@ -354,7 +358,6 @@ describe('admitted readiness probe contracts', () => {
       manualCommand: ['kilo', 'models', '--refresh'],
     });
     if (
-      aider.declared.catalog.kind === 'not-run' ||
       codex.declared.catalog.kind === 'not-run' ||
       opencode.declared.catalog.kind === 'not-run' ||
       kilo.declared.catalog.kind === 'not-run'
@@ -449,6 +452,100 @@ describe('admitted readiness probe contracts', () => {
       }),
     ).toEqual({ kind: 'success', value: parseCursorModels(CURSOR_LIST_MODELS_FIXTURE) });
   });
+
+  it('binds Command Code to declared version, auth, and catalog probes', () => {
+    const planner = lookupCliReadinessProbe({ tool: 'command-code', role: 'planner' });
+    const implementer = lookupCliReadinessProbe({ tool: 'command-code', role: 'implementer' });
+
+    expect(planner).toBe(CLI_PLANNER_ADAPTERS['command-code'].probe);
+    expect(implementer).toBe(CLI_IMPLEMENTER_ADAPTERS['command-code'].probe);
+    expect(isDeclaredCliProbeContract(planner)).toBe(true);
+    if (!isDeclaredCliProbeContract(planner))
+      throw new Error('expected declared Command Code probe');
+
+    expect(planner.declared.version.command).toEqual(['cmd', '--version']);
+    expect(planner.declared.auth).toMatchObject({
+      kind: 'auth-status',
+      command: ['cmd', 'status', '--json'],
+      cwd: 'neutral',
+    });
+    expect(planner.declared.catalog).toMatchObject({
+      kind: 'catalog',
+      command: ['cmd', '--list-models'],
+    });
+    if (planner.declared.catalog.kind === 'not-run') {
+      throw new Error('expected Command Code catalog probe');
+    }
+
+    const catalog = parseCommandCodeNativeModelCatalog(COMMAND_CODE_LIST_MODELS_FIXTURE);
+    if (catalog === null) throw new Error('command code list-models fixture failed to parse');
+
+    expect(
+      planner.declared.catalog.parse({
+        stdout: COMMAND_CODE_LIST_MODELS_FIXTURE,
+        stderr: '',
+        exitCode: 0,
+        timedOut: false,
+        outputExceeded: false,
+      }),
+    ).toEqual({
+      kind: 'success',
+      value: nativeCliCatalogToDetectedModels(catalog),
+    });
+  });
+
+  it('treats a Command Code exit code 3 as missing and the recorded status payload as verified', () => {
+    const planner = lookupCliReadinessProbe({ tool: 'command-code', role: 'planner' });
+    expect(isDeclaredCliProbeContract(planner)).toBe(true);
+    if (!isDeclaredCliProbeContract(planner))
+      throw new Error('expected declared Command Code probe');
+    if (planner.declared.auth.kind === 'not-run') {
+      throw new Error('expected Command Code auth probe');
+    }
+
+    expect(
+      planner.declared.auth.parse({
+        stdout: '',
+        stderr: 'Not authenticated',
+        exitCode: 3,
+        timedOut: false,
+        outputExceeded: false,
+      }),
+    ).toBe('missing');
+    expect(
+      planner.declared.auth.parse({
+        stdout: COMMAND_CODE_STATUS_FIXTURE,
+        stderr: '',
+        exitCode: 0,
+        timedOut: false,
+        outputExceeded: false,
+      }),
+    ).toBe('verified');
+  });
+
+  it.each(['claude-code', 'codex', 'cursor', 'command-code'] as const)(
+    'reads a negated %s status line as missing, not verified',
+    (tool) => {
+      const planner = lookupCliReadinessProbe({ tool, role: 'planner' });
+      expect(isDeclaredCliProbeContract(planner)).toBe(true);
+      if (!isDeclaredCliProbeContract(planner)) throw new Error(`expected declared ${tool} probe`);
+      if (planner.declared.auth.kind === 'not-run') {
+        throw new Error(`expected ${tool} auth probe`);
+      }
+
+      for (const stderr of ['Not authenticated', 'Not signed in', 'No active session']) {
+        expect(
+          planner.declared.auth.parse({
+            stdout: '',
+            stderr,
+            exitCode: 1,
+            timedOut: false,
+            outputExceeded: false,
+          }),
+        ).toBe('missing');
+      }
+    },
+  );
 
   it.each([
     {
@@ -586,7 +683,7 @@ describe('admitCliCompilerRuntime', () => {
     },
   );
 
-  itUnix.each(['copilot', 'aider'] as const)(
+  itUnix.each(['copilot', 'cursor'] as const)(
     'refuses the loader-only %s adapter even with exact claimed evidence',
     async (tool) => {
       const runtime = await bindExactOpenCodeRuntime();

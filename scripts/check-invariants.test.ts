@@ -3,13 +3,9 @@ import { execSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  getInvariantGates,
-  runInvariantGates,
-  scanT065Invariants,
-  T065_RULES,
-  type Gate,
-} from './check-invariants.js';
+import { runInvariantGates } from './check-invariants.js';
+import { getInvariantGates, type Gate } from './invariants/gates.js';
+import { T065_RULES } from './invariants/t065-scan.js';
 
 function captureLog(): { lines: string[]; log: (line?: string) => void } {
   const lines: string[] = [];
@@ -340,31 +336,6 @@ describe('check-invariants', () => {
     }
   });
 
-  it('reports the exact source path and line for a direct state-writer violation', () => {
-    const root = mkdtempSync(join(tmpdir(), 'splitbrief-t065-'));
-    try {
-      const path = join(root, 'cli', 'bad.ts');
-      mkdirSync(join(root, 'cli'), { recursive: true });
-      writeFileSync(
-        path,
-        "import { saveState } from '../core/state/persistence.js';\nsaveState(ref, state);\n",
-      );
-
-      const findings = scanT065Invariants(root, 'direct-state');
-
-      expect(findings).toHaveLength(2);
-      expect(findings[0]).toEqual(
-        expect.objectContaining({
-          rule: 'direct-state',
-          path: expect.stringContaining('cli/bad.ts'),
-          line: 1,
-        }),
-      );
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
   it('fails a T-065 gate on a synthetic path instead of hiding its diagnostic', () => {
     const root = mkdtempSync(join(tmpdir(), 'splitbrief-t065-gate-'));
     try {
@@ -388,58 +359,5 @@ describe('check-invariants', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
-
-  it('classifies owner hydration and rejects an unclassified loadState path', () => {
-    const root = mkdtempSync(join(tmpdir(), 'splitbrief-t065-hydration-'));
-    try {
-      mkdirSync(join(root, 'app'), { recursive: true });
-      mkdirSync(join(root, 'misc'), { recursive: true });
-      writeFileSync(
-        join(root, 'app', 'prepare-resume.ts'),
-        "import { loadState } from '../core/state/persistence.js';\nexport const resume = () => loadState(ref);\n",
-      );
-      writeFileSync(
-        join(root, 'misc', 'reader.ts'),
-        "import { loadState } from '../core/state/persistence.js';\nexport const read = () => loadState(ref);\n",
-      );
-
-      const findings = scanT065Invariants(root, 'hydration');
-
-      expect(findings.map((finding) => finding.path)).toEqual([
-        expect.stringContaining('app/prepare-resume.ts'),
-        expect.stringContaining('app/prepare-resume.ts'),
-        expect.stringContaining('misc/reader.ts'),
-      ]);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it('rejects a recovery marker that can re-enter review without the guard fields', () => {
-    const root = mkdtempSync(join(tmpdir(), 'splitbrief-t065-marker-'));
-    try {
-      const path = join(root, 'engine', 'bad.ts');
-      mkdirSync(join(root, 'engine'), { recursive: true });
-      writeFileSync(
-        path,
-        "const marker = { briefRecovery: true, operationId: 'op-1' };\nplanner.review(prompt);\n",
-      );
-
-      const findings = scanT065Invariants(root, 'recovery-marker');
-
-      expect(findings).toEqual([
-        expect.objectContaining({ path: expect.stringContaining('engine/bad.ts'), line: 1 }),
-        expect.objectContaining({ path: expect.stringContaining('engine/bad.ts'), line: 2 }),
-      ]);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it('fails closed when the T-065 source root is missing', () => {
-    expect(() => scanT065Invariants('/tmp/splitbrief-t065-does-not-exist')).toThrow(
-      'T-065 source root does not exist',
-    );
   });
 });

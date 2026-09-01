@@ -27,6 +27,7 @@ src/
 │   ├── layout.tsx                           # structural shell (header + body + footer)
 │   ├── keys.ts                              # app-wide keyboard dispatch (useAppKeys)
 │   ├── command-context.ts                   # runtime-command wiring (useRuntimeCommands)
+│   ├── refresh-skills.ts                    # helper: re-run skill discovery when the skills overlay opens
 │   ├── screens/                             # FLAT page entries: home, workflow, summary, setup
 │   └── overlays/                            # FLAT pages: help, palette, skills, sessions, settings, runners, editor
 ├── cli/                                     # CLI subcommand handlers
@@ -172,7 +173,8 @@ src/engine/codebase/
 
 ```
 src/core/hooks/
-└── trust.ts           # hook config + module file digest trust hash; compared against the owner's receipt in ~/.splitbrief/trust/hooks.json
+├── trust.ts           # the trust grant: receipt schema, lookup and persistence against the owner's store in ~/.splitbrief/trust/hooks.json
+└── trust-digest.ts    # hashHooksConfig — hook config + module import graph + command script digests
 ```
 
 ### `src/core/tokens/` — token math
@@ -186,13 +188,19 @@ src/core/tokens/
 
 ```
 src/core/runtime/commands/
-├── registry.ts        # createRuntimeCommands(ctx) and phase guards
+├── defs/              # the command definitions, one module per category
+│   ├── navigate.ts    # navigateCommands(ctx)
+│   ├── crew.ts        # crewCommands(ctx)
+│   ├── workflow.ts    # workflowCommands(ctx)
+│   ├── view.ts        # viewCommands(ctx)
+│   └── io.ts          # ioCommands(ctx)
+├── registry.ts        # createRuntimeCommands(ctx): concatenates defs/, filters for attached clients
 ├── dispatch.ts        # parses /name args, validates screen/phase, executes
 ├── lookup.ts          # exact, alias, and fuzzy command lookup
 └── types.ts           # RuntimeCommandDef, RuntimeCommandContext, CommandPaletteItem
 ```
 
-These are runtime commands, not a slash-only subsystem: the same registry backs composer `/` input, the command palette, and RPC command dispatch. Colocated tests include `dispatch.test.ts`, `lookup.test.ts`, and split `registry-*.test.ts` suites (for example `registry-configuration.test.ts`, `registry-recovery.test.ts`, `registry-conversation.test.ts`) covering the phase / screen / arg matrix.
+These are runtime commands, not a slash-only subsystem: the same registry backs composer `/` input, the command palette, and RPC command dispatch. `defs/` is split by `category`, and `registry.ts` concatenates the five modules in `COMMAND_CATEGORIES` order — the order `/help` and the palette already render. Colocated tests include `dispatch.test.ts`, `lookup.test.ts`, and split `registry-*.test.ts` suites (for example `registry-configuration.test.ts`, `registry-recovery.test.ts`, `registry-conversation.test.ts`) covering the phase / screen / arg matrix.
 
 ### `src/core/sessions/` — session domain
 
@@ -391,6 +399,8 @@ The `src/app/` shell is the composition layer. It has two parts:
 
 - **Shell modules** — `app/root.tsx` (composition root), `app/router.tsx` (dispatch), `app/provider.tsx` (`AppProvider`, today only `<ThemeProvider>`), `app/layout.tsx` (header + body + footer), `app/keys.ts` (`useAppKeys`), `app/command-context.ts` (`useRuntimeCommands`).
 - **FLAT pages** — one file per surface under `app/screens/` (full screens) and `app/overlays/` (overlays). Each page is the surface's entry point and *composes* its feature's internals.
+
+`app/refresh-skills.ts` is a plain helper, not a shell module: it re-runs `discoverSkills(projectDir)` into `skillsStore` and is called from the two sites that open the skills overlay (`app/keys.ts` for `Ctrl+S`, `app/command-context.ts` for the `/skills` command's `refreshSkills` port). The page→shell guard does not cover it, so a page may import it.
 
 `app/root.tsx` is the composition root: it reads `routerStore`/`overlayStore`/`lifecycleStore`, wires runtime commands via `useRuntimeCommands()` (`app/command-context.ts`) and app-wide keys via `useAppKeys()` (`app/keys.ts`), and renders `<AppProvider>` wrapping `<Router/>`.
 

@@ -541,6 +541,9 @@ describe('spawnAndCollect', () => {
       args: ['-e', 'console.log("line1"); console.log("line2")'],
       cwd: '.',
       notFoundMessage: 'node not found',
+      // Ambient credentials would redact any parsed text that prefixes one, so
+      // an exact-text assertion states its own redaction inputs.
+      credentialValues: [],
       parseLine: (line) => {
         if (line.includes('line1'))
           return { text: 'a', usage: { inputTokens: 10, outputTokens: 5 } };

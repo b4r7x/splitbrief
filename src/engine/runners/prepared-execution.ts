@@ -29,7 +29,6 @@ type RunnerGateBase = Readonly<{
 export type RunnerGate =
   | (RunnerGateBase & Readonly<{ kind: 'cli'; tool: CliToolId; executable: CliExecutableReceipt }>)
   | (RunnerGateBase & Readonly<{ kind: 'api'; provider: string; endpointOrigin: string }>)
-  | (RunnerGateBase & Readonly<{ kind: 'agent-sdk'; provider: 'anthropic' }>)
   | (RunnerGateBase & Readonly<{ kind: 'shell'; command: CommandGate }>)
   | (RunnerGateBase & Readonly<{ kind: 'agent'; command: CommandGate }>);
 
@@ -43,7 +42,6 @@ export type CommandGateExpectation =
 export type RunnerGateExpectation =
   | (RunnerGateBase & Readonly<{ kind: 'cli'; tool: CliToolId }>)
   | (RunnerGateBase & Readonly<{ kind: 'api'; provider: string; endpointOrigin: string }>)
-  | (RunnerGateBase & Readonly<{ kind: 'agent-sdk'; provider: 'anthropic' }>)
   | (RunnerGateBase & Readonly<{ kind: 'shell'; command: CommandGateExpectation }>)
   | (RunnerGateBase & Readonly<{ kind: 'agent'; command: CommandGateExpectation }>);
 

@@ -11,11 +11,9 @@ import type { SettingDef } from '../../../core/settings/catalog.js';
 import { buildSettingsItems, type SettingsItem } from '../items.js';
 import { hintFor, useSettingsEditor, type CrewSettingsItem } from './editor.js';
 
-const O3_PLANNER = {
-  kind: 'api',
-  provider: 'openai',
-  model: 'o3',
-  apiBase: 'https://api.openai.com/v1',
+const CLI_PLANNER = {
+  kind: 'cli',
+  tool: 'claude-code',
 } as const;
 
 function crewItems(config: Config): SettingsItem[] {
@@ -48,6 +46,11 @@ function plannerEffort(): unknown {
   return planner && 'effort' in planner ? planner.effort : undefined;
 }
 
+function implementerVariant(): unknown {
+  const implementer = configStore.get().config?.implementer;
+  return implementer && 'variant' in implementer ? implementer.variant : undefined;
+}
+
 let projectDir = '';
 
 function seed(config: Config): void {
@@ -66,7 +69,7 @@ describe('useSettingsEditor', () => {
   });
 
   it('hands a crew row to the injected activation handler on Enter', async () => {
-    const config = makeConfig({ planner: O3_PLANNER });
+    const config = makeConfig({ planner: CLI_PLANNER });
     seed(config);
     const items = crewItems(config);
     const activated: CrewSettingsItem[] = [];
@@ -83,7 +86,7 @@ describe('useSettingsEditor', () => {
   });
 
   it('cycles an editable effort row through every level and back to unset', async () => {
-    const config = makeConfig({ planner: O3_PLANNER });
+    const config = makeConfig({ planner: CLI_PLANNER });
     seed(config);
     const items = crewItems(config);
 
@@ -108,7 +111,7 @@ describe('useSettingsEditor', () => {
   });
 
   it('leaves the config untouched when space lands on an inherited effort row', async () => {
-    const config = makeConfig({ planner: { ...O3_PLANNER, effort: 'high' } });
+    const config = makeConfig({ planner: { ...CLI_PLANNER, effort: 'high' } });
     seed(config);
     const items = crewItems(config);
     const before = JSON.stringify(configStore.get().config);
@@ -126,7 +129,72 @@ describe('useSettingsEditor', () => {
 
   it('leaves the config untouched when space lands on an undeliverable effort row', async () => {
     const config = makeConfig({
-      implementer: { kind: 'cli', tool: 'opencode' },
+      implementer: { kind: 'cli', tool: 'codex' },
+    });
+    seed(config);
+    const items = crewItems(config);
+    const before = JSON.stringify(configStore.get().config);
+
+    const ui = renderFeature(
+      createElement(Harness, { config, items, initialKey: 'effort:build', activated: [] }),
+    );
+    await flushEffects();
+    ui.stdin.write(' ');
+    await tick(30);
+
+    expect(JSON.stringify(configStore.get().config)).toBe(before);
+    ui.unmount();
+  });
+
+  it("cycles an opencode build seat through its provider's verbatim variant ladder", async () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6-luna' },
+    });
+    seed(config);
+    const items = crewItems(config);
+
+    const ui = renderFeature(
+      createElement(Harness, { config, items, initialKey: 'effort:build', activated: [] }),
+    );
+    await flushEffects();
+    expect(implementerVariant()).toBeUndefined();
+
+    const seen: unknown[] = [];
+    for (let press = 0; press < 7; press++) {
+      const previous = implementerVariant();
+      ui.stdin.write(' ');
+      for (let poll = 0; poll < 50 && implementerVariant() === previous; poll++) await tick(10);
+      seen.push(implementerVariant());
+    }
+
+    expect(seen).toEqual(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', undefined]);
+    const implementer = configStore.get().config?.implementer;
+    expect(implementer && 'variant' in implementer).toBe(false);
+    ui.unmount();
+  });
+
+  it('leaves an opencode seat alone when its provider offers no variants', async () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'opencode', model: 'opencode-go/gpt-5.6-luna' },
+    });
+    seed(config);
+    const items = crewItems(config);
+    const before = JSON.stringify(configStore.get().config);
+
+    const ui = renderFeature(
+      createElement(Harness, { config, items, initialKey: 'effort:build', activated: [] }),
+    );
+    await flushEffects();
+    ui.stdin.write(' ');
+    await tick(30);
+
+    expect(JSON.stringify(configStore.get().config)).toBe(before);
+    ui.unmount();
+  });
+
+  it("leaves a cursor seat's effort row read-only", async () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'cursor', model: 'gpt-5.6-luna-high' },
     });
     seed(config);
     const items = crewItems(config);
@@ -159,8 +227,39 @@ describe('hintFor', () => {
   });
 
   it('advertises Enter on a seat row', () => {
-    const config = makeConfig({ planner: O3_PLANNER });
+    const config = makeConfig({ planner: CLI_PLANNER });
     const seat = crewItems(config)[0];
     expect(seat && hintFor(seat)).toContain('⏎');
+  });
+
+  function buildEffortHint(config: Config): string {
+    const row = crewItems(config).find((item) => item.key === 'effort:build');
+    if (row === undefined) throw new Error('no build effort row');
+    return hintFor(row);
+  }
+
+  // Space is inert wherever the provider spells no presets, so the row must not
+  // promise it: the cycle stops at the vocabulary, not at the channel.
+  it('promises no cycle on a variant seat whose provider spells no presets', () => {
+    expect(
+      buildEffortHint(makeConfig({ implementer: { kind: 'cli', tool: 'opencode' } })),
+    ).not.toContain('space cycle');
+    expect(
+      buildEffortHint(
+        makeConfig({
+          implementer: { kind: 'cli', tool: 'opencode', model: 'opencode-go/gpt-5.6-luna' },
+        }),
+      ),
+    ).not.toContain('space cycle');
+  });
+
+  it('promises the cycle on a variant seat whose provider spells presets', () => {
+    expect(
+      buildEffortHint(
+        makeConfig({
+          implementer: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6-luna' },
+        }),
+      ),
+    ).toContain('space cycle');
   });
 });

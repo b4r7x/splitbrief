@@ -13,17 +13,11 @@ describe('makeConfig', () => {
 
   it('adds catalog identity to API runner and profile fixtures', () => {
     const config = makeConfig({
-      planner: {
-        kind: 'api',
-        provider: 'anthropic',
-        model: 'claude-sonnet-4-6',
-        apiBase: 'https://api.anthropic.com/v1',
-      },
       implementer: {
         kind: 'api',
-        provider: 'openrouter',
-        model: 'qwen/qwen3-coder',
-        apiBase: 'https://openrouter.ai/api/v1',
+        provider: 'lm-studio',
+        model: 'qwen3-coder-30b',
+        apiBase: 'http://localhost:1234/v1',
       },
       implementerProfiles: {
         profiles: {
@@ -37,8 +31,7 @@ describe('makeConfig', () => {
       },
     });
 
-    expect(config.planner).toMatchObject({ service: 'anthropic', offering: 'payg' });
-    expect(config.implementer).toMatchObject({ service: 'openrouter', offering: 'payg' });
+    expect(config.implementer).toMatchObject({ service: 'lm-studio', offering: 'local' });
     expect(config.implementerProfiles?.profiles.local).toMatchObject({
       service: 'ollama',
       offering: 'local',
@@ -49,16 +42,16 @@ describe('makeConfig', () => {
     const config = makeConfig({
       reviewer: {
         kind: 'api',
-        provider: 'anthropic',
+        provider: 'custom-endpoint',
         model: 'claude-sonnet-4-6',
-        apiBase: 'https://api.anthropic.com/v1',
+        apiBase: 'https://api.example.test/v1',
       },
     });
 
     expect(config.reviewer).toMatchObject({
       kind: 'api',
-      provider: 'anthropic',
-      service: 'anthropic',
+      provider: 'custom-endpoint',
+      service: 'custom-endpoint',
       offering: 'payg',
     });
     expect(makeConfig().reviewer).toBeUndefined();

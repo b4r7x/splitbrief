@@ -1,6 +1,6 @@
 import { Box } from 'ink';
 import type { ReactElement } from 'react';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
@@ -19,6 +19,20 @@ import { CrewRowView, CrewSpine, CrewVerdictLine } from './row-view.js';
 
 /** The label column starts here: cursor gutter (2) plus the rail glyph and its gap (2). */
 const LABEL_COLUMN = 4;
+
+/** A dimmed row drops the bold on its label, so the styling has to survive the frame. */
+const originalForceColor = vi.hoisted(() => {
+  const saved = process.env['FORCE_COLOR'];
+  process.env['FORCE_COLOR'] = '3';
+  return saved;
+});
+
+afterAll(() => {
+  if (originalForceColor === undefined) delete process.env['FORCE_COLOR'];
+  else process.env['FORCE_COLOR'] = originalForceColor;
+});
+
+const BOLD_OPEN = '\u001b[1m';
 
 type BlockProps = Readonly<{ config: Config; width: number; cursor?: CrewRowKey }>;
 
@@ -49,6 +63,14 @@ async function linesFor(props: BlockProps): Promise<string[]> {
   const frame = stripAnsiStyles(ui.lastFrame() ?? '');
   ui.unmount();
   return frame.split('\n').filter((line) => line.trim() !== '');
+}
+
+async function rawLinesFor(props: BlockProps): Promise<string[]> {
+  const ui = renderFeature(<CrewBlock {...props} />, { cols: 120, rows: 40 });
+  await flushEffects();
+  const frame = ui.lastFrame() ?? '';
+  ui.unmount();
+  return frame.split('\n');
 }
 
 async function firstLineOf(node: ReactElement): Promise<string> {
@@ -120,6 +142,27 @@ describe('crew row view', () => {
     for (const line of lines) {
       expect(line.slice(LABEL_COLUMN, LABEL_COLUMN + CREW_LABEL_WIDTH).trim()).not.toBe('');
     }
+  });
+
+  it('no longer dims the effort row of a seat that has a real channel', async () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'openai/gpt-5.6-luna',
+        variant: 'xhigh',
+      },
+    });
+    const effort = lineWith(await rawLinesFor({ config, width: 78 }), 'xhigh');
+
+    expect(effort).toContain(BOLD_OPEN);
+  });
+
+  it('still dims the effort row of a seat with no effort channel', async () => {
+    const config = makeConfig({ implementer: { kind: 'cli', tool: 'codex' } });
+    const effort = lineWith(await rawLinesFor({ config, width: 78 }), 'n/a');
+
+    expect(effort).not.toContain(BOLD_OPEN);
   });
 
   it('hangs the verdict line off the same rail column as the spine', async () => {

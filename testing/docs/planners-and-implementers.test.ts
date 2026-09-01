@@ -139,6 +139,15 @@ describe('canonical CLI runner matrix docs', () => {
     }
   });
 
+  it('documents Command Code without a credential environment variable', () => {
+    const posture = postureSection();
+    const row = posture.split('\n').find((line) => line.startsWith('| `command-code` |'));
+
+    expect(row, 'missing posture row for command-code').toBeDefined();
+    expect(row?.trimEnd().endsWith('| — |')).toBe(true);
+    expect(DOC).not.toMatch(/COMMAND.?CODE.*_API_KEY/i);
+  });
+
   it('documents every CLI readiness state and check ID pattern', () => {
     const readiness = sectionBetween('##### Readiness states', '##### Minimal configuration');
 

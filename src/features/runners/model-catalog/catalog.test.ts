@@ -7,7 +7,7 @@ import { buildRightModels, countModelOptions, resolveAndSort } from './catalog.j
 import type { PickerOption } from './options.js';
 import { deriveModelCatalogCapability } from './posture.js';
 import type { ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
-import { runnerRoleForActiveRole } from '../../../core/runners/cli-tool-catalog.js';
+import { runnerRoleForActiveRole } from '../../../core/runners/seat-roles.js';
 
 function pickerItem(
   item: Omit<PickerOption, 'modelCapability'> & { modelPolicy: PickerOption['modelPolicy'] },
@@ -56,7 +56,7 @@ describe('right column models', () => {
       getModelsDevCatalog: () => null,
       getProviderModels: () => null,
       getScopedProviderRuntime: () => ({
-        connection: { role: 'planner', provider: 'openai', contextKey: 'planner-context' },
+        connection: { role: 'implementer', provider: 'ollama', contextKey: 'implementer-context' },
         state: 'stale',
         catalog: 'populated',
         models: [{ id: 'last-confirmed-model' }],
@@ -67,7 +67,7 @@ describe('right column models', () => {
       }),
     };
 
-    const models = resolveAndSort('openai', 'planner', cache);
+    const models = resolveAndSort('ollama', 'implementer', cache);
 
     expect(models.find((model) => model.id === 'last-confirmed-model')).toMatchObject({
       membership: 'stale',
@@ -102,8 +102,8 @@ describe('right column models', () => {
           : null,
     };
     const currentItem = pickerItem({
-      id: 'openai',
-      displayName: 'OpenAI',
+      id: 'ollama',
+      displayName: 'Ollama',
       kind: 'api',
       roles: ['planner', 'implementer'],
       modelPolicy: 'per-call',
@@ -133,38 +133,10 @@ describe('right column models', () => {
     ).toEqual({ confirmed: 1, stale: 2, suggestions: 1, bundled: 1, custom: 2 });
   });
 
-  it('exposes bundled Agent SDK models for implementers', () => {
-    const models = buildRightModels({
-      role: 'implementer',
-      customModels: [],
-      currentItem: pickerItem({
-        id: 'agent-sdk',
-        displayName: 'Agent SDK',
-        kind: 'agent-sdk',
-        roles: ['planner', 'implementer'],
-        modelPolicy: 'per-call',
-        billing: 'api-metered',
-        permissions: {
-          directWrite: true,
-          network: true,
-          shell: true,
-          automaticApproval: false,
-          sandbox: 'none',
-        },
-        status: { state: 'ready', remediation: null },
-        available: true,
-      }),
-    });
-
-    expect(models.map((model) => model.id)).toEqual(
-      expect.arrayContaining(['claude-sonnet-5', 'claude-opus-5']),
-    );
-  });
-
   it('keeps buildRightModels deterministic unless a cache is passed', () => {
     const currentItem = pickerItem({
-      id: 'openai',
-      displayName: 'OpenAI',
+      id: 'ollama',
+      displayName: 'Ollama',
       kind: 'api' as const,
       roles: ['planner', 'implementer'] as const,
       modelPolicy: 'per-call' as const,
@@ -369,8 +341,8 @@ describe('auto is a selection policy, never catalog data', () => {
       customModels: [],
       currentItem: pickerItem(
         {
-          id: 'anthropic',
-          displayName: 'Anthropic',
+          id: 'ollama',
+          displayName: 'Ollama',
           kind: 'api',
           roles: ['planner', 'implementer'],
           modelPolicy: 'per-call',
@@ -500,12 +472,199 @@ describe('runtime recommendation quality', () => {
   });
 });
 
-describe('toModelOption displayName precedence', () => {
-  it('carries displayName and prefers provider runtime name over models.dev catalog name', () => {
+describe('one authoritative row per model', () => {
+  function ollamaRuntime(models: readonly { id: string }[]) {
+    return {
+      connection: {
+        role: 'implementer',
+        provider: 'ollama',
+        contextKey: 'implementer-context',
+      },
+      state: 'fresh',
+      catalog: 'populated',
+      models,
+      fetchedAt: 1,
+      validatedAt: 2,
+    } as const;
+  }
+
+  it('renders one row when models.dev spells a confirmed model with a :free suffix', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => ({
+        ollama: {
+          id: 'ollama',
+          models: {
+            'deepseek-v4-flash:free': { id: 'deepseek-v4-flash:free', name: 'DeepSeek V4 Flash' },
+          },
+        },
+      }),
+      getProviderModels: () => null,
+      getScopedProviderRuntime: () => ollamaRuntime([{ id: 'deepseek-v4-flash' }]),
+    };
+
+    expect(resolveAndSort('ollama', 'implementer', cache).map((model) => model.id)).toEqual([
+      'deepseek-v4-flash',
+    ]);
+  });
+
+  it('keeps two provider routes of one model as separate rows before the provider merge', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => null,
+      getScopedProviderRuntime: () =>
+        ollamaRuntime([{ id: 'openai/gpt-5.6-luna' }, { id: 'opencode-go/gpt-5.6-luna' }]),
+    };
+
+    expect(resolveAndSort('ollama', 'implementer', cache).map((model) => model.id)).toEqual([
+      'openai/gpt-5.6-luna',
+      'opencode-go/gpt-5.6-luna',
+    ]);
+  });
+
+  it('keeps a provider-qualified route beside the shorter route it suffixes', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => null,
+      getScopedCliCatalogRuntime: () => ({
+        connection: { role: 'planner', tool: 'opencode', contextKey: 'routes-test' },
+        state: 'fresh',
+        models: [
+          { id: 'anthropic/claude-sonnet-5' },
+          { id: 'openrouter/anthropic/claude-sonnet-5' },
+          { id: 'openai/gpt-5.6-luna' },
+        ],
+        fetchedAt: 1,
+        validatedAt: 2,
+      }),
+    };
+
+    expect(resolveAndSort('opencode', 'planner', cache).map((model) => model.id)).toEqual([
+      'anthropic/claude-sonnet-5',
+      'openrouter/anthropic/claude-sonnet-5',
+      'openai/gpt-5.6-luna',
+    ]);
+  });
+
+  it('renders the claude-code aliases in their documented order', () => {
     const cache: ModelCacheAccessor = {
       getModelsDevCatalog: () => ({
         anthropic: {
           id: 'anthropic',
+          models: {
+            'claude-opus-5': { id: 'claude-opus-5', release_date: '2026-04-01' },
+            'claude-sonnet-5': { id: 'claude-sonnet-5', release_date: '2026-03-01' },
+            'claude-fable-5': { id: 'claude-fable-5', release_date: '2026-05-01' },
+            'claude-haiku-4-5': { id: 'claude-haiku-4-5', release_date: '2026-01-01' },
+          },
+        },
+      }),
+      getProviderModels: () => null,
+    };
+
+    expect(resolveAndSort('claude-code', 'planner', cache).map((model) => model.id)).toEqual([
+      'default',
+      'best',
+      'fable',
+      'opus',
+      'sonnet',
+      'haiku',
+      'opusplan',
+      'sonnet[1m]',
+      'opus[1m]',
+    ]);
+  });
+
+  it('carries the native order of a confirmed row into the picker option', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => null,
+      getScopedProviderRuntime: () => ollamaRuntime([{ id: 'zeta-model' }, { id: 'alpha-model' }]),
+    };
+
+    expect(
+      resolveAndSort('ollama', 'implementer', cache).map((model) => ({
+        id: model.id,
+        nativeOrder: model.nativeOrder,
+      })),
+    ).toEqual([
+      { id: 'zeta-model', nativeOrder: 0 },
+      { id: 'alpha-model', nativeOrder: 1 },
+    ]);
+  });
+});
+
+describe('the configured model that the list does not contain', () => {
+  it('marks the configured model absent from the list as a recovery row', () => {
+    const models = buildRightModels({
+      role: 'planner',
+      customModels: ['some-unlisted-id'],
+      currentItem: { ...cliItem('codex', 'optional'), isCurrent: true },
+      persistedModel: 'some-unlisted-id',
+    });
+
+    expect(models.find((model) => model.id === 'some-unlisted-id')).toMatchObject({
+      isRecovery: true,
+      isCustom: true,
+    });
+  });
+
+  it('recovers nothing onto a tool the cursor is only browsing', () => {
+    const models = buildRightModels({
+      role: 'planner',
+      customModels: [],
+      currentItem: cliItem('opencode', 'optional'),
+      persistedModel: 'gpt-5.6-sol',
+      cache: {
+        getModelsDevCatalog: () => null,
+        getProviderModels: () => null,
+        getScopedCliCatalogRuntime: () => ({
+          connection: { role: 'planner', tool: 'opencode', contextKey: 'browsing-test' },
+          state: 'fresh',
+          models: [{ id: 'anthropic/claude-sonnet-5' }],
+          fetchedAt: 1,
+          validatedAt: 2,
+        }),
+      },
+    });
+
+    expect(models.some((model) => model.isRecovery === true)).toBe(false);
+    expect(models.map((model) => model.id)).not.toContain('gpt-5.6-sol');
+  });
+
+  it('reopens the catalog rows when browseCatalog is set', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => ({
+        openai: {
+          id: 'openai',
+          name: 'OpenAI',
+          models: { 'gpt-4o': { id: 'gpt-4o', name: 'GPT-4o' } },
+        },
+      }),
+      getProviderModels: () => null,
+      getScopedCliCatalogRuntime: () => ({
+        connection: { role: 'planner', tool: 'codex', contextKey: 'browse-test' },
+        state: 'fresh',
+        models: [{ id: 'gpt-5-codex' }],
+        fetchedAt: 1,
+        validatedAt: 2,
+      }),
+    };
+
+    expect(resolveAndSort('codex', 'planner', cache).map((model) => model.id)).toEqual([
+      'gpt-5-codex',
+    ]);
+    expect(
+      resolveAndSort('codex', 'planner', cache, { browseCatalog: true }).map((model) => model.id),
+    ).toContain('gpt-4o');
+  });
+});
+
+describe('toModelOption displayName precedence', () => {
+  it('carries displayName and prefers provider runtime name over models.dev catalog name', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => ({
+        ollama: {
+          id: 'ollama',
           models: {
             'claude-sonnet-4-6': {
               id: 'claude-sonnet-4-6',
@@ -516,7 +675,7 @@ describe('toModelOption displayName precedence', () => {
       }),
       getProviderModels: () => null,
       getScopedProviderRuntime: () => ({
-        connection: { role: 'planner', provider: 'anthropic', contextKey: 'planner-context' },
+        connection: { role: 'implementer', provider: 'ollama', contextKey: 'implementer-context' },
         state: 'fresh',
         catalog: 'populated',
         models: [{ id: 'claude-sonnet-4-6', displayName: 'Provider Sonnet' }],
@@ -525,7 +684,7 @@ describe('toModelOption displayName precedence', () => {
       }),
     };
 
-    const models = resolveAndSort('anthropic', 'planner', cache);
+    const models = resolveAndSort('ollama', 'implementer', cache);
     const sonnet = models.find((m) => m.id === 'claude-sonnet-4-6');
     expect(sonnet?.displayName).toBe('Provider Sonnet');
   });
@@ -533,8 +692,8 @@ describe('toModelOption displayName precedence', () => {
   it('uses models.dev name when provider has no runtime display name', () => {
     const cache: ModelCacheAccessor = {
       getModelsDevCatalog: () => ({
-        anthropic: {
-          id: 'anthropic',
+        ollama: {
+          id: 'ollama',
           models: {
             'claude-sonnet-4-6': {
               id: 'claude-sonnet-4-6',
@@ -545,7 +704,7 @@ describe('toModelOption displayName precedence', () => {
       }),
       getProviderModels: () => null,
       getScopedProviderRuntime: () => ({
-        connection: { role: 'planner', provider: 'anthropic', contextKey: 'planner-context' },
+        connection: { role: 'implementer', provider: 'ollama', contextKey: 'implementer-context' },
         state: 'fresh',
         catalog: 'populated',
         models: [{ id: 'claude-sonnet-4-6' }],
@@ -554,7 +713,7 @@ describe('toModelOption displayName precedence', () => {
       }),
     };
 
-    const models = resolveAndSort('anthropic', 'planner', cache);
+    const models = resolveAndSort('ollama', 'implementer', cache);
     const sonnet = models.find((m) => m.id === 'claude-sonnet-4-6');
     expect(sonnet?.displayName).toBe('ModelsDev Sonnet');
   });

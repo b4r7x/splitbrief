@@ -31,7 +31,7 @@ interface OpenSession {
 export type EditorSessionState = { status: 'closed' } | (OpenSession & EditorState);
 
 // Owner token of a live field-editor session, or null when none is open. The single
-// ownership predicate (mount ≡ input-suppression ≡ keys ≡ write-gate, CON-B) compares
+// ownership predicate (mount ≡ input-suppression ≡ keys ≡ write-gate) compares
 // this against reviewStore.ownerToken.
 export function fieldSessionOwnerToken(s: EditorSessionState): number | null {
   return s.status === 'open' && s.surface === 'field' ? s.ownerToken : null;
@@ -72,15 +72,15 @@ export const editorStore = {
       if (s.layout.columns === layout.columns && s.layout.rows === layout.rows) return s;
       // A resize/reflow re-wraps the document at the new width, which can push the caret's visual
       // row outside the stale scroll window. Re-follow the caret against the NEW layout so it stays
-      // visible immediately, without a mis-placed caret persisting until the next keystroke (REQ-033
-      // / REQ-029). Wheel scroll-away (REQ-030) is unaffected: it flows through scrollBy, not here.
+      // visible immediately, without a mis-placed caret persisting until the next keystroke. Wheel
+      // scroll-away is unaffected: it flows through scrollBy, not here.
       return { ...s, ...followCaretScroll(s, layout), layout };
     }),
   scrollBy: (delta: number) =>
     store.set((s) => {
       if (s.status !== 'open') return s;
       // Clamp to the same document bounds the viewport paints with (clampScrollToDocument over the
-      // wrapped visual-line count, CON-F): flooring at 0 alone lets wheeling past the last row
+      // wrapped visual-line count): flooring at 0 alone lets wheeling past the last row
       // accumulate phantom offset above maxTop, creating a dead-zone on the way back up.
       const lineCount = wrapVisualLines(s.value, s.layout.columns).length;
       const scrollTop = clampScrollToDocument(s.scrollTop + delta, s.layout.rows, lineCount);

@@ -83,12 +83,20 @@ There is no `debug` package / namespace logger in SPLITBRIEF today. The diagnost
 | `SPLITBRIEF_OTEL_EXPORTER=console` | Alias for the above | `src/lib/otel.ts` |
 | `SPLITBRIEF_CONTEXT_LENGTH` | Override detected implementer context length (integer) | `src/engine/providers/capabilities.ts` |
 | `CI` | Suppresses fullscreen TUI (`--no-fullscreen` is equivalent) | `src/cli/setup.ts` |
+| `SPLITBRIEF_REAL_CLI_E2E` | Set to `1` to enable the paid live CLI e2e tier (default: every case skips) | `testing/e2e/helpers/live-harness.ts` |
+| `SPLITBRIEF_REAL_CLI_TIER` | `easy` (default) / `heavy` / `all` — which live scenarios run | `testing/e2e/helpers/live-harness.ts` |
 
-For finer-grained traces, use the event log or OTel spans. API-key-bearing env vars (`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, etc.) are listed in [CONFIGURATION.md](./CONFIGURATION.md) — missing keys surface as loud config-validation warnings.
+For finer-grained traces, use the event log or OTel spans. The API-key-bearing env vars SPLITBRIEF reads are listed in [CONFIGURATION.md §Provider authentication](./CONFIGURATION.md#provider-authentication) — a missing credential fails config load for an API seat and shows as a readiness blocker for a CLI seat.
 
 ### Terminal diagnostics
 
 Direct terminal diagnostics are sanitized before printing. `warnStderr`, `warnError`, process-output errors, and generic CLI error formatting strip ANSI/OSC/control sequences, redact shared secret patterns including JWT-like tokens, and bound diagnostic text before writing to stderr. First-party styling may wrap the sanitized text after that; untrusted subprocess/provider text should not be styled before sanitization.
+
+### Live CLI e2e tier
+
+Reading a skip in `testing/e2e/scenarios/live/`: with `SPLITBRIEF_REAL_CLI_E2E` unset every case is skipped silently — that is the default and means nothing is wrong. With the master switch set, a per-tool skip prints the readiness reason from `liveToolBlocker`, which is the tool's own detection state; `ready` requires trusted + compatible + authenticated, so `not ready (…)` almost always means the binary is missing from `PATH` or the login expired. Fix it with the tool's own install or login command, not with SPLITBRIEF.
+
+A refused model pin throws instead of skipping. That is intentional: the ceiling exists to stop a mistyped `SPLITBRIEF_REAL_CLI_<TOOL>_MODEL` from billing a frontier model, and a silent skip would hide the typo.
 
 ## Common issues
 
@@ -160,11 +168,19 @@ Diagnostic checklist:
 - `CI=1` is set in CI → TUI disabled, some tests depend on non-TTY stdout. Run locally with `CI=1 npm test` to reproduce.
 - Temp dir state: some tests write under `os.tmpdir()`. Flake when runs don't clean up; rerun after `rm -rf $TMPDIR/splitbrief-*`.
 - API-key env vars from your shell leak into tests. CI runs cleaner. Unset local keys to reproduce CI.
-- Run the CI pipeline exactly: `npm run test-ci` (format:check → typecheck → lint → test:coverage → e2e → invariants).
+- Reproduce CI's split gate with `npm run release-check` (the same steps minus coverage). CI runs `static`, `unit` (four vitest shards), `e2e-replay` and `smoke` as parallel jobs, and coverage nightly.
+- Add the nightly coverage job on top with `npm run test-ci` (format:check → typecheck → lint → test:coverage → e2e → invariants) — the superset of both CI workflows.
 
-### API key warning in logs
+### Config load fails with "API key exfiltration risk"
 
-Cause: config file contains `apiKey: sk-...` inline. SPLITBRIEF detects and warns via `warnStderr` — config load still succeeds. Migrate to the corresponding env var (see [API-KEYS.md](./API-KEYS.md) and [CONFIGURATION.md](./CONFIGURATION.md) §Environment variables).
+Two variants, both errors — the config does not load:
+
+- `Custom/unknown provider <x> <role> cannot use env apiKey reference env:<VAR> with apiBase <url> (API key exfiltration risk). Use an inline apiKey for this custom provider.`
+- `<Provider> <role> with custom endpoint <url> cannot use <VAR> without an inline apiKey (API key exfiltration risk).`
+
+Cause: an `api` runner points at an endpoint SPLITBRIEF does not own (a custom/unknown `provider`, or a known provider with an `apiBase` of a different origin than its official one) while its key comes from the environment. Sending an env-held key to an arbitrary host would leak it.
+
+Fix: for a custom/unknown `provider`, give the seat an inline `apiKey: sk-...` — an `env:` reference is never accepted there, whatever the `apiBase`. For a known provider pointed at a foreign `apiBase`, either set an inline `apiKey` for that endpoint or drop the `apiBase` override so the provider's official endpoint and its env var apply. Source: `src/core/config/credentials.ts`. See [API-KEYS.md](./API-KEYS.md) and [CONFIGURATION.md](./CONFIGURATION.md) §Environment variables.
 
 ### `.splitbrief/config.yaml` permissions warning
 

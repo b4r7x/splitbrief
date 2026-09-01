@@ -240,7 +240,7 @@ describe('selectRailForm', () => {
     expect(selectRailForm({ phase: 'implementing', cols: min - 1 })).toBe('C');
   });
 
-  it('stays horizontal (Form B) on a wide terminal and never returns the removed Form A', () => {
+  it('stays horizontal (Form B) on a wide terminal in every phase', () => {
     expect(selectRailForm({ phase: 'idle', cols: 200 })).toBe('B');
     expect(selectRailForm({ phase: 'planning', cols: 200 })).toBe('B');
     expect(selectRailForm({ phase: 'implementing', cols: 200 })).toBe('B');

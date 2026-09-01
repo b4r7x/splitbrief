@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { IMPLEMENTER_CLI_TOOL_IDS, PLANNER_CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
 import { PlannerConfigSchema } from './planner-config.js';
 import {
   GenerationCommonFields,
+  REMOVED_API_PROVIDER_IDS,
   createPlannerConfigSchema,
   createRunnerConfigSchema,
 } from './runner-fields.js';
@@ -20,12 +22,11 @@ describe('createRunnerConfigSchema', () => {
       }).success,
       schema.safeParse({
         kind: 'api',
-        provider: 'openai',
-        service: 'openai',
-        offering: 'payg',
-        apiBase: 'https://api.openai.com/v1',
-        apiKey: 'env:OPENAI_API_KEY',
-        model: 'gpt-5-mini',
+        provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
+        apiBase: 'http://localhost:11434/v1',
+        model: 'qwen2.5-coder:7b',
       }).success,
       schema.safeParse({
         kind: 'shell',
@@ -38,20 +39,66 @@ describe('createRunnerConfigSchema', () => {
         command: 'my-agent',
         model: 'agent-default',
       }).success,
-      schema.safeParse({
-        kind: 'agent-sdk',
-        apiKey: 'env:ANTHROPIC_API_KEY',
-        model: 'claude-sonnet-4-5',
-      }).success,
-    ]).toEqual([true, true, true, true, true]);
+    ]).toEqual([true, true, true, true]);
+  });
+
+  it('round-trips a verbatim opencode variant on a cli seat', () => {
+    const result = createRunnerConfigSchema(GenerationCommonFields).safeParse({
+      kind: 'cli',
+      tool: 'opencode',
+      model: 'openai/gpt-5.6-luna',
+      variant: 'xhigh',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.variant).toBe('xhigh');
+  });
+
+  it('round-trips a custom variant name no vocabulary knows', () => {
+    for (const schema of [
+      createRunnerConfigSchema(GenerationCommonFields),
+      createPlannerConfigSchema(GenerationCommonFields),
+    ]) {
+      const result = schema.safeParse({
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'openai/gpt-5.6-luna',
+        variant: 'my-preset',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.data?.variant).toBe('my-preset');
+    }
+  });
+
+  it('rejects an empty variant string', () => {
+    const result = createRunnerConfigSchema(GenerationCommonFields).safeParse({
+      kind: 'cli',
+      tool: 'opencode',
+      model: 'openai/gpt-5.6-luna',
+      variant: '',
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('keeps variant optional', () => {
+    const result = createRunnerConfigSchema(GenerationCommonFields).safeParse({
+      kind: 'cli',
+      tool: 'opencode',
+      model: 'openai/gpt-5.6-luna',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data === undefined ? [] : Object.keys(result.data)).not.toContain('variant');
   });
 
   it('requires known API providers to state service and offering at runtime schema boundaries', () => {
     const providerOnly = {
       kind: 'api',
-      provider: 'openrouter',
-      apiBase: 'https://openrouter.ai/api/v1',
-      model: 'anthropic/claude-sonnet-4',
+      provider: 'ollama',
+      apiBase: 'http://localhost:11434/v1',
+      model: 'qwen2.5-coder:7b',
     } as const;
 
     expect(createRunnerConfigSchema(GenerationCommonFields).safeParse(providerOnly).success).toBe(
@@ -84,6 +131,47 @@ describe('createRunnerConfigSchema', () => {
         model: 'custom-model',
       }).success,
     ).toBe(true);
+  });
+
+  it.each(REMOVED_API_PROVIDER_IDS)('rejects the removed %s API provider by name', (provider) => {
+    const removed = {
+      kind: 'api' as const,
+      provider,
+      service: provider,
+      offering: 'payg' as const,
+      apiBase: 'https://api.example.test/v1',
+      model: 'some-model',
+    };
+
+    for (const schema of [
+      createRunnerConfigSchema(GenerationCommonFields),
+      createPlannerConfigSchema(GenerationCommonFields),
+    ]) {
+      const result = schema.safeParse(removed);
+      expect(result.success).toBe(false);
+      expect(result.error?.issues).toContainEqual(
+        expect.objectContaining({
+          path: ['provider'],
+          message: expect.stringContaining(`API provider "${provider}" was removed`),
+        }),
+      );
+    }
+  });
+
+  it('rejects the removed aider CLI tool by name, listing the catalog tools for that seat', () => {
+    for (const [schema, supported] of [
+      [createRunnerConfigSchema(GenerationCommonFields), IMPLEMENTER_CLI_TOOL_IDS],
+      [createPlannerConfigSchema(GenerationCommonFields), PLANNER_CLI_TOOL_IDS],
+    ] as const) {
+      const result = schema.safeParse({ kind: 'cli', tool: 'aider', model: 'sonnet' });
+      expect(result.success).toBe(false);
+      expect(result.error?.issues).toContainEqual(
+        expect.objectContaining({
+          path: ['tool'],
+          message: `CLI tool "aider" was removed; supported tools are ${supported.join(', ')}.`,
+        }),
+      );
+    }
   });
 
   it('enforces catalog role admission for API runners while retaining explicit custom providers', () => {
@@ -150,20 +238,20 @@ describe('createRunnerConfigSchema', () => {
     expect(
       schema.safeParse({
         kind: 'api',
-        provider: 'openrouter',
-        service: 'openrouter',
-        apiBase: 'https://openrouter.ai/api/v1',
-        model: 'anthropic/claude-sonnet-4',
+        provider: 'ollama',
+        service: 'ollama',
+        apiBase: 'http://localhost:11434/v1',
+        model: 'qwen2.5-coder:7b',
       }).success,
     ).toBe(false);
 
     const mismatch = schema.safeParse({
       kind: 'api',
-      provider: 'openrouter',
-      service: 'openrouter',
+      provider: 'ollama',
+      service: 'ollama',
       offering: 'coding-subscription',
-      apiBase: 'https://openrouter.ai/api/v1',
-      model: 'anthropic/claude-sonnet-4',
+      apiBase: 'http://localhost:11434/v1',
+      model: 'qwen2.5-coder:7b',
     });
     expect(mismatch.success).toBe(false);
     expect(mismatch.error?.issues[0]?.path).toEqual(['offering']);
@@ -172,11 +260,11 @@ describe('createRunnerConfigSchema', () => {
     expect(
       schema.safeParse({
         kind: 'api',
-        provider: 'openrouter',
-        service: 'openrouter',
+        provider: 'ollama',
+        service: 'ollama',
         offering: 'unknown-offering',
-        apiBase: 'https://openrouter.ai/api/v1',
-        model: 'anthropic/claude-sonnet-4',
+        apiBase: 'http://localhost:11434/v1',
+        model: 'qwen2.5-coder:7b',
       }).success,
     ).toBe(false);
   });
@@ -185,14 +273,7 @@ describe('createRunnerConfigSchema', () => {
     const implementerSchema = createRunnerConfigSchema(GenerationCommonFields);
     const plannerSchema = createPlannerConfigSchema(GenerationCommonFields);
 
-    for (const tool of [
-      'claude-code',
-      'codex',
-      'opencode',
-      'aider',
-      'copilot',
-      'kilo-code',
-    ] as const) {
+    for (const tool of ['claude-code', 'codex', 'opencode', 'copilot', 'kilo-code'] as const) {
       for (const schema of [plannerSchema, implementerSchema]) {
         expect(schema.safeParse({ kind: 'cli', tool }).success).toBe(true);
         expect(schema.safeParse({ kind: 'cli', tool, model: 'explicit-model' }).success).toBe(true);
@@ -239,10 +320,10 @@ describe('createRunnerConfigSchema', () => {
     expect(
       schema.safeParse({
         kind: 'api',
-        provider: 'anthropic',
-        service: 'anthropic',
-        offering: 'payg',
-        apiBase: 'https://api.anthropic.com/v1',
+        provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
+        apiBase: 'http://localhost:11434/v1',
         model: 'auto',
       }).success,
     ).toBe(true);
@@ -328,53 +409,36 @@ describe('createRunnerConfigSchema', () => {
     ).toBe(true);
   });
 
-  it('rejects supportsSessionResume/supportsEffort/supportsImages on shell and agent planners', () => {
-    const shellResume = PlannerConfigSchema.safeParse({
-      kind: 'shell',
-      command: './run',
-      model: 'local-shell',
-      capabilities: { supportsSessionResume: true },
-    });
-    expect(shellResume.success).toBe(false);
-    expect(shellResume.error?.issues[0]?.path).toEqual(['capabilities', 'supportsSessionResume']);
-    expect(shellResume.error?.issues[0]?.message).toContain('session-handle contract');
+  const commandSeatRejections = (
+    [
+      ['shell', './run', 'local-shell'],
+      ['agent', 'my-agent', 'agent-default'],
+    ] as const
+  ).flatMap(([kind, command, model]) =>
+    (
+      [
+        ['supportsSessionResume', 'session-handle contract'],
+        ['supportsEffort', 'effort hint'],
+        ['supportsImages', 'image attachments'],
+      ] as const
+    ).map(([flag, message]) => ({ kind, command, model, flag, message })),
+  );
 
-    const agentResume = PlannerConfigSchema.safeParse({
-      kind: 'agent',
-      command: 'my-agent',
-      model: 'agent-default',
-      capabilities: { supportsSessionResume: true },
-    });
-    expect(agentResume.success).toBe(false);
-    expect(agentResume.error?.issues[0]?.path).toEqual(['capabilities', 'supportsSessionResume']);
+  it.each(commandSeatRejections)(
+    'rejects $flag on $kind planners',
+    ({ kind, command, model, flag, message }) => {
+      const result = PlannerConfigSchema.safeParse({
+        kind,
+        command,
+        model,
+        capabilities: { [flag]: true },
+      });
 
-    const shellEffort = PlannerConfigSchema.safeParse({
-      kind: 'shell',
-      command: './run',
-      model: 'local-shell',
-      capabilities: { supportsEffort: true },
-    });
-    expect(shellEffort.success).toBe(false);
-    expect(shellEffort.error?.issues[0]?.path).toEqual(['capabilities', 'supportsEffort']);
-
-    expect(
-      PlannerConfigSchema.safeParse({
-        kind: 'shell',
-        command: './run',
-        model: 'local-shell',
-        capabilities: { supportsImages: true },
-      }).success,
-    ).toBe(false);
-
-    const agentImages = PlannerConfigSchema.safeParse({
-      kind: 'agent',
-      command: 'my-agent',
-      model: 'agent-default',
-      capabilities: { supportsImages: true },
-    });
-    expect(agentImages.success).toBe(false);
-    expect(agentImages.error?.issues[0]?.path).toEqual(['capabilities', 'supportsImages']);
-  });
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0]?.path).toEqual(['capabilities', flag]);
+      expect(result.error?.issues[0]?.message).toContain(message);
+    },
+  );
 
   it('still accepts supportsEffort/supportsImages flags set to false on shell and agent planners', () => {
     expect(
@@ -391,7 +455,9 @@ describe('createRunnerConfigSchema', () => {
     const schema = createRunnerConfigSchema(GenerationCommonFields);
     expect(schema.safeParse({ kind: 'unknown', model: 'x' }).success).toBe(false);
     expect(schema.safeParse({ kind: 'shell', model: 'x' }).success).toBe(false);
-    expect(schema.safeParse({ kind: 'api', provider: 'openai', model: 'x' }).success).toBe(false);
+    expect(schema.safeParse({ kind: 'api', provider: 'my-gateway', model: 'x' }).success).toBe(
+      false,
+    );
   });
 
   it('rejects {prompt} in shell and agent command strings', () => {
@@ -442,7 +508,7 @@ describe('createRunnerConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('cli, shell, agent, and agent-sdk runners accept idleWarnMs and idleKillMs', () => {
+  it('cli, shell, and agent runners accept idleWarnMs and idleKillMs', () => {
     const schema = createRunnerConfigSchema(GenerationCommonFields);
 
     expect([
@@ -467,14 +533,7 @@ describe('createRunnerConfigSchema', () => {
         idleWarnMs: 60_000,
         idleKillMs: 300_000,
       }).success,
-      schema.safeParse({
-        kind: 'agent-sdk',
-        apiKey: 'env:ANTHROPIC_API_KEY',
-        model: 'claude-sonnet-4-5',
-        idleWarnMs: 60_000,
-        idleKillMs: 300_000,
-      }).success,
-    ]).toEqual([true, true, true, true]);
+    ]).toEqual([true, true, true]);
   });
 
   it('rejects fractional idle thresholds — stall events carry integer silentMs', () => {
@@ -573,11 +632,11 @@ describe('createRunnerConfigSchema', () => {
 
     const result = schema.safeParse({
       kind: 'api',
-      provider: 'openai',
-      service: 'openai',
-      offering: 'payg',
-      apiBase: 'https://api.openai.com/v1',
-      model: 'gpt-5-mini',
+      provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
+      apiBase: 'http://localhost:11434/v1',
+      model: 'qwen2.5-coder:7b',
       idleWarnMs: 60_000,
       idleKillMs: 300_000,
     });

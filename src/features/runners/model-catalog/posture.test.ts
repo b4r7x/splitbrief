@@ -92,11 +92,4 @@ describe('model policy capability', () => {
   it.each(cases)('defaults $policy to no automatic row', ({ policy, capability }) => {
     expect(deriveModelCatalogCapability(policy)).toEqual({ ...capability, allowsAutomatic: false });
   });
-
-  it.each(['required', 'none'] as const)(
-    'keeps %s free of an automatic row even when offered',
-    (policy) => {
-      expect(deriveModelCatalogCapability(policy, true).allowsAutomatic).toBe(false);
-    },
-  );
 });

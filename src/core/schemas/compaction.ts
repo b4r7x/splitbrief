@@ -21,7 +21,7 @@ export function resolveCompactionFormat(
 ): ResolvedCompactionFormat {
   if (configured === 'freeform') return 'freeform';
   if (configured === 'structured') return 'structured';
-  return plannerKind === 'api' || plannerKind === 'agent-sdk' ? 'structured' : 'freeform';
+  return plannerKind === 'api' ? 'structured' : 'freeform';
 }
 
 export function tryParseStructuredSummary(text: string): StructuredSummary | null {

@@ -81,19 +81,14 @@ describe('custom runner admission errors', () => {
 });
 
 describe('checkRunnerTrust', () => {
-  it('trusts system commands like claude and codex', () => {
-    const config = makeConfig(shellConfig('claude'));
-    const result = checkRunnerTrust(config, '/tmp/project');
-    expect(result.violations.map((violation) => violation.command)).toEqual([]);
-  });
-
-  it('trusts node, npx, and other common tools', () => {
-    for (const cmd of ['node', 'npx', 'npm', 'python', 'python3', 'cargo', 'go']) {
-      const config = makeConfig(shellConfig(cmd));
+  it.each(['claude', 'codex', 'node', 'npx', 'npm', 'python', 'python3', 'cargo', 'go'])(
+    'trusts the bare system command %s',
+    (command) => {
+      const config = makeConfig(shellConfig(command));
       const result = checkRunnerTrust(config, '/tmp/project');
       expect(result.violations.map((violation) => violation.command)).toEqual([]);
-    }
-  });
+    },
+  );
 
   it('flags package-manager script execution as repo-local execution', () => {
     const config = makeConfig(shellConfig('npm run build'));
@@ -497,7 +492,7 @@ describe('rejectUntrustedRunners', () => {
   });
 
   it('does not throw for a system command', () => {
-    const config = makeConfig(shellConfig('aider'));
+    const config = makeConfig(shellConfig('opencode'));
     expect(() =>
       rejectUntrustedRunners({ config, projectDir: '/tmp/project', allowRepoRunners: false }),
     ).not.toThrow();

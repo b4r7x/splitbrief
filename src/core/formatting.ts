@@ -11,11 +11,14 @@ export function formatScoreSummary(
   return parts.join(' · ');
 }
 
+/** Floors: a context window may be shown smaller than it is, never larger. */
 export function formatContextLength(tokens: number | undefined): string {
   if (tokens == null || tokens === 0) return '';
-  if (tokens >= 1_000_000)
-    return `${(tokens / 1_000_000).toFixed(tokens % 1_000_000 === 0 ? 0 : 1)}M`;
-  return `${Math.round(tokens / 1000)}K`;
+  if (tokens >= 1_000_000) {
+    const millions = Math.floor(tokens / 100_000) / 10;
+    return `${millions % 1 === 0 ? String(millions) : millions.toFixed(1)}M`;
+  }
+  return `${Math.floor(tokens / 1000)}K`;
 }
 
 export function formatCost(dollars: number): string {

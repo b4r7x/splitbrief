@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultConfig } from './load/io.js';
+import { createDefaultConfig } from './load/defaults.js';
 import { ConfigSchema } from '../schemas/config.js';
 import {
   CustomCommandDefinitionSchema,

@@ -8,6 +8,7 @@ import { sessionDir, SESSION_LOG_FILE } from '../../core/paths.js';
 import { createInitialState } from '../../core/state/machine.js';
 import type { ResumeContextHolder } from './types.js';
 import type { RunnerCallContext } from '../calls/types.js';
+import type { Planner } from '../planners/types.js';
 import {
   applyRebuiltContext,
   autoCompactResumeContext,
@@ -20,6 +21,30 @@ function workflowConfig(persistTranscript: boolean, compactionThreshold?: number
     persistTranscript,
     compactionFormat: 'auto' as const,
     ...(compactionThreshold !== undefined && { compactionThreshold }),
+  };
+}
+
+type CompactionPlanner = Pick<Planner, 'capabilities' | 'summarize' | 'summarizeStructured'>;
+
+function summarizingPlanner({
+  supportsSelfSummarisation = true,
+  ...hooks
+}: { supportsSelfSummarisation?: boolean } & Partial<
+  Pick<Planner, 'summarize' | 'summarizeStructured'>
+> = {}): CompactionPlanner {
+  return {
+    capabilities: {
+      supportsConversationalPlanning: false,
+      supportsHintEscalation: true,
+      supportsSessionResume: false,
+      supportsEffort: false,
+      supportsImages: false,
+      supportsSelfSummarisation,
+    },
+    summarize: async () => {
+      throw new Error('summarize should not be called');
+    },
+    ...hooks,
   };
 }
 
@@ -192,15 +217,7 @@ describe('autoCompactResumeContext', () => {
       bus,
       config: { workflow: workflowConfig(true, 10), planner: cliPlannerConfig },
       state: createInitialState('resume'),
-      planner: {
-        capabilities: {
-          supportsConversationalPlanning: false,
-          supportsHintEscalation: true,
-          supportsSessionResume: false,
-          supportsEffort: false,
-          supportsImages: false,
-          supportsSelfSummarisation: true,
-        },
+      planner: summarizingPlanner({
         summarize: async (messages, opts) => {
           summarizedBatches.push(messages);
           opts?.callbacks?.onCallEvent?.({ type: 'call_started', ts: startedAt, ...call });
@@ -222,7 +239,7 @@ describe('autoCompactResumeContext', () => {
             usage: { inputTokens: 800, outputTokens: 120 },
           };
         },
-      },
+      }),
     });
 
     const file = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);
@@ -272,19 +289,7 @@ describe('autoCompactResumeContext', () => {
       config: { workflow: workflowConfig(true, 10), planner: cliPlannerConfig },
       state: createInitialState('resume'),
       signal: controller.signal,
-      planner: {
-        capabilities: {
-          supportsConversationalPlanning: false,
-          supportsHintEscalation: true,
-          supportsSessionResume: false,
-          supportsEffort: false,
-          supportsImages: false,
-          supportsSelfSummarisation: true,
-        },
-        summarize: async () => {
-          throw new Error('should not summarize after abort');
-        },
-      },
+      planner: summarizingPlanner(),
     });
 
     const file = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);
@@ -312,24 +317,13 @@ describe('autoCompactResumeContext', () => {
       bus,
       config: { workflow: workflowConfig(true, 10), planner: apiPlannerConfig },
       state: createInitialState('resume'),
-      planner: {
-        capabilities: {
-          supportsConversationalPlanning: false,
-          supportsHintEscalation: true,
-          supportsSessionResume: false,
-          supportsEffort: false,
-          supportsImages: false,
-          supportsSelfSummarisation: true,
-        },
-        summarize: async () => {
-          throw new Error('freeform summarization should not be used');
-        },
+      planner: summarizingPlanner({
         summarizeStructured: async () => ({
           text: JSON.stringify(structured),
           structured,
           usage: { inputTokens: 500, outputTokens: 60 },
         }),
-      },
+      }),
     });
 
     const file = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);
@@ -359,20 +353,9 @@ describe('autoCompactResumeContext', () => {
       bus,
       config: { workflow: workflowConfig(true, 10), planner: apiPlannerConfig },
       state: createInitialState('resume'),
-      planner: {
-        capabilities: {
-          supportsConversationalPlanning: false,
-          supportsHintEscalation: true,
-          supportsSessionResume: false,
-          supportsEffort: false,
-          supportsImages: false,
-          supportsSelfSummarisation: true,
-        },
-        summarize: async () => {
-          throw new Error('freeform summarization should not be used');
-        },
+      planner: summarizingPlanner({
         summarizeStructured: async () => ({ text: 'not json', structured: null, usage: null }),
-      },
+      }),
     });
 
     const warning = events.find((event) => event.type === 'warning');
@@ -390,19 +373,7 @@ describe('autoCompactResumeContext', () => {
       bus,
       config: { workflow: workflowConfig(true, 10), planner: cliPlannerConfig },
       state: createInitialState('resume'),
-      planner: {
-        capabilities: {
-          supportsConversationalPlanning: false,
-          supportsHintEscalation: true,
-          supportsSessionResume: false,
-          supportsEffort: false,
-          supportsImages: false,
-          supportsSelfSummarisation: false,
-        },
-        summarize: async () => {
-          throw new Error('should not be called');
-        },
-      },
+      planner: summarizingPlanner({ supportsSelfSummarisation: false }),
     });
 
     const file = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);

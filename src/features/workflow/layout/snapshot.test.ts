@@ -107,16 +107,15 @@ describe('readConversationScrollSnapshot', () => {
     expect(snap.viewportHeight).toBe(fullBodyHeight);
     expect(snap.viewportHeight).toBeLessThan(40);
     expect(snap.contentRect.height).toBe(snap.viewportHeight);
-  });
 
-  it('reduces viewportHeight on a small terminal', () => {
-    terminalSizeStore.__testReset({ cols: 80, rows: 20, isSmall: true });
-    inputHeightStore.__testReset({ rows: 3 });
-
-    const snap = readConversationScrollSnapshot();
-
-    expect(snap.viewportHeight).toBeGreaterThanOrEqual(0);
-    expect(snap.viewportHeight).toBeLessThan(20);
+    // Rows alone drive the body height: the same terminal with fewer rows is strictly shorter,
+    // while the isSmall flag feeds no layout geometry.
+    terminalSizeStore.__testReset({ cols: 160, rows: 20, isSmall: true });
+    const shortTerminal = readConversationScrollSnapshot();
+    expect(shortTerminal.viewportHeight).toBeLessThan(snap.viewportHeight);
+    expect(shortTerminal.viewportHeight).toBe(
+      getWorkflowViewportHeight({ rows: 20, inputRows: 3, promptRows: 0 }),
+    );
   });
 
   it('reserves no viewport row for the live status, which lives in the footer byline', () => {
@@ -227,7 +226,7 @@ describe('readConversationScrollSnapshot', () => {
     expect(narrow.totalHeight).toBeGreaterThan(wide.totalHeight);
   });
 
-  it('uses full content width for scroll calculations now that the activity rail is removed', () => {
+  it('uses the full content width for scroll calculations', () => {
     eventsStore.__testReset({ events: [makeLongTaskStarted()] });
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     inputHeightStore.__testReset({ rows: 3 });
@@ -380,8 +379,8 @@ describe('readRailSnapshot', () => {
     const cancelled = readRailSnapshot();
 
     expect(live.zones).toHaveLength(5);
-    // The horizontal rail no longer paints the fraction inline, so dropping it (cancelled) can never
-    // shift the trailing zones — the geometry mirrors rail.tsx.
+    // Form B paints no inline fraction, so dropping it (cancelled) cannot shift the trailing
+    // zones — the geometry mirrors rail.tsx.
     expect(
       cancelled.zones.map((zone) => ({ index: zone.index, left: zone.left, right: zone.right })),
     ).toEqual(
@@ -492,7 +491,7 @@ describe('readBriefListSnapshot phantom-hotspot clamp', () => {
     const snap = readBriefListSnapshot();
     if (!snap) throw new Error('expected a brief list snapshot while reviewing briefs');
 
-    // The review column is no longer capped, so the brief card fills the whole content pane.
+    // The review column is uncapped, so the brief card fills the whole content pane.
     const fullContentWidth = getWorkflowContentWidth({
       cols: 300,
       sidebarVisible: false,

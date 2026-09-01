@@ -7,7 +7,7 @@ import type {
 import { suggestRuntimeCommand } from '../../../../core/runtime/commands/lookup.js';
 import { detectedModelFact, seatSupportsImages } from '../../../../core/runners/capabilities.js';
 import { configStore } from '../../../../stores/project/config.js';
-import { modelCacheStore } from '../../../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../../../stores/discovery/model-cache/state.js';
 import { routerStore } from '../../../../stores/navigation/router.js';
 import { inputHistoryStore } from '../../../../stores/ui/input-history.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
@@ -134,7 +134,12 @@ export function useCommandCompletion({
     argCommand !== undefined && closedArgs !== null
       ? closedArgs.options
           .filter((option) => option.toLowerCase().startsWith(argToken.toLowerCase()))
-          .map((option): CommandCompletionRow => ({ name: option, description: '' }))
+          .map(
+            (option): CommandCompletionRow => ({
+              name: option,
+              description: closedArgs.optionDescriptions?.[option] ?? '',
+            }),
+          )
       : null;
   const argRows = argOptions !== null && argOptions.length > 0 ? argOptions : null;
   const showSuggestions = commandMode && !suppressed && (!hasArgs || argRows !== null);

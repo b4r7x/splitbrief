@@ -809,8 +809,8 @@ describe('event row dispatch', () => {
 describe('validate failure output', () => {
   const columnar = [
     '  × Formatter would have printed the following content:',
-    "    16 16 │       ['ollama-cloud', 'kimi-k2.7-code', { state: 'supported', source: 'provider' }],",
-    "    17    │ - ····['ollama-cloud',·'text-embedding-3-large',·{·state:·'unsupported'·}],",
+    "    16 16 │       ['lm-studio', 'kimi-k2.7-code', { state: 'supported', source: 'provider' }],",
+    "    17    │ - ····['lm-studio',·'text-embedding-3-large',·{·state:·'unsupported'·}],",
     '       17 │ + ····[',
   ].join('\n');
 

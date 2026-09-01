@@ -23,7 +23,6 @@ import { clampToMaxOutput } from '../providers/capability-inference.js';
 import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../core/tokens/context-length.js';
 import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../core/schemas/runner-fields.js';
 import { composeAbortSignal } from '../../utils/abort.js';
-import { seatSupportsEffort } from '../../core/runners/capabilities.js';
 
 // Constructs the provider and its availability helper inside a try so a
 // construction failure — a missing env-referenced key — yields `undefined`
@@ -98,8 +97,7 @@ export function createApiImplementer(
         apiBase: impl.apiBase,
         apiKey: impl.apiKey,
       });
-      const client: StreamClient | null =
-        impl.provider === 'anthropic' ? null : toStreamClient(createClientFromProvider(provider));
+      const client: StreamClient = toStreamClient(createClientFromProvider(provider));
 
       const messages = [
         { role: 'system' as const, content: systemPreamble },
@@ -117,9 +115,6 @@ export function createApiImplementer(
         onProgress: onOutput,
         maxTokens,
         signal: effectiveSignal,
-        effort: seatSupportsEffort({ runner: { ...impl, model }, role: 'implementer' })
-          ? impl.effort
-          : undefined,
         onCallEvent: opts.onCallEvent,
         callContext: opts.callContext,
       });

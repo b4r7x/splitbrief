@@ -3,10 +3,18 @@ import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.j
 import { predictCost, type PredictCostOptions } from './cost-prediction.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makePricedModelCache } from '#testing/helpers/factories/model-cache.js';
+
+// Pricing follows the model, so a metered seat needs a catalog to rate against.
+const cache = makePricedModelCache();
+
+function predict(opts: PredictCostOptions) {
+  return predictCost({ cache, ...opts });
+}
 
 describe('predictCost', () => {
   it('returns zero costs for zero tasks', () => {
-    const result = predictCost({
+    const result = predict({
       taskCount: 0,
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
@@ -18,32 +26,34 @@ describe('predictCost', () => {
   });
 
   it('produces low < expected < high for priced planner and implementer', () => {
-    const result = predictCost({
+    const result = predict({
       taskCount: 10,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
+      implementerModel: 'deepseek-v4-flash',
     });
     expect(result.lowCost).toBeLessThan(result.expectedCost);
     expect(result.expectedCost).toBeLessThan(result.highCost);
   });
 
-  it('computes prediction with known tools (claude-code + deepseek)', () => {
-    const result = predictCost({
+  it('computes prediction with a subscription planner and a metered implementer', () => {
+    const result = predict({
       taskCount: 5,
       plannerTool: 'claude-code',
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
+      implementerModel: 'deepseek-v4-flash',
     });
     expect(result.estimatedTasks).toBe(5);
     expect(result.plannerTool).toBe('claude-code');
-    expect(result.implementerTool).toBe('deepseek');
+    expect(result.implementerTool).toBe('custom-worker-api');
     expect(result.lowCost).toBeGreaterThan(0);
     expect(result.expectedCost).toBeGreaterThan(0);
     expect(result.highCost).toBeGreaterThan(0);
   });
 
   it('returns zero prediction for known tools when both paths are unpriced', () => {
-    const result = predictCost({
+    const result = predict({
       taskCount: 5,
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
@@ -58,16 +68,16 @@ describe('predictCost', () => {
 
   it('uses actual planner token usage when provided', () => {
     const tokenUsage = makeUsage({ plannerInput: 10000, plannerOutput: 5000 });
-    const withUsage = predictCost({
+    const withUsage = predict({
       taskCount: 5,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       implementerTool: 'ollama',
       plannerModel: 'claude-sonnet-5',
       tokenUsage,
     });
-    const withoutUsage = predictCost({
+    const withoutUsage = predict({
       taskCount: 5,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       implementerTool: 'ollama',
       plannerModel: 'claude-sonnet-5',
     });
@@ -75,8 +85,8 @@ describe('predictCost', () => {
     expect(withUsage.lowCost).not.toBe(withoutUsage.lowCost);
   });
 
-  it('falls back to local pricing for unknown tools', () => {
-    const result = predictCost({
+  it('prices nothing for unknown tools that name no model', () => {
+    const result = predict({
       taskCount: 3,
       plannerTool: 'unknown-tool',
       implementerTool: 'another-unknown',
@@ -87,17 +97,17 @@ describe('predictCost', () => {
   });
 
   it('consults the model-pricing cache instead of dropping it (live models.dev pricing)', () => {
-    // Without a cache, the anthropic planner resolves to its bundled-fallback price.
-    // A cache that reports a much higher models.dev price for the same model must change the
-    // prediction — proving opts.cache is threaded through to resolvePricing and not dropped.
+    // The rate must come from the cache the caller passes, never from a constant
+    // baked into the predictor: the same seat and the same model priced against a
+    // dearer catalog must predict more, and against no catalog must price nothing.
     const baseOpts: PredictCostOptions = {
       taskCount: 5,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-opus-5',
       implementerTool: 'ollama',
     };
 
-    const cache = makeModelCacheAccessor({
+    const dearerCatalog = makeModelCacheAccessor({
       catalog: {
         anthropic: {
           id: 'anthropic',
@@ -112,17 +122,19 @@ describe('predictCost', () => {
       },
     });
 
-    const withoutCache = predictCost(baseOpts);
-    const withCache = predictCost({ ...baseOpts, cache });
+    const uncatalogued = predict({ ...baseOpts, cache: makeModelCacheAccessor() });
+    const standard = predict(baseOpts);
+    const dearer = predict({ ...baseOpts, cache: dearerCatalog });
 
-    expect(withoutCache.expectedCost).toBeGreaterThan(0);
-    expect(withCache.expectedCost).toBeGreaterThan(withoutCache.expectedCost);
-    expect(withCache.lowCost).toBeGreaterThan(withoutCache.lowCost);
-    expect(withCache.highCost).toBeGreaterThan(withoutCache.highCost);
+    expect(uncatalogued.expectedCost).toBe(0);
+    expect(standard.expectedCost).toBeGreaterThan(0);
+    expect(dearer.expectedCost).toBeGreaterThan(standard.expectedCost);
+    expect(dearer.lowCost).toBeGreaterThan(standard.lowCost);
+    expect(dearer.highCost).toBeGreaterThan(standard.highCost);
   });
 
   it('clamps negative taskCount to zero', () => {
-    const result = predictCost({
+    const result = predict({
       taskCount: -5,
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
@@ -136,12 +148,12 @@ describe('predictCost', () => {
   it('prices reviewer usage at the planner rate when no reviewer is configured', () => {
     const base = {
       taskCount: 5,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
     } satisfies PredictCostOptions;
 
-    const withReviewerTokens = predictCost({
+    const withReviewerTokens = predict({
       ...base,
       tokenUsage: makeUsage({
         plannerInput: 10_000,
@@ -151,7 +163,7 @@ describe('predictCost', () => {
       }),
       config: makeConfig(),
     });
-    const asPlannerTokens = predictCost({
+    const asPlannerTokens = predict({
       ...base,
       tokenUsage: makeUsage({ plannerInput: 20_000, plannerOutput: 10_000 }),
     });
@@ -162,7 +174,7 @@ describe('predictCost', () => {
   it('prices reviewer usage at the reviewer rate when a reviewer is configured', () => {
     const base = {
       taskCount: 5,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
     } satisfies PredictCostOptions;
@@ -173,20 +185,20 @@ describe('predictCost', () => {
       reviewerOutput: 5_000,
     });
 
-    const withReviewer = predictCost({
+    const withReviewer = predict({
       ...base,
       tokenUsage: usage,
       config: makeConfig({
         reviewer: {
           kind: 'api',
-          provider: 'deepseek',
+          provider: 'custom-worker-api',
           model: 'deepseek-v4-flash',
           apiBase: 'https://api.deepseek.com',
         },
       }),
     });
-    const foldedIntoPlanner = predictCost({ ...base, tokenUsage: usage, config: makeConfig() });
-    const plannerOnly = predictCost({
+    const foldedIntoPlanner = predict({ ...base, tokenUsage: usage, config: makeConfig() });
+    const plannerOnly = predict({
       ...base,
       tokenUsage: makeUsage({ plannerInput: 10_000, plannerOutput: 5_000 }),
     });
@@ -198,12 +210,13 @@ describe('predictCost', () => {
   it('leaves the prediction unchanged when no reviewer is configured', () => {
     const opts = {
       taskCount: 5,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
+      implementerModel: 'deepseek-v4-flash',
       tokenUsage: makeUsage({ plannerInput: 10_000, plannerOutput: 5_000 }),
     } satisfies PredictCostOptions;
 
-    expect(predictCost({ ...opts, config: makeConfig() })).toEqual(predictCost(opts));
+    expect(predict({ ...opts, config: makeConfig() })).toEqual(predict(opts));
   });
 });

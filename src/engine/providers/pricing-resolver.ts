@@ -1,13 +1,12 @@
-import { META_PROVIDER_IDS, isProviderId, type ProviderId } from '../../core/schemas/enums.js';
-import { REMOTE_API_PROVIDER_IDS } from '../../core/providers/api-provider-catalog.js';
+import { META_PROVIDER_IDS, type ProviderId } from '../../core/schemas/enums.js';
 import { CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
+import { REMOVED_CLI_TOOL_IDS, REMOVED_RUNNER_KINDS } from '../../core/schemas/runner-fields.js';
 import { isProviderLocal, isProviderSubscription } from '../../core/providers/catalog.js';
+import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 import {
   NULL_CACHE,
-  findKnownModel,
-  getEffectiveModelId,
-  lookupModelsDevModel,
-  lookupRuntimeModel,
+  findKnownModelByModelId,
+  lookupCatalogModelByModelId,
   type ModelCacheAccessor,
 } from './model/resolution.js';
 import type { DetectedPricingTier } from '../../core/discovery/detection.js';
@@ -29,12 +28,15 @@ export interface ResolvedPricing {
   isPriced: boolean;
   pricingMode: PricingMode;
   name: string;
-  source: 'models-dev' | 'runtime' | 'bundled-fallback' | 'unpriced';
+  source: 'models-dev' | 'bundled-fallback' | 'unpriced';
 }
 
-const PRICED_PROVIDER_IDS = new Set<ProviderId>(REMOTE_API_PROVIDER_IDS);
-const UNPRICED_CLI_PROVIDER_IDS = new Set<string>(CLI_TOOL_IDS);
-const META_UNPRICED_IDS = new Set<string>(META_PROVIDER_IDS);
+// Persisted runs still name the identities this release removed, and the
+// pricing candidate test below is a catch-all: without them a resumed
+// `aider`/`agent-sdk` seat would be re-read as a metered custom endpoint and
+// charged its model's rates.
+const UNPRICED_CLI_PROVIDER_IDS = new Set<string>([...CLI_TOOL_IDS, ...REMOVED_CLI_TOOL_IDS]);
+const META_UNPRICED_IDS = new Set<string>([...META_PROVIDER_IDS, ...REMOVED_RUNNER_KINDS]);
 
 export const LOCAL_PRICING: ResolvedPricing = {
   inputPer1M: 0,
@@ -66,13 +68,22 @@ function pickUnpricedMode(providerId: string): PricingMode {
   return 'unpriced-unknown';
 }
 
-export function isApiPricedProvider(providerId: string): providerId is ProviderId {
-  return isProviderId(providerId) && PRICED_PROVIDER_IDS.has(providerId);
+/**
+ * Whether a runner meters per token, so its rates are worth resolving. Rates
+ * follow the model, not the provider preset: a custom endpoint the user
+ * declared is a candidate exactly like a catalog remote provider would be.
+ */
+export function isApiPricedProvider(providerId: string): boolean {
+  return (
+    !isProviderLocal(providerId) &&
+    !UNPRICED_CLI_PROVIDER_IDS.has(providerId) &&
+    !isProviderSubscription(providerId) &&
+    !META_UNPRICED_IDS.has(providerId)
+  );
 }
 
 export function getPricingMode(providerId: ProviderId): PricingMode {
   if (isProviderLocal(providerId)) return 'unpriced-local';
-  if (isApiPricedProvider(providerId)) return 'api-priced';
   if (UNPRICED_CLI_PROVIDER_IDS.has(providerId) || isProviderSubscription(providerId))
     return 'unpriced-cli';
   return 'unpriced-meta';
@@ -102,23 +113,29 @@ function makePricedResult(opts: {
   };
 }
 
+function pricingModelId(modelId?: string): string | undefined {
+  const trimmed = modelId?.trim();
+  if (trimmed === undefined || trimmed === '' || isAutomaticModel(trimmed)) return undefined;
+  return trimmed;
+}
+
 export function resolvePricing(
   providerId: string,
   cache: ModelCacheAccessor = NULL_CACHE,
   modelId?: string,
 ): ResolvedPricing {
-  if (!isProviderId(providerId)) return makeUnpriced(providerId, modelId);
   if (!isApiPricedProvider(providerId)) return makeUnpriced(providerId, modelId);
 
-  const effectiveModelId = getEffectiveModelId(providerId, modelId);
+  const effectiveModelId = pricingModelId(modelId);
   if (!effectiveModelId) return makeUnpriced(providerId, modelId);
 
+  // Only a custom endpoint reaches here, so rates are looked up by model id alone.
   // Prefer cache rates from the catalog that priced input/output; when that catalog omits them
   // (or for the bundled path) fall back to the bundled fallback's verified cache rates so
   // cache-aware cost math stays consistent regardless of the data source.
-  const bundled = findKnownModel(providerId, effectiveModelId);
+  const bundled = findKnownModelByModelId(effectiveModelId);
 
-  const modelsDev = lookupModelsDevModel(providerId, effectiveModelId, cache);
+  const modelsDev = lookupCatalogModelByModelId(effectiveModelId, cache);
   if (modelsDev?.pricingInput !== undefined && modelsDev.pricingOutput !== undefined) {
     return makePricedResult({
       modelId: effectiveModelId,
@@ -128,19 +145,6 @@ export function resolvePricing(
       cacheRead: modelsDev.pricingCacheRead ?? bundled?.pricingCacheRead,
       cacheWrite: modelsDev.pricingCacheWrite ?? bundled?.pricingCacheWrite,
       pricingTiers: modelsDev.pricingTiers,
-    });
-  }
-
-  const runtime = lookupRuntimeModel(providerId, effectiveModelId, cache);
-  if (runtime?.pricingInput !== undefined && runtime.pricingOutput !== undefined) {
-    return makePricedResult({
-      modelId: effectiveModelId,
-      input: runtime.pricingInput,
-      output: runtime.pricingOutput,
-      source: 'runtime',
-      cacheRead: runtime.pricingCacheRead ?? bundled?.pricingCacheRead,
-      cacheWrite: runtime.pricingCacheWrite ?? bundled?.pricingCacheWrite,
-      pricingTiers: runtime.pricingTiers,
     });
   }
 

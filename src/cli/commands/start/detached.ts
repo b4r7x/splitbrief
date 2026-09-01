@@ -11,7 +11,7 @@ import { cliError } from '../../errors.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
 import { formatDetachedAttachHint } from '../attach-hint.js';
 import type { RequiredFeatureDispatchArgs } from './types.js';
-import { assertDetachedOverridesTransportable } from '../../../engine/ipc/spawn-server.js';
+import { assertDetachedOverridesTransportable } from '../../../engine/ipc/server-invocation.js';
 
 export async function runDetachedStart(args: RequiredFeatureDispatchArgs): Promise<void> {
   const { deps, projectDir, feature, enrichedFeature, plannerContext, opts } = args;

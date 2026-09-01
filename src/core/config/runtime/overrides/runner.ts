@@ -6,7 +6,8 @@ import type { Config } from '../../../schemas/config.js';
 import type { PlannerConfig } from '../../../schemas/planner-config.js';
 import type { ImplementerConfig } from '../../../schemas/implementer-config.js';
 import type { EffortLevel } from '../../../schemas/enums.js';
-import type { CliAuthChannelId, ActiveRunnerRole } from '../../../runners/cli-tool-catalog.js';
+import type { CliAuthChannelId } from '../../../runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole } from '../../../runners/seat-roles.js';
 import {
   mergeImplementerProfileMetadata,
   pickDefaultProfileName,
@@ -24,6 +25,7 @@ export function existingToOpts(existing: PlannerConfig | ImplementerConfig): Bui
     ...(existing.timeout !== undefined && { timeout: existing.timeout }),
     ...(existing.customModels !== undefined && { customModels: existing.customModels }),
     ...(existing.effort !== undefined && { effort: existing.effort }),
+    ...(existing.variant !== undefined && { variant: existing.variant }),
     ...('idleWarnMs' in existing &&
       existing.idleWarnMs !== undefined && { idleWarnMs: existing.idleWarnMs }),
     ...('idleKillMs' in existing &&
@@ -63,13 +65,6 @@ export function existingToOpts(existing: PlannerConfig | ImplementerConfig): Bui
       ...('capabilities' in existing && { capabilities: existing.capabilities }),
     };
   }
-  if (existing.kind === 'agent-sdk') {
-    return {
-      ...common,
-      kind: 'agent-sdk',
-      ...('apiKey' in existing && { apiKey: existing.apiKey }),
-    };
-  }
   return assertNever(existing);
 }
 
@@ -103,7 +98,7 @@ function warnUnusableProviderOverrides(
   apiBase: string | undefined,
   apiKey: string | undefined,
 ): void {
-  const usesApiKey = kind === 'api' || kind === 'agent-sdk';
+  const usesApiKey = kind === 'api';
   const usesApiBase = kind === 'api';
   if (apiKey !== undefined && !usesApiKey) {
     warnStderr(`--${role}-api-key-env is ignored: the ${role} '${kind}' runner does not use it.`);
@@ -152,7 +147,7 @@ function buildRunnerFromOverrides(
     args !== undefined ||
     outputFormat !== undefined ||
     contextLength !== undefined ||
-    (apiKey !== undefined && (kind === 'api' || kind === 'agent-sdk'));
+    (apiKey !== undefined && kind === 'api');
   if (!applies) return undefined;
 
   const opts: BuildRunnerOpts = {

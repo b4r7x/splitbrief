@@ -19,6 +19,8 @@ import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { projectFilesStore } from '../stores/ui/project-files.js';
+import { skillsStore } from '../stores/project/skills.js';
+import { refreshSkills } from './refresh-skills.js';
 import { attachImage, detachImage, listAttachments } from '../stores/workflow/attachments.js';
 import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
 import { getDefaultDetectionService } from '../engine/detection/service.js';
@@ -34,11 +36,13 @@ import type {
   RuntimeCommandContext,
   ScrollCommandTarget,
   ScrollConversationResult,
+  SkillCommandOption,
+  SkillToggleResult,
   ToggleLatestActivityBatchResult,
   ToggleLatestDiffResult,
 } from '../core/runtime/commands/types.js';
 import { detectedModelFact, seatSupportsImages } from '../core/runners/capabilities.js';
-import { modelCacheStore } from '../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { createCommandContext } from '../core/runtime/commands/context-factory.js';
 import { copyToClipboard } from '../lib/clipboard/clipboard.js';
 import { sessionDir } from '../core/paths.js';
@@ -165,6 +169,34 @@ function toggleLatestDiff(
   return { status: 'toggled', expanded };
 }
 
+// Project skills first, then the ones already selected this session — the in-session selection set
+// is what "recently used" means here; there is no persisted recency store.
+function listSkills(): readonly SkillCommandOption[] {
+  const { available, selected } = skillsStore.get();
+  const project = available.filter((skill) => skill.scope === 'project');
+  const globals = available.filter((skill) => skill.scope === 'global');
+  return [
+    ...project,
+    ...globals.filter((skill) => selected.has(skill.id)),
+    ...globals.filter((skill) => !selected.has(skill.id)),
+  ].map((skill) => ({
+    id: skill.id,
+    name: skill.name,
+    description: skill.description,
+  }));
+}
+
+function toggleSkill(id: string): SkillToggleResult {
+  const { available, selected } = skillsStore.get();
+  const skill = available.find((candidate) => candidate.id === id);
+  if (skill === undefined) return { status: 'unknown' };
+  const next = new Set(selected);
+  const wasSelected = next.delete(id);
+  if (!wasSelected) next.add(id);
+  skillsStore.setSelected(next);
+  return { status: wasSelected ? 'deselected' : 'selected', name: skill.name };
+}
+
 async function copyTarget(
   target: CopyTarget,
   resolveCopyValue: WorkflowCommandPorts['resolveCopyValue'],
@@ -237,6 +269,9 @@ export function buildCommandContext({
       });
     },
     refreshProjectFiles: projectFilesStore.requestRefresh,
+    listSkills,
+    toggleSkill,
+    refreshSkills,
     getCurrentPhase: () => lifecycleStore.get().phase,
     requestRewind: workflow.requestRewind,
     requestTaskRedo: (taskId) => workflow.requestRewind({ target: 'task', taskId }),
@@ -317,6 +352,9 @@ export function useRuntimeCommands({ exit, phase }: { exit: () => void; phase: P
       resolveCopyValue,
     },
   });
+  // The command list embeds the skill id set as `/skills`'s closed options, so it has to be
+  // rebuilt whenever a rescan or a toggle changes the store.
+  skillsStore.use((s) => s);
   const commands = createRuntimeCommands(ctx);
   const runtimeChainRef = useRef(Promise.resolve());
   const handleRuntimeCommand = (raw: string, from: Screen) => {

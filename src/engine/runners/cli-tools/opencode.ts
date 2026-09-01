@@ -23,6 +23,7 @@ const OPENCODE_PROTECTED_FLAGS = new Set([
   '--format',
   '--model',
   '--prompt',
+  '--variant',
   '-m',
   'plan',
   'run',
@@ -134,6 +135,7 @@ function createProbe() {
 function plannerBaseArgs(input: OpenCodePlannerBuildInput): string[] {
   const args = ['run'];
   if (input.model !== undefined) args.push('--model', input.model);
+  if (input.variant !== undefined) args.push('--variant', input.variant);
   args.push('--format', 'json');
   args.push('--agent', input.mode === 'plan' ? 'plan' : 'build');
   args.push(input.prompt);
@@ -143,6 +145,7 @@ function plannerBaseArgs(input: OpenCodePlannerBuildInput): string[] {
 function implementerBaseArgs(input: OpenCodeImplementerBuildInput): string[] {
   const args = ['run'];
   if (input.model !== undefined) args.push('--model', input.model);
+  if (input.variant !== undefined) args.push('--variant', input.variant);
   args.push('--format', 'json', '--agent', 'build', input.prompt);
   return args;
 }

@@ -116,12 +116,6 @@ describe('createWorktree', () => {
     expect(existsSync(join(repoDir, TREES_DIR, slug))).toBe(false);
   });
 
-  it('accepts a valid worktree name', async () => {
-    const slug = 'feat-x';
-    await expect(createWorktree({ projectDir: repoDir, slug, git })).resolves.toBeDefined();
-    expect(existsSync(join(repoDir, TREES_DIR, slug))).toBe(true);
-  });
-
   it('carries the base .splitbrief/config.yaml into the new worktree', async () => {
     const ignoredRepo = await mkdtemp(join(tmpdir(), 'worktree-config-'));
     try {

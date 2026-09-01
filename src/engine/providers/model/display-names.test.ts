@@ -7,8 +7,8 @@ import { resolveCrewDisplayNames, resolveSeatDisplayName } from './display-names
 describe('resolveSeatDisplayName', () => {
   const cache: ModelCacheAccessor = {
     getModelsDevCatalog: () => ({
-      anthropic: {
-        id: 'anthropic',
+      ollama: {
+        id: 'ollama',
         models: {
           'claude-sonnet-4-6': {
             id: 'claude-sonnet-4-6',
@@ -19,7 +19,7 @@ describe('resolveSeatDisplayName', () => {
     }),
     getProviderModels: () => null,
     getScopedProviderRuntime: () => ({
-      connection: { role: 'planner', provider: 'anthropic', contextKey: 'planner-context' },
+      connection: { role: 'planner', provider: 'ollama', contextKey: 'planner-context' },
       state: 'fresh',
       catalog: 'populated',
       models: [{ id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Runtime)' }],
@@ -31,11 +31,11 @@ describe('resolveSeatDisplayName', () => {
   it('resolves displayName from catalog with provider runtime precedence', () => {
     const runner: RunnerConfig = {
       kind: 'api',
-      provider: 'anthropic',
-      service: 'anthropic',
-      offering: 'payg',
+      provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
       model: 'claude-sonnet-4-6',
-      apiBase: 'https://api.anthropic.com/v1',
+      apiBase: 'http://localhost:11434/v1',
     };
     expect(resolveSeatDisplayName(runner, 'planner', cache)).toBe('Claude Sonnet 4.6 (Runtime)');
   });
@@ -53,12 +53,21 @@ describe('resolveSeatDisplayName', () => {
 describe('resolveCrewDisplayNames', () => {
   const cache: ModelCacheAccessor = {
     getModelsDevCatalog: () => ({
-      anthropic: {
-        id: 'anthropic',
+      ollama: {
+        id: 'ollama',
         models: {
           'claude-sonnet-4-6': {
             id: 'claude-sonnet-4-6',
             name: 'Claude 3.7 Sonnet',
+          },
+        },
+      },
+      anthropic: {
+        id: 'anthropic',
+        models: {
+          'claude-sonnet-5': {
+            id: 'claude-sonnet-5',
+            name: 'Claude Sonnet 5',
           },
         },
       },
@@ -69,26 +78,23 @@ describe('resolveCrewDisplayNames', () => {
   it('resolves all crew seat display names', () => {
     const config = makeConfig({
       planner: {
-        kind: 'api',
-        provider: 'anthropic',
-        service: 'anthropic',
-        offering: 'payg',
-        model: 'claude-sonnet-4-6',
-        apiBase: 'https://api.anthropic.com/v1',
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'sonnet',
       },
       implementer: {
         kind: 'api',
-        provider: 'anthropic',
-        service: 'anthropic',
-        offering: 'payg',
+        provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
         model: 'claude-sonnet-4-6',
-        apiBase: 'https://api.anthropic.com/v1',
+        apiBase: 'http://localhost:11434/v1',
       },
     });
 
     const names = resolveCrewDisplayNames(config, cache);
-    expect(names.plan).toBe('Claude 3.7 Sonnet');
+    expect(names.plan).toBe('Claude Sonnet 5');
     expect(names.build).toBe('Claude 3.7 Sonnet');
-    expect(names.review).toBe('Claude 3.7 Sonnet'); // inherited from planner
+    expect(names.review).toBe('Claude Sonnet 5'); // inherited from planner
   });
 });

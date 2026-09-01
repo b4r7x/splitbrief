@@ -1,140 +1,30 @@
 import type { BriefQualityReport } from '../../spec/brief-quality.js';
-import {
-  briefErrorMessages,
-  evaluateBriefQuality,
-  firstBriefError,
-  isBriefQualityCode,
-} from '../../spec/brief-quality.js';
-import type { Task, TaskId } from '../../../core/schemas/task.js';
+import { evaluateBriefQuality, isBriefQualityCode } from '../../spec/brief-quality.js';
+import type { TaskId } from '../../../core/schemas/task.js';
 import { TaskIdSchema, taskId } from '../../../core/schemas/task.js';
-import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
-import type { SpecMetadata } from '../../../core/paths-io.js';
-import type { EventBus } from '../../events/types.js';
-import type { OrchestratorCallbacks, WorkflowSinks } from '../types.js';
-import type { Planner } from '../../planners/types.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { PhaseRecoveryBinding } from '../run/phases.js';
 import type { PlanningPhaseResult } from './types.js';
-import { createBusTextHandler } from '../events.js';
-import { planningError } from './errors.js';
-import { buildBriefQualityRepairComment } from './regen-targeted.js';
-import { regenerateTasks } from './regen.js';
-import { runLegacyQualityGate } from './brief-quality-gate.js';
+import { prepareLegacyBriefQuality } from './brief-quality-legacy.js';
 import { recoveryViewOf } from './brief-owner-projection.js';
-import {
-  commitQueueMessagesDrained,
-  readQueueForPrompt,
-  releaseQueueMessagesForPrompt,
-} from '../queue/drain.js';
+import { commitQueueMessagesDrained } from '../queue/drain.js';
 import type {
   BriefRecoveryInspection,
   BriefRecoveryProjectionV1,
 } from '../../../core/schemas/brief-recovery/document.js';
+import type { QueueBriefInput } from '../../../core/schemas/brief-recovery.js';
 import type {
-  BriefAdmissionInput,
-  BriefRecoveryController,
-  QueueBriefInput,
-  QueueResultV1,
-  RecoveryResultV1,
-  StateAuthorityReceipt,
-} from '../../../core/schemas/brief-recovery.js';
-
-type RecoveryControllerClient = Pick<
-  BriefRecoveryController,
-  | 'inspectBriefRecovery'
-  | 'enterBriefAdmission'
-  | 'queueBriefInput'
-  | 'dispatchBriefAction'
-  | 'settlePlannerAttempt'
->;
-
-export type BriefQualityAdmissionContext = {
-  tasks: Task[];
-  state: WorkflowState;
-  projectDir: string;
-  sessionId: string;
-};
-
-export type BriefQualityRecoveryBinding = {
-  controller: RecoveryControllerClient;
-  authority: StateAuthorityReceipt;
-  createAdmissionInput: (input: BriefQualityAdmissionContext) => BriefAdmissionInput;
-  /** The workflow owner exposes the persisted state for terminal recovery decisions. */
-  readState?: () => WorkflowState;
-};
-
-export type BriefQualityControllerResult = RecoveryResultV1 | QueueResultV1;
-
-export type BriefQualityPreparationOptions = {
-  tasks: Task[];
-  state: WorkflowState;
-  planner: Planner;
-  projectDir: string;
-  sessionId: string;
-  callbacks: OrchestratorCallbacks;
-  bus: EventBus;
-  metadata: SpecMetadata;
-  signal?: AbortSignal | undefined;
-  sinks?: WorkflowSinks | undefined;
-  queuedMessages?: readonly QueuedMessage[] | undefined;
-  recovery?: BriefQualityRecoveryBinding | undefined;
-};
-
-export type BriefQualityPreparationError =
-  | ReturnType<typeof planningError.briefQualityGateFailed>
-  | {
-      kind: 'brief-recovery-blocked';
-      data: { code: string; taskId: string };
-    };
-
-export type BriefQualityPreparationResult =
-  | {
-      ok: true;
-      state: WorkflowState;
-      tasks: Task[];
-      report: BriefQualityReport;
-      projection: BriefRecoveryProjectionV1;
-      recovery: BriefQualityControllerResult | null;
-    }
-  | {
-      ok: false;
-      state: WorkflowState;
-      tasks: Task[];
-      report: BriefQualityReport;
-      projection: BriefRecoveryProjectionV1;
-      recovery: BriefQualityControllerResult | null;
-      error: BriefQualityPreparationError;
-    };
-
-const fallbackAllowedActions = [
-  'status',
-] satisfies readonly BriefRecoveryProjectionV1['allowedActions'][number][];
-
-export function fallbackBriefRecoveryProjection(
-  sessionId: string,
-  state: WorkflowState,
-): BriefRecoveryProjectionV1 {
-  return {
-    version: 1,
-    sessionId,
-    stateRevision: state.stateRevision ?? 0,
-    recoveryRevision: 0,
-    epochId: null,
-    status: 'storage-blocked',
-    origin: null,
-    continuation: null,
-    activeBrief: null,
-    matchingReport: null,
-    blocker: {
-      kind: 'storage',
-      code: 'brief_storage_invalid',
-      message: 'Brief recovery controller is unavailable.',
-    },
-    allowedActions: fallbackAllowedActions,
-    activeOperation: null,
-    latestAttempt: null,
-    queuedInputs: { ids: [], count: 0, carriedCount: 0, heldCount: 0, releasedCount: 0 },
-  };
-}
+  BriefQualityControllerResult,
+  BriefQualityPreparationError,
+  BriefQualityPreparationOptions,
+  BriefQualityPreparationResult,
+  BriefQualityRecoveryBinding,
+} from './brief-quality-queue.js';
+import {
+  fallbackBriefRecoveryProjection,
+  prepareQueuedTasks,
+  releasePromptMessages,
+} from './brief-quality-queue.js';
 
 /**
  * The parked planning result every phase returns when it stops on a persisted
@@ -237,56 +127,6 @@ function queueInputsFor(
   }));
 }
 
-type QueuedTasksPreparation = {
-  state: WorkflowState;
-  tasks: Task[];
-  messages: readonly QueuedMessage[];
-};
-
-async function prepareQueuedTasks(
-  opts: BriefQualityPreparationOptions,
-): Promise<QueuedTasksPreparation> {
-  const pending =
-    opts.queuedMessages === undefined
-      ? readQueueForPrompt({
-          projectDir: opts.projectDir,
-          sessionId: opts.sessionId,
-          state: opts.state,
-        })
-      : { state: opts.state, messages: [...opts.queuedMessages] };
-  if (pending.messages.length === 0) {
-    return { state: pending.state, tasks: opts.tasks, messages: [] };
-  }
-
-  const summary = 'applying queued input before the brief quality gate';
-  createBusTextHandler({ bus: opts.bus, phase: pending.state.phase })(`\n[${summary}]\n`);
-  try {
-    const regenerated = await regenerateTasks({
-      projectDir: opts.projectDir,
-      sessionId: opts.sessionId,
-      planner: opts.planner,
-      callbacks: opts.callbacks,
-      bus: opts.bus,
-      state: pending.state,
-      metadata: opts.metadata,
-      signal: opts.signal,
-      queuedMessages: pending.messages,
-      commitQueue: false,
-      statusPhase: 'planning',
-      statusSummary: summary,
-      sinks: opts.sinks,
-    });
-    return {
-      state: regenerated.state,
-      tasks: regenerated.tasks,
-      messages: regenerated.queuedMessages,
-    };
-  } catch (err) {
-    releasePromptMessages(opts, pending.messages);
-    throw err;
-  }
-}
-
 async function admitAndQueue(
   opts: BriefQualityPreparationOptions,
   binding: BriefQualityRecoveryBinding,
@@ -313,128 +153,6 @@ async function admitAndQueue(
     if (queued.kind === 'conflict' || queued.kind === 'refused') break;
   }
   return { projection, recovery };
-}
-
-async function prepareLegacyBriefQuality(
-  opts: BriefQualityPreparationOptions,
-): Promise<BriefQualityPreparationResult> {
-  const queued = await prepareQueuedTasks(opts);
-  let state = queued.state;
-  let tasks = queued.tasks;
-  const queuedMessages = queued.messages;
-
-  const first = runLegacyQualityGate({
-    tasks,
-    projectDir: opts.projectDir,
-    sessionId: opts.sessionId,
-    bus: opts.bus,
-    phase: state.phase,
-  });
-  if (first.ok) {
-    const nextState =
-      queuedMessages.length === 0
-        ? state
-        : commitQueueMessagesDrained({
-            projectDir: opts.projectDir,
-            sessionId: opts.sessionId,
-            state,
-            messages: queuedMessages,
-            bus: opts.bus,
-          }).state;
-    return {
-      ok: true,
-      state: nextState,
-      tasks,
-      report: first.report,
-      projection: fallbackBriefRecoveryProjection(opts.sessionId, nextState),
-      recovery: null,
-    };
-  }
-
-  const summary = 'regenerating Task Briefs to clear the brief quality gate';
-  createBusTextHandler({ bus: opts.bus, phase: opts.state.phase })(`\n[${summary}]\n`);
-
-  let regenerated: Awaited<ReturnType<typeof regenerateTasks>>;
-  try {
-    regenerated = await regenerateTasks({
-      projectDir: opts.projectDir,
-      sessionId: opts.sessionId,
-      planner: opts.planner,
-      callbacks: opts.callbacks,
-      bus: opts.bus,
-      state,
-      metadata: opts.metadata,
-      signal: opts.signal,
-      feedback: buildBriefQualityRepairComment(briefErrorMessages(first.report)),
-      queuedMessages,
-      commitQueue: false,
-      statusPhase: 'planning',
-      statusSummary: summary,
-      sinks: opts.sinks,
-    });
-  } catch (err) {
-    releasePromptMessages(opts, queuedMessages);
-    throw err;
-  }
-
-  state = regenerated.state;
-  tasks = regenerated.tasks;
-  const second = runLegacyQualityGate({
-    tasks,
-    projectDir: opts.projectDir,
-    sessionId: opts.sessionId,
-    bus: opts.bus,
-    phase: state.phase,
-  });
-  if (second.ok) {
-    const nextState =
-      regenerated.queuedMessages.length === 0
-        ? state
-        : commitQueueMessagesDrained({
-            projectDir: opts.projectDir,
-            sessionId: opts.sessionId,
-            state,
-            messages: regenerated.queuedMessages,
-            bus: opts.bus,
-          }).state;
-    return {
-      ok: true,
-      state: nextState,
-      tasks,
-      report: second.report,
-      projection: fallbackBriefRecoveryProjection(opts.sessionId, nextState),
-      recovery: null,
-    };
-  }
-
-  const secondError = firstBriefError(second.report);
-  createBusTextHandler({ bus: opts.bus, phase: state.phase })(
-    `\n[Brief quality gate still failing after regeneration: ${secondError?.message ?? 'unknown error'}]\n`,
-  );
-  releasePromptMessages(opts, regenerated.queuedMessages);
-
-  return {
-    ok: false,
-    state,
-    tasks,
-    report: second.report,
-    projection: fallbackBriefRecoveryProjection(opts.sessionId, state),
-    recovery: null,
-    error: planningError.briefQualityGateFailed(
-      secondError?.code ?? 'unknown',
-      String(secondError?.taskId ?? 'unknown'),
-    ),
-  };
-}
-
-function releasePromptMessages(
-  opts: BriefQualityPreparationOptions,
-  messages: ReadonlyArray<{ id: string }>,
-): void {
-  releaseQueueMessagesForPrompt(
-    { projectDir: opts.projectDir, sessionId: opts.sessionId },
-    messages,
-  );
 }
 
 function publishQualityEvent(

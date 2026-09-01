@@ -1,4 +1,5 @@
 import type { DetectedModel, DetectedPricingTier } from '../../core/discovery/detection.js';
+import type { CatalogVendorId } from '../../core/providers/known-models.js';
 import type { ProviderId } from '../../core/schemas/enums.js';
 import type { ModelsDevCatalog, ModelsDevModel } from '../../core/schemas/models-dev.js';
 import {
@@ -8,19 +9,22 @@ import {
   type ModelsDevCatalogCacheOutcome,
 } from './models-dev-cache.js';
 import { isModelFree, pricingFieldsFromResolved } from './metadata.js';
+import type { ModelVendorIdentity } from './model/parsing.js';
 
 const CONTEXT_OVER_200K_THRESHOLD = 200_000;
 type ModelsDevRawCostTier = NonNullable<NonNullable<ModelsDevModel['cost']>['tiers']>[number];
 
-const PROVIDER_TO_MODELS_DEV_IDS: Partial<Record<ProviderId, string[]>> = {
-  together: ['togetherai'],
+/** A models.dev vendor: the runner id itself, or the lab a runner fronts. */
+export type ModelsDevProviderId = ProviderId | CatalogVendorId;
+
+const PROVIDER_TO_MODELS_DEV_IDS: Partial<Record<ModelsDevProviderId, string[]>> = {
   'lm-studio': ['lmstudio'],
   copilot: ['github-copilot'],
   'kilo-code': ['kilo'],
   opencode: ['opencode', 'opencode-go'],
 };
 
-function toModelsDevProviderIds(providerId: ProviderId): string[] {
+function toModelsDevProviderIds(providerId: ModelsDevProviderId): string[] {
   return PROVIDER_TO_MODELS_DEV_IDS[providerId] ?? [providerId];
 }
 
@@ -263,9 +267,34 @@ export async function fetchModelsDevCatalog(
   }
 }
 
+/**
+ * Model-keyed catalog lookup for a runner that has no catalog vendor of its own
+ * — a custom endpoint. A `vendor/model` prefix narrows the search to that
+ * vendor; a bare id searches every vendor and prefers a row that carries a rate.
+ */
+export function findCatalogModelByIdentity(
+  catalog: ModelsDevCatalog,
+  identity: ModelVendorIdentity,
+): DetectedModel | null {
+  let unpriced: DetectedModel | null = null;
+  for (const [key, provider] of Object.entries(catalog)) {
+    if (identity.vendor !== undefined && key !== identity.vendor && provider.id !== identity.vendor)
+      continue;
+    for (const model of Object.values(provider.models)) {
+      if (model.id !== identity.bareId) continue;
+      const detected = modelToDetected(provider.id, model);
+      if (detected.pricingInput !== undefined && detected.pricingOutput !== undefined) {
+        return detected;
+      }
+      unpriced ??= detected;
+    }
+  }
+  return unpriced;
+}
+
 export function getModelsForProvider(
   catalog: ModelsDevCatalog,
-  providerId: ProviderId,
+  providerId: ModelsDevProviderId,
 ): DetectedModel[] {
   const merged = new Map<string, DetectedModel>();
 

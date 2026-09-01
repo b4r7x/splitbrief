@@ -243,25 +243,32 @@ afterEach(() => {
 
 describe('renderHandoffWithCustom', () => {
   it.each(HANDOFF_TARGETS)(
-    'renders built-in target %s without loading a custom file',
+    'renders built-in target %s without loading a same-named custom file',
     async (target) => {
+      const renderersDir = join(customRendererTmp, '.splitbrief', 'handoff-renderers');
+      mkdirSync(renderersDir, { recursive: true });
+      writeFileSync(
+        join(renderersDir, `${target}.js`),
+        `export default async function render() {
+          return { files: [{ path: 'sentinel.md', content: 'from custom renderer' }] };
+        }`,
+      );
+
       const pack = await renderHandoffWithCustom(
         { ...customRendererBaseInput, target },
         customRendererTmp,
-        { trustCustomRenderers: false },
+        { trustCustomRenderers: true },
       );
-      expect(pack.files.length).toBeGreaterThan(0);
+      expect(pack).toEqual(renderHandoff({ ...customRendererBaseInput, target }));
+      expect(pack.files.some((f) => f.path === 'sentinel.md')).toBe(false);
+
+      const untrusted = await renderHandoffWithCustom(
+        { ...customRendererBaseInput, target },
+        customRendererTmp,
+      );
+      expect(untrusted).toEqual(pack);
     },
   );
-
-  it('delegates to sync renderHandoff for built-in targets without loading a file', async () => {
-    const pack = await renderHandoffWithCustom(
-      { ...customRendererBaseInput, target: 'spec-kit' },
-      customRendererTmp,
-    );
-    expect(pack.files.length).toBeGreaterThan(0);
-    expect(pack.files.some((f) => f.path.startsWith('tasks/'))).toBe(true);
-  });
 
   it('loads and calls a custom renderer for an unknown target when trusted', async () => {
     const renderersDir = join(customRendererTmp, '.splitbrief', 'handoff-renderers');

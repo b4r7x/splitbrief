@@ -16,4 +16,17 @@ describe('provider catalog', () => {
     expect(getProviderDisplayName('cursor')).toBe(CLI_TOOL_CATALOG.cursor.displayName);
     expect(getProviderBaseURL('cursor')).toBe('');
   });
+
+  it('projects admitted Command Code as a CLI, not an API provider', () => {
+    expect(PROVIDER_CATALOG['command-code']).toMatchObject({
+      id: 'command-code',
+      displayName: CLI_TOOL_CATALOG['command-code'].displayName,
+      category: 'cli',
+    });
+    expect(API_PROVIDER_CATALOG).not.toHaveProperty('command-code');
+    expect(getProviderDisplayName('command-code')).toBe(
+      CLI_TOOL_CATALOG['command-code'].displayName,
+    );
+    expect(getProviderBaseURL('command-code')).toBe('');
+  });
 });

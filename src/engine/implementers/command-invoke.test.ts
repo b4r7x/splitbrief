@@ -1,187 +1,19 @@
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  realpathSync,
-  writeFileSync,
-} from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { normalizeCustomCommand } from '../../core/config/custom-commands.js';
-import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
-import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { describe, expect, it, vi } from 'vitest';
 import {
-  customRunnerSecurityPosture,
-  markCustomRunnerTrusted,
-  type ConfiguredCustomRunner,
-} from '../runners/custom-trust.js';
+  configuredRunner,
+  createConfiguredCustomImplementer,
+  createConfiguredImplementerFixtures,
+  implement,
+} from '#testing/helpers/configured-custom-implementer.js';
+import { customRunnerSecurityPosture, markCustomRunnerTrusted } from '../runners/custom-trust.js';
 import { resolveCustomExecutable } from '../runners/resolve-cli-executable.js';
-import { customRunnerAdmissionError } from '../runners/custom-launchability.js';
-import type { CustomRunnerRuntimePort } from '../runners/types.js';
-import {
-  createConfiguredCustomImplementer as createPreparedConfiguredCustomImplementer,
-  type ConfiguredCustomImplementerOptions,
-} from './command-invoke.js';
-import { prepareCustomRunnerAdmission } from '../runners/custom-admission.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
-async function createConfiguredCustomImplementer(
-  options: Omit<ConfiguredCustomImplementerOptions, 'admission'> & {
-    runner: ConfiguredCustomRunner;
-  },
-) {
-  const admission = await prepareCustomRunnerAdmission({
-    ...options.runtime.admission,
-    projectDir: options.runtime.authorizationProjectDir,
-    runner: options.runner,
-    posture: customRunnerSecurityPosture('implementer', options.runner.command.contract),
-    phase: 'implementing',
-    authorizationPathEnv: options.runtime.authorizationPathEnv ?? '',
-    authorizationPathExt: options.runtime.authorizationPathExt ?? '',
-  });
-  if (admission.kind !== 'admitted') throw customRunnerAdmissionError.denied('implementer');
-  return createPreparedConfiguredCustomImplementer({
-    runtime: options.runtime,
-    ...(options.factoryOptions === undefined ? {} : { factoryOptions: options.factoryOptions }),
-    admission: admission.invocation,
-  });
-}
-
-let directories: string[] = [];
-
-function temporaryDirectory(prefix: string): string {
-  const directory = createTempDir(prefix);
-  directories.push(directory);
-  return directory;
-}
-
-function projectDirectory(prefix: string): string {
-  const projectDir = temporaryDirectory(prefix);
-  mkdirSync(join(projectDir, 'src'));
-  return projectDir;
-}
-
-function configuredRunner(
-  input: Readonly<{
-    contract?: 'output' | 'direct';
-    executable?: string;
-    argv?: readonly string[];
-    env?: readonly string[];
-    idleWarnMs?: number;
-    idleKillMs?: number;
-  }> = {},
-): ConfiguredCustomRunner {
-  return {
-    source: 'configured',
-    command: normalizeCustomCommand('configured-implementer-test', {
-      label: 'Configured implementer test',
-      contract: input.contract ?? 'output',
-      executable: input.executable ?? process.execPath,
-      argv: input.argv === undefined ? [] : [...input.argv],
-      env: input.env === undefined ? [] : [...input.env],
-      ...(input.idleWarnMs === undefined ? {} : { idleWarnMs: input.idleWarnMs }),
-      ...(input.idleKillMs === undefined ? {} : { idleKillMs: input.idleKillMs }),
-    }),
-  };
-}
-
-type RuntimeHarnessOptions = Readonly<{
-  sourceEnv?: NodeJS.ProcessEnv;
-  authorizationPathEnv?: string;
-  authorizationPathExt?: string;
-  admission?: CustomRunnerRuntimePort['admission'];
-  onCreateStage?: (sourceProjectDir: string, role: 'planner' | 'implementer') => void;
-}>;
-
-type RuntimeHarness = Readonly<{
-  runtime: CustomRunnerRuntimePort;
-  stages: string[];
-}>;
-
-function runtimeHarness(
-  authorizationProjectDir: string,
-  options: RuntimeHarnessOptions = {},
-): RuntimeHarness {
-  const stateDir = temporaryDirectory('configured-implementer-state');
-  const stageParent = temporaryDirectory('configured-implementer-stages');
-  const stages: string[] = [];
-  let stageNumber = 0;
-
-  const runtime: CustomRunnerRuntimePort = {
-    sessionId: 'configured-implementer-test-session',
-    authorizationProjectDir,
-    sourceEnv: options.sourceEnv ?? {},
-    ...(options.authorizationPathEnv === undefined
-      ? {}
-      : { authorizationPathEnv: options.authorizationPathEnv }),
-    ...(options.authorizationPathExt === undefined
-      ? {}
-      : { authorizationPathExt: options.authorizationPathExt }),
-    admission:
-      options.admission ??
-      ({
-        interaction: 'headless',
-        allowRepoRunners: true,
-        stateDir,
-      } satisfies CustomRunnerRuntimePort['admission']),
-    createStage: async (sourceProjectDir, role) => {
-      options.onCreateStage?.(sourceProjectDir, role);
-      const createdProjectDir = join(stageParent, `stage-${++stageNumber}`);
-      mkdirSync(createdProjectDir);
-      const projectDir = realpathSync(createdProjectDir);
-      stages.push(projectDir);
-      return {
-        projectDir,
-        snapshot: { head: '', files: [], dirtyFileContents: {} },
-        cleanup: () => cleanupTempDir(projectDir),
-      };
-    },
-    cleanupStaleArtifactReviews: async () => undefined,
-    beginDeclaredArtifactReview: async () => ({
-      reviewAfterChild: async () => '',
-      readWithReceiptAfterChild: async () => {
-        throw new Error('not used by implementer tests');
-      },
-      get receipt() {
-        return undefined;
-      },
-      getReceipt: () => undefined,
-      dispose: async () => undefined,
-    }),
-  };
-
-  return { runtime, stages };
-}
-
-async function implement(
-  implementer: Awaited<ReturnType<typeof createConfiguredCustomImplementer>>,
-  projectDir: string,
-  options: Readonly<{
-    file: string;
-    signal?: AbortSignal;
-    sandboxEnv?: NodeJS.ProcessEnv;
-    phase?: 'implementing';
-  }>,
-) {
-  return implementer.implement({
-    task: makeTask({ file: options.file, action: 'create' }),
-    projectDir,
-    config: makeConfig(),
-    context: { ...defaultContext, dir: projectDir },
-    onOutput: () => undefined,
-    ...(options.signal === undefined ? {} : { signal: options.signal }),
-    ...(options.sandboxEnv === undefined ? {} : { sandboxEnv: options.sandboxEnv }),
-    ...(options.phase === undefined ? {} : { phase: options.phase }),
-  });
-}
-
-afterEach(() => {
-  for (const directory of directories) cleanupTempDir(directory);
-  directories = [];
-});
+const { temporaryDirectory, projectDirectory, runtimeHarness } =
+  createConfiguredImplementerFixtures();
 
 describe('createConfiguredCustomImplementer', () => {
   it('constructs with named runner, runtime, and factoryOptions while preserving publisher wiring', async () => {

@@ -1,6 +1,6 @@
 import type { WorkflowState } from '../../../../core/schemas/workflow.js';
 import { isResumable } from '../../../../core/phases.js';
-import { loadStateForResume } from '../../../../core/state/persistence.js';
+import { loadStateForResume } from '../../../../core/state/resume-authority.js';
 import type { ResumeLoadAuthority, StateAuthorityReceipt } from '../../../../core/state/types.js';
 
 export type WorkflowScreenResumeResult =

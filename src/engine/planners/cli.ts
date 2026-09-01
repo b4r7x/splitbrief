@@ -63,6 +63,7 @@ export function createCliPlanner(
   const { supportsSessionResume, supportsEffort } = adapter;
 
   const effort = plannerCfg.effort;
+  const variant = plannerCfg.variant;
   const timeout = plannerCfg.timeout;
   const extraArgs = plannerCfg.args ?? [];
 
@@ -122,6 +123,7 @@ export function createCliPlanner(
       mode,
       sessionId: supportsSessionResume ? resumeId : null,
       effort: supportsEffort ? effort : undefined,
+      variant,
     });
     const result = await invokeCliAdapter({
       adapter,

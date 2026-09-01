@@ -327,10 +327,11 @@ describe('applyRecoveryAction: persisted success effects', () => {
           profiles: {
             'cheap-cloud': {
               kind: 'api',
-              provider: 'deepseek',
-              service: 'deepseek',
+              provider: 'custom-endpoint',
+              service: 'custom-endpoint',
               offering: 'payg',
-              apiBase: 'https://api.deepseek.com/v1',
+              apiBase: 'https://api.example.com/v1',
+              apiKey: 'test-key',
               model: 'deepseek-chat',
               costTier: 'cheap',
             },

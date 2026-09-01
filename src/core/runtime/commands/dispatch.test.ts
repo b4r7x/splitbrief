@@ -32,7 +32,7 @@ describe('executeRuntimeCommand', () => {
         errorMsg = msg;
       },
     });
-    expect(errorMsg).toContain('Unknown command');
+    expect(errorMsg).toBe('Unknown command: /nope. Type /help for available commands.');
   });
 
   it('points a removed command at its replacement instead of reporting it unknown', async () => {
@@ -253,31 +253,6 @@ describe('executeRuntimeCommand', () => {
     });
 
     expect(received).toEqual(['copy:path', 'queue:clear']);
-  });
-
-  it('reports an unknown slash command against a populated registry', async () => {
-    let errorMsg = '';
-    const cmds: RuntimeCommandDef[] = [
-      {
-        kind: 'noarg',
-        name: '/help',
-        description: 'help',
-        category: 'navigate',
-        validScreens: ['home'],
-        handler: noop,
-      },
-    ];
-
-    await runCommandInTest({
-      commands: cmds,
-      raw: '/nope',
-      screen: 'home',
-      onError: (msg) => {
-        errorMsg = msg;
-      },
-    });
-
-    expect(errorMsg).toContain('Unknown command: /nope');
   });
 
   it('waits for async command handlers', async () => {

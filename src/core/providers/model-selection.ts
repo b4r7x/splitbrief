@@ -10,8 +10,8 @@ function getDefaultResolvedModel(providerId: ProviderId): string | undefined {
 }
 
 /**
- * Resolves automatic selection for backends that transmit a model ID (`api`,
- * `agent-sdk`). CLI runners must use `resolveCliModel` instead — their automatic
+ * Resolves automatic selection for backends that transmit a model ID (`api`).
+ * CLI runners must use `resolveCliModel` instead — their automatic
  * mode means "omit the flag", not "substitute the catalog default".
  */
 export function resolveAutoModel(

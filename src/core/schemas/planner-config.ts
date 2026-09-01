@@ -16,4 +16,3 @@ export type CliPlannerConfig = Extract<PlannerConfig, { kind: 'cli' }>;
 export type ApiPlannerConfig = Extract<PlannerConfig, { kind: 'api' }>;
 export type ShellPlannerConfig = Extract<PlannerConfig, { kind: 'shell' }>;
 export type AgentPlannerConfig = Extract<PlannerConfig, { kind: 'agent' }>;
-export type AgentSdkPlannerConfig = Extract<PlannerConfig, { kind: 'agent-sdk' }>;

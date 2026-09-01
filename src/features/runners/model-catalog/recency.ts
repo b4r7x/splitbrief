@@ -9,6 +9,12 @@ export interface ModelVariant {
   /** Pre-merge enumeration facts so counting can restate per-variant truth. */
   membership?: ResolvedModelMembership | undefined;
   isCustom?: boolean | undefined;
+  /**
+   * Named presets the seat's tool offers for this route; synthetic, never
+   * id-encoded. Vocabulary is per provider, so it belongs to the route rather
+   * than to the merged row.
+   */
+  variantChoices?: readonly string[] | undefined;
 }
 
 export interface ModelOption {
@@ -21,6 +27,14 @@ export interface ModelOption {
   /** Last-confirmed runtime inventory retained after a failed refresh. */
   isStale?: boolean | undefined;
   isCustom?: boolean | undefined;
+  /**
+   * The authoritative list's own position — a confirmed row's place in the
+   * tool's output, or a bundled alias's place in the documented set; absent on
+   * catalog and custom rows.
+   */
+  nativeOrder?: number | undefined;
+  /** The configured model the authoritative list does not contain. */
+  isRecovery?: boolean | undefined;
   contextLength?: number | undefined;
   releaseDate?: string | undefined;
   /** Present on provider-merged rows and option-family rows (≥2 members). */
@@ -70,6 +84,14 @@ export function sortModelsByRecency(models: ModelOption[]): ModelOption[] {
   return [...models].sort((a, b) => {
     if (a.isDefault && !b.isDefault) return -1;
     if (!a.isDefault && b.isDefault) return 1;
+
+    const aNative = a.nativeOrder;
+    const bNative = b.nativeOrder;
+    if (aNative !== undefined && bNative !== undefined && aNative !== bNative) {
+      return aNative - bNative;
+    }
+    if (aNative !== undefined && bNative === undefined) return -1;
+    if (aNative === undefined && bNative !== undefined) return 1;
 
     if (a.releaseDate || b.releaseDate) {
       const aDate = a.releaseDate ?? '';

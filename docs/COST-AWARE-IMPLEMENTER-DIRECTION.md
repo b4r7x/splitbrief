@@ -77,11 +77,11 @@ Two transports are first-class and supported equally:
 | Transport | Write mode | Example |
 |---|---|---|
 | Tool CLI driving a cheaper model | `direct` — the agent writes files itself | Codex, Claude Code, OpenCode, Kilo, or Copilot pinned to a cheap model |
-| Model behind an OpenAI-compatible API | `extracted-code` — the model returns file contents, SPLITBRIEF writes them | Ollama, LM Studio, OpenRouter, DeepSeek |
+| Model behind an OpenAI-compatible API | `extracted-code` — the model returns file contents, SPLITBRIEF writes them | Ollama, LM Studio, or a custom endpoint |
 
 SPLITBRIEF does not favour a transport. The user picks; both paths get the same prompt quality, the same isolation, and the same validation. Shell and agent subprocesses remain supported as the escape hatch for custom executors.
 
-The write mode is not a free choice — it follows the runner kind, enforced in `src/core/schemas/implementer-config.ts`: `api` and `shell` return code, `cli`, `agent`, and `agent-sdk` write files.
+The write mode is not a free choice — it follows the runner kind, enforced in `src/core/schemas/implementer-config.ts`: `api` and `shell` return code, `cli` and `agent` write files.
 
 The important point is that this is still one role: implementer. A pool means SPLITBRIEF can choose the cheapest capable executor for each Task Brief — it is profile selection, not the swarm/multi-agent behavior ruled out in [VISION.md](./VISION.md).
 
@@ -159,11 +159,12 @@ implementerProfiles:
         writesFiles: extracted-code
     cheap-cloud:
       kind: api
-      provider: openrouter
-      service: openrouter
+      provider: custom-endpoint
+      service: custom-endpoint
       offering: payg
-      apiBase: https://openrouter.ai/api/v1
-      model: qwen/qwen3-coder
+      apiBase: https://api.example-endpoint.com/v1
+      apiKey: your-key
+      model: qwen3-coder
       contextLength: 131072
       costTier: cheap
       capabilities:
@@ -271,7 +272,7 @@ Tools belong to the underlying runner. Truth belongs to SPLITBRIEF.
 
 That means:
 
-- Claude Code, Codex, OpenCode, Kilo, Copilot, or Agent SDK may use their own tools and MCP clients when they are the planner or implementer.
+- Claude Code, Codex, OpenCode, Kilo, or Copilot may use their own tools and MCP clients when they are the planner or implementer.
 - SPLITBRIEF should not become another tool-calling agent that independently reads, writes, browses, and shells around the worker.
 - SPLITBRIEF should run deterministic orchestration operations: file snapshots, git status/diff, validation commands, budget checks, drift checks, evidence writes, approval gates.
 - SPLITBRIEF's MCP server should keep project resources read-only. The current mutation surface is limited to evidence-ledger tools that let external agents report progress, evidence, validation results, completion, or errors.

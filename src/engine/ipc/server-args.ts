@@ -5,6 +5,11 @@ import {
   CLIOverridesSchema,
   RunnerOverrideSchema,
 } from '../../core/config/runtime/overrides/schema.js';
+import {
+  ApproveLevelSchema,
+  EffortLevelSchema,
+  WorkflowModeSchema,
+} from '../../core/schemas/enums.js';
 import { writeSecureFile } from '../../lib/fs.js';
 import { warnStderr } from '../../lib/warn.js';
 import { error, matches } from '../../utils/error.js';
@@ -42,10 +47,18 @@ const DetachedRunnerOverrideSchema = RunnerOverrideSchema.pick({
   outputFormat: true,
   contextLength: true,
 }).strict();
+// CLIOverridesSchema keeps these fields as bare strings because commander hands
+// over unvalidated input that applyCLIOverrides validates later. This file is a
+// process boundary that parses what a bootstrap file claims, so every field with
+// a closed vocabulary is re-declared against it.
 const DetachedOverridesSchema = CLIOverridesSchema.extend({
   planner: DetachedRunnerOverrideSchema.optional(),
   implementer: DetachedRunnerOverrideSchema.optional(),
   reviewer: DetachedRunnerOverrideSchema.optional(),
+  mode: WorkflowModeSchema.optional(),
+  approve: ApproveLevelSchema.optional(),
+  plannerEffort: EffortLevelSchema.optional(),
+  reviewerEffort: EffortLevelSchema.optional(),
 });
 
 export type IpcServerAttachment = z.infer<typeof IpcServerAttachmentSchema>;

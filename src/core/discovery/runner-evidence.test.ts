@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { CliToolDetection, ProviderDetection } from './detection.js';
 import {
   admitStart,
   deriveRunnerStatus,
-  legacyDetectionFromRunnerEvidence,
-  runnerEvidenceFromCliToolDetection,
-  runnerEvidenceFromProviderDetection,
   type AuthFact,
   type ProbeOutcome,
   type RunnerEvidence,
@@ -73,43 +69,6 @@ function startAdmission(evidence: RunnerEvidence, requiredFacts: readonly StartF
 }
 
 describe('runner evidence', () => {
-  it('does not promote version-only or credential-present legacy facts to verified authentication', () => {
-    const cliDetection: CliToolDetection = {
-      tool: 'codex',
-      executable: {
-        path: '/opt/splitbrief/bin/codex',
-        fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
-      },
-      trust: 'trusted',
-      installedVersion: '0.40.0',
-      testedVersion: '0.40.0',
-      compatibility: 'compatible',
-      auth: 'authenticated',
-      diagnostic: { state: 'ready', remediation: null },
-      probedAt: 1_786_000_000_000,
-    };
-    const providerWithKey: ProviderDetection = {
-      provider: 'openai',
-      available: true,
-      isLocal: false,
-      hasKey: true,
-    };
-    const providerWithoutKey: ProviderDetection = { ...providerWithKey, hasKey: false };
-
-    const cliEvidence = runnerEvidenceFromCliToolDetection(cliDetection);
-    const providerEvidence = runnerEvidenceFromProviderDetection(providerWithKey);
-    const providerEvidenceWithoutKey = runnerEvidenceFromProviderDetection(providerWithoutKey);
-
-    expect(cliEvidence.auth).toBe('unknown');
-    expect(cliEvidence.executable).toEqual({ kind: 'unknown' });
-    expect(providerEvidence).toMatchObject({ credential: 'present', auth: 'unknown' });
-    expect(providerEvidenceWithoutKey).toMatchObject({ credential: 'absent', auth: 'unknown' });
-    expect(startAdmission(cliEvidence, ['authentication'])).toEqual({
-      kind: 'denied',
-      reason: { kind: 'evidence-source', source: 'legacy-projection' },
-    });
-  });
-
   it('keeps an installed runner configurable when authentication is unknown', () => {
     const evidence = freshEvidence({ auth: 'unknown', credential: 'present' });
 
@@ -228,15 +187,5 @@ describe('runner evidence', () => {
       kind: 'denied',
       reason: { kind: 'model-context-mismatch' },
     });
-  });
-
-  it('projects evidence back to the legacy shape without credential material', () => {
-    const legacy = legacyDetectionFromRunnerEvidence({
-      evidence: freshEvidence({ auth: 'unknown', credential: 'present' }),
-      remediationFor: (state) => `remediation:${state}`,
-    });
-
-    expect(legacy).toMatchObject({ auth: 'unknown', diagnostic: { state: 'unverified' } });
-    expect(JSON.stringify(legacy)).not.toContain('credential');
   });
 });

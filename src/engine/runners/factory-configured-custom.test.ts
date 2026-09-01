@@ -25,7 +25,7 @@ import { prepareCustomRunnerAdmission } from './custom-admission.js';
 import { customRunnerSecurityPosture } from './custom-trust.js';
 import { customRunnerAdmissionError } from './custom-launchability.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
-import { prepareExecution } from './prepare-execution.js';
+import { prepareExecution } from './prepare-execution/prepare-execution.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
 
 type CustomRunnerRole = 'planner' | 'implementer';
@@ -33,11 +33,11 @@ type CustomCommandContract = 'output' | 'direct';
 
 const API_PLANNER = {
   kind: 'api',
-  provider: 'anthropic',
-  service: 'anthropic',
+  provider: 'custom-endpoint',
+  service: 'custom-endpoint',
   offering: 'payg',
-  apiBase: 'https://api.anthropic.com',
-  model: 'claude-3-7-sonnet-latest',
+  apiBase: 'https://api.example.test/v1',
+  model: 'house-brand-1',
   apiKey: 'test-key',
 } as const;
 

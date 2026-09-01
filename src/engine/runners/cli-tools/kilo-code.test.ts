@@ -38,6 +38,21 @@ function implementerArgs(model: string | undefined, configuredArgs: readonly str
   });
 }
 
+const ROLE_SEATS = [
+  ['planner', kiloPlannerAdapter, plannerArgs(undefined, 'plan', []), 'plan'],
+  ['implementer', kiloImplementerAdapter, implementerArgs(undefined, []), 'code'],
+] as const;
+
+const AGENT_OVERRIDE_SEATS = ROLE_SEATS.flatMap(([seat, adapter, base]) =>
+  (
+    [
+      ['separate-value subagent', ['--agent', 'subagent']],
+      ['inline plan', ['--agent=plan']],
+      ['separate-value default', ['--agent', 'default']],
+    ] as const
+  ).map(([shape, override]) => [`${seat} ${shape}`, adapter, base, override] as const),
+);
+
 describe('Kilo Code role adapters', () => {
   it('exports planner then implementer candidates with matching hashes', () => {
     expect(CLI_CONFORMANCE_CANDIDATES).toHaveLength(2);
@@ -155,46 +170,22 @@ describe('Kilo Code role adapters', () => {
     });
   });
 
-  it('pins the effective role on every vector: default-role, fallback, and subagent runs fail', () => {
-    const plannerBase = plannerArgs(undefined, 'plan', []);
-    const implementerBase = implementerArgs(undefined, []);
+  it.each(ROLE_SEATS)(
+    'pins the %s effective role in its own base vector',
+    (_seat, _adapter, base, agent) => {
+      expect(base).toContain('--agent');
+      expect(base[base.indexOf('--agent') + 1]).toBe(agent);
+    },
+  );
 
-    expect(plannerBase).toContain('--agent');
-    expect(plannerBase[plannerBase.indexOf('--agent') + 1]).toBe('plan');
-    expect(implementerBase).toContain('--agent');
-    expect(implementerBase[implementerBase.indexOf('--agent') + 1]).toBe('code');
-    expect(implementerBase).toContain('--auto');
-
-    for (const base of [plannerBase, implementerBase]) {
+  it.each(AGENT_OVERRIDE_SEATS)(
+    'refuses a %s role override before dispatch',
+    (_label, adapter, base, override) => {
       expect(
-        kiloImplementerAdapter.validateArgs({
-          invocationArgs: [...base, '--agent', 'subagent'],
-          baseArgs: base,
-        }),
-      ).toEqual({
-        valid: false,
-        conflicts: ['--agent'],
-      });
-      expect(
-        kiloImplementerAdapter.validateArgs({
-          invocationArgs: [...base, '--agent=plan'],
-          baseArgs: base,
-        }),
-      ).toEqual({
-        valid: false,
-        conflicts: ['--agent'],
-      });
-      expect(
-        kiloImplementerAdapter.validateArgs({
-          invocationArgs: [...base, '--agent', 'default'],
-          baseArgs: base,
-        }),
-      ).toEqual({
-        valid: false,
-        conflicts: ['--agent'],
-      });
-    }
-  });
+        adapter.validateArgs({ invocationArgs: [...base, ...override], baseArgs: base }),
+      ).toEqual({ valid: false, conflicts: ['--agent'] });
+    },
+  );
 
   it('overrides read-only agent defaults with the verified code agent for full escalation', () => {
     const args = plannerArgs(undefined, 'escalate', []);

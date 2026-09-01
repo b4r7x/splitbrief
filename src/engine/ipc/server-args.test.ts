@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildServerArgs } from './spawn-server.js';
+import { buildServerArgs } from './server-invocation.js';
 import { createServerArgsAttachmentDrain, parseIpcServerArgs } from './server-args.js';
 
 const candidate = {
@@ -158,6 +158,26 @@ describe('parseIpcServerArgs launch contract', () => {
         projectDir: '/repo',
         feature: 'feature',
         overrides: { mode },
+      }),
+    ).toBeNull();
+  });
+
+  // The CLI transport keeps these as bare strings and validates them later, so
+  // the bootstrap file is the only place a closed vocabulary is checked before
+  // the detached child acts on it.
+  it.each([
+    { field: 'approve', value: 'yolo' },
+    { field: 'plannerEffort', value: 'max' },
+    { field: 'reviewerEffort', value: 'ludicrous' },
+  ])('rejects an out-of-vocabulary $field override', ({ field, value }) => {
+    expect(
+      parseIpcServerArgs({
+        version: 1,
+        parentPid: process.pid,
+        candidate,
+        projectDir: '/repo',
+        feature: 'feature',
+        overrides: { [field]: value },
       }),
     ).toBeNull();
   });

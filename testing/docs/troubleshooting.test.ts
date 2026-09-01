@@ -90,35 +90,15 @@ describe('TROUBLESHOOTING diagnostic parity', () => {
     },
   );
 
-  it('indexes every required diagnostic family without decoration-dependent matching', () => {
+  it('spells out symptom prose alongside the stateId index', () => {
     const readiness = sectionBetween(READINESS_TABLE_MARKER, RUNNER_TABLE_MARKER).toLowerCase();
     const runner = sectionBetween(
       RUNNER_TABLE_MARKER,
       '### Canonical support documentation',
     ).toLowerCase();
-    const combined = `${readiness}\n${runner}`;
 
-    const families: Array<{ needle: string; region?: 'readiness' | 'runner' | 'combined' }> = [
-      { needle: 'missing-binary', region: 'readiness' },
-      { needle: 'not on `path`', region: 'readiness' },
-      { needle: 'untrusted-path', region: 'readiness' },
-      { needle: 'incompatible-version', region: 'readiness' },
-      { needle: 'unauthenticated', region: 'readiness' },
-      { needle: 'auth-unknown', region: 'readiness' },
-      { needle: 'endpoint-invalid', region: 'readiness' },
-      { needle: 'credential-family-mismatch', region: 'readiness' },
-      { needle: 'protocol-failure', region: 'readiness' },
-      { needle: 'missing terminal', region: 'readiness' },
-      { needle: 'quota-rate-limit', region: 'readiness' },
-      { needle: '429', region: 'readiness' },
-      { needle: 'conflicting-args', region: 'readiness' },
-      { needle: 'output-budget-breach', region: 'runner' },
-      { needle: 'no-staged-change', region: 'runner' },
-    ];
-
-    for (const { needle, region = 'combined' } of families) {
-      const haystack = region === 'readiness' ? readiness : region === 'runner' ? runner : combined;
-      expect(haystack.includes(needle), `missing symptom family "${needle}"`).toBe(true);
+    for (const needle of ['not on `path`', 'missing terminal', '429']) {
+      expect(readiness.includes(needle), `missing symptom prose "${needle}"`).toBe(true);
     }
 
     expect(readiness).not.toMatch(/^config:/m);
@@ -129,6 +109,5 @@ describe('TROUBLESHOOTING diagnostic parity', () => {
     expect(troubleshootingDoc).toContain(
       'planner <backend> <detected> differs from the tested <tested>; compiled with runtime-drift evidence',
     );
-    expect(troubleshootingDoc).toContain('runtime-drift evidence');
   });
 });

@@ -29,18 +29,6 @@ const FIXTURE: ModelsDevCatalog = {
       },
     },
   },
-  togetherai: {
-    id: 'togetherai',
-    name: 'Together AI',
-    models: {
-      'meta-llama/Llama-3-70b': {
-        id: 'meta-llama/Llama-3-70b',
-        name: 'Llama 3 70B',
-        cost: { input: 0.9, output: 0.9 },
-        limit: { context: 8192 },
-      },
-    },
-  },
   lmstudio: {
     id: 'lmstudio',
     name: 'LM Studio',
@@ -270,7 +258,6 @@ describe('getModelsForProvider', () => {
   });
 
   it.each([
-    { providerId: 'together', modelId: 'meta-llama/Llama-3-70b' },
     { providerId: 'lm-studio', modelId: 'qwen2.5-7b' },
     { providerId: 'copilot', modelId: 'claude-opus-4.6' },
     { providerId: 'kilo-code', modelId: 'kimi-k2.5' },
@@ -281,7 +268,7 @@ describe('getModelsForProvider', () => {
   });
 
   it('leaves maxOutputTokens undefined when limit.output is absent', () => {
-    const models = getModelsForProvider(FIXTURE, 'together');
+    const models = getModelsForProvider(FIXTURE, 'ollama');
     expect(models.at(0)?.maxOutputTokens).toBeUndefined();
   });
 
@@ -298,14 +285,11 @@ describe('getModelsForProvider', () => {
     expect(models.at(0)).toMatchObject({ id: 'qwen2.5-7b', isFree: true });
   });
 
-  it('returns empty array for unknown provider', () => {
-    const models = getModelsForProvider(FIXTURE, 'groq');
-    expect(models).toEqual([]);
-  });
-
-  it('returns empty array when catalog is empty', () => {
-    const models = getModelsForProvider({}, 'openai');
-    expect(models).toEqual([]);
+  it.each([
+    { label: 'unknown provider', catalog: FIXTURE, providerId: 'openrouter' },
+    { label: 'empty catalog', catalog: {}, providerId: 'openai' },
+  ] as const)('returns empty array for $label', ({ catalog, providerId }) => {
+    expect(getModelsForProvider(catalog, providerId)).toEqual([]);
   });
 
   it('returns models with undefined pricing fields when the catalog omits cost', () => {
@@ -370,8 +354,8 @@ describe('getModelsForProvider', () => {
 
   it('preserves metadata through the live resolver without rewriting a provider-qualified ID', () => {
     const catalog: ModelsDevCatalog = {
-      openai: {
-        id: 'openai',
+      opencode: {
+        id: 'opencode',
         models: {
           'openai/gpt-5.4-20260101': {
             id: 'openai/gpt-5.4-20260101',
@@ -388,11 +372,11 @@ describe('getModelsForProvider', () => {
       },
     };
 
-    const [model] = getModelsDevEntries('openai', makeModelCacheAccessor({ catalog }));
+    const [model] = getModelsDevEntries('opencode', makeModelCacheAccessor({ catalog }));
 
     expect(model).toMatchObject({
       id: 'openai/gpt-5.4-20260101',
-      providerId: 'openai',
+      providerId: 'opencode',
       modelId: 'openai/gpt-5.4-20260101',
       displayName: 'GPT 5.4 Pinned',
       lifecycle: 'active',

@@ -1,5 +1,3 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -11,22 +9,16 @@ import { toErrorMessage } from '../../utils/format-errors.js';
 import { cliProviderAuthFacts } from '../../core/discovery/detection.js';
 import { formatModelName } from '../../core/model-display.js';
 import type { CustomCommandRunnerKind } from '../../core/config/custom-commands.js';
-import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { clearReviewerSeat } from '../../core/config/accessors/active-runner.js';
 
-import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
-import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
 import { isAutomaticModel } from '../../core/providers/automatic-model.js';
+import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
 import {
-  CLI_TOOL_CATALOG,
-  CLI_TOOL_IDS,
   seatPickerLane,
   type ActiveRunnerRole,
   type SeatPickerRole,
-} from '../../core/runners/cli-tool-catalog.js';
+} from '../../core/runners/seat-roles.js';
 import type { Config } from '../../core/schemas/config.js';
-import { getDefaultDetectionService } from '../../engine/detection/service.js';
-import { refreshDetectionForCurrentConfig } from '../../engine/detection/store-publication.js';
 import { assertNever, includes } from '../../utils/type-guards.js';
 import type { PickerOption, RunnerPickerOption } from './model-catalog/options.js';
 import {
@@ -47,33 +39,19 @@ import {
   removeCustomModel,
   type SeatCommitResult,
 } from './config-transforms.js';
-import {
-  configHasInlineApiKey,
-  failureCopy,
-  gitignoreCoversSplitbrief,
-  redactKey,
-  validateProviderKey,
-} from './provider-auth.js';
 import { pickerViewStore, type PickerSubView } from '../../stores/ui/picker-view.js';
 
 export interface PickerActions {
   confirm(selection: PickerOption, model: ModelOption | null): Promise<void>;
-  confirmProviderVariant(fullId: string): Promise<void>;
+  confirmProviderVariant(fullId: string, variant?: string | undefined): Promise<void>;
   leftChange(item: PickerOption): void;
+  browseCatalog(): void;
   deleteRight(item: ModelOption): Promise<void>;
   chooseContract(kind: CustomCommandRunnerKind): void;
   customCommand(cmd: string): Promise<void>;
   customModel(modelName: string): Promise<void>;
   openCustomModel(item: PickerOption): void;
-  openProviderAuth(item: PickerOption): void;
-  submitProviderKey(value: string): Promise<void>;
   closeOverlay(): void;
-}
-
-export interface PickerActionDeps {
-  validateKey: typeof validateProviderKey;
-  refreshDetection: () => Promise<unknown>;
-  readGitignore: (projectDir: string) => Promise<string | null>;
 }
 
 /** A picker action runs unawaited; its failure has to reach the user here. */
@@ -82,25 +60,6 @@ async function reportFailure(task: () => Promise<void>): Promise<void> {
     await task();
   } catch (err) {
     feedbackStore.setError(toErrorMessage(err));
-  }
-}
-
-function defaultRefreshDetection(): Promise<unknown> {
-  return refreshDetectionForCurrentConfig({
-    service: getDefaultDetectionService(),
-    publication: detectionStore,
-    getCurrent: () => {
-      const { config, projectDir } = configStore.get();
-      return config === null || projectDir === '' ? null : { config, projectDir };
-    },
-  });
-}
-
-async function defaultReadGitignore(projectDir: string): Promise<string | null> {
-  try {
-    return await readFile(join(projectDir, '.gitignore'), 'utf8');
-  } catch {
-    return null;
   }
 }
 
@@ -143,18 +102,12 @@ function needsSignInVariantNote(item: RunnerPickerOption, fullId: string): strin
 export function usePickerActions(opts: {
   role: SeatPickerRole;
   catalog: PickerCatalog;
-  deps?: Partial<PickerActionDeps> | undefined;
 }): PickerActions {
   const { role, catalog } = opts;
   const seatRole: ActiveRunnerRole = seatPickerLane(role);
   const config = configStore.useConfig();
   const view = pickerViewStore.use((s) => s.view);
   const preservedLeftIndex = pickerViewStore.use((s) => s.preservedLeftIndex);
-  const deps: PickerActionDeps = {
-    validateKey: opts.deps?.validateKey ?? validateProviderKey,
-    refreshDetection: opts.deps?.refreshDetection ?? defaultRefreshDetection,
-    readGitignore: opts.deps?.readGitignore ?? defaultReadGitignore,
-  };
 
   const reportNotice = (notice: string | undefined) => {
     if (notice !== undefined && !feedbackStore.get().isError) {
@@ -174,15 +127,15 @@ export function usePickerActions(opts: {
   const commitSelection = (
     selection: RunnerPickerOption,
     model: { id: string } | null,
-    apiKey?: string,
+    variant?: string | undefined,
   ): SeatCommitResult => {
     switch (seatRole) {
       case 'planner':
-        return commitPlannerTierSelection({ config, role: 'planner', selection, model, apiKey });
+        return commitPlannerTierSelection({ config, role: 'planner', selection, model, variant });
       case 'reviewer':
-        return commitPlannerTierSelection({ config, role: 'reviewer', selection, model, apiKey });
+        return commitPlannerTierSelection({ config, role: 'reviewer', selection, model, variant });
       case 'implementer':
-        return commitImplementerSelection({ config, selection, model, apiKey });
+        return commitImplementerSelection({ config, selection, model, variant });
       default:
         return assertNever(seatRole);
     }
@@ -199,14 +152,17 @@ export function usePickerActions(opts: {
     selection: RunnerPickerOption,
     modelId: string | null,
     note?: string | undefined,
+    variant?: string | undefined,
   ) => {
+    const seat = commitSelection(selection, modelId === null ? null : { id: modelId }, variant);
     const label =
       modelId === null
         ? selection.displayName
         : `${selection.displayName}${SOFT_SEP}${formatModelName(modelId)}`;
-    const message = `${catalog.roleLabel} set to: ${label}`;
-    const seat = commitSelection(selection, modelId === null ? null : { id: modelId });
-    await commit(seat.config, message);
+    // The line names what the commit kept: a variant the seat's tool cannot spell
+    // is dropped there, and announcing it would retract itself one line later.
+    const saved = seat.variant === undefined ? label : `${label}${SOFT_SEP}${seat.variant}`;
+    await commit(seat.config, `${catalog.roleLabel} set to: ${saved}`);
     // Both notices are news the save does not carry: neither may overwrite the
     // other, so they land as one line.
     reportNotice(
@@ -232,13 +188,20 @@ export function usePickerActions(opts: {
         await saveModelSelection(selection, model?.id ?? null);
       });
     },
-    async confirmProviderVariant(fullId: string) {
+    async confirmProviderVariant(fullId: string, variant?: string | undefined) {
       const item = runnerItemOf(catalog.currentItem);
       if (item === undefined) return;
-      await saveModelSelection(item, fullId, needsSignInVariantNote(item, fullId));
+      await saveModelSelection(item, fullId, needsSignInVariantNote(item, fullId), variant);
     },
     leftChange(item: PickerOption) {
+      // A catalog opened for one tool must not follow the cursor onto the next, and
+      // neither may a preset drafted from the tool the cursor left.
+      pickerViewStore.setBrowseCatalog(false);
+      pickerViewStore.setVariantDraft(null);
       catalog.setCurrentItem(item);
+    },
+    browseCatalog() {
+      pickerViewStore.setBrowseCatalog(true);
     },
     deleteRight(item: ModelOption) {
       return reportFailure(async () => {
@@ -297,75 +260,6 @@ export function usePickerActions(opts: {
     openCustomModel(item: PickerOption) {
       if (runnerItemOf(item) === undefined) return;
       openSubView({ kind: 'custom-model' }, item);
-    },
-    openProviderAuth(item: PickerOption) {
-      if (item.kind !== 'api') return;
-      openSubView({ kind: 'provider-auth' }, item);
-    },
-    async submitProviderKey(value: string) {
-      if (view.kind !== 'provider-auth') {
-        throw error('picker-invalid-view', 'submitProviderKey called outside provider-auth view', {
-          view: view.kind,
-        });
-      }
-      const item = runnerItemOf(catalog.currentItem);
-      if (item === undefined) return;
-      const descriptor = getApiProviderDescriptor(item.id);
-      if (descriptor === undefined) {
-        feedbackStore.setError(`Unknown provider: ${item.id}`);
-        return;
-      }
-      feedbackStore.setMessage(`Validating ${descriptor.displayName} key…`);
-      const validation = await deps.validateKey({ provider: descriptor.id, apiKey: value });
-      if (validation.kind === 'invalid') {
-        feedbackStore.setError(failureCopy(validation.failure, descriptor));
-        return;
-      }
-      // An implementer moving onto a new provider needs a model; the probe's
-      // catalog supplies one. A planner-tier seat or an unchanged provider keeps its own.
-      const authModel = (): { id: string } | null => {
-        if (seatRole !== 'implementer') return null;
-        const existing = resolveImplementerProfiles(config).defaultProfile.config;
-        if (
-          existing.kind === 'api' &&
-          existing.provider === item.id &&
-          existing.model !== undefined
-        ) {
-          return null;
-        }
-        const first = validation.models[0];
-        return first === undefined ? null : { id: first.id };
-      };
-      const firstInlineKey = !configHasInlineApiKey(config);
-      let seat: SeatCommitResult;
-      try {
-        seat = commitSelection(item, authModel(), value);
-      } catch (err) {
-        feedbackStore.setError(redactKey(toErrorMessage(err), value));
-        return;
-      }
-      // Read before the save: the config transaction appends the entry itself,
-      // so only the pre-save state can reveal that the key landed in a
-      // directory the user's .gitignore was not covering.
-      const gitignore = firstInlineKey
-        ? await deps.readGitignore(configStore.get().projectDir)
-        : null;
-      const result = await configStore.save(seat.config);
-      if (reportConfigSaveFailure(result, (message) => redactKey(message, value))) return;
-      let message = `${catalog.roleLabel} set to: ${item.displayName}${SOFT_SEP}key saved to ${SPLITBRIEF_DIR}/${CONFIG_FILE}`;
-      if (firstInlineKey && !gitignoreCoversSplitbrief(gitignore)) {
-        message += `${SOFT_SEP}warning: .gitignore did not cover ${SPLITBRIEF_DIR}/ — verify before committing`;
-      }
-      // The effort note is news the save line does not carry; appending keeps
-      // the .gitignore warning on screen instead of replacing it.
-      if (seat.notice !== undefined) message += `${SOFT_SEP}${seat.notice}`;
-      feedbackStore.setMessage(message);
-      overlayStore.close();
-      try {
-        await deps.refreshDetection();
-      } catch {
-        // Detection refresh is advisory; the key is already saved and selected.
-      }
     },
     closeOverlay() {
       pickerViewStore.close();

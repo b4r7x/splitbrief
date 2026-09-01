@@ -15,9 +15,9 @@ import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { inheritPlannerOption, type PickerOption } from './model-catalog/options.js';
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
-import type { ModelVariant } from './model-catalog/recency.js';
-import type { RightRow } from './model-catalog/rows.js';
-import { PickerView, rightRowActivation } from './picker-view.js';
+import type { ModelOption, ModelVariant } from './model-catalog/recency.js';
+import { buildRightRows, type RightRow } from './model-catalog/rows.js';
+import { PickerView } from './picker-view.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import type { PickerActions } from './use-picker-actions.js';
 
@@ -84,6 +84,7 @@ function makeCatalog(input: {
     initialRightIndex: input.initialRightIndex ?? 0,
     resolveRightIndex: () => 0,
     focusModels: input.focusModels ?? false,
+    browseCatalog: false,
     roleLabel: input.roleLabel ?? 'Reviewer',
     plannerIdentity: 'Claude Code CLI · Claude Sonnet 4',
     currentModel: undefined,
@@ -97,6 +98,7 @@ function makeCatalog(input: {
     currentCommandKind: undefined,
     customModels: [],
     discovery: { cold: false, refreshing: false },
+    variantDraft: null,
     setCurrentItem: () => {},
   };
 }
@@ -111,14 +113,33 @@ function makeActions(): PickerActions {
     customCommand: async () => {},
     customModel: async () => {},
     openCustomModel: () => {},
-    openProviderAuth: () => {},
-    submitProviderKey: async () => {},
     closeOverlay: () => {},
+    browseCatalog: () => {},
   };
 }
 
 function frameText(ui: ReturnType<typeof renderFeature>): string {
   return stripAnsiStyles(ui.lastFrame() ?? '');
+}
+
+/** An id-spelled axis row: no preset ladder, and a grid it can step through. */
+function optionAxisRow(input: {
+  model: ModelOption;
+  axis: 'effort' | 'speed';
+  value: string;
+  last?: boolean;
+  steps?: boolean;
+}): RightRow {
+  return {
+    kind: 'axis',
+    model: input.model,
+    axis: input.axis,
+    providerPrefix: '',
+    value: input.value,
+    choices: [],
+    steps: input.steps ?? true,
+    last: input.last ?? false,
+  };
 }
 
 describe('PickerView terminal panes', () => {
@@ -321,8 +342,8 @@ describe('PickerView terminal panes', () => {
     const model = { id: 'gpt-5.6-luna-high', displayName: 'GPT-5.6 Luna', variants };
     const rows: RightRow[] = [
       { kind: 'model', model, provenance: 'Detected', section: '', expanded: true },
-      { kind: 'axis', model, axis: 'effort', value: 'High', last: false },
-      { kind: 'axis', model, axis: 'speed', value: 'Fast', last: true },
+      optionAxisRow({ model, axis: 'effort', value: 'High' }),
+      optionAxisRow({ model, axis: 'speed', value: 'Fast', last: true }),
     ];
     const ui = mount(
       <PickerView
@@ -345,46 +366,6 @@ describe('PickerView terminal panes', () => {
     expect(frameText(ui)).not.toContain('choose route');
     expect(frameText(ui)).toContain('Cursor Agent CLI');
     ui.unmount();
-  });
-});
-
-describe('rightRowActivation', () => {
-  const lunaVariants: ModelVariant[] = [
-    { fullId: 'gpt-5.6-luna-high', providerPrefix: '', tag: '1M High' },
-    { fullId: 'gpt-5.6-luna-high-fast', providerPrefix: '', tag: 'High Fast' },
-  ];
-  const luna = { id: 'gpt-5.6-luna-high', displayName: 'GPT-5.6 Luna', variants: lunaVariants };
-  const openaiVariants: ModelVariant[] = [
-    { fullId: 'openai/gpt-5.6', providerPrefix: 'openai', tag: 'openai' },
-    { fullId: 'opencode-go/gpt-5.6', providerPrefix: 'opencode-go', tag: 'opencode-go' },
-  ];
-  const openai = { id: 'gpt-5.6', variants: openaiVariants };
-
-  it('confirms an axis and an expanded option parent, and collapses an expanded provider parent', () => {
-    expect(
-      rightRowActivation(
-        { kind: 'axis', model: luna, axis: 'effort', value: 'High', last: false },
-        undefined,
-      ),
-    ).toBe('confirm');
-    expect(
-      rightRowActivation(
-        { kind: 'model', model: luna, provenance: 'Detected', section: '', expanded: true },
-        undefined,
-      ),
-    ).toBe('confirm');
-    expect(
-      rightRowActivation(
-        { kind: 'model', model: openai, provenance: 'Detected', section: '', expanded: true },
-        undefined,
-      ),
-    ).toBe('collapse');
-    expect(
-      rightRowActivation(
-        { kind: 'model', model: luna, provenance: 'Detected', section: '', expanded: false },
-        lunaVariants[0],
-      ),
-    ).toBe('expand');
   });
 });
 
@@ -428,8 +409,8 @@ describe('PickerView option-axis confirm and cycle', () => {
   function axisRows(speed: string, withSibling: boolean): RightRow[] {
     const rows: RightRow[] = [
       { kind: 'model', model: luna, provenance: 'Detected', section: '', expanded: true },
-      { kind: 'axis', model: luna, axis: 'effort', value: 'High', last: false },
-      { kind: 'axis', model: luna, axis: 'speed', value: speed, last: true },
+      optionAxisRow({ model: luna, axis: 'effort', value: 'High' }),
+      optionAxisRow({ model: luna, axis: 'speed', value: speed, last: true }),
     ];
     if (withSibling) {
       rows.push({
@@ -479,8 +460,15 @@ describe('PickerView option-axis confirm and cycle', () => {
           currentItem: cursor,
           rightRows: [
             { kind: 'model', model: sparse, provenance: 'Detected', section: '', expanded: true },
-            { kind: 'axis', model: sparse, axis: 'effort', value: 'High', last: false },
-            { kind: 'axis', model: sparse, axis: 'speed', value: 'Standard', last: true },
+            optionAxisRow({ model: sparse, axis: 'effort', value: 'High' }),
+            // `gpt-5-high` has no fast twin, so this rung is the end of the ladder.
+            optionAxisRow({
+              model: sparse,
+              axis: 'speed',
+              value: 'Standard',
+              last: true,
+              steps: false,
+            }),
           ],
           roleLabel: 'Planner',
           focusModels: true,
@@ -607,7 +595,7 @@ describe('PickerView option-axis confirm and cycle', () => {
     const ui = renderAxisPicker({ actions, initialRightIndex: 0 });
     await flushEffects();
     collectClickableZones({ cols: 140, rows: 40 }).get(
-      'runner-right:axis:gpt-5.6-luna-high:speed',
+      'runner-right:axis:gpt-5.6-luna-high::speed',
     )?.();
     await flushEffects();
 
@@ -731,7 +719,7 @@ describe('PickerView option-axis confirm and cycle', () => {
     pickerViewStore.expand(sparse.id, 'gpt-5-high');
     const ui = renderSparsePicker({ actions, initialRightIndex: 0 });
     await flushEffects();
-    collectClickableZones({ cols: 140, rows: 40 }).get('runner-right:axis:gpt-5:speed')?.();
+    collectClickableZones({ cols: 140, rows: 40 }).get('runner-right:axis:gpt-5::speed')?.();
     await flushEffects();
 
     // The row cannot step, so it does not own the click: it confirms, the way its
@@ -792,5 +780,174 @@ describe('PickerView option-axis confirm and cycle', () => {
     expect(pickerViewStore.get().optionDraftId).toBeNull();
     expect(pickerViewStore.get().expandedModelId).toBeNull();
     ui.unmount();
+  });
+});
+
+describe('PickerView hybrid route and axis expansion', () => {
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+    resetAllStores();
+    _resetMouseZones();
+    terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({ planner: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6' } }),
+    });
+    detectionStore.setDetection({ providers: [], cliTools: [] });
+  });
+
+  // Two routes, and one of them spells a speed option: the merge that makes this row
+  // is what forces route rows and axis rows into the same expansion.
+  const hybridVariants: ModelVariant[] = [
+    { fullId: 'openai/gpt-5.6-luna', providerPrefix: 'openai', tag: 'openai' },
+    { fullId: 'openai/gpt-5.6-luna-fast', providerPrefix: 'openai', tag: 'openai' },
+    { fullId: 'opencode-go/gpt-5.6-luna', providerPrefix: 'opencode-go', tag: 'opencode-go' },
+  ];
+  const hybrid = {
+    id: 'openai/gpt-5.6-luna',
+    displayName: 'GPT-5.6 Luna',
+    variants: hybridVariants,
+  };
+  const DRAFTED = 'openai/gpt-5.6-luna';
+
+  // The rows come from the production builder, so the order under test is the one
+  // the picker actually renders rather than a fixture's opinion of it.
+  function hybridRows(model: ModelOption): RightRow[] {
+    return buildRightRows({
+      models: [model],
+      expandedModelId: model.id,
+      providerAuth: undefined,
+      hasOracle: false,
+      catalogLane: 'ready',
+      persistedModel: undefined,
+      customModels: [],
+      browseCatalog: false,
+      optionDraftId: pickerViewStore.get().optionDraftId,
+    });
+  }
+
+  function renderHybrid(input: {
+    actions: PickerActions;
+    initialRightIndex: number;
+    model?: ModelOption;
+  }) {
+    const opencode = cliTool('opencode', 'OpenCode CLI');
+    return mount(
+      <PickerView
+        role="planner"
+        catalog={makeCatalog({
+          items: [opencode],
+          currentItem: opencode,
+          rightRows: hybridRows(input.model ?? hybrid),
+          roleLabel: 'Planner',
+          focusModels: true,
+          initialRightIndex: input.initialRightIndex,
+        })}
+        actions={input.actions}
+      />,
+    );
+  }
+
+  it('expands a two-route family into each route followed by its own axis rows', async () => {
+    pickerViewStore.expand(hybrid.id, DRAFTED);
+    const ui = renderHybrid({ actions: makeActions(), initialRightIndex: 0 });
+    await flushEffects();
+
+    const lines = frameText(ui).split('\n');
+    const at = (needle: string): number => lines.findIndex((line) => line.includes(needle));
+    const parent = at('GPT-5.6 Luna');
+
+    expect(parent).toBeGreaterThanOrEqual(0);
+    expect(at('openai')).toBe(parent + 1);
+    // Only that route spells a speed, so its axis closes its block and the second
+    // route follows with none of its own.
+    expect(at('─ speed')).toBe(parent + 2);
+    expect(at('opencode-go')).toBe(parent + 3);
+    ui.unmount();
+  });
+
+  it('steps the speed axis of its own route only', async () => {
+    pickerViewStore.expand(hybrid.id, DRAFTED);
+    const ui = renderHybrid({ actions: makeActions(), initialRightIndex: 2 });
+    await flushEffects();
+
+    ui.stdin.write(' ');
+    await flushEffects();
+    expect(pickerViewStore.get().optionDraftId).toBe('openai/gpt-5.6-luna-fast');
+
+    ui.stdin.write(' ');
+    await flushEffects();
+    // The other route is a sibling, not a rung: stepping never walks off the route.
+    expect(pickerViewStore.get().optionDraftId).toBe(DRAFTED);
+    ui.unmount();
+  });
+
+  it('confirms the drafted id from the parent and from its own route rows', async () => {
+    const confirmed: string[] = [];
+    const confirmFrom = async (initialRightIndex: number) => {
+      const actions = makeActions();
+      actions.confirmProviderVariant = async (fullId: string) => {
+        confirmed.push(fullId);
+      };
+      pickerViewStore.expand(hybrid.id, DRAFTED);
+      const ui = renderHybrid({ actions, initialRightIndex });
+      await flushEffects();
+      ui.stdin.write('\r');
+      await flushEffects();
+      ui.unmount();
+    };
+
+    await confirmFrom(1);
+    await confirmFrom(2);
+    await confirmFrom(0);
+    // The second route confirms itself, not the route the draft happens to sit on.
+    await confirmFrom(3);
+
+    expect(confirmed).toEqual([DRAFTED, DRAFTED, DRAFTED, 'opencode-go/gpt-5.6-luna']);
+  });
+
+  // The blocker this row shape exists to close: before per-route axes the second
+  // route's option spellings had no keystroke that could reach them.
+  it('reaches all four spellings of a two-route, two-speed row', async () => {
+    const squareVariants: ModelVariant[] = [
+      ...hybridVariants,
+      {
+        fullId: 'opencode-go/gpt-5.6-luna-fast',
+        providerPrefix: 'opencode-go',
+        tag: 'opencode-go',
+      },
+    ];
+    const square: ModelOption = { ...hybrid, variants: squareVariants };
+    const confirmed: string[] = [];
+    const actions = makeActions();
+    actions.confirmProviderVariant = async (fullId: string) => {
+      confirmed.push(fullId);
+    };
+
+    // rows: parent, openai, openai speed, opencode-go, opencode-go speed
+    for (const [index, steps] of [
+      [1, 0],
+      [2, 1],
+      [3, 0],
+      [4, 1],
+    ] as const) {
+      pickerViewStore.expand(square.id, DRAFTED);
+      const ui = renderHybrid({ actions, initialRightIndex: index, model: square });
+      await flushEffects();
+      for (let step = 0; step < steps; step++) {
+        ui.stdin.write(' ');
+        await flushEffects();
+      }
+      ui.stdin.write('\r');
+      await flushEffects();
+      ui.unmount();
+    }
+
+    expect(confirmed).toEqual([
+      'openai/gpt-5.6-luna',
+      'openai/gpt-5.6-luna-fast',
+      'opencode-go/gpt-5.6-luna',
+      'opencode-go/gpt-5.6-luna-fast',
+    ]);
   });
 });

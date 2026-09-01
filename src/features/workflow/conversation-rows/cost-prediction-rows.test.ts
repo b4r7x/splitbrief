@@ -13,8 +13,8 @@ function makeEvent(
     lowCost: 0.1,
     expectedCost: 0.2,
     highCost: 0.4,
-    plannerTool: 'anthropic',
-    implementerTool: 'deepseek',
+    plannerTool: 'claude-code',
+    implementerTool: 'custom-endpoint',
     ...(review !== undefined && { plannerEstimateReview: review }),
   };
   return { type: 'cost_prediction', ts: 0, phase: 'implementing', prediction };

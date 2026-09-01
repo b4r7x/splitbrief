@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { lstat, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
-import { ensureConfigGitignore } from '../../../core/config/load/io.js';
+import { ensureConfigGitignore } from '../../../core/config/load/document.js';
 import { isolationMarkerPath, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import type { GitClient } from '../../../lib/git/client.js';
 import { checkIgnoredPaths, getCurrentChangedFiles } from '../../../lib/git/files.js';

@@ -4,10 +4,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { adviseMode } from '../../../engine/orchestrator/planning/mode-advisor.js';
 import type { AdvisorResult } from '../../../engine/orchestrator/planning/mode-advisor.js';
-import {
-  parsePreparedConfig,
-  type PreparedExecution,
-} from '../../../engine/runners/prepared-execution.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
@@ -25,90 +22,6 @@ import { InputFooter } from './input-footer.js';
 
 import { makeRunnerCallStalled } from '#testing/helpers/events/runner-call.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
-
-function localExecution(
-  feature: string,
-  worktreeName?: string,
-): { kind: 'local'; prepared: PreparedExecution } {
-  const projectDir = '/tmp/splitbrief-test';
-  const preparationId = 'input-footer-preparation';
-  const sessionId = 'input-footer-session';
-  const active = {
-    version: 1 as const,
-    sessionId,
-    generation: '22222222-2222-4222-8222-222222222222',
-  };
-
-  return {
-    kind: 'local',
-    prepared: {
-      purpose: 'new-workflow',
-      config: parsePreparedConfig(
-        makeConfig({
-          planner: {
-            kind: 'api',
-            provider: 'anthropic',
-            model: 'test-planner',
-            apiBase: 'https://api.anthropic.com/v1',
-            apiKey: 'test-key',
-            contextLength: 32_768,
-          },
-        }),
-      ),
-      preparationId,
-      report: {
-        generatedAt: '2026-08-04T00:00:00.000Z',
-        projectDir,
-        status: 'ready',
-        counts: { ok: 2, info: 0, warning: 0, blocker: 0 },
-        nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
-        sections: [
-          {
-            id: 'runners',
-            title: 'Runners',
-            checks: [
-              { id: 'runner.planner', severity: 'ok', summary: 'Planner ready' },
-              {
-                id: 'runner.implementer.default',
-                severity: 'ok',
-                summary: 'Implementer ready',
-              },
-            ],
-          },
-        ],
-        metadata: {},
-      },
-      gates: [
-        {
-          kind: 'api',
-          slot: { role: 'planner' },
-          preparationId,
-          provider: 'anthropic',
-          endpointOrigin: 'https://api.anthropic.com',
-        },
-        {
-          kind: 'api',
-          slot: { role: 'implementer', profile: 'default' },
-          preparationId,
-          provider: 'ollama',
-          endpointOrigin: 'http://localhost:11434',
-        },
-      ],
-      session: {
-        kind: 'new',
-        ref: { projectDir, sessionId },
-        ownership: active,
-        active,
-      },
-      runtime: {
-        feature,
-        ...(worktreeName !== undefined && { worktreeName }),
-        allowRepoRunners: false,
-        allowHooks: false,
-      },
-    },
-  };
-}
 
 function publishAdvisory(advisory: AdvisorResult): void {
   if (advisory.kind === 'none') return;
@@ -299,7 +212,7 @@ describe('InputFooter', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('advisor:');
-    expect(frame).toContain('instant');
+    expect(frame).toContain('quick');
 
     ui.unmount();
   });
@@ -338,18 +251,6 @@ describe('InputFooter', () => {
     expect(frame).not.toContain('Local rate');
     expect(frame).not.toContain('Spent:');
     expect(frame).not.toContain('Saved:');
-
-    ui.unmount();
-  });
-
-  it('shows the queue notice in the resting footer byline', () => {
-    terminalSizeStore.__testReset({ cols: 140, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'planning', queueDepth: 2 });
-
-    const ui = renderFeature(<InputFooter />);
-    const frame = ui.lastFrame() ?? '';
-
-    expect(frame).toContain('2 queued');
 
     ui.unmount();
   });
@@ -503,7 +404,17 @@ describe('InputFooter', () => {
     const dirty = `${esc}]52;c;YWJj${bel}clean-tree${esc}[2K`;
     routerStore.init({
       screen: 'workflow',
-      execution: localExecution('demo', dirty),
+      execution: {
+        kind: 'local',
+        prepared: makePreparedExecution({
+          projectDir: '/tmp/splitbrief-test',
+          sessionId: 'input-footer-session',
+          feature: 'demo',
+          config: makeConfig(),
+          gates: () => [],
+          worktreeName: dirty,
+        }),
+      },
     });
 
     const ui = renderFeature(<InputFooter />);

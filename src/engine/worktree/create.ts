@@ -3,7 +3,7 @@ import { cp, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../core/paths.js';
 import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
-import { ensureConfigGitignore } from '../../core/config/load/io.js';
+import { ensureConfigGitignore } from '../../core/config/load/document.js';
 import type { GitClient } from '../../lib/git/client.js';
 import { worktreeError } from './errors.js';
 import {

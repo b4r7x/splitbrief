@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { createDetectionCoordinator } from './coordinator.js';
 import {
-  createDetectionCoordinator,
   detectionContextKey,
   detectionSourceContextKey,
   type DetectionProjection,
   type DetectionSourceError,
   type CliModelSnapshot,
-} from './coordinator.js';
+} from './types.js';
 
 function createClock() {
   let current = 1_700_000_000_000;

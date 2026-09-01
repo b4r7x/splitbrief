@@ -1,4 +1,5 @@
-import type { ActiveRunnerRole } from '../../../core/runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
+import { variantChoicesForModelId } from '../../../core/runners/variant-vocabulary.js';
 import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
 import { AUTOMATIC_MODEL, isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
@@ -6,20 +7,20 @@ import type { CliProviderAuth } from '../../../core/discovery/detection.js';
 import type { Config } from '../../../core/schemas/config.js';
 import {
   resolveModelCatalog,
+  type ResolvedModelCatalogEntry,
   type ResolvedModelMembership,
 } from '../../../engine/providers/model/catalog.js';
+import {
+  canonicalModelBucket,
+  isSameCanonicalModel,
+  type ModelIdentity,
+} from '../../../core/providers/canonical-model-id.js';
 import { resolveModelDisplayName } from '../../../core/discovery/model-catalog.js';
 import { NULL_CACHE, type ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
 import type { PickerOption } from './options.js';
-import { mergeOptionFamilies } from './option-axis.js';
-import {
-  compactProviderTag,
-  modelBareId,
-  modelProviderAuthKey,
-  modelProviderPrefix,
-  resolveProviderAuthState,
-} from './provider-axis.js';
-import { sortModelsByRecency, type ModelOption, type ModelVariant } from './recency.js';
+import { mergeOptionFamilies } from './option-merge.js';
+import { mergeProviderVariants } from './provider-merge.js';
+import { sortModelsByRecency, type ModelOption } from './recency.js';
 
 // A selection policy, not catalog data: it carries no context length, pricing,
 // release date or provenance, and is synthesized per render rather than merged.
@@ -81,154 +82,6 @@ export function countModelOptions(models: readonly ModelOption[]): PickerModelCo
   return { confirmed, stale, suggestions, bundled, custom };
 }
 
-const MEMBERSHIP_RANK = {
-  confirmed: 0,
-  stale: 1,
-  'catalog-suggestion': 2,
-  'bundled-suggestion': 3,
-  custom: 4,
-} as const satisfies Record<ResolvedModelMembership, number>;
-
-interface ProviderVariantSource {
-  readonly row: ModelOption;
-  readonly prefix: string;
-}
-
-interface ProviderMergeContext {
-  readonly persistedModel: string | undefined;
-  readonly customModels: readonly string[];
-  readonly providerAuth: CliProviderAuth | undefined;
-}
-
-function toVariant(source: ProviderVariantSource): ModelVariant {
-  return {
-    fullId: source.row.id,
-    providerPrefix: source.prefix,
-    tag: compactProviderTag(source.prefix),
-    ...(source.row.displayName !== undefined ? { displayName: source.row.displayName } : {}),
-    ...(source.row.membership === undefined ? {} : { membership: source.row.membership }),
-    ...(source.row.isCustom ? { isCustom: true } : {}),
-  };
-}
-
-function sortVariantsConfiguredFirst(
-  variants: readonly ModelVariant[],
-  providerAuth: CliProviderAuth | undefined,
-): readonly ModelVariant[] {
-  // Only a read listing names configured providers; an empty or unreadable one
-  // claims no auth state, so the recency order stands.
-  if (providerAuth?.kind !== 'read') return variants;
-  const facts = providerAuth.facts;
-  const needsSignIn = (variant: ModelVariant): number => {
-    const authKey = modelProviderAuthKey(variant.fullId);
-    if (authKey === undefined) return 1;
-    return resolveProviderAuthState(authKey, facts) === 'configured' ? 0 : 1;
-  };
-  return variants.toSorted((a, b) => needsSignIn(a) - needsSignIn(b));
-}
-
-function bestMembership(rows: readonly ModelOption[]): ResolvedModelMembership | undefined {
-  let best: ResolvedModelMembership | undefined;
-  for (const row of rows) {
-    if (row.membership === undefined) continue;
-    if (best === undefined || MEMBERSHIP_RANK[row.membership] < MEMBERSHIP_RANK[best]) {
-      best = row.membership;
-    }
-  }
-  return best;
-}
-
-function mergeGroupRows(
-  first: ProviderVariantSource,
-  rest: readonly ProviderVariantSource[],
-  ctx: ProviderMergeContext,
-): ModelOption {
-  const sources = [first, ...rest];
-  const variants = sortVariantsConfiguredFirst(sources.map(toVariant), ctx.providerAuth);
-  if (rest.length === 0) return { ...first.row, variants };
-
-  const rows = sources.map((source) => source.row);
-  const representative =
-    sources.find((source) => source.row.id === ctx.persistedModel)?.row ??
-    sources.find((source) => ctx.customModels.includes(source.row.id))?.row ??
-    first.row;
-  const membership = bestMembership(rows);
-  let contextLength: number | undefined;
-  let releaseDate: string | undefined;
-  for (const row of rows) {
-    if (
-      row.contextLength !== undefined &&
-      (contextLength === undefined || row.contextLength > contextLength)
-    ) {
-      contextLength = row.contextLength;
-    }
-    if (
-      row.releaseDate !== undefined &&
-      (releaseDate === undefined || row.releaseDate > releaseDate)
-    ) {
-      releaseDate = row.releaseDate;
-    }
-  }
-
-  const displayName =
-    representative.displayName ?? rows.find((row) => row.displayName !== undefined)?.displayName;
-
-  return {
-    id: representative.id,
-    ...(displayName !== undefined ? { displayName } : {}),
-    ...(rows.some((row) => row.isDefault) ? { isDefault: true } : {}),
-    ...(membership === undefined ? {} : { membership }),
-    ...(membership !== undefined && membership !== 'custom'
-      ? { isDetected: membership === 'confirmed' }
-      : {}),
-    ...(membership === 'stale' ? { isStale: true } : {}),
-    ...(rows.some((row) => row.isCustom) ? { isCustom: true } : {}),
-    ...(contextLength === undefined ? {} : { contextLength }),
-    ...(releaseDate === undefined ? {} : { releaseDate }),
-    variants,
-  };
-}
-
-interface ProviderVariantGroup {
-  readonly kind: 'group';
-  readonly first: ProviderVariantSource;
-  readonly rest: ProviderVariantSource[];
-}
-
-type MergeSlot = Readonly<{ kind: 'row'; row: ModelOption }> | ProviderVariantGroup;
-
-/**
- * Collapses same-bare-id rows of a provider-dependent tool into one row per
- * model, keeping each group at its most-recent member's position. Unprefixed
- * ids never join a group.
- */
-function mergeProviderVariants(
-  models: readonly ModelOption[],
-  ctx: ProviderMergeContext,
-): ModelOption[] {
-  const groups = new Map<string, ProviderVariantGroup>();
-  const slots: MergeSlot[] = [];
-  for (const row of models) {
-    const prefix = modelProviderPrefix(row.id);
-    if (prefix === undefined) {
-      slots.push({ kind: 'row', row });
-      continue;
-    }
-    const bareId = modelBareId(row.id);
-    const existing = groups.get(bareId);
-    if (existing !== undefined) {
-      existing.rest.push({ row, prefix });
-      continue;
-    }
-    const slot: ProviderVariantGroup = { kind: 'group', first: { row, prefix }, rest: [] };
-    groups.set(bareId, slot);
-    slots.push(slot);
-  }
-  return slots.map((slot) =>
-    slot.kind === 'row' ? slot.row : mergeGroupRows(slot.first, slot.rest, ctx),
-  );
-}
-
 /** True when the row is, or one of its provider variants is, the given full id. */
 export function modelRowMatchesId(row: ModelOption, fullId: string): boolean {
   if (row.id === fullId) return true;
@@ -259,24 +112,93 @@ function toModelOption(entry: ReturnType<typeof resolveModelCatalog>[number]): M
     isDetected: entry.membership === 'confirmed',
     membership: entry.membership,
     ...(entry.isStale ? { isStale: true } : {}),
+    ...(entry.nativeOrder === undefined ? {} : { nativeOrder: entry.nativeOrder }),
+    ...(entry.source === 'configured-recovery' ? { isRecovery: true } : {}),
     contextLength: entry.contextLength,
     releaseDate: entry.releaseDate,
   };
+}
+
+function identityOf(entry: ResolvedModelCatalogEntry): ModelIdentity {
+  return { id: entry.selectionId, owner: entry.sourceProviderId };
+}
+
+/** Candidates that share a last canonical segment — every match has one. */
+function bucketOf(
+  buckets: Map<string, ResolvedModelCatalogEntry[]>,
+  identity: ModelIdentity,
+): ResolvedModelCatalogEntry[] {
+  const key = canonicalModelBucket(identity);
+  const existing = buckets.get(key);
+  if (existing !== undefined) return existing;
+  const created: ResolvedModelCatalogEntry[] = [];
+  buckets.set(key, created);
+  return created;
+}
+
+/**
+ * Two runtime rows are two routes the tool really offers — `anthropic/x` and
+ * `openrouter/anthropic/x` bill differently — so they collapse only on an exact
+ * id, and `mergeProviderVariants` owns the multi-route row. Everything
+ * speculative folds into whatever the runtime lane already names.
+ */
+function dedupeAgainstRuntime(
+  entries: readonly ResolvedModelCatalogEntry[],
+): ResolvedModelCatalogEntry[] {
+  const buckets = new Map<string, ResolvedModelCatalogEntry[]>();
+  const runtimeIds = new Set<string>();
+  const runtime: ResolvedModelCatalogEntry[] = [];
+  for (const entry of entries) {
+    if (entry.source !== 'runtime' || runtimeIds.has(entry.selectionId)) continue;
+    runtimeIds.add(entry.selectionId);
+    bucketOf(buckets, identityOf(entry)).push(entry);
+    runtime.push(entry);
+  }
+
+  const rest: ResolvedModelCatalogEntry[] = [];
+  for (const entry of entries) {
+    if (entry.source === 'runtime') continue;
+    const identity = identityOf(entry);
+    const bucket = bucketOf(buckets, identity);
+    if (bucket.some((earlier) => isSameCanonicalModel(identityOf(earlier), identity))) continue;
+    bucket.push(entry);
+    rest.push(entry);
+  }
+  return [...runtime, ...rest];
 }
 
 export function resolveAndSort(
   providerId: string,
   role: ActiveRunnerRole,
   cache: ModelCacheAccessor = NULL_CACHE,
+  options: Readonly<{
+    configuredSelectionId?: string | undefined;
+    browseCatalog?: boolean | undefined;
+  }> = {},
 ): ModelOption[] {
-  const seen = new Set<string>();
-  const models: ModelOption[] = [];
-  for (const entry of resolveModelCatalog(providerId, { cache, role })) {
-    if (seen.has(entry.id)) continue;
-    seen.add(entry.id);
-    models.push(toModelOption(entry));
-  }
-  return sortModelsByRecency(models);
+  const entries = resolveModelCatalog(providerId, {
+    cache,
+    role,
+    configuredSelectionId: options.configuredSelectionId,
+    browseCatalog: options.browseCatalog,
+  });
+  return sortModelsByRecency(dedupeAgainstRuntime(entries).map(toModelOption));
+}
+
+/**
+ * A merged row spans several routes and each provider spells its own presets, so
+ * the ladder hangs off the route rather than off the row's representative id.
+ */
+function withVariantChoices(row: ModelOption): ModelOption {
+  const variants = row.variants;
+  if (variants === undefined) return row;
+  return {
+    ...row,
+    variants: variants.map((variant) => {
+      const variantChoices = variantChoicesForModelId(variant.fullId);
+      return variantChoices.length === 0 ? variant : { ...variant, variantChoices };
+    }),
+  };
 }
 
 export function buildRightModels(params: {
@@ -286,6 +208,7 @@ export function buildRightModels(params: {
   cache?: ModelCacheAccessor;
   persistedModel?: string | undefined;
   providerAuth?: CliProviderAuth | undefined;
+  browseCatalog?: boolean | undefined;
 }): ModelOption[] {
   if (!params.currentItem) {
     return params.customModels.map(
@@ -299,8 +222,15 @@ export function buildRightModels(params: {
   }
 
   const cache = params.cache ?? NULL_CACHE;
+  // The seat's model belongs to the seat's tool: recovering it onto a tool the
+  // cursor is merely visiting would offer, and then save, an id that tool cannot run.
+  const configuredSelectionId =
+    params.currentItem.isCurrent === true ? params.persistedModel : undefined;
   const knownModels = capability.showsDiscovered
-    ? resolveAndSort(params.currentItem.id, params.role, cache)
+    ? resolveAndSort(params.currentItem.id, params.role, cache, {
+        configuredSelectionId,
+        browseCatalog: params.browseCatalog,
+      })
     : [];
   const customOptions: ModelOption[] = capability.allowsCustom
     ? params.customModels
@@ -309,19 +239,25 @@ export function buildRightModels(params: {
     : [];
 
   const merged = mergeModelOptions(customOptions, knownModels);
-  const afterProviders =
+  const families = mergeOptionFamilies(merged, {
+    persistedModel: params.persistedModel,
+    customModels: params.customModels,
+  });
+  const routed =
     params.currentItem.providerDependent === true
-      ? mergeProviderVariants(merged, {
+      ? mergeProviderVariants(families, {
           persistedModel: params.persistedModel,
           customModels: params.customModels,
           providerAuth: params.providerAuth,
         })
-      : merged;
-  const rows = mergeOptionFamilies(afterProviders, {
-    persistedModel: params.persistedModel,
-    customModels: params.customModels,
-  });
-  return capability.allowsAutomatic ? [AUTOMATIC_MODEL_OPTION, ...rows] : rows;
+      : families;
+  const rows =
+    params.currentItem.effortChannel === 'variant' ? routed.map(withVariantChoices) : routed;
+  // Automatic selection is structural, never a catalog row: cursor's native list
+  // ships its own `auto` line, which would otherwise duplicate the synthesized
+  // option — same id, same list key.
+  const listed = rows.filter((row) => !isAutomaticModel(row.id));
+  return capability.allowsAutomatic ? [AUTOMATIC_MODEL_OPTION, ...listed] : listed;
 }
 
 export function isCurrentConfig(

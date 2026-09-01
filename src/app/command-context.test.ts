@@ -27,6 +27,8 @@ import {
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
 import { findLatestRenderableDiffKey } from '../core/sections/event-sections.js';
 import { configStore } from '../stores/project/config.js';
+import { skillsStore } from '../stores/project/skills.js';
+import type { SkillMeta } from '../core/skills/types.js';
 import { addEvent } from '../stores/workflow/actions/event.js';
 import { getSections } from '../stores/workflow/actions/sections.js';
 import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
@@ -262,6 +264,83 @@ describe('buildCommandContext', () => {
   });
 });
 
+function skill(id: string, scope: 'global' | 'project'): SkillMeta {
+  return {
+    id,
+    name: `${id} name`,
+    description: `${id} description`,
+    path: `/skills/${id}/SKILL.md`,
+    scope,
+  };
+}
+
+describe('buildCommandContext skills ports', () => {
+  beforeEach(() => {
+    resetAllStores();
+  });
+
+  afterEach(() => {
+    resetAllStores();
+  });
+
+  it('ranks project skills, then selected global skills, then the rest', () => {
+    skillsStore.setAvailable([
+      skill('global-a', 'global'),
+      skill('project-a', 'project'),
+      skill('global-b', 'global'),
+      skill('project-b', 'project'),
+      skill('global-c', 'global'),
+    ]);
+    skillsStore.setSelected(new Set(['global-b']));
+
+    const options = build().listSkills();
+
+    expect(options.map((option) => option.id)).toEqual([
+      'project-a',
+      'project-b',
+      'global-b',
+      'global-a',
+      'global-c',
+    ]);
+  });
+
+  it('lists each skill as an id, name and description', () => {
+    skillsStore.setAvailable([skill('project-a', 'project'), skill('global-a', 'global')]);
+    skillsStore.setSelected(new Set(['project-a']));
+
+    expect(build().listSkills()).toEqual([
+      {
+        id: 'project-a',
+        name: 'project-a name',
+        description: 'project-a description',
+      },
+      {
+        id: 'global-a',
+        name: 'global-a name',
+        description: 'global-a description',
+      },
+    ]);
+  });
+
+  it('reports selected and deselected when toggling a known skill', () => {
+    skillsStore.setAvailable([skill('project-a', 'project')]);
+    const ctx = build();
+
+    expect(ctx.toggleSkill('project-a')).toEqual({ status: 'selected', name: 'project-a name' });
+    expect(skillsStore.get().selected.has('project-a')).toBe(true);
+
+    expect(ctx.toggleSkill('project-a')).toEqual({ status: 'deselected', name: 'project-a name' });
+    expect(skillsStore.get().selected.has('project-a')).toBe(false);
+  });
+
+  it('reports unknown for a skill id that is not available', () => {
+    skillsStore.setAvailable([skill('project-a', 'project')]);
+
+    expect(build().toggleSkill('nope')).toEqual({ status: 'unknown' });
+    expect(skillsStore.get().selected.size).toBe(0);
+  });
+});
+
 function RuntimeCommandsHarness({
   onModel,
 }: {
@@ -299,6 +378,68 @@ describe('useRuntimeCommands', () => {
     expect(feedback.isError).toBe(true);
     expect(feedback.message).toContain('Unknown command');
     expect(feedback.message).toContain('/totally-unknown-xyz');
+    ui.unmount();
+  });
+});
+
+function skillOptions(model: ReturnType<typeof useRuntimeCommands> | undefined): readonly string[] {
+  const command = model?.commands.find((cmd) => cmd.name === '/skills');
+  if (command === undefined || command.kind !== 'arg' || command.args.kind !== 'closed') {
+    throw new Error('/skills is not a closed-argument command');
+  }
+  return command.args.options;
+}
+
+describe('useRuntimeCommands skills freshness', () => {
+  beforeEach(() => {
+    resetAllStores();
+  });
+
+  afterEach(() => {
+    resetAllStores();
+  });
+
+  it('rebuilds the /skills option set when a rescan publishes new skills', async () => {
+    skillsStore.setAvailable([skill('project-a', 'project')]);
+    let model: ReturnType<typeof useRuntimeCommands> | undefined;
+    const ui = renderFeature(
+      createElement(RuntimeCommandsHarness, {
+        onModel: (m) => {
+          model = m;
+        },
+      }),
+    );
+    await tick();
+    expect(skillOptions(model)).toEqual(['project-a']);
+
+    skillsStore.setAvailable([skill('project-a', 'project'), skill('global-new', 'global')]);
+    await tick();
+
+    expect(skillOptions(model)).toContain('global-new');
+    ui.unmount();
+  });
+
+  it('reorders the /skills options when a global skill is selected', async () => {
+    skillsStore.setAvailable([
+      skill('project-a', 'project'),
+      skill('global-a', 'global'),
+      skill('global-b', 'global'),
+    ]);
+    let model: ReturnType<typeof useRuntimeCommands> | undefined;
+    const ui = renderFeature(
+      createElement(RuntimeCommandsHarness, {
+        onModel: (m) => {
+          model = m;
+        },
+      }),
+    );
+    await tick();
+    expect(skillOptions(model)).toEqual(['project-a', 'global-a', 'global-b']);
+
+    skillsStore.setSelected(new Set(['global-b']));
+    await tick();
+
+    expect(skillOptions(model)).toEqual(['project-a', 'global-b', 'global-a']);
     ui.unmount();
   });
 });

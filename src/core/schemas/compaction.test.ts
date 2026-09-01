@@ -18,11 +18,6 @@ describe('resolveCompactionFormat', () => {
       expected: 'structured' as const,
     },
     {
-      description: 'uses structured summaries for agent-sdk planners in auto mode',
-      input: { configured: 'auto' as const, plannerKind: 'agent-sdk' as const },
-      expected: 'structured' as const,
-    },
-    {
       description: 'uses freeform summaries for cli planners in auto mode',
       input: { configured: 'auto' as const, plannerKind: 'cli' as const },
       expected: 'freeform' as const,

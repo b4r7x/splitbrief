@@ -18,8 +18,6 @@ export function makeRunnerGate(
         provider: runner.provider,
         endpointOrigin: new URL(runner.apiBase).origin,
       };
-    case 'agent-sdk':
-      return { ...base, kind: 'agent-sdk', provider: 'anthropic' };
     case 'shell':
       return { ...base, kind: 'shell', command: { kind: 'validated-config' } };
     case 'agent':

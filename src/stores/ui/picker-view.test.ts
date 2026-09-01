@@ -12,8 +12,28 @@ describe('pickerViewStore', () => {
       preservedLeftIndex: 0,
       expandedModelId: null,
       optionDraftId: null,
+      variantDraft: null,
       draft: null,
+      browseCatalog: false,
     });
+  });
+
+  it('starts with the catalog unbrowsed', () => {
+    expect(pickerViewStore.get().browseCatalog).toBe(false);
+  });
+
+  it('remembers that the user asked to browse the catalog', () => {
+    pickerViewStore.setBrowseCatalog(true);
+
+    expect(pickerViewStore.get().browseCatalog).toBe(true);
+  });
+
+  it('keeps the same state object when the browse flag does not change', () => {
+    pickerViewStore.setBrowseCatalog(true);
+    const browsing = pickerViewStore.get();
+    pickerViewStore.setBrowseCatalog(true);
+
+    expect(pickerViewStore.get()).toBe(browsing);
   });
 
   it('preserves the left index a sub-view was opened from', () => {
@@ -63,9 +83,37 @@ describe('pickerViewStore', () => {
     expect(pickerViewStore.get().optionDraftId).toBeNull();
   });
 
+  it('seeds the variant draft when a model expands', () => {
+    pickerViewStore.expand('openai/gpt-5.6-luna', 'openai/gpt-5.6-luna', 'high');
+
+    expect(pickerViewStore.get().variantDraft).toBe('high');
+  });
+
+  it('clears the variant draft on collapse', () => {
+    pickerViewStore.expand('openai/gpt-5.6-luna', undefined, 'high');
+    pickerViewStore.collapse();
+
+    expect(pickerViewStore.get().variantDraft).toBeNull();
+  });
+
+  it('no-ops when setVariantDraft is given the value it already holds', () => {
+    pickerViewStore.setVariantDraft('medium');
+    const drafted = pickerViewStore.get();
+    pickerViewStore.setVariantDraft('medium');
+
+    expect(pickerViewStore.get()).toBe(drafted);
+  });
+
+  it('leaves the variant draft alone when expand omits it', () => {
+    pickerViewStore.expand('openai/gpt-5.6-luna', undefined, 'xhigh');
+    pickerViewStore.expand('anthropic/claude-sonnet-4');
+
+    expect(pickerViewStore.get().variantDraft).toBe('xhigh');
+  });
+
   it('keeps an expanded model while a sub-view opens and closes', () => {
     pickerViewStore.expand('gpt-5.6-luna');
-    pickerViewStore.open({ kind: 'provider-auth' });
+    pickerViewStore.open({ kind: 'custom-model' });
     pickerViewStore.close();
 
     expect(pickerViewStore.get().expandedModelId).toBe('gpt-5.6-luna');
@@ -84,6 +132,7 @@ describe('pickerViewStore', () => {
     pickerViewStore.open({ kind: 'custom-model' }, 7);
     pickerViewStore.expand('gpt-5.6-luna');
     pickerViewStore.setDraft('ollama/llama4');
+    pickerViewStore.setBrowseCatalog(true);
 
     pickerViewStore.reset();
 
@@ -92,7 +141,9 @@ describe('pickerViewStore', () => {
       preservedLeftIndex: 0,
       expandedModelId: null,
       optionDraftId: null,
+      variantDraft: null,
       draft: null,
+      browseCatalog: false,
     });
   });
 });

@@ -27,6 +27,7 @@ import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { overlayRect, type OverlayDensity } from '../../core/navigation/overlay-rect.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { handleSessionSelect } from '../../stores/navigation/session-select.js';
+import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { sessionSelectDeps } from '../prepare-resume.js';
 
 const PANEL_DENSITY: OverlayDensity = 'roomy';
@@ -39,6 +40,8 @@ const SECTION_HEADER_MIN_ROWS = 12;
 // truncated instead, so the description column always survives (exercised by the row-truncation
 // test at 50 columns).
 const LABEL_COLUMN_SHARE = 0.5;
+// Cells a widened label leaves behind for the status word a session or task row carries.
+const STATUS_RESERVE = 14;
 
 // Command rows always carry a category and are sectioned by it, so they never reach this map.
 const SOURCE_HEADERS: Record<Exclude<PaletteSource, 'command'>, string> = {
@@ -172,36 +175,50 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
         <FilterInput filter={query} placeholder="Type a command…" />
       </Box>
 
-      <ListViewport
-        items={results}
-        selectedIndex={cursor}
-        getKey={(result) => result.id}
-        rowBudget={listBudget}
-        rowZonePrefix="palette"
-        showRemainingCount
-        onRowActivate={(index) => {
-          void runResult(index);
-        }}
-        section={{
-          ...section,
-          renderHeader: (label) => <Text color={t.textDim}>{label}</Text>,
-        }}
-        placeholder={<Text color={t.textDim}>No matching commands</Text>}
-        renderItem={(result, ctx) => (
-          <ListRow
-            label={result.label}
-            state={ctx.isCursor ? 'active' : 'default'}
-            metadata={descriptionColumn({
-              description: result.description,
-              shortcut: result.shortcut,
-              innerWidth,
-              labelWidth,
-            })}
-            {...(result.shortcut ? { trailing: result.shortcut } : {})}
-            labelWidth={labelWidth}
-          />
-        )}
-      />
+      <Box flexDirection="column" height={listBudget}>
+        <ListViewport
+          items={results}
+          selectedIndex={cursor}
+          getKey={(result) => result.id}
+          rowBudget={listBudget}
+          rowZonePrefix="palette"
+          showRemainingCount
+          onRowActivate={(index) => {
+            void runResult(index);
+          }}
+          section={{
+            ...section,
+            renderHeader: (label) => <Text color={t.textDim}>{label}</Text>,
+          }}
+          placeholder={<Text color={t.textDim}>No matching commands</Text>}
+          renderItem={(result, ctx) => {
+            // Command names share one column so the description edge holds still across screens.
+            // A session or task title is the whole row, so it widens its own label instead of
+            // being cut to the width of the longest command name.
+            const rowLabelWidth =
+              result.source === 'command'
+                ? labelWidth
+                : Math.max(
+                    labelWidth,
+                    Math.min(getTerminalCellWidth(result.label), innerWidth - STATUS_RESERVE),
+                  );
+            return (
+              <ListRow
+                label={result.label}
+                state={ctx.isCursor ? 'active' : 'default'}
+                metadata={descriptionColumn({
+                  description: result.description,
+                  shortcut: result.shortcut,
+                  innerWidth,
+                  labelWidth: rowLabelWidth,
+                })}
+                {...(result.shortcut ? { trailing: result.shortcut } : {})}
+                labelWidth={rowLabelWidth}
+              />
+            );
+          }}
+        />
+      </Box>
     </OverlayPanel>
   );
 }

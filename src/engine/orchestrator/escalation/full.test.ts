@@ -62,8 +62,8 @@ describe('runFullTier', () => {
     const config = makeNoValidationConfig({
       planner: {
         kind: 'api',
-        provider: 'anthropic',
-        apiBase: 'https://api.anthropic.com/v1',
+        provider: 'custom-endpoint',
+        apiBase: 'https://api.example.com/v1',
         apiKey: 'test-key',
         model: 'claude-sonnet-4-6',
       },
@@ -137,8 +137,8 @@ describe('runFullTier', () => {
     const config = makeNoValidationConfig({
       planner: {
         kind: 'api',
-        provider: 'anthropic',
-        apiBase: 'https://api.anthropic.com/v1',
+        provider: 'custom-endpoint',
+        apiBase: 'https://api.example.com/v1',
         apiKey: 'test-key',
         model: 'claude-sonnet-4-6',
       },

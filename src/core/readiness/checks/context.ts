@@ -6,7 +6,6 @@ import type { ReadinessCheck } from '../types.js';
 import { formatRoleLabel } from '../../phase-display.js';
 
 const MODE_CONTEXT_FLOORS: Record<WorkflowMode, number> = {
-  instant: 8_000,
   quick: 16_000,
   standard: 32_000,
   speckit: 64_000,

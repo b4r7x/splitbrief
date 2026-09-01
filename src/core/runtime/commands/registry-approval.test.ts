@@ -74,7 +74,7 @@ describe('/approval command', () => {
 });
 
 describe('/yolo command', () => {
-  it('/yolo toggles approval enabled state', () => {
+  it('/yolo toggles approval enabled state', async () => {
     let approvalEnabled = true;
     let feedback: string | undefined;
     const ctx = makeCtx({
@@ -87,15 +87,12 @@ describe('/yolo command', () => {
       },
     });
     const commands = createRuntimeCommands(ctx);
-    const yolo = commands.find((command) => command.name === '/yolo');
-    if (!yolo) throw new Error('Expected /yolo command');
-    if (yolo.kind !== 'noarg') throw new Error('Expected /yolo to be a noarg command');
 
-    yolo.handler();
+    await runCommandInTest({ commands, raw: '/yolo', screen: 'workflow', onError: noop });
     expect(approvalEnabled).toBe(false);
     expect(feedback).toMatch(/ON|enabled|disabled/i);
 
-    yolo.handler();
+    await runCommandInTest({ commands, raw: '/yolo', screen: 'workflow', onError: noop });
     expect(approvalEnabled).toBe(true);
     expect(feedback).toMatch(/OFF|restored/i);
   });

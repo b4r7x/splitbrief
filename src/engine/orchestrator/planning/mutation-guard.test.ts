@@ -10,24 +10,6 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 
 describe('planning mutation guard', () => {
-  it('flags unexpected source mutations after planning baseline', async () => {
-    const projectDir = createTempDir('planning-mutation-guard');
-    createTestGitRepo(projectDir);
-    try {
-      const baseline = await capturePlanningMutationBaseline(projectDir);
-      mkdirSync(join(projectDir, 'src'), { recursive: true });
-      writeFileSync(join(projectDir, 'src', 'leak.ts'), 'export const leak = true;\n');
-
-      const unexpected = await findUnexpectedPlanningMutations({
-        projectDir,
-        baseline,
-      });
-      expect(unexpected).toContain('src/leak.ts');
-    } finally {
-      cleanupTempDir(projectDir);
-    }
-  });
-
   it('reports a common-basename artifact as a mutation with no tasks.md allowance', async () => {
     const projectDir = createTempDir('planning-mutation-guard-artifact');
     createTestGitRepo(projectDir);

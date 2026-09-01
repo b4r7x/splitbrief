@@ -12,8 +12,7 @@ import {
   PLANNER_CLI_TOOL_IDS,
 } from '../runners/cli-tool-catalog.js';
 
-// agent-sdk is a meta runner, not an API provider — SPLITBRIEF serves no pricing for it.
-export const META_PROVIDER_IDS = ['shell', 'agent', 'agent-sdk'] as const;
+export const META_PROVIDER_IDS = ['shell', 'agent'] as const;
 
 export const PROVIDER_IDS = [
   ...CLI_TOOL_IDS,
@@ -43,10 +42,6 @@ export const ImplementerApiProviderIdSchema = z.enum(IMPLEMENTER_API_PROVIDER_ID
 
 export function isProviderId(id: string): id is ProviderId {
   return includes(PROVIDER_IDS, id);
-}
-
-export function isPlannerToolId(id: string): id is PlannerToolId {
-  return includes(PLANNER_TOOL_IDS, id);
 }
 
 export const PHASES = [
@@ -163,9 +158,20 @@ export const CURRENT_CODE_CONTEXT_MODES = [
 export const CurrentCodeContextModeSchema = z.enum(CURRENT_CODE_CONTEXT_MODES);
 export type CurrentCodeContextMode = z.infer<typeof CurrentCodeContextModeSchema>;
 
-export const WORKFLOW_MODES = ['instant', 'quick', 'standard', 'speckit'] as const;
-export const WorkflowModeSchema = z.enum(WORKFLOW_MODES);
+export const WORKFLOW_MODES = ['quick', 'standard', 'speckit'] as const;
+export const RETIRED_WORKFLOW_MODE = 'instant' as const;
+export const RETIRED_WORKFLOW_MODE_NOTICE =
+  'workflow mode "instant" was merged into "quick"; using quick. Update your config or --mode flag.';
+export const WorkflowModeSchema = z.preprocess(
+  (value) => (value === RETIRED_WORKFLOW_MODE ? 'quick' : value),
+  z.enum(WORKFLOW_MODES),
+);
 export type WorkflowMode = z.infer<typeof WorkflowModeSchema>;
+
+export function normalizeWorkflowMode(raw: string | undefined): WorkflowMode | undefined {
+  const parsed = WorkflowModeSchema.safeParse(raw?.trim().toLowerCase());
+  return parsed.success ? parsed.data : undefined;
+}
 
 export const APPROVE_LEVELS = ['none', 'spec', 'plan', 'all', 'default'] as const;
 export const ApproveLevelSchema = z.enum(APPROVE_LEVELS);
@@ -200,21 +206,10 @@ export type OutputFormat = z.infer<typeof OutputFormatSchema>;
 
 export const CliToolIdSchema = z.enum(CLI_TOOL_IDS);
 
-export const RUNNER_KINDS = ['cli', 'api', 'shell', 'agent', 'agent-sdk'] as const;
+export const RUNNER_KINDS = ['cli', 'api', 'shell', 'agent'] as const;
 const RunnerKindSchema = z.enum(RUNNER_KINDS);
 export type RunnerKind = z.infer<typeof RunnerKindSchema>;
 
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh'] as const;
 export const EffortLevelSchema = z.enum(EFFORT_LEVELS);
 export type EffortLevel = z.infer<typeof EffortLevelSchema>;
-
-const ANTHROPIC_EFFORT_BUDGET: Record<EffortLevel, number> = {
-  low: 2_000,
-  medium: 8_000,
-  high: 24_000,
-  xhigh: 48_000,
-};
-
-export function effortToAnthropicBudget(level: EffortLevel): number {
-  return ANTHROPIC_EFFORT_BUDGET[level];
-}

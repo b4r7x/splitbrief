@@ -66,10 +66,11 @@ describe('createWorkflowRecoveryBinding', () => {
       config: makeConfig({
         planner: {
           kind: 'api',
-          provider: 'openai',
-          service: 'openai',
+          provider: 'custom-endpoint',
+          service: 'custom-endpoint',
           offering: 'payg',
-          apiBase: 'https://api.openai.com/v1',
+          apiBase: 'https://api.example.com/v1',
+          apiKey: 'test-key',
           model: 'gpt-5.4',
         },
       }),
@@ -127,7 +128,7 @@ describe('createWorkflowRecoveryBinding', () => {
     const attempt = Object.values(recovery.attempts)[0];
     expect(attempt?.reservation.pricing).toMatchObject({
       budgetUnit: 'usd',
-      pricingIdentity: 'openai/gpt-5.4',
+      pricingIdentity: 'custom-endpoint/gpt-5.4',
     });
   });
 
@@ -293,10 +294,11 @@ describe('createWorkflowRecoveryBinding', () => {
       config: makeConfig({
         planner: {
           kind: 'api',
-          provider: 'openai',
-          service: 'openai',
+          provider: 'custom-endpoint',
+          service: 'custom-endpoint',
           offering: 'payg',
-          apiBase: 'https://api.openai.com/v1',
+          apiBase: 'https://api.example.com/v1',
+          apiKey: 'test-key',
           model: 'gpt-5.4',
         },
       }),

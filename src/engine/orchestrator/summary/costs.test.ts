@@ -5,6 +5,14 @@ import { taskId } from '../../../core/schemas/task.js';
 import { SummarySchema, unmeteredRunCostLabel } from '../../../core/schemas/summary.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makePricedModelCache } from '#testing/helpers/factories/model-cache.js';
+
+// Pricing follows the model, so a metered seat needs a catalog to rate against.
+const pricingCache = makePricedModelCache();
+
+function summaryOf(opts: Parameters<typeof buildSummary>[0]) {
+  return buildSummary({ pricingCache, ...opts });
+}
 
 function makeState(overrides?: Partial<BuildSummaryState>): BuildSummaryState {
   return {
@@ -21,11 +29,11 @@ function makeState(overrides?: Partial<BuildSummaryState>): BuildSummaryState {
 describe('buildSummary estimatedCostSavings', () => {
   it('returns $0.00 when no implementer tokens used', () => {
     const usage = makeUsage({ plannerInput: 1000, plannerOutput: 500 });
-    const summary = buildSummary({
+    const summary = summaryOf({
       feature: 'f',
       state: makeState({ tasks: [], tokenUsage: usage }),
       startTime: Date.now(),
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
     });
@@ -34,13 +42,13 @@ describe('buildSummary estimatedCostSavings', () => {
 
   it('calculates savings for known token values', () => {
     const usage = makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 });
-    const summary = buildSummary({
+    const summary = summaryOf({
       feature: 'f',
       state: makeState({ tasks: [], tokenUsage: usage }),
       startTime: Date.now(),
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
     });
     expect(summary.estimatedCostSavings).toBe('$11.58');
@@ -51,11 +59,11 @@ describe('buildSummary estimatedCostSavings', () => {
 
   it('marks savings unavailable when implementer price is unknown', () => {
     const usage = makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 });
-    const summary = buildSummary({
+    const summary = summaryOf({
       feature: 'f',
       state: makeState({ tasks: [], tokenUsage: usage }),
       startTime: Date.now(),
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
     });
@@ -73,13 +81,13 @@ describe('buildSummary estimatedCostSavings', () => {
       implementerInput: 100,
       implementerOutput: 50,
     });
-    const summary = buildSummary({
+    const summary = summaryOf({
       feature: 'f',
       state: makeState({ tasks: [], tokenUsage: usage }),
       startTime: Date.now(),
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
     });
     expect(summary.estimatedCostSavings).toBe('$0.00');
@@ -111,13 +119,14 @@ describe('buildSummary task costs', () => {
       },
     ];
 
-    const summary = buildSummary({
+    const summary = summaryOf({
       feature: 'with-costs',
       state: makeState({ tokenUsage: usage }),
       startTime: Date.now(),
       taskBreakdowns: breakdowns,
       plannerTool: 'claude-code',
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
+      implementerModel: 'deepseek-v4-flash',
     });
 
     const breakdown = summary.taskBreakdown;
@@ -144,7 +153,7 @@ describe('buildSummary task costs', () => {
       },
     ];
 
-    const summary = buildSummary({
+    const summary = summaryOf({
       feature: 'local-cost',
       state: makeState({ tokenUsage: usage }),
       startTime: Date.now(),
@@ -175,12 +184,12 @@ describe('buildSummary task costs', () => {
       },
     ];
 
-    const summary = buildSummary({
+    const summary = summaryOf({
       feature: 'model-aware-costs',
       state: makeState({ tokenUsage: usage }),
       startTime: Date.now(),
       taskBreakdowns: breakdowns,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-opus-5',
       implementerTool: 'ollama',
     });
@@ -215,19 +224,19 @@ describe('buildSummary task costs', () => {
         implementerTokens: 1_000_000,
         escalationTokens: 0,
         retryCount: 0,
-        tool: 'deepseek',
+        tool: 'custom-worker-api',
         model: 'deepseek-v4-flash',
         implementerProfile: 'cheap-cloud',
       },
     ];
 
-    const summary = buildSummary({
+    const summary = summaryOf({
       feature: 'mixed-profile-costs',
       state: makeState({ tokenUsage: usage }),
       startTime: Date.now(),
       taskBreakdowns: breakdowns,
       plannerTool: 'claude-code',
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
     });
 
@@ -257,12 +266,12 @@ describe('buildSummary offering presentation', () => {
       implementerOutput: 1_000_000,
     });
 
-    const summary = buildSummary({
+    const summary = summaryOf({
       feature: 'offering-labels',
       state: makeState({ tokenUsage: usage }),
       startTime: Date.now(),
       plannerTool: 'claude-code',
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
     });
 
@@ -270,7 +279,7 @@ describe('buildSummary offering presentation', () => {
     if (!parsed) throw new Error('expected cost breakdown');
     expect(parsed.providerRunMetadata?.['claude-code']?.offering).toBe('coding-subscription');
     expect(parsed.offeringPresentations?.['claude-code']?.costLabel).toBe('subscription-included');
-    expect(parsed.offeringPresentations?.deepseek?.costLabel).toMatch(/^\$/);
+    expect(parsed.offeringPresentations?.['custom-worker-api']?.costLabel).toMatch(/^\$/);
     expect(unmeteredRunCostLabel(parsed)).toBeNull();
   });
 
@@ -282,7 +291,7 @@ describe('buildSummary offering presentation', () => {
       implementerOutput: 100_000,
     });
 
-    const summary = buildSummary({
+    const summary = summaryOf({
       feature: 'subscription-only',
       state: makeState({ tokenUsage: usage }),
       startTime: Date.now(),
@@ -310,7 +319,7 @@ describe('buildSummary offering presentation', () => {
       reviewerCacheRead: number,
       reviewerSeat?: { tool: string; model: string },
     ): number | undefined => {
-      const summary = buildSummary({
+      const summary = summaryOf({
         feature: 'reviewer-cache',
         state: makeState({
           tokenUsage: makeUsage({
@@ -322,9 +331,9 @@ describe('buildSummary offering presentation', () => {
         }),
         startTime: Date.now(),
         taskBreakdowns: breakdowns,
-        plannerTool: 'anthropic',
+        plannerTool: 'custom-planner-api',
         plannerModel: 'claude-sonnet-5',
-        implementerTool: 'deepseek',
+        implementerTool: 'custom-worker-api',
         implementerModel: 'deepseek-v4-flash',
         ...(reviewerSeat !== undefined && {
           reviewerTool: reviewerSeat.tool,
@@ -334,7 +343,7 @@ describe('buildSummary offering presentation', () => {
       return summary.taskBreakdown?.[0]?.cost;
     };
 
-    const configured = { tool: 'deepseek', model: 'deepseek-v4-flash' };
+    const configured = { tool: 'custom-worker-api', model: 'deepseek-v4-flash' };
 
     expect(buildWith(900_000, configured)).toBe(buildWith(0, configured));
     expect(buildWith(900_000)).not.toBe(buildWith(0));

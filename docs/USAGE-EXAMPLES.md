@@ -53,15 +53,15 @@ splitbrief init
 **Run:**
 
 ```bash
-splitbrief start --mode instant "rename function calcualteTax to calculateTax in src/billing/tax.ts"
+splitbrief start --mode quick "rename function calcualteTax to calculateTax in src/billing/tax.ts"
 ```
 
 **You'll see:**
 
 ```
-mode resolved: instant
-planner_status: instant_plan
-instant_plan_received · 1 task
+mode resolved: quick
+planner_status: quick_plan
+brief_quality_passed
 T001  modify  src/billing/tax.ts  rename function
 implementer_generate_done
 validate · tsc ✓ lint ✓ test ✓
@@ -69,9 +69,9 @@ task_completed T001
 workflow_complete
 ```
 
-`instant` mode does one planner call, parses `tasks.md` directly, and goes straight into the task loop — no `spec.md`, no `plan.md`, no approval gates.
+`quick` mode does one planner call and goes straight into the task loop — no `spec.md`, no `plan.md`, no approval gates. Because the mode advisor reads "rename" in a short prompt as `trivial`, the planner is additionally told to skip its codebase-structure review and to keep the run to a handful of briefs.
 
-**Variations:** `splitbrief start --mode quick "..."` if you want a brief generated but no approval gate. Set `workflow.mode: instant` in config to default new runs to instant.
+**Variations:** Set `workflow.mode: quick` in config to default new runs to quick. `--mode instant` is retired: it still runs, resolves to `quick`, and prints a deprecation notice.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.3.1, recipe 3.
 
@@ -218,11 +218,11 @@ Three events fire as spend grows: `budget_warning` at 80%, `budget_paused` at th
 
 ### 7. Use a cheap implementer
 
-**When:** you want an expensive planner (Claude Code subscription) to compile briefs but a cheap hosted API model to execute them.
+**When:** you want an expensive planner (Claude Code subscription) to compile briefs but a cheap local model to execute them.
 
 **Setup (`.splitbrief/config.yaml`):**
 
-<!-- config-example: cheap-cloud-profiles -->
+<!-- config-example: local-implementer-profiles -->
 ```yaml
 version: 3
 planner:
@@ -230,35 +230,35 @@ planner:
   tool: claude-code
 implementer:
   kind: api
-  provider: groq
-  service: groq
-  offering: payg
-  apiBase: https://api.groq.com/openai/v1
-  model: openai/gpt-oss-120b
+  provider: lm-studio
+  service: lm-studio
+  offering: local
+  apiBase: http://localhost:1234/v1
+  model: qwen2.5-coder-7b
 implementerProfiles:
-  default: cheap-cloud
+  default: local-lmstudio
   profiles:
-    cheap-cloud:
+    local-lmstudio:
       kind: api
-      provider: groq
-      service: groq
-      offering: payg
-      apiBase: https://api.groq.com/openai/v1
-      model: openai/gpt-oss-120b
-      label: Groq GPT OSS
-      costTier: cheap
+      provider: lm-studio
+      service: lm-studio
+      offering: local
+      apiBase: http://localhost:1234/v1
+      model: qwen2.5-coder-7b
+      label: LM Studio Qwen2.5 Coder
+      costTier: local
 validation:
   typecheck: true
   lint: true
   test: true
 ```
 
-`openai/gpt-oss-120b` on Groq is a bundled **`compatible-only`** row — T-080 recorded OMIT-NOT-APPLICABLE for it, so it carries no SPLITBRIEF quality claim (see the [bundled model catalog](./CONFIGURATION.md#bundled-model-catalog-t-081-runtime-state)). Set `GROQ_API_KEY` in your environment per [docs/API-KEYS.md](./API-KEYS.md) — never inline credentials in YAML. Named `implementerProfiles` persist in config; recovery can route a stuck task to another profile via `route-bigger-worker`. Groq is pay-as-you-go with provider-dependent billing; prompts leave your machine for hosted inference.
+Load the model in LM Studio and start its server before the run; the model ID must match what `/v1/models` reports. Like every bundled row, a local default is **`compatible-only`**, so it carries no SPLITBRIEF quality claim (see the [bundled model catalog](./CONFIGURATION.md#bundled-model-catalog-t-081-runtime-state)). Named `implementerProfiles` persist in config; recovery can route a stuck task to another profile via `route-bigger-worker`. LM Studio is local: no key, no metered spend, and prompts never leave your machine.
 
 **Run:**
 
 ```bash
-splitbrief doctor              # verify claude-code auth and GROQ_API_KEY readiness
+splitbrief doctor              # verify claude-code auth and LM Studio reachability
 splitbrief start "add a CSV exporter"
 ```
 
@@ -266,14 +266,14 @@ splitbrief start "add a CSV exporter"
 
 ```
 planner: claude-code (cli)  · subscription, no API spend tracked
-implementer: groq · openai/gpt-oss-120b
-cost_update: planner unpriced · implementer $0.02
+implementer: lm-studio · qwen2.5-coder-7b
+cost_update: planner unpriced · implementer local
 validate · tsc ✓ lint ✓ test ✓
 ```
 
-The planner bills through your Claude Code subscription, so its usage reads `unpriced` — never zero cost and never `local`, which is reserved for local backends. The implementer shows metered API spend when pricing metadata is available, and the session total reads `$0.02 + unpriced`.
+The planner bills through your Claude Code subscription, so its usage reads `unpriced` — never zero cost and never `local`, which is reserved for local backends. The local implementer reads `local`, and the session total reads `unpriced + local`.
 
-**Variations:** For local backends (`ollama`, `lm-studio`), see the [provider matrix](./CONFIGURATION.md#provider-matrix) and bundled catalog — like every bundled row, local defaults are **`compatible-only`**, not recommended. Swap the planner `tool` using the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix).
+**Variations:** `provider: ollama` with `apiBase: http://localhost:11434/v1` is the other local backend; a remote OpenAI-compatible endpoint works as a custom provider with an inline `apiKey` (see [docs/API-KEYS.md](./API-KEYS.md)), and metered spend then shows in `cost_update`. Swap the planner `tool` using the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix).
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §implementer / §implementerProfiles, [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), [docs/API-KEYS.md](./API-KEYS.md).
 
@@ -774,7 +774,7 @@ task_completed T003
 Mode set to 'quick'. Saved to .splitbrief/config.yaml.
 ```
 
-`/mode <name>` accepts `instant`, `quick`, `standard`, or `speckit` and persists the value to config. `/mode` with no argument opens the mode-selector overlay.
+`/mode <name>` accepts `quick`, `standard`, or `speckit` and persists the value to config. The retired `instant` is accepted too: it sets `quick` and reports that the modes were merged. `/mode` with no argument opens the mode-selector overlay.
 
 **Variations:** `--mode <name>` on `start` / `resume` is the same setting at the CLI boundary. The mode advisor (`mode_advice` event) hints when the current mode looks wrong but never auto-switches.
 
@@ -1465,7 +1465,7 @@ phase: constitution-check
 
 A hard violation (`severity: hard`) aborts the run with a `warning` event explaining which principle failed.
 
-**Variations:** Constitution-check is speckit-only. Standard / quick / instant don't read it. Delete the file to disable.
+**Variations:** Constitution-check is speckit-only. Standard and quick don't read it. Delete the file to disable.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.3.2.
 
@@ -1622,7 +1622,7 @@ Press `Ctrl+K` from any screen.
 │    /planner            Alias for /crew plan                              │
 │    /implementer        Alias for /crew build                             │
 │    /reviewer           Alias for /crew review                            │
-│    /mode               Workflow mode   [instant|quick|standard|speckit]  │
+│    /mode               Workflow mode           [quick|standard|speckit]  │
 │    /refresh            Re-detect available tools                         │
 │   ↓ 21 more                                                              │
 │                                                                          │

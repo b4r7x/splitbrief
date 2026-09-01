@@ -24,10 +24,8 @@ import {
   type CliProbeContract,
 } from '../runners/cli-tools/contract.js';
 import { lookupCliReadinessProbe } from '../runners/cli-tools/registry.js';
-import type {
-  CliReadinessProbeEvidence,
-  ProbeCliReadinessOptions,
-} from '../runners/cli-tools/readiness-probe.js';
+import type { CliReadinessProbeEvidence } from '../runners/cli-tools/cli-probe-evidence.js';
+import type { ProbeCliReadinessOptions } from '../runners/cli-tools/readiness-probe.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
 import { detectAll, detectAvailableCliReadiness, detectAvailableCliTools } from './detect.js';
 import { detectRunnerEvidence } from './runner-evidence.js';
@@ -352,10 +350,30 @@ describe('legacy CLI detection presentation', () => {
 });
 
 describe('context-bound runner evidence', () => {
-  it('does not export a contextless catalog-capable readiness operation', () => {
-    expect(readinessProbeModule).not.toHaveProperty('probeDeclaredCliEvidence');
-    expect(readinessProbeModule).not.toHaveProperty('probeCliCatalog');
-  });
+  it.runIf(platform !== 'win32')(
+    'dispatches no catalog command from the contextless readiness path',
+    async () => {
+      await withTempDir('detect-contextless-catalog', async (directory) => {
+        const marker = join(directory, 'catalog-ran');
+        const shim = await installCodexShim(directory, catalogShim(marker));
+
+        const [readiness] = await detectAvailableCliReadiness({
+          tools: ['codex'],
+          projectDir: directory,
+          resolveExecutable: async () => shim,
+          now: () => 98,
+        });
+
+        expect(readiness).toMatchObject({
+          tool: 'codex',
+          installation: 'installed',
+          installedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
+        });
+        expect(existsSync(marker)).toBe(false);
+      });
+    },
+    20_000,
+  );
 
   it('does not promote a metadata-only resolver result to a trusted executable fact', async () => {
     const evidence = await detectRunnerEvidence({
@@ -925,14 +943,14 @@ describe('detectAll', () => {
       {
         connection: {
           role: 'planner' as const,
-          provider: 'openai' as const,
+          provider: 'ollama' as const,
           contextKey: 'planner',
         },
         outcome: {
           kind: 'success' as const,
           source: 'provider-runtime' as const,
-          provider: 'openai' as const,
-          isLocal: false,
+          provider: 'ollama' as const,
+          isLocal: true,
           credential: 'present' as const,
           catalog: 'empty' as const,
           models: [],

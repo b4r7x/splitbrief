@@ -14,7 +14,7 @@ import {
 } from 'node:fs';
 import { delimiter, dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDefaultConfig } from '../../../core/config/load/io.js';
+import { createDefaultConfig } from '../../../core/config/load/defaults.js';
 import {
   isolationWorktreePath,
   isolationWorktreeRoot,
@@ -30,7 +30,8 @@ import {
   getChangedFilesSnapshot,
 } from '../approval/file-snapshots/capture.js';
 import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
-import { createRunnerSandboxEnv, sandboxCredentialValues } from '../../runners/sandbox-env.js';
+import { createRunnerSandboxEnv } from '../../runners/sandbox-env.js';
+import { sandboxCredentialValues } from '../../runners/sandbox-credential-values.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';

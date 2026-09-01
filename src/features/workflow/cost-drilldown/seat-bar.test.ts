@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { makePricedModelCache } from '#testing/helpers/factories/model-cache.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { buildSeatRows, costBar } from './seat-bar.js';
@@ -6,7 +7,7 @@ import { resolvePricing } from '../../../engine/providers/pricing-resolver.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 
-const priced = resolvePricing('anthropic', undefined, 'claude-sonnet-5');
+const priced = resolvePricing('custom-endpoint', makePricedModelCache(), 'claude-sonnet-5');
 
 const usage = makeUsage({
   plannerInput: 20_000,

@@ -16,13 +16,15 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
 import {
-  MODELS_DEV_CATALOG_MAX_PAYLOAD_BYTES,
   loadModelsDevCatalogCache,
   refreshModelsDevCatalogCache,
-  resolveModelsDevCatalogCachePath,
-  resolveModelsDevUserCacheDir,
   type ModelsDevCatalogCacheOptions,
 } from './models-dev-cache.js';
+import {
+  MODELS_DEV_CATALOG_MAX_PAYLOAD_BYTES,
+  resolveModelsDevCatalogCachePath,
+  resolveModelsDevUserCacheDir,
+} from './models-dev-cache/store.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 

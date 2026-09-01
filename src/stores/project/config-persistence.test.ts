@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultConfig } from '../../core/config/load/io.js';
+import { createDefaultConfig } from '../../core/config/load/defaults.js';
 import { deriveConfigEdits, persistedConfigForSave } from './config-persistence.js';
 
 describe('config persistence', () => {

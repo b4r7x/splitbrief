@@ -1,6 +1,6 @@
 import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
 import type { DetectedModel } from '../../core/discovery/detection.js';
-import type { RunnerRole } from '../../core/runners/cli-tool-catalog.js';
+import type { RunnerRole } from '../../core/runners/seat-roles.js';
 import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
 import type { ProviderCatalogFailureKind, ProviderCatalogOutcome } from '../providers/types.js';
 

@@ -1,35 +1,40 @@
 import { Box, Text } from 'ink';
 import { TwoColumnPicker, type PreviewContext } from './two-column-picker/picker.js';
-import type { RightActivation, TerminalPane } from './two-column-picker/use-nav-state.js';
-import { arrowSep, SOFT_SEP } from '../../components/separators.js';
+import type { TerminalPane } from './two-column-picker/types.js';
+import { SOFT_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
 import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
-import { detectionStore } from '../../stores/project/detection.js';
 import { providerOracleCommand } from '../../engine/runners/cli-tools/provider-oracle.js';
 import { configStore } from '../../stores/project/config.js';
 
-import {
-  CLI_TOOL_CATALOG,
-  CLI_TOOL_IDS,
-  type SeatPickerRole,
-} from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
+import type { SeatPickerRole } from '../../core/runners/seat-roles.js';
 import type { RunnerBillingPosture } from '../../core/runners/runner-billing.js';
-import { includes, assertNever } from '../../utils/type-guards.js';
+import { includes } from '../../utils/type-guards.js';
+import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../utils/display-text.js';
+import { contractForRunnerKind } from '../../core/config/custom-commands.js';
 import { sortPickerOptions, type PickerOption } from './model-catalog/options.js';
-import { isCustomModel, type ModelOption, type ModelVariant } from './model-catalog/recency.js';
-import { isOptionFamily, optionDraftOf, stepOptionAxis } from './model-catalog/option-axis.js';
+import { isCustomModel, type ModelVariant } from './model-catalog/recency.js';
+import { isOptionFamily, optionDraftOf } from './model-catalog/option-axis.js';
 import {
   rightRowKey,
-  routeAuthStateFor,
   sectionOf,
   type RightRow,
   type RouteAuthState,
 } from './model-catalog/rows.js';
+import {
+  activationOfRightRow,
+  confirmRow as confirmRightRow,
+  cycleRightRow,
+  expandedRowHint,
+  rightRowMatches,
+  seatVariantDraft,
+  type RouteAuthContext,
+} from './right-column-policy.js';
 import { filterByFields } from '../../components/pickers/filtering.js';
 import {
-  formatAuthActionAffordance,
   formatBillingLabel,
   formatModelCatalogGuidance,
   formatPermissionLabels,
@@ -38,11 +43,9 @@ import {
   isPickerItemDisabled,
   type ModelCatalogDiagnostic,
 } from './picker-format.js';
-import { needsAuthAction, type ProviderAuthAction } from './provider-auth.js';
 import { renderToolRow, renderModelRow } from './tool-row.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import type { PickerActions } from './use-picker-actions.js';
-import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
 import type { PickerModelCounts } from './model-catalog/catalog.js';
 import { refreshPickerDetection } from './refresh-detection.js';
 
@@ -59,6 +62,15 @@ const POSTURE_WORDS: Readonly<Record<RunnerBillingPosture, string | undefined>> 
 };
 
 const MAX_STALE_MODEL_COPY_COUNT = 99;
+
+/**
+ * The card truncates below its own wrap threshold and wraps at or above it, so a
+ * line kept inside that width costs the pane exactly one row at every terminal
+ * width — which is what lets the copy below be budgeted against the pane's height.
+ */
+const CARD_LINE_CELLS = 40;
+
+const CURRENT_COMMAND_PREFIX = 'Current: ';
 
 /** Rows a failed refresh left behind are not a count the byline can claim. */
 function staleModelCopy(staleCount: number): string | undefined {
@@ -124,33 +136,11 @@ function keyRows(rows: readonly RightRow[]): KeyedRightRow[] {
   return rows.map((row) => ({ ...row, id: rightRowKey(row) }));
 }
 
-export function rightRowActivation(
-  row: RightRow,
-  soleConfigured: ModelVariant | undefined,
-): RightActivation {
-  switch (row.kind) {
-    case 'notice':
-      return row.action === 'refresh' ? 'refresh' : 'none';
-    case 'route':
-    case 'axis':
-      return 'confirm';
-    case 'model':
-      if (row.expanded) return isOptionFamily(row.model) ? 'confirm' : 'collapse';
-      if (isOptionFamily(row.model)) return 'expand';
-      return (row.model.variants?.length ?? 0) > 1 && soleConfigured === undefined
-        ? 'expand'
-        : 'confirm';
-    default:
-      return assertNever(row);
-  }
-}
-
 export function PickerView({ role, catalog, actions }: PickerViewProps) {
   const isRefreshing = catalog.discovery.refreshing;
   const { frame } = useSpinnerFrame(isRefreshing);
   const resolvedStepLabel = isRefreshing ? `${frame} refreshing…` : undefined;
   const projectDir = configStore.use((s) => s.projectDir);
-  const providers = detectionStore.use((s) => s.providers);
   const optionDraftId = pickerViewStore.use((s) => s.optionDraftId);
   const allowsCustom = catalog.currentItem?.modelCapability.allowsCustom ?? false;
 
@@ -185,17 +175,34 @@ export function PickerView({ role, catalog, actions }: PickerViewProps) {
       };
     }
     if (item.kind !== 'custom-command') return undefined;
+    const contract =
+      catalog.currentCommandKind === undefined
+        ? ''
+        : `${SOFT_SEP}${contractForRunnerKind(catalog.currentCommandKind)}`;
+    // The command shares its row with the prefix and the contract word, so it is
+    // cut to what is left of the card line rather than pushed onto a second row.
+    const configured =
+      catalog.currentCommand === undefined
+        ? []
+        : [
+            `${CURRENT_COMMAND_PREFIX}${truncateTerminalDisplayText(
+              catalog.currentCommand,
+              CARD_LINE_CELLS - getTerminalCellWidth(`${CURRENT_COMMAND_PREFIX}${contract}`),
+            )}${contract}`,
+          ];
+    // Six lines is what the pane holds on a short terminal, and the two contract
+    // lines are short enough to still read at the narrowest card, where the card
+    // truncates instead of wrapping. The contract words are the launcher row's own.
     return {
       label: 'Custom command',
       verb: 'add custom',
       lines: [
-        `run a custom ${catalog.roleLabel.toLowerCase()} command`,
-        '',
-        `OUTPUT${SOFT_SEP}reads stdout`,
-        `DIRECT${SOFT_SEP}writes files`,
-        '',
-        `⏎ contract${arrowSep()}command`,
-        'saved only on final ⏎',
+        ...configured,
+        `Run your own command in the ${catalog.roleLabel.toLowerCase()} seat.`,
+        `output${SOFT_SEP}reads stdout`,
+        `direct${SOFT_SEP}writes files`,
+        '⏎ picks the contract, then the command.',
+        'Nothing is saved until you confirm.',
       ],
     };
   };
@@ -204,82 +211,12 @@ export function PickerView({ role, catalog, actions }: PickerViewProps) {
     void refreshPickerDetection(projectDir);
   };
 
-  const resolveAuthAction = (item: PickerOption): ProviderAuthAction | null => {
-    if (item.kind !== 'api') return null;
-    const descriptor = getApiProviderDescriptor(item.id);
-    if (descriptor === undefined) return null;
-    return needsAuthAction(
-      item.status,
-      providers.find((provider) => provider.provider === item.id),
-      descriptor,
-    );
-  };
-
-  // One signed-in route needs no chooser: Enter saves it. Two or more, or none,
-  // is a decision the user has to see, so the row expands instead.
-  const soleConfiguredRoute = (row: RightRow): ModelVariant | undefined => {
-    if (row.kind !== 'model') return undefined;
-    const variants = row.model.variants ?? [];
-    if (variants.length <= 1) return variants[0];
-    const configured = variants.filter(
-      (variant) =>
-        routeAuthStateFor({
-          hasOracle: catalog.hasOracle,
-          variant,
-          providerAuth: catalog.providerAuth,
-        }).kind === 'configured',
-    );
-    return configured.length === 1 ? configured[0] : undefined;
-  };
-
-  // The expanded column's Enter verb belongs to the highlighted row: space steps an
-  // axis in place, and a row outside the expansion still confirms or expands there.
-  // Only a provider expansion's own rows keep the column-wide `⏎ choose route`.
-  const expandedRowHint = (row: RightRow | undefined): string | undefined => {
-    if (row === undefined || row.kind === 'route') return undefined;
-    // A notice sits outside the expansion and must not borrow its verb: a picker of
-    // option families holds no route to choose. The failed lane retries on Enter; the
-    // pending one has no key at all, and repeating the row's own text in the key slot
-    // would read as an affordance, so it contributes nothing.
-    if (row.kind === 'notice') return row.action === 'refresh' ? '⏎ retry' : '';
-    if (row.kind === 'axis') {
-      // A sparse variant grid leaves an axis with nowhere to step, and the byline
-      // must not promise a key that cannot move.
-      const steps = stepOptionAxis(row.model, row.axis, optionDraftId) !== undefined;
-      return steps ? `space cycle${SOFT_SEP}⏎ confirm` : '⏎ confirm';
-    }
-    if (row.expanded) return isOptionFamily(row.model) ? '⏎ confirm' : '⏎ collapse';
-    return rightRowActivation(row, soleConfiguredRoute(row)) === 'expand'
-      ? '⏎ expand'
-      : '⏎ confirm';
+  const authContext: RouteAuthContext = {
+    hasOracle: catalog.hasOracle,
+    providerAuth: catalog.providerAuth,
   };
 
   const rightRows = keyRows(catalog.rightRows);
-
-  const confirmRow = (left: PickerOption, row: RightRow | null) => {
-    if (row === null) {
-      void actions.confirm(left, null);
-      return;
-    }
-    if (row.kind === 'route') {
-      void actions.confirmProviderVariant(row.variant.fullId);
-      return;
-    }
-    if (row.kind === 'notice') return;
-    // An axis row confirms the family's drafted variant, not its own axis value.
-    if (row.kind === 'axis' || (row.expanded && isOptionFamily(row.model))) {
-      void actions.confirmProviderVariant(
-        optionDraftOf(row.model, pickerViewStore.get().optionDraftId),
-      );
-      return;
-    }
-    const sole = soleConfiguredRoute(row);
-    if (sole !== undefined) {
-      void actions.confirmProviderVariant(sole.fullId);
-      return;
-    }
-    void actions.confirm(left, row.model);
-  };
 
   const resolvePreview = (ctx: PreviewContext<PickerOption, KeyedRightRow>): string | undefined => {
     const tool = ctx.leftItem ?? catalog.currentItem;
@@ -319,6 +256,7 @@ export function PickerView({ role, catalog, actions }: PickerViewProps) {
     }
     const byline = formatPickerByline({
       toolName: tool.displayName,
+      toolId,
       version: tool.version,
       counts: catalog.modelCounts,
       lane: catalog.catalogLane,
@@ -327,18 +265,13 @@ export function PickerView({ role, catalog, actions }: PickerViewProps) {
     });
     const stale = staleModelCopy(catalog.modelCounts.stale);
     const trail = stale === undefined ? byline : `${byline}${SOFT_SEP}${stale}`;
-    // A provider whose key this picker can take has its remedy in a keystroke.
-    // Like a route's sign-in command it leads, so right truncation cuts the
-    // byline before it ever reaches the actionable part. A status remediation
-    // leads for the same reason: a runner the picker cannot run says how to fix
-    // it before it recites what it is. The retained-stale line is already a
-    // refresh instruction, so a remediation ahead of it would only push it off
-    // the end.
+    // A status remediation leads: a runner the picker cannot run says how to fix
+    // it before it recites what it is, so right truncation cuts the byline
+    // before it ever reaches the actionable part. The retained-stale line is
+    // already a refresh instruction, so a remediation ahead of it would only
+    // push it off the end.
     const reason = stale === undefined ? tool.status.remediation : null;
-    const remedied = reason === null ? trail : `${reason}${SOFT_SEP}${trail}`;
-    const authAction = resolveAuthAction(tool);
-    if (authAction === null) return remedied;
-    return `${formatAuthActionAffordance(authAction)}${SOFT_SEP}${remedied}`;
+    return reason === null ? trail : `${reason}${SOFT_SEP}${trail}`;
   };
 
   return (
@@ -347,12 +280,9 @@ export function PickerView({ role, catalog, actions }: PickerViewProps) {
       subtitle={subtitleFor(role)}
       stepLabel={resolvedStepLabel}
       initialColumn={catalog.focusModels ? 'right' : 'left'}
-      onConfirm={confirmRow}
+      onConfirm={(left, row) => confirmRightRow(left, row, { actions, auth: authContext })}
       onCancel={() => overlayStore.close()}
       onRefresh={handleRefresh}
-      onDisabledSelect={(item) => {
-        if (resolveAuthAction(item) !== null) actions.openProviderAuth(item);
-      }}
       preview={resolvePreview}
       leftProps={{
         items: catalog.items,
@@ -381,69 +311,22 @@ export function PickerView({ role, catalog, actions }: PickerViewProps) {
         items: rightRows,
         label: 'Models',
         getKey: (row) => row.id,
-        // A merged row answers for every spelling it folded — provider prefixes
-        // and option tags — so typing "openrouter" or "luna" still finds it.
-        filterBy: (row, query) => {
-          const q = query.toLowerCase();
-          const hits = (value: string | undefined): boolean =>
-            value?.toLowerCase().includes(q) === true;
-          const hitsModel = (model: ModelOption): boolean =>
-            hits(model.id) ||
-            hits(model.displayName) ||
-            (model.variants?.some(
-              (variant) => hits(variant.fullId) || hits(variant.tag) || hits(variant.displayName),
-            ) ??
-              false);
-          switch (row.kind) {
-            case 'notice':
-              return true;
-            case 'route':
-              return (
-                hits(row.variant.fullId) || hits(row.variant.tag) || hits(row.variant.displayName)
-              );
-            // An axis row is a child of its model row, so it follows the parent
-            // through the filter; a lone child would draw a tree that hangs off nothing.
-            case 'axis':
-            case 'model':
-              return hitsModel(row.model);
-            default:
-              return assertNever(row);
-          }
-        },
+        filterBy: rightRowMatches,
         initialIndex: catalog.initialRightIndex,
         resolveInitialIndex: catalog.resolveRightIndex,
         onLeftChange: actions.leftChange,
         section: { by: (row) => sectionOf(row) ?? '' },
-        activationOf: (row) =>
-          rightRowActivation(row, row.kind === 'model' ? soleConfiguredRoute(row) : undefined),
+        activationOf: (row) => activationOfRightRow(row, authContext),
         onExpand: (row) => {
           if (row.kind !== 'model') return;
-          if (isOptionFamily(row.model)) {
-            pickerViewStore.expand(
-              row.model.id,
-              optionDraftOf(row.model, catalog.currentModel ?? catalog.persistedModel),
-            );
-            return;
-          }
-          pickerViewStore.expand(row.model.id);
+          const draft = isOptionFamily(row.model)
+            ? optionDraftOf(row.model, catalog.currentModel ?? catalog.persistedModel)
+            : undefined;
+          pickerViewStore.expand(row.model.id, draft, seatVariantDraft(row.model, draft, role));
         },
         onCollapse: () => pickerViewStore.collapse(),
-        // Space belongs to the expanded family: an axis row steps it, and takes the key
-        // even where its ladder has nowhere to go — but only a row that moved owns the
-        // click, so a dead axis confirms under the mouse the way its byline says. The
-        // parent holds the key rather than collapsing the family the user is steering.
-        onCycle: (row) => {
-          if (row.kind !== 'axis') {
-            return row.kind === 'model' && row.expanded && isOptionFamily(row.model)
-              ? 'held'
-              : 'none';
-          }
-          const next = stepOptionAxis(row.model, row.axis, pickerViewStore.get().optionDraftId);
-          if (next === undefined) return 'held';
-          pickerViewStore.setOptionDraftId(next);
-          return 'stepped';
-        },
-        expandedHint: expandedRowHint,
+        onCycle: cycleRightRow,
+        expandedHint: (row) => expandedRowHint(row, authContext),
         // The store's id survives a move to another tool, whose rows carry no
         // expansion; only the rows on screen can say whether Escape collapses.
         isExpanded: catalog.rightRows.some((row) => row.kind === 'model' && row.expanded),

@@ -2,13 +2,18 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  test:
+  static:
     runs-on: ubuntu-latest
     steps:
       # GitHub Actions are pinned to full SHAs; update by resolving the latest release tag before changing these refs.
@@ -17,6 +22,47 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      # Skips the `prepare` build this job never uses. Only safe here: the other
+      # jobs need better-sqlite3's install script to fetch its native binding.
+      - run: npm ci --ignore-scripts
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run check:invariants
+
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '22'
+          cache: npm
       - run: npm ci
-      - run: npm run test-ci
+      - run: npm test -- --shard=${{ matrix.shard }}/4
+
+  e2e-replay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run test:e2e
+
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
       - run: npm run tui-shots -- --scenario home-empty --viewport 80x24 --output .test-artifacts/ui/ci-smoke

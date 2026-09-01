@@ -29,7 +29,7 @@ describe('splitSeatTokenTotals', () => {
   });
 
   it('keeps reviewer tokens on their own seat once the reviewer has an identity', () => {
-    const seats = splitSeatTokenTotals({ tokenUsage: usage, reviewerTool: 'deepseek' });
+    const seats = splitSeatTokenTotals({ tokenUsage: usage, reviewerTool: 'custom-endpoint' });
 
     expect(seats.planner).toEqual({
       input: 110_000,

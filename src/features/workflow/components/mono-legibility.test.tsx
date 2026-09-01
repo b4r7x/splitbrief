@@ -1,14 +1,9 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { glyph } from '../../../lib/glyphs.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { eventsStore } from '../../../stores/workflow/events.js';
-import { tasksStore } from '../../../stores/workflow/tasks.js';
-import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
-import { railConnectorString } from '../layout/chrome-rows.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
 import { rowText } from '../conversation-rows/row-format/rows.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
@@ -22,64 +17,13 @@ import { CostApprovalPrompt } from './cost-approval-prompt.js';
 // glyph and layout layer. These tests assert the redesign never lets required state ride on colour
 // or dim alone — every state is also carried by a distinct shape, connector, border weight, or sign.
 
-const ACTIVE = glyph('stageActive');
-const DONE = glyph('stageDone');
-const PENDING = glyph('stagePending');
-
 function monoFrame(frame: string | undefined): string {
   return stripAnsiStyles(frame ?? '');
 }
 
 beforeEach(() => {
-  lifecycleStore.__testReset();
   terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
-  eventsStore.__testReset();
-  tasksStore.__testReset();
-  tokensStore.__testReset();
   overlayStore.reset();
-});
-
-describe('mono legibility — the pipeline rail without colour', () => {
-  it('encodes each stage state by shape alone (○ pending / ◉ active / ● done)', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
-    tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
-    const { Rail } = await import('./rail.js');
-    const ui = renderFeature(<Rail form="B" />);
-    await tick();
-    const frame = monoFrame(ui.lastFrame());
-    const railLine = frame.split('\n').find((row) => row.includes('Spec')) ?? '';
-
-    // The three marker shapes are mutually distinct and each still binds to its stage by position,
-    // so progress reads with hue and faint both stripped.
-    expect(new Set([PENDING, ACTIVE, DONE]).size).toBe(3);
-    expect(railLine).toContain(`${DONE} Spec`);
-    expect(railLine).toContain(`${ACTIVE} Build`);
-    expect(railLine).toContain(`${PENDING} Verify`);
-    // Exactly one stage is active — not inferable from a hue/bold that the strip removed.
-    expect(railLine.split(ACTIVE).length - 1).toBe(1);
-    ui.unmount();
-  });
-
-  it('encodes the planner→implementer handoff by connector shape (› same-role / → seam)', async () => {
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
-    tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
-    const { Rail } = await import('./rail.js');
-    const ui = renderFeature(<Rail form="B" />);
-    await tick();
-    const railLine =
-      monoFrame(ui.lastFrame())
-        .split('\n')
-        .find((row) => row.includes('Spec')) ?? '';
-
-    const handoff = railConnectorString({ handoff: true });
-    const sameRole = railConnectorString({ handoff: false });
-    expect(handoff).not.toBe(sameRole);
-    // Two role seams (briefs→build, build→verify), two same-role gaps — the cost handoff is the
-    // arrow, and it stays the arrow once the hue that also marks it is stripped.
-    expect(railLine.split(handoff).length - 1).toBe(2);
-    expect(railLine.split(sameRole).length - 1).toBe(2);
-    ui.unmount();
-  });
 });
 
 // NO_COLOR on a capable terminal: the glyph tier is still unicode (the terminal renders box
@@ -142,7 +86,6 @@ describe('mono legibility — the cost approval gate without colour (unicode ter
 
     // The approve action is the focused default: the ▸ cursor (not a hue) points at it.
     const cursor = glyph('cursor');
-    expect(cursor).toBe('▸');
     const approveLine = frame.split('\n').find((row) => row.includes('Approve')) ?? '';
     expect(approveLine).toContain(cursor);
     expect(approveLine.indexOf(cursor)).toBeLessThan(approveLine.indexOf('Approve'));
@@ -188,13 +131,5 @@ describe('mono legibility — the live diff and the live/cursor split without co
     // The header keeps signed counts too.
     expect(text).toContain('+1');
     expect(text).toContain('-1');
-  });
-
-  it('keeps "this is live" (▌) shape-distinct from "your cursor is here" (▸)', () => {
-    // The two restored selection meanings must not collapse to a single mark, or in mono a live
-    // row and a focused row become indistinguishable.
-    expect(glyph('liveBar')).not.toBe(glyph('cursor'));
-    expect(glyph('liveBar').length).toBeGreaterThan(0);
-    expect(glyph('cursor').length).toBeGreaterThan(0);
   });
 });

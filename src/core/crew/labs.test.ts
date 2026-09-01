@@ -6,28 +6,35 @@ const claudeCode = { kind: 'cli', tool: 'claude-code' } satisfies RunnerConfig;
 const codex = { kind: 'cli', tool: 'codex' } satisfies RunnerConfig;
 const opencode = { kind: 'cli', tool: 'opencode' } satisfies RunnerConfig;
 
-function apiRunner(input: { provider: string; service: string; model: string }): RunnerConfig {
+function apiRunner(input: {
+  provider: string;
+  service: string;
+  model: string;
+  offering?: 'local' | 'payg';
+  apiBase?: string;
+}): RunnerConfig {
   return {
     kind: 'api',
     provider: input.provider,
     service: input.service,
-    offering: 'payg',
-    apiBase: 'https://example.test/v1',
+    offering: input.offering ?? 'payg',
+    apiBase: input.apiBase ?? 'https://api.example.test/v1',
     model: input.model,
   };
 }
 
-const anthropicApi = apiRunner({
-  provider: 'anthropic',
-  service: 'anthropic',
-  model: 'claude-sonnet-4-5',
+const ollama = apiRunner({
+  provider: 'ollama',
+  service: 'ollama',
+  model: 'llama3.1',
+  offering: 'local',
+  apiBase: 'http://localhost:11434/v1',
 });
-const openrouter = apiRunner({
-  provider: 'openrouter',
-  service: 'openrouter',
-  model: 'anthropic/claude-sonnet-4-5',
+const gateway = apiRunner({
+  provider: 'my-gateway',
+  service: 'my-gateway',
+  model: 'anthropic/claude',
 });
-const agentSdk = { kind: 'agent-sdk' } satisfies RunnerConfig;
 const shell = {
   kind: 'shell',
   command: 'my-reviewer',
@@ -44,31 +51,23 @@ describe('resolveLab', () => {
     expect(resolveLab(opencode)).toEqual({ kind: 'undetermined' });
   });
 
-  it('names Anthropic as the lab behind the agent SDK', () => {
-    expect(resolveLab(agentSdk)).toEqual({ kind: 'known', lab: 'anthropic' });
-  });
-
-  it("names the lab behind an API provider's service", () => {
-    expect(resolveLab(anthropicApi)).toEqual({ kind: 'known', lab: 'anthropic' });
-  });
-
-  it('leaves an API seat undetermined when the model names another vendor', () => {
-    expect(
-      resolveLab(apiRunner({ provider: 'anthropic', service: 'anthropic', model: 'openai/gpt-5' })),
-    ).toEqual({
-      kind: 'undetermined',
-    });
-  });
-
-  it('leaves routers, custom providers and command runners undetermined', () => {
-    expect(resolveLab(openrouter)).toEqual({ kind: 'undetermined' });
+  it('leaves an API seat undetermined when no admitted provider fronts a lab', () => {
+    expect(resolveLab(ollama)).toEqual({ kind: 'undetermined' });
     expect(
       resolveLab(
-        apiRunner({ provider: 'my-gateway', service: 'my-gateway', model: 'anthropic/claude' }),
+        apiRunner({
+          provider: 'lm-studio',
+          service: 'lm-studio',
+          model: 'qwen2.5-coder:7b',
+          offering: 'local',
+          apiBase: 'http://localhost:1234/v1',
+        }),
       ),
-    ).toEqual({
-      kind: 'undetermined',
-    });
+    ).toEqual({ kind: 'undetermined' });
+  });
+
+  it('leaves custom providers and command runners undetermined', () => {
+    expect(resolveLab(gateway)).toEqual({ kind: 'undetermined' });
     expect(resolveLab(shell)).toEqual({ kind: 'undetermined' });
   });
 });
@@ -81,20 +80,14 @@ describe('crossLabVerdict', () => {
   });
 
   it('reports same-lab when both seats resolve to the same lab', () => {
-    expect(
-      crossLabVerdict({ build: resolveLab(claudeCode), review: resolveLab(anthropicApi) }),
-    ).toBe('same-lab');
-  });
-
-  it('reports cross-lab for an agent SDK reviewer against another lab', () => {
-    expect(crossLabVerdict({ build: resolveLab(codex), review: resolveLab(agentSdk) })).toBe(
-      'cross-lab',
+    expect(crossLabVerdict({ build: resolveLab(claudeCode), review: resolveLab(claudeCode) })).toBe(
+      'same-lab',
     );
   });
 
   it('reports nothing when either seat is undetermined', () => {
     expect(
-      crossLabVerdict({ build: resolveLab(claudeCode), review: resolveLab(openrouter) }),
+      crossLabVerdict({ build: resolveLab(claudeCode), review: resolveLab(ollama) }),
     ).toBeUndefined();
     expect(
       crossLabVerdict({ build: resolveLab(shell), review: resolveLab(codex) }),

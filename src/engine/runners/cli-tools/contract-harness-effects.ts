@@ -77,7 +77,7 @@ function effectConfig(timeoutMs: number | undefined): Config {
     workflow: {
       maxRetries: 0,
       persistTranscript: false,
-      mode: 'instant',
+      mode: 'quick',
       taskReview: 'none',
       compactionFormat: 'auto',
     },

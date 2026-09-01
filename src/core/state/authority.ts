@@ -28,7 +28,10 @@ import type {
   StateAuthorityCandidate,
   StateAuthorityReceipt,
 } from './types.js';
-import { commitStateAuthorityFence, type StateAuthorityFenceCommitResult } from './persistence.js';
+import {
+  commitStateAuthorityFence,
+  type StateAuthorityFenceCommitResult,
+} from './resume-authority.js';
 import { SECURE_DIR_MODE, SECURE_FILE_MODE } from '../../lib/fs.js';
 import { isNodeError } from '../../lib/process/errors.js';
 import { currentProcessStartTimeMs, readProcessStartTimeMs } from '../../lib/process/start-time.js';

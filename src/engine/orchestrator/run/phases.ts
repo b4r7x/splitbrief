@@ -1,17 +1,14 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type { WorkflowContext, PlannerCallbacksContext } from '../types.js';
+import type { WorkflowContext } from '../types.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { EngineEvent } from '../../events/types.js';
-import type { Planner } from '../../planners/types.js';
 import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
 import type { RecoveryResultV1 } from '../../../core/schemas/brief-recovery.js';
-import { RecoveryResultV1Schema } from '../../../core/schemas/brief-recovery.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
 import {
   matchesPersistedExecutionPermit,
   parkedPlanningResult,
   planningResultForState,
-  terminalPlanningResult,
   withPlanningResultState,
 } from '../planning/handoff.js';
 
@@ -19,12 +16,12 @@ import { publishWarning } from '../events.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { runPlanningPhase } from '../planning/run.js';
 import { resumeBriefsApproval } from '../planning/resume-briefs.js';
-import { resumeArtifactApproval } from '../planning/resume-artifact-approval.js';
-import { regeneratePlanAndTasks, regenerateTasksIfNeeded } from '../planning/regen.js';
 import { runBriefQuality } from '../planning/brief-quality-run.js';
-import type { BriefQualityRecoveryBinding } from '../planning/brief-quality-preparation.js';
+import type { BriefQualityRecoveryBinding } from '../planning/brief-quality-queue.js';
 import { transitionAndSave } from '../state-ops.js';
-import { APPROVAL_PARKED_ARTIFACT } from './task-execution.js';
+import { applyBriefQualityResult, stateAfterRecovery } from './phase-recovery-state.js';
+import { plannerCallbacksContextOf } from './planner-callbacks-context.js';
+import { resumeParkedApproval } from './resume-parked-approval.js';
 
 export type RunPlanningPhasesOptions = {
   wctx: WorkflowContext;
@@ -51,30 +48,8 @@ export type PhaseRecoveryBinding = BriefQualityRecoveryBinding & {
   writeState: (state: WorkflowState) => void;
 };
 
-function stateAfterRecovery(state: WorkflowState, recovery: PhaseRecoveryBinding): WorkflowState {
-  try {
-    return recovery.readState();
-  } catch {
-    // Keep the state already supplied by the owner when its refresh seam fails.
-  }
-  return state;
-}
-
 function recoveryHasAdmission(recovery: PhaseRecoveryBinding): boolean {
   return recovery.projection.epochId !== null;
-}
-
-function applyBriefQualityResult(
-  recovery: PhaseRecoveryBinding,
-  result: Awaited<ReturnType<typeof runBriefQuality>>,
-): void {
-  recovery.projection = result.projection;
-  recovery.authority = {
-    ...recovery.authority,
-    stateRevision: result.projection.stateRevision,
-  };
-  const parsed = RecoveryResultV1Schema.safeParse(result.recovery);
-  if (parsed.success) recovery.admission = parsed.data;
 }
 
 function isInterruptedPlanningTurn(state: WorkflowState): boolean {
@@ -99,115 +74,6 @@ async function exitNonApprovalBrief(opts: {
   });
 }
 
-// Continues a resumed artifact approval from the persisted artifacts, never from a fresh
-// planning turn: an approved spec.md drives plan/brief regeneration and then the plan gate,
-// and a plan the planner revised at either gate invalidates the briefs it produced, so they
-// are regenerated before the briefs gate reads tasks.md. This is what rewind.ts does after
-// its own APPROVE_SPEC; re-planning would overwrite the artifact just approved and re-prompt
-// the same gate.
-async function continueApprovedArtifact(opts: {
-  wctx: PlannerCallbacksContext & { planner: Planner };
-  phase: 'reviewing-spec' | 'reviewing-plan';
-  approval: { state: WorkflowState; regenerated: boolean };
-  setTrackedState: (s: WorkflowState) => void;
-  recovery: PhaseRecoveryBinding;
-}): Promise<PlanningPhaseResult> {
-  const { wctx, setTrackedState, recovery } = opts;
-  const { projectDir, sessionId, callbacks, bus, metadata, sinks, signal, planner } = wctx;
-  const ref = { projectDir, sessionId };
-  let { state, regenerated } = opts.approval;
-  let tasks = state.tasks;
-
-  if (opts.phase === 'reviewing-spec') {
-    state = transitionAndSave(ref, state, { type: 'APPROVE_SPEC' });
-    let planAndTasks: Awaited<ReturnType<typeof regeneratePlanAndTasks>>;
-    try {
-      planAndTasks = await regeneratePlanAndTasks({
-        ...ref,
-        planner,
-        callbacks,
-        bus,
-        state,
-        metadata,
-        signal,
-        sinks,
-      });
-    } catch {
-      const preserved = stateAfterRecovery(state, recovery);
-      setTrackedState(preserved);
-      return parkedPlanningResult(wctx.sessionId, preserved, recovery.projection);
-    }
-    tasks = planAndTasks.tasks;
-    state = transitionAndSave(ref, planAndTasks.state, {
-      type: 'PLAN_DONE',
-      tasks,
-    });
-    setTrackedState(state);
-
-    const planApproval = await resumeArtifactApproval({
-      wctx,
-      state,
-      phase: 'reviewing-plan',
-    });
-    if (planApproval.cancelled) {
-      return terminalPlanningResult(planApproval.state, 'cancelled');
-    }
-    state = planApproval.state;
-    regenerated = planApproval.regenerated;
-  }
-
-  let regen: Awaited<ReturnType<typeof regenerateTasksIfNeeded>>;
-  try {
-    regen = await regenerateTasksIfNeeded({
-      ...ref,
-      regenerated,
-      planner,
-      callbacks,
-      bus,
-      state,
-      tasks,
-      metadata,
-      signal,
-      sinks,
-    });
-  } catch {
-    const preserved = stateAfterRecovery(state, recovery);
-    setTrackedState(preserved);
-    return parkedPlanningResult(wctx.sessionId, preserved, recovery.projection);
-  }
-  state = regen.state;
-  tasks = regen.tasks;
-
-  let quality: Awaited<ReturnType<typeof runBriefQuality>>;
-  try {
-    quality = await runBriefQuality({
-      tasks,
-      state,
-      planner,
-      wctx,
-      recovery,
-    });
-  } catch {
-    const preserved = stateAfterRecovery(state, recovery);
-    setTrackedState(preserved);
-    return parkedPlanningResult(wctx.sessionId, preserved, recovery.projection);
-  }
-  applyBriefQualityResult(recovery, quality);
-  const latest = stateAfterRecovery(quality.state, recovery);
-  setTrackedState(latest);
-  if (!quality.ok) return withPlanningResultState(quality.result, latest);
-
-  const briefs = await resumeBriefsApproval({
-    wctx,
-    state: latest,
-    qualityValidatedTasks: quality.tasks,
-    recovery,
-  });
-  const finalState = stateAfterRecovery(briefs.state, recovery);
-  setTrackedState(finalState);
-  return withPlanningResultState(briefs, finalState);
-}
-
 export async function runPlanningPhases(
   opts: RunPlanningPhasesOptions,
 ): Promise<PlanningPhaseResult> {
@@ -221,7 +87,7 @@ export async function runPlanningPhases(
     rewindFeedback,
   } = opts;
   let { state } = opts;
-  const { projectDir, sessionId, config, callbacks, planner } = wctx;
+  const { projectDir, sessionId, config, planner } = wctx;
 
   const interrupted = isInterruptedPlanningTurn(state);
   const shouldRunPlanning = !savedState || Boolean(savedState.rewindPending) || interrupted;
@@ -238,57 +104,15 @@ export async function runPlanningPhases(
     setTrackedState(state);
   }
 
-  const parkedArtifact = APPROVAL_PARKED_ARTIFACT[state.phase];
-  if (parkedArtifact !== undefined) {
-    if (opts.recovery === undefined) return parkedPlanningResult(sessionId, state);
-
-    const resumeWctx: PlannerCallbacksContext & { planner: Planner } = {
-      projectDir,
-      sessionId,
-      config,
-      callbacks,
-      bus: wctx.bus,
-      signal: wctx.signal,
-      metadata: wctx.metadata,
-      sinks: wctx.sinks,
-      drainPendingAttachments: wctx.drainPendingAttachments,
-      ...(wctx.modelCache !== undefined && { modelCache: wctx.modelCache }),
-      ...(wctx.detectedContextLength !== undefined && {
-        detectedContextLength: wctx.detectedContextLength,
-      }),
-      planner,
-    };
-
-    if (state.phase === 'reviewing-briefs') {
-      const resumed = await resumeBriefsApproval({
-        wctx: resumeWctx,
-        state,
-        recovery: opts.recovery,
-      });
-      state = stateAfterRecovery(resumed.state, opts.recovery);
-      setTrackedState(state);
-      phaseTimings.planning = Date.now() - startTime;
-      return withPlanningResultState(resumed, state);
-    }
-
-    const resumePhase = state.phase;
-    if (resumePhase === 'reviewing-spec' || resumePhase === 'reviewing-plan') {
-      const resumed = await resumeArtifactApproval({ wctx: resumeWctx, state, phase: resumePhase });
-      const continued = resumed.cancelled
-        ? terminalPlanningResult(resumed.state, 'cancelled')
-        : await continueApprovedArtifact({
-            wctx: resumeWctx,
-            phase: resumePhase,
-            approval: resumed,
-            setTrackedState,
-            recovery: opts.recovery,
-          });
-      state = continued.state;
-      setTrackedState(state);
-      phaseTimings.planning = Date.now() - startTime;
-      return withPlanningResultState(continued, state);
-    }
-  }
+  const parked = await resumeParkedApproval({
+    wctx,
+    state,
+    setTrackedState,
+    recovery: opts.recovery,
+    phaseTimings,
+    startTime,
+  });
+  if (parked !== null) return parked;
 
   if (shouldRunPlanning) {
     if (config.hooks) {
@@ -315,23 +139,8 @@ export async function runPlanningPhases(
     const plannerFeature = wctx.plannerContext
       ? `${state.feature}\n\n<user-context>\n${wctx.plannerContext}\n</user-context>`
       : state.feature;
-    const planningWctx = {
-      projectDir,
-      sessionId,
-      config,
-      callbacks,
-      bus: wctx.bus,
-      signal: wctx.signal,
-      metadata: wctx.metadata,
-      sinks: wctx.sinks,
-      drainPendingAttachments: wctx.drainPendingAttachments,
-      ...(wctx.modelCache !== undefined && { modelCache: wctx.modelCache }),
-      ...(wctx.detectedContextLength !== undefined && {
-        detectedContextLength: wctx.detectedContextLength,
-      }),
-    };
     const planning = await runPlanningPhase({
-      wctx: planningWctx,
+      wctx: plannerCallbacksContextOf(wctx),
       planner,
       state,
       feature: plannerFeature,

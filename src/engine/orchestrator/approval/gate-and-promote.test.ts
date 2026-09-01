@@ -8,7 +8,7 @@ import { makeBusRecorder, makeCallbacks } from '#testing/helpers/orchestrator-fa
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { createStagedProject } from './staged-project.js';
-import { gateAndPromoteChangedFiles } from './gate-and-promote.js';
+import { gateAndPromoteChangedFiles, type GateAndPromoteOpts } from './gate-and-promote.js';
 import { getChangedFilesSnapshot } from './file-snapshots/capture.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -19,6 +19,28 @@ afterEach(() => {
   for (const dir of dirs) cleanupTempDir(dir);
   dirs = [];
 });
+
+type GateArgs = Pick<
+  GateAndPromoteOpts,
+  'task' | 'state' | 'projectDir' | 'workspace' | 'taskStartSnapshot'
+> &
+  Partial<GateAndPromoteOpts>;
+
+function runGate(args: GateArgs) {
+  return gateAndPromoteChangedFiles({
+    sessionId: 'sess-gate',
+    bus: makeBusRecorder().bus,
+    callbacks: makeCallbacks().callbacks,
+    config: makeNoValidationConfig({
+      approval: { enabled: false, feedRejectionsToPlanner: true },
+    }),
+    usesIsolation: true,
+    dependsOnFiles: [],
+    handleConflict: async (s) => s,
+    onApproved: () => {},
+    ...args,
+  });
+}
 
 describe('gateAndPromoteChangedFiles', () => {
   itUnix('returns a handled error outcome and runs cleanup when promotion throws', async () => {
@@ -45,23 +67,13 @@ describe('gateAndPromoteChangedFiles', () => {
     const state = makeImplState([task]);
     const cleanup = vi.fn(workspace.cleanup);
 
-    const outcome = await gateAndPromoteChangedFiles({
+    const outcome = await runGate({
       task,
       state,
       projectDir,
-      sessionId: 'sess-gate',
-      bus: makeBusRecorder().bus,
-      callbacks: makeCallbacks().callbacks,
-      config: makeNoValidationConfig({
-        approval: { enabled: false, feedRejectionsToPlanner: true },
-      }),
       workspace,
-      usesIsolation: true,
       taskStartSnapshot,
-      dependsOnFiles: [],
       cleanup,
-      handleConflict: async (s) => s,
-      onApproved: () => {},
     });
 
     expect(outcome.outcome).toBe('error');
@@ -89,23 +101,7 @@ describe('gateAndPromoteChangedFiles', () => {
     const task = makeTask({ id: 'T010', file: 'src/user.ts' });
     const state = makeImplState([task]);
 
-    const outcome = await gateAndPromoteChangedFiles({
-      task,
-      state,
-      projectDir,
-      sessionId: 'sess-gate',
-      bus: makeBusRecorder().bus,
-      callbacks: makeCallbacks().callbacks,
-      config: makeNoValidationConfig({
-        approval: { enabled: false, feedRejectionsToPlanner: true },
-      }),
-      workspace,
-      usesIsolation: true,
-      taskStartSnapshot,
-      dependsOnFiles: [],
-      handleConflict: async (s) => s,
-      onApproved: () => {},
-    });
+    const outcome = await runGate({ task, state, projectDir, workspace, taskStartSnapshot });
 
     expect(outcome.outcome).toBe('allow');
     expect(readFileSync(join(projectDir, 'src', 'user.ts'), 'utf-8')).toBe(
@@ -128,23 +124,7 @@ describe('gateAndPromoteChangedFiles', () => {
     const task = makeTask({ id: 'T010', file: 'src/app.ts' });
     const state = makeImplState([task]);
 
-    const outcome = await gateAndPromoteChangedFiles({
-      task,
-      state,
-      projectDir,
-      sessionId: 'sess-gate',
-      bus: makeBusRecorder().bus,
-      callbacks: makeCallbacks().callbacks,
-      config: makeNoValidationConfig({
-        approval: { enabled: false, feedRejectionsToPlanner: true },
-      }),
-      workspace,
-      usesIsolation: true,
-      taskStartSnapshot,
-      dependsOnFiles: [],
-      handleConflict: async (s) => s,
-      onApproved: () => {},
-    });
+    const outcome = await runGate({ task, state, projectDir, workspace, taskStartSnapshot });
 
     expect(outcome.outcome).toBe('allow');
     expect(readFileSync(join(projectDir, 'src', 'app.ts'), 'utf-8')).toBe(
@@ -167,21 +147,12 @@ describe('gateAndPromoteChangedFiles', () => {
     const task = makeTask({ id: 'T010', file: 'src/app.ts' });
     const state = makeImplState([task]);
 
-    const outcome = await gateAndPromoteChangedFiles({
+    const outcome = await runGate({
       task,
       state,
       projectDir,
-      sessionId: 'sess-gate',
-      bus: makeBusRecorder().bus,
-      callbacks: makeCallbacks().callbacks,
-      config: makeNoValidationConfig({
-        approval: { enabled: false, feedRejectionsToPlanner: true },
-      }),
       workspace,
-      usesIsolation: true,
       taskStartSnapshot,
-      dependsOnFiles: [],
-      handleConflict: async (s) => s,
       onApproved: () => {
         writeFileSync(join(projectDir, 'src', 'app.ts'), 'export const app = 1;\n');
       },
@@ -215,24 +186,18 @@ describe('gateAndPromoteChangedFiles', () => {
     const task = makeTask({ id: 'T010', file: 'src/main.ts' });
     const state = makeImplState([task]);
 
-    const outcome = await gateAndPromoteChangedFiles({
+    const outcome = await runGate({
       task,
       state,
       projectDir,
-      sessionId: 'sess-gate',
-      bus: makeBusRecorder().bus,
+      workspace,
+      taskStartSnapshot,
       callbacks: makeCallbacks({
         onTieredApproval: vi.fn().mockResolvedValue({ decision: 'deny', reason: 'test' }),
       }).callbacks,
       config: makeNoValidationConfig({
         approval: { enabled: true, feedRejectionsToPlanner: false },
       }),
-      workspace,
-      usesIsolation: true,
-      taskStartSnapshot,
-      dependsOnFiles: [],
-      handleConflict: async (s) => s,
-      onApproved: () => {},
     });
 
     expect(outcome.outcome).toBe('gate-denied');

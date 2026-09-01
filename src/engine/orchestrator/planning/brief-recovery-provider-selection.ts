@@ -32,7 +32,7 @@ import type { WorkflowContext } from '../types.js';
  * frozen-program batch path (T-084) on the same operation-wide ledger, so
  * recovery claims count against the same 64-dispatch ceiling as planning. A
  * fail-closed planner refuses recovery with the typed capability code and zero
- * dispatch; everything else (quick/instant, test doubles) keeps the legacy
+ * dispatch; everything else (quick, test doubles) keeps the legacy
  * single-call provider.
  */
 export function recoveryProviderFor(opts: {

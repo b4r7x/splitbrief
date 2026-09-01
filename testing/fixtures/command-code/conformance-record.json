@@ -1,0 +1,17 @@
+{
+  "rawCapture": {
+    "candidateId": "command-code",
+    "role": "implementer",
+    "contractSha256": "422f14aab76b26244059be8100147d5bf78e34882e324b7797a0469e8a63ee2d",
+    "stdout": "version exit=0\n1.39.2\n\n{\"type\":\"result\",\"subtype\":\"error\",\"usage\":{\"inputTokens\":0,\"outputTokens\":0,\"cacheReadTokens\":0,\"cacheWriteTokens\":0},\"durationMs\":1,\"finalText\":\"\",\"error\":\"Error: Not authenticated. Please run \\\"cmd login\\\" first.\"}\n\nError: Not authenticated. Please run \"cmd login\" first.\n",
+    "stderr": "\n"
+  },
+  "productionConformance": {
+    "candidateId": "command-code",
+    "role": "implementer",
+    "contractSha256": "422f14aab76b26244059be8100147d5bf78e34882e324b7797a0469e8a63ee2d",
+    "stdout": "{\n  \"candidateId\": \"command-code\",\n  \"role\": \"implementer\",\n  \"status\": \"failed\",\n  \"textBytes\": 0,\n  \"directChange\": false,\n  \"terminal\": false\n}",
+    "stderr": "implementer produced no staged-project change"
+  },
+  "verdict": "OMIT"
+}

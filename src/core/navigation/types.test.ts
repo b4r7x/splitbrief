@@ -5,7 +5,7 @@ import {
   overlayAllowsPickerKeys,
   seatPickerOverlayFor,
 } from './types.js';
-import { SEAT_PICKER_ROLES } from '../runners/cli-tool-catalog.js';
+import { SEAT_PICKER_ROLES } from '../runners/seat-roles.js';
 
 describe('seat picker overlays', () => {
   it('gives every seat picker role a routable overlay', () => {

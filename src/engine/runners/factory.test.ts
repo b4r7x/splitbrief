@@ -10,12 +10,11 @@ import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
-  customRunnerFactoryError,
   createImplementer as createPreparedImplementer,
   createPlanner as createPreparedPlanner,
   createReviewer as createPreparedReviewer,
-  type RunnerFactoryAuthority,
 } from './factory.js';
+import { customRunnerFactoryError, type RunnerFactoryAuthority } from './factory-gates.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import type { CliStartGate } from './start-gate.js';
 import type { CustomRunnerRuntimePort } from './types.js';
@@ -32,6 +31,7 @@ import { readPlannerCompilerRefusal, readPlannerCompilerSeam } from '../planners
 import { saveDetectionCache } from '../detection/cache.js';
 import { detectionContextsForCurrentConfig } from '../detection/store-publication.js';
 import type { CliExecutableIdentity, CliToolDetection } from '../../core/discovery/detection.js';
+import { CLI_TOOL_CATALOG, CUSTOM_ONLY_CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
 import type { PlannerCreationOptions } from './factory.js';
 
 function writeVersionProbeShim(shimDir: string, probeLog: string): void {
@@ -319,6 +319,41 @@ describe('createPlanner', () => {
     expect(written).toContain('planner-effort');
   });
 
+  it('writes a variant warning to stderr when the backend has no named effort preset', async () => {
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const config = withPlanner({
+      kind: 'shell',
+      command: 'cat',
+      outputFormat: 'text',
+      variant: 'xhigh',
+    });
+
+    await createPlanner(config);
+
+    const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
+    expect(written).toContain('planner-variant');
+  });
+
+  it('keeps the variant when the planner backend takes it as a named effort preset', async () => {
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const config = withPlanner({ kind: 'cli', tool: 'opencode', variant: 'xhigh' });
+
+    await createPlanner(config);
+
+    const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
+    expect(written).not.toContain('planner-variant');
+  });
+
+  it('does not warn about variant when no variant is configured', async () => {
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const config = withPlanner({ kind: 'shell', command: 'cat', outputFormat: 'text' });
+
+    await createPlanner(config);
+
+    const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
+    expect(written).not.toContain('planner-variant');
+  });
+
   it('writes a temperature warning to stderr when the backend cannot deliver it', async () => {
     const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const config = withPlanner({
@@ -436,6 +471,32 @@ describe('createImplementer', () => {
     expect(implementer.capabilities?.writesFiles).toMatch(/^(direct|extracted-code)$/);
   });
 
+  it('writes a variant warning to stderr when the backend has no named effort preset', async () => {
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const config = withImplementer({
+      kind: 'shell',
+      command: 'cat',
+      outputFormat: 'text',
+      model: 'test',
+      variant: 'xhigh',
+    });
+
+    await createImplementer(config);
+
+    const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
+    expect(written).toContain('implementer-variant');
+  });
+
+  it('keeps the variant when the implementer backend takes it as a named effort preset', async () => {
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const config = withImplementer({ kind: 'cli', tool: 'opencode', variant: 'xhigh' });
+
+    await createImplementer(config);
+
+    const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
+    expect(written).not.toContain('implementer-variant');
+  });
+
   it('writes a temperature warning to stderr when the backend cannot deliver it', async () => {
     const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const config = withImplementer({
@@ -542,29 +603,21 @@ describe('configured custom runner routing', () => {
 });
 
 describe('CLI role enforcement', () => {
-  it('rejects CLI tools outside the planner tuple before planner construction', async () => {
-    const config = withPlanner({
-      kind: 'cli',
-      tool: 'antigravity' as Config['planner'] extends { kind: 'cli'; tool: infer T } ? T : never,
-      authChannel: 'session',
-      model: 'test',
-    });
+  it.each(CUSTOM_ONLY_CLI_TOOL_IDS)(
+    'rejects custom-only CLI tool %s before planner construction',
+    async (tool) => {
+      const config = withPlanner({
+        kind: 'cli',
+        tool: tool as Config['planner'] extends { kind: 'cli'; tool: infer T } ? T : never,
+        authChannel: 'session',
+        model: 'test',
+      });
 
-    await expect(createPlanner(config)).rejects.toThrow(/planner configuration/);
-  });
+      await expect(createPlanner(config)).rejects.toThrow(/planner configuration/);
+    },
+  );
 
-  it('rejects unknown CLI tools before planner construction', async () => {
-    const config = withPlanner({
-      kind: 'cli',
-      tool: 'kiro' as Config['planner'] extends { kind: 'cli'; tool: infer T } ? T : never,
-      authChannel: 'session',
-      model: 'test',
-    });
-
-    await expect(createPlanner(config)).rejects.toThrow(/planner configuration/);
-  });
-
-  it('rejects unknown CLI tools before implementer construction', async () => {
+  it('rejects custom-only CLI tools before implementer construction', async () => {
     const config = withImplementer({
       kind: 'cli',
       tool: 'kiro' as Config['implementer'] extends { kind: 'cli'; tool: infer T } ? T : never,
@@ -588,7 +641,6 @@ describe('prepared generic gate enforcement', () => {
         apiBase: 'http://localhost:11434/v1',
         model: 'test',
       }),
-      withPlanner({ kind: 'agent-sdk', model: 'claude-sonnet-4-5', apiKey: 'test-key' }),
       withPlanner({ kind: 'shell', command: 'cat', outputFormat: 'text' }),
       withPlanner({ kind: 'agent', command: 'cat', outputFormat: 'text' }),
     ];
@@ -602,7 +654,6 @@ describe('prepared generic gate enforcement', () => {
         apiBase: 'http://localhost:11434/v1',
         model: 'test',
       }),
-      withImplementer({ kind: 'agent-sdk', model: 'claude-sonnet-4-5', apiKey: 'test-key' }),
       withImplementer({ kind: 'shell', command: 'cat', outputFormat: 'text', model: 'test' }),
       withImplementer({ kind: 'agent', command: 'cat', outputFormat: 'text', model: 'test' }),
     ];
@@ -764,16 +815,16 @@ describe('createReviewer', () => {
     return makeConfig({
       planner: {
         kind: 'api',
-        provider: 'openrouter',
-        apiBase: 'https://openrouter.ai/api/v1',
+        provider: 'planner-endpoint',
+        apiBase: 'https://planner.example.test/v1',
         apiKey: 'sk-planner',
         model: 'planner-model',
       },
       reviewer: {
         kind: 'api',
-        provider: 'anthropic',
-        apiBase: 'https://api.anthropic.com/v1',
-        apiKey: 'sk-ant-reviewer',
+        provider: 'reviewer-endpoint',
+        apiBase: 'https://reviewer.example.test/v1',
+        apiKey: 'sk-reviewer',
         model: 'reviewer-model',
       },
     });
@@ -819,22 +870,52 @@ describe('createReviewer', () => {
     expect(readPlannerCompilerRefusal(reviewer)).toBeNull();
     expect(readPlannerCompilerRefusal(planner) ?? readPlannerCompilerSeam(planner)).not.toBeNull();
   });
+
+  it('writes a variant warning to stderr when the reviewer backend has no named effort preset', async () => {
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const config = makeConfig({
+      reviewer: {
+        kind: 'api',
+        provider: 'reviewer-endpoint',
+        apiBase: 'https://reviewer.example.test/v1',
+        apiKey: 'sk-reviewer',
+        model: 'reviewer-model',
+        variant: 'xhigh',
+      },
+    });
+
+    await createPreparedReviewer(config, reviewerAuthority(config));
+
+    const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
+    expect(written).toContain('reviewer-variant');
+  });
+
+  it('keeps the variant when the reviewer backend takes it as a named effort preset', async () => {
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const config = makeConfig({ reviewer: { kind: 'cli', tool: 'opencode', variant: 'xhigh' } });
+
+    await createPreparedReviewer(config, reviewerAuthority(config));
+
+    const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
+    expect(written).not.toContain('reviewer-variant');
+  });
 });
 
 describe('planner compiler admission path', () => {
-  it.each(['copilot', 'aider'] as const)(
+  it.each(['copilot', 'cursor', 'command-code'] as const)(
     'refuses an unsupported %s planner with a typed capability failure and zero provider calls',
     async (tool) => {
       const shimDir = createTempDir(`factory-unsupported-${tool}`);
       const invocationMarker = join(shimDir, 'invoked');
+      const shimPath = join(shimDir, CLI_TOOL_CATALOG[tool].command);
       const restorePath = prependPath(shimDir);
       try {
         writeFileSync(
-          join(shimDir, tool),
+          shimPath,
           ['#!/bin/sh', `touch ${JSON.stringify(invocationMarker)}`, 'exit 0', ''].join('\n'),
           'utf8',
         );
-        chmodSync(join(shimDir, tool), 0o755);
+        chmodSync(shimPath, 0o755);
         const config = withPlanner({
           kind: 'cli',
           tool,
@@ -923,7 +1004,7 @@ describe('planner compiler admission path', () => {
       expect(result.text).toContain('slow response');
       const invocations = readFileSync(argvLog, 'utf8').trim().split('\n').filter(Boolean);
       expect(invocations).toHaveLength(1);
-      expect(invocations[0]).toMatch(/^run (?:--model \S+ )?--format json --agent plan /);
+      expect(invocations[0]).toMatch(/^run --model test --format json --agent plan /);
     } finally {
       restorePath();
       cleanupTempDir(projectDir);
@@ -1039,19 +1120,7 @@ describe('planner compiler admission path', () => {
     }
   });
 
-  it('keeps the typed refusal for unsupported planner backends', async () => {
-    const shellConfig = withPlanner({
-      kind: 'shell',
-      command: 'cat',
-      outputFormat: 'text',
-    });
-    const shellPlanner = await createPlanner(shellConfig);
-
-    expect(readPlannerCompilerSeam(shellPlanner)).toBeNull();
-    const shellRefusal = readPlannerCompilerRefusal(shellPlanner);
-    expect(shellRefusal).not.toBeNull();
-    expect(shellRefusal?.code).toBe('task_compiler_capability_unsupported');
-
+  it('keeps the typed refusal for an agent planner backend', async () => {
     const agentConfig = withPlanner({
       kind: 'agent',
       command: 'cat',
@@ -1065,10 +1134,10 @@ describe('planner compiler admission path', () => {
     expect(agentRefusal?.code).toBe('task_compiler_capability_unsupported');
   });
 
-  it('leaves neither seam nor refusal for quick and instant modes', async () => {
-    const projectDir = createTempDir('factory-quick-instant-project');
+  it('leaves neither seam nor refusal for quick mode', async () => {
+    const projectDir = createTempDir('factory-quick-mode-project');
     createTestGitRepo(projectDir);
-    const shimDir = createTempDir('factory-quick-instant-shim');
+    const shimDir = createTempDir('factory-quick-mode-shim');
     const restorePath = prependPath(shimDir);
     try {
       writeFileSync(
@@ -1110,17 +1179,6 @@ describe('planner compiler admission path', () => {
       const quickPlanner = await createPlanner(quickConfig, undefined, { trustedCli });
       expect(readPlannerCompilerSeam(quickPlanner)).toBeNull();
       expect(readPlannerCompilerRefusal(quickPlanner)).toBeNull();
-
-      const instantConfig = {
-        ...base,
-        workflow: {
-          ...base.workflow,
-          mode: 'instant' as const,
-        },
-      };
-      const instantPlanner = await createPlanner(instantConfig, undefined, { trustedCli });
-      expect(readPlannerCompilerSeam(instantPlanner)).toBeNull();
-      expect(readPlannerCompilerRefusal(instantPlanner)).toBeNull();
     } finally {
       restorePath();
       cleanupTempDir(projectDir);

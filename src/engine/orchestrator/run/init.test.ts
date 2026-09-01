@@ -27,7 +27,8 @@ import type { EngineEvent, EventBus } from '../../events/types.js';
 import { createEventBus } from '../../events/bus.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { formatValidationError } from '../validation/format-error.js';
-import { loadState, loadStateForResume, saveState } from '../../../core/state/persistence.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
+import { loadStateForResume } from '../../../core/state/resume-authority.js';
 import { acquireStateAuthority } from '../../../core/state/authority.js';
 import type { SummaryBase } from '../summary/build.js';
 import {
@@ -240,11 +241,11 @@ describe('initializeWorkflow', () => {
       name: 'seats a distinct runner in the review chair when a reviewer is configured',
       reviewer: {
         kind: 'api',
-        provider: 'anthropic',
-        service: 'anthropic',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
         offering: 'payg',
-        apiBase: 'https://api.anthropic.com/v1',
-        apiKey: 'sk-ant-reviewer',
+        apiBase: 'https://api.example.com/v1',
+        apiKey: 'sk-custom-reviewer',
         model: 'reviewer-model',
       },
       distinct: true,
@@ -648,13 +649,13 @@ describe('initializeWorkflow', () => {
         configOverrides: {
           planner: {
             kind: 'api',
-            provider: 'openrouter',
+            provider: 'custom-endpoint',
             model: 'some-model',
-            apiBase: 'https://openrouter.ai/api/v1',
+            apiBase: 'https://api.example.com/v1',
             apiKey: 'k',
           },
         },
-        plannerTool: 'openrouter',
+        plannerTool: 'custom-endpoint',
         plannerRunner: makePlanner({
           isAvailable: vi.fn().mockResolvedValue(false),
           unavailabilityReason: () => 'HTTP 401',
@@ -666,7 +667,7 @@ describe('initializeWorkflow', () => {
       const errorEvent = events.find(
         (e): e is Extract<EngineEvent, { type: 'error' }> => e.type === 'error',
       );
-      expect(errorEvent?.message).toContain("Planner 'openrouter' is not available");
+      expect(errorEvent?.message).toContain("Planner 'custom-endpoint' is not available");
       expect(errorEvent?.message).toContain('HTTP 401');
       expect(errorEvent?.message).not.toContain("Make sure it's installed");
     });

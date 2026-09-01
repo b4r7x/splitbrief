@@ -409,7 +409,6 @@ describe('CLI readiness probe', () => {
     },
   );
 
-  // Atomic catalog coverage belongs to the detector-path tests.
   it('reaps a hanging probe before returning an unverified result', async () => {
     const executable = await nodeExecutable();
     const startedAt = Date.now();

@@ -11,6 +11,19 @@ import {
 import { deriveCliReadiness } from '../schemas/readiness.js';
 
 describe('readiness formatting', () => {
+  const blockedReport = () =>
+    buildReadinessReport({
+      projectDir: '/tmp/project',
+      configLoad: {
+        state: 'invalid',
+        path: '/tmp/project/.splitbrief/config.yaml',
+        warnings: [],
+        error: 'bad config',
+      },
+      packageScripts: { packageJsonExists: false, scripts: {} },
+      repo: { isGitRepo: false, hasCommits: false, dirtyFiles: [], untrackedFiles: [] },
+    });
+
   it('formats fail-closed human output and compact start records without config secrets', () => {
     const report = buildReadinessReport({
       projectDir: '/tmp/project',
@@ -165,25 +178,7 @@ describe('readiness formatting', () => {
   });
 
   it('summarizes blocker messages for CLI errors', () => {
-    const report = buildReadinessReport({
-      projectDir: '/tmp/project',
-      configLoad: {
-        state: 'invalid',
-        path: '/tmp/project/.splitbrief/config.yaml',
-        warnings: [],
-        error: 'bad config',
-      },
-      packageScripts: {
-        packageJsonExists: false,
-        scripts: {},
-      },
-      repo: {
-        isGitRepo: false,
-        hasCommits: false,
-        dirtyFiles: [],
-        untrackedFiles: [],
-      },
-    });
+    const report = blockedReport();
 
     expect(readinessBlockerMessage(report)).toContain('config.invalid');
     expect(readinessBlockerMessage(report)).toContain('repo.not-git');
@@ -196,25 +191,7 @@ describe('readiness formatting', () => {
   });
 
   it('points to the blocker summary in a single line without listing each blocker', () => {
-    const report = buildReadinessReport({
-      projectDir: '/tmp/project',
-      configLoad: {
-        state: 'invalid',
-        path: '/tmp/project/.splitbrief/config.yaml',
-        warnings: [],
-        error: 'bad config',
-      },
-      packageScripts: {
-        packageJsonExists: false,
-        scripts: {},
-      },
-      repo: {
-        isGitRepo: false,
-        hasCommits: false,
-        dirtyFiles: [],
-        untrackedFiles: [],
-      },
-    });
+    const report = blockedReport();
 
     const pointer = readinessBlockerPointer(report);
     expect(pointer.split('\n')).toHaveLength(1);
@@ -227,17 +204,7 @@ describe('readiness formatting', () => {
   it('strips terminal control sequences from human output while keeping the record raw', () => {
     const esc = '\u001b';
     const bel = '\u0007';
-    const report = buildReadinessReport({
-      projectDir: '/tmp/project',
-      configLoad: {
-        state: 'invalid',
-        path: '/tmp/project/.splitbrief/config.yaml',
-        warnings: [],
-        error: 'bad config',
-      },
-      packageScripts: { packageJsonExists: false, scripts: {} },
-      repo: { isGitRepo: false, hasCommits: false, dirtyFiles: [], untrackedFiles: [] },
-    });
+    const report = blockedReport();
 
     const blocker = report.sections
       .flatMap((section) => section.checks)

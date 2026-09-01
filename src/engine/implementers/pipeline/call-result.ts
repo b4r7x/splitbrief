@@ -27,8 +27,6 @@ function implementerRunnerName(config: ImplementerOptions['config']['implementer
     case 'shell':
     case 'agent':
       return config.command;
-    case 'agent-sdk':
-      return 'agent-sdk';
     default: {
       const _exhaustive: never = config;
       return _exhaustive;

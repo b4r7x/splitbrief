@@ -95,43 +95,32 @@ describe('/copy command', () => {
     expect(error).toMatch(/Invalid copy target/);
   });
 
-  it('is unavailable on the summary screen', async () => {
-    let error: string | undefined;
-    const commands = createRuntimeCommands(makeCtx());
-    await runCommandInTest({
-      commands: commands,
-      raw: '/copy path',
-      screen: 'summary',
-      onError: (m) => {
-        error = m;
-      },
-    });
-    expect(error).toMatch(/only available/);
-  });
-
-  it('is unavailable on the home screen so stale workflow stores are never read', async () => {
-    let copied = false;
-    let error: string | undefined;
-    const commands = createRuntimeCommands(
-      makeCtx({
-        copyTarget: async () => {
-          copied = true;
-          return 'native';
-        },
-        setFeedbackError: (m) => {
+  it.each(['summary', 'home'] as const)(
+    'is unavailable on %s so stale workflow stores are never read',
+    async (screen) => {
+      let copied = false;
+      let error: string | undefined;
+      const commands = createRuntimeCommands(
+        makeCtx({
+          copyTarget: async () => {
+            copied = true;
+            return 'native';
+          },
+          setFeedbackError: (m) => {
+            error = m;
+          },
+        }),
+      );
+      await runCommandInTest({
+        commands: commands,
+        raw: '/copy path',
+        screen: screen,
+        onError: (m) => {
           error = m;
         },
-      }),
-    );
-    await runCommandInTest({
-      commands: commands,
-      raw: '/copy path',
-      screen: 'home',
-      onError: (m) => {
-        error = m;
-      },
-    });
-    expect(copied).toBe(false);
-    expect(error).toMatch(/only available/);
-  });
+      });
+      expect(copied).toBe(false);
+      expect(error).toMatch(/only available/);
+    },
+  );
 });

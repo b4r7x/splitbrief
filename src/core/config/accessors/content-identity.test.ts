@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { contentIdentityId } from './content-identity.js';
-import { projectRunnerDiscoveryContext } from './runner-discovery-context.js';
-import { createDefaultConfig } from '../load/io.js';
+import { createDefaultConfig } from '../load/defaults.js';
 import type { Config } from '../../schemas/config.js';
 
 function apiConfig(apiKey: string): Config {
@@ -9,10 +8,10 @@ function apiConfig(apiKey: string): Config {
     ...createDefaultConfig(),
     planner: {
       kind: 'api',
-      provider: 'anthropic',
-      service: 'anthropic',
+      provider: 'custom-endpoint',
+      service: 'custom-endpoint',
       offering: 'payg',
-      apiBase: 'https://api.anthropic.com/v1/',
+      apiBase: 'https://api.example.test/v1/',
       apiKey,
       model: 'claude-opus-4-6',
     },
@@ -48,14 +47,5 @@ describe('contentIdentityId', () => {
     const a = contentIdentityId('config', apiConfig('env:KEY_ONE'));
     const b = contentIdentityId('config', apiConfig('env:KEY_TWO'));
     expect(a).not.toBe(b);
-  });
-});
-
-describe('runner discovery context generation', () => {
-  it('is reproducible across processes: equal content yields an equal context', () => {
-    const left = projectRunnerDiscoveryContext({ config: createDefaultConfig(), role: 'planner' });
-    const right = projectRunnerDiscoveryContext({ config: createDefaultConfig(), role: 'planner' });
-    expect(left.configGeneration).toBe(right.configGeneration);
-    expect(left).toEqual(right);
   });
 });

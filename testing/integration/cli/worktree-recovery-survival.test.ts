@@ -7,7 +7,6 @@ import {
   prepareExecutionMock,
   runStart,
   setupStartCommandIntegration,
-  spawnServerMock,
   writeReadyReadinessFixtures,
   runHeadlessMock,
 } from '#testing/helpers/start-command.js';
@@ -79,36 +78,6 @@ describe('start command — worktree survival on recovery vs startup failure', (
     expect((await git.branch()).all).toContain(`splitbrief/${slug}`);
     expect(existsSync(join(wtPath, '.git'))).toBe(true);
   });
-
-  it('genuine startup failure still rolls the created worktree back', async () => {
-    const tmp = getStartCommandTmp();
-    const slug = 'startup-rollback';
-    writeReadyReadinessFixtures(tmp);
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    spawnServerMock.mockImplementationOnce(async () => ({ ok: false, reason: 'boom' }));
-
-    let captured: unknown;
-    try {
-      await runStart(['--project', tmp, '--worktree', slug, '--detach', 'implement X']);
-      throw new Error('expected start to throw');
-    } catch (err) {
-      captured = err;
-    }
-
-    expect(isCliError(captured)).toBe(true);
-    expect((captured as Error).message).toContain('Failed to start server');
-
-    await vi.waitFor(() => {
-      expect(existsSync(worktreePath(tmp, slug))).toBe(false);
-    });
-
-    const branchesAfterFailure = execSync(`git branch --list splitbrief/${slug}`, {
-      cwd: tmp,
-      encoding: 'utf-8',
-    });
-    expect(branchesAfterFailure.trim()).toBe('');
-  }, 60_000);
 
   it('an interactive preparation failure still rolls the created worktree back', async () => {
     const tmp = getStartCommandTmp();

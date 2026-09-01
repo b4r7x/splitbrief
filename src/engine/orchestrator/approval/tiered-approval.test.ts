@@ -3,7 +3,8 @@ import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { gateAction } from './tiered-approval.js';
 import type { GateActionInput } from './types.js';
-import type { TieredApprovalResponse } from '../../../core/approval/types.js';
+import type { OrchestratorCallbacks } from '../types.js';
+import type { ApprovalGrant } from '../../../core/schemas/approval-store.js';
 import type { EngineEvent } from '../../events/types.js';
 import { makeConfig, makeApprovalConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -19,7 +20,11 @@ function trackTempDir(name: string): string {
   return dir;
 }
 
-function makeInput(overrides: Partial<GateActionInput> = {}): GateActionInput {
+type InputOverrides = Partial<Omit<GateActionInput, 'callbacks'>> & {
+  onTieredApproval?: OrchestratorCallbacks['onTieredApproval'];
+};
+
+function makeInput({ onTieredApproval, ...overrides }: InputOverrides = {}): GateActionInput {
   const { bus } = makeBusRecorder();
   const task = makeTask();
   return {
@@ -33,12 +38,29 @@ function makeInput(overrides: Partial<GateActionInput> = {}): GateActionInput {
     bus,
     callbacks: {
       onApprovalNeeded: async () => ({ approved: true }),
-
       onComplete: () => {},
+      ...(onTieredApproval && { onTieredApproval }),
     },
     config: makeConfig(),
     ...overrides,
   };
+}
+
+function seedGrants(projectDir: string, grants: Array<Omit<ApprovalGrant, 'grantedAt'>>): void {
+  mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
+  const store = {
+    version: 1,
+    grants: grants.map((grant) => ({ ...grant, grantedAt: new Date().toISOString() })),
+  };
+  writeFileSync(approvalsFile(projectDir), JSON.stringify(store));
+}
+
+function grantedEvent(events: EngineEvent[]) {
+  return events.find((e) => e.type === 'approval_granted');
+}
+
+function rejectedEvent(events: EngineEvent[]) {
+  return events.find((e) => e.type === 'approval_rejected');
 }
 
 describe('gateAction', () => {
@@ -91,11 +113,6 @@ describe('gateAction', () => {
       bus,
       config,
       actionDescription: 'write /tmp/outside-project/file.ts',
-      callbacks: {
-        onApprovalNeeded: async () => ({ approved: true }),
-
-        onComplete: () => {},
-      },
     });
     const result = await gateAction(input);
     expect(result.allow).toBe(false);
@@ -103,66 +120,20 @@ describe('gateAction', () => {
     expect(events.some((e) => e.type === 'approval_prompted')).toBe(true);
   });
 
-  it('sticky tier, always grant exists → allow without callback', async () => {
+  it.each([
+    { scope: 'always' as const, sessionId: undefined },
+    { scope: 'session' as const, sessionId: 'sess-001' },
+  ])('sticky tier, $scope grant exists → allow without callback', async ({ scope, sessionId }) => {
     const { bus, events } = makeBusRecorder();
     const projectDir = trackTempDir('splitbrief-test');
-    mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
-    const store = {
-      version: 1,
-      grants: [
-        {
-          pattern: 'write /tmp/outside-project/file.ts',
-          class: 'write_out_of_scope',
-          scope: 'always',
-          grantedAt: new Date().toISOString(),
-        },
-      ],
-    };
-    writeFileSync(approvalsFile(projectDir), JSON.stringify(store));
-    const config = makeApprovalConfig({ enabled: true, headless: true });
-    let callbackCalled = false;
-    const input = makeInput({
-      bus,
-      config,
-      projectDir,
-      actionDescription: 'write /tmp/outside-project/file.ts',
-      callbacks: {
-        onApprovalNeeded: async () => ({ approved: true }),
-
-        onComplete: () => {},
-        onTieredApproval: async () => {
-          callbackCalled = true;
-          return { decision: 'allow', scope: 'once' };
-        },
+    seedGrants(projectDir, [
+      {
+        pattern: 'write /tmp/outside-project/file.ts',
+        class: 'write_out_of_scope',
+        scope,
+        sessionId,
       },
-    });
-    const result = await gateAction(input);
-    expect(result.allow).toBe(true);
-    expect(callbackCalled).toBe(false);
-    const granted = events.find((e) => e.type === 'approval_granted') as
-      | Extract<EngineEvent, { type: 'approval_granted' }>
-      | undefined;
-    expect(granted?.scope).toBe('always');
-    expect(events.some((e) => e.type === 'approval_prompted')).toBe(false);
-  });
-
-  it('sticky tier, session grant matching sessionId → allow without callback', async () => {
-    const { bus, events } = makeBusRecorder();
-    const projectDir = trackTempDir('splitbrief-test');
-    mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
-    const store = {
-      version: 1,
-      grants: [
-        {
-          pattern: 'write /tmp/outside-project/file.ts',
-          class: 'write_out_of_scope',
-          scope: 'session',
-          sessionId: 'sess-001',
-          grantedAt: new Date().toISOString(),
-        },
-      ],
-    };
-    writeFileSync(approvalsFile(projectDir), JSON.stringify(store));
+    ]);
     const config = makeApprovalConfig({ enabled: true, headless: true });
     let callbackCalled = false;
     const input = makeInput({
@@ -171,43 +142,29 @@ describe('gateAction', () => {
       projectDir,
       sessionId: 'sess-001',
       actionDescription: 'write /tmp/outside-project/file.ts',
-      callbacks: {
-        onApprovalNeeded: async () => ({ approved: true }),
-
-        onComplete: () => {},
-        onTieredApproval: async () => {
-          callbackCalled = true;
-          return { decision: 'allow', scope: 'once' };
-        },
+      onTieredApproval: async () => {
+        callbackCalled = true;
+        return { decision: 'allow', scope: 'once' };
       },
     });
     const result = await gateAction(input);
     expect(result.allow).toBe(true);
     expect(callbackCalled).toBe(false);
-    const granted = events.find((e) => e.type === 'approval_granted') as
-      | Extract<EngineEvent, { type: 'approval_granted' }>
-      | undefined;
-    expect(granted?.scope).toBe('session');
+    expect(grantedEvent(events)?.scope).toBe(scope);
     expect(events.some((e) => e.type === 'approval_prompted')).toBe(false);
   });
 
   it('sticky tier, session grant for different sessionId → callback invoked', async () => {
     const { bus } = makeBusRecorder();
     const projectDir = trackTempDir('splitbrief-test');
-    mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
-    const store = {
-      version: 1,
-      grants: [
-        {
-          pattern: 'write /tmp/outside-project/file.ts',
-          class: 'write_out_of_scope',
-          scope: 'session',
-          sessionId: 'sess-OTHER',
-          grantedAt: new Date().toISOString(),
-        },
-      ],
-    };
-    writeFileSync(approvalsFile(projectDir), JSON.stringify(store));
+    seedGrants(projectDir, [
+      {
+        pattern: 'write /tmp/outside-project/file.ts',
+        class: 'write_out_of_scope',
+        scope: 'session',
+        sessionId: 'sess-OTHER',
+      },
+    ]);
     const config = makeApprovalConfig({ enabled: true });
     let callbackCalled = false;
     const input = makeInput({
@@ -216,14 +173,9 @@ describe('gateAction', () => {
       projectDir,
       sessionId: 'sess-001',
       actionDescription: 'write /tmp/outside-project/file.ts',
-      callbacks: {
-        onApprovalNeeded: async () => ({ approved: true }),
-
-        onComplete: () => {},
-        onTieredApproval: async () => {
-          callbackCalled = true;
-          return { decision: 'allow', scope: 'once' };
-        },
+      onTieredApproval: async () => {
+        callbackCalled = true;
+        return { decision: 'allow', scope: 'once' };
       },
     });
     const result = await gateAction(input);
@@ -233,31 +185,17 @@ describe('gateAction', () => {
 
   it('sticky tier, callback allow once → allow, no persistence', async () => {
     const { bus, events } = makeBusRecorder();
-    const projectDir = trackTempDir('splitbrief-test');
-    mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
     const config = makeApprovalConfig({ enabled: true });
     const input = makeInput({
       bus,
       config,
-      projectDir,
       actionDescription: 'write /tmp/outside-project/file.ts',
-      callbacks: {
-        onApprovalNeeded: async () => ({ approved: true }),
-
-        onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
-          decision: 'allow',
-          scope: 'once',
-        }),
-      },
+      onTieredApproval: async () => ({ decision: 'allow', scope: 'once' }),
     });
     const result = await gateAction(input);
     expect(result.allow).toBe(true);
     expect(events.some((e) => e.type === 'approval_sticky_recorded')).toBe(false);
-    const granted = events.find((e) => e.type === 'approval_granted') as
-      | Extract<EngineEvent, { type: 'approval_granted' }>
-      | undefined;
-    expect(granted?.scope).toBe('once');
+    expect(grantedEvent(events)?.scope).toBe('once');
   });
 
   it('sticky tier, callback allow session → allow, persist, approval_sticky_recorded emitted', async () => {
@@ -271,15 +209,7 @@ describe('gateAction', () => {
       projectDir,
       sessionId: 'sess-001',
       actionDescription: 'write /tmp/outside-project/file.ts',
-      callbacks: {
-        onApprovalNeeded: async () => ({ approved: true }),
-
-        onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
-          decision: 'allow',
-          scope: 'session',
-        }),
-      },
+      onTieredApproval: async () => ({ decision: 'allow', scope: 'session' }),
     });
     const result = await gateAction(input);
     expect(result.allow).toBe(true);
@@ -292,31 +222,17 @@ describe('gateAction', () => {
 
   it('sticky tier, callback deny → deny, approval_rejected emitted', async () => {
     const { bus, events } = makeBusRecorder();
-    const projectDir = trackTempDir('splitbrief-test');
-    mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
     const config = makeApprovalConfig({ enabled: true });
     const input = makeInput({
       bus,
       config,
-      projectDir,
       actionDescription: 'write /tmp/outside-project/file.ts',
-      callbacks: {
-        onApprovalNeeded: async () => ({ approved: true }),
-
-        onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
-          decision: 'deny',
-          reason: 'wrong dir',
-        }),
-      },
+      onTieredApproval: async () => ({ decision: 'deny', reason: 'wrong dir' }),
     });
     const result = await gateAction(input);
     expect(result.allow).toBe(false);
     expect(result.reason).toBe('wrong dir');
-    const rejected = events.find((e) => e.type === 'approval_rejected') as
-      | Extract<EngineEvent, { type: 'approval_rejected' }>
-      | undefined;
-    expect(rejected?.reason).toBe('wrong dir');
+    expect(rejectedEvent(events)?.reason).toBe('wrong dir');
   });
 
   it('confirm tier, headless → deny APPROVAL_REQUIRED', async () => {
@@ -346,24 +262,16 @@ describe('gateAction', () => {
       bus,
       config,
       actionDescription: 'write /tmp/outside-project/file.ts',
-      callbacks: {
-        onApprovalNeeded: async () => ({ approved: true }),
-
-        onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
-          decision: 'confirm',
-          phrase: 'yes please',
-          reason: 'I understand',
-        }),
-      },
+      onTieredApproval: async () => ({
+        decision: 'confirm',
+        phrase: 'yes please',
+        reason: 'I understand',
+      }),
     });
     const result = await gateAction(input);
     expect(result.allow).toBe(false);
     expect(result.reason).toBe('invalid_confirm_phrase');
-    const rejected = events.find((e) => e.type === 'approval_rejected') as
-      | Extract<EngineEvent, { type: 'approval_rejected' }>
-      | undefined;
-    expect(rejected?.reason).toBe('invalid_confirm_phrase');
+    expect(rejectedEvent(events)?.reason).toBe('invalid_confirm_phrase');
   });
 
   it('confirm tier, callback deny → deny, approval_rejected emitted', async () => {
@@ -376,23 +284,12 @@ describe('gateAction', () => {
       bus,
       config,
       actionDescription: 'write /tmp/outside-project/file.ts',
-      callbacks: {
-        onApprovalNeeded: async () => ({ approved: true }),
-
-        onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
-          decision: 'deny',
-          reason: 'not allowed',
-        }),
-      },
+      onTieredApproval: async () => ({ decision: 'deny', reason: 'not allowed' }),
     });
     const result = await gateAction(input);
     expect(result.allow).toBe(false);
     expect(result.reason).toBe('not allowed');
-    const rejected = events.find((e) => e.type === 'approval_rejected') as
-      | Extract<EngineEvent, { type: 'approval_rejected' }>
-      | undefined;
-    expect(rejected?.reason).toBe('not allowed');
+    expect(rejectedEvent(events)?.reason).toBe('not allowed');
   });
 
   it('tier override write_out_of_scope → confirm', async () => {
@@ -402,22 +299,15 @@ describe('gateAction', () => {
       bus,
       config,
       actionDescription: 'write /tmp/outside-project/file.ts',
-      callbacks: {
-        onApprovalNeeded: async () => ({ approved: true }),
-
-        onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
-          decision: 'confirm',
-          phrase: 'I confirm',
-          reason: 'I understand',
-        }),
-      },
+      onTieredApproval: async () => ({
+        decision: 'confirm',
+        phrase: 'I confirm',
+        reason: 'I understand',
+      }),
     });
     const result = await gateAction(input);
     expect(result.allow).toBe(true);
-    const prompted = events.find((e) => e.type === 'approval_prompted') as
-      | Extract<EngineEvent, { type: 'approval_prompted' }>
-      | undefined;
+    const prompted = events.find((e) => e.type === 'approval_prompted');
     expect(prompted?.tier).toBe('confirm');
   });
 
@@ -431,25 +321,13 @@ describe('gateAction', () => {
       bus,
       config,
       actionDescription: 'write /tmp/outside-project/file.ts',
-      callbacks: {
-        onApprovalNeeded: async () => ({ approved: true }),
-
-        onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
-          decision: 'allow',
-          scope: 'once',
-        }),
-      },
+      onTieredApproval: async () => ({ decision: 'allow', scope: 'once' }),
     });
     const result = await gateAction(input);
     expect(result.allow).toBe(false);
     expect(result.reason).toBe('invalid_confirm_response');
-    const rejected = events.find((e) => e.type === 'approval_rejected') as
-      | Extract<EngineEvent, { type: 'approval_rejected' }>
-      | undefined;
-    expect(rejected?.reason).toBe('invalid_confirm_response');
-    const granted = events.find((e) => e.type === 'approval_granted');
-    expect(granted).toBeUndefined();
+    expect(rejectedEvent(events)?.reason).toBe('invalid_confirm_response');
+    expect(grantedEvent(events)).toBeUndefined();
   });
 
   it('confirm tier, valid confirm → approval_granted event records confirmReason', async () => {
@@ -462,23 +340,16 @@ describe('gateAction', () => {
       bus,
       config,
       actionDescription: 'write /tmp/outside-project/file.ts',
-      callbacks: {
-        onApprovalNeeded: async () => ({ approved: true }),
-
-        onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
-          decision: 'confirm',
-          phrase: 'I confirm',
-          reason: 'cleaning stale fixtures',
-        }),
-      },
+      onTieredApproval: async () => ({
+        decision: 'confirm',
+        phrase: 'I confirm',
+        reason: 'cleaning stale fixtures',
+      }),
     });
     const result = await gateAction(input);
     expect(result.allow).toBe(true);
     expect(result.confirmReason).toBe('cleaning stale fixtures');
-    const granted = events.find((e) => e.type === 'approval_granted') as
-      | Extract<EngineEvent, { type: 'approval_granted' }>
-      | undefined;
+    const granted = grantedEvent(events);
     expect(granted).toBeDefined();
     expect(granted?.scope).toBe('once');
     expect(granted?.confirmReason).toBe('cleaning stale fixtures');
@@ -486,21 +357,14 @@ describe('gateAction', () => {
 
   it('sticky tier, session grant matches a different action description on same file (pattern match)', async () => {
     const projectDir = trackTempDir('splitbrief-test');
-    mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
-
-    const store = {
-      version: 1,
-      grants: [
-        {
-          pattern: '/tmp/outside-project/file.ts',
-          class: 'write_out_of_scope',
-          scope: 'session',
-          sessionId: 'sess-X',
-          grantedAt: new Date().toISOString(),
-        },
-      ],
-    };
-    writeFileSync(approvalsFile(projectDir), JSON.stringify(store));
+    seedGrants(projectDir, [
+      {
+        pattern: '/tmp/outside-project/file.ts',
+        class: 'write_out_of_scope',
+        scope: 'session',
+        sessionId: 'sess-X',
+      },
+    ]);
 
     const { bus, events } = makeBusRecorder();
     let prompted = false;
@@ -511,48 +375,32 @@ describe('gateAction', () => {
       projectDir,
       sessionId: 'sess-X',
       actionDescription: 'modify /tmp/outside-project/file.ts',
-      callbacks: {
-        onApprovalNeeded: async () => ({ approved: true }),
-
-        onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => {
-          prompted = true;
-          return { decision: 'deny', reason: 'should not be called' };
-        },
+      onTieredApproval: async () => {
+        prompted = true;
+        return { decision: 'deny', reason: 'should not be called' };
       },
     });
     const result = await gateAction(input);
     expect(result.allow).toBe(true);
     expect(prompted).toBe(false);
-    const granted = events.find((e) => e.type === 'approval_granted') as
-      | Extract<EngineEvent, { type: 'approval_granted' }>
-      | undefined;
-    expect(granted?.scope).toBe('session');
+    expect(grantedEvent(events)?.scope).toBe('session');
   });
 
   it('sticky tier, session grant is replaced when same pattern already has a session grant for a different session', async () => {
     const projectDir = trackTempDir('splitbrief-test');
-    mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
-
-    const store = {
-      version: 1,
-      grants: [
-        {
-          pattern: '/tmp/outside-project/file.ts',
-          class: 'write_out_of_scope',
-          scope: 'session',
-          sessionId: 'sess-OLD',
-          grantedAt: new Date().toISOString(),
-        },
-        {
-          pattern: '/tmp/other/file.ts',
-          class: 'write_out_of_scope',
-          scope: 'always',
-          grantedAt: new Date().toISOString(),
-        },
-      ],
-    };
-    writeFileSync(approvalsFile(projectDir), JSON.stringify(store));
+    seedGrants(projectDir, [
+      {
+        pattern: '/tmp/outside-project/file.ts',
+        class: 'write_out_of_scope',
+        scope: 'session',
+        sessionId: 'sess-OLD',
+      },
+      {
+        pattern: '/tmp/other/file.ts',
+        class: 'write_out_of_scope',
+        scope: 'always',
+      },
+    ]);
 
     const { bus } = makeBusRecorder();
     const config = makeApprovalConfig({ enabled: true });
@@ -562,15 +410,7 @@ describe('gateAction', () => {
       projectDir,
       sessionId: 'sess-NEW',
       actionDescription: 'write /tmp/outside-project/file.ts',
-      callbacks: {
-        onApprovalNeeded: async () => ({ approved: true }),
-
-        onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
-          decision: 'allow',
-          scope: 'session',
-        }),
-      },
+      onTieredApproval: async () => ({ decision: 'allow', scope: 'session' }),
     });
     await gateAction(input);
 

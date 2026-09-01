@@ -10,8 +10,8 @@ const e2eApiBase = process.env.SPLITBRIEF_E2E_API_BASE ?? 'http://localhost:1143
 
 export const e2ePlanner = {
   kind: 'api',
-  provider: 'anthropic',
-  service: 'anthropic',
+  provider: 'custom-endpoint',
+  service: 'custom-endpoint',
   offering: 'payg',
   apiBase: e2eApiBase,
   ...(e2eApiKey ? { apiKey: e2eApiKey } : {}),
@@ -20,8 +20,8 @@ export const e2ePlanner = {
 
 export const e2eImplementer = {
   kind: 'api',
-  provider: 'anthropic',
-  service: 'anthropic',
+  provider: 'custom-endpoint',
+  service: 'custom-endpoint',
   offering: 'payg',
   apiBase: e2eApiBase,
   ...(e2eApiKey ? { apiKey: e2eApiKey } : {}),

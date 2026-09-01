@@ -81,9 +81,7 @@ const VAGUE_RE =
   /^(improve|fix|make better|make it better|make it work|update|enhance)\s*(it|this|that)?\s*$/i;
 
 function riskToMode(risk: WorkRisk): WorkflowMode {
-  return ({ trivial: 'instant', small: 'quick', normal: 'standard', high: 'speckit' } as const)[
-    risk
-  ];
+  return ({ trivial: 'quick', small: 'quick', normal: 'standard', high: 'speckit' } as const)[risk];
 }
 
 function modeIndex(mode: WorkflowMode): number {

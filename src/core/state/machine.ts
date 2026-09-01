@@ -1,66 +1,20 @@
-import type { BriefAdmissionStateAction, StateAction } from './types.js';
+import type { MachineAction, StateAction } from './types.js';
 import type { WorkflowState } from '../schemas/workflow.js';
 import type { TaskId } from '../schemas/task.js';
 import type { Phase, TaskStatus } from '../schemas/enums.js';
 import { ZERO_TOKEN_USAGE } from '../schemas/tokens.js';
-import type { BriefReadinessDecision } from '../schemas/brief-recovery/attempt.js';
-import type {
-  BriefRecoveryV1,
-  NormalBriefRecoveryV1,
-  RejectedStorageBriefRecoveryV1,
-} from '../schemas/brief-recovery/document.js';
-import { sameExecutionPermit, sameGeneration } from '../schemas/brief-owner.js';
 import { isQueuedMessageClearable, isQueuedMessagePendingDelivery } from '../queue-state.js';
 import { taskStatusForCompletionMethod } from '../task-completion.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { includes } from '../../utils/type-guards.js';
-import { error } from '../../utils/error.js';
+import { transitionError } from './errors.js';
+import {
+  assertCurrentExecutionPermit,
+  recordBriefReadiness,
+  rejectBriefAdmission,
+} from './brief-admission.js';
 
 export const CURRENT_STATE_VERSION = 4;
-
-type MachineAction = StateAction | BriefAdmissionStateAction;
-
-type BriefContractBlockReason =
-  | 'missing-recovery'
-  | 'stale-report'
-  | 'quality-errors'
-  | 'retry-in-flight'
-  | 'unresolved-retry'
-  | 'not-ready';
-
-export const transitionError = {
-  invalidActionForPhase: (phase: Phase, action: MachineAction['type']) =>
-    error(
-      'state-invalid-action-for-phase',
-      `Cannot apply ${action} while workflow is in ${phase}.`,
-      { phase, action },
-    ),
-  briefContractBlocked: (reason: BriefContractBlockReason, epochId?: string) =>
-    error(
-      'brief_contract_blocked',
-      'Task Briefs cannot enter implementation until the current report has zero errors.',
-      { reason, ...(epochId === undefined ? {} : { epochId }) },
-    ),
-  briefReadinessBlocked: (epochId: string) =>
-    error(
-      'brief_readiness_blocked',
-      'Task Brief readiness must be re-evaluated or explicitly overridden before implementation.',
-      { epochId },
-    ),
-  executionPermitInvalid: () =>
-    error(
-      'execution_permit_invalid',
-      'Implementation requires the exact current owner-issued generation and execution permit.',
-    ),
-} as const;
-
-function isRejectedStorageBriefRecovery(
-  recovery: BriefRecoveryV1,
-): recovery is RejectedStorageBriefRecoveryV1 {
-  return (
-    recovery.status === 'rejected' && 'storageEvidence' in recovery && recovery.activeBrief === null
-  );
-}
 
 const anytimeActions = [
   'CANCEL',
@@ -134,197 +88,6 @@ const phaseActions = {
 
 function canApplyAction(phase: Phase, action: MachineAction['type']): boolean {
   return includes(anytimeActions, action) || includes(phaseActions[phase], action);
-}
-
-function hasCurrentZeroErrorReport(recovery: BriefRecoveryV1 | null | undefined): boolean {
-  if (recovery === undefined || recovery === null) return false;
-  if (!('matchingReport' in recovery) || !('activeBrief' in recovery)) return false;
-  if (recovery.status !== 'ready') return false;
-  if (recovery.activeBrief === null || recovery.matchingReport === null) return false;
-  if (recovery.matchingReport.briefHash !== recovery.activeBrief.hash) return false;
-  if (recovery.matchingReport.ruleVersion !== recovery.qualityPolicyVersion) return false;
-  if (
-    recovery.readinessDecision !== undefined &&
-    !readinessDecisionMatchesRecovery(recovery.readinessDecision, recovery)
-  ) {
-    return false;
-  }
-  if (recovery.readinessDecision?.kind === 'blocked') return false;
-  if (recovery.matchingReport.issues.some((issue) => issue.severity === 'error')) return false;
-  if (Object.values(recovery.attempts).some((attempt) => attempt.epochId !== recovery.epochId)) {
-    return false;
-  }
-  if (
-    Object.values(recovery.attempts).some(
-      (attempt) =>
-        attempt.status === 'accepted' ||
-        attempt.status === 'started' ||
-        attempt.status === 'unresolved',
-    )
-  ) {
-    return false;
-  }
-  return recovery.activeOperationId === null;
-}
-
-function readinessDecisionMatchesRecovery(
-  decision: BriefReadinessDecision,
-  recovery: NormalBriefRecoveryV1,
-): boolean {
-  return (
-    recovery.matchingReport !== null &&
-    decision.briefHash === recovery.activeBrief.hash &&
-    decision.reportHash === recovery.matchingReport.report.hash &&
-    decision.qualityPolicyVersion === recovery.qualityPolicyVersion
-  );
-}
-
-function recordBriefReadiness(
-  state: WorkflowState,
-  decision: BriefReadinessDecision,
-): WorkflowState {
-  const recovery = state.briefRecovery;
-  if (
-    recovery === undefined ||
-    recovery === null ||
-    recovery.status === 'storage-blocked' ||
-    recovery.status === 'rejected' ||
-    !readinessDecisionMatchesRecovery(decision, recovery)
-  ) {
-    throw transitionError.briefReadinessBlocked(recovery?.epochId ?? 'missing');
-  }
-  if (
-    decision.kind !== 'blocked' &&
-    (recovery.status !== 'readiness-blocked' ||
-      recovery.readinessDecision?.kind !== 'blocked' ||
-      (decision.kind === 'override' &&
-        recovery.readinessDecision.fingerprint !== decision.fingerprint))
-  ) {
-    throw transitionError.briefReadinessBlocked(recovery.epochId);
-  }
-  return {
-    ...state,
-    briefRecovery: {
-      ...recovery,
-      recoveryRevision: recovery.recoveryRevision + 1,
-      status: decision.kind === 'blocked' ? 'readiness-blocked' : 'ready',
-      readinessDecision: decision,
-    },
-  };
-}
-
-function assertBriefAdmissionMayExit(state: WorkflowState): void {
-  const recovery = state.briefRecovery;
-  if (recovery === undefined || recovery === null) {
-    throw transitionError.briefContractBlocked('missing-recovery');
-  }
-  if (recovery.status === 'retrying' || recovery.status === 'auto-repairing') {
-    throw transitionError.briefContractBlocked('retry-in-flight', recovery.epochId);
-  }
-  if (recovery.status === 'unresolved') {
-    throw transitionError.briefContractBlocked('unresolved-retry', recovery.epochId);
-  }
-  if (recovery.status === 'readiness-blocked') {
-    throw transitionError.briefReadinessBlocked(recovery.epochId);
-  }
-  if (!('matchingReport' in recovery) || !('activeBrief' in recovery)) {
-    throw transitionError.briefContractBlocked('not-ready', recovery.epochId);
-  }
-  if (recovery.matchingReport?.issues.some((issue) => issue.severity === 'error')) {
-    throw transitionError.briefContractBlocked('quality-errors', recovery.epochId);
-  }
-  if (
-    recovery.matchingReport !== null &&
-    recovery.activeBrief !== null &&
-    recovery.matchingReport.briefHash !== recovery.activeBrief.hash
-  ) {
-    throw transitionError.briefContractBlocked('stale-report', recovery.epochId);
-  }
-  if (
-    recovery.matchingReport !== null &&
-    recovery.matchingReport.ruleVersion !== recovery.qualityPolicyVersion
-  ) {
-    throw transitionError.briefContractBlocked('stale-report', recovery.epochId);
-  }
-  if (Object.values(recovery.attempts).some((attempt) => attempt.epochId !== recovery.epochId)) {
-    throw transitionError.briefContractBlocked('stale-report', recovery.epochId);
-  }
-  if (
-    Object.values(recovery.attempts).some(
-      (attempt) =>
-        attempt.status === 'accepted' ||
-        attempt.status === 'started' ||
-        attempt.status === 'unresolved',
-    )
-  ) {
-    throw transitionError.briefContractBlocked('retry-in-flight', recovery.epochId);
-  }
-  if (!hasCurrentZeroErrorReport(recovery)) {
-    throw transitionError.briefContractBlocked('not-ready', recovery.epochId);
-  }
-}
-
-function assertCurrentExecutionPermit(
-  state: WorkflowState,
-  action: Extract<StateAction, { type: 'BEGIN_IMPLEMENTATION' }>,
-): void {
-  assertBriefAdmissionMayExit(state);
-  const recovery = state.briefRecovery;
-  const persistedGeneration = state.generation;
-  const persistedPermit = state.permit;
-  if (
-    recovery === undefined ||
-    recovery === null ||
-    recovery.status !== 'ready' ||
-    state.authorityRevision === undefined ||
-    persistedGeneration === undefined ||
-    persistedGeneration === null ||
-    persistedPermit === undefined ||
-    persistedPermit === null
-  ) {
-    throw transitionError.executionPermitInvalid();
-  }
-  if (
-    action.permit.epochId !== recovery.epochId ||
-    action.permit.authorityRevision !== state.authorityRevision ||
-    !sameGeneration(action.generation, persistedGeneration) ||
-    !sameExecutionPermit(action.permit, persistedPermit) ||
-    action.permit.generationId !== action.generation.generationId ||
-    action.permit.manifestDigest !== action.generation.manifestDigest ||
-    action.permit.tasksDigest !== action.generation.tasksDigest ||
-    action.permit.qualityDigest !== action.generation.qualityDigest
-  ) {
-    throw transitionError.executionPermitInvalid();
-  }
-}
-
-function rejectBriefAdmission(state: WorkflowState): WorkflowState {
-  const recovery = state.briefRecovery;
-  if (recovery === undefined || recovery === null) return resetToIdle(state);
-  if (recovery.status === 'storage-blocked') {
-    const rejectedStorageRecovery: RejectedStorageBriefRecoveryV1 = {
-      ...recovery,
-      status: 'rejected',
-    };
-    return {
-      ...resetToIdle(state),
-      briefRecovery: rejectedStorageRecovery,
-    };
-  }
-  if (isRejectedStorageBriefRecovery(recovery)) {
-    return {
-      ...resetToIdle(state),
-      briefRecovery: recovery,
-    };
-  }
-  return {
-    ...resetToIdle(state),
-    briefRecovery: {
-      ...recovery,
-      status: 'rejected',
-      activeOperationId: null,
-    },
-  };
 }
 
 export function createInitialState(feature: string, now: Date = new Date()): WorkflowState {
@@ -491,7 +254,7 @@ export function transition(
       return recordBriefReadiness(state, action.decision);
 
     case 'REJECT_BRIEFS':
-      return rejectBriefAdmission(state);
+      return rejectBriefAdmission(state, resetToIdle(state));
 
     case 'BRIEF_ADMISSION_OPENED':
       if (action.briefRecovery.status === 'rejected') {

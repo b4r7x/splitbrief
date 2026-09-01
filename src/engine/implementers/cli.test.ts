@@ -507,7 +507,16 @@ describe('createCliImplementer (exact-effect gate fixtures)', () => {
     expect(readFileSync(target, 'utf8')).toBe('generated');
   });
 
-  it('still fails on the git-status path for a non-internal extra write beside the declared file', async () => {
+  it('rejects a non-internal extra write even when the child also writes its sandbox home, so the carve-out above is per-path and not per-run', async () => {
+    const sandboxHomeFile = join(
+      projectDir,
+      '.splitbrief',
+      'sandbox',
+      'implementer',
+      'claude-code',
+      'home',
+      '.claude.json',
+    );
     const shimPath = join(shimDir, 'claude');
     writeFileSync(
       shimPath,
@@ -516,6 +525,8 @@ describe('createCliImplementer (exact-effect gate fixtures)', () => {
         'cat > /dev/null',
         'mkdir -p src',
         "printf '%s' 'generated' > src/hello.ts",
+        `mkdir -p "$(dirname '${sandboxHomeFile}')"`,
+        `printf '%s' '{}' > '${sandboxHomeFile}'`,
         "printf '%s' 'extra' > notes.md",
         `printf '%s\\n' '{"type":"result","result":"done"}'`,
         '',
@@ -536,6 +547,9 @@ describe('createCliImplementer (exact-effect gate fixtures)', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('instead of exactly src/hello.ts');
+    expect(result.error).toContain('notes.md');
+    expect(result.error).not.toContain('.splitbrief');
+    expect(existsSync(sandboxHomeFile)).toBe(true);
   });
 });
 
@@ -703,6 +717,73 @@ describe('createCliImplementer (opencode arg vector)', () => {
       expect(readArgv(argvFile)).not.toContain('--model');
     },
   );
+
+  it('emits --effort on the claude-code implementer argv when the config sets it', async () => {
+    const { argvFile } = installRecordingClaudeShim('src/hello.ts');
+    const withEffort: CliImplementerConfig = { ...cliClaudeImplementer, effort: 'high' };
+    const config = makeConfig({ implementer: withEffort });
+
+    const implementer = createCliImplementer(withEffort);
+    await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+
+    const argv = readArgv(argvFile);
+    expect(argv.slice(argv.indexOf('--effort'), argv.indexOf('--effort') + 2)).toEqual([
+      '--effort',
+      'high',
+    ]);
+  });
+
+  it('emits --variant on the opencode implementer argv when the config sets it', async () => {
+    const { argvFile } = installRecordingShim('opencode', 'src/hello.ts');
+    const withVariant: CliImplementerConfig = {
+      ...opencodeImplementer,
+      model: 'openai/gpt-5.6-luna',
+      variant: 'xhigh',
+    };
+    const config = makeConfig({ implementer: withVariant });
+
+    const implementer = createCliImplementer(withVariant);
+    await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+
+    const argv = readArgv(argvFile);
+    expect(argv.slice(0, 5)).toEqual([
+      'run',
+      '--model',
+      'openai/gpt-5.6-luna',
+      '--variant',
+      'xhigh',
+    ]);
+  });
+
+  it('emits neither flag when the config sets neither', async () => {
+    const { argvFile } = installRecordingShim('opencode', 'src/hello.ts');
+    const config = makeConfig({ implementer: opencodeImplementer });
+
+    const implementer = createCliImplementer(opencodeImplementer);
+    await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+
+    const argv = readArgv(argvFile);
+    expect(argv).not.toContain('--variant');
+    expect(argv).not.toContain('--effort');
+  });
 
   it('retry() drives the same `run` arg vector and reports success on a file change', async () => {
     const { argvFile } = installRecordingShim('opencode', 'src/hello.ts');

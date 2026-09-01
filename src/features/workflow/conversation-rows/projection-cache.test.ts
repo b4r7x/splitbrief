@@ -109,7 +109,7 @@ describe('conversation rows projection cache', () => {
     expect(expansionChanged).not.toBe(reprimed);
   });
 
-  it('rebuilds when a set input is a new identity with equal contents', () => {
+  it('renders the same rows when a set input is a new identity with equal contents', () => {
     const base = {
       sections: sections(3),
       expandedDiffs: new Set<string>(),
@@ -117,13 +117,18 @@ describe('conversation rows projection cache', () => {
       cols: 80,
       viewportHeight: 10,
       streaming,
+      windowStart: 0,
+      windowEnd: 999,
     };
 
-    const first = getConversationRowsProjection(base);
-    const second = getConversationRowsProjection({ ...base, expandedDiffs: new Set<string>() });
+    const first = getConversationRowsWindowProjection(base);
+    const second = getConversationRowsWindowProjection({
+      ...base,
+      expandedDiffs: new Set<string>(),
+    });
 
-    expect(second).not.toBe(first);
-    expect(second.totalRows).toBe(first.totalRows);
+    expect(second.rows.map(rowText)).toEqual(['event 0', '', 'event 1', '', 'event 2']);
+    expect(second.rows.map(rowText)).toEqual(first.rows.map(rowText));
   });
 
   it('rebuilds after resetConversationRowsProjectionCache', () => {

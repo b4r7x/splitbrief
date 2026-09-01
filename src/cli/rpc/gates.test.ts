@@ -196,14 +196,26 @@ describe('createApprovalGate', () => {
     },
   );
 
-  it('rejects duplicate held-input IDs before dispatch', () => {
+  it('rejects duplicate frozen-input IDs without settling the prompt', async () => {
+    const gate = createApprovalGate();
+    const promise = gate.wait({ approvalType: 'briefs' });
+    const prompt = gate.pendingPrompt();
     const retry = reviewCommand('retry');
-    expect(
-      BriefReviewCommandSchema.safeParse({
-        ...retry,
-        frozenInputIds: ['input-1', 'input-1'],
-      }).success,
-    ).toBe(false);
+    if (retry.action !== 'retry') throw new Error('expected a retry command');
+
+    await expect(
+      gate.handleBriefReview(
+        { ...retry, frozenInputIds: ['input-1', 'input-1'] },
+        prompt?.promptId,
+      ),
+    ).resolves.toEqual({
+      status: 'rejected',
+      prompt,
+      message: 'Task Brief review command is invalid.',
+    });
+    expect(gate.isPending()).toBe(true);
+    expect(gate.reject(new Error('test cleanup'))).toBe(true);
+    await expect(promise).rejects.toThrow('test cleanup');
   });
 
   it('rejects a stale command epoch without changing the current projection', async () => {

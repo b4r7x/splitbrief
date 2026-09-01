@@ -134,10 +134,7 @@ describe('killAllProcesses', () => {
       controller.abort();
       await vi.advanceTimersByTimeAsync(3000);
       const err = await failure;
-      expect(err).toMatchObject({
-        kind: 'platform-limitation',
-        data: { operation: 'signal', target: 'process-group', signal: 'SIGKILL' },
-      });
+      expect(err).toMatchObject({ kind: 'platform-limitation' });
       expect(err).toHaveProperty('message', 'Unable to send SIGKILL to process-group');
       expect(err).toHaveProperty('data', {
         operation: 'signal',
@@ -311,10 +308,7 @@ describe('killAllProcesses', () => {
       const failure = termination.catch((err: unknown) => err);
       await vi.advanceTimersByTimeAsync(3000);
       const err = await failure;
-      expect(err).toMatchObject({
-        kind: 'platform-limitation',
-        data: { operation: 'verify-absence', target: 'process-group', signal: 'SIGKILL' },
-      });
+      expect(err).toMatchObject({ kind: 'platform-limitation' });
       expect(err).toHaveProperty(
         'message',
         'process-group absence could not be verified after SIGKILL',

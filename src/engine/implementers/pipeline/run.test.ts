@@ -332,34 +332,44 @@ describe('createImplementerBase — wrote-nothing warning', () => {
 
 describe('createImplementerBase — retry', () => {
   it.each([
-    ['local', 2, 'tsc failed'],
-    ['hint', 1, 'lint failed'],
-  ] as const)('succeeds on retry for kind "%s"', async (kind, attempt, error) => {
-    const invoke = vi.fn().mockResolvedValue(
-      makeRunnerCallResult({
-        status: 'completed',
-        text: '```ts\nconst x = 1;\n```',
-        usage: null,
-      }),
-    );
-    const implementer = createImplementerBase(
-      makeBaseConfig({ invoke, retryTemperatureStep: 0.1 }),
-    );
-    const task = makeTask({ id: 'T001', file: 'src/retry.ts', action: 'create' });
+    ['local', 2, 'tsc failed', 0.4, 'Previous attempts failed.'],
+    ['hint', 1, 'lint failed', 0.2, 'Your previous attempt had an error.'],
+  ] as const)(
+    'succeeds on retry for kind "%s" at attempt %i, prompting with the error and setting the temperature',
+    async (kind, attempt, error, expectedTemperature, framing) => {
+      let seenPrompt = '';
+      let seenTemperature: number | undefined;
+      const invoke = vi.fn().mockImplementation(async (opts) => {
+        seenPrompt = opts.prompt;
+        seenTemperature = opts.temperature;
+        return makeRunnerCallResult({
+          status: 'completed',
+          text: '```ts\nconst x = 1;\n```',
+          usage: null,
+        });
+      });
+      const implementer = createImplementerBase(
+        makeBaseConfig({ invoke, retryTemperatureStep: 0.1 }),
+      );
+      const task = makeTask({ id: 'T001', file: 'src/retry.ts', action: 'create' });
 
-    const result = await implementer.retry({
-      task,
-      projectDir,
-      config: makeConfig(),
-      context: defaultContext,
-      onOutput: vi.fn(),
-      error,
-      attempt,
-      kind,
-    });
+      const result = await implementer.retry({
+        task,
+        projectDir,
+        config: makeConfig(),
+        context: defaultContext,
+        onOutput: vi.fn(),
+        error,
+        attempt,
+        kind,
+      });
 
-    expect(result.success).toBe(true);
-  });
+      expect(result.success).toBe(true);
+      expect(seenPrompt).toContain(error);
+      expect(seenPrompt).toContain(framing);
+      expect(seenTemperature).toBe(expectedTemperature);
+    },
+  );
 });
 
 describe('createImplementerBase — thrown provider auth failures', () => {
@@ -399,9 +409,9 @@ describe('createImplementerBase — unavailabilityReason', () => {
     expect(implementer.unavailabilityReason?.()).toBe('the endpoint is unreachable');
   });
 
-  it('leaves the member absent when no reason is supplied', async () => {
+  it('reports no reason when none is configured', async () => {
     const implementer = createImplementerBase(makeBaseConfig());
 
-    expect('unavailabilityReason' in implementer).toBe(false);
+    expect(implementer.unavailabilityReason?.()).toBeUndefined();
   });
 });

@@ -18,14 +18,14 @@ describe('streamError factories', () => {
   });
 
   test('httpStatus records status + detail', () => {
-    const err = streamError.httpStatus('openai', 429, 'rate limited');
+    const err = streamError.httpStatus('custom-endpoint', 429, 'rate limited');
     expect(err.kind).toBe('stream-http-status');
-    expect(err.data).toEqual({ provider: 'openai', status: 429, detail: 'rate limited' });
+    expect(err.data).toEqual({ provider: 'custom-endpoint', status: 429, detail: 'rate limited' });
   });
 
   test('httpStatus redacts secrets in message', () => {
     const err = streamError.httpStatus(
-      'openai',
+      'custom-endpoint',
       500,
       'leaked sk-ant-1234567890abcdefghijklmnopqrstuvwxyz boom',
     );
@@ -35,28 +35,28 @@ describe('streamError factories', () => {
   });
 
   test('apiError records detail', () => {
-    const err = streamError.apiError('anthropic', 'overloaded');
+    const err = streamError.apiError('custom-endpoint', 'overloaded');
     expect(err.kind).toBe('stream-api-error');
-    expect(err.data).toEqual({ provider: 'anthropic', detail: 'overloaded' });
+    expect(err.data).toEqual({ provider: 'custom-endpoint', detail: 'overloaded' });
   });
 
   test('apiError redacts secrets in data', () => {
-    const err = streamError.apiError('anthropic', 'token=github_pat_1234567890abcdef');
+    const err = streamError.apiError('custom-endpoint', 'token=github_pat_1234567890abcdef');
     expect(err.message).not.toContain('github_pat_1234567890abcdef');
     expect(err.data.detail).toBe('token=github_pat_***REDACTED***');
   });
 
   test('apiError threads cause', () => {
     const cause = new Error('raw');
-    const err = streamError.apiError('anthropic', 'x', cause);
+    const err = streamError.apiError('custom-endpoint', 'x', cause);
     expect(err.cause).toBe(cause);
   });
 
   test('emptyResponse records provider', () => {
-    const err = streamError.emptyResponse('Anthropic');
+    const err = streamError.emptyResponse('custom-endpoint');
     expect(err.kind).toBe('stream-empty-response');
-    expect(err.message).toContain('Anthropic');
-    expect(err.data).toEqual({ provider: 'Anthropic' });
+    expect(err.message).toContain('custom-endpoint');
+    expect(err.data).toEqual({ provider: 'custom-endpoint' });
   });
 
   test('invalidPayload records reason and optional cause', () => {
@@ -137,12 +137,12 @@ describe('throwMappedError', () => {
   test('wraps HTTP status errors with original as cause', () => {
     const underlying = Object.assign(new Error('Too Many Requests'), { status: 429 });
     try {
-      throwMappedError(underlying, { provider: 'openai' });
+      throwMappedError(underlying, { provider: 'custom-endpoint' });
       throw new Error('expected throw');
     } catch (err) {
       expect(matches('stream-http-status')(err)).toBe(true);
       if (matches('stream-http-status')(err)) {
-        expect(err.data).toMatchObject({ status: 429, provider: 'openai' });
+        expect(err.data).toMatchObject({ status: 429, provider: 'custom-endpoint' });
       }
       expect((err as Error & { cause?: unknown }).cause).toBe(underlying);
     }
@@ -154,7 +154,7 @@ describe('throwMappedError', () => {
       headers: new Headers({ 'retry-after': '60' }),
     });
     try {
-      throwMappedError(underlying, { provider: 'groq' });
+      throwMappedError(underlying, { provider: 'custom-endpoint' });
       throw new Error('expected throw');
     } catch (err) {
       expect(matches('stream-http-status')(err)).toBe(true);
@@ -171,7 +171,7 @@ describe('throwMappedError', () => {
     });
     let serverThrown: unknown;
     try {
-      throwMappedError(serverError, { provider: 'groq' });
+      throwMappedError(serverError, { provider: 'custom-endpoint' });
     } catch (err) {
       serverThrown = err;
     }
@@ -188,7 +188,7 @@ describe('throwMappedError', () => {
     });
     let dateThrown: unknown;
     try {
-      throwMappedError(dateHeader, { provider: 'groq' });
+      throwMappedError(dateHeader, { provider: 'custom-endpoint' });
     } catch (err) {
       dateThrown = err;
     }

@@ -12,6 +12,8 @@ export type BriefAdmissionStateAction = {
   briefRecovery: BriefRecoveryV1;
 };
 
+export type MachineAction = StateAction | BriefAdmissionStateAction;
+
 export type StateAuthorityCandidate = {
   readonly kind: 'candidate';
   readonly sessionId: string;

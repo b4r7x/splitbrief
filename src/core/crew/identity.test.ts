@@ -35,11 +35,11 @@ describe('formatSeatIdentity', () => {
     expect(
       formatSeatIdentity({
         kind: 'api',
-        provider: 'deepseek',
-        service: 'deepseek',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
         offering: 'payg',
         model: 'auto',
-        apiBase: 'https://api.deepseek.com/v1',
+        apiBase: 'https://api.example.test/v1',
       }),
     ).toContain('auto');
   });

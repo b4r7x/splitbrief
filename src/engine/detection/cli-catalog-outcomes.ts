@@ -1,7 +1,8 @@
 import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
 import { CliExecutableReceiptSchema, type DetectedModel } from '../../core/discovery/detection.js';
 import type { ProbeOutcome, ProbeOutcomeKind } from '../../core/discovery/runner-evidence.js';
-import type { CliToolId, RunnerRole } from '../../core/runners/cli-tool-catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import type { RunnerRole } from '../../core/runners/seat-roles.js';
 
 /**
  * A catalog belongs to a single selected runner, not merely to a CLI name.

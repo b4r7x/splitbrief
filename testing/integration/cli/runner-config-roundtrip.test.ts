@@ -19,7 +19,8 @@ import {
 import { optionalSectionsYaml, writeConfigYaml } from '#testing/helpers/config-io.js';
 import { realPickerOption, realPickerOptions } from '#testing/helpers/runner-picker.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createDefaultConfig, writeConfig } from '../../../src/core/config/load/io.js';
+import { writeConfig } from '../../../src/core/config/load/io.js';
+import { createDefaultConfig } from '../../../src/core/config/load/defaults.js';
 import { getRunnerDisplayName } from '../../../src/core/config/accessors/runner-config.js';
 import {
   API_PROVIDER_CATALOG,
@@ -27,7 +28,7 @@ import {
   KNOWN_API_PROVIDER_IDS,
 } from '../../../src/core/providers/api-provider-catalog.js';
 import { AUTOMATIC_MODEL } from '../../../src/core/providers/automatic-model.js';
-import type { RunnerRole } from '../../../src/core/runners/cli-tool-catalog.js';
+import type { RunnerRole } from '../../../src/core/runners/seat-roles.js';
 import { buildRightModels } from '../../../src/features/runners/model-catalog/catalog.js';
 import type {
   PickerOption,
@@ -66,31 +67,6 @@ const sameTargetCases: readonly (
     },
   },
   {
-    role: 'planner',
-    keepsEffort: false,
-    existing: {
-      kind: 'api',
-      provider: 'openrouter',
-      service: 'openrouter',
-      offering: 'payg',
-      apiBase: 'https://openrouter.ai/api/v1',
-      apiKey: 'env:PATH',
-      model: 'anthropic/claude-opus-4.6',
-      ...commonGeneration,
-    },
-  },
-  {
-    role: 'planner',
-    keepsEffort: true,
-    existing: {
-      kind: 'agent-sdk',
-      apiKey: 'env:PATH',
-      model: 'claude-opus-4-6',
-      ...watchdogs,
-      ...commonGeneration,
-    },
-  },
-  {
     role: 'implementer',
     keepsEffort: false,
     existing: {
@@ -108,23 +84,11 @@ const sameTargetCases: readonly (
     keepsEffort: false,
     existing: {
       kind: 'api',
-      provider: 'openrouter',
-      service: 'openrouter',
-      offering: 'payg',
-      apiBase: 'https://openrouter.ai/api/v1',
-      apiKey: 'env:PATH',
-      model: 'qwen/qwen3-coder',
-      ...commonGeneration,
-    },
-  },
-  {
-    role: 'implementer',
-    keepsEffort: true,
-    existing: {
-      kind: 'agent-sdk',
-      apiKey: 'env:PATH',
-      model: 'claude-sonnet-4-6',
-      ...watchdogs,
+      provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
+      apiBase: 'http://localhost:11434/v1',
+      model: 'qwen3-coder:30b',
       ...commonGeneration,
     },
   },
@@ -146,11 +110,11 @@ function expectedSameTarget(
 
 const crossTargetSource: ImplementerConfig = {
   kind: 'api',
-  provider: 'openrouter',
-  service: 'openrouter',
+  provider: 'custom-endpoint',
+  service: 'custom-endpoint',
   offering: 'payg',
-  apiBase: 'https://openrouter.ai/api/v1',
-  apiKey: 'env:PATH',
+  apiBase: 'https://api.example.test/v1',
+  apiKey: 'test-key',
   model: 'anthropic/claude-opus-4.6',
   customModels: ['anthropic/claude-opus-4.6', 'source-only-model'],
   effort: 'high',
@@ -165,15 +129,26 @@ interface CrossTargetCase {
 
 const crossTargetCases: readonly CrossTargetCase[] = [
   {
-    label: 'hosted destination with a required model',
-    optionId: 'anthropic',
-    model: { id: 'claude-sonnet-4-6' },
+    label: 'API destination with a required model',
+    optionId: 'lm-studio',
+    model: { id: 'qwen3-coder-30b' },
     expected: {
       kind: 'api',
-      provider: 'anthropic',
-      service: 'anthropic',
-      offering: 'payg',
-      apiBase: 'https://api.anthropic.com/v1',
+      provider: 'lm-studio',
+      service: 'lm-studio',
+      offering: 'local',
+      apiBase: 'http://localhost:1234/v1',
+      model: 'qwen3-coder-30b',
+    },
+  },
+  {
+    label: 'destination with an effort channel',
+    optionId: 'claude-code',
+    model: { id: 'claude-sonnet-4-6' },
+    expected: {
+      kind: 'cli',
+      tool: 'claude-code',
+      authChannel: 'session',
       model: 'claude-sonnet-4-6',
       effort: 'high',
     },
@@ -221,7 +196,7 @@ const crossTargetCases: readonly CrossTargetCase[] = [
  * row joins the matrix the moment the catalog admits it. The role axis is fixed
  * at the two roles the catalog's `RunnerRole` admits; the reviewer seat reuses
  * the planner's option list and its YAML parity is proven in
- * `src/core/config/load/io-defaults.test.ts`.
+ * `src/core/config/load/defaults.test.ts`.
  */
 interface MatrixCell {
   role: RunnerRole;
@@ -232,7 +207,6 @@ interface MatrixCell {
 }
 
 function credentialEnvFor(option: PickerOption): string | undefined {
-  if (option.kind === 'agent-sdk') return 'ANTHROPIC_API_KEY';
   if (option.kind !== 'api') return undefined;
   if (!isApiProviderId(option.id)) return undefined;
   return API_PROVIDER_CATALOG[option.id].credentialEnv ?? undefined;
@@ -292,7 +266,6 @@ function commitCell(cell: MatrixCell): Config {
 }
 
 function clearRunnerCredentials(): void {
-  vi.stubEnv('ANTHROPIC_API_KEY', undefined);
   for (const id of KNOWN_API_PROVIDER_IDS) {
     const env = API_PROVIDER_CATALOG[id].credentialEnv;
     if (env) vi.stubEnv(env, undefined);
@@ -379,10 +352,10 @@ describe('runner config roundtrip integration', () => {
       const configPath = writeRunnerConfigYaml(dir, {
         profile: {
           kind: 'api',
-          provider: 'together',
-          service: 'together',
-          offering: 'payg',
-          apiBase: 'https://api.together.ai/v1',
+          provider: 'lm-studio',
+          service: 'lm-studio',
+          offering: 'local',
+          apiBase: 'http://localhost:1234/v1',
           apiKey: 'env:PATH',
           model: 'existing-model',
           customModels: ['existing-model'],
@@ -402,18 +375,18 @@ describe('runner config roundtrip integration', () => {
 
       configStore.load(dir);
       let current = loadConfig(dir).config;
-      const together = realPickerOption('implementer', 'together');
+      const lmStudio = realPickerOption('implementer', 'lm-studio');
 
       current = await saveAndReload(
         dir,
         commitImplementerSelection({
           config: current,
-          selection: together,
+          selection: lmStudio,
           model: { id: 'selected-model' },
         }).config,
       );
       expect(resolvedDefaultProfile(current)).toMatchObject({
-        apiBase: 'https://api.together.ai/v1',
+        apiBase: 'http://localhost:1234/v1',
         apiKey: 'env:PATH',
         model: 'selected-model',
       });
@@ -423,7 +396,7 @@ describe('runner config roundtrip integration', () => {
         commitCustomModel({
           config: current,
           role: 'implementer',
-          selection: together,
+          selection: lmStudio,
           modelName: 'custom-added',
           customModels: ['existing-model'],
         }),
@@ -481,10 +454,10 @@ describe('runner config roundtrip integration', () => {
       writeRunnerConfigYaml(dir, {
         profile: {
           kind: 'api',
-          provider: 'together',
-          service: 'together',
-          offering: 'payg',
-          apiBase: 'https://api.together.ai/v1',
+          provider: 'lm-studio',
+          service: 'lm-studio',
+          offering: 'local',
+          apiBase: 'http://localhost:1234/v1',
           apiKey: 'env:PATH',
           model: 'existing-model',
           customModels: ['existing-model'],
@@ -502,10 +475,10 @@ describe('runner config roundtrip integration', () => {
         plannerEstimateReview: true,
         implementer: {
           kind: 'api',
-          provider: 'together',
-          service: 'together',
-          offering: 'payg',
-          apiBase: 'https://api.together.ai/v1',
+          provider: 'lm-studio',
+          service: 'lm-studio',
+          offering: 'local',
+          apiBase: 'http://localhost:1234/v1',
           apiKey: 'env:PATH',
           model: 'roundtrip-model',
           customModels: ['existing-model', 'roundtrip-model'],
@@ -517,10 +490,10 @@ describe('runner config roundtrip integration', () => {
             'active-cloud': {
               ...activeProfile,
               kind: 'api',
-              provider: 'together',
-              service: 'together',
-              offering: 'payg',
-              apiBase: 'https://api.together.ai/v1',
+              provider: 'lm-studio',
+              service: 'lm-studio',
+              offering: 'local',
+              apiBase: 'http://localhost:1234/v1',
               apiKey: 'env:PATH',
               model: 'roundtrip-model',
               customModels: ['existing-model', 'roundtrip-model'],
@@ -532,8 +505,8 @@ describe('runner config roundtrip integration', () => {
       const reloaded = await saveAndReload(dir, updated);
       expect(reloaded.plannerEstimateReview).toBe(true);
       expect(resolvedDefaultProfile(reloaded)).toMatchObject({
-        provider: 'together',
-        apiBase: 'https://api.together.ai/v1',
+        provider: 'lm-studio',
+        apiBase: 'http://localhost:1234/v1',
         apiKey: 'env:PATH',
         model: 'roundtrip-model',
         customModels: ['existing-model', 'roundtrip-model'],
@@ -580,11 +553,11 @@ implementer:
         `version: 3
 planner:
   kind: api
-  provider: anthropic
-  service: anthropic
+  provider: custom-endpoint
+  service: custom-endpoint
   offering: payg
-  api_base: https://api.anthropic.com/v1
-  api_key: env:PATH
+  api_base: https://api.example.test/v1
+  api_key: test-key
   model: claude-opus-4
 implementer:
   kind: api
@@ -598,10 +571,10 @@ implementer_profiles:
   profiles:
     active-cloud:
       kind: api
-      provider: together
-      service: together
-      offering: payg
-      api_base: https://api.together.ai/v1
+      provider: lm-studio
+      service: lm-studio
+      offering: local
+      api_base: http://localhost:1234/v1
       api_key: env:PATH
       model: existing-model
 codebase:
@@ -617,19 +590,19 @@ codebase:
       );
       configStore.load(dir);
       const loaded = loadConfig(dir).config;
-      expect(loaded.planner).toMatchObject({ service: 'anthropic', offering: 'payg' });
+      expect(loaded.planner).toMatchObject({ service: 'custom-endpoint', offering: 'payg' });
       expect(loaded.implementer).toMatchObject({ service: 'ollama', offering: 'local' });
       expect(loaded.implementerProfiles?.profiles['active-cloud']).toMatchObject({
-        service: 'together',
-        offering: 'payg',
+        service: 'lm-studio',
+        offering: 'local',
       });
 
       const saved = await saveAndReload(dir, loaded);
-      expect(saved.planner).toMatchObject({ service: 'anthropic', offering: 'payg' });
+      expect(saved.planner).toMatchObject({ service: 'custom-endpoint', offering: 'payg' });
       expect(saved.implementer).toMatchObject({ service: 'ollama', offering: 'local' });
       expect(saved.implementerProfiles?.profiles['active-cloud']).toMatchObject({
-        service: 'together',
-        offering: 'payg',
+        service: 'lm-studio',
+        offering: 'local',
       });
       expect(yamlBlock(readFileSync(join(splitbriefDir, 'config.yaml'), 'utf-8'), 'codebase')).toBe(
         unrelatedBlock,
@@ -688,10 +661,8 @@ codebase:
       const dir = createTempDir(`cross-target-${testCase.label.replace(/\s+/g, '-')}`);
       dirs.push(dir);
       const selection = realPickerOption('implementer', testCase.optionId);
-      const needsAnthropicKey = selection.id === 'anthropic';
-      if (needsAnthropicKey) {
-        vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-integration-test');
-      }
+      const credentialEnv = credentialEnvFor(selection);
+      if (credentialEnv) vi.stubEnv(credentialEnv, 'cross-target-credential');
 
       writeRunnerConfigYaml(dir, { profile: crossTargetSource });
       configStore.load(dir);
@@ -762,18 +733,14 @@ codebase:
         }
       }
 
-      // Enumerated, not inferred: a destination joining this list is a visible
-      // diff, and a shape error would show up here as an unlisted id.
-      expect([...failures.keys()].toSorted()).toEqual([
-        'agent-sdk',
-        'anthropic',
-        'deepseek',
-        'groq',
-        'ollama-cloud',
-        'openai',
-        'openrouter',
-        'together',
-      ]);
+      // Read off the catalog's own credential facts, so the expectation cannot
+      // drift from the admitted providers; a shape error shows up as an id that
+      // fails without declaring a credential env.
+      expect([...failures.keys()].toSorted()).toEqual(
+        KNOWN_API_PROVIDER_IDS.filter(
+          (id) => API_PROVIDER_CATALOG[id].credentialEnv !== null,
+        ).toSorted(),
+      );
       for (const [optionId, message] of failures) {
         const env = credentialEnvFor(realPickerOption('implementer', optionId));
         expect(env).toBeDefined();

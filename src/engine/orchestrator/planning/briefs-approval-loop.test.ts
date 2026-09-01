@@ -23,17 +23,13 @@ import { runBriefsApprovalLoop } from './briefs-approval-loop.js';
 import { runPlanningPhases } from '../run/phases.js';
 import { createWorkflowRecoveryBinding } from '../run/recovery-binding.js';
 import { readWorkflowStateHead } from '../state-ops.js';
-import { createPlannerBase, installCompilerSeam, type CompilerSeam } from '../../planners/base.js';
-import type { CompilerCapabilityReceipt } from '../../runners/compiler-capability.js';
+import { createPlannerBase, installCompilerSeam } from '../../planners/base.js';
+import { makeCompilerSeam } from '#testing/helpers/factories/compiler-seam.js';
 import { readRuntimeConformance } from '../../runners/runtime-conformance-cache.js';
-import { TaskCompilationOperationIdSchema } from '../../../core/schemas/task-compilation.js';
-import {
-  createTaskDispatchClaimPort,
-  createTaskDispatchLedger,
-} from '../../calls/dispatch-ledger.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import type { StateAuthorityReceipt } from '../../../core/state/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { BriefReadinessDecision } from '../../../core/schemas/brief-recovery/attempt.js';
 import { taskId, type Task } from '../../../core/schemas/task.js';
 import type { PlannerCapabilities } from '../../planners/types.js';
 import type { PlanningPhaseOptions } from './types.js';
@@ -61,10 +57,13 @@ function completedRunnerCall(text: string) {
   return makeRunnerCallResult({ status: 'completed', text });
 }
 
-function readinessDecisionBriefHash(projectDir: string, sessionId: string): string | undefined {
+function persistedReadinessDecision(
+  projectDir: string,
+  sessionId: string,
+): BriefReadinessDecision | undefined {
   const recovery = readWorkflowStateHead({ projectDir, sessionId })?.state.briefRecovery;
   return recovery !== null && recovery !== undefined && 'readinessDecision' in recovery
-    ? recovery.readinessDecision?.briefHash
+    ? recovery.readinessDecision
     : undefined;
 }
 
@@ -166,9 +165,10 @@ function makePricedBriefReviewConfig(
     ...overrides,
     planner: {
       kind: 'api',
-      provider: 'anthropic',
+      provider: 'custom-endpoint',
       model: 'claude-sonnet-4-6',
-      apiBase: 'https://api.anthropic.com/v1',
+      apiBase: 'https://api.example.com/v1',
+      apiKey: 'test-key',
     },
   });
 }
@@ -319,9 +319,8 @@ describe('runPlanningPhase — briefs approval loop', () => {
           },
           'catalog-api': {
             kind: 'api',
-            provider: 'openrouter',
-            apiBase: 'https://openrouter.ai/api/v1',
-            apiKey: 'test-key',
+            provider: 'ollama',
+            apiBase: 'http://localhost:11434/v1',
             model: 'runtime-wide',
             costTier: 'standard',
           },
@@ -339,7 +338,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
         bus,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
         modelCache: makeModelCacheAccessor({
-          providerModels: { openrouter: [{ id: 'runtime-wide', contextLength: 200_000 }] },
+          providerModels: { ollama: [{ id: 'runtime-wide', contextLength: 200_000 }] },
         }),
         detectedContextLength: 4_096,
       },
@@ -971,7 +970,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
       workflow: { mode: 'standard', approve: 'none' },
     });
 
-    const { result } = await runPhase({
+    const { result, events, projectDir, sessionId } = await runPhase({
       planner,
       callbacks,
       config,
@@ -980,6 +979,18 @@ describe('runPlanningPhase — briefs approval loop', () => {
     expect(result.disposition).toBe('ready-for-tasks');
     expect(result.state.phase).toBe('implementing');
     expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
+    expect(persistedReadinessDecision(projectDir, sessionId)).toMatchObject({
+      kind: 'override',
+      fingerprint: expect.any(String),
+    });
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'warning' &&
+          event.code === 'brief_readiness_blocked' &&
+          event.message.includes('Approve again without editing tasks.md to proceed anyway'),
+      ),
+    ).toBe(true);
   });
 
   it('editing tasks.md between the two approvals cancels the pending override', async () => {
@@ -1018,13 +1029,13 @@ describe('runPlanningPhase — briefs approval loop', () => {
       .fn<OrchestratorCallbacks['onApprovalNeeded']>()
       .mockResolvedValueOnce({ approved: true })
       .mockImplementationOnce(async () => {
-        blockedBeforeEditHash = readinessDecisionBriefHash(projectDir, sessionId);
+        blockedBeforeEditHash = persistedReadinessDecision(projectDir, sessionId)?.briefHash;
         writeFileSync(tasksPath, editedOverflowing, 'utf8');
         return { approved: false, action: 'edit' };
       })
       .mockResolvedValueOnce({ approved: true })
       .mockImplementationOnce(async () => {
-        blockedAfterEditHash = readinessDecisionBriefHash(projectDir, sessionId);
+        blockedAfterEditHash = persistedReadinessDecision(projectDir, sessionId)?.briefHash;
         return { approved: true };
       });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
@@ -1168,7 +1179,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
       })
       .mockResolvedValueOnce({ approved: true })
       .mockImplementationOnce(async () => {
-        blockedBriefHash = readinessDecisionBriefHash(projectDir, sessionId);
+        blockedBriefHash = persistedReadinessDecision(projectDir, sessionId)?.briefHash;
         return { approved: true };
       });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
@@ -1209,65 +1220,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
   it('records the drifted planner runtime in the conformance cache once approved briefs settle', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const planner = makePassingPlanner();
-    const receipt: CompilerCapabilityReceipt = {
-      backend: 'opencode',
-      version: '1.18.15',
-      runtimeVersion: '1.19.0',
-      versionObservation: 'drifted',
-      role: 'planner-read-only',
-      transport: 'stdout-final',
-      terminalContract: 'opencode-final-message-v1',
-      containmentProfile: 'seatbelt',
-      credentialChannel: 'session-copy',
-      envelopeVersion: 1,
-      fixtureDate: '2026-08-15',
-      capabilityDigest: '0000000000000000000000000000000000000000000000000000000000000000',
-    };
-    const seam: CompilerSeam = {
-      invocation: {
-        runtime: {
-          executablePath: '/usr/bin/opencode',
-          version: '1.18.15',
-          runtimeDigest: 'digest',
-          protocolDigest: 'protocol-digest',
-        },
-        role: 'planner-read-only',
-        transport: { kind: 'stdout-final' },
-        terminalContract: 'opencode-final-message-v1',
-        envelope: {
-          version: 1,
-          promptBytes: 1000,
-          inputTokensUpperBound: 1000,
-          requestedOutputTokens: 1000,
-          outputTokensUpperBound: 1000,
-          maxNormalizedOutputBytes: 1000,
-          maxDeclaredArtifactBytes: 1000,
-          maxRawProtocolBytes: 1000,
-          maxStderrBytes: 1000,
-          deadlineMs: 1000,
-          idleTimeoutMs: 1000,
-        },
-        capabilityDigest: receipt.capabilityDigest,
-      },
-      ledger: createTaskDispatchLedger({
-        operation: {
-          version: 1,
-          dispatchLimit: 64,
-          callCount: 0,
-          totalPromptBytes: 0,
-          totalInputTokensUpperBound: 0,
-          totalOutputTokensUpperBound: 0,
-          totalNormalizedOutputBytes: 0,
-          totalDeclaredArtifactBytes: 0,
-          callsDigest: 'calls-digest',
-        },
-        operationId: TaskCompilationOperationIdSchema.parse('operation-approval-drift'),
-        claimPort: createTaskDispatchClaimPort(),
-      }),
-      dispatch: vi.fn(),
-      receipt,
-    };
-    installCompilerSeam(planner, seam);
+    installCompilerSeam(planner, makeCompilerSeam({ backend: 'opencode' }));
     const onApprovalNeeded = vi
       .fn<OrchestratorCallbacks['onApprovalNeeded']>()
       .mockResolvedValue({ approved: true });

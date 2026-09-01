@@ -8,7 +8,7 @@ import type { EngineEvent, EventBus } from '../events/types.js';
 import { createEventBus } from '../events/bus.js';
 import { taskId } from '../../core/schemas/task.js';
 import { markHooksConfigTrusted } from '../../core/hooks/trust.js';
-import { makeCommandHookEntry, makeAllowHook } from '#testing/helpers/factories/hook-entry.js';
+import { makeAllowHook, makeCommandHookEntry } from '#testing/helpers/factories/hook-entry.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 
 let projectDir: string;
@@ -114,26 +114,25 @@ describe('createHookSink', () => {
     expect(all).toHaveLength(0);
   });
 
-  it('dispatches post_task hook on task_completed event', async () => {
-    {
-      const { bus, warnings, all } = makeBus();
-      const hooks = trust({ post_task: [makeAllowHook('allow-hook')] });
-      const sink = createHookSink(hooks, ctx(), bus);
-      sink(taskCompletedEvent);
-      await waitForNoActivity(all);
-      expect(warnings).toHaveLength(0);
-    }
-    {
-      const { bus, warnings } = makeBus();
-      const hooks = trust({
-        post_task: [makeCommandHookEntry({ command: 'false', name: 'fails', on_failure: 'warn' })],
-      });
-      const sink = createHookSink(hooks, ctx(), bus);
-      sink(taskCompletedEvent);
-      await waitForWarnings(warnings, 1);
-      expect(warnings).toHaveLength(1);
-      expect(warnings[0]).toContain('fails');
-    }
+  it('stays silent when a post_task hook succeeds', async () => {
+    const { bus, warnings, all } = makeBus();
+    const hooks = trust({ post_task: [makeAllowHook('allow-hook')] });
+    const sink = createHookSink(hooks, ctx(), bus);
+    sink(taskCompletedEvent);
+    await waitForNoActivity(all);
+    expect(warnings).toHaveLength(0);
+  });
+
+  it('publishes a warning when a post_task command hook fails', async () => {
+    const { bus, warnings } = makeBus();
+    const hooks = trust({
+      post_task: [makeCommandHookEntry({ command: 'false', name: 'fails', on_failure: 'warn' })],
+    });
+    const sink = createHookSink(hooks, ctx(), bus);
+    sink(taskCompletedEvent);
+    await waitForWarnings(warnings, 1);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('fails');
   });
 
   it('runs multiple hooks sequentially in order', async () => {

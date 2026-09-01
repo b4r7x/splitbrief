@@ -219,7 +219,7 @@ describe('aggregateSessionCosts', () => {
           localCompletionRate: 0.75,
           providerCosts: {
             'claude-code': { inputTokens: 120, outputTokens: 60, cost: 0.89 },
-            openrouter: { inputTokens: 400, outputTokens: 200, cost: 0.7 },
+            'custom-endpoint': { inputTokens: 400, outputTokens: 200, cost: 0.7 },
           },
         },
       }),
@@ -232,7 +232,7 @@ describe('aggregateSessionCosts', () => {
     expect(result.providerTotals['claude-code']!.cost).toBeCloseTo(1.89);
     expect(result.providerTotals['claude-code']!.sessions).toBe(2);
     expect(result.providerTotals['ollama']).toEqual({ cost: 0.3, sessions: 1 });
-    expect(result.providerTotals['openrouter']).toEqual({ cost: 0.7, sessions: 1 });
+    expect(result.providerTotals['custom-endpoint']).toEqual({ cost: 0.7, sessions: 1 });
     expect(Object.keys(result.providerTotals)).toHaveLength(3);
   });
 });

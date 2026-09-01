@@ -313,9 +313,8 @@ describe('runBriefReadinessGate', () => {
           'local-agent': LOCAL_AGENT_PROFILE,
           'catalog-api': {
             kind: 'api',
-            provider: 'openrouter',
-            apiBase: 'https://openrouter.ai/api/v1',
-            apiKey: 'test-key',
+            provider: 'ollama',
+            apiBase: 'http://localhost:11434/v1',
             model: 'runtime-wide',
             costTier: 'standard',
           },
@@ -329,7 +328,7 @@ describe('runBriefReadinessGate', () => {
       projectDir,
       modelCache: makeModelCacheAccessor({
         providerModels: {
-          openrouter: [{ id: 'runtime-wide', contextLength: CACHE_CONTEXT_LENGTH }],
+          ollama: [{ id: 'runtime-wide', contextLength: CACHE_CONTEXT_LENGTH }],
         },
       }),
       detectedContextLength: 4_096,

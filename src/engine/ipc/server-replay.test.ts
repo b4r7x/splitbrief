@@ -308,7 +308,7 @@ describe('startIpcServer replay', () => {
       sessionId: 'live-test',
       sessionDir: tmpDir,
       startedAt: 500,
-      mode: 'instant',
+      mode: 'quick',
       feature: 'y',
       authToken: harness.authToken,
       bus,

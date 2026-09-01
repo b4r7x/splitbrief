@@ -99,40 +99,33 @@ function createSnapshot(
 describe('task dispatch ledger', () => {
   it('starts fresh and records the claim on the snapshot', () => {
     const ledger = createLedger(createOperationId('callback'));
-    let observedCount = 0;
 
     expect(ledger.snapshot()).toMatchObject({
       dispatchCount: 0,
       dispatchLimit: TASK_BRIEF_COMPILER_POLICY.maxDispatches,
       claimedAttemptIds: [],
     });
-    const claim = ledger.claimDispatch(createTaskCompilationAttemptId());
-    if (claim.kind === 'claimed') observedCount = ledger.snapshot().dispatchCount;
 
-    expect(claim.kind).toBe('claimed');
-    expect(observedCount).toBe(1);
+    expect(ledger.claimDispatch(createTaskCompilationAttemptId())).toMatchObject({
+      kind: 'claimed',
+    });
+    expect(ledger.snapshot().dispatchCount).toBe(1);
   });
 
   it('allows claims 1 through 64 and refuses claim 65', () => {
     const ledger = createLedger(createOperationId('capacity'));
-    let invoked = 0;
 
     for (let index = 0; index < TASK_BRIEF_COMPILER_POLICY.maxDispatches; index += 1) {
-      const claim = ledger.claimDispatch(createTaskCompilationAttemptId());
-      if (claim.kind === 'claimed') invoked += 1;
-      expect(claim.kind).toBe('claimed');
+      expect(ledger.claimDispatch(createTaskCompilationAttemptId()).kind).toBe('claimed');
     }
 
-    const refused = ledger.claimDispatch(createTaskCompilationAttemptId());
-    if (refused.kind === 'claimed') invoked += 1;
-    expect(refused).toEqual({
+    expect(ledger.claimDispatch(createTaskCompilationAttemptId())).toEqual({
       kind: 'refused',
       attemptId: expect.any(String),
       reason: 'dispatch-limit',
       dispatchCount: TASK_BRIEF_COMPILER_POLICY.maxDispatches,
       dispatchLimit: TASK_BRIEF_COMPILER_POLICY.maxDispatches,
     });
-    expect(invoked).toBe(TASK_BRIEF_COMPILER_POLICY.maxDispatches);
     expect(ledger.snapshot().dispatchCount).toBe(TASK_BRIEF_COMPILER_POLICY.maxDispatches);
   });
 
@@ -166,9 +159,7 @@ describe('task dispatch ledger', () => {
 
     const firstAttemptId = durableState.claimedAttemptIds[0];
     if (firstAttemptId === undefined) throw new Error('durable state has no claimed attempts');
-    let invoked = 0;
     const next = reconstructed.claimDispatch(createTaskCompilationAttemptId());
-    if (next.kind === 'claimed') invoked += 1;
 
     expect(reconstructed.claimDispatch(firstAttemptId)).toMatchObject({
       kind: 'refused',
@@ -176,14 +167,11 @@ describe('task dispatch ledger', () => {
       dispatchCount: 64,
     });
     expect(next).toMatchObject({ kind: 'claimed', dispatchNumber: 64, remaining: 0 });
-    const overLimit = reconstructed.claimDispatch(createTaskCompilationAttemptId());
-    if (overLimit.kind === 'claimed') invoked += 1;
-    expect(overLimit).toMatchObject({
+    expect(reconstructed.claimDispatch(createTaskCompilationAttemptId())).toMatchObject({
       kind: 'refused',
       reason: 'dispatch-limit',
       dispatchCount: 64,
     });
-    expect(invoked).toBe(1);
     expect(operation.callCount).toBe(TASK_BRIEF_COMPILER_POLICY.maxDispatches);
     expect(Object.isFrozen(operation)).toBe(true);
   });

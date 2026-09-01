@@ -1,12 +1,10 @@
 import { join } from 'node:path';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import type { PlanResult } from '../../planners/types.js';
-import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
 import { SPEC_FILE, PLAN_FILE, TASKS_FILE, sessionDir } from '../../../core/paths.js';
-import { getPlannerToolId } from '../../../core/config/accessors/runner-config.js';
 import { parseDiscoveredValidation } from './parse-validation.js';
 import { sanitizeDiscoveredValidation } from './sanitize-discovered-validation.js';
 import { buildSkillsSection, discoverSkills } from '../../skill-discovery.js';
@@ -28,7 +26,8 @@ import { persistPhases } from './io.js';
 import { runPlannerCallInContinuationLoop } from './call-loop.js';
 import { regenerateTasks, regeneratePlanAndTasks } from './regen.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult, PlanningRunContext } from './types.js';
-import { fallbackBriefRecoveryProjection, parkedResult } from './brief-quality-preparation.js';
+import { parkedResult } from './brief-quality-preparation.js';
+import { fallbackBriefRecoveryProjection } from './brief-quality-queue.js';
 import { isRecord } from '../../../utils/type-guards.js';
 
 function compilerFailureCode(err: unknown): string | null {
@@ -82,13 +81,12 @@ async function resolvePlanningSkills(
   selectedSkills: SkillMeta[] | undefined,
   state: WorkflowState,
   projectDir: string,
-  config: Config,
 ): Promise<SkillMeta[]> {
   if (selectedSkills && selectedSkills.length > 0) return selectedSkills;
   const persisted = state.selectedSkills;
   if (!persisted || persisted.length === 0) return [];
   const ids = new Set(persisted);
-  const available = await discoverSkills(getPlannerToolId(config.planner), projectDir);
+  const available = await discoverSkills(projectDir);
   return available.filter((s) => ids.has(s.id));
 }
 
@@ -117,7 +115,6 @@ async function runNewPlanning(
       state,
       planner,
       feature,
-      mode: 'speckit',
       skillsContext,
       ...(opts.codebaseContext !== undefined ? { codebaseContext: opts.codebaseContext } : {}),
       ...(resumeHolder && resumeHolder.messages.length > 0
@@ -286,7 +283,7 @@ export async function runFullPlanning(opts: PlanningPhaseOptions): Promise<Plann
   const { wctx, selectedSkills } = opts;
   const { projectDir, sessionId, metadata, config } = wctx;
   let { state } = opts;
-  const skills = await resolvePlanningSkills(selectedSkills, state, projectDir, config);
+  const skills = await resolvePlanningSkills(selectedSkills, state, projectDir);
   const skillsContext = skills.length > 0 ? await buildSkillsSection(skills) : undefined;
 
   const approveLevel =

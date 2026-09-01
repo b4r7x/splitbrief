@@ -8,12 +8,7 @@ import { glyph, spinnerFrames } from '../../lib/glyphs.js';
 import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import { modelRowMatchesId } from './model-catalog/catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
-import {
-  formatOptionSummary,
-  isOptionFamily,
-  optionDraftOf,
-  stepOptionAxis,
-} from './model-catalog/option-axis.js';
+import { formatOptionSummary, isOptionFamily, optionDraftOf } from './model-catalog/option-axis.js';
 import type { RightRow } from './model-catalog/rows.js';
 import { formatPickerStatusLabel, formatRouteAuth } from './picker-format.js';
 
@@ -134,20 +129,20 @@ export function renderModelRow({
   optionDraftId,
 }: ModelRowParams) {
   if (row.kind === 'notice') return <NoticeRow row={row} isCursor={isCursor} />;
+  if (row.kind === 'action') return <ActionRow row={row} isCursor={isCursor} />;
   if (row.kind === 'route') return <RouteRow row={row} isCursor={isCursor} width={maxWidth} />;
   if (row.kind === 'axis') {
     const floor = maxWidth < AXIS_FLOOR_WIDTH;
-    // The row's value was composed from this same draft, so the affordance reads it the
-    // same way. A ladder with nowhere to step drops the mark but keeps its cells, or the
-    // sibling rows' trailing column shifts under it.
-    const steps = stepOptionAxis(row.model, row.axis, optionDraftId) !== undefined;
+    // The row states whether its ladder can move, so the mark and the byline never
+    // disagree. A ladder with nowhere to step drops the mark but keeps its cells, or
+    // the sibling rows' trailing column shifts under it.
     return (
       <ListRow
         label={`${glyph(row.last ? 'treeLast' : 'treeBranch')}${glyph('divider')} ${row.axis}`}
         state={isCursor ? 'active' : 'default'}
         defaultLead="blank"
         metadata={row.value}
-        trailing={floor ? undefined : steps ? glyph('connectorSame') : ' '}
+        trailing={floor ? undefined : row.steps ? glyph('connectorSame') : ' '}
         selected={floor ? undefined : false}
         width={maxWidth}
       />
@@ -167,7 +162,7 @@ export function renderModelRow({
   const summary = optionFamily
     ? formatOptionSummary(optionDraftOf(row.model, optionDraftId ?? currentModel), variants)
     : '';
-  const contextStr = row.model.contextLength ? formatContextLength(row.model.contextLength) : '';
+  const contextStr = formatContextLength(row.model.contextLength);
   const rest = [provenance, contextStr].filter(Boolean).join(' ');
   const chip = optionFamily
     ? optionChip({ summary, provenance, context: contextStr }, row.expanded, maxWidth)
@@ -237,6 +232,21 @@ function NoticeRow({
   return (
     <Text color={isCursor ? t.accent : t.textDim} dimColor wrap="truncate-end">
       {`${leadFor(isCursor, 2)}${mark} ${row.text}`}
+    </Text>
+  );
+}
+
+function ActionRow({
+  row,
+  isCursor,
+}: {
+  row: Extract<RightRow, { kind: 'action' }>;
+  isCursor: boolean;
+}) {
+  const t = useTheme();
+  return (
+    <Text color={isCursor ? t.accent : t.text} wrap="truncate-end">
+      {`${leadFor(isCursor, 2)}${glyph('disclosureClosed')} ${row.text}`}
     </Text>
   );
 }

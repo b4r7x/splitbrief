@@ -28,6 +28,7 @@ import {
   type WorkflowFixtureProjection,
 } from './fixtures/workflow/projections.js';
 import { persistedBriefRecoveryFixture } from './fixtures/workflow/persisted-brief-recovery.js';
+import { recoveryProfileForColumns, recoveryRoleElements } from './recovery-locators.js';
 import {
   createWorkflowFixtureAppDeps,
   createWorkflowFixtureFactory,
@@ -52,11 +53,7 @@ const RECOVERY_FIXTURE_IDS = [
   scenarioId('workflow-brief-recovery-budget-blocked'),
 ] as const;
 
-const RECOVERY_PROFILES = [
-  { name: 'unicode-color', viewport: viewport({ cols: 121, rows: 16 }) },
-  { name: 'unicode-mono', viewport: viewport({ cols: 120, rows: 16 }) },
-  { name: 'ascii-mono', viewport: viewport({ cols: 119, rows: 16 }) },
-] as const;
+const RECOVERY_VIEWPORT = viewport({ cols: 121, rows: 16 });
 const ANSI_CONTROL_SEQUENCE = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, 'gu');
 
 function lifecycleFor(scenarioId: ScenarioId): FixtureLifecycle {
@@ -214,18 +211,7 @@ describe('workflow visual fixtures', () => {
           `${recoveryScenarioId}/${element}`,
         ).toBeDefined();
       }
-      expect(
-        declaredElements.find((element) => /(?:composer|input)/iu.test(element)),
-        `${recoveryScenarioId} stable input element`,
-      ).toBeDefined();
-      expect(
-        declaredElements.find((element) => /(?:action|now)/iu.test(element)),
-        `${recoveryScenarioId} action element`,
-      ).toBeDefined();
-      expect(
-        declaredElements.find((element) => /(?:because|cause)/iu.test(element)),
-        `${recoveryScenarioId} cause element`,
-      ).toBeDefined();
+      expect(() => recoveryRoleElements(scenario), `${recoveryScenarioId} roles`).not.toThrow();
     }
   });
 
@@ -235,15 +221,14 @@ describe('workflow visual fixtures', () => {
     if (!scenario) throw new Error(`Missing persisted recovery scenario ${fixture.scenarioId}`);
     const checkpoint = scenario.checkpoints[0];
     if (!checkpoint) throw new Error(`Missing persisted recovery checkpoint ${fixture.scenarioId}`);
-    const profile = RECOVERY_PROFILES[0];
     const environment = enterCaptureEnvironment({
-      viewport: profile.viewport,
-      profile: profile.name,
+      viewport: RECOVERY_VIEWPORT,
+      profile: recoveryProfileForColumns(RECOVERY_VIEWPORT.cols),
     });
     const lifecycle = createWorkflowFixtureFactory(fixture)();
     let ui: RenderFeatureResult | null = null;
     try {
-      await lifecycle.setup({ scenario, checkpoint, viewport: profile.viewport });
+      await lifecycle.setup({ scenario, checkpoint, viewport: RECOVERY_VIEWPORT });
 
       const sessionDir = join(
         VISUAL_FIXTURE_PROJECT_DIR,
@@ -262,12 +247,12 @@ describe('workflow visual fixtures', () => {
 
       ui = renderFeature(
         <App workflowDeps={createWorkflowFixtureAppDeps(fixture)} />,
-        profile.viewport,
+        RECOVERY_VIEWPORT,
       );
       const frame = await waitForCheckpoint({
         scenario,
         checkpoint,
-        viewport: profile.viewport,
+        viewport: RECOVERY_VIEWPORT,
         lastFrame: ui.lastFrame,
       });
       const plainFrame = frame.replace(ANSI_CONTROL_SEQUENCE, '');

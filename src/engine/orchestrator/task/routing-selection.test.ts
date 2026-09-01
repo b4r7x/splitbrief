@@ -19,11 +19,10 @@ function cacheOnlyResolvableProfile(): ResolvedImplementerProfile {
     isDefault: true,
     config: {
       kind: 'api',
-      provider: 'openrouter',
-      service: 'openrouter',
-      offering: 'payg',
-      apiBase: 'https://openrouter.ai/api/v1',
-      apiKey: 'test-key',
+      provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
+      apiBase: 'http://localhost:11434/v1',
       model: 'runtime-only-model',
     },
   };
@@ -68,7 +67,7 @@ describe('selectRoutingProfile context cache', () => {
     const modelCache: ModelCacheAccessor = {
       getModelsDevCatalog: () => null,
       getProviderModels: (providerId) =>
-        providerId === 'openrouter'
+        providerId === 'ollama'
           ? [{ id: 'runtime-only-model', contextLength: 64_000, pricingInput: 1, pricingOutput: 2 }]
           : null,
     };

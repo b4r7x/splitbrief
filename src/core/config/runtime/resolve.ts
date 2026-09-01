@@ -13,7 +13,6 @@ export function resolveMode(opts: {
 }
 
 const MODE_DEFAULT_APPROVE: Record<WorkflowMode, ApproveLevel> = {
-  instant: 'none',
   quick: 'none',
   standard: 'spec',
   speckit: 'all',

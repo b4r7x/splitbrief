@@ -8,10 +8,10 @@ import type { CliToolDetection, ProviderDetection } from '../../core/discovery/d
 import type { CliReadinessFacts } from '../../core/schemas/readiness.js';
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
-import { detectionContextKey } from './coordinator.js';
+import { detectionContextKey } from './types.js';
 import { saveDetectionCache } from './cache.js';
 import { detectionStore } from '../../stores/project/detection.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import type { ModelsDevCatalogCacheOutcome } from '../providers/models-dev-cache.js';
 import { fetchModelsDevCatalogWithCache } from '../providers/models-dev.js';
 import {
@@ -106,7 +106,7 @@ function legacyPrivateCache(version: 1 | 2): string {
       planners: [{ tool: 'codex', error: 'legacy-v1-service-private-planner-diagnostic-canary' }],
       implementers: [
         {
-          provider: 'openai',
+          provider: 'ollama',
           models: [{ id: 'legacy-v1-service-private-model-canary' }],
           error: 'legacy-v1-service-private-provider-diagnostic-canary',
         },
@@ -118,7 +118,7 @@ function legacyPrivateCache(version: 1 | 2): string {
     timestamp: 1_700_000_000_000,
     providers: [
       {
-        provider: 'openai',
+        provider: 'ollama',
         models: [{ id: 'legacy-v2-service-private-model-canary' }],
         error: 'legacy-v2-service-private-provider-diagnostic-canary',
       },
@@ -144,10 +144,10 @@ function projectSourceContexts(
   const context = (source: string) =>
     detectionContextKey({
       platform: process.platform,
-      runner: `${source}:planner:claude-code:implementer:openai`,
+      runner: `${source}:planner:claude-code:implementer:custom-endpoint`,
       authChannel: `${input.authChannel}:api-key`,
-      endpointOrigin: `${input.endpointOrigin}:https://api.openai.example`,
-      credentialDomain: `${input.credentialDomain}:env:OPENAI_API_KEY`,
+      endpointOrigin: `${input.endpointOrigin}:https://api.custom-endpoint.example`,
+      credentialDomain: `${input.credentialDomain}:env:CUSTOM_ENDPOINT_API_KEY`,
       configGeneration: `${input.projectDir}:${input.configGeneration}`,
     });
   return {
@@ -558,6 +558,28 @@ describe('createDetectionService', () => {
         probedAt: expect.any(Number),
       },
     ]);
+  });
+
+  it('persists the provider auth facts a CLI probe read', async () => {
+    const providerAuth = {
+      kind: 'read',
+      facts: [{ provider: 'Anthropic', source: 'oauth' }],
+    } as const;
+    const deps = makeDeps({
+      sourceContexts: sourceContexts(),
+      detectAll: async () => ({
+        providers: [],
+        cliTools: [{ ...makeCliTool(), providerAuth }],
+      }),
+    });
+
+    await service.loadDetection({ deps, projectDir: tempDir });
+    await service.getPendingSave();
+    const cache = JSON.parse(
+      await readFile(join(tempDir, SPLITBRIEF_DIR, 'detection-cache.json'), 'utf8'),
+    );
+
+    expect(cache.cliTools[0].providerAuth).toEqual(providerAuth);
   });
 
   it('persists the fresh CLI probe of a new process even when readiness answers from disk', async () => {

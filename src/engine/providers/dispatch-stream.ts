@@ -1,8 +1,6 @@
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
-import { streamAnthropicCompletion } from './anthropic/stream.js';
-import { providerError } from './errors.js';
 import { streamCompletion } from './openai-stream/completion.js';
 import type { StreamClient } from './openai-stream/request.js';
 import type { StreamMessage } from './types.js';
@@ -11,7 +9,7 @@ export type { StreamMessage } from './types.js';
 
 interface StreamDispatchOpts {
   provider: string;
-  client: StreamClient | null;
+  client: StreamClient;
   apiKey: string;
   apiBase: string;
   model: string;
@@ -45,25 +43,6 @@ export async function dispatchStreamCompletion(
     onCallEvent,
     callContext,
   } = opts;
-
-  if (provider === 'anthropic') {
-    return streamAnthropicCompletion({
-      apiKey,
-      apiBase,
-      model,
-      messages,
-      temperature,
-      onProgress,
-      ...(maxTokens !== undefined && { maxTokens }),
-      ...(signal !== undefined && { signal }),
-      ...(effort !== undefined && { effort }),
-      ...(images && images.length > 0 ? { images } : {}),
-      ...(onCallEvent !== undefined && { onCallEvent }),
-      ...(callContext !== undefined && { callContext }),
-    });
-  }
-
-  if (!client) throw providerError.expectedOpenAIClient(provider);
 
   return streamCompletion(client, model, messages, {
     temperature,

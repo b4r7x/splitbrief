@@ -8,7 +8,7 @@ import { loadState } from '../../../src/core/state/persistence.js';
 import { readSession } from '../../../src/core/sessions/io.js';
 import { BRIEF_QUALITY_FILE, sessionDir } from '../../../src/core/paths.js';
 import { isBriefQualityReport } from '../../../src/engine/spec/brief-quality.js';
-import { readRecoveryJournal } from '../../../src/core/evidence/recovery-journal.js';
+import { readRecoveryJournal } from '../../../src/core/evidence/recovery-journal/journal.js';
 import {
   createHeadlessGitProject,
   preparedHeadlessExecution,
@@ -33,10 +33,10 @@ function writeFailureFixture(projectDir: string, mode: 'standard' | 'speckit'): 
     'version: 3',
     'planner:',
     '  kind: api',
-    '  provider: anthropic',
-    '  service: anthropic',
+    '  provider: custom-endpoint',
+    '  service: custom-endpoint',
     '  offering: payg',
-    '  api_base: https://api.anthropic.com/v1',
+    '  api_base: https://api.example.test/v1',
     '  api_key: test-key',
     '  model: claude-sonnet-4-6',
     'implementer:',

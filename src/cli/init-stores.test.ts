@@ -14,14 +14,14 @@ import { skillsStore } from '../stores/project/skills.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { SPLITBRIEF_DIR } from '../core/paths.js';
 import { toYaml } from '../core/config/load/transform.js';
-import { createDefaultConfig } from '../core/config/load/io.js';
+import { createDefaultConfig } from '../core/config/load/defaults.js';
 import { detectCapabilities } from '../engine/providers/capabilities.js';
 import * as capabilitiesModule from '../engine/providers/capabilities.js';
 import { loadDetectionCacheSnapshot, saveDetectionCache } from '../engine/detection/cache.js';
 import * as detectionServiceModule from '../engine/detection/service.js';
 import * as modelsDevCacheModule from '../engine/providers/models-dev-cache.js';
 import type { ModelsDevCatalogSnapshot } from '../engine/providers/models-dev-cache.js';
-import { modelCacheStore } from '../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { detectionContextsForCurrentConfig } from '../engine/detection/store-publication.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
@@ -32,6 +32,8 @@ import { makeUsage } from '#testing/helpers/factories/summary.js';
 setupFetchMock();
 
 let tmp: string;
+let fakeHome: string;
+let savedHome: string | undefined;
 let savedContextLengthEnv: string | undefined;
 
 function requireConfig() {
@@ -57,7 +59,28 @@ function makeProjectDir(
   return tmp;
 }
 
+function writeBootstrapProofSkill(dir: string): void {
+  const skillDir = join(dir, '.claude', 'skills', 'bootstrap-proof');
+  mkdirSync(skillDir, { recursive: true });
+  writeFileSync(
+    join(skillDir, 'SKILL.md'),
+    `---
+id: bootstrap-proof
+name: bootstrap-proof
+description: proves initStores discovers project skills
+---
+Skill body for bootstrap proof.
+`,
+    'utf-8',
+  );
+}
+
+// Skill discovery scans global roots under homedir(); a real HOME would pull the
+// developer's own ~/.claude/skills into these assertions.
 beforeEach(() => {
+  fakeHome = createTempDir('init-stores-home');
+  savedHome = process.env.HOME;
+  process.env.HOME = fakeHome;
   vi.mocked(globalThis.fetch).mockImplementation(async () => new Response('{}', { status: 200 }));
   savedContextLengthEnv = process.env.SPLITBRIEF_CONTEXT_LENGTH;
   delete process.env.SPLITBRIEF_CONTEXT_LENGTH;
@@ -69,6 +92,9 @@ afterEach(() => {
   resetAllStores();
   if (savedContextLengthEnv === undefined) delete process.env.SPLITBRIEF_CONTEXT_LENGTH;
   else process.env.SPLITBRIEF_CONTEXT_LENGTH = savedContextLengthEnv;
+  if (savedHome === undefined) delete process.env.HOME;
+  else process.env.HOME = savedHome;
+  cleanupTempDir(fakeHome);
   if (tmp) cleanupTempDir(tmp);
 });
 
@@ -452,23 +478,30 @@ describe('initStores', () => {
         implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
       }),
     );
-    const skillDir = join(dir, '.claude', 'skills', 'bootstrap-proof');
-    mkdirSync(skillDir, { recursive: true });
-    writeFileSync(
-      join(skillDir, 'SKILL.md'),
-      `---
-id: bootstrap-proof
-name: bootstrap-proof
-description: proves initStores discovers project skills
----
-Skill body for bootstrap proof.
-`,
-      'utf-8',
-    );
+    writeBootstrapProofSkill(dir);
 
     await initStores(dir);
 
-    expect(skillsStore.get().available.some((skill) => skill.id === 'bootstrap-proof')).toBe(true);
+    const available = skillsStore.get().available;
+    expect(available.some((skill) => skill.id === 'bootstrap-proof')).toBe(true);
+  }, 30_000);
+
+  it('discovers project skills regardless of which tool holds the plan seat', async () => {
+    const dir = makeProjectDir();
+    writeConfigYaml(
+      dir,
+      toYaml({
+        ...createDefaultConfig(),
+        planner: { kind: 'cli', tool: 'opencode' },
+        implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
+      }),
+    );
+    writeBootstrapProofSkill(dir);
+
+    await initStores(dir);
+
+    const available = skillsStore.get().available;
+    expect(available.some((skill) => skill.id === 'bootstrap-proof')).toBe(true);
   }, 30_000);
 
   it('overrides implementer model from opts.implementerModel', async () => {

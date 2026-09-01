@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { createDefaultConfig, formatConfigLoaderDiagnostic } from '../load/io.js';
+import { formatConfigLoaderDiagnostic } from '../load/io.js';
+import { createDefaultConfig } from '../load/defaults.js';
 import type { ConfigLoaderDiagnostic } from '../load/io.js';
 import {
   emitEffectiveConfigWarnings,
@@ -13,13 +14,10 @@ describe('resolveEffectiveConfig', () => {
     const base = {
       ...createDefaultConfig(),
       implementer: {
-        kind: 'api' as const,
-        provider: 'anthropic' as const,
-        service: 'anthropic' as const,
-        offering: 'payg' as const,
-        apiBase: 'https://api.anthropic.com/v1',
-        model: 'claude-sonnet-4-6',
-        apiKey: 'sk-ant-inline',
+        kind: 'shell' as const,
+        command: 'local-implementer',
+        args: ['--prompt', '{prompt}'],
+        model: 'custom-model',
       },
     };
     const { config, warnings } = resolveEffectiveConfig({
@@ -30,7 +28,7 @@ describe('resolveEffectiveConfig', () => {
     expect(warnings).toContainEqual(
       expect.objectContaining({
         source: 'validation',
-        message: expect.stringContaining('Inline API key in implementer config'),
+        message: expect.stringContaining('implementer.args contains {prompt}'),
       }),
     );
   });
@@ -38,13 +36,10 @@ describe('resolveEffectiveConfig', () => {
   it('keeps stable loader warnings while discarding override-cleared validation warnings', () => {
     const base = makeConfig({
       implementer: {
-        kind: 'api',
-        provider: 'anthropic',
-        service: 'anthropic',
-        offering: 'payg',
-        apiBase: 'https://api.anthropic.com/v1',
-        model: 'claude-sonnet-4-6',
-        apiKey: 'sk-ant-inline',
+        kind: 'shell',
+        command: 'local-implementer',
+        args: ['--prompt', '{prompt}'],
+        model: 'custom-model',
       },
     });
     const permissionPath = '/tmp/project/.splitbrief/config.yaml';
@@ -70,8 +65,7 @@ describe('resolveEffectiveConfig', () => {
     );
     expect(
       warnings.some(
-        (warning) =>
-          warning.source === 'validation' && warning.message.includes('ANTHROPIC_API_KEY'),
+        (warning) => warning.source === 'validation' && warning.message.includes('{prompt}'),
       ),
     ).toBe(false);
   });
@@ -96,16 +90,13 @@ describe('resolveEffectiveConfig', () => {
     expect(config.implementer).toMatchObject({ model: 'deepseek-chat' });
   });
 
-  it('drops stale inline-key warnings after provider overrides', () => {
+  it('drops stale runner warnings after provider overrides', () => {
     const base = makeConfig({
       implementer: {
-        kind: 'api',
-        provider: 'anthropic',
-        service: 'anthropic',
-        offering: 'payg',
-        apiBase: 'https://api.anthropic.com/v1',
-        model: 'claude-sonnet-4-6',
-        apiKey: 'sk-ant-inline',
+        kind: 'shell',
+        command: 'local-implementer',
+        args: ['--prompt', '{prompt}'],
+        model: 'custom-model',
       },
     });
 

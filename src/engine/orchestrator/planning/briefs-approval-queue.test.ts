@@ -55,7 +55,7 @@ import {
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupProject } from '#testing/helpers/queue.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
-import { persistBriefOwnerTransition } from '../evidence/recovery-journal.js';
+import { persistBriefOwnerTransition } from '../evidence/brief-owner-journal.js';
 import { readWorkflowStateHead } from '../state-ops.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import type {

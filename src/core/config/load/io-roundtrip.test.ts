@@ -3,7 +3,9 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, rmSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
-import { configPath, createDefaultConfig, loadConfig, writeConfig } from './io.js';
+import { loadConfig, writeConfig } from './io.js';
+import { configPath } from './document.js';
+import { createDefaultConfig } from './defaults.js';
 import { SPLITBRIEF_DIR } from '../../paths.js';
 import { defaultCliAuthChannel } from '../../runners/cli-tool-catalog.js';
 import { configStore } from '../../../stores/project/config.js';
@@ -237,10 +239,10 @@ describe('config roundtrip', () => {
           profiles: {
             'active-cloud': {
               kind: 'api',
-              provider: 'together',
-              service: 'together',
-              offering: 'payg',
-              api_base: 'https://api.together.ai/v1',
+              provider: 'lm-studio',
+              service: 'lm-studio',
+              offering: 'local',
+              api_base: 'http://localhost:1234/v1',
               api_key: 'env:PATH',
               model: 'existing-model',
               custom_models: ['existing-model'],
@@ -276,16 +278,16 @@ describe('config roundtrip', () => {
 
       configStore.load(dir);
       let current = loadConfig(dir).config;
-      const together = realPickerOption('implementer', 'together');
+      const lmStudio = realPickerOption('implementer', 'lm-studio');
 
       current = commitImplementerSelection({
         config: current,
-        selection: together,
+        selection: lmStudio,
         model: { id: 'selected-model' },
       }).config;
       expect((await configStore.save(current)).ok).toBe(true);
       expect(loadConfig(dir).config.implementerProfiles?.profiles['active-cloud']).toMatchObject({
-        apiBase: 'https://api.together.ai/v1',
+        apiBase: 'http://localhost:1234/v1',
         apiKey: 'env:PATH',
         model: 'selected-model',
       });
@@ -293,7 +295,7 @@ describe('config roundtrip', () => {
       current = commitCustomModel({
         config: current,
         role: 'implementer',
-        selection: together,
+        selection: lmStudio,
         modelName: 'custom-added',
         customModels: ['existing-model'],
       });

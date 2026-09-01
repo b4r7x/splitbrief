@@ -12,7 +12,7 @@ import {
   makePlanner,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
+import { makePricedModelCache } from '#testing/helpers/factories/model-cache.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -36,15 +36,13 @@ afterEach(() => {
 const REVIEW_TEXT = '# Final review\n\nThe planner reviewed the run diff.';
 const REVIEW_USAGE = { inputTokens: 60, outputTokens: 30 };
 const PLAN_USAGE = { inputTokens: 140, outputTokens: 90 };
-const PLANNER_PROVIDER = 'openai';
-const PLANNER_MODEL = 'priced-planner-model';
+const PLANNER_PROVIDER = 'planner-endpoint';
+const PLANNER_MODEL = 'claude-sonnet-5';
 const IMPLEMENTED_MARKER = 'from-implementer';
 
-const modelCache = makeModelCacheAccessor({
-  providerModels: {
-    [PLANNER_PROVIDER]: [{ id: PLANNER_MODEL, pricingInput: 1, pricingOutput: 2 }],
-  },
-});
+// A custom endpoint has no runtime rate rows; it prices through the catalog on
+// its model id, so the seat needs a model the priced catalog knows.
+const modelCache = makePricedModelCache();
 
 describe('run with no reviewer configured', () => {
   it('keeps the planner in the review seat, and its artifact, events and cost lines', async () => {
@@ -101,7 +99,7 @@ describe('run with no reviewer configured', () => {
         kind: 'api',
         provider: PLANNER_PROVIDER,
         model: PLANNER_MODEL,
-        apiBase: 'https://api.openai.test/v1',
+        apiBase: 'https://api.planner.test/v1',
       },
       implementer: {
         kind: 'agent',
@@ -125,7 +123,7 @@ describe('run with no reviewer configured', () => {
           slot: { role: 'planner' },
           preparationId,
           provider: PLANNER_PROVIDER,
-          endpointOrigin: 'https://api.openai.test',
+          endpointOrigin: 'https://api.planner.test',
         },
         {
           kind: 'agent',
@@ -195,6 +193,14 @@ describe('run with no reviewer configured', () => {
       'workflow_complete',
     ]);
 
+    const plannerTexts = events.filter(
+      (event): event is Extract<EngineEvent, { type: 'planner_text' }> =>
+        event.type === 'planner_text',
+    );
+    expect(plannerTexts).toHaveLength(1);
+    expect(plannerTexts[0]?.text).toContain(REVIEW_TEXT);
+
+    // Seat resolution happens at init, so a reviewer seat would surface here.
     const workflowConfig = events.find(
       (event): event is Extract<EngineEvent, { type: 'workflow_config' }> =>
         event.type === 'workflow_config',

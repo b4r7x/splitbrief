@@ -12,7 +12,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import { readActive } from '../../../core/sessions/active-pointer.js';
 import { prepareNewSession } from '../../../core/sessions/prepare.js';
 import { runnerDiscoveryContextKey } from '../../../engine/detection/runner-evidence.js';
-import { prepareExecution } from '../../../engine/runners/prepare-execution.js';
+import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 import {
   cliPreparationPolicy,
   detectConfiguredCliReadiness,
@@ -256,14 +256,13 @@ describe('detectConfiguredCliReadiness', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
-        provider: 'openrouter',
-        service: 'openrouter',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
         offering: 'payg',
-        apiBase: 'https://openrouter.ai/api/v1',
-        apiKey: `\${OPENROUTER_API_KEY}`,
+        apiBase: 'https://api.example.test/v1',
         model: 'some-model',
       },
-      reviewer: { kind: 'cli', tool: 'aider' },
+      reviewer: { kind: 'cli', tool: 'opencode' },
     });
 
     const results = await detectConfiguredCliReadiness({
@@ -272,6 +271,6 @@ describe('detectConfiguredCliReadiness', () => {
       opts: {},
     });
 
-    expect(results.map((result) => result.tool)).toEqual(['aider']);
+    expect(results.map((result) => result.tool)).toEqual(['opencode']);
   });
 });

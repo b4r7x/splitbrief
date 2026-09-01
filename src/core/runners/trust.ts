@@ -2,10 +2,10 @@ import type { RunnerKind } from '../schemas/enums.js';
 import {
   CLI_TOOL_TRUST,
   type CliToolId,
-  type RunnerRole,
   type RunnerRoleTrustMetadata,
   type RunnerTrustMetadata,
 } from './cli-tool-catalog.js';
+import type { RunnerRole } from './seat-roles.js';
 
 type RunnerTrustConfig = { kind: 'cli'; tool: CliToolId } | { kind: Exclude<RunnerKind, 'cli'> };
 
@@ -17,20 +17,6 @@ const API_TRUST: RunnerTrustMetadata = {
 };
 
 const COMMAND_TRUST: RunnerTrustMetadata = {
-  executesLocalCommand: true,
-  mayUseNetwork: true,
-  mayWriteFilesDirectly: true,
-  autoAllowFlags: [],
-};
-
-const AGENT_SDK_PLANNER_TRUST: RunnerTrustMetadata = {
-  executesLocalCommand: false,
-  mayUseNetwork: true,
-  mayWriteFilesDirectly: false,
-  autoAllowFlags: [],
-};
-
-const AGENT_SDK_IMPLEMENTER_TRUST: RunnerTrustMetadata = {
   executesLocalCommand: true,
   mayUseNetwork: true,
   mayWriteFilesDirectly: true,
@@ -52,10 +38,6 @@ const RUNNER_KIND_TRUST = {
   agent: {
     planner: COMMAND_TRUST,
     implementer: COMMAND_TRUST,
-  },
-  'agent-sdk': {
-    planner: AGENT_SDK_PLANNER_TRUST,
-    implementer: AGENT_SDK_IMPLEMENTER_TRUST,
   },
 } as const satisfies Record<RunnerKind, RunnerRoleTrustMetadata | typeof CLI_TOOL_TRUST>;
 

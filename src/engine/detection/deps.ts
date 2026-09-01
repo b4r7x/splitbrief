@@ -1,30 +1,26 @@
 import type { Config } from '../../core/schemas/config.js';
 import { readActiveRunnerLens } from '../../core/config/accessors/active-runner.js';
 import {
-  isSameCredentialDomain,
   projectRunnerDiscoveryContext,
   type RunnerDiscoveryContext,
 } from '../../core/config/accessors/runner-discovery-context.js';
 import { isApiProviderId } from '../../core/providers/api-provider-catalog.js';
-import type { CredentialDomainIdentity } from '../../core/config/accessors/runner-discovery-context.js';
 import {
   CLI_TOOL_IDS,
   defaultCliAuthChannel,
   NATIVE_CLI_CATALOG_TOOL_IDS,
   type CliAuthChannelId,
   type CliToolId,
-  type RunnerRole,
-  type ActiveRunnerRole,
 } from '../../core/runners/cli-tool-catalog.js';
+import type { RunnerRole, ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import { includes } from '../../utils/type-guards.js';
-import { error } from '../../utils/error.js';
 import { detectAll } from './detect.js';
 import { runnerDiscoveryContextKey } from './runner-evidence.js';
 import type {
   ConfiguredProviderConnection,
   ConfiguredProviderOutcome,
 } from './provider-outcomes.js';
-import { detectionContextKey } from './coordinator.js';
+import { detectionContextKey } from './types.js';
 import type {
   DetectionDeps,
   DetectionSourceContexts,
@@ -44,16 +40,7 @@ interface ConfiguredProviderProbe {
   readonly connection: ConfiguredProviderConnection;
   /** Closure-local values only. Never return, publish, or serialize these. */
   readonly overrides: ProviderOverrides;
-  readonly credentialDomain: CredentialDomainIdentity | undefined;
 }
-
-type ConfiguredProviderPlan =
-  | Readonly<{ kind: 'probe'; probe: ConfiguredProviderProbe }>
-  | Readonly<{
-      kind: 'reuse';
-      connection: ConfiguredProviderConnection;
-      source: ConfiguredProviderProbe;
-    }>;
 
 export type ProductionDetectionDeps = DetectionDeps &
   Readonly<{ sourceContexts: ResolvedDetectionSourceContexts }>;
@@ -91,75 +78,27 @@ function apiProbeForRole(
   return {
     connection: connectionFor(input.context, runner.provider),
     overrides: { apiBase: runner.apiBase, apiKey: runner.apiKey ?? '' },
-    credentialDomain: input.context.credentialDomain,
   };
 }
 
-function agentSdkProbeForRole(
-  input: Readonly<{
-    config: Config;
-    role: ActiveRunnerRole;
-    context: RunnerDiscoveryContext;
-  }>,
-): ConfiguredProviderProbe | null {
-  const runner = readActiveRunnerLens({ config: input.config, role: input.role }).runner;
-  if (runner.kind !== 'agent-sdk') return null;
-  return {
-    connection: connectionFor(input.context, 'anthropic'),
-    overrides: { apiKey: runner.apiKey ?? '' },
-    credentialDomain: input.context.credentialDomain,
-  };
-}
-
-function configuredProviderPlans(
+function configuredProviderProbes(
   input: Readonly<{ config: Config; contexts: ActiveRunnerContexts }>,
-): readonly ConfiguredProviderPlan[] {
+): readonly ConfiguredProviderProbe[] {
   const roles: readonly RunnerRole[] = ['planner', 'implementer'];
-  const apiProbes = roles
+  return roles
     .map((role) => apiProbeForRole({ config: input.config, role, context: input.contexts[role] }))
     .filter((probe): probe is ConfiguredProviderProbe => probe !== null);
-
-  const plans: ConfiguredProviderPlan[] = apiProbes.map((probe) => ({ kind: 'probe', probe }));
-  for (const role of roles) {
-    const agentSdkProbe = agentSdkProbeForRole({
-      config: input.config,
-      role,
-      context: input.contexts[role],
-    });
-    if (agentSdkProbe === null) continue;
-
-    const reusableAnthropicProbe = apiProbes.find(
-      (candidate) =>
-        candidate.connection.role !== role &&
-        candidate.connection.provider === 'anthropic' &&
-        isSameCredentialDomain({
-          left: agentSdkProbe.credentialDomain,
-          right: candidate.credentialDomain,
-        }),
-    );
-    plans.push(
-      reusableAnthropicProbe === undefined
-        ? { kind: 'probe', probe: agentSdkProbe }
-        : {
-            kind: 'reuse',
-            connection: agentSdkProbe.connection,
-            source: reusableAnthropicProbe,
-          },
-    );
-  }
-  return plans;
 }
 
 function configuredProviderDetection(
-  plans: readonly ConfiguredProviderPlan[],
+  probes: readonly ConfiguredProviderProbe[],
 ): (
   input: Readonly<{ signal?: AbortSignal | undefined }>,
 ) => Promise<readonly ConfiguredProviderOutcome[]> {
-  const probes = plans.flatMap((plan) => (plan.kind === 'probe' ? [plan.probe] : []));
-  return async ({ signal }) => {
-    const outcomes = await Promise.all(
+  return ({ signal }) =>
+    Promise.all(
       probes.map(async (probe) => ({
-        probe,
+        connection: probe.connection,
         outcome: await detectProviderCatalog({
           provider: probe.connection.provider,
           configOverrides: probe.overrides,
@@ -167,22 +106,6 @@ function configuredProviderDetection(
         }),
       })),
     );
-    const outcomesByProbe = new Map(outcomes.map(({ probe, outcome }) => [probe, outcome]));
-    return plans.map((plan) => {
-      const probe = plan.kind === 'probe' ? plan.probe : plan.source;
-      const outcome = outcomesByProbe.get(probe);
-      if (outcome === undefined) {
-        throw error(
-          'detection-configured-provider-outcome-missing',
-          'Configured provider probe outcome was missing.',
-        );
-      }
-      return {
-        connection: plan.kind === 'probe' ? probe.connection : plan.connection,
-        outcome,
-      };
-    });
-  };
 }
 
 /**
@@ -277,12 +200,12 @@ export function createProductionDetectionDeps(
   input: Readonly<{ config: Config; projectDir: string }>,
 ): ProductionDetectionDeps {
   const contexts = activeRunnerContexts(input.config);
-  const providerPlans = configuredProviderPlans({ config: input.config, contexts });
+  const providerProbes = configuredProviderProbes({ config: input.config, contexts });
   return {
     detectAll: ({ signal }) =>
       detectAll({
         authChannels: admittedCliAuthChannels(contexts),
-        detectConfiguredProviderOutcomes: configuredProviderDetection(providerPlans),
+        detectConfiguredProviderOutcomes: configuredProviderDetection(providerProbes),
         signal,
       }),
     fetchModelsDevCatalog: ({ mode, signal }) => fetchModelsDevCatalogWithCache({ mode, signal }),

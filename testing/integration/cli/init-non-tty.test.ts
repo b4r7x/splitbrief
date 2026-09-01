@@ -4,7 +4,8 @@ import { Command } from 'commander';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { runCommand } from '#testing/helpers/commander.js';
 import { registerInitCommand } from '../../../src/cli/commands/init.js';
-import { configPath, loadConfig } from '../../../src/core/config/load/io.js';
+import { loadConfig } from '../../../src/core/config/load/io.js';
+import { configPath } from '../../../src/core/config/load/document.js';
 
 function initHelp(): string {
   const program = new Command();
@@ -16,23 +17,24 @@ function initHelp(): string {
 
 let tmp: string;
 let prevCwd: string;
+let prevIsTTY: boolean | undefined;
 
 beforeEach(() => {
   tmp = createTempDir('cli-init-non-tty');
   prevCwd = process.cwd();
   process.chdir(tmp);
+  prevIsTTY = process.stdin.isTTY;
+  delete (process.stdin as { isTTY?: boolean }).isTTY;
 });
 
 afterEach(() => {
   process.chdir(prevCwd);
   cleanupTempDir(tmp);
-  delete (process.stdin as { isTTY?: boolean }).isTTY;
+  (process.stdin as { isTTY?: boolean | undefined }).isTTY = prevIsTTY;
 });
 
 describe('CLI integration: init without a TTY', { timeout: 90_000 }, () => {
   it('defers the config write: init without a TTY fails fast and writes nothing', async () => {
-    delete (process.stdin as { isTTY?: boolean }).isTTY;
-
     const { exitCode, stderr } = await runCommand(['init']);
 
     expect(exitCode).not.toBe(0);
@@ -40,12 +42,8 @@ describe('CLI integration: init without a TTY', { timeout: 90_000 }, () => {
     expect(existsSync(configPath(tmp))).toBe(false);
   });
 
-  // The refusal used to point at `--json` / `--detach`, which `init` has never
-  // accepted, so the one message a CI user ever sees named no way out. Every
-  // flag the message offers is checked against the command's own help.
+  // A CI user sees only this message, so every flag it names must exist.
   it('offers only flags that init actually defines', async () => {
-    delete (process.stdin as { isTTY?: boolean }).isTTY;
-
     const { stderr } = await runCommand(['init']);
     const help = initHelp();
 
@@ -57,8 +55,6 @@ describe('CLI integration: init without a TTY', { timeout: 90_000 }, () => {
   });
 
   it('writes a loadable default config with --yes and no TTY', async () => {
-    delete (process.stdin as { isTTY?: boolean }).isTTY;
-
     const { exitCode, stdout } = await runCommand(['init', '--yes']);
 
     expect(exitCode).toBe(0);
@@ -67,7 +63,6 @@ describe('CLI integration: init without a TTY', { timeout: 90_000 }, () => {
   });
 
   it('writes into --project instead of the working directory', async () => {
-    delete (process.stdin as { isTTY?: boolean }).isTTY;
     const target = createTempDir('cli-init-project');
 
     try {
@@ -82,7 +77,6 @@ describe('CLI integration: init without a TTY', { timeout: 90_000 }, () => {
   });
 
   it('leaves an existing config alone unless --reconfigure is passed', async () => {
-    delete (process.stdin as { isTTY?: boolean }).isTTY;
     await runCommand(['init', '--yes']);
     const original = readFileSync(configPath(tmp), 'utf8');
 

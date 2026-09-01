@@ -19,6 +19,7 @@ import {
   TASKS_FILE,
 } from '../../core/paths.js';
 import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
+import { RETIRED_WORKFLOW_MODE_NOTICE } from '../../core/schemas/enums.js';
 import type { Config } from '../../core/schemas/config.js';
 import {
   createTaskCompilationAttemptId,
@@ -155,7 +156,7 @@ describe('spec --mode', () => {
     const help = specCommand.helpInformation();
 
     expect(help).toContain('--mode <mode>');
-    expect(help).toContain('Workflow mode: instant, quick, standard, or speckit');
+    expect(help).toContain('Workflow mode: quick, standard, or speckit');
     const flags = [...help.matchAll(/--[\w-]+/g)].map((match) => match[0]);
     expect(new Set(flags)).toEqual(
       new Set(['--mode', '--project', '--allow-hooks', '--allow-repo-runners', '--help']),
@@ -177,25 +178,7 @@ describe('spec --mode', () => {
     expect(files).toEqual([READINESS_FILE, TASKS_FILE]);
   });
 
-  it('--mode instant uses the instant call when the planner has one', async () => {
-    const instantPlan = vi.fn().mockResolvedValue({
-      spec: '',
-      plan: '',
-      tasks: [],
-      usage: null,
-      phases: [phaseResult(TASKS_FILE, '# Instant Tasks')],
-    });
-    const planner = makePlanner({ instantPlan });
-    createPlannerMock.mockResolvedValue(planner);
-
-    await parseSpec(['--mode', 'instant', 'fix the button']);
-
-    expect(instantPlan).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(planner.quickPlan)).not.toHaveBeenCalled();
-    expect(vi.mocked(planner.plan)).not.toHaveBeenCalled();
-  });
-
-  it('--mode instant falls back to the quick call when the planner has none', async () => {
+  it('runs the quick planner call when --mode instant is given', async () => {
     const planner = plannerWithSingleTaskPhase();
     createPlannerMock.mockResolvedValue(planner);
 
@@ -266,7 +249,7 @@ describe('spec --mode', () => {
     expect(vi.mocked(planner.quickPlan)).not.toHaveBeenCalled();
   });
 
-  it('an unrecognized --mode value rejects, names the four modes, and creates no session folder', async () => {
+  it('an unrecognized --mode value rejects, names the three modes, and creates no session folder', async () => {
     let caught: unknown;
     try {
       await parseSpec(['--mode', 'bogus', 'probe']);
@@ -277,19 +260,45 @@ describe('spec --mode', () => {
     expect(caught).toBeTruthy();
     const message = caught instanceof Error ? caught.message : String(caught);
     expect(message).toContain('Invalid mode: bogus');
-    expect(message).toContain('Must be one of: instant, quick, standard, speckit');
+    expect(message).toContain('Must be one of: quick, standard, speckit');
     expect(existsSync(sessionsRoot())).toBe(false);
     expect(createPlannerMock).not.toHaveBeenCalled();
+  });
+
+  it('prints the retired-mode notice for a config file that still sets mode: instant', async () => {
+    mkdirSync(join(tmp, SPLITBRIEF_DIR), { recursive: true });
+    const config = makeConfig();
+    writeFileSync(
+      join(tmp, SPLITBRIEF_DIR, CONFIG_FILE),
+      JSON.stringify({ ...config, workflow: { ...config.workflow, mode: 'instant' } }, null, 2),
+    );
+    const stderrChunks: string[] = [];
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderrChunks.push(String(chunk));
+      return true;
+    });
+    const planner = plannerWithSingleTaskPhase();
+    createPlannerMock.mockResolvedValue(planner);
+    try {
+      await parseSpec(['fix the button']);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+
+    expect(vi.mocked(planner.quickPlan)).toHaveBeenCalledTimes(1);
+    expect(
+      stderrChunks.filter((chunk) => chunk.includes(RETIRED_WORKFLOW_MODE_NOTICE)),
+    ).toHaveLength(1);
   });
 
   it('prints config warnings unchanged', async () => {
     writeConfig(
       makeConfig({
         implementer: {
-          kind: 'api',
-          provider: 'anthropic',
-          model: 'claude-sonnet-4',
-          apiKey: 'not-a-real-key',
+          kind: 'shell',
+          command: 'my-implementer',
+          args: ['--task', '{prompt}'],
+          model: 'custom-model',
         },
       }),
     );
@@ -305,8 +314,6 @@ describe('spec --mode', () => {
       stderrSpy.mockRestore();
     }
 
-    expect(stderrChunks.join('')).toContain(
-      "API key for anthropic doesn't match expected format (sk-ant-...)",
-    );
+    expect(stderrChunks.join('')).toContain('implementer.args contains {prompt}');
   });
 });

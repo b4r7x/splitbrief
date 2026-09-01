@@ -2,12 +2,10 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  PROVIDER_CONFORMANCE_EXIT_CODES,
-  createUnregisteredOpenAICompatProvider,
-  runProductionProviderConformance,
-  runRawProviderConformance,
-} from './conformance.js';
+import { PROVIDER_CONFORMANCE_EXIT_CODES } from './conformance.js';
+import { runProductionProviderConformance } from './conformance-production.js';
+import { runRawProviderConformance } from './conformance-raw.js';
+import { createUnregisteredOpenAICompatProvider } from './unregistered-provider.js';
 import { contractSha256 } from './candidate-contract.js';
 
 const credential = 'ex-live-credential-canary-123';

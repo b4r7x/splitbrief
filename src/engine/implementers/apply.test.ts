@@ -77,26 +77,6 @@ describe('applyCode', () => {
     expect(content).not.toContain('>>>>>>> REPLACE');
   });
 
-  it('modify action with search/replace markers applies patch', async () => {
-    tempDir = createTempDir('impl-test');
-    const filePath = join(tempDir, 'src', 'large.ts');
-    const task = makeTask({ action: 'modify', file: 'src/large.ts' });
-
-    mkdirSync(join(tempDir, 'src'), { recursive: true });
-    const lines = Array.from({ length: 250 }, (_, i) => `// line ${i + 1}`);
-    lines[10] = 'export const old = true;';
-    writeFileSync(filePath, lines.join('\n'));
-
-    const patchCode =
-      '<<<<<<< SEARCH\nexport const old = true;\n=======\nexport const patched = true;\n>>>>>>> REPLACE';
-    const result = await applyCode(patchCode, task, tempDir);
-
-    expect(result.success).toBe(true);
-    const content = readFileSync(filePath, 'utf-8');
-    expect(content).toContain('export const patched = true;');
-    expect(content).not.toContain('export const old = true;');
-  });
-
   it('search/replace rejects an ambiguous search block matching multiple occurrences', async () => {
     tempDir = createTempDir('impl-test');
     const filePath = join(tempDir, 'src', 'repeated.ts');

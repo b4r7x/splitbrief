@@ -2,15 +2,13 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { createElement } from 'react';
 import { App, type AppProps } from '../../../../src/app/root.js';
-import { createDefaultConfig } from '../../../../src/core/config/load/io.js';
+import { createDefaultConfig } from '../../../../src/core/config/load/defaults.js';
 import { createInitialState, transition } from '../../../../src/core/state/machine.js';
 import { ensureSessionDir } from '../../../../src/core/paths-io.js';
 import type { EngineEvent } from '../../../../src/engine/events/types.js';
 import type { RunWorkflowOptions } from '../../../../src/engine/orchestrator/run/init.js';
-import {
-  prepareExecution,
-  type PreparationPolicy,
-} from '../../../../src/engine/runners/prepare-execution.js';
+import { prepareExecution } from '../../../../src/engine/runners/prepare-execution/prepare-execution.js';
+import type { PreparationPolicy } from '../../../../src/engine/runners/prepare-execution/types.js';
 import type { PreparedExecution } from '../../../../src/engine/runners/prepared-execution.js';
 import { renderApp as productionRenderApp } from '../../../../src/cli/render/app.js';
 import { configStore } from '../../../../src/stores/project/config.js';

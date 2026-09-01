@@ -47,7 +47,7 @@ have happened but its result is unknown, the state is `UNRESOLVED`: held inputs
 and remote usage stay recorded until the user explicitly chooses rebind while
 acknowledging duplication risk, or abandon. No implicit retry is allowed.
 
-The same rules apply in `instant`, `quick`, `standard`, and `speckit`, and to
+The same rules apply in `quick`, `standard`, and `speckit`, and to
 interactive, attached, RPC, and headless callers. Durable evidence is retained
 even when transcript or UI projections are unavailable.
 
@@ -63,13 +63,14 @@ deterministic four-item batches, at most 64 real dispatches per operation, and
 each batch runs in a fresh detached session scope that cannot read, replace,
 expire, resume, or report into the workflow planner session. Every planner mode
 crosses the same admission boundary: standard and speckit run the compiler's
-detached batches, quick and instant stay single-call and accept only a
+detached batches, and quick stays single-call while accepting only a
 current-call result.
 
 **Tiered admission.** The Task Brief compiler admits backends across tiers: the
 tested version yields a full capability receipt; other detected versions of
 supported backends are admitted with runtime-drift evidence and a run warning;
-unsupported candidates (`copilot`, `aider`, `shell`, `agent`) receive a typed
+unsupported candidates (`copilot`, `cursor`, `command-code`, `shell`, `agent`)
+receive a typed
 fail-closed refusal (`task_compiler_capability_unsupported`). Runtime guards
 (envelopes, terminal contract, dispatch ledger, post-run mutation detection)
 are the enforcement surface.
@@ -311,44 +312,45 @@ From `src/core/phases.ts`. Each phase has four properties derived from the sourc
 
 ## 3. Mode dispatch
 
-Mode dispatch: `src/engine/orchestrator/planning/run.ts`. Mode determines how many planner calls run and which approval gates activate. All four modes stay in the product; the question a mode answers is how much ceremony precedes the briefs, not which features are available.
+Mode dispatch: `src/engine/orchestrator/planning/run.ts`. Mode determines how many planner calls run and which approval gates activate. All three modes stay in the product; the question a mode answers is how much ceremony precedes the briefs, not which features are available.
 
 | Mode | Planner calls | Phases visited | Default approval | Artifacts |
 |------|:------------:|----------------|:----------------:|-----------|
-| `instant` | 1 | idle → implementing | `none` | tasks.md |
 | `quick` | 1 | idle → implementing | `none` | tasks.md |
 | `standard` | 4 | idle → researching → specifying → reviewing-spec → planning → reviewing-plan → reviewing-briefs → implementing | `spec` | research, spec.md, plan.md, tasks.md |
 | `speckit` | 6-7 | idle → researching → specifying → reviewing-spec → clarifying → constitution-check → planning → reviewing-plan → analyzing → implementing → reviewing-briefs → implementing | `all` | research, spec.md, clarifications.md, constitution-check.json, plan.md, tasks.md, analyze.json |
 
+**The retired `instant` mode.** `instant` was merged into `quick`; it is no longer a mode you can select. The string still parses everywhere it was persisted — `WorkflowModeSchema` (`src/core/schemas/enums.ts`) preprocesses `instant` to `quick` — so old configs, old `--mode instant` invocations, and session state written before the merge all keep loading. Reading `instant` prints a deprecation notice: a config warning from `validateConfig`, a `--mode` warning on stderr from `resolveEffectiveConfig`, and a feedback line from the runtime `/mode` handler. Three persisted wire formats are retained for back-compatibility only, so pre-merge sessions still replay: the `instant_plan_received` event, the `instant-start` brief-recovery continuation kind, and `BriefRecoveryOriginSchema.mode` (`src/core/schemas/brief-recovery/primitives.ts`), whose enum still accepts a literal `instant` rather than preprocessing it to `quick`. Nothing produces any of them any more.
+
 Speckit runs pre-review quality preparation while in `reviewing-plan`. After it succeeds, `ANALYZE_START` enters `analyzing`, `ANALYZE_DONE` returns to `implementing`, and `BRIEFS_READY` opens `reviewing-briefs`.
 
-**When the single call produces no briefs** (`instant` and `quick`). If the planner's single call returns no Task Briefs, the same call is retried exactly once. If the retry also returns zero tasks, a coded, transcript-safe warning (`planner_returned_zero_tasks`) is published stating that the failed attempt contributes no Brief generation; the attempt writes no planning artifact. The planning result is terminal in `instant`, and in `quick` it is terminal under the workflow owner or parked when no owner authority is present. The run never falls through to the multi-phase path, which would silently change the selected mode and its cost.
+**When the single call produces no briefs** (`quick`). The single planner call is never repeated: there is no automatic zero-task retry or repair. If it returns no Task Briefs, a coded, transcript-safe warning (`planner_returned_zero_tasks`) is published stating that the failed attempt contributes no Brief generation; the attempt writes no planning artifact. The planning result is terminal under the workflow owner and parked when no owner authority is present. The run never falls through to the multi-phase path, which would silently change the selected mode and its cost.
 
 ### Selecting a mode
 
-Every entry point that runs the planner reaches all four modes. Resolution happens in `resolveMode()` (`src/core/config/runtime/resolve.ts`), highest precedence first:
+Every entry point that runs the planner reaches all three modes. Resolution happens in `resolveMode()` (`src/core/config/runtime/resolve.ts`), highest precedence first:
 
 | Source | Scope | Notes |
 |--------|-------|-------|
-| `--mode <mode>` | one invocation | Accepted by `start`, `spec`, `resume`, `continue`, and `last`. The value is parsed against the four-mode enum; anything else aborts the command with `Invalid mode: <value>. Must be one of: instant, quick, standard, speckit`. |
+| `--mode <mode>` | one invocation | Accepted by `start`, `spec`, `resume`, `continue`, and `last`. The value is parsed against the three-mode enum; anything else aborts the command with `Invalid mode: <value>. Must be one of: quick, standard, speckit`. |
 | Saved mode in `state.json` | the resumed run | Written when the run first resolved its mode. `resume` / `continue` / `last` reuse it; passing `--mode` overrides it for that resume and prints a warning. |
 | `workflow.mode` in `.splitbrief/config.yaml` | the project | What `/mode` and the mode selector write. |
 | `standard` | — | Built-in default when nothing else is set. |
 
-`splitbrief spec` takes the same flag with the same validation and the same precedence. The mode decides how much planning happens before the command stops: `instant` and `quick` make one planner call, `standard` and `speckit` run the multi-call pipeline. `spec` never implements, so the approval gates below do not apply to it — it writes the artifacts its mode produces and exits. In particular `spec --mode speckit` produces the **standard** artifact set (`research.md`, `spec.md`, `plan.md`, `tasks.md`): the speckit-only artifacts (`clarifications.md`, `constitution-check.json`, `analyze.json`) are orchestrator-side and the 6-7-call row in the table above describes `start`, not `spec`.
+`splitbrief spec` takes the same flag with the same validation and the same precedence. The mode decides how much planning happens before the command stops: `quick` makes one planner call, `standard` and `speckit` run the multi-call pipeline. `spec` never implements, so the approval gates below do not apply to it — it writes the artifacts its mode produces and exits. In particular `spec --mode speckit` produces the **standard** artifact set (`research.md`, `spec.md`, `plan.md`, `tasks.md`): the speckit-only artifacts (`clarifications.md`, `constitution-check.json`, `analyze.json`) are orchestrator-side and the 6-7-call row in the table above describes `start`, not `spec`.
 
-**Where the mode is visible when the choice is made.** On the home screen the crew block above the composer (`src/features/home/components/seat-block.tsx`) prints one labelled row per seat — `PLAN`, `BUILD`, `REVIEW`, each followed by that seat's identity (`Claude Code CLI · Claude Sonnet 4`) — and closes with a status line carrying the mode, then the optional skill count and detection notice, then the `/crew to change` hint. The mode in force is therefore on screen while the feature is being typed; when the block is too short for a row per seat it collapses to a single line, and when the status line is too narrow the optional parts drop before the mode or the hint do. `/mode` with no argument opens the mode selector (`src/features/settings/mode-selector.tsx`), which lists all four with their planner-call and approval counts and marks the current one; `/mode <name>` sets it without opening the overlay. Both persist `workflow.mode` to `.splitbrief/config.yaml`. On the command line, `--mode` is listed in `splitbrief start --help` and `splitbrief spec --help`, and `spec` names the resolved mode alongside the planner identity on the line it prints before planning starts. Once planning begins the orchestrator publishes `mode_resolved` carrying the resolved mode and approval level.
+**Where the mode is visible when the choice is made.** On the home screen the crew block above the composer (`src/features/home/components/seat-block.tsx`) prints one labelled row per seat — `PLAN`, `BUILD`, `REVIEW`, each followed by that seat's identity (`Claude Code CLI · Claude Sonnet 4`) — and closes with a status line carrying the mode, then the optional skill count and detection notice, then the `/crew to change` hint. The mode in force is therefore on screen while the feature is being typed; when the block is too short for a row per seat it collapses to a single line, and when the status line is too narrow the optional parts drop before the mode or the hint do. `/mode` with no argument opens the mode selector (`src/features/settings/mode-selector.tsx`), which lists all three with their planner-call and approval counts and marks the current one; `/mode <name>` sets it without opening the overlay. Both persist `workflow.mode` to `.splitbrief/config.yaml`. On the command line, `--mode` is listed in `splitbrief start --help` and `splitbrief spec --help`, and `spec` names the resolved mode alongside the planner identity on the line it prints before planning starts. Once planning begins the orchestrator publishes `mode_resolved` carrying the resolved mode and approval level.
 
 ### Approval gates
 
 Controlled by `workflow.approve`: `none` | `spec` | `plan` | `all` | `default`. Each mode has a default; `default` follows that mode default. Override via `--approve <level>` on the CLI.
 
-- `none` — skip spec/plan document gates. instant/quick default. Briefs review still runs in modes that produce reviewable briefs.
+- `none` — skip spec/plan document gates. quick default. Briefs review still runs in modes that produce reviewable briefs.
 - `spec` — gate on supporting spec. standard default.
 - `plan` — gate on plan only.
 - `all` — gate on spec and plan. speckit default.
 
-The brief quality gate (`src/engine/spec/brief-quality.ts`) runs for all four modes after the Task Brief is produced and before `implementing`. It writes `brief-quality.json` and publishes `brief_quality_passed` or `brief_quality_failed`. Error-level issues block a direct transition. In `standard` and `speckit`, the first error-level report triggers one bounded tasks-only `auto-repair` of `tasks.md`, before `BRIEFS_READY` and `reviewing-briefs`. If the repaired tasks still have any error-level issue, the second report fails the run closed: briefs approval is not called, `reviewing-briefs` is not entered, and implementation does not start. This applies to every error-level issue, not only `empty_task_list`.
+The brief quality gate (`src/engine/spec/brief-quality.ts`) runs for all three modes after the Task Brief is produced and before `implementing`. It writes `brief-quality.json` and publishes `brief_quality_passed` or `brief_quality_failed`. Error-level issues block a direct transition. In `standard` and `speckit`, the first error-level report triggers one bounded tasks-only `auto-repair` of `tasks.md`, before `BRIEFS_READY` and `reviewing-briefs`. If the repaired tasks still have any error-level issue, the second report fails the run closed: briefs approval is not called, `reviewing-briefs` is not entered, and implementation does not start. This applies to every error-level issue, not only `empty_task_list`.
 
 The second unrepaired report is a terminal planning failure, not a user cancellation or abort. The failed result records the workflow failure and stops before briefs approval or implementation. A user cancellation or abort keeps cancellation semantics and does not publish the planning error.
 
@@ -358,7 +360,9 @@ Briefs review is separate from `workflow.approve`: `standard` and `speckit` ente
 
 ### Mode advisor
 
-`adviseMode()` in `src/engine/orchestrator/planning/mode-advisor.ts` is a deterministic keyword/pattern classifier. No LLM call. It classifies the feature prompt into a risk tier (`trivial` → instant, `small` → quick, `normal` → standard, `high` → speckit) and produces a `ModeAdviceKind`: `none`, `downgrade`, `upgrade`, or `missing-context`.
+`adviseMode()` in `src/engine/orchestrator/planning/mode-advisor.ts` is a deterministic keyword/pattern classifier. No LLM call. It classifies the feature prompt into a risk tier (`trivial` → quick, `small` → quick, `normal` → standard, `high` → speckit) and produces a `ModeAdviceKind`: `none`, `downgrade`, `upgrade`, or `missing-context`.
+
+The `trivial` tier does one thing beyond suggesting `quick`: `runPlanningPhase` passes `trivial: true` into the quick planning phase for that run, and `buildQuickPlanPrompt()` then tells the planner to skip the codebase-structure review and cap the run at one to five Task Briefs. The contract sections (Scope, Escalation, Evidence) are still required; only their length is relaxed.
 
 Upgrade and downgrade advice fire only when `confidence >= 0.65`. Missing-context fires below that threshold when the prompt is obviously vague.
 
@@ -366,13 +370,13 @@ The advisor never auto-switches the mode. It publishes a `mode_advice` event and
 
 ### Clarification questions
 
-All four modes extract planner `<!-- Q:{...} -->` markers and show the interactive `QuestionPrompt` panel above the composer (`collectAndPersistClarifications` in `src/engine/orchestrator/clarifications.ts`); the marker itself never appears in the transcript, in any mode. Known CLI runners preserve explicit markers across stream chunks, so a marker split between chunks still invokes the question flow once. Arbitrary prose questions are not inferred. The five-question cap holds everywhere.
+All three modes extract planner `<!-- Q:{...} -->` markers and show the interactive `QuestionPrompt` panel above the composer (`collectAndPersistClarifications` in `src/engine/orchestrator/clarifications.ts`); the marker itself never appears in the transcript, in any mode. Known CLI runners preserve explicit markers across stream chunks, so a marker split between chunks still invokes the question flow once. Arbitrary prose questions are not inferred. The five-question cap holds everywhere.
 
-Question IDs are unique for the planning run. The collector keeps the first question for an ID across planner callbacks, continuation turns, and the built-in zero-task retry, then applies the five-question cap to the distinct IDs. A later question with an ID already seen in that run is ignored.
+Question IDs are unique for the planning run. The collector keeps the first question for an ID across planner callbacks and continuation turns, then applies the five-question cap to the distinct IDs. A later question with an ID already seen in that run is ignored.
 
 `standard` and `speckit` collect clarifications mid-plan, after the phase's planner call, and regenerate the affected planning artifacts with the answers before moving on — existing behavior, unchanged by this feature.
 
-`quick` and `instant` ask after their single planner call completes, once tasks are already drafted: each answer is persisted under `## Clarifications` in `spec.md` and queued as a `QueuedMessage` (`origin: 'clarification'`) for the next planner invocation, with a native-inject attempt against the live planner session where the runner supports it. There is no automatic re-plan — `quick` and `instant` stay one planner call each; the answers ride along as queued context rather than triggering a second call.
+`quick` asks after its single planner call completes, once tasks are already drafted: each answer is persisted under `## Clarifications` in `spec.md` and queued as a `QueuedMessage` (`origin: 'clarification'`) for the next planner invocation, with a native-inject attempt against the live planner session where the runner supports it. There is no automatic re-plan — `quick` stays one planner call; the answers ride along as queued context rather than triggering a second call.
 
 Skipping, cancelling, or superseding a question lets the workflow proceed; no mode blocks on an answer that never comes.
 
@@ -463,7 +467,7 @@ An unresolved recovery also makes the stop audible: when the task loop re-enters
 
 Resume uses the capability matrix:
 
-1. Backend has `supportsSessionResume: true` and `plannerSessionId` is set → reuse the native session (Claude Code: `--session-id`, Agent SDK: `options.resume`).
+1. Backend has `supportsSessionResume: true` and `plannerSessionId` is set → reuse the native session (Claude Code: `--session-id`).
 2. Backend rejects the session (expired, unknown) → emit `session_expired`, notify user, fall through.
 3. Rebuild from `session.jsonl`: read transcript messages, use latest compact summary entry plus later messages. Pass as initial context to fresh planner call.
 4. If `persistTranscript: false` and step 1 failed → no transcript context is available. `applyRebuiltContext()` publishes a warning and continues with Task Brief transport plus any supporting spec/plan as handoff.

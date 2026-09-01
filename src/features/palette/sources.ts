@@ -3,8 +3,9 @@ import type { Phase } from '../../core/schemas/enums.js';
 import type { Session } from '../../core/schemas/session.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { CommandGuardContext, RuntimeCommandDef } from '../../core/runtime/commands/types.js';
+import { commandDisplayName } from '../../components/list-columns.js';
 import { detectedModelFact, seatSupportsImages } from '../../core/runners/capabilities.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import type { WorkflowTask } from '../../stores/workflow/tasks.js';
@@ -58,10 +59,21 @@ export function buildPaletteSources({
 }
 
 function describeCommand(command: RuntimeCommandDef): string {
-  if (command.kind === 'noarg') return command.description;
-  const hint =
-    command.args.kind === 'closed' ? `[${command.args.options.join('|')}]` : command.args.hint;
-  return `${command.description}  ${hint}`;
+  const parts = [command.description];
+  if (command.kind === 'arg') {
+    // An option set too large to spell out carries its own grammar hint; the description is also the
+    // fuzzy-match target, so hundreds of enumerated ids would swamp both.
+    parts.push(
+      command.args.kind === 'closed'
+        ? (command.args.hint ?? `[${command.args.options.join('|')}]`)
+        : command.args.hint,
+    );
+  }
+  // An argument-bearing alias gets no row of its own, so it rides in the description: that is both
+  // what the row shows and what the query is matched against, so typing 'planner' reaches /crew.
+  const withArgs = (command.aliases ?? []).filter((alias) => alias.args !== undefined);
+  if (withArgs.length > 0) parts.push(withArgs.map((alias) => alias.name).join(' '));
+  return parts.join('  ');
 }
 
 function runAction(raw: string, onRuntimeCommand: (raw: string) => unknown): PaletteAction {
@@ -71,27 +83,6 @@ function runAction(raw: string, onRuntimeCommand: (raw: string) => unknown): Pal
       void onRuntimeCommand(raw);
     },
   };
-}
-
-function aliasAction(
-  command: RuntimeCommandDef,
-  alias: { name: string; args?: string },
-  onRuntimeCommand: (raw: string) => unknown,
-): PaletteAction {
-  if (alias.args !== undefined) {
-    const raw = `${command.name} ${alias.args}`;
-    // A `closed` spec enumerates every accepted value, so an alias resolving to one is a whole
-    // command line. A `free` spec's hint is a grammar (`remove <index|id>`) whose head the alias
-    // only fills in — running it would only print a usage error, so hand the rest to the composer.
-    const isWholeCommandLine =
-      command.kind === 'arg' &&
-      command.args.kind === 'closed' &&
-      command.args.options.includes(alias.args);
-    if (isWholeCommandLine) return runAction(raw, onRuntimeCommand);
-    return { kind: 'prefill', text: `${raw} ` };
-  }
-  if (command.kind === 'arg') return { kind: 'prefill', text: `${alias.name} ` };
-  return runAction(alias.name, onRuntimeCommand);
 }
 
 export function buildCommandItems({
@@ -113,7 +104,7 @@ export function buildCommandItems({
     if (command.guard?.(guardContext) !== undefined) continue;
 
     items.push({
-      label: command.name,
+      label: commandDisplayName(command),
       description: describeCommand(command),
       shortcut: command.shortcut ?? null,
       category: command.category,
@@ -122,19 +113,6 @@ export function buildCommandItems({
           ? { kind: 'prefill', text: `${command.name} ` }
           : runAction(command.name, onRuntimeCommand),
     });
-
-    for (const alias of command.aliases ?? []) {
-      items.push({
-        label: alias.name,
-        description:
-          alias.args === undefined
-            ? `Alias for ${command.name}`
-            : `Alias for ${command.name} ${alias.args}`,
-        shortcut: null,
-        category: command.category,
-        action: aliasAction(command, alias, onRuntimeCommand),
-      });
-    }
   }
 
   return items;

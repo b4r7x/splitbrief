@@ -3,7 +3,7 @@ import type { RecoveryEstimateInput } from '../../../core/schemas/brief-recovery
 import type { NormalBriefRecoveryV1 } from '../../../core/schemas/brief-recovery/document.js';
 import { PLAN_FILE, SPEC_FILE, TASKS_FILE } from '../../../core/paths.js';
 import { readSpecFile } from '../../../core/paths-io.js';
-import { readRecoveryArtifact } from '../../../core/evidence/recovery-journal.js';
+import { readRecoveryArtifact } from '../../../core/evidence/recovery-journal/artifacts.js';
 import { runPricingIdentity } from '../../../core/providers/pricing-identity.js';
 import { getEscalatedTaskIds } from '../../../core/state/selectors.js';
 import { sha256Hex } from '../../../utils/sha256.js';

@@ -1,7 +1,7 @@
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { configStore } from '../../../stores/project/config.js';
-import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { useStores } from '../../../stores/use-stores.js';
 import type { CostBreakdown } from '../../../core/schemas/summary.js';
 import type { PricingState } from '../layout/cost-chrome.js';

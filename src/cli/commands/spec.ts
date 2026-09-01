@@ -17,6 +17,7 @@ import { stripTerminalControls } from '../../utils/display-text.js';
 import {
   emitEffectiveConfigWarnings,
   resolveEffectiveConfig,
+  type EffectiveConfigWarning,
 } from '../../core/config/runtime/effective-config.js';
 import { workflowOptsToCLIOverrides } from '../../core/config/runtime/overrides/from-options.js';
 import { assertNever } from '../../utils/type-guards.js';
@@ -34,7 +35,7 @@ import {
   promptCustomRunnerDisclosure,
 } from '../custom-runner-prompts.js';
 import { ALLOW_REPO_RUNNERS_HELP } from '../options.js';
-import { prepareExecution } from '../../engine/runners/prepare-execution.js';
+import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import {
   releasePreparedExecutionOwnership,
   rollbackPreparedExecutionOwnership,
@@ -68,7 +69,7 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
   program
     .command('spec <feature>')
     .description('Generate spec, plan, and tasks only (no implementation)')
-    .option('--mode <mode>', 'Workflow mode: instant, quick, standard, or speckit')
+    .option('--mode <mode>', 'Workflow mode: quick, standard, or speckit')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .option('--allow-hooks', 'Trust hook config without prompting (use in CI)', false)
     .option('--allow-repo-runners', ALLOW_REPO_RUNNERS_HELP, false)
@@ -86,7 +87,14 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
         overrides: workflowOptsToCLIOverrides(opts),
         loaderDiagnostics: loaded.loaderDiagnostics,
       });
-      emitEffectiveConfigWarnings(warnings);
+      // Load-time validation sees the raw file; resolveEffectiveConfig re-validates an
+      // already-preprocessed config, so notices about retired values are only on this side.
+      emitEffectiveConfigWarnings([
+        ...warnings,
+        ...loaded.warnings.map(
+          (message): EffectiveConfigWarning => ({ source: 'validation', message }),
+        ),
+      ]);
       const mode = getWorkflowMode(config);
 
       const interaction = process.stdin.isTTY ? 'interactive' : 'headless';
@@ -211,8 +219,6 @@ function selectPlanCall(
   mode: WorkflowMode,
 ): (opts: PlanOptions) => Promise<PlanResult> {
   switch (mode) {
-    case 'instant':
-      return planner.instantPlan ?? planner.quickPlan;
     case 'quick':
       return planner.quickPlan;
     case 'standard':

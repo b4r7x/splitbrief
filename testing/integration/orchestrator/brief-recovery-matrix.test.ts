@@ -46,7 +46,7 @@ const OWNER_ID = 'matrix-owner';
 const FENCE = 7;
 const NOW = '2026-08-13T00:00:00.000Z';
 
-type Mode = 'standard' | 'speckit' | 'instant' | 'quick';
+type Mode = 'standard' | 'speckit' | 'quick';
 type Entry = 'initial' | 'rewind' | 'regenerated-plan' | 'auto-split';
 type ProviderPlan = (
   input: RecoveryProviderRequest,
@@ -178,9 +178,7 @@ function continuationFor(mode: Mode, entry: Entry): BriefAdmissionInput['continu
   if (entry === 'auto-split') {
     throw new Error(`${mode} does not support auto-split continuation`);
   }
-  return mode === 'instant'
-    ? { version: 1, kind: 'instant-start', entry }
-    : { version: 1, kind: 'quick-start', entry };
+  return { version: 1, kind: 'quick-start', entry };
 }
 
 function normalRecovery(state: MutationRecord['state'] | null): NormalRecovery | null {
@@ -414,7 +412,7 @@ function modeEntries(): Array<[Mode, Entry]> {
     for (const entry of ['initial', 'rewind', 'regenerated-plan', 'auto-split'] as const)
       rows.push([mode, entry]);
   }
-  for (const mode of ['instant', 'quick'] as const) {
+  for (const mode of ['quick'] as const) {
     for (const entry of ['initial', 'rewind', 'regenerated-plan'] as const)
       rows.push([mode, entry]);
   }
@@ -536,12 +534,9 @@ describe('Brief recovery mode and entry matrix', () => {
   it.each(modeEntries())(
     '%s/%s preserves origin, continuation, allowance, persisted identity, and provider accounting',
     async (mode, entry) => {
-      const automatic =
-        ((mode === 'standard' || mode === 'speckit') && entry !== 'auto-split') ||
-        (mode === 'instant' && entry !== 'auto-split');
-      const issueCode = mode === 'instant' ? 'empty_task_list' : 'missing_scope';
+      const automatic = (mode === 'standard' || mode === 'speckit') && entry !== 'auto-split';
       const harness = makeHarness();
-      const input = makeAdmission(mode, entry, [qualityIssue(issueCode)]);
+      const input = makeAdmission(mode, entry, [qualityIssue()]);
       const result = await harness.controller.enterBriefAdmission(input, harness.authority());
       const state = harness.lastState();
 
@@ -563,11 +558,7 @@ describe('Brief recovery mode and entry matrix', () => {
         expect(recovery.matchingReport?.report).toEqual(input.report.report);
       }
       expect(recovery.automaticRepair.policy).toBe(
-        mode === 'instant'
-          ? 'zero-task-only'
-          : mode === 'quick' || entry === 'auto-split'
-            ? 'none'
-            : 'existing-one-shot',
+        mode === 'quick' || entry === 'auto-split' ? 'none' : 'existing-one-shot',
       );
       expect(harness.providerCalls).toHaveLength(automatic ? 1 : 0);
       expect(harness.accounting.filter((call) => call.kind === 'reserve')).toHaveLength(
@@ -848,7 +839,6 @@ describe('Brief recovery hydration and migration matrix', () => {
     'v4 retrying',
     'v4 ready',
     'v4 unresolved',
-    'terminal Instant',
     'terminal Quick',
     'storage-blocked',
     'idle rejected archive',
@@ -951,13 +941,12 @@ describe('Brief recovery hydration and migration matrix', () => {
         artifacts = legacyArtifacts();
         expected = 'unresolved';
         expect(retried.kind).toBe('unresolved');
-      } else if (name === 'terminal Instant' || name === 'terminal Quick') {
+      } else if (name === 'terminal Quick') {
         const state = makeHarness();
-        const mode = name === 'terminal Instant' ? 'instant' : 'quick';
-        const admission = makeAdmission(mode, 'initial', [qualityIssue()]);
+        const admission = makeAdmission('quick', 'initial', [qualityIssue()]);
         const admitted = await state.controller.enterBriefAdmission(admission, state.authority());
         const rejected = await state.controller.dispatchBriefAction(
-          rejectCommand(admission, admitted.epochId ?? 'missing', `terminal-${mode}`),
+          rejectCommand(admission, admitted.epochId ?? 'missing', 'terminal-quick'),
           state.authority(1),
         );
         rawState = workflowState(state.lastState()!, 'idle');
@@ -1008,7 +997,7 @@ describe('Brief recovery hydration and migration matrix', () => {
         });
         expected = 'blocked';
       } else if (name === 'v3 zero-task') {
-        rawState = legacyState('instant');
+        rawState = legacyState('quick');
         artifacts = legacyArtifacts('# Empty Brief\n', {
           version: 1,
           passed: false,

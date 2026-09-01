@@ -80,17 +80,15 @@ When the workflow needs a human decision — approve a spec, answer a question, 
 
 ## Modes
 
-Four modes trade speed for thoroughness:
+Three modes trade speed for thoroughness:
 
-**instant** — One planner call. Produces tasks directly. No spec, no approval gates. For renaming a variable or fixing a typo.
-
-**quick** — One planner call. Tasks only, no supporting documents. For small, well-understood changes.
+**quick** — One planner call. Tasks only, no supporting documents, no approval gates. For renaming a variable, fixing a typo, or any small, well-understood change.
 
 **standard** — Four planner calls: research → spec → plan → tasks. Spec approval gate before planning. The default for most work.
 
 **speckit** — Six to seven calls: adds clarification questions, constitution check, and post-plan analysis. Spec, plan, and briefs gates are active by default. For large, risky, or externally visible work.
 
-All four modes produce the same output: a list of Task Briefs. The difference is how much the planner thinks before writing them.
+All three modes produce the same output: a list of Task Briefs. The difference is how much the planner thinks before writing them.
 
 ---
 
@@ -106,23 +104,22 @@ Every workflow run is a session. A session is a folder on disk under `.splitbrie
 
 One foreground active session at a time per project directory. `.splitbrief/active` contains the current foreground session ID when the active pointer is present, while the per-session lockfile/heartbeat proves whether a process is still alive. Detached sessions use lockfiles. Isolated parallel sessions require git worktrees, which give each worktree its own `.splitbrief/`.
 
-`splitbrief resume` picks up the active interrupted workflow. If the active pointer is absent, use `splitbrief continue <session-id>` for a known resumable session. If the backend supports session persistence (Claude Code, Agent SDK), it reconnects. Otherwise, it rebuilds context from the JSONL log.
+`splitbrief resume` picks up the active interrupted workflow. If the active pointer is absent, use `splitbrief continue <session-id>` for a known resumable session. If the backend supports session persistence (Claude Code), it reconnects. Otherwise, it rebuilds context from the JSONL log.
 
 ---
 
-## Five runner kinds
+## Four runner kinds
 
-Both planner and implementer are pluggable. The same five backend kinds work for either role:
+Both planner and implementer are pluggable. The same four backend kinds work for either role:
 
-**cli** — Spawns a CLI tool as a subprocess. Claude Code, Codex, Aider, Copilot, Opencode, Kilo-Code.
+**cli** — Spawns a CLI tool as a subprocess. Claude Code, Codex, Copilot, Opencode, Kilo-Code, Cursor.
 
-**api** — Calls an OpenAI-compatible HTTP endpoint. Ollama, LM Studio, Anthropic, OpenRouter, DeepSeek, OpenAI, Groq, Together.
+**api** — Calls an OpenAI-compatible HTTP endpoint. Ollama, LM Studio, custom endpoint.
 
 **shell** — Runs an arbitrary command with stdin/stdout piping; no shell/network sandbox.
 
 **agent** — Subprocess that writes files directly to disk (no code extraction from response); no shell/network sandbox.
 
-**agent-sdk** — Anthropic Agent SDK library call with thread persistence.
 
 The orchestrator never branches on backend type. It calls `planner.plan()` and `implementer.implement()`. The factory dispatches to the right backend based on `config.planner.kind` and `config.implementer.kind`. Each backend exposes a capabilities struct — the orchestrator reads capabilities, not backend identity, to decide what's possible.
 
@@ -164,7 +161,7 @@ The workflow pauses at defined points for human review:
 - **Tiered approval** — During implementation, declared/promoted file-write requests are classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, or `package_change` and gated at three tiers: `auto` (allow silently), `sticky` (remember the user's choice), `confirm` (always ask). `network` is accepted only for config compatibility; it is not shell/network sandboxing.
 - **Cost gate** — Before tasks start, if the predicted cost exceeds the budget.
 
-`--approve none` skips spec/plan document gates. Briefs review is separate and still runs in modes that produce reviewable briefs. `--approve all` enables spec and plan gates. The mode sets the default: instant/quick skip spec/plan gates, standard gates on spec, speckit gates on spec and plan.
+`--approve none` skips spec/plan document gates. Briefs review is separate and still runs in modes that produce reviewable briefs. `--approve all` enables spec and plan gates. The mode sets the default: quick skips spec/plan gates, standard gates on spec, speckit gates on spec and plan.
 
 ---
 

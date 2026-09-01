@@ -10,8 +10,7 @@
         "method": "GET",
         "url": "http://localhost:11434/v1/models",
         "headers": {
-          "authorization": "***",
-          "anthropic-version": "2023-06-01"
+          "authorization": "***"
         },
         "body": null
       },
@@ -22,7 +21,7 @@
         },
         "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 44
     },
     {
@@ -32,8 +31,7 @@
         "method": "GET",
         "url": "http://localhost:11434/v1/models",
         "headers": {
-          "authorization": "***",
-          "anthropic-version": "2023-06-01"
+          "authorization": "***"
         },
         "body": null
       },
@@ -44,7 +42,7 @@
         },
         "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 44
     },
     {
@@ -54,8 +52,7 @@
         "method": "GET",
         "url": "http://localhost:11434/v1/models",
         "headers": {
-          "authorization": "***",
-          "anthropic-version": "2023-06-01"
+          "authorization": "***"
         },
         "body": null
       },
@@ -66,7 +63,7 @@
         },
         "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 44
     },
     {
@@ -74,10 +71,9 @@
       "recordedAt": "2026-04-30T12:10:03.000Z",
       "request": {
         "method": "POST",
-        "url": "http://localhost:11434/v1/messages",
+        "url": "http://localhost:11434/v1/chat/completions",
         "headers": {
           "authorization": "***",
-          "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
         "body": "{\"purpose\":\"planner research text\"}"
@@ -87,9 +83,9 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_standard_research\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":520,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"# Research\\n\\nThe fixture can be implemented with isolated TypeScript helpers and no external dependencies.\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":22}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"# Research\\n\\nThe fixture can be implemented with isolated TypeScript helpers and no external dependencies.\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":520,\"completion_tokens\":22}}\n\ndata: [DONE]\n\n"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 920
     },
     {
@@ -97,10 +93,9 @@
       "recordedAt": "2026-04-30T12:10:04.000Z",
       "request": {
         "method": "POST",
-        "url": "http://localhost:11434/v1/messages",
+        "url": "http://localhost:11434/v1/chat/completions",
         "headers": {
           "authorization": "***",
-          "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
         "body": "{\"purpose\":\"planner spec text\"}"
@@ -110,9 +105,9 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_standard_spec\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":610,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"# Specification\\n\\nBuild a static profile helper and a colocated Vitest test for the fixture project.\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":21}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"# Specification\\n\\nBuild a static profile helper and a colocated Vitest test for the fixture project.\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":610,\"completion_tokens\":21}}\n\ndata: [DONE]\n\n"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 990
     },
     {
@@ -120,10 +115,9 @@
       "recordedAt": "2026-04-30T12:10:05.000Z",
       "request": {
         "method": "POST",
-        "url": "http://localhost:11434/v1/messages",
+        "url": "http://localhost:11434/v1/chat/completions",
         "headers": {
           "authorization": "***",
-          "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
         "body": "{\"purpose\":\"planner plan text\"}"
@@ -133,9 +127,9 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_standard_plan\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":680,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"# Implementation Plan\\n\\n## Summary\\nAdd a static user profile helper and a colocated Vitest test for the fixture project.\\n\\n## Architecture Decisions\\n- Keep the profile data inline: the fixture project has no data layer to read from.\\n- Colocate the test with the helper so the feature stays in one module boundary.\\n\\n## File Structure\\n### New Files\\n- `src/profile.ts`\\n  Purpose: export a getUserProfile helper that returns the fixture user profile.\\n- `src/profile.test.ts`\\n  Purpose: assert the helper returns the fixture id, name, and role.\\n\\n### Modified Files\\n\\n## Dependencies\\nNone. The fixture project already depends on Vitest.\\n\\n## Data Model\\nUserProfile: { id: string; name: string; role: string }.\\n\\n## Key Implementation Details\\n- getUserProfile(): UserProfile returns the fixture user with no I/O and no persistence.\\n\\n## Testing Strategy\\n- One Vitest case asserting the returned name and role.\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":224}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"# Implementation Plan\\n\\n## Summary\\nAdd a static user profile helper and a colocated Vitest test for the fixture project.\\n\\n## Architecture Decisions\\n- Keep the profile data inline: the fixture project has no data layer to read from.\\n- Colocate the test with the helper so the feature stays in one module boundary.\\n\\n## File Structure\\n### New Files\\n- `src/profile.ts`\\n  Purpose: export a getUserProfile helper that returns the fixture user profile.\\n- `src/profile.test.ts`\\n  Purpose: assert the helper returns the fixture id, name, and role.\\n\\n### Modified Files\\n\\n## Dependencies\\nNone. The fixture project already depends on Vitest.\\n\\n## Data Model\\nUserProfile: { id: string; name: string; role: string }.\\n\\n## Key Implementation Details\\n- getUserProfile(): UserProfile returns the fixture user with no I/O and no persistence.\\n\\n## Testing Strategy\\n- One Vitest case asserting the returned name and role.\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":680,\"completion_tokens\":224}}\n\ndata: [DONE]\n\n"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 1010
     },
     {
@@ -143,10 +137,9 @@
       "recordedAt": "2026-04-30T12:10:06.000Z",
       "request": {
         "method": "POST",
-        "url": "http://localhost:11434/v1/messages",
+        "url": "http://localhost:11434/v1/chat/completions",
         "headers": {
           "authorization": "***",
-          "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
         "body": "{\"purpose\":\"planner standard task briefs\"}"
@@ -156,9 +149,9 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_standard_tasks\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":740,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"---\\nid: T001\\ntitle: Create profile helper\\naction: create\\nfile: src/profile.ts\\ndepends_on: []\\n---\\n### Description\\nCreate src/profile.ts with a getUserProfile helper for a static user profile.\\n\\n### Implementation Steps\\n1. Define a UserProfile type and a getUserProfile function.\\n2. Return deterministic id, name, and role fields.\\n\\n### Tests\\n- Verify getUserProfile returns id, name, and role values for the fixture user.\\n\\n### Scope\\n**In bounds:**\\n- src/profile.ts\\n**Out of bounds:**\\n- UI rendering or persistence.\\n\\n### Escalation\\n- Stop if profile data must come from a database or external service.\\n\\n### Evidence\\n- The helper returns a deterministic profile object.\\n\\n### Type Definitions\\n```ts\\nexport type UserProfile = { id: string; name: string; role: string };\\n```\\n---\\nid: T002\\ntitle: Create profile helper test\\naction: create\\nfile: src/profile.test.ts\\ndepends_on: T001\\n---\\n### Description\\nCreate src/profile.test.ts with a Vitest assertion for the profile helper.\\n\\n### Implementation Steps\\n1. Import the profile helper from the production module.\\n2. Assert the returned profile name and role.\\n\\n### Tests\\n- Verify the Vitest test file asserts the fixture profile shape.\\n\\n### Scope\\n**In bounds:**\\n- src/profile.test.ts\\n**Out of bounds:**\\n- Changing production behavior.\\n\\n### Escalation\\n- Stop if additional test setup or runtime configuration is required.\\n\\n### Evidence\\n- The test exercises the exported profile helper.\\n\\n### Type Definitions\\n```ts\\ntype ProfileTestCase = { expectedName: string; expectedRole: string };\\n```\\n\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":354}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"---\\nid: T001\\ntitle: Create profile helper\\naction: create\\nfile: src/profile.ts\\ndepends_on: []\\n---\\n### Description\\nCreate src/profile.ts with a getUserProfile helper for a static user profile.\\n\\n### Implementation Steps\\n1. Define a UserProfile type and a getUserProfile function.\\n2. Return deterministic id, name, and role fields.\\n\\n### Tests\\n- Verify getUserProfile returns id, name, and role values for the fixture user.\\n\\n### Scope\\n**In bounds:**\\n- src/profile.ts\\n**Out of bounds:**\\n- UI rendering or persistence.\\n\\n### Escalation\\n- Stop if profile data must come from a database or external service.\\n\\n### Evidence\\n- The helper returns a deterministic profile object.\\n\\n### Type Definitions\\n```ts\\nexport type UserProfile = { id: string; name: string; role: string };\\n```\\n---\\nid: T002\\ntitle: Create profile helper test\\naction: create\\nfile: src/profile.test.ts\\ndepends_on: T001\\n---\\n### Description\\nCreate src/profile.test.ts with a Vitest assertion for the profile helper.\\n\\n### Implementation Steps\\n1. Import the profile helper from the production module.\\n2. Assert the returned profile name and role.\\n\\n### Tests\\n- Verify the Vitest test file asserts the fixture profile shape.\\n\\n### Scope\\n**In bounds:**\\n- src/profile.test.ts\\n**Out of bounds:**\\n- Changing production behavior.\\n\\n### Escalation\\n- Stop if additional test setup or runtime configuration is required.\\n\\n### Evidence\\n- The test exercises the exported profile helper.\\n\\n### Type Definitions\\n```ts\\ntype ProfileTestCase = { expectedName: string; expectedRole: string };\\n```\\n\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":740,\"completion_tokens\":354}}\n\ndata: [DONE]\n\n"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 1720
     },
     {
@@ -168,8 +161,7 @@
         "method": "GET",
         "url": "http://localhost:11434/v1/models",
         "headers": {
-          "authorization": "***",
-          "anthropic-version": "2023-06-01"
+          "authorization": "***"
         },
         "body": null
       },
@@ -180,7 +172,7 @@
         },
         "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 44
     },
     {
@@ -188,10 +180,9 @@
       "recordedAt": "2026-04-30T12:10:08.000Z",
       "request": {
         "method": "POST",
-        "url": "http://localhost:11434/v1/messages",
+        "url": "http://localhost:11434/v1/chat/completions",
         "headers": {
           "authorization": "***",
-          "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
         "body": "{\"purpose\":\"implementer profile code\"}"
@@ -201,9 +192,9 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_standard_impl_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-haiku-4-5-20251001\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":500,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"```typescript\\nexport type UserProfile = {\\n  id: string;\\n  name: string;\\n  role: string;\\n};\\n\\nexport function getUserProfile(): UserProfile {\\n  return {\\n    id: 'user-1',\\n    name: 'Ada Lovelace',\\n    role: 'admin',\\n  };\\n}\\n```\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":66}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"```typescript\\nexport type UserProfile = {\\n  id: string;\\n  name: string;\\n  role: string;\\n};\\n\\nexport function getUserProfile(): UserProfile {\\n  return {\\n    id: 'user-1',\\n    name: 'Ada Lovelace',\\n    role: 'admin',\\n  };\\n}\\n```\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":500,\"completion_tokens\":66}}\n\ndata: [DONE]\n\n"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 870
     },
     {
@@ -213,8 +204,7 @@
         "method": "GET",
         "url": "http://localhost:11434/v1/models",
         "headers": {
-          "authorization": "***",
-          "anthropic-version": "2023-06-01"
+          "authorization": "***"
         },
         "body": null
       },
@@ -225,7 +215,7 @@
         },
         "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 44
     },
     {
@@ -233,10 +223,9 @@
       "recordedAt": "2026-04-30T12:10:10.000Z",
       "request": {
         "method": "POST",
-        "url": "http://localhost:11434/v1/messages",
+        "url": "http://localhost:11434/v1/chat/completions",
         "headers": {
           "authorization": "***",
-          "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
         "body": "{\"purpose\":\"implementer profile test code\"}"
@@ -246,9 +235,9 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_standard_impl_2\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-haiku-4-5-20251001\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":520,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"```typescript\\nimport { describe, expect, it } from 'vitest';\\nimport { getUserProfile } from './profile.js';\\n\\ndescribe('getUserProfile', () => {\\n  it('returns the fixture profile', () => {\\n    expect(getUserProfile()).toEqual({\\n      id: 'user-1',\\n      name: 'Ada Lovelace',\\n      role: 'admin',\\n    });\\n  });\\n});\\n```\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":86}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"```typescript\\nimport { describe, expect, it } from 'vitest';\\nimport { getUserProfile } from './profile.js';\\n\\ndescribe('getUserProfile', () => {\\n  it('returns the fixture profile', () => {\\n    expect(getUserProfile()).toEqual({\\n      id: 'user-1',\\n      name: 'Ada Lovelace',\\n      role: 'admin',\\n    });\\n  });\\n});\\n```\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":520,\"completion_tokens\":86}}\n\ndata: [DONE]\n\n"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 910
     },
     {
@@ -256,10 +245,9 @@
       "recordedAt": "2026-04-30T12:10:11.000Z",
       "request": {
         "method": "POST",
-        "url": "http://localhost:11434/v1/messages",
+        "url": "http://localhost:11434/v1/chat/completions",
         "headers": {
           "authorization": "***",
-          "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
         "body": "{\"purpose\":\"planner final review\"}"
@@ -269,17 +257,17 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_standard_review\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":340,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Review complete. The workflow changes match the task briefs.\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":14}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Review complete. The workflow changes match the task briefs.\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":340,\"completion_tokens\":14}}\n\ndata: [DONE]\n\n"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 650
     }
   ],
   "meta": {
     "mode": "standard",
-    "plannerProvider": "openai",
-    "plannerModel": "gpt-4o",
-    "implementerProvider": "openai",
-    "implementerModel": "gpt-4o-mini"
+    "plannerProvider": "custom-endpoint",
+    "plannerModel": "claude-sonnet-4-6",
+    "implementerProvider": "custom-endpoint",
+    "implementerModel": "claude-haiku-4-5-20251001"
   }
 }

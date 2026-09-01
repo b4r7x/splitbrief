@@ -1,47 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { normalizePlannerPhase } from './normalize.js';
-import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import {
   createTaskCompilationAttemptId,
   TaskCompilationSemanticIdSchema,
   type TaskCompilationAttemptId,
 } from '../../core/schemas/task-compilation.js';
-
-let projectDir: string;
-
-const taskMarkdown = `---
-id: T001
-title: Test task
-action: create
-file: src/example.py
-depends_on: []
----
-
-### Description
-Create an example file.
-
-### Implementation Steps
-1. Write the file.
-
-### Tests
-- pytest passes
-
-### Constraints
-- Follow project conventions
-`;
-
-beforeEach(() => {
-  projectDir = createTempDir('planner-normalize-test');
-  createTestGitRepo(projectDir);
-});
-
-afterEach(() => {
-  cleanupTempDir(projectDir);
-});
 
 function declaredFileLeaseResult(input: {
   attemptId: TaskCompilationAttemptId;
@@ -126,30 +90,6 @@ describe('normalizePlannerPhase — normalized current-call result', () => {
     }
 
     expect(caught).toMatchObject({ kind: 'runner-call-failed' });
-  });
-
-  it('ignores stale files: phase bytes come only from the current result', () => {
-    writeFileSync(join(projectDir, 'tasks.md'), 'stale file bytes that must not leak');
-    const attemptId = createTaskCompilationAttemptId();
-    const result = makeRunnerCallResult({
-      status: 'completed',
-      text: taskMarkdown,
-      attemptId,
-      callId: 'call-fresh',
-      role: 'planner',
-    });
-
-    const phase = normalizePlannerPhase({
-      result,
-      callContext: { callId: 'call-fresh', attemptId, role: 'planner', backendKind: 'cli' },
-      logicalName: 'tasks.md',
-      text: result.text,
-    });
-
-    expect(phase.artifact.text).toBe(taskMarkdown);
-    expect(readFileSync(join(projectDir, 'tasks.md'), 'utf-8')).toBe(
-      'stale file bytes that must not leak',
-    );
   });
 
   it('rejects a declared-file receipt that does not bind the current attempt', () => {

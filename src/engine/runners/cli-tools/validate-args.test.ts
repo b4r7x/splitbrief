@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import {
+  COMMAND_CODE_PROTECTED_FLAGS,
+  COMMAND_CODE_PROTECTED_SHORT_VALUE_FLAGS,
+} from './command-code.js';
 import { CURSOR_PROTECTED_FLAGS, CURSOR_PROTECTED_SHORT_VALUE_FLAGS } from './cursor.js';
 import { parseCliSemanticVector, validateCliArgs } from './validate-args.js';
 
@@ -10,6 +14,28 @@ function validateWithTail(tail: readonly string[]) {
     baseArgs: BASE_ARGS,
     protectedFlags: new Set(['--model', '-m', '-p']),
     protectedShortValueFlags: new Set(['-m']),
+    promptTransport: 'argv',
+  });
+}
+
+const CURSOR_BASE_ARGS = [
+  '--print',
+  '--output-format',
+  'stream-json',
+  '--mode',
+  'plan',
+  '<PROMPT>',
+];
+
+function validateCursorTail(
+  tail: readonly string[],
+  protectedShortValueFlags?: ReadonlySet<string>,
+) {
+  return validateCliArgs({
+    invocationArgs: [...CURSOR_BASE_ARGS, ...tail],
+    baseArgs: CURSOR_BASE_ARGS,
+    protectedFlags: CURSOR_PROTECTED_FLAGS,
+    protectedShortValueFlags,
     promptTransport: 'argv',
   });
 }
@@ -64,36 +90,17 @@ describe('validateCliArgs', () => {
     });
   });
 
-  it('rejects plural and camelCase authority spellings', () => {
-    expect(validateWithTail(['--hooks', 'pre.js'])).toEqual({
-      valid: false,
-      conflicts: ['--hooks'],
-    });
-    expect(validateWithTail(['--plugins', 'one'])).toEqual({
-      valid: false,
-      conflicts: ['--plugins'],
-    });
-    expect(validateWithTail(['--tools', 'x'])).toEqual({ valid: false, conflicts: ['--tools'] });
-    expect(validateWithTail(['--permissions', 'x'])).toEqual({
-      valid: false,
-      conflicts: ['--permissions'],
-    });
-    expect(validateWithTail(['--approvals', 'x'])).toEqual({
-      valid: false,
-      conflicts: ['--approvals'],
-    });
-    expect(validateWithTail(['--approve-for-me'])).toEqual({
-      valid: false,
-      conflicts: ['--approve-for-me'],
-    });
-    expect(validateWithTail(['--allowedTools', 'Write'])).toEqual({
-      valid: false,
-      conflicts: ['--allowedTools'],
-    });
-    expect(validateWithTail(['--dangerouslySkipPermissions'])).toEqual({
-      valid: false,
-      conflicts: ['--dangerouslySkipPermissions'],
-    });
+  it.each([
+    [['--hooks', 'pre.js'], '--hooks'],
+    [['--plugins', 'one'], '--plugins'],
+    [['--tools', 'x'], '--tools'],
+    [['--permissions', 'x'], '--permissions'],
+    [['--approvals', 'x'], '--approvals'],
+    [['--approve-for-me'], '--approve-for-me'],
+    [['--allowedTools', 'Write'], '--allowedTools'],
+    [['--dangerouslySkipPermissions'], '--dangerouslySkipPermissions'],
+  ] as const)('rejects the plural or camelCase authority spelling %j', (tail, conflict) => {
+    expect(validateWithTail(tail)).toEqual({ valid: false, conflicts: [conflict] });
   });
 
   it('leaves ordinary configured flags alone', () => {
@@ -101,97 +108,73 @@ describe('validateCliArgs', () => {
     expect(validateWithTail([])).toEqual({ valid: true });
   });
 
-  it('cursor user args cannot inject a protected flag', () => {
-    const base = ['--print', '--output-format', 'stream-json', '--mode', 'plan', '<PROMPT>'];
-    expect(
-      validateCliArgs({
-        invocationArgs: [...base, '--force'],
+  it.each([
+    [['--force'], '--force'],
+    [['--yolo'], '--yolo'],
+    [['--trust'], '--trust'],
+    [['-f'], '-f'],
+    [['--workspace', '/tmp/other'], '--workspace'],
+    [['--worktree', '/tmp/other'], '--worktree'],
+    [['--auto-review'], '--auto-review'],
+    [['--header', 'X-Test: 1'], '--header'],
+    [['-H', 'X-Test: 1'], '-H'],
+  ] as const)('cursor user args cannot inject the protected flag %j', (tail, conflict) => {
+    expect(validateCursorTail(tail)).toEqual({ valid: false, conflicts: [conflict] });
+  });
+
+  it('cursor user args cannot inject a protected flag with an attached short value', () => {
+    expect(validateCursorTail(['-HX-Test:1'], CURSOR_PROTECTED_SHORT_VALUE_FLAGS)).toEqual({
+      valid: false,
+      conflicts: ['-H'],
+    });
+  });
+
+  it('leaves the untouched cursor base invocation alone', () => {
+    expect(validateCursorTail([])).toEqual({ valid: true });
+  });
+
+  it('command-code user args cannot inject a protected flag', () => {
+    const base = [
+      '-p',
+      '--output-format',
+      'json',
+      '--trust',
+      '--skip-onboarding',
+      '--permission-mode',
+      'plan',
+      '<PROMPT>',
+    ];
+    function validateCommandCodeTail(tail: readonly string[]) {
+      return validateCliArgs({
+        invocationArgs: [...base, ...tail],
         baseArgs: base,
-        protectedFlags: CURSOR_PROTECTED_FLAGS,
+        protectedFlags: COMMAND_CODE_PROTECTED_FLAGS,
+        protectedShortValueFlags: COMMAND_CODE_PROTECTED_SHORT_VALUE_FLAGS,
         promptTransport: 'argv',
-      }),
-    ).toEqual({ valid: false, conflicts: ['--force'] });
-    expect(
-      validateCliArgs({
-        invocationArgs: [...base, '--yolo'],
-        baseArgs: base,
-        protectedFlags: CURSOR_PROTECTED_FLAGS,
-        promptTransport: 'argv',
-      }),
-    ).toEqual({ valid: false, conflicts: ['--yolo'] });
-    expect(
-      validateCliArgs({
-        invocationArgs: [...base, '--trust'],
-        baseArgs: base,
-        protectedFlags: CURSOR_PROTECTED_FLAGS,
-        promptTransport: 'argv',
-      }),
-    ).toEqual({ valid: false, conflicts: ['--trust'] });
-    expect(
-      validateCliArgs({
-        invocationArgs: [...base, '-f'],
-        baseArgs: base,
-        protectedFlags: CURSOR_PROTECTED_FLAGS,
-        promptTransport: 'argv',
-      }),
-    ).toEqual({ valid: false, conflicts: ['-f'] });
-    expect(
-      validateCliArgs({
-        invocationArgs: [...base, '--workspace', '/tmp/other'],
-        baseArgs: base,
-        protectedFlags: CURSOR_PROTECTED_FLAGS,
-        promptTransport: 'argv',
-      }),
-    ).toEqual({ valid: false, conflicts: ['--workspace'] });
-    expect(
-      validateCliArgs({
-        invocationArgs: [...base, '--worktree', '/tmp/other'],
-        baseArgs: base,
-        protectedFlags: CURSOR_PROTECTED_FLAGS,
-        promptTransport: 'argv',
-      }),
-    ).toEqual({ valid: false, conflicts: ['--worktree'] });
-    expect(
-      validateCliArgs({
-        invocationArgs: [...base, '--auto-review'],
-        baseArgs: base,
-        protectedFlags: CURSOR_PROTECTED_FLAGS,
-        promptTransport: 'argv',
-      }),
-    ).toEqual({ valid: false, conflicts: ['--auto-review'] });
-    expect(
-      validateCliArgs({
-        invocationArgs: [...base, '--header', 'X-Test: 1'],
-        baseArgs: base,
-        protectedFlags: CURSOR_PROTECTED_FLAGS,
-        promptTransport: 'argv',
-      }),
-    ).toEqual({ valid: false, conflicts: ['--header'] });
-    expect(
-      validateCliArgs({
-        invocationArgs: [...base, '-H', 'X-Test: 1'],
-        baseArgs: base,
-        protectedFlags: CURSOR_PROTECTED_FLAGS,
-        promptTransport: 'argv',
-      }),
-    ).toEqual({ valid: false, conflicts: ['-H'] });
-    expect(
-      validateCliArgs({
-        invocationArgs: [...base, '-HX-Test:1'],
-        baseArgs: base,
-        protectedFlags: CURSOR_PROTECTED_FLAGS,
-        protectedShortValueFlags: CURSOR_PROTECTED_SHORT_VALUE_FLAGS,
-        promptTransport: 'argv',
-      }),
-    ).toEqual({ valid: false, conflicts: ['-H'] });
-    expect(
-      validateCliArgs({
-        invocationArgs: base,
-        baseArgs: base,
-        protectedFlags: CURSOR_PROTECTED_FLAGS,
-        promptTransport: 'argv',
-      }),
-    ).toEqual({ valid: true });
+      });
+    }
+
+    expect(validateCommandCodeTail(['--permission-mode', 'dont-ask'])).toEqual({
+      valid: false,
+      conflicts: ['--permission-mode'],
+    });
+    expect(validateCommandCodeTail(['--yolo'])).toEqual({ valid: false, conflicts: ['--yolo'] });
+    expect(validateCommandCodeTail(['--dangerously-skip-permissions'])).toEqual({
+      valid: false,
+      conflicts: ['--dangerously-skip-permissions'],
+    });
+    expect(validateCommandCodeTail(['--output-format', 'text'])).toEqual({
+      valid: false,
+      conflicts: ['--output-format'],
+    });
+    expect(validateCommandCodeTail(['-m', 'other'])).toEqual({ valid: false, conflicts: ['-m'] });
+    expect(validateCommandCodeTail(['-mother'])).toEqual({ valid: false, conflicts: ['-m'] });
+    expect(validateCommandCodeTail(['-p'])).toEqual({ valid: false, conflicts: ['-p'] });
+    expect(validateCommandCodeTail(['--session', 'transcript.jsonl'])).toEqual({
+      valid: false,
+      conflicts: ['--session'],
+    });
+    expect(validateCommandCodeTail(['--verbose'])).toEqual({ valid: true });
   });
 });
 

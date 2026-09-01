@@ -18,11 +18,6 @@ export const providerError = {
     error('provider-not-api', `getImplementerProvider requires kind=api, got kind=${kind}`, {
       kind,
     }),
-  anthropicNotOpenAICompat: () =>
-    error(
-      'provider-anthropic-not-openai-compat',
-      'Anthropic API is not OpenAI-compatible; use the Anthropic streaming path',
-    ),
   missingModel: (role: 'planner' | 'implementer') =>
     error(
       'provider-missing-model',
@@ -39,12 +34,6 @@ export const providerError = {
       `Prompt (${promptTokens} tokens) leaves no room for output within the ${contextLength}-token context window. ` +
         `Raise ${role}.contextLength or reduce the task context.`,
       { promptTokens, contextLength },
-    ),
-  expectedOpenAIClient: (provider: string) =>
-    error(
-      'provider-expected-openai-client',
-      `Expected OpenAI-compatible client for provider '${provider}'`,
-      { provider },
     ),
   httpFailure: (status: number, url: string) =>
     error('provider-http-failure', `HTTP ${status}`, { status, url }),
@@ -69,38 +58,4 @@ export const providerError = {
       'provider-ollama-local-credential-invalid',
       'Local Ollama accepts no apiKey or exactly env:OLLAMA_LOCAL_API_KEY',
     ),
-  apiBaseExfiltration: (provider: string, envVar: string) =>
-    error(
-      'provider-api-base-exfiltration',
-      `Refusing to send ${envVar} to a custom apiBase for known provider '${provider}'. ` +
-        `This combination can exfiltrate API keys. Either remove the apiBase override, ` +
-        `or set the API key explicitly in the same config (not via environment variable).`,
-      { provider, envVar },
-    ),
-  admissionOmitRequiresAbsentSource: (relativePath: string) =>
-    error(
-      'provider-admission-omit-absent-source',
-      `Provider admission OMIT requires absent candidate source: ${relativePath}`,
-      { relativePath },
-    ),
-  admissionPassRequiresRetainedSource: (relativePath: string) =>
-    error(
-      'provider-admission-pass-retained-source',
-      `Provider admission PASS requires retained candidate source: ${relativePath}`,
-      { relativePath },
-    ),
-  passCandidateMissingImport: (id: string) =>
-    error(
-      'provider-pass-candidate-missing-import',
-      `PASS verdict ${id} requires a static candidate import in registry.ts`,
-      { id },
-    ),
-  passCandidateMissingCatalog: (id: string) =>
-    error(
-      'provider-pass-candidate-missing-catalog',
-      `PASS verdict ${id} is missing from API_PROVIDER_CATALOG`,
-      { id },
-    ),
-  candidateCatalogMismatch: (message: string, id: string) =>
-    error('provider-candidate-catalog-mismatch', message, { id }),
 } as const;

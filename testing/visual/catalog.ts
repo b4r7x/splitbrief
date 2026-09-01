@@ -458,7 +458,7 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       },
       {
         id: 'overlay-picker-routes-unchecked',
-        title: 'Overlay · planner picker · routes without a credential oracle',
+        title: 'Overlay · planner picker · routes with no credential read',
         marker: PICKER_TITLE_MARKER,
       },
       {
@@ -495,11 +495,6 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-picker-custom-model',
         title: 'Overlay · planner picker · custom model entry',
         marker: 'Custom model',
-      },
-      {
-        id: 'overlay-picker-api-key',
-        title: 'Overlay · planner picker · API key entry',
-        marker: 'Add API key',
       },
     ],
   }),

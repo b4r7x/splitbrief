@@ -173,7 +173,7 @@ describe('detection schemas', () => {
       source: 'test fixture pricing record',
     };
     const detection = {
-      provider: 'openai',
+      provider: 'ollama',
       available: true,
       models: [
         {
@@ -203,7 +203,7 @@ describe('detection schemas', () => {
           releaseDate: '2026-07-31',
         },
       ],
-      isLocal: false,
+      isLocal: true,
       hasKey: true,
     } as const;
 
@@ -222,7 +222,7 @@ describe('detection schemas', () => {
     ).toBe(true);
   });
 
-  it.each(['claude-code', 'shell', 'agent-sdk'])(
+  it.each(['claude-code', 'shell', 'agent'])(
     'rejects non-API runner ID %s as provider detection',
     (provider) => {
       expect(
@@ -237,9 +237,9 @@ describe('detection schemas', () => {
 
   it.each(PROVIDER_DETECTION_FAILURE_KINDS)('round-trips a %s provider failure', (failure) => {
     const detection = {
-      provider: 'openai',
+      provider: 'ollama',
       available: false,
-      isLocal: false,
+      isLocal: true,
       hasKey: true,
       failure,
       error: 'Provider model discovery failed.',
@@ -252,9 +252,9 @@ describe('detection schemas', () => {
 
   it('accepts cached provider payloads that predate the failure field', () => {
     const legacy = {
-      provider: 'openai',
+      provider: 'ollama',
       available: false,
-      isLocal: false,
+      isLocal: true,
       hasKey: false,
       error: 'Provider credential is not configured.',
     };
@@ -267,9 +267,9 @@ describe('detection schemas', () => {
   it('rejects provider failure values outside the known kinds', () => {
     expect(
       ProviderDetectionSchema.safeParse({
-        provider: 'openai',
+        provider: 'ollama',
         available: false,
-        isLocal: false,
+        isLocal: true,
         failure: 'unreachable',
       }).success,
     ).toBe(false);
@@ -316,10 +316,10 @@ describe('detection schemas', () => {
       pricingProvenance,
     };
     const provider = {
-      provider: 'openai',
+      provider: 'ollama',
       available: true,
       models: [model],
-      isLocal: false,
+      isLocal: true,
       hasKey: true,
     } as const;
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Text } from 'ink';
+import { Box, Text } from 'ink';
 import { useTheme } from '../../components/theme.js';
 import type { SkillMeta } from '../../core/skills/types.js';
 import { filterByFields } from '../../components/pickers/filtering.js';
@@ -10,7 +10,10 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { useStores } from '../../stores/use-stores.js';
 import { truncateTerminalDisplayText } from '../../utils/display-text.js';
 import { FilterableList } from '../../components/pickers/filterable-list.js';
-import { SPLITBRIEF_DIR } from '../../core/paths.js';
+import {
+  GLOBAL_SKILL_SCAN_PATH_LABELS,
+  PROJECT_SKILL_SCAN_PATH_LABELS,
+} from '../../core/skills/scan-paths.js';
 
 const filterSkill = (s: SkillMeta, query: string): boolean => {
   if (query.endsWith(' ')) {
@@ -23,6 +26,13 @@ const SECTION_LABELS = {
   project: 'Project',
   global: 'Global',
 } as const;
+
+const SCAN_GROUPS = [
+  { label: SECTION_LABELS.project, paths: PROJECT_SKILL_SCAN_PATH_LABELS },
+  { label: SECTION_LABELS.global, paths: GLOBAL_SKILL_SCAN_PATH_LABELS },
+];
+
+const SCAN_LABEL_COL = 9;
 
 interface SkillRowProps {
   skill: SkillMeta;
@@ -96,7 +106,7 @@ export function SkillsPicker() {
       title={`Skills${SOFT_SEP}${checked.size} selected`}
       hint={hintText}
       chromeRows={12}
-      density="wide"
+      density="roomy"
       customKeys={(
         input,
         key,
@@ -140,9 +150,23 @@ export function SkillsPicker() {
       }}
       placeholder={
         skills.length === 0 ? (
-          <Text color={t.textDim}>
-            No skills yet — add them under .claude/skills/ or {SPLITBRIEF_DIR}/skills/
-          </Text>
+          <Box flexDirection="column">
+            <Text color={t.textDim}>No skills found. Scanned, in precedence order:</Text>
+            {SCAN_GROUPS.map((group) => (
+              <Box key={group.label}>
+                <Box width={SCAN_LABEL_COL}>
+                  <Text color={t.textDim}>{group.label}</Text>
+                </Box>
+                <Box flexDirection="column">
+                  {group.paths.map((path) => (
+                    <Text key={path} color={t.textDim}>
+                      {path}
+                    </Text>
+                  ))}
+                </Box>
+              </Box>
+            ))}
+          </Box>
         ) : (
           <Text color={t.textDim}>No matching skills</Text>
         )
@@ -166,7 +190,7 @@ export function SkillsPicker() {
             nameColWidth={nameColWidth}
             descMaxWidth={Math.max(1, innerWidth - 5 - nameColWidth)}
             width={innerWidth}
-            showDesc={innerWidth >= 76}
+            showDesc={innerWidth >= 70}
           />
         );
       }}

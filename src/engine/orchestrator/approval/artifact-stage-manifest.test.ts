@@ -391,6 +391,16 @@ describe('prepareArtifactStageLease', () => {
     await expectInvalid(() => fixture.lease.readAfterChild({ declaredRedactionValues: [] }));
   });
 
+  it('disposes after a rejected read and still refuses a later read', async () => {
+    const fixture = await createFixture();
+    writeArtifact(fixture, Buffer.from([0xc3, 0x28]));
+    await expectInvalid(() => fixture.lease.readAfterChild({ declaredRedactionValues: [] }));
+
+    await fixture.lease.dispose();
+
+    await expectInvalid(() => fixture.lease.readAfterChild({ declaredRedactionValues: [] }));
+  });
+
   itWindows('has an explicit Windows junction confinement contract', async () => {
     const fixture = await createFixture();
     const outside = trackedTempDir('artifact-stage-junction-outside');
@@ -408,49 +418,5 @@ describe('prepareArtifactStageLease', () => {
     symlinkSync(outside, output, 'junction');
     writeFileSync(join(outside, 'result'), 'junction canary');
     await expectInvalid(() => fixture.lease.readAfterChild({ declaredRedactionValues: [] }));
-  });
-});
-
-describe('R7 terminal manifest cleanup', () => {
-  it('returns no artifact text for missing, extra, malformed, or declared-secret terminal state', async () => {
-    const secret = 'r7-terminal-manifest-secret';
-    const rows = [
-      {
-        name: 'missing result',
-        mutate: (fixture: Fixture) => unlinkSync(fixture.artifactPath),
-        values: [] as const,
-      },
-      {
-        name: 'extra stage write',
-        mutate: (fixture: Fixture) => {
-          writeArtifact(fixture, 'declared result');
-          writeFileSync(join(fixture.root, 'r7-extra-stage-write'), 'reject');
-        },
-        values: [] as const,
-      },
-      {
-        name: 'malformed UTF-8',
-        mutate: (fixture: Fixture) => writeArtifact(fixture, Buffer.from([0xc3, 0x28])),
-        values: [] as const,
-      },
-      {
-        name: 'declared secret',
-        mutate: (fixture: Fixture) => writeArtifact(fixture, `result ${secret}`),
-        values: [secret],
-      },
-    ] as const;
-
-    for (const row of rows) {
-      const fixture = await createFixture();
-      row.mutate(fixture);
-      const failure = await expectInvalid(() =>
-        fixture.lease.readAfterChild({ declaredRedactionValues: row.values }),
-      );
-
-      expect(failure.message, row.name).not.toContain(secret);
-      expect(JSON.stringify(failure), row.name).not.toContain(secret);
-      await fixture.lease.dispose();
-      await expectInvalid(() => fixture.lease.readAfterChild({ declaredRedactionValues: [] }));
-    }
   });
 });

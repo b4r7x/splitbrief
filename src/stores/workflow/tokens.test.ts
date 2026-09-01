@@ -366,7 +366,9 @@ describe('tokensStore — per-task attempt accumulation', () => {
   beforeEach(() => resetWorkflow());
 
   it('keeps one attempt record per task_tokens event and sums tokens for display', () => {
-    addEvent(makeTaskTokens({ implementerTokens: 100, tool: 'deepseek', model: 'deepseek-chat' }));
+    addEvent(
+      makeTaskTokens({ implementerTokens: 100, tool: 'custom-endpoint', model: 'custom-chat' }),
+    );
     addEvent(
       makeTaskTokens({
         implementerTokens: 250,
@@ -379,8 +381,8 @@ describe('tokensStore — per-task attempt accumulation', () => {
     const record = tokensStore.get().perTask['T001'];
     expect(record?.totalTokens).toBe(350);
     expect(record?.attempts).toHaveLength(2);
-    expect(record?.attempts?.map((a) => a.tool)).toEqual(['deepseek', 'claude-code']);
-    expect(record?.attempts?.map((a) => a.model)).toEqual(['deepseek-chat', 'claude-opus-4-6']);
+    expect(record?.attempts?.map((a) => a.tool)).toEqual(['custom-endpoint', 'claude-code']);
+    expect(record?.attempts?.map((a) => a.model)).toEqual(['custom-chat', 'claude-opus-4-6']);
   });
 
   it('preserves routing, context, and cache metadata from task_tokens', () => {

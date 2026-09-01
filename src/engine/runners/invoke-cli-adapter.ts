@@ -14,7 +14,7 @@ import type {
 } from './cli-tools/contract.js';
 import { reconcileFinalText } from '../streaming/final-text.js';
 import { invokeProcessCli } from './cli-tools/process-invoke.js';
-import { SANDBOX_CREDENTIAL_VALUES, sandboxCredentialValues } from './sandbox-env.js';
+import { SANDBOX_CREDENTIAL_VALUES, sandboxCredentialValues } from './sandbox-credential-values.js';
 
 /** The process executor owns explicit runner timeouts; this is its no-deadline sentinel. */
 export const CLI_NO_DEADLINE_MS = 2_147_000_000;

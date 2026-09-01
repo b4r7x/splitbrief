@@ -67,7 +67,7 @@ describe('editorStore scrollBy', () => {
   });
 });
 
-describe('editorStore wheel scroll origin after keyboard navigation (REQ-030)', () => {
+describe('editorStore wheel scroll origin after keyboard navigation', () => {
   it('syncs scrollTop on caret motion so scrollBy nudges from what is displayed, not a stale origin', () => {
     const layout: EditorLayout = { columns: 4, rows: 3 };
     const owner = reviewStore.setReviewFile('spec.md');
@@ -86,7 +86,7 @@ describe('editorStore wheel scroll origin after keyboard navigation (REQ-030)', 
   });
 });
 
-describe('editorStore setLayout re-follows the caret after reflow (REQ-033 / REQ-029)', () => {
+describe('editorStore setLayout re-follows the caret after reflow', () => {
   it('keeps the caret in the visible window when a narrower width re-wraps it lower', () => {
     const owner = reviewStore.setReviewFile('spec.md');
     editorStore.openRaw({

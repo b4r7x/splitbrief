@@ -50,7 +50,7 @@ describe('deriveCrewSeats', () => {
 
   it('keeps the YAML-only escalation config out of the build seat', () => {
     const config = makeConfig({
-      escalation: { intermediateProvider: 'deepseek', intermediateModel: 'deepseek-chat' },
+      escalation: { intermediateProvider: 'ollama', intermediateModel: 'llama3.1' },
     });
     const build = seatOf(deriveCrewSeats({ config }), 'build');
 
@@ -73,14 +73,49 @@ describe('deriveCrewSeats', () => {
     expect(plan.model).toContain('auto');
   });
 
-  it('carries the planner effort the config states', () => {
+  it('keeps the claude-code effort channel on the effort field', () => {
     const config = makeConfig({
       planner: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4', effort: 'high' },
     });
     const plan = seatOf(deriveCrewSeats({ config }), 'plan');
 
-    expect(plan.effort).toBe('high');
-    expect(plan.supportsEffort).toBe(true);
+    expect(plan.channel).toBe('effort-flag');
+    expect(plan.effortValue).toBe('high');
+  });
+
+  it("reports the opencode build seat's variant channel and its saved variant", () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'openai/gpt-5.6-luna',
+        variant: 'xhigh',
+      },
+    });
+    const build = seatOf(deriveCrewSeats({ config }), 'build');
+
+    expect(build.channel).toBe('variant');
+    expect(build.effortValue).toBe('xhigh');
+  });
+
+  it("reads a cursor seat's effort out of its model id", () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'cursor', model: 'gpt-5.6-luna-high-fast' },
+    });
+    const plan = seatOf(deriveCrewSeats({ config }), 'plan');
+
+    expect(plan.channel).toBe('model-id');
+    expect(plan.effortValue).toBe('high');
+  });
+
+  it('leaves a cursor seat whose id spells no effort with no value', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'cursor', model: 'composer-2.5' },
+    });
+    const plan = seatOf(deriveCrewSeats({ config }), 'plan');
+
+    expect(plan.channel).toBe('model-id');
+    expect(plan.effortValue).toBeUndefined();
   });
 
   it('refuses effort on a build seat no implementer adapter can deliver it to', () => {
@@ -89,7 +124,8 @@ describe('deriveCrewSeats', () => {
     });
     const build = seatOf(deriveCrewSeats({ config }), 'build');
 
-    expect(build.supportsEffort).toBe(false);
+    expect(build.channel).toBe('none');
+    expect(build.effortEditable).toBe(false);
   });
 
   it('offers effort on a Claude Code build seat', () => {
@@ -98,15 +134,17 @@ describe('deriveCrewSeats', () => {
     });
     const build = seatOf(deriveCrewSeats({ config }), 'build');
 
-    expect(build.supportsEffort).toBe(true);
+    expect(build.channel).toBe('effort-flag');
+    expect(build.effortEditable).toBe(true);
   });
 
-  it('offers effort on a build seat whose api model reasons', () => {
+  it('refuses effort on an api build seat, whatever its model', () => {
     const config = makeConfig({
-      implementer: { kind: 'api', provider: 'anthropic', model: 'claude-sonnet-4' },
+      implementer: { kind: 'api', provider: 'ollama', model: 'llama3.1' },
     });
     const build = seatOf(deriveCrewSeats({ config }), 'build');
 
-    expect(build.supportsEffort).toBe(true);
+    expect(build.channel).toBe('none');
+    expect(build.effortEditable).toBe(false);
   });
 });

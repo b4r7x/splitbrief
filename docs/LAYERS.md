@@ -130,7 +130,7 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 - `core/paths.ts`, `core/paths-io.ts` — `.splitbrief/` path derivation and validation
 - `core/runtime/commands/` — runtime command definitions (pure data + handlers; see also `core/keybindings/`)
 - `core/providers/` — provider catalog, known-models, model-selection logic
-- `core/hooks/` — workflow hook config validation + sha256 trust hashing (`trust.ts`)
+- `core/hooks/` — workflow hook trust grant (`trust.ts`) + sha256 config/file digest (`trust-digest.ts`)
 - `core/tokens/` — pure token accounting helpers (`estimate.ts`) used by the repo-map budget and the planner base
 
 **Prohibited imports:** `engine/`, `stores/`, `features/`, `components/`, `hooks/`, `cli/`. `core/` may import `utils/`, `lib/`, and other `core/` siblings.
@@ -153,14 +153,14 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 
 **What lives here:**
 - `engine/orchestrator/` — the main loop and its decomposed modules
-- `engine/planners/` — five planner backends (cli, api, shell, agent, agent-sdk)
+- `engine/planners/` — four planner backends (cli, api, shell, agent)
 - `engine/implementers/` — mirror for implementers
 - `engine/providers/` — HTTP clients, pricing, streaming
 - `engine/spec/` — spec parsing, prompt templates
 - `engine/parsers/` — response parsers (question, code extraction)
 - `engine/streaming/` — streaming transport layer
 - `engine/detection/` — auto-detect installed tools
-- `engine/skill-discovery.ts` — planner skill source discovery
+- `engine/skill-discovery.ts` — skill source discovery over the roots in `core/skills/scan-paths.ts`
 - `engine/availability.ts` — command availability probing
 - `engine/error-hints.ts` — engine-scoped error diagnosis (provider hints, etc.)
 - `engine/events/` — event bus subsystem: `schema.ts` (`EngineEventSchema` type-dispatched schema + `parseEngineEvent`), `types.ts` (the `EngineEvent` alias inferred from that schema, plus the `EventBus`/`EventSink` ports), `bus.ts` (`createEventBus()` factory with crash isolation per sink), and `sinks/` holding headless/persistence/telemetry subscribers:
@@ -298,8 +298,7 @@ engine/planners/
 ├── cli.ts            # ADAPTER — Claude Code / Codex / OpenCode subprocess
 ├── api.ts            # ADAPTER — OpenAI-compatible HTTP
 ├── shell.ts          # ADAPTER — arbitrary shell command
-├── agent.ts          # ADAPTER — file-writing agent
-└── agent-sdk.ts      # ADAPTER — Anthropic Agent SDK
+└── agent.ts          # ADAPTER — file-writing agent
 
 engine/implementers/   # mirror of planners/ — same port+adapter pattern
 ```

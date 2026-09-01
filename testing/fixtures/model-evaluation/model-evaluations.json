@@ -27,20 +27,6 @@
     {
       "resolution": "OMIT-NOT-APPLICABLE",
       "taskId": "T-080",
-      "provider": "openrouter",
-      "model": "anthropic/claude-sonnet-5",
-      "reason": "no credentialed five-scenario extracted-code run was executed; runtime recommendation stays compatible-only"
-    },
-    {
-      "resolution": "OMIT-NOT-APPLICABLE",
-      "taskId": "T-080",
-      "provider": "groq",
-      "model": "openai/gpt-oss-120b",
-      "reason": "no credentialed five-scenario extracted-code run was executed; runtime recommendation stays compatible-only"
-    },
-    {
-      "resolution": "OMIT-NOT-APPLICABLE",
-      "taskId": "T-080",
       "provider": "ollama",
       "model": "qwen3-coder:30b",
       "reason": "no credentialed five-scenario extracted-code run was executed; runtime recommendation stays compatible-only"

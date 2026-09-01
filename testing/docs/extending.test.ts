@@ -94,7 +94,7 @@ describe('forbidden-abstraction', () => {
     for (const kind of RUNNER_KINDS) {
       expect(constraints).toContain(kind);
     }
-    expect(constraints).toMatch(/do not add a sixth runner kind/i);
+    expect(constraints).toMatch(/do not add a fifth runner kind/i);
   });
 
   it('rejects a generic argv DSL and plugin framework', () => {

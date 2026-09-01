@@ -6,6 +6,7 @@ import {
   blocksSpecGate,
   blocksPlanGate,
 } from './resolve.js';
+import { formatEffectiveConfigWarnings, resolveEffectiveConfig } from './effective-config.js';
 import type { Config } from '../../schemas/config.js';
 import type { EffortLevel, WorkflowMode } from '../../schemas/enums.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -24,8 +25,8 @@ describe('resolveMode', () => {
   it.each([
     {
       description: 'returns CLI override when present',
-      input: { config: baseConfig('standard'), cliOverride: 'instant' as const },
-      expected: 'instant' as const,
+      input: { config: baseConfig('standard'), cliOverride: 'quick' as const },
+      expected: 'quick' as const,
     },
     {
       description: 'returns config mode when no override',
@@ -47,9 +48,9 @@ describe('resolveMode', () => {
       input: {
         config: baseConfig('standard'),
         savedMode: 'speckit' as const,
-        cliOverride: 'instant' as const,
+        cliOverride: 'quick' as const,
       },
-      expected: 'instant' as const,
+      expected: 'quick' as const,
     },
   ])('$description', ({ input, expected }) => {
     expect(resolveMode(input)).toBe(expected);
@@ -58,7 +59,6 @@ describe('resolveMode', () => {
 
 describe('resolveApproveLevel', () => {
   it.each([
-    { description: 'instant', input: { mode: 'instant' as const }, expected: 'none' as const },
     { description: 'quick', input: { mode: 'quick' as const }, expected: 'none' as const },
     { description: 'standard', input: { mode: 'standard' as const }, expected: 'spec' as const },
     { description: 'speckit', input: { mode: 'speckit' as const }, expected: 'all' as const },
@@ -106,6 +106,20 @@ describe('blocksSpecGate / blocksPlanGate', () => {
       expect(blocksPlanGate(input)).toBe(expectedPlan);
     },
   );
+});
+
+describe('retired instant mode', () => {
+  it('warns once when --mode instant is used', () => {
+    const { config, warnings } = resolveEffectiveConfig({
+      base: baseConfig('standard'),
+      overrides: { mode: 'instant' },
+    });
+
+    expect(config.workflow.mode).toBe('quick');
+    expect(
+      formatEffectiveConfigWarnings(warnings).filter((message) => message.includes('instant')),
+    ).toHaveLength(1);
+  });
 });
 
 describe('resolveEffortLevel', () => {

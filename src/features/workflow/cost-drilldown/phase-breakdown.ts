@@ -5,7 +5,7 @@ import type { PricingMode, ResolvedPricing } from '../../../engine/providers/pri
 import { phaseCostRole } from '../../../core/phases.js';
 import { PhaseSchema, type Phase } from '../../../core/schemas/enums.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import type { ActiveRunnerRole } from '../../../core/runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import {
   foldReviewerIntoPlanner,
   type SeatTokenTotals,

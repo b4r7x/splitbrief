@@ -228,6 +228,36 @@ async function invokeCandidate(opts: {
   return RunnerCallResultSchema.parse(result);
 }
 
+async function recordOmit(input: {
+  options: ProductionCliConformanceOptions;
+  rawCapture: RawCapture;
+  candidate: CandidateValue;
+  credentials: readonly string[];
+  stdout: string;
+  stderr: string;
+  reason: string;
+  exitCode: CliConformanceOutcome['exitCode'];
+}): Promise<CliConformanceOutcome> {
+  await writeProductionRecord({
+    recordPath: input.options.recordPath,
+    rawCapture: input.rawCapture,
+    productionConformance: captureFor({
+      contract: input.candidate.rawContract,
+      stdout: input.stdout,
+      stderr: input.stderr,
+      credentials: input.credentials,
+    }),
+    verdict: 'OMIT',
+  });
+  return {
+    exitCode: input.exitCode,
+    verdict: 'OMIT',
+    candidateId: input.candidate.id,
+    role: input.options.role,
+    reason: input.reason,
+  };
+}
+
 export async function runProductionCliConformance(
   options: ProductionCliConformanceOptions,
 ): Promise<CliConformanceOutcome> {
@@ -267,25 +297,16 @@ export async function runProductionCliConformance(
     );
     const credentials = credentialsForContract(candidate.rawContract, environment);
     if (!hasRequiredCredential(candidate.rawContract, environment)) {
-      const production = captureFor({
-        contract: candidate.rawContract,
+      return recordOmit({
+        options,
+        rawCapture,
+        candidate,
+        credentials,
         stdout: '',
         stderr: 'required credential is unavailable',
-        credentials,
-      });
-      await writeProductionRecord({
-        recordPath: options.recordPath,
-        rawCapture,
-        productionConformance: production,
-        verdict: 'OMIT',
-      });
-      return {
-        exitCode: CLI_CONFORMANCE_EXIT_CODES.OMIT,
-        verdict: 'OMIT',
-        candidateId: candidate.id,
-        role: options.role,
         reason: 'required CLI credential is unavailable',
-      };
+        exitCode: CLI_CONFORMANCE_EXIT_CODES.OMIT,
+      });
     }
     let executable: CliExecutableIdentity;
     try {
@@ -294,25 +315,16 @@ export async function runProductionCliConformance(
         projectDir: project.path,
       });
     } catch {
-      const production = captureFor({
-        contract: candidate.rawContract,
+      return recordOmit({
+        options,
+        rawCapture,
+        candidate,
+        credentials,
         stdout: '',
         stderr: 'CLI executable is unavailable',
-        credentials,
-      });
-      await writeProductionRecord({
-        recordPath: options.recordPath,
-        rawCapture,
-        productionConformance: production,
-        verdict: 'OMIT',
-      });
-      return {
-        exitCode: CLI_CONFORMANCE_EXIT_CODES.OMIT,
-        verdict: 'OMIT',
-        candidateId: candidate.id,
-        role: options.role,
         reason: 'CLI executable is unavailable',
-      };
+        exitCode: CLI_CONFORMANCE_EXIT_CODES.OMIT,
+      });
     }
     const before = await projectFingerprint(project.path);
     let result: RunnerCallResult;
@@ -326,25 +338,16 @@ export async function runProductionCliConformance(
       });
     } catch (cause) {
       const reason = safeReason(cause);
-      const production = captureFor({
-        contract: candidate.rawContract,
+      return recordOmit({
+        options,
+        rawCapture,
+        candidate,
+        credentials,
         stdout: '',
         stderr: reason,
-        credentials,
-      });
-      await writeProductionRecord({
-        recordPath: options.recordPath,
-        rawCapture,
-        productionConformance: production,
-        verdict: 'OMIT',
-      });
-      return {
-        exitCode: CLI_CONFORMANCE_EXIT_CODES.HARNESS_FAILURE,
-        verdict: 'OMIT',
-        candidateId: candidate.id,
-        role: options.role,
         reason,
-      };
+        exitCode: CLI_CONFORMANCE_EXIT_CODES.HARNESS_FAILURE,
+      });
     }
     const after = await projectFingerprint(project.path);
     const output = JSON.stringify(
@@ -360,50 +363,32 @@ export async function runProductionCliConformance(
       2,
     );
     if (productionFailureIsHarness(result)) {
-      const production = captureFor({
-        contract: candidate.rawContract,
+      return recordOmit({
+        options,
+        rawCapture,
+        candidate,
+        credentials,
         stdout: output,
         stderr: result.error?.message ?? '',
-        credentials,
-      });
-      await writeProductionRecord({
-        recordPath: options.recordPath,
-        rawCapture,
-        productionConformance: production,
-        verdict: 'OMIT',
-      });
-      return {
-        exitCode: CLI_CONFORMANCE_EXIT_CODES.HARNESS_FAILURE,
-        verdict: 'OMIT',
-        candidateId: candidate.id,
-        role: options.role,
         reason: 'CLI adapter rejected the conformance invocation',
-      };
+        exitCode: CLI_CONFORMANCE_EXIT_CODES.HARNESS_FAILURE,
+      });
     }
     if (result.status !== 'completed' || (options.role === 'implementer' && before === after)) {
       const reason =
         options.role === 'implementer' && before === after
           ? 'implementer produced no staged-project change'
           : `CLI production result was ${result.status}`;
-      const production = captureFor({
-        contract: candidate.rawContract,
+      return recordOmit({
+        options,
+        rawCapture,
+        candidate,
+        credentials,
         stdout: output,
         stderr: reason,
-        credentials,
-      });
-      await writeProductionRecord({
-        recordPath: options.recordPath,
-        rawCapture,
-        productionConformance: production,
-        verdict: 'OMIT',
-      });
-      return {
-        exitCode: CLI_CONFORMANCE_EXIT_CODES.OMIT,
-        verdict: 'OMIT',
-        candidateId: candidate.id,
-        role: options.role,
         reason,
-      };
+        exitCode: CLI_CONFORMANCE_EXIT_CODES.OMIT,
+      });
     }
     const production = captureFor({
       contract: candidate.rawContract,

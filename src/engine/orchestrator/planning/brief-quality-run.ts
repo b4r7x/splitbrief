@@ -11,11 +11,13 @@ import { planningError } from './errors.js';
 import {
   briefQualityReportFromProjection,
   prepareBriefQuality,
+} from './brief-quality-preparation.js';
+import {
   fallbackBriefRecoveryProjection,
   type BriefQualityPreparationOptions,
   type BriefQualityControllerResult,
   type BriefQualityRecoveryBinding,
-} from './brief-quality-preparation.js';
+} from './brief-quality-queue.js';
 
 type PreparationOptions = BriefQualityPreparationOptions;
 
