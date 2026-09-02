@@ -54,7 +54,8 @@ import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
 import { registerProcess } from '../../../lib/process/registry.js';
 import { readRunnerPids } from '../../../core/sessions/runner-pids.js';
 import { simpleGit } from 'simple-git';
-import { runWorkflow as runPreparedWorkflow, WORKFLOW_REWIND_ABORT_REASON } from './workflow.js';
+import { runWorkflow as runPreparedWorkflow } from './workflow.js';
+import { WORKFLOW_REWIND_ABORT_REASON } from './rewind-authority.js';
 import type { RunWorkflowOptions } from './init.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../events/workflow-cancel.js';
 import { error } from '../../../utils/error.js';
@@ -1628,22 +1629,6 @@ describe('runWorkflow — orphan session sweep', () => {
     }
   });
 
-  it('removes a collectable session directory at run start and continues', async () => {
-    const projectDir = setupProject();
-    const { callbacks } = makeCallbacks();
-    const collectable = readinessOnly(projectDir, '2026-08-04-sweep-old', oldMtime());
-
-    await runWorkflow({
-      feature: 'sweep collectable session',
-      projectDir,
-      config: unavailablePlannerConfig(),
-      callbacks,
-      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-    });
-
-    expect(existsSync(collectable)).toBe(false);
-  });
-
   it('removes exactly the collectable directory and leaves every other kind on disk', async () => {
     const projectDir = setupProject();
     const { callbacks } = makeCallbacks();
@@ -1903,15 +1888,16 @@ describe('runWorkflow — recovery resume', () => {
     saveState({ projectDir, sessionId }, savedState);
 
     const { callbacks } = makeCallbacks();
-    // The new config switches the implementer to deepseek; the resumed summary must keep
-    // the state-pinned identity so cumulative usage is not re-priced at the new runner.
+    // The new config switches the implementer to a custom endpoint; the resumed summary
+    // must keep the state-pinned identity so cumulative usage is not re-priced at the new
+    // runner.
     const summary = await runWorkflow({
       feature: 'feat',
       projectDir,
       config: makeConfig({
         implementer: {
-          provider: 'deepseek',
-          apiBase: 'https://api.deepseek.com/v1',
+          provider: 'custom-endpoint',
+          apiBase: 'https://api.example.com/v1',
           apiKey: 'test-key',
           model: 'deepseek-chat',
         },

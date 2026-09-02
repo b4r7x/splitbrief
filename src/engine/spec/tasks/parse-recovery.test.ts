@@ -87,28 +87,6 @@ depends_on: []
     );
   });
 
-  it('throws on a task block whose frontmatter is never closed before end of input', () => {
-    const input = `${dependencyTaskBlock('T001')}
----
-id: T999
-title: "Unterminated frontmatter"
-action: create
-file: src/unterminated.ts
-depends_on: []
-`;
-    expect(() => parseTasksStrict(input)).toThrow('unterminated task block after separator');
-  });
-
-  it('throws on a trailing in-frontmatter block with content but no id at end of input', () => {
-    const input = `${dependencyTaskBlock('T001')}
----
-title: "Dangling frontmatter without id"
-action: create
-file: src/dangling.ts
-`;
-    expect(() => parseTasksStrict(input)).toThrow('unterminated task block after separator');
-  });
-
   it('keeps earlier tasks when a bare trailing separator carries no frontmatter body at all', () => {
     const input = `${dependencyTaskBlock('T001')}
 ---

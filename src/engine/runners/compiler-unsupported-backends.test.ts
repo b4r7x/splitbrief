@@ -19,10 +19,11 @@ import {
   createTaskCompilationAttemptId,
 } from '../../core/schemas/task-compilation.js';
 import { COMPILER_SUPPORT_TABLE, admitCompilerCapability } from './compiler-capability.js';
-import { CLI_COMPILER_EVIDENCE } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_COMPILER_EVIDENCE, CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
 import { admitCliCompilerRuntime } from './cli-tools/registry.js';
 import { bindCompilerRuntimeEvidence } from './compiler-runtime-evidence.js';
-import { createPlanner, type RunnerFactoryAuthority } from './factory.js';
+import { createPlanner } from './factory.js';
+import type { RunnerFactoryAuthority } from './factory-gates.js';
 import { installRunCompiler } from './compiler-seam.js';
 import { readPlannerCompilerRefusal, readPlannerCompilerSeam } from '../planners/base.js';
 import { executableReceipt } from '#testing/helpers/custom-command-based.js';
@@ -42,14 +43,14 @@ function authorityFor(config: Config): RunnerFactoryAuthority {
 
 describe('compiler backend support matrix', () => {
   it('keeps the CLI compiler evidence in agreement with the unsupported support-table rows', () => {
-    for (const tool of ['copilot', 'aider'] as const) {
+    for (const tool of ['copilot', 'cursor', 'command-code'] as const) {
       expect(CLI_COMPILER_EVIDENCE[tool].state).toBe('unsupported');
       expect(CLI_COMPILER_EVIDENCE[tool].state).toBe(COMPILER_SUPPORT_TABLE[tool].state);
     }
   });
 
   it('keeps conditional rows conformance-gated and the baseline row explicit', () => {
-    for (const backend of ['kilo-code', 'api', 'agent-sdk', 'custom-command'] as const) {
+    for (const backend of ['kilo-code', 'api', 'custom-command'] as const) {
       expect(COMPILER_SUPPORT_TABLE[backend].state).toBe('conformance-gated');
     }
     expect(COMPILER_SUPPORT_TABLE.opencode.state).toBe('required-baseline');
@@ -62,22 +63,24 @@ describe('compiler backend support matrix', () => {
 describe('unsupported CLI planner rows fail closed with zero dispatch', () => {
   it.each([
     ['copilot', 'session'],
-    ['aider', 'provider-dependent'],
+    ['cursor', 'session'],
+    ['command-code', 'session'],
   ] as const)(
     'refuses the %s planner through the production factory before any spawn',
     async (tool, authChannel) => {
       const projectDir = createTempDir(`unsupported-${tool}-project`);
       const shimDir = createTempDir(`unsupported-${tool}-shim`);
       const marker = join(shimDir, 'spawned');
+      const shimPath = join(shimDir, CLI_TOOL_CATALOG[tool].command);
       const originalPath = process.env.PATH;
       try {
         createTestGitRepo(projectDir);
         writeFileSync(
-          join(shimDir, tool),
+          shimPath,
           ['#!/bin/sh', `touch '${marker}'`, 'exit 0', ''].join('\n'),
           'utf8',
         );
-        chmodSync(join(shimDir, tool), 0o755);
+        chmodSync(shimPath, 0o755);
         process.env.PATH = `${shimDir}:${originalPath ?? ''}`;
 
         const config = makeConfig({

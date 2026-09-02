@@ -247,9 +247,11 @@ describe('Composer image attach gate', () => {
       config: makeConfig({
         planner: {
           kind: 'api',
-          provider: 'openai',
+          provider: 'custom-endpoint',
+          service: 'custom-endpoint',
+          offering: 'payg',
           model: 'house-brand-text-only-extended-preview',
-          apiBase: 'https://api.openai.com/v1',
+          apiBase: 'https://api.example.test/v1',
         },
       }),
     });
@@ -292,26 +294,29 @@ describe('Composer image attach gate', () => {
     ui.unmount();
   });
 
-  it('attaches the drop when detection says the API model sees images despite its name', async () => {
+  it('refuses the drop when the only image-capable fact belongs to another provider', async () => {
     configStore.__testReset({
       projectDir,
       config: makeConfig({
         planner: {
           kind: 'api',
-          provider: 'openai',
+          provider: 'custom-endpoint',
+          service: 'custom-endpoint',
+          offering: 'payg',
           model: 'house-brand-1',
-          apiBase: 'https://api.openai.com/v1',
+          apiBase: 'https://api.example.test/v1',
         },
       }),
     });
+    // Detection only ever probes admitted presets, so a fact carrying the same
+    // model id under a different provider is never borrowed for this seat.
     detectionStore.setDetection({
       cliTools: [],
       providers: [
         {
-          provider: 'openai',
+          provider: 'ollama',
           available: true,
-          isLocal: false,
-          hasKey: true,
+          isLocal: true,
           models: [{ id: 'house-brand-1', contextLength: 8192, supportsImages: true }],
         },
       ],
@@ -320,9 +325,7 @@ describe('Composer image attach gate', () => {
     await flushEffects();
     await dropImage(ui);
 
-    expect(attachmentsStore.peek().map((a) => normalizeMacTmpPath(a.path))).toEqual([
-      normalizeMacTmpPath(imagePath),
-    ]);
+    expect(attachmentsStore.peek()).toEqual([]);
     ui.unmount();
   });
 
@@ -350,6 +353,162 @@ describe('Composer image attach gate', () => {
 
     const rows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
     expect(rows.filter((row) => row.includes('/settings')).length).toBe(1);
+    ui.unmount();
+  });
+});
+
+describe('Composer attachment affordances', () => {
+  const BACKSPACE = '\x7f';
+  const HOME_LEGEND = '/help · /crew · /settings · ctrl+k commands';
+
+  function attachment(id: string) {
+    return {
+      id,
+      kind: 'image' as const,
+      path: `/tmp/${id}.png`,
+      mimeType: 'image/png',
+      sizeBytes: 1,
+    };
+  }
+
+  function renderComposer(mode: 'normal' | 'review') {
+    return renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode={mode}
+        hint=""
+        onSubmit={() => {}}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+  }
+
+  // Home's own prop shape: a live box whose `hint` is always set, so nothing about the
+  // placeholder is observable here — the hint line is what the screen actually paints.
+  function renderHomeComposer({ disabled }: { disabled: boolean }) {
+    return renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint="Describe your feature…"
+        homeHint={HOME_LEGEND}
+        disabled={disabled}
+        onSubmit={() => {}}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+  }
+
+  beforeEach(() => {
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+  });
+
+  it('offers the drop hint on the home hint line when the plan seat can see images', async () => {
+    configStore.__testReset({
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    const ui = renderHomeComposer({ disabled: false });
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain(`${HOME_LEGEND} · drop an image`);
+    ui.unmount();
+  });
+
+  it('keeps the plain hint line when the plan seat cannot see images', async () => {
+    configStore.__testReset({
+      config: makeConfig({ planner: { kind: 'shell', command: 'my-planner' } }),
+    });
+    const ui = renderHomeComposer({ disabled: false });
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain(HOME_LEGEND);
+    expect(frame).not.toContain('drop an image');
+    ui.unmount();
+  });
+
+  it('drops the affordance whole rather than clipping the legend it rides', async () => {
+    configStore.__testReset({
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    terminalSizeStore.__testReset({ cols: 50, rows: 18 });
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint="Describe your feature…"
+        homeHint={HOME_LEGEND}
+        onSubmit={() => {}}
+        onRuntimeCommand={() => {}}
+      />,
+      { cols: 50, rows: 18 },
+    );
+    await flushEffects();
+
+    const hintRow = stripAnsiStyles(ui.lastFrame() ?? '')
+      .split('\n')
+      .find((row) => row.includes('/help'));
+    expect(hintRow?.trim()).toBe(HOME_LEGEND);
+    ui.unmount();
+  });
+
+  it('drops the affordance while the box is disabled and cannot take a drop', async () => {
+    configStore.__testReset({
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    const ui = renderHomeComposer({ disabled: true });
+    await flushEffects();
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('drop an image');
+    ui.unmount();
+  });
+
+  it('pops the last attachment chip on backspace when the draft is empty', async () => {
+    attachmentsStore.add(attachment('first'));
+    attachmentsStore.add(attachment('second'));
+    const ui = renderComposer('normal');
+    await flushEffects();
+
+    ui.stdin.write(BACKSPACE);
+    await flushEffects();
+
+    expect(attachmentsStore.get().pending.map((a) => a.id)).toEqual(['first']);
+    ui.unmount();
+  });
+
+  it('leaves attachments alone when backspace edits a non-empty draft', async () => {
+    attachmentsStore.add(attachment('first'));
+    attachmentsStore.add(attachment('second'));
+    const ui = renderComposer('normal');
+    await flushEffects();
+
+    ui.stdin.write('sentinel');
+    await flushEffects();
+    ui.stdin.write(BACKSPACE);
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('sentine');
+    expect(frame).not.toContain('sentinel');
+    expect(attachmentsStore.get().pending.map((a) => a.id)).toEqual(['first', 'second']);
+    ui.unmount();
+  });
+
+  it('does not pop a chip while a review gate is armed', async () => {
+    attachmentsStore.add(attachment('first'));
+    attachmentsStore.add(attachment('second'));
+    const ui = renderComposer('review');
+    await flushEffects();
+
+    ui.stdin.write(BACKSPACE);
+    await flushEffects();
+
+    expect(attachmentsStore.get().pending.map((a) => a.id)).toEqual(['first', 'second']);
     ui.unmount();
   });
 });

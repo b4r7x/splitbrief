@@ -1,8 +1,6 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { Planner, PriorMessage } from './types.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
-import type { EffortLevel, ProviderId } from '../../core/schemas/enums.js';
-import type { Attachment } from '../../core/schemas/attachment.js';
 import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
 import { getProvider } from '../providers/registry.js';
@@ -12,9 +10,7 @@ import { estimateTokens } from '../../core/tokens/estimate.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { providerError } from '../providers/errors.js';
 import { assertPlannerKind } from '../config-assertions.js';
-import { isProviderId } from '../../core/schemas/enums.js';
 import { clampToMaxOutput } from '../providers/capability-inference.js';
-import { modelSupportsEffort, modelSupportsImages } from '../../core/runners/capabilities.js';
 import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
 import { dispatchStreamCompletion } from '../providers/dispatch-stream.js';
 import { toStreamClient } from '../providers/openai-stream/client.js';
@@ -42,7 +38,7 @@ function buildMessages(prompt: string, priorMessages?: PriorMessage[] | undefine
 }
 
 export async function invokeApiTransport(opts: {
-  client: StreamClient | null;
+  client: StreamClient;
   model: string;
   contextLength: number;
   planner: {
@@ -54,8 +50,6 @@ export async function invokeApiTransport(opts: {
   prompt: string;
   onOutput: (text: string) => void;
   priorMessages?: PriorMessage[] | undefined;
-  effort?: EffortLevel | undefined;
-  images?: Attachment[] | undefined;
   signal?: AbortSignal | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   callContext: RunnerCallContext;
@@ -120,8 +114,6 @@ export async function invokeApiTransport(opts: {
       temperature: opts.planner.temperature ?? 0.3,
       onProgress: opts.onOutput,
       maxTokens,
-      effort: opts.effort,
-      images: opts.images,
       signal,
       onCallEvent: opts.onCallEvent,
       callContext,
@@ -167,19 +159,13 @@ export function createApiPlanner(config: Config): Planner {
   });
 
   const availability = createProviderAvailability(resolved);
-  const effort = plannerCfg.effort;
   const timeout = plannerCfg.timeout;
   const contextLength = plannerCfg.contextLength ?? DEFAULT_CONTEXT_LENGTH;
-  const providerId: ProviderId | null = isProviderId(provider) ? provider : null;
-  const supportsEffort = providerId !== null && modelSupportsEffort(providerId, model);
-  const supportsImages =
-    providerId !== null && modelSupportsImages({ provider: providerId, model });
 
   const invoke = ({
     prompt,
     callbacks,
     priorMessages,
-    images,
     signal,
     callContext,
   }: {
@@ -191,12 +177,10 @@ export function createApiPlanner(config: Config): Planner {
       onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
     };
     priorMessages?: PriorMessage[] | undefined;
-    images?: Attachment[] | undefined;
     signal?: AbortSignal | undefined;
   }) => {
     const effectiveSignal = composeAbortSignal(signal, timeout);
-    const client: StreamClient | null =
-      provider === 'anthropic' ? null : toStreamClient(createClientFromProvider(resolved));
+    const client: StreamClient = toStreamClient(createClientFromProvider(resolved));
     return invokeApiTransport({
       client,
       model,
@@ -210,8 +194,6 @@ export function createApiPlanner(config: Config): Planner {
       prompt,
       onOutput: callbacks.onOutput,
       priorMessages,
-      effort: supportsEffort ? effort : undefined,
-      images: supportsImages ? images : undefined,
       signal: effectiveSignal,
       onCallEvent: callbacks.onCallEvent,
       callContext,
@@ -234,6 +216,8 @@ export function createApiPlanner(config: Config): Planner {
       return model;
     },
 
-    capabilities: { ...ONE_SHOT_API_CAPS, supportsEffort, supportsImages },
+    // The API seat carries no effort channel, so a configured `planner.effort`
+    // never reaches the wire; `warnDroppedRunnerFields` reports the drop.
+    capabilities: ONE_SHOT_API_CAPS,
   });
 }

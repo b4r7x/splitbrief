@@ -22,7 +22,6 @@ import { taskId } from '../../../core/schemas/task.js';
 import {
   BRIEF_GENERATION_STORAGE_POLICY,
   BriefGenerationManifestSchema,
-  briefGenerationStorageError,
   buildBriefGenerationIdentity,
   buildBriefSupportSnapshotIdentity,
   cleanupUnreferencedCandidates,
@@ -34,6 +33,7 @@ import {
   verifyStoredGeneration,
   verifyStoredSupportSnapshot,
 } from './brief-generation.js';
+import { briefGenerationStorageError } from './immutable-store.js';
 import type {
   BriefGenerationCandidate,
   BriefGenerationIdentity,

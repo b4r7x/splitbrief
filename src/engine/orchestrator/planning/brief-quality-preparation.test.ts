@@ -8,12 +8,6 @@ import type {
   BriefRecoveryController,
   StateAuthorityReceipt,
 } from '../../../core/schemas/brief-recovery.js';
-import type { BriefQualityIssue } from '../../../core/schemas/brief-recovery/primitives.js';
-import type {
-  RecoveryProviderRequest,
-  RecoveryProviderResult,
-} from '../../../core/schemas/brief-recovery/provider-call.js';
-import type { BriefOwnerCommitPort } from '../../../core/schemas/brief-owner.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { BRIEF_QUALITY_FILE, sessionDir } from '../../../core/paths.js';
 import {
@@ -36,7 +30,6 @@ import { createBriefRecoveryController } from './brief-recovery-controller.js';
 import { makeBriefRecoveryControllerDeps } from '#testing/helpers/factories/recovery.js';
 import { prepareBriefQuality } from './brief-quality-preparation.js';
 import { observeGenerationStorage } from './brief-generation.js';
-import { makeTestOwnerCommit } from '#testing/helpers/brief-owner.js';
 
 const dirs: string[] = [];
 
@@ -83,17 +76,7 @@ const PREPARATION_AUTHORITY: StateAuthorityReceipt = {
   stateDigest: 'state-digest',
 };
 
-const PREPARATION_ERROR: BriefQualityIssue = {
-  code: 'missing_scope',
-  severity: 'error',
-  taskId: 'T001',
-  message: 'scope is missing',
-};
-
-function preparationAdmission(
-  sessionId = PREPARATION_AUTHORITY.sessionId,
-  issues: readonly BriefQualityIssue[] = [PREPARATION_ERROR],
-): BriefAdmissionInput {
+function preparationAdmission(sessionId: string): BriefAdmissionInput {
   const activeBrief = { revision: 1, hash: 'b'.repeat(64), path: 'tasks.md' };
   return {
     sessionId,
@@ -104,31 +87,24 @@ function preparationAdmission(
       briefHash: activeBrief.hash,
       report: { revision: 1, hash: 'r'.repeat(64), path: 'brief-quality.json' },
       ruleVersion: 'brief-quality-v1',
-      issues,
-      errorCount: issues.filter((issue) => issue.severity === 'error').length,
+      issues: [],
+      errorCount: 0,
     },
     qualityPolicyVersion: 'brief-quality-v1',
   };
 }
 
-function preparationController(
-  options: {
-    providerResult?: (input: RecoveryProviderRequest) => RecoveryProviderResult;
-    commit?: BriefOwnerCommitPort;
-    qualityIssues?: BriefQualityIssue[];
-  } = {},
-): { controller: BriefRecoveryController; calls: RecoveryProviderRequest[] } {
+function preparationController(): BriefRecoveryController {
   let generatedId = 0;
   const fake = makeBriefRecoveryControllerDeps({
-    ...options,
-    qualityIssues: options.qualityIssues ?? [PREPARATION_ERROR],
+    qualityIssues: [],
     now: () => '2026-01-01T00:00:00.000Z',
     nextId: () => {
       generatedId += 1;
       return `preparation-id-${generatedId}`;
     },
   });
-  return { controller: createBriefRecoveryController(fake.deps), calls: fake.providerCalls };
+  return createBriefRecoveryController(fake.deps);
 }
 
 describe('prepareBriefQuality', () => {
@@ -164,15 +140,15 @@ describe('prepareBriefQuality', () => {
       messageQueue: [queued],
     };
     vi.mocked(prepared.planner.review).mockResolvedValue({ text: REAL_TASKS_MD, usage: null });
-    const harness = preparationController({ qualityIssues: [] });
+    const controller = preparationController();
     const authority = { ...PREPARATION_AUTHORITY, sessionId: prepared.sessionId };
 
     const result = await prepareBriefQuality({
       ...prepared.input,
       recovery: {
-        controller: harness.controller,
+        controller,
         authority,
-        createAdmissionInput: ({ sessionId }) => preparationAdmission(sessionId, []),
+        createAdmissionInput: ({ sessionId }) => preparationAdmission(sessionId),
       },
     });
 
@@ -425,96 +401,5 @@ describe('preparation leaves no generation authority on failure', () => {
     const saved = loadState({ projectDir: prepared.projectDir, sessionId: prepared.sessionId });
     expect(saved?.generation ?? null).toBeNull();
     expect(saved?.permit ?? null).toBeNull();
-  });
-});
-
-describe('controller failure identity', () => {
-  it('returns storage-blocked before reserving or dispatching when the admission checkpoint fails', async () => {
-    const harness = preparationController({
-      commit: makeTestOwnerCommit({ fail: true }),
-    });
-
-    const result = await harness.controller.enterBriefAdmission(
-      preparationAdmission(),
-      PREPARATION_AUTHORITY,
-    );
-
-    expect(result).toMatchObject({ kind: 'blocked', code: 'brief_storage_invalid' });
-    expect(harness.calls).toHaveLength(0);
-  });
-
-  it.each([
-    [
-      'auth failure',
-      {
-        kind: 'definite-failure' as const,
-        dispatchPossibility: 'possible' as const,
-        remoteObservation: 'confirmed-final' as const,
-        providerCode: 'auth_failed',
-        text: null,
-        usage: null,
-      },
-      'blocked',
-    ],
-    [
-      'quota failure',
-      {
-        kind: 'definite-failure' as const,
-        dispatchPossibility: 'possible' as const,
-        remoteObservation: 'confirmed-final' as const,
-        providerCode: 'quota_exhausted',
-        text: null,
-        usage: null,
-      },
-      'blocked',
-    ],
-    [
-      'ambiguous abort',
-      {
-        kind: 'ambiguous-failure' as const,
-        dispatchPossibility: 'possible' as const,
-        remoteObservation: 'unknown' as const,
-        providerCode: 'aborted',
-        text: null,
-        usage: null,
-      },
-      'unresolved',
-    ],
-  ])('retains operation identity for %s settlement', async (_label, provider, expectedKind) => {
-    const harness = preparationController({
-      providerResult: (input) => ({ requestId: input.requestId, ...provider }),
-    });
-
-    const result = await harness.controller.enterBriefAdmission(
-      preparationAdmission(),
-      PREPARATION_AUTHORITY,
-    );
-    const call = harness.calls[0];
-
-    expect(result.kind).toBe(expectedKind);
-    expect(call).toBeDefined();
-    expect(result.projection.latestAttempt?.operationId).toBe(call?.operationId);
-    expect(result.projection.latestAttempt?.outcome).toBe(
-      expectedKind === 'unresolved' ? null : 'provider-failed',
-    );
-  });
-
-  it('blocks a failed owner commit without losing the operation receipt', async () => {
-    const harness = preparationController({
-      commit: makeTestOwnerCommit({ failOnCommit: 4 }),
-    });
-
-    const result = await harness.controller.enterBriefAdmission(
-      preparationAdmission(),
-      PREPARATION_AUTHORITY,
-    );
-    const call = harness.calls[0];
-
-    expect(result).toMatchObject({ kind: 'blocked', code: 'brief_storage_invalid' });
-    expect(call).toBeDefined();
-    expect(result.projection.latestAttempt).toMatchObject({
-      operationId: call?.operationId,
-      outcome: null,
-    });
   });
 });

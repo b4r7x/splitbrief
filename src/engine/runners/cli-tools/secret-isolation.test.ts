@@ -14,11 +14,8 @@ import { SANDBOX_DIR } from '../../../core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
 import { toCliEnvironment } from '../invoke-cli-adapter.js';
-import {
-  createRunnerSandboxEnv,
-  createSandboxEnv,
-  sandboxCredentialValues,
-} from '../sandbox-env.js';
+import { createRunnerSandboxEnv, createSandboxEnv } from '../sandbox-env.js';
+import { sandboxCredentialValues } from '../sandbox-credential-values.js';
 import type { CliImplementerAdapter, CliInvocation, CliPromptTransport } from './contract.js';
 import { invokeProcessCli } from './process-invoke.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';

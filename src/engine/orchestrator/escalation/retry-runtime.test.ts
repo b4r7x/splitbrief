@@ -66,11 +66,10 @@ function configWithProfiles() {
       profiles: {
         'cheap-large': {
           kind: 'api' as const,
-          provider: 'deepseek',
-          service: 'deepseek',
-          offering: 'payg' as const,
-          apiBase: 'https://api.deepseek.com/v1',
-          apiKey: 'test-key',
+          provider: 'ollama',
+          service: 'ollama',
+          offering: 'local' as const,
+          apiBase: 'http://localhost:11434/v1',
           model: 'deepseek-chat',
           costTier: 'cheap' as const,
           contextLength: 128_000,
@@ -195,6 +194,35 @@ function configuredRetryRuntime(
   };
 }
 
+async function makeRetryCtx(
+  input: Readonly<{
+    projectDir: string;
+    sessionId: string;
+    config: Config;
+    contextName?: string;
+  }>,
+): Promise<EscalationContext> {
+  const { callbacks } = makeCallbacks();
+  const { bus } = makeBusRecorder();
+  return {
+    projectDir: input.projectDir,
+    sessionId: input.sessionId,
+    config: input.config,
+    callbacks,
+    bus,
+    planner: makePlanner(),
+    reviewer: makePlanner(),
+    context: { name: input.contextName ?? 'test', dir: input.projectDir },
+    implementer: makeImplementer(),
+    metadata: TEST_METADATA,
+    sinks: TEST_SINKS,
+    validator: createValidator(),
+    isolation: makeCopyingIsolation({ projectDir: input.projectDir, sessionId: input.sessionId }),
+    taskStartSnapshot: await getChangedFilesSnapshot(input.projectDir),
+    dependsOnFiles: [],
+  };
+}
+
 async function configuredRetryContext(
   input: Readonly<{
     projectDir: string;
@@ -203,8 +231,6 @@ async function configuredRetryContext(
     runtime: CustomRunnerRuntimePort;
   }>,
 ): Promise<EscalationContext> {
-  const { callbacks } = makeCallbacks();
-  const { bus } = makeBusRecorder();
   const preparationId = 'configured-retry-preparation';
   const gates: RunnerGate[] = [];
   for (const profile of resolveImplementerProfiles(input.config).profiles) {
@@ -229,15 +255,7 @@ async function configuredRetryContext(
     });
   }
   return {
-    projectDir: input.projectDir,
-    sessionId: input.sessionId,
-    config: input.config,
-    callbacks,
-    bus,
-    planner: makePlanner(),
-    reviewer: makePlanner(),
-    context: { name: 'retry configured runner', dir: input.projectDir },
-    implementer: makeImplementer(),
+    ...(await makeRetryCtx({ ...input, contextName: 'retry configured runner' })),
     createImplementer: (runnerConfig, factoryOptions) =>
       createImplementer(input.config, {
         ...factoryOptions,
@@ -251,12 +269,6 @@ async function configuredRetryContext(
             intermediateContextLength: runnerConfig.implementer.contextLength,
           }),
       }),
-    metadata: TEST_METADATA,
-    sinks: TEST_SINKS,
-    validator: createValidator(),
-    isolation: makeCopyingIsolation({ projectDir: input.projectDir, sessionId: input.sessionId }),
-    taskStartSnapshot: await getChangedFilesSnapshot(input.projectDir),
-    dependsOnFiles: [],
   };
 }
 
@@ -267,10 +279,10 @@ describe('stateForRetryProfile', () => {
       name: 'test',
       config: {
         kind: 'api' as const,
-        provider: 'openai',
-        service: 'openai',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
         offering: 'payg' as const,
-        apiBase: 'https://api.openai.com/v1',
+        apiBase: 'https://api.example.com/v1',
         apiKey: 'key',
         model: 'gpt-4',
         costTier: 'frontier' as const,
@@ -281,7 +293,7 @@ describe('stateForRetryProfile', () => {
       isDefault: false,
     };
     const result = stateForRetryProfile(state, profile);
-    expect(result.implementerTool).toBe('openai');
+    expect(result.implementerTool).toBe('custom-endpoint');
     expect(result.implementerModel).toBe('gpt-4');
   });
 
@@ -289,13 +301,13 @@ describe('stateForRetryProfile', () => {
     const state = makeImplState([], { implementerTool: 'ollama', implementerModel: 'qwen' });
     const profile = {
       name: 'test',
-      config: { kind: 'cli' as const, tool: 'aider' as const },
+      config: { kind: 'cli' as const, tool: 'opencode' as const },
       costTier: 'local' as const,
       capabilities: { writesFiles: 'direct' as const },
       isDefault: false,
     };
     const result = stateForRetryProfile(state, profile);
-    expect(result.implementerTool).toBe('aider');
+    expect(result.implementerTool).toBe('opencode');
     expect('implementerModel' in result).toBe(false);
   });
 });
@@ -304,59 +316,18 @@ describe('createRetryRuntime', () => {
   it('returns existing implementer when no override', async () => {
     const { projectDir, sessionId } = setupProject();
     const config = configWithProfiles();
-    const { bus } = makeBusRecorder();
-    const implementer = makeImplementer();
-    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-    const { callbacks } = makeCallbacks();
-    const ctx: EscalationContext = {
-      projectDir,
-      sessionId,
-      config,
-      callbacks,
-      bus,
-      planner: makePlanner(),
-      reviewer: makePlanner(),
-      context: { name: 'test', dir: projectDir },
-      implementer,
-      metadata: TEST_METADATA,
-      sinks: TEST_SINKS,
-      validator: createValidator(),
-      isolation: makeCopyingIsolation({ projectDir, sessionId }),
-      taskStartSnapshot,
-      dependsOnFiles: [],
-    };
+    const ctx = await makeRetryCtx({ projectDir, sessionId, config });
 
     const runtime = await createRetryRuntime(ctx, undefined);
 
     expect(runtime.config).toBe(config);
-    expect(runtime.implementer).toBe(implementer);
+    expect(runtime.implementer).toBe(ctx.implementer);
     expect(runtime.implementerProfile).toBeUndefined();
   });
 
   it('throws for nonexistent profile', async () => {
     const { projectDir, sessionId } = setupProject();
-    const config = configWithProfiles();
-    const { bus } = makeBusRecorder();
-    const implementer = makeImplementer();
-    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-    const { callbacks } = makeCallbacks();
-    const ctx: EscalationContext = {
-      projectDir,
-      sessionId,
-      config,
-      callbacks,
-      bus,
-      planner: makePlanner(),
-      reviewer: makePlanner(),
-      context: { name: 'test', dir: projectDir },
-      implementer,
-      metadata: TEST_METADATA,
-      sinks: TEST_SINKS,
-      validator: createValidator(),
-      isolation: makeCopyingIsolation({ projectDir, sessionId }),
-      taskStartSnapshot,
-      dependsOnFiles: [],
-    };
+    const ctx = await makeRetryCtx({ projectDir, sessionId, config: configWithProfiles() });
 
     await expect(createRetryRuntime(ctx, 'nonexistent')).rejects.toThrow(/nonexistent/);
   });

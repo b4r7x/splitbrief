@@ -3,7 +3,6 @@ import { resolveMode, resolveApproveLevel } from '../../../core/config/runtime/r
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { runQuickPlanning } from './quick.js';
-import { runInstantPlanning } from './instant.js';
 import { runFullPlanning } from './full.js';
 import { runSpeckitPlanning } from './speckit.js';
 import { adviseMode } from './mode-advisor.js';
@@ -26,11 +25,7 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
     state = stateForPlanningPersistence(state, config.workflow.persistTranscript);
   }
 
-  if (
-    (mode === 'instant' || mode === 'quick') &&
-    approveLevel !== 'none' &&
-    approveLevel !== 'default'
-  ) {
+  if (mode === 'quick' && approveLevel !== 'none' && approveLevel !== 'default') {
     publishWarning({
       bus: wctx.bus,
       phase: state.phase,
@@ -95,11 +90,8 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
     codebaseContext: codebaseContext || undefined,
     approveLevel,
     ...(attachments.length > 0 ? { attachments } : {}),
+    ...(advisory.risk === 'trivial' ? { trivial: true } : {}),
   };
-
-  if (mode === 'instant') {
-    return runInstantPlanning(optsWithContext);
-  }
 
   if (mode === 'quick') {
     return runQuickPlanning(optsWithContext);

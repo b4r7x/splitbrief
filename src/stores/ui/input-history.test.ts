@@ -6,43 +6,58 @@ describe('inputHistoryStore', () => {
     inputHistoryStore.reset();
   });
 
-  it('covers push/dedup/caps/hydrate end-to-end', () => {
-    expect(MAX_INPUT_HISTORY).toBe(50);
-
+  it('ignores blank pushes', () => {
     inputHistoryStore.push('   ');
     expect(inputHistoryStore.get().entries).toEqual([]);
+  });
 
+  it('trims pushed values and keeps the newest first', () => {
     inputHistoryStore.push('first');
     inputHistoryStore.push(' second ');
     expect(inputHistoryStore.get().entries).toEqual(['second', 'first']);
+  });
 
-    // pushing an existing value moves it to the front (dedup by re-push).
+  it('moves a re-pushed value to the front instead of duplicating it', () => {
+    inputHistoryStore.push('first');
+    inputHistoryStore.push('second');
     inputHistoryStore.push('first');
     expect(inputHistoryStore.get().entries).toEqual(['first', 'second']);
 
     inputHistoryStore.push('first');
     expect(inputHistoryStore.get().entries).toEqual(['first', 'second']);
+  });
 
-    inputHistoryStore.reset();
+  it('caps pushed entries at the maximum, dropping the oldest', () => {
     for (let index = 0; index < MAX_INPUT_HISTORY + 2; index++) {
       inputHistoryStore.push(`item-${index}`);
     }
     expect(inputHistoryStore.get().entries).toHaveLength(MAX_INPUT_HISTORY);
     expect(inputHistoryStore.get().entries[0]).toBe(`item-${MAX_INPUT_HISTORY + 1}`);
+  });
 
+  it('replaces existing entries on hydrate', () => {
+    inputHistoryStore.push('stale');
     inputHistoryStore.hydrate(['fresh-a', 'fresh-b']);
     expect(inputHistoryStore.get().entries).toEqual(['fresh-a', 'fresh-b']);
+  });
 
+  it('drops duplicates while hydrating', () => {
     inputHistoryStore.hydrate(['a', 'b', 'a', 'c']);
     expect(inputHistoryStore.get().entries).toEqual(['a', 'b', 'c']);
+  });
 
+  it('drops blank lines while hydrating', () => {
     inputHistoryStore.hydrate(['first', '', '   ', 'second']);
     expect(inputHistoryStore.get().entries).toEqual(['first', 'second']);
+  });
 
+  it('caps hydrated entries at the maximum', () => {
     const lines = Array.from({ length: MAX_INPUT_HISTORY + 3 }, (_, i) => `item-${i}`);
     inputHistoryStore.hydrate(lines);
     expect(inputHistoryStore.get().entries).toHaveLength(MAX_INPUT_HISTORY);
+  });
 
+  it('clears entries when hydrated with nothing', () => {
     inputHistoryStore.push('something');
     inputHistoryStore.hydrate([]);
     expect(inputHistoryStore.get().entries).toEqual([]);

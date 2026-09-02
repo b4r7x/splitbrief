@@ -15,7 +15,7 @@ import { CONFIG_FILE, SPLITBRIEF_DIR, worktreePath } from '../../../src/core/pat
 import { isCliError } from '../../../src/cli/errors.js';
 import { MAX_SLUG_LENGTH } from '../../../src/core/sessions/session-id.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
-import type { SpawnServerResult } from '../../../src/engine/ipc/spawn-server.js';
+import type { SpawnServerResult } from '../../../src/engine/ipc/detached-handshake.js';
 
 setupStartCommandIntegration();
 

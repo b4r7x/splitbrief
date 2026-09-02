@@ -114,8 +114,8 @@ async function cliRuntimeVersionEvidence(
 }
 
 /**
- * The one production seam installer (REQ-016, REQ-046): quick/instant planners
- * never carry a compiler; standard/speckit planners get the deterministic
+ * The one production seam installer (REQ-016, REQ-046): quick planners never
+ * carry a compiler; standard/speckit planners get the deterministic
  * compiler when capability admission admits the run's claim, and a typed
  * zero-dispatch refusal otherwise — never the legacy single-call prompt.
  *
@@ -136,7 +136,7 @@ export async function installRunCompiler(
 ): Promise<void> {
   const { planner, config, trustedCli } = input;
   const mode = getWorkflowMode(config);
-  if (mode === 'quick' || mode === 'instant') return;
+  if (mode === 'quick') return;
 
   const runner = config.planner;
   const evidence =

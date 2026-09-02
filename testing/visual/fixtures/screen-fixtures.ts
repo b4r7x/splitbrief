@@ -9,7 +9,7 @@ import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import type { CliToolDetection } from '../../../src/core/discovery/detection.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
-import type { ModelsDevRefreshOutcome } from '../../../src/engine/detection/service.js';
+import type { ModelsDevRefreshOutcome } from '../../../src/engine/detection/models-dev-lane.js';
 import type { Config } from '../../../src/core/schemas/config.js';
 import type { ModelsDevCatalog } from '../../../src/core/schemas/models-dev.js';
 import { scenarioId } from '../contracts/identifiers.js';
@@ -329,9 +329,9 @@ function createCommandArgumentFixture(): FixtureLifecycle {
 
 const HOME_REVIEWER_API_SEAT = {
   kind: 'api',
-  provider: 'openai',
+  provider: 'custom-endpoint',
   model: 'o3',
-  apiBase: 'https://api.openai.com/v1',
+  apiBase: 'https://api.example.test/v1',
 } as const;
 
 export const screenFixtureRegistry: FixtureRegistry = new Map([

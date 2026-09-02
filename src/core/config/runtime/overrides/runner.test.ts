@@ -50,11 +50,11 @@ const sameTargetCases: readonly (
     role: 'planner',
     existing: {
       kind: 'api',
-      provider: 'openrouter',
-      service: 'openrouter',
+      provider: 'custom-endpoint',
+      service: 'custom-endpoint',
       offering: 'payg',
-      apiBase: 'https://openrouter.ai/api/v1',
-      apiKey: 'env:OPENROUTER_API_KEY',
+      apiBase: 'https://api.example.test/v1',
+      apiKey: 'test-key',
       model: 'anthropic/claude-opus-4.6',
       ...commonGeneration,
     },
@@ -86,16 +86,6 @@ const sameTargetCases: readonly (
     },
   },
   {
-    role: 'planner',
-    existing: {
-      kind: 'agent-sdk',
-      apiKey: 'env:ANTHROPIC_API_KEY',
-      model: 'claude-opus-4-6',
-      ...watchdogs,
-      ...commonGeneration,
-    },
-  },
-  {
     role: 'implementer',
     existing: {
       kind: 'cli',
@@ -111,11 +101,11 @@ const sameTargetCases: readonly (
     role: 'implementer',
     existing: {
       kind: 'api',
-      provider: 'openrouter',
-      service: 'openrouter',
+      provider: 'custom-endpoint',
+      service: 'custom-endpoint',
       offering: 'payg',
-      apiBase: 'https://openrouter.ai/api/v1',
-      apiKey: 'env:OPENROUTER_API_KEY',
+      apiBase: 'https://api.example.test/v1',
+      apiKey: 'test-key',
       model: 'qwen/qwen3-coder',
       ...commonGeneration,
     },
@@ -140,16 +130,6 @@ const sameTargetCases: readonly (
       args: ['--apply'],
       outputFormat: 'jsonl',
       model: 'agent-implementer-model',
-      ...watchdogs,
-      ...commonGeneration,
-    },
-  },
-  {
-    role: 'implementer',
-    existing: {
-      kind: 'agent-sdk',
-      apiKey: 'env:ANTHROPIC_API_KEY',
-      model: 'claude-sonnet-4-6',
       ...watchdogs,
       ...commonGeneration,
     },
@@ -219,10 +199,10 @@ describe('applyCLIOverrides — unusable provider overrides', () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
     applyCLIOverrides(baseConfig, {
       implementer: {
-        tool: 'openrouter',
-        model: 'qwen/qwen3-coder',
-        apiBase: 'https://openrouter.ai/api/v1',
-        apiKey: 'env:OPENROUTER_API_KEY',
+        tool: 'ollama',
+        model: 'qwen2.5-coder:7b',
+        apiBase: 'http://localhost:11434/v1',
+        apiKey: 'env:OLLAMA_LOCAL_API_KEY',
       },
     });
     const output = stderr.mock.calls.map((c) => String(c[0])).join('');
@@ -262,11 +242,11 @@ describe('applyCLIOverrides — runner commands', () => {
     const config = makeConfig({
       implementer: {
         kind: 'api',
-        provider: 'openrouter',
-        service: 'openrouter',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
         offering: 'payg',
-        apiBase: 'https://openrouter.ai/api/v1',
-        apiKey: 'env:OPENROUTER_API_KEY',
+        apiBase: 'https://api.example.test/v1',
+        apiKey: 'test-key',
         model: 'anthropic/claude-opus-4.6',
         customModels: ['anthropic/claude-opus-4.6', 'source-only-model'],
         effort: 'high',
@@ -305,23 +285,45 @@ describe('applyCLIOverrides — runner commands', () => {
     });
   });
 
+  it('preserves a configured variant through an unrelated runner override', () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'openai/gpt-5.6-luna',
+        variant: 'my-preset',
+      },
+    });
+
+    const result = applyCLIOverrides(config, {
+      implementer: { model: 'openai/gpt-5.6-mini' },
+    });
+
+    expect(result.implementer).toEqual({
+      kind: 'cli',
+      tool: 'opencode',
+      model: 'openai/gpt-5.6-mini',
+      variant: 'my-preset',
+    });
+  });
+
   it('applies API base and env API key overrides to API implementers', () => {
     const result = applyCLIOverrides(baseConfig, {
       implementer: {
-        tool: 'openrouter',
-        model: 'qwen/qwen3-coder',
-        apiBase: 'https://openrouter.ai/api/v1',
-        apiKey: 'env:OPENROUTER_API_KEY',
+        tool: 'ollama',
+        model: 'qwen2.5-coder:7b',
+        apiBase: 'http://127.0.0.1:22000/v1',
+        apiKey: 'env:OLLAMA_LOCAL_API_KEY',
         contextLength: 131_072,
       },
     });
 
     expect(result.implementer).toMatchObject({
       kind: 'api',
-      provider: 'openrouter',
-      model: 'qwen/qwen3-coder',
-      apiBase: 'https://openrouter.ai/api/v1',
-      apiKey: 'env:OPENROUTER_API_KEY',
+      provider: 'ollama',
+      model: 'qwen2.5-coder:7b',
+      apiBase: 'http://127.0.0.1:22000/v1',
+      apiKey: 'env:OLLAMA_LOCAL_API_KEY',
       contextLength: 131_072,
     });
   });
@@ -352,9 +354,9 @@ describe('applyCLIOverrides — runner commands', () => {
         profiles: {
           'cloud-cheap': {
             kind: 'api',
-            provider: 'openrouter',
-            apiBase: 'https://openrouter.ai/api/v1',
-            apiKey: 'env:OPENROUTER_API_KEY',
+            provider: 'custom-endpoint',
+            apiBase: 'https://api.example.test/v1',
+            apiKey: 'test-key',
             model: 'qwen/qwen3-coder',
             costTier: 'cheap',
           },
@@ -399,27 +401,27 @@ describe('applyCLIOverrides — runner commands', () => {
       resolved.profiles.find((profile) => profile.name === 'cloud-cheap')?.config,
     ).toMatchObject({
       kind: 'api',
-      provider: 'openrouter',
+      provider: 'custom-endpoint',
     });
   });
 
   it('applies planner runner fields without changing implementer config', () => {
     const result = applyCLIOverrides(baseConfig, {
       planner: {
-        tool: 'anthropic',
+        tool: 'custom-endpoint',
         model: 'claude-sonnet-4-5',
-        apiBase: 'https://api.anthropic.com/v1',
-        apiKey: 'env:ANTHROPIC_API_KEY',
+        apiBase: 'https://api.example.test/v1',
+        apiKey: 'test-key',
         contextLength: 200_000,
       },
     });
 
     expect(result.planner).toMatchObject({
       kind: 'api',
-      provider: 'anthropic',
+      provider: 'custom-endpoint',
       model: 'claude-sonnet-4-5',
-      apiBase: 'https://api.anthropic.com/v1',
-      apiKey: 'env:ANTHROPIC_API_KEY',
+      apiBase: 'https://api.example.test/v1',
+      apiKey: 'test-key',
       contextLength: 200_000,
     });
     expect(result.implementer).toEqual(baseConfig.implementer);

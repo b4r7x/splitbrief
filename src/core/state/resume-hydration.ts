@@ -1,6 +1,6 @@
 import type { SessionRef } from '../types/session-ref.js';
 import { acquireStateAuthority, releaseStateAuthority } from './authority.js';
-import { loadStateForResume } from './persistence.js';
+import { loadStateForResume } from './resume-authority.js';
 import type { ResumeLoadResult } from './types.js';
 
 export type OwnedResumeHydration = ResumeLoadResult & { readonly fenced: boolean };

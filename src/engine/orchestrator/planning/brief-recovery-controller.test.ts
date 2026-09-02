@@ -1,11 +1,19 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import type { BriefRecoveryStateView } from '../../../core/schemas/brief-recovery/document.js';
-import type { EvidenceRef } from '../../../core/schemas/brief-recovery/primitives.js';
-import type { RecoveryProviderRequest } from '../../../core/schemas/brief-recovery/provider-call.js';
+import type {
+  BriefQualityIssue,
+  EvidenceRef,
+} from '../../../core/schemas/brief-recovery/primitives.js';
+import type {
+  RecoveryProviderRequest,
+  RecoveryProviderResult,
+} from '../../../core/schemas/brief-recovery/provider-call.js';
+import type { BriefRecoveryController } from '../../../core/schemas/brief-recovery.js';
 import { BriefRecoveryStateViewSchema } from '../../../core/schemas/brief-recovery/document.js';
 import type {
   BriefOwnerCommitInput,
+  BriefOwnerCommitPort,
   BriefOwnerCommitResult,
 } from '../../../core/schemas/brief-owner.js';
 import { createBriefRecoveryController } from './brief-recovery-controller.js';
@@ -18,8 +26,6 @@ import {
   makeStandardBriefAdmission,
 } from '#testing/helpers/factories/recovery.js';
 import { makeTestOwnerCommit } from '#testing/helpers/brief-owner.js';
-import { runBriefQualityGate } from './brief-quality-gate.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
 import { createInitialState } from '../../../core/state/machine.js';
 
 function makeDependencies(): {
@@ -48,6 +54,23 @@ function makeDependencies(): {
   });
 }
 
+const QUALITY_ERROR: BriefQualityIssue = {
+  code: 'missing_scope',
+  severity: 'error',
+  taskId: 'T001',
+  message: 'scope is missing',
+};
+
+function failingQualityHarness(
+  options: {
+    providerResult?: (input: RecoveryProviderRequest) => RecoveryProviderResult;
+    commit?: BriefOwnerCommitPort;
+  } = {},
+): { controller: BriefRecoveryController; calls: RecoveryProviderRequest[] } {
+  const fake = makeBriefRecoveryControllerDeps({ ...options, qualityIssues: [QUALITY_ERROR] });
+  return { controller: createBriefRecoveryController(fake.deps), calls: fake.providerCalls };
+}
+
 function automaticIntentFor(view: BriefRecoveryStateView): string {
   const recovery = view.briefRecovery;
   if (recovery === null || recovery === undefined || !('matchingReport' in recovery))
@@ -57,18 +80,6 @@ function automaticIntentFor(view: BriefRecoveryStateView): string {
     .update(`${recovery.activeBrief.hash}:${recovery.qualityPolicyVersion}:${codes}`)
     .digest('hex');
 }
-
-describe('runBriefQualityGate', () => {
-  it('is deterministic and has no event or artifact side effect', () => {
-    const task = makeTask({ id: 'T001' });
-    const first = runBriefQualityGate({ tasks: [task] });
-    const second = runBriefQualityGate({ tasks: [task] });
-
-    expect(first).toEqual(second);
-    expect(first.report.issues.every((issue) => issue.taskId === 'T001')).toBe(true);
-    expect(first.warningCount).toBeGreaterThanOrEqual(0);
-  });
-});
 
 describe('createBriefRecoveryController', () => {
   it('uses the existing one-shot automatic repair policy during standard admission', async () => {
@@ -436,74 +447,57 @@ describe('createBriefRecoveryController', () => {
     expect(result.projection.status).toBe('ready');
   });
 
-  it('returns a storage blocker and keeps the local head unchanged when evidence is unavailable', async () => {
-    const { deps } = makeDependencies();
-    let evidenceAttempts = 0;
-    deps.commit = () => {
-      evidenceAttempts += 1;
-      throw new Error('owner commit unavailable');
-    };
-    const controller = createBriefRecoveryController(deps);
-
-    const first = await controller.enterBriefAdmission(
-      makeBriefAdmission(),
-      makeRecoveryAuthority(),
-    );
-    const second = await controller.enterBriefAdmission(
-      makeBriefAdmission(),
-      makeRecoveryAuthority(),
-    );
-
-    expect(first).toMatchObject({
-      kind: 'blocked',
-      code: 'brief_storage_invalid',
-      projection: { stateRevision: 0 },
-    });
-    expect(second).toMatchObject({
-      kind: 'blocked',
-      code: 'brief_storage_invalid',
-      projection: { stateRevision: 0 },
-    });
-    expect(evidenceAttempts).toBe(2);
-  });
-
-  it('returns a storage blocker and keeps the local head unchanged when the owner commit conflicts', async () => {
-    const { deps } = makeDependencies();
-    let mutationAttempts = 0;
-    deps.commit = (): BriefOwnerCommitResult => {
-      mutationAttempts += 1;
-      return {
+  it.each([
+    [
+      'a throwing owner commit',
+      (): BriefOwnerCommitResult => {
+        throw new Error('owner commit unavailable');
+      },
+    ],
+    [
+      'a conflicting owner commit',
+      (): BriefOwnerCommitResult => ({
         kind: 'conflict',
         stateRevision: null,
         authorityRevision: null,
         recovery: null,
         generation: null,
         permit: null,
+      }),
+    ],
+  ])(
+    'returns a storage blocker and keeps the local head unchanged for %s',
+    async (_label, failingCommit) => {
+      const { deps } = makeDependencies();
+      let attempts = 0;
+      deps.commit = () => {
+        attempts += 1;
+        return failingCommit();
       };
-    };
-    const controller = createBriefRecoveryController(deps);
+      const controller = createBriefRecoveryController(deps);
 
-    const first = await controller.enterBriefAdmission(
-      makeBriefAdmission(),
-      makeRecoveryAuthority(),
-    );
-    const second = await controller.enterBriefAdmission(
-      makeBriefAdmission(),
-      makeRecoveryAuthority(),
-    );
+      const first = await controller.enterBriefAdmission(
+        makeBriefAdmission(),
+        makeRecoveryAuthority(),
+      );
+      const second = await controller.enterBriefAdmission(
+        makeBriefAdmission(),
+        makeRecoveryAuthority(),
+      );
 
-    expect(first).toMatchObject({
-      kind: 'blocked',
-      code: 'brief_storage_invalid',
-      projection: { stateRevision: 0 },
-    });
-    expect(second).toMatchObject({
-      kind: 'blocked',
-      code: 'brief_storage_invalid',
-      projection: { stateRevision: 0 },
-    });
-    expect(mutationAttempts).toBe(2);
-  });
+      expect(first).toMatchObject({
+        kind: 'blocked',
+        code: 'brief_storage_invalid',
+        projection: { stateRevision: 0 },
+      });
+      expect(second).toMatchObject({
+        kind: 'blocked',
+        code: 'brief_storage_invalid',
+        projection: { stateRevision: 0 },
+      });
+      expect(attempts).toBe(2);
+    },
+  );
 
   it('returns a contract blocker instead of ready when quality evaluation is unavailable', async () => {
     const { deps } = makeDependencies();
@@ -569,6 +563,91 @@ describe('createBriefRecoveryController', () => {
     expect(result.projection.activeBrief?.path).toBe('tasks.md');
     expect(result.projection.matchingReport?.report.path).toBe('brief-quality.json');
     expect(providerCalls).toHaveLength(0);
+  });
+
+  it('returns storage-blocked before reserving or dispatching when the admission checkpoint fails', async () => {
+    const harness = failingQualityHarness({ commit: makeTestOwnerCommit({ fail: true }) });
+
+    const result = await harness.controller.enterBriefAdmission(
+      makeStandardBriefAdmission(),
+      makeRecoveryAuthority(),
+    );
+
+    expect(result).toMatchObject({ kind: 'blocked', code: 'brief_storage_invalid' });
+    expect(harness.calls).toHaveLength(0);
+  });
+
+  it.each([
+    [
+      'auth failure',
+      {
+        kind: 'definite-failure' as const,
+        dispatchPossibility: 'possible' as const,
+        remoteObservation: 'confirmed-final' as const,
+        providerCode: 'auth_failed',
+        text: null,
+        usage: null,
+      },
+      'blocked',
+    ],
+    [
+      'quota failure',
+      {
+        kind: 'definite-failure' as const,
+        dispatchPossibility: 'possible' as const,
+        remoteObservation: 'confirmed-final' as const,
+        providerCode: 'quota_exhausted',
+        text: null,
+        usage: null,
+      },
+      'blocked',
+    ],
+    [
+      'ambiguous abort',
+      {
+        kind: 'ambiguous-failure' as const,
+        dispatchPossibility: 'possible' as const,
+        remoteObservation: 'unknown' as const,
+        providerCode: 'aborted',
+        text: null,
+        usage: null,
+      },
+      'unresolved',
+    ],
+  ])('retains operation identity for %s settlement', async (_label, provider, expectedKind) => {
+    const harness = failingQualityHarness({
+      providerResult: (input) => ({ requestId: input.requestId, ...provider }),
+    });
+
+    const result = await harness.controller.enterBriefAdmission(
+      makeStandardBriefAdmission(),
+      makeRecoveryAuthority(),
+    );
+    const call = harness.calls[0];
+
+    expect(result.kind).toBe(expectedKind);
+    expect(call).toBeDefined();
+    expect(result.projection.latestAttempt?.operationId).toBe(call?.operationId);
+    expect(result.projection.latestAttempt?.outcome).toBe(
+      expectedKind === 'unresolved' ? null : 'provider-failed',
+    );
+  });
+
+  it('blocks a failed owner commit without losing the operation receipt', async () => {
+    const harness = failingQualityHarness({ commit: makeTestOwnerCommit({ failOnCommit: 4 }) });
+
+    const result = await harness.controller.enterBriefAdmission(
+      makeStandardBriefAdmission(),
+      makeRecoveryAuthority(),
+    );
+    const call = harness.calls[0];
+
+    expect(result).toMatchObject({ kind: 'blocked', code: 'brief_storage_invalid' });
+    expect(call).toBeDefined();
+    expect(result.projection.latestAttempt).toMatchObject({
+      operationId: call?.operationId,
+      outcome: null,
+    });
   });
 });
 
@@ -977,5 +1056,68 @@ describe('createBriefRecoveryController — durable refusal, accounting, and pub
     expect(settlement.result.recovery.briefRecovery).toMatchObject({ status: 'ready' });
     expect(settlement.result.generation).toBeNull();
     expect(settlement.result.permit).toBeNull();
+  });
+});
+
+describe('createBriefRecoveryController — admission call bounds', () => {
+  const warning: BriefQualityIssue = {
+    code: 'missing_scope',
+    severity: 'warning',
+    taskId: 'T001',
+    message: 'scope could be more specific',
+  };
+
+  it.each([
+    ['clean', []],
+    ['warning-only', [warning]],
+  ] as const)('does not reserve or dispatch for %s admission', async (_label, issues) => {
+    const fake = makeBriefRecoveryControllerDeps();
+    const controller = createBriefRecoveryController(fake.deps);
+    const base = makeStandardBriefAdmission();
+
+    const result = await controller.enterBriefAdmission(
+      { ...base, report: { ...base.report, issues, errorCount: 0 } },
+      makeRecoveryAuthority(),
+    );
+
+    expect(result.kind).toBe('ready');
+    expect(fake.providerCalls).toHaveLength(0);
+    expect(fake.estimateCalls).toBe(0);
+  });
+
+  it('allows distinct manual operations one provider call each until quality remains blocked', async () => {
+    const fake = makeBriefRecoveryControllerDeps({ qualityIssues: [QUALITY_ERROR] });
+    const controller = createBriefRecoveryController(fake.deps);
+    const admission = makeBriefAdmission();
+    const initial = await controller.enterBriefAdmission(admission, makeRecoveryAuthority());
+    const epochId = initial.epochId;
+    if (epochId === null) throw new Error('expected a recovery epoch');
+
+    const command = (operationId: string, base = admission.activeBrief) => ({
+      version: 1 as const,
+      sessionId: admission.sessionId,
+      epochId,
+      operationId,
+      base,
+      intentHash: `intent-${operationId}`,
+      action: 'retry' as const,
+      diagnosticFingerprint: 'd'.repeat(64),
+      frozenInputIds: [],
+    });
+
+    const first = await controller.dispatchBriefAction(
+      command('manual-1'),
+      makeRecoveryAuthority(initial.projection.stateRevision),
+    );
+    const second = await controller.dispatchBriefAction(
+      command('manual-2', first.projection.activeBrief ?? admission.activeBrief),
+      makeRecoveryAuthority(first.projection.stateRevision),
+    );
+
+    expect(initial.kind).toBe('blocked');
+    expect(first.kind).toBe('blocked');
+    expect(second.kind).toBe('blocked');
+    expect(fake.providerCalls).toHaveLength(2);
+    expect(fake.providerCalls.map((call) => call.operationId)).toEqual(['manual-1', 'manual-2']);
   });
 });

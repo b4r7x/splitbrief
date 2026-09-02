@@ -9,6 +9,9 @@ import {
   roleHasTokens,
 } from './phase-breakdown.js';
 import { resolvePricing } from '../../../engine/providers/pricing-resolver.js';
+import { makePricedModelCache } from '#testing/helpers/factories/model-cache.js';
+
+const pricedCache = makePricedModelCache();
 
 describe('buildPhaseRows', () => {
   it('returns empty array for empty perPhase', () => {
@@ -16,7 +19,7 @@ describe('buildPhaseRows', () => {
   });
 
   it('can sort by a derived display cost when store rows keep raw token data', () => {
-    const pricing = resolvePricing('anthropic', undefined, 'claude-sonnet-5');
+    const pricing = resolvePricing('custom-endpoint', pricedCache, 'claude-sonnet-5');
     const rows = buildPhaseRows(
       {
         planning: {
@@ -117,8 +120,8 @@ describe('formatPhaseCost', () => {
 });
 
 describe('calculatePhaseRowCost — reviewer fold', () => {
-  const plannerPricing = resolvePricing('anthropic', undefined, 'claude-sonnet-5');
-  const reviewerPricing = resolvePricing('deepseek', undefined, 'deepseek-v4-flash');
+  const plannerPricing = resolvePricing('custom-endpoint', pricedCache, 'claude-sonnet-5');
+  const reviewerPricing = resolvePricing('custom-endpoint', pricedCache, 'deepseek-v4-flash');
   const row = {
     phase: 'final-review',
     inputTokens: 20_000,

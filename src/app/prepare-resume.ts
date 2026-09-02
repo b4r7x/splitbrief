@@ -1,10 +1,10 @@
 import { configForSessionTranscriptPolicy } from '../core/sessions/io.js';
 import { acquireStateAuthority, releaseStateAuthority } from '../core/state/authority.js';
-import { loadStateForResume } from '../core/state/persistence.js';
+import { loadStateForResume } from '../core/state/resume-authority.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { SessionRef } from '../core/types/session-ref.js';
-import { prepareExecution } from '../engine/runners/prepare-execution.js';
-import type { PreparationPolicy } from '../engine/runners/prepare-execution.js';
+import { prepareExecution } from '../engine/runners/prepare-execution/prepare-execution.js';
+import type { PreparationPolicy } from '../engine/runners/prepare-execution/types.js';
 import type { PreparationOutcome } from '../engine/runners/prepared-execution.js';
 import { closeApprovalPrompt, openApprovalPrompt } from '../stores/approval-prompt/prompt.js';
 import type { SessionSelectDeps } from '../stores/navigation/session-select.js';

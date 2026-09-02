@@ -7,17 +7,15 @@ import type { TaskId } from '../../../core/schemas/task.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { Planner } from '../../planners/types.js';
 import type { Reviewer } from '../../reviewers/types.js';
-import type { Implementer, ImplementerFactoryOptions } from '../../implementers/types.js';
+import type { Implementer } from '../../implementers/types.js';
 import type { CustomRunnerRuntimePort } from '../../runners/types.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { StreamingSink } from '../task/streaming-feed.js';
 import type { RunIsolation } from '../isolation/types.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
-import { configuredReviewerSeat } from '../../../core/config/accessors/reviewer-seat.js';
 import { createInitialState } from '../../../core/state/machine.js';
-import { recoverInterruptedNativeDeliveries } from '../../../core/queue-state.js';
-import type { StateAction, StateAuthorityReceipt } from '../../../core/state/types.js';
+import type { StateAuthorityReceipt } from '../../../core/state/types.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
 import {
   ensureSessionDir,
@@ -26,15 +24,7 @@ import {
 } from '../../../core/paths-io.js';
 import { readPackageJson } from '../../../core/project-meta.js';
 import { compilerDriftWarning } from '../../runners/compiler-drift-warning.js';
-import { createPlanner, createImplementer, createReviewer } from '../../runners/factory.js';
-import { createEventBus } from '../../events/bus.js';
-import { createJsonlSink } from '../../events/sinks/jsonl.js';
-import { createStdoutJsonSink } from '../../events/sinks/stdout-json.js';
-import { createOtelSink } from '../../events/sinks/otel.js';
-import { createTreeRecorderSink } from '../../events/sinks/tree-recorder.js';
-import { createLoggerSink } from '../../events/sinks/logger.js';
 import type { EventBus, EventSink } from '../../events/types.js';
-import { createHookSink } from '../../hooks/sink.js';
 import { createBranch } from '../../../lib/git/refs.js';
 import { initLogger } from '../../../core/logger.js';
 import { slugify } from '../../../utils/slugify.js';
@@ -48,7 +38,6 @@ import type {
 } from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary/build.js';
 import {
-  createImplementerPublisher,
   publishError,
   publishPlannerStatus,
   publishWorkflowConfig,
@@ -66,15 +55,14 @@ import {
   cleanupStaleArtifactReviews as cleanupWorkflowArtifactReviews,
 } from '../approval/planner-artifact.js';
 import type { PreparedExecution } from '../../runners/prepared-execution.js';
-import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
-import { configForProfile } from '../task/routing.js';
 import {
   attachWorkflowAuthority,
   workflowMutationOptions,
   type WorkflowAuthorityHolder,
 } from './authority.js';
-
-const initSinkUnsubscribers = new WeakMap<EventBus, Array<() => void>>();
+import { attachRunSinks } from './init-sinks.js';
+import { recoverNativeDeliveries } from './init-native-recovery.js';
+import { createPlannerSeat, createImplementerSeat } from './init-seats.js';
 
 function plannerUnavailableMessage(plannerConfig: Config['planner'], planner: Planner): string {
   const name = getRunnerDisplayName(plannerConfig);
@@ -207,7 +195,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     newWorkflow = false,
   } = args;
   const { callbacks, sinks } = opts;
-  const { preparationId, gates, runtime } = opts.prepared;
+  const { runtime } = opts.prepared;
   const feature = runtime.feature;
   const projectDir = opts.prepared.session.ref.projectDir;
 
@@ -223,110 +211,35 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     allowRepoRunners: runtime.allowRepoRunners,
   });
 
-  const bus = opts.eventBus ?? createEventBus();
-  const prev = initSinkUnsubscribers.get(bus);
-  if (prev) {
-    for (const unsub of prev) unsub();
-  }
-  const unsubs: Array<() => void> = [];
-  if (opts.tuiSink) unsubs.push(bus.subscribe(opts.tuiSink));
-  unsubs.push(
-    bus.subscribe(
-      createJsonlSink({
-        projectDir,
-        sessionId,
-        persistTranscript: config.workflow.persistTranscript,
-        onDegraded: (warning) => bus.publish(warning),
-      }),
-    ),
-  );
-  unsubs.push(
-    bus.subscribe(
-      createTreeRecorderSink({
-        projectDir,
-        sessionId,
-        persistTranscript: config.workflow.persistTranscript,
-      }),
-    ),
-  );
-  unsubs.push(
-    bus.subscribe(createLoggerSink({ persistTranscript: config.workflow.persistTranscript })),
-  );
-  if (opts.headless)
-    unsubs.push(
-      bus.subscribe(createStdoutJsonSink({ persistTranscript: config.workflow.persistTranscript })),
-    );
-  if (opts._eventSink) unsubs.push(bus.subscribe(opts._eventSink));
-  if (config.hooks)
-    unsubs.push(bus.subscribe(createHookSink(config.hooks, { projectDir, sessionId }, bus)));
-  if (config.otel?.enabled) {
-    const { trace } = await import('@opentelemetry/api');
-    unsubs.push(
-      bus.subscribe(
-        createOtelSink({
-          provider: trace.getTracerProvider(),
-          serviceName: config.otel.serviceName,
-          persistTranscript: config.workflow.persistTranscript,
-        }),
-      ),
-    );
-  }
-  initSinkUnsubscribers.set(bus, unsubs);
+  const bus = await attachRunSinks({ opts, config, projectDir, sessionId });
   if (config.approval?.enabled === false) {
     bus.publish({ type: 'approval_mode_changed', ts: Date.now(), mode: 'yolo' });
   }
 
   let savedState = newWorkflow ? undefined : (args.savedState ?? opts.savedState);
   if (savedState !== undefined) {
-    const recovered = recoverInterruptedNativeDeliveries(savedState);
-    if (recovered !== savedState) {
-      let recoveredState = savedState;
-      for (const [index, message] of savedState.messageQueue.entries()) {
-        const normalized = recovered.messageQueue[index];
-        if (normalized === undefined || normalized === message) continue;
-        const action: StateAction =
-          normalized.deliveredViaNative || normalized.nativeDeliveryState === 'delivered'
-            ? { type: 'MARK_DELIVERED_NATIVE', id: message.id }
-            : { type: 'MARK_NATIVE_DELIVERY_FAILED', id: message.id };
-        recoveredState = transitionAndSave(
-          { projectDir, sessionId },
-          recoveredState,
-          action,
-          workflowMutationOptions(recoveredState, authorityHolder?.current ?? authority),
-        );
-        setTrackedState(recoveredState);
-      }
-      savedState = recoveredState;
-    }
+    savedState = recoverNativeDeliveries({
+      projectDir,
+      sessionId,
+      state: savedState,
+      authority: authorityHolder?.current ?? authority,
+      setTrackedState,
+    });
   }
   if (savedState) setTrackedState(savedState);
   const hasPendingRecovery = savedState?.pendingRecovery !== undefined;
 
   // Stateless backends receive priorMessages instead of plannerSessionId.
   const initialSessionId = savedState?.plannerSessionId ?? null;
-  const planner =
-    opts._planner ??
-    (await createPlanner(config, {
-      initialSessionId,
-      projectDir,
-      preparedConfig: opts.prepared.config,
-      preparationId,
-      gates,
-      slot: { role: 'planner' },
-      customRuntime,
-    }));
-  const reviewerSeat = configuredReviewerSeat(config);
-  const reviewer: Reviewer =
-    opts._reviewer ??
-    (reviewerSeat === undefined
-      ? planner
-      : await createReviewer(config, {
-          preparedConfig: opts.prepared.config,
-          preparationId,
-          gates,
-          slot: { role: 'reviewer' },
-          customRuntime,
-        }));
+  const { planner, reviewer, reviewerSeat } = await createPlannerSeat({
+    config,
+    prepared: opts.prepared,
+    customRuntime,
+    projectDir,
+    initialSessionId,
+    injectedPlanner: opts._planner,
+    injectedReviewer: opts._reviewer,
+  });
   const driftWarning = compilerDriftWarning({ planner, projectDir });
   if (driftWarning !== null) {
     publishWarning({ bus, phase: savedState?.phase ?? 'idle', message: driftWarning });
@@ -372,33 +285,14 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     }
   }
 
-  const resolvedDefaultProfile = resolveImplementerProfiles(config).defaultProfile;
-  const defaultProfile = resolvedDefaultProfile.name;
-  const createPreparedImplementer = async (
-    runnerConfig: Config,
-    factoryOptions: ImplementerFactoryOptions = {},
-  ): Promise<Implementer> => {
-    const slot = factoryOptions.slot ?? { role: 'implementer', profile: defaultProfile };
-    return createImplementer(config, {
-      ...factoryOptions,
-      customRuntime,
-      preparedConfig: opts.prepared.config,
-      preparationId,
-      gates,
-      slot,
-      ...(slot.role === 'intermediate' &&
-        runnerConfig.implementer.contextLength !== undefined && {
-          intermediateContextLength: runnerConfig.implementer.contextLength,
-        }),
-    });
-  };
-  const implementer =
-    opts._implementer ??
-    (await createPreparedImplementer(configForProfile(config, resolvedDefaultProfile), {
-      publisher: createImplementerPublisher(bus),
-      allowRepoRunners: runtime.allowRepoRunners,
-      slot: { role: 'implementer', profile: defaultProfile },
-    }));
+  const { implementer, createPreparedImplementer } = await createImplementerSeat({
+    config,
+    prepared: opts.prepared,
+    customRuntime,
+    bus,
+    allowRepoRunners: runtime.allowRepoRunners,
+    injectedImplementer: opts._implementer,
+  });
 
   let state: WorkflowState;
 

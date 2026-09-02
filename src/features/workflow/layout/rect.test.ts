@@ -57,26 +57,6 @@ describe('workflow viewport layout', () => {
     expect(getWorkflowSidebarWidth({ cols: 400, sidebarVisible: false })).toBe(0);
   });
 
-  it('hands the review column the whole content pane on both sides of the 120/121 breakpoint', () => {
-    const below = getWorkflowContentWidth({ cols: 120, sidebarVisible: true });
-    const above = getWorkflowContentWidth({ cols: 121, sidebarVisible: true });
-    const sidebar = getWorkflowSidebarWidth({ cols: 121, sidebarVisible: true });
-
-    expect(below).toBe(120);
-    expect(above).toBe(121 - sidebar - WORKFLOW_SIDEBAR_GAP);
-    expect(above).toBeLessThan(below);
-    expect(getReviewColumnWidth(below)).toBe(below);
-    expect(getReviewColumnWidth(above)).toBe(above);
-  });
-
-  it('keeps sidebar plus gap plus content equal to the terminal width at every viewport', () => {
-    for (const cols of [121, 160, 400]) {
-      const sidebar = getWorkflowSidebarWidth({ cols, sidebarVisible: true });
-      const content = getWorkflowContentWidth({ cols, sidebarVisible: true });
-      expect(sidebar + WORKFLOW_SIDEBAR_GAP + content).toBe(cols);
-    }
-  });
-
   it('gives the task title the interior of the box the row paints into, and less when a status tail reserves cells', () => {
     const width = 48;
     expect(getSidebarTaskTitleWidth({ width, reservedTailCells: 0 })).toBe(width - 7);
@@ -131,7 +111,7 @@ describe('workflow viewport layout', () => {
     const inputRows = 3;
     const contentHeight = getWorkflowViewportHeight({ rows, inputRows });
 
-    for (const cols of [121, 120, 119, 80, 50, 40]) {
+    for (const cols of [400, 160, 121, 120, 119, 80, 50, 40]) {
       const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible: true });
       const expectedSidebar = cols > SIDEBAR_BREAKPOINT_COLS;
 

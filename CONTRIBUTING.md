@@ -37,10 +37,12 @@ npm run format                # Biome format --write
 npm test                      # vitest run
 npm run test:watch            # vitest watch mode
 npm run test:coverage         # tsx scripts/coverage-run.ts (vitest --coverage + run pruning)
+npm run release-check         # format:check -> typecheck -> lint -> vitest -> e2e -> invariants (no coverage)
+npm run test:e2e:live         # OPT-IN, costs money: real CLI calls (needs SPLITBRIEF_REAL_CLI_E2E=1)
 npm run test-ci               # format -> typecheck -> lint -> test:coverage -> e2e -> invariants
 ```
 
-**Before submitting a PR, `npm run test-ci` MUST pass.**
+**Before submitting a PR, `npm run release-check` MUST pass** — it is the fast gate every PR is held to. `npm run test-ci` is the exhaustive form that additionally enforces the coverage thresholds, which CI also runs nightly.
 
 ## Adding a feature
 
@@ -48,7 +50,7 @@ npm run test-ci               # format -> typecheck -> lint -> test:coverage -> 
 2. Respect layer direction — [docs/LAYERS.md](./docs/LAYERS.md). Imports flow one way: `utils -> lib -> core -> engine/stores -> features`. No cross-feature imports.
 3. Write tests for observable behavior — [docs/TESTING.md](./docs/TESTING.md). Colocate unit tests next to source; multi-folder flows go under `testing/integration/{cli,orchestrator,ui}/`.
 4. Validate at boundaries only — [docs/ERRORS.md](./docs/ERRORS.md).
-5. Run `npm run test-ci`.
+5. Run `npm run release-check` (or `npm run test-ci` for the exhaustive form).
 
 ## Pre-merge gates
 
@@ -58,7 +60,7 @@ Enforced on every PR; the full list and rationale lives in [docs/INVARIANTS.md](
 npm run check:invariants
 ```
 
-Do not duplicate the gate list in new docs; update [docs/INVARIANTS.md](./docs/INVARIANTS.md) and `scripts/check-invariants.ts` together.
+Do not duplicate the gate list in new docs; update [docs/INVARIANTS.md](./docs/INVARIANTS.md) and `scripts/invariants/gates.ts` together.
 
 ## Code conventions
 
@@ -93,7 +95,7 @@ No commit-message format is enforced. Keep the first line concise; reference iss
 
 ## Adding a runner kind
 
-Planner and implementer both dispatch on a required `kind` discriminant across five variants: `cli`, `api`, `shell`, `agent`, `agent-sdk`. The factory lives at `src/engine/runners/factory.ts` — `createPlanner(config)` / `createImplementer(config)`. New integrations plug in here.
+Planner and implementer both dispatch on a required `kind` discriminant across four variants: `cli`, `api`, `shell`, `agent`. The factory lives at `src/engine/runners/factory.ts` — `createPlanner(config)` / `createImplementer(config)`. New integrations plug in here.
 
 Full config schemas and YAML examples: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 

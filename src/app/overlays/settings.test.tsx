@@ -17,11 +17,14 @@ const ENTER = String.fromCharCode(13);
 const RAW_TEST_COMMAND = `safe${ESC}]8;;http://evil${BEL}${ESC}[31mcmd`;
 
 const PLANNER_WITH_EFFORT = { kind: 'cli', tool: 'claude-code', effort: 'high' } as const;
-const OPENAI_REVIEWER = {
+const API_REVIEWER = {
   kind: 'api',
-  provider: 'openai',
-  model: 'o3',
-  apiBase: 'https://api.openai.com/v1',
+  provider: 'custom-endpoint',
+  service: 'custom-endpoint',
+  offering: 'payg',
+  model: 'qwen3-coder',
+  apiBase: 'https://api.example.test/v1',
+  apiKey: 'test-key',
 } as const;
 
 let projectDir = '';
@@ -119,10 +122,10 @@ describe('SettingsOverlay', () => {
   it('keeps the effort rows while hiding the YAML-only escalation tier at 60x18', async () => {
     seed({
       planner: PLANNER_WITH_EFFORT,
-      reviewer: OPENAI_REVIEWER,
+      reviewer: API_REVIEWER,
       escalation: {
-        intermediateProvider: 'deepseek',
-        intermediateModel: 'deepseek-chat',
+        intermediateProvider: 'ollama',
+        intermediateModel: 'llama3.1',
       },
     });
     const ui = renderAt(60, 18);
@@ -139,7 +142,7 @@ describe('SettingsOverlay', () => {
   it('renders 6 crew rows and cycling effort changes only that row with zero geometry jumps', async () => {
     seed({
       planner: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4' },
-      reviewer: OPENAI_REVIEWER,
+      reviewer: API_REVIEWER,
     });
     overlayStore.open('settings', 'effort:plan');
     const ui = renderAt(120, 40);

@@ -6,7 +6,7 @@ import { sha256Hex } from '../../../utils/sha256.js';
 /**
  * The approval-path Brief generation ref is a derived `brief-${epochId}-${tasksDigest.slice(0, 16)}`
  * identity, never an installed immutable generation: the approval loop and the
- * quick/instant settlement issue the execution permit without calling
+ * quick settlement issue the execution permit without calling
  * `installBriefGeneration`, so REQ-023's immutable install happens only on the
  * producer path (`publishBriefGeneration`), whose canonical id is
  * `generation-${sha256(domain\u0000manifest)}`. The two id conventions coexist

@@ -6,13 +6,13 @@ import type { ReadinessCheck } from '../../core/readiness/types.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
 import type { PlannerConfig } from '../../core/schemas/planner-config.js';
-import type { ActiveRunnerRole, RunnerRole } from '../../core/runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole, RunnerRole } from '../../core/runners/seat-roles.js';
 import {
   customRunnerSecurityPosture,
   inlineRunnerSecurityPosture,
   type ConfiguredCustomRunner,
 } from './custom-trust.js';
-import { inlineRunnerRefusal } from './prepare-execution.js';
+import { inlineRunnerRefusal } from './prepare-execution/evaluate-candidate.js';
 import { admitCustomRunner } from './custom-launchability.js';
 import { checkRunnerTrust } from './trust.js';
 

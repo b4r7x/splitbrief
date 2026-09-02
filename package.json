@@ -48,6 +48,9 @@
     "test:coverage": "tsx scripts/coverage-run.ts",
     "test:e2e": "vitest run --config testing/e2e/vitest.e2e.config.ts",
     "test:e2e:record": "SPLITBRIEF_E2E_RECORD=1 vitest run --config testing/e2e/vitest.e2e.config.ts",
+    "test:e2e:live": "SPLITBRIEF_REAL_CLI_E2E=1 vitest run --config testing/e2e/vitest.live.config.ts testing/e2e/scenarios/live",
+    "test:e2e:live:heavy": "SPLITBRIEF_REAL_CLI_E2E=1 SPLITBRIEF_REAL_CLI_TIER=heavy vitest run --config testing/e2e/vitest.live.config.ts testing/e2e/scenarios/live",
+    "test:e2e:live:smoke": "SPLITBRIEF_REAL_CLI_E2E=1 vitest run --config testing/e2e/vitest.live.config.ts testing/e2e/scenarios/real-cli-planner-implementer-smoke.test.ts",
     "tui-shots": "tsx scripts/tui-shots.ts",
     "tui-shots:pty": "tsx testing/integration/cli/pty/cli.ts",
     "eval": "tsx evals/cli.ts",
@@ -55,6 +58,7 @@
     "eval:replay": "tsx evals/cli.ts --replay",
     "check:invariants": "tsx scripts/check-invariants.ts",
     "knip": "knip",
+    "release-check": "npm run format:check && npm run typecheck && npm run lint && npm test && npm run test:e2e && npm run check:invariants",
     "test-ci": "npm run format:check && npm run typecheck && npm run lint && npm run test:coverage && npm run test:e2e && npm run check:invariants"
   },
   "keywords": [
@@ -73,14 +77,6 @@
     "esbuild": "^0.28.1"
   },
   "license": "MIT",
-  "peerDependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.0"
-  },
-  "peerDependenciesMeta": {
-    "@anthropic-ai/claude-agent-sdk": {
-      "optional": true
-    }
-  },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/sdk-trace-base": "^2.7.0",

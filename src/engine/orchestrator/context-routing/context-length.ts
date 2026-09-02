@@ -15,8 +15,6 @@ export function profileProviderId(profile: ResolvedImplementerProfile): string {
       return 'shell';
     case 'agent':
       return 'agent';
-    case 'agent-sdk':
-      return 'agent-sdk';
     default:
       return assertNever(config);
   }

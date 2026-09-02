@@ -47,19 +47,35 @@ describe('ModeSelector', () => {
     process.env = { ...envSnapshot };
   });
 
-  it('renders planner call counts that match current workflow mode semantics', async () => {
+  it('renders exactly the three workflow modes and never instant', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+
+    const ui = renderFeature(<ModeSelector />);
+    await tick(20);
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Workflow mode');
+    expect(frame).not.toContain('instant');
+    expect([...collectClickableZones({ cols: 120, rows: 40 }).keys()]).toEqual([
+      'mode:quick',
+      'mode:standard',
+      'mode:speckit',
+    ]);
+
+    ui.unmount();
+  });
+
+  it('states each mode planner call count and gate count', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+
     const ui = renderFeature(<ModeSelector />);
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Workflow mode');
     expect(frame).toContain(`↑↓ navigate${SOFT_SEP}⏎ confirm${SOFT_SEP}esc close`);
-    expect(frame).toContain('instant');
-    expect(frame).toContain('1 call');
-    expect(frame).toContain('standard');
-    expect(frame).toContain('4 calls');
-    expect(frame).toContain('speckit');
-    expect(frame).toContain('6-7 calls');
+    expect(modeLine(frame, 'quick')).toContain(`1 call${SOFT_SEP}0 gates`);
+    expect(modeLine(frame, 'standard')).toContain(`4 calls${SOFT_SEP}1 gate`);
+    expect(modeLine(frame, 'speckit')).toContain(`6-7 calls${SOFT_SEP}2 gates`);
 
     ui.unmount();
   });
@@ -72,7 +88,6 @@ describe('ModeSelector', () => {
 
     const frame = ui.lastFrame() ?? '';
     const modeCases: ReadonlyArray<readonly [string, string]> = [
-      ['instant', '1 call'],
       ['quick', '1 call'],
       ['standard', '4 calls'],
       ['speckit', '6-7 calls'],
@@ -105,7 +120,7 @@ describe('ModeSelector', () => {
 
     const frame = ui.lastFrame() ?? '';
     const currentLine = modeLine(frame, 'standard');
-    const otherLine = modeLine(frame, 'instant');
+    const otherLine = modeLine(frame, 'quick');
 
     expect(currentLine).toContain(`${glyph('check')} Current`);
     expect(currentLine.split('Current').length - 1).toBe(1);
@@ -121,13 +136,13 @@ describe('ModeSelector', () => {
     const ui = renderFeature(<ModeSelector />);
     await tick(20);
 
-    const click = collectClickableZones({ cols: 100, rows: 50 }).get('mode:instant');
+    const click = collectClickableZones({ cols: 100, rows: 50 }).get('mode:quick');
     expect(click).toBeDefined();
     click?.();
     await vi.waitFor(() => {
-      expect(getWorkflowMode(configStore.get().config ?? makeConfig())).toBe('instant');
+      expect(getWorkflowMode(configStore.get().config ?? makeConfig())).toBe('quick');
     });
-    expect(feedbackStore.get().message).toContain('instant');
+    expect(feedbackStore.get().message).toContain('quick');
     expect(overlayStore.get().active).toBe('none');
 
     ui.unmount();
@@ -159,7 +174,7 @@ describe('ModeSelector', () => {
     const ui = renderFeature(<ModeSelector />);
     await tick(20);
 
-    collectClickableZones({ cols: 80, rows: 4 }).get('mode:instant')?.();
+    collectClickableZones({ cols: 80, rows: 4 }).get('mode:quick')?.();
     await tick(20);
 
     expect(getWorkflowMode(configStore.get().config ?? makeConfig())).toBe('standard');

@@ -18,7 +18,7 @@ import {
   hydrateDetectionIntoStores,
   hydrateModelsDevCatalogIntoStores,
 } from '../stores/discovery/detection-adapter.js';
-import { modelCacheStore } from '../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { loadRememberedPresentationSnapshot } from '../engine/detection/cache.js';
 import { loadModelsDevCatalogCache } from '../engine/providers/models-dev-cache.js';
 import { discoverSkills } from '../engine/skill-discovery.js';
@@ -26,7 +26,6 @@ import { initLogger } from '../core/logger.js';
 import { createLogger } from '../lib/logger.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
 import { cliError } from './errors.js';
-import { getPlannerToolId } from '../core/config/accessors/runner-config.js';
 import { ensureHooksTrusted } from './hook-trust-prompt.js';
 import { resolveHooksConfig } from '../engine/hooks/discover.js';
 import { workflowOptsToCLIOverrides } from '../core/config/runtime/overrides/from-options.js';
@@ -133,7 +132,7 @@ async function loadDiscovery(projectDir: string): Promise<void> {
     warnError('Could not refresh runner discovery', err);
   });
 
-  const skills = await discoverSkills(getPlannerToolId(storeConfig.planner), projectDir);
+  const skills = await discoverSkills(projectDir);
   skillsStore.setAvailable(skills);
 }
 

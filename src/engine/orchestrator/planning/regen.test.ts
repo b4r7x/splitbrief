@@ -90,10 +90,17 @@ describe('regeneratePlanAndTasks', () => {
     expect(persisted.tokenUsage).toMatchObject({ plannerInput: 17, plannerOutput: 9 });
   });
 
-  it('leaves queued feedback pending when task regeneration fails after plan regeneration', async () => {
+  it('leaves queued feedback pending and Tasks, quality, permit, and events untouched when task regeneration fails after plan regeneration', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
+    writeSpecFile(
+      { projectDir, sessionId },
+      TASKS_FILE,
+      '# Authoritative Task Briefs\n\nPrior bytes stay.\n',
+      TEST_METADATA,
+    );
+    const priorTasksBytes = readSpecFile({ projectDir, sessionId }, TASKS_FILE);
     const planner = makePlanner({
       review: vi
         .fn()
@@ -116,9 +123,18 @@ describe('regeneratePlanAndTasks', () => {
     const saved = loadState({ projectDir, sessionId });
     expect(saved?.messageQueue[0]?.drainedAt).toBeUndefined();
     expect(events.some((event) => event.type === 'queue_drained')).toBe(false);
+    expect(readSpecFile({ projectDir, sessionId }, TASKS_FILE)).toBe(priorTasksBytes);
+    expect(
+      events.filter((event) => event.type === 'artifact_written').map((event) => event.filename),
+    ).toEqual([PLAN_FILE]);
+    expect(events.filter((event) => event.type.startsWith('brief_quality'))).toHaveLength(0);
+    expect(events.filter((event) => event.type === 'brief_generation_published')).toHaveLength(0);
+    expect(events.filter((event) => event.type === 'brief_execution_permit_issued')).toHaveLength(
+      0,
+    );
   });
 
-  it('commits queued feedback after plan and task regeneration both succeed', async () => {
+  it('commits queued feedback and projects the regenerated plan as an approval document after plan and task regeneration both succeed', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
@@ -129,6 +145,7 @@ describe('regeneratePlanAndTasks', () => {
       TEST_METADATA,
     );
     const priorTasksBytes = readSpecFile({ projectDir, sessionId }, TASKS_FILE);
+    const priorPlanBytes = readSpecFile({ projectDir, sessionId }, PLAN_FILE);
     const planner = makePlanner({
       review: vi
         .fn()
@@ -153,6 +170,45 @@ describe('regeneratePlanAndTasks', () => {
       events.filter((event) => event.type === 'artifact_written').map((event) => event.filename),
     ).toEqual([PLAN_FILE]);
     expect(readSpecFile({ projectDir, sessionId }, TASKS_FILE)).toBe(priorTasksBytes);
+    expect(readSpecFile({ projectDir, sessionId }, PLAN_FILE)).not.toBe(priorPlanBytes);
+    expect(readSpecFile({ projectDir, sessionId }, PLAN_FILE)).toContain('# Plan\n\nRegenerated.');
+  });
+
+  it('preserves the authoritative Tasks, plan, quality, permit, and events when plan regeneration fails', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    const { bus, events } = makeBusRecorder();
+    writeSpecFile(
+      { projectDir, sessionId },
+      TASKS_FILE,
+      '# Authoritative Task Briefs\n\nPrior bytes stay.\n',
+      TEST_METADATA,
+    );
+    const priorTasksBytes = readSpecFile({ projectDir, sessionId }, TASKS_FILE);
+    const priorPlanBytes = readSpecFile({ projectDir, sessionId }, PLAN_FILE);
+    const planner = makePlanner({
+      review: vi.fn().mockRejectedValue(new Error('plan regeneration failed')),
+    });
+
+    await expect(
+      regeneratePlanAndTasks({
+        projectDir,
+        sessionId,
+        planner,
+        callbacks: makeCallbacks().callbacks,
+        bus,
+        state: createInitialState('feat'),
+        metadata: TEST_METADATA,
+      }),
+    ).rejects.toThrow('plan regeneration failed');
+
+    expect(readSpecFile({ projectDir, sessionId }, PLAN_FILE)).toBe(priorPlanBytes);
+    expect(readSpecFile({ projectDir, sessionId }, TASKS_FILE)).toBe(priorTasksBytes);
+    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
+    expect(events.filter((event) => event.type.startsWith('brief_quality'))).toHaveLength(0);
+    expect(events.filter((event) => event.type === 'brief_generation_published')).toHaveLength(0);
+    expect(events.filter((event) => event.type === 'brief_execution_permit_issued')).toHaveLength(
+      0,
+    );
   });
 });
 
@@ -336,13 +392,43 @@ describe('regenerateTasks', () => {
     expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
   });
 
-  it('persists planner usage when strict Task Brief parsing rejects a replacement', async () => {
+  it('parses the candidate without writing tasks.md', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { bus, events } = makeBusRecorder();
     writeSpecFile(
       { projectDir, sessionId },
       TASKS_FILE,
-      '# Prior Task Briefs\n\nUnchanged.\n',
+      '# Authoritative Task Briefs\n\nPrior bytes stay.\n',
+      TEST_METADATA,
+    );
+    const priorTasksBytes = readSpecFile({ projectDir, sessionId }, TASKS_FILE);
+    const planner = makePlanner({
+      review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
+    });
+
+    const result = await regenerateTasks({
+      projectDir,
+      sessionId,
+      planner,
+      callbacks: makeCallbacks().callbacks,
+      bus,
+      state: createInitialState('feat'),
+      metadata: TEST_METADATA,
+    });
+
+    expect(result.tasks).toHaveLength(1);
+    expect(result.tasks[0]?.id).toBe('T001');
+    expect(readSpecFile({ projectDir, sessionId }, TASKS_FILE)).toBe(priorTasksBytes);
+    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
+  });
+
+  it('persists planner usage and leaves Tasks, quality, permit, and events untouched when strict Task Brief parsing rejects a replacement', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    const { bus, events } = makeBusRecorder();
+    writeSpecFile(
+      { projectDir, sessionId },
+      TASKS_FILE,
+      '# Authoritative Task Briefs\n\nPrior bytes stay.\n',
       TEST_METADATA,
     );
     const priorTasksBytes = readSpecFile({ projectDir, sessionId }, TASKS_FILE);
@@ -382,6 +468,11 @@ This replacement must fail strict parsing.
     expect(persisted.tokenUsage).toMatchObject({ plannerInput: 31, plannerOutput: 7 });
     expect(readSpecFile({ projectDir, sessionId }, TASKS_FILE)).toBe(priorTasksBytes);
     expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
+    expect(events.filter((event) => event.type.startsWith('brief_quality'))).toHaveLength(0);
+    expect(events.filter((event) => event.type === 'brief_generation_published')).toHaveLength(0);
+    expect(events.filter((event) => event.type === 'brief_execution_permit_issued')).toHaveLength(
+      0,
+    );
   });
 
   it('an abort during regeneration review parks the retry prompt instead of failing', async () => {

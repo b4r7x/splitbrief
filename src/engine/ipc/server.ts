@@ -12,13 +12,16 @@ import {
   type ServerMessage,
 } from './protocol.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { rejectAsAlreadyAttached, tokensMatch, tryControlDetach } from './control-detach.js';
+import { rejectAsAlreadyAttached, tryControlDetach } from './control-detach.js';
 import { createPromptTracker, ipcPromptError } from './prompt-tracker.js';
 import { error } from '../../utils/error.js';
 import { canonicalJSON } from '../../utils/canonical-json.js';
 import { replaySession } from './replay-session.js';
 import { writeServerMessage } from './write-message.js';
 import { protectEngineEventForConsumer } from '../events/protection/protect.js';
+import { createSocketLineBuffer } from './line-buffer.js';
+import { publishIpcOperationalWarning } from './operational-warning.js';
+import { handleClientMessage } from './server-messages.js';
 
 export type IpcServerOptions = {
   sessionId: string;
@@ -66,81 +69,6 @@ export const ipcServerError = {
   bindFailed: (reason: string) =>
     error('ipc-server-bind-failed', `IPC server failed to bind: ${reason}`, { reason }),
 } as const;
-
-function publishIpcOperationalWarning(bus: EventBus, message: string, code: string): void {
-  bus.publish({
-    type: 'warning',
-    ts: Date.now(),
-    phase: 'idle',
-    category: 'ipc',
-    code,
-    transcriptSafe: true,
-    message,
-  });
-}
-
-type SocketLineBufferOptions = {
-  maxLineBytes: number;
-  onLine: (line: string) => void;
-  onOverflow: (lineBytes: number) => void;
-};
-
-function createSocketLineBuffer(opts: SocketLineBufferOptions): {
-  push(chunk: Buffer): void;
-  bufferedBytes(): number;
-} {
-  const lineParts: Buffer[] = [];
-  let lineBytes = 0;
-  let oversized = false;
-  let overflowReported = false;
-
-  function append(segment: Buffer): void {
-    if (oversized || segment.length === 0) return;
-    const remaining = opts.maxLineBytes - lineBytes;
-    if (segment.length > remaining) {
-      if (remaining > 0) lineParts.push(segment.subarray(0, remaining));
-      lineBytes = opts.maxLineBytes;
-      oversized = true;
-      if (!overflowReported) {
-        overflowReported = true;
-        opts.onOverflow(opts.maxLineBytes + 1);
-      }
-      return;
-    }
-    lineParts.push(segment);
-    lineBytes += segment.length;
-  }
-
-  function finish(): void {
-    if (oversized) {
-      if (!overflowReported) opts.onOverflow(opts.maxLineBytes + 1);
-    } else {
-      const line = Buffer.concat(lineParts, lineBytes).toString('utf8');
-      opts.onLine(line.endsWith('\r') ? line.slice(0, -1) : line);
-    }
-    lineParts.length = 0;
-    lineBytes = 0;
-    oversized = false;
-    overflowReported = false;
-  }
-
-  return {
-    push(chunk) {
-      let offset = 0;
-      while (offset < chunk.length) {
-        const newlineIndex = chunk.indexOf(0x0a, offset);
-        const segmentEnd = newlineIndex === -1 ? chunk.length : newlineIndex;
-        append(chunk.subarray(offset, segmentEnd));
-        if (newlineIndex === -1) return;
-        finish();
-        offset = newlineIndex + 1;
-      }
-    },
-    bufferedBytes() {
-      return lineBytes;
-    },
-  };
-}
 
 export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer> {
   const {
@@ -412,108 +340,23 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
           return;
         }
 
-        if (msg.kind === 'authenticate') {
-          if (!tokensMatch(msg.token, authToken)) {
-            writeMessage(socket, {
-              kind: 'error',
-              code: 'unauthorized',
-              message: 'IPC: invalid auth token',
-            });
-            socket.destroy();
-            detachClient();
-            return;
-          }
-          authenticated = true;
-          releasePendingUnauthenticated();
-          void startAuthenticatedSession();
-          return;
-        }
-
-        if (msg.kind === 'parent_accept') {
-          const accepted =
-            tokensMatch(msg.token, authToken) &&
-            onParentAccept?.({
-              version: msg.version,
-              sessionId: msg.sessionId,
-              generation: msg.generation,
-              childPid: msg.childPid,
-            }) === true;
-          if (!accepted) {
-            writeMessage(socket, {
-              kind: 'error',
-              code: 'unauthorized',
-              message: 'IPC: invalid detached parent acceptance',
-            });
-            releasePendingUnauthenticated();
-            socket.end();
-            return;
-          }
-          releasePendingUnauthenticated();
-          writeMessage(socket, {
-            kind: 'parent_accepted',
-            version: msg.version,
-            sessionId: msg.sessionId,
-            generation: msg.generation,
-            childPid: msg.childPid,
-          });
-          socket.end();
-          return;
-        }
-
-        if (!authenticated) {
-          writeMessage(socket, {
-            kind: 'error',
-            code: 'unauthorized',
-            message: 'IPC: authenticate before sending commands',
-          });
-          socket.destroy();
-          detachClient();
-          return;
-        }
-
-        if (msg.kind === 'user_input') {
-          try {
-            onUserInput(msg.text);
-          } catch (err) {
-            bus.publish({
-              type: 'warning',
-              ts: Date.now(),
-              phase: 'idle',
-              message: `IPC: onUserInput threw: ${toErrorMessage(err)}`,
-            });
-          }
-        } else if (msg.kind === 'queue_clear') {
-          if (!onQueueClear) {
-            publishIpcOperationalWarning(
-              bus,
-              'IPC: queue clear is not available for this workflow',
-              'queue_clear_unavailable',
-            );
-            return;
-          }
-          try {
-            onQueueClear();
-          } catch (err) {
-            bus.publish({
-              type: 'warning',
-              ts: Date.now(),
-              phase: 'idle',
-              message: `IPC: onQueueClear threw: ${toErrorMessage(err)}`,
-            });
-          }
-        } else if (msg.kind === 'prompt_response') {
-          if (!promptTracker.handleResponse(msg.requestId, msg.response)) {
-            bus.publish({
-              type: 'warning',
-              ts: Date.now(),
-              phase: 'idle',
-              message: `IPC: response for unknown prompt ${msg.requestId}`,
-            });
-          }
-        } else if (msg.kind === 'detach') {
-          detachClient();
-          socket.destroy();
-        }
+        handleClientMessage(msg, {
+          socket,
+          bus,
+          writeMessage,
+          authToken,
+          onUserInput,
+          onQueueClear,
+          onParentAccept,
+          promptTracker,
+          isAuthenticated: () => authenticated,
+          markAuthenticated: () => {
+            authenticated = true;
+          },
+          detachClient,
+          startAuthenticatedSession,
+          releasePendingUnauthenticated,
+        });
       },
       onOverflow: (lineBytes) => {
         publishIpcOperationalWarning(

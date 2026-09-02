@@ -9,11 +9,8 @@ import {
   type ResolvedImplementerProfile,
 } from '../../core/config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
-import {
-  CLI_TOOL_CATALOG,
-  type ActiveRunnerRole,
-  type CliToolId,
-} from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import { createSanitizedChildEnv } from '../../lib/process/spawn/child-env.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { spawnWithTimeout } from '../../lib/process/spawn/progress.js';
@@ -233,6 +230,7 @@ export async function collectArgVectorPreflightChecks(
       model: input.config.planner.model,
       args: input.config.planner.args,
       effort: input.config.planner.effort,
+      variant: input.config.planner.variant,
     });
   }
   if (input.roles.includes('reviewer')) {
@@ -244,6 +242,7 @@ export async function collectArgVectorPreflightChecks(
         model: reviewer.runner.model,
         args: reviewer.runner.args,
         effort: reviewer.runner.effort,
+        variant: reviewer.runner.variant,
       });
     }
   }
@@ -262,6 +261,7 @@ export async function collectArgVectorPreflightChecks(
           model: profile.config.model,
           args: profile.config.args,
           effort: profile.config.effort,
+          variant: profile.config.variant,
         });
       }
     }
@@ -279,6 +279,7 @@ type PreflightRunner = Readonly<{
   model: string | undefined;
   args: readonly string[] | undefined;
   effort: EffortLevel | undefined;
+  variant: string | undefined;
 }>;
 
 async function buildPreflightCheck(
@@ -369,6 +370,7 @@ function emittedArgVectors(runner: PreflightRunner): readonly (readonly string[]
           projectDir: '.',
           configuredArgs: runner.args ?? [],
           effort: runner.effort,
+          variant: runner.variant,
         }),
       ];
     case 'reviewer': {
@@ -412,6 +414,7 @@ function plannerCommonArgs(
     projectDir: '.',
     configuredArgs: runner.args ?? [],
     effort: adapter.supportsEffort ? runner.effort : undefined,
+    variant: runner.variant,
   };
 }
 

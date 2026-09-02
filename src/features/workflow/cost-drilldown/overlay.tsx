@@ -10,7 +10,7 @@ import { overlayRect } from '../../../core/navigation/overlay-rect.js';
 import { CREW_LABEL_WIDTH, CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { formatCacheHitPct } from '../layout/cost-chrome.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { resolvePricing } from '../../../engine/providers/pricing-resolver.js';

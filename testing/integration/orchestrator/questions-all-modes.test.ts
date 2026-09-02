@@ -50,7 +50,6 @@ const SEVEN_MARKERS = Array.from(
 const ANSWER = 'use-jwt-for-auth';
 const FLAVORS = ['conversational', 'command'] as const;
 const PRODUCER_HANDOFF_PHASE: Record<WorkflowMode, WorkflowState['phase']> = {
-  instant: 'idle',
   quick: 'idle',
   standard: 'reviewing-plan',
   speckit: 'analyzing',
@@ -121,7 +120,6 @@ function makeMarkerPlanner(opts: {
   const planner = makePlanner({
     plan: vi.fn((planOpts: PlanOptions) => respond(planOpts, fullPlan)),
     quickPlan: vi.fn((planOpts: PlanOptions) => respond(planOpts, briefOnly)),
-    instantPlan: vi.fn((planOpts: PlanOptions) => respond(planOpts, briefOnly)),
     review: vi.fn(async (prompt: string) => {
       reviewPrompts.push(prompt);
       return { text: REAL_TASKS_MD, usage: null };
@@ -273,10 +271,6 @@ function modeSuite(mode: WorkflowMode): void {
     expectMarkerFreePlannerText(events);
   });
 }
-
-describe('instant', { timeout: 90_000 }, () => {
-  modeSuite('instant');
-});
 
 describe('quick', { timeout: 90_000 }, () => {
   modeSuite('quick');

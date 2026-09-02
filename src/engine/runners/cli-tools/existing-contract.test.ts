@@ -9,10 +9,10 @@ import { prependPath } from '#testing/helpers/command-shim.js';
 import { CLI_CONFORMANCE_CANDIDATES as claudeCodeCandidates } from './claude-code.js';
 import { CLI_CONFORMANCE_CANDIDATES as codexCandidates } from './codex.js';
 import { CLI_CONFORMANCE_CANDIDATES as opencodeCandidates } from './opencode.js';
-import { CLI_CONFORMANCE_CANDIDATES as aiderCandidates } from './aider.js';
 import { CLI_CONFORMANCE_CANDIDATES as copilotCandidates } from './copilot.js';
 import { CLI_CONFORMANCE_CANDIDATES as kiloCodeCandidates } from './kilo-code.js';
 import { CLI_CONFORMANCE_CANDIDATES as cursorCandidates } from './cursor.js';
+import { CLI_CONFORMANCE_CANDIDATES as commandCodeCandidates } from './command-code.js';
 import type { RawCliCandidateContract, UnregisteredCliCandidate } from './candidate-contract.js';
 import { CLI_CONFORMANCE_EXIT_CODES, type CliConformanceRole } from './contract-harness.js';
 import { runProductionCliConformance } from './contract-harness-production.js';
@@ -30,10 +30,10 @@ const CONFORMANCE_MODULES: readonly ConformanceModule[] = [
   { modulePath: join(here, 'claude-code.ts'), candidates: claudeCodeCandidates },
   { modulePath: join(here, 'codex.ts'), candidates: codexCandidates },
   { modulePath: join(here, 'opencode.ts'), candidates: opencodeCandidates },
-  { modulePath: join(here, 'aider.ts'), candidates: aiderCandidates },
   { modulePath: join(here, 'copilot.ts'), candidates: copilotCandidates },
   { modulePath: join(here, 'kilo-code.ts'), candidates: kiloCodeCandidates },
   { modulePath: join(here, 'cursor.ts'), candidates: cursorCandidates },
+  { modulePath: join(here, 'command-code.ts'), candidates: commandCodeCandidates },
 ];
 
 const CONFORMANCE_ROWS = CONFORMANCE_MODULES.flatMap((module) =>
@@ -65,11 +65,6 @@ const SHIM_PROFILES: Readonly<Record<string, ShimProfile>> = {
     transport: 'argv',
     terminal: 'process-exit',
   },
-  aider: {
-    versionLine: 'aider 0.86.0',
-    transport: 'argv',
-    terminal: 'process-exit',
-  },
   opencode: {
     versionLine: 'opencode 0.5.0',
     transport: 'argv',
@@ -82,6 +77,11 @@ const SHIM_PROFILES: Readonly<Record<string, ShimProfile>> = {
   },
   'cursor-agent': {
     versionLine: '2026.08.25-3e8eec8',
+    transport: 'argv',
+    terminal: 'result',
+  },
+  cmd: {
+    versionLine: '1.4.0',
     transport: 'argv',
     terminal: 'result',
   },
@@ -149,6 +149,22 @@ function writeConformanceShim(
   ]
     .map((line) => `printf '%s\\n' '${line.replace(/'/g, "'\\''")}'`)
     .join('\n');
+  const commandCodeNdjson = [
+    JSON.stringify({
+      type: 'event',
+      event: { type: 'tool_running', toolCallId: 'call_1', toolName: 'read_file' },
+    }),
+    JSON.stringify({
+      type: 'result',
+      subtype: 'success',
+      sessionId: 'contract-session',
+      stopReason: 'end_turn',
+      finalText: 'done',
+      usage: { inputTokens: 10, outputTokens: 2 },
+    }),
+  ]
+    .map((line) => `printf '%s\\n' '${line.replace(/'/g, "'\\''")}'`)
+    .join('\n');
   const codexLine = JSON.stringify({ type: 'turn.completed' });
   const bashFirstArg = '$' + '{1:-}';
   const body = [
@@ -170,7 +186,9 @@ function writeConformanceShim(
         : profile.terminal === 'result'
           ? command === 'cursor-agent'
             ? cursorNdjson
-            : `printf '%s\\n' '${resultLine.replace(/'/g, "'\\''")}'`
+            : command === 'cmd'
+              ? commandCodeNdjson
+              : `printf '%s\\n' '${resultLine.replace(/'/g, "'\\''")}'`
           : "printf '%s\\n' 'ok'",
     role === 'implementer' ? 'printf changed > "$MARKER"' : '',
     'exit 0',

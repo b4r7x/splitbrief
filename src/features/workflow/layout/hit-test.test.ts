@@ -135,7 +135,7 @@ describe('hitBriefTaskRow', () => {
         previousCount: 0,
       }),
     ).toBe(2);
-    // A click at the no-error offset now lands on the error line itself: inert.
+    // A click at the no-error offset lands on the error line itself: inert.
     expect(
       hitBriefTaskRow({
         rect: r,
@@ -227,9 +227,9 @@ describe('rail stage hit zones', () => {
     for (const zone of zones) expect(zone.right).toBeLessThanOrEqual(maxCol);
   });
 
-  it('keeps Form B zones independent of the fraction now that it lives in the activity row', () => {
-    // The horizontal rail no longer paints `N/M` inline — the active stage's segment is a fixed
-    // marker+label slot — so the fraction can never advance the trailing zones.
+  it('keeps Form B zones independent of the fraction', () => {
+    // A Form-B active stage is a fixed marker+label slot with no inline `N/M` (only Form C widens
+    // for the fraction), so the fraction can never advance the trailing zones.
     const withFraction = getRailStageZones({
       form: 'B',
       phase: 'implementing',

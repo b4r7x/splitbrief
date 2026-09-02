@@ -2,7 +2,7 @@
 
 > **Different from `docs/HOOKS.md`!** That doc covers React hooks. This doc covers user-extensible **workflow lifecycle hooks** — shell commands or built-in scanners that fire at well-known moments during a SPLITBRIEF workflow. Lifecycle hooks are not React hooks.
 
-User-extensible hook system inspired by Claude Agent SDK. Declare commands or modules in `.splitbrief/config.yaml`, or drop convention-named JS/TS modules into `.splitbrief/hooks/`, to fire at workflow events (pre/post task, pre/post validation, optional pre/post commit, etc.). Used for `prettier --write` after each task, secret scanning when product-level commit hooks are enabled, Slack notifications, custom validators — anything you can run from a script or module.
+User-extensible hook system inspired by Claude Code. Declare commands or modules in `.splitbrief/config.yaml`, or drop convention-named JS/TS modules into `.splitbrief/hooks/`, to fire at workflow events (pre/post task, pre/post validation, optional pre/post commit, etc.). Used for `prettier --write` after each task, secret scanning when product-level commit hooks are enabled, Slack notifications, custom validators — anything you can run from a script or module.
 
 ## Quick start
 
@@ -230,7 +230,7 @@ A single JSON object is written to the child's stdin, then stdin is closed:
 ```
 
 - `event` is the in-flight `EngineEvent` — the same payload rendered in the TUI. Fields present depend on event type (see [per-event availability](#per-event-availability)). The stdin payload is bounded and secret-redacted before it is written to the child process.
-- `context` is static for the run: `projectDir` (absolute), `sessionId` (per-invocation), `phase` (`plan` / `implement` / `validate`), `mode` (`instant` / `quick` / `standard` / `speckit`).
+- `context` is static for the run: `projectDir` (absolute), `sessionId` (per-invocation), `phase` (`plan` / `implement` / `validate`), `mode` (`quick` / `standard` / `speckit`).
 
 ### stdout — optional response
 
@@ -309,7 +309,7 @@ A hung hook can never stall the workflow indefinitely — `timeout_ms` is mandat
 
 ## Security model
 
-Hook commands run with the user's **full shell privileges** — the same authority as any other process they launch. This is intentional and matches the posture of Claude Agent SDK hooks and comparable tools (opencode plugins, Cursor Composer hooks). Without full privileges, hooks could not invoke `npx prettier`, open a scanner, or call the user's CI.
+Hook commands run with the user's **full shell privileges** — the same authority as any other process they launch. This is intentional and matches the posture of Claude Code hooks and comparable tools (opencode plugins, Cursor Composer hooks). Without full privileges, hooks could not invoke `npx prettier`, open a scanner, or call the user's CI.
 
 Because of that authority, SPLITBRIEF layers several guardrails:
 
@@ -404,7 +404,8 @@ Module: `src/engine/hooks/`
 - `builtins/{registry,prettier-on-change,block-secrets}.ts` — built-in hook implementations
 
 Trust:
-- `src/core/hooks/trust.ts` — sha256 + canonical JSON, receipts in the owner's trust store
+- `src/core/hooks/trust.ts` — receipts in the owner's trust store
+- `src/core/hooks/trust-digest.ts` — sha256 + canonical JSON over the config and the hook files it reaches
 - `src/core/trust/receipt-store.ts` — the machine-scoped receipt store shared with custom runner trust (`~/.splitbrief/trust/`, canonical-checkout identity, owner-only read)
 - `src/cli/hook-trust-prompt.ts` — `ensureHooksTrusted()` disclosure + prompt + non-TTY refusal
 

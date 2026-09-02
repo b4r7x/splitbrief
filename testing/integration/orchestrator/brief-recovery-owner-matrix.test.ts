@@ -20,11 +20,9 @@ import {
   readWorkflowStateHead,
   workflowStateRevision,
 } from '../../../src/engine/orchestrator/state-ops.js';
-import {
-  drainRecoveryOutbox,
-  persistBriefOwnerTransition,
-} from '../../../src/engine/orchestrator/evidence/recovery-journal.js';
-import { readRecoveryJournal } from '../../../src/core/evidence/recovery-journal.js';
+import { drainRecoveryOutbox } from '../../../src/engine/orchestrator/evidence/recovery-journal.js';
+import { persistBriefOwnerTransition } from '../../../src/engine/orchestrator/evidence/brief-owner-journal.js';
+import { readRecoveryJournal } from '../../../src/core/evidence/recovery-journal/journal.js';
 import { publishBriefGeneration } from '../../../src/engine/orchestrator/planning/brief-publication.js';
 import {
   type RecoveryRefusalInput,
@@ -528,7 +526,7 @@ describe('recovery owner integration matrix', () => {
     if (receipt.status !== 'settled') return;
     expect(receipt.reservation.pricing).toMatchObject({
       budgetUnit: 'usd',
-      pricingIdentity: 'openai/gpt-5.4',
+      pricingIdentity: 'custom-endpoint/gpt-5.4',
     });
     expect(recovery.committedSpend).toBeGreaterThan(0);
     const bookedOnce = recovery.committedSpend;

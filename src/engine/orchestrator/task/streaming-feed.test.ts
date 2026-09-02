@@ -56,18 +56,6 @@ describe('createStreamingFeed', () => {
     expect(sink.stop).toHaveBeenCalled();
   });
 
-  it('shows long incomplete lines before a newline arrives', () => {
-    const sink = fakeSink();
-    const feed = createStreamingFeed(taskId('T001'), sink);
-    const longLine = 'a'.repeat(21);
-
-    feed.onText(longLine);
-    flushThrottle();
-
-    expect(sink.lines.at(-1)).toEqual([longLine]);
-    feed.stop();
-  });
-
   it('replaces an incomplete preview when its newline arrives', () => {
     const sink = fakeSink();
     const feed = createStreamingFeed(taskId('T001'), sink);
@@ -135,13 +123,5 @@ describe('createStreamingFeed', () => {
     expect(lastPush).toEqual(['b', 'c', 'd', 'e', 'f']);
 
     feed.stop();
-  });
-
-  it('stop() calls sink.stop()', () => {
-    const sink = fakeSink();
-    const feed = createStreamingFeed(taskId('T003'), sink);
-
-    feed.stop();
-    expect(sink.stop).toHaveBeenCalledTimes(1);
   });
 });

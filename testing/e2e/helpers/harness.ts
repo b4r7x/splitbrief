@@ -8,11 +8,10 @@ import { getApiProviderDescriptor } from '../../../src/core/providers/api-provid
 import { markHooksConfigTrusted } from '../../../src/core/hooks/trust.js';
 import { loadConfig } from '../../../src/core/config/load/io.js';
 import { applyCLIOverrides } from '../../../src/core/config/runtime/overrides/apply.js';
-import type { ReadinessReport } from '../../../src/core/readiness/types.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
-import { prepareExecution } from '../../../src/engine/runners/prepare-execution.js';
+import { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare-execution.js';
 import { resolveHooksConfig } from '../../../src/engine/hooks/discover.js';
 import { releasePreparedSession } from '../../../src/core/sessions/prepare.js';
 import { createTestGitRepo } from '../../helpers/git.js';
@@ -22,6 +21,7 @@ import { useTrustHome } from '../../helpers/trust-home.js';
 import { createCassetteRecorder } from '../../helpers/cassette/recorder.js';
 import { createCassetteReplayer, loadCassette } from '../../helpers/cassette/replayer.js';
 import { TEST_WORKFLOW_SINKS } from '../../helpers/orchestrator-context.js';
+import { blockerLines } from './blockers.js';
 
 export interface E2eScenario {
   name: string;
@@ -157,19 +157,6 @@ export async function runE2eWorkflow(
       onComplete: () => undefined,
     },
   });
-}
-
-/**
- * A blocked preparation is how cassette drift shows up first: the readiness
- * probe hits an entry the workflow was going to use. Naming the blockers here
- * is the difference between "ended with 'blocked'" and a diagnosis.
- */
-function blockerLines(report: ReadinessReport): string[] {
-  return report.sections.flatMap((section) =>
-    section.checks
-      .filter((check) => check.severity === 'blocker')
-      .map((check) => `  ${check.id}: ${[check.summary, ...(check.details ?? [])].join(' ')}`),
-  );
 }
 
 function replayRunner(runner: Config['planner'] | Config['implementer']): unknown {

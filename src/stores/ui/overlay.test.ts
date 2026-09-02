@@ -56,6 +56,16 @@ describe('overlayStore', () => {
     expect(overlayStore.get().focus).toBeUndefined();
   });
 
+  it('closes a directly opened seat picker back to the screen, not into settings', () => {
+    // The /crew hop opens the seat picker with no overlay beneath it,
+    // so Esc must land on the previous screen — never on Settings.
+    overlayStore.open('planner-picker', 'models');
+    expect(overlayStore.get().stack).toEqual([]);
+
+    overlayStore.close();
+    expect(overlayStore.get()).toEqual({ active: 'none', exclusive: false, stack: [] });
+  });
+
   it('setExclusive toggles exclusive-input independently of the active overlay', () => {
     overlayStore.setExclusive(true);
     expect(overlayStore.get().exclusive).toBe(true);

@@ -63,7 +63,7 @@ describe('parseEntryAs', () => {
     expect(
       AgentInvocationPayloadSchema.safeParse({
         role: 'escalation',
-        backendKind: 'agent-sdk',
+        backendKind: 'api',
         tool: 'claude-code',
         phase: 'implementing',
         status: 'unsupported_tool',

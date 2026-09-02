@@ -334,15 +334,6 @@ function automaticPolicy(input: BriefAdmissionInput): NormalRecovery['automaticR
   if (input.origin.entry === 'auto-split' || input.origin.mode === 'quick') {
     return { policy: 'none', eligible: false, consumed: false, operationId: null };
   }
-  if (input.origin.mode === 'instant') {
-    const zeroTask = input.report.issues.some((issue) => issue.code === 'empty_task_list');
-    return {
-      policy: 'zero-task-only',
-      eligible: zeroTask,
-      consumed: false,
-      operationId: null,
-    };
-  }
   return {
     policy: 'existing-one-shot',
     eligible: true,

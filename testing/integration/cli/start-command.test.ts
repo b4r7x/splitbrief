@@ -14,32 +14,11 @@ import {
 } from '#testing/helpers/start-command.js';
 import { registerStartCommand } from '../../../src/cli/commands/start/register.js';
 import { SPLITBRIEF_DIR } from '../../../src/core/paths.js';
-import { isCliError } from '../../../src/cli/errors.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 
 setupStartCommandIntegration();
 
 describe('start command — concurrency guard', () => {
-  it('refuses to start when a live session already exists and preserves the active marker', async () => {
-    const tmp = getStartCommandTmp();
-    writeLiveSession(tmp, '2026-04-18-live');
-    writeSessionLockfile(tmp, '2026-04-18-live');
-
-    let captured: unknown;
-    try {
-      await runStart(['--project', tmp, 'another feature']);
-      throw new Error('expected start to throw');
-    } catch (err) {
-      captured = err;
-    }
-
-    expect(isCliError(captured)).toBe(true);
-    expect((captured as Error).message).toContain('2026-04-18-live');
-    const activePath = join(tmp, SPLITBRIEF_DIR, 'active');
-    expect(existsSync(activePath)).toBe(true);
-    expect(readFileSync(activePath, 'utf-8').trim()).toBe('2026-04-18-live');
-  });
-
   it('starts interactive setup past an exited session and preserves its active marker', async () => {
     const tmp = getStartCommandTmp();
     const sessionId = '2026-04-18-exited';

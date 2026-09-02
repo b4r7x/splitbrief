@@ -271,8 +271,8 @@ describe('createMetadataProvider', () => {
       createMetadataProvider(
         {
           ...opts,
-          name: 'openai',
-          defaultBaseURL: 'https://api.openai.com/v1',
+          name: 'lm-studio',
+          defaultBaseURL: 'http://localhost:1234/v1',
         },
         { apiBase: 'https://lookalike.example/v1', apiKey: 'env:MISSING_ENDPOINT_KEY' },
       ),
@@ -284,8 +284,8 @@ describe('createMetadataProvider', () => {
       createMetadataProvider(
         {
           ...opts,
-          name: 'openai',
-          defaultBaseURL: 'https://api.openai.com/v1',
+          name: 'lm-studio',
+          defaultBaseURL: 'http://localhost:1234/v1',
           endpointPolicy: { kind: 'fixed-origin', baseURL: 'https://candidate.example/v1' },
         },
         { apiBase: 'https://candidate.example/v1', apiKey: 'candidate-key' },
@@ -532,10 +532,10 @@ describe('metadata provider offering billing metadata', () => {
 
   it('keys run metadata by the metadata provider name and base URL', () => {
     const p = createMetadataProvider<Raw>({
-      name: 'deepseek',
-      defaultBaseURL: 'https://api.deepseek.com/v1',
-      envKeyName: 'DEEPSEEK_API_KEY',
-      isLocal: false,
+      name: 'lm-studio',
+      defaultBaseURL: 'http://localhost:1234/v1',
+      envKeyName: '',
+      isLocal: true,
       schema: RawSchema,
       fallback: (id): Raw => ({ id }),
     });
@@ -543,32 +543,32 @@ describe('metadata provider offering billing metadata', () => {
     expect(
       resolveProviderRunMetadata({ tool: p.name, normalizedEndpoint: p.baseURL }),
     ).toMatchObject({
-      service: 'deepseek',
-      normalizedEndpoint: 'https://api.deepseek.com/v1',
+      service: 'lm-studio',
+      normalizedEndpoint: 'http://localhost:1234/v1',
     });
   });
 
   it('retains normalized endpoint overrides in run metadata', () => {
     const p = createMetadataProvider<Raw>(
       {
-        name: 'openai',
-        defaultBaseURL: 'https://api.openai.com/v1',
-        envKeyName: 'OPENAI_API_KEY',
-        isLocal: false,
+        name: 'lm-studio',
+        defaultBaseURL: 'http://localhost:1234/v1',
+        envKeyName: '',
+        isLocal: true,
         schema: RawSchema,
         fallback: (id): Raw => ({ id }),
       },
-      { apiBase: 'HTTPS://API.OPENAI.COM:443/v1/' },
+      { apiBase: 'HTTP://LOCALHOST:1234/v1/' },
     );
 
-    expect(p.baseURL).toBe('https://api.openai.com/v1');
+    expect(p.baseURL).toBe('http://localhost:1234/v1');
     expect(
       resolveProviderRunMetadata({ tool: p.name, normalizedEndpoint: p.baseURL }),
     ).toMatchObject({
-      service: 'openai',
-      offering: 'payg',
-      normalizedEndpoint: 'https://api.openai.com/v1',
-      billing: 'api-metered',
+      service: 'lm-studio',
+      offering: 'local',
+      normalizedEndpoint: 'http://localhost:1234/v1',
+      billing: 'local',
       asOf: '2026-07-31',
     });
   });

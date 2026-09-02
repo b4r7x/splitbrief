@@ -37,6 +37,12 @@ describe('displayValue', () => {
     ).toBe('auto (256K)');
   });
 
+  it('shows a floored context window for the auto-detected implementer limit', () => {
+    const def = getDef('implementer.contextLength');
+    expect(displayValue(def, 1_048_576, { detectedContextLength: 1_048_576 })).toBe('auto (1M)');
+    expect(displayValue(def, 262_144, { detectedContextLength: 262_144 })).toBe('auto (262K)');
+  });
+
   it('unsetLabel fallbacks for timeout and contextLength', () => {
     expect(displayValue(getDef('implementer.timeout'), null)).toBe('auto (idle kill 30m)');
     expect(displayValue(getDef('implementer.contextLength'), undefined)).toBe('auto');

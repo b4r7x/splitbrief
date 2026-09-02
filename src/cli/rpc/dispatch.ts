@@ -7,7 +7,7 @@ import type { ClearQueueHandler, QueueHandler } from '../../engine/orchestrator/
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 import { createRuntimeCommands } from '../../core/runtime/commands/registry.js';
 import { detectedModelFact, seatSupportsImages } from '../../core/runners/capabilities.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { executeRuntimeCommand } from '../../core/runtime/commands/dispatch.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { createRpcCommandContext } from './command-context.js';

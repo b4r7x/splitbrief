@@ -8,7 +8,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { _resetMouseZones } from '../../../lib/terminal/mouse-zones.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { TwoColumnPicker } from './picker.js';
-import type { CycleOutcome } from './use-nav-state.js';
+import type { CycleOutcome } from './types.js';
 
 // A failing expect skips any unmount written into a test body, and the leaked Ink
 // tree keeps re-registering its row zones for the rest of the file. Teardown lives

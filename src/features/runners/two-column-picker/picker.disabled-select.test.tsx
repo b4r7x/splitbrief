@@ -25,7 +25,6 @@ const ENTER = '\r';
 
 function renderPicker(handlers: {
   onConfirm?: ((left: Tool, right: Model | null) => void) | undefined;
-  onDisabledSelect?: ((item: Tool) => void) | undefined;
   onLeftChange?: ((item: Tool) => void) | undefined;
 }) {
   return renderFeature(
@@ -45,28 +44,23 @@ function renderPicker(handlers: {
       }}
       onConfirm={handlers.onConfirm ?? (() => {})}
       onCancel={() => {}}
-      onDisabledSelect={handlers.onDisabledSelect}
     />,
   );
 }
 
-describe('TwoColumnPicker onDisabledSelect', () => {
+describe('TwoColumnPicker Enter on a disabled left row', () => {
   beforeEach(() => {
     forceUnicodeGlyphs();
     resetAllStores();
     _resetMouseZones();
   });
 
-  it('fires onDisabledSelect instead of onConfirm on Enter on a disabled left row', async () => {
+  it('neither confirms nor advances to the model column', async () => {
     const confirms: string[] = [];
-    const disabledSelects: string[] = [];
     const leftChanges: string[] = [];
     const ui = renderPicker({
       onConfirm: (left) => {
         confirms.push(left.id);
-      },
-      onDisabledSelect: (item) => {
-        disabledSelects.push(item.id);
       },
       onLeftChange: (item) => {
         leftChanges.push(item.id);
@@ -89,50 +83,13 @@ describe('TwoColumnPicker onDisabledSelect', () => {
     );
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => {
-        expect(disabledSelects).toEqual(['beta']);
-      },
-      { timeout: 5_000 },
-    );
+    await flushEffects();
 
     expect(confirms).toEqual([]);
-    ui.unmount();
-  });
-
-  it('does not fire onDisabledSelect for Enter on an enabled row or in the right column', async () => {
-    const confirms: string[] = [];
-    const disabledSelects: string[] = [];
-    const leftChanges: string[] = [];
-    const ui = renderPicker({
-      onConfirm: (left, right) => {
-        confirms.push(`${left.id}:${right?.id ?? 'none'}`);
-      },
-      onDisabledSelect: (item) => {
-        disabledSelects.push(item.id);
-      },
-      onLeftChange: (item) => {
-        leftChanges.push(item.id);
-      },
-    });
-    await vi.waitFor(
-      () => {
-        expect(leftChanges.at(-1)).toBe('alpha');
-      },
-      { timeout: 5_000 },
-    );
+    // The cursor stayed in the tool column: another Enter still confirms nothing.
+    ui.stdin.write(ENTER);
     await flushEffects();
-
-    ui.stdin.write(ENTER); // enabled alpha -> focus right
-    await flushEffects();
-    ui.stdin.write(ENTER); // right column -> confirm
-    await vi.waitFor(
-      () => {
-        expect(confirms).toEqual(['alpha:model-1']);
-      },
-      { timeout: 5_000 },
-    );
-    expect(disabledSelects).toEqual([]);
+    expect(confirms).toEqual([]);
     ui.unmount();
   });
 });

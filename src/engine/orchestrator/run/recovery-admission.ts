@@ -37,7 +37,6 @@ export type AdmissionProjection = Readonly<{
 }>;
 
 function continuationFor(mode: WorkflowState['mode']): BriefContinuationV1 {
-  if (mode === 'instant') return { version: 1, kind: 'instant-start', entry: 'initial' };
   if (mode === 'quick') return { version: 1, kind: 'quick-start', entry: 'initial' };
   return {
     version: 1,

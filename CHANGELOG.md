@@ -5,6 +5,9 @@
 ### Added
 
 - Cursor Agent CLI (`cursor`) is an admitted `kind: cli` tool.
+- Command Code (`command-code`) is an admitted `kind: cli` tool.
+- `npm run release-check` is the PR gate: `format:check → typecheck → lint → test → test:e2e → check:invariants`. `npm run test-ci` remains the exhaustive form that runs the coverage thresholds instead of the plain test run.
+- A live end-to-end tier that drives the real CLI binaries (`testing/e2e/scenarios/live` for the easy and heavy scenarios, `testing/e2e/scenarios/real-cli-planner-implementer-smoke.test.ts` for the smoke one, `testing/e2e/vitest.live.config.ts`), opt-in behind `SPLITBRIEF_REAL_CLI_E2E=1` through `npm run test:e2e:live`, `test:e2e:live:heavy`, and `test:e2e:live:smoke`. Nothing in the default `npm test` or `npm run test:e2e` path spends a token.
 
 ### Changed
 
@@ -19,11 +22,15 @@
 - The runtime command registry is 27 commands in five categories (Navigate, Crew, Workflow, View, Input & output), each with its aliases and, where a command takes an argument, prefill. `/crew [seat]` opens Crew focused on that seat's row (PLAN when no seat is given). No row in the palette errors on Enter.
 - New commands in that registry: `/diff` shows the run diff, `/cost` the cost breakdown — which gains a `By seat` section — `/run accept|reject` answers the run approval gate, and `/image` attaches and removes images, offered only when the seat's runner can accept them.
 - The stderr effort-drop warning (`src/engine/runners/factory.ts`) is kept for headless runs; in the TUI the picker now clears an unsupported effort at save time and says so in the feedback row.
+- CI is split into four jobs — `static` (format, lint, typecheck, invariants), `unit` sharded four ways, `e2e-replay`, and `smoke` (the TUI screenshot scenario) — instead of one job running `npm run test-ci`, with `concurrency` cancelling superseded runs and push builds limited to `main`. Coverage moved to its own nightly workflow (`.github/workflows/nightly-coverage.yml`, 04:00 UTC plus `workflow_dispatch`), so a coverage threshold no longer blocks a pull request.
 
 ### Removed
 
 - The commands `/effort`, `/repomap`, `/resume`, `/planner`, `/implementer`, `/reviewer`, `/accept-run`, `/reject-run`, `/attach`, and `/detach`. The last seven live on for one release as alias rows for `/crew <seat>`, `/run accept|reject`, and `/image`; `/effort`, `/repomap`, and `/resume` are gone outright — effort is edited on the seat's row in Crew.
 - The standalone Crew overlay, `SubPanel`, the per-seat Settings sections, and the pinned overlay widths.
+- **Breaking.** The `agent-sdk` runner kind, along with its optional peer dependency `@anthropic-ai/claude-agent-sdk`. A config naming it is rejected with `Runner kind "agent-sdk" was removed; use kind cli, api, shell, or agent.`; the replacement is `kind: api` against your own endpoint (`provider`/`service`, `offering`, `apiBase`, inline `apiKey`).
+- **Breaking.** The `aider` CLI tool. A config naming it is rejected with `CLI tool "aider" was removed; supported tools are …`; there is no drop-in replacement — choose another `cli` tool, or drive Aider as a `shell` runner.
+- **Breaking.** The `instant` workflow mode, merged into `quick` and no longer selectable. Every persisted `instant` still loads — `WorkflowModeSchema` preprocesses it to `quick` — and reading one prints a deprecation notice from `validateConfig`, from `--mode` on stderr, and from the runtime `/mode` handler. Three back-compatibility-only wire formats keep the literal so pre-merge sessions replay: the `instant_plan_received` event, the `instant-start` brief-recovery continuation kind, and `BriefRecoveryOriginSchema.mode`. See `docs/WORKFLOW.md`.
 - The `escalate` crew row and the escalation picker. The escalation tier stays YAML-only (`config.escalation`); `deriveCrewRows` never reads it, so it has no crew row and no picker.
 
 ### Fixed

@@ -245,17 +245,7 @@ describe('psCommand', () => {
   });
 
   it('hints at the collectable count when collectable directories exist', async () => {
-    const nowMs = Date.now();
-    const data: LockfileData = {
-      version: 1,
-      pid: 100,
-      startTimeMs: nowMs,
-      lastAliveMs: nowMs,
-      sessionId: 'real-session',
-      mode: 'standard',
-      feature: 'real feature',
-    };
-    putSession('real-session', data, { alive: true, data });
+    putRunningSession('real-session');
     putCollectableSession('2026-08-01-collectable');
 
     const lines = await collectPsOutput();
@@ -278,17 +268,7 @@ describe('psCommand', () => {
   });
 
   it('prints no hint when no directory is collectable', async () => {
-    const nowMs = Date.now();
-    const data: LockfileData = {
-      version: 1,
-      pid: 100,
-      startTimeMs: nowMs,
-      lastAliveMs: nowMs,
-      sessionId: 'real-session',
-      mode: 'standard',
-      feature: 'real feature',
-    };
-    putSession('real-session', data, { alive: true, data });
+    putRunningSession('real-session');
 
     const lines = await collectPsOutput();
 
@@ -296,18 +276,8 @@ describe('psCommand', () => {
   });
 
   it('--prune removes collectable directories, reports each, and leaves session state in place', async () => {
-    const nowMs = Date.now();
-    const data: LockfileData = {
-      version: 1,
-      pid: 100,
-      startTimeMs: nowMs,
-      lastAliveMs: nowMs,
-      sessionId: 'real-session',
-      mode: 'standard',
-      feature: 'real feature',
-    };
-    putSession('real-session', data, { alive: true, data });
-    putInteractiveSession('interactive-session', nowMs);
+    putRunningSession('real-session');
+    putInteractiveSession('interactive-session', Date.now());
     putCollectableSession('2026-08-01-collectable');
     const collectableDir = join(testDir, '.splitbrief', 'sessions', '2026-08-01-collectable');
 
@@ -333,17 +303,7 @@ describe('psCommand', () => {
   });
 
   it('names an isolation worktree whose session directory is gone in the hint', async () => {
-    const nowMs = Date.now();
-    const data: LockfileData = {
-      version: 1,
-      pid: 100,
-      startTimeMs: nowMs,
-      lastAliveMs: nowMs,
-      sessionId: 'real-session',
-      mode: 'standard',
-      feature: 'real feature',
-    };
-    putSession('real-session', data, { alive: true, data });
+    putRunningSession('real-session');
     createTestGitRepo(testDir, { 'README.md': '# test\n' });
     const orphanDir = putIsolationWorktree('2026-08-01-orphan', '2026-07-01-gone-session');
     putIsolationWorktree('2026-08-01-kept', 'real-session');
@@ -531,7 +491,7 @@ describe('psCommand', () => {
       startTimeMs: startMs,
       lastAliveMs: endMs,
       sessionId: 'timed-session',
-      mode: 'instant',
+      mode: 'quick',
       feature: 'timed feature',
       exitedAt: endMs,
       exitCode: 0,

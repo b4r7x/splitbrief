@@ -193,9 +193,9 @@ describe('fresh CLI start gate', () => {
   });
 
   it('requires an explicit interactive disclosure for compatibility auth unknown', () => {
-    const evidence = freshEvidence({ tool: 'aider', auth: 'unknown' });
+    const evidence = freshEvidence({ tool: 'copilot', auth: 'unknown' });
     const initial = admitFreshCliStart({
-      tool: 'aider',
+      tool: 'copilot',
       evidence,
       expectedContextKey: 'fresh-context',
       expectedSelectionId: 'unselected',
@@ -203,7 +203,7 @@ describe('fresh CLI start gate', () => {
       unverifiedAuth: 'denied',
     });
     const disclosed = admitFreshCliStart({
-      tool: 'aider',
+      tool: 'copilot',
       evidence,
       expectedContextKey: 'fresh-context',
       expectedSelectionId: 'unselected',
@@ -212,7 +212,7 @@ describe('fresh CLI start gate', () => {
     });
 
     expect(initial).toEqual({ kind: 'disclosure-required', auth: 'unknown' });
-    expect(disclosed).toMatchObject({ kind: 'admitted', gate: { tool: 'aider' } });
+    expect(disclosed).toMatchObject({ kind: 'admitted', gate: { tool: 'copilot' } });
   });
 
   it('surfaces first-class unknown auth for review and admits it only once disclosed', () => {
@@ -238,9 +238,9 @@ describe('fresh CLI start gate', () => {
   });
 
   it('requires an explicit headless allowance for unknown auth', () => {
-    const evidence = freshEvidence({ tool: 'aider', auth: 'unknown' });
+    const evidence = freshEvidence({ tool: 'copilot', auth: 'unknown' });
     const denied = admitFreshCliStart({
-      tool: 'aider',
+      tool: 'copilot',
       evidence,
       expectedContextKey: 'fresh-context',
       expectedSelectionId: 'unselected',
@@ -248,7 +248,7 @@ describe('fresh CLI start gate', () => {
       unverifiedAuth: 'denied',
     });
     const allowed = admitFreshCliStart({
-      tool: 'aider',
+      tool: 'copilot',
       evidence,
       expectedContextKey: 'fresh-context',
       expectedSelectionId: 'unselected',
@@ -257,7 +257,7 @@ describe('fresh CLI start gate', () => {
     });
 
     expect(denied).toEqual({ kind: 'denied', reason: { kind: 'authentication-unverified' } });
-    expect(allowed).toMatchObject({ kind: 'admitted', gate: { tool: 'aider' } });
+    expect(allowed).toMatchObject({ kind: 'admitted', gate: { tool: 'copilot' } });
   });
 
   it('does not turn a legacy stat-only receipt into fresh start authorization', () => {
@@ -378,14 +378,8 @@ describe('prepared runner gates', () => {
         kind: 'api',
         slot: { role: 'implementer', profile: 'api' },
         preparationId,
-        provider: 'openrouter',
-        endpointOrigin: 'https://openrouter.ai',
-      },
-      {
-        kind: 'agent-sdk',
-        slot: { role: 'implementer', profile: 'sdk' },
-        preparationId,
-        provider: 'anthropic',
+        provider: 'custom-endpoint',
+        endpointOrigin: 'https://api.example.test',
       },
       {
         kind: 'shell',
@@ -406,14 +400,8 @@ describe('prepared runner gates', () => {
         kind: 'api',
         slot: { role: 'implementer', profile: 'api' },
         preparationId,
-        provider: 'openrouter',
-        endpointOrigin: 'https://openrouter.ai',
-      },
-      {
-        kind: 'agent-sdk',
-        slot: { role: 'implementer', profile: 'sdk' },
-        preparationId,
-        provider: 'anthropic',
+        provider: 'custom-endpoint',
+        endpointOrigin: 'https://api.example.test',
       },
       {
         kind: 'shell',
@@ -470,8 +458,8 @@ describe('prepared runner gates', () => {
         kind: 'api',
         slot: { role: 'implementer', profile: 'fast' },
         preparationId: 'preparation-1',
-        provider: 'openrouter',
-        endpointOrigin: 'https://openrouter.ai',
+        provider: 'custom-endpoint',
+        endpointOrigin: 'https://api.example.test',
       },
     ];
     expect(() =>
@@ -479,8 +467,8 @@ describe('prepared runner gates', () => {
         kind: 'api',
         slot: { role: 'implementer', profile: 'cheap' },
         preparationId: 'preparation-1',
-        provider: 'openrouter',
-        endpointOrigin: 'https://openrouter.ai',
+        provider: 'custom-endpoint',
+        endpointOrigin: 'https://api.example.test',
       }),
     ).toThrow('does not match the prepared implementer context');
   });

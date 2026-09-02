@@ -76,7 +76,9 @@ describe('ListViewport row zones (integration)', () => {
 
     ui.unmount();
   });
+});
 
+describe('RowZone registration', () => {
   it('keeps the latest same-id registration when an earlier mount is disposed', async () => {
     const first = vi.fn();
     const second = vi.fn();

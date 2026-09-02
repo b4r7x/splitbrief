@@ -10,8 +10,7 @@
         "method": "GET",
         "url": "http://localhost:11434/v1/models",
         "headers": {
-          "authorization": "***",
-          "anthropic-version": "2023-06-01"
+          "authorization": "***"
         },
         "body": null
       },
@@ -22,7 +21,7 @@
         },
         "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 40
     },
     {
@@ -32,8 +31,7 @@
         "method": "GET",
         "url": "http://localhost:11434/v1/models",
         "headers": {
-          "authorization": "***",
-          "anthropic-version": "2023-06-01"
+          "authorization": "***"
         },
         "body": null
       },
@@ -44,7 +42,7 @@
         },
         "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 40
     },
     {
@@ -54,8 +52,7 @@
         "method": "GET",
         "url": "http://localhost:11434/v1/models",
         "headers": {
-          "authorization": "***",
-          "anthropic-version": "2023-06-01"
+          "authorization": "***"
         },
         "body": null
       },
@@ -66,7 +63,7 @@
         },
         "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 40
     },
     {
@@ -76,8 +73,7 @@
         "method": "GET",
         "url": "http://localhost:11434/v1/models",
         "headers": {
-          "authorization": "***",
-          "anthropic-version": "2023-06-01"
+          "authorization": "***"
         },
         "body": null
       },
@@ -88,7 +84,7 @@
         },
         "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 40
     },
     {
@@ -96,10 +92,9 @@
       "recordedAt": "2026-04-30T12:20:04.000Z",
       "request": {
         "method": "POST",
-        "url": "http://localhost:11434/v1/messages",
+        "url": "http://localhost:11434/v1/chat/completions",
         "headers": {
           "authorization": "***",
-          "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
         "body": "{\"purpose\":\"planner quick task briefs\"}"
@@ -109,9 +104,9 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_cost_plan\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":365,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"---\\nid: T001\\ntitle: Create title case utility\\naction: create\\nfile: src/utility.ts\\ndepends_on: []\\n---\\n### Description\\nCreate src/utility.ts with a toTitleCase helper.\\n\\n### Implementation Steps\\n1. Split the input into words and normalize each word.\\n2. Export toTitleCase as a deterministic string helper.\\n\\n### Tests\\n- Verify toTitleCase converts a lowercase phrase into title case.\\n\\n### Scope\\n**In bounds:**\\n- src/utility.ts\\n**Out of bounds:**\\n- Locale-specific casing rules or CLI commands.\\n\\n### Escalation\\n- Stop if utility behavior needs locale or product policy decisions.\\n\\n### Evidence\\n- The helper returns predictable title-cased output.\\n\\n### Type Definitions\\n```ts\\nexport type TitleCaseInput = string;\\n```\\n\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":178}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"---\\nid: T001\\ntitle: Create title case utility\\naction: create\\nfile: src/utility.ts\\ndepends_on: []\\n---\\n### Description\\nCreate src/utility.ts with a toTitleCase helper.\\n\\n### Implementation Steps\\n1. Split the input into words and normalize each word.\\n2. Export toTitleCase as a deterministic string helper.\\n\\n### Tests\\n- Verify toTitleCase converts a lowercase phrase into title case.\\n\\n### Scope\\n**In bounds:**\\n- src/utility.ts\\n**Out of bounds:**\\n- Locale-specific casing rules or CLI commands.\\n\\n### Escalation\\n- Stop if utility behavior needs locale or product policy decisions.\\n\\n### Evidence\\n- The helper returns predictable title-cased output.\\n\\n### Type Definitions\\n```ts\\nexport type TitleCaseInput = string;\\n```\\n\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":365,\"completion_tokens\":178}}\n\ndata: [DONE]\n\n"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 1360
     },
     {
@@ -121,8 +116,7 @@
         "method": "GET",
         "url": "http://localhost:11434/v1/models",
         "headers": {
-          "authorization": "***",
-          "anthropic-version": "2023-06-01"
+          "authorization": "***"
         },
         "body": null
       },
@@ -133,7 +127,7 @@
         },
         "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 40
     },
     {
@@ -141,10 +135,9 @@
       "recordedAt": "2026-04-30T12:20:06.000Z",
       "request": {
         "method": "POST",
-        "url": "http://localhost:11434/v1/messages",
+        "url": "http://localhost:11434/v1/chat/completions",
         "headers": {
           "authorization": "***",
-          "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
         "body": "{\"purpose\":\"implementer utility code\"}"
@@ -154,9 +147,9 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_cost_impl\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-haiku-4-5-20251001\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":455,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"```typescript\\nexport function toTitleCase(value: string): string {\\n  return value\\n    .split(' ')\\n    .filter(part => part.length > 0)\\n    .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())\\n    .join(' ');\\n}\\n```\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":62}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"```typescript\\nexport function toTitleCase(value: string): string {\\n  return value\\n    .split(' ')\\n    .filter(part => part.length > 0)\\n    .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())\\n    .join(' ');\\n}\\n```\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":455,\"completion_tokens\":62}}\n\ndata: [DONE]\n\n"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 820
     },
     {
@@ -164,10 +157,9 @@
       "recordedAt": "2026-04-30T12:20:07.000Z",
       "request": {
         "method": "POST",
-        "url": "http://localhost:11434/v1/messages",
+        "url": "http://localhost:11434/v1/chat/completions",
         "headers": {
           "authorization": "***",
-          "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
         "body": "{\"purpose\":\"planner final review\"}"
@@ -177,17 +169,17 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_cost_review\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":285,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Review complete. The workflow changes match the task briefs.\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":14}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Review complete. The workflow changes match the task briefs.\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":285,\"completion_tokens\":14}}\n\ndata: [DONE]\n\n"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 620
     }
   ],
   "meta": {
     "mode": "quick",
-    "plannerProvider": "openai",
-    "plannerModel": "gpt-4o",
-    "implementerProvider": "openai",
-    "implementerModel": "gpt-4o-mini"
+    "plannerProvider": "custom-endpoint",
+    "plannerModel": "claude-sonnet-4-6",
+    "implementerProvider": "custom-endpoint",
+    "implementerModel": "claude-haiku-4-5-20251001"
   }
 }

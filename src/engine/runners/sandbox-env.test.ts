@@ -19,17 +19,16 @@ import { delimiter, dirname, join } from 'node:path';
 import { SANDBOX_DIR } from '../../core/paths.js';
 import { cliAuthChannelHostStateAccess } from '../../core/runners/cli-tool-catalog.js';
 import {
-  bridgedCliStatePresent,
-  clearBridgedCliState,
   createRunnerSandboxEnv,
   createSandboxEnv,
   prependCliExecutableDirectory,
   resolveCliRunnerAuth,
   runnerAuthEnvKeys,
   runnerSandboxIdentity,
-  sandboxCredentialValues,
   withPrependedPathDirectory,
 } from './sandbox-env.js';
+import { sandboxCredentialValues } from './sandbox-credential-values.js';
+import { bridgedCliStatePresent, clearBridgedCliState } from './sandbox-state-bridge.js';
 import { createRunnerCallCredentialRedactor } from '../calls/status.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
@@ -149,7 +148,7 @@ describe('createSandboxEnv', () => {
 
     mkdirSync(join(fakeHome, '.claude'), { recursive: true });
     mkdirSync(join(fakeHome, '.codex'), { recursive: true });
-    mkdirSync(join(fakeHome, '.aider'), { recursive: true });
+    mkdirSync(join(fakeHome, '.copilot'), { recursive: true });
     writeFileSync(join(fakeHome, '.claude', '.credentials.json'), '{"token":"secret"}');
 
     setEnv('HOME', fakeHome);
@@ -159,7 +158,7 @@ describe('createSandboxEnv', () => {
     const sandboxHome = env.HOME as string;
     expect(existsSync(join(sandboxHome, '.claude'))).toBe(false);
     expect(existsSync(join(sandboxHome, '.codex'))).toBe(false);
-    expect(existsSync(join(sandboxHome, '.aider'))).toBe(false);
+    expect(existsSync(join(sandboxHome, '.copilot'))).toBe(false);
   });
 
   itUnix('does not seed writable credential files into the sandbox HOME', async () => {
@@ -1190,23 +1189,6 @@ describe('runnerAuthEnvKeys', () => {
     expect(Object.values(env)).not.toContain(hostHome);
   });
 
-  it('maps the agent-sdk runner to ANTHROPIC_API_KEY', () => {
-    expect(runnerAuthEnvKeys({ kind: 'agent-sdk', model: 'auto' })).toEqual(['ANTHROPIC_API_KEY']);
-  });
-
-  it('maps a known api provider to its catalog auth env var', () => {
-    expect(
-      runnerAuthEnvKeys({
-        kind: 'api',
-        provider: 'openai',
-        service: 'openai',
-        offering: 'payg',
-        apiBase: 'https://api.openai.com/v1',
-        model: 'gpt-4',
-      }),
-    ).toEqual(['OPENAI_API_KEY']);
-  });
-
   it('includes an explicit env: apiKey reference', () => {
     expect(
       runnerAuthEnvKeys({
@@ -1379,6 +1361,36 @@ describe('backend compatibility fixtures', () => {
     expect(sandboxCredentialValues(env)).toEqual(
       expect.arrayContaining([kiloToken, kilocodeToken]),
     );
+  });
+
+  itUnix('seals the command-code auth snapshot and exposes no ambient env credential', async () => {
+    const hostHome = createTempDir('sandbox-command-code-host');
+    const projectDir = createTempDir('sandbox-command-code-project');
+    dirs.push(hostHome, projectDir);
+    // The state directory is `.commandcode`, unhyphenated, unlike the tool id.
+    const credential = JSON.stringify({ apiKey: 'command-code-session-canary-5a8e' });
+    const hostAuth = join(hostHome, '.commandcode', 'auth.json');
+    mkdirSync(join(hostHome, '.commandcode'), { recursive: true });
+    writeFileSync(hostAuth, credential);
+    setEnv('HOME', hostHome);
+
+    const env = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'command-code', authChannel: 'session' },
+      'planner',
+    );
+
+    expect(env.HOME).toBe(join(projectDir, SANDBOX_DIR, 'planner', 'command-code', 'home'));
+    expect(await bridgedCliStatePresent(env, 'command-code')).toBe(true);
+
+    // The login mints a long-lived apiKey that never rotates, so the child
+    // reads a sealed copy and the host file stays out of its reach.
+    const sealed = join(env.HOME as string, '.commandcode', 'auth.json');
+    expect(lstatSync(sealed).isSymbolicLink()).toBe(false);
+    expect(readFileSync(sealed, 'utf8')).toBe(credential);
+    expect(statSync(sealed).mode & 0o777).toBe(0o400);
+
+    expect(Object.keys(env).filter((key) => /COMMAND.?CODE|^CMD_/iu.test(key))).toEqual([]);
   });
 
   it('keeps the OpenCode and Kilo provider-dependent channels env-credential-free', () => {

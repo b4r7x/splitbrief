@@ -7,6 +7,7 @@ import {
   type CrewRow,
   type CrewRowKey,
 } from '../../core/crew/rows.js';
+import type { CliEffortChannel } from '../../core/runners/effort-channel.js';
 import type { Config } from '../../core/schemas/config.js';
 import {
   SETTINGS_SECTIONS,
@@ -28,6 +29,15 @@ const INHERITED_EFFORT_DESCRIPTION =
   "Inherited with the planner's setup. Give REVIEW its own tool to set it separately (⏎ on REVIEW).";
 
 const EFFORT_DESCRIPTION = 'How hard this seat reasons; auto leaves the choice to the tool.';
+
+const EFFORT_DESCRIPTIONS: Readonly<Record<CliEffortChannel, string>> = {
+  'effort-flag': EFFORT_DESCRIPTION,
+  none: EFFORT_DESCRIPTION,
+  variant:
+    "How hard this seat reasons, in opencode's own vocabulary; delivered as `opencode run --variant <name>`.",
+  'model-id':
+    'How hard this seat reasons is spelled by the model id, so it is chosen with the model in the seat picker (⏎ on the seat).',
+};
 
 export function buildSettingsItems(
   input: Readonly<{
@@ -65,7 +75,7 @@ function crewRowDescription(row: CrewRow): string {
     case 'seat':
       return SEAT_DESCRIPTIONS[row.id];
     case 'effort':
-      return row.inherited ? INHERITED_EFFORT_DESCRIPTION : EFFORT_DESCRIPTION;
+      return row.inherited ? INHERITED_EFFORT_DESCRIPTION : EFFORT_DESCRIPTIONS[row.channel];
     default:
       return assertNever(row);
   }

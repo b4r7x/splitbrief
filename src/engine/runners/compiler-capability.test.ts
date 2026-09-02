@@ -54,7 +54,7 @@ describe('admitCompilerCapability', () => {
 });
 
 describe('admitCompilerCapability — absent sandbox rows', () => {
-  it.each(['unavailable', 'none'])(
+  it.each(['unavailable', 'none', 'unknown-launcher'])(
     'refuses containment profile "%s" with the typed capability code',
     (containmentProfile) => {
       const admission = admitCompilerCapability(
@@ -68,16 +68,6 @@ describe('admitCompilerCapability — absent sandbox rows', () => {
       expect(admission.failure.message.length).toBeGreaterThan(0);
     },
   );
-
-  it('refuses a non-admitted launcher profile even with full conformance', () => {
-    const admission = admitCompilerCapability(
-      capabilityTuple('opencode', { containmentProfile: 'unknown-launcher' }),
-    );
-
-    expect(admission.kind).toBe('refused');
-    if (admission.kind !== 'refused') return;
-    expect(admission.missing).toEqual(['containmentProfile']);
-  });
 });
 
 describe('admitCompilerCapability — role and fixture date', () => {
@@ -282,7 +272,7 @@ describe('admitCompilerCapability — hostile-config rows', () => {
 });
 
 describe('admitCompilerCapability — unsupported backend rows', () => {
-  it.each(['copilot', 'aider', 'shell', 'agent'] as const)(
+  it.each(['copilot', 'cursor', 'command-code', 'shell', 'agent'] as const)(
     'refuses %s no matter what the candidate claims',
     (backend) => {
       const admission = admitCompilerCapability(
@@ -388,7 +378,7 @@ describe('COMPILER_SUPPORT_TABLE', () => {
   });
 
   it('keeps unsupported rows free of any admitted transport or channel', () => {
-    for (const backend of ['copilot', 'aider', 'shell', 'agent'] as const) {
+    for (const backend of ['copilot', 'cursor', 'command-code', 'shell', 'agent'] as const) {
       expect(COMPILER_SUPPORT_TABLE[backend].state).toBe('unsupported');
       expect(COMPILER_SUPPORT_TABLE[backend].transports).toEqual([]);
       expect(COMPILER_SUPPORT_TABLE[backend].credentialChannels).toEqual([]);

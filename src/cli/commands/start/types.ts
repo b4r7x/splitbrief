@@ -2,10 +2,11 @@ import type { renderApp } from '../../render/app.js';
 import type { runHeadless } from '../../headless.js';
 import type { runRpc } from '../../rpc/run/host.js';
 import type { initStores } from '../../init-stores.js';
-import type { SpawnServerOptions, SpawnServerResult } from '../../../engine/ipc/spawn-server.js';
+import type { SpawnServerResult } from '../../../engine/ipc/detached-handshake.js';
+import type { SpawnServerOptions } from '../../../engine/ipc/server-invocation.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { GitClient } from '../../../lib/git/client.js';
-import type { prepareExecution } from '../../../engine/runners/prepare-execution.js';
+import type { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 
 export interface StartDeps {
   spawnServer: (opts: SpawnServerOptions) => Promise<SpawnServerResult>;

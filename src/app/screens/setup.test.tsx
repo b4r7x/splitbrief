@@ -7,7 +7,8 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
-import { configPath, loadConfig } from '../../core/config/load/io.js';
+import { loadConfig } from '../../core/config/load/io.js';
+import { configPath } from '../../core/config/load/document.js';
 import { CONFIG_FILE, sessionDir, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { computeCrewPresets } from '../../core/crew/presets.js';
 import { readActive } from '../../core/sessions/active-pointer.js';
@@ -16,7 +17,7 @@ import type {
   DetectionRefreshOutcomes,
   DetectionServiceResult,
 } from '../../engine/detection/service.js';
-import type { PrepareExecutionInput } from '../../engine/runners/prepare-execution.js';
+import type { PrepareExecutionInput } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import type {
   PreparationOutcome,
   PreparedExecution,
@@ -28,7 +29,7 @@ import { detectionStore } from '../../stores/project/detection.js';
 import type {
   DiscoveryRefreshRequest,
   DiscoverySourceContexts,
-} from '../../stores/discovery/model-cache.js';
+} from '../../stores/discovery/model-cache/types.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -302,7 +303,7 @@ describe('SetupScreen', () => {
     configStore.__testReset({
       projectDir: '/tmp/project',
       config: makeConfig({
-        escalation: { intermediateProvider: 'deepseek', intermediateModel: 'deepseek-chat' },
+        escalation: { intermediateProvider: 'ollama', intermediateModel: 'llama3.1' },
       }),
     });
     const request = beginDiscovery();
@@ -426,7 +427,7 @@ describe('SetupScreen', () => {
       config: makeConfig({
         implementer: { kind: 'cli', tool: 'claude-code' },
         reviewer: { kind: 'cli', tool: 'codex' },
-        escalation: { intermediateProvider: 'deepseek', intermediateModel: 'deepseek-chat' },
+        escalation: { intermediateProvider: 'ollama', intermediateModel: 'llama3.1' },
       }),
     });
     expect(

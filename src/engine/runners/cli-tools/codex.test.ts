@@ -206,6 +206,12 @@ describe('Codex role adapters', () => {
       valid: false,
       conflicts: ['prompt-transport'],
     });
+    expect(
+      codexImplementerAdapter.validateArgs({ invocationArgs: [...args, '--json'], baseArgs: base }),
+    ).toEqual({
+      valid: false,
+      conflicts: ['--json'],
+    });
   });
 
   it.each([
@@ -244,6 +250,36 @@ describe('Codex role adapters', () => {
     if (!validation.valid) {
       expect(validation.conflicts.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('Codex lossless prompt transport', () => {
+  it('keeps an oversized planner prompt byte-for-byte for pre-launch rejection', () => {
+    const oversizedPrompt = `HEAD_SENTINEL ${'x'.repeat(200_000)} TAIL_SENTINEL`;
+    const args = codexPlannerAdapter.buildArgs({
+      prompt: oversizedPrompt,
+      model: 'gpt-5',
+      projectDir: '/project',
+      configuredArgs: [],
+      mode: 'plan',
+      sessionId: 'session-1',
+      effort: undefined,
+    });
+    expect(args.at(-1)).toBe(oversizedPrompt);
+  });
+
+  it('does not alter multibyte prompt code points', () => {
+    const prompt = '😀'.repeat(80_000);
+    const args = codexPlannerAdapter.buildArgs({
+      prompt,
+      model: undefined,
+      projectDir: '/project',
+      configuredArgs: [],
+      mode: 'plan',
+      sessionId: null,
+      effort: undefined,
+    });
+    expect(args.at(-1)).toBe(prompt);
   });
 });
 

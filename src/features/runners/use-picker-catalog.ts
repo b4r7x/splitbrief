@@ -6,17 +6,10 @@ import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { useStores } from '../../stores/use-stores.js';
 import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 import { formatSeatIdentity } from '../../core/crew/identity.js';
-import {
-  getRunnerCommand,
-  getRunnerDisplayName,
-} from '../../core/config/accessors/runner-config.js';
+import { getRunnerCommand } from '../../core/config/accessors/runner-config.js';
 import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../../core/providers/automatic-model.js';
-import {
-  CLI_TOOL_IDS,
-  hasNativeCliCatalog,
-  seatPickerLane,
-  type SeatPickerRole,
-} from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_IDS, hasNativeCliCatalog } from '../../core/runners/cli-tool-catalog.js';
+import { seatPickerLane, type SeatPickerRole } from '../../core/runners/seat-roles.js';
 import type { CliProviderAuth } from '../../core/discovery/detection.js';
 import { providerOracleCommand } from '../../engine/runners/cli-tools/provider-oracle.js';
 import { includes } from '../../utils/type-guards.js';
@@ -37,10 +30,8 @@ import {
 import { buildRightRows, type CatalogLane, type RightRow } from './model-catalog/rows.js';
 import { inheritsPlannerSeat } from './config-transforms.js';
 import type { Config } from '../../core/schemas/config.js';
-import {
-  modelCacheStore,
-  type DiscoverySourceRefresh,
-} from '../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
+import type { DiscoverySourceRefresh } from '../../stores/discovery/model-cache/types.js';
 import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
 
 export interface PickerCatalog {
@@ -74,6 +65,10 @@ export interface PickerCatalog {
   customModels: string[];
   /** Live discovery lane state: cold means no readiness result has ever landed. */
   discovery: Readonly<{ cold: boolean; refreshing: boolean }>;
+  /** The user asked to see the wider catalog after a recovery row. */
+  browseCatalog: boolean;
+  /** The in-flight variant selection inside the expanded model, committed only on Enter. */
+  variantDraft: string | null;
   setCurrentItem: (item: PickerOption) => void;
 }
 
@@ -108,6 +103,10 @@ function deriveCatalogDiagnostic(
   if (runtime === null || runtime === undefined) return { kind: 'not-probed' };
   if (runtime.failure === undefined) return undefined;
   return { kind: 'probe-failed', failure: runtime.failure };
+}
+
+function toolIdOf(item: PickerOption | undefined): (typeof CLI_TOOL_IDS)[number] | undefined {
+  return item !== undefined && includes(CLI_TOOL_IDS, item.id) ? item.id : undefined;
 }
 
 function rowIndexForModel(rows: readonly RightRow[], persistedModel: string | undefined): number {
@@ -152,6 +151,8 @@ export function usePickerCatalog(
   const focus = overlayStore.use((s) => s.focus);
   const expandedModelId = pickerViewStore.use((s) => s.expandedModelId);
   const optionDraftId = pickerViewStore.use((s) => s.optionDraftId);
+  const variantDraft = pickerViewStore.use((s) => s.variantDraft);
+  const browseCatalog = pickerViewStore.use((s) => s.browseCatalog);
 
   const [{ cliTools, providers, providerOutcomes, cliCatalogOutcomes, refresh }] =
     useStores(detectionStore);
@@ -165,7 +166,6 @@ export function usePickerCatalog(
     assemblePickerDescriptors(),
     { cliTools, providers, providerOutcomes },
     undefined,
-    { activeRunnerId: getRunnerDisplayName(runnerConfig) },
   );
   const items = buildLeftItems({
     role,
@@ -199,42 +199,55 @@ export function usePickerCatalog(
   const persistedModel =
     configuredModel ??
     (configuredItem?.modelCapability.allowsAutomatic ? AUTOMATIC_MODEL : undefined);
-  const toolId =
-    currentItem !== undefined && includes(CLI_TOOL_IDS, currentItem.id)
-      ? currentItem.id
+  const authOf = (item: PickerOption | undefined): CliProviderAuth | undefined => {
+    const tool = toolIdOf(item);
+    return item?.providerDependent === true && tool !== undefined
+      ? cliTools.find((detection) => detection.tool === tool)?.providerAuth
       : undefined;
-  const providerAuth =
-    currentItem?.providerDependent === true && toolId !== undefined
-      ? cliTools.find((detection) => detection.tool === toolId)?.providerAuth
-      : undefined;
+  };
+
+  const toolId = toolIdOf(currentItem);
+  const providerAuth = authOf(currentItem);
   const hasOracle = toolId !== undefined && providerOracleCommand(toolId) !== undefined;
 
-  const rightModels = buildRightModels({
-    role: lane,
-    customModels,
-    currentItem,
-    cache: modelCacheStore,
-    persistedModel,
-    providerAuth,
-  });
   // Read the scoped catalog lane so a catalog-only publication rerenders this
   // picker; actual role-aware lookup remains inside modelCacheStore.
   void cliCatalogOutcomes;
+  const catalogLane = laneOf(refresh.modelsDev);
+
+  const catalogFor = (item: PickerOption | undefined) => {
+    const auth = authOf(item);
+    const tool = toolIdOf(item);
+    const models = buildRightModels({
+      role: lane,
+      customModels,
+      currentItem: item,
+      cache: modelCacheStore,
+      persistedModel,
+      providerAuth: auth,
+      browseCatalog,
+    });
+    return {
+      models,
+      rows: buildRightRows({
+        models,
+        expandedModelId,
+        providerAuth: auth,
+        hasOracle: tool !== undefined && providerOracleCommand(tool) !== undefined,
+        catalogLane,
+        persistedModel,
+        customModels,
+        browseCatalog,
+        optionDraftId,
+        variantDraft,
+      }),
+    };
+  };
+
+  const { models: rightModels, rows: rightRows } = catalogFor(currentItem);
   const modelCounts = countModelOptions(rightModels);
   const catalogDiagnostic =
     modelCounts.confirmed > 0 ? undefined : deriveCatalogDiagnostic(role, currentItem);
-  const catalogLane = laneOf(refresh.modelsDev);
-
-  const rightRows = buildRightRows({
-    models: rightModels,
-    expandedModelId,
-    providerAuth,
-    hasOracle,
-    catalogLane,
-    persistedModel,
-    customModels,
-    optionDraftId,
-  });
 
   // Every reset of the model column must land on the configured model, or
   // moving the tool cursor and confirming silently rewrites it with the pinned
@@ -244,26 +257,7 @@ export function usePickerCatalog(
       return undefined;
     }
     if (item.id === currentItem?.id) return rowIndexForModel(rightRows, persistedModel);
-    return rowIndexForModel(
-      buildRightRows({
-        models: buildRightModels({
-          role: lane,
-          customModels,
-          currentItem: item,
-          cache: modelCacheStore,
-          persistedModel,
-          providerAuth,
-        }),
-        expandedModelId,
-        providerAuth,
-        hasOracle,
-        catalogLane,
-        persistedModel,
-        customModels,
-        optionDraftId,
-      }),
-      persistedModel,
-    );
+    return rowIndexForModel(catalogFor(item).rows, persistedModel);
   };
 
   const discovery = {
@@ -304,6 +298,8 @@ export function usePickerCatalog(
     currentCommandKind,
     customModels,
     discovery,
+    browseCatalog,
+    variantDraft,
     setCurrentItem: (item) => {
       if (selectedItemId !== undefined) return;
       setUncontrolledItemId(item.id);

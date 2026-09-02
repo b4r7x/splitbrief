@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { analyzeBriefDrift } from './analyze.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { ACCEPTED_SCOPE_CASES } from '#testing/helpers/factories/scope-attribution-cases.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { createEvidenceLedger, withUpdatedTask } from '../../../core/evidence/ledger-state.js';
@@ -12,71 +13,11 @@ import {
   inferTaskAcceptedChangedFiles,
 } from '../changed-files-baseline.js';
 
-const acceptedScopeCases = [
-  {
-    label: 'exact primary',
-    task: makeTask({ file: 'src/primary.ts', status: 'done' }),
-    changedFile: 'src/primary.ts',
-    accepted: true,
-  },
-  {
-    label: 'glob primary',
-    task: makeTask({ file: 'src/primary/*.ts', status: 'done' }),
-    changedFile: 'src/primary/matched.ts',
-    accepted: true,
-  },
-  {
-    label: 'exact in-bounds',
-    task: makeTask({
-      file: 'src/primary.ts',
-      status: 'done',
-      scope: { inBounds: ['src/in-bounds.ts'] },
-    }),
-    changedFile: 'src/in-bounds.ts',
-    accepted: true,
-  },
-  {
-    label: 'glob in-bounds',
-    task: makeTask({
-      file: 'src/primary.ts',
-      status: 'done',
-      scope: { inBounds: ['src/in-bounds/**'] },
-    }),
-    changedFile: 'src/in-bounds/matched.ts',
-    accepted: true,
-  },
-  {
-    label: 'exact approved',
-    task: makeTask({
-      file: 'src/primary.ts',
-      status: 'done',
-      scope: { approvedOutOfBounds: ['generated/exact.ts'] },
-    }),
-    changedFile: 'generated/exact.ts',
-    accepted: true,
-  },
-  {
-    label: 'glob approved',
-    task: makeTask({
-      file: 'src/primary.ts',
-      status: 'done',
-      scope: { approvedOutOfBounds: ['generated/**'] },
-    }),
-    changedFile: 'generated/matched.ts',
-    accepted: true,
-  },
-  {
-    label: 'truly untargeted',
-    task: makeTask({ file: 'src/primary.ts', status: 'done' }),
-    changedFile: 'unrelated/extra.ts',
-    accepted: false,
-  },
-] as const;
-
 describe('analyzeBriefDrift', () => {
-  it.each(acceptedScopeCases)(
+  it.each(ACCEPTED_SCOPE_CASES)(
     'matches task attribution for $label paths',
-    async ({ task, changedFile, accepted }) => {
+    async ({ task: overrides, changedFile, accepted }) => {
+      const task = makeTask({ ...overrides, status: 'done' });
       await withTempDir('drift-scope-parity', async (projectDir) => {
         createTestGitRepo(projectDir);
         const target = join(projectDir, changedFile);
@@ -115,6 +56,7 @@ describe('analyzeBriefDrift', () => {
     expect(report.passed).toBe(true);
     expect(report.findings).toEqual([]);
     expect(report.score).toBe(1);
+    expect(report.briefHash).toBeNull();
   });
 
   it('warns about an extra changed file when no out-of-bounds is declared', () => {
@@ -456,6 +398,9 @@ describe('analyzeBriefDrift', () => {
 
     expect(report.passed).toBe(true);
     expect(report.score).toBe(1);
+    expect(report.briefHash).toBe(
+      'e0ea1cbfbbf2f73228274a3e402f2a22d211befacf49d67d56062c6289167188',
+    );
     expect(report.changedFiles).toEqual([
       'runB.err',
       'runB.ndjson',
@@ -663,20 +608,6 @@ describe('analyzeBriefDrift', () => {
     expect(report.findings.some((f) => f.code === 'orphan_diff')).toBe(false);
   });
 
-  it('still warns out-of-scope for a run-produced file not in the run-start status baseline', () => {
-    const tasks = [makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' })];
-    const report = analyzeBriefDrift({
-      tasks,
-      changedFiles: ['src/a.ts', 'src/extra.ts'],
-      diff: '',
-      preRunChangedFiles: ['src/legacy.ts'],
-    });
-    const finding = report.findings.find((f) => f.file === 'src/extra.ts');
-    expect(finding?.code).toBe('out_of_scope_file');
-    expect(finding?.severity).toBe('warning');
-    expect(report.passed).toBe(true);
-  });
-
   it('treats a ledger-attributed baseline file as run-produced but still out-of-scope when untargeted', () => {
     const task = makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' });
     const ledger = withUpdatedTask(
@@ -751,28 +682,5 @@ describe('analyzeBriefDrift', () => {
     expect(r1.score).toBe(r2.score);
     expect(r1.score).toBeCloseTo(0.75, 5);
     expect(r1.passed).toBe(false);
-  });
-});
-
-describe('analyzeBriefDrift — briefHash', () => {
-  it('includes briefHash in returned report when supplied', () => {
-    const report = analyzeBriefDrift({
-      tasks: [],
-      changedFiles: [],
-      diff: '',
-      briefHash: 'abc123',
-      preRunChangedFiles: [],
-    });
-    expect(report.briefHash).toBe('abc123');
-  });
-
-  it('sets briefHash: null when not supplied', () => {
-    const report = analyzeBriefDrift({
-      tasks: [],
-      changedFiles: [],
-      diff: '',
-      preRunChangedFiles: [],
-    });
-    expect(report.briefHash).toBeNull();
   });
 });

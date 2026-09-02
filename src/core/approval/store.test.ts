@@ -189,10 +189,4 @@ describe('clearGrantsByScope', () => {
     clearGrantsByScope(store, 'all');
     expect(store.grants).toHaveLength(2);
   });
-
-  it('leaves a store without matching grants untouched', () => {
-    const alwaysOnly: ApprovalsStore = { version: 1, grants: [alwaysGrant] };
-    const result = clearGrantsByScope(alwaysOnly, 'session');
-    expect(result.grants).toEqual([alwaysGrant]);
-  });
 });

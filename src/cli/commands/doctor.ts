@@ -17,7 +17,7 @@ import {
   type ArgVectorPreflightCheckInput,
 } from '../../engine/runners/arg-vector-preflight.js';
 import { collectCustomRunnerConsentChecks } from '../../engine/runners/consent-preflight.js';
-import { collectRunnerAdmissionChecks } from '../../engine/runners/prepare-execution.js';
+import { collectRunnerAdmissionChecks } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import { probeRunnerAvailability } from '../../engine/runners/probe-availability.js';
 import { canonicalizeProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';

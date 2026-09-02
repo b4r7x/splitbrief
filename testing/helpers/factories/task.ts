@@ -1,7 +1,7 @@
 import type { Task } from '../../../src/core/schemas/task.js';
 import { taskId as brand } from '../../../src/core/schemas/task.js';
 
-type TaskOverrides = Omit<Partial<Task>, 'id' | 'dependsOn'> & {
+export type TaskOverrides = Omit<Partial<Task>, 'id' | 'dependsOn'> & {
   id?: string;
   dependsOn?: string[];
 };

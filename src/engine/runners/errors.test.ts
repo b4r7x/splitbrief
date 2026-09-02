@@ -36,9 +36,9 @@ describe('runnerConfigError factories', () => {
     expect(planner.message).toBe("CLI tool 'claude-code' has no planner configuration");
     expect(planner.data).toEqual({ toolName: 'claude-code', role: 'planner' });
 
-    const implementer = runnerConfigError.missingToolConfig('aider', 'implementer');
-    expect(implementer.message).toBe("CLI tool 'aider' has no implementer configuration");
-    expect(implementer.data).toEqual({ toolName: 'aider', role: 'implementer' });
+    const implementer = runnerConfigError.missingToolConfig('opencode', 'implementer');
+    expect(implementer.message).toBe("CLI tool 'opencode' has no implementer configuration");
+    expect(implementer.data).toEqual({ toolName: 'opencode', role: 'implementer' });
   });
 });
 

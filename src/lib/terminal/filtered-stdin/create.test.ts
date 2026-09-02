@@ -308,9 +308,8 @@ describe('createFilteredStdin input filtering', () => {
   });
 
   it('does not merge a flushed held prefix with a later unrelated keypress', async () => {
-    // Before the fix, a longer held prefix was withheld indefinitely and then merged with the
-    // next chunk, so `\u001b[2` + a later `x` re-parsed as a single corrupted sequence. The
-    // flush timer must emit the held prefix on its own so the subsequent key stays separate.
+    // The flush timer must emit the held prefix on its own so a later unrelated key stays
+    // separate rather than merging into a corrupted sequence.
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const chunks: string[] = [];
@@ -850,7 +849,7 @@ describe('createFilteredStdin bracketed paste handling', () => {
     expect(filtered.isPasteActive()).toBe(false);
   });
 
-  it('folds CRLF to LF, strips embedded escapes and C0 bytes, and leaves no ESC (T-030)', async () => {
+  it('folds CRLF to LF, strips embedded escapes and C0 bytes, and leaves no ESC', async () => {
     // A CRLF reaching Ink would fire the composer submit / approval gates mid-paste, and a leaked
     // ESC would explode into synthetic keypresses. A single paste that mixes a CRLF line break, an
     // embedded CSI cursor-move, and C0 control bytes must emerge as printable text with LF only.
@@ -872,10 +871,10 @@ describe('createFilteredStdin bracketed paste handling', () => {
     filtered.disable();
   });
 
-  it('decodes a tmux CSI-u CR/LF re-encoding inside a paste to a newline (REQ-052, T-030)', async () => {
+  it('decodes a tmux CSI-u CR/LF re-encoding inside a paste to a newline', async () => {
     // Under tmux extended-keys, CR/LF can arrive re-encoded as CSI-u (e.g. `\u001b[13u` for CR,
     // `[10u` for LF, or a modified variant `[13;5u`). These are decoded to LF before
-    // sanitizing so pasted line breaks survive as newlines (REQ-052) — while no raw ESC leaks.
+    // sanitizing so pasted line breaks survive as newlines — while no raw ESC leaks.
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const collected: string[] = [];
@@ -895,7 +894,7 @@ describe('createFilteredStdin bracketed paste handling', () => {
     filtered.disable();
   });
 
-  it('still strips a non-line-break tmux CSI-u re-encoding inside a paste (T-030)', async () => {
+  it('still strips a non-line-break tmux CSI-u re-encoding inside a paste', async () => {
     // A CSI-u for a printable key (e.g. `\u001b[97u` = 'a') is not a line break, so it is
     // dropped whole like any other in-paste escape - only CR/LF re-encodings become newlines.
     const fakeStdin = makeFakeStdin();

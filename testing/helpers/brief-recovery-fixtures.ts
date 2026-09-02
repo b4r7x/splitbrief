@@ -15,8 +15,10 @@ import {
   readWorkflowStateHead,
   workflowStateRevision,
 } from '../../src/engine/orchestrator/state-ops.js';
+import { createBriefRecoveryState } from '../../src/engine/orchestrator/planning/brief-recovery.js';
 import { makeConfig } from './factories/config.js';
 import { makeWctx } from './orchestrator-factories.js';
+import { makeTaskWorkflowContext } from './orchestrator-task-context.js';
 import { makePassingPlanner, setupProject, TEST_METADATA } from './planning-phase.js';
 
 export const PRICED_MODEL_CACHE = {
@@ -55,6 +57,47 @@ type RecoveryFixtureOptions = Omit<RecoveryBindingOptions, 'ref'> & {
   dirs: string[];
   mode?: WorkflowState['mode'] | undefined;
 };
+
+export const RECOVERY_FIXTURE_BRIEF_HASH = 'a'.repeat(64);
+export const RECOVERY_FIXTURE_REPORT_HASH = 'b'.repeat(64);
+
+export function recoveryJournalState(): WorkflowState {
+  const activeBrief = { revision: 1, hash: RECOVERY_FIXTURE_BRIEF_HASH, path: 'brief.json' };
+  const report = { revision: 1, hash: RECOVERY_FIXTURE_REPORT_HASH, path: 'report.json' };
+  const recovery = createBriefRecoveryState(
+    {
+      sessionId: 'sess-task-step',
+      origin: { mode: 'standard', entry: 'initial' },
+      continuation: { version: 1, kind: 'approval', mode: 'standard', entry: 'initial' },
+      activeBrief,
+      report: {
+        briefHash: activeBrief.hash,
+        report,
+        ruleVersion: 'quality-v1',
+        issues: [],
+        errorCount: 0,
+      },
+      qualityPolicyVersion: 'quality-v1',
+    },
+    { epochId: 'epoch-1' },
+  );
+  return {
+    ...createInitialState('feat'),
+    phase: 'reviewing-briefs',
+    briefRecovery: recovery,
+  };
+}
+
+export function makeRecoveryJournalFixture(): {
+  projectDir: string;
+  sessionId: string;
+  state: WorkflowState;
+} {
+  const wctx = makeTaskWorkflowContext();
+  const state = recoveryJournalState();
+  saveState(wctx, state);
+  return { projectDir: wctx.projectDir, sessionId: wctx.sessionId, state };
+}
 
 export function stateBytes(ref: SessionRef): string {
   return readFileSync(join(sessionDir(ref.projectDir, ref.sessionId), STATE_FILE), 'utf8');
@@ -114,10 +157,10 @@ export function makeRecoveryBinding(options: RecoveryBindingOptions): BindingFix
     config: makeConfig({
       planner: {
         kind: 'api',
-        provider: 'openai',
-        service: 'openai',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
         offering: 'payg',
-        apiBase: 'https://api.openai.com/v1',
+        apiBase: 'https://api.example.test/v1',
         model: options.model ?? 'gpt-5.4',
       },
       workflow: {

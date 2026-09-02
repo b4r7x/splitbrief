@@ -12,13 +12,7 @@ import type { PlannerArtifactTransport } from '../../core/schemas/task-compilati
 import { canonicalJSON } from '../../utils/canonical-json.js';
 import { sha256Hex } from '../../utils/sha256.js';
 
-export type CompilerBackendId =
-  | CliToolId
-  | 'shell'
-  | 'agent'
-  | 'api'
-  | 'agent-sdk'
-  | 'custom-command';
+export type CompilerBackendId = CliToolId | 'shell' | 'agent' | 'api' | 'custom-command';
 
 export type CompilerCredentialChannel = 'api-key' | 'session-copy';
 
@@ -47,7 +41,7 @@ export type CompilerSupportRow = Readonly<{
   version: string;
   /**
    * True marks a versioned backend requiring verified runtime version evidence. False marks a
-   * versionless backend (api, agent-sdk, custom-command) where no runtime version
+   * versionless backend (api, custom-command) where no runtime version
    * is required and the verified conformance proof alone carries the identity evidence.
    */
   versionRequired: boolean;
@@ -100,8 +94,8 @@ const CLI_COMPILER_CAPABILITY: Readonly<Record<CliToolId, CliCompilerCapability>
     credentialChannels: ['session-copy'],
   },
   copilot: { containmentProfiles: [], credentialChannels: [] },
-  aider: { containmentProfiles: [], credentialChannels: [] },
   cursor: { containmentProfiles: [], credentialChannels: [] },
+  'command-code': { containmentProfiles: [], credentialChannels: [] },
 });
 
 function cliSupportRow(backend: CliToolId): CompilerSupportRow {
@@ -128,8 +122,8 @@ function cliSupportRow(backend: CliToolId): CompilerSupportRow {
  * The locked V1 support table. The seven CLI rows are built from the catalog's
  * `CLI_COMPILER_EVIDENCE`, which owns their identity evidence; only the
  * non-CLI backends are declared here in full. Supported rows are admitted on valid tuple
- * conformance with tested or drifted version observation; Copilot, Aider, Cursor, and the legacy
- * shell and agent planners are typed-unsupported in V1 and refuse with zero
+ * conformance with tested or drifted version observation; Copilot, Cursor, Command Code, and the
+ * legacy shell and agent planners are typed-unsupported in V1 and refuse with zero
  * dispatches no matter what a candidate claims. The record has a null
  * prototype, so a lookup by an arbitrary claimed backend id is total: an
  * inherited key such as `__proto__` or `toString` resolves to `undefined`.
@@ -142,8 +136,8 @@ export const COMPILER_SUPPORT_TABLE: Readonly<Record<CompilerBackendId, Compiler
     codex: cliSupportRow('codex'),
     'kilo-code': cliSupportRow('kilo-code'),
     copilot: cliSupportRow('copilot'),
-    aider: cliSupportRow('aider'),
     cursor: cliSupportRow('cursor'),
+    'command-code': cliSupportRow('command-code'),
     shell: supportRow({
       backend: 'shell',
       version: '',
@@ -179,18 +173,6 @@ export const COMPILER_SUPPORT_TABLE: Readonly<Record<CompilerBackendId, Compiler
       state: 'conformance-gated',
       transports: Object.freeze(['stdout-final']),
       terminalContract: 'provider-final-assistant-response-v1',
-      containmentProfiles: Object.freeze(['seatbelt', 'bubblewrap']),
-      credentialChannels: Object.freeze(['api-key']),
-      envelopeVersion: 1,
-      fixtureDate: '2026-08-15',
-    }),
-    'agent-sdk': supportRow({
-      backend: 'agent-sdk',
-      version: '',
-      versionRequired: false,
-      state: 'conformance-gated',
-      transports: Object.freeze(['stdout-final']),
-      terminalContract: 'agent-sdk-final-assistant-turn-v1',
       containmentProfiles: Object.freeze(['seatbelt', 'bubblewrap']),
       credentialChannels: Object.freeze(['api-key']),
       envelopeVersion: 1,

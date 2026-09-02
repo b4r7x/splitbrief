@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Box, Text } from 'ink';
 import { useAppKeys } from './keys.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeCostPrediction } from '#testing/helpers/factories/cost-prediction.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
@@ -28,6 +31,8 @@ import { costApprovalStore, openCostApprovalPrompt } from '../stores/cost-approv
 import { editorStore } from '../stores/ui/editor.js';
 import { reviewStore } from '../stores/workflow/review.js';
 import { handleSessionSelect, sessionSelectStore } from '../stores/navigation/session-select.js';
+import { configStore } from '../stores/project/config.js';
+import { skillsStore } from '../stores/project/skills.js';
 import { SessionPreparation } from './session-preparation.js';
 
 // Comfortably past the escape-debounce defer (DEFAULT_DELAY_MS in escape-debounce.ts)
@@ -52,9 +57,11 @@ function localExecution(feature: string): { kind: 'local'; prepared: PreparedExe
         makeConfig({
           planner: {
             kind: 'api',
-            provider: 'anthropic',
+            provider: 'custom-endpoint',
+            service: 'custom-endpoint',
+            offering: 'payg',
             model: 'test-planner',
-            apiBase: 'https://api.anthropic.com/v1',
+            apiBase: 'https://api.example.test/v1',
             apiKey: 'test-key',
             contextLength: 32_768,
           },
@@ -88,8 +95,8 @@ function localExecution(feature: string): { kind: 'local'; prepared: PreparedExe
           kind: 'api',
           slot: { role: 'planner' },
           preparationId,
-          provider: 'anthropic',
-          endpointOrigin: 'https://api.anthropic.com',
+          provider: 'custom-endpoint',
+          endpointOrigin: 'https://api.example.test',
         },
         {
           kind: 'api',
@@ -708,6 +715,72 @@ describe('useAppKeys: keystroke binding', () => {
 
     expect(overlayStore.get().active).toBe(overlay);
     ui.unmount();
+  });
+
+  describe('skills rescan', () => {
+    let projectDir = '';
+    let fakeHome = '';
+    let originalHome: string | undefined;
+
+    beforeEach(() => {
+      projectDir = realpathSync(createTempDir('splitbrief-keys-project'));
+      fakeHome = realpathSync(createTempDir('splitbrief-keys-home'));
+      originalHome = process.env.HOME;
+      process.env.HOME = fakeHome;
+      const skillDir = join(projectDir, '.claude', 'skills', 'rescan-proof');
+      mkdirSync(skillDir, { recursive: true });
+      writeFileSync(
+        join(skillDir, 'SKILL.md'),
+        '---\nname: rescan-proof\ndescription: proves the rescan ran\n---\nBody\n',
+      );
+      configStore.__testReset({ projectDir });
+      skillsStore.setAvailable([
+        {
+          id: 'stale-skill',
+          name: 'stale-skill',
+          description: 'seeded before the keypress',
+          path: '/nowhere/stale-skill/SKILL.md',
+          scope: 'project',
+        },
+      ]);
+    });
+
+    afterEach(() => {
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+      cleanupTempDir(projectDir);
+      cleanupTempDir(fakeHome);
+    });
+
+    function availableIds(): string[] {
+      return skillsStore.get().available.map((skill) => skill.id);
+    }
+
+    it('Ctrl+S opens the skills overlay over a freshly scanned list', async () => {
+      const ui = renderFeature(<Harness exit={vi.fn()} />);
+      await tick(20);
+
+      await writeKey(ui, '\x13');
+      await tick(20);
+
+      expect(overlayStore.get().active).toBe('skills');
+      await vi.waitFor(() => expect(availableIds()).toEqual(['rescan-proof']));
+      ui.unmount();
+    });
+
+    it('opening a non-skills overlay leaves the skills list untouched', async () => {
+      const ui = renderFeature(<Harness exit={vi.fn()} />);
+      await tick(20);
+
+      await writeKey(ui, '\x0b');
+      // Long enough for a rescan to have landed: the Ctrl+S scan above runs against the same
+      // two temp directories and resolves well inside this window.
+      await tick(100);
+
+      expect(overlayStore.get().active).toBe('command-palette');
+      expect(availableIds()).toEqual(['stale-skill']);
+      ui.unmount();
+    });
   });
 
   it('Ctrl+, does not open local settings in an attached client', async () => {

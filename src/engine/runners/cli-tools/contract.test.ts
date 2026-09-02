@@ -2,17 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type {
   CliImplementerAdapter,
-  CliInvocation,
   CliOutputContract,
   CliPlannerAdapter,
   CliProbeContract,
   CliPromptTransport,
   CliProtocolEvent,
 } from './contract.js';
-import { aiderPlannerAdapter } from './aider.js';
 import { claudeCodePlannerAdapter } from './claude-code.js';
 import { codexImplementerAdapter, codexPlannerAdapter } from './codex.js';
 import { admitCliRoleVector, type CliRoleAllowlist } from './contract.js';
+import { opencodePlannerAdapter } from './opencode.js';
 import { parseCliSemanticVector } from './validate-args.js';
 
 const probe = {
@@ -69,7 +68,7 @@ const implementerAdapter = {
 
 const wrongDescriptorAdapter = {
   ...plannerAdapter,
-  descriptor: CLI_TOOL_CATALOG.aider,
+  descriptor: CLI_TOOL_CATALOG.opencode,
 };
 
 const plannerAllowlist = {
@@ -96,7 +95,7 @@ describe('CLI adapter contract', () => {
   it('distinguishes protocol-terminal output from process-exit text output', () => {
     const contracts = [
       codexImplementerAdapter.outputContract,
-      aiderPlannerAdapter.outputContract,
+      opencodePlannerAdapter.outputContract,
     ] as const satisfies readonly CliOutputContract[];
 
     expect(contracts.map((contract) => contract.kind)).toEqual([
@@ -107,27 +106,10 @@ describe('CLI adapter contract', () => {
       kind: 'structured-terminal',
       terminalEvent: 'required',
     });
-    expect(aiderPlannerAdapter.outputContract).toEqual({
+    expect(opencodePlannerAdapter.outputContract).toEqual({
       kind: 'text-exit',
       successfulExitCodes: [0],
     });
-  });
-
-  it('keeps invocation transport, environment, cancellation, and limits explicit', () => {
-    const invocation = {
-      executable: {
-        path: '/usr/local/bin/fixture',
-        fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
-      },
-      args: ['run'],
-      promptTransport: { kind: 'stdin' },
-      environment: { FIXTURE_MODE: 'test' },
-      cwd: '/tmp/project',
-      timeoutMs: 30_000,
-      signal: undefined,
-    } satisfies CliInvocation;
-
-    expect(invocation.promptTransport.kind).toBe(claudeCodePlannerAdapter.promptTransport.kind);
   });
 
   it('requires role-specific adapters to own argument and process policies', () => {
@@ -156,7 +138,7 @@ describe('CLI adapter contract', () => {
     // @ts-expect-error Adapters must bind to a real catalog descriptor.
     const _implementerWithoutDescriptor: CliImplementerAdapter = missingDescriptor;
 
-    expect(wrongDescriptorAdapter.descriptor.id).toBe(aiderPlannerAdapter.descriptor.id);
+    expect(wrongDescriptorAdapter.descriptor.id).toBe(opencodePlannerAdapter.descriptor.id);
   });
 });
 

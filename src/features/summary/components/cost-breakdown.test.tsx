@@ -35,8 +35,8 @@ describe('buildCostBreakdownRows', () => {
       isTotalActualCostKnown: true,
       isAllPlannerBaselineKnown: true,
       providerCosts: {
-        anthropic: { inputTokens: 100_000, outputTokens: 50_000, cost: 1 },
-        deepseek: { inputTokens: 200_000, outputTokens: 100_000, cost: 0.5 },
+        'plan-endpoint': { inputTokens: 100_000, outputTokens: 50_000, cost: 1 },
+        'build-endpoint': { inputTokens: 200_000, outputTokens: 100_000, cost: 0.5 },
       },
     };
 
@@ -54,8 +54,8 @@ describe('buildCostBreakdownRows', () => {
     expect(frame).toContain('$4.50 (75%)');
     expect(frame).not.toContain('Local/cheap rate');
     expect(frame).not.toContain('provider pricing unavailable');
-    expect(frame).toContain('Anthropic');
-    expect(frame).toContain('DeepSeek');
+    expect(frame).toContain('plan-endpoint');
+    expect(frame).toContain('build-endpoint');
 
     ui.unmount();
   });
@@ -139,8 +139,8 @@ describe('buildCostBreakdownRows', () => {
       isAllPlannerBaselineKnown: true,
       providerCosts: {
         'claude-code': { inputTokens: 100, outputTokens: 100, cost: 0 },
-        openai: { inputTokens: 100, outputTokens: 100, cost: 0.25 },
-        groq: { inputTokens: 100, outputTokens: 100, cost: 0 },
+        'payg-endpoint': { inputTokens: 100, outputTokens: 100, cost: 0.25 },
+        'quota-endpoint': { inputTokens: 100, outputTokens: 100, cost: 0 },
         ollama: { inputTokens: 100, outputTokens: 100, cost: 0 },
       },
       providerRunMetadata: {
@@ -151,17 +151,17 @@ describe('buildCostBreakdownRows', () => {
           billing: 'subscription-included',
           asOf: '2026-07-31',
         },
-        openai: {
-          service: 'openai',
+        'payg-endpoint': {
+          service: 'payg-endpoint',
           offering: 'payg',
-          normalizedEndpoint: 'https://api.openai.com/v1',
+          normalizedEndpoint: 'https://payg.example.test/v1',
           billing: 'api-metered',
           asOf: '2026-07-31',
         },
-        groq: {
-          service: 'groq',
+        'quota-endpoint': {
+          service: 'quota-endpoint',
           offering: 'free-quota',
-          normalizedEndpoint: 'https://api.groq.com/openai/v1',
+          normalizedEndpoint: 'https://quota.example.test/v1',
           billing: 'api-metered',
           asOf: '2026-07-31',
         },
@@ -178,8 +178,8 @@ describe('buildCostBreakdownRows', () => {
           costLabel: 'subscription-included',
           billingLabel: 'subscription-included',
         },
-        openai: { costLabel: '$0.25', billingLabel: 'api-metered' },
-        groq: { costLabel: 'variable quota', billingLabel: 'api-metered' },
+        'payg-endpoint': { costLabel: '$0.25', billingLabel: 'api-metered' },
+        'quota-endpoint': { costLabel: 'variable quota', billingLabel: 'api-metered' },
         ollama: { costLabel: 'local', billingLabel: 'local' },
       },
     };

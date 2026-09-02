@@ -2,17 +2,15 @@ import { describe, it, expect } from 'vitest';
 import { estimateTokens, resolveCharsPerToken } from './estimate.js';
 
 describe('resolveCharsPerToken', () => {
-  it('returns 3.5 for Claude models', () => {
-    expect(resolveCharsPerToken('claude-sonnet-4-6')).toBe(3.5);
-    expect(resolveCharsPerToken('claude-opus-4-6')).toBe(3.5);
-  });
-
-  it('returns 4.0 for GPT models', () => {
-    expect(resolveCharsPerToken('gpt-4o')).toBe(4.0);
-  });
-
-  it('returns 3.6 for Qwen models', () => {
-    expect(resolveCharsPerToken('qwen2.5-coder:32b')).toBe(3.6);
+  it.each([
+    ['claude-sonnet-4-6', 3.5],
+    ['claude-opus-4-6', 3.5],
+    ['gpt-4o', 4.0],
+    ['qwen2.5-coder:32b', 3.6],
+    ['some-custom-model', 4],
+    [undefined, 4],
+  ] as const)('resolves %s to %s chars per token', (modelId, expected) => {
+    expect(resolveCharsPerToken(modelId)).toBe(expected);
   });
 
   it('does not match short keys as substrings of unrelated model names', () => {
@@ -25,14 +23,6 @@ describe('resolveCharsPerToken', () => {
     expect(resolveCharsPerToken('o1-preview')).toBe(4.0);
     expect(resolveCharsPerToken('openrouter/o3-mini')).toBe(4.0);
     expect(resolveCharsPerToken('provider-o4-latest')).toBe(4.0);
-  });
-
-  it('returns default for unknown model', () => {
-    expect(resolveCharsPerToken('some-custom-model')).toBe(4);
-  });
-
-  it('returns default when no modelId provided', () => {
-    expect(resolveCharsPerToken()).toBe(4);
   });
 });
 

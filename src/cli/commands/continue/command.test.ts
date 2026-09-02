@@ -15,7 +15,7 @@ import type { StateAuthorityReceipt } from '../../../core/state/types.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { activeFile, CONFIG_FILE, sessionsRoot, SPLITBRIEF_DIR } from '../../../core/paths.js';
-import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution.js';
+import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 

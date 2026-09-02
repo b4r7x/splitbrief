@@ -290,10 +290,7 @@ describe('ConversationRowView color-off degradation', () => {
     const focusedText = stripAnsiStyles(focused.lastFrame() ?? '');
     focused.unmount();
 
-    const unfocused = renderFeature(<ConversationRowView row={row} focused={false} />);
-    const unfocusedText = stripAnsiStyles(unfocused.lastFrame() ?? '');
-    unfocused.unmount();
-
-    expect(focusedText).not.toBe(unfocusedText);
+    expect(focusedText).toContain(FOCUS_MARK);
+    expect(focusedText).not.toContain(DONE_MARK);
   });
 });

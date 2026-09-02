@@ -69,10 +69,8 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     });
 
     const taskStart = events.find((e) => e.type === 'task_started');
-    expect(taskStart).toBeDefined();
     expect(taskStart).toMatchObject({ type: 'task_started', taskId: 'T001', index: 0, total: 1 });
     const taskComplete = events.find((e) => e.type === 'task_completed');
-    expect(taskComplete).toBeDefined();
     expect(taskComplete).toMatchObject({ type: 'task_completed', taskId: 'T001', method: 'local' });
   });
 
@@ -194,7 +192,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     });
 
     const snapshotEvent = events.find((e) => e.type === 'snapshot_created');
-    expect(snapshotEvent).toBeDefined();
     expect(snapshotEvent).toMatchObject({ type: 'snapshot_created', taskIndex: 0 });
 
     const ledger = await readRunSnapshotLedger(projectDir, sessionId);

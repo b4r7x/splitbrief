@@ -4,8 +4,8 @@ import {
   saveDetectionCache,
   type RememberedCliCatalog,
 } from './cache.js';
+import { createDetectionCoordinator } from './coordinator.js';
 import {
-  createDetectionCoordinator,
   type CliModelSnapshot,
   type DetectionCoordinator,
   detectionContextKey,
@@ -13,24 +13,28 @@ import {
   type DetectionProjection,
   type DetectionSourceError,
   type DetectionSourceOutcome,
-  type DetectionSourceSnapshot,
-} from './coordinator.js';
+} from './types.js';
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
-import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
+import {
+  cloneCliToolDetection,
+  cloneProviderDetection,
+} from '../../core/discovery/clone-detection.js';
 import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
 import { cloneConfiguredProviderOutcome } from './provider-outcomes.js';
 import { cloneScopedCliCatalogAttempt } from './cli-catalog-outcomes.js';
+import { createLaneChannel, type DetectionLaneListener, type LaneChannel } from './lane-channel.js';
+import {
+  modelsDevCatalogValue,
+  type ModelsDevCatalogFetchResult,
+  type ModelsDevCatalogRequest,
+  type ModelsDevRefreshOutcome,
+  refreshModelsDev,
+} from './models-dev-lane.js';
 import { assertNever } from '../../utils/type-guards.js';
-import type {
-  ModelsDevCacheFailure,
-  ModelsDevCatalogCacheOutcome,
-  ModelsDevCatalogSnapshot,
-} from '../providers/models-dev-cache.js';
-import { throwIfAborted } from '../../utils/abort.js';
-import { warnError } from '../../lib/warn.js';
+import type { ModelsDevCatalogCacheOutcome } from '../providers/models-dev-cache.js';
 import { createOpaqueIdFactory } from '../../utils/opaque-id.js';
 
-export type { DetectionProjection } from './coordinator.js';
+export type { DetectionProjection } from './types.js';
 
 export interface DetectionSourceContexts {
   readonly readiness?: string | undefined;
@@ -44,11 +48,6 @@ export interface ResolvedDetectionSourceContexts {
   readonly cliModels: string;
 }
 
-export interface ModelsDevCatalogRequest {
-  readonly mode: 'automatic' | 'manual';
-  readonly signal: AbortSignal;
-}
-
 export interface DetectionLaneRequest {
   readonly signal: AbortSignal;
 }
@@ -56,8 +55,6 @@ export interface DetectionLaneRequest {
 export interface CliModelsLaneRequest extends DetectionLaneRequest {
   readonly mode: 'automatic' | 'manual';
 }
-
-type ModelsDevCatalogFetchResult = ModelsDevCatalogCacheOutcome | ModelsDevCatalog;
 
 export interface DetectionDeps {
   detectAll(input: DetectionLaneRequest): Promise<DetectionProjection>;
@@ -68,49 +65,11 @@ export interface DetectionDeps {
   readonly sourceContexts?: DetectionSourceContexts | undefined;
 }
 
-export type ModelsDevRefreshOutcome =
-  | Readonly<{
-      kind: 'cached' | 'fresh' | 'not-modified';
-      origin: 'request' | 'snapshot';
-      snapshot: DetectionSourceSnapshot<ModelsDevCatalog>;
-    }>
-  | Readonly<{
-      kind: 'stale';
-      snapshot: DetectionSourceSnapshot<ModelsDevCatalog>;
-      failure: ModelsDevCacheFailure;
-    }>
-  | Readonly<{
-      kind: 'failed';
-      source: 'models-dev';
-      contextKey: string;
-      generation: number;
-      requestId: number;
-      checkedAt: number;
-      failure: ModelsDevCacheFailure;
-    }>
-  | Readonly<{
-      kind: 'not-run';
-      source: 'models-dev';
-      contextKey: string;
-      reason: 'offline' | 'cancelled' | 'superseded' | 'uninitialized';
-    }>;
-
-type ModelsDevCoordinatorSnapshot = DetectionSourceSnapshot<ModelsDevCatalog> &
-  Readonly<{ source: 'models-dev' }>;
-
 export interface DetectionRefreshOutcomes {
   readonly readiness: DetectionSourceOutcome<DetectionProjection>;
   readonly modelsDev: ModelsDevRefreshOutcome;
   readonly cliModels: DetectionSourceOutcome<CliModelSnapshot>;
 }
-
-/** One settled lane of a refresh, carried to the store before its siblings finish. */
-export type DetectionLanePublication =
-  | Readonly<{ lane: 'readiness'; outcome: DetectionSourceOutcome<DetectionProjection> }>
-  | Readonly<{ lane: 'modelsDev'; outcome: ModelsDevRefreshOutcome }>
-  | Readonly<{ lane: 'cliModels'; outcome: DetectionSourceOutcome<CliModelSnapshot> }>;
-
-export type DetectionLaneListener = (lane: DetectionLanePublication) => void;
 
 export interface DetectionServiceResult extends DetectionProjection {
   readonly catalog: ModelsDevCatalog | null;
@@ -147,76 +106,12 @@ export interface DetectionService {
 }
 
 const READINESS_TTL_MS = 5 * 60 * 1_000;
-const MODELS_DEV_TTL_MS = 15 * 60 * 1_000;
 // Native catalog results are executable-identity-bound; do not reuse a TTL
 // snapshot before the resolver has established the current identity again.
 const CLI_MODELS_TTL_MS = 0;
 const EMPTY_CLI_MODELS: CliModelSnapshot = [];
 const EMPTY_PROJECTION: DetectionProjection = { providers: [], cliTools: [] };
 const fallbackDependencyContext = createOpaqueIdFactory('unconfigured-deps');
-
-interface LaneChannel {
-  announce(lane: DetectionLanePublication): void;
-  listen(listener: DetectionLaneListener): void;
-}
-
-function createLaneChannel(): LaneChannel {
-  const listeners = new Set<DetectionLaneListener>();
-  const settled: DetectionLanePublication[] = [];
-  // Announcement is best-effort notification and runs inside the awaited lane
-  // promises. A throwing listener must not reject the load, because `queueSave`
-  // runs after that await and losing it would silently stop the detection cache
-  // from persisting.
-  const deliver = (listener: DetectionLaneListener, lane: DetectionLanePublication): void => {
-    try {
-      listener(lane);
-    } catch (err) {
-      warnError('Detection lane listener failed', err);
-    }
-  };
-  return {
-    announce(lane) {
-      settled.push(lane);
-      for (const listener of listeners) deliver(listener, lane);
-    },
-    // A caller that joins a load already in flight is told about the lanes it
-    // missed; nothing else ever replays them.
-    listen(listener) {
-      listeners.add(listener);
-      for (const lane of settled) deliver(listener, lane);
-    },
-  };
-}
-
-function cloneCliToolDetection(cli: CliToolDetection): CliToolDetection {
-  return {
-    tool: cli.tool,
-    trust: cli.trust,
-    installedVersion: cli.installedVersion,
-    testedVersion: cli.testedVersion,
-    compatibility: cli.compatibility,
-    auth: cli.auth,
-    probedAt: cli.probedAt,
-    executable:
-      cli.executable === null
-        ? null
-        : {
-            path: cli.executable.path,
-            fingerprint: { ...cli.executable.fingerprint },
-          },
-    diagnostic:
-      cli.diagnostic.state === 'ready'
-        ? { state: 'ready', remediation: null }
-        : { state: cli.diagnostic.state, remediation: cli.diagnostic.remediation },
-  };
-}
-
-function cloneProviderDetection(provider: ProviderDetection): ProviderDetection {
-  return {
-    ...provider,
-    ...(provider.models === undefined ? {} : { models: provider.models.map(cloneDetectedModel) }),
-  };
-}
 
 function cloneProjection(detection: DetectionProjection): DetectionProjection {
   return {
@@ -281,98 +176,6 @@ function sourceError(source: 'readiness' | 'cli-models'): DetectionSourceError {
       return { kind: 'request-failed', message: 'Runner readiness refresh failed.' };
     case 'cli-models':
       return { kind: 'request-failed', message: 'CLI model discovery refresh failed.' };
-  }
-}
-
-function modelsDevSourceError(failure: ModelsDevCacheFailure): DetectionSourceError {
-  switch (failure.kind) {
-    case 'timeout':
-      return { kind: 'timeout', message: failure.message };
-    case 'invalid-json':
-    case 'invalid-schema':
-    case 'not-modified-without-cache':
-    case 'payload-too-large':
-      return { kind: 'invalid-response', message: failure.message };
-    case 'cache-write-failed':
-    case 'http-error':
-    case 'request-failed':
-      return { kind: 'request-failed', message: failure.message };
-    default:
-      return assertNever(failure.kind);
-  }
-}
-
-function catalogState(catalog: ModelsDevCatalog): ModelsDevCatalogSnapshot['catalogState'] {
-  return Object.keys(catalog).length === 0 ? 'empty' : 'populated';
-}
-
-function isModelsDevCatalogCacheOutcome(
-  value: ModelsDevCatalogFetchResult,
-): value is ModelsDevCatalogCacheOutcome {
-  if (!('kind' in value)) return false;
-  switch (value.kind) {
-    case 'cached':
-    case 'fresh':
-    case 'not-modified':
-    case 'stale':
-    case 'failed':
-      return true;
-    default:
-      return false;
-  }
-}
-
-function normalizeModelsDevCatalogOutcome(
-  input: Readonly<{ value: ModelsDevCatalogFetchResult; observedAt: number }>,
-): ModelsDevCatalogCacheOutcome {
-  if (isModelsDevCatalogCacheOutcome(input.value)) return input.value;
-  return {
-    kind: 'fresh',
-    snapshot: {
-      sourceUrl: 'legacy-detection-dependency',
-      parserVersion: 'legacy-detection-dependency',
-      catalog: structuredClone(input.value),
-      catalogState: catalogState(input.value),
-      fetchedAt: input.observedAt,
-      validatedAt: input.observedAt,
-    },
-  };
-}
-
-function modelsDevSnapshot(
-  input: Readonly<{
-    cacheSnapshot: ModelsDevCatalogSnapshot;
-    contextKey: string;
-    failure?: ModelsDevCacheFailure | undefined;
-    generation: number;
-    requestId: number;
-  }>,
-): ModelsDevCoordinatorSnapshot {
-  return {
-    source: 'models-dev',
-    contextKey: input.contextKey,
-    generation: input.generation,
-    requestId: input.requestId,
-    fetchedAt: input.cacheSnapshot.fetchedAt,
-    validatedAt: input.cacheSnapshot.validatedAt,
-    stale: input.failure !== undefined,
-    value: structuredClone(input.cacheSnapshot.catalog),
-    ...(input.failure === undefined ? {} : { error: modelsDevSourceError(input.failure) }),
-  };
-}
-
-function modelsDevCatalogValue(outcome: ModelsDevRefreshOutcome): ModelsDevCatalog | null {
-  switch (outcome.kind) {
-    case 'cached':
-    case 'fresh':
-    case 'not-modified':
-    case 'stale':
-      return structuredClone(outcome.snapshot.value);
-    case 'failed':
-    case 'not-run':
-      return null;
-    default:
-      return assertNever(outcome);
   }
 }
 
@@ -536,167 +339,6 @@ export function createDetectionService() {
     );
   }
 
-  async function refreshModelsDev(
-    input: Readonly<{
-      contextKey: string;
-      deps: DetectionDeps;
-      mode: 'automatic' | 'manual';
-    }>,
-  ): Promise<ModelsDevRefreshOutcome> {
-    const scopeKey = detectionSourceContextKey({
-      source: 'models-dev',
-      contextKey: input.contextKey,
-    });
-    const outer = await coordinatorFor(input.deps).refresh({
-      source: 'models-dev',
-      contextKey: input.contextKey,
-      ttlMs: MODELS_DEV_TTL_MS,
-      mode: input.mode,
-      offline: input.deps.offline,
-      load: async (signal) => {
-        let outcome: ModelsDevCatalogCacheOutcome;
-        try {
-          outcome = normalizeModelsDevCatalogOutcome({
-            value: await input.deps.fetchModelsDevCatalog({ mode: input.mode, signal }),
-            observedAt: clock(),
-          });
-        } catch {
-          throwIfAborted(signal);
-          outcome = {
-            kind: 'failed',
-            failure: {
-              kind: 'request-failed',
-              message: 'Models.dev catalog request failed.',
-            },
-          };
-        }
-        modelsDevCacheOutcomes.set(scopeKey, outcome);
-        switch (outcome.kind) {
-          case 'cached':
-          case 'fresh':
-          case 'not-modified':
-          case 'stale':
-            return structuredClone(outcome.snapshot.catalog);
-          case 'failed':
-            throw outcome.failure;
-          default:
-            return assertNever(outcome);
-        }
-      },
-      error: () => ({ kind: 'request-failed', message: 'Models.dev catalog request failed.' }),
-    });
-
-    if (outer.kind === 'not-run') {
-      return {
-        kind: 'not-run',
-        source: 'models-dev',
-        contextKey: outer.contextKey,
-        reason: outer.reason,
-      };
-    }
-    const cacheOutcome = modelsDevCacheOutcomes.get(scopeKey);
-    if (cacheOutcome === undefined) {
-      const failure = {
-        kind: 'request-failed' as const,
-        message: 'Models.dev catalog request failed.',
-      };
-      switch (outer.kind) {
-        case 'fresh':
-          return { kind: 'fresh', origin: outer.origin, snapshot: outer.snapshot };
-        case 'stale':
-          return { kind: 'stale', snapshot: outer.snapshot, failure };
-        case 'failed':
-          return {
-            kind: 'failed',
-            source: 'models-dev',
-            contextKey: outer.contextKey,
-            generation: outer.generation,
-            requestId: outer.requestId,
-            checkedAt: outer.checkedAt,
-            failure,
-          };
-        default:
-          return assertNever(outer);
-      }
-    }
-
-    if (cacheOutcome.kind === 'failed') {
-      coordinatorFor(input.deps).invalidate({ source: 'models-dev', contextKey: input.contextKey });
-      switch (outer.kind) {
-        case 'failed':
-          return {
-            kind: 'failed',
-            source: 'models-dev',
-            contextKey: outer.contextKey,
-            generation: outer.generation,
-            requestId: outer.requestId,
-            checkedAt: outer.checkedAt,
-            failure: cacheOutcome.failure,
-          };
-        case 'stale':
-          return {
-            kind: 'failed',
-            source: 'models-dev',
-            contextKey: outer.snapshot.contextKey,
-            generation: outer.snapshot.generation,
-            requestId: outer.snapshot.requestId,
-            checkedAt: outer.snapshot.validatedAt,
-            failure: cacheOutcome.failure,
-          };
-        case 'fresh':
-          return {
-            kind: 'failed',
-            source: 'models-dev',
-            contextKey: outer.snapshot.contextKey,
-            generation: outer.snapshot.generation,
-            requestId: outer.snapshot.requestId,
-            checkedAt: outer.snapshot.validatedAt,
-            failure: cacheOutcome.failure,
-          };
-        default:
-          return assertNever(outer);
-      }
-    }
-
-    const identity =
-      outer.kind === 'fresh' || outer.kind === 'stale'
-        ? {
-            generation: outer.snapshot.generation,
-            requestId: outer.snapshot.requestId,
-          }
-        : {
-            generation: outer.generation,
-            requestId: outer.requestId,
-          };
-    const failure = cacheOutcome.kind === 'stale' ? cacheOutcome.failure : undefined;
-    const snapshot = modelsDevSnapshot({
-      cacheSnapshot: cacheOutcome.snapshot,
-      contextKey: input.contextKey,
-      failure,
-      generation: identity.generation,
-      requestId: identity.requestId,
-    });
-    coordinatorFor(input.deps).hydrate(snapshot);
-
-    switch (cacheOutcome.kind) {
-      case 'cached':
-      case 'fresh':
-      case 'not-modified':
-        return {
-          kind: cacheOutcome.kind,
-          origin:
-            cacheOutcome.kind === 'cached'
-              ? 'snapshot'
-              : outer.kind === 'fresh'
-                ? outer.origin
-                : 'request',
-          snapshot,
-        };
-      case 'stale':
-        return { kind: 'stale', snapshot, failure: cacheOutcome.failure };
-    }
-  }
-
   async function load(
     input: Readonly<{
       deps: DetectionDeps;
@@ -767,6 +409,9 @@ export function createDetectionService() {
         contextKey: modelsDevContext,
         deps: input.deps,
         mode: input.mode,
+        coordinator,
+        cacheOutcomes: modelsDevCacheOutcomes,
+        now: () => clock(),
       }).then((outcome) => {
         input.channel.announce({ lane: 'modelsDev', outcome });
         return outcome;

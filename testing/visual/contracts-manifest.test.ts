@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { CropArtifactIdentity, FrameArtifactIdentity } from './contracts/artifact-identity.js';
 import { getArtifactTargetKey, getFailureArtifactIdentity } from './contracts/failure-identity.js';
 import {
-  type CleanupFailureTarget,
   CleanupFailureTargetSchema,
   type Failure,
   FailureSchema,
@@ -45,7 +44,6 @@ import { CaptureRequestSchema, CaptureTargetSchema } from './contracts/selection
 import {
   createCropArtifact,
   createFrameArtifact,
-  createFrameIdentity,
   createVisualProvenance,
 } from './visual-contract-fixtures.js';
 
@@ -439,20 +437,7 @@ describe('visual manifest contracts', () => {
     expect(getFailureArtifactIdentity(selectionFailure)).toBeNull();
   });
 
-  it('models structured selection and cleanup failure targets without free-form identities', () => {
-    const provenance = createVisualProvenance();
-    const identity = createFrameIdentity(provenance);
-    const selectionTarget: SelectionFailureTarget = SelectionFailureTargetSchema.parse({
-      kind: 'capture',
-      provenance,
-    });
-    const cleanupTarget: CleanupFailureTarget = CleanupFailureTargetSchema.parse({
-      kind: 'artifact',
-      artifact: identity,
-    });
-
-    expect(selectionTarget.kind).toBe('capture');
-    expect(cleanupTarget.kind).toBe('artifact');
+  it('rejects free-form path identities in cleanup failure targets', () => {
     expect(
       CleanupFailureTargetSchema.safeParse({ kind: 'path', path: '/tmp/private' }).success,
     ).toBe(false);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultConfig } from '../../core/config/load/io.js';
+import { createDefaultConfig } from '../../core/config/load/defaults.js';
 import type { Config } from '../../core/schemas/config.js';
 import { listCustomCommandConsumers, readRoleCustomCommandCatalog } from './custom-catalog.js';
 

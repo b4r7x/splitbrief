@@ -32,37 +32,24 @@ describe('OpenAI-compatible policy', () => {
     ).toEqual(conservativePolicy);
   });
 
-  it('routes direct OpenAI reasoning models through the proved fields', () => {
+  it('fails closed for a reasoning model at the official OpenAI endpoint', () => {
     expect(
       resolveOpenAICompatPolicy({
         provider: 'openai',
         model: 'o3-mini',
         apiBase: 'https://api.openai.com/v1',
       }),
-    ).toMatchObject({
-      tokenField: 'max_completion_tokens',
-      streamUsage: true,
-      temperature: 'omit',
-      effort: 'clamp-xhigh',
-      reasoning: 'reasoning_effort',
-      extraBody: undefined,
-    });
+    ).toEqual(conservativePolicy);
   });
 
-  it('keeps sampling for a direct OpenAI non-reasoning model', () => {
+  it('fails closed for a non-reasoning model at the official OpenAI endpoint', () => {
     expect(
       resolveOpenAICompatPolicy({
         provider: 'openai',
         model: 'gpt-4o',
         apiBase: 'https://api.openai.com/v1',
       }),
-    ).toMatchObject({
-      tokenField: 'max_tokens',
-      streamUsage: true,
-      temperature: 'verbatim',
-      effort: 'omit',
-      reasoning: 'omit',
-    });
+    ).toEqual(conservativePolicy);
   });
 
   it('fails closed for an OpenAI lookalike endpoint', () => {
@@ -75,56 +62,24 @@ describe('OpenAI-compatible policy', () => {
     ).toEqual(conservativePolicy);
   });
 
-  it('uses model-aware reasoning only for existing OpenRouter and DeepSeek behavior', () => {
-    expect(resolveOpenAICompatPolicy({ provider: 'openrouter', model: 'openai/o3' })).toMatchObject(
-      {
-        streamUsage: true,
-        tokenField: 'max_tokens',
-        effort: 'verbatim',
-        reasoning: 'reasoning_effort',
-      },
-    );
-    expect(
-      resolveOpenAICompatPolicy({ provider: 'deepseek', model: 'deepseek-v4-flash' }),
-    ).toMatchObject({
-      streamUsage: true,
-      tokenField: 'max_tokens',
-      effort: 'map-medium-to-high',
-      reasoning: 'reasoning_effort',
-    });
-    expect(
-      resolveOpenAICompatPolicy({ provider: 'deepseek', model: 'deepseek-v4-pro' }),
-    ).toMatchObject({
-      streamUsage: true,
-      tokenField: 'max_tokens',
-      effort: 'map-medium-to-high',
-      reasoning: 'reasoning_effort',
-    });
-  });
-
-  it('uses completion-token requests for the Groq GPT OSS recommendation', () => {
-    expect(
-      resolveOpenAICompatPolicy({ provider: 'groq', model: 'openai/gpt-oss-120b' }),
-    ).toMatchObject({
-      tokenField: 'max_completion_tokens',
-      streamUsage: true,
-    });
-  });
-
-  it('keeps Together and unknown Groq models on the standard request contract', () => {
+  it('fails closed for every removed remote preset name', () => {
     for (const [provider, model] of [
+      ['openai', 'o3'],
+      ['openrouter', 'openai/o3'],
+      ['deepseek', 'deepseek-v4-pro'],
+      ['groq', 'openai/gpt-oss-120b'],
       ['together', 'model-1'],
-      ['groq', 'other-model'],
     ] as const) {
-      expect(resolveOpenAICompatPolicy({ provider, model })).toEqual({
-        tokenField: 'max_tokens',
-        streamUsage: true,
-        temperature: 'verbatim',
-        effort: 'omit',
-        reasoning: 'omit',
-        extraBody: undefined,
-        finishReasons: OPENAI_COMPAT_STANDARD_FINISH_REASONS,
-      });
+      expect(resolveOpenAICompatPolicy({ provider, model })).toEqual(conservativePolicy);
+    }
+  });
+
+  it('fails closed for the surviving local services', () => {
+    for (const [provider, model] of [
+      ['ollama', 'qwen3-coder:30b'],
+      ['lm-studio', 'qwen2.5-coder-7b'],
+    ] as const) {
+      expect(resolveOpenAICompatPolicy({ provider, model })).toEqual(conservativePolicy);
     }
   });
 

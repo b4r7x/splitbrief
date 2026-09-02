@@ -2,12 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { computeCompletionOverlayRows, computeCompletionCap } from './layout.js';
 
 describe('computeCompletionCap', () => {
-  it('caps at 8 for a standard 24-row terminal', () => {
-    expect(computeCompletionCap(24, 1)).toBe(8);
-  });
-
-  it('caps at 8 for a large terminal', () => {
-    expect(computeCompletionCap(50, 1)).toBe(8);
+  it.each([21, 50])('caps at 8 for a %i-row terminal', (rows) => {
+    expect(computeCompletionCap(rows, 1)).toBe(8);
   });
 
   it('floors at 3 for a tiny terminal', () => {

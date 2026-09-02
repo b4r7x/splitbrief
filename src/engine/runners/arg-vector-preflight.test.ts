@@ -293,10 +293,10 @@ describe('collectArgVectorPreflightChecks', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
-        provider: 'openrouter',
-        service: 'openrouter',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
         offering: 'payg',
-        apiBase: 'https://openrouter.ai/api/v1',
+        apiBase: 'https://api.example.test/v1',
         model: 'qwen2.5-coder:7b',
       },
     });
@@ -315,10 +315,10 @@ describe('collectArgVectorPreflightChecks', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
-        provider: 'openrouter',
-        service: 'openrouter',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
         offering: 'payg',
-        apiBase: 'https://openrouter.ai/api/v1',
+        apiBase: 'https://api.example.test/v1',
         model: 'qwen2.5-coder:7b',
       },
       reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5' },
@@ -402,10 +402,10 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       config: makeConfig({
         planner: {
           kind: 'api',
-          provider: 'openrouter',
-          service: 'openrouter',
+          provider: 'custom-endpoint',
+          service: 'custom-endpoint',
           offering: 'payg',
-          apiBase: 'https://openrouter.ai/api/v1',
+          apiBase: 'https://api.example.test/v1',
           model: 'qwen2.5-coder:7b',
         },
         reviewer: { kind: 'cli', tool: 'claude-code', model: 'sonnet', effort: 'high' },
@@ -445,6 +445,55 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     });
     expect(checks[0]?.details).toEqual([
       'Emitted argv: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode acceptEdits',
+    ]);
+  });
+
+  const opencodeHelp = (...extra: string[]) =>
+    [
+      'Usage: opencode run [message..]',
+      '  --model <model>      Model to use',
+      '  --format <format>    Output format',
+      '  --agent <agent>      Agent to run',
+      ...extra,
+    ].join('\n');
+
+  const opencodePlannerChecksWithVariant = (helpText: string) =>
+    collectArgVectorPreflightChecks({
+      config: makeConfig({
+        planner: {
+          kind: 'cli',
+          tool: 'opencode',
+          model: 'openai/gpt-5.6-luna',
+          variant: 'xhigh',
+        },
+      }),
+      projectDir: '/project',
+      roles: ['planner'],
+      runHelp: async () => helpText,
+    });
+
+  it('blocks on the variant flag an opencode binary that omits it would reject', async () => {
+    const checks = await opencodePlannerChecksWithVariant(opencodeHelp());
+
+    expect(checks[0]).toMatchObject({
+      id: 'runners.cli.opencode.arg-vector.planner',
+      severity: 'blocker',
+      metadata: { unsupported: ['--variant'] },
+    });
+  });
+
+  it('reports ok once the binary advertises --variant', async () => {
+    const checks = await opencodePlannerChecksWithVariant(
+      opencodeHelp('  --variant <name>     Model variant'),
+    );
+
+    expect(checks[0]).toMatchObject({
+      id: 'runners.cli.opencode.arg-vector.planner',
+      severity: 'ok',
+    });
+    expect(checks[0]?.details).toEqual([
+      'Emitted argv: run --model openai/gpt-5.6-luna --variant xhigh --format json --agent plan <PROMPT>',
+      'Emitted argv: run --model openai/gpt-5.6-luna --variant xhigh --format json --agent build <PROMPT>',
     ]);
   });
 

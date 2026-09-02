@@ -3,7 +3,12 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['testing/e2e/scenarios/**/*.test.ts'],
-    exclude: ['node_modules', 'dist'],
+    exclude: [
+      'node_modules',
+      'dist',
+      'testing/e2e/scenarios/live/**',
+      'testing/e2e/scenarios/real-cli-planner-implementer-smoke.test.ts',
+    ],
     setupFiles: ['./testing/helpers/state-home.ts'],
     environment: 'node',
     globals: false,

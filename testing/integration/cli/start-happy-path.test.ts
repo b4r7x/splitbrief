@@ -11,7 +11,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { runCommand } from '#testing/helpers/commander.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { createDefaultConfig } from '../../../src/core/config/load/io.js';
+import { createDefaultConfig } from '../../../src/core/config/load/defaults.js';
 import { defaultCliAuthChannel } from '../../../src/core/runners/cli-tool-catalog.js';
 import { toYaml } from '../../../src/core/config/load/transform.js';
 import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../../src/core/paths.js';

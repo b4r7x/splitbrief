@@ -111,6 +111,50 @@ const TEST_SINKS: WorkflowSinks = {
   setQueueHandler: () => {},
 };
 
+// Custom endpoints have no catalog vendor of their own, so their rates come from
+// the models.dev catalog keyed by model id.
+const PRICED_MODEL_CACHE = makeModelCacheAccessor({
+  catalog: {
+    'test-vendor': {
+      id: 'test-vendor',
+      models: {
+        'claude-opus-5': {
+          id: 'claude-opus-5',
+          cost: { input: 15, output: 75 },
+          limit: { context: 200_000 },
+        },
+        'deepseek-v4-flash': {
+          id: 'deepseek-v4-flash',
+          cost: { input: 0.3, output: 1.2 },
+          limit: { context: 128_000 },
+        },
+      },
+    },
+  },
+});
+
+const PRICED_PLANNER = {
+  kind: 'api' as const,
+  provider: 'custom-endpoint',
+  service: 'custom-endpoint' as const,
+  offering: 'payg' as const,
+  apiBase: 'https://api.example.com/v1',
+  apiKey: 'test-key',
+  model: 'claude-opus-5',
+};
+
+const PRICED_CHEAP_WORKER = {
+  kind: 'api' as const,
+  provider: 'custom-cloud',
+  service: 'custom-cloud' as const,
+  offering: 'payg' as const,
+  apiBase: 'https://custom.example/v1',
+  apiKey: 'test-key',
+  model: 'deepseek-v4-flash',
+  contextLength: 20_000,
+  costTier: 'cheap' as const,
+};
+
 function profileImplementerRuntime(
   implementer = makeImplementer(),
 ): Pick<WorkflowContext, 'implementer' | 'createImplementer'> {
@@ -307,30 +351,13 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     });
     const config = {
       ...makeNoValidationConfig({
-        planner: {
-          kind: 'api',
-          provider: 'anthropic',
-          service: 'anthropic' as const,
-          offering: 'payg' as const,
-          apiBase: 'https://api.anthropic.com/v1',
-          model: 'claude-opus-5',
-        },
+        planner: PRICED_PLANNER,
         workflow: {},
       }),
       implementerProfiles: {
         default: 'cheap-worker',
         profiles: {
-          'cheap-worker': {
-            kind: 'api' as const,
-            provider: 'deepseek',
-            service: 'deepseek' as const,
-            offering: 'payg' as const,
-            apiBase: 'https://api.deepseek.com/v1',
-            apiKey: 'test-key',
-            model: 'deepseek-v4-flash',
-            contextLength: 20_000,
-            costTier: 'cheap' as const,
-          },
+          'cheap-worker': PRICED_CHEAP_WORKER,
         },
       },
     };
@@ -347,10 +374,11 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         reviewer: planner,
         context: defaultContext,
         ...profileImplementerRuntime(implementer),
+        modelCache: PRICED_MODEL_CACHE,
         metadata: {
-          plannerTool: 'anthropic',
+          plannerTool: 'custom-endpoint',
           plannerModel: 'claude-opus-5',
-          implementerTool: 'deepseek',
+          implementerTool: 'custom-cloud',
           implementerModel: 'deepseek-v4-flash',
           mode: 'standard',
         },
@@ -362,9 +390,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
-        plannerTool: 'anthropic',
+        plannerTool: 'custom-endpoint',
         plannerModel: 'claude-opus-5',
-        implementerTool: 'deepseek',
+        implementerTool: 'custom-cloud',
         implementerModel: 'deepseek-v4-flash',
       },
       phaseTimings: {},
@@ -409,14 +437,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const { bus, events } = makeBusRecorder();
     const config = {
       ...makeNoValidationConfig({
-        planner: {
-          kind: 'api',
-          provider: 'anthropic',
-          service: 'anthropic' as const,
-          offering: 'payg' as const,
-          apiBase: 'https://api.anthropic.com/v1',
-          model: 'claude-opus-5',
-        },
+        planner: PRICED_PLANNER,
         workflow: {},
       }),
       implementerProfiles: {
@@ -449,8 +470,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         reviewer: planner,
         context: defaultContext,
         ...profileImplementerRuntime(),
+        modelCache: PRICED_MODEL_CACHE,
         metadata: {
-          plannerTool: 'anthropic',
+          plannerTool: 'custom-endpoint',
           plannerModel: 'claude-opus-5',
           implementerTool: 'custom-cloud',
           implementerModel: 'custom-model',
@@ -464,7 +486,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
-        plannerTool: 'anthropic',
+        plannerTool: 'custom-endpoint',
         plannerModel: 'claude-opus-5',
         implementerTool: 'custom-cloud',
         implementerModel: 'custom-model',
@@ -516,31 +538,14 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const { bus, events } = makeBusRecorder();
     const config = {
       ...makeNoValidationConfig({
-        planner: {
-          kind: 'api',
-          provider: 'anthropic',
-          service: 'anthropic' as const,
-          offering: 'payg' as const,
-          apiBase: 'https://api.anthropic.com/v1',
-          model: 'claude-opus-5',
-        },
+        planner: PRICED_PLANNER,
         workflow: {},
       }),
       plannerEstimateReview: true,
       implementerProfiles: {
         default: 'cheap-worker',
         profiles: {
-          'cheap-worker': {
-            kind: 'api' as const,
-            provider: 'deepseek',
-            service: 'deepseek' as const,
-            offering: 'payg' as const,
-            apiBase: 'https://api.deepseek.com/v1',
-            apiKey: 'test-key',
-            model: 'deepseek-v4-flash',
-            contextLength: 20_000,
-            costTier: 'cheap' as const,
-          },
+          'cheap-worker': PRICED_CHEAP_WORKER,
         },
       },
     };
@@ -557,10 +562,11 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         reviewer: planner,
         context: defaultContext,
         ...profileImplementerRuntime(),
+        modelCache: PRICED_MODEL_CACHE,
         metadata: {
-          plannerTool: 'anthropic',
+          plannerTool: 'custom-endpoint',
           plannerModel: 'claude-opus-5',
-          implementerTool: 'deepseek',
+          implementerTool: 'custom-cloud',
           implementerModel: 'deepseek-v4-flash',
           mode: 'standard',
         },
@@ -572,9 +578,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
-        plannerTool: 'anthropic',
+        plannerTool: 'custom-endpoint',
         plannerModel: 'claude-opus-5',
-        implementerTool: 'deepseek',
+        implementerTool: 'custom-cloud',
         implementerModel: 'deepseek-v4-flash',
       },
       phaseTimings: {},
@@ -652,31 +658,14 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const { bus } = makeBusRecorder();
     const config = {
       ...makeNoValidationConfig({
-        planner: {
-          kind: 'api',
-          provider: 'anthropic',
-          service: 'anthropic' as const,
-          offering: 'payg' as const,
-          apiBase: 'https://api.anthropic.com/v1',
-          model: 'claude-opus-5',
-        },
+        planner: PRICED_PLANNER,
         workflow: {},
       }),
       plannerEstimateReview: true,
       implementerProfiles: {
         default: 'cheap-worker',
         profiles: {
-          'cheap-worker': {
-            kind: 'api' as const,
-            provider: 'deepseek',
-            service: 'deepseek' as const,
-            offering: 'payg' as const,
-            apiBase: 'https://api.deepseek.com/v1',
-            apiKey: 'test-key',
-            model: 'deepseek-v4-flash',
-            contextLength: 20_000,
-            costTier: 'cheap' as const,
-          },
+          'cheap-worker': PRICED_CHEAP_WORKER,
         },
       },
     };
@@ -693,10 +682,11 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         reviewer: planner,
         context: defaultContext,
         ...profileImplementerRuntime(),
+        modelCache: PRICED_MODEL_CACHE,
         metadata: {
-          plannerTool: 'anthropic',
+          plannerTool: 'custom-endpoint',
           plannerModel: 'claude-opus-5',
-          implementerTool: 'deepseek',
+          implementerTool: 'custom-cloud',
           implementerModel: 'deepseek-v4-flash',
           mode: 'standard',
         },
@@ -708,9 +698,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
-        plannerTool: 'anthropic',
+        plannerTool: 'custom-endpoint',
         plannerModel: 'claude-opus-5',
-        implementerTool: 'deepseek',
+        implementerTool: 'custom-cloud',
         implementerModel: 'deepseek-v4-flash',
       },
       phaseTimings: {},
@@ -787,11 +777,10 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         profiles: {
           'tiny-worker': {
             kind: 'api' as const,
-            provider: 'deepseek',
-            service: 'deepseek' as const,
-            offering: 'payg' as const,
-            apiBase: 'https://api.deepseek.com/v1',
-            apiKey: 'test-key',
+            provider: 'ollama',
+            service: 'ollama' as const,
+            offering: 'local' as const,
+            apiBase: 'http://localhost:11434/v1',
             model: 'deepseek-v4-flash',
             contextLength: 20_000,
             costTier: 'cheap' as const,
@@ -813,7 +802,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
       ...profileImplementerRuntime(implementer),
       metadata: {
         plannerTool: 'claude-code',
-        implementerTool: 'deepseek',
+        implementerTool: 'ollama',
         implementerModel: 'deepseek-v4-flash',
         mode: 'standard',
       },
@@ -831,7 +820,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         feature: 'feat',
         startTime: Date.now(),
         plannerTool: 'claude-code',
-        implementerTool: 'deepseek',
+        implementerTool: 'ollama',
         implementerModel: 'deepseek-v4-flash',
       },
       phaseTimings: {},
@@ -1131,10 +1120,10 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         profiles: {
           'tiny-worker': {
             kind: 'api' as const,
-            provider: 'deepseek',
-            service: 'deepseek' as const,
-            offering: 'payg' as const,
-            apiBase: 'https://api.deepseek.com/v1',
+            provider: 'ollama',
+            service: 'ollama' as const,
+            offering: 'local' as const,
+            apiBase: 'http://localhost:11434/v1',
             model: 'deepseek-v4-flash',
             contextLength: 20_000,
             costTier: 'cheap' as const,
@@ -1155,7 +1144,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
       ...profileImplementerRuntime(),
       metadata: {
         plannerTool: 'claude-code',
-        implementerTool: 'deepseek',
+        implementerTool: 'ollama',
         implementerModel: 'deepseek-v4-flash',
         mode: 'standard',
       },
@@ -1173,7 +1162,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         feature: 'feat',
         startTime: Date.now(),
         plannerTool: 'claude-code',
-        implementerTool: 'deepseek',
+        implementerTool: 'ollama',
         implementerModel: 'deepseek-v4-flash',
       },
       phaseTimings: {},
@@ -1526,30 +1515,13 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const { bus, events } = makeBusRecorder();
     const config = {
       ...makeNoValidationConfig({
-        planner: {
-          kind: 'api',
-          provider: 'anthropic',
-          service: 'anthropic' as const,
-          offering: 'payg' as const,
-          apiBase: 'https://api.anthropic.com/v1',
-          model: 'claude-opus-5',
-        },
+        planner: PRICED_PLANNER,
         workflow: {},
       }),
       implementerProfiles: {
         default: 'cheap-worker',
         profiles: {
-          'cheap-worker': {
-            kind: 'api' as const,
-            provider: 'deepseek',
-            service: 'deepseek' as const,
-            offering: 'payg' as const,
-            apiBase: 'https://api.deepseek.com/v1',
-            apiKey: 'test-key',
-            model: 'deepseek-v4-flash',
-            contextLength: 20_000,
-            costTier: 'cheap' as const,
-          },
+          'cheap-worker': PRICED_CHEAP_WORKER,
         },
       },
     };
@@ -1574,10 +1546,11 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
             }),
           }),
         ),
+        modelCache: PRICED_MODEL_CACHE,
         metadata: {
-          plannerTool: 'anthropic',
+          plannerTool: 'custom-endpoint',
           plannerModel: 'claude-opus-5',
-          implementerTool: 'deepseek',
+          implementerTool: 'custom-cloud',
           implementerModel: 'deepseek-v4-flash',
           mode: 'standard',
         },
@@ -1589,9 +1562,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
-        plannerTool: 'anthropic',
+        plannerTool: 'custom-endpoint',
         plannerModel: 'claude-opus-5',
-        implementerTool: 'deepseek',
+        implementerTool: 'custom-cloud',
         implementerModel: 'deepseek-v4-flash',
       },
       phaseTimings: {},
@@ -1626,30 +1599,13 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     });
     const config = {
       ...makeNoValidationConfig({
-        planner: {
-          kind: 'api',
-          provider: 'anthropic',
-          service: 'anthropic' as const,
-          offering: 'payg' as const,
-          apiBase: 'https://api.anthropic.com/v1',
-          model: 'claude-opus-5',
-        },
+        planner: PRICED_PLANNER,
         workflow: {},
       }),
       implementerProfiles: {
         default: 'cheap-worker',
         profiles: {
-          'cheap-worker': {
-            kind: 'api' as const,
-            provider: 'deepseek',
-            service: 'deepseek' as const,
-            offering: 'payg' as const,
-            apiBase: 'https://api.deepseek.com/v1',
-            apiKey: 'test-key',
-            model: 'deepseek-v4-flash',
-            contextLength: 20_000,
-            costTier: 'cheap' as const,
-          },
+          'cheap-worker': PRICED_CHEAP_WORKER,
         },
       },
     };
@@ -1666,10 +1622,11 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         reviewer: planner,
         context: defaultContext,
         ...profileImplementerRuntime(makeImplementer({ implement })),
+        modelCache: PRICED_MODEL_CACHE,
         metadata: {
-          plannerTool: 'anthropic',
+          plannerTool: 'custom-endpoint',
           plannerModel: 'claude-opus-5',
-          implementerTool: 'deepseek',
+          implementerTool: 'custom-cloud',
           implementerModel: 'deepseek-v4-flash',
           mode: 'standard',
         },
@@ -1681,9 +1638,9 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
       summaryBase: {
         feature: 'feat',
         startTime: Date.now(),
-        plannerTool: 'anthropic',
+        plannerTool: 'custom-endpoint',
         plannerModel: 'claude-opus-5',
-        implementerTool: 'deepseek',
+        implementerTool: 'custom-cloud',
         implementerModel: 'deepseek-v4-flash',
       },
       phaseTimings: {},
@@ -2666,9 +2623,8 @@ describe('runPlanningPhases — routing inputs reaching the readiness gate', () 
             },
             'catalog-api': {
               kind: 'api',
-              provider: 'openrouter',
-              apiBase: 'https://openrouter.ai/api/v1',
-              apiKey: 'test-key',
+              provider: 'ollama',
+              apiBase: 'http://localhost:11434/v1',
               model: 'runtime-wide',
               costTier: 'standard',
             },
@@ -2708,7 +2664,7 @@ describe('runPlanningPhases — routing inputs reaching the readiness gate', () 
       ...routingWctx({ projectDir, sessionId, callbacks, bus, planner }),
       modelCache: makeModelCacheAccessor({
         providerModels: {
-          openrouter: [{ id: 'runtime-wide', contextLength: CACHE_CONTEXT_LENGTH }],
+          ollama: [{ id: 'runtime-wide', contextLength: CACHE_CONTEXT_LENGTH }],
         },
       }),
       detectedContextLength: 4_096,

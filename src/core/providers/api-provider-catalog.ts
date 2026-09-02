@@ -1,6 +1,6 @@
 import { typedEntries } from '../../utils/type-guards.js';
 import type { RunnerBillingPosture } from '../runners/runner-billing.js';
-import { endpointPolicyError, type EndpointPolicy } from './endpoint-policy.js';
+import type { EndpointPolicy } from './endpoint-policy.js';
 
 export const API_OFFERINGS = Object.freeze([
   'payg',
@@ -63,13 +63,6 @@ export type DataUsePosture =
 
 export type ApiRunnerRole = 'planner' | 'implementer';
 
-export type ApiProviderAdmission =
-  | Readonly<{ state: 'active' }>
-  | Readonly<{
-      state: 'pending-adapter';
-      activation: 'createOllamaCloudProvider';
-    }>;
-
 export interface ApiProviderDescriptor<
   Id extends string = string,
   Roles extends readonly ApiRunnerRole[] = readonly ApiRunnerRole[],
@@ -94,7 +87,6 @@ export interface ApiProviderDescriptor<
   readonly privacyURL: string;
   readonly termsURL: string;
   readonly asOf: string;
-  readonly admission: ApiProviderAdmission;
 }
 
 function freezeEndpointPolicy(policy: EndpointPolicy): EndpointPolicy {
@@ -102,14 +94,6 @@ function freezeEndpointPolicy(policy: EndpointPolicy): EndpointPolicy {
     return Object.freeze({ ...policy, hosts: Object.freeze([...policy.hosts]) });
   }
   return Object.freeze({ ...policy });
-}
-
-function freezeAdmission(admission: ApiProviderAdmission): ApiProviderAdmission {
-  if (admission.state === 'active') return Object.freeze({ state: 'active' });
-  return Object.freeze({
-    state: 'pending-adapter',
-    activation: admission.activation,
-  });
 }
 
 function freezeDescriptor<
@@ -124,7 +108,6 @@ function freezeDescriptor<
     roles: Object.freeze(descriptor.roles),
     endpointPolicy: freezeEndpointPolicy(descriptor.endpointPolicy),
     mandatoryPreflightFacts: Object.freeze([...descriptor.mandatoryPreflightFacts]),
-    admission: freezeAdmission(descriptor.admission),
   });
 }
 
@@ -135,15 +118,7 @@ const LOCAL_API_PREFLIGHT_FACTS = Object.freeze([
   'model-runnability',
 ] as const satisfies readonly ApiPreflightFact[]);
 
-const REMOTE_API_PREFLIGHT_FACTS = Object.freeze([
-  'endpoint',
-  'reachability',
-  'authentication',
-  'model-catalog',
-  'model-runnability',
-] as const satisfies readonly ApiPreflightFact[]);
-
-export const API_PROVIDER_DECLARATIONS = Object.freeze({
+export const API_PROVIDER_CATALOG = Object.freeze({
   ollama: freezeDescriptor({
     id: 'ollama',
     displayName: 'Ollama',
@@ -164,29 +139,6 @@ export const API_PROVIDER_DECLARATIONS = Object.freeze({
     privacyURL: 'https://ollama.com/privacy',
     termsURL: 'https://ollama.com/terms',
     asOf: '2026-07-31',
-    admission: { state: 'active' },
-  }),
-  'ollama-cloud': freezeDescriptor({
-    id: 'ollama-cloud',
-    displayName: 'Ollama Cloud',
-    service: 'ollama',
-    offering: 'payg',
-    category: 'remote-api',
-    locality: 'remote',
-    roles: ['planner', 'implementer'],
-    endpointPolicy: { kind: 'fixed-origin', baseURL: 'https://ollama.com' },
-    credentialEnv: 'OLLAMA_API_KEY',
-    credentialPrefix: null,
-    authDiscoveryMode: 'api-key-unverified',
-    modelDiscoveryMode: 'account-model-list',
-    mandatoryPreflightFacts: REMOTE_API_PREFLIGHT_FACTS,
-    billing: 'provider-dependent',
-    compatibility: 'unverified',
-    dataUse: 'provider-routed',
-    privacyURL: 'https://ollama.com/privacy',
-    termsURL: 'https://ollama.com/terms',
-    asOf: '2026-07-31',
-    admission: { state: 'active' },
   }),
   'lm-studio': freezeDescriptor({
     id: 'lm-studio',
@@ -208,165 +160,13 @@ export const API_PROVIDER_DECLARATIONS = Object.freeze({
     privacyURL: 'https://lmstudio.ai/app-privacy',
     termsURL: 'https://lmstudio.ai/terms',
     asOf: '2026-07-31',
-    admission: { state: 'active' },
-  }),
-  anthropic: freezeDescriptor({
-    id: 'anthropic',
-    displayName: 'Anthropic',
-    service: 'anthropic',
-    offering: 'payg',
-    category: 'remote-api',
-    locality: 'remote',
-    roles: ['planner', 'implementer'],
-    endpointPolicy: { kind: 'fixed-origin', baseURL: 'https://api.anthropic.com/v1' },
-    credentialEnv: 'ANTHROPIC_API_KEY',
-    credentialPrefix: 'sk-ant-',
-    authDiscoveryMode: 'api-key-unverified',
-    modelDiscoveryMode: 'account-model-list',
-    mandatoryPreflightFacts: REMOTE_API_PREFLIGHT_FACTS,
-    billing: 'api-metered',
-    compatibility: 'verified',
-    dataUse: 'no-training',
-    privacyURL: 'https://www.anthropic.com/legal/privacy',
-    termsURL: 'https://www.anthropic.com/legal/commercial-terms',
-    asOf: '2026-07-31',
-    admission: { state: 'active' },
-  }),
-  openrouter: freezeDescriptor({
-    id: 'openrouter',
-    displayName: 'OpenRouter',
-    service: 'openrouter',
-    offering: 'payg',
-    category: 'remote-api',
-    locality: 'remote',
-    roles: ['planner', 'implementer'],
-    endpointPolicy: { kind: 'fixed-origin', baseURL: 'https://openrouter.ai/api/v1' },
-    credentialEnv: 'OPENROUTER_API_KEY',
-    credentialPrefix: 'sk-or-',
-    authDiscoveryMode: 'api-key-unverified',
-    modelDiscoveryMode: 'account-model-list',
-    mandatoryPreflightFacts: REMOTE_API_PREFLIGHT_FACTS,
-    billing: 'provider-dependent',
-    compatibility: 'verified',
-    dataUse: 'provider-routed',
-    privacyURL: 'https://openrouter.ai/docs/guides/privacy/provider-logging/',
-    termsURL: 'https://openrouter.ai/terms',
-    asOf: '2026-07-31',
-    admission: { state: 'active' },
-  }),
-  deepseek: freezeDescriptor({
-    id: 'deepseek',
-    displayName: 'DeepSeek',
-    service: 'deepseek',
-    offering: 'payg',
-    category: 'remote-api',
-    locality: 'remote',
-    roles: ['planner', 'implementer'],
-    endpointPolicy: { kind: 'fixed-origin', baseURL: 'https://api.deepseek.com/v1' },
-    credentialEnv: 'DEEPSEEK_API_KEY',
-    credentialPrefix: 'sk-',
-    authDiscoveryMode: 'api-key-unverified',
-    modelDiscoveryMode: 'account-model-list',
-    mandatoryPreflightFacts: REMOTE_API_PREFLIGHT_FACTS,
-    billing: 'api-metered',
-    compatibility: 'unverified',
-    dataUse: 'allowed-training',
-    privacyURL: 'https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html',
-    termsURL:
-      'https://cdn.deepseek.com/policies/en-US/deepseek-open-platform-terms-of-service.html',
-    asOf: '2026-07-31',
-    admission: { state: 'active' },
-  }),
-  openai: freezeDescriptor({
-    id: 'openai',
-    displayName: 'OpenAI',
-    service: 'openai',
-    offering: 'payg',
-    category: 'remote-api',
-    locality: 'remote',
-    roles: ['planner', 'implementer'],
-    endpointPolicy: { kind: 'fixed-origin', baseURL: 'https://api.openai.com/v1' },
-    credentialEnv: 'OPENAI_API_KEY',
-    credentialPrefix: 'sk-',
-    authDiscoveryMode: 'api-key-unverified',
-    modelDiscoveryMode: 'account-model-list',
-    mandatoryPreflightFacts: REMOTE_API_PREFLIGHT_FACTS,
-    billing: 'api-metered',
-    compatibility: 'verified',
-    dataUse: 'no-training',
-    privacyURL: 'https://openai.com/policies/privacy-policy/',
-    termsURL: 'https://openai.com/policies/business-terms/',
-    asOf: '2026-07-31',
-    admission: { state: 'active' },
-  }),
-  groq: freezeDescriptor({
-    id: 'groq',
-    displayName: 'Groq',
-    service: 'groq',
-    offering: 'payg',
-    category: 'remote-api',
-    locality: 'remote',
-    roles: ['planner', 'implementer'],
-    endpointPolicy: { kind: 'fixed-origin', baseURL: 'https://api.groq.com/openai/v1' },
-    credentialEnv: 'GROQ_API_KEY',
-    credentialPrefix: 'gsk_',
-    authDiscoveryMode: 'api-key-unverified',
-    modelDiscoveryMode: 'account-model-list',
-    mandatoryPreflightFacts: REMOTE_API_PREFLIGHT_FACTS,
-    billing: 'provider-dependent',
-    compatibility: 'verified',
-    dataUse: 'non-retention',
-    privacyURL: 'https://console.groq.com/docs/your-data',
-    termsURL: 'https://groq.com/terms-of-use/',
-    asOf: '2026-07-31',
-    admission: { state: 'active' },
-  }),
-  together: freezeDescriptor({
-    id: 'together',
-    displayName: 'Together AI',
-    service: 'together',
-    offering: 'payg',
-    category: 'remote-api',
-    locality: 'remote',
-    roles: ['planner', 'implementer'],
-    endpointPolicy: { kind: 'fixed-origin', baseURL: 'https://api.together.ai/v1' },
-    credentialEnv: 'TOGETHER_API_KEY',
-    credentialPrefix: null,
-    authDiscoveryMode: 'api-key-unverified',
-    modelDiscoveryMode: 'account-model-list',
-    mandatoryPreflightFacts: REMOTE_API_PREFLIGHT_FACTS,
-    billing: 'api-metered',
-    compatibility: 'verified',
-    dataUse: 'unreviewed',
-    privacyURL: 'https://www.together.ai/privacy',
-    termsURL: 'https://www.together.ai/terms-of-service',
-    asOf: '2026-07-31',
-    admission: { state: 'active' },
   }),
 } satisfies Record<string, ApiProviderDescriptor>);
 
-export const OLLAMA_CLOUD_API_PROVIDER_CANDIDATE = API_PROVIDER_DECLARATIONS['ollama-cloud'];
-
-function activeProviderCatalog<Id extends string, Descriptor extends ApiProviderDescriptor<Id>>(
-  declarations: Readonly<Record<Id, Descriptor>>,
-): Readonly<Record<Id, Descriptor>> {
-  for (const [, descriptor] of typedEntries(declarations)) {
-    if (descriptor.admission.state !== 'active') throw endpointPolicyError.unsupported();
-  }
-  return declarations;
-}
-
-export type ApiProviderId = keyof typeof API_PROVIDER_DECLARATIONS;
-export const API_PROVIDER_CATALOG = activeProviderCatalog(API_PROVIDER_DECLARATIONS);
+export type ApiProviderId = keyof typeof API_PROVIDER_CATALOG;
 
 export const ADMITTED_API_PROVIDER_IDS = Object.freeze(
   typedEntries(API_PROVIDER_CATALOG).map(([id]) => id),
-);
-
-export const PENDING_API_PROVIDER_CANDIDATE_IDS = Object.freeze(
-  typedEntries(API_PROVIDER_DECLARATIONS)
-    .filter(([, descriptor]) => descriptor.admission.state !== 'active')
-    .map(([id]) => id),
 );
 
 export type ApiProviderIdForRole<Role extends ApiRunnerRole> = {

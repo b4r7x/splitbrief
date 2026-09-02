@@ -7,7 +7,7 @@ import { IMPLEMENTER_CLI_TOOL_IDS, PLANNER_CLI_TOOL_IDS } from '../runners/cli-t
 import { ImplementerConfigSchema } from './implementer-config.js';
 import { PlannerConfigSchema } from './planner-config.js';
 import { ConfigSchema } from './config.js';
-import { createDefaultConfig } from '../config/load/io.js';
+import { createDefaultConfig } from '../config/load/defaults.js';
 import { readCustomCommandCatalog } from '../config/custom-command-catalog.js';
 
 function implementerOnlyApiProviderIds() {

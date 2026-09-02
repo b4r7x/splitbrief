@@ -17,10 +17,13 @@ import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
 import { registerStartCommand } from '../../src/cli/commands/start/register.js';
 import type { StartDeps } from '../../src/cli/commands/start/types.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR, LOCKFILE, STATE_FILE } from '../../src/core/paths.js';
-import type { SpawnServerOptions, SpawnServerResult } from '../../src/engine/ipc/spawn-server.js';
-import { buildServerArgs } from '../../src/engine/ipc/spawn-server.js';
+import type { SpawnServerResult } from '../../src/engine/ipc/detached-handshake.js';
+import {
+  buildServerArgs,
+  type SpawnServerOptions,
+} from '../../src/engine/ipc/server-invocation.js';
 import { routerStore } from '../../src/stores/navigation/router.js';
-import { prepareExecution } from '../../src/engine/runners/prepare-execution.js';
+import { prepareExecution } from '../../src/engine/runners/prepare-execution/prepare-execution.js';
 import type { probeRunnerAvailability } from '../../src/engine/runners/probe-availability.js';
 import { sessionDir } from '../../src/core/paths.js';
 

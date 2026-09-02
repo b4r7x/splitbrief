@@ -1,0 +1,14 @@
+cmd -p --output-format json --trust --skip-onboarding --no-auto-update --permission-mode auto-accept "Reply with exactly: ok"
+# version: 1.39.2
+{"type":"event","event":{"type":"run_start","sessionId":"cbb9c239-83c1-4e53-aa48-b0efeb5589d1"}}
+{"type":"event","event":{"type":"turn_start","turnNumber":1}}
+{"type":"event","event":{"type":"message_start"}}
+{"type":"event","event":{"type":"model_request_start","model":"deepseek/deepseek-v4-flash"}}
+{"type":"event","event":{"type":"model_trace","traceId":"735eb58d374729ddd8de07390dcf0dc4"}}
+{"type":"event","event":{"type":"text_delta","delta":"ok"}}
+{"type":"event","event":{"type":"message_update","content":[{"type":"text","text":"ok"}]}}
+{"type":"event","event":{"type":"model_request_end","model":"deepseek/deepseek-v4-flash","usage":{"inputTokens":20154,"outputTokens":2,"cacheReadTokens":5888,"cacheWriteTokens":0},"stopReason":"stop"}}
+{"type":"event","event":{"type":"message_end","content":[{"type":"text","text":"ok"}]}}
+{"type":"event","event":{"type":"turn_end","turnNumber":1,"hadToolCalls":false,"usage":{"inputTokens":20154,"outputTokens":2,"cacheReadTokens":5888,"cacheWriteTokens":0}}}
+{"type":"event","event":{"type":"run_end","result":{"finalText":"ok","stopReason":"end_turn","turnCount":1,"usage":{"inputTokens":20154,"outputTokens":2,"cacheReadTokens":5888,"cacheWriteTokens":0},"systemPromptTokens":null,"nextState":{"sessionId":"cbb9c239-83c1-4e53-aa48-b0efeb5589d1","messages":[{"role":"user","content":[{"type":"text","text":"Reply with exactly: ok"}],"meta":{"source":"user","createdAt":1788275152973,"messageId":"10ef40ef-ef85-4f85-a93b-759a49d4437b"}},{"role":"assistant","content":[{"type":"text","text":"ok"}],"meta":{"source":"model","createdAt":1788275155074,"messageId":"92397b74-5193-4744-98d6-a013f6d9a64d"}}],"interrupted":false,"modState":{"workspace":{"cwd":"/private/var/folders/k8/y30tf3zs7pbg6bnv5hsd_7nr0000gn/T/tmp.slSd8YEqSB","platform":"darwin","branch":null,"gitStatus":null,"recentCommits":[],"additionalDirectories":[]},"compaction":20154}}}}}
+{"type":"result","subtype":"success","sessionId":"cbb9c239-83c1-4e53-aa48-b0efeb5589d1","stopReason":"end_turn","usage":{"inputTokens":20154,"outputTokens":2,"cacheReadTokens":5888,"cacheWriteTokens":0},"durationMs":2297,"finalText":"ok"}

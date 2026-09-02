@@ -2,9 +2,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { PRICED_CATALOG } from '#testing/helpers/factories/model-cache.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { CostDrilldownOverlay } from './overlay.js';
 
@@ -12,8 +14,19 @@ function unwrap(frame: string): string {
   return frame.replace(/[│|]/g, ' ').replace(/\s+/g, ' ');
 }
 
+/** Custom endpoints price by model id, so the drilldown needs catalog rates for those ids. */
+function seedPricedCatalog(): void {
+  modelCacheStore.reset();
+  modelCacheStore.hydrateModelsDevCatalog({
+    catalog: PRICED_CATALOG,
+    fetchedAt: 1,
+    validatedAt: 1,
+  });
+}
+
 describe('CostDrilldownOverlay task metadata', () => {
   beforeEach(() => {
+    seedPricedCatalog();
     tokensStore.__testReset();
     terminalSizeStore.__testReset({ cols: 120, rows: 40 });
   });
@@ -129,8 +142,8 @@ describe('CostDrilldownOverlay task metadata', () => {
   it('renders cache-only task attempts with non-zero totals and cache pricing state', () => {
     tokensStore.__testReset({
       pricingContext: {
-        plannerTool: 'anthropic',
-        implementerTool: 'deepseek',
+        plannerTool: 'custom-endpoint',
+        implementerTool: 'custom-endpoint',
         implementerModel: 'deepseek-v4-flash',
       },
       perTask: {
@@ -143,7 +156,7 @@ describe('CostDrilldownOverlay task metadata', () => {
               implementerTokens: 0,
               escalationTokens: 0,
               retryCount: 0,
-              tool: 'deepseek',
+              tool: 'custom-endpoint',
               model: 'deepseek-v4-flash',
               implementerCacheReadTokens: 1_000_000,
             },
@@ -283,16 +296,174 @@ describe('CostDrilldownOverlay task metadata', () => {
   });
 });
 
+describe('CostDrilldownOverlay phase pricing', () => {
+  beforeEach(() => {
+    seedPricedCatalog();
+    tokensStore.__testReset();
+    terminalSizeStore.__testReset({ cols: 100, rows: 40 });
+  });
+
+  it('renders real phase cost and cache data from the store', () => {
+    tokensStore.__testReset({
+      perPhase: {
+        planning: {
+          inputTokens: 1000,
+          outputTokens: 500,
+          cacheReadTokens: 250,
+          cacheCreateTokens: 125,
+        },
+      },
+    });
+    const ui = renderFeature(<CostDrilldownOverlay />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('planning');
+    expect(frame).toContain('cache 20%');
+    expect(frame).toContain('create 125');
+    ui.unmount();
+  });
+
+  it('renders local/unpriced/n/a labels instead of fake zero costs for unpriced phases', () => {
+    tokensStore.__testReset({
+      pricingContext: {
+        plannerTool: 'ollama',
+        plannerModel: 'qwen2.5',
+        implementerTool: 'unknown-tool',
+        implementerModel: 'unknown-model',
+      },
+      perPhase: {
+        planning: {
+          inputTokens: 1000,
+          outputTokens: 500,
+          cacheReadTokens: 0,
+          cacheCreateTokens: 0,
+        },
+        implementing: {
+          inputTokens: 2000,
+          outputTokens: 1000,
+          cacheReadTokens: 0,
+          cacheCreateTokens: 0,
+        },
+      },
+    });
+    const ui = renderFeature(<CostDrilldownOverlay />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('local');
+    expect(frame).toContain('n/a');
+    expect(frame).not.toContain('$0.00');
+    ui.unmount();
+  });
+
+  it('derives priced phase bars from raw token data when store cost is zero', () => {
+    tokensStore.__testReset({
+      pricingContext: {
+        plannerTool: 'custom-endpoint',
+        plannerModel: 'claude-sonnet-5',
+        implementerTool: 'ollama',
+        implementerModel: 'qwen2.5',
+      },
+      perPhase: {
+        planning: {
+          inputTokens: 1_000_000,
+          outputTokens: 1_000_000,
+          cacheReadTokens: 0,
+          cacheCreateTokens: 0,
+        },
+      },
+    });
+    const ui = renderFeature(<CostDrilldownOverlay />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('planning');
+    expect(frame).toContain('$12.00');
+    ui.unmount();
+  });
+
+  it('prices planner and implementer portions of an implementer phase separately', () => {
+    tokensStore.__testReset({
+      pricingContext: {
+        plannerTool: 'custom-endpoint',
+        plannerModel: 'claude-sonnet-5',
+        implementerTool: 'ollama',
+        implementerModel: 'qwen2.5',
+      },
+      perPhase: {
+        implementing: {
+          inputTokens: 3_000_000,
+          outputTokens: 2_000_000,
+          cacheReadTokens: 0,
+          cacheCreateTokens: 0,
+          plannerInputTokens: 1_000_000,
+          plannerOutputTokens: 1_000_000,
+          plannerCacheReadTokens: 0,
+          plannerCacheCreateTokens: 0,
+          implementerInputTokens: 2_000_000,
+          implementerOutputTokens: 1_000_000,
+          implementerCacheReadTokens: 0,
+          implementerCacheCreateTokens: 0,
+        },
+      },
+    });
+    const ui = renderFeature(<CostDrilldownOverlay />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('implementing');
+    expect(frame).toContain('$12.00');
+    ui.unmount();
+  });
+
+  it('prices the final-review phase at the configured reviewer rates', () => {
+    tokensStore.__testReset({
+      pricingContext: {
+        plannerTool: 'custom-endpoint',
+        plannerModel: 'claude-sonnet-5',
+        implementerTool: 'ollama',
+        implementerModel: 'qwen2.5',
+        reviewerTool: 'custom-endpoint',
+        reviewerModel: 'claude-sonnet-5',
+      },
+      perPhase: {
+        'final-review': {
+          inputTokens: 1_000_000,
+          outputTokens: 1_000_000,
+          cacheReadTokens: 0,
+          cacheCreateTokens: 0,
+          plannerInputTokens: 0,
+          plannerOutputTokens: 0,
+          plannerCacheReadTokens: 0,
+          plannerCacheCreateTokens: 0,
+          implementerInputTokens: 0,
+          implementerOutputTokens: 0,
+          implementerCacheReadTokens: 0,
+          implementerCacheCreateTokens: 0,
+          reviewerInputTokens: 1_000_000,
+          reviewerOutputTokens: 1_000_000,
+          reviewerCacheReadTokens: 0,
+          reviewerCacheCreateTokens: 0,
+        },
+      },
+    });
+    const ui = renderFeature(<CostDrilldownOverlay />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('final-review');
+    expect(frame).toContain('$12.00');
+    ui.unmount();
+  });
+});
+
 describe('CostDrilldownOverlay seat breakdown', () => {
   const pricedSeats = {
-    plannerTool: 'anthropic',
+    plannerTool: 'custom-endpoint',
     plannerModel: 'claude-sonnet-5',
-    implementerTool: 'anthropic',
+    implementerTool: 'custom-endpoint',
     implementerModel: 'claude-sonnet-5',
   };
 
   beforeEach(() => {
     forceUnicodeGlyphs();
+    seedPricedCatalog();
     tokensStore.__testReset();
     terminalSizeStore.__testReset({ cols: 120, rows: 40 });
   });

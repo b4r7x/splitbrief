@@ -45,10 +45,5 @@ describe('runner trust metadata', () => {
         autoAllowFlags: [],
       });
     }
-
-    expect(getRunnerTrustMeta('planner', { kind: 'agent-sdk' }).mayWriteFilesDirectly).toBe(false);
-    expect(getRunnerTrustMeta('implementer', { kind: 'agent-sdk' }).mayWriteFilesDirectly).toBe(
-      true,
-    );
   });
 });

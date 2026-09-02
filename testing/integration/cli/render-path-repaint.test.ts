@@ -9,10 +9,10 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { renderApp } from '../../../src/cli/render/app.js';
 import {
   cycleOptionAxis,
-  mergeOptionFamilies,
   optionAxesOf,
   type OptionAxisName,
 } from '../../../src/features/runners/model-catalog/option-axis.js';
+import { mergeOptionFamilies } from '../../../src/features/runners/model-catalog/option-merge.js';
 import type { ModelOption } from '../../../src/features/runners/model-catalog/recency.js';
 import { buildRightRows } from '../../../src/features/runners/model-catalog/rows.js';
 import { PickerView } from '../../../src/features/runners/picker-view.js';
@@ -122,8 +122,7 @@ const actions: PickerActions = {
   customCommand: async () => {},
   customModel: async () => {},
   openCustomModel: () => {},
-  openProviderAuth: () => {},
-  submitProviderKey: async () => {},
+  browseCatalog: () => {},
   closeOverlay: () => {},
 };
 
@@ -141,6 +140,7 @@ function LivePicker() {
     persistedModel: undefined,
     customModels: [],
     optionDraftId,
+    browseCatalog: false,
   });
   return createElement(PickerView, {
     role: 'planner',

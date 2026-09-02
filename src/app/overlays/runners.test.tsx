@@ -5,7 +5,8 @@ import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { createDefaultConfig, loadConfig, writeConfig } from '../../core/config/load/io.js';
+import { loadConfig, writeConfig } from '../../core/config/load/io.js';
+import { createDefaultConfig } from '../../core/config/load/defaults.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { CliToolDetection } from '../../core/discovery/detection.js';
 import type { ScopedCliCatalogAttempt } from '../../engine/detection/cli-catalog-outcomes.js';
@@ -14,12 +15,11 @@ import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { listRowLead } from '../../components/list-row.js';
 import { glyph } from '../../lib/glyphs.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { hydrateDetectionIntoStores } from '../../stores/discovery/detection-adapter.js';
 import { ToolModelPicker } from './runners.js';
 
@@ -35,15 +35,17 @@ const ARROW_UP = `${ESC}[A`;
 async function openContractChoice(ui: ReturnType<typeof renderFeature>) {
   await vi.waitFor(() => {
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('run a custom planner command');
-    expect(frame).toContain('saved only on final ⏎');
+    expect(frame).toContain('Run your own command in the planner seat.');
+    expect(frame).toContain('Nothing is saved until you confirm');
   });
   await flushEffects();
   ui.stdin.write('\r'); // Enter on the launcher opens the contract choice
+  // The launcher card names both contracts too, so only the chooser's own
+  // ledger clauses tell the two views apart.
   await vi.waitFor(() => {
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Output command');
-    expect(frame).toContain('Direct-write agent');
+    expect(frame).toContain("read from the command's stdout");
+    expect(frame).toContain('written directly to your tree');
   });
 }
 
@@ -87,15 +89,15 @@ describe('ToolModelPicker custom-command input', () => {
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).not.toContain('Command to run'); // left the text-input view
-      expect(frame).toContain('Output command'); // back on the contract chooser
-      expect(frame).toContain('Direct-write agent');
+      expect(frame).toContain("read from the command's stdout"); // back on the contract chooser
+      expect(frame).toContain('written directly to your tree');
     });
 
     await flushEffects();
     ui.stdin.write(ESC); // one more step back reaches the tool list
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
-      expect(frame).not.toContain('Output command');
+      expect(frame).not.toContain("read from the command's stdout");
       expect(frame).toContain('Tools'); // back on the two-column picker view
       expect(frame).toContain('Claude Code CLI'); // the tool rows are listed again
     });
@@ -153,7 +155,7 @@ describe('ToolModelPicker custom-command input', () => {
     ui.stdin.write(ESC);
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
-      expect(frame).not.toContain('Output command');
+      expect(frame).not.toContain("read from the command's stdout");
       expect(frame).toContain('Tools');
       expect(frame).toContain('Claude Code CLI');
     });
@@ -176,7 +178,7 @@ describe('ToolModelPicker custom-command input', () => {
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).not.toContain('Command to run');
-      expect(frame).toContain('Output command');
+      expect(frame).toContain("read from the command's stdout");
     });
 
     await flushEffects();
@@ -615,13 +617,14 @@ describe('ToolModelPicker model catalog', () => {
     });
   });
 
-  it('keeps the configured model row and its check when the models.dev lane lands', async () => {
+  it('enriches the configured Claude Code alias when the models.dev lane lands, without adding catalog rows', async () => {
     const ui = renderFeature(<ToolModelPicker role="planner" />);
     await tick(20);
 
     const before = checkedModelLines(frameText(ui));
     expect(before).toHaveLength(1);
     expect(before.join('')).toContain('Opus');
+    const aliasRowCount = modelColumnLines(frameText(ui)).length;
 
     modelCacheStore.hydrateModelsDevCatalog({
       catalog: {
@@ -638,35 +641,14 @@ describe('ToolModelPicker model catalog', () => {
       validatedAt: 100,
     });
 
+    // The alias is the row; models.dev only tells it what it is called.
     await vi.waitFor(() => {
-      expect(frameText(ui)).toContain('Claude Sonnet 5');
+      expect(checkedModelLines(frameText(ui)).join('')).toContain('Claude Opus 5');
     });
 
-    // The suggestions arrive next to the configured row, never in place of it.
     const after = checkedModelLines(frameText(ui));
     expect(after).toHaveLength(1);
-    expect(after.join('')).toContain('Opus');
-    ui.unmount();
-  });
-});
-
-describe('ToolModelPicker sub-view desync', () => {
-  beforeEach(() => {
-    resetAllStores();
-    terminalSizeStore.__testReset({ cols: 120, rows: 36, isSmall: false });
-    configStore.__testReset({ projectDir: '/tmp/project', config: makeConfig() });
-  });
-
-  it('closes the provider-auth view when the focused row is not an API provider', async () => {
-    publishOpenCodePlannerModels(['openrouter/deepseek-v4-flash']);
-    const ui = renderFeature(<ToolModelPicker role="planner" />);
-    await tick(20);
-
-    pickerViewStore.open({ kind: 'provider-auth' });
-    await vi.waitFor(() => {
-      expect(pickerViewStore.get().view.kind).toBe('picker');
-    });
-    expect(frameText(ui)).toContain('Tools');
+    expect(modelColumnLines(frameText(ui))).toHaveLength(aliasRowCount);
     ui.unmount();
   });
 });

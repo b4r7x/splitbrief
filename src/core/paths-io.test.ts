@@ -147,23 +147,7 @@ describe('validateFilename', () => {
     expect(() => validateFilename('spec.md')).not.toThrow();
   });
 
-  it('rejects empty string', () => {
-    expect(() => validateFilename('')).toThrow("Invalid filename ''");
-  });
-
-  it('rejects whitespace-only string', () => {
-    expect(() => validateFilename('   ')).toThrow('Invalid filename');
-  });
-
-  it('rejects filenames with ..', () => {
-    expect(() => validateFilename('../etc/passwd')).toThrow('Invalid filename');
-  });
-
-  it('rejects filenames with forward slash', () => {
-    expect(() => validateFilename('sub/spec.md')).toThrow('Invalid filename');
-  });
-
-  it('rejects filenames with backslash', () => {
-    expect(() => validateFilename('sub\\spec.md')).toThrow('Invalid filename');
+  it.each(['', '   ', '../etc/passwd', 'sub/spec.md', 'sub\\spec.md'])('rejects %j', (filename) => {
+    expect(() => validateFilename(filename)).toThrow('Invalid filename');
   });
 });

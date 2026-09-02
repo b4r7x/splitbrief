@@ -9,7 +9,7 @@ How the orchestrator runs, how events flow, and how the engine talks to the UI w
 Entry point: `runWorkflow()` in `src/engine/orchestrator/run/workflow.ts`. It builds a `WorkflowContext`, runs the planner, runs the implementer on each task, reviews the result, and writes a summary. The top-level sequence:
 
 1. `initializeWorkflow()` (`run/init.ts`) — creates the EventBus, subscribes all sinks, spawns the planner and implementer, bootstraps initial state or loads saved state for resume.
-2. `runPlanningPhases()` (`run/phases.ts`) — delegates to mode-specific planning (instant, quick, standard, speckit). Each mode determines how many planner calls happen and which approval gates fire.
+2. `runPlanningPhases()` (`run/phases.ts`) — delegates to mode-specific planning (quick, standard, speckit). Each mode determines how many planner calls happen and which approval gates fire.
 3. `runTasksAndReview()` — predicts cost, gates on budget if needed, runs the task loop (implementer writes code, validation runs), then calls the planner for a final review.
 4. `saveFinalSession()` (`session-lifecycle/finalize.ts`) — persists the summary, updates stats, clears the active-session lock.
 
@@ -30,7 +30,7 @@ flowchart TD
 
 The orchestrator is split by concern under `src/engine/orchestrator/`:
 
-- **`planning/`** — Mode-specific planner flows. `instant.ts` does one call producing tasks directly; `quick.ts` does one call for briefs; `full.ts` does research/spec/plan/tasks; `speckit.ts` adds clarification and constitution phases. `regen.ts` and `rewind.ts` handle regeneration from feedback and rewinding to earlier phases.
+- **`planning/`** — Mode-specific planner flows. `quick.ts` does one call for briefs; `full.ts` does research/spec/plan/tasks; `speckit.ts` adds clarification and constitution phases. `regen.ts` and `rewind.ts` handle regeneration from feedback and rewinding to earlier phases.
 - **`task/`** — The task loop. `loop.ts` iterates tasks, `step.ts` runs a single task (call implementer, validate, retry), `commit.ts` handles per-task git commits, `pre-task.ts` runs pre-task setup.
 - **`escalation/`** — Tiered escalation when the implementer fails. Local retries (`local-retries.ts`) come first, then `tier.ts` dispatches the tiers (`intermediate.ts` / `INTERMEDIATE_TIER` retries with a paid mid-tier API model from `escalation.intermediateProvider`, `hint.ts` / `HINT_TIER` has the planner write a hint that the implementer applies, `full.ts` / `FULL_TIER` hands the task to the planner to write the code itself).
 - **`recovery/`** — User-facing recovery flow after all escalation tiers fail. Presents the user with choices: retry same worker, route to a bigger worker, skip, pause, or abort.
@@ -104,7 +104,7 @@ The full union has many variants, but the pattern is consistent: every event is 
 
 Raw acquisition happens before the runner-call contract. The shared subprocess helpers in `src/lib/process/spawn/` (`lifecycle.ts`, `run-command.ts`, `progress.ts`, `line-stream.ts`) drain child stdout/stderr while retaining bounded snapshots: stdout/result text defaults to 1 MiB with prefix+tail retention, stderr defaults to a 256 KiB tail, and stdout line buffers default to 1 MiB. Snapshots carry `bytesSeen`, `bytesStored`, `omittedBytes`, `truncated`, policy, and budget. Runner stderr streaming uses an 8 KiB line buffer; an oversized stderr line is skipped and becomes a bounded `stderr_line_overflow` warning. Process errors use only sanitized bounded snapshots.
 
-Backend calls are normalized through `src/engine/calls/*`. CLI tools, shell commands, API streams, Claude Code, and Agent SDK adapters emit `RunnerCallEvent` values. `createRunnerCallRecorder()` validates every emitted value with `RunnerCallEventSchema`; invalid upstream data becomes a bounded `call_unknown_upstream` diagnostic with a safe preview instead of a malformed event. Final snapshots/results validate with `RunnerCallResultSchema`. Streaming parsers and provider adapters validate their own upstream message/block shapes before recording; unrecognized provider chunks also route through unknown-upstream diagnostics. The collector turns the ordered stream into a `RunnerCallResult` with:
+Backend calls are normalized through `src/engine/calls/*`. CLI tools, shell commands, API streams, and Claude Code adapters emit `RunnerCallEvent` values. `createRunnerCallRecorder()` validates every emitted value with `RunnerCallEventSchema`; invalid upstream data becomes a bounded `call_unknown_upstream` diagnostic with a safe preview instead of a malformed event. Final snapshots/results validate with `RunnerCallResultSchema`. Streaming parsers and provider adapters validate their own upstream message/block shapes before recording; unrecognized provider chunks also route through unknown-upstream diagnostics. The collector turns the ordered stream into a `RunnerCallResult` with:
 
 - call identity: `callId`, role, backend kind, runner/model metadata
 - lifecycle status: `completed`, `failed`, `truncated`, `aborted`, `timeout`, `refused`, `unsupported_tool`, or `incomplete`

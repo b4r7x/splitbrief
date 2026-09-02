@@ -3,16 +3,11 @@ import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import type {
   BriefAdmissionInput,
-  BriefRecoveryController,
   RecoveryResultV1,
   StateAuthorityReceipt,
 } from '../../../core/schemas/brief-recovery.js';
 import type { BriefQualityIssue } from '../../../core/schemas/brief-recovery/primitives.js';
-import type {
-  RecoveryProviderRequest,
-  RecoveryProviderResult,
-} from '../../../core/schemas/brief-recovery/provider-call.js';
-import type { BriefQualityRecoveryBinding } from './brief-quality-preparation.js';
+import type { BriefQualityRecoveryBinding } from './brief-quality-queue.js';
 import { error } from '../../../utils/error.js';
 import { addUsageAndSave } from '../state-ops.js';
 import {
@@ -29,8 +24,6 @@ import {
 } from '#testing/helpers/planning-phase.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { formatTasks } from '../../spec/formatter.js';
-import { createBriefRecoveryController } from './brief-recovery-controller.js';
-import { makeBriefRecoveryControllerDeps } from '#testing/helpers/factories/recovery.js';
 import { runBriefQuality } from './brief-quality-run.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
@@ -76,18 +69,12 @@ const CONTROLLER_AUTHORITY: StateAuthorityReceipt = {
   stateDigest: 'state-digest',
 };
 
-function makeAdmission(
-  issues: readonly BriefQualityIssue[],
-  mode: 'standard' | 'quick' = 'standard',
-): BriefAdmissionInput {
+function makeAdmission(issues: readonly BriefQualityIssue[]): BriefAdmissionInput {
   const activeBrief = { revision: 1, hash: 'b'.repeat(64), path: 'tasks.md' };
   return {
     sessionId: CONTROLLER_AUTHORITY.sessionId,
-    origin: mode === 'standard' ? { mode, entry: 'initial' } : { mode, entry: 'initial' },
-    continuation:
-      mode === 'standard'
-        ? { version: 1, kind: 'approval', mode, entry: 'initial' }
-        : { version: 1, kind: 'quick-start', entry: 'initial' },
+    origin: { mode: 'standard', entry: 'initial' },
+    continuation: { version: 1, kind: 'approval', mode: 'standard', entry: 'initial' },
     activeBrief,
     report: {
       briefHash: activeBrief.hash,
@@ -97,35 +84,6 @@ function makeAdmission(
       errorCount: issues.filter((issue) => issue.severity === 'error').length,
     },
     qualityPolicyVersion: 'brief-quality-v1',
-  };
-}
-
-function makeController(
-  options: {
-    providerResult?: (input: RecoveryProviderRequest) => RecoveryProviderResult;
-    budgetRefused?: boolean;
-    qualityIssues?: BriefQualityIssue[];
-  } = {},
-): {
-  controller: BriefRecoveryController;
-  providerCalls: RecoveryProviderRequest[];
-  estimateCalls: number;
-} {
-  let generatedId = 0;
-  const fake = makeBriefRecoveryControllerDeps({
-    ...options,
-    now: () => '2026-01-01T00:00:00.000Z',
-    nextId: () => {
-      generatedId += 1;
-      return `controller-id-${generatedId}`;
-    },
-  });
-  return {
-    controller: createBriefRecoveryController(fake.deps),
-    providerCalls: fake.providerCalls,
-    get estimateCalls() {
-      return fake.estimateCalls;
-    },
   };
 }
 
@@ -248,107 +206,6 @@ describe('runBriefQuality', () => {
       plannerInput: 19,
       plannerOutput: 7,
     });
-  });
-});
-
-describe('controller admission call bounds', () => {
-  const warning: BriefQualityIssue = {
-    code: 'missing_scope',
-    severity: 'warning',
-    taskId: 'T001',
-    message: 'scope could be more specific',
-  };
-  const errorIssue: BriefQualityIssue = {
-    code: 'missing_scope',
-    severity: 'error',
-    taskId: 'T001',
-    message: 'scope is missing',
-  };
-
-  it.each([
-    ['clean', []],
-    ['warning-only', [warning]],
-  ] as const)('does not reserve or dispatch for %s admission', async (_label, issues) => {
-    const harness = makeController();
-
-    const result = await harness.controller.enterBriefAdmission(
-      makeAdmission(issues),
-      CONTROLLER_AUTHORITY,
-    );
-
-    expect(result.kind).toBe('ready');
-    expect(harness.providerCalls).toHaveLength(0);
-    expect(harness.estimateCalls).toBe(0);
-  });
-
-  it('permits exactly one automatic repair and binds the provider call to its operation', async () => {
-    const harness = makeController();
-
-    const result = await harness.controller.enterBriefAdmission(
-      makeAdmission([errorIssue]),
-      CONTROLLER_AUTHORITY,
-    );
-
-    expect(result.kind).toBe('ready');
-    expect(harness.providerCalls).toHaveLength(1);
-    expect(harness.estimateCalls).toBe(1);
-    expect(harness.providerCalls[0]).toMatchObject({
-      sessionId: CONTROLLER_AUTHORITY.sessionId,
-      epochId: result.epochId,
-      operationId: expect.any(String),
-      requestId: expect.any(String),
-    });
-  });
-
-  it('allows distinct manual operations one provider call each until quality remains blocked', async () => {
-    const harness = makeController({ qualityIssues: [errorIssue] });
-    const admission = makeAdmission([errorIssue], 'quick');
-    const initial = await harness.controller.enterBriefAdmission(admission, CONTROLLER_AUTHORITY);
-    const epochId = initial.epochId;
-    if (epochId === null) throw new Error('expected a recovery epoch');
-
-    const command = (operationId: string, base = admission.activeBrief) => ({
-      version: 1 as const,
-      sessionId: CONTROLLER_AUTHORITY.sessionId,
-      epochId,
-      operationId,
-      base,
-      intentHash: `intent-${operationId}`,
-      action: 'retry' as const,
-      diagnosticFingerprint: 'd'.repeat(64),
-      frozenInputIds: [],
-    });
-
-    const first = await harness.controller.dispatchBriefAction(command('manual-1'), {
-      ...CONTROLLER_AUTHORITY,
-      stateRevision: initial.projection.stateRevision,
-    });
-    const second = await harness.controller.dispatchBriefAction(
-      command('manual-2', first.projection.activeBrief ?? admission.activeBrief),
-      {
-        ...CONTROLLER_AUTHORITY,
-        stateRevision: first.projection.stateRevision,
-      },
-    );
-
-    expect(initial.kind).toBe('blocked');
-    expect(first.kind).toBe('blocked');
-    expect(second.kind).toBe('blocked');
-    expect(harness.providerCalls).toHaveLength(2);
-    expect(harness.providerCalls.map((call) => call.operationId)).toEqual(['manual-1', 'manual-2']);
-  });
-
-  it('refuses automatic repair at the budget boundary before any provider call', async () => {
-    const harness = makeController({ budgetRefused: true });
-
-    const result = await harness.controller.enterBriefAdmission(
-      makeAdmission([errorIssue]),
-      CONTROLLER_AUTHORITY,
-    );
-
-    expect(result).toMatchObject({ kind: 'blocked', code: 'brief_budget_exhausted' });
-    expect(harness.estimateCalls).toBe(1);
-    expect(harness.providerCalls).toHaveLength(0);
   });
 });
 

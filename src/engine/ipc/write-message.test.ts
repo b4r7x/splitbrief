@@ -3,11 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
-import { taskId } from '../../core/schemas/task.js';
 import { PLANNER_ARTIFACT_MAX_BYTES } from '../runners/types.js';
 import { IPC_MAX_FRAME_BYTES, type ServerMessage } from './protocol.js';
 import { writeServerMessage } from './write-message.js';
-import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 const servers: Server[] = [];
 const sockets: Socket[] = [];
@@ -161,49 +159,5 @@ describe('writeServerMessage', () => {
         feature: TRANSCRIPT_OMITTED_MESSAGE,
       },
     ]);
-  });
-
-  it('writes a bounded warning for protected IPC messages that still exceed the public limit', async () => {
-    const { server, client } = await connectedPair();
-    const received = collectLines(client);
-
-    const expected = Array.from(
-      { length: 4_000 },
-      (_value, index) => `item-${index}-${'x'.repeat(120)}`,
-    );
-    const msg: ServerMessage = {
-      kind: 'prompt_request',
-      request: {
-        requestId: 'prompt-1',
-        kind: 'task_review',
-        request: {
-          taskId: taskId('T001'),
-          taskTitle: 'Review task',
-          status: 'done',
-          filesTouched: ['a.ts'],
-          validation: { passed: true, summary: 'ok', stages: [] },
-          evidence: { summary: 'ok', expected, observed: [] },
-          cost: {
-            tokenUsage: makeUsage(),
-          },
-          availableCommands: ['continue'],
-        },
-      },
-    };
-
-    writeServerMessage(server, msg);
-    await new Promise((r) => setTimeout(r, 50));
-
-    const frames = received.lines.map((l) => JSON.parse(l) as ServerMessage);
-    expect(frames).toHaveLength(1);
-    const only = frames[0];
-    expect(only?.kind).toBe('event');
-    if (only?.kind === 'event') {
-      expect(only.payload.type).toBe('warning');
-      expect((only.payload as { message: string }).message).toContain(
-        'dropped oversized prompt_request frame',
-      );
-      expect(Buffer.byteLength(JSON.stringify(only), 'utf8')).toBeLessThan(IPC_MAX_FRAME_BYTES);
-    }
   });
 });

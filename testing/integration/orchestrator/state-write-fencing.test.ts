@@ -20,7 +20,8 @@ import type {
   StateAuthorityReceipt,
 } from '../../../src/core/state/types.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
-import { loadState, loadStateForResume, saveState } from '../../../src/core/state/persistence.js';
+import { loadState, saveState } from '../../../src/core/state/persistence.js';
+import { loadStateForResume } from '../../../src/core/state/resume-authority.js';
 import {
   acquireStateAuthority,
   readStateAuthority,
@@ -85,15 +86,13 @@ function fenced(
   return result;
 }
 
-function seedFencedState(
-  value: WorkflowState = createInitialState('fenced-feature'),
-  ownerId = 'owner-a',
-): Fixture & {
+function seedFencedState(): Fixture & {
   authority: StateAuthorityReceipt;
   state: WorkflowState;
 } {
+  const ownerId = 'owner-a';
   const result = fixture();
-  saveState(result.ref, value);
+  saveState(result.ref, createInitialState('fenced-feature'));
   const acquired = fenced(
     acquireStateAuthority({
       ref: result.ref,
@@ -264,13 +263,6 @@ describe('global state writer fencing', () => {
         acquisitionId: 'owner-b-acquisition',
       }),
     ).toThrow(/live|proven dead/iu);
-
-    const old = seedFencedState(createInitialState('takeover-feature'), 'old-owner');
-    const oldDir = stateAuthorityDirectory(old.ref);
-    const oldOwnerRecord = JSON.parse(readFileSync(join(oldDir, 'owner.json'), 'utf8')) as {
-      ownerId: string;
-    };
-    expect(oldOwnerRecord.ownerId).toBe('old-owner');
 
     cleanupTempDir(first.projectDir);
     fixtures.splice(fixtures.indexOf(first.projectDir), 1);

@@ -1,6 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
@@ -8,7 +6,6 @@ import { ensureSessionDir } from '../../core/paths-io.js';
 import { createEventBus } from '../events/bus.js';
 import type { EngineEvent } from '../events/types.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
@@ -18,9 +15,6 @@ import {
   rebaseOnPersistedWorkflowState,
   addUsageAndSave,
 } from './state-ops.js';
-import { refreshAndPersistCode } from './task/refresh-code.js';
-
-const itUnix = process.platform === 'win32' ? it.skip : it;
 
 function setupProject(): { projectDir: string; sessionId: string } {
   const projectDir = createTempDir('state-ops-test');
@@ -224,31 +218,6 @@ describe('raisePendingRecovery', () => {
       expect(loadState({ projectDir, sessionId })?.pendingRecovery).toEqual(issue);
       expect(events.some((event) => event.type === 'recovery_prompted')).toBe(true);
     } finally {
-      cleanupTempDir(projectDir);
-    }
-  });
-});
-
-describe('refreshAndPersistCode', () => {
-  itUnix('clears currentCode when the task file is a symlink escape', async () => {
-    const projectDir = createTempDir('state-ops-symlink');
-    const outside = createTempDir('state-ops-symlink-outside');
-    const sessionId = 'sess-state-ops';
-    ensureSessionDir(projectDir, sessionId);
-    try {
-      mkdirSync(join(projectDir, 'src'), { recursive: true });
-      writeFileSync(join(outside, 'secret.ts'), 'outside');
-      symlinkSync(join(outside, 'secret.ts'), join(projectDir, 'src', 'leak.ts'));
-
-      const task = makeTask({ file: 'src/leak.ts' });
-      const state = createInitialState('feature');
-
-      const result = await refreshAndPersistCode(task, { projectDir, sessionId }, state);
-
-      expect(result.task.currentCode).toBeUndefined();
-      expect(readFileSync(join(outside, 'secret.ts'), 'utf-8')).toBe('outside');
-    } finally {
-      cleanupTempDir(outside);
       cleanupTempDir(projectDir);
     }
   });

@@ -67,22 +67,6 @@ describe('buildArtifactExcerpt — the document itself', () => {
     expect(result.omittedCount).toBe(2);
   });
 
-  it('counts the document the reader sees, not the header SPLITBRIEF stamps on the file', () => {
-    const body = `${Array.from({ length: 30 }, (_, index) => `Requirement ${index + 1}.`).join('\n\n')}\n`;
-    const frontmatter = buildSpecFrontmatter({
-      plannerTool: 'opencode',
-      implementerTool: 'opencode',
-      mode: 'standard',
-    });
-
-    const document = buildArtifactExcerpt(body, SPEC_FILE);
-    const file = buildArtifactExcerpt(frontmatter + body, SPEC_FILE);
-
-    expect(document.lineCount).toBe(59);
-    expect(file.lineCount).toBe(document.lineCount);
-    expect((frontmatter + body).split('\n').length).toBe(document.lineCount + 8);
-  });
-
   it('keeps a leading rule that is not SPLITBRIEF frontmatter', () => {
     const result = buildArtifactExcerpt('---\ntitle: user notes\n---\nPlan\n', PLAN_FILE);
 

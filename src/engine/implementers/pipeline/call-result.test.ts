@@ -189,15 +189,15 @@ const CODEX_BURNED_REFRESH =
 const CODEX_SIGNED_OUT =
   'unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses';
 
-describe('runnerCallOutcome — auth-failure classification', () => {
-  function failed(code: string, message: string) {
-    return makeRunnerCallResult({
-      status: 'failed',
-      text: '',
-      error: { code, message },
-    });
-  }
+function failed(code: string, message: string) {
+  return makeRunnerCallResult({
+    status: 'failed',
+    text: '',
+    error: { code, message },
+  });
+}
 
+describe('runnerCallOutcome — auth-failure classification', () => {
   it('maps the real codex burned-refresh turn failure to unauthenticated', () => {
     expect(runnerCallOutcome(failed('codex-turn-failed', CODEX_BURNED_REFRESH)).state).toBe(
       'unauthenticated',
@@ -257,14 +257,6 @@ const CODEX_USAGE_LIMIT =
   "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Aug 8th, 2026 3:27 PM.";
 
 describe('runnerCallOutcome — usage-limit classification', () => {
-  function failed(code: string, message: string) {
-    return makeRunnerCallResult({
-      status: 'failed',
-      text: '',
-      error: { code, message },
-    });
-  }
-
   it('maps the live codex usage-limit turn failure to usage-limit, not auth', () => {
     const outcome = runnerCallOutcome(failed('codex-turn-failed', CODEX_USAGE_LIMIT));
     expect(outcome.state).toBe('usage-limit');

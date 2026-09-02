@@ -26,10 +26,8 @@ import {
 } from '../../../src/core/paths.js';
 import { isCliError } from '../../../src/cli/errors.js';
 import { isOpaqueSessionId } from '../../../src/core/sessions/session-id.js';
-import type {
-  SpawnServerOptions,
-  SpawnServerResult,
-} from '../../../src/engine/ipc/spawn-server.js';
+import type { SpawnServerResult } from '../../../src/engine/ipc/detached-handshake.js';
+import type { SpawnServerOptions } from '../../../src/engine/ipc/server-invocation.js';
 import { parseIpcServerArgs, type IpcServerArgs } from '../../../src/engine/ipc/server-args.js';
 import { formatDetachedAttachHint } from '../../../src/cli/commands/attach-hint.js';
 
@@ -51,10 +49,28 @@ function readServerArgsArtifact(projectDir: string): IpcServerArgs {
   return artifact;
 }
 
+/** Points the implementer at a custom endpoint whose credential can only be inline. */
+function writeCustomEndpointImplementer(projectDir: string): void {
+  const configFilePath = join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE);
+  writeFileSync(
+    configFilePath,
+    readFileSync(configFilePath, 'utf-8').replace(
+      '  provider: ollama\n  apiBase: http://localhost:11434/v1\n',
+      [
+        '  provider: custom-endpoint',
+        '  service: custom-endpoint',
+        '  offering: payg',
+        '  apiBase: https://api.example.test/v1',
+        '  apiKey: test-key',
+        '',
+      ].join('\n'),
+    ),
+  );
+}
+
 describe('start command — detached', () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    delete process.env.OPENROUTER_API_KEY;
     delete process.env.PLANNER_KEY;
   });
 
@@ -118,7 +134,7 @@ describe('start command — detached', () => {
   it('forwards transport-safe detached CLI overrides in the private bootstrap artifact', async () => {
     const tmp = getStartCommandTmp();
     writeReadyReadinessFixtures(tmp);
-    process.env.OPENROUTER_API_KEY = 'sk-or-test-openrouter-key';
+    writeCustomEndpointImplementer(tmp);
     process.env.PLANNER_KEY = 'test-planner-key';
     captureConsoleLog();
 
@@ -139,13 +155,13 @@ describe('start command — detached', () => {
       '--planner-context-length',
       '200000',
       '--implementer',
-      'openrouter',
+      'custom-endpoint',
       '--implementer-model',
       'qwen/qwen3-coder',
       '--implementer-command',
       'build-it',
       '--implementer-api-base',
-      'https://openrouter.ai/api/v1',
+      'https://api.example.test/v1',
       '--implementer-output-format',
       'opencode',
       '--implementer-context-length',
@@ -153,7 +169,7 @@ describe('start command — detached', () => {
       '--model',
       'alias-model',
       '--provider',
-      'deepseek',
+      'lm-studio',
       '--approve',
       'all',
       '--budget',
@@ -187,10 +203,10 @@ describe('start command — detached', () => {
           contextLength: 200_000,
         },
         implementer: {
-          tool: 'openrouter',
+          tool: 'custom-endpoint',
           model: 'qwen/qwen3-coder',
           command: 'build-it',
-          apiBase: 'https://openrouter.ai/api/v1',
+          apiBase: 'https://api.example.test/v1',
           outputFormat: 'opencode',
           contextLength: 131_072,
         },
@@ -202,7 +218,7 @@ describe('start command — detached', () => {
     });
     expect(artifact.overrides.planner).not.toHaveProperty('apiKey');
     expect(artifact.overrides.implementer).not.toHaveProperty('apiKey');
-    expect(JSON.stringify(artifact)).not.toContain('sk-or-test-openrouter-key');
+    expect(JSON.stringify(artifact)).not.toContain('test-key');
     expect(JSON.stringify(artifact)).not.toContain('test-planner-key');
     expect(artifact).not.toHaveProperty('configPath');
     expect(artifact).not.toHaveProperty('gates');
@@ -212,7 +228,7 @@ describe('start command — detached', () => {
     ['--planner-args', '--secret-header'],
     ['--implementer-args', '--secret-header'],
     ['--planner-api-key-env', 'PLANNER_KEY'],
-    ['--implementer-api-key-env', 'OPENROUTER_API_KEY'],
+    ['--implementer-api-key-env', 'IMPLEMENTER_KEY'],
   ])('rejects detached %s before allocating a session', async (flag, value) => {
     const tmp = getStartCommandTmp();
     writeReadyReadinessFixtures(tmp);
@@ -288,10 +304,18 @@ describe('start command — detached', () => {
 
     await expect(
       runStart(['--project', tmp, '--detach', '--mode', mode, 'implement X']),
-    ).rejects.toThrow(
-      /Invalid mode: (full|spec-kit)\. Must be one of: instant, quick, standard, speckit/,
-    );
+    ).rejects.toThrow(/Invalid mode: (full|spec-kit)\. Must be one of: quick, standard, speckit/);
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
+  });
+
+  it('accepts the retired instant name and starts in quick', async () => {
+    const tmp = getStartCommandTmp();
+    writeReadyReadinessFixtures(tmp);
+    captureConsoleLog();
+
+    await runStart(['--project', tmp, '--detach', '--mode', 'instant', 'implement X']);
+
+    expect(readServerArgsArtifact(tmp).overrides.mode).toBe('quick');
   });
 
   it('clears the active pointer when detached server spawn fails', async () => {

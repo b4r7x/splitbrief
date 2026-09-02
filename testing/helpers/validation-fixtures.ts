@@ -1,4 +1,4 @@
-import { createDefaultConfig } from '../../src/core/config/load/io.js';
+import { createDefaultConfig } from '../../src/core/config/load/defaults.js';
 import type { Config } from '../../src/core/schemas/config.js';
 import type { ValidationCommandRunner } from '../../src/engine/orchestrator/validation/types.js';
 

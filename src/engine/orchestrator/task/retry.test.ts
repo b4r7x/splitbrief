@@ -31,8 +31,6 @@ import { retryAndRecord } from './retry.js';
 // so widen the timeout for this file (cases pass in seconds in isolation).
 vi.setConfig({ testTimeout: 30_000 });
 
-let savedOpenRouterKey: string | undefined;
-
 const preparedIntermediateFactory = makePreparedImplementerFactory({
   preparationId: 'retry-intermediate-preparation',
   slot: { role: 'intermediate' },
@@ -41,19 +39,13 @@ const preparedIntermediateFactory = makePreparedImplementerFactory({
       kind: 'api',
       slot: { role: 'intermediate' },
       preparationId: 'retry-intermediate-preparation',
-      provider: 'openrouter',
-      endpointOrigin: 'https://openrouter.ai',
+      provider: 'ollama',
+      endpointOrigin: 'http://localhost:11434',
     },
   ],
 });
 
-beforeEach(() => {
-  savedOpenRouterKey = process.env.OPENROUTER_API_KEY;
-});
-
 afterEach(() => {
-  if (savedOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
-  else process.env.OPENROUTER_API_KEY = savedOpenRouterKey;
   cleanupTaskProjects();
 });
 
@@ -478,7 +470,6 @@ describe('retryAndRecord — escalated-intermediate booking identity', () => {
   });
 
   it('books the per-task record under the intermediate provider/model, not the primary implementer', async () => {
-    process.env.OPENROUTER_API_KEY = 'sk-or-test';
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', file: 'src/intermediate.ts', action: 'create' });
     let state = implementingState([task]);
@@ -511,7 +502,7 @@ describe('retryAndRecord — escalated-intermediate booking identity', () => {
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: { maxRetries: 1 },
         escalation: {
-          intermediateProvider: 'openrouter',
+          intermediateProvider: 'ollama',
           intermediateModel: 'x-ai/grok-4-fast',
           enabled: true,
         },
@@ -533,7 +524,7 @@ describe('retryAndRecord — escalated-intermediate booking identity', () => {
     expect(res.completed).toBe(true);
     const record = taskBreakdowns[0];
     expect(record?.method).toBe('escalated-intermediate');
-    expect(record?.tool).toBe('openrouter');
+    expect(record?.tool).toBe('ollama');
     expect(record?.model).toBe('x-ai/grok-4-fast');
     expect(record?.implementerTokens).toBeGreaterThanOrEqual(600);
   });

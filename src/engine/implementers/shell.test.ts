@@ -81,7 +81,7 @@ describe('shell implementer', () => {
 
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error).toMatch(/extract|code/i);
+      expect(result.error).toMatch(/extract/i);
     }
   });
 
@@ -97,7 +97,7 @@ describe('shell implementer', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toBeTruthy();
+    expect(result.error).toMatch(/exit(ed)? (with )?(code )?1\b/i);
   });
 
   it('throws on command not found (ENOENT)', async () => {

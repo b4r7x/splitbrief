@@ -338,7 +338,6 @@ describe('runValidation', () => {
       phase: 'implementing',
     });
 
-    expect(results).toHaveLength(1);
     const tc = results.find((r) => r.stage === 'typecheck');
     expect(tc?.passed).toBe(false);
     expect(results.map((r) => r.stage)).toEqual(['typecheck']);

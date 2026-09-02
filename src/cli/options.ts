@@ -148,7 +148,7 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--no-fullscreen', 'Disable fullscreen alternate screen buffer')
     .option('--no-mouse', 'Disable mouse tracking')
     .option('--hover', 'Enable hover highlight (opt-in; requires mouse + fullscreen)', false)
-    .option('--mode <mode>', 'Workflow mode: instant, quick, standard, or speckit')
+    .option('--mode <mode>', 'Workflow mode: quick, standard, or speckit')
     .option('--budget <amount>', 'Maximum budget in dollars (e.g., 2.00)', parseBudgetOption)
     .option(
       '--planner-effort <level>',

@@ -5,7 +5,7 @@ import { glyph, type GlyphTier, resolveGlyphTier } from '../../../lib/glyphs.js'
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
-// The header row (which now carries the phase rail inline) + the divider (1). The divider alone
+// The header row (which carries the phase rail inline) + the divider (1). The divider alone
 // separates the chrome from the body — no gap row below it — and the live status rides inline, so
 // no chrome row is reserved for it either.
 export const WORKFLOW_CHROME_ROWS = {

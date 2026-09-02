@@ -7,7 +7,7 @@ import { deriveModelCatalogCapability } from './model-catalog/posture.js';
 import type { ModelOption } from './model-catalog/recency.js';
 import { glyph } from '../../lib/glyphs.js';
 import type { ProvenanceWord } from '../../core/providers/provenance.js';
-import type { RightRow, RouteAuthState } from './model-catalog/rows.js';
+import type { RightAxisName, RightRow, RouteAuthState } from './model-catalog/rows.js';
 import { renderModelRow, renderToolRow } from './tool-row.js';
 
 function modelRow(
@@ -20,11 +20,12 @@ function modelRow(
 
 function axisRow(
   model: ModelOption,
-  axis: 'effort' | 'speed' | 'thinking',
+  axis: RightAxisName,
   value: string,
   last = false,
+  steps = true,
 ): RightRow {
-  return { kind: 'axis', model, axis, value, last };
+  return { kind: 'axis', model, axis, providerPrefix: '', value, choices: [], steps, last };
 }
 
 function routeRow(auth: RouteAuthState): RightRow {
@@ -44,6 +45,20 @@ function pickerItem(
     ...item,
     modelCapability: deriveModelCatalogCapability(item.modelPolicy),
   };
+}
+
+async function rowFrame(row: RightRow, maxWidth: number, currentModel?: string): Promise<string> {
+  const ui = renderFeature(
+    renderModelRow({ row, isCursor: false, maxWidth, currentModel, sectioned: false }),
+  );
+  await tick(20);
+  const frame = ui.lastFrame() ?? '';
+  ui.unmount();
+  return frame;
+}
+
+async function rowLine(row: RightRow, maxWidth: number, currentModel?: string): Promise<string> {
+  return stripAnsiStyles(await rowFrame(row, maxWidth, currentModel)).split('\n')[0] ?? '';
 }
 
 const readyPermissions = {
@@ -245,6 +260,55 @@ describe('runner row grammar', () => {
     expect(frame).toContain('Stale');
     expect(frame).not.toContain('Detected');
     expect(frame).not.toContain('Confirmed');
+    ui.unmount();
+  });
+
+  it('shows a floored context window on a model row', async () => {
+    const million = renderFeature(
+      renderModelRow({
+        row: modelRow({ id: 'gpt-5.6', contextLength: 1_048_576 }, 'Detected'),
+        isCursor: false,
+        maxWidth: 60,
+        currentModel: undefined,
+        sectioned: false,
+      }),
+    );
+    await tick(20);
+    const millionFrame = million.lastFrame() ?? '';
+    expect(millionFrame).toContain('1M');
+    expect(millionFrame).not.toContain('1.0M');
+    million.unmount();
+
+    const thousands = renderFeature(
+      renderModelRow({
+        row: modelRow({ id: 'gpt-5.6-mini', contextLength: 262_144 }, 'Detected'),
+        isCursor: false,
+        maxWidth: 60,
+        currentModel: undefined,
+        sectioned: false,
+      }),
+    );
+    await tick(20);
+    expect(thousands.lastFrame() ?? '').toContain('262K');
+    thousands.unmount();
+  });
+
+  it('renders the browse-catalog escape as an affordance, not a failure', async () => {
+    forceUnicodeGlyphs();
+    const ui = renderFeature(
+      renderModelRow({
+        row: { kind: 'action', action: 'browse-catalog', text: 'Browse the full catalog' },
+        isCursor: false,
+        maxWidth: 60,
+        currentModel: undefined,
+        sectioned: false,
+      }),
+    );
+    await tick(20);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Browse the full catalog');
+    expect(frame).toContain(glyph('disclosureClosed'));
+    expect(frame).not.toContain(glyph('statusFailed'));
     ui.unmount();
   });
 
@@ -477,21 +541,8 @@ describe('runner row grammar', () => {
           { fullId: 'claude-opus-5-thinking-high-fast', providerPrefix: '', tag: 'Thinking Fast' },
         ],
       };
-      const frameAt = async (maxWidth: number): Promise<string> => {
-        const ui = renderFeature(
-          renderModelRow({
-            row: modelRow(opus, 'Detected'),
-            isCursor: false,
-            maxWidth,
-            currentModel: 'claude-opus-5-low',
-            sectioned: false,
-          }),
-        );
-        await tick(20);
-        const frame = ui.lastFrame() ?? '';
-        ui.unmount();
-        return frame;
-      };
+      const frameAt = (maxWidth: number): Promise<string> =>
+        rowFrame(modelRow(opus, 'Detected'), maxWidth, 'claude-opus-5-low');
 
       // The three-axis summary and the context length together push the name under
       // its floor, so the context goes first and the name stays whole.
@@ -520,21 +571,8 @@ describe('runner row grammar', () => {
           { fullId: 'cursor-grok-4.6-thinking-high', providerPrefix: '', tag: 'Thinking' },
         ],
       };
-      const frameAt = async (maxWidth: number): Promise<string> => {
-        const ui = renderFeature(
-          renderModelRow({
-            row: modelRow(grok, 'Stale'),
-            isCursor: false,
-            maxWidth,
-            currentModel: 'cursor-grok-4.6-low',
-            sectioned: false,
-          }),
-        );
-        await tick(20);
-        const frame = ui.lastFrame() ?? '';
-        ui.unmount();
-        return frame;
-      };
+      const frameAt = (maxWidth: number): Promise<string> =>
+        rowFrame(modelRow(grok, 'Stale'), maxWidth, 'cursor-grok-4.6-low');
 
       const wide = await frameAt(48);
       expect(wide).toContain('Low · Standard · Off');
@@ -570,21 +608,8 @@ describe('runner row grammar', () => {
           { fullId: 'cursor-grok-4.6-max', providerPrefix: '', tag: 'Max' },
         ],
       };
-      const frameAt = async (maxWidth: number): Promise<string> => {
-        const ui = renderFeature(
-          renderModelRow({
-            row: modelRow(grok, 'Stale'),
-            isCursor: false,
-            maxWidth,
-            currentModel: 'cursor-grok-4.6-low',
-            sectioned: false,
-          }),
-        );
-        await tick(20);
-        const frame = ui.lastFrame() ?? '';
-        ui.unmount();
-        return frame;
-      };
+      const frameAt = (maxWidth: number): Promise<string> =>
+        rowFrame(modelRow(grok, 'Stale'), maxWidth, 'cursor-grok-4.6-low');
 
       // Room for one of them: the word the row cannot recover elsewhere wins.
       const word = await frameAt(26);
@@ -696,21 +721,8 @@ describe('runner row grammar', () => {
           { fullId: 'gpt-5.6-luna-high-fast', providerPrefix: '', tag: 'High Fast' },
         ],
       };
-      const lineAt = async (maxWidth: number): Promise<string> => {
-        const ui = renderFeature(
-          renderModelRow({
-            row: axisRow(luna, 'speed', 'Standard', true),
-            isCursor: false,
-            maxWidth,
-            currentModel: undefined,
-            sectioned: false,
-          }),
-        );
-        await tick(20);
-        const line = stripAnsiStyles(ui.lastFrame() ?? '').split('\n')[0] ?? '';
-        ui.unmount();
-        return line;
-      };
+      const lineAt = (maxWidth: number): Promise<string> =>
+        rowLine(axisRow(luna, 'speed', 'Standard', true), maxWidth);
 
       // A value the column truncated away is a value space cannot be seen to cycle.
       const floored = await lineAt(22);
@@ -730,51 +742,24 @@ describe('runner row grammar', () => {
     });
 
     it('drops the cycle mark on an axis with nowhere to step and holds its cells', async () => {
-      // Nothing makes a catalog list a full grid: `gpt-5-high` has no fast twin, so the
-      // speed axis cannot move while the draft sits on it, while effort still can.
-      const sparse: ModelOption = {
+      const model: ModelOption = {
         id: 'gpt-5',
         displayName: 'GPT-5',
         variants: [
           { fullId: 'gpt-5', providerPrefix: '', tag: 'Medium' },
-          { fullId: 'gpt-5-fast', providerPrefix: '', tag: 'Medium Fast' },
           { fullId: 'gpt-5-high', providerPrefix: '', tag: 'High' },
         ],
       };
-      const full: ModelOption = {
-        id: 'gpt-5',
-        displayName: 'GPT-5',
-        variants: [
-          ...(sparse.variants ?? []),
-          { fullId: 'gpt-5-high-fast', providerPrefix: '', tag: 'High Fast' },
-        ],
-      };
-      const lineFor = async (model: ModelOption, axis: 'effort' | 'speed'): Promise<string> => {
-        const ui = renderFeature(
-          renderModelRow({
-            row: axisRow(model, axis, axis === 'speed' ? 'Standard' : 'High', axis === 'speed'),
-            isCursor: false,
-            maxWidth: 60,
-            currentModel: undefined,
-            sectioned: false,
-            optionDraftId: 'gpt-5-high',
-          }),
-        );
-        await tick(20);
-        const line = stripAnsiStyles(ui.lastFrame() ?? '').split('\n')[0] ?? '';
-        ui.unmount();
-        return line;
-      };
+      const lineFor = (steps: boolean): Promise<string> =>
+        rowLine(axisRow(model, 'speed', 'Standard', true, steps), 60);
 
-      const deadSpeed = await lineFor(sparse, 'speed');
-      const liveSpeed = await lineFor(full, 'speed');
-      const liveEffort = await lineFor(sparse, 'effort');
+      const dead = await lineFor(false);
+      const live = await lineFor(true);
 
-      expect(deadSpeed).not.toContain(glyph('connectorSame'));
-      expect(liveSpeed).toContain(glyph('connectorSame'));
-      expect(liveEffort).toContain(glyph('connectorSame'));
+      expect(dead).not.toContain(glyph('connectorSame'));
+      expect(live).toContain(glyph('connectorSame'));
       // The mark goes but its cells stay, so the value column does not slide right.
-      expect(deadSpeed.indexOf('Standard')).toBe(liveSpeed.indexOf('Standard'));
+      expect(dead.indexOf('Standard')).toBe(live.indexOf('Standard'));
     });
 
     it('renders axis rows with the axis label and current value', async () => {
@@ -855,8 +840,54 @@ describe('runner row grammar', () => {
         }),
       );
       await tick(20);
-      expect(ui.lastFrame() ?? '').toContain('✓');
+      expect(ui.lastFrame() ?? '').toContain(glyph('check'));
       ui.unmount();
+    });
+  });
+
+  describe('variant axis rows', () => {
+    beforeEach(() => {
+      forceUnicodeGlyphs();
+    });
+
+    const hybrid: ModelOption = {
+      id: 'openai/gpt-5.6-luna-high',
+      displayName: 'GPT-5.6 Luna',
+      variants: [
+        { fullId: 'openai/gpt-5.6-luna-high', providerPrefix: 'openai', tag: 'High' },
+        { fullId: 'openai/gpt-5.6-luna-low', providerPrefix: 'openai', tag: 'Low' },
+      ],
+    };
+
+    it('draws a variant axis row with the drafted preset', async () => {
+      const line = await rowLine(axisRow(hybrid, 'variant', 'xhigh', true), 60);
+      expect(line).toContain('variant');
+      expect(line).toContain('xhigh');
+    });
+
+    it('draws the cycle mark for a ladder that can step', async () => {
+      const line = await rowLine(axisRow(hybrid, 'variant', 'high', true), 60);
+      expect(line).toContain(glyph('connectorSame'));
+    });
+
+    it('drops the cycle mark for a ladder with nowhere to step', async () => {
+      const line = await rowLine(axisRow(hybrid, 'variant', 'max', true, false), 60);
+      expect(line).toContain('max');
+      expect(line).not.toContain(glyph('connectorSame'));
+    });
+
+    it('drops the mark but keeps the cells below the axis floor width', async () => {
+      const variant = await rowLine(axisRow(hybrid, 'variant', 'high', true), 22);
+      const effort = await rowLine(axisRow(hybrid, 'effort', 'High'), 22);
+      expect(variant).not.toContain(glyph('connectorSame'));
+      expect(variant.indexOf('high')).toBe(effort.indexOf('High'));
+    });
+
+    it('closes the child block on the last axis row', async () => {
+      const last = await rowLine(axisRow(hybrid, 'variant', 'high', true), 60);
+      const branch = await rowLine(axisRow(hybrid, 'variant', 'high'), 60);
+      expect(last.startsWith(`  ${glyph('treeLast')}${glyph('divider')} variant`)).toBe(true);
+      expect(branch.startsWith(`  ${glyph('treeBranch')}${glyph('divider')} variant`)).toBe(true);
     });
   });
 

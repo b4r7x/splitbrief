@@ -88,8 +88,8 @@ src/
 │
 ├── engine/                   Workflow logic — zero React imports
 │   ├── orchestrator/         Main run loop (runWorkflow, planning, task loop, …)
-│   ├── planners/             Five runner kinds implementing Planner interface
-│   ├── implementers/         Five runner kinds implementing Implementer interface
+│   ├── planners/             Four runner kinds implementing Planner interface
+│   ├── implementers/         Four runner kinds implementing Implementer interface
 │   ├── runners/              Factory dispatching on config.kind
 │   ├── providers/            Model catalog, pricing, HTTP clients
 │   ├── spec/                 Task Brief templates + tasks.md transport/parser
@@ -169,7 +169,7 @@ The planner receives a token-budgeted [repo-map](./REPOMAP.md) of the codebase o
 
 Prompt builders receive a language context resolved from planner-discovered validation, project heuristics, or a generic fallback. TypeScript keeps the existing ESM-with-`.js` guidance; Python, Go, Rust, JavaScript, and generic prompts use language-appropriate imports, module wording, examples, and type guidance.
 
-Both are configured by the same five runner kinds. The factories dispatch identically:
+Both are configured by the same four runner kinds. The factories dispatch identically:
 
 ```
 src/engine/runners/factory.ts
@@ -188,7 +188,6 @@ Factory dispatch is async and lazy: backend modules are loaded with memoized dyn
 | `api` | `planners/api.ts` | `implementers/api.ts` | `extracted-code` |
 | `shell` | `planners/shell.ts` | `implementers/shell.ts` | `extracted-code` |
 | `agent` | `planners/agent.ts` | `implementers/agent.ts` | `direct` |
-| `agent-sdk` | `planners/agent-sdk.ts` | `implementers/agent-sdk.ts` | `direct` |
 
 What separates the two roles is model strength, not transport. A CLI tool pointed at a cheap model and a cheap model behind an OpenAI-compatible endpoint are both first-class implementers; the write mode just records who writes the file. `direct` runners work in the run's isolation directory and their output is promoted into the project; `extracted-code` runners return the file body and SPLITBRIEF writes it. See [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#write-modes).
 
@@ -224,7 +223,7 @@ One session = one folder. All per-session state lives inside it. See `docs/CONCE
 | `session.jsonl` | `.splitbrief/sessions/<id>/` | Append-only, on every event and (unless disabled) every message chunk | Grows over the run |
 | `research.md` / `spec.md` / `plan.md` / `tasks.md` / speckit artifacts | `.splitbrief/sessions/<id>/` | At the end of each planning phase that produces the artifact | Mode-dependent; `tasks.md` is the markdown transport for Task Briefs |
 | `summary.json` | `.splitbrief/sessions/<id>/` | Exactly once at end-of-run | Final aggregates — tokens, cost, timings, task outcomes |
-| Skills metadata | `.claude/skills/`, `~/.claude/skills/`, `.splitbrief/skills/`, `~/.splitbrief/skills/`, `AGENTS.md`, `~/.codex/skills/`, `CONVENTIONS.md` | Read-only; never written by SPLITBRIEF | Per-project or global, cross-session |
+| Skills metadata | `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, `~/.splitbrief/skills/`, `~/.claude/skills/`, `~/.agents/skills/`, `~/.codex/skills/`, `~/.config/opencode/skills/`, `AGENTS.md` | Read-only; never written by SPLITBRIEF | Per-project or global, cross-session; roots listed in precedence order (`src/core/skills/scan-paths.ts`) |
 
 Single source of truth for `resume`: `state.json` + the session folder it lives in. If `state.json` is missing, corrupt, or from an older `stateVersion`, resume refuses. `session.jsonl` is consulted as a fallback context source when the stored `plannerSessionId` is rejected by the backend (see `docs/WORKFLOW.md` §1.5).
 
@@ -253,13 +252,13 @@ type PlannerCapabilities = {
 |---------|:---:|:---:|:---:|:---:|:---:|:---:|
 | `cli` claude-code | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ |
 | `cli` codex | ✗ | ✓ | ✓ | ✗ | ✗ | ✓ |
-| `cli` opencode / aider / copilot / kilo-code | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ |
-| `api` (any OAI-compat) | ✗ | ✓ | ✗ | model-dependent | model-dependent | ✓ |
+| `cli` opencode / copilot / kilo-code / cursor | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ |
+| `cli` command-code | ✗ | ✓ | ✗ | ✓ | ✗ | ✓ |
+| `api` (any OAI-compat) | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ |
 | `shell` (default) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | `agent` (default) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| `agent-sdk` | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ |
 
-Claude Code resumes via `claude --session-id <id>`. Codex resumes via `codex exec resume --json <id> <prompt>` (captured from the `thread.started` JSONL event). Agent SDK resumes via the `options.resume` argument to `query()`; see `src/engine/runners/agent-sdk/backend.ts`. All other backends fall back to transcript rebuild on resume (`src/engine/orchestrator/transcript/rebuild.ts`).
+Claude Code resumes via `claude --session-id <id>`. Codex resumes via `codex exec resume --json <id> <prompt>` (captured from the `thread.started` JSONL event). All other backends fall back to transcript rebuild on resume (`src/engine/orchestrator/transcript/rebuild.ts`).
 
 `shell` and `agent` defaults are all-false but can be narrowed or partially declared per project. The schema rejects `supportsSessionResume`, `supportsEffort`, and `supportsImages` when set to `true` because command-based adapters have no session-handle, effort, or image-attachment channel.
 
@@ -275,7 +274,7 @@ planner:
     supportsSelfSummarisation: false
 ```
 
-`cli`, `api`, and `agent-sdk` kinds have hardcoded capabilities; the `capabilities` config key is rejected by schema validation for those kinds.
+`cli` and `api` kinds have hardcoded capabilities; the `capabilities` config key is rejected by schema validation for those kinds. The `api` row is the `ONE_SHOT_API_CAPS` preset (`src/engine/planners/types.ts`), so `supportsEffort` and `supportsImages` are `false` for every OpenAI-compatible endpoint — regardless of whether the model behind it accepts `reasoning_effort` or image content blocks on the wire. The flag says what the orchestrator will use, not what the model can do.
 
 When a capability is missing, the orchestrator falls back:
 
@@ -308,7 +307,7 @@ See [Part 2 §12](#12-test-suite-shape) for current test counts.
 | Adding a … | Go to |
 |-----------|-------|
 | New CLI subcommand | `src/cli/commands/` + register in `src/cli.ts` |
-| New runtime command | `src/core/runtime/commands/registry.ts` |
+| New runtime command | `src/core/runtime/commands/defs/<category>.ts` |
 | New planner backend | `src/engine/planners/<name>.ts` + `runners/factory.ts` switch + planner-config schema variant + declare `capabilities` struct |
 | New implementer backend | Mirror of above under `src/engine/implementers/` |
 | New provider (for `api` kind) | `src/engine/providers/<name>.ts` + register in `providers/registry.ts` |
@@ -429,7 +428,7 @@ SPLITBRIEF is an orchestrator of two coding tools: one plans and reviews, the ot
 
 The repository layers many supporting subsystems on top of that core loop:
 
-- **Workflow modes** (`instant` / `quick` / `standard` / `speckit`) trade ceremony for speed, all four converging on the same Task Brief contract and going through a shared `runWorkflow` orchestrator (`src/engine/orchestrator/run/workflow.ts`).
+- **Workflow modes** (`quick` / `standard` / `speckit`) trade ceremony for speed, all three converging on the same Task Brief contract and going through a shared `runWorkflow` orchestrator (`src/engine/orchestrator/run/workflow.ts`).
 - **EventBus** (`src/engine/events/bus.ts`) — single pub/sub port; sinks include the TUI store, an append-only JSONL log, a session-tree recorder, an opt-in NDJSON-on-stdout sink for `--json` headless runs, an opt-in OpenTelemetry sink, and a workflow-hook dispatcher.
 - **Quality gates** — every mode runs a brief-quality scoring pass before tasks start; standard and speckit additionally enter a `reviewing-briefs` phase for human approval. The final deterministic `drift-report.json` / `drift_report` event is produced during final review; per-task cross-scope accumulation is `drift-chains.json` / `drift_chain_detected`.
 - **Snapshots** (`src/engine/snapshots/`) — content-addressed working-tree snapshots stored under `.splitbrief/sessions/<id>/snapshots/` with a baseline + delta layout. Auto-snapshots fire on user-configured triggers (`preTask` / `postTask` / `preFinalReview`); manual ones via `splitbrief snapshot create` (CLI-only; no `/snapshot` slash command).
@@ -487,6 +486,7 @@ src/
 │   │                              strings), rows, seats, presets, labs
 │   ├── formatting.ts              formatCost, formatDuration, etc.
 │   ├── hooks/trust.ts             Hook trust receipts (~/.splitbrief/trust/hooks.json)
+│   ├── hooks/trust-digest.ts      Hook config + hook file digest hashing
 │   ├── trust/receipt-store.ts     Machine-scoped receipt store shared by hook and custom runner trust
 │   ├── sections/                  pure section builders:
 │   │                              completed-task-summary-rows,
@@ -570,7 +570,7 @@ src/
 │   │   │                          post_* / on_* hook dispatch
 │   │   ├── substitute.ts          ${event.field} substitution
 │   │   └── types.ts               HookConfig types
-│   ├── implementers/              5 backends: agent, agent-sdk, api, cli,
+│   ├── implementers/              4 backends: agent, api, cli,
 │   │                              shell + apply (file-write helpers),
 │   │                              pipeline/ (shared pipeline: run,
 │   │                              call-result, extracted-code),
@@ -606,7 +606,7 @@ src/
 │   │   ├── final-review.ts        Final-review phase
 │   │   ├── queue/                 Message queue (submit, drain, clear, prompt, native-injection)
 │   │   ├── planner-review.ts      Spec/plan review prompts
-│   │   ├── planning/              instant, quick, full, speckit,
+│   │   ├── planning/              quick, full, speckit,
 │   │   │                          mode-advisor, rewind, run, shared
 │   │   │                          (runBriefQualityGate,
 │   │   │                          runBriefsApprovalLoop)
@@ -628,26 +628,26 @@ src/
 │   ├── parsers/                   code-detection, code-patterns,
 │   │                              question, response-extractor,
 │   │                              scope-extractor
-│   ├── planners/                  5 backends: agent, agent-sdk, api,
+│   ├── planners/                  4 backends: agent, api,
 │   │                              claude-code (cli specialization), cli,
 │   │                              shell + base, command-invoke, context,
 │   │                              escalation, single-phase, summary,
 │   │                              types
-│   ├── providers/                 anthropic adapter+stream (prompt caching:
-│   │                              system sent as block array with
-│   │                              cache_control markers), capability-
-│   │                              inference, client, openai-compat, constants,
-│   │                              discovery, errors, groq, lm-studio,
-│   │                              metadata, model/{catalog,parsing,resolution},
-│   │                              models-dev, ollama,
-│   │                              openai-stream, openrouter, cost,
-│   │                              cost-math, pricing-resolver, registry,
-│   │                              together, types
+│   ├── providers/                 candidate-contract, capabilities,
+│   │                              capability-inference, catalog-detection,
+│   │                              cli-model-catalog, client, conformance,
+│   │                              constants, cost, cost-math, discovery,
+│   │                              dispatch-stream, errors, image-attach,
+│   │                              lm-studio, metadata,
+│   │                              model/{catalog,parsing,resolution},
+│   │                              models-dev, models-dev-cache, ollama,
+│   │                              openai-compat, openai-compat-policy,
+│   │                              openai-stream, pricing-resolver,
+│   │                              registry, types
 │   ├── runners/                   command-based, errors, factory
 │   │                              (createPlanner, createReviewer,
 │   │                              createImplementer), types,
-│   │                              agent-sdk/ (Anthropic Agent SDK
-│   │                              wrapper), claude/ (Claude-Code CLI
+│   │                              claude/ (Claude-Code CLI
 │   │                              subprocess: invoke, stream), cli-tools (CLI-tool
 │   │                              spawn helpers), sandbox-env (HOME/XDG/cache
 │   │                              env redirect, host HOME/USER kept for an OS-keychain
@@ -676,7 +676,7 @@ src/
 │   │   ├── prompts/               analyze, builder, constitution,
 │   │   │                          escalation (incl. few-shot examples
 │   │   │                          via escalation-examples.ts),
-│   │   │                          estimate-review, instant,
+│   │   │                          estimate-review,
 │   │   │                          language-context, plan, quick-plan,
 │   │   │                          required-sections, research, review,
 │   │   │                          spec, system (implementer system
@@ -693,7 +693,7 @@ src/
 │   ├── create-store.ts            ~45-LOC factory
 │   ├── use-stores.ts              Cross-store React aggregator
 │   ├── approval-prompt/           actions, store
-│   ├── discovery/model-cache.ts   Cached models-dev catalog
+│   ├── discovery/model-cache/     Cached models-dev catalog (entry state.ts)
 │   ├── navigation/router.ts       Active screen + overlay
 │   ├── project/                   config, detection, sessions, skills
 │   ├── ui/                        controls, feedback, input-height,
@@ -715,7 +715,9 @@ src/
 │   ├── palette/                   sources + results (command-palette source
 │   │                              assembly + cross-store result aggregator)
 │   ├── runners/                   picker-view, tool-row, picker-format,
-│   │                              config-transforms, use-picker-actions,
+│   │                              config-transforms (seat commits),
+│   │                              custom-command-transforms (named-command
+│   │                              catalog CRUD), use-picker-actions,
 │   │                              use-picker-catalog, contract-chip,
 │   │                              contract-choice-overlay,
 │   │                              model-catalog/{catalog, options, posture,
@@ -835,16 +837,15 @@ Two modules are load-bearing for the seat surfaces and worth naming with their p
 
 ## 4. Workflow modes
 
-Four modes are canonical (`'instant' | 'quick' | 'standard' | 'speckit'`); any other value is rejected. Set via `--mode`, config `workflow.mode`, or `/mode` at runtime.
+Three modes are canonical (`'quick' | 'standard' | 'speckit'`); the retired `'instant'` is preprocessed to `'quick'` with a deprecation notice, and any other value is rejected. Set via `--mode`, config `workflow.mode`, or `/mode` at runtime.
 
 | Mode | Planner calls | Approval gates | Brief quality gate | Brief approval (`reviewing-briefs`) | Artifacts |
 |------|:---:|:---:|:---:|:---:|---|
-| `instant` | 1 | none | yes | no | `tasks.md` |
 | `quick` | 1 | none | yes | no | `tasks.md` (+ compact plan summary) |
 | `standard` (default) | 4 | optional spec | yes | yes | `research.md`, `spec.md`, `plan.md`, `tasks.md` |
 | `speckit` | 6–7 | optional spec + plan + constitution + analyze | yes | yes | `research.md`, `spec.md`, `plan.md`, `tasks.md`, `clarifications.md`, `constitution-check.json`, `analyze.json` |
 
-Implementation: `src/engine/orchestrator/planning/{instant,quick,full,speckit}.ts`. `full.ts` is `standard`. The shared helpers each live in their own file:
+Implementation: `src/engine/orchestrator/planning/{quick,full,speckit}.ts`. `full.ts` is `standard`. The shared helpers each live in their own file:
 
 - `runBriefQualityGate(...)` (`planning/brief-quality-gate.ts`) — runs `BriefQualityScorer` (`src/engine/spec/brief-quality.ts`) and writes `brief-quality.json`. Error codes: `missing_scope`, `missing_validation`, `vague_validation`, `missing_evidence`, `missing_escalation`, `missing_code_context`, `empty_task_list`, `multi_file_task`, `missing_implementation_steps`. Warning code: `missing_type_definitions`. Publishes `brief_quality_passed` or `brief_quality_failed`.
 - `runBriefReadinessGateAndReport({...})` (`planning/brief-readiness-gate.ts`) — runs `evaluateBriefReadiness` over routing-preview metadata, writes `brief-readiness.json`, and publishes `brief_readiness_passed` or `brief_readiness_blocked`.
@@ -889,7 +890,7 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 `planner_status`, `planner_text`, `planner_heartbeat`
 
 **Planning milestones (20):**
-`spec_rejected`, `spec_regenerated`, `plan_approved`, `plan_rejected`, `plan_regenerated`, `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `brief_quality_passed`, `brief_quality_failed`, `brief_readiness_passed`, `brief_readiness_blocked`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_advice`, `instant_plan_received`
+`spec_rejected`, `spec_regenerated`, `plan_approved`, `plan_rejected`, `plan_regenerated`, `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `brief_quality_passed`, `brief_quality_failed`, `brief_readiness_passed`, `brief_readiness_blocked`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_advice`, `instant_plan_received` (retained for back-compatibility so pre-merge sessions replay; nothing produces it since `instant` merged into `quick`)
 
 **Task lifecycle:**
 `task_started`, `task_completed`, `task_skipped`, `task_retry`, `task_escalating`, `task_full_fail`, `task_reset`, `task_tokens`, `task_review_needed`, `hint_failed`
@@ -986,7 +987,7 @@ Also relative to project root, **outside** `.splitbrief/`:
 
 - `./.trees/<slug>/` — git worktrees (`src/engine/worktree/`): the checkout for a `--worktree` session. Managed by `splitbrief worktree`.
 - `$XDG_STATE_HOME/splitbrief/trees/<hash>/<slug>/` — the run's implementer isolation worktree (`src/engine/orchestrator/isolation/`). Defaults to `~/.local/state/splitbrief/trees/...`; outside `.git/` (direct-writing CLIs refuse paths there) and outside the project tree so a project-rooted test glob cannot walk into the second copy. See [WORKTREES.md](./WORKTREES.md) §Run isolation.
-- `./.claude/skills/`, `~/.claude/skills/`, `./.splitbrief/skills/`, `~/.splitbrief/skills/`, `AGENTS.md`, `~/.codex/skills/`, `CONVENTIONS.md` — skill sources, read-only to SPLITBRIEF.
+- `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, `~/.splitbrief/skills/`, `~/.claude/skills/`, `~/.agents/skills/`, `~/.codex/skills/`, `~/.config/opencode/skills/`, `AGENTS.md` — skill sources, read-only to SPLITBRIEF. The order is the discovery precedence order (project before global, first root wins per skill id); the list lives in `src/core/skills/scan-paths.ts`.
 
 Single source of truth for `resume`: `state.json` + the session folder it lives in. If `state.json` is missing or stateVersion-mismatched, `resume` refuses. `session.jsonl` is the fallback context source for backends without native session resume (`src/engine/orchestrator/transcript/rebuild.ts`).
 
@@ -996,17 +997,16 @@ Path encoding: snapshots URL-encode each path segment then join with `__` to fla
 
 ---
 
-## 7. Runner abstraction (5 kinds)
+## 7. Runner abstraction (4 kinds)
 
 The `kind` discriminant is required in every planner / reviewer / implementer config. Factory: `src/engine/runners/factory.ts` — `createPlanner(config)` / `createReviewer(config, options)` / `createImplementer(config)` are async and dispatch on `kind` through memoized dynamic imports. The `reviewer:` block is optional; with none configured the planner holds the review seat. Pairs of files match by role:
 
 | `kind` | Planner file | Implementer file | Implementer write mode | Examples |
 |---|---|---|---|---|
-| `cli` | `planners/cli.ts` (+ specialization in `claude-code.ts`) | `implementers/cli.ts` | `direct` | claude-code, codex, opencode, aider, copilot, kilo-code |
-| `api` | `planners/api.ts` | `implementers/api.ts` | `extracted-code` | anthropic, openrouter, deepseek, openai, groq, together (any OpenAI-compatible) |
+| `cli` | `planners/cli.ts` (+ specialization in `claude-code.ts`) | `implementers/cli.ts` | `direct` | claude-code, codex, opencode, copilot, kilo-code, cursor, command-code |
+| `api` | `planners/api.ts` | `implementers/api.ts` | `extracted-code` | ollama, lm-studio (any OpenAI-compatible) |
 | `shell` | `planners/shell.ts` | `implementers/shell.ts` | `extracted-code` | arbitrary subprocess, stdin-prompt → stdout-response, no shell/network sandbox |
 | `agent` | `planners/agent.ts` | `implementers/agent.ts` | `direct` | subprocess that writes files directly, no stdout extraction or shell/network sandbox |
-| `agent-sdk` | `planners/agent-sdk.ts` | `implementers/agent-sdk.ts` | `direct` | `@anthropic-ai/claude-agent-sdk` library call |
 
 Each backend implements `Planner` / `Implementer` via a `base.ts`-built shared pipeline; only `invoke*` differs per backend. The orchestrator branches on `PlannerCapabilities` (declared per backend), never on backend identity. See Part 1 §Capability matrix for the full capability table and fallback strategy.
 
@@ -1228,7 +1228,7 @@ Registered in `src/cli.ts`. [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) is the cano
 
 ## 10. Runtime commands (full list, 27)
 
-Defined in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'` (no args) or `'arg'` (positional input); every command declares a `category` from `COMMAND_CATEGORIES` (`src/core/runtime/commands/types.ts`), which is the order the command palette groups them in. Commands are callable from composer `/` input, the command palette, and RPC command dispatch. Aliases resolve to their canonical command and may pin an argument.
+Defined in `src/core/runtime/commands/defs/`, one module per category, concatenated by `createRuntimeCommands` in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'` (no args) or `'arg'` (positional input); every command declares a `category` from `COMMAND_CATEGORIES` (`src/core/runtime/commands/types.ts`), which is the order the command palette groups them in. Commands are callable from composer `/` input, the command palette, and RPC command dispatch. Aliases resolve to their canonical command and may pin an argument.
 
 **Navigate**
 
@@ -1247,7 +1247,7 @@ Defined in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'
 | Runtime command | Description |
 |---|---|
 | `/crew [plan\|build\|review]` | Who fills each seat — opens Settings on the Crew section, or straight on that seat's picker |
-| `/mode [instant\|quick\|standard\|speckit]` | Select workflow mode |
+| `/mode [quick\|standard\|speckit]` | Select workflow mode |
 | `/refresh` | Re-detect available tools |
 
 `/planner`, `/implementer` and `/reviewer` survive one release as aliases of `/crew plan`, `/crew build` and `/crew review`.
@@ -1280,7 +1280,7 @@ Defined in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'
 | Runtime command | Description |
 |---|---|
 | `/copy [message\|brief\|path\|command\|cost]` | Copy a reviewed value to the clipboard |
-| `/image <path> \| list \| remove <index\|id>` | Attach, list or remove images for the next planner call (aliases `/attach`, `/detach`) |
+| `/image <path> \| list \| remove <index\|id>` | Attach, list or remove images for the next planner call |
 | `/export` | Export session as HTML report |
 | `/compact-transcript` | Summarize older transcript turns |
 
@@ -1351,7 +1351,7 @@ Quickest path for a fresh agent:
 1. `src/cli.ts` — see what commands exist.
 2. `src/cli/commands/start/register.ts` — see the bootstrap flow.
 3. `src/engine/orchestrator/run/workflow.ts` → `run/init.ts` → `run/phases.ts` — see the top-level loop.
-4. `src/engine/orchestrator/planning/{instant,quick,full,speckit}.ts` — see how each mode differs.
+4. `src/engine/orchestrator/planning/{quick,full,speckit}.ts` — see how each mode differs.
 5. `src/engine/orchestrator/task/loop.ts` and `src/engine/orchestrator/task/step.ts` (entry) with internal helpers such as `analyze-drift.ts` and `rollback.ts` — see the per-task loop with auto-snapshot, drift chain, evidence, and budget integration.
 6. `src/engine/events/schema.ts` — see the full event vocabulary (`EngineEventSchema`).
 7. `src/core/paths.ts` — see every path the system writes.

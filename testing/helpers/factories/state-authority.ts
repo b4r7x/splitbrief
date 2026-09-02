@@ -2,7 +2,7 @@ import type {
   acquireStateAuthority,
   releaseStateAuthority,
 } from '../../../src/core/state/authority.js';
-import type { loadStateForResume } from '../../../src/core/state/persistence.js';
+import type { loadStateForResume } from '../../../src/core/state/resume-authority.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { StateAuthorityReceipt } from '../../../src/core/state/types.js';
 import type { SessionRef } from '../../../src/core/types/session-ref.js';

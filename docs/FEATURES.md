@@ -8,14 +8,13 @@ User-facing capability reference for SPLITBRIEF. For each feature: what it does,
 
 ## Core orchestration
 
-### Workflow modes (instant / quick / standard / speckit)
+### Workflow modes (quick / standard / speckit)
 
-**What it does.** Four canonical modes trade ceremony for speed. All four converge on the same Task Brief contract and pass through the shared `runWorkflow` orchestrator.
+**What it does.** Three canonical modes trade ceremony for speed. All three converge on the same Task Brief contract and pass through the shared `runWorkflow` orchestrator.
 
 **How to use.** `--mode` flag, `workflow.mode` config, or `/mode` at runtime.
 
 ```bash
-splitbrief start --mode instant "rename foo to bar"
 splitbrief start --mode quick "add unit test for X"
 splitbrief start --mode standard "add JWT middleware"   # default
 splitbrief start --mode speckit "redesign auth subsystem"
@@ -25,8 +24,7 @@ splitbrief start --mode speckit "redesign auth subsystem"
 
 | Mode | Planner calls | Approval gates | Pick when |
 |---|:---:|:---:|---|
-| `instant` | 1 | none | Trivial single-edit changes (rename, typo, one-liner) |
-| `quick` | 1 | none | Small tasks that still warrant a brief but not a spec |
+| `quick` | 1 | none | Trivial single-edit changes and small tasks that warrant a brief but not a spec |
 | `standard` (default) | 4 | spec | Ordinary feature work — research → spec → plan → tasks |
 | `speckit` | 6–7 | spec + plan + constitution + analyze | Risky, large, or externally visible work |
 
@@ -56,19 +54,18 @@ splitbrief start "add endpoint" @api-spec.yaml @existing-handler.ts
 
 **When to use.** When the planner needs additional context (design docs, screenshots, existing code) that isn't captured by the repo-map or the feature description alone.
 
-### Runner kinds (cli / api / shell / agent / agent-sdk)
+### Runner kinds (cli / api / shell / agent)
 
-**What it does.** Both planner and implementer dispatch on a `kind` discriminant. Five kinds cover every backend SPLITBRIEF supports.
+**What it does.** Both planner and implementer dispatch on a `kind` discriminant. Four kinds cover every backend SPLITBRIEF supports.
 
 **How to use.** Set `kind:` plus the kind-specific fields under `planner:` and `implementer:` in `.splitbrief/config.yaml`.
 
 | `kind` | What it is | Example |
 |---|---|---|
-| `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code` |
-| `api` | OpenAI-compatible HTTP endpoint | Ollama, LM Studio, Anthropic, OpenRouter, DeepSeek, OpenAI, Groq, Together |
+| `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code` |
+| `api` | OpenAI-compatible HTTP endpoint | Ollama, LM Studio, custom endpoint |
 | `shell` | Arbitrary stdin → stdout subprocess; no shell/network sandbox | Custom scripts |
 | `agent` | Subprocess that writes files directly; no shell/network sandbox | File-writing tools (no stdout extraction) |
-| `agent-sdk` | `@anthropic-ai/claude-agent-sdk` library call | In-process Anthropic Agent SDK |
 
 **Auto-detection.** `splitbrief init` and `/refresh` probe installed CLI tools and reachable API endpoints; the seat pickers, reached from Settings ∋ Crew (`/crew plan`, `/crew build`), surface only what is available. A first setup with no remembered result shows the "Waking your crew…" boot manifest (seat rows plus live discovery-lane marks) and advances when discovery succeeds. On later TUI setup loads, SPLITBRIEF publishes the sanitized remembered result for the project — including remembered model rows — before discovery refreshes in the background; a result remembered under a different configuration context still hydrates, as presentation-only rows that never outrank a live lane. A failed refresh leaves those rows visible with a refresh-failure indication. The home screen shows a spinner with "Waking your crew…" during a cold first discovery and "Refreshing your tools…" during warm background refreshes, and the runner pickers mirror the same cold/warm states.
 
@@ -134,8 +131,8 @@ Events: `validate`, `git_commit`, `git_checkpoint`, `git_branch_created`.
 ```yaml
 workflow: { maxRetries: 3 }
 escalation:
-  intermediateProvider: openrouter
-  intermediateModel: z-ai/glm-4.6
+  intermediateProvider: ollama
+  intermediateModel: llama3.1
 ```
 
 **When to use.** Set `escalation.intermediateProvider` to add a mid-tier model between the cheap implementer and the expensive planner; it is active by default once configured. Set `escalation.enabled: false` to disable that intermediate tier without removing the provider config.
@@ -200,7 +197,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 | File | Modes |
 |---|---|
-| `tasks.md` | all four modes |
+| `tasks.md` | all three modes |
 | `spec.md`, `plan.md` | `standard`, `speckit` |
 | `research.md`, `clarifications.md`, `constitution-check.json`, `analyze.json` | `speckit` only |
 | `review.md`, `summary.json`, `evidence.json` | all modes |
@@ -211,7 +208,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 **What it does.** A deterministic linter scores every Task Brief before implementation begins. Error codes are `missing_scope`, `missing_validation`, `vague_validation`, `missing_evidence`, `missing_escalation`, `missing_code_context`, `empty_task_list`, `multi_file_task`, and `missing_implementation_steps`. `missing_type_definitions` is a warning. Any error-level issue blocks transition to `implementing`.
 
-**How to use.** Always runs in all four modes. Result persists at `brief-quality.json`; events are `brief_quality_passed` or `brief_quality_failed`. Visible in the summary screen as a `Brief quality` row.
+**How to use.** Always runs in all three modes. Result persists at `brief-quality.json`; events are `brief_quality_passed` or `brief_quality_failed`. Visible in the summary screen as a `Brief quality` row.
 
 **When to use.** Out of the box. To inspect after the fact, read `.splitbrief/sessions/<id>/brief-quality.json`.
 
@@ -225,7 +222,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 ### Mode advisor (deterministic risk classifier)
 
-**What it does.** A pure keyword/pattern classifier (no LLM call) emits a `ModeAdviceKind` of `none | downgrade | upgrade | missing-context` for the user prompt. Risk tiers: `trivial → instant`, `small → quick`, `normal → standard`, `high → speckit`. Confidence threshold of 0.65 for upgrades / downgrades; missing-context can fire below.
+**What it does.** A pure keyword/pattern classifier (no LLM call) emits a `ModeAdviceKind` of `none | downgrade | upgrade | missing-context` for the user prompt. Risk tiers: `trivial → quick`, `small → quick`, `normal → standard`, `high → speckit`. Confidence threshold of 0.65 for upgrades / downgrades; missing-context can fire below. A `trivial` classification also sets `trivial: true` on the quick planning phase, which drops the planner's codebase-review step and caps the run at one to five briefs.
 
 **How to use.** Runs automatically before planning. Surfaces in the workflow footer as `advisor: consider quick · trivial edit` or similar. Never auto-switches the mode — the user decides via `/mode`.
 
@@ -233,7 +230,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 ### Brief review gate (standard / speckit)
 
-**What it does.** After Task Briefs are compiled, standard and speckit enter a `reviewing-briefs` phase. The user can approve, comment (sends feedback for regeneration), reject (workflow ends), or edit the briefs. Quick and instant skip this gate.
+**What it does.** After Task Briefs are compiled, standard and speckit enter a `reviewing-briefs` phase. The user can approve, comment (sends feedback for regeneration), reject (workflow ends), or edit the briefs. Quick skips this gate.
 
 The review surface includes a compact execution-readiness scorecard: `ready`, `routing pending`, `split/overflow`, `risky/tight`, `stale/conflict`, and `missing checks`. Unknown, stale, pending, or missing routing/context fit does not count as ready.
 
@@ -277,9 +274,9 @@ After the editor exits successfully, SPLITBRIEF re-reads `.splitbrief/sessions/<
 
 ### Pricing catalog
 
-**What it does.** Built-in per-model pricing for priced API providers, with runtime catalog pricing when model discovery reports it. `local` replaces the dollar amount when the implementer is unpriced (for example local Ollama, Agent SDK, or an OpenCode/Claude-Code subscription) so no fake savings are shown.
+**What it does.** Per-model pricing for any metered API runner, including a custom endpoint you configure yourself. Rates follow the model, not the provider preset: a `vendor/model` id is rated through that vendor's catalog row, a bare id is matched across the catalog. `local` replaces the dollar amount when the implementer is unpriced (for example local Ollama or an OpenCode/Claude-Code subscription) so no fake savings are shown.
 
-**How to use.** Pricing is auto-resolved per provider/model from the built-in catalog or runtime model cache (see `src/engine/providers/pricing-resolver.ts`).
+**How to use.** Pricing is auto-resolved from the model id against the models.dev catalog, the runtime model cache, or the bundled fallback (see `src/engine/providers/pricing-resolver.ts`). Local, CLI and shell/agent runners are never priced.
 
 ### Budget pause gate
 
@@ -665,7 +662,7 @@ splitbrief snapshot list --session 1
 |---|---|
 | `/help` | Show help overlay (Ctrl+/) |
 | `/palette` | Open command palette (Ctrl+K) — typeable, hidden from the palette's own list |
-| `/skills` | Select planner skills (home only; Ctrl+S) |
+| `/skills` | Select planner skills (any screen; Ctrl+S on home) |
 | `/sessions` | Browse past sessions |
 | `/settings` | Crew, validation, workflow (Ctrl+,) |
 | `/home` | Return to home screen |
@@ -675,8 +672,8 @@ splitbrief snapshot list --session 1
 
 | Command | Purpose |
 |---|---|
-| `/crew [plan\|build\|review]` | Who fills each seat — opens Settings with the cursor on that seat |
-| `/mode [instant\|quick\|standard\|speckit]` | Workflow mode |
+| `/crew [plan\|build\|review]` | Who fills each seat — bare `/crew` opens Settings with the cursor on `plan`; `/crew <seat>` opens that seat's picker overlay directly |
+| `/mode [quick\|standard\|speckit]` | Workflow mode |
 | `/refresh` | Re-detect available tools |
 
 **Workflow**
@@ -711,9 +708,9 @@ splitbrief snapshot list --session 1
 | `/compact-transcript` | Summarize older transcript turns |
 | `/image <path> \| list \| remove <index-or-id>` | Attach, list or remove images for the next planner call |
 
-**Capability-aware `/image`.** The command is offered only when the PLAN seat can actually receive images — `cli` and `agent-sdk` seats can, an `api` seat depends on its model, `shell` and `agent` never can. On a seat without vision the row is hidden and typing the command answers `PLAN seat cannot see images — pick a vision model with /crew plan`, instead of dropping the attachment silently at call time.
+**Capability-aware `/image`.** The command is offered only when the PLAN seat can actually receive images — `cli` seats can, an `api` seat depends on its model, `shell` and `agent` never can. On a seat without vision the row is hidden and typing the command answers `PLAN seat cannot see images — pick a vision model with /crew plan`, instead of dropping the attachment silently at call time.
 
-**Aliases.** `/config` runs `/settings`; `/planner`, `/implementer` and `/reviewer` run `/crew plan`, `/crew build` and `/crew review`. They are kept for one release, render as alias rows in the palette, and are listed in full — together with the removed names and where each one went — in [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
+**Aliases.** `/config` runs `/settings`; `/planner`, `/implementer` and `/reviewer` run `/crew plan`, `/crew build` and `/crew review`. They are kept for one release. Bare aliases ride their primary row in the palette — `/settings` renders as `/settings (/config)`; argument-bearing aliases get no palette row of their own and stay reachable by typing them in the composer or over RPC. All of them are listed in full — together with the removed names and where each one went — in [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
 Full reference: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
@@ -751,7 +748,7 @@ Sessions are execution records scoped to one workflow each. The brief review gat
 
 **What it does.** The crew section is a rail, not a list of settings rows: one labelled row per seat — `PLAN`, `BUILD`, `REVIEW` — each carrying the seat identity (`Claude Code CLI · Claude Sonnet 4`) and a right-aligned posture word, joined by a tree rail (`●` for a seat, `├`/`└` for its branches). A REVIEW seat with no `reviewer:` block shows the planner's identity with the inheritance mark.
 
-**Branches.** Effort lives on the seat that honours it: a seat whose runner supports effort gets an effort branch under it, cycled in place, and an inherited REVIEW seat shows the planner's effort read-only. Enter on a seat row opens that seat's tool/model picker. The escalation tier is YAML-only (`config.escalation`) and has no crew row.
+**Branches.** Effort lives on the seat that honours it, and honouring it means one of three real channels rather than a single yes/no. A `claude-code` seat gets an effort branch carrying the `effort` field, cycled in place. An `opencode` seat gets the same branch cycling its `variant` preset, which is the form opencode's effort actually takes. A `cursor` seat shows the effort its selected model id already spells, read-only — that value is chosen in the model picker, not on the branch. Only a seat with no channel at all — `codex`, `copilot`, `kilo-code`, and every `api`, `shell` and `agent` seat — reads `n/a`. An inherited REVIEW seat shows the planner's value read-only. Enter on a seat row opens that seat's tool/model picker. The escalation tier is YAML-only (`config.escalation`) and has no crew row.
 
 **How to use.** `/crew` opens Settings on the crew section; `/crew plan`, `/crew build` and `/crew review` land the cursor on that seat directly. Ready-made crew presets are offered only on the first-run Setup screen, never here. At small viewports the section yields in a fixed order — the lab verdict line first, then the rail spine gaps, then the posture column — so all three seat rows stay visible down to the 60x18 floor.
 
@@ -759,7 +756,11 @@ Sessions are execution records scoped to one workflow each. The brief review gat
 
 **What it does.** Two-column pickers for workflow mode (`/mode` with no argument) and for a seat's tool and model (Enter on a seat row in Settings ∋ Crew). Filtered to detected/available tools.
 
-**Option families.** Detected models whose ids differ only by effort, speed or thinking fold into one row that expands into an axis row per axis; custom models and provider-routed (`provider/model`) ids keep their own rows. `space` cycles the axis under the cursor in place — the key Settings ∋ Crew already uses for effort — and `⏎` confirms the drafted variant from any row of the family, parent or child.
+**Model rows.** One authoritative lane per tool renders the model rows. models.dev is metadata-only enrichment (context window, pricing, release date, display name) and never creates a row for a tool that has an authoritative lane of its own. `codex`, `opencode`, `kilo-code`, `cursor` and `command-code` render their own `--list-models`-style native output as `Detected` rows; rows remembered from an earlier run keep rendering, flagged `Stale`. `claude-code` has no listing command at all, so it renders the documented alias set (`default`, `best`, `fable`, `opus`, `sonnet`, `haiku`, `opusplan`, `sonnet[1m]`, `opus[1m]`) merged best-effort with the local `~/.claude.json` `additionalModelOptionsCache`, and an unknown id you type through is passed to the CLI unvalidated, because Claude Code does not validate it either. `copilot` has no non-interactive listing command, so it renders one bundled static list, labelled unverified against your account. Confirmed rows keep the tool's own order and are not re-sorted by release date. Dedup is by a suffix-aware canonical id, so a `:free` catalog twin folds into its provider-qualified runtime row; a display name is never a dedup key, so two genuinely different ids are never collapsed for printing the same. Context windows are floored and never carry an empty decimal: a 1,048,576-token window reads `1M`, 1,100,000 reads `1.1M`, 262,144 reads `262K`. When the configured model is absent from the authoritative list the picker keeps a recovery row for it and offers one explicit "Browse the full catalog" row; nothing speculative appears otherwise.
+
+**Option families.** Detected models whose ids differ only by effort, speed or thinking fold into one row that expands into an axis row per axis. Suffix peeling is provider-aware, so a provider-routed (`provider/model`) id folds into its family per route instead of keeping a row of its own, and a family that also spans providers expands into one provider route row per route, each followed by that route's own axis rows — so every spelling of every route stays reachable. A genuinely branded id with no sibling to fold with (`opencode/grok-code-fast`) stays flat, spelled exactly as the tool listed it. Only custom models keep their own rows. `space` cycles the axis under the cursor in place — the key Settings ∋ Crew already uses for effort — moving the draft onto that axis's route, and `⏎` confirms the drafted id: its own route's from a route or axis row, the family's from the parent.
+
+**The variant axis.** An `opencode` model row carries one more axis than its id spells: a synthetic `variant` axis built from the tool's own verbatim preset vocabulary (`src/core/runners/variant-vocabulary.ts`), keyed on the route's provider rather than on the merged row's representative id. It is not id-encoded and `opencode models` never lists it, so there is nothing to peel or probe — an unlisted provider simply offers no variant row, even where a sibling route of the same row offers one. The axis closes its route's block, after that route's effort/speed/thinking rows, cycles with the same `space`, and confirming saves the `variant` config field beside the model — but only on a route whose vocabulary spells the drafted preset; elsewhere the row reads unset and the save drops it. No other tool gets the row.
 
 ### Input footer
 
@@ -945,13 +946,17 @@ Or per-run: `--otel-exporter console`. Full details: [OTEL.md](./OTEL.md).
 /image remove 1
 ```
 
+Dragging a file onto the terminal attaches it too. The home composer advertises this with a `drop an image` hint on its legend line; the workflow composer shows no hint because its byline is occupied by live status, but drops still work there. `Backspace` on an empty draft pops the last attachment chip.
+
 Offered only when the PLAN seat can receive images; on a seat without vision the command answers with the reason instead of dropping the attachment at call time.
 
 ### Skills
 
-**What it does.** Loads planner skills into the picker so the planner can be primed with project-specific knowledge. Source discovery lives in `src/engine/skill-discovery.ts` and covers `.claude/skills/`, `.splitbrief/skills/`, global tool skill dirs, `AGENTS.md`, and `CONVENTIONS.md` depending on the selected planner.
+**What it does.** Loads planner skills into the picker so the planner can be primed with project-specific knowledge. Source discovery lives in `src/engine/skill-discovery.ts` and does not depend on which tool holds the PLAN seat. It scans one fixed union of roots, listed here in precedence order — project `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, then global `~/.splitbrief/skills/`, `~/.claude/skills/`, `~/.agents/skills/`, `~/.codex/skills/`, `~/.config/opencode/skills/`. The path table is `src/core/skills/scan-paths.ts`. Dedup is by skill id, first root wins, so project skills always outrank global ones. `<project>/AGENTS.md` is emitted as the `agents-root` entry whenever the file exists.
 
-**How to use.** Open the picker via `/skills` (home screen only; Ctrl+S). Read-only — SPLITBRIEF never writes to skill sources.
+**Detection.** A directory holding a `SKILL.md` is a skill and is not descended into; other directories are walked to depth 4. Loose `.md` files count only at the top level of a root. Frontmatter that omits `name` falls back to the directory (or file) name; a file with no frontmatter block is skipped. Symlinks are followed in both scopes, but project scope never leaves the project: a project symlink whose target resolves outside the project is dropped, not read.
+
+**How to use.** Open the picker via `/skills` on any screen (Ctrl+S on home). Discovery re-runs when the overlay opens, so a skill added mid-session appears without a restart. `/skills <id> [<id>…]` toggles skills from the composer instead of opening the picker; the `/` menu completes skill ids, project skills first, then already-selected global ones, and shows each skill's name and description. Selection applies to the session only. Read-only — SPLITBRIEF never writes to skill sources.
 
 ---
 

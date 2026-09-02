@@ -1,10 +1,6 @@
 import { createStore, storeBase } from '../create-store.js';
-import {
-  loadConfig,
-  transactConfigDocument,
-  configRevisionsMatch,
-  configPath,
-} from '../../core/config/load/io.js';
+import { loadConfig, transactConfigDocument } from '../../core/config/load/io.js';
+import { configRevisionsMatch, configPath } from '../../core/config/load/document.js';
 import type { ConfigRevision, ExpectedConfigRevision } from '../../lib/confined-fs-atomic.js';
 import { toYaml } from '../../core/config/load/transform.js';
 import type { CLIOverrides } from '../../core/config/runtime/overrides/schema.js';

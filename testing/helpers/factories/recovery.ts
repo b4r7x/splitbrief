@@ -27,6 +27,7 @@ import type { ModelCacheAccessor } from '../../../src/engine/providers/model/res
 import {
   estimateBriefRecoveryCall,
   type RecoveryFiniteEstimate,
+  type RecoveryUnavailableEstimate,
 } from '../../../src/engine/orchestrator/budget/recovery-estimate.js';
 
 export function makeRecoveryIssue(overrides: Partial<RecoveryIssue> = {}): RecoveryIssue {
@@ -91,13 +92,35 @@ export function makePricedRecoveryEstimate(
 ): RecoveryFiniteEstimate {
   const estimate = estimateBriefRecoveryCall({
     prompt: 'Retry the frozen Brief once.',
-    plannerTool: 'openai',
+    plannerTool: 'custom-endpoint',
     plannerModel: 'gpt-5.4',
     configuredOutputCap: 1_000,
     pricingCache,
   });
   if (!isFiniteRecoveryEstimate(estimate)) {
     throw new Error('expected a finite priced estimate');
+  }
+  return estimate;
+}
+
+function isUnavailableRecoveryEstimate(
+  estimate: RecoveryCallEstimate,
+): estimate is RecoveryUnavailableEstimate {
+  return estimate.kind === 'unavailable' && estimate.amount === null;
+}
+
+export function makeUnavailableRecoveryEstimate(
+  pricingCache: ModelCacheAccessor,
+): RecoveryUnavailableEstimate {
+  const estimate = estimateBriefRecoveryCall({
+    prompt: 'Retry the frozen Brief once.',
+    plannerTool: 'opencode',
+    plannerModel: 'auto',
+    configuredOutputCap: 1_000,
+    pricingCache,
+  });
+  if (!isUnavailableRecoveryEstimate(estimate)) {
+    throw new Error('expected an unpriced recovery estimate');
   }
   return estimate;
 }

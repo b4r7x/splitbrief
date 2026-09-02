@@ -6,7 +6,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import { FIRST_RUN_NOTE } from '../../core/discovery/copy.js';
 import { glyph, spinnerFrames } from '../../lib/glyphs.js';

@@ -114,7 +114,7 @@ The implementer is a weaker **model**, not a weaker **transport**. Two
 paths are first-class and MUST be held to the same maturity in prompt,
 isolation, validation, and documentation:
 - a runner that writes the files itself, such as a CLI tool driving a
-  cheaper model (`cli`, `agent`, `agent-sdk` — `writesFiles: direct`)
+  cheaper model (`cli`, `agent` — `writesFiles: direct`)
 - a runner that returns file contents as text, which SPLITBRIEF then
   writes, such as an API model (`api`, `shell` —
   `writesFiles: extracted-code`)
@@ -235,8 +235,8 @@ Explicit anti-goals that MUST NOT be implemented:
 - **Target**: macOS (primary), Linux (secondary)
 - **Project languages**: TypeScript and JavaScript are the primary stack; command-based
   validation is also resolved for configured or detected Python, Go, and Rust pipelines
-- **Planner**: Pluggable runner kinds via config: `cli`, `api`, `shell`, `agent`, and `agent-sdk`
-- **Implementer**: The same five runner kinds as planner. Runners that write files themselves (`cli`, `agent`, `agent-sdk` — for example a CLI tool driving a cheaper model) and runners that return file contents as text for SPLITBRIEF to write (`api`, `shell` — for example an API model) are equally supported; the user picks, and the write mode follows from the kind
+- **Planner**: Pluggable runner kinds via config: `cli`, `api`, `shell`, and `agent`
+- **Implementer**: The same four runner kinds as planner. Runners that write files themselves (`cli`, `agent` — for example a CLI tool driving a cheaper model) and runners that return file contents as text for SPLITBRIEF to write (`api`, `shell` — for example an API model) are equally supported; the user picks, and the write mode follows from the kind
 - **Edit format**: Whole-file replacement for files under 200 lines,
   search/replace blocks for larger files
 

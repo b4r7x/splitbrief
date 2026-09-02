@@ -6,13 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configStore } from '../../stores/project/config.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { detectionStore } from '../../stores/project/detection.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { realPickerOption } from '#testing/helpers/runner-picker.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
-import type { SeatPickerRole } from '../../core/runners/cli-tool-catalog.js';
+import type { SeatPickerRole } from '../../core/runners/seat-roles.js';
 import type { Config } from '../../core/schemas/config.js';
 import { INHERIT_PLANNER_OPTION_ID, type RunnerPickerOption } from './model-catalog/options.js';
 import { usePickerActions } from './use-picker-actions.js';
@@ -48,6 +48,56 @@ function ConfirmRowProbe({ role, itemId }: { role: SeatPickerRole; itemId?: stri
         ? catalog.items[catalog.initialLeftIdx]
         : catalog.items.find((item) => item.id === itemId);
     if (row !== undefined) void actions.confirm(row, null);
+  });
+
+  return <Text>{catalog.roleLabel}</Text>;
+}
+
+/** Confirms an expanded model: the drafted id, plus the drafted variant when there is one. */
+function ConfirmVariantProbe({
+  role,
+  toolId,
+  modelId,
+  variant,
+}: {
+  role: SeatPickerRole;
+  toolId: string;
+  modelId: string;
+  variant?: string | undefined;
+}) {
+  const catalog = usePickerCatalog(role, 0, toolId);
+  const actions = usePickerActions({ role, catalog });
+
+  useInput(() => {
+    void actions.confirmProviderVariant(modelId, variant);
+  });
+
+  return <Text>{catalog.roleLabel}</Text>;
+}
+
+function BrowseOnKeyProbe({ role }: { role: SeatPickerRole }) {
+  const catalog = usePickerCatalog(role, 0);
+  const actions = usePickerActions({ role, catalog });
+
+  useInput(() => {
+    actions.browseCatalog();
+  });
+
+  return <Text>{catalog.roleLabel}</Text>;
+}
+
+function LeftChangeOnKeyProbe({
+  role,
+  selection,
+}: {
+  role: SeatPickerRole;
+  selection: RunnerPickerOption;
+}) {
+  const catalog = usePickerCatalog(role, 0);
+  const actions = usePickerActions({ role, catalog });
+
+  useInput(() => {
+    actions.leftChange(selection);
   });
 
   return <Text>{catalog.roleLabel}</Text>;
@@ -184,6 +234,136 @@ describe('usePickerActions', () => {
     expect(configStore.get().config?.planner).toMatchObject({
       customModels: ['inherited-custom'],
     });
+    ui.unmount();
+  });
+
+  it('opens the full catalog when the browse action fires', async () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } });
+    seed(config);
+    const configBefore = JSON.stringify(configStore.get().config);
+
+    const ui = renderFeature(<BrowseOnKeyProbe role="planner" />);
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(pickerViewStore.get().browseCatalog).toBe(true);
+    });
+    expect(JSON.stringify(configStore.get().config)).toBe(configBefore);
+    ui.unmount();
+  });
+
+  it('closes the browsed catalog when the tool cursor moves', async () => {
+    seed(makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } }));
+    pickerViewStore.setBrowseCatalog(true);
+
+    const ui = renderFeature(
+      <LeftChangeOnKeyProbe role="planner" selection={realPickerOption('planner', 'codex')} />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(pickerViewStore.get().browseCatalog).toBe(false);
+    });
+    ui.unmount();
+  });
+
+  it('persists the drafted variant beside the model on confirm', async () => {
+    seed(makeConfig({ planner: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6' } }));
+
+    const ui = renderFeature(
+      <ConfirmVariantProbe
+        role="planner"
+        toolId="opencode"
+        modelId="openai/gpt-5.6"
+        variant="high"
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(configStore.get().config?.planner).toMatchObject({
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'openai/gpt-5.6',
+        variant: 'high',
+      });
+    });
+    ui.unmount();
+  });
+
+  it('saves the model alone when no variant was drafted', async () => {
+    seed(makeConfig({ planner: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6' } }));
+
+    const ui = renderFeature(
+      <ConfirmVariantProbe role="planner" toolId="opencode" modelId="openai/gpt-5.5" />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(configStore.get().config?.planner).toMatchObject({ model: 'openai/gpt-5.5' });
+    });
+    expect(configStore.get().config?.planner).not.toHaveProperty('variant');
+    ui.unmount();
+  });
+
+  it('names the saved variant in the confirmation message', async () => {
+    seed(makeConfig({ planner: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6' } }));
+
+    const ui = renderFeature(
+      <ConfirmVariantProbe
+        role="planner"
+        toolId="opencode"
+        modelId="openai/gpt-5.6"
+        variant="high"
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(feedbackStore.get().message).toContain('high');
+    });
+    expect(feedbackStore.get().message).toContain('Planner set to:');
+    ui.unmount();
+  });
+
+  // A save line that names a preset the same commit dropped retracts itself one
+  // notice later, so it names what was kept instead.
+  it('leaves a dropped variant out of the confirmation message', async () => {
+    seed(makeConfig({ planner: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6' } }));
+
+    const messages: string[] = [];
+    const stopWatching = feedbackStore.subscribe(() => {
+      const message = feedbackStore.get().message;
+      if (message !== null) messages.push(message);
+    });
+
+    const ui = renderFeature(
+      <ConfirmVariantProbe
+        role="planner"
+        toolId="kilo-code"
+        modelId="openrouter/gpt-5.6"
+        variant="high"
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(messages.some((message) => message.startsWith('Planner set to:'))).toBe(true);
+    });
+    stopWatching();
+
+    const saveLine = messages.find((message) => message.startsWith('Planner set to:'));
+    expect(saveLine).not.toContain('high');
+    // The drop is still news, it just arrives as the notice rather than as a claim
+    // the save line has to take back.
+    expect(messages[messages.length - 1]).toContain('Variant high cleared');
+    expect(configStore.get().config?.planner).not.toHaveProperty('variant');
     ui.unmount();
   });
 

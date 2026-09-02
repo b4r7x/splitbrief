@@ -6,7 +6,11 @@ import {
   captureAccountingKey,
   CaptureSelectionSchema,
 } from './contracts/selection.js';
-import { createFrameIdentity, createVisualProvenance } from './visual-contract-fixtures.js';
+import {
+  createFrameIdentity,
+  createVisualProvenance,
+  requireProvenance,
+} from './visual-contract-fixtures.js';
 
 const profiles = ['unicode-color', 'unicode-mono', 'ascii-mono'] as const;
 
@@ -74,22 +78,13 @@ describe('terminal profile selection contract', () => {
   });
 
   it('keeps provenance and frame identity independent of the run profile', () => {
-    const selections = profiles.map((profile) =>
-      CaptureSelectionSchema.parse({ ...selectionInput(), profile }),
+    const provenances = profiles.map((profile) =>
+      requireProvenance(CaptureSelectionSchema.parse({ ...selectionInput(), profile })),
     );
-    const provenances = selections.map((selection) => selection.targets[0]?.provenance);
-    if (provenances.some((provenance) => provenance === undefined)) {
-      throw new Error('profile fixture did not produce a target provenance');
-    }
+    const first = provenances[0];
+    if (first === undefined) throw new Error('profile fixture did not produce a target provenance');
 
-    const definedProvenances = provenances.filter(
-      (provenance): provenance is NonNullable<typeof provenance> => provenance !== undefined,
-    );
-    expect(definedProvenances).toHaveLength(profiles.length);
-    const first = definedProvenances[0];
-    if (first === undefined) throw new Error('profile fixture has no provenance');
-    expect(definedProvenances[1]).toEqual(first);
-    expect(definedProvenances[2]).toEqual(first);
+    expect(provenances).toEqual(profiles.map(() => first));
     for (const profile of profiles) {
       expect(captureAccountingKey(first)).not.toContain(profile);
       expect(createFrameIdentity(first).key).not.toContain(profile);

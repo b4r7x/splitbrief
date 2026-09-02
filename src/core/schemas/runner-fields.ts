@@ -3,13 +3,18 @@ import { API_OFFERINGS, API_PROVIDER_CATALOG } from '../providers/api-provider-c
 import {
   CLI_AUTH_CHANNEL_IDS,
   CLI_TOOL_CATALOG,
+  CLI_TOOL_IDS,
+  IMPLEMENTER_CLI_TOOL_IDS,
+  PLANNER_CLI_TOOL_IDS,
   cliModelPolicyViolations,
+} from '../runners/cli-tool-catalog.js';
+import {
   runnerRoleForActiveRole,
   type ActiveRunnerRole,
   type PlannerTierRole,
   type RunnerRole,
-} from '../runners/cli-tool-catalog.js';
-import { narrowRecord } from '../../utils/type-guards.js';
+} from '../runners/seat-roles.js';
+import { includes, narrowRecord } from '../../utils/type-guards.js';
 import { isAutomaticModel, normalizeConfiguredModel } from '../providers/automatic-model.js';
 import { hasAutomaticModelDefault } from '../providers/model-selection.js';
 import { isOllamaLocalCredentialReference } from '../providers/ollama-credential.js';
@@ -25,6 +30,33 @@ import {
 import type { RunnerKind } from './enums.js';
 
 const PROMPT_PLACEHOLDER = '{prompt}';
+
+export const REMOVED_API_PROVIDER_IDS = Object.freeze([
+  'anthropic',
+  'deepseek',
+  'groq',
+  'ollama-cloud',
+  'openai',
+  'openrouter',
+  'together',
+] as const);
+
+export const REMOVED_CLI_TOOL_IDS = Object.freeze(['aider'] as const);
+
+export const REMOVED_RUNNER_KINDS = Object.freeze(['agent-sdk'] as const);
+
+// The tool enums reject a removed id before any refinement runs, so the named
+// message has to come from a guard that sits in front of them. The supported
+// list is the caller's catalog slice, so it cannot drift from the enum it pipes into.
+function removedCliToolGuard(supportedToolIds: readonly string[]) {
+  return z.string().superRefine((tool, ctx) => {
+    if (!includes(REMOVED_CLI_TOOL_IDS, tool)) return;
+    ctx.addIssue({
+      code: 'custom',
+      message: `CLI tool "${tool}" was removed; supported tools are ${supportedToolIds.join(', ')}.`,
+    });
+  });
+}
 
 export const EnvironmentReferenceNameSchema = z
   .string()
@@ -74,7 +106,7 @@ const IDLE_THRESHOLD_ORDER = {
 
 const CliRunnerFields = {
   kind: z.literal('cli'),
-  tool: CliToolIdSchema,
+  tool: removedCliToolGuard(CLI_TOOL_IDS).pipe(CliToolIdSchema),
   authChannel: z.enum(CLI_AUTH_CHANNEL_IDS).optional(),
   args: z.array(z.string()).optional(),
   outputFormat: OutputFormatSchema.optional(),
@@ -83,12 +115,12 @@ const CliRunnerFields = {
 
 const PlannerCliRunnerFields = {
   ...CliRunnerFields,
-  tool: PlannerCliToolIdSchema,
+  tool: removedCliToolGuard(PLANNER_CLI_TOOL_IDS).pipe(PlannerCliToolIdSchema),
 };
 
 const ImplementerCliRunnerFields = {
   ...CliRunnerFields,
-  tool: ImplementerCliToolIdSchema,
+  tool: removedCliToolGuard(IMPLEMENTER_CLI_TOOL_IDS).pipe(ImplementerCliToolIdSchema),
 };
 
 const ApiOfferingSchema = z.enum(API_OFFERINGS);
@@ -178,6 +210,20 @@ function validateOllamaLocalCredential(input: unknown, ctx: z.RefinementCtx): vo
     path: ['apiKey'],
     message:
       'Local Ollama apiKey must be omitted or exactly "env:OLLAMA_LOCAL_API_KEY" to keep cloud credentials out of loopback requests',
+  });
+}
+
+// A removed provider still satisfies the custom-provider escape hatch, so
+// without this it would load as an anonymous endpoint under its old name.
+function validateRemovedApiProvider(input: unknown, ctx: z.RefinementCtx): void {
+  const runner = narrowRecord(input);
+  if (runner?.kind !== 'api' || typeof runner.provider !== 'string') return;
+  if (!includes(REMOVED_API_PROVIDER_IDS, runner.provider.toLowerCase())) return;
+
+  ctx.addIssue({
+    code: 'custom',
+    path: ['provider'],
+    message: `API provider "${runner.provider}" was removed; only "ollama" and "lm-studio" are built in. Configure it as a custom endpoint: set provider/service to your own name plus apiBase and an inline apiKey (docs/CONFIGURATION.md).`,
   });
 }
 
@@ -289,12 +335,6 @@ const AgentRunnerFields = {
   ...WatchdogFields,
 };
 
-const AgentSdkRunnerFields = {
-  kind: z.literal('agent-sdk'),
-  apiKey: z.string().optional(),
-  ...WatchdogFields,
-};
-
 export const GenerationCommonFields = {
   model: z.string().min(1),
   customModels: z.array(z.string()).optional(),
@@ -302,6 +342,7 @@ export const GenerationCommonFields = {
   temperature: z.number().min(0).max(2).optional(),
   timeout: z.number().positive().max(600000).optional(),
   effort: EffortLevelSchema.optional(),
+  variant: z.string().min(1).optional(),
 };
 
 const RUNNER_DESCRIPTORS = {
@@ -309,7 +350,6 @@ const RUNNER_DESCRIPTORS = {
   api: { fields: ApiRunnerFields },
   shell: { fields: ShellRunnerFields },
   agent: { fields: AgentRunnerFields },
-  'agent-sdk': { fields: AgentSdkRunnerFields },
 } as const satisfies Record<RunnerKind, { fields: Record<string, z.ZodTypeAny> }>;
 
 export function createRunnerConfigSchema<C extends z.ZodRawShape>(commonFields: C) {
@@ -324,9 +364,9 @@ export function createRunnerConfigSchema<C extends z.ZodRawShape>(commonFields: 
       z.strictObject({ ...commonFields, ...ImplementerApiRunnerFields }),
       z.strictObject({ ...commonFields, ...RUNNER_DESCRIPTORS.shell.fields }),
       z.strictObject({ ...commonFields, ...RUNNER_DESCRIPTORS.agent.fields }),
-      z.strictObject({ ...commonFields, ...RUNNER_DESCRIPTORS['agent-sdk'].fields }),
     ])
     .superRefine((input, ctx) => {
+      validateRemovedApiProvider(input, ctx);
       validateApiIdentity(input, ctx);
       validateOllamaLocalCredential(input, ctx);
       validateAutomaticModelResolvable(input, ctx);
@@ -363,9 +403,9 @@ export function createPlannerConfigSchema<C extends z.ZodRawShape>(
         ...RUNNER_DESCRIPTORS.agent.fields,
         ...PlannerCapabilitiesField,
       }),
-      z.strictObject({ ...commonFields, ...RUNNER_DESCRIPTORS['agent-sdk'].fields }),
     ])
     .superRefine((input, ctx) => {
+      validateRemovedApiProvider(input, ctx);
       validateApiIdentity(input, ctx);
       validateOllamaLocalCredential(input, ctx);
       validateAutomaticModelResolvable(input, ctx);
@@ -394,7 +434,7 @@ export function commandKindCapabilityGuard(seatLabel: PlannerTierRole) {
       ctx.addIssue({
         code: 'custom',
         path: ['capabilities', capability],
-        message: `Runner kind "${cfg.kind}" ${reason}; remove ${capability} or use a cli/api/agent-sdk ${seatLabel}`,
+        message: `Runner kind "${cfg.kind}" ${reason}; remove ${capability} or use a cli/api ${seatLabel}`,
       });
     }
   };

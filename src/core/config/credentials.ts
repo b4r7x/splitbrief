@@ -3,7 +3,7 @@ import { isProviderId } from '../schemas/enums.js';
 import type { ImplementerConfig } from '../schemas/implementer-config.js';
 import type { PlannerConfig } from '../schemas/planner-config.js';
 import { redactSecrets } from '../../utils/redact.js';
-import type { ActiveRunnerRole } from '../runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole } from '../runners/seat-roles.js';
 
 export const API_KEY_ENV_PREFIX = 'env:';
 
@@ -18,12 +18,6 @@ export function parseApiKeyEnvRef(apiKey: string | undefined): string | undefine
 export function isInlineApiKey(apiKey: string | undefined): boolean {
   if (!apiKey) return false;
   return parseApiKeyEnvRef(apiKey) === undefined;
-}
-
-export function resolveConfiguredApiKey(apiKey: string | undefined): string | undefined {
-  const envVar = apiKey ? parseApiKeyEnvRef(apiKey) : undefined;
-  if (!envVar) return apiKey;
-  return process.env[envVar];
 }
 
 export function missingEnvRefError(

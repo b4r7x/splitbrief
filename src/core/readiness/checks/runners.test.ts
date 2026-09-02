@@ -163,10 +163,10 @@ describe('buildRunnerChecks availability guidance', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
-        provider: 'openrouter',
-        service: 'openrouter',
+        provider: 'custom-endpoint',
+        service: 'example-llm',
         offering: 'payg',
-        apiBase: 'https://openrouter.ai/api/v1',
+        apiBase: 'https://api.example.test/v1',
         model: 'qwen2.5-coder:7b',
       },
     });
@@ -182,11 +182,11 @@ describe('buildRunnerChecks availability guidance', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
-        provider: 'openrouter',
-        service: 'openrouter',
+        provider: 'custom-endpoint',
+        service: 'example-llm',
         offering: 'payg',
         model: 'some-model',
-        apiBase: 'https://openrouter.ai/api/v1',
+        apiBase: 'https://api.example.test/v1',
       },
     });
 
@@ -211,11 +211,11 @@ describe('buildRunnerChecks availability guidance', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
-        provider: 'openrouter',
-        service: 'openrouter',
+        provider: 'custom-endpoint',
+        service: 'example-llm',
         offering: 'payg',
         model: 'qwen2.5-coder:7b',
-        apiBase: 'https://openrouter.ai/api/v1',
+        apiBase: 'https://api.example.test/v1',
       },
       implementer: { kind: 'cli', tool: 'copilot' },
       workflow: { approve: 'none' },
@@ -243,11 +243,11 @@ describe('buildRunnerChecks availability guidance', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
-        provider: 'openrouter',
-        service: 'openrouter',
+        provider: 'custom-endpoint',
+        service: 'example-llm',
         offering: 'payg',
         model: 'qwen2.5-coder:7b',
-        apiBase: 'https://openrouter.ai/api/v1',
+        apiBase: 'https://api.example.test/v1',
       },
       implementer: { kind: 'cli', tool: 'copilot' },
     });
@@ -345,11 +345,11 @@ describe('buildRunnerChecks availability guidance', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
-        provider: 'openrouter',
-        service: 'openrouter',
+        provider: 'custom-endpoint',
+        service: 'example-llm',
         offering: 'payg',
         model: 'qwen2.5-coder:7b',
-        apiBase: 'https://openrouter.ai/api/v1',
+        apiBase: 'https://api.example.test/v1',
       },
       implementer: { kind: 'cli', tool: 'claude-code' },
       workflow: { approve: 'none' },
@@ -367,11 +367,11 @@ describe('buildRunnerChecks availability guidance', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
-        provider: 'openrouter',
-        service: 'openrouter',
+        provider: 'custom-endpoint',
+        service: 'example-llm',
         offering: 'payg',
         model: 'qwen2.5-coder:7b',
-        apiBase: 'https://openrouter.ai/api/v1',
+        apiBase: 'https://api.example.test/v1',
       },
       implementer: { kind: 'agent', command: './agent', model: 'agent-default' },
       approval: { enabled: false, feedRejectionsToPlanner: true },

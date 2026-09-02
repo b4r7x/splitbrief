@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { cliDetectionFor, PROBE_EXECUTABLE } from '#testing/helpers/factories/detection.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
-import { createDefaultConfig } from '../../core/config/load/io.js';
+import { createDefaultConfig } from '../../core/config/load/defaults.js';
 import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
 import { detectionContextsForCurrentConfig } from './store-publication.js';
 import type { DetectionCacheSnapshot } from './cache.js';
@@ -43,7 +43,7 @@ function legacyPrivateCache(version: 1 | 2): string {
       planners: [{ tool: 'codex', error: 'legacy-v1-private-planner-diagnostic-canary' }],
       implementers: [
         {
-          provider: 'openai',
+          provider: 'custom-endpoint',
           models: [{ id: 'legacy-v1-private-model-canary' }],
           error: 'legacy-v1-private-provider-diagnostic-canary',
         },
@@ -55,7 +55,7 @@ function legacyPrivateCache(version: 1 | 2): string {
     timestamp: 1_786_000_000_000,
     providers: [
       {
-        provider: 'openai',
+        provider: 'custom-endpoint',
         models: [{ id: 'legacy-v2-private-model-canary' }],
         error: 'legacy-v2-private-provider-diagnostic-canary',
       },
@@ -164,7 +164,7 @@ describe('detection cache', () => {
       snapshot: cacheSnapshot({
         providers: [
           {
-            provider: 'openrouter',
+            provider: 'ollama',
             available: true,
             isLocal: false,
             hasKey: true,
@@ -203,7 +203,7 @@ describe('detection cache', () => {
     ).resolves.toMatchObject({
       providers: [
         {
-          provider: 'openrouter',
+          provider: 'ollama',
           models: [{ id: 'deepseek/deepseek-chat', contextLength: 131_072 }],
         },
       ],
@@ -256,13 +256,13 @@ describe('detection cache', () => {
       {
         connection: {
           role: 'planner',
-          provider: 'openai',
+          provider: 'ollama',
           contextKey: 'role-private-connection-canary',
         },
         outcome: {
           kind: 'failed',
           source: 'provider-runtime',
-          provider: 'openai',
+          provider: 'ollama',
           isLocal: false,
           credential: 'present',
           failure: 'privacy-filtered',
@@ -274,7 +274,7 @@ describe('detection cache', () => {
       ...cacheSnapshot({
         providers: [
           {
-            provider: 'openai',
+            provider: 'ollama',
             available: true,
             isLocal: false,
             hasKey: true,
@@ -367,23 +367,23 @@ describe('detection cache', () => {
     ).resolves.toMatchObject({ contextKey });
   });
 
-  it('caches a context naming the OPENAI_API_KEY environment variable', async () => {
+  it('caches a context naming the CUSTOM_ENDPOINT_API_KEY environment variable', async () => {
     const contextKey = detectionContextsForCurrentConfig({
       config: {
         ...createDefaultConfig(),
         planner: {
           kind: 'api',
-          provider: 'openai',
-          service: 'openai',
+          provider: 'custom-endpoint',
+          service: 'custom-endpoint',
           offering: 'payg',
-          apiBase: 'https://api.openai.com/v1',
-          apiKey: 'env:OPENAI_API_KEY',
+          apiBase: 'https://custom-endpoint.example/v1',
+          apiKey: 'env:CUSTOM_ENDPOINT_API_KEY',
           model: 'gpt-5-mini',
         },
       },
       projectDir: tempDir,
     }).readiness;
-    expect(contextKey).toContain('OPENAI_API_KEY');
+    expect(contextKey).toContain('CUSTOM_ENDPOINT_API_KEY');
 
     await saveDetectionCache({
       projectDir: tempDir,
@@ -423,7 +423,7 @@ describe('detection cache', () => {
   it('round-trips detections carrying a failure kind without their diagnostics', async () => {
     const providers: ProviderDetection[] = [
       {
-        provider: 'openai',
+        provider: 'ollama',
         available: false,
         isLocal: false,
         hasKey: true,
@@ -442,7 +442,7 @@ describe('detection cache', () => {
     });
     expect(loaded?.providers).toEqual([
       {
-        provider: 'openai',
+        provider: 'ollama',
         available: false,
         isLocal: false,
         hasKey: true,
@@ -463,7 +463,7 @@ describe('detection cache', () => {
         validatedAt: 1_786_000_001_000,
         generation: 12,
         requestId: 27,
-        providers: [{ provider: 'openai', available: false, isLocal: false, hasKey: true }],
+        providers: [{ provider: 'ollama', available: false, isLocal: false, hasKey: true }],
         cliTools: [],
       }),
       'utf8',
@@ -474,7 +474,7 @@ describe('detection cache', () => {
       contextKey: CACHE_CONTEXT,
     });
     expect(loaded?.providers).toEqual([
-      { provider: 'openai', available: false, isLocal: false, hasKey: true },
+      { provider: 'ollama', available: false, isLocal: false, hasKey: true },
     ]);
     expect(loaded?.providers[0]?.failure).toBeUndefined();
   });
@@ -709,7 +709,7 @@ describe('detection cache', () => {
       const outsideCache = JSON.stringify({
         version: 2,
         timestamp: 1_786_000_000_000,
-        providers: [{ provider: 'openai', models: [{ id: 'outside-private-model' }] }],
+        providers: [{ provider: 'custom-endpoint', models: [{ id: 'outside-private-model' }] }],
         cliTools: [],
       });
       writeFileSync(outsideCachePath, outsideCache);

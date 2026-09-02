@@ -14,17 +14,6 @@ export interface MissingRunnerCredential {
 export function missingRunnerCredential(
   runner: RunnerCredentialConfig,
 ): MissingRunnerCredential | undefined {
-  if (runner.kind === 'agent-sdk') {
-    const sdk = PROVIDER_CATALOG['agent-sdk'];
-    const envVar = sdk.apiKeyEnv ?? 'ANTHROPIC_API_KEY';
-    if (runner.apiKey || process.env[envVar]) return undefined;
-    return {
-      provider: 'agent-sdk',
-      providerDisplayName: sdk.displayName,
-      envVar,
-    };
-  }
-
   if (runner.kind !== 'api') return undefined;
 
   if (!isProviderId(runner.provider)) {

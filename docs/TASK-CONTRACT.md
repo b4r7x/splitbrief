@@ -9,7 +9,7 @@
 `stateVersion` is `4`; `stateRevision` and `stateFence` identify the state
 head. Only the state-operations/controller path may mutate it. Every mutation
 rebases complete state, supplies the expected revision, and refuses a stale,
-future, malformed, or owner-less write. All modes (`instant`, `quick`,
+future, malformed, or owner-less write. All modes (`quick`,
 `standard`, and `speckit`) and all callers (TUI, RPC, IPC attach, and headless)
 consume the same v4 projection and command policy. Read-only integrations may
 observe state but never promote a local migration, retry a provider, or bypass
@@ -78,7 +78,7 @@ execution readiness.
 
 ### Tiered compiler admission
 
-Task Brief compilation admits backends under tiered capability rules: the tested version produces a full capability receipt; other detected versions of supported backends are admitted with runtime-drift evidence and a run warning; unsupported backends (`copilot`, `aider`, `shell`, `agent`) receive a typed fail-closed refusal (`task_compiler_capability_unsupported`). Runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) are the enforcement surface.
+Task Brief compilation admits backends under tiered capability rules: the tested version produces a full capability receipt; other detected versions of supported backends are admitted with runtime-drift evidence and a run warning; unsupported backends (`copilot`, `cursor`, `command-code`, `shell`, `agent`) receive a typed fail-closed refusal (`task_compiler_capability_unsupported`). Runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) are the enforcement surface.
 
 ## Task Brief v1: the semantic contract
 
@@ -347,7 +347,7 @@ type EvidenceLedger = {
   version: 1;
   sessionId: string;
   feature: string;
-  mode?: 'instant' | 'quick' | 'standard' | 'speckit';
+  mode?: 'quick' | 'standard' | 'speckit';
   generatedAt: string;
   tasks: Array<{
     id: string;

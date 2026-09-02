@@ -4,21 +4,14 @@ import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
-import {
-  makeBusRecorder,
-  makeCallbacks,
-  makeCopyingIsolation,
-  makeImplementer,
-  makePlanner,
-  TEST_METADATA,
-  TEST_SINKS,
-} from '#testing/helpers/orchestrator-factories.js';
+import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { makeWctx } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import type { ValidationStage } from '../../../core/schemas/enums.js';
 import { decideValidationAcceptance } from '../validation/acceptance.js';
 import type { Validator } from '../validation/types.js';
+import type { EscalationContext } from './types.js';
 import { validateAndCommit } from './validate-and-commit.js';
 
 let dirs: string[] = [];
@@ -61,14 +54,29 @@ function configWithProfiles(): Config {
   };
 }
 
+async function makeValidateCtx(opts: {
+  projectDir: string;
+  sessionId: string;
+  validator: Validator;
+  signal?: AbortSignal | undefined;
+}): Promise<EscalationContext> {
+  return {
+    ...makeWctx({
+      projectDir: opts.projectDir,
+      sessionId: opts.sessionId,
+      config: configWithProfiles(),
+      validator: opts.validator,
+      ...(opts.signal !== undefined && { signal: opts.signal }),
+    }),
+    taskStartSnapshot: await getChangedFilesSnapshot(opts.projectDir),
+    dependsOnFiles: [],
+  };
+}
+
 describe('validateAndCommit', () => {
   it('does not commit retry results when the signal aborts during validation', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T011', file: 'src/abort.ts' });
-    const state = makeImplState([task]);
-    const { callbacks } = makeCallbacks();
-    const { bus } = makeBusRecorder();
-    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
     const controller = new AbortController();
     const validator: Validator = {
       primeBaseline: vi.fn().mockResolvedValue(undefined),
@@ -85,26 +93,14 @@ describe('validateAndCommit', () => {
     };
 
     const result = await validateAndCommit({
-      ctx: {
+      ctx: await makeValidateCtx({
         projectDir,
         sessionId,
-        config: configWithProfiles(),
-        callbacks,
-        bus,
-        planner: makePlanner(),
-        reviewer: makePlanner(),
-        context: defaultContext,
-        implementer: makeImplementer(),
-        metadata: TEST_METADATA,
-        sinks: TEST_SINKS,
         validator,
-        isolation: makeCopyingIsolation({ projectDir: projectDir, sessionId }),
-        taskStartSnapshot,
-        dependsOnFiles: [],
         signal: controller.signal,
-      },
+      }),
       task,
-      state,
+      state: makeImplState([task]),
       method: 'local',
       transitionType: 'VALIDATION_PASS',
       retryCount: 1,
@@ -122,10 +118,6 @@ describe('validateAndCommit', () => {
   it('accepts a retry whose only failing stage was exempt at baseline, like the task path', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T012', file: 'src/exempt.ts' });
-    const state = makeImplState([task]);
-    const { callbacks } = makeCallbacks();
-    const { bus } = makeBusRecorder();
-    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
     const validator: Validator = {
       primeBaseline: vi.fn().mockResolvedValue(undefined),
       runValidation: vi
@@ -142,25 +134,9 @@ describe('validateAndCommit', () => {
     };
 
     const result = await validateAndCommit({
-      ctx: {
-        projectDir,
-        sessionId,
-        config: configWithProfiles(),
-        callbacks,
-        bus,
-        planner: makePlanner(),
-        reviewer: makePlanner(),
-        context: defaultContext,
-        implementer: makeImplementer(),
-        metadata: TEST_METADATA,
-        sinks: TEST_SINKS,
-        validator,
-        isolation: makeCopyingIsolation({ projectDir: projectDir, sessionId }),
-        taskStartSnapshot,
-        dependsOnFiles: [],
-      },
+      ctx: await makeValidateCtx({ projectDir, sessionId, validator }),
       task,
-      state,
+      state: makeImplState([task]),
       method: 'local',
       transitionType: 'VALIDATION_PASS',
       retryCount: 1,
@@ -176,10 +152,6 @@ describe('validateAndCommit', () => {
   it('blocks a retry whose failing stage was green at baseline', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T013', file: 'src/blocks.ts' });
-    const state = makeImplState([task]);
-    const { callbacks } = makeCallbacks();
-    const { bus } = makeBusRecorder();
-    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
     const validator: Validator = {
       primeBaseline: vi.fn().mockResolvedValue(undefined),
       runValidation: vi
@@ -196,25 +168,9 @@ describe('validateAndCommit', () => {
     };
 
     const result = await validateAndCommit({
-      ctx: {
-        projectDir,
-        sessionId,
-        config: configWithProfiles(),
-        callbacks,
-        bus,
-        planner: makePlanner(),
-        reviewer: makePlanner(),
-        context: defaultContext,
-        implementer: makeImplementer(),
-        metadata: TEST_METADATA,
-        sinks: TEST_SINKS,
-        validator,
-        isolation: makeCopyingIsolation({ projectDir: projectDir, sessionId }),
-        taskStartSnapshot,
-        dependsOnFiles: [],
-      },
+      ctx: await makeValidateCtx({ projectDir, sessionId, validator }),
       task,
-      state,
+      state: makeImplState([task]),
       method: 'local',
       transitionType: 'VALIDATION_PASS',
       retryCount: 1,

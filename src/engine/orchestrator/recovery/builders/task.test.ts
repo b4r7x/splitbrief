@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { RecoveryIssueSchema } from '../../../../core/schemas/recovery/schemas.js';
-import { actionsAreLegalForReason } from '../../../../core/schemas/recovery/policy.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
 import {
   buildContextOverflowRecoveryIssue,
@@ -50,7 +49,7 @@ function overflowRoutingDecision(overrides: Partial<RoutingDecision> = {}): Rout
 }
 
 describe('buildRetryExhaustedRecoveryIssue', () => {
-  it('builds retry-exhausted issues without ordinary retry unless override is explicit', () => {
+  it('escalates to a bigger worker without offering ordinary retry', () => {
     const task = makeTask({ id: 'T012' });
 
     const issue = buildRetryExhaustedRecoveryIssue({
@@ -73,11 +72,14 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
         'abort-workflow',
       ]),
     );
+    expect(issue.availableActions).not.toContain('retry-same-worker');
     expect(issue.availableActions).not.toContain('planner-split-rebase');
     expectValidRecoveryIssue(issue);
+  });
 
+  it('offers retry only when allowRetryOverride is explicit', () => {
     const override = buildRetryExhaustedRecoveryIssue({
-      task,
+      task: makeTask({ id: 'T012' }),
       createdAt,
       validationSummary: 'lint failed after all attempts',
       attempts: 3,
@@ -119,14 +121,20 @@ describe('buildRunnerUsageLimitRecoveryIssue', () => {
       'abort-workflow',
     ]);
     expect(issue.recommendedAction).toBe('pause-run');
-    expect(actionsAreLegalForReason(issue)).toBe(true);
     expectValidRecoveryIssue(issue);
   });
 
   it('offers and recommends the profile switch when a bigger worker exists', () => {
     const issue = buildRunnerUsageLimitRecoveryIssue({
       task: makeTask({ id: 'T003' }),
-      runner: makeConfig({ implementer: { kind: 'api', provider: 'groq' } }).implementer,
+      runner: makeConfig({
+        implementer: {
+          kind: 'api',
+          provider: 'custom-endpoint',
+          apiBase: 'https://api.example.com/v1',
+          apiKey: 'test-key',
+        },
+      }).implementer,
       toolMessage:
         'Rate limit reached for model `llama-3.3-70b-versatile`. Please try again in 7.66s.',
       routeBiggerProfile: 'cloud-big',
@@ -136,7 +144,6 @@ describe('buildRunnerUsageLimitRecoveryIssue', () => {
     expect(issue.availableActions).toContain('route-bigger-worker');
     expect(issue.recommendedAction).toBe('route-bigger-worker');
     expect(issue.facts?.routeBiggerProfile).toBe('cloud-big');
-    expect(actionsAreLegalForReason(issue)).toBe(true);
     expectValidRecoveryIssue(issue);
   });
 });

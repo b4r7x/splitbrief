@@ -1,7 +1,9 @@
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { BriefRecoveryProjectionV1Schema } from '../../core/schemas/brief-recovery/document.js';
-import { createCommandReader, createRpcOperationDeduper, type RpcEnvelopeError } from './reader.js';
+import type { RpcEnvelopeError } from './envelope.js';
+import { createRpcOperationDeduper } from './operation-dedupe.js';
+import { createCommandReader } from './reader.js';
 import { RPC_MAX_FRAME_BYTES, type RpcCommand } from './types.js';
 
 type BriefReviewRpcCommand = Extract<RpcCommand, { type: 'brief_review' }>;
@@ -349,36 +351,30 @@ describe('createCommandReader', () => {
     expect(typedErrors.map((error) => error.code)).toEqual(['authority-unavailable']);
   });
 
-  it('reports malformed, legacy, and future authority states as typed errors', async () => {
-    const states: ReadonlyArray<{ state: unknown; code: RpcEnvelopeError['code'] }> = [
-      { state: { stateVersion: 3 }, code: 'legacy-state' },
-      { state: { stateVersion: 5 }, code: 'future-state' },
-      { state: { stateVersion: 4, projection: { status: 'blocked' } }, code: 'malformed-state' },
-    ];
+  it.each<{ state: unknown; code: RpcEnvelopeError['code'] }>([
+    { state: { stateVersion: 3 }, code: 'legacy-state' },
+    { state: { stateVersion: 5 }, code: 'future-state' },
+    { state: { stateVersion: 4, projection: { status: 'blocked' } }, code: 'malformed-state' },
+  ])('reports $code for that authority state', async ({ state, code }) => {
+    const commands: RpcCommand[] = [];
+    const typedErrors: RpcEnvelopeError[] = [];
+    const stream = createReadableInput();
 
-    for (const [index, fixture] of states.entries()) {
-      const commands: RpcCommand[] = [];
-      const typedErrors: RpcEnvelopeError[] = [];
-      const stream = createReadableInput();
+    createCommandReader({
+      stream,
+      operationDedupe: createRpcOperationDeduper(),
+      getAuthoritativeState: () => state,
+      requireCurrentV4: true,
+      onCommand: (command) => commands.push(command),
+      onError: () => {},
+      onTypedError: (error) => typedErrors.push(error),
+    });
 
-      createCommandReader({
-        stream,
-        operationDedupe: createRpcOperationDeduper(),
-        getAuthoritativeState: () => fixture.state,
-        requireCurrentV4: true,
-        onCommand: (command) => commands.push(command),
-        onError: () => {},
-        onTypedError: (error) => typedErrors.push(error),
-      });
+    stream.end(`${JSON.stringify(briefReviewComment({ operationId: `operation-${code}` }))}\n`);
+    await waitForReader();
 
-      stream.end(
-        `${JSON.stringify(briefReviewComment({ operationId: `operation-state-${index}` }))}\n`,
-      );
-      await waitForReader();
-
-      expect(commands).toEqual([]);
-      expect(typedErrors.map((error) => error.code)).toEqual([fixture.code]);
-    }
+    expect(commands).toEqual([]);
+    expect(typedErrors.map((error) => error.code)).toEqual([code]);
   });
 
   it('refuses approve while the authoritative projection is blocked', async () => {

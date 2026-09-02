@@ -19,6 +19,8 @@ const readyPermissions = {
 
 const zeroCounts = { confirmed: 0, stale: 0, suggestions: 0, bundled: 0, custom: 0 };
 
+const longCommand = './scripts/plan-with-a-really-long-name.sh --json';
+
 function cliTool(id: string, displayName: string): PickerOption {
   return {
     id,
@@ -49,9 +51,8 @@ function makeActions(): PickerActions {
     customCommand: async () => {},
     customModel: async () => {},
     openCustomModel: () => {},
-    openProviderAuth: () => {},
-    submitProviderKey: async () => {},
     closeOverlay: () => {},
+    browseCatalog: () => {},
   };
 }
 
@@ -65,6 +66,7 @@ describe('PickerView launcher filtering', () => {
     const codexTool = cliTool('codex', 'OpenAI Codex CLI');
     const claudeTool = cliTool('claude-code', 'Claude Code');
     const catalog: PickerCatalog = pickerCatalog({
+      browseCatalog: false,
       items: [codexTool, claudeTool, launcher],
       rightModels: [],
       currentItem: codexTool,
@@ -93,9 +95,10 @@ describe('PickerView launcher filtering', () => {
     ui.unmount();
   });
 
-  it('states both contracts on the launcher card while the row keeps the command', async () => {
+  it('states both contracts in the launcher row vocabulary', async () => {
     const codexTool = cliTool('codex', 'OpenAI Codex CLI');
     const catalog: PickerCatalog = pickerCatalog({
+      browseCatalog: false,
       items: [codexTool, launcher],
       rightModels: [],
       currentItem: codexTool,
@@ -103,7 +106,34 @@ describe('PickerView launcher filtering', () => {
       initialLeftIdx: 1,
       roleLabel: 'Planner',
       modelCounts: zeroCounts,
-      currentCommand: 'my-tool --json',
+    });
+
+    const ui = renderFeature(
+      <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
+    );
+    await flushEffects();
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('Run your own command in the planner seat.');
+    expect(frame).toContain('output · reads stdout');
+    expect(frame).toContain('direct · writes files');
+    expect(frame).toContain('⏎ picks the contract, then the command.');
+    expect(frame).toContain('Nothing is saved until you confirm.');
+    ui.unmount();
+  });
+
+  it('leads the pane with the command already configured for the seat', async () => {
+    const codexTool = cliTool('codex', 'OpenAI Codex CLI');
+    const catalog: PickerCatalog = pickerCatalog({
+      browseCatalog: false,
+      items: [codexTool, launcher],
+      rightModels: [],
+      currentItem: codexTool,
+      selectedItemId: codexTool.id,
+      initialLeftIdx: 1,
+      roleLabel: 'Planner',
+      modelCounts: zeroCounts,
+      currentCommand: './scripts/plan.sh',
       currentCommandKind: 'shell',
     });
 
@@ -113,18 +143,15 @@ describe('PickerView launcher filtering', () => {
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('output · my-tool --json'); // launcher row: contract word first
-    // The launcher is a terminal row now: the card states what each contract
-    // does, so the truth is never competing with the command for one line.
-    expect(frame).toContain('OUTPUT · reads stdout');
-    expect(frame).toContain('DIRECT · writes files');
+    expect(frame).toContain('Current: ./scripts/plan.sh');
+    expect(frame).toContain('output');
     ui.unmount();
   });
 
-  it('keeps the contract truth visible at 60 cols when the configured command is long', async () => {
-    terminalSizeStore.__testReset({ cols: 60, rows: 40, isSmall: true });
+  it('omits the current-command line when the seat has no custom command', async () => {
     const codexTool = cliTool('codex', 'OpenAI Codex CLI');
     const catalog: PickerCatalog = pickerCatalog({
+      browseCatalog: false,
       items: [codexTool, launcher],
       rightModels: [],
       currentItem: codexTool,
@@ -132,8 +159,7 @@ describe('PickerView launcher filtering', () => {
       initialLeftIdx: 1,
       roleLabel: 'Planner',
       modelCounts: zeroCounts,
-      currentCommand: 'my-ai-tool --format stream-json',
-      currentCommandKind: 'agent',
+      currentCommand: undefined,
     });
 
     const ui = renderFeature(
@@ -141,8 +167,46 @@ describe('PickerView launcher filtering', () => {
     );
     await flushEffects();
 
+    expect(ui.lastFrame() ?? '').not.toContain('Current:');
+    ui.unmount();
+  });
+
+  // The pane is a fixed-height card, so the copy has to survive the narrowest
+  // width and the shortest height the picker renders at, and 100 cols is where the
+  // card starts wrapping — the one width that can spend two rows on one sentence.
+  it.each([
+    { cols: 60, rows: 18 },
+    { cols: 100, rows: 18 },
+    { cols: 120, rows: 20 },
+  ])('keeps the whole launcher card on screen at $cols x $rows', async ({ cols, rows }) => {
+    terminalSizeStore.__testReset({ cols, rows, isSmall: cols < 80 });
+    const codexTool = cliTool('codex', 'OpenAI Codex CLI');
+    const catalog: PickerCatalog = pickerCatalog({
+      browseCatalog: false,
+      items: [codexTool, launcher],
+      rightModels: [],
+      currentItem: codexTool,
+      selectedItemId: codexTool.id,
+      initialLeftIdx: 1,
+      roleLabel: 'Implementer',
+      modelCounts: zeroCounts,
+      currentCommand: longCommand,
+      currentCommandKind: 'agent',
+    });
+
+    const ui = renderFeature(
+      <PickerView role="implementer" catalog={catalog} actions={makeActions()} />,
+    );
+    await flushEffects();
+
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('DIRECT · writes files');
+    expect(frame).toContain('output · reads stdout');
+    expect(frame).toContain('direct · writes files');
+    // The last line of the card proves no row was dropped off the bottom.
+    expect(frame).toContain('Nothing is saved');
+    // The command is elided to what the card line has left, never wrapped onto a row.
+    expect(frame).toContain('Current: ./scripts/pla');
+    expect(frame).not.toContain(`Current: ${longCommand}`);
     ui.unmount();
   });
 });

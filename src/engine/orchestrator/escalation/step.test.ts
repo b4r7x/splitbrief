@@ -22,6 +22,7 @@ import {
   makeCopyingIsolation,
   makeImplementer,
   makePlanner,
+  makeWctx,
   TEST_METADATA,
   TEST_SINKS,
 } from '#testing/helpers/orchestrator-factories.js';
@@ -80,10 +81,10 @@ function configWithProfiles(): Config {
       profiles: {
         'cheap-large': {
           kind: 'api',
-          provider: 'deepseek',
-          service: 'deepseek',
+          provider: 'custom-endpoint',
+          service: 'custom-endpoint',
           offering: 'payg',
-          apiBase: 'https://api.deepseek.com/v1',
+          apiBase: 'https://api.example.com/v1',
           apiKey: 'test-key',
           model: 'deepseek-chat',
           costTier: 'cheap',
@@ -165,10 +166,11 @@ describe('runRetryStep', () => {
     };
     const intermediateRunner = {
       kind: 'api' as const,
-      provider: 'openrouter' as const,
-      service: 'openrouter' as const,
+      provider: 'custom-endpoint' as const,
+      service: 'custom-endpoint' as const,
       offering: 'payg' as const,
-      apiBase: 'https://openrouter.ai/api/v1',
+      apiBase: 'https://api.example.com/v1',
+      apiKey: 'test-key',
       model: 'x-ai/grok-4-fast',
     };
     const config = makeNoValidationConfig({ implementer: defaultImplementer });
@@ -305,7 +307,7 @@ describe('runRetryStep', () => {
       error: 'validation failed',
       attempt: 1,
       kind: 'local',
-      config: { implementer: { kind: 'api', provider: 'deepseek', model: 'deepseek-chat' } },
+      config: { implementer: { kind: 'api', provider: 'custom-endpoint', model: 'deepseek-chat' } },
     });
     expect(outcome.result).toEqual({
       completed: true,
@@ -318,46 +320,29 @@ describe('runRetryStep', () => {
       taskId: 'T001',
       method: 'local',
       implementerProfile: 'cheap-large',
-      tool: 'deepseek',
+      tool: 'custom-endpoint',
       model: 'deepseek-chat',
     });
     expect(loadState({ projectDir, sessionId })).toMatchObject({
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-endpoint',
       implementerModel: 'deepseek-chat',
     });
   });
 
-  it('throws when profileOverride points to a non-existent profile', async () => {
+  it('propagates the profile-resolution error instead of retrying', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T002', file: 'src/missing.ts' });
-    const state = makeImplState([task]);
-    const config = configWithProfiles();
-    const { callbacks } = makeCallbacks();
-    const { bus } = makeBusRecorder();
-    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-    const defaultImplementer = makeImplementer();
+    const invokeRetry = vi.fn();
 
     await expect(
       runRetryStep({
         ctx: {
-          projectDir,
-          sessionId,
-          config,
-          callbacks,
-          bus,
-          planner: makePlanner(),
-          reviewer: makePlanner(),
-          context: defaultContext,
-          implementer: defaultImplementer,
-          metadata: TEST_METADATA,
-          sinks: TEST_SINKS,
-          validator: createValidator(),
-          isolation: makeCopyingIsolation({ projectDir, sessionId }),
-          taskStartSnapshot,
+          ...makeWctx({ projectDir, sessionId, config: configWithProfiles() }),
+          taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
           dependsOnFiles: [],
         },
         task,
-        state,
+        state: makeImplState([task]),
         lastError: 'validation failed',
         attempts: 1,
         method: 'local',
@@ -365,27 +350,10 @@ describe('runRetryStep', () => {
         usageCategory: 'implementer',
         retryFailureFallback: 'retry failed',
         profileOverride: 'nonexistent-profile',
-        invokeRetry: ({
-          implementer,
-          task: retryTask,
-          lastError,
-          attempts,
-          projectDir: retryProjectDir,
-          config: retryConfig,
-        }) =>
-          implementer.retry({
-            task: retryTask,
-            projectDir: retryProjectDir,
-            config: retryConfig,
-            context: defaultContext,
-            error: lastError,
-            attempt: attempts,
-            kind: 'local',
-            onOutput: () => {},
-            phase: state.phase,
-          }),
+        invokeRetry,
       }),
     ).rejects.toThrow(/nonexistent-profile/);
+    expect(invokeRetry).not.toHaveBeenCalled();
   });
 
   it('uses the default implementer when profileOverride is undefined', async () => {

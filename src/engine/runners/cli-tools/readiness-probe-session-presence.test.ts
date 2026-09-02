@@ -312,9 +312,9 @@ describe('session-state presence readiness', () => {
     vi.stubEnv('OPENAI_API_KEY', 'ambient-key');
 
     const result = await probeCliReadiness({
-      tool: 'aider',
+      tool: 'codex',
       executable,
-      authChannel: 'provider-dependent',
+      authChannel: 'api-key',
       probe: sessionProbe({ authNotRun: true }),
       classifyVersion: () => 'compatible',
     });

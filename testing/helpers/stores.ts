@@ -20,7 +20,7 @@ import { configStore } from '../../src/stores/project/config.js';
 import { sessionsStore } from '../../src/stores/project/sessions.js';
 import { skillsStore } from '../../src/stores/project/skills.js';
 import { detectionStore } from '../../src/stores/project/detection.js';
-import { modelCacheStore } from '../../src/stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../src/stores/discovery/model-cache/state.js';
 import { streamingOutputStore } from '../../src/stores/workflow/streaming-output.js';
 import { approvalPromptStore } from '../../src/stores/approval-prompt/prompt.js';
 import { costApprovalStore } from '../../src/stores/cost-approval/prompt.js';

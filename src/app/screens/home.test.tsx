@@ -25,7 +25,6 @@ import { createInitialState } from '../../core/state/machine.js';
 import { PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
-import { sessionsStore } from '../../stores/project/sessions.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
@@ -36,7 +35,7 @@ import { getTerminalCellWidth } from '../../utils/display-text.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import type { TieredApprovalResponse } from '../../core/approval/types.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
-import type { PrepareExecutionInput } from '../../engine/runners/prepare-execution.js';
+import type { PrepareExecutionInput } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import type {
   PreparationOutcome,
   PreparedExecution,
@@ -462,7 +461,7 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
-  it('shows recent sessions on short terminals', async () => {
+  it('omits the hidden-count row when a short terminal fits every session', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 18, isSmall: true });
     saveSummary(
       { projectDir: projectDir, sessionId: 'short-session' },
@@ -475,8 +474,9 @@ describe('HomeScreen', () => {
     const ui = renderHome();
     await flushEffects();
 
-    expect(ui.lastFrame() ?? '').toContain('short feature');
-    expect(sessionsStore.get().sessions.length).toBeGreaterThan(0);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('short feature');
+    expect(frame).not.toMatch(/\b\d+ more\b/);
     ui.unmount();
   });
 

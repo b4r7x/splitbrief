@@ -1,62 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { realPickerOption } from '#testing/helpers/runner-picker.js';
-import { commitImplementerSelection, commitPlannerTierSelection } from './config-transforms.js';
+import { commitImplementerSelection } from './config-transforms.js';
 
 const KEY = 'sk-test-commit-key-1234';
 
-describe('runner selection commits with an inline apiKey', () => {
-  it('stores the key and selects the provider in one planner config', () => {
-    const { config: updated } = commitPlannerTierSelection({
-      config: makeConfig(),
-      role: 'planner',
-      selection: realPickerOption('planner', 'openai'),
-      model: { id: 'gpt-5-mini' },
-      apiKey: KEY,
-    });
-
-    expect(updated.planner).toMatchObject({
-      kind: 'api',
-      provider: 'openai',
-      model: 'gpt-5-mini',
-      apiKey: KEY,
-    });
-  });
-
-  it('stores the key and selects the provider in one implementer config', () => {
-    const { config: updated } = commitImplementerSelection({
-      config: makeConfig(),
-      selection: realPickerOption('implementer', 'groq'),
-      model: { id: 'llama-3.3-70b-versatile' },
-      apiKey: KEY,
-    });
-
-    expect(updated.implementer).toMatchObject({
-      kind: 'api',
-      provider: 'groq',
-      model: 'llama-3.3-70b-versatile',
-      apiKey: KEY,
-    });
-  });
-
-  it('keeps the stored key when the same provider is re-selected without one', () => {
+describe('runner selection commits against a stored apiKey', () => {
+  it('keeps the stored key when the same provider is re-selected', () => {
     const config = makeConfig({
-      planner: {
+      implementer: {
         kind: 'api',
-        provider: 'openai',
-        apiBase: 'https://api.openai.com/v1',
-        model: 'gpt-5-mini',
+        provider: 'lm-studio',
+        apiBase: 'http://localhost:1234/v1',
+        model: 'qwen2.5-coder-7b',
         apiKey: KEY,
       },
     });
 
-    const { config: updated } = commitPlannerTierSelection({
+    const { config: updated } = commitImplementerSelection({
       config,
-      role: 'planner',
-      selection: realPickerOption('planner', 'openai'),
-      model: { id: 'gpt-5-mini' },
+      selection: realPickerOption('implementer', 'lm-studio'),
+      model: { id: 'qwen2.5-coder-7b' },
     });
 
-    expect(updated.planner).toMatchObject({ kind: 'api', provider: 'openai', apiKey: KEY });
+    expect(updated.implementer).toMatchObject({
+      kind: 'api',
+      provider: 'lm-studio',
+      apiKey: KEY,
+    });
   });
 });

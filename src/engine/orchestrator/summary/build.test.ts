@@ -56,12 +56,12 @@ describe('buildSummary', () => {
       startTime: Date.now() - 5000,
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
-      reviewerTool: 'deepseek',
-      reviewerModel: 'deepseek-v4-flash',
+      reviewerTool: 'custom-endpoint',
+      reviewerModel: 'custom-v4-flash',
     });
 
-    expect(summary.reviewerTool).toBe('deepseek');
-    expect(summary.reviewerModel).toBe('deepseek-v4-flash');
+    expect(summary.reviewerTool).toBe('custom-endpoint');
+    expect(summary.reviewerModel).toBe('custom-v4-flash');
   });
 
   it('mix of local/escalated/skipped/failed → correct counts', () => {
@@ -304,7 +304,7 @@ describe('buildSummary', () => {
       feature: 'models',
       state: makeState(),
       startTime: Date.now() - 1000,
-      plannerTool: 'openrouter',
+      plannerTool: 'custom-endpoint',
       plannerModel: 'claude-sonnet-4-20250514',
       implementerTool: 'ollama',
       implementerModel: 'qwen2.5-coder:14b',

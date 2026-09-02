@@ -168,7 +168,7 @@ describe('raw editor overlay Ctrl+O external escape hatch', () => {
   });
 });
 
-describe('raw editor overlay frame layout (REQ-122/123/124/125)', () => {
+describe('raw editor overlay frame layout', () => {
   const FOOTER = 'ctrl+s save';
 
   function openEditor(projectDir: string): void {
@@ -193,12 +193,12 @@ describe('raw editor overlay frame layout (REQ-122/123/124/125)', () => {
     await tick(20);
 
     const lines = (lastFrame() ?? '').split('\n');
-    // The painted frame occupies exactly `rows` lines — no reserve≠render gap (REQ-122).
+    // The painted frame occupies exactly `rows` lines — no reserve≠render gap.
     expect(lines).toHaveLength(24);
-    // Footer sits on the last interior row (rows-2); only the bottom border is beneath it (REQ-123).
+    // Footer sits on the last interior row (rows-2); only the bottom border is beneath it.
     expect(lines[22]).toContain(FOOTER);
     expect(lines[21]).not.toContain(FOOTER);
-    // No blank band beneath the footer: the final line is the border row, not empty space (REQ-124).
+    // No blank band beneath the footer: the final line is the border row, not empty space.
     expect(lines[23]).not.toContain(FOOTER);
     expect(lines[23]?.trim()).not.toBe('');
   });
@@ -219,7 +219,7 @@ describe('raw editor overlay frame layout (REQ-122/123/124/125)', () => {
     expect(lines[7]?.trim()).not.toBe('');
   });
 
-  it('recomputes the viewport, wrap width, and caret layout when the terminal resizes mid-session (REQ-125)', async () => {
+  it('recomputes the viewport, wrap width, and caret layout when the terminal resizes mid-session', async () => {
     const projectDir = tempDir();
     configStore.__testReset({ projectDir });
     terminalSizeStore.__testReset({ cols: 80, rows: 24 });
@@ -239,7 +239,7 @@ describe('raw editor overlay frame layout (REQ-122/123/124/125)', () => {
     expect(resized).toHaveLength(30);
     expect(resized[28]).toContain(FOOTER);
     // Both the wrap width and the content viewport track the new terminal, so the buffer view
-    // re-wraps and re-places the caret against the new layout (REQ-125).
+    // re-wraps and re-places the caret against the new layout.
     expect(editorStore.get()).toMatchObject({ layout: { columns: 95, rows: 25 } });
   });
 });

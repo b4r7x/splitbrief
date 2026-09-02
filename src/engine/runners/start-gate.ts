@@ -71,8 +71,6 @@ export function runnerGateFor(
           candidate.provider === expected.provider &&
           candidate.endpointOrigin === expected.endpointOrigin
         );
-      case 'agent-sdk':
-        return expected.kind === 'agent-sdk' && candidate.provider === expected.provider;
       case 'shell':
       case 'agent':
         if (expected.kind !== candidate.kind) return false;

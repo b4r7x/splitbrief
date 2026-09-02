@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatCopyResult } from './types.js';
+import { formatCopyResult, REMOVED_COMMANDS } from './types.js';
 
 describe('formatCopyResult', () => {
   it.each([
@@ -13,5 +13,11 @@ describe('formatCopyResult', () => {
     { result: 'empty' as const, message: 'Nothing to copy' },
   ])('$result → $message', ({ result, message }) => {
     expect(formatCopyResult(result)).toBe(message);
+  });
+});
+
+describe('REMOVED_COMMANDS', () => {
+  it.each(['/attach', '/detach'])('points %s at /image', (name) => {
+    expect(REMOVED_COMMANDS[name]).toContain('/image');
   });
 });

@@ -89,9 +89,13 @@ describe('applyCLIOverrides — contextLength, mode, budget', () => {
   });
 
   it.each(['full', 'spec-kit'])('rejects the removed %s mode alias', (mode) => {
-    expect(() => applyCLIOverrides(baseConfig, { mode: mode as 'speckit' })).toThrow(
-      /Invalid mode: (full|spec-kit)\. Must be one of: instant, quick, standard, speckit/,
+    expect(() => applyCLIOverrides(baseConfig, { mode })).toThrow(
+      /Invalid mode: (full|spec-kit)\. Must be one of: quick, standard, speckit/,
     );
+  });
+
+  it('maps --mode instant onto quick', () => {
+    expect(applyCLIOverrides(baseConfig, { mode: 'instant' }).workflow.mode).toBe('quick');
   });
 
   it('throws on NaN budget override', () => {

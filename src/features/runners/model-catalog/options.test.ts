@@ -10,8 +10,8 @@ import {
   CLI_TOOL_CATALOG,
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
-  SEAT_PICKER_ROLES,
 } from '../../../core/runners/cli-tool-catalog.js';
+import { SEAT_PICKER_ROLES } from '../../../core/runners/seat-roles.js';
 import { isCurrentConfig } from './catalog.js';
 import { assemblePickerDescriptors, buildPickerOptions, type PickerOption } from './options.js';
 import { deriveModelCatalogCapability } from './posture.js';
@@ -31,7 +31,7 @@ function makeImplementerDetection(
 
 function scopedRuntime(input: {
   role: 'planner' | 'implementer';
-  provider: 'openrouter' | 'anthropic';
+  provider: 'ollama' | 'lm-studio';
   state: 'fresh' | 'stale' | 'failed';
   failure?: ConfiguredProviderRuntime['failure'];
 }): ConfiguredProviderRuntime {
@@ -52,10 +52,10 @@ describe('role membership', () => {
     const detections = {
       cliTools: [cliDetectionFor('ready', 'claude-code')],
       providers: [
-        makeImplementerDetection('anthropic', { available: true }),
+        makeImplementerDetection('lm-studio', { available: true, isLocal: true }),
         makeImplementerDetection('ollama', { available: true, isLocal: true }),
       ],
-      hasApiKeyOverride: (provider: string) => provider === 'agent-sdk',
+      hasApiKeyOverride: () => false,
     };
 
     const plannerItems = buildPickerOptions('planner', descriptors, detections, undefined);
@@ -68,7 +68,6 @@ describe('role membership', () => {
     expect(plannerIds).toEqual(
       expect.arrayContaining([
         'custom-command',
-        'agent-sdk',
         ...PLANNER_CLI_TOOL_IDS,
         ...PLANNER_API_PROVIDER_IDS,
       ]),
@@ -76,7 +75,6 @@ describe('role membership', () => {
     expect(implementerIds).toEqual(
       expect.arrayContaining([
         'custom-command',
-        'agent-sdk',
         ...IMPLEMENTER_CLI_TOOL_IDS,
         ...IMPLEMENTER_API_PROVIDER_IDS,
       ]),
@@ -117,6 +115,32 @@ describe('role membership', () => {
   });
 });
 
+describe('effort channel projection', () => {
+  const descriptors = assemblePickerDescriptors();
+  const detections = { cliTools: [], providers: [] };
+
+  function seatRow(role: 'planner' | 'implementer', id: string): PickerOption {
+    const row = buildPickerOptions(role, descriptors, detections, undefined).find(
+      (item) => item.id === id,
+    );
+    if (row === undefined) throw new Error(`no ${role} picker row for ${id}`);
+    return row;
+  }
+
+  it("names the opencode option's variant channel", () => {
+    expect(seatRow('planner', 'opencode').effortChannel).toBe('variant');
+  });
+
+  it("names the cursor option's model-id channel", () => {
+    expect(seatRow('planner', 'cursor').effortChannel).toBe('model-id');
+  });
+
+  it('gives a channel-less tool and an api provider no channel', () => {
+    expect(seatRow('planner', 'codex').effortChannel).toBeUndefined();
+    expect(seatRow('implementer', 'ollama').effortChannel).toBeUndefined();
+  });
+});
+
 describe('status projection', () => {
   for (const state of CLI_READINESS_STATES) {
     it(`maps CLI ${state} readiness to one picker status and remediation`, () => {
@@ -139,92 +163,62 @@ describe('status projection', () => {
     });
   }
 
-  it('maps remote API missing credentials to unauthenticated', () => {
-    const options = buildPickerOptions(
-      'planner',
-      assemblePickerDescriptors(),
-      {
-        cliTools: [],
-        providers: [makeImplementerDetection('openrouter', { available: false, hasKey: false })],
-      },
-      undefined,
-    );
-    const openrouter = options.find((item) => item.id === 'openrouter');
-    expect(openrouter?.status).toEqual({
-      state: 'unauthenticated',
-      remediation: 'Set OPENROUTER_API_KEY or configure an inline apiKey, then refresh detection.',
-    });
-    expect(openrouter?.available).toBe(false);
-  });
-
-  it('maps a rejected env credential to unauthenticated with key-replacement remediation', () => {
-    const options = buildPickerOptions(
-      'planner',
-      assemblePickerDescriptors(),
-      {
-        cliTools: [],
-        providers: [
-          makeImplementerDetection('openai', {
-            available: false,
-            hasKey: true,
-            failure: 'invalid-credential',
-          }),
-        ],
-      },
-      undefined,
-    );
-    const openai = options.find((item) => item.id === 'openai');
-    expect(openai?.status).toEqual({
-      state: 'unauthenticated',
-      remediation: 'Key found in OPENAI_API_KEY but openai rejected it.',
-    });
-    expect(openai?.available).toBe(false);
-  });
-
-  it.each(['offline', 'timeout', 'request-failed'] as const)(
-    'keeps a present-key %s detection unavailable rather than unauthenticated',
+  it.each(['missing-credential', 'invalid-credential'] as const)(
+    'maps a %s provider outcome to unauthenticated',
     (failure) => {
       const options = buildPickerOptions(
-        'planner',
+        'implementer',
         assemblePickerDescriptors(),
         {
           cliTools: [],
-          providers: [
-            makeImplementerDetection('openai', {
-              available: false,
-              hasKey: true,
+          providers: [makeImplementerDetection('lm-studio', { available: false })],
+          providerOutcomes: [
+            scopedRuntime({
+              role: 'implementer',
+              provider: 'lm-studio',
+              state: 'failed',
               failure,
-              error: 'openai is not currently reachable.',
             }),
           ],
         },
         undefined,
       );
-      expect(options.find((item) => item.id === 'openai')?.status).toEqual({
-        state: 'unavailable',
-        remediation: 'openai is not currently reachable.',
+      const lmStudio = options.find((item) => item.id === 'lm-studio');
+      expect(lmStudio?.status).toEqual({
+        state: 'unauthenticated',
+        remediation: 'Configure credentials and refresh detection.',
       });
+      expect(lmStudio?.available).toBe(false);
     },
   );
 
-  it('keeps an unverified provider unselectable even when reachable with a credential', () => {
-    const options = buildPickerOptions(
-      'planner',
-      assemblePickerDescriptors(),
-      {
-        cliTools: [],
-        providers: [makeImplementerDetection('deepseek', { available: true, hasKey: true })],
-      },
-      undefined,
-    );
-    const deepseek = options.find((item) => item.id === 'deepseek');
-    expect(deepseek?.status).toEqual({
-      state: 'unverified',
-      remediation:
-        'deepseek has no passing provider conformance evidence as of 2026-07-31. Select a verified provider, or re-run `scripts/provider-conformance.ts` with a credential to qualify it.',
-    });
-    expect(deepseek?.available).toBe(false);
-  });
+  it.each(['offline', 'timeout', 'request-failed'] as const)(
+    'keeps a present-key %s outcome unavailable rather than unauthenticated',
+    (failure) => {
+      const options = buildPickerOptions(
+        'implementer',
+        assemblePickerDescriptors(),
+        {
+          cliTools: [],
+          providers: [],
+          providerOutcomes: [
+            scopedRuntime({
+              role: 'implementer',
+              provider: 'lm-studio',
+              state: 'failed',
+              failure,
+            }),
+          ],
+          hasApiKeyOverride: () => true,
+        },
+        undefined,
+      );
+      expect(options.find((item) => item.id === 'lm-studio')?.status).toEqual({
+        state: 'unavailable',
+        remediation: 'lm-studio is not currently reachable.',
+      });
+    },
+  );
 
   it('maps local API offline state to unavailable', () => {
     const options = buildPickerOptions(
@@ -251,40 +245,34 @@ describe('status projection', () => {
 
   it('maps ready API detection to ready status', () => {
     const options = buildPickerOptions(
-      'planner',
+      'implementer',
       assemblePickerDescriptors(),
       {
         cliTools: [],
-        providers: [makeImplementerDetection('anthropic', { available: true, hasKey: true })],
+        providers: [makeImplementerDetection('ollama', { available: true })],
       },
       undefined,
     );
-    const anthropic = options.find((item) => item.id === 'anthropic');
-    expect(anthropic?.status).toEqual({ state: 'ready', remediation: null });
-    expect(anthropic?.available).toBe(true);
+    const ollama = options.find((item) => item.id === 'ollama');
+    expect(ollama?.status).toEqual({ state: 'ready', remediation: null });
+    expect(ollama?.available).toBe(true);
   });
 
-  it('keeps same-provider picker status role-scoped and surfaces typed guardrail remediation', () => {
+  it('scopes a provider outcome to the seat that produced it and surfaces typed guardrail remediation', () => {
     const detections = {
       cliTools: [],
-      providers: [makeImplementerDetection('openrouter', { available: true, hasKey: true })],
+      providers: [makeImplementerDetection('ollama', { available: true, hasKey: true })],
       providerOutcomes: [
-        scopedRuntime({ role: 'planner', provider: 'openrouter', state: 'fresh' }),
+        scopedRuntime({ role: 'planner', provider: 'ollama', state: 'fresh' }),
         scopedRuntime({
           role: 'implementer',
-          provider: 'openrouter',
+          provider: 'ollama',
           state: 'failed',
           failure: 'guardrail-filtered',
         }),
       ],
     };
 
-    const planner = buildPickerOptions(
-      'planner',
-      assemblePickerDescriptors(),
-      detections,
-      undefined,
-    );
     const implementer = buildPickerOptions(
       'implementer',
       assemblePickerDescriptors(),
@@ -292,73 +280,32 @@ describe('status projection', () => {
       undefined,
     );
 
-    expect(planner.find((item) => item.id === 'openrouter')?.status).toEqual({
-      state: 'ready',
-      remediation: null,
-    });
-    expect(implementer.find((item) => item.id === 'openrouter')?.status).toEqual({
+    expect(implementer.find((item) => item.id === 'ollama')?.status).toEqual({
       state: 'unavailable',
       remediation:
-        'openrouter guardrails filtered catalog access. Review provider policy and refresh detection.',
+        'ollama guardrails filtered catalog access. Review provider policy and refresh detection.',
     });
   });
 
   it('does not borrow a generic ready provider detection when scoped outcomes are authoritative', () => {
     const options = buildPickerOptions(
-      'planner',
+      'implementer',
       assemblePickerDescriptors(),
       {
         cliTools: [],
-        providers: [makeImplementerDetection('openrouter', { available: true, hasKey: true })],
+        providers: [makeImplementerDetection('ollama', { available: true, hasKey: true })],
         providerOutcomes: [
-          scopedRuntime({ role: 'planner', provider: 'anthropic', state: 'fresh' }),
+          scopedRuntime({ role: 'implementer', provider: 'lm-studio', state: 'fresh' }),
         ],
         hasApiKeyOverride: () => false,
       },
       undefined,
     );
 
-    expect(options.find((item) => item.id === 'openrouter')?.status.state).toBe('unauthenticated');
-  });
-
-  it('marks a role-scoped stale Agent SDK catalog unavailable instead of using ambient credential state', () => {
-    const currentConfig = makeConfig({
-      planner: {
-        kind: 'agent-sdk',
-        apiKey: 'sk-ant-picker-status',
-        model: 'claude-sonnet-4-6',
-      },
-    }).planner;
-    const options = buildPickerOptions(
-      'planner',
-      assemblePickerDescriptors(),
-      {
-        cliTools: [],
-        providers: [],
-        providerOutcomes: [
-          scopedRuntime({ role: 'planner', provider: 'anthropic', state: 'stale' }),
-        ],
-        hasApiKeyOverride: () => true,
-      },
-      currentConfig,
-    );
-
-    expect(options.find((item) => item.id === 'agent-sdk')?.status).toEqual({
+    expect(options.find((item) => item.id === 'ollama')?.status).toEqual({
       state: 'unavailable',
-      remediation: 'Last confirmed Agent SDK catalog is stale. Refresh detection.',
+      remediation: 'Start ollama and refresh detection.',
     });
-  });
-
-  it('maps agent-sdk without credentials to unauthenticated', () => {
-    const options = buildPickerOptions(
-      'implementer',
-      assemblePickerDescriptors(),
-      { cliTools: [], providers: [], hasApiKeyOverride: () => false },
-      undefined,
-    );
-    const agentSdk = options.find((item) => item.id === 'agent-sdk');
-    expect(agentSdk?.status.state).toBe('unauthenticated');
-    expect(agentSdk?.available).toBe(false);
   });
 
   it('keeps the custom-command launcher always ready and selectable', () => {
@@ -405,9 +352,9 @@ describe('current config visibility', () => {
     const config = makeConfig({
       implementer: {
         kind: 'api',
-        provider: 'deepseek',
-        apiBase: 'https://api.deepseek.com/v1',
-        model: 'deepseek-chat',
+        provider: 'custom-endpoint',
+        apiBase: 'https://api.example.com/v1',
+        model: 'custom-endpoint-model',
       },
       implementerProfiles: {
         default: 'local-qwen',
@@ -440,14 +387,14 @@ describe('current config visibility', () => {
 
     const ollama = options.find((item) => item.id === 'ollama');
     if (ollama === undefined) throw new Error('no implementer picker row for ollama');
-    const deepseek = options.find((item) => item.id === 'deepseek');
-    if (deepseek === undefined) throw new Error('no implementer picker row for deepseek');
+    const lmStudio = options.find((item) => item.id === 'lm-studio');
+    if (lmStudio === undefined) throw new Error('no implementer picker row for lm-studio');
     expect(ollama.isCurrent).toBe(true);
     expect(ollama.status.state).toBe('unavailable');
     expect(ollama.status.remediation).toBe('Ollama is not running');
 
     expect(isCurrentConfig(ollama, config, 'implementer')).toBe(true);
-    expect(isCurrentConfig(deepseek, config, 'implementer')).toBe(false);
+    expect(isCurrentConfig(lmStudio, config, 'implementer')).toBe(false);
   });
 
   it('keeps an incompatible current CLI visible with remediation', () => {
@@ -498,29 +445,6 @@ describe('reviewer seat', () => {
     expect(isCurrentConfig(reviewerRow('claude-code'), config, 'reviewer')).toBe(false);
   });
 
-  it('does not report the planner probe verdict on the review seat', () => {
-    const scoped = {
-      cliTools: [],
-      providers: [makeImplementerDetection('openrouter', { available: true, hasKey: true })],
-      providerOutcomes: [
-        scopedRuntime({
-          role: 'planner',
-          provider: 'openrouter',
-          state: 'failed',
-          failure: 'guardrail-filtered',
-        }),
-      ],
-    };
-    const rowFor = (role: 'planner' | 'reviewer') =>
-      buildPickerOptions(role, descriptors, scoped, undefined).find(
-        (item) => item.id === 'openrouter',
-      );
-
-    expect(rowFor('planner')?.status.state).toBe('unavailable');
-    expect(rowFor('reviewer')?.status).not.toEqual(rowFor('planner')?.status);
-    expect(rowFor('reviewer')?.status).toEqual({ state: 'ready', remediation: null });
-  });
-
   it('marks the planner row current when no reviewer is configured', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
@@ -541,7 +465,7 @@ describe('launcher sort order', () => {
 
   it('launcher last while filtering', () => {
     for (const role of SEAT_PICKER_ROLES) {
-      const options = buildPickerOptions(role, descriptors, detections, undefined, undefined, {
+      const options = buildPickerOptions(role, descriptors, detections, undefined, {
         filterActive: true,
       });
       expect(options.at(-1)?.kind).toBe('custom-command');

@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultConfig } from '../config/load/io.js';
+import { createDefaultConfig } from '../config/load/defaults.js';
 import {
   API_PROVIDER_CATALOG,
   IMPLEMENTER_API_PROVIDER_IDS,
   PLANNER_API_PROVIDER_IDS,
+  type ApiRunnerRole,
 } from '../providers/api-provider-catalog.js';
 import { FORBIDDEN_API_PROVIDER_IDS } from '../providers/api-provider-verdicts.js';
 import { ConfigSchema } from './config.js';
@@ -169,7 +170,7 @@ describe('ConfigSchema user config contracts', () => {
     expect(
       ConfigSchema.safeParse({
         ...validConfig,
-        escalation: { intermediateProvider: 'deepseek', intermediateModel: 'deepseek-chat' },
+        escalation: { intermediateProvider: 'ollama', intermediateModel: 'llama3.1' },
       }).success,
     ).toBe(true);
 
@@ -177,7 +178,7 @@ describe('ConfigSchema user config contracts', () => {
       hasIssueAtPath(
         issuesFor({
           ...validConfig,
-          escalation: { intermediateProvider: 'deepseek' },
+          escalation: { intermediateProvider: 'ollama' },
         }),
         'escalation.intermediateModel',
       ),
@@ -267,12 +268,9 @@ describe('ConfigSchema API role admission', () => {
   it('derives planner and implementer API enums from the admitted catalog', () => {
     for (const id of Object.keys(API_PROVIDER_CATALOG)) {
       const descriptor = API_PROVIDER_CATALOG[id as keyof typeof API_PROVIDER_CATALOG];
-      if (descriptor.roles.some((role) => role === 'planner')) {
-        expect(PlannerApiProviderIdSchema.safeParse(id).success).toBe(true);
-      } else {
-        expect(PlannerApiProviderIdSchema.safeParse(id).success).toBe(false);
-      }
-      if (descriptor.roles.some((role) => role === 'implementer')) {
+      const roles: readonly ApiRunnerRole[] = descriptor.roles;
+      expect(PlannerApiProviderIdSchema.safeParse(id).success).toBe(roles.includes('planner'));
+      if (roles.includes('implementer')) {
         expect(ImplementerApiProviderIdSchema.safeParse(id).success).toBe(true);
       }
     }

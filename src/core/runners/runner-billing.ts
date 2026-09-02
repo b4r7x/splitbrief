@@ -27,8 +27,6 @@ export function runnerBillingPosture(runner: RunnerConfig): RunnerBillingPosture
     }
     case 'api':
       return getApiProviderDescriptor(runner.provider)?.billing ?? 'unknown';
-    case 'agent-sdk':
-      return 'api-metered';
     case 'shell':
     case 'agent':
       return 'unknown';

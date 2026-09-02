@@ -19,7 +19,11 @@ import {
   relativeArtifactPath,
   scenarioId,
 } from './contracts/identifiers.js';
-import { ArtifactProvenanceSchema, type ArtifactProvenance } from './contracts/selection.js';
+import {
+  ArtifactProvenanceSchema,
+  type ArtifactProvenance,
+  type CaptureSelection,
+} from './contracts/selection.js';
 
 export function createVisualProvenance(
   viewportValue: Viewport = viewport({ cols: 120, rows: 40 }),
@@ -31,6 +35,12 @@ export function createVisualProvenance(
     checkpointId: checkpointId('ready'),
     viewport: viewportValue,
   });
+}
+
+export function requireProvenance(selection: CaptureSelection): ArtifactProvenance {
+  const target = selection.targets[0];
+  if (target === undefined) throw new Error('capture selection has no targets');
+  return target.provenance;
 }
 
 export function createFrameIdentity(provenance: ArtifactProvenance): FrameArtifactIdentity {

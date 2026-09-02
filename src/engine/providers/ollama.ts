@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { API_PROVIDER_CATALOG } from '../../core/providers/api-provider-catalog.js';
 import type { DetectedModel } from '../../core/discovery/detection.js';
 import {
-  endpointPolicyError,
   endpointPolicyFetch,
   normalizeProviderEndpoint,
 } from '../../core/providers/endpoint-policy.js';
@@ -44,12 +43,6 @@ const OllamaShowSchema = z.object({
 
 type OllamaModel = z.infer<typeof OllamaModelSchema>;
 
-function ollamaCloudEndpointPolicy() {
-  const policy = API_PROVIDER_CATALOG['ollama-cloud'].endpointPolicy;
-  if (policy.kind !== 'fixed-origin') throw endpointPolicyError.unsupported();
-  return policy;
-}
-
 function ollamaTagsUrl(baseURL: string): string {
   return `${stripV1Suffix(baseURL)}/api/tags`;
 }
@@ -76,15 +69,12 @@ function ollamaDetailFacts(model: OllamaModel): string[] {
   return facts;
 }
 
-function ollamaModelToDetected(
-  owner: 'ollama' | 'ollama-cloud',
-  model: OllamaModel,
-): DetectedModel {
-  const remoteBacked = owner === 'ollama' && isRemoteBackedOllamaModel(model.name);
+function ollamaModelToDetected(model: OllamaModel): DetectedModel {
+  const remoteBacked = isRemoteBackedOllamaModel(model.name);
   const capabilities = [...ollamaDetailFacts(model), ...(remoteBacked ? ['remote-backed'] : [])];
   return {
     id: model.name,
-    providerId: owner,
+    providerId: 'ollama',
     ...(capabilities.length === 0 ? {} : { capabilities }),
   };
 }
@@ -145,7 +135,7 @@ export function createOllamaProvider(overrides?: ProviderOverrides): ProviderDef
       fallback: (id) => ({ id, name: id }),
       modelsUrl: ollamaTagsUrl,
       extractModels: extractOllamaModels,
-      toDetected: (model) => ollamaModelToDetected('ollama', model),
+      toDetected: ollamaModelToDetected,
       authentication: 'optional',
       credentialSource: 'override-only',
       rejectRedirects: true,
@@ -163,24 +153,4 @@ export function createOllamaProvider(overrides?: ProviderOverrides): ProviderDef
         policyFetch: provider[endpointPolicyFetch],
       }),
   };
-}
-
-export function createOllamaCloudProvider(overrides?: ProviderOverrides): ProviderDefWithMetadata {
-  const endpointPolicy = ollamaCloudEndpointPolicy();
-  return createMetadataProvider<OllamaModel>(
-    {
-      name: 'ollama-cloud',
-      defaultBaseURL: endpointPolicy.baseURL,
-      envKeyName: 'OLLAMA_API_KEY',
-      isLocal: false,
-      schema: OllamaModelSchema,
-      fallback: (id) => ({ id, name: id }),
-      modelsUrl: ollamaTagsUrl,
-      extractModels: extractOllamaModels,
-      toDetected: (model) => ollamaModelToDetected('ollama-cloud', model),
-      authentication: 'required',
-      endpointPolicy,
-    },
-    overrides,
-  );
 }

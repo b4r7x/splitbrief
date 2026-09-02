@@ -13,11 +13,6 @@ describe('decideCostGate', () => {
       decideCostGate({ mode: 'speckit', prediction: makeCostPrediction(), costGateEnabled: true }),
     ).toBe('gate');
   });
-  it('returns skip for instant mode', () => {
-    expect(
-      decideCostGate({ mode: 'instant', prediction: makeCostPrediction(), costGateEnabled: true }),
-    ).toBe('skip');
-  });
   it('returns skip for quick mode', () => {
     expect(
       decideCostGate({ mode: 'quick', prediction: makeCostPrediction(), costGateEnabled: true }),

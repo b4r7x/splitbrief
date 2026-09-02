@@ -14,7 +14,7 @@ import { pickerViewStore } from '../../../src/stores/ui/picker-view.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';
 import { sessionsStore } from '../../../src/stores/project/sessions.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
-import { modelCacheStore } from '../../../src/stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state.js';
 import { reviewStore } from '../../../src/stores/workflow/review.js';
 import { tokensStore } from '../../../src/stores/workflow/tokens.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
@@ -41,7 +41,6 @@ const EMPTY_SEED: OverlaySeed = () => {};
 
 /** The merged two-route row the provider-expansion frames open on. */
 const OPENCODE_ROUTED_MODEL = 'openai/gpt-5.6-luna';
-const AIDER_ROUTED_MODEL = 'anthropic/claude-sonnet-4';
 
 /** Opens the picker on OpenCode with the model column live, as the frames show. */
 const OPENCODE_FOCUS = 'tool:opencode';
@@ -264,19 +263,6 @@ function seedCostBreakdown(): void {
   });
 }
 
-const AIDER_CATALOG_IDS = [
-  AIDER_ROUTED_MODEL,
-  'openrouter/claude-sonnet-4',
-  'anthropic/claude-opus-4',
-  'openrouter/claude-opus-4',
-  'anthropic/claude-haiku-3-5',
-  'openrouter/claude-haiku-3-5',
-  'openai/gpt-5.1',
-  'openrouter/gpt-5.1',
-  'openai/o4-mini',
-  'openrouter/o4-mini',
-];
-
 function seedConfig(overrides?: VisualConfigOverrides): OverlaySeed {
   return () => seedVisualConfig(overrides);
 }
@@ -321,18 +307,21 @@ function seedProviderAuth(
   });
 }
 
-function seedAiderMultiRoute(): void {
-  seedConfig({ planner: { kind: 'cli', tool: 'aider', model: AIDER_ROUTED_MODEL } })();
-  publishVisualDiscovery({
-    cliTools: [cliDetectionFor('ready', 'aider')],
-    cliModels: [
-      catalogAttempt({
-        tool: 'aider',
-        outcome: { kind: 'success', value: AIDER_CATALOG_IDS.map((id) => ({ id })) },
-      }),
+/**
+ * The one detection an oracle tool can carry with no `providerAuth` at all: the
+ * probe stops before the credential listing when the executable's identity no
+ * longer matches, so the cached routes render with their sign-in state unread.
+ */
+function seedUnprobedOpencode(): void {
+  seedOpencodeCatalog();
+  const detection = detectionStore.get();
+  detectionStore.setDetection({
+    providers: [...detection.providers],
+    cliTools: [
+      ...detection.cliTools.filter((tool) => tool.tool !== 'opencode'),
+      cliDetectionFor('untrusted', 'opencode'),
     ],
   });
-  hydrateSlice();
 }
 
 function seedModelsDevLane(outcome: 'uninitialized' | 'failed'): OverlaySeed {
@@ -427,14 +416,14 @@ function reseedAfterWorkflowReset(seed: OverlaySeed): () => void {
 const REVIEWER_SEAT = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' } as const;
 const REVIEWER_API_SEAT = {
   kind: 'api',
-  provider: 'openai',
+  provider: 'custom-endpoint',
   model: 'o3',
-  apiBase: 'https://api.openai.com/v1',
+  apiBase: 'https://api.example.test/v1',
   effort: 'high',
 } as const;
 const ESCALATION_SEAT = {
-  intermediateProvider: 'deepseek',
-  intermediateModel: 'deepseek-chat',
+  intermediateProvider: 'custom-endpoint',
+  intermediateModel: 'custom-chat',
 } as const;
 /** The verdict line only exists when both BUILD and REVIEW resolve to a lab, so BUILD names one. */
 const BUILD_ANTHROPIC_SEAT = {
@@ -528,10 +517,10 @@ const createRoutesUncheckedFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
     seed: () => {
-      seedAiderMultiRoute();
-      pickerViewStore.expand(AIDER_ROUTED_MODEL);
+      seedUnprobedOpencode();
+      pickerViewStore.expand(OPENCODE_ROUTED_MODEL);
     },
-    focus: 'tool:aider',
+    focus: OPENCODE_FOCUS,
   });
 const createPlannerPickerColdFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'planner-picker', seed: seedModelsDevLane('uninitialized') });
@@ -567,12 +556,6 @@ const createCustomModelFixture: FixtureFactory = () =>
     overlay: 'planner-picker',
     seed: () => pickerViewStore.open({ kind: 'custom-model' }),
     focus: 'tool:ollama',
-  });
-const createApiKeyFixture: FixtureFactory = () =>
-  createOverlayFixture({
-    overlay: 'planner-picker',
-    seed: () => pickerViewStore.open({ kind: 'provider-auth' }),
-    focus: 'tool:deepseek',
   });
 const createImplementerPickerFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'implementer-picker' });
@@ -618,7 +601,6 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-contract-choice'), createContractChoiceFixture],
   [scenarioId('overlay-picker-custom-command'), createCustomCommandFixture],
   [scenarioId('overlay-picker-custom-model'), createCustomModelFixture],
-  [scenarioId('overlay-picker-api-key'), createApiKeyFixture],
   [scenarioId('overlay-implementer-picker'), createImplementerPickerFixture],
   [scenarioId('overlay-reviewer-picker-inherited'), createReviewerPickerFixture],
   [scenarioId('overlay-reviewer-picker-tool'), createReviewerPickerToolFixture],

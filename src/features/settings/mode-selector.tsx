@@ -20,14 +20,13 @@ import { getWorkflowMode } from '../../core/config/accessors/values.js';
 interface ModeDef {
   mode: WorkflowMode;
   cost: string;
-  size: string;
+  phases: string;
 }
 
-const MODE_METADATA: Record<WorkflowMode, { cost: string; size: string }> = {
-  instant: { cost: `1 call${SOFT_SEP}no approval`, size: 'trivial edits' },
-  quick: { cost: `1 call${SOFT_SEP}no approval`, size: 'small fixes' },
-  standard: { cost: `4 calls${SOFT_SEP}1 approval`, size: 'features' },
-  speckit: { cost: `6-7 calls${SOFT_SEP}2 approvals`, size: 'large scope' },
+const MODE_METADATA: Record<WorkflowMode, { cost: string; phases: string }> = {
+  quick: { cost: `1 call${SOFT_SEP}0 gates`, phases: 'plan and go; no brief compiler' },
+  standard: { cost: `4 calls${SOFT_SEP}1 gate`, phases: 'spec gate, brief review, compiler' },
+  speckit: { cost: `6-7 calls${SOFT_SEP}2 gates`, phases: 'adds clarify + constitution phases' },
 };
 
 const PANEL_DENSITY: OverlayDensity = 'compact';
@@ -39,7 +38,7 @@ const MODE_CHECK_WIDTH = 2;
 const MODE_METADATA_PREFIX_WIDTH = 1;
 
 function smallModeMetadata(mode: ModeDef, panelInnerWidth: number): string {
-  const metadata = `${mode.cost}${SOFT_SEP}${mode.size}`;
+  const metadata = `${mode.cost}${SOFT_SEP}${mode.phases}`;
   const metadataWidth =
     panelInnerWidth -
     MODE_LEAD_WIDTH -
@@ -141,7 +140,7 @@ export function ModeSelector() {
               />
               {!isSmall && (
                 <Box marginLeft={14}>
-                  <Text color={t.textDim}>{m.size}</Text>
+                  <Text color={t.textDim}>{m.phases}</Text>
                 </Box>
               )}
             </Box>

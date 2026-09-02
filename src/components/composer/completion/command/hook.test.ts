@@ -74,6 +74,21 @@ const COMMANDS: RuntimeCommandDef[] = [
   },
   {
     kind: 'arg',
+    name: '/skills',
+    label: 'Skills',
+    description: 'Select planner skills',
+    category: 'navigate',
+    args: {
+      kind: 'closed',
+      options: ['alpha', 'bravo'],
+      optionDescriptions: { alpha: 'Reviews alpha conventions', bravo: 'Drafts bravo notes' },
+      optional: true,
+    },
+    validScreens: ['home'],
+    handler: () => {},
+  },
+  {
+    kind: 'arg',
     name: '/scroll',
     label: 'Scroll',
     description: 'Scroll the transcript',
@@ -386,6 +401,40 @@ describe('useCommandCompletion closed arguments', () => {
     await tick(20);
     expect(hidden.lastFrame()).toContain('false');
     hidden.unmount();
+  });
+
+  it('renders the description supplied for a closed option', async () => {
+    const { ui } = renderComposer();
+
+    await flushEffects();
+    ui.stdin.write('/skills ');
+    await tick(20);
+    await vi.waitFor(
+      () => {
+        const frame = ui.lastFrame();
+        expect(frame).toContain('Reviews alpha conventions');
+        expect(frame).toContain('Drafts bravo notes');
+      },
+      { timeout: 5000 },
+    );
+    ui.unmount();
+  });
+
+  it('falls back to an empty description when a closed option has none', async () => {
+    const { ui } = renderComposer();
+
+    await flushEffects();
+    ui.stdin.write('/mode ');
+    await tick(20);
+    await vi.waitFor(
+      () => {
+        const frame = ui.lastFrame();
+        expect(frame).toContain('instant');
+        expect(frame).not.toContain('Workflow mode');
+      },
+      { timeout: 5000 },
+    );
+    ui.unmount();
   });
 
   it('offers an alias under its own name', async () => {

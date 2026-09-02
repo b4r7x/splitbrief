@@ -41,8 +41,8 @@ describe('resetWorkflow', () => {
       lowCost: 0.01,
       expectedCost: 0.02,
       highCost: 0.05,
-      plannerTool: 'anthropic',
-      implementerTool: 'anthropic',
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
     };
     const pending = openCostApprovalPrompt(prediction);
     expect(costApprovalStore.get().status).toBe('pending');
@@ -103,10 +103,10 @@ describe('resetWorkflow', () => {
       plannerSessionId: null,
       startedAt: new Date().toISOString(),
       tokenUsage: makeUsage(),
-      plannerTool: 'anthropic',
+      plannerTool: 'claude-code',
       plannerModel: 'claude-sonnet-4-6',
-      implementerTool: 'deepseek',
-      implementerModel: 'deepseek-chat',
+      implementerTool: 'ollama',
+      implementerModel: 'qwen2.5-coder:7b',
       awaitingContinue: false,
       messageQueue: [
         {
@@ -137,10 +137,10 @@ describe('resetWorkflow', () => {
     expect(tokensStore.get().escalatedCount).toBe(0);
     expect(tokensStore.get().completedTaskCount).toBe(2);
     expect(tokensStore.get().pricingContext).toEqual({
-      plannerTool: 'anthropic',
+      plannerTool: 'claude-code',
       plannerModel: 'claude-sonnet-4-6',
-      implementerTool: 'deepseek',
-      implementerModel: 'deepseek-chat',
+      implementerTool: 'ollama',
+      implementerModel: 'qwen2.5-coder:7b',
     });
   });
 
@@ -150,9 +150,10 @@ describe('resetWorkflow', () => {
       config: makeConfig({
         reviewer: {
           kind: 'api',
-          provider: 'openrouter',
+          provider: 'custom-endpoint',
           model: 'swapped-after-the-run',
-          apiBase: 'https://openrouter.ai/api/v1',
+          apiBase: 'https://api.example.test/v1',
+          apiKey: 'test-key',
         },
       }),
     });
@@ -167,18 +168,18 @@ describe('resetWorkflow', () => {
       plannerSessionId: null,
       startedAt: new Date().toISOString(),
       tokenUsage: makeUsage({ reviewerInput: 20_000, reviewerOutput: 5_000 }),
-      plannerTool: 'anthropic',
+      plannerTool: 'claude-code',
       plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'ollama',
-      reviewerTool: 'deepseek',
-      reviewerModel: 'deepseek-v4-flash',
+      reviewerTool: 'custom-endpoint',
+      reviewerModel: 'custom-v4-flash',
       awaitingContinue: false,
       messageQueue: [],
     });
 
     expect(tokensStore.get().pricingContext).toMatchObject({
-      reviewerTool: 'deepseek',
-      reviewerModel: 'deepseek-v4-flash',
+      reviewerTool: 'custom-endpoint',
+      reviewerModel: 'custom-v4-flash',
     });
   });
 
@@ -188,9 +189,10 @@ describe('resetWorkflow', () => {
       config: makeConfig({
         reviewer: {
           kind: 'api',
-          provider: 'deepseek',
-          model: 'deepseek-v4-flash',
-          apiBase: 'https://api.deepseek.com/v1',
+          provider: 'custom-endpoint',
+          model: 'custom-v4-flash',
+          apiBase: 'https://api.example.test/v1',
+          apiKey: 'test-key',
         },
       }),
     });
@@ -205,7 +207,7 @@ describe('resetWorkflow', () => {
       plannerSessionId: null,
       startedAt: new Date().toISOString(),
       tokenUsage: makeUsage(),
-      plannerTool: 'anthropic',
+      plannerTool: 'claude-code',
       plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'ollama',
       awaitingContinue: false,
@@ -213,7 +215,7 @@ describe('resetWorkflow', () => {
     });
 
     expect(tokensStore.get().pricingContext).toEqual({
-      plannerTool: 'anthropic',
+      plannerTool: 'claude-code',
       plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'ollama',
       implementerModel: undefined,
@@ -231,9 +233,9 @@ describe('resetWorkflow', () => {
       plannerSessionId: null,
       startedAt: new Date().toISOString(),
       tokenUsage: makeUsage({ implementerCacheRead: 1_000_000 }),
-      plannerTool: 'anthropic',
+      plannerTool: 'claude-code',
       plannerModel: 'claude-sonnet-4-6',
-      implementerTool: 'openai',
+      implementerTool: 'custom-endpoint',
       implementerModel: 'runtime-priced-model',
       awaitingContinue: false,
       messageQueue: [],
@@ -247,7 +249,7 @@ describe('resetWorkflow', () => {
           implementerCacheReadTokens: 1_000_000,
           implementerCacheCreateTokens: 0,
           retryCount: 0,
-          tool: 'openai',
+          tool: 'custom-endpoint',
           model: 'runtime-priced-model',
           implementerProfile: 'cheap-cloud',
           contextFit: 'tight',
@@ -267,7 +269,7 @@ describe('resetWorkflow', () => {
     expect(record?.attempts?.[0]).toMatchObject({
       implementerCacheReadTokens: 1_000_000,
       implementerCacheCreateTokens: 0,
-      tool: 'openai',
+      tool: 'custom-endpoint',
       model: 'runtime-priced-model',
       implementerProfile: 'cheap-cloud',
       contextFit: 'tight',

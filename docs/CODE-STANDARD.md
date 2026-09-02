@@ -198,6 +198,11 @@ Run top to bottom on any diff. The mechanical rows are mostly covered by `npm ru
 - [ ] Check which validation stages were baseline-exempt for each task, and confirm the review packet names them next to the raw pass counts.
 - [ ] Oversized test files (>500 LOC) split by concern, with shared setup in `testing/helpers/` factories rather than copy-pasted per test.
 
+**Looks & logic (user-visible changes — CLAUDE.md "Look-and-logic verification")**
+- [ ] The touched surface was rendered (`npm run tui-shots -- --scenario <id>`) and the PNG was opened and critiqued; the review names the render's remaining defects, or states there are none.
+- [ ] Every value the change shows or selects (model, effort, speed, thinking, variant, tool) has exactly one editable home; other surfaces derive from it read-only.
+- [ ] Rendered lists were compared against their source of truth (tool listing, alias table, provider vocabulary) — no missing, extra, duplicated or orphaned rows.
+
 **Comments & hygiene**
 - [ ] No decorative banners; comments explain non-obvious *why*, invariants, or workarounds only ([STRUCTURE.md](./STRUCTURE.md#no-decorative-comments)).
 - [ ] No defensive check on a statically non-nullable value; no never-triggering fallback; no empty `catch {}` without a one-line justification ([ERRORS.md](./ERRORS.md)).

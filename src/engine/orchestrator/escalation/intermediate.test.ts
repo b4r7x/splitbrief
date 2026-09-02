@@ -21,6 +21,7 @@ import {
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
+import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import type { RunnerGate } from '../../runners/prepared-execution.js';
 import { INTERMEDIATE_TIER, runEscalationTier } from './tier.js';
 import { resolveIntermediateConfig } from './intermediate.js';
@@ -44,65 +45,60 @@ function setupProject(): { projectDir: string; sessionId: string } {
 
 describe('runEscalationTier intermediate tier guard ordering', () => {
   it('does not publish a tier-0 escalate event when intermediate credentials are missing', async () => {
-    const savedKey = process.env.OPENROUTER_API_KEY;
-    delete process.env.OPENROUTER_API_KEY;
-    try {
-      const { projectDir, sessionId } = setupProject();
-      const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-      const { bus, events } = makeBusRecorder();
-      const { callbacks } = makeCallbacks();
-      const ctx: EscalationContext = {
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig({
-          implementer: {
-            kind: 'api',
-            provider: 'ollama',
-            model: 'qwen',
-            apiBase: 'http://localhost:11434/v1',
-          },
-          escalation: {
-            intermediateProvider: 'openrouter',
-            intermediateModel: 'openrouter/model',
-            enabled: true,
-          },
-        }),
-        callbacks,
-        bus,
-        planner: makePlanner({}),
-        reviewer: makePlanner({}),
-        context: defaultContext,
-        implementer: makeImplementer(),
-        metadata: TEST_METADATA,
-        sinks: TEST_SINKS,
-        validator: createValidator(),
-        isolation: makeCopyingIsolation({ projectDir: projectDir, sessionId }),
-        taskStartSnapshot,
-        dependsOnFiles: [],
-      };
-      const task = makeTask();
-      const state = makeImplState([task]);
+    const { projectDir, sessionId } = setupProject();
+    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+    const { bus, events } = makeBusRecorder();
+    const { callbacks } = makeCallbacks();
+    const ctx: EscalationContext = {
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig({
+        implementer: {
+          kind: 'api',
+          provider: 'ollama',
+          model: 'qwen',
+          apiBase: 'http://localhost:11434/v1',
+        },
+        escalation: {
+          intermediateProvider: 'custom-endpoint',
+          intermediateModel: 'custom-endpoint/model',
+          enabled: true,
+        },
+      }),
+      callbacks,
+      bus,
+      planner: makePlanner({}),
+      reviewer: makePlanner({}),
+      context: defaultContext,
+      implementer: makeImplementer(),
+      metadata: TEST_METADATA,
+      sinks: TEST_SINKS,
+      validator: createValidator(),
+      isolation: makeCopyingIsolation({ projectDir: projectDir, sessionId }),
+      taskStartSnapshot,
+      dependsOnFiles: [],
+    };
+    const task = makeTask();
+    const state = makeImplState([task]);
 
-      const outcome = await runEscalationTier(INTERMEDIATE_TIER, {
-        ctx,
-        task,
-        state,
-        lastError: 'validation failed',
-        priorAttempts: 0,
-      });
+    const outcome = await runEscalationTier(INTERMEDIATE_TIER, {
+      ctx,
+      task,
+      state,
+      lastError: 'validation failed',
+      priorAttempts: 0,
+    });
 
-      expect(outcome.attempts).toBe(0);
-      expect(events.some((e) => e.type === 'escalate')).toBe(false);
-      expect(events).toContainEqual(
-        expect.objectContaining({
-          type: 'warning',
-          message: expect.stringContaining('OpenRouter intermediate provider is missing'),
-        }),
-      );
-    } finally {
-      if (savedKey === undefined) delete process.env.OPENROUTER_API_KEY;
-      else process.env.OPENROUTER_API_KEY = savedKey;
-    }
+    expect(outcome.attempts).toBe(0);
+    expect(events.some((e) => e.type === 'escalate')).toBe(false);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'warning',
+        message: expect.stringContaining(
+          'Custom provider custom-endpoint intermediate provider is missing',
+        ),
+      }),
+    );
   });
 
   it('does not publish a tier-0 escalate event when the intermediate config cannot resolve', async () => {
@@ -151,15 +147,13 @@ describe('runEscalationTier intermediate tier guard ordering', () => {
   });
 
   it('uses the prepared intermediate gate without a second admission path', async () => {
-    const savedKey = process.env.OPENROUTER_API_KEY;
-    process.env.OPENROUTER_API_KEY = 'sk-or-test';
     const { projectDir, sessionId } = setupProject();
     const sentinel = join(projectDir, 'configured-default-ran');
     const childProgram = `require('node:fs').writeFileSync(${JSON.stringify(sentinel)}, 'ran');`;
     const config = ConfigSchema.parse({
       ...makeNoValidationConfig({
         escalation: {
-          intermediateProvider: 'openrouter',
+          intermediateProvider: 'ollama',
           intermediateModel: 'x-ai/grok-4-fast',
           enabled: true,
         },
@@ -203,8 +197,8 @@ describe('runEscalationTier intermediate tier guard ordering', () => {
         kind: 'api',
         slot: { role: 'intermediate' },
         preparationId,
-        provider: 'openrouter',
-        endpointOrigin: 'https://openrouter.ai',
+        provider: 'ollama',
+        endpointOrigin: 'http://localhost:11434',
       },
     ];
     const preparedFactory = vi.fn(
@@ -248,7 +242,7 @@ describe('runEscalationTier intermediate tier guard ordering', () => {
       expect(outcome.result).toMatchObject({
         completed: true,
         method: 'escalated-intermediate',
-        tool: 'openrouter',
+        tool: 'ollama',
         model: 'x-ai/grok-4-fast',
       });
       expect(events).toContainEqual(expect.objectContaining({ type: 'escalate', tier: 0 }));
@@ -262,18 +256,23 @@ describe('runEscalationTier intermediate tier guard ordering', () => {
       expect(config.implementerProfiles).toBe(originalProfiles);
     } finally {
       vi.unstubAllGlobals();
-      if (savedKey === undefined) delete process.env.OPENROUTER_API_KEY;
-      else process.env.OPENROUTER_API_KEY = savedKey;
     }
   });
 });
 
 describe('resolveIntermediateConfig', () => {
+  const modelCache: ModelCacheAccessor = {
+    getModelsDevCatalog: () => null,
+    getProviderModels: (providerId) =>
+      providerId === 'lm-studio' ? [{ id: 'deepseek-v4-flash', contextLength: 1_000_000 }] : null,
+  };
+
   function makeIntermediateCtx(): EscalationContext {
     const { projectDir, sessionId } = setupProject();
     const { bus } = makeBusRecorder();
     const { callbacks } = makeCallbacks();
     return {
+      modelCache,
       projectDir,
       sessionId,
       config: makeNoValidationConfig({
@@ -287,7 +286,7 @@ describe('resolveIntermediateConfig', () => {
           customModels: ['qwen2.5-coder:7b'],
         },
         escalation: {
-          intermediateProvider: 'deepseek',
+          intermediateProvider: 'lm-studio',
           intermediateModel: 'deepseek-v4-flash',
           enabled: true,
         },
@@ -315,9 +314,9 @@ describe('resolveIntermediateConfig', () => {
 
     expect(resolved?.implementer).toMatchObject({
       kind: 'api',
-      provider: 'deepseek',
-      service: 'deepseek',
-      offering: 'payg',
+      provider: 'lm-studio',
+      service: 'lm-studio',
+      offering: 'local',
       model: 'deepseek-v4-flash',
       contextLength: 1_000_000,
     });

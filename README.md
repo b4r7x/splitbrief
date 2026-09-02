@@ -65,7 +65,7 @@ You: "add user authentication with JWT"
 └──────────────────────┘
 ```
 
-How the changes land depends on which kind of implementer you picked. A tool that writes files itself (`writesFiles: direct` — the `cli`, `agent`, and `agent-sdk` kinds) works in an isolated directory; SPLITBRIEF promotes the result into your project and refuses to overwrite a file that changed while the task was running. A model that returns file contents (`writesFiles: extracted-code` — the `api` and `shell` kinds) never touches your working tree; SPLITBRIEF writes each file itself, one approval gate at a time. Isolation covers files only — same ports, same database, same hooks and config — so it is not a security boundary.
+How the changes land depends on which kind of implementer you picked. A tool that writes files itself (`writesFiles: direct` — the `cli` and `agent` kinds) works in an isolated directory; SPLITBRIEF promotes the result into your project and refuses to overwrite a file that changed while the task was running. A model that returns file contents (`writesFiles: extracted-code` — the `api` and `shell` kinds) never touches your working tree; SPLITBRIEF writes each file itself, one approval gate at a time. Isolation covers files only — same ports, same database, same hooks and config — so it is not a security boundary.
 
 The TUI shows planner and implementer working together as a conversation flow — event cards, inline diffs, real-time cost tracking.
 
@@ -91,14 +91,15 @@ Then bring a planner — the stronger of the two:
 npm install -g @openai/codex      # Codex
 npm install -g @github/copilot    # Copilot
 npm install -g @kilocode/cli      # Kilo Code
-# OpenCode and Aider work the same way; any stdin/stdout tool can be a shell planner
-# Or an API planner: anthropic, openai, openrouter, deepseek, groq, together, ollama-cloud
+npm install -g command-code       # Command Code (binary `cmd`)
+# OpenCode works the same way; any stdin/stdout tool can be a shell planner
+# Or an API planner: any OpenAI-compatible endpoint you point `apiBase` at
 ```
 
 And an implementer — the weaker **model**. It reaches SPLITBRIEF by either transport, and SPLITBRIEF favours neither:
 
 - **A CLI tool running a cheaper model.** Any of the tools above, pointed at a cheap model. The tool writes files itself, in an isolated directory.
-- **An API model.** OpenRouter, DeepSeek, Groq, Together, Anthropic or OpenAI, or a local daemon — `ollama pull qwen3-coder:30b`, or a coding model loaded in LM Studio. The model returns file contents; SPLITBRIEF writes them.
+- **An API model.** A local Ollama or LM Studio daemon — `ollama pull qwen3-coder:30b`, or a coding model loaded in LM Studio — or any OpenAI-compatible endpoint. The model returns file contents; SPLITBRIEF writes them.
 
 ```bash
 cd your-project
@@ -154,7 +155,7 @@ export SPLITBRIEF_CONTEXT_LENGTH=32768
 
 Those are the ones you need first. The full set — `ps`, `stats`, `export`, `explain`, `handoff`, `snapshot`, `approval`, `worktree`, `attach`, `detach`, `continue`, `last`, `mcp` — is in [docs/CLI-REFERENCE.md](./docs/CLI-REFERENCE.md).
 
-`start` and `spec` both take `--mode instant|quick|standard|speckit`, which sets how much planning ceremony runs before the Task Briefs exist. The default is `standard`.
+`start` and `spec` both take `--mode quick|standard|speckit`, which sets how much planning ceremony runs before the Task Briefs exist. The default is `standard`.
 
 `--approve none` auto-approves spec/plan review gates only. Briefs review and file-write tiered approvals still follow workflow and approval config; use `--yolo` or approval tiers for unattended file writes.
 
@@ -180,7 +181,7 @@ version: 3
 
 planner:
   kind: cli
-  tool: claude-code          # claude-code | codex | opencode | aider | copilot | kilo-code | cursor
+  tool: claude-code          # claude-code | codex | opencode | copilot | kilo-code | cursor | command-code
 
 implementer:
   kind: api                  # or `kind: cli` with a `tool:`, to run a CLI tool on a cheaper model
@@ -212,29 +213,22 @@ Git commit strategies are opt-in. The default (`commitStrategy: none`) leaves ch
 
 ### Planner backends
 
-Seventeen admitted planner IDs — seven CLI tools, seven API providers, plus `agent-sdk`, `shell`, and `agent`:
+Ten planner backends — seven CLI tools, plus `api`, `shell`, and `agent`:
 
 | Tool | Kind | Output Format | Notes |
 |------|------|---------------|-------|
 | `claude-code` | cli | stream-json | Default. Uses existing subscription |
 | `codex` | cli | jsonl | OpenAI Codex CLI |
 | `opencode` | cli | jsonl | OpenCode CLI |
-| `aider` | cli | text | Parses `Tokens: Xk sent, Yk received` |
 | `copilot` | cli | json | GitHub Copilot CLI |
 | `kilo-code` | cli | json | Kilo Code CLI |
 | `cursor` | cli | stream-json | Cursor Agent CLI |
-| `anthropic` | api | — | Endpoints and keys in the Implementer providers table below |
-| `openrouter` | api | — | |
-| `deepseek` | api | — | |
-| `openai` | api | — | |
-| `groq` | api | — | |
-| `together` | api | — | |
-| `ollama-cloud` | api | — | Fixed origin `https://ollama.com`, `OLLAMA_API_KEY` |
-| `agent-sdk` | agent-sdk | — | Requires `ANTHROPIC_API_KEY` |
+| `command-code` | cli | json | Command Code CLI (binary `cmd`) |
+| custom | api | — | Any OpenAI-compatible endpoint; declare `apiBase`, `service`, and `offering` |
 | `shell` | shell | configurable | Any stdin/stdout command, see below |
 | `agent` | agent | configurable | Subprocess that writes files directly |
 
-Any of these is valid as `--planner <tool>` or `--reviewer <tool>`, for example `splitbrief start "add tests" --planner anthropic --implementer ollama`. The local-only providers `ollama` and `lm-studio` are implementer-only.
+Any CLI tool above is valid as `--planner <tool>` or `--reviewer <tool>`, for example `splitbrief start "add tests" --planner codex --implementer ollama`. The built-in providers `ollama` and `lm-studio` are local-only and implementer-only.
 
 #### Shell planner
 
@@ -252,7 +246,7 @@ Planner backends vary in supported features. See [docs/ARCHITECTURE.md](docs/ARC
 
 ### Reviewer
 
-The planner reads the run diff unless an optional top-level `reviewer:` block names its own runner. It is the same discriminated union as `planner:` — the five kinds, the same generation fields, an optional `model` — and it draws from the planner roster above, so a backend the planner may not use is rejected here too.
+The planner reads the run diff unless an optional top-level `reviewer:` block names its own runner. It is the same discriminated union as `planner:` — the four kinds, the same generation fields, an optional `model` — and it draws from the planner roster above, so a backend the planner may not use is rejected here too.
 
 ```yaml
 reviewer:
@@ -272,14 +266,7 @@ Anything that speaks the OpenAI chat completions protocol works.
 | Provider | Default Base URL | API Key |
 |----------|-----------------|---------|
 | `ollama` | `http://localhost:11434/v1` | Not needed |
-| `ollama-cloud` | `https://ollama.com` | `OLLAMA_API_KEY` |
 | `lm-studio` | `http://localhost:1234/v1` | Not needed |
-| `anthropic` | `https://api.anthropic.com/v1` | `ANTHROPIC_API_KEY` |
-| `openai` | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
-| `groq` | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` |
-| `together` | `https://api.together.xyz/v1` | `TOGETHER_API_KEY` |
-| `deepseek` | `https://api.deepseek.com/v1` | `DEEPSEEK_API_KEY` |
-| `openrouter` | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` |
 
 #### Custom providers
 
@@ -292,11 +279,11 @@ implementer:
   service: custom-openai
   offering: payg          # payg | free-quota | coding-subscription | local
   model: Qwen/Qwen2.5-Coder-32B-Instruct
-  apiBase: https://api.together.xyz/v1
+  apiBase: https://api.example-endpoint.com/v1
   apiKey: your-key
 ```
 
-API key resolution for built-ins: config `apiKey` overrides the provider env var. Unknown providers must set `apiKey` in config.
+Both built-ins are local and keyless; a secured loopback Ollama daemon accepts exactly `apiKey: env:OLLAMA_LOCAL_API_KEY`. Custom providers must set an inline `apiKey` — an `env:` reference is rejected there.
 
 #### CLI tool implementers
 
@@ -305,7 +292,7 @@ Any planner CLI tool can also be used as an implementer:
 ```yaml
 implementer:
   kind: cli
-  tool: claude-code           # or codex, opencode, aider, copilot, kilo-code, cursor
+  tool: claude-code           # or codex, opencode, copilot, kilo-code, cursor, command-code
                               # omit model to let the tool pick its own default
 ```
 
@@ -388,7 +375,7 @@ TypeScript 6.x, ESM only, Ink 6.8 + React 19 for the TUI. Tests are colocated wi
 
 - **EventBus architecture** — engine emits typed `EngineEvent` values; UI, persistence, hooks, and observability subscribe as independent sinks. See [docs/ARCHITECTURE.md](https://github.com/b4r7x/splitbrief/blob/main/docs/ARCHITECTURE.md#eventbus).
 - **Workflow hooks** — fire shell commands or JS modules at workflow events (`pre_task`, `post_commit`, etc.). 2 built-ins: `prettier-on-change`, `block-secrets`. See [docs/HOOKS-CONFIG.md](https://github.com/b4r7x/splitbrief/blob/main/docs/HOOKS-CONFIG.md).
-- **Repo-map context** — Aider-style symbol summary auto-injected into the planner prompt so it can compile a sharper Task Brief. Tree-sitter + PageRank + SQLite cache for fast incremental updates. See [docs/REPOMAP.md](https://github.com/b4r7x/splitbrief/blob/main/docs/REPOMAP.md).
+- **Repo-map context** — ranked symbol summary auto-injected into the planner prompt so it can compile a sharper Task Brief. Tree-sitter + PageRank + SQLite cache for fast incremental updates. See [docs/REPOMAP.md](https://github.com/b4r7x/splitbrief/blob/main/docs/REPOMAP.md).
 - **Headless mode** — `splitbrief start --json "feature"` emits each engine event as NDJSON to stdout and skips the TUI. Workflow review gates are auto-approved; file-write tiered sticky/confirm approvals fail closed unless their tiers allow the write.
 - **Advanced interop** — handoff packs and the MCP server expose read-only session artifacts for external tools; they are escape hatches, not the main execution path.
 - **OpenTelemetry** — opt-in span emission for workflow, phase, and task lifecycle with per-cost attributes. See [docs/OTEL.md](https://github.com/b4r7x/splitbrief/blob/main/docs/OTEL.md).

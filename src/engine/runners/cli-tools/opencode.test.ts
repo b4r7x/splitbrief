@@ -131,6 +131,89 @@ describe('OpenCode role adapters', () => {
     ).toEqual({ valid: false, conflicts: ['--format'] });
   });
 
+  it('puts the configured variant on the planner argv', () => {
+    expect(
+      opencodePlannerAdapter.buildArgs({
+        prompt: PROMPT,
+        model: 'openai/gpt-5.6-luna',
+        projectDir: PROJECT_DIR,
+        configuredArgs: [],
+        mode: 'plan',
+        sessionId: null,
+        effort: undefined,
+        variant: 'xhigh',
+      }),
+    ).toEqual([
+      'run',
+      '--model',
+      'openai/gpt-5.6-luna',
+      '--variant',
+      'xhigh',
+      '--format',
+      'json',
+      '--agent',
+      'plan',
+      PROMPT,
+    ]);
+  });
+
+  it('puts the configured variant on the implementer argv', () => {
+    expect(
+      opencodeImplementerAdapter.buildArgs({
+        prompt: PROMPT,
+        model: 'openai/gpt-5.6-luna',
+        projectDir: PROJECT_DIR,
+        configuredArgs: [],
+        variant: 'xhigh',
+      }),
+    ).toEqual([
+      'run',
+      '--model',
+      'openai/gpt-5.6-luna',
+      '--variant',
+      'xhigh',
+      '--format',
+      'json',
+      '--agent',
+      'build',
+      PROMPT,
+    ]);
+  });
+
+  it('omits the flag entirely when no variant is configured', () => {
+    expect(plannerArgs('openai/gpt-5.6-luna', 'plan', [])).not.toContain('--variant');
+    expect(implementerArgs('openai/gpt-5.6-luna', [])).not.toContain('--variant');
+  });
+
+  it('refuses a configured --variant smuggled through args', () => {
+    const base = implementerArgs('openai/gpt-5.6-luna', []);
+    expect(
+      opencodeImplementerAdapter.validateArgs({
+        invocationArgs: [...base, '--variant', 'max'],
+        baseArgs: base,
+      }),
+    ).toEqual({ valid: false, conflicts: ['--variant'] });
+  });
+
+  it('keeps --variant out of the declared raw contract', () => {
+    expect(CLI_CONFORMANCE_CANDIDATES[0]?.rawContract.rawInvocation).toEqual([
+      'run',
+      '--format',
+      'json',
+      '--agent',
+      'plan',
+      PROMPT,
+    ]);
+    expect(CLI_CONFORMANCE_CANDIDATES[1]?.rawContract.rawInvocation).toEqual([
+      'run',
+      '--format',
+      'json',
+      '--agent',
+      'build',
+      PROMPT,
+    ]);
+  });
+
   it('pins the effective role on every vector: default-role, fallback, and subagent runs fail', () => {
     const plannerBase = plannerArgs(undefined, 'plan', []);
     const implementerBase = implementerArgs(undefined, []);
@@ -143,31 +226,15 @@ describe('OpenCode role adapters', () => {
     expect(escalationArgs).toContain('--agent');
     expect(escalationArgs[escalationArgs.indexOf('--agent') + 1]).toBe('build');
 
-    for (const base of [plannerBase, implementerBase]) {
-      expect(
-        opencodeImplementerAdapter.validateArgs({
-          invocationArgs: [...base, '--agent', 'subagent'],
-          baseArgs: base,
-        }),
-      ).toEqual({ valid: false, conflicts: ['--agent'] });
-      expect(
-        opencodeImplementerAdapter.validateArgs({
-          invocationArgs: [...base, '--agent=plan'],
-          baseArgs: base,
-        }),
-      ).toEqual({
-        valid: false,
-        conflicts: ['--agent'],
-      });
-      expect(
-        opencodeImplementerAdapter.validateArgs({
-          invocationArgs: [...base, '--agent', 'default'],
-          baseArgs: base,
-        }),
-      ).toEqual({
-        valid: false,
-        conflicts: ['--agent'],
-      });
+    for (const [adapter, base] of [
+      [opencodePlannerAdapter, plannerBase],
+      [opencodeImplementerAdapter, implementerBase],
+    ] as const) {
+      for (const override of [['--agent', 'subagent'], ['--agent=plan'], ['--agent', 'default']]) {
+        expect(
+          adapter.validateArgs({ invocationArgs: [...base, ...override], baseArgs: base }),
+        ).toEqual({ valid: false, conflicts: ['--agent'] });
+      }
     }
   });
 

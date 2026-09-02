@@ -124,7 +124,7 @@ Types should live where their domain meaning is created — not in a central `ty
 
 **Banned anti-patterns:**
 
-- ❌ `src/types.ts` or `src/types/` as a top-level dumping ground — the ban targets first-party `.ts` type buckets, not `.d.ts` ambient declarations (e.g. `src/types/anthropic-agent-sdk.d.ts`, which augments a third-party module with no shipped types, is fine)
+- ❌ `src/types.ts` or `src/types/` as a top-level dumping ground — the ban targets first-party `.ts` type buckets, not `.d.ts` ambient declarations (a `.d.ts` that augments a third-party module with no shipped types is fine)
 - ❌ Feature-scoped types in `src/core/types/`
 - ❌ `*-types.ts` suffix when the folder name already implies the domain
 - ❌ A `core/types/app.ts` kitchen-sink grouping unrelated types
@@ -250,7 +250,7 @@ A: Inline into `review-parser.ts` (Case A).
 **Q: I'm adding a `CliToolDetection` type produced in `core/discovery/detection.ts` and consumed across `engine/detection/`, `stores/project/`, and `features/runners/`.**
 A: Keep it with its producer in `core/discovery/detection.ts`; cross-folder consumers `import type` from there. (Case C — placing the contract in `core/` keeps `engine/`/`stores/`/`features/` from importing each other.)
 
-**Q: I'm adding a `ProviderMetadata` type created by `engine/providers/metadata.ts` and consumed by `engine/providers/registry.ts` + `stores/discovery/model-cache.ts`.**
+**Q: I'm adding a `ProviderMetadata` type created by `engine/providers/metadata.ts` and consumed by `engine/providers/registry.ts` + `stores/discovery/model-cache/state.ts`.**
 A: Inline in `engine/providers/metadata.ts` (the producer). Consumers `import type`. (Case C)
 
 **Q: I'm adding a Zod schema for a new config section.**

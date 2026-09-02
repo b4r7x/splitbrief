@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type {
-  BudgetAccountingKey,
-  BudgetReservation,
-  RecoveryCallEstimate,
-  RecoveryUsage,
+import {
+  RecoveryBudgetResourceSchema,
+  type BudgetAccountingKey,
+  type BudgetReservation,
+  type RecoveryUsage,
 } from '../../../core/schemas/brief-recovery/budget.js';
 import { estimateBriefRecoveryCall } from './recovery-estimate.js';
 import {
@@ -17,12 +17,13 @@ import {
   makeBoundedOperationEnvelope as boundedEnvelope,
   makePricedRecoveryEstimate,
   makeRecoveryBudgetKey as key,
+  makeUnavailableRecoveryEstimate,
 } from '#testing/helpers/factories/recovery.js';
 
 const pricingCache = makeModelCacheAccessor({
   catalog: {
-    openai: {
-      id: 'openai',
+    'custom-endpoint': {
+      id: 'custom-endpoint',
       models: {
         'gpt-5.4': {
           id: 'gpt-5.4',
@@ -60,7 +61,7 @@ describe('operation-scoped recovery budget', () => {
   it('refuses priced work without a safe output cap but allows local zero-cost work', () => {
     const unknown = estimateBriefRecoveryCall({
       prompt: 'retry',
-      plannerTool: 'openai',
+      plannerTool: 'custom-endpoint',
       plannerModel: 'gpt-5.4',
       pricingCache,
     });
@@ -93,6 +94,29 @@ describe('operation-scoped recovery budget', () => {
       maxBudget: 0,
     });
     expect(replay).toEqual({ kind: 'reserved', reservation: first });
+  });
+
+  it('reserves the exact finite amount within the cap and refuses a known excess', () => {
+    const estimate = makePricedRecoveryEstimate(pricingCache);
+    const within = reserveBriefRecoveryCall({
+      accountingKey: key('operation-exact'),
+      estimate,
+      currentKnownSpend: 0,
+      activeReservations: [],
+      maxBudget: estimate.amount,
+    });
+    expect(within).toMatchObject({ kind: 'reserved' });
+    if (within.kind !== 'reserved') throw new Error(within.reason);
+    expect(within.reservation.amount).toBe(estimate.amount);
+
+    const over = reserveBriefRecoveryCall({
+      accountingKey: key('operation-excess'),
+      estimate,
+      currentKnownSpend: estimate.amount,
+      activeReservations: [],
+      maxBudget: estimate.amount,
+    });
+    expect(over).toMatchObject({ kind: 'refused', code: 'brief_budget_exhausted' });
   });
 
   it('releases definite no-dispatch and holds unresolved usage without duplicate history', () => {
@@ -179,23 +203,91 @@ describe('operation-scoped recovery budget', () => {
 });
 
 describe('provider-dependent budget policy replaces the missing-price blanket refusal', () => {
-  function unavailableEstimate(): RecoveryCallEstimate {
-    const estimate = estimateBriefRecoveryCall({
+  it('admits one bounded provider-dependent reservation without a dollar cap', () => {
+    const estimate = makeUnavailableRecoveryEstimate(pricingCache);
+    const accountingKey = key('operation-provider-dependent');
+
+    const first = reserveProviderDependentRecoveryCall({
+      accountingKey,
+      estimate,
+      envelope: boundedEnvelope(),
+    });
+    const replayed = reserveProviderDependentRecoveryCall({
+      accountingKey,
+      estimate,
+      envelope: boundedEnvelope(),
+    });
+    expect(first).toEqual(replayed);
+    expect(first).toMatchObject({ kind: 'reserved' });
+    if (first.kind !== 'reserved') throw new Error(first.reason);
+    expect(first.resource).toMatchObject({
+      kind: 'provider-dependent',
+      accountingKey: 'session-1/epoch-1/operation-provider-dependent',
+      pricingIdentity: 'opencode/auto',
+      observedUsage: null,
+      resolvedPricing: null,
+    });
+    expect(first.resource.envelope).toEqual(boundedEnvelope());
+  });
+
+  it('refuses capped unknown price before dispatch with brief_budget_unknown', () => {
+    const decision = reserveBriefRecoveryCall({
+      accountingKey: key('operation-capped-unknown'),
+      estimate: makeUnavailableRecoveryEstimate(pricingCache),
+      currentKnownSpend: 0,
+      activeReservations: [],
+      maxBudget: 1,
+    });
+    expect(decision).toMatchObject({ kind: 'refused', code: 'brief_budget_unknown' });
+    expect(decision).not.toHaveProperty('reservation');
+  });
+
+  it('refuses an unbounded call even without a cap', () => {
+    const unbounded = estimateBriefRecoveryCall({
       prompt: 'Retry the frozen Brief once.',
       plannerTool: 'opencode',
       plannerModel: 'auto',
-      configuredOutputCap: 1_000,
       pricingCache,
     });
-    expect(estimate).toMatchObject({ kind: 'unavailable', amount: null });
-    return estimate;
-  }
+    expect(unbounded).toMatchObject({ kind: 'unavailable', outputTokens: 0 });
+
+    const decision = reserveProviderDependentRecoveryCall({
+      accountingKey: key('operation-unbounded'),
+      estimate: unbounded,
+      envelope: boundedEnvelope(),
+    });
+    expect(decision).toMatchObject({ kind: 'refused', code: 'brief_budget_unknown' });
+  });
+
+  it('rejects a finite estimate routed to the provider-dependent admission', () => {
+    expect(() =>
+      reserveProviderDependentRecoveryCall({
+        accountingKey: key('operation-misroute'),
+        estimate: makePricedRecoveryEstimate(pricingCache),
+        envelope: boundedEnvelope(),
+      }),
+    ).toThrow('requires an unpriced recovery estimate');
+  });
+
+  it('never serializes unknown cost as zero dollars', () => {
+    const decision = reserveProviderDependentRecoveryCall({
+      accountingKey: key('operation-no-zero'),
+      estimate: makeUnavailableRecoveryEstimate(pricingCache),
+      envelope: boundedEnvelope(),
+    });
+    if (decision.kind !== 'reserved') throw new Error(decision.reason);
+    expect(decision.resource).not.toHaveProperty('amount');
+    expect(JSON.stringify(decision.resource)).not.toContain('amount');
+    expect(
+      RecoveryBudgetResourceSchema.safeParse({ ...decision.resource, amount: 0 }).success,
+    ).toBe(false);
+  });
 
   it('refuses an admission whose frozen envelope exceeds its own dispatch limit', () => {
     const envelope = boundedEnvelope();
     const decision = reserveProviderDependentRecoveryCall({
       accountingKey: key('operation-over-dispatch'),
-      estimate: unavailableEstimate(),
+      estimate: makeUnavailableRecoveryEstimate(pricingCache),
       envelope: { ...envelope, callCount: envelope.dispatchLimit + 1 },
     });
     expect(decision).toMatchObject({ kind: 'refused', code: 'brief_budget_unknown' });
@@ -205,7 +297,7 @@ describe('provider-dependent budget policy replaces the missing-price blanket re
     expect(() =>
       reserveProviderDependentRecoveryCall({
         accountingKey: { ...key('operation-incomplete'), operationId: '' },
-        estimate: unavailableEstimate(),
+        estimate: makeUnavailableRecoveryEstimate(pricingCache),
         envelope: boundedEnvelope(),
       }),
     ).toThrow('accounting key is invalid');

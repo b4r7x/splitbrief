@@ -12,12 +12,10 @@ import type { Planner } from '../../../engine/planners/types.js';
 import type { Implementer } from '../../../engine/implementers/types.js';
 import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
 import type { ClearQueueHandler, QueueHandler } from '../../../engine/orchestrator/types.js';
-import {
-  runWorkflow,
-  WORKFLOW_REWIND_ABORT_REASON,
-} from '../../../engine/orchestrator/run/workflow.js';
+import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
+import { WORKFLOW_REWIND_ABORT_REASON } from '../../../engine/orchestrator/run/rewind-authority.js';
 import type { RunWorkflowOptions } from '../../../engine/orchestrator/run/init.js';
-import { loadStateForResume } from '../../../core/state/persistence.js';
+import { loadStateForResume } from '../../../core/state/resume-authority.js';
 import { readStateAuthority } from '../../../core/state/authority.js';
 import type { ResumeLoadAuthority, StateAuthorityReceipt } from '../../../core/state/types.js';
 import { createEventBus } from '../../../engine/events/bus.js';
@@ -27,11 +25,12 @@ import { error } from '../../../utils/error.js';
 import { resolveRunConfigWithBase, type ResolvedRunConfig } from '../../build-overrides.js';
 import { installTerminalOutputErrorGuard } from '../../../lib/terminal/control.js';
 import { createApprovalGate, createGate } from '../gates.js';
-import { createCommandReader, type RpcEnvelopeError } from '../reader.js';
+import { createCommandReader } from '../reader.js';
+import type { RpcEnvelopeError } from '../envelope.js';
 import { createResponseWriter } from '../writer.js';
 import { createWorkflowCallbacks } from '../callbacks.js';
 import { attachmentsStore } from '../../../stores/workflow/attachments.js';
-import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { createCommandHandler } from '../dispatch.js';
 import { createRpcRecoveryHandlers } from './recovery.js';
 import { createRpcStatusProjection, pendingQueueDepth } from './status.js';

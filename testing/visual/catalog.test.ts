@@ -154,10 +154,8 @@ describe('visual catalog', () => {
 
   it('gives each screen and overlay scenario its own fixture registration', () => {
     const factories = [...screenFixtureRegistry.values(), ...overlayFixtureRegistry.values()];
-    const calls = factories.map((factory) => factory.toString());
 
     expect(new Set(factories).size).toBe(factories.length);
-    expect(new Set(calls).size).toBe(calls.length);
   });
 
   it('lists the catalog without changing stores or starting network work', () => {

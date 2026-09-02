@@ -1,12 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
-import { PASS_API_PROVIDER_IDS } from '../../core/providers/api-provider-verdicts.js';
+import { FORBIDDEN_API_PROVIDER_IDS } from '../../core/providers/api-provider-verdicts.js';
 import type { ProviderDef, ProviderOverrides } from './types.js';
-import { createGroqProvider } from './groq.js';
-import { createTogetherProvider } from './together.js';
 import { createLmStudioProvider } from './lm-studio.js';
-import { createOllamaCloudProvider, createOllamaProvider } from './ollama.js';
-import { createOpenRouterProvider } from './openrouter.js';
+import { createOllamaProvider } from './ollama.js';
 
 /** A credential of the provider's own family; a foreign prefix fails admission. */
 function fixtureCredential(provider: string, suffix: string): string {
@@ -37,61 +34,6 @@ interface ProviderFixture {
 }
 
 const FIXTURES: ProviderFixture[] = [
-  {
-    name: 'groq',
-    create: createGroqProvider,
-    defaultBaseURL: 'https://api.groq.com/openai/v1',
-    isLocal: false,
-    envKey: 'GROQ_API_KEY',
-    listEndpoint: 'https://api.groq.com/openai/v1/models',
-    successResponse: {
-      data: [
-        { id: 'llama3-8b-8192', context_window: 8192 },
-        { id: 'mixtral-8x7b-32768', context_window: 32768 },
-      ],
-    },
-    modelIds: ['llama3-8b-8192', 'mixtral-8x7b-32768'],
-    contextLengthForFirst: 8192,
-    contextLengthResponse: {
-      data: [{ id: 'llama3-8b-8192', context_window: 8192 }],
-    },
-    detectUsesListEndpoint: true,
-    sendsAuth: true,
-  },
-  {
-    name: 'together',
-    create: createTogetherProvider,
-    defaultBaseURL: 'https://api.together.ai/v1',
-    isLocal: false,
-    envKey: 'TOGETHER_API_KEY',
-    listEndpoint: 'https://api.together.ai/v1/models',
-    successResponse: [
-      {
-        id: 'meta-llama/Llama-3-8b-chat-hf',
-        type: 'chat',
-        serverless: true,
-        context_length: 8192,
-      },
-      {
-        id: 'mistralai/Mixtral-8x7B-Instruct-v0.1',
-        type: 'code',
-        serverless: true,
-        context_length: 32768,
-      },
-    ],
-    modelIds: ['meta-llama/Llama-3-8b-chat-hf', 'mistralai/Mixtral-8x7B-Instruct-v0.1'],
-    contextLengthForFirst: 8192,
-    contextLengthResponse: [
-      {
-        id: 'meta-llama/Llama-3-8b-chat-hf',
-        type: 'chat',
-        serverless: true,
-        context_length: 8192,
-      },
-    ],
-    detectUsesListEndpoint: true,
-    sendsAuth: true,
-  },
   {
     name: 'lm-studio',
     create: createLmStudioProvider,
@@ -129,54 +71,15 @@ const FIXTURES: ProviderFixture[] = [
     detectUsesListEndpoint: false,
     sendsAuth: false,
   },
-  {
-    name: 'ollama-cloud',
-    create: createOllamaCloudProvider,
-    defaultBaseURL: 'https://ollama.com',
-    isLocal: false,
-    envKey: 'OLLAMA_API_KEY',
-    listEndpoint: 'https://ollama.com/api/tags',
-    successResponse: {
-      models: [{ name: 'kimi-k2.7-code' }, { name: 'gpt-oss:120b' }],
-    },
-    modelIds: ['kimi-k2.7-code', 'gpt-oss:120b'],
-    contextLengthForFirst: 0, // unused — detection goes through /api/show
-    contextLengthResponse: null,
-    detectUsesListEndpoint: false,
-    sendsAuth: true,
-  },
-  {
-    name: 'openrouter',
-    create: createOpenRouterProvider,
-    defaultBaseURL: 'https://openrouter.ai/api/v1',
-    isLocal: false,
-    envKey: 'OPENROUTER_API_KEY',
-    listEndpoint: 'https://openrouter.ai/api/v1/models',
-    successResponse: {
-      data: [
-        { id: 'openai/gpt-4o', context_length: 128000 },
-        { id: 'anthropic/claude-3-opus', context_length: 200000 },
-      ],
-    },
-    modelIds: ['openai/gpt-4o', 'anthropic/claude-3-opus'],
-    contextLengthForFirst: 128000,
-    contextLengthResponse: {
-      data: [{ id: 'openai/gpt-4o', context_length: 128000 }],
-    },
-    detectUsesListEndpoint: true,
-    sendsAuth: true,
-  },
 ];
 
 describe('provider verdict admission contract', () => {
   it('keeps provider-contract fixtures limited to retained existing factories', () => {
     const fixtureNames = FIXTURES.map((fixture) => fixture.name);
-    for (const id of PASS_API_PROVIDER_IDS) {
+    for (const id of FORBIDDEN_API_PROVIDER_IDS) {
       expect(fixtureNames).not.toContain(id);
     }
-    expect(fixtureNames.toSorted()).toEqual(
-      ['groq', 'lm-studio', 'ollama', 'ollama-cloud', 'openrouter', 'together'].toSorted(),
-    );
+    expect(fixtureNames.toSorted()).toEqual(['lm-studio', 'ollama'].toSorted());
   });
 });
 

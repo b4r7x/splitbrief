@@ -1,6 +1,7 @@
 import type { RememberedPresentation } from '../../engine/detection/cache.js';
 import type { ModelsDevCatalogSnapshot } from '../../engine/providers/models-dev-cache.js';
-import type { DiscoverySourceContexts, modelCacheStore } from './model-cache.js';
+import type { modelCacheStore } from './model-cache/state.js';
+import type { DiscoverySourceContexts } from './model-cache/types.js';
 import type { detectionStore } from '../project/detection.js';
 
 /** Store-only cache hydration; engine owns discovery execution and publication. */

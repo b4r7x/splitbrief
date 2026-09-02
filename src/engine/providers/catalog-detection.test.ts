@@ -52,31 +52,22 @@ describe('detectAvailableProviders', () => {
     });
 
     const results = await detectAvailableProviders();
+    expect(results.length).toBe(Object.keys(KNOWN_PROVIDERS).length);
+
     const ollama = results.find((r) => r.provider === 'ollama');
     const lmStudio = results.find((r) => r.provider === 'lm-studio');
 
-    expect(ollama).toMatchObject({ available: true, models: [{ id: 'codellama:7b' }] });
+    expect(ollama).toMatchObject({
+      available: true,
+      models: [{ id: 'codellama:7b' }],
+      isLocal: true,
+    });
     expect(lmStudio).toMatchObject({
       available: false,
       failure: 'offline',
       error: 'Connection refused',
     });
     expect(lmStudio).not.toHaveProperty('models');
-  });
-
-  it('returns detection for each known provider', async () => {
-    mockFetchRoutes({ '11434': { models: [{ name: 'qwen:7b' }] } }, () => {
-      throw new Error('refused');
-    });
-
-    const results = await detectAvailableProviders();
-    expect(results.length).toBe(Object.keys(KNOWN_PROVIDERS).length);
-
-    const ollama = results.find((r) => r.provider === 'ollama');
-    expect(ollama).toMatchObject({ available: true, models: [{ id: 'qwen:7b' }], isLocal: true });
-
-    const deepseek = results.find((r) => r.provider === 'deepseek');
-    expect(deepseek).toMatchObject({ available: false });
   });
 
   it('keeps successful metadata and valid empty inventories distinct', async () => {
@@ -123,44 +114,24 @@ describe('detectAvailableProviders', () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(new Response('', { status: 403 }));
 
     const outcome = await detectProviderCatalog({
-      provider: 'openai',
+      provider: 'lm-studio',
       configOverrides: { apiKey: 'sk-registry-policy-denied' },
     });
 
     expect(outcome).toEqual({
       kind: 'failed',
       source: 'provider-runtime',
-      provider: 'openai',
-      isLocal: false,
+      provider: 'lm-studio',
+      isLocal: true,
       credential: 'present',
       failure: 'policy-denied',
       diagnostic: 'HTTP 403',
     });
   });
 
-  it.each([
-    ['privacy_data_collection_restricted', 'privacy-filtered'],
-    ['guardrail_rejected', 'guardrail-filtered'],
-  ] as const)('preserves OpenRouter %s as a typed %s catalog failure', async (code, failure) => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify({ error: { code } }), { status: 403 }),
-    );
-
-    const outcome = await detectProviderCatalog({
-      provider: 'openrouter',
-      configOverrides: { apiKey: 'sk-or-filtered' },
-    });
-
-    expect(outcome).toMatchObject({
-      kind: 'failed',
-      provider: 'openrouter',
-      failure,
-    });
-  });
-
   it('validates a configured endpoint before attempting its credential reference', async () => {
     const outcome = await detectProviderCatalog({
-      provider: 'openrouter',
+      provider: 'lm-studio',
       configOverrides: {
         apiBase: 'https://untrusted.example/api/v1',
         apiKey: 'env:REGISTRY_MISSING_KEY',
@@ -169,7 +140,7 @@ describe('detectAvailableProviders', () => {
 
     expect(outcome).toMatchObject({
       kind: 'failed',
-      provider: 'openrouter',
+      provider: 'lm-studio',
       failure: 'endpoint-invalid',
     });
     expect(globalThis.fetch).not.toHaveBeenCalled();
@@ -191,13 +162,13 @@ describe('detectAvailableProviders', () => {
     );
 
     const outcome = await detectProviderCatalog({
-      provider: 'openai',
+      provider: 'lm-studio',
       configOverrides: { apiKey: canary },
     });
 
     expect(outcome).toMatchObject({
       kind: 'failed',
-      provider: 'openai',
+      provider: 'lm-studio',
       credential: 'present',
       diagnostic: expect.stringContaining('***REDACTED***'),
     });
@@ -220,14 +191,14 @@ describe('providerDetectionFromOutcome', () => {
       providerDetectionFromOutcome({
         kind: 'failed',
         source: 'provider-runtime',
-        provider: 'openai',
+        provider: 'lm-studio',
         isLocal: false,
         credential: 'present',
         failure,
         diagnostic: 'diagnostic under test',
       }),
     ).toEqual({
-      provider: 'openai',
+      provider: 'lm-studio',
       available: false,
       isLocal: false,
       hasKey: true,

@@ -148,17 +148,6 @@ describe('buildRunnerConfig', () => {
       expect(expectApi(result).apiBase).toBe('http://localhost:1234/v1');
     });
 
-    it('normalizes an exact fixed provider endpoint', () => {
-      const result = buildRunnerConfig('implementer', {
-        kind: 'api',
-        tool: 'openai',
-        apiBase: 'HTTPS://API.OPENAI.COM:443/v1/',
-        model: 'gpt-5.4',
-      });
-
-      expect(expectApi(result).apiBase).toBe('https://api.openai.com/v1');
-    });
-
     it('normalizes a loopback provider endpoint', () => {
       const result = buildRunnerConfig('implementer', {
         kind: 'api',
@@ -168,17 +157,6 @@ describe('buildRunnerConfig', () => {
       });
 
       expect(expectApi(result).apiBase).toBe('http://127.0.0.1:22000/v1');
-    });
-
-    it('rejects a fixed provider endpoint on another origin', () => {
-      expect(() =>
-        buildRunnerConfig('implementer', {
-          kind: 'api',
-          tool: 'openai',
-          apiBase: 'https://proxy.example.com/v1',
-          model: 'gpt-5.4',
-        }),
-      ).toThrow(expect.objectContaining({ kind: 'provider-endpoint-invalid' }));
     });
 
     it('rejects a local provider endpoint outside loopback', () => {
@@ -195,22 +173,22 @@ describe('buildRunnerConfig', () => {
     it('does not reuse the previous provider apiBase when switching providers', () => {
       const result = buildRunnerConfig('implementer', {
         kind: 'api',
-        tool: 'anthropic',
-        model: 'claude-sonnet-4-6',
+        tool: 'lm-studio',
+        model: 'qwen2.5-coder-7b',
         existing: {
           kind: 'api',
-          provider: 'openrouter',
-          service: 'openrouter',
+          provider: 'custom-endpoint',
+          service: 'custom-endpoint',
           offering: 'payg',
-          apiBase: 'https://openrouter.ai/api/v1',
-          apiKey: 'openrouter-key',
-          model: 'anthropic/claude-sonnet-4.6',
+          apiBase: 'https://api.example.test/v1',
+          apiKey: 'test-key',
+          model: 'custom-model',
           contextLength: 8192,
         },
       });
 
       const api = expectApi(result);
-      expect(api.apiBase).toBe('https://api.anthropic.com/v1');
+      expect(api.apiBase).toBe('http://localhost:1234/v1');
       expect(api.apiKey).toBeUndefined();
     });
   });
@@ -290,8 +268,8 @@ describe('buildRunnerConfig', () => {
     it('switching tool drops contextLength and temperature', () => {
       const result = buildRunnerConfig('implementer', {
         kind: 'api',
-        tool: 'anthropic',
-        model: 'claude-sonnet-4-6',
+        tool: 'lm-studio',
+        model: 'qwen2.5-coder-7b',
         existing: {
           kind: 'api',
           provider: 'ollama',
@@ -384,7 +362,7 @@ describe('buildRunnerConfig', () => {
     it('carries timeout but resets source customModels across targets', () => {
       const result = buildRunnerConfig('implementer', {
         kind: 'api',
-        tool: 'anthropic',
+        tool: 'lm-studio',
         model: 'new-model',
         existing: {
           kind: 'api',
@@ -409,13 +387,13 @@ describe('buildRunnerConfig', () => {
   describe('target changes', () => {
     const source = {
       kind: 'api' as const,
-      provider: 'openrouter',
-      service: 'openrouter',
+      provider: 'custom-endpoint',
+      service: 'custom-endpoint',
       offering: 'payg' as const,
-      apiBase: 'https://openrouter.ai/api/v1',
-      apiKey: 'env:OPENROUTER_API_KEY',
-      model: 'anthropic/claude-opus-4.6',
-      customModels: ['anthropic/claude-opus-4.6', 'source-only-model'],
+      apiBase: 'https://api.example.test/v1',
+      apiKey: 'test-key',
+      model: 'custom-model',
+      customModels: ['custom-model', 'source-only-model'],
       effort: 'high' as const,
     };
 
@@ -423,7 +401,7 @@ describe('buildRunnerConfig', () => {
       expect(() =>
         buildRunnerConfig('implementer', {
           kind: 'api',
-          tool: 'anthropic',
+          tool: 'lm-studio',
           existing: source,
         }),
       ).toThrow(/model/);
@@ -432,17 +410,17 @@ describe('buildRunnerConfig', () => {
     it('keeps an explicit destination model even when it equals the source model', () => {
       const result = buildRunnerConfig('implementer', {
         kind: 'api',
-        tool: 'anthropic',
+        tool: 'lm-studio',
         model: source.model,
         existing: source,
       });
 
       expect(result).toEqual({
         kind: 'api',
-        provider: 'anthropic',
-        service: 'anthropic',
-        offering: 'payg',
-        apiBase: 'https://api.anthropic.com/v1',
+        provider: 'lm-studio',
+        service: 'lm-studio',
+        offering: 'local',
+        apiBase: 'http://localhost:1234/v1',
         model: source.model,
       });
     });
@@ -495,29 +473,6 @@ describe('buildRunnerConfig', () => {
       });
 
       expect(result).toEqual({ kind: 'cli', tool: 'copilot', model: 'auto' });
-    });
-
-    it('initializes a hosted target from its destination descriptor', () => {
-      const result = buildRunnerConfig('implementer', {
-        kind: 'api',
-        tool: 'anthropic',
-        model: 'claude-sonnet-4-6',
-        apiBase: source.apiBase,
-        apiKey: source.apiKey,
-        service: source.service,
-        offering: source.offering,
-        effort: source.effort,
-        existing: source,
-      });
-
-      expect(result).toEqual({
-        kind: 'api',
-        provider: 'anthropic',
-        service: 'anthropic',
-        offering: 'payg',
-        apiBase: 'https://api.anthropic.com/v1',
-        model: 'claude-sonnet-4-6',
-      });
     });
 
     it('initializes a subscription target without API or auto state', () => {
@@ -595,6 +550,48 @@ describe('buildRunnerConfig', () => {
     });
   });
 
+  describe('variant', () => {
+    const opencode = {
+      kind: 'cli' as const,
+      tool: 'opencode' as const,
+      model: 'openai/gpt-5.6-luna',
+      variant: 'high',
+    };
+
+    it('carries the variant forward when the seat keeps its tool', () => {
+      const result = buildRunnerConfig('implementer', {
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'openai/gpt-5.6-mini',
+        existing: opencode,
+      });
+
+      expect(expectCli(result).variant).toBe('high');
+    });
+
+    it('drops the variant when the seat switches tool', () => {
+      const result = buildRunnerConfig('implementer', {
+        kind: 'cli',
+        tool: 'claude-code',
+        existing: opencode,
+      });
+
+      expect(expectCli(result).variant).toBeUndefined();
+      expect(result).not.toHaveProperty('variant');
+    });
+
+    it('takes an explicit variant over the carried one', () => {
+      const result = buildRunnerConfig('implementer', {
+        kind: 'cli',
+        tool: 'opencode',
+        variant: 'my-preset',
+        existing: opencode,
+      });
+
+      expect(expectCli(result).variant).toBe('my-preset');
+    });
+  });
+
   describe('missing required field errors', () => {
     it('throws for cli without tool', () => {
       expect(() =>
@@ -643,13 +640,10 @@ describe('inferKindFromTool', () => {
   it.each([
     ['known CLI tool claude-code', 'claude-code', 'cli'],
     ['known CLI tool codex', 'codex', 'cli'],
-    ['known CLI tool aider', 'aider', 'cli'],
     ['shell meta-runner', 'shell', 'shell'],
     ['agent meta-runner', 'agent', 'agent'],
-    ['agent-sdk meta-runner', 'agent-sdk', 'agent-sdk'],
-    ['known API provider anthropic', 'anthropic', 'api'],
     ['known API provider ollama', 'ollama', 'api'],
-    ['known API provider openrouter', 'openrouter', 'api'],
+    ['known API provider lm-studio', 'lm-studio', 'api'],
     ['custom API provider', 'my-custom-provider', 'api'],
   ] as const)('%s', (_label, tool, kind) => {
     expect(inferKindFromTool(tool)).toBe(kind);

@@ -1,4 +1,38 @@
-import { error, matches } from '../../utils/error.js';
+import { error, matches, type AppError } from '../../utils/error.js';
+import type { SessionRef } from '../types/session-ref.js';
+
+export type SessionPreparationOperation =
+  | 'allocate-session'
+  | 'write-readiness'
+  | 'publish-active'
+  | 'release-session'
+  | 'rollback-session'
+  | 'transfer-detached-session'
+  | 'accept-detached-session'
+  | 'settle-detached-session'
+  | 'rollback-detached-session'
+  | 'discard-orphan-session';
+
+type SessionPreparationErrorData = Readonly<{
+  operation: SessionPreparationOperation;
+  sessionId: string;
+}>;
+
+export type SessionPreparationIoError = AppError<'session-prepare-io', SessionPreparationErrorData>;
+
+export const sessionPreparationError = {
+  io: (
+    operation: SessionPreparationOperation,
+    ref: SessionRef,
+    cause: unknown,
+  ): SessionPreparationIoError =>
+    error(
+      'session-prepare-io',
+      `Failed to ${operation.replaceAll('-', ' ')} for session '${ref.sessionId}'`,
+      { operation, sessionId: ref.sessionId },
+      cause,
+    ),
+} as const;
 
 export const sessionError = {
   invalidData: (sessionId: string, reason: string) =>

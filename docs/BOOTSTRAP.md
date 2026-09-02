@@ -86,7 +86,7 @@ A store **may** expose its own `.load()` / `.bootstrap()` method, but does not h
 ```ts
 configStore.load(projectDir, overrides);
 sessionsStore.load(projectDir);
-const skills = await discoverSkills(plannerTool, projectDir);
+const skills = await discoverSkills(projectDir);
 skillsStore.setAvailable(skills);
 ```
 
@@ -124,7 +124,7 @@ At the end of `initStores()`:
 
 ```ts
 await Promise.all([
-  discoverSkills(getPlannerToolId(storeConfig.planner), projectDir).then(skills => {
+  discoverSkills(projectDir).then(skills => {
     skillsStore.setAvailable(skills);
   }),
   loadDetectionIntoStores(

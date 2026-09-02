@@ -9,26 +9,22 @@ import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
   CLI_TOOL_TRUST,
+  COMMAND_CODE_CLI_ADMISSION_VERDICT,
   CURSOR_CLI_ADMISSION_VERDICT,
   CUSTOM_ONLY_CLI_TOOL_DEFINITIONS,
   EXCLUDED_CLI_TOOL_IDS,
   IMPLEMENTER_CLI_TOOL_IDS,
   NATIVE_CLI_CATALOG_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
-  classifyCliAdmittedVersion,
-  classifyCliCompilerVersion,
   cliAuthChannelHostStateAccess,
   cliModelPolicyViolations,
   cliToolSupportsRole,
   defaultCliAuthChannel,
   getCliModelPolicy,
   selectCliAuthChannel,
-  seatPickerLane,
-  SEAT_PICKER_ROLES,
-  type ActiveRunnerRole,
   type CliModelPolicy,
-  type SeatPickerRole,
 } from './cli-tool-catalog.js';
+import { classifyCliAdmittedVersion, classifyCliCompilerVersion } from './cli-version.js';
 import { CLI_PLANNER_ADAPTERS } from '../../engine/runners/cli-tools/registry.js';
 
 const REPO_ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '../../..');
@@ -37,10 +33,10 @@ const EXISTING_CLI_TOOL_IDS = [
   'claude-code',
   'codex',
   'opencode',
-  'aider',
   'copilot',
   'kilo-code',
   'cursor',
+  'command-code',
 ] as const;
 
 function resolveRepoPath(relativePath: string): string {
@@ -48,10 +44,12 @@ function resolveRepoPath(relativePath: string): string {
 }
 
 describe('CLI tool catalog', () => {
-  it('admits Cursor as an active CLI tool', () => {
+  it('admits Cursor and Command Code as active CLI tools', () => {
     expect(CURSOR_CLI_ADMISSION_VERDICT).toBe('PASS');
+    expect(COMMAND_CODE_CLI_ADMISSION_VERDICT).toBe('PASS');
     expect(ANTIGRAVITY_CLI_ADMISSION_VERDICT).toBe('OMIT');
     expect(CLI_TOOL_CATALOG.cursor.admission.state).toBe('active');
+    expect(CLI_TOOL_CATALOG['command-code'].admission.state).toBe('active');
     expect(Object.keys(CLI_TOOL_CATALOG)).toEqual(EXISTING_CLI_TOOL_IDS);
     expect(Object.keys(CLI_TOOL_TRUST)).toEqual(EXISTING_CLI_TOOL_IDS);
     expect(CLI_TOOL_IDS).toEqual(EXISTING_CLI_TOOL_IDS);
@@ -110,10 +108,10 @@ describe('CLI tool catalog', () => {
       'claude-code': '2.0.0',
       codex: '0.40.0',
       opencode: '0.5.0',
-      aider: '0.86.0',
       copilot: '0.3.0',
       'kilo-code': '0.1.0',
       cursor: '2026.08.25-3e8eec8',
+      'command-code': '1.39.2',
     });
   });
 
@@ -121,9 +119,9 @@ describe('CLI tool catalog', () => {
     expect(NATIVE_CLI_CATALOG_TOOL_IDS).toEqual([
       'codex',
       'opencode',
-      'aider',
       'kilo-code',
       'cursor',
+      'command-code',
     ]);
   });
 
@@ -138,10 +136,10 @@ describe('CLI tool catalog', () => {
         '.opencode/package.json',
         '.opencode/node_modules/',
       ],
-      aider: [],
       copilot: [],
       'kilo-code': [],
       cursor: [],
+      'command-code': [],
     });
   });
 
@@ -150,10 +148,10 @@ describe('CLI tool catalog', () => {
       'claude-code': [],
       codex: ['--sandbox workspace-write'],
       opencode: [],
-      aider: ['--yes-always'],
       copilot: ['--allow-all', '--no-ask-user'],
       'kilo-code': ['--auto'],
       cursor: ['--force'],
+      'command-code': ['--permission-mode auto-accept'],
     } as const;
 
     for (const id of EXISTING_CLI_TOOL_IDS) {
@@ -185,113 +183,14 @@ describe('CLI tool catalog', () => {
   ] as const)(
     'classifies %s through the descriptor-owned compatibility gate',
     (version, expected) => {
-      expect(
-        classifyCliAdmittedVersion({
-          installedVersion: version,
-          minimumAdmittedVersion: CLI_TOOL_CATALOG.codex.compatibility.minimumAdmittedVersion,
-        }),
-      ).toBe(expected);
-    },
-  );
-
-  it.each([
-    ['1.18.15', 'exact'],
-    ['1.18.14', 'older'],
-    ['1.18.16', 'newer'],
-    ['1.19.0', 'newer'],
-    ['1.18.15-beta.1', 'mismatch'],
-    ['latest', 'mismatch'],
-    ['', 'mismatch'],
-    ['0.40', 'mismatch'],
-  ] as const)(
-    'classifies compiler version %s against the exact admitted version',
-    (installedVersion, expected) => {
-      expect(
-        classifyCliCompilerVersion({
-          installedVersion,
-          exactAdmittedVersion: '1.18.15',
-        }),
-      ).toBe(expected);
-    },
-  );
-
-  it('calver newer than minimum is compatible', () => {
-    expect(
-      classifyCliAdmittedVersion({
-        installedVersion: '2026.09.01',
-        minimumAdmittedVersion: '2026.08.25',
-        versionScheme: 'calver',
-      }),
-    ).toBe('compatible');
-  });
-
-  it('calver older than minimum is incompatible', () => {
-    expect(
-      classifyCliAdmittedVersion({
-        installedVersion: '2026.08.24',
-        minimumAdmittedVersion: '2026.08.25',
-        versionScheme: 'calver',
-      }),
-    ).toBe('incompatible');
-  });
-
-  it('calver with build suffix parses', () => {
-    expect(
-      classifyCliAdmittedVersion({
-        installedVersion: '2026.08.25-3e8eec8',
-        minimumAdmittedVersion: '2026.08.25',
-        versionScheme: 'calver',
-      }),
-    ).toBe('compatible');
-  });
-
-  it('semver behaviour unchanged', () => {
-    const cases = [
-      ['0.40.0', 'compatible'],
-      ['0.40.7', 'compatible'],
-      ['0.41.0', 'compatible'],
-      ['0.146.0', 'compatible'],
-      ['0.39.9', 'incompatible'],
-      ['0.40.0-rc.1', 'unverified'],
-      ['0.40', 'unverified'],
-    ] as const;
-    const minimumAdmittedVersion = CLI_TOOL_CATALOG.codex.compatibility.minimumAdmittedVersion;
-
-    for (const [version, expected] of cases) {
-      const input = { installedVersion: version, minimumAdmittedVersion };
+      const input = {
+        installedVersion: version,
+        minimumAdmittedVersion: CLI_TOOL_CATALOG.codex.compatibility.minimumAdmittedVersion,
+      };
       expect(classifyCliAdmittedVersion(input)).toBe(expected);
       expect(classifyCliAdmittedVersion({ ...input, versionScheme: 'semver' })).toBe(expected);
-    }
-
-    expect(
-      classifyCliCompilerVersion({
-        installedVersion: '1.18.15',
-        exactAdmittedVersion: '1.18.15',
-        versionScheme: 'semver',
-      }),
-    ).toBe('exact');
-    expect(
-      classifyCliCompilerVersion({
-        installedVersion: '1.18.14',
-        exactAdmittedVersion: '1.18.15',
-        versionScheme: 'semver',
-      }),
-    ).toBe('older');
-    expect(
-      classifyCliCompilerVersion({
-        installedVersion: '1.18.16',
-        exactAdmittedVersion: '1.18.15',
-        versionScheme: 'semver',
-      }),
-    ).toBe('newer');
-    expect(
-      classifyCliCompilerVersion({
-        installedVersion: '1.18.15-beta.1',
-        exactAdmittedVersion: '1.18.15',
-        versionScheme: 'semver',
-      }),
-    ).toBe('mismatch');
-  });
+    },
+  );
 
   it('keeps compiler evidence exact-version-only and immutable', () => {
     expect(Object.keys(CLI_COMPILER_EVIDENCE)).toEqual(EXISTING_CLI_TOOL_IDS);
@@ -360,6 +259,7 @@ describe('CLI tool catalog', () => {
       expect(existsSync(resolveRepoPath(relativePath))).toBe(false);
     }
     expect('cursor' in CLI_TOOL_CATALOG).toBe(true);
+    expect('command-code' in CLI_TOOL_CATALOG).toBe(true);
     expect('antigravity' in CLI_TOOL_CATALOG).toBe(false);
   });
 
@@ -535,10 +435,6 @@ describe('CLI tool catalog', () => {
   });
 
   it('defaults a session-less tool to its declared bridge-free channel', () => {
-    expect(defaultCliAuthChannel('aider')).toMatchObject({
-      id: 'provider-dependent',
-      stateBridge: 'none',
-    });
     expect(defaultCliAuthChannel('opencode').id).toBe('provider-dependent');
     expect(defaultCliAuthChannel('kilo-code').id).toBe('provider-dependent');
   });
@@ -597,6 +493,33 @@ describe('CLI tool catalog', () => {
     }
   });
 
+  it('admits Command Code with a session-only auth channel and no api-key env', () => {
+    const descriptor = CLI_TOOL_CATALOG['command-code'];
+
+    expect(descriptor.auth.kind).toBe('session');
+    expect(descriptor.auth.channels).toHaveLength(1);
+    expect(descriptor.auth.channels[0]).toMatchObject({ id: 'session', env: [] });
+    expect(descriptor.auth.channels[0]?.hostKeychainPlatforms).toEqual([]);
+    expect(descriptor.supportsEffort).toBe(true);
+    expect(descriptor.effortChannel).toBe('effort-flag');
+    expect(descriptor.command).toBe('cmd');
+    expect(descriptor.executableAliases).toEqual(['cmd']);
+  });
+
+  it('pins Command Code to the version its conformance transaction exercised', () => {
+    const descriptor = CLI_TOOL_CATALOG['command-code'];
+
+    expect(descriptor.authDiscoveryMode).toBe('status-unverified');
+    expect(descriptor.compatibility.testedVersion).toBe('1.39.2');
+    expect(descriptor.compatibility.minimumAdmittedVersion).toBe('1.39.2');
+    expect(
+      classifyCliAdmittedVersion({
+        installedVersion: '1.4.0',
+        minimumAdmittedVersion: descriptor.compatibility.minimumAdmittedVersion,
+      }),
+    ).not.toBe('compatible');
+  });
+
   it('names the subscription channel as the Claude Code default', () => {
     // The subscription the user already pays for is the planner default
     // everywhere; no platform resolves a fresh Claude Code runner to metered
@@ -609,13 +532,27 @@ describe('CLI tool catalog', () => {
 });
 
 describe('effort support', () => {
-  it('declares the per-call effort flag only for Claude Code', () => {
-    expect(CLI_TOOL_CATALOG['claude-code'].supportsEffort).toBe(true);
+  it('names the real effort channel of every tool', () => {
+    const channels = Object.fromEntries(
+      CLI_TOOL_IDS.map((tool) => [tool, CLI_TOOL_CATALOG[tool].effortChannel]),
+    );
+    expect(channels).toEqual({
+      'claude-code': 'effort-flag',
+      codex: 'none',
+      opencode: 'variant',
+      copilot: 'none',
+      'kilo-code': 'none',
+      cursor: 'model-id',
+      'command-code': 'effort-flag',
+    });
+  });
+
+  it('keeps supportsEffort as the effort-flag channel alone', () => {
     for (const tool of CLI_TOOL_IDS) {
-      if (tool === 'claude-code') continue;
-      expect({ tool, supportsEffort: CLI_TOOL_CATALOG[tool].supportsEffort }).toEqual({
+      const descriptor = CLI_TOOL_CATALOG[tool];
+      expect({ tool, supportsEffort: descriptor.supportsEffort }).toEqual({
         tool,
-        supportsEffort: false,
+        supportsEffort: descriptor.effortChannel === 'effort-flag',
       });
     }
   });
@@ -630,25 +567,6 @@ describe('effort support', () => {
         tool,
         supportsEffort: CLI_TOOL_CATALOG[tool].supportsEffort,
       });
-    }
-  });
-});
-
-describe('seatPickerLane', () => {
-  it('reads every picker role through its own seat lane', () => {
-    for (const role of ['planner', 'implementer', 'reviewer'] as const) {
-      expect(seatPickerLane(role)).toBe(role);
-    }
-  });
-
-  it('accepts every config seat as a picker role', () => {
-    for (const seat of [
-      'planner',
-      'implementer',
-      'reviewer',
-    ] as const satisfies readonly ActiveRunnerRole[]) {
-      const pickerRole: SeatPickerRole = seat;
-      expect(SEAT_PICKER_ROLES).toContain(pickerRole);
     }
   });
 });

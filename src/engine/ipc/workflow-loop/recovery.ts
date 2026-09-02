@@ -1,4 +1,4 @@
-import { loadStateForResume } from '../../../core/state/persistence.js';
+import { loadStateForResume } from '../../../core/state/resume-authority.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import { RecoveryActionSchema } from '../../../core/schemas/enums.js';

@@ -173,7 +173,7 @@ All three use the same fuzzy ranking algorithm (AD-4).
 
 ### AD-12: Structured compaction for long plans (partial)
 
-Implemented for transcript compaction: `workflow.compactionFormat` supports `auto`, `freeform`, and `structured`; `auto` selects structured JSON for `api` and `agent-sdk` planners and freeform for subprocess planners. Structured summaries use `Plan Goal / Steps Completed / Current Step / Files Modified / Constraints Discovered / Remaining Work`, update incrementally by merging with the previous structured summary, and fall back to freeform text on validation failure. Still future: tree-session compaction entries and read-file tracking across branches.
+Implemented for transcript compaction: `workflow.compactionFormat` supports `auto`, `freeform`, and `structured`; `auto` selects structured JSON for `api` planners and freeform for subprocess planners. Structured summaries use `Plan Goal / Steps Completed / Current Step / Files Modified / Constraints Discovered / Remaining Work`, update incrementally by merging with the previous structured summary, and fall back to freeform text on validation failure. Still future: tree-session compaction entries and read-file tracking across branches.
 
 ---
 
@@ -188,7 +188,7 @@ The niche has direct competitors now (`VISION.md`). Any single row here can be m
 | Recovery system | Typed `RecoveryIssue` → user chooses `RecoveryAction` (skip, retry, abort, switch-profile) |
 | `explain` | Post-hoc reasoning about routing/cost/review decisions |
 | Budget tracking | Real-time cost prediction, budget gates, `budget_exceeded` events |
-| Mode system | `instant`/`quick`/`standard`/`speckit` — adjusts ceremony to task complexity |
+| Mode system | `quick`/`standard`/`speckit` — adjusts ceremony to task complexity |
 | Drift detection | Detects when implementation diverges from plan |
 | Worktree isolation | One git worktree per run for a direct-writing implementer, project dependencies linked in, changes promoted back hash-guarded. Isolates files, not the runtime — it is not a security boundary |
 | 92 typed events + `--json` | NDJSON event stream for CI/automation |
@@ -227,7 +227,7 @@ These were specced in DIRECTION but not yet built as of the audit. Each is a sta
 
 | Feature | What it does | Status |
 |---|---|---|
-| `splitbrief "feature"` shorthand | Bare positional arg = `splitbrief start "feature"` in instant mode | ✅ |
+| `splitbrief "feature"` shorthand | Bare positional arg = `splitbrief start "feature"`, resolving the mode the usual way | ✅ |
 | `@file` syntax | `splitbrief "refactor auth" @context.md @screenshot.png` enriches planner context | ✅ |
 | `--help` with 14 real examples | Not just flag descriptions — concrete command examples with explanations | ✅ |
 | `splitbrief continue` | Smart command: attaches if running, resumes if interrupted | ✅ |
@@ -287,6 +287,6 @@ These are conscious anti-goals, not TODO items:
 
 - **Custom TUI framework** — Ink 6.x is sufficient; the whole-frame rewrite at the 30fps cap is fast enough, and `incrementalRendering` stays off until ink >= 7.0.0. Custom differential rendering is a multi-month effort with no user-visible gain.
 - **Extension/plugin system** — Our hook system (allow/deny/warn/crash) is the right abstraction for an orchestrator. Extensions are for tools that own the agent loop; we don't.
-- **Model registry** — We delegate model management to the providers (ollama, LM Studio, OpenRouter). No model catalog, no download management.
+- **Model registry** — We delegate model management to the providers (ollama, LM Studio). No model catalog, no download management.
 - **OAuth/login flows** — Authentication belongs to the child agents (claude-code, codex). We pass API keys in config.
 - **Parallel same-checkout writes** — Git doesn't support this safely. Worktrees or sequential execution only.

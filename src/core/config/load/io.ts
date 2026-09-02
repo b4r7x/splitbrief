@@ -1,24 +1,23 @@
-import { createHash } from 'node:crypto';
-import {
-  closeSync,
-  constants,
-  fstatSync,
-  openSync,
-  readFileSync,
-  realpathSync,
-  type BigIntStats,
-} from 'node:fs';
 import { join } from 'node:path';
+import { realpathSync } from 'node:fs';
 import YAML, { parseDocument, type Document } from 'yaml';
-import { CONFIG_VERSION, ConfigSchema, type Config } from '../../schemas/config.js';
-import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner-fields.js';
-import { getKnownProviderBaseURL } from '../../providers/catalog.js';
-import { API_PROVIDER_CATALOG } from '../../providers/api-provider-catalog.js';
-import { defaultCliAuthChannel } from '../../runners/cli-tool-catalog.js';
+import { CONFIG_VERSION, type Config } from '../../schemas/config.js';
 import { validateConfig } from './validation/config.js';
 import { fromYaml, toYaml } from './transform.js';
-import { SPLITBRIEF_DIR, TREES_DIR, CONFIG_FILE, getSplitbriefPath } from '../../paths.js';
-import { checkConfigPermissions, ensureGitignore } from '../../../lib/fs.js';
+import { createDefaultConfig, mergeWithDefaults } from './defaults.js';
+import {
+  CONFIG_RELATIVE_PATH,
+  canonicalConfigTarget,
+  configPath,
+  configRevisionsMatch,
+  ensureConfigGitignore,
+  readConfigDocument,
+  renderConfigDocumentEdits,
+  type ConfigDocumentEdit,
+  type ConfigDocumentSnapshot,
+} from './document.js';
+import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../paths.js';
+import { checkConfigPermissions } from '../../../lib/fs.js';
 import { confinedWriteFile, confinedEnsureDir } from '../../../lib/confined-fs.js';
 import {
   confinedAtomicWriteFile,
@@ -26,108 +25,8 @@ import {
   type ExpectedConfigRevision,
 } from '../../../lib/confined-fs-atomic.js';
 import { SECURE_FILE_MODE } from '../../../lib/fs.js';
-import { assertWritablePathConfined, pathConfinementError } from '../../../lib/path-confinement.js';
-import { isENOENT, isNodeError } from '../../../lib/process/errors.js';
 import { narrowRecord } from '../../../utils/type-guards.js';
 import { configError } from '../errors.js';
-
-export function configPath(projectDir: string): string {
-  return getSplitbriefPath(projectDir, CONFIG_FILE);
-}
-
-export function createDefaultConfig(): Config {
-  const provider = API_PROVIDER_CATALOG.ollama;
-  return {
-    version: CONFIG_VERSION,
-    planner: {
-      kind: 'cli',
-      tool: 'claude-code',
-      authChannel: defaultCliAuthChannel('claude-code').id,
-    },
-    implementer: {
-      kind: 'api',
-      provider: provider.id,
-      service: provider.service,
-      offering: provider.offering,
-      model: 'qwen3-coder:30b',
-      apiBase: getKnownProviderBaseURL(provider.id),
-      temperature: DEFAULT_IMPLEMENTER_TEMPERATURE,
-    },
-    validation: {
-      typecheck: true,
-      lint: true,
-      test: true,
-    },
-    workflow: {
-      approve: 'default',
-      maxRetries: 3,
-      git: { commitStrategy: 'none' },
-      isolation: 'worktree',
-      persistTranscript: true,
-      compactionFormat: 'auto',
-      mode: 'standard',
-      taskReview: 'none',
-    },
-    plannerEstimateReview: false,
-    autoSplitOverflow: false,
-  };
-}
-
-function mergeRunner(
-  loaded: Record<string, unknown> | null,
-  defaults: Record<string, unknown>,
-): Record<string, unknown> {
-  if (!loaded) return defaults;
-  // When kinds differ, the loaded runner is already self-contained. Merging
-  // would leak kind-specific fields (e.g. provider/apiBase from an api default
-  // into a cli config).
-  if (loaded.kind !== undefined && loaded.kind !== defaults.kind) return loaded;
-  // When the provider is explicitly set and differs from the default, the
-  // provider-specific defaults (model/apiBase) do not apply. Merging them would
-  // mask schema validation of the genuinely missing model/apiBase fields.
-  if (loaded.provider !== undefined && loaded.provider !== defaults.provider) return loaded;
-  return { ...defaults, ...loaded };
-}
-
-const MERGE_HANDLED_KEYS = new Set([
-  'version',
-  'planner',
-  'implementer',
-  'implementerProfiles',
-  'validation',
-  'workflow',
-  'plannerEstimateReview',
-  'autoSplitOverflow',
-]);
-
-function mergeWithDefaults(loaded: Record<string, unknown>): Record<string, unknown> {
-  const defaults = createDefaultConfig();
-  const implementerDefaults: Record<string, unknown> = { ...defaults.implementer };
-
-  const passthrough: Record<string, unknown> = {};
-  for (const key of Object.keys(ConfigSchema.shape)) {
-    if (MERGE_HANDLED_KEYS.has(key)) continue;
-    if (loaded[key] !== undefined) passthrough[key] = loaded[key];
-  }
-
-  return {
-    version: CONFIG_VERSION,
-    planner: loaded['planner'] ?? defaults.planner,
-    implementer: mergeRunner(narrowRecord(loaded['implementer']), implementerDefaults),
-    ...(loaded['implementerProfiles'] !== undefined && {
-      implementerProfiles: loaded['implementerProfiles'],
-    }),
-    validation: narrowRecord(loaded['validation'])
-      ? { ...defaults.validation, ...narrowRecord(loaded['validation']) }
-      : defaults.validation,
-    workflow: narrowRecord(loaded['workflow'])
-      ? { ...defaults.workflow, ...narrowRecord(loaded['workflow']) }
-      : defaults.workflow,
-    ...passthrough,
-    plannerEstimateReview: loaded['plannerEstimateReview'] ?? defaults.plannerEstimateReview,
-    autoSplitOverflow: loaded['autoSplitOverflow'] ?? defaults.autoSplitOverflow,
-  };
-}
 
 export interface LoadConfigResult {
   config: Config;
@@ -166,15 +65,6 @@ function combineLoadWarnings(
   ]);
 }
 
-const CONFIG_RELATIVE_PATH = join(SPLITBRIEF_DIR, CONFIG_FILE);
-
-export type ConfigDocumentSnapshot = Readonly<{
-  rawBytes: Uint8Array;
-  rawYaml: string;
-  document: Document.Parsed;
-  revision: ExpectedConfigRevision;
-}>;
-
 export type ConfigDocumentTransactionResult =
   | Readonly<{ kind: 'saved'; revision: ConfigRevision }>
   | Readonly<{ kind: 'conflict'; currentRevision: ExpectedConfigRevision }>
@@ -189,92 +79,6 @@ type ConfigDocumentAtomicWriter = typeof confinedAtomicWriteFile;
 const configTransactions = new Map<string, Promise<void>>();
 const DURABILITY_WARNING =
   'Config replacement is visible, but directory durability could not be confirmed.';
-
-export function ensureConfigGitignore(projectDir: string): void {
-  ensureGitignore(projectDir, `${SPLITBRIEF_DIR}/`);
-  ensureGitignore(projectDir, `${TREES_DIR}/`);
-}
-
-function configRevision(rawBytes: Uint8Array, stat: BigIntStats): ConfigRevision {
-  return {
-    rawSha256: createHash('sha256').update(rawBytes).digest('hex'),
-    fileIdentity: {
-      dev: stat.dev,
-      ino: stat.ino,
-      size: stat.size,
-      mtimeNs: stat.mtimeNs,
-    },
-  };
-}
-
-export function configRevisionsMatch(
-  expected: ExpectedConfigRevision,
-  observed: ExpectedConfigRevision,
-): boolean {
-  if (expected === null || observed === null) return expected === observed;
-  return (
-    expected.rawSha256 === observed.rawSha256 &&
-    expected.fileIdentity.dev === observed.fileIdentity.dev &&
-    expected.fileIdentity.ino === observed.fileIdentity.ino &&
-    expected.fileIdentity.size === observed.fileIdentity.size &&
-    expected.fileIdentity.mtimeNs === observed.fileIdentity.mtimeNs
-  );
-}
-
-function canonicalConfigTarget(projectDir: string): string | null {
-  assertWritablePathConfined(CONFIG_RELATIVE_PATH, projectDir);
-  const parent = join(realpathSync(projectDir), SPLITBRIEF_DIR);
-  let realParent: string;
-  try {
-    realParent = realpathSync(parent);
-  } catch (err) {
-    if (isENOENT(err)) return null;
-    throw err;
-  }
-  if (realParent !== parent) throw pathConfinementError.symlinkParent(parent);
-  return join(parent, CONFIG_FILE);
-}
-
-function emptyConfigDocumentSnapshot(): ConfigDocumentSnapshot {
-  return {
-    rawBytes: new Uint8Array(),
-    rawYaml: '',
-    document: parseDocument(''),
-    revision: null,
-  };
-}
-
-export function readConfigDocument(projectDir: string): ConfigDocumentSnapshot {
-  const displayPath = configPath(projectDir);
-  const filePath = canonicalConfigTarget(projectDir);
-  if (filePath === null) return emptyConfigDocumentSnapshot();
-
-  let descriptor: number;
-  try {
-    descriptor = openSync(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
-  } catch (err) {
-    if (isENOENT(err)) return emptyConfigDocumentSnapshot();
-    if (isNodeError(err) && err.code === 'ELOOP')
-      throw pathConfinementError.symlinkRead(displayPath);
-    throw configError.unreadable(displayPath);
-  }
-
-  try {
-    const openedStat = fstatSync(descriptor, { bigint: true });
-    if (!openedStat.isFile()) throw configError.unreadable(displayPath);
-    const rawBytes = readFileSync(descriptor);
-    const stat = fstatSync(descriptor, { bigint: true });
-    const rawYaml = rawBytes.toString('utf8');
-    return {
-      rawBytes,
-      rawYaml,
-      document: parseDocument(rawYaml),
-      revision: configRevision(rawBytes, stat),
-    };
-  } finally {
-    closeSync(descriptor);
-  }
-}
 
 function parseLoadedConfig(
   projectDir: string,
@@ -350,28 +154,6 @@ export function writeConfig(projectDir: string, config: Config): string {
   confinedEnsureDir(projectDir, SPLITBRIEF_DIR);
   confinedWriteFile(projectDir, CONFIG_RELATIVE_PATH, text);
   return text;
-}
-
-export interface ConfigDocumentEdit {
-  path: readonly string[];
-  value: unknown;
-}
-
-export function renderConfigDocumentEdits(
-  snapshot: ConfigDocumentSnapshot,
-  edits: readonly ConfigDocumentEdit[],
-): string {
-  let document = snapshot.document.clone();
-  for (const { path, value } of edits) {
-    if (path.length === 0) {
-      document = parseDocument(value === undefined ? '' : YAML.stringify(value));
-    } else if (value === undefined) {
-      document.deleteIn(path);
-    } else {
-      document.setIn(path, value);
-    }
-  }
-  return document.toString();
 }
 
 async function serializedConfigTransaction<T>(

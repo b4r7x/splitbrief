@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { configStore } from '../../stores/project/config.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { detectionStore } from '../../stores/project/detection.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
@@ -14,7 +14,7 @@ import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { TwoColumnPicker } from './two-column-picker/picker.js';
 import { usePickerCatalog } from './use-picker-catalog.js';
-import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import type { PickerOption } from './model-catalog/options.js';
 import type { RightRow } from './model-catalog/rows.js';
 import type { ModelOption } from './model-catalog/recency.js';
@@ -36,17 +36,63 @@ function seedDetections() {
         models: [{ id: 'ollama-only-model', contextLength: 8192 }],
       },
       {
-        provider: 'anthropic',
+        provider: 'lm-studio',
         available: true,
-        isLocal: false,
-        models: [{ id: 'anthropic-only-model', contextLength: 200000 }],
+        isLocal: true,
+        models: [{ id: 'lm-studio-only-model', contextLength: 200000 }],
       },
     ],
   });
   modelCacheStore.setProviderModels('ollama', [{ id: 'ollama-only-model', contextLength: 8192 }]);
-  modelCacheStore.setProviderModels('anthropic', [
-    { id: 'anthropic-only-model', contextLength: 200000 },
+  modelCacheStore.setProviderModels('lm-studio', [
+    { id: 'lm-studio-only-model', contextLength: 200000 },
   ]);
+}
+
+const CODEX_MODELS_DEV = {
+  openai: {
+    id: 'openai',
+    name: 'OpenAI',
+    models: {
+      'gpt-5-codex': { id: 'gpt-5-codex', name: 'GPT-5 Codex', release_date: '2026-01-01' },
+      'gpt-4o': { id: 'gpt-4o', name: 'GPT-4o', release_date: '2025-11-01' },
+      'gpt-4.5-preview': {
+        id: 'gpt-4.5-preview',
+        name: 'GPT-4.5 Preview',
+        release_date: '2025-09-01',
+      },
+      'o3-mini': { id: 'o3-mini', name: 'o3 Mini', release_date: '2025-08-01' },
+    },
+  },
+};
+
+/** codex with a confirmed native list, so models.dev stays metadata-only. */
+function publishConfirmedCodexList() {
+  const request = detectionStore.beginRefresh({
+    contexts: { readiness: 'r', modelsDev: 'm', cliModels: 'c' },
+  });
+  detectionStore.publish({
+    request,
+    result: {
+      providers: [],
+      cliTools: [cliDetectionFor('ready', 'codex')],
+      catalog: CODEX_MODELS_DEV,
+      cliModels: [
+        {
+          connection: { role: 'planner', tool: 'codex', contextKey: 'c' },
+          outcome: { kind: 'success', value: [{ id: 'gpt-5-codex' }] },
+        },
+      ],
+      generation: 1,
+    },
+  });
+}
+
+let capturedRightRows: RightRow[] = [];
+
+function RowsProbe() {
+  capturedRightRows = usePickerCatalog('planner', 0, 'codex').rightRows;
+  return <Text>rows</Text>;
 }
 
 function CatalogProbe({
@@ -141,6 +187,7 @@ function KeyboardCatalogProbe({ role }: { role: 'planner' | 'implementer' }) {
 
 describe('usePickerCatalog', () => {
   beforeEach(() => {
+    capturedRightRows = [];
     configStore.__testReset({ projectDir: '/tmp/project', config: makeConfig() });
     detectionStore.reset();
     modelCacheStore.reset();
@@ -172,30 +219,20 @@ describe('usePickerCatalog', () => {
     configStore.__testReset({
       projectDir: '/tmp/project',
       config: makeConfig({
-        planner: {
-          kind: 'api',
-          provider: 'anthropic',
-          apiBase: 'https://api.anthropic.example/v1',
-          model: 'planner-model',
-        },
-        reviewer: {
-          kind: 'api',
-          provider: 'openai',
-          apiBase: 'https://api.openai.example/v1',
-          model: 'reviewer-model',
-        },
+        planner: { kind: 'cli', tool: 'codex', model: 'planner-model' },
+        reviewer: { kind: 'cli', tool: 'claude-code', model: 'reviewer-model' },
       }),
     });
     seedDetections();
 
     const reviewer = renderFeature(<CurrentSelectionProbe role="reviewer" />);
     await tick(20);
-    expect(reviewer.lastFrame()).toContain('Reviewer|openai|reviewer-model');
+    expect(reviewer.lastFrame()).toContain('Reviewer|claude-code|reviewer-model');
     reviewer.unmount();
 
     const planner = renderFeature(<CurrentSelectionProbe role="planner" />);
     await tick(20);
-    expect(planner.lastFrame()).toContain('Planner|anthropic|planner-model');
+    expect(planner.lastFrame()).toContain('Planner|codex|planner-model');
     planner.unmount();
   });
 
@@ -244,36 +281,36 @@ describe('usePickerCatalog', () => {
     configStore.__testReset({
       projectDir: '/tmp/project',
       config: makeConfig({
-        planner: {
+        implementer: {
           kind: 'api',
-          provider: 'openai',
-          apiBase: 'https://api.openai.example/v1',
-          model: 'planner-last-confirmed-model',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'implementer-last-confirmed-model',
         },
       }),
     });
-    const plannerRuntime: ConfiguredProviderRuntime = {
-      connection: { role: 'planner', provider: 'openai', contextKey: 'planner-context' },
+    const implementerRuntime: ConfiguredProviderRuntime = {
+      connection: { role: 'implementer', provider: 'ollama', contextKey: 'implementer-context' },
       state: 'stale',
       catalog: 'populated',
-      models: [{ id: 'planner-last-confirmed-model' }],
+      models: [{ id: 'implementer-last-confirmed-model' }],
       fetchedAt: 1,
       validatedAt: 2,
       failure: 'timeout',
       diagnostic: 'Configured provider catalog refresh did not complete.',
     };
-    const implementerRuntime: ConfiguredProviderRuntime = {
-      connection: { role: 'implementer', provider: 'openai', contextKey: 'implementer-context' },
+    const plannerRuntime: ConfiguredProviderRuntime = {
+      connection: { role: 'planner', provider: 'ollama', contextKey: 'planner-context' },
       state: 'fresh',
       catalog: 'populated',
-      models: [{ id: 'implementer-confirmed-model' }],
+      models: [{ id: 'planner-confirmed-model' }],
       fetchedAt: 1,
       validatedAt: 2,
     };
     detectionStore.setDetection({
       cliTools: [],
       providers: [],
-      providerOutcomes: [plannerRuntime, implementerRuntime],
+      providerOutcomes: [implementerRuntime, plannerRuntime],
     });
     let projection:
       | Readonly<{
@@ -284,10 +321,10 @@ describe('usePickerCatalog', () => {
       | undefined;
 
     function Probe() {
-      const catalog = usePickerCatalog('planner', 0, 'openai');
+      const catalog = usePickerCatalog('implementer', 0, 'ollama');
       projection = {
         model: rowModels(catalog.rightRows).find(
-          (model) => model.id === 'planner-last-confirmed-model',
+          (model) => model.id === 'implementer-last-confirmed-model',
         ),
         detected: catalog.modelCounts.confirmed,
         counts: catalog.modelCounts,
@@ -310,21 +347,21 @@ describe('usePickerCatalog', () => {
         custom: 0,
       }),
     });
-    expect(projection?.model?.id).not.toBe('implementer-confirmed-model');
+    expect(projection?.model?.id).not.toBe('planner-confirmed-model');
 
     detectionStore.setDetection({
       cliTools: [],
       providers: [],
       providerOutcomes: [
         {
-          connection: plannerRuntime.connection,
+          connection: implementerRuntime.connection,
           state: 'fresh',
           catalog: 'populated',
-          models: [{ id: 'planner-last-confirmed-model' }],
+          models: [{ id: 'implementer-last-confirmed-model' }],
           fetchedAt: 3,
           validatedAt: 3,
         },
-        implementerRuntime,
+        plannerRuntime,
       ],
     });
     ui.rerender(<Probe />);
@@ -339,19 +376,21 @@ describe('usePickerCatalog', () => {
       providers: [],
       providerOutcomes: [
         {
-          connection: plannerRuntime.connection,
+          connection: implementerRuntime.connection,
           state: 'fresh',
           catalog: 'empty',
           models: [],
           fetchedAt: 4,
           validatedAt: 4,
         },
-        implementerRuntime,
+        plannerRuntime,
       ],
     });
     ui.rerender(<Probe />);
+    // An empty catalog drops the model from every lane, so the only row left
+    // naming it is the recovery row the configured selection earns.
     expect(projection).toEqual({
-      model: undefined,
+      model: expect.objectContaining({ membership: 'custom', isRecovery: true }),
       detected: 0,
       counts: expect.objectContaining({ confirmed: 0, stale: 0 }),
     });
@@ -377,9 +416,9 @@ describe('usePickerCatalog', () => {
       config: makeConfig({
         implementer: {
           kind: 'api',
-          provider: 'deepseek',
-          apiBase: 'https://api.deepseek.com/v1',
-          model: 'deepseek-chat',
+          provider: 'custom-endpoint',
+          apiBase: 'https://api.example.com/v1',
+          model: 'custom-endpoint-model',
         },
         implementerProfiles: {
           default: 'local-qwen',
@@ -417,10 +456,10 @@ describe('usePickerCatalog', () => {
 
     const ui = renderFeature(<Probe toolId="ollama" />);
     expect(frames.at(-1)).toContain('ollama-only-model');
-    expect(frames.at(-1)).not.toContain('anthropic-only-model');
+    expect(frames.at(-1)).not.toContain('lm-studio-only-model');
 
-    ui.rerender(<Probe toolId="anthropic" />);
-    expect(frames.at(-1)).toContain('anthropic-only-model');
+    ui.rerender(<Probe toolId="lm-studio" />);
+    expect(frames.at(-1)).toContain('lm-studio-only-model');
     expect(frames.at(-1)).not.toContain('ollama-only-model');
     ui.unmount();
   });
@@ -431,53 +470,38 @@ describe('usePickerCatalog', () => {
     function Probe({ toolId }: { toolId: string }) {
       const catalog = usePickerCatalog('implementer', 0, toolId);
       frames.push(
-        rowModels(catalog.rightRows)
-          .map((model) => model.id)
-          .join('|') || 'empty',
-      );
-      return <Text>{catalog.currentItem?.id}</Text>;
-    }
-
-    const ui = renderFeature(<Probe toolId="ollama" />);
-    const toolSequence = ['anthropic', 'ollama', 'anthropic', 'ollama'] as const;
-    for (const toolId of toolSequence) {
-      ui.rerender(<Probe toolId={toolId} />);
-    }
-
-    const anthropicMarker = 'anthropic-only-model';
-    const ollamaMarker = 'ollama-only-model';
-    // A leaked previous-tool model shows up as a frame carrying both tools' ids.
-    for (const frame of frames) {
-      expect(frame.includes(anthropicMarker) && frame.includes(ollamaMarker)).toBe(false);
-    }
-    expect(frames.at(-1)).toContain(ollamaMarker);
-    expect(frames.at(-1)).not.toContain(anthropicMarker);
-    ui.unmount();
-  });
-
-  it('keyboard target changes update models without a previous-tool model frame', async () => {
-    seedDetections();
-    const frames: string[] = [];
-    function Probe({ toolId }: { toolId: string }) {
-      const catalog = usePickerCatalog('implementer', 0, toolId);
-      frames.push(
-        `${catalog.currentItem?.id}:${rowModels(catalog.rightRows)
-          .map((model) => model.id)
-          .join(',')}`,
+        `${catalog.currentItem?.id}:${
+          rowModels(catalog.rightRows)
+            .map((model) => model.id)
+            .join('|') || 'empty'
+        }`,
       );
       return <Text>{frames.at(-1)}</Text>;
     }
 
     const ui = renderFeature(<Probe toolId="ollama" />);
-    ui.rerender(<Probe toolId="anthropic" />);
-    ui.rerender(<Probe toolId="ollama" />);
+    const toolSequence = ['lm-studio', 'ollama', 'lm-studio', 'ollama'] as const;
+    for (const toolId of toolSequence) {
+      ui.rerender(<Probe toolId={toolId} />);
+    }
 
-    expect(frames).not.toContain(
-      frames.find((frame) => frame.startsWith('anthropic:') && frame.includes('ollama-only-model')),
+    const lmStudioMarker = 'lm-studio-only-model';
+    const ollamaMarker = 'ollama-only-model';
+    // A leaked previous-tool model shows up as a frame carrying both tools' ids,
+    // or as a frame pairing one tool with the other tool's models.
+    for (const frame of frames) {
+      expect(frame.includes(lmStudioMarker) && frame.includes(ollamaMarker)).toBe(false);
+    }
+    expect(frames.some((frame) => frame.startsWith('lm-studio:'))).toBe(true);
+    expect(frames.filter((frame) => frame.startsWith('lm-studio:'))).not.toContainEqual(
+      expect.stringContaining(ollamaMarker),
     );
-    expect(frames).not.toContain(
-      frames.find((frame) => frame.startsWith('ollama:') && frame.includes('anthropic-only-model')),
+    expect(frames.filter((frame) => frame.startsWith('ollama:'))).not.toContainEqual(
+      expect.stringContaining(lmStudioMarker),
     );
+    expect(frames.at(-1)).toMatch(/^ollama:/);
+    expect(frames.at(-1)).toContain(ollamaMarker);
+    expect(frames.at(-1)).not.toContain(lmStudioMarker);
     ui.unmount();
   });
 
@@ -487,16 +511,16 @@ describe('usePickerCatalog', () => {
     await flushEffects();
 
     const zones = collectClickableZones({ cols: 140, rows: 40 });
-    zones.get('runner-left:anthropic')?.();
+    zones.get('runner-left:lm-studio')?.();
     await vi.waitFor(() => {
-      expect(ui.lastFrame()).toContain('anthropic-only-model');
+      expect(ui.lastFrame()).toContain('lm-studio-only-model');
       expect(ui.lastFrame()).not.toContain('ollama-only-model');
     });
 
     zones.get('runner-left:ollama')?.();
     await vi.waitFor(() => {
       expect(ui.lastFrame()).toContain('ollama-only-model');
-      expect(ui.lastFrame()).not.toContain('anthropic-only-model');
+      expect(ui.lastFrame()).not.toContain('lm-studio-only-model');
     });
     ui.unmount();
   });
@@ -552,6 +576,52 @@ describe('usePickerCatalog', () => {
     ui.unmount();
   });
 
+  it('passes the drafted variant through to the row builder', async () => {
+    // The variant axis is synthetic: nothing in the model id spells it, so the
+    // store's draft is the only thing that can put a value on the row.
+    const request = detectionStore.beginRefresh({
+      contexts: { readiness: 'r', modelsDev: 'm', cliModels: 'c' },
+    });
+    detectionStore.publish({
+      request,
+      result: {
+        providers: [],
+        cliTools: [cliDetectionFor('ready', 'opencode')],
+        catalog: {},
+        cliModels: [
+          {
+            connection: { role: 'planner', tool: 'opencode', contextKey: 'c' },
+            outcome: { kind: 'success', value: [{ id: 'anthropic/claude-sonnet-4' }] },
+          },
+        ],
+        generation: 1,
+      },
+    });
+    pickerViewStore.expand('anthropic/claude-sonnet-4', undefined, 'max');
+
+    let variantRow: Extract<RightRow, { kind: 'axis' }> | undefined;
+    function VariantProbe() {
+      const catalog = usePickerCatalog('planner', 0, 'opencode');
+      variantRow = catalog.rightRows.find(
+        (row): row is Extract<RightRow, { kind: 'axis' }> =>
+          row.kind === 'axis' && row.axis === 'variant',
+      );
+      return <Text>{catalog.variantDraft ?? 'none'}</Text>;
+    }
+
+    const ui = renderFeature(<VariantProbe />);
+    await tick(20);
+
+    expect(ui.lastFrame()).toContain('max');
+    expect(variantRow).toMatchObject({ axis: 'variant', value: 'max' });
+
+    pickerViewStore.setVariantDraft('high');
+    await tick(20);
+
+    expect(variantRow).toMatchObject({ axis: 'variant', value: 'high' });
+    ui.unmount();
+  });
+
   it('arrow-key selection updates models without a previous-tool model frame', async () => {
     seedDetections();
     const ui = renderFeature(<KeyboardCatalogProbe role="implementer" />);
@@ -570,37 +640,9 @@ describe('usePickerCatalog', () => {
     ui.unmount();
   });
 
-  it('preserves models.dev suggestions when a shorter native cli-models probe lands and sorts confirmed rows first', async () => {
-    const codexCatalog = {
-      openai: {
-        id: 'openai',
-        name: 'OpenAI',
-        models: {
-          'gpt-5-codex': {
-            id: 'gpt-5-codex',
-            name: 'GPT-5 Codex',
-            release_date: '2026-01-01',
-          },
-          'gpt-4o': {
-            id: 'gpt-4o',
-            name: 'GPT-4o',
-            release_date: '2025-11-01',
-          },
-          'gpt-4.5-preview': {
-            id: 'gpt-4.5-preview',
-            name: 'GPT-4.5 Preview',
-            release_date: '2025-09-01',
-          },
-          'o3-mini': {
-            id: 'o3-mini',
-            name: 'o3 Mini',
-            release_date: '2025-08-01',
-          },
-        },
-      },
-    };
+  it('drops models.dev suggestions once the native cli-models probe confirms a list', async () => {
     modelCacheStore.hydrateModelsDevCatalog({
-      catalog: codexCatalog,
+      catalog: CODEX_MODELS_DEV,
       fetchedAt: 100,
       validatedAt: 100,
     });
@@ -655,28 +697,54 @@ describe('usePickerCatalog', () => {
     const postProbeRows = rowModels(catalogSnapshot?.rightRows ?? []);
     const postProbeIds = postProbeRows.map((model) => model.id);
 
-    for (const id of preProbeIds) {
-      expect(postProbeIds).toContain(id);
-    }
-    expect(postProbeIds.length).toBeGreaterThanOrEqual(preProbeIds.length);
+    expect(postProbeIds).toContain('gpt-5-codex');
+    expect(postProbeIds).not.toContain('gpt-4o');
+    expect(postProbeIds).not.toContain('gpt-4.5-preview');
+    expect(postProbeIds).not.toContain('o3-mini');
 
     const confirmedRows = postProbeRows.filter((row) => row.membership === 'confirmed');
-    const suggestionRows = postProbeRows.filter((row) => row.membership === 'catalog-suggestion');
     expect(confirmedRows).toHaveLength(1);
     expect(confirmedRows[0]?.id).toBe('gpt-5-codex');
     expect(confirmedRows[0]?.isDetected).toBe(true);
-    expect(suggestionRows).toHaveLength(3);
+    expect(postProbeRows.filter((row) => row.membership === 'catalog-suggestion')).toHaveLength(0);
 
-    const firstConfirmedIndex = postProbeRows.findIndex((row) => row.membership === 'confirmed');
-    const firstSuggestionIndex = postProbeRows.findIndex(
-      (row) => row.membership === 'catalog-suggestion',
-    );
-    const lastConfirmedIndex = postProbeRows.findLastIndex((row) => row.membership === 'confirmed');
+    ui.unmount();
+  });
 
-    expect(firstConfirmedIndex).toBeGreaterThan(-1);
-    expect(firstSuggestionIndex).toBeGreaterThan(-1);
-    expect(lastConfirmedIndex).toBeLessThan(firstSuggestionIndex);
+  it('offers a browse-catalog row when the configured model is missing from the list', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'codex', model: 'gpt-5.6-retired' },
+      }),
+    });
+    publishConfirmedCodexList();
 
+    const ui = renderFeature(<RowsProbe />);
+    await tick(20);
+
+    expect(capturedRightRows.at(-1)).toMatchObject({ kind: 'action', action: 'browse-catalog' });
+    ui.unmount();
+  });
+
+  it('widens the rows once the store says the catalog is being browsed', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'codex', model: 'gpt-5.6-retired' },
+      }),
+    });
+    publishConfirmedCodexList();
+
+    const ui = renderFeature(<RowsProbe />);
+    await tick(20);
+    const narrowModelCount = rowModels(capturedRightRows).length;
+
+    pickerViewStore.setBrowseCatalog(true);
+    await tick(20);
+
+    expect(capturedRightRows.some((row) => row.kind === 'action')).toBe(false);
+    expect(rowModels(capturedRightRows).length).toBeGreaterThan(narrowModelCount);
     ui.unmount();
   });
 });
@@ -708,17 +776,13 @@ describe('usePickerCatalog right-column entry point', () => {
     configStore.__testReset({
       projectDir: '/tmp/project',
       config: makeConfig({
-        planner: {
-          kind: 'api',
-          provider: 'anthropic',
-          apiBase: 'https://api.anthropic.com',
-          model: 'anthropic-only-model',
-        },
+        planner: { kind: 'cli', tool: 'codex', model: 'gpt-5.5' },
       }),
     });
     detectionStore.reset();
     modelCacheStore.reset();
     overlayStore.reset();
+    pickerViewStore.reset();
     seedDetections();
   });
 
@@ -736,26 +800,21 @@ describe('usePickerCatalog right-column entry point', () => {
     // persisted model can only be reached by an index the hook computed.
     expect(seen?.rowIds[0]).toBe('auto');
     expect(seen?.rightIndex).toBeGreaterThan(0);
-    expect(seen?.rowIds[seen.rightIndex]).toBe('anthropic-only-model');
-    expect(seen?.rightId).toBe('anthropic-only-model');
+    expect(seen?.rowIds[seen.rightIndex]).toBe('gpt-5.5');
+    expect(seen?.rightId).toBe('gpt-5.5');
     ui.unmount();
   });
 
-  it('falls back to the first row when the persisted model is not in the catalog', () => {
+  it('opens on the recovery row when the persisted model is not in the catalog', () => {
     configStore.__testReset({
       projectDir: '/tmp/project',
       config: makeConfig({
-        planner: {
-          kind: 'api',
-          provider: 'anthropic',
-          apiBase: 'https://api.anthropic.com',
-          model: 'a-model-no-catalog-lists',
-        },
+        planner: { kind: 'cli', tool: 'codex', model: 'a-model-no-catalog-lists' },
       }),
     });
     const ui = renderFeature(<EntryProbe />);
 
-    expect(seen?.rightIndex).toBe(0);
+    expect(seen?.rowIds[seen.rightIndex]).toBe('a-model-no-catalog-lists');
     ui.unmount();
   });
 

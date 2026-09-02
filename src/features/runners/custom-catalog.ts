@@ -14,7 +14,7 @@ import {
   seatPickerLane,
   type ActiveRunnerRole,
   type SeatPickerRole,
-} from '../../core/runners/cli-tool-catalog.js';
+} from '../../core/runners/seat-roles.js';
 import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 import type { Config } from '../../core/schemas/config.js';
 import type {

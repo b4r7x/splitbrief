@@ -19,10 +19,10 @@ import {
 } from '../../../src/engine/orchestrator/state-ops.js';
 import {
   drainRecoveryOutbox,
-  persistBriefOwnerTransition,
   type RecoveryFaultPoint,
 } from '../../../src/engine/orchestrator/evidence/recovery-journal.js';
-import { readRecoveryJournal } from '../../../src/core/evidence/recovery-journal.js';
+import { persistBriefOwnerTransition } from '../../../src/engine/orchestrator/evidence/brief-owner-journal.js';
+import { readRecoveryJournal } from '../../../src/core/evidence/recovery-journal/journal.js';
 import {
   publishBriefGeneration,
   type BriefPublicationOptions,

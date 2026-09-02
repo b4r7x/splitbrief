@@ -168,6 +168,8 @@ export const CREW_COMMAND_SEATS = CREW_SEAT_IDS;
 
 /** Deleted names keep pointing at their replacement for one release. */
 export const REMOVED_COMMANDS: Readonly<Record<string, string>> = {
+  '/attach': 'images are attached with /image <path>',
+  '/detach': 'images are removed with /image remove <index|id>',
   '/effort': 'effort lives on the seat: /crew plan',
   '/repomap': 'the repo map rebuilds itself on each planning run, with no manual step',
   '/resume': 'a paused workflow resumes from its approval prompt',
@@ -177,6 +179,18 @@ export type AttachImageResult =
   | { ok: true; path: string }
   | { ok: false; reason: ResolveAttachmentReason | 'no-vision' };
 
+export interface SkillCommandOption {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export type SkillToggleResult =
+  | { status: 'selected'; name: string }
+  | { status: 'deselected'; name: string }
+  | { status: 'unknown' }
+  | { status: 'unavailable'; message: string };
+
 export interface CommandGuardContext {
   phase: Phase;
   attached: boolean;
@@ -184,7 +198,14 @@ export interface CommandGuardContext {
 }
 
 type CommandArgSpec =
-  | { kind: 'closed'; options: readonly string[]; optional?: true }
+  | {
+      kind: 'closed';
+      options: readonly string[];
+      optionDescriptions?: Readonly<Record<string, string>>;
+      /** Display grammar for option sets too large to spell out in a palette or help row. */
+      hint?: string;
+      optional?: true;
+    }
   | { kind: 'free'; hint: string };
 
 interface RuntimeCommandBase {
@@ -218,6 +239,9 @@ export interface RuntimeCommandContext {
   setFeedbackError: (msg: string) => void;
   refreshDetection: () => Promise<DiscoveryRefreshSummary>;
   refreshProjectFiles: () => void;
+  listSkills: () => readonly SkillCommandOption[];
+  toggleSkill: (id: string) => SkillToggleResult;
+  refreshSkills: () => void;
   getCurrentPhase: () => Phase;
   requestRewind: (target: 'spec' | 'plan', comment?: string) => boolean;
   requestTaskRedo: (taskId: string) => boolean;

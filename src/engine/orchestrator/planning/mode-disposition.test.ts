@@ -12,7 +12,7 @@ import {
   setupProject,
 } from '#testing/helpers/planning-phase.js';
 import { readWorkflowStateHead } from '../state-ops.js';
-import { persistBriefOwnerTransition } from '../evidence/recovery-journal.js';
+import { persistBriefOwnerTransition } from '../evidence/brief-owner-journal.js';
 import { createBriefRecoveryState } from './brief-recovery.js';
 import { planningResultForState, matchesPersistedExecutionPermit } from './handoff.js';
 import { resolveOwnerReadiness } from './io.js';
@@ -30,8 +30,6 @@ afterEach(() => {
   dirs.length = 0;
 });
 
-const DISPOSITIONS = ['ready-for-tasks', 'parked', 'terminal'] as const;
-
 function approveCallbacks() {
   const { callbacks } = makeCallbacks({
     onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
@@ -41,7 +39,6 @@ function approveCallbacks() {
 
 describe('cross-mode disposition contract', () => {
   it.each([
-    ['instant', { mode: 'instant' }],
     ['quick', { mode: 'quick' }],
     ['standard', { mode: 'standard' }],
     ['speckit', { mode: 'speckit' }],
@@ -52,16 +49,14 @@ describe('cross-mode disposition contract', () => {
       config: makeConfig({ workflow }),
     });
 
-    expect(DISPOSITIONS).toContain(result.disposition);
-    if (result.disposition === 'ready-for-tasks') {
-      const readiness = resolveOwnerReadiness({ projectDir, sessionId });
-      expect(readiness.ok).toBe(true);
-      if (readiness.ok) {
-        expect(result.generation).toEqual(readiness.generation);
-        expect(result.permit).toEqual(readiness.permit);
-        expect(result.permit.authorityRevision).toBe(readiness.authorityRevision);
-      }
-    }
+    expect(result.disposition).toBe('ready-for-tasks');
+    if (result.disposition !== 'ready-for-tasks') throw new Error('expected ready-for-tasks');
+    const readiness = resolveOwnerReadiness({ projectDir, sessionId });
+    expect(readiness.ok).toBe(true);
+    if (!readiness.ok) throw new Error('expected owner readiness');
+    expect(result.generation).toEqual(readiness.generation);
+    expect(result.permit).toEqual(readiness.permit);
+    expect(result.permit.authorityRevision).toBe(readiness.authorityRevision);
   });
 
   it('readiness is never derived from phase, task count, or the absence of failure flags', () => {

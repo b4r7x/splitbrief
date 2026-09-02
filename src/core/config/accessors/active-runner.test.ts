@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { clearReviewerSeat, readActiveRunner, updateActiveRunner } from './active-runner.js';
-import { createDefaultConfig } from '../load/io.js';
+import { createDefaultConfig } from '../load/defaults.js';
 import type { Config } from '../../schemas/config.js';
 
 function configWithProfiles(): Config {
@@ -19,10 +19,11 @@ function configWithProfiles(): Config {
       profiles: {
         preferred: {
           kind: 'api',
-          provider: 'anthropic',
-          service: 'anthropic',
+          provider: 'custom-endpoint',
+          service: 'custom-endpoint',
           offering: 'payg',
-          apiBase: 'https://api.anthropic.com/v1',
+          apiBase: 'https://api.example.test/v1',
+          apiKey: 'test-key',
           model: 'active-profile-model',
           label: 'Preferred API',
           costTier: 'frontier',
@@ -50,7 +51,7 @@ describe('active runner accessors', () => {
 
     expect(active).toMatchObject({
       kind: 'api',
-      provider: 'anthropic',
+      provider: 'custom-endpoint',
       model: 'active-profile-model',
     });
     expect(config).toEqual(original);
@@ -87,12 +88,12 @@ describe('active runner accessors', () => {
 
     expect(readActiveRunner({ config: updated, role: 'implementer' })).toMatchObject({
       kind: 'api',
-      provider: 'anthropic',
+      provider: 'custom-endpoint',
       model: 'updated-profile-model',
     });
     expect(updated.implementer).toMatchObject({
       kind: 'api',
-      provider: 'anthropic',
+      provider: 'custom-endpoint',
       model: 'updated-profile-model',
     });
     expect(updated.implementerProfiles?.profiles.preferred).toMatchObject({

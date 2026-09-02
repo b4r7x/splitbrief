@@ -3,7 +3,7 @@ import type { PlanningPhaseResult } from './types.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import { publishError } from '../events.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
-import { loadStateForResume } from '../../../core/state/persistence.js';
+import { loadStateForResume } from '../../../core/state/resume-authority.js';
 import type { ResumeLoadAuthority, StateAuthorityReceipt } from '../../../core/state/types.js';
 import { typedRunnerCallErrorMessage } from '../../implementers/pipeline/call-result.js';
 import {

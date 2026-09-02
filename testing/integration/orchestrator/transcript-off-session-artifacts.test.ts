@@ -15,8 +15,9 @@ describe('transcript-off session artifact privacy', () => {
     createTestGitRepo(projectDir);
 
     try {
-      const { runWorkflow, WORKFLOW_REWIND_ABORT_REASON } = await import(
-        '../../../src/engine/orchestrator/run/workflow.js'
+      const { runWorkflow } = await import('../../../src/engine/orchestrator/run/workflow.js');
+      const { WORKFLOW_REWIND_ABORT_REASON } = await import(
+        '../../../src/engine/orchestrator/run/rewind-authority.js'
       );
       const { generateSessionId } = await import('../../../src/core/sessions/session-id.js');
       const { readActive } = await import('../../../src/core/sessions/active-pointer.js');

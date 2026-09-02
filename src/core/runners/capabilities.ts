@@ -1,7 +1,7 @@
-import { stripVendorPrefix } from '../model-display.js';
-import { isProviderId, type ProviderId } from '../schemas/enums.js';
 import { assertNever } from '../../utils/type-guards.js';
-import { CLI_TOOL_CATALOG, type ActiveRunnerRole } from './cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from './cli-tool-catalog.js';
+import type { ActiveRunnerRole } from './seat-roles.js';
+import type { CliEffortChannel } from './effort-channel.js';
 import type { ProviderDetection } from '../discovery/detection.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
 import { resolveAutoModel } from '../providers/model-selection.js';
@@ -9,85 +9,35 @@ import { resolveAutoModel } from '../providers/model-selection.js';
 /** The models.dev fact for one model; absent when detection never reached it. */
 export type DetectedModelFact = Readonly<{ supportsImages?: boolean }>;
 
-/** The normalized form every model predicate matches on, in core and in the engine. */
-export function modelKey(model: string): string {
-  return stripVendorPrefix(model).toLowerCase();
-}
-
-const ANTHROPIC_IMAGE_MODEL_RE =
-  /claude-(?:(opus|sonnet|haiku)-[3-9]|[3-9](?:[-.]\d+)?-(opus|sonnet|haiku))/i;
-const OPENAI_IMAGE_MODEL_RE = /gpt-4o|gpt-4-vision|gpt-4\.1|gpt-5|o[34]/i;
-
-export function modelSupportsEffort(provider: ProviderId, model: string | undefined): boolean {
-  if (!model) return false;
-  const key = provider === 'openrouter' ? modelKey(model) : model;
-  if (provider === 'anthropic') return /claude-(opus|sonnet)-[4-9]/i.test(key);
-  if (provider === 'openai' || provider === 'openrouter')
-    return /^(o[1345]|gpt-[5-9])/i.test(key) || /(?:^|-)r1(?:-|$)|reasoner/i.test(key);
-  if (provider === 'deepseek') return /(?:^|-)r1(?:-|$)|reasoner|deepseek-v4/i.test(key);
-  return false;
-}
-
-/**
- * The models.dev `modalities.input ∋ 'image'` fact wins whenever detection
- * carries it; the name regexes are the cold-start fallback.
- */
-export function modelSupportsImages(
-  input: Readonly<{
-    provider: ProviderId;
-    model: string | undefined;
-    detected?: DetectedModelFact | undefined;
-  }>,
-): boolean {
-  const { provider, model } = input;
-  if (input.detected?.supportsImages !== undefined) return input.detected.supportsImages;
-  if (!model) return false;
-  const key = provider === 'openrouter' ? modelKey(model) : model;
-  if (provider === 'anthropic') return ANTHROPIC_IMAGE_MODEL_RE.test(key);
-  if (provider === 'openai') return OPENAI_IMAGE_MODEL_RE.test(key);
-  if (provider === 'openrouter') return true;
-  return false;
-}
-
-export function seatSupportsEffort(
+export function seatEffortChannel(
   input: Readonly<{ runner: RunnerConfig; role: ActiveRunnerRole }>,
-): boolean {
+): CliEffortChannel {
   const runner = input.runner;
   switch (runner.kind) {
     case 'cli':
-      return CLI_TOOL_CATALOG[runner.tool].supportsEffort;
+      return CLI_TOOL_CATALOG[runner.tool].effortChannel;
     case 'api':
-      return (
-        isProviderId(runner.provider) &&
-        modelSupportsEffort(runner.provider, resolveAutoModel(runner.model, runner.provider))
-      );
-    case 'agent-sdk':
-      return true;
     case 'shell':
     case 'agent':
-      return false;
+      return 'none';
     default:
       return assertNever(runner);
   }
 }
 
+/**
+ * Only OpenAI-compatible endpoints hold the API seat, so the models.dev
+ * `modalities.input ∋ 'image'` fact detection carries is the whole answer.
+ */
 export function seatSupportsImages(
   input: Readonly<{ runner: RunnerConfig; detected?: DetectedModelFact | undefined }>,
 ): boolean {
   const runner = input.runner;
   switch (runner.kind) {
     case 'cli':
-    case 'agent-sdk':
       return true;
     case 'api':
-      return (
-        isProviderId(runner.provider) &&
-        modelSupportsImages({
-          provider: runner.provider,
-          model: resolveAutoModel(runner.model, runner.provider),
-          detected: input.detected,
-        })
-      );
+      return input.detected?.supportsImages ?? false;
     case 'shell':
     case 'agent':
       return false;

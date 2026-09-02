@@ -21,23 +21,31 @@ export function overlayInnerRowCapacity(input: { rows: number; outerChromeRows: 
 interface OverlayPanelProps {
   title?: string | undefined;
   hint?: string | undefined;
+  /** `tight` buys back the blank row under the title for panels that budget their own body rows. */
+  titleSpacing?: 'gap' | 'tight' | undefined;
   density: OverlayDensity;
   children: ReactNode;
 }
 
-export function OverlayPanel({ title, hint, density, children }: OverlayPanelProps) {
+export function OverlayPanel({
+  title,
+  hint,
+  titleSpacing = 'gap',
+  density,
+  children,
+}: OverlayPanelProps) {
   const t = useTheme();
   const [{ cols, rows }] = useStores(terminalSizeStore);
   const rect = overlayRect({ cols, rows, density });
 
   // Surface titles stay quiet dim metadata (§1.1 accent budget).
   const titleNode = title && (
-    <Box marginBottom={1}>
+    <Box marginBottom={titleSpacing === 'tight' ? 0 : 1}>
       <Text color={t.textDim}>{title}</Text>
     </Box>
   );
 
-  // Hints truncate rather than wrap (REQ-005); callers write the key glyphs first so the surviving
+  // Hints truncate rather than wrap; callers write the key glyphs first so the surviving
   // prefix stays actionable.
   const hintNode = hint && (
     <Box marginTop={1} width={rect.innerWidth}>

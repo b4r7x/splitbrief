@@ -41,7 +41,7 @@ function migrationTimestamp(state: LegacyWorkflowState): string {
   return state.startedAt.length > 0 ? state.startedAt : LEGACY_DEFAULT_TIMESTAMP;
 }
 
-function migrationMode(state: LegacyWorkflowState): 'standard' | 'speckit' | 'instant' | 'quick' {
+function migrationMode(state: LegacyWorkflowState): 'standard' | 'speckit' | 'quick' {
   return state.mode ?? 'standard';
 }
 
@@ -52,7 +52,6 @@ function migrationEntry(state: LegacyWorkflowState): 'initial' | 'rewind' {
 function migrationContinuation(state: LegacyWorkflowState): NormalBriefRecoveryV1['continuation'] {
   const mode = migrationMode(state);
   const entry = migrationEntry(state);
-  if (mode === 'instant') return { version: 1, kind: 'instant-start', entry };
   if (mode === 'quick') return { version: 1, kind: 'quick-start', entry };
   return { version: 1, kind: 'approval', mode, entry };
 }

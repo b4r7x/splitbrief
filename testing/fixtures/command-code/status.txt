@@ -1,0 +1,3 @@
+cmd status --json
+# version: 1.39.2
+{"authenticated":true,"version":"1.39.2","user":"b4r7x","model":"deepseek/deepseek-v4-flash","context_window":1000000}

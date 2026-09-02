@@ -10,8 +10,7 @@
         "method": "GET",
         "url": "http://localhost:11434/v1/models",
         "headers": {
-          "authorization": "***",
-          "anthropic-version": "2023-06-01"
+          "authorization": "***"
         },
         "body": null
       },
@@ -22,7 +21,7 @@
         },
         "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 39
     },
     {
@@ -32,8 +31,7 @@
         "method": "GET",
         "url": "http://localhost:11434/v1/models",
         "headers": {
-          "authorization": "***",
-          "anthropic-version": "2023-06-01"
+          "authorization": "***"
         },
         "body": null
       },
@@ -44,7 +42,7 @@
         },
         "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 39
     },
     {
@@ -54,8 +52,7 @@
         "method": "GET",
         "url": "http://localhost:11434/v1/models",
         "headers": {
-          "authorization": "***",
-          "anthropic-version": "2023-06-01"
+          "authorization": "***"
         },
         "body": null
       },
@@ -66,7 +63,7 @@
         },
         "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 39
     },
     {
@@ -74,10 +71,9 @@
       "recordedAt": "2026-04-30T12:05:03.000Z",
       "request": {
         "method": "POST",
-        "url": "http://localhost:11434/v1/messages",
+        "url": "http://localhost:11434/v1/chat/completions",
         "headers": {
           "authorization": "***",
-          "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
         "body": "{\"purpose\":\"planner quick task briefs\"}"
@@ -87,9 +83,9 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_quick_plan\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":360,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"---\\nid: T001\\ntitle: Create health helper\\naction: create\\nfile: src/health.ts\\ndepends_on: []\\n---\\n### Description\\nCreate src/health.ts with a getHealth helper.\\n\\n### Implementation Steps\\n1. Add a getHealth function that returns a stable ok status.\\n2. Export the function from the file.\\n\\n### Tests\\n- Verify getHealth returns an object with status equal to ok.\\n\\n### Scope\\n**In bounds:**\\n- src/health.ts\\n**Out of bounds:**\\n- HTTP server routing or package metadata.\\n\\n### Escalation\\n- Stop if endpoint wiring is required outside the target helper.\\n\\n### Evidence\\n- The helper exposes deterministic health data.\\n\\n### Type Definitions\\n```ts\\nexport type HealthResult = { status: 'ok' };\\n```\\n\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":172}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"---\\nid: T001\\ntitle: Create health helper\\naction: create\\nfile: src/health.ts\\ndepends_on: []\\n---\\n### Description\\nCreate src/health.ts with a getHealth helper.\\n\\n### Implementation Steps\\n1. Add a getHealth function that returns a stable ok status.\\n2. Export the function from the file.\\n\\n### Tests\\n- Verify getHealth returns an object with status equal to ok.\\n\\n### Scope\\n**In bounds:**\\n- src/health.ts\\n**Out of bounds:**\\n- HTTP server routing or package metadata.\\n\\n### Escalation\\n- Stop if endpoint wiring is required outside the target helper.\\n\\n### Evidence\\n- The helper exposes deterministic health data.\\n\\n### Type Definitions\\n```ts\\nexport type HealthResult = { status: 'ok' };\\n```\\n\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":360,\"completion_tokens\":172}}\n\ndata: [DONE]\n\n"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 1450
     },
     {
@@ -99,8 +95,7 @@
         "method": "GET",
         "url": "http://localhost:11434/v1/models",
         "headers": {
-          "authorization": "***",
-          "anthropic-version": "2023-06-01"
+          "authorization": "***"
         },
         "body": null
       },
@@ -111,7 +106,7 @@
         },
         "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 39
     },
     {
@@ -119,10 +114,9 @@
       "recordedAt": "2026-04-30T12:05:05.000Z",
       "request": {
         "method": "POST",
-        "url": "http://localhost:11434/v1/messages",
+        "url": "http://localhost:11434/v1/chat/completions",
         "headers": {
           "authorization": "***",
-          "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
         "body": "{\"purpose\":\"implementer health code\"}"
@@ -132,9 +126,9 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_quick_impl\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-haiku-4-5-20251001\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":460,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"```typescript\\nexport function getHealth() {\\n  return { status: 'ok' };\\n}\\n```\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":28}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"```typescript\\nexport function getHealth() {\\n  return { status: 'ok' };\\n}\\n```\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":460,\"completion_tokens\":28}}\n\ndata: [DONE]\n\n"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 780
     },
     {
@@ -142,10 +136,9 @@
       "recordedAt": "2026-04-30T12:05:06.000Z",
       "request": {
         "method": "POST",
-        "url": "http://localhost:11434/v1/messages",
+        "url": "http://localhost:11434/v1/chat/completions",
         "headers": {
           "authorization": "***",
-          "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
         "body": "{\"purpose\":\"planner final review\"}"
@@ -155,17 +148,17 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_quick_review\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":280,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Review complete. The workflow changes match the task briefs.\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":14}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Review complete. The workflow changes match the task briefs.\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":280,\"completion_tokens\":14}}\n\ndata: [DONE]\n\n"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 610
     }
   ],
   "meta": {
     "mode": "quick",
-    "plannerProvider": "openai",
-    "plannerModel": "gpt-4o",
-    "implementerProvider": "openai",
-    "implementerModel": "gpt-4o-mini"
+    "plannerProvider": "custom-endpoint",
+    "plannerModel": "claude-sonnet-4-6",
+    "implementerProvider": "custom-endpoint",
+    "implementerModel": "claude-haiku-4-5-20251001"
   }
 }

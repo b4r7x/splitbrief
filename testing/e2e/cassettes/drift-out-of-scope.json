@@ -10,8 +10,7 @@
         "method": "GET",
         "url": "http://localhost:11434/v1/models",
         "headers": {
-          "authorization": "***",
-          "anthropic-version": "2023-06-01"
+          "authorization": "***"
         },
         "body": null
       },
@@ -22,7 +21,7 @@
         },
         "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 43
     },
     {
@@ -32,8 +31,7 @@
         "method": "GET",
         "url": "http://localhost:11434/v1/models",
         "headers": {
-          "authorization": "***",
-          "anthropic-version": "2023-06-01"
+          "authorization": "***"
         },
         "body": null
       },
@@ -44,7 +42,7 @@
         },
         "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 43
     },
     {
@@ -54,8 +52,7 @@
         "method": "GET",
         "url": "http://localhost:11434/v1/models",
         "headers": {
-          "authorization": "***",
-          "anthropic-version": "2023-06-01"
+          "authorization": "***"
         },
         "body": null
       },
@@ -66,7 +63,7 @@
         },
         "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 43
     },
     {
@@ -74,10 +71,9 @@
       "recordedAt": "2026-04-30T12:25:03.000Z",
       "request": {
         "method": "POST",
-        "url": "http://localhost:11434/v1/messages",
+        "url": "http://localhost:11434/v1/chat/completions",
         "headers": {
           "authorization": "***",
-          "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
         "body": "{\"purpose\":\"planner quick task briefs\"}"
@@ -87,9 +83,9 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_drift_plan\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":385,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"---\\nid: T001\\ntitle: Create config parser\\naction: create\\nfile: src/config-parser.ts\\ndepends_on: []\\n---\\n### Description\\nCreate src/config-parser.ts with a parseConfig helper for simple key values.\\n\\n### Implementation Steps\\n1. Parse semicolon-separated key value pairs into a lookup map.\\n2. Return a default name and enabled flag when fields are absent.\\n\\n### Tests\\n- Verify parseConfig reads name and enabled values from a simple input string.\\n\\n### Scope\\n**In bounds:**\\n- src/config-parser.ts\\n**Out of bounds:**\\n- File system config loading or environment variable reads.\\n\\n### Escalation\\n- Stop if parser behavior needs schema migration or security decisions.\\n\\n### Evidence\\n- The parser returns deterministic defaults and parsed values.\\n\\n### Type Definitions\\n```ts\\nexport type ParsedConfig = { name: string; enabled: boolean };\\n```\\n\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":188}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"---\\nid: T001\\ntitle: Create config parser\\naction: create\\nfile: src/config-parser.ts\\ndepends_on: []\\n---\\n### Description\\nCreate src/config-parser.ts with a parseConfig helper for simple key values.\\n\\n### Implementation Steps\\n1. Parse semicolon-separated key value pairs into a lookup map.\\n2. Return a default name and enabled flag when fields are absent.\\n\\n### Tests\\n- Verify parseConfig reads name and enabled values from a simple input string.\\n\\n### Scope\\n**In bounds:**\\n- src/config-parser.ts\\n**Out of bounds:**\\n- File system config loading or environment variable reads.\\n\\n### Escalation\\n- Stop if parser behavior needs schema migration or security decisions.\\n\\n### Evidence\\n- The parser returns deterministic defaults and parsed values.\\n\\n### Type Definitions\\n```ts\\nexport type ParsedConfig = { name: string; enabled: boolean };\\n```\\n\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":385,\"completion_tokens\":188}}\n\ndata: [DONE]\n\n"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 1420
     },
     {
@@ -99,8 +95,7 @@
         "method": "GET",
         "url": "http://localhost:11434/v1/models",
         "headers": {
-          "authorization": "***",
-          "anthropic-version": "2023-06-01"
+          "authorization": "***"
         },
         "body": null
       },
@@ -111,7 +106,7 @@
         },
         "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 43
     },
     {
@@ -119,10 +114,9 @@
       "recordedAt": "2026-04-30T12:25:05.000Z",
       "request": {
         "method": "POST",
-        "url": "http://localhost:11434/v1/messages",
+        "url": "http://localhost:11434/v1/chat/completions",
         "headers": {
           "authorization": "***",
-          "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
         "body": "{\"purpose\":\"implementer config parser code\"}"
@@ -132,9 +126,9 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_drift_impl\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-haiku-4-5-20251001\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":465,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"```typescript\\nexport type ParsedConfig = {\\n  name: string;\\n  enabled: boolean;\\n};\\n\\nexport function parseConfig(input: string): ParsedConfig {\\n  const values = new Map<string, string>();\\n  const pairs = input.split(';').map(part => part.trim()).filter(Boolean);\\n\\n  for (const pair of pairs) {\\n    const separator = pair.indexOf('=');\\n    if (separator === -1) continue;\\n    values.set(pair.slice(0, separator).trim(), pair.slice(separator + 1).trim());\\n  }\\n\\n  return {\\n    name: values.get('name') ?? 'default',\\n    enabled: values.get('enabled') === 'true',\\n  };\\n}\\n```\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":128}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"```typescript\\nexport type ParsedConfig = {\\n  name: string;\\n  enabled: boolean;\\n};\\n\\nexport function parseConfig(input: string): ParsedConfig {\\n  const values = new Map<string, string>();\\n  const pairs = input.split(';').map(part => part.trim()).filter(Boolean);\\n\\n  for (const pair of pairs) {\\n    const separator = pair.indexOf('=');\\n    if (separator === -1) continue;\\n    values.set(pair.slice(0, separator).trim(), pair.slice(separator + 1).trim());\\n  }\\n\\n  return {\\n    name: values.get('name') ?? 'default',\\n    enabled: values.get('enabled') === 'true',\\n  };\\n}\\n```\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":465,\"completion_tokens\":128}}\n\ndata: [DONE]\n\n"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 930
     },
     {
@@ -142,10 +136,9 @@
       "recordedAt": "2026-04-30T12:25:06.000Z",
       "request": {
         "method": "POST",
-        "url": "http://localhost:11434/v1/messages",
+        "url": "http://localhost:11434/v1/chat/completions",
         "headers": {
           "authorization": "***",
-          "anthropic-version": "2023-06-01",
           "content-type": "application/json"
         },
         "body": "{\"purpose\":\"planner final review\"}"
@@ -155,17 +148,17 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_drift_review\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":295,\"output_tokens\":0}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Review complete. The workflow changes match the task briefs.\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":14}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Review complete. The workflow changes match the task briefs.\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":295,\"completion_tokens\":14}}\n\ndata: [DONE]\n\n"
       },
-      "provider": "anthropic",
+      "provider": "openai-compatible",
       "durationMs": 630
     }
   ],
   "meta": {
     "mode": "quick",
-    "plannerProvider": "openai",
-    "plannerModel": "gpt-4o",
-    "implementerProvider": "openai",
-    "implementerModel": "gpt-4o-mini"
+    "plannerProvider": "custom-endpoint",
+    "plannerModel": "claude-sonnet-4-6",
+    "implementerProvider": "custom-endpoint",
+    "implementerModel": "claude-haiku-4-5-20251001"
   }
 }

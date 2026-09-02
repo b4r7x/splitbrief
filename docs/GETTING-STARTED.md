@@ -31,7 +31,7 @@ Today's AI coding workflow has four sharp edges that SPLITBRIEF is designed to f
 | **Token burn** | Frontier models spend expensive tokens on mechanical edits. | The planner writes the brief. A weaker implementer writes the code. |
 | **Plan drift** | The agent forgets the plan halfway and starts inventing. | The brief is on disk, the review seat reviews the final diff against it. |
 | **Destructive actions** | A bad rename or migration trashes the working tree, no undo. | Checkpoints, file-level snapshots, hash-guarded restore. |
-| **Vendor lock-in** | Switching from Claude → Codex means re-learning the tool. | Five interchangeable runner kinds (`cli`, `api`, `shell`, `agent`, `agent-sdk`) on both sides. |
+| **Vendor lock-in** | Switching from Claude → Codex means re-learning the tool. | Four interchangeable runner kinds (`cli`, `api`, `shell`, `agent`) on both sides. |
 
 SPLITBRIEF is **not** a multi-agent orchestrator. There are exactly two roles, in a clear hierarchy. It is **not** a "universal AI connector". It is opinionated about one thing: two tools on one job, with the contract, the validation and the review held by the orchestrator rather than by either model.
 
@@ -132,7 +132,7 @@ Use `/quit` or `Ctrl-Q` to exit. State is on disk. Resume later with `splitbrief
        └──────────────────────────────────────────────────────────────────┘
 ```
 
-Both sides accept five **runner kinds** behind a unified interface (`cli`, `api`, `shell`, `agent`, `agent-sdk`). The orchestrator never knows which one is active — it talks to the `Planner` / `Implementer` interface and reads a per-backend `capabilities` struct to decide what to use.
+Both sides accept four **runner kinds** behind a unified interface (`cli`, `api`, `shell`, `agent`). The orchestrator never knows which one is active — it talks to the `Planner` / `Implementer` interface and reads a per-backend `capabilities` struct to decide what to use.
 
 ---
 
@@ -142,19 +142,17 @@ Pick a mode based on how much ceremony the work warrants. Set with `--mode`, in 
 
 | Mode | Planner calls | Approval gates | Best for | Example prompt |
 |---|:---:|:---:|---|---|
-| `instant` | 1 | none | Trivial one-step edits | `"rename foo to bar in src/util.ts"` |
-| `quick` | 1 | none | Small but real tasks | `"add a debounce helper to lib/timing.ts"` |
+| `quick` | 1 | none | Trivial one-step edits and small but real tasks | `"rename foo to bar in src/util.ts"` |
 | `standard` (default) | 4 | 2 (spec + briefs) | Ordinary feature work | `"add an email validator with RFC 5321 support"` |
 | `speckit` | 6–7 | 3 (spec + plan + briefs) | Large, risky, audited work | `"migrate auth from sessions to JWT"` |
 
 Concrete guidance:
 
-- Use `instant` for typo fixes, one-line edits, anything where writing a spec would take longer than the change itself.
-- Use `quick` for small additions where you still want a Task Brief on disk for review.
+- Use `quick` for typo fixes, one-line edits, and small additions — anything where writing a spec would take longer than the change itself, but you still want a Task Brief on disk for review. When the mode advisor reads the prompt as trivial, `quick` also tells the planner to skip its codebase-structure review and cap the run at a handful of briefs.
 - Use `standard` as your default — research → spec → plan → tasks, with spec review and briefs review before code is written.
 - Use `speckit` for anything touching auth, security, billing, payments, migrations, or anything externally visible. Adds clarification rounds, a constitution check (against `.specify/memory/constitution.md`), and post-planning analysis with coverage scoring.
 
-A built-in **mode advisor** watches your prompt and quietly suggests a switch when the mode looks wrong (e.g. `speckit` for "fix typo" → suggests `instant`). It never auto-switches; you decide.
+A built-in **mode advisor** watches your prompt and quietly suggests a switch when the mode looks wrong (e.g. `speckit` for "fix typo" → suggests `quick`). It never auto-switches; you decide.
 
 Full workflow-mode semantics: [docs/WORKFLOW.md](./WORKFLOW.md).
 
@@ -162,7 +160,7 @@ Full workflow-mode semantics: [docs/WORKFLOW.md](./WORKFLOW.md).
 
 ## 7. Configuration
 
-`.splitbrief/config.yaml` (created by `splitbrief init`). Runner matrices, field reference, and secret handling live in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), [CONFIGURATION.md](./CONFIGURATION.md), and [API-KEYS.md](./API-KEYS.md). Do not paste credentials into this file or into examples — set the provider's env var (see [CONFIGURATION.md](./CONFIGURATION.md)) or use `apiKey: env:VAR_NAME` for custom endpoints.
+`.splitbrief/config.yaml` (created by `splitbrief init`). Runner matrices, field reference, and secret handling live in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), [CONFIGURATION.md](./CONFIGURATION.md), and [API-KEYS.md](./API-KEYS.md). Do not paste credentials into this file or into examples — set the provider's env var (see [CONFIGURATION.md](./CONFIGURATION.md)); a custom endpoint takes its key inline, so keep that config out of version control.
 
 `version: 3` is the only accepted config version; anything else fails the load with `Unsupported config version`.
 
@@ -172,7 +170,7 @@ Fastest path from install to a validated run using **admitted** runners only. Fu
 
 **1. Readiness.** `splitbrief doctor` (or `splitbrief doctor --json` for automation) is read-only: no sessions, migrations, or model calls. It surfaces blockers for config, git posture, and configured runners before you spend tokens. Fix every blocker, then continue. If your tree already has failing checks, `splitbrief doctor --probe-validation` runs the configured validation commands and names the stages that are already red — use it before a run, not inside one (it can take minutes).
 
-**2. Hybrid recipe (subscription planner + cheap API implementer).** The admitted CLI `claude-code` (evidence as-of 2026-07-31, tested version 2.0.0) uses your existing Claude Code login — billing posture `subscription-included`; SPLITBRIEF shows spend as unpriced, not as zero cost or local. Pair it with the bundled **`compatible-only`** Groq row `openai/gpt-oss-120b` (`provider-dependent` API billing; set `GROQ_API_KEY` in your environment — never inline in YAML). No bundled model is `recommended` — see the note below:
+**2. Hybrid recipe (subscription planner + local implementer).** The admitted CLI `claude-code` (evidence as-of 2026-07-31, tested version 2.0.0) uses your existing Claude Code login — billing posture `subscription-included`; SPLITBRIEF shows spend as unpriced, not as zero cost or local. Pair it with a bundled **`compatible-only`** local row served by LM Studio (`local` billing; no key, traffic stays on loopback). Load the model in LM Studio and start its server first. No bundled model is `recommended` — see the note below:
 
 ```yaml
 version: 3
@@ -183,12 +181,12 @@ planner:
 
 implementer:
   kind: api
-  provider: groq
-  service: groq
-  offering: payg
-  apiBase: https://api.groq.com/openai/v1
-  model: openai/gpt-oss-120b
-  contextLength: 131072
+  provider: lm-studio
+  service: lm-studio
+  offering: local
+  apiBase: http://localhost:1234/v1
+  model: qwen2.5-coder-7b
+  contextLength: 16384
   temperature: 0.3
 
 validation:
@@ -209,11 +207,11 @@ After each implementer task, the orchestrator runs the resolved typecheck, lint,
 
 **3. Subscription CLI implementer (optional).** To type through the same admitted CLI instead of an API, set `implementer.kind: cli` with `tool: claude-code`. The child CLI may auto-edit SPLITBRIEF's disposable staged copy; SPLITBRIEF detects changes and asks before promoting approved paths into your checkout. Posture and auth channels: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth).
 
-**4. Named implementer profiles.** Persist multiple implementer backends under `implementerProfiles` — profile names are stable identifiers saved in config and referenced by routing/recovery events. Example: keep `local-qwen` (Ollama, `costTier: local`) and `cheap-cloud` (Groq row above, `costTier: cheap`); set `default` to the profile SPLITBRIEF should pick when no routing hint applies. Schema and persistence rules: [CONFIGURATION.md](./CONFIGURATION.md#optional-implementerprofiles).
+**4. Named implementer profiles.** Persist multiple implementer backends under `implementerProfiles` — profile names are stable identifiers saved in config and referenced by routing/recovery events. Example: keep `local-qwen` (Ollama, `costTier: local`) and `local-lmstudio` (the LM Studio row above, `costTier: local`); set `default` to the profile SPLITBRIEF should pick when no routing hint applies. Schema and persistence rules: [CONFIGURATION.md](./CONFIGURATION.md#optional-implementerprofiles).
 
 **5. Billing and privacy.** `subscription-included` CLIs bill through your vendor login; `api-metered` / `provider-dependent` APIs bill per request; `local` providers keep traffic on loopback. SPLITBRIEF does not persist API keys to session artifacts and redacts known secret patterns in protected output — see [API-KEYS.md](./API-KEYS.md). `workflow.persistTranscript: false` strips prompt/answer text from logs and machine-readable consumers while still writing review artifacts (`tasks.md`, `review.md`, validation output). Details: [CONFIGURATION.md](./CONFIGURATION.md#transcript-persistence-policy).
 
-**No recommended API models.** Evaluation currently produces zero runtime `recommended` rows, so every row in the **compatible-only** model table in [CONFIGURATION.md](./CONFIGURATION.md#bundled-model-catalog-t-081-runtime-state) is selectable but carries no SPLITBRIEF quality claim. The Groq row above is a working starting point, not a recommendation; SPLITBRIEF publishes no default cloud implementer recipe until a model passes evaluation.
+**No recommended API models.** Evaluation currently produces zero runtime `recommended` rows, so every row in the **compatible-only** model table in [CONFIGURATION.md](./CONFIGURATION.md#bundled-model-catalog-t-081-runtime-state) is selectable but carries no SPLITBRIEF quality claim. The LM Studio row above is a working starting point, not a recommendation; SPLITBRIEF publishes no default implementer recipe until a model passes evaluation.
 
 For every other planner/implementer combination, swap tools and models via the canonical matrices rather than duplicating lists here.
 
@@ -274,7 +272,7 @@ Explicit non-goals, so you don't go looking:
 - **Not a swarm or generic multi-agent manager.** Two roles, one workflow. An implementer pool selects one capable worker per Task Brief; it does not fan out competing agents over the same checkout.
 - **Not Windows-supported.** macOS and Linux only. The IPC server (`splitbrief attach` / `splitbrief ps`) and the snapshot path encoding need POSIX semantics. Windows support is planned but not yet available.
 - **No fixed validator language.** Validation is command-based and can be resolved for TypeScript, JavaScript, Python, Go, and Rust projects.
-- **No SPLITBRIEF-defined tool-call protocol for implementers.** SPLITBRIEF does not layer a second control protocol on top of the runner. An implementer either returns file contents that SPLITBRIEF writes (`extracted-code`), or writes into its working directory itself (`direct` — `cli`, `agent`, and `agent-sdk` runners) and SPLITBRIEF inspects the resulting diff. Whatever tools the runner exposes internally are the runner's business. See [docs/VISION.md §Strategic decisions](./VISION.md).
+- **No SPLITBRIEF-defined tool-call protocol for implementers.** SPLITBRIEF does not layer a second control protocol on top of the runner. An implementer either returns file contents that SPLITBRIEF writes (`extracted-code`), or writes into its working directory itself (`direct` — `cli` and `agent` runners) and SPLITBRIEF inspects the resulting diff. Whatever tools the runner exposes internally are the runner's business. See [docs/VISION.md §Strategic decisions](./VISION.md).
 - **No cloud-side state.** Everything lives under `.splitbrief/` in your project. No accounts, no SaaS, no telemetry-by-default (OpenTelemetry is opt-in via `otel.enabled: true`).
 
 ---

@@ -5,16 +5,15 @@ import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 const itUnix = process.platform === 'win32' ? it.skip : it;
 import {
-  configPath,
-  createDefaultConfig,
   initConfig,
   loadConfig,
-  readConfigDocument,
   transactConfigDocument,
   transactConfigDocumentForTest,
   writeConfig,
   writeConfigDocument,
 } from './io.js';
+import { configPath, readConfigDocument } from './document.js';
+import { createDefaultConfig } from './defaults.js';
 import { SPLITBRIEF_DIR, TREES_DIR } from '../../paths.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { confinedAtomicWriteFileForTest } from '../../../lib/confined-fs-atomic.js';
@@ -164,27 +163,17 @@ describe('config load safety', () => {
 
     it('returns security warnings in the warnings array', () => {
       const dir = join(TMP, 'security-warn');
-      const orig = process.env['ANTHROPIC_API_KEY'];
-      delete process.env['ANTHROPIC_API_KEY'];
-      try {
-        writeConfigYaml(dir, {
-          planner: {
-            kind: 'api',
-            provider: 'anthropic',
-            service: 'anthropic',
-            offering: 'payg',
-            api_base: 'https://api.anthropic.com/v1',
-            model: 'm',
-            api_key: 'sk-ant-test',
-          },
-        });
+      writeConfigYaml(dir, {
+        version: 3,
+        planner: {
+          kind: 'shell',
+          command: 'local-planner',
+          args: ['--prompt', '{prompt}'],
+        },
+      });
 
-        const { warnings } = loadConfig(dir);
-        expect(warnings.some((w) => w.includes('ANTHROPIC_API_KEY'))).toBe(true);
-      } finally {
-        if (orig === undefined) delete process.env['ANTHROPIC_API_KEY'];
-        else process.env['ANTHROPIC_API_KEY'] = orig;
-      }
+      const { warnings } = loadConfig(dir);
+      expect(warnings.some((w) => w.includes('planner.args contains {prompt}'))).toBe(true);
     });
 
     it('returns no warnings when no api keys in config', () => {
@@ -240,7 +229,12 @@ describe('config load safety', () => {
       const dir = join(TMP, 'provider-mismatch');
       writeConfigYaml(dir, {
         version: 3,
-        implementer: { kind: 'api', provider: 'openai' },
+        implementer: {
+          kind: 'api',
+          provider: 'custom-endpoint',
+          api_base: 'https://api.example.test/v1',
+          api_key: 'test-key',
+        },
       });
 
       expect(() => loadConfig(dir)).toThrow(/implementer\.model/);

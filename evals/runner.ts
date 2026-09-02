@@ -2,15 +2,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { sessionDir } from '../src/core/paths.js';
-import {
-  API_PROVIDER_CATALOG,
-  IMPLEMENTER_API_PROVIDER_IDS,
-  PLANNER_API_PROVIDER_IDS,
-  getApiProviderDescriptor,
-  type ApiProviderDescriptor,
-} from '../src/core/providers/api-provider-catalog.js';
-import { ConfigSchema, type Config } from '../src/core/schemas/config.js';
-import { error } from '../src/utils/error.js';
+import type { Config } from '../src/core/schemas/config.js';
 import { createEventBus } from '../src/engine/events/bus.js';
 import type { EngineEvent } from '../src/engine/events/types.js';
 import { runWorkflow } from '../src/engine/orchestrator/run/workflow.js';
@@ -19,24 +11,22 @@ import {
   loadModelsDevCatalogCache,
   type ModelsDevCatalogSnapshot,
 } from '../src/engine/providers/models-dev-cache.js';
-import { prepareExecution } from '../src/engine/runners/prepare-execution.js';
+import { prepareExecution } from '../src/engine/runners/prepare-execution/prepare-execution.js';
 import { releasePreparedSession } from '../src/core/sessions/prepare.js';
 import { createCassetteRecorder } from '#testing/helpers/cassette/recorder.js';
 import { createCassetteReplayer, loadCassette } from '#testing/helpers/cassette/replayer.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+import { buildEvalConfig, type EvalMode, type ModelPair } from './eval-config.js';
 import {
-  collectGreenRunAggregates,
+  aggregateComparisons,
   collectRunMetrics,
   compareScenario,
   type EvalReport,
   type RunMetrics,
-  type ScenarioComparison,
 } from './metrics.js';
 import { generateReport } from './report.js';
 import { ensureNodeModules } from './scenarios/ensure-node-modules.js';
 import type { EvalScenario, QualityCheckResult } from './scenarios/types.js';
-
-type EvalMode = 'baseline' | 'routed';
 
 export type EvalRunOptions = {
   scenarios: EvalScenario[];
@@ -328,148 +318,4 @@ export async function runEvalSuite(opts: EvalRunOptions): Promise<EvalReport> {
 export function formatRunProgressLine(run: RunMetrics): string {
   const cost = run.cost.pricingAvailable ? `$${run.cost.estimatedCostUSD.toFixed(4)}` : 'unpriced';
   return `    cost: ${cost} | quality: ${Math.round(run.quality.score * 100)}%`;
-}
-
-function sum(values: number[]): number {
-  return values.reduce((total, value) => total + value, 0);
-}
-
-function sumOrNull(values: number[]): number | null {
-  return values.length > 0 ? sum(values) : null;
-}
-
-function average(values: number[]): number {
-  return values.length > 0 ? sum(values) / values.length : 0;
-}
-
-function roundTenth(value: number): number {
-  return Math.round(value * 10) / 10;
-}
-
-export function aggregateComparisons(comparisons: ScenarioComparison[]): EvalReport['aggregate'] {
-  const pricedBaselines = comparisons.filter(
-    (comparison) => comparison.baseline.cost.pricingAvailable,
-  );
-  const pricedRouted = comparisons.filter((comparison) => comparison.routed.cost.pricingAvailable);
-  const pricedPairs = comparisons.filter(
-    (comparison) =>
-      comparison.baseline.cost.pricingAvailable && comparison.routed.cost.pricingAvailable,
-  );
-  const greenRuns = collectGreenRunAggregates(comparisons);
-
-  return {
-    avgCostSavingsPercent:
-      pricedPairs.length > 0
-        ? roundTenth(average(pricedPairs.map((comparison) => comparison.costSavingsPercent)))
-        : null,
-    avgQualityRetentionPercent: roundTenth(
-      average(comparisons.map((comparison) => comparison.qualityRetentionPercent)),
-    ),
-    totalBaselineCostUSD: sumOrNull(
-      pricedBaselines.map((comparison) => comparison.baselineCostUSD),
-    ),
-    totalRoutedCostUSD: sumOrNull(pricedRouted.map((comparison) => comparison.routedCostUSD)),
-    totalSavingsUSD: sumOrNull(pricedPairs.map((comparison) => comparison.savingsUSD)),
-    scenariosRun: comparisons.length,
-    scenariosWhereRoutedMatchedBaseline: comparisons.filter(
-      (comparison) => comparison.qualityRetentionPercent >= 100,
-    ).length,
-    avgBaselineFirstPassRatePercent: roundTenth(
-      average(comparisons.map((comparison) => comparison.baseline.outcome.firstPassRate)) * 100,
-    ),
-    avgRoutedFirstPassRatePercent: roundTenth(
-      average(comparisons.map((comparison) => comparison.routed.outcome.firstPassRate)) * 100,
-    ),
-    totalRetryAttempts: sum(
-      comparisons.map(
-        (comparison) =>
-          comparison.baseline.outcome.retryAttempts + comparison.routed.outcome.retryAttempts,
-      ),
-    ),
-    totalEscalations: sum(
-      comparisons.map(
-        (comparison) =>
-          comparison.baseline.outcome.escalationAttempts +
-          comparison.routed.outcome.escalationAttempts,
-      ),
-    ),
-    totalEscalationCompletions: sum(
-      comparisons.map(
-        (comparison) =>
-          comparison.baseline.outcome.escalatedTasks + comparison.routed.outcome.escalatedTasks,
-      ),
-    ),
-    greenRunsWithFindings: greenRuns.greenRunsWithFindings,
-    greenRunsCriticalFindings: greenRuns.greenRunsCriticalFindings,
-  };
-}
-
-type ModelPair = {
-  plannerModel: string;
-  baselineImplementerModel: string;
-  routedImplementerModel: string;
-  provider: string;
-  baseUrl: string;
-  apiKey: string;
-};
-
-function resolveEvalProviderIdentity(provider: string): ApiProviderDescriptor {
-  const admissibleIds = PLANNER_API_PROVIDER_IDS.filter((id) =>
-    IMPLEMENTER_API_PROVIDER_IDS.some((implementerId) => implementerId === id),
-  );
-  const usableInBothRoles = (id: string): boolean =>
-    admissibleIds.some((admissibleId) => admissibleId === id);
-
-  const byId = getApiProviderDescriptor(provider);
-  if (byId !== undefined && usableInBothRoles(byId.id)) return byId;
-
-  const serviceMatches = Object.values(API_PROVIDER_CATALOG).filter(
-    (descriptor) => descriptor.service === provider,
-  );
-  const byService = serviceMatches.length === 1 ? serviceMatches[0] : undefined;
-  if (byService !== undefined && usableInBothRoles(byService.id)) return byService;
-
-  throw error(
-    'eval-provider-not-usable-for-both-roles',
-    `Eval provider "${provider}" is not usable for both eval roles; use one of: ${admissibleIds.join(', ')}`,
-  );
-}
-
-export function buildEvalConfig(pair: ModelPair, mode: EvalMode): Config {
-  const implementerModel =
-    mode === 'baseline' ? pair.baselineImplementerModel : pair.routedImplementerModel;
-  const descriptor = resolveEvalProviderIdentity(pair.provider);
-
-  return ConfigSchema.parse({
-    version: 3,
-    planner: {
-      kind: 'api',
-      provider: descriptor.id,
-      service: descriptor.service,
-      offering: descriptor.offering,
-      apiBase: pair.baseUrl,
-      model: pair.plannerModel,
-      apiKey: pair.apiKey,
-    },
-    implementer: {
-      kind: 'api',
-      provider: descriptor.id,
-      service: descriptor.service,
-      offering: descriptor.offering,
-      apiBase: pair.baseUrl,
-      model: implementerModel,
-      apiKey: pair.apiKey,
-    },
-    validation: {
-      typecheck: true,
-      lint: false,
-      test: true,
-      testCommand: 'npm test',
-    },
-    workflow: {
-      maxRetries: 1,
-      mode: 'quick',
-      persistTranscript: true,
-    },
-  });
 }

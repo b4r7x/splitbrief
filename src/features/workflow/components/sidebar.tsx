@@ -256,7 +256,7 @@ export function Sidebar({ width, height }: SidebarProps) {
   const innerWidth = Math.max(0, width - 5);
 
   const costFmt = formatCostDisplay(cost.localRate, cost.costBreakdown, cost.pricingState);
-  // The three seat rows and the cost row always render; mode and the done/escalated split do not.
+  // The cost row is unconditional; mode and the done/escalated split are not.
   const footerRows = seats.length + 1 + (mode ? 1 : 0) + (escalatedCount > 0 ? 1 : 0);
   // Without a height the caller is not budgeting rows, so the list never windows.
   const listRows =

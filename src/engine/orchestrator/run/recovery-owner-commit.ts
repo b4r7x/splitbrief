@@ -11,7 +11,7 @@ import {
 } from '../../../core/schemas/brief-owner.js';
 import { TASKS_FILE } from '../../../core/paths.js';
 import { writeSpecFile } from '../../../core/paths-io.js';
-import { transactRecoveryEvidence } from '../../../core/evidence/recovery-journal.js';
+import { transactRecoveryEvidence } from '../../../core/evidence/recovery-journal/journal.js';
 import { narrowRecord } from '../../../utils/type-guards.js';
 import { error } from '../../../utils/error.js';
 import { writeBriefQualityReport } from '../../spec/brief-quality-file.js';
@@ -20,7 +20,7 @@ import {
   projectOwnerCommittedState,
   recoveryViewOf,
 } from '../planning/brief-owner-projection.js';
-import { OWNER_EVIDENCE_KIND } from '../evidence/recovery-journal.js';
+import { OWNER_EVIDENCE_KIND } from '../evidence/brief-owner-journal.js';
 import {
   commitWorkflowState,
   workflowStateRevision,

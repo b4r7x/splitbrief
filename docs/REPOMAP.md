@@ -118,7 +118,6 @@ The resulting string is passed to the planner as an optional `codebaseContext` f
 
 - `cli` planners prepend the block to the first-phase prompt.
 - `api` planners include it in the system prompt.
-- `agent-sdk` adds it as a `<repo-map>` block on the user turn.
 
 The implementer does not see the repo-map — it's planner-side context only, so `tasks.md` remains transport for Task Briefs and implementer prompts stay unchanged.
 

@@ -26,7 +26,9 @@ import {
   scenarioMetricsMeetThresholds,
   type ModelEvaluationScenarioMetrics,
 } from './implementer-provider.js';
+import { buildEvalConfig } from './eval-config.js';
 import {
+  aggregateComparisons,
   collectCostMetrics,
   collectRunMetrics,
   compareScenario,
@@ -36,8 +38,6 @@ import {
 } from './metrics.js';
 import { formatCliSummary, generateReport } from './report.js';
 import {
-  aggregateComparisons,
-  buildEvalConfig,
   copyScenarioFixture,
   createEvalModelCache,
   formatRunProgressLine,
@@ -45,7 +45,7 @@ import {
   runInEvalSandbox,
 } from './runner.js';
 import { calculateCostBreakdown } from '../src/engine/providers/cost/breakdown.js';
-import { lookupModelsDevModel } from '../src/engine/providers/model/resolution.js';
+import { lookupCatalogModelByModelId } from '../src/engine/providers/model/resolution.js';
 import type { ModelsDevCatalogSnapshot } from '../src/engine/providers/models-dev-cache.js';
 import type { QualityCheckResult } from './scenarios/types.js';
 import type { Summary } from '../src/core/schemas/summary.js';
@@ -175,8 +175,8 @@ describe('eval harness', () => {
       tokenUsage,
       totalTasks: 0,
       escalatedCount: 0,
-      plannerTool: 'openai',
-      implementerTool: 'openai',
+      plannerTool: 'custom-endpoint',
+      implementerTool: 'custom-endpoint',
       plannerModel: 'gpt-4o',
       implementerModel: 'gpt-4o-mini',
     });
@@ -696,10 +696,8 @@ describe('eval harness', () => {
     ]);
   });
 
-  it('discovers pending-evaluation candidates for OpenRouter, Groq, Ollama, and LM Studio', () => {
+  it('discovers pending-evaluation candidates for Ollama and LM Studio', () => {
     expect(discoverPendingEvaluationCandidates()).toEqual([
-      { provider: 'openrouter', model: 'anthropic/claude-sonnet-5' },
-      { provider: 'groq', model: 'openai/gpt-oss-120b' },
       { provider: 'ollama', model: 'qwen3-coder:30b' },
       { provider: 'lm-studio', model: 'qwen2.5-coder-7b' },
     ]);
@@ -797,10 +795,10 @@ describe('eval harness', () => {
     if (config.planner.kind !== 'api' || config.implementer.kind !== 'api') {
       throw new Error('expected API runners');
     }
-    expect(config.planner.provider).toBe('openai');
-    expect(config.planner.service).toBe('openai');
+    expect(config.planner.provider).toBe('custom-endpoint');
+    expect(config.planner.service).toBe('custom-endpoint');
     expect(config.planner.offering).toBe('payg');
-    expect(config.implementer.service).toBe('openai');
+    expect(config.implementer.service).toBe('custom-endpoint');
     expect(config.implementer.offering).toBe('payg');
     expect(config.planner.apiBase).toBe('https://api.example.test/v1');
     expect(config.workflow.mode).toBe('quick');
@@ -813,14 +811,6 @@ describe('eval harness', () => {
     expect(buildEvalConfig(pair, 'routed').implementer.model).toBe('routed-model');
   });
 
-  it('rejects an unknown provider and names the admissible providers', () => {
-    const pair = { ...makeModelPair(), provider: 'not-a-catalog-provider' };
-
-    expect(() => buildEvalConfig(pair, 'baseline')).toThrow(
-      /"not-a-catalog-provider".*(openai|anthropic|openrouter)/,
-    );
-  });
-
   it('rejects a catalog provider only one eval role admits, instead of failing schema parsing', () => {
     for (const provider of ['ollama', 'lm-studio']) {
       const pair = { ...makeModelPair(), provider };
@@ -829,7 +819,7 @@ describe('eval harness', () => {
         expect.objectContaining({ kind: 'eval-provider-not-usable-for-both-roles' }),
       );
       expect(() => buildEvalConfig(pair, 'baseline')).toThrow(
-        new RegExp(`"${provider}".*not usable for both eval roles.*openai`),
+        new RegExp(`"${provider}".*not usable for both eval roles`),
       );
     }
   });
@@ -844,16 +834,18 @@ describe('eval harness', () => {
 
     expect(Object.keys(routed.getModelsDevCatalog() ?? {})).toEqual(['openai']);
     expect(Object.keys(baseline.getModelsDevCatalog() ?? {})).toEqual(['anthropic']);
-    expect(lookupModelsDevModel('openai', 'gpt-4o-mini', routed)).toMatchObject({
+    // A snapshot is keyed by a models.dev vendor, which is no longer a runner
+    // provider, so an eval seat reaches its rates by model id.
+    expect(lookupCatalogModelByModelId('gpt-4o-mini', routed)).toMatchObject({
       pricingInput: 0.15,
       pricingOutput: 0.6,
     });
-    expect(lookupModelsDevModel('anthropic', 'claude-opus-5', baseline)).toMatchObject({
+    expect(lookupCatalogModelByModelId('claude-opus-5', baseline)).toMatchObject({
       pricingInput: 5,
       pricingOutput: 25,
     });
-    expect(lookupModelsDevModel('anthropic', 'claude-opus-5', routed)).toBeNull();
-    expect(routed.getProviderModels('openai')).toBeNull();
+    expect(lookupCatalogModelByModelId('claude-opus-5', routed)).toBeNull();
+    expect(routed.getProviderModels('ollama')).toBeNull();
   });
 
   it('keeps the harness out of every app layer the engine may not import, at any nesting depth', () => {
@@ -883,7 +875,7 @@ function makeModelPair() {
     plannerModel: 'planner-model',
     baselineImplementerModel: 'baseline-model',
     routedImplementerModel: 'routed-model',
-    provider: 'openai',
+    provider: 'custom-endpoint',
     baseUrl: 'https://api.example.test/v1',
     apiKey: 'secret',
   };

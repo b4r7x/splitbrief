@@ -3,12 +3,8 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { API_PROVIDER_CATALOG } from '../../src/core/providers/api-provider-catalog.js';
 import { AUTOMATIC_MODEL, isAutomaticModel } from '../../src/core/providers/automatic-model.js';
-import {
-  createDefaultConfig,
-  initConfig,
-  loadConfig,
-  writeConfig,
-} from '../../src/core/config/load/io.js';
+import { initConfig, loadConfig, writeConfig } from '../../src/core/config/load/io.js';
+import { createDefaultConfig } from '../../src/core/config/load/defaults.js';
 import { defaultCliAuthChannel } from '../../src/core/runners/cli-tool-catalog.js';
 import type { Config } from '../../src/core/schemas/config.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';

@@ -10,11 +10,13 @@ import {
   cliModelPolicyViolations,
   getCliModelPolicy,
   defaultCliAuthChannel,
+  type CliAuthChannelId,
+} from '../../runners/cli-tool-catalog.js';
+import {
   runnerRoleForActiveRole,
   type ActiveRunnerRole,
-  type CliAuthChannelId,
   type PlannerTierRole,
-} from '../../runners/cli-tool-catalog.js';
+} from '../../runners/seat-roles.js';
 import { PlannerConfigSchema } from '../../schemas/planner-config.js';
 import { ImplementerConfigSchema } from '../../schemas/implementer-config.js';
 import { ReviewerConfigSchema } from '../../schemas/reviewer-config.js';
@@ -40,6 +42,7 @@ export interface BuildRunnerOpts {
   timeout?: number | undefined;
   customModels?: string[] | undefined;
   effort?: EffortLevel | undefined;
+  variant?: string | undefined;
   idleWarnMs?: number | undefined;
   idleKillMs?: number | undefined;
   capabilities?: PlannerCapabilities | undefined;
@@ -66,8 +69,6 @@ export function buildRunnerConfig(
       return buildCommandConfig(role, opts, 'shell');
     case 'agent':
       return buildCommandConfig(role, opts, 'agent');
-    case 'agent-sdk':
-      return buildAgentSdkConfig(role, opts);
     default:
       return assertNever(kind);
   }
@@ -80,6 +81,7 @@ interface GenerationParams {
   timeout?: number | undefined;
   customModels?: string[] | undefined;
   effort?: EffortLevel | undefined;
+  variant?: string | undefined;
 }
 
 interface RunnerTarget {
@@ -98,8 +100,6 @@ function existingTargetId(existing: PlannerConfig | ImplementerConfig): string |
     case 'shell':
     case 'agent':
       return existing.command;
-    case 'agent-sdk':
-      return undefined;
     default:
       return assertNever(existing);
   }
@@ -143,6 +143,7 @@ function resolveGenerationParams(opts: BuildRunnerOpts, target: RunnerTarget): G
     timeout: opts.timeout ?? ex?.timeout,
     customModels: opts.customModels ?? sameTarget?.customModels,
     effort: state === 'changed' ? undefined : (opts.effort ?? sameTarget?.effort),
+    variant: state === 'changed' ? undefined : (opts.variant ?? sameTarget?.variant),
   };
 }
 
@@ -154,6 +155,7 @@ function spreadGenParams(gen: ReturnType<typeof resolveGenerationParams>): Recor
     ...(gen.timeout !== undefined && { timeout: gen.timeout }),
     ...(gen.customModels !== undefined && { customModels: gen.customModels }),
     ...(gen.effort !== undefined && { effort: gen.effort }),
+    ...(gen.variant !== undefined && { variant: gen.variant }),
   };
 }
 
@@ -202,7 +204,6 @@ function existingPlannerCapabilities(
 export function inferKindFromTool(tool: string): RunnerKind {
   if (tool === 'shell') return 'shell';
   if (tool === 'agent') return 'agent';
-  if (tool === 'agent-sdk') return 'agent-sdk';
   if (includes(CLI_TOOL_IDS, tool)) return 'cli';
   return 'api';
 }
@@ -252,17 +253,9 @@ function getDescriptorApiBase(provider: string): string | undefined {
 
 function getExistingApiKey(
   existing: PlannerConfig | ImplementerConfig | undefined,
-  nextKind: 'api' | 'agent-sdk',
-  provider?: string,
+  provider: string,
 ): string | undefined {
-  if (!existing) return undefined;
-  if (existing.kind === 'agent-sdk') {
-    return nextKind === 'agent-sdk' || provider === 'anthropic' ? existing.apiKey : undefined;
-  }
-  if (existing.kind !== 'api') return undefined;
-  if (nextKind === 'agent-sdk') {
-    return existing.provider === 'anthropic' ? existing.apiKey : undefined;
-  }
+  if (existing?.kind !== 'api') return undefined;
   return existing.provider === provider ? existing.apiKey : undefined;
 }
 
@@ -345,8 +338,7 @@ function buildApiConfig(
   const sourceApiKey =
     opts.existing !== undefined && 'apiKey' in opts.existing ? opts.existing.apiKey : undefined;
   const requestedApiKey = destinationValue(state, opts.apiKey, sourceApiKey);
-  const existingApiKey =
-    state === 'same' ? getExistingApiKey(opts.existing, 'api', provider) : undefined;
+  const existingApiKey = state === 'same' ? getExistingApiKey(opts.existing, provider) : undefined;
   const gen = resolveGenerationParams(opts, target);
   assertModelPresent(role, 'api', gen.model);
   const apiKey = requestedApiKey ?? existingApiKey;
@@ -400,31 +392,6 @@ function buildCommandConfig(
     ...(args !== undefined && { args }),
     ...(outputFormat !== undefined && { outputFormat }),
     ...(capabilities !== undefined && { capabilities }),
-    ...spreadWatchdogs(resolveWatchdogs(opts, target)),
-    ...spreadGenParams(gen),
-  };
-
-  return parseRunnerConfig(role, config);
-}
-
-function buildAgentSdkConfig(
-  role: ActiveRunnerRole,
-  opts: BuildRunnerOpts,
-): PlannerConfig | ImplementerConfig {
-  const target = { kind: 'agent-sdk' as const };
-  const state = targetState(opts, target);
-  const sourceApiKey =
-    opts.existing !== undefined && 'apiKey' in opts.existing ? opts.existing.apiKey : undefined;
-  const requestedApiKey = destinationValue(state, opts.apiKey, sourceApiKey);
-  const existingApiKey =
-    state === 'same' ? getExistingApiKey(opts.existing, 'agent-sdk') : undefined;
-  const gen = resolveGenerationParams(opts, target);
-  assertModelPresent(role, 'agent-sdk', gen.model);
-  const apiKey = requestedApiKey ?? existingApiKey;
-
-  const config: Record<string, unknown> = {
-    kind: 'agent-sdk',
-    ...(apiKey !== undefined && { apiKey }),
     ...spreadWatchdogs(resolveWatchdogs(opts, target)),
     ...spreadGenParams(gen),
   };

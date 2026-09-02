@@ -4,11 +4,19 @@ import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { getBudgetCostKnownness } from './knownness.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { makePricedModelCache } from '#testing/helpers/factories/model-cache.js';
+
+// Pricing follows the model, so a metered seat needs a catalog to rate against.
+const pricedCache = makePricedModelCache();
 
 const zeroUsage = makeUsage();
 
+function budgetKnownness(opts: Parameters<typeof getBudgetCostKnownness>[0]) {
+  return getBudgetCostKnownness({ pricingCache: pricedCache, ...opts });
+}
+
 function currentKnownCost(opts: Parameters<typeof getBudgetCostKnownness>[0]): number {
-  return getBudgetCostKnownness(opts).currentKnownCost;
+  return budgetKnownness(opts).currentKnownCost;
 }
 
 describe('getBudgetCostKnownness', () => {
@@ -24,7 +32,7 @@ describe('getBudgetCostKnownness', () => {
     ).toBe(0);
   });
 
-  it('returns positive cost for API-priced providers', () => {
+  it('returns positive cost for a metered seat', () => {
     const usage: TokenUsage = {
       ...zeroUsage,
       plannerInput: 1_000_000,
@@ -34,25 +42,30 @@ describe('getBudgetCostKnownness', () => {
       tokenUsage: usage,
       totalTasks: 1,
       escalatedCount: 0,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
+      plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
     });
     expect(cost).toBeGreaterThan(0);
   });
 
-  it('uses runtime-only model cache pricing when calculating current cost', () => {
+  // The rate is whatever the caller's cache says about the seat's MODEL. A seat
+  // whose model no catalog lists costs nothing knowable, and the same seat gains
+  // a rate the moment a catalog carries that model.
+  it('takes the current cost from the pricing cache the caller passes', () => {
     const pricingCache: ModelCacheAccessor = {
-      getModelsDevCatalog: () => null,
-      getProviderModels: (providerId) =>
-        providerId === 'anthropic'
-          ? [
-              {
-                id: 'claude-runtime-budget-only',
-                pricingInput: 10,
-                pricingOutput: 30,
-              },
-            ]
-          : null,
+      getModelsDevCatalog: () => ({
+        vendor: {
+          id: 'vendor',
+          models: {
+            'budget-only-model': {
+              id: 'budget-only-model',
+              cost: { input: 10, output: 30 },
+            },
+          },
+        },
+      }),
+      getProviderModels: () => null,
     };
     const usage: TokenUsage = {
       ...zeroUsage,
@@ -64,16 +77,16 @@ describe('getBudgetCostKnownness', () => {
       tokenUsage: usage,
       totalTasks: 1,
       escalatedCount: 0,
-      plannerTool: 'anthropic',
-      plannerModel: 'claude-runtime-budget-only',
+      plannerTool: 'custom-planner-api',
+      plannerModel: 'budget-only-model',
       implementerTool: 'ollama',
     });
     const withCache = currentKnownCost({
       tokenUsage: usage,
       totalTasks: 1,
       escalatedCount: 0,
-      plannerTool: 'anthropic',
-      plannerModel: 'claude-runtime-budget-only',
+      plannerTool: 'custom-planner-api',
+      plannerModel: 'budget-only-model',
       implementerTool: 'ollama',
       pricingCache,
     });
@@ -113,7 +126,7 @@ describe('getBudgetCostKnownness', () => {
           implementerTokens: 1_000_000,
           escalationTokens: 0,
           retryCount: 0,
-          tool: 'deepseek',
+          tool: 'custom-worker-api',
           model: 'deepseek-v4-flash',
         },
       ],
@@ -137,7 +150,7 @@ describe('getBudgetCostKnownness', () => {
         implementerCacheReadTokens: 1_000_000,
         implementerCacheCreateTokens: 0,
         retryCount: 0,
-        tool: 'anthropic',
+        tool: 'custom-planner-api',
         model: 'claude-sonnet-5',
       },
     ];
@@ -150,7 +163,7 @@ describe('getBudgetCostKnownness', () => {
       implementerTool: 'ollama',
       taskBreakdowns,
     });
-    const knownness = getBudgetCostKnownness({
+    const knownness = budgetKnownness({
       tokenUsage: usage,
       totalTasks: 1,
       escalatedCount: 0,
@@ -174,7 +187,7 @@ describe('getBudgetCostKnownness', () => {
       implementerCacheRead: 1_000_000,
     };
 
-    const knownness = getBudgetCostKnownness({
+    const knownness = budgetKnownness({
       tokenUsage: usage,
       totalTasks: 1,
       escalatedCount: 0,
@@ -189,7 +202,7 @@ describe('getBudgetCostKnownness', () => {
           escalationTokens: 0,
           implementerCacheReadTokens: 1_000_000,
           retryCount: 0,
-          tool: 'deepseek',
+          tool: 'custom-worker-api',
           model: 'deepseek-v4-flash',
         },
       ],
@@ -200,7 +213,7 @@ describe('getBudgetCostKnownness', () => {
       isKnown: false,
       hasUnknownPaidUsage: true,
       hasLocalOnlyUnpricedUsage: false,
-      unknownReason: 'pricing unknown for deepseek/deepseek-v4-flash',
+      unknownReason: 'pricing unknown for custom-worker-api/deepseek-v4-flash',
     });
   });
 
@@ -216,7 +229,7 @@ describe('getBudgetCostKnownness', () => {
       totalTasks: 1,
       escalatedCount: 0,
       plannerTool: 'claude-code',
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
       taskBreakdowns: [
         {
@@ -242,7 +255,7 @@ describe('getBudgetCostKnownness', () => {
       implementerOutput: 500_000,
     };
 
-    const knownness = getBudgetCostKnownness({
+    const knownness = budgetKnownness({
       tokenUsage: usage,
       totalTasks: 1,
       escalatedCount: 0,
@@ -289,7 +302,7 @@ describe('getBudgetCostKnownness', () => {
       tokenUsage: { ...zeroUsage, plannerInput: 200_000 },
       totalTasks: 1,
       escalatedCount: 0,
-      plannerTool: 'openai',
+      plannerTool: 'custom-openai-api',
       plannerModel: 'gpt-5.4',
       implementerTool: 'ollama',
       pricingCache,
@@ -298,7 +311,7 @@ describe('getBudgetCostKnownness', () => {
       tokenUsage: { ...zeroUsage, plannerInput: 300_000 },
       totalTasks: 1,
       escalatedCount: 0,
-      plannerTool: 'openai',
+      plannerTool: 'custom-openai-api',
       plannerModel: 'gpt-5.4',
       implementerTool: 'ollama',
       pricingCache,
@@ -309,7 +322,7 @@ describe('getBudgetCostKnownness', () => {
   });
 
   it('attributes reviewer usage to the planner identity when no reviewer is configured', () => {
-    const knownness = getBudgetCostKnownness({
+    const knownness = budgetKnownness({
       tokenUsage: makeUsage({ reviewerCacheRead: 1_000_000 }),
       totalTasks: 1,
       escalatedCount: 0,
@@ -325,20 +338,20 @@ describe('getBudgetCostKnownness', () => {
   });
 
   it('attributes reviewer usage to the reviewer identity when a reviewer is configured', () => {
-    const knownness = getBudgetCostKnownness({
+    const knownness = budgetKnownness({
       tokenUsage: makeUsage({ reviewerCacheRead: 1_000_000 }),
       totalTasks: 1,
       escalatedCount: 0,
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
-      reviewerTool: 'deepseek',
+      reviewerTool: 'custom-worker-api',
       reviewerModel: 'deepseek-v4-flash',
     });
 
     expect(knownness).toMatchObject({
       isKnown: false,
       hasUnknownPaidUsage: true,
-      unknownReason: 'pricing unknown for deepseek/deepseek-v4-flash',
+      unknownReason: 'pricing unknown for custom-worker-api/deepseek-v4-flash',
     });
   });
 
@@ -346,13 +359,13 @@ describe('getBudgetCostKnownness', () => {
     const base = {
       totalTasks: 2,
       escalatedCount: 1,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
     };
 
     expect(
-      getBudgetCostKnownness({
+      budgetKnownness({
         ...base,
         tokenUsage: makeUsage({
           plannerInput: 900_000,
@@ -361,7 +374,7 @@ describe('getBudgetCostKnownness', () => {
         }),
       }),
     ).toEqual(
-      getBudgetCostKnownness({
+      budgetKnownness({
         ...base,
         tokenUsage: makeUsage({ plannerInput: 1_000_000, plannerOutput: 100_000 }),
       }),

@@ -135,14 +135,6 @@ export function withPlannerCallPublishing(
     wrapped.injectUserTurn = (opts) =>
       injectUserTurn.call(planner, withPlannerUserTurnOptions(opts, ctx));
   }
-  const instantPlan = planner.instantPlan;
-  if (instantPlan !== undefined) {
-    wrapped.instantPlan = (opts) =>
-      instantPlan.call(planner, {
-        ...opts,
-        callbacks: withPlannerCallbacks(opts.callbacks, ctx),
-      });
-  }
   const summarizeStructured = planner.summarizeStructured;
   if (summarizeStructured !== undefined) {
     wrapped.summarizeStructured = (messages, opts) =>

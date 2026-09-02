@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { ProviderDetection } from '../../core/discovery/detection.js';
+import type { DetectionLanePublication } from './lane-channel.js';
 import type {
   DetectionDeps,
-  DetectionLanePublication,
   DetectionRefreshOutcomes,
   DetectionService,
   DetectionServiceResult,
@@ -11,7 +11,7 @@ import type {
 } from './service.js';
 import { createProductionDetectionDeps } from './deps.js';
 import { detectionStore } from '../../stores/project/detection.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import {
   detectionContextsForCurrentConfig,
   loadDetectionForCurrentConfig,
@@ -185,9 +185,9 @@ function recordingService(input: {
   };
 }
 
-function openAiProvider(modelId: string): ProviderDetection {
+function ollamaProvider(modelId: string): ProviderDetection {
   return {
-    provider: 'openai',
+    provider: 'ollama',
     available: true,
     isLocal: false,
     models: [{ id: modelId }],
@@ -204,7 +204,9 @@ describe('store publication from current configuration', () => {
       planner: { kind: 'cli', tool: 'codex', model: 'gpt-5.4' },
       implementer: {
         kind: 'api',
-        provider: 'openai',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
+        offering: 'payg',
         apiBase: 'https://gateway.current.example/v1',
         apiKey: 'current-private-key',
         model: 'gpt-5.4',
@@ -213,7 +215,7 @@ describe('store publication from current configuration', () => {
     const state = current(config, '/projects/current');
     const { publication, began, publishedLanes } = publicationRecorder();
     const { service, received } = recordingService({
-      load: async () => freshResult([openAiProvider('current-private-model')]),
+      load: async () => freshResult([ollamaProvider('current-private-model')]),
     });
 
     await loadDetectionForCurrentConfig({ service, publication, current: state });
@@ -222,7 +224,7 @@ describe('store publication from current configuration', () => {
     expect(received[0]?.sourceContexts).toEqual(detectionContextsForCurrentConfig(state));
     expect(began).toEqual([detectionContextsForCurrentConfig(state)]);
     expect(publishedLanes).toEqual(['readiness', 'modelsDev', 'cliModels']);
-    expect(modelCacheStore.getProviderModels('openai')).toEqual([{ id: 'current-private-model' }]);
+    expect(modelCacheStore.getProviderModels('ollama')).toEqual([{ id: 'current-private-model' }]);
   });
 
   it('rejects executable config-A closure relabeling before publication begins', async () => {
@@ -230,7 +232,9 @@ describe('store publication from current configuration', () => {
       planner: { kind: 'cli', tool: 'codex', model: 'gpt-5.4' },
       implementer: {
         kind: 'api',
-        provider: 'openai',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
+        offering: 'payg',
         apiBase: 'https://gateway.a.example/v1',
         apiKey: 'private-a',
         model: 'gpt-5.4',
@@ -240,7 +244,9 @@ describe('store publication from current configuration', () => {
       planner: { kind: 'cli', tool: 'codex', model: 'gpt-5.4' },
       implementer: {
         kind: 'api',
-        provider: 'openai',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
+        offering: 'payg',
         apiBase: 'https://gateway.b.example/v1',
         apiKey: 'private-b',
         model: 'gpt-5.4',
@@ -254,7 +260,7 @@ describe('store publication from current configuration', () => {
     };
     const { publication, began } = publicationRecorder();
     const { service, received } = recordingService({
-      refresh: async () => freshResult([openAiProvider('private-from-a')]),
+      refresh: async () => freshResult([ollamaProvider('private-from-a')]),
     });
     const launderingCurrent = { ...stateB, deps: forgedConfigADependencies };
     const launderingAttempt = {
@@ -268,7 +274,7 @@ describe('store publication from current configuration', () => {
     expect(summary).toMatchObject({ status: 'uninitialized', published: false });
     expect(began).toEqual([]);
     expect(received).toEqual([]);
-    expect(modelCacheStore.getProviderModels('openai')).toBeNull();
+    expect(modelCacheStore.getProviderModels('ollama')).toBeNull();
   });
 
   it('reports a first-ever all-lane failure without publishing invented last-good data', async () => {
@@ -320,7 +326,9 @@ describe('store publication from current configuration', () => {
       planner: { kind: 'cli', tool: 'codex', model: 'gpt-5.4' },
       implementer: {
         kind: 'api',
-        provider: 'openai',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
+        offering: 'payg',
         apiBase: 'https://gateway.a.example/v1',
         apiKey: 'private-a',
         model: 'gpt-5.4',
@@ -330,7 +338,9 @@ describe('store publication from current configuration', () => {
       planner: { kind: 'cli', tool: 'codex', model: 'gpt-5.4' },
       implementer: {
         kind: 'api',
-        provider: 'openai',
+        provider: 'custom-endpoint',
+        service: 'custom-endpoint',
+        offering: 'payg',
         apiBase: 'https://gateway.b.example/v1',
         apiKey: 'private-b',
         model: 'gpt-5.4',
@@ -345,7 +355,7 @@ describe('store publication from current configuration', () => {
       refresh: async (deps) =>
         deps.sourceContexts?.readiness === contextsA.readiness
           ? pendingA.promise
-          : freshResult([openAiProvider('private-from-b')]),
+          : freshResult([ollamaProvider('private-from-b')]),
     });
 
     const oldRefresh = refreshDetectionForCurrentConfig({
@@ -358,11 +368,11 @@ describe('store publication from current configuration', () => {
       publication,
       getCurrent: () => stateB,
     });
-    pendingA.resolve(freshResult([openAiProvider('private-from-a')]));
+    pendingA.resolve(freshResult([ollamaProvider('private-from-a')]));
     const oldSummary = await oldRefresh;
 
     expect(currentRefresh).toMatchObject({ status: 'fresh', published: true });
     expect(oldSummary).toMatchObject({ status: 'superseded', published: false });
-    expect(modelCacheStore.getProviderModels('openai')).toEqual([{ id: 'private-from-b' }]);
+    expect(modelCacheStore.getProviderModels('ollama')).toEqual([{ id: 'private-from-b' }]);
   });
 });

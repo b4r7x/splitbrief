@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { SOFT_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
-import type { ActiveRunnerRole } from '../../core/runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import { glyph } from '../../lib/glyphs.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';

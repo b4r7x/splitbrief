@@ -47,7 +47,6 @@ export const CleanupFailureTargetSchema = z
     z.object({ kind: z.literal('artifact'), artifact: ArtifactIdentitySchema }).strict(),
   ])
   .readonly();
-export type CleanupFailureTarget = z.infer<typeof CleanupFailureTargetSchema>;
 
 export const FailureSchema = z
   .discriminatedUnion('stage', [

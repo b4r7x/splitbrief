@@ -2,8 +2,8 @@ import { assertCandidateFilesAbsent } from '../../../core/runners/candidate-admi
 import { cliAdmissionError } from '../../../core/runners/cli-admission-error.js';
 import {
   nativeCliCatalogToDetectedModels,
-  parseAiderNativeModelCatalog,
   parseCodexNativeModelCatalog,
+  parseCommandCodeNativeModelCatalog,
   parseCursorNativeModelCatalog,
   parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
@@ -17,17 +17,17 @@ import {
   PLANNER_CLI_TOOL_IDS,
   type CliCompilerEvidence,
   type CliToolId,
-  type RunnerRole,
 } from '../../../core/runners/cli-tool-catalog.js';
+import type { RunnerRole } from '../../../core/runners/seat-roles.js';
 import type { PlannerCliToolId, ImplementerCliToolId } from '../../../core/schemas/enums.js';
 import { includes, isRecord } from '../../../utils/type-guards.js';
 import { runnerConfigError } from '../errors.js';
 import { refusedCompilerAdmission, type RefusedCompilerAdmission } from '../compiler-capability.js';
 import type { CompilerRuntimeEvidence } from '../compiler-runtime-evidence.js';
-import { aiderImplementerAdapter, aiderPlannerAdapter } from './aider.js';
 import { claudeCodeImplementerAdapter, claudeCodePlannerAdapter } from './claude-code.js';
 import { codexImplementerAdapter, codexPlannerAdapter } from './codex.js';
 import { CODEX_NATIVE_MODEL_CATALOG_PROBE } from './codex.js';
+import { commandCodeImplementerAdapter, commandCodePlannerAdapter } from './command-code.js';
 import { copilotImplementerAdapter, copilotPlannerAdapter } from './copilot.js';
 import { cursorImplementerAdapter, cursorPlannerAdapter } from './cursor.js';
 import { kiloImplementerAdapter, kiloPlannerAdapter } from './kilo-code.js';
@@ -78,6 +78,7 @@ function versionOutputFormat(tool: CliToolId, command: string): VersionOutputFor
     // version contract. The whole line must be the one semver token.
     case 'opencode':
     case 'kilo-code':
+    case 'command-code':
       return { kind: 'bare' };
     case 'cursor':
       return { kind: 'bare' };
@@ -87,8 +88,6 @@ function versionOutputFormat(tool: CliToolId, command: string): VersionOutputFor
         labels: [command, 'claude code'],
         bareDescriptorSuffix: 'Claude Code',
       };
-    case 'aider':
-      return { kind: 'labeled', labels: [command] };
     case 'copilot':
       return {
         kind: 'labeled',
@@ -181,8 +180,13 @@ function jsonAuthFact(output: CliProbeOutput): ReturnType<typeof authFactFromTex
 function authFactFromText(value: string) {
   const text = value.trim().toLowerCase();
   if (text.length === 0) return undefined;
+  // Negated forms come first: `not authenticated` and `not signed in` contain
+  // the positive tokens the verified arm matches on.
   if (
     text.includes('not logged in') ||
+    text.includes('not authenticated') ||
+    text.includes('not signed in') ||
+    text.includes('no active session') ||
     text.includes('unauthenticated') ||
     text.includes('no credential') ||
     text.includes('missing credential')
@@ -225,6 +229,13 @@ function parseStatusAuth(output: CliProbeOutput) {
   const fromJson = jsonAuthFact(output);
   if (fromJson !== undefined) return fromJson;
   return authFactFromText(`${output.stdout}\n${output.stderr}`) ?? 'malformed';
+}
+
+// `cmd` exits 3 for "not authenticated" even when it prints nothing; every
+// other code falls through to the shared status parsing.
+function parseCommandCodeStatusAuth(output: CliProbeOutput) {
+  if (output.exitCode === 3) return 'missing' as const;
+  return parseStatusAuth(output);
 }
 
 function declaredAuthProbe(tool: CliToolId, command: string): CliAuthProbe {
@@ -273,7 +284,15 @@ function declaredAuthProbe(tool: CliToolId, command: string): CliAuthProbe {
         maxOutputBytes: PROBE_OUTPUT_MAX_BYTES,
         parse: parseStatusAuth,
       };
-    case 'aider':
+    case 'command-code':
+      return {
+        kind: 'auth-status',
+        command: [command, 'status', '--json'],
+        cwd: 'neutral',
+        timeoutMs: PROBE_TIMEOUT_MS,
+        maxOutputBytes: PROBE_OUTPUT_MAX_BYTES,
+        parse: parseCommandCodeStatusAuth,
+      };
     case 'copilot':
       return { kind: 'not-run' };
   }
@@ -383,11 +402,6 @@ function declaredCatalogProbe(tool: CliToolId): CliCatalogProbe {
         command: CODEX_NATIVE_MODEL_CATALOG_PROBE.command,
         parser: parseCodexNativeModelCatalog,
       });
-    case 'aider':
-      return structuralCatalogProbe({
-        command: ['aider', '--list-models', ''],
-        parser: parseAiderNativeModelCatalog,
-      });
     case 'opencode':
       return structuralCatalogProbe({
         command: ['opencode', 'models'],
@@ -404,6 +418,11 @@ function declaredCatalogProbe(tool: CliToolId): CliCatalogProbe {
       return structuralCatalogProbe({
         command: ['cursor-agent', '--list-models'],
         parser: parseCursorNativeModelCatalog,
+      });
+    case 'command-code':
+      return structuralCatalogProbe({
+        command: ['cmd', '--list-models'],
+        parser: parseCommandCodeNativeModelCatalog,
       });
     case 'claude-code':
     case 'copilot':
@@ -450,10 +469,10 @@ function assembleImplementerAdapters(): Record<ImplementerCliToolId, CliImplemen
     'claude-code': withDeclaredImplementerProbe(claudeCodeImplementerAdapter),
     codex: withDeclaredImplementerProbe(codexImplementerAdapter),
     opencode: withDeclaredImplementerProbe(opencodeImplementerAdapter),
-    aider: withDeclaredImplementerProbe(aiderImplementerAdapter),
     copilot: withDeclaredImplementerProbe(copilotImplementerAdapter),
     'kilo-code': withDeclaredImplementerProbe(kiloImplementerAdapter),
     cursor: withDeclaredImplementerProbe(cursorImplementerAdapter),
+    'command-code': withDeclaredImplementerProbe(commandCodeImplementerAdapter),
   } satisfies Record<ImplementerCliToolId, CliImplementerAdapter>;
 
   assertCandidateFilesAbsent(
@@ -469,10 +488,10 @@ function assemblePlannerAdapters(): Record<PlannerCliToolId, CliPlannerAdapter> 
     'claude-code': withDeclaredPlannerProbe(claudeCodePlannerAdapter),
     codex: withDeclaredPlannerProbe(codexPlannerAdapter),
     opencode: withDeclaredPlannerProbe(opencodePlannerAdapter),
-    aider: withDeclaredPlannerProbe(aiderPlannerAdapter),
     copilot: withDeclaredPlannerProbe(copilotPlannerAdapter),
     'kilo-code': withDeclaredPlannerProbe(kiloPlannerAdapter),
     cursor: withDeclaredPlannerProbe(cursorPlannerAdapter),
+    'command-code': withDeclaredPlannerProbe(commandCodePlannerAdapter),
   });
 }
 

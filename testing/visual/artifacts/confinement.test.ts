@@ -1,31 +1,14 @@
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { resolveContainedArtifactPath } from './confinement.js';
 
-const temporaryRoots: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(
-    temporaryRoots.splice(0).map((root) => rm(root, { force: true, recursive: true })),
-  );
-});
-
 describe('visual artifact confinement paths', () => {
-  it('rejects traversal and absolute artifact paths', async () => {
-    const outputRoot = await createOutputRoot();
+  it('rejects traversal and absolute artifact paths', () => {
+    const outputRoot = '/synthetic/artifact-root';
 
     for (const invalidPath of ['../outside.txt', '/absolute.txt', 'nested\\file.txt']) {
       expect(() =>
         resolveContainedArtifactPath({ root: outputRoot, relativePath: invalidPath }),
-      ).toThrow();
+      ).toThrow(/must match pattern/);
     }
   });
 });
-
-async function createOutputRoot(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'splitbrief-artifact-paths-'));
-  temporaryRoots.push(root);
-  return root;
-}

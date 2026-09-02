@@ -17,10 +17,8 @@ import {
 import { assertNoLiveSession, clearStaleSession } from '../../../core/sessions/guards.js';
 import { sessionError } from '../../../core/sessions/errors.js';
 import { detectAvailableCliReadiness } from '../../../engine/detection/detect.js';
-import {
-  prepareExecution,
-  type PreparationPolicy,
-} from '../../../engine/runners/prepare-execution.js';
+import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+import type { PreparationPolicy } from '../../../engine/runners/prepare-execution/types.js';
 import type {
   PreparationOutcome,
   PreparedExecution,

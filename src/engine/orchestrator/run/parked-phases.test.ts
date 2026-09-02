@@ -9,8 +9,11 @@ import {
   makePlanner,
   TEST_METADATA,
 } from '#testing/helpers/orchestrator-factories.js';
+import { REAL_TASKS_MD } from '#testing/helpers/planning-phase.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { TASKS_FILE } from '../../../core/paths.js';
+import { writeSpecFile } from '../../../core/paths-io.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { createStorageBlockedRecovery } from '../planning/brief-recovery.js';
@@ -291,7 +294,7 @@ describe('runPlanningPhases — parked disposition', () => {
     expect(result.state.generation).not.toBeNull();
   });
 
-  it('hydrates an absent-owner resume without mutating the persisted state', async () => {
+  it('hydrates an absent-owner resume without mutating the persisted state or inspecting persisted tasks', async () => {
     const { projectDir, sessionId } = setupProject();
     const planner = makePlanner({ review: vi.fn() });
     const onApprovalNeeded = vi.fn();
@@ -303,6 +306,7 @@ describe('runPlanningPhases — parked disposition', () => {
       phase: 'reviewing-briefs',
     };
     const ref = { projectDir, sessionId };
+    writeSpecFile(ref, TASKS_FILE, REAL_TASKS_MD, TEST_METADATA);
     saveState(ref, parked);
     const before = readWorkflowStateHead(ref);
     expect(before).not.toBeNull();
@@ -325,5 +329,6 @@ describe('runPlanningPhases — parked disposition', () => {
     expect(planner.review).not.toHaveBeenCalled();
     expect(events.some((event) => event.type === 'task_started')).toBe(false);
     expect(events.some((event) => event.type === 'brief_quality_failed')).toBe(false);
+    expect(events.some((event) => event.type === 'brief_quality_passed')).toBe(false);
   });
 });

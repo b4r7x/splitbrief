@@ -3,7 +3,7 @@ import {
   updateDefaultImplementerConfig,
 } from './implementer-profiles.js';
 import { resolveReviewerRunner } from './reviewer-runner.js';
-import type { ActiveRunnerRole } from '../../runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole } from '../../runners/seat-roles.js';
 import type { Config } from '../../schemas/config.js';
 import type { ImplementerConfig } from '../../schemas/implementer-config.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';

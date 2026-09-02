@@ -1,10 +1,24 @@
-import { existsSync, lstatSync, readdirSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { assertWritablePathConfined } from '../../lib/path-confinement.js';
 import { warnError } from '../../lib/warn.js';
-import { isValidSessionId, READINESS_FILE, sessionDir, sessionsRoot } from '../paths.js';
+import {
+  isValidSessionId,
+  READINESS_FILE,
+  sessionDir,
+  sessionsRoot,
+  validateSessionId,
+} from '../paths.js';
 import type { SessionRef } from '../types/session-ref.js';
-import { readActiveRecord } from './active-pointer.js';
-import { discardOrphanSessionDirectory } from './prepare.js';
+import { readActiveRecord, withSessionMutationLock } from './active-pointer.js';
+import { sessionPreparationError } from './errors.js';
+import {
+  claimRelativePath,
+  directoryIdentity,
+  ownershipFailure,
+  pathExists,
+  sessionRelativePath,
+} from './ownership-marker.js';
 
 export const ORPHAN_SESSION_GRACE_MS = 24 * 60 * 60 * 1000;
 
@@ -49,6 +63,49 @@ function isCollectableOrphan(ref: SessionRef, nowMs: number): boolean {
   if (entries.length !== 1 || entries[0] !== READINESS_FILE) return false;
   if (!lstatSync(join(directory, READINESS_FILE)).isFile()) return false;
   return olderThanGrace(directory, nowMs);
+}
+
+function isCollectableOrphanDirectory(ref: SessionRef, relativeDirectory: string): boolean {
+  const entries = readdirSync(join(ref.projectDir, relativeDirectory));
+  if (entries.length === 0) return true;
+  if (entries.length !== 1 || entries[0] !== READINESS_FILE) return false;
+  return lstatSync(join(ref.projectDir, relativeDirectory, READINESS_FILE)).isFile();
+}
+
+function discardOrphanSessionDirectoryLocked(ref: SessionRef): boolean {
+  if (activeSessionId(ref.projectDir) === ref.sessionId) return false;
+  const original = sessionRelativePath(ref.sessionId);
+  const originalPath = join(ref.projectDir, original);
+  if (!pathExists(originalPath)) return false;
+  const identity = directoryIdentity(ref, original);
+  if (!isCollectableOrphanDirectory(ref, original)) return false;
+  const claim = claimRelativePath(ref, 'directory');
+  const claimPath = join(ref.projectDir, claim);
+  assertWritablePathConfined(original, ref.projectDir);
+  assertWritablePathConfined(claim, ref.projectDir);
+  renameSync(originalPath, claimPath);
+  directoryIdentity(ref, claim, identity);
+  if (!isCollectableOrphanDirectory(ref, claim)) {
+    if (pathExists(originalPath)) {
+      throw ownershipFailure(ref, 'the canonical session path was recreated');
+    }
+    renameSync(claimPath, originalPath);
+    return false;
+  }
+  if (pathExists(originalPath)) {
+    throw ownershipFailure(ref, 'the canonical session path was recreated');
+  }
+  rmSync(claimPath, { recursive: true });
+  return true;
+}
+
+export function discardOrphanSessionDirectory(ref: SessionRef): boolean {
+  try {
+    validateSessionId(ref.sessionId);
+    return withSessionMutationLock(ref.projectDir, () => discardOrphanSessionDirectoryLocked(ref));
+  } catch (cause) {
+    throw sessionPreparationError.io('discard-orphan-session', ref, cause);
+  }
 }
 
 export function listOrphanSessionIds(input: OrphanScanInput): string[] {

@@ -1,17 +1,19 @@
 version: 3
 planner:
   kind: api
-  provider: anthropic
-  service: anthropic
+  provider: custom-endpoint
+  service: custom-endpoint
   offering: payg
-  apiBase: https://api.anthropic.com/v1
+  apiBase: https://api.example.test/v1
+  apiKey: eval-fixture-key
   model: claude-sonnet-4-6
 implementer:
   kind: api
-  provider: anthropic
-  service: anthropic
+  provider: custom-endpoint
+  service: custom-endpoint
   offering: payg
-  apiBase: https://api.anthropic.com/v1
+  apiBase: https://api.example.test/v1
+  apiKey: eval-fixture-key
   model: claude-haiku-4-5-20251001
 validation:
   typecheck: true

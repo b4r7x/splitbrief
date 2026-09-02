@@ -10,12 +10,12 @@ import { hasCommits, isGitRepo } from '../../../lib/git/repository.js';
 import { warnError } from '../../../lib/warn.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import {
-  clearBridgedCliState,
   createRunnerSandboxEnv,
   pruneSandboxNpmCache,
   runnerSandboxIdentity,
   withPrependedPathDirectory,
 } from '../../runners/sandbox-env.js';
+import { clearBridgedCliState } from '../../runners/sandbox-state-bridge.js';
 import { removeWorktree } from '../../worktree/remove.js';
 import {
   getChangedFilesSinceSnapshot,

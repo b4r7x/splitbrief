@@ -77,16 +77,16 @@ describe('detectCapabilities', () => {
       );
     }
 
-    function deepseekConfig(): Config {
+    function customEndpointConfig(): Config {
       const config = makeConfig({
         implementer: {
           kind: 'api',
-          provider: 'deepseek',
-          service: 'deepseek',
+          provider: 'custom-endpoint',
+          service: 'custom-endpoint',
           offering: 'payg',
-          apiBase: 'https://api.deepseek.com/v1',
+          apiBase: 'https://api.example.com/v1',
           apiKey: 'test-key',
-          model: 'deepseek-v4-flash',
+          model: 'custom-model',
         },
       });
       delete config.implementer.contextLength;
@@ -121,13 +121,13 @@ describe('detectCapabilities', () => {
       expect(result.origin).toBe('detected');
     });
 
-    it('falls back to the bundled catalog entry when detection fails', async () => {
+    it('falls back to the default window when detection fails with no bundled row', async () => {
       vi.mocked(globalThis.fetch).mockRejectedValue(new TypeError('offline'));
 
-      const result = await detectCapabilities(deepseekConfig());
+      const result = await detectCapabilities(customEndpointConfig());
 
-      expect(result.contextLength).toBe(1_000_000);
-      expect(result.origin).toBe('catalog');
+      expect(result.contextLength).toBe(32768);
+      expect(result.origin).toBe('fallback');
     });
 
     // This probe runs during store init, before the TUI paints. A first-run

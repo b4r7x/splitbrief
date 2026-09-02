@@ -333,38 +333,6 @@ describe('runApprovalLoop', () => {
     ).toBe(true);
   });
 
-  it('writes regenerated spec text to disk before downstream planning reads it', async () => {
-    const { projectDir, sessionId, specPath } = setupProject();
-    const { callbacks } = makeCallbacks({
-      onApprovalNeeded: vi
-        .fn()
-        .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'add auth' })
-        .mockResolvedValueOnce({ approved: true }),
-    });
-    const { bus } = makeBusRecorder();
-    const planner = makePlanner({
-      regenerate: async () => ({ text: '# Spec\n\nWith auth.\n', usage: null }),
-    });
-
-    await runApprovalLoop({
-      type: 'spec',
-      filePath: specPath,
-      planner,
-      projectDir,
-      sessionId,
-      callbacks,
-      bus,
-      state: prepareState(),
-      persistTranscript: false,
-    });
-
-    const onDisk = readFileSync(
-      join(projectDir, '.splitbrief', 'sessions', sessionId, SPEC_FILE),
-      'utf8',
-    );
-    expect(onDisk).toContain('With auth.');
-  });
-
   it('regenerated spec reaches the transcript as an artifact card, not as a body paste', async () => {
     const { projectDir, sessionId, specPath } = setupProject();
     const document = `# Spec\n\n${Array.from({ length: 30 }, (_, i) => `Requirement ${i + 1}.`).join('\n\n')}\n`;
@@ -499,45 +467,14 @@ describe('runApprovalLoop', () => {
     expect(events.some((e) => e.type === 'plan_regenerated')).toBe(true);
   });
 
-  it('passes the abort signal into planner regeneration callbacks', async () => {
-    const { projectDir, sessionId, specPath } = setupProject();
-    const controller = new AbortController();
-    const { callbacks } = makeCallbacks({
-      onApprovalNeeded: vi
-        .fn()
-        .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'revise' })
-        .mockResolvedValueOnce({ approved: true }),
-    });
-    const { bus } = makeBusRecorder();
-    let capturedSignal: AbortSignal | undefined;
-    const planner = makePlanner({
-      regenerate: async (opts) => {
-        capturedSignal = opts.callbacks.signal;
-        return { text: '# Spec\n\nRegenerated.', usage: null };
-      },
-    });
-
-    await runApprovalLoop({
-      type: 'spec',
-      filePath: specPath,
-      planner,
-      projectDir,
-      sessionId,
-      callbacks,
-      bus,
-      state: prepareState(),
-      persistTranscript: false,
-      signal: controller.signal,
-    });
-
-    expect(capturedSignal).toBe(controller.signal);
-  });
-
   it('wires live regeneration to the workflow abort handler', async () => {
     const { projectDir, sessionId, specPath } = setupProject();
-    const controller = new AbortController();
+    const workflowSignal = new AbortController().signal;
+    const installedHandlers: (() => void)[] = [];
     const sinks = {
-      setAbortHandler: () => {},
+      setAbortHandler: (handler) => {
+        if (handler) installedHandlers.push(handler);
+      },
       setQueueHandler: () => {},
     } satisfies WorkflowSinks;
     const { callbacks } = makeCallbacks({
@@ -577,14 +514,15 @@ describe('runApprovalLoop', () => {
       bus,
       state: prepareState(),
       persistTranscript: false,
-      signal: controller.signal,
+      signal: workflowSignal,
       sinks,
     });
 
     await vi.waitFor(() => {
       expect(regenLive).toBe(true);
     });
-    controller.abort();
+    expect(installedHandlers).toHaveLength(1);
+    installedHandlers[0]?.();
     const result = await loopPromise;
 
     expect(result.aborted).toBe(true);

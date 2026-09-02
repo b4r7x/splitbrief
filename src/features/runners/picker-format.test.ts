@@ -90,6 +90,27 @@ describe('formatModelCatalogGuidance', () => {
     expect(guidance.detail).not.toContain('ctrl+r');
   });
 
+  it('says a copilot list is unverified rather than calling it aliases', () => {
+    const guidance = formatModelCatalogGuidance(
+      { ...readyCliTool(), id: 'copilot', displayName: 'GitHub Copilot CLI' },
+      { ...zeroCounts, bundled: 2 },
+      { kind: 'unsupported' } satisfies ModelCatalogDiagnostic,
+    );
+
+    expect(guidance.detail).toBe('a static list is offered — not verified against your account');
+    expect(guidance.detail).not.toContain('alias');
+  });
+
+  it('keeps the alias wording for claude-code', () => {
+    const guidance = formatModelCatalogGuidance(
+      { ...readyCliTool(), id: 'claude-code', displayName: 'Claude Code CLI' },
+      { ...zeroCounts, bundled: 9 },
+      { kind: 'unsupported' } satisfies ModelCatalogDiagnostic,
+    );
+
+    expect(guidance.detail).toBe('aliases are offered');
+  });
+
   it('does not claim aliases are offered when a live catalog lane hides bundled rows', () => {
     const guidance = formatModelCatalogGuidance(
       readyCliTool(),
@@ -179,16 +200,16 @@ describe('formatModelCatalogGuidance', () => {
 describe('formatCatalogDiagnostic', () => {
   it.each([
     [{ kind: 'not-probed' }, 'Select this tool to detect its models'],
-    [{ kind: 'probe-failed', failure: 'unsupported' }, 'Aider does not support model listing'],
+    [{ kind: 'probe-failed', failure: 'unsupported' }, 'OpenCode does not support model listing'],
     [
       { kind: 'probe-failed', failure: 'missing-credential' },
-      'Sign in to Aider to detect its models',
+      'Sign in to OpenCode to detect its models',
     ],
     [
       { kind: 'probe-failed', failure: 'invalid-credential' },
-      'Aider sign-in was rejected. Sign in again',
+      'OpenCode sign-in was rejected. Sign in again',
     ],
-    [{ kind: 'probe-failed', failure: 'policy-denied' }, 'Aider denied model catalog access'],
+    [{ kind: 'probe-failed', failure: 'policy-denied' }, 'OpenCode denied model catalog access'],
     [
       { kind: 'probe-failed', failure: 'offline' },
       'Model catalog request could not reach the network',
@@ -208,7 +229,7 @@ describe('formatCatalogDiagnostic', () => {
   ] satisfies Array<[ModelCatalogDiagnostic, string]>)(
     'gives actionable copy for %j',
     (diagnostic, copy) => {
-      expect(formatCatalogDiagnostic(diagnostic, 'Aider')).toBe(copy);
+      expect(formatCatalogDiagnostic(diagnostic, 'OpenCode')).toBe(copy);
     },
   );
 });
@@ -387,6 +408,35 @@ describe('formatPickerByline', () => {
     expect(failed).toContain('ctrl+r');
     expect(failed.indexOf('ctrl+r')).toBeLessThan(failed.indexOf('Network'));
     expect(byline()).not.toContain('Loading models…');
+  });
+
+  it('counts copilot bundled rows as static models rather than aliases', () => {
+    const line = formatPickerByline({
+      toolName: 'GitHub Copilot CLI',
+      version: undefined,
+      counts: { confirmed: 0, stale: 0, suggestions: 0, bundled: 2, custom: 0 },
+      lane: 'ready',
+      diagnostic: { kind: 'unsupported' },
+      capabilities: [],
+      toolId: 'copilot',
+    });
+
+    expect(line).toContain('2 static models');
+    expect(line).not.toContain('alias');
+  });
+
+  it('still counts claude-code bundled rows as known aliases', () => {
+    const line = formatPickerByline({
+      toolName: 'Claude Code CLI',
+      version: undefined,
+      counts: { confirmed: 0, stale: 0, suggestions: 0, bundled: 2, custom: 0 },
+      lane: 'ready',
+      diagnostic: { kind: 'unsupported' },
+      capabilities: [],
+      toolId: 'claude-code',
+    });
+
+    expect(line).toContain('known aliases');
   });
 
   it('omits the version when the tool did not report one', () => {

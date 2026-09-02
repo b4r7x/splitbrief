@@ -5,7 +5,7 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { runCommand } from '#testing/helpers/commander.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
-import { createDefaultConfig } from '../../../src/core/config/load/io.js';
+import { createDefaultConfig } from '../../../src/core/config/load/defaults.js';
 import { toYaml } from '../../../src/core/config/load/transform.js';
 
 let tmp: string;

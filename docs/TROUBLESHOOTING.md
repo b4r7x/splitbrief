@@ -223,14 +223,14 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ### Symptom: Cache hit percentage stuck at 0% in the cost status line
 
-**Likely cause:** The active runner does not surface `cache_read_input_tokens`. CLI runners (`claude-code`, `codex`, `aider`, etc.) often emit aggregate token counts only, with no cache breakdown; the orchestrator reports what it receives.
+**Likely cause:** The active runner does not surface `cache_read_input_tokens`. CLI runners (`claude-code`, `codex`, `opencode`, etc.) often emit aggregate token counts only, with no cache breakdown; the orchestrator reports what it receives.
 
 **Fix:**
 1. Confirm runner kind via `splitbrief status` or `.splitbrief/config.yaml`.
-2. If you require cache visibility, switch the planner / implementer to `kind: api` with Anthropic or to `kind: agent-sdk`. Both expose cache token counts in usage payloads.
+2. If you require cache visibility, switch the planner / implementer to `kind: api`: the OpenAI-compatible stream reads `prompt_tokens_details.cached_tokens`, so cache counts appear whenever the endpoint reports them.
 3. For CLI runners, accept that the cache % will be `0` (or `n/a`) and rely on the absolute token totals instead.
 
-**Prevention:** Choose `api` or `agent-sdk` runners when cache observability matters for cost analysis.
+**Prevention:** Choose `api` runners when cache observability matters for cost analysis.
 
 **See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md), [docs/OTEL.md](./OTEL.md).
 
@@ -295,7 +295,7 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ### Symptom: Planner returns vague briefs — generic acceptance criteria, no file references, hand-wavy steps
 
-**Likely cause:** The current workflow mode is too light for the task (`instant` or `quick` skip the iterative refinement passes), or the planner model is undersized for the codebase.
+**Likely cause:** The current workflow mode is too light for the task (`quick` skips the iterative refinement passes), or the planner model is undersized for the codebase.
 
 **Fix:**
 1. Re-run with a higher mode: `npm run dev -- start --mode standard "..."` or `--mode speckit` for risky / cross-cutting work.
@@ -303,7 +303,7 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 3. Confirm the planner is large enough — Sonnet 4.6 minimum, Opus for unfamiliar codebases.
 4. Tune the codebase config (`codebase.tokenBudget`) so the planner sees enough of the codebase to ground its references.
 
-**Prevention:** Default to `standard` mode for ordinary feature work and reserve `instant` / `quick` for trivial edits that genuinely do not need ceremony.
+**Prevention:** Default to `standard` mode for ordinary feature work and reserve `quick` for trivial edits that genuinely do not need ceremony.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), [docs/REPOMAP.md](./REPOMAP.md).
 
@@ -311,7 +311,7 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ### Symptom: Planner times out before producing a brief
 
-**Likely cause:** There is no default total-call timeout. What you are hitting is the fixed 60-second **stream-idle** guard: an `api`-kind planner aborts when no token (including the first one) arrives for 60s. A cold-loading local model (Ollama/LM Studio pulling a model into memory) easily exceeds that time-to-first-token window. Non-`api` planners (`cli`, `shell`, `agent`, `agent-sdk`) are covered by the **inactivity watchdog** instead: after 5 minutes of output silence the byline shows a "still working" warning, and at 30 minutes of silence the runner process group is auto-interrupted and a retry prompt appears (type instructions to steer, or press Enter to retry) — except the optional estimate-review extra planner call, which degrades gracefully to an unavailable review instead of parking a retry prompt. Both thresholds are tunable per runner via `idleWarnMs` / `idleKillMs`; `planner.timeout` remains the optional wall-clock cap on the whole call.
+**Likely cause:** There is no default total-call timeout. What you are hitting is the fixed 60-second **stream-idle** guard: an `api`-kind planner aborts when no token (including the first one) arrives for 60s. A cold-loading local model (Ollama/LM Studio pulling a model into memory) easily exceeds that time-to-first-token window. Non-`api` planners (`cli`, `shell`, `agent`) are covered by the **inactivity watchdog** instead: after 5 minutes of output silence the byline shows a "still working" warning, and at 30 minutes of silence the runner process group is auto-interrupted and a retry prompt appears (type instructions to steer, or press Enter to retry) — except the optional estimate-review extra planner call, which degrades gracefully to an unavailable review instead of parking a retry prompt. Both thresholds are tunable per runner via `idleWarnMs` / `idleKillMs`; `planner.timeout` remains the optional wall-clock cap on the whole call.
 
 **Fix:**
 1. Warm the model before the run so the first token arrives within 60s — e.g. issue one throwaway request to your local server, or pre-pull the model so it is resident.
@@ -342,20 +342,20 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ---
 
-### Symptom: instant mode failed with zero tasks
+### Symptom: quick mode failed with zero tasks
 
-**Likely cause:** The single planner call returned no parsable Task Briefs, and the one retry returned none either. The failed attempt contributes no Brief generation: a coded, transcript-safe warning (`planner_returned_zero_tasks`) is published, and the attempt writes no planning artifact. The planning result is terminal in `instant`, and in `quick` it is terminal under the workflow owner or parked when no owner authority is present.
+**Likely cause:** The single planner call returned no parsable Task Briefs, and the one retry returned none either. The failed attempt contributes no Brief generation: a coded, transcript-safe warning (`planner_returned_zero_tasks`) is published, and the attempt writes no planning artifact. The planning result is terminal under the workflow owner and parked when no owner authority is present.
 
 **Fix:**
 1. Read the `planner_returned_zero_tasks` warning in the transcript or `session.jsonl` — it states that the failed attempt contributes no Brief generation, so there is no planner artifact on disk to inspect for the attempt.
 2. If the planner's output was prose with no briefs, the planner model may be too weak to emit Task Briefs: raise the planner model or switch to `--mode standard`.
 3. If the planner produced nothing at all, check the runner diagnostics (`planner.timeout`, stream-idle guard, provider health) and re-run.
 4. If the result parked, resume the session and choose `retry`, `edit`, or `reject` from the persisted projection.
-5. Re-run with `splitbrief start --mode instant "<feature>"`.
+5. Re-run with `splitbrief start --mode quick "<feature>"`.
 
-**Prevention:** Keep `instant`/`quick` for trivial edits and reserve the multi-call modes for anything where brief quality matters — a zero-task outcome is usually a mode/model mismatch.
+**Prevention:** Keep `quick` for trivial edits and reserve the multi-call modes for anything where brief quality matters — a zero-task outcome is usually a mode/model mismatch.
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) (mode table), `src/engine/orchestrator/planning/instant.ts`.
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) (mode table), `src/engine/orchestrator/planning/quick.ts`.
 
 ---
 
@@ -770,7 +770,7 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ### Symptom: the planner refuses before any dispatch with `task_compiler_capability_unsupported`
 
-**Likely cause:** The configured backend is unsupported for the planner role (such as Copilot, Aider, shell, or agent), or its conformance row has not been verified. Under tiered admission, tested versions yield a full capability receipt and other detected versions of supported backends are admitted with runtime-drift evidence and a run warning; unsupported rows refuse with typed fail-closed zero dispatches. Runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) are the enforcement surface.
+**Likely cause:** The configured backend is unsupported for the planner role (such as Copilot, Cursor, shell, or agent), or its conformance row has not been verified. Under tiered admission, tested versions yield a full capability receipt and other detected versions of supported backends are admitted with runtime-drift evidence and a run warning; unsupported rows refuse with typed fail-closed zero dispatches. Runtime guards (envelopes, terminal contract, dispatch ledger, post-run mutation detection) are the enforcement surface.
 
 **Fix:**
 1. Check the support table in [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) for the backend's V1 state and tested runtime.
@@ -1317,13 +1317,13 @@ SPLITBRIEF MCP exposes read-only session resources and five constrained evidence
 
 **Fix:**
 1. Inspect the screen indicator in the TUI status bar.
-2. Open `src/core/runtime/commands/registry.ts` and check the command's `validScreens` array.
+2. Open the command's `src/core/runtime/commands/defs/<category>.ts` module and check its `validScreens` array.
 3. Navigate to a screen where the command is valid.
 4. If you authored the command, add the missing screen to its `validScreens`.
 
 **Prevention:** When adding a new slash command, list every screen it should be available on — defaulting to too few is more common than too many.
 
-**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), `src/core/runtime/commands/registry.ts`.
+**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), `src/core/runtime/commands/defs/`.
 
 ---
 
@@ -1352,7 +1352,7 @@ SPLITBRIEF MCP exposes read-only session resources and five constrained evidence
 
 **Fix:**
 1. Confirm the runner kind via `splitbrief status`. CLI runners often skip cost events.
-2. Switch to `kind: api` for USD pricing when the provider/model is priced. `agent-sdk` can report token usage, but it remains unpriced because it is a meta/subscription runner.
+2. Switch to `kind: api` for USD pricing when the provider/model is priced.
 3. If you must use a CLI runner and want approximate costs, post-process `summary.json` after the run rather than relying on the live status.
 
 **Prevention:** Use `api` runners when live USD cost feedback matters.

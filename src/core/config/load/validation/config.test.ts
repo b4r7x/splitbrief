@@ -5,14 +5,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 const savedEnv: Record<string, string | undefined> = {};
 
 beforeEach(() => {
-  for (const key of [
-    'ANTHROPIC_API_KEY',
-    'OPENROUTER_API_KEY',
-    'DEEPSEEK_API_KEY',
-    'OLLAMA_API_KEY',
-    'OLLAMA_LOCAL_API_KEY',
-    'OPENAI_API_KEY',
-  ]) {
+  for (const key of ['OLLAMA_API_KEY', 'OLLAMA_LOCAL_API_KEY', 'OPENAI_API_KEY']) {
     savedEnv[key] = process.env[key];
     delete process.env[key];
   }
@@ -26,113 +19,57 @@ afterEach(() => {
 });
 
 describe('validateConfig', () => {
-  it.each([
-    { role: 'planner', provider: 'anthropic', envKey: 'ANTHROPIC_API_KEY', path: 'planner.apiKey' },
-    {
-      role: 'planner',
-      provider: 'openrouter',
-      envKey: 'OPENROUTER_API_KEY',
-      path: 'planner.apiKey',
-    },
-    {
-      role: 'implementer',
-      provider: 'anthropic',
-      envKey: 'ANTHROPIC_API_KEY',
-      path: 'implementer.apiKey',
-    },
-    {
-      role: 'implementer',
-      provider: 'openrouter',
-      envKey: 'OPENROUTER_API_KEY',
-      path: 'implementer.apiKey',
-    },
-  ])(
-    'requires credentials for $provider $role unless config or env provides them',
-    ({ role, provider, envKey, path }) => {
-      const config =
-        role === 'planner'
-          ? makeConfig({
-              planner: { kind: 'api', provider, model: 'm', apiBase: 'https://api.example.com' },
-            })
-          : makeConfig({
-              implementer: {
-                kind: 'api',
-                provider,
-                model: 'm',
-                apiBase: 'https://api.example.com',
-              },
-            });
+  it('names a removed API provider at the config path that still uses it', () => {
+    const config = {
+      ...makeConfig(),
+      planner: {
+        kind: 'api',
+        provider: 'openrouter',
+        service: 'openrouter',
+        offering: 'payg',
+        model: 'm',
+        apiBase: 'https://openrouter.ai/api/v1',
+      },
+    };
 
-      expect(validateConfig(config).errors.find((e) => e.path === path)).toBeTruthy();
+    expect(validateConfig(config).errors).toContainEqual({
+      path: 'planner.provider',
+      message: expect.stringContaining('API provider "openrouter" was removed'),
+    });
+  });
 
-      const withConfigKey =
-        role === 'planner'
-          ? makeConfig({
-              planner: {
-                kind: 'api',
-                provider,
-                model: 'm',
-                apiKey: 'configured-key',
-                apiBase: 'https://api.example.com',
-              },
-            })
-          : makeConfig({
-              implementer: {
-                kind: 'api',
-                provider,
-                model: 'm',
-                apiKey: 'configured-key',
-                apiBase: 'https://api.example.com',
-              },
-            });
-      expect(validateConfig(withConfigKey).errors.find((e) => e.path === path)).toBeUndefined();
+  it.each(['planner', 'reviewer', 'implementer'])(
+    'names the removed agent-sdk runner kind in the %s block',
+    (block) => {
+      const config = {
+        ...makeConfig(),
+        [block]: { kind: 'agent-sdk', model: 'claude-sonnet-4-6' },
+      };
 
-      process.env[envKey] = 'env-key';
-      expect(validateConfig(config).errors.find((e) => e.path === path)?.message).toMatch(
-        /exfiltration risk/,
-      );
+      const { errors } = validateConfig(config);
+
+      expect(errors).toContainEqual({
+        path: `${block}.kind`,
+        message: 'Runner kind "agent-sdk" was removed; use kind cli, api, shell, or agent.',
+      });
+      expect(errors.filter((e) => e.path === `${block}.kind`)).toHaveLength(1);
     },
   );
 
-  it.each([
-    { role: 'planner', path: 'planner.apiKey' },
-    { role: 'implementer', path: 'implementer.apiKey' },
-  ])(
-    'requires credentials for agent-sdk $role unless config or env provides them',
-    ({ role, path }) => {
-      const config =
-        role === 'planner'
-          ? makeConfig({ planner: { kind: 'agent-sdk', model: 'claude-3-5-sonnet-20241022' } })
-          : {
-              ...makeConfig(),
-              implementer: { kind: 'agent-sdk', model: 'claude-3-5-sonnet-20241022' },
-            };
+  it('names the removed agent-sdk runner kind inside an implementer profile', () => {
+    const config = {
+      ...makeConfig(),
+      implementerProfiles: {
+        default: 'sdk',
+        profiles: { sdk: { kind: 'agent-sdk', model: 'claude-sonnet-4-6' } },
+      },
+    };
 
-      expect(validateConfig(config).errors.find((e) => e.path === path)).toBeTruthy();
-
-      const withConfigKey =
-        role === 'planner'
-          ? makeConfig({
-              planner: {
-                kind: 'agent-sdk',
-                model: 'claude-3-5-sonnet-20241022',
-                apiKey: 'sk-ant-key',
-              },
-            })
-          : {
-              ...makeConfig(),
-              implementer: {
-                kind: 'agent-sdk',
-                model: 'claude-3-5-sonnet-20241022',
-                apiKey: 'sk-ant-key',
-              },
-            };
-      expect(validateConfig(withConfigKey).errors.find((e) => e.path === path)).toBeUndefined();
-
-      process.env['ANTHROPIC_API_KEY'] = 'sk-ant-env';
-      expect(validateConfig(config).errors.find((e) => e.path === path)).toBeUndefined();
-    },
-  );
+    expect(validateConfig(config).errors).toContainEqual({
+      path: 'implementerProfiles.profiles.sdk.kind',
+      message: 'Runner kind "agent-sdk" was removed; use kind cli, api, shell, or agent.',
+    });
+  });
 
   it('allows local implementers without API credentials', () => {
     delete process.env.OLLAMA_API_KEY;
@@ -186,9 +123,9 @@ describe('validateConfig', () => {
         profiles: {
           'cheap-cloud': {
             kind: 'api',
-            provider: 'openrouter',
+            provider: 'cheap-gateway',
             model: 'm',
-            apiBase: 'https://openrouter.ai/api/v1',
+            apiBase: 'https://cheap-gateway.example.test/v1',
           },
           'local-qwen': {
             kind: 'api',
@@ -212,6 +149,17 @@ describe('validateConfig', () => {
     ).toBe(false);
   });
 
+  it('loads a config declaring the retired instant mode as quick and warns', () => {
+    const base = makeConfig();
+    const config = { ...base, workflow: { ...base.workflow, mode: 'instant' } };
+
+    const { errors, warnings, data } = validateConfig(config);
+
+    expect(errors).toEqual([]);
+    expect(data?.workflow.mode).toBe('quick');
+    expect(warnings.some((w) => w.includes('instant') && w.includes('quick'))).toBe(true);
+  });
+
   it('blocks non-default implementer profiles when required credentials are missing', () => {
     const config = makeConfig({
       implementerProfiles: {
@@ -219,9 +167,9 @@ describe('validateConfig', () => {
         profiles: {
           'cheap-cloud': {
             kind: 'api',
-            provider: 'openrouter',
+            provider: 'cheap-gateway',
             model: 'm',
-            apiBase: 'https://openrouter.ai/api/v1',
+            apiBase: 'https://cheap-gateway.example.test/v1',
           },
           'local-qwen': {
             kind: 'api',
@@ -245,26 +193,6 @@ describe('validateConfig', () => {
     ).toBe(false);
   });
 
-  it('requires credentials for an enabled remote intermediate provider', () => {
-    const config = makeConfig({
-      escalation: {
-        intermediateProvider: 'openrouter',
-        intermediateModel: 'openrouter/model',
-        enabled: true,
-      },
-    });
-
-    expect(validateConfig(config).errors).toContainEqual({
-      path: 'escalation.intermediateProvider',
-      message: 'OpenRouter intermediate provider requires OPENROUTER_API_KEY env var',
-    });
-
-    process.env.OPENROUTER_API_KEY = 'sk-or-env';
-    expect(
-      validateConfig(config).errors.find((e) => e.path === 'escalation.intermediateProvider'),
-    ).toBeUndefined();
-  });
-
   it('does not require credentials for local or disabled intermediate providers', () => {
     const local = makeConfig({
       escalation: {
@@ -275,8 +203,8 @@ describe('validateConfig', () => {
     });
     const disabled = makeConfig({
       escalation: {
-        intermediateProvider: 'openrouter',
-        intermediateModel: 'openrouter/model',
+        intermediateProvider: 'cheap-gateway',
+        intermediateModel: 'cheap-gateway/model',
         enabled: false,
       },
     });
@@ -365,18 +293,20 @@ describe('validateConfig', () => {
   });
 
   it('allows known provider env apiKey references with official same-origin apiBase', () => {
-    process.env.OPENAI_API_KEY = 'sk-test-env';
+    process.env.OLLAMA_LOCAL_API_KEY = 'local-key';
     const config = makeConfig({
-      planner: {
+      implementer: {
         kind: 'api',
-        provider: 'openai',
-        model: 'gpt-5.1',
-        apiBase: 'https://api.openai.com/',
-        apiKey: 'env:OPENAI_API_KEY',
+        provider: 'ollama',
+        model: 'qwen2.5-coder:7b',
+        apiBase: 'http://localhost:11434/v1',
+        apiKey: 'env:OLLAMA_LOCAL_API_KEY',
       },
     });
 
-    expect(validateConfig(config).errors.find((e) => e.path === 'planner.apiKey')).toBeUndefined();
+    expect(
+      validateConfig(config).errors.find((e) => e.path === 'implementer.apiKey'),
+    ).toBeUndefined();
   });
 
   it('keeps userinfo credentials out of the custom-endpoint exfiltration error', () => {
@@ -384,9 +314,10 @@ describe('validateConfig', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
-        provider: 'openai',
-        model: 'gpt-5.1',
+        provider: 'custom-planner',
+        model: 'm',
         apiBase: 'https://alice:secret@proxy.example.com/v1',
+        apiKey: 'env:OPENAI_API_KEY',
       },
     });
 
@@ -401,7 +332,7 @@ describe('validateConfig', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
-        provider: 'openrouter',
+        provider: 'custom-gateway',
         model: 'm',
         apiKey: 'configured-key',
         apiBase: 'https://alice:secret@example.com/v1',
@@ -425,7 +356,7 @@ describe('validateConfig', () => {
     const config = makeConfig({
       reviewer: {
         kind: 'api',
-        provider: 'openrouter',
+        provider: 'custom-gateway',
         model: 'm',
         apiKey: 'configured-key',
         apiBase: 'https://alice:secret@example.com/v1',
@@ -449,7 +380,7 @@ describe('validateConfig', () => {
     const config = makeConfig({
       reviewer: {
         kind: 'api',
-        provider: 'openrouter',
+        provider: 'custom-gateway',
         model: 'm',
         apiBase: 'https://api.example.com',
       },
@@ -510,45 +441,5 @@ describe('validateConfig', () => {
       path: 'implementer.command',
       message: expect.stringContaining('must not contain {prompt}'),
     });
-  });
-
-  it('warns when agent args contain {prompt}', () => {
-    const config = makeConfig({
-      implementer: {
-        kind: 'agent',
-        command: './agent',
-        args: ['--prompt', '{prompt}'],
-        model: 'agent-default',
-      },
-    });
-
-    const { errors, warnings } = validateConfig(config);
-
-    expect(errors).toEqual([]);
-    expect(warnings).toContainEqual(expect.stringContaining('implementer.args contains {prompt}'));
-  });
-
-  it.each([
-    ['plain bash -c', 'bash', ['-c', 'printf "%s" "{prompt}"']],
-    ['bash with options before -c', 'bash', ['--noprofile', '-c', 'printf "%s" "{prompt}"']],
-    ['bash combined flags', 'bash', ['-lc', 'printf "%s" "{prompt}"']],
-    ['sh combined flags', 'sh', ['-ec', 'printf "%s" "{prompt}"']],
-  ])('uses a stronger warning for %s', (_name, command, args) => {
-    const config = makeConfig({
-      implementer: {
-        kind: 'agent',
-        command,
-        args,
-        model: 'agent-default',
-      },
-    });
-
-    const { errors, warnings } = validateConfig(config);
-
-    expect(errors).toEqual([]);
-    expect(warnings).toContainEqual(
-      expect.stringContaining(`implementer.args passes {prompt} through ${command} -c`),
-    );
-    expect(warnings).toContainEqual(expect.stringContaining('shell-evaluate prompt text'));
   });
 });

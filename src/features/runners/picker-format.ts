@@ -1,7 +1,7 @@
 import { SOFT_SEP } from '../../components/separators.js';
 import { countNoun } from '../../utils/pluralize.js';
 import type { ProbeOutcomeKind } from '../../core/discovery/runner-evidence.js';
-import type { DataUsePosture } from '../../core/providers/api-provider-catalog.js';
+import { CLI_TOOL_CATALOG, isCliToolId } from '../../core/runners/cli-tool-catalog.js';
 import type { RunnerBillingPosture } from '../../core/runners/runner-billing.js';
 import type { PickerModelCounts } from './model-catalog/catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
@@ -12,7 +12,6 @@ import {
   CATALOG_LANE_PENDING,
   type RouteAuthState,
 } from './model-catalog/rows.js';
-import type { ProviderAuthAction } from './provider-auth.js';
 import { assertNever } from '../../utils/type-guards.js';
 
 const DETECTING_MODELS_COPY = 'Detecting models…';
@@ -64,27 +63,6 @@ export function formatBillingLabel(billing: RunnerBillingPosture): string {
   }
 }
 
-export function formatDataUseLabel(dataUse: DataUsePosture): string {
-  switch (dataUse) {
-    case 'local':
-      return 'Local data';
-    case 'non-retention':
-      return 'No retention';
-    case 'no-training':
-      return 'No training';
-    case 'opt-out':
-      return 'Training opt-out';
-    case 'region-sensitive':
-      return 'Region sensitive';
-    case 'provider-routed':
-      return 'Provider routed';
-    case 'allowed-training':
-      return 'Training allowed';
-    case 'unreviewed':
-      return 'Data use unreviewed';
-  }
-}
-
 export function formatPermissionLabels(permissions: RunnerPermissionPosture): string[] {
   const labels: string[] = [];
   if (permissions.directWrite) labels.push('Direct write');
@@ -128,7 +106,7 @@ export function formatCatalogDiagnostic(
   }
 }
 
-export function formatConfiguredProviderSummary(status: PickerOptionStatus): string | undefined {
+function formatConfiguredProviderSummary(status: PickerOptionStatus): string | undefined {
   if (status.state !== 'ready' || status.configuredProviders === undefined) return undefined;
   return `${countNoun(status.configuredProviders.length, 'provider')} configured`;
 }
@@ -186,9 +164,10 @@ function readyModelGuidance(
   return zeroConfirmedGuidance({
     diagnostic,
     toolName: item.displayName,
+    toolId: item.id,
     offersRows:
       counts.suggestions + counts.stale + counts.custom + (liveLane ? 0 : counts.bundled) > 0,
-    aliasesOffered: bundledOffered,
+    staticRowsOffered: bundledOffered,
   });
 }
 
@@ -196,12 +175,22 @@ function hasLiveCatalogLane(counts: PickerModelCounts): boolean {
   return counts.confirmed > 0 || counts.stale > 0 || counts.suggestions > 0;
 }
 
+/** The tool ships a curated list it cannot verify against the user's account. */
+function isStaticCatalogTool(toolId: string | undefined): boolean {
+  return (
+    toolId !== undefined &&
+    isCliToolId(toolId) &&
+    CLI_TOOL_CATALOG[toolId].modelDiscoveryMode === 'static-catalog-unverified'
+  );
+}
+
 /** No confirmed model: the real diagnostic leads, and its remedy never over-promises. */
 function zeroConfirmedGuidance(input: {
   diagnostic: ModelCatalogDiagnostic | undefined;
   toolName: string;
+  toolId: string;
   offersRows: boolean;
-  aliasesOffered: boolean;
+  staticRowsOffered: boolean;
 }): { headline: string; detail: string | undefined } {
   if (input.diagnostic === undefined) {
     return input.offersRows
@@ -211,7 +200,7 @@ function zeroConfirmedGuidance(input: {
   if (input.diagnostic.kind === 'unsupported') {
     return {
       headline: noListingSentence(input.toolName),
-      detail: input.aliasesOffered ? 'aliases are offered' : undefined,
+      detail: staticRowsDetail(input.staticRowsOffered, input.toolId),
     };
   }
   return {
@@ -220,8 +209,11 @@ function zeroConfirmedGuidance(input: {
   };
 }
 
-export function formatAuthActionAffordance(action: ProviderAuthAction): string {
-  return action === 'replace-key' ? '⏎ replace key' : '⏎ add API key';
+function staticRowsDetail(offered: boolean, toolId: string): string | undefined {
+  if (!offered) return undefined;
+  return isStaticCatalogTool(toolId)
+    ? 'a static list is offered — not verified against your account'
+    : 'aliases are offered';
 }
 
 const GATEWAY_ACCOUNT_NAMES: Record<string, string> = {
@@ -323,12 +315,13 @@ export function formatPickerByline(input: {
   lane: 'ready' | 'pending' | 'failed';
   diagnostic?: ModelCatalogDiagnostic | undefined;
   capabilities: readonly string[];
+  toolId?: string | undefined;
 }): string {
   const parts = [input.toolName];
   if (input.version !== undefined) parts.push(input.version);
   if (input.diagnostic?.kind === 'unsupported') parts.push('no listing command');
   if (input.counts.bundled > 0 && !hasLiveCatalogLane(input.counts)) {
-    parts.push(countNoun(input.counts.bundled, 'known alias', 'known aliases'));
+    parts.push(bundledLaneCount(input.counts.bundled, input.toolId));
   }
   if (input.counts.suggestions > 0) parts.push(countNoun(input.counts.suggestions, 'model'));
   if (input.counts.confirmed > 0) parts.push(`${input.counts.confirmed} detected`);
@@ -336,6 +329,12 @@ export function formatPickerByline(input: {
   if (input.lane === 'failed') parts.push(`${CATALOG_FETCH_FAILED}${SOFT_SEP}ctrl+r`);
   parts.push(...input.capabilities);
   return parts.join(SOFT_SEP);
+}
+
+function bundledLaneCount(count: number, toolId: string | undefined): string {
+  return isStaticCatalogTool(toolId)
+    ? countNoun(count, 'static model')
+    : countNoun(count, 'known alias', 'known aliases');
 }
 
 export function formatNeedsSignInSaveFeedback(input: {

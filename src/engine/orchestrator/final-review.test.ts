@@ -81,10 +81,10 @@ const SUMMARY_BASE = {
 
 const REVIEWER_RUNNER = {
   kind: 'api',
-  provider: 'deepseek',
-  service: 'deepseek',
+  provider: 'custom-endpoint',
+  service: 'custom-endpoint',
   offering: 'payg',
-  apiBase: 'https://api.deepseek.com/v1',
+  apiBase: 'https://api.example.com/v1',
   apiKey: 'sk-reviewer',
   model: 'deepseek-reviewer',
 } as const;

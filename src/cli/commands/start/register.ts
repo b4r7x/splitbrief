@@ -17,7 +17,7 @@ import { runDetachedStart } from './detached.js';
 import { runJsonStart, runRpcStart } from './streaming.js';
 import { runInteractiveStart } from './interactive.js';
 import type { StartDeps } from './types.js';
-import { prepareExecution } from '../../../engine/runners/prepare-execution.js';
+import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 
 export const defaultStartDeps: StartDeps = {
   spawnServer,

@@ -1,7 +1,7 @@
 import type { Session } from '../../core/schemas/session.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import type { loadStateForResume } from '../../core/state/persistence.js';
+import type { loadStateForResume } from '../../core/state/resume-authority.js';
 import type { acquireStateAuthority, releaseStateAuthority } from '../../core/state/authority.js';
 import type {
   ResumeLoadAuthority,

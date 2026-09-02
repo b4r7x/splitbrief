@@ -11,7 +11,8 @@ import { runPlannerCallInContinuationLoop } from './call-loop.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 import { withRewindFeedback } from './rewind-feedback.js';
 import { parkedResult } from './brief-quality-preparation.js';
-import { publishProducerGeneration, settleApprovedAdmission } from './brief-publication.js';
+import { publishProducerGeneration } from './producer-publication.js';
+import { settleApprovedAdmission } from './approved-admission.js';
 import { planningResultForState, terminalPlanningResult } from './handoff.js';
 import { TASKS_FILE } from '../../../core/paths.js';
 import { PhaseSchema } from '../../../core/schemas/enums.js';
@@ -26,7 +27,7 @@ function syncRecoveryState(opts: PlanningPhaseOptions, state: typeof opts.state)
   }
 }
 
-function quickPlannerWithoutAutomaticRetry(planner: Planner): Planner {
+function plannerUsingQuickPlan(planner: Planner): Planner {
   return {
     ...planner,
     plan: (options) => planner.quickPlan(options),
@@ -52,15 +53,15 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
     const run = await runPlannerCallInContinuationLoop({
       wctx,
       state,
-      planner: quickPlannerWithoutAutomaticRetry(planner),
+      planner: plannerUsingQuickPlan(planner),
       feature,
-      mode: 'speckit',
       collectedQuestions,
       ...(opts.codebaseContext !== undefined ? { codebaseContext: opts.codebaseContext } : {}),
       ...(resumeHolder && resumeHolder.messages.length > 0
         ? { priorMessages: resumeHolder.messages }
         : {}),
       ...(opts.attachments && opts.attachments.length > 0 ? { attachments: opts.attachments } : {}),
+      ...(opts.trivial === true ? { trivial: true } : {}),
       phaseHint: 'generating plan',
     });
     state = run.state;
@@ -84,7 +85,7 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
       return parkedResult({ recovery: opts.recovery, sessionId, state });
     }
     return handlePlanningFailure({
-      err: planningError.zeroTasks('quick'),
+      err: planningError.zeroTasks(),
       projectDir,
       sessionId,
       state,

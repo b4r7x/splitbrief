@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeCostBreakdown } from '#testing/helpers/factories/cost-breakdown.js';
 import { configStore } from '../../stores/project/config.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { tokensStore } from '../../stores/workflow/tokens.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { formatCost } from '../../core/formatting.js';
@@ -14,6 +14,38 @@ import {
   readCostText,
 } from './cost-text.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
+
+/**
+ * Custom endpoints price by model id, so every priced fixture states its rates
+ * as models.dev catalog rows keyed on the model the seat actually ran.
+ */
+function seedCatalog(
+  rates: Record<string, { input: number; output: number; cacheRead?: number }>,
+): void {
+  modelCacheStore.reset();
+  modelCacheStore.hydrateModelsDevCatalog({
+    catalog: {
+      vendor: {
+        id: 'vendor',
+        models: Object.fromEntries(
+          Object.entries(rates).map(([id, rate]) => [
+            id,
+            {
+              id,
+              cost: {
+                input: rate.input,
+                output: rate.output,
+                ...(rate.cacheRead !== undefined && { cache_read: rate.cacheRead }),
+              },
+            },
+          ]),
+        ),
+      },
+    },
+    fetchedAt: 1,
+    validatedAt: 1,
+  });
+}
 
 describe('formatCostDisplay', () => {
   it('hides zero-dollar savings estimates', () => {
@@ -106,10 +138,10 @@ describe('formatSpentText', () => {
           billing: 'subscription-included',
           asOf: '2026-07-31',
         },
-        deepseek: {
-          service: 'deepseek',
+        'custom-endpoint': {
+          service: 'custom-endpoint',
           offering: 'payg',
-          normalizedEndpoint: 'https://api.deepseek.com/v1',
+          normalizedEndpoint: 'https://api.example.test/v1',
           billing: 'api-metered',
           asOf: '2026-07-31',
         },
@@ -119,7 +151,7 @@ describe('formatSpentText', () => {
           costLabel: 'subscription-included',
           billingLabel: 'subscription-included',
         },
-        deepseek: { costLabel: formatCost(12.5), billingLabel: 'api-metered' },
+        'custom-endpoint': { costLabel: formatCost(12.5), billingLabel: 'api-metered' },
       },
     });
 
@@ -140,9 +172,10 @@ describe('readCostText', () => {
       config: makeConfig({
         implementer: {
           kind: 'api',
-          provider: 'openai',
-          model: 'runtime-priced-model',
-          apiBase: 'https://api.openai.test/v1',
+          provider: 'custom-endpoint',
+          model: 'priced-model',
+          apiBase: 'https://api.example.test/v1',
+          apiKey: 'test-key',
         },
       }),
     });
@@ -153,9 +186,7 @@ describe('readCostText', () => {
   });
 
   it('returns the canonical sidebar spend figure once model pricing is known', () => {
-    modelCacheStore.setProviderModels('openai', [
-      { id: 'runtime-priced-model', pricingInput: 1, pricingOutput: 2 },
-    ]);
+    seedCatalog({ 'priced-model': { input: 1, output: 2 } });
 
     expect(readCostText()).toBe(formatCost(3));
   });
@@ -196,14 +227,19 @@ describe('computeCostBreakdownStats offering presentation', () => {
 
 describe('computeCostBreakdownStats reviewer pricing', () => {
   it('prices reviewer tokens from the recorded session identity, not the live config', () => {
+    seedCatalog({
+      'claude-sonnet-5': { input: 3, output: 15 },
+      'review-model': { input: 0.14, output: 0.28 },
+    });
     const modelCache = asReactiveModelCache(modelCacheStore.get());
     const inputs = {
       config: makeConfig({
         reviewer: {
           kind: 'api' as const,
-          provider: 'deepseek' as const,
-          model: 'deepseek-v4-flash',
-          apiBase: 'https://api.deepseek.com/v1',
+          provider: 'review-endpoint' as const,
+          model: 'review-model',
+          apiBase: 'https://review.example.test/v1',
+          apiKey: 'test-key',
         },
       }),
       perTask: {},
@@ -222,7 +258,7 @@ describe('computeCostBreakdownStats reviewer pricing', () => {
     const recordedWithoutReviewer = computeCostBreakdownStats({
       ...inputs,
       pricingContext: {
-        plannerTool: 'anthropic',
+        plannerTool: 'plan-endpoint',
         plannerModel: 'claude-sonnet-5',
         implementerTool: 'ollama',
       },
@@ -230,19 +266,23 @@ describe('computeCostBreakdownStats reviewer pricing', () => {
     const recordedWithReviewer = computeCostBreakdownStats({
       ...inputs,
       pricingContext: {
-        plannerTool: 'anthropic',
+        plannerTool: 'plan-endpoint',
         plannerModel: 'claude-sonnet-5',
         implementerTool: 'ollama',
-        reviewerTool: 'deepseek',
-        reviewerModel: 'deepseek-v4-flash',
+        reviewerTool: 'review-endpoint',
+        reviewerModel: 'review-model',
       },
     });
 
-    expect(recordedWithoutReviewer.costBreakdown?.providerCosts?.deepseek).toBeUndefined();
-    expect(recordedWithoutReviewer.costBreakdown?.providerCosts?.anthropic?.inputTokens).toBe(
-      120_000,
-    );
-    expect(recordedWithReviewer.costBreakdown?.providerCosts?.deepseek?.inputTokens).toBe(20_000);
+    expect(
+      recordedWithoutReviewer.costBreakdown?.providerCosts?.['review-endpoint'],
+    ).toBeUndefined();
+    expect(
+      recordedWithoutReviewer.costBreakdown?.providerCosts?.['plan-endpoint']?.inputTokens,
+    ).toBe(120_000);
+    expect(
+      recordedWithReviewer.costBreakdown?.providerCosts?.['review-endpoint']?.inputTokens,
+    ).toBe(20_000);
   });
 });
 
@@ -285,30 +325,26 @@ describe('computeCostBreakdownStats pricing state', () => {
 });
 
 describe('computeCostBreakdownStats task reconstruction', () => {
-  const openAiFallback = {
-    id: 'fallback-model',
-    pricingInput: 2,
-    pricingOutput: 0,
-    pricingCacheRead: 0.2,
-  };
-  const anthropicTask = {
-    id: 'task-model',
-    pricingInput: 1,
-    pricingOutput: 0,
-    pricingCacheRead: 0.1,
+  const rates = {
+    'fallback-model': { input: 2, output: 0, cacheRead: 0.2 },
+    'task-model': { input: 1, output: 0, cacheRead: 0.1 },
   };
 
-  it('prices task input with the task model instead of aggregate fallback pricing', () => {
-    const config = makeConfig({
+  function fallbackConfig() {
+    return makeConfig({
       implementer: {
         kind: 'api',
-        provider: 'openai',
+        provider: 'build-endpoint',
         model: 'fallback-model',
-        apiBase: 'https://api.openai.test/v1',
+        apiBase: 'https://build.example.test/v1',
+        apiKey: 'test-key',
       },
     });
-    modelCacheStore.setProviderModels('openai', [openAiFallback]);
-    modelCacheStore.setProviderModels('anthropic', [anthropicTask]);
+  }
+
+  it('prices task input with the task model instead of aggregate fallback pricing', () => {
+    const config = fallbackConfig();
+    seedCatalog(rates);
     const modelCache = asReactiveModelCache(modelCacheStore.get());
 
     const { costBreakdown } = computeCostBreakdownStats({
@@ -324,7 +360,7 @@ describe('computeCostBreakdownStats task reconstruction', () => {
               implementerTokens: 1_000_000,
               escalationTokens: 0,
               retryCount: 0,
-              tool: 'anthropic',
+              tool: 'task-endpoint',
               model: 'task-model',
               implementerCacheReadTokens: 0,
             },
@@ -339,21 +375,13 @@ describe('computeCostBreakdownStats task reconstruction', () => {
     });
 
     expect(costBreakdown?.totalActualCost).toBeCloseTo(1.2);
-    expect(costBreakdown?.providerCosts?.anthropic?.cost).toBeCloseTo(1.0);
-    expect(costBreakdown?.providerCosts?.openai?.cost).toBeCloseTo(0.2);
+    expect(costBreakdown?.providerCosts?.['task-endpoint']?.cost).toBeCloseTo(1.0);
+    expect(costBreakdown?.providerCosts?.['build-endpoint']?.cost).toBeCloseTo(0.2);
   });
 
   it('prices cache-only task attempts with the task model cache rate', () => {
-    const config = makeConfig({
-      implementer: {
-        kind: 'api',
-        provider: 'openai',
-        model: 'fallback-model',
-        apiBase: 'https://api.openai.test/v1',
-      },
-    });
-    modelCacheStore.setProviderModels('openai', [openAiFallback]);
-    modelCacheStore.setProviderModels('anthropic', [anthropicTask]);
+    const config = fallbackConfig();
+    seedCatalog(rates);
     const modelCache = asReactiveModelCache(modelCacheStore.get());
 
     const { costBreakdown } = computeCostBreakdownStats({
@@ -369,7 +397,7 @@ describe('computeCostBreakdownStats task reconstruction', () => {
               implementerTokens: 0,
               escalationTokens: 0,
               retryCount: 0,
-              tool: 'anthropic',
+              tool: 'task-endpoint',
               model: 'task-model',
               implementerCacheReadTokens: 1_000_000,
             },
@@ -383,7 +411,7 @@ describe('computeCostBreakdownStats task reconstruction', () => {
       modelCache,
     });
 
-    expect(costBreakdown?.providerCosts?.anthropic?.cost).toBeCloseTo(0.1);
-    expect(costBreakdown?.providerCosts?.openai?.cost ?? 0).toBe(0);
+    expect(costBreakdown?.providerCosts?.['task-endpoint']?.cost).toBeCloseTo(0.1);
+    expect(costBreakdown?.providerCosts?.['build-endpoint']?.cost ?? 0).toBe(0);
   });
 });

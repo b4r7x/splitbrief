@@ -1,23 +1,11 @@
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   API_PROVIDER_CATALOG,
   ADMITTED_API_PROVIDER_IDS,
 } from '../../core/providers/api-provider-catalog.js';
-import {
-  API_PROVIDER_VERDICT_CANDIDATE_PATHS,
-  PASS_API_PROVIDER_IDS,
-} from '../../core/providers/api-provider-verdicts.js';
-import { resolveRepoPath as productionResolveRepoPath } from '../../core/runners/candidate-admission.js';
-import { KNOWN_PROVIDERS, REGISTRY_OMIT_CANDIDATE_IDS, getProvider } from './registry.js';
+import { FORBIDDEN_API_PROVIDER_IDS } from '../../core/providers/api-provider-verdicts.js';
+import { KNOWN_PROVIDERS, getProvider } from './registry.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
-
-const REPO_ROOT = join(import.meta.dirname, '../../..');
-
-function resolveRepoPath(relativePath: string): string {
-  return join(REPO_ROOT, relativePath);
-}
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200 });
@@ -30,31 +18,21 @@ afterEach(() => {
 });
 
 describe('provider registry admission', () => {
-  it('resolves production repo root to the workspace package.json', () => {
-    expect(existsSync(productionResolveRepoPath('package.json'))).toBe(true);
-    expect(productionResolveRepoPath('package.json')).toBe(resolveRepoPath('package.json'));
-  });
-
-  it('matches catalog keys with the exact retained registry count', () => {
+  it('registers exactly the retained factories and matches the catalog', () => {
+    expect(Object.keys(KNOWN_PROVIDERS).toSorted()).toEqual(['lm-studio', 'ollama']);
     expect(Object.keys(KNOWN_PROVIDERS).toSorted()).toEqual(
       Object.keys(API_PROVIDER_CATALOG).toSorted(),
     );
-    expect(Object.keys(KNOWN_PROVIDERS).length).toBe(ADMITTED_API_PROVIDER_IDS.length);
   });
 
-  it('derives the PASS allowlist from T-044–T-053 verdicts and keeps OMIT modules absent', () => {
-    for (const id of REGISTRY_OMIT_CANDIDATE_IDS) {
+  it('keeps every forbidden provider id out of the registry', () => {
+    for (const id of FORBIDDEN_API_PROVIDER_IDS) {
       expect(KNOWN_PROVIDERS).not.toHaveProperty(id);
-    }
-    for (const candidate of API_PROVIDER_VERDICT_CANDIDATE_PATHS) {
-      if ((PASS_API_PROVIDER_IDS as readonly string[]).includes(candidate.id)) continue;
-      expect(existsSync(resolveRepoPath(candidate.source))).toBe(false);
-      expect(existsSync(resolveRepoPath(candidate.test))).toBe(false);
     }
   });
 
   it('wires a factory for every catalog id', () => {
-    for (const id of Object.keys(API_PROVIDER_CATALOG)) {
+    for (const id of ADMITTED_API_PROVIDER_IDS) {
       expect(typeof KNOWN_PROVIDERS[id]).toBe('function');
     }
   });
@@ -73,28 +51,19 @@ describe('getProvider', () => {
     expect(p.apiKey()).toBe('sk-test');
   });
 
-  it('returns valid provider for known openai-compat name (deepseek)', () => {
-    const p = getProvider('deepseek');
-    expect(p.name).toBe('deepseek');
-    expect(p.baseURL).toBe('https://api.deepseek.com/v1');
+  it('returns the admitted local provider for a known name', () => {
+    const p = getProvider('lm-studio');
+    expect(p.name).toBe('lm-studio');
+    expect(p.baseURL).toBe('http://localhost:1234/v1');
     expect(typeof p.apiKey()).toBe('string');
   });
 
-  it('keeps local Ollama and Ollama Cloud as separate provider sources', () => {
-    const local = getProvider('ollama');
-    const cloud = getProvider('ollama-cloud', { apiKey: 'ollama-cloud-registry-key' });
-
-    expect(local).toMatchObject({
+  it('keeps local Ollama on its loopback endpoint and rejects foreign credentials', () => {
+    expect(getProvider('ollama')).toMatchObject({
       name: 'ollama',
       baseURL: 'http://localhost:11434/v1',
       isLocal: true,
     });
-    expect(cloud).toMatchObject({
-      name: 'ollama-cloud',
-      baseURL: 'https://ollama.com',
-      isLocal: false,
-    });
-    expect(cloud.apiKey()).toBe('ollama-cloud-registry-key');
     expect(() => getProvider('ollama', { apiKey: 'env:OLLAMA_API_KEY' })).toThrow(
       expect.objectContaining({ kind: 'provider-ollama-local-credential-invalid' }),
     );
@@ -116,59 +85,56 @@ describe('getProvider', () => {
     ).toThrow(/must not include credentials/);
   });
 
-  it('lists Anthropic models with Anthropic headers', async () => {
+  it('lists models from the admitted local provider', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
-      jsonResponse({ data: [{ id: 'claude-sonnet-4-6', created_at: '2025-02-19T00:00:00Z' }] }),
+      jsonResponse({ models: [{ key: 'qwen2.5-coder-7b', type: 'llm' }] }),
     );
 
-    const provider = getProvider('anthropic', {
-      apiBase: 'https://api.anthropic.com/v1',
-      apiKey: 'sk-ant-test',
-    });
+    const provider = getProvider('lm-studio');
     const models = await provider.listModels();
 
-    expect(models).toEqual(['claude-sonnet-4-6']);
+    expect(models).toEqual(['qwen2.5-coder-7b']);
   });
 });
 
 describe('apiKey env references', () => {
   it('resolves env: apiKey overrides for known providers', () => {
-    process.env.OPENROUTER_API_KEY = 'sk-or-env-key';
-    const p = getProvider('openrouter', { apiKey: 'env:OPENROUTER_API_KEY' });
-    expect(p.apiKey()).toBe('sk-or-env-key');
+    process.env.LM_STUDIO_API_KEY = 'lms-env-key';
+    const p = getProvider('lm-studio', { apiKey: 'env:LM_STUDIO_API_KEY' });
+    expect(p.apiKey()).toBe('lms-env-key');
   });
 
   it('throws when an env: apiKey override references a missing variable', () => {
-    delete process.env.OPENROUTER_API_KEY;
-    expect(() => getProvider('openrouter', { apiKey: 'env:OPENROUTER_API_KEY' })).toThrow(
-      /OPENROUTER_API_KEY/,
+    delete process.env.LM_STUDIO_API_KEY;
+    expect(() => getProvider('lm-studio', { apiKey: 'env:LM_STUDIO_API_KEY' })).toThrow(
+      /LM_STUDIO_API_KEY/,
     );
   });
 
   it('throws when an env: apiKey override has an empty variable name', () => {
-    expect(() => getProvider('openrouter', { apiKey: 'env:' })).toThrow(/env:VARIABLE_NAME/);
+    expect(() => getProvider('lm-studio', { apiKey: 'env:' })).toThrow(/env:VARIABLE_NAME/);
   });
 
   it('throws when an env: apiKey override has a whitespace-only variable name', () => {
-    expect(() => getProvider('openrouter', { apiKey: 'env:   ' })).toThrow(/env:VARIABLE_NAME/);
+    expect(() => getProvider('lm-studio', { apiKey: 'env:   ' })).toThrow(/env:VARIABLE_NAME/);
   });
 
   it('rejects env-referenced keys with a custom apiBase for known providers', () => {
-    process.env.OPENROUTER_API_KEY = 'sk-or-env-key';
+    process.env.LM_STUDIO_API_KEY = 'lms-env-key';
     expect(() =>
-      getProvider('openrouter', {
+      getProvider('lm-studio', {
         apiBase: 'https://proxy.example.com/v1',
-        apiKey: 'env:OPENROUTER_API_KEY',
+        apiKey: 'env:LM_STUDIO_API_KEY',
       }),
     ).toThrow(expect.objectContaining({ kind: 'provider-endpoint-invalid' }));
   });
 
   it('validates a known provider endpoint before resolving an env key reference', () => {
-    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.LM_STUDIO_API_KEY;
     expect(() =>
-      getProvider('openrouter', {
+      getProvider('lm-studio', {
         apiBase: 'https://evil.example.com/api/v1',
-        apiKey: 'env:OPENROUTER_API_KEY',
+        apiKey: 'env:LM_STUDIO_API_KEY',
       }),
     ).toThrow(expect.objectContaining({ kind: 'provider-endpoint-invalid' }));
   });
@@ -177,21 +143,10 @@ describe('apiKey env references', () => {
 describe('known provider endpoint policies', () => {
   setupFetchMock();
 
-  it('rejects known provider with env-sourced key and custom apiBase', () => {
-    process.env.OPENAI_API_KEY = 'sk-real-key';
-    expect(() => getProvider('openai', { apiBase: 'https://evil.example.com/v1' })).toThrow(
+  it('rejects a known provider pointed off its declared endpoint', () => {
+    expect(() => getProvider('lm-studio', { apiBase: 'https://evil.example.com/v1' })).toThrow(
       expect.objectContaining({ kind: 'provider-endpoint-invalid' }),
     );
-  });
-
-  it('rejects a fixed-origin override even with an inline apiKey', () => {
-    delete process.env.OPENAI_API_KEY;
-    expect(() =>
-      getProvider('openai', {
-        apiBase: 'https://proxy.example.com/v1',
-        apiKey: 'sk-inline',
-      }),
-    ).toThrow(expect.objectContaining({ kind: 'provider-endpoint-invalid' }));
   });
 
   it('allows unknown provider with custom apiBase', () => {
@@ -214,15 +169,8 @@ describe('known provider endpoint policies', () => {
   });
 
   it('allows known provider with default apiBase', () => {
-    process.env.OPENAI_API_KEY = 'sk-real-key';
-    const p = getProvider('openai', { apiBase: 'https://api.openai.com/v1' });
-    expect(p.name).toBe('openai');
-  });
-
-  it('normalizes equivalent exact fixed endpoints before provider construction', () => {
-    process.env.ANTHROPIC_API_KEY = 'sk-ant-real-key';
-    const p = getProvider('anthropic', { apiBase: 'HTTPS://API.ANTHROPIC.COM:443/v1/' });
-    expect(p.baseURL).toBe('https://api.anthropic.com/v1');
+    const p = getProvider('lm-studio', { apiBase: 'http://localhost:1234/v1' });
+    expect(p.name).toBe('lm-studio');
   });
 
   it('allows and normalizes loopback provider overrides', () => {
@@ -240,8 +188,7 @@ describe('known provider endpoint policies', () => {
   });
 
   it('allows known provider without apiBase override', () => {
-    process.env.DEEPSEEK_API_KEY = 'sk-deep';
-    const p = getProvider('deepseek');
-    expect(p.name).toBe('deepseek');
+    const p = getProvider('lm-studio');
+    expect(p.name).toBe('lm-studio');
   });
 });

@@ -23,7 +23,8 @@ import {
 } from '../core/schemas/brief-recovery/document.js';
 import { writeActive } from '../core/sessions/active-pointer.js';
 import { buildContextOverflowRecoveryIssue } from '../engine/orchestrator/recovery/builders/task.js';
-import { headlessRecoveryOutcome, headlessRecoveryStatus, runHeadless } from './headless.js';
+import { runHeadless } from './headless.js';
+import { headlessRecoveryOutcome, headlessRecoveryStatus } from './headless-recovery.js';
 import type { Implementer } from '../engine/implementers/types.js';
 import type { Planner } from '../engine/planners/types.js';
 

@@ -8,15 +8,3 @@ export function setupFetchMock(): void {
     vi.unstubAllGlobals();
   });
 }
-
-export function setupEnvMock(key: string, value: string): void {
-  let original: string | undefined;
-  beforeEach(() => {
-    original = process.env[key];
-    process.env[key] = value;
-  });
-  afterEach(() => {
-    if (original === undefined) delete process.env[key];
-    else process.env[key] = original;
-  });
-}

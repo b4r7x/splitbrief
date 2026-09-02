@@ -58,12 +58,6 @@ const CAPABILITY_IDENTITIES = {
     terminalContract: 'provider-final-assistant-response-v1',
     credentialChannel: 'api-key',
   },
-  'agent-sdk': {
-    version: '',
-    transport: 'stdout-final',
-    terminalContract: 'agent-sdk-final-assistant-turn-v1',
-    credentialChannel: 'api-key',
-  },
   'custom-command': {
     version: '',
     transport: 'stdout-final',

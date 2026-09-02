@@ -9,19 +9,19 @@ describe('escalation accessors', () => {
     expect(readEscalationRunner(config)).toBeUndefined();
 
     const written = writeEscalationRunner(config, {
-      provider: 'deepseek',
+      provider: 'lm-studio',
       model: 'deepseek-chat',
     });
-    expect(ConfigSchema.parse(written)).toBeDefined();
+    expect(ConfigSchema.parse(written).escalation?.intermediateModel).toBe('deepseek-chat');
     expect(readEscalationRunner(written)).toEqual({
       kind: 'api',
-      provider: 'deepseek',
+      provider: 'lm-studio',
       model: 'deepseek-chat',
     });
     expect(written.escalation?.enabled).toBe(true);
 
     const cleared = clearEscalation(written);
-    expect(ConfigSchema.parse(cleared)).toBeDefined();
+    expect(ConfigSchema.parse(cleared).escalation?.intermediateModel).toBeUndefined();
     expect(readEscalationRunner(cleared)).toBeUndefined();
     expect(cleared.escalation?.enabled).toBe(true);
   });
@@ -30,7 +30,7 @@ describe('escalation accessors', () => {
     const config = makeConfig({
       escalation: {
         enabled: false,
-        intermediateProvider: 'deepseek',
+        intermediateProvider: 'lm-studio',
         intermediateModel: 'deepseek-chat',
       },
     });
@@ -39,10 +39,10 @@ describe('escalation accessors', () => {
 
   it('leaves the original config untouched', () => {
     const config = makeConfig({
-      escalation: { intermediateProvider: 'deepseek', intermediateModel: 'deepseek-chat' },
+      escalation: { intermediateProvider: 'lm-studio', intermediateModel: 'deepseek-chat' },
     });
     const before = structuredClone(config);
-    writeEscalationRunner(config, { provider: 'groq', model: 'llama-3.3-70b' });
+    writeEscalationRunner(config, { provider: 'lm-studio', model: 'llama-3.3-70b' });
     clearEscalation(config);
     expect(config).toEqual(before);
   });

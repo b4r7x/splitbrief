@@ -17,8 +17,7 @@ import { costTextWidth, wrappedRows } from './measure.js';
 // same rule every gate panel follows, the legend carries it and the escape and nothing more.
 export const COST_HINTS = formatKeyHints([{ key: CONFIRM_HINT.key, verb: 'approve' }, DENY_HINT]);
 
-// `Deny` answers `x` on every other gate. A cost gate that answered `n` instead was the one place
-// the same word took a different key; `n` still works, it is simply no longer what we teach.
+// `Deny` answers `x` on every gate. `n` is still accepted for a cost gate but is no longer taught.
 export const COST_OPTIONS: ReadonlyArray<ApprovalOption> = [
   { key: 'y', label: 'Approve' },
   { key: 'x', label: 'Deny' },

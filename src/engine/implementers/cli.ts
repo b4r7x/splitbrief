@@ -175,6 +175,7 @@ export function createCliImplementer(
           projectDir,
           configuredArgs,
           effort: config.effort,
+          variant: config.variant,
         });
 
         const result = await invokeCliAdapter({

@@ -24,6 +24,8 @@ export type PlanningPhaseOptions = {
   codebaseContext?: string | undefined;
   approveLevel?: ApproveLevel | undefined;
   attachments?: Attachment[] | undefined;
+  /** The advisor classified this prompt as a trivial edit, so the quick planner prompt drops its codebase-review step and caps the brief count. */
+  trivial?: boolean | undefined;
   afterSpecReview?: (input: {
     state: WorkflowState;
     tasks: Task[];
@@ -72,12 +74,13 @@ export type PlannerCallOptions = {
   state: WorkflowState;
   planner: Planner;
   feature: string;
-  mode: 'quick' | 'speckit';
   skillsContext?: string | undefined;
   codebaseContext?: string | undefined;
   priorMessages?: PriorMessage[] | undefined;
   collectedQuestions?: ClarificationQuestion[] | undefined;
   attachments?: Attachment[] | undefined;
+  /** The advisor classified this prompt as a trivial edit, so the quick planner prompt drops its codebase-review step and caps the brief count. */
+  trivial?: boolean | undefined;
   phaseHint?: string | undefined;
 };
 

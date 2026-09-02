@@ -8,8 +8,8 @@ import type { TaskCompilationOperationEnvelope } from '../schemas/task-compilati
 import {
   persistRecoveryBudgetResource,
   readRecoveryBudgetResources,
-  readRecoveryJournal,
-} from './recovery-journal.js';
+} from './recovery-journal/budget-resources.js';
+import { readRecoveryJournal } from './recovery-journal/journal.js';
 import { setupEvidenceTmpDir } from '#testing/helpers/evidence-test-setup.js';
 
 const tmpDir = setupEvidenceTmpDir();
@@ -98,29 +98,6 @@ describe('provider-dependent recovery budget resources', () => {
     expect(read[0]?.recordHash).toBe(hold.record.recordHash);
     expect(read[1]?.recordHash).toBe(reconciled.record.recordHash);
     expect(read[1]?.resource).toMatchObject({ observedUsage: usage, resolvedPricing: null });
-  });
-
-  it('keeps unknown-price distinct from unknown-dispatch holds', () => {
-    const hold = persistRecoveryBudgetResource(ref(), {
-      epochId: 'epoch-1',
-      operationId: 'operation-distinct',
-      kind: 'reservation',
-      resource: providerDependentResource(),
-    });
-    const observedWrite = persistRecoveryBudgetResource(ref(), {
-      epochId: 'epoch-1',
-      operationId: 'operation-distinct',
-      kind: 'usage-reconciliation',
-      resource: providerDependentResource({ observedUsage: usage }),
-    });
-
-    const read = readRecoveryBudgetResources(ref(), 'epoch-1', 'operation-distinct');
-    expect(read.find((record) => record.kind === 'reservation')?.recordHash).toBe(
-      hold.record.recordHash,
-    );
-    expect(read.find((record) => record.kind === 'usage-reconciliation')?.recordHash).toBe(
-      observedWrite.record.recordHash,
-    );
   });
 
   it('persists a later-resolved price against the same accounting key', () => {

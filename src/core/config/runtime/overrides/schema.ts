@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { OutputFormatSchema, WorkflowModeSchema } from '../../../schemas/enums.js';
+import { OutputFormatSchema } from '../../../schemas/enums.js';
 
 export const RunnerOverrideSchema = z.object({
   tool: z.string().optional(),
@@ -17,7 +17,7 @@ export const CLIOverridesSchema = z.object({
   implementer: RunnerOverrideSchema.optional(),
   reviewer: RunnerOverrideSchema.optional(),
   approve: z.string().optional(),
-  mode: WorkflowModeSchema.optional(),
+  mode: z.string().optional(),
   budget: z.number().optional(),
   contextLength: z.number().optional(),
   plannerEffort: z.string().optional(),

@@ -221,6 +221,7 @@ export type CliPlannerBuildArgsInput = Readonly<{
   mode: 'plan' | 'escalate';
   sessionId: string | null;
   effort: EffortLevel | undefined;
+  variant?: string | undefined;
 }>;
 
 export type CliImplementerBuildArgsInput = Readonly<{
@@ -229,6 +230,7 @@ export type CliImplementerBuildArgsInput = Readonly<{
   projectDir: string;
   configuredArgs: readonly string[];
   effort?: EffortLevel | undefined;
+  variant?: string | undefined;
 }>;
 
 export type CliPlannerAdapter<Tool extends CliToolId = CliToolId> = CliAdapterContract<

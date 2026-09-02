@@ -1,13 +1,16 @@
 import type { DetectedModel } from '../../../core/discovery/detection.js';
-import {
-  CLI_TOOL_CATALOG,
-  isCliToolId,
-  type ActiveRunnerRole,
-} from '../../../core/runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
+import {
+  canonicalModelBucket,
+  isSameCanonicalModel,
+  type ModelIdentity,
+} from '../../../core/providers/canonical-model-id.js';
 import type { KnownModel } from '../../../core/providers/known-models.js';
 import { isProviderId, type ProviderId } from '../../../core/schemas/enums.js';
-import { getPricingMode, isApiPricedProvider, type PricingMode } from '../pricing-resolver.js';
+import { getPricingMode, type PricingMode } from '../pricing-resolver.js';
+import type { ClaudeCodeModelOption } from '../../../core/providers/claude-code-options.js';
+import { modelRowLanes } from './lane-policy.js';
 import {
   NULL_CACHE,
   findKnownModel,
@@ -34,6 +37,7 @@ export interface ResolveModelCatalogOptions {
   readonly cache?: ModelCacheAccessor | undefined;
   readonly configuredSelectionId?: string | undefined;
   readonly role?: ActiveRunnerRole | undefined;
+  readonly browseCatalog?: boolean | undefined;
 }
 
 export interface ResolvedModelCatalogEntry extends DetectedModel {
@@ -92,10 +96,10 @@ function metadataForSelection(
   if (direct !== null) return direct;
 
   const known = findKnownModel(input.runnerId, input.selectionId);
-  if (known?.catalogModelId === undefined || known.catalogProvider === undefined) return null;
+  if (known === undefined || known.catalogProvider === undefined) return null;
   return exactModelsDevMetadata({
     entries: input.modelsDevEntries,
-    selectionId: known.catalogModelId,
+    selectionId: known.catalogModelId ?? known.name,
     sourceProviderId: known.catalogProvider,
   });
 }
@@ -123,11 +127,12 @@ function mergeRuntimeMetadata(
   return { ...modelsDev, ...runtime };
 }
 
-function stripUnpricedFields(
-  providerId: ProviderId,
-  entry: ResolvedModelCatalogEntry,
-): ResolvedModelCatalogEntry {
-  if (isApiPricedProvider(providerId)) return entry;
+/**
+ * No runner that owns a catalog meters per token — CLI tools bill their own
+ * subscription, `ollama`/`lm-studio` are local, `shell`/`agent` name no model —
+ * so a catalog row never carries rates, whatever metadata it merged.
+ */
+function stripUnpricedFields(entry: ResolvedModelCatalogEntry): ResolvedModelCatalogEntry {
   const {
     pricingInput: _pricingInput,
     pricingOutput: _pricingOutput,
@@ -155,14 +160,11 @@ function runtimeEntry(
   const metadata = metadataForSelection({
     runnerId: input.runnerId,
     selectionId: input.model.id,
-    sourceProviderId:
-      input.matchMetadataAcrossOwners && input.model.id.includes('/')
-        ? undefined
-        : sourceProviderId,
+    sourceProviderId: input.matchMetadataAcrossOwners ? undefined : sourceProviderId,
     modelsDevEntries: input.modelsDevEntries,
   });
   const merged = mergeRuntimeMetadata(input.model, metadata);
-  return stripUnpricedFields(input.runnerId, {
+  return stripUnpricedFields({
     ...merged,
     id: input.model.id,
     selectionId: input.model.id,
@@ -185,7 +187,7 @@ function modelsDevSuggestion(
   }>,
 ): ResolvedModelCatalogEntry {
   const sourceProviderId = ownerFor(input.model, input.runnerId);
-  return stripUnpricedFields(input.runnerId, {
+  return stripUnpricedFields({
     ...input.model,
     id: input.model.id,
     selectionId: input.model.id,
@@ -205,6 +207,7 @@ function bundledSuggestion(
     model: KnownModel;
     modelsDevEntries: readonly DetectedModel[];
     keepBundledDefault: boolean;
+    nativeOrder: number;
   }>,
 ): ResolvedModelCatalogEntry {
   const sourceProviderId = input.runnerId;
@@ -233,13 +236,46 @@ function bundledSuggestion(
     ...(input.model.isFree === undefined ? {} : { isFree: input.model.isFree }),
   };
   const merged = metadata === null ? base : { ...metadata, ...base };
-  return stripUnpricedFields(input.runnerId, {
+  return stripUnpricedFields({
     ...merged,
     id: input.model.name,
     selectionId: input.model.name,
     runnerId: input.runnerId,
     sourceProviderId,
     ...(input.keepBundledDefault && input.model.isDefault ? { isDefault: true } : {}),
+    isDetected: false,
+    nativeOrder: input.nativeOrder,
+    source: 'bundled-fallback',
+    membership: 'bundled-suggestion',
+    canConfigure: true,
+    pricingMode: getPricingMode(input.runnerId),
+  });
+}
+
+function claudeCodeOptionEntry(
+  input: Readonly<{
+    runnerId: ProviderId;
+    option: ClaudeCodeModelOption;
+    modelsDevEntries: readonly DetectedModel[];
+  }>,
+): ResolvedModelCatalogEntry {
+  const metadata = metadataForSelection({
+    runnerId: input.runnerId,
+    selectionId: input.option.id,
+    sourceProviderId: undefined,
+    modelsDevEntries: input.modelsDevEntries,
+  });
+  const base: DetectedModel = {
+    id: input.option.id,
+    ...(input.option.displayName === undefined ? {} : { displayName: input.option.displayName }),
+  };
+  const merged = metadata === null ? base : { ...metadata, ...base };
+  return stripUnpricedFields({
+    ...merged,
+    id: input.option.id,
+    selectionId: input.option.id,
+    runnerId: input.runnerId,
+    sourceProviderId: input.runnerId,
     isDetected: false,
     source: 'bundled-fallback',
     membership: 'bundled-suggestion',
@@ -254,7 +290,7 @@ function configuredRecovery(
     selectionId: string;
   }>,
 ): ResolvedModelCatalogEntry {
-  return stripUnpricedFields(input.runnerId, {
+  return stripUnpricedFields({
     id: input.selectionId,
     selectionId: input.selectionId,
     runnerId: input.runnerId,
@@ -313,12 +349,6 @@ function configuredSelectionId(
   return input.selectionId;
 }
 
-function usesNativeCliModelDiscovery(providerId: ProviderId): boolean {
-  return (
-    isCliToolId(providerId) && CLI_TOOL_CATALOG[providerId].modelDiscoveryMode === 'native-cli'
-  );
-}
-
 function hasExactSelection(
   entries: readonly ResolvedModelCatalogEntry[],
   selectionId: string,
@@ -328,18 +358,44 @@ function hasExactSelection(
   );
 }
 
+function identityOf(entry: ResolvedModelCatalogEntry): ModelIdentity {
+  return { id: entry.selectionId, owner: entry.sourceProviderId };
+}
+
 /**
- * A provider-qualified runtime id (`anthropic/claude-x`) names the same
- * selection as its owner's unqualified catalog id (`claude-x`).
+ * Candidates bucketed by their last canonical segment, so a dedup pass compares
+ * an entry only against the rows that could possibly name the same model.
  */
-function runtimeCoversSelection(
-  runtimeRows: readonly ResolvedModelCatalogEntry[],
-  input: Readonly<{ owner: string; selectionId: string }>,
-): boolean {
-  return (
-    hasExactSelection(runtimeRows, input.selectionId) ||
-    hasExactSelection(runtimeRows, `${input.owner}/${input.selectionId}`)
-  );
+type CanonicalIndex = Map<string, ResolvedModelCatalogEntry[]>;
+
+function indexCanonically(index: CanonicalIndex, entry: ResolvedModelCatalogEntry): void {
+  const key = canonicalModelBucket(identityOf(entry));
+  const bucket = index.get(key);
+  if (bucket === undefined) index.set(key, [entry]);
+  else bucket.push(entry);
+}
+
+/**
+ * A provider-qualified runtime id (`openrouter/deepseek/x`) names the same
+ * selection as its owner's shorter catalog id (`deepseek/x`, `x:free`).
+ */
+function indexNamesSameModel(index: CanonicalIndex, identity: ModelIdentity): boolean {
+  const bucket = index.get(canonicalModelBucket(identity));
+  if (bucket === undefined) return false;
+  return bucket.some((row) => isSameCanonicalModel(identityOf(row), identity));
+}
+
+function dedupeCanonically(
+  entries: readonly ResolvedModelCatalogEntry[],
+): ResolvedModelCatalogEntry[] {
+  const index: CanonicalIndex = new Map();
+  const kept: ResolvedModelCatalogEntry[] = [];
+  for (const entry of entries) {
+    if (indexNamesSameModel(index, identityOf(entry))) continue;
+    indexCanonically(index, entry);
+    kept.push(entry);
+  }
+  return kept;
 }
 
 function resolveCatalogEntries(
@@ -348,6 +404,7 @@ function resolveCatalogEntries(
     cache: ModelCacheAccessor;
     configuredSelectionId?: string | undefined;
     role?: ActiveRunnerRole | undefined;
+    browseCatalog?: boolean | undefined;
   }>,
 ): ResolvedModelCatalogEntry[] {
   const { providerId, cache } = input;
@@ -356,47 +413,52 @@ function resolveCatalogEntries(
   const runtime = runtimeSnapshot?.entries ?? [];
   const runtimeRows: ResolvedModelCatalogEntry[] = [];
   const runtimeKeys = new Set<string>();
-  const runtimeConfirmed = runtime.length > 0 && runtimeSnapshot?.isStale !== true;
+  const runtimeIndex: CanonicalIndex = new Map();
+  const lanes = modelRowLanes({
+    providerId,
+    hasRuntimeList: runtime.length > 0,
+    browseCatalog: input.browseCatalog,
+  });
 
   runtime.forEach((model, nativeOrder) => {
     const owner = ownerFor(model, runtimeSnapshot?.providerId ?? providerId);
     const key = entryKey({ owner, selectionId: model.id });
     if (runtimeKeys.has(key)) return;
     runtimeKeys.add(key);
-    runtimeRows.push(
-      runtimeEntry({
-        runnerId: providerId,
-        runtimeProviderId: runtimeSnapshot?.providerId ?? providerId,
-        model,
-        nativeOrder,
-        isStale: runtimeSnapshot?.isStale ?? false,
-        modelsDevEntries,
-        matchMetadataAcrossOwners: usesNativeCliModelDiscovery(providerId) && runtimeConfirmed,
-      }),
-    );
+    const row = runtimeEntry({
+      runnerId: providerId,
+      runtimeProviderId: runtimeSnapshot?.providerId ?? providerId,
+      model,
+      nativeOrder,
+      isStale: runtimeSnapshot?.isStale ?? false,
+      modelsDevEntries,
+      matchMetadataAcrossOwners: !lanes.modelsDev,
+    });
+    runtimeRows.push(row);
+    indexCanonically(runtimeIndex, row);
   });
 
   const modelsDevRows: ResolvedModelCatalogEntry[] = [];
   const modelsDevKeys = new Set<string>();
-  for (const model of modelsDevEntries) {
-    const owner = ownerFor(model, providerId);
-    const key = entryKey({ owner, selectionId: model.id });
-    if (modelsDevKeys.has(key)) continue;
-    if (runtimeCoversSelection(runtimeRows, { owner, selectionId: model.id })) continue;
-    modelsDevKeys.add(key);
-    modelsDevRows.push(modelsDevSuggestion({ runnerId: providerId, model }));
+  if (lanes.modelsDev) {
+    for (const model of modelsDevEntries) {
+      const owner = ownerFor(model, providerId);
+      const key = entryKey({ owner, selectionId: model.id });
+      if (modelsDevKeys.has(key)) continue;
+      if (indexNamesSameModel(runtimeIndex, { id: model.id, owner })) continue;
+      modelsDevKeys.add(key);
+      modelsDevRows.push(modelsDevSuggestion({ runnerId: providerId, model }));
+    }
   }
 
   const bundledRows: ResolvedModelCatalogEntry[] = [];
   const bundledKeys = new Set<string>();
-  if (!runtimeConfirmed) {
+  if (lanes.bundled) {
     const keepBundledDefault = runtimeSnapshot === null;
-    for (const model of getBundledModels(providerId)) {
+    for (const [nativeOrder, model] of getBundledModels(providerId).entries()) {
       const key = entryKey({ owner: providerId, selectionId: model.name });
       if (modelsDevKeys.has(key) || bundledKeys.has(key)) continue;
-      if (runtimeCoversSelection(runtimeRows, { owner: providerId, selectionId: model.name })) {
-        continue;
-      }
+      if (indexNamesSameModel(runtimeIndex, { id: model.name, owner: providerId })) continue;
       bundledKeys.add(key);
       bundledRows.push(
         bundledSuggestion({
@@ -404,15 +466,29 @@ function resolveCatalogEntries(
           model,
           modelsDevEntries,
           keepBundledDefault,
+          nativeOrder,
         }),
+      );
+    }
+  }
+
+  const claudeCodeOptionRows: ResolvedModelCatalogEntry[] = [];
+  if (lanes.claudeCodeOptions) {
+    for (const option of cache.getClaudeCodeModelOptions?.() ?? []) {
+      if (indexNamesSameModel(runtimeIndex, { id: option.id, owner: providerId })) continue;
+      claudeCodeOptionRows.push(
+        claudeCodeOptionEntry({ runnerId: providerId, option, modelsDevEntries }),
       );
     }
   }
 
   const catalogRows = [
     ...runtimeRows,
-    ...modelsDevRows.sort(compareSuggestions),
-    ...bundledRows.sort(compareSuggestions),
+    ...dedupeCanonically([
+      ...modelsDevRows.sort(compareSuggestions),
+      ...bundledRows.sort(compareSuggestions),
+      ...claudeCodeOptionRows,
+    ]),
   ];
   const configured = configuredSelectionId({
     providerId,
@@ -433,5 +509,6 @@ export function resolveModelCatalog(
     cache: options.cache ?? NULL_CACHE,
     configuredSelectionId: options.configuredSelectionId,
     role: options.role,
+    browseCatalog: options.browseCatalog,
   });
 }

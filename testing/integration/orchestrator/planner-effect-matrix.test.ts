@@ -44,7 +44,7 @@ function effectConfig(timeoutMs?: number): Config {
     workflow: {
       maxRetries: 0,
       persistTranscript: false,
-      mode: 'instant',
+      mode: 'quick',
       taskReview: 'none',
       compactionFormat: 'auto',
     },
@@ -394,10 +394,10 @@ describe('planner effect matrix — production factories under hostile config', 
 
   it('names the refused backend and its reason on unsupported planner rows', async () => {
     const reasons = {
-      aider: /read-only planner contract/i,
+      cursor: /compiler planner contract/i,
       copilot: /non-writing programmatic planner posture/i,
     } as const;
-    for (const tool of ['aider', 'copilot'] as const) {
+    for (const tool of ['cursor', 'copilot'] as const) {
       const config = makeConfig({ planner: { kind: 'cli', tool } });
       const slot = { role: 'planner' } as const;
       const preparationId = `unsupported-${tool}`;

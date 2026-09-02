@@ -25,14 +25,6 @@ describe('renderReviewRows', () => {
     expect(second).toBe(first);
   });
 
-  it('reuses rows across repeated scroll renders of the same document', () => {
-    const baseline = renderReviewRows(options());
-
-    for (let scrollStep = 0; scrollStep < 10; scrollStep += 1) {
-      expect(renderReviewRows(options())).toBe(baseline);
-    }
-  });
-
   it('re-renders when the source changes', () => {
     const first = renderReviewRows(options());
     const second = renderReviewRows(options({ source: `${source}\nAppended paragraph.\n` }));

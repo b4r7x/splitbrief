@@ -46,7 +46,7 @@ After setup, the handler calls `initStores()` and then `renderApp()`.
 
 **`loadDiscovery()`** runs last because it's async and independent of config/session state. It detects provider capabilities via `detectCapabilities()` (`src/engine/providers/capabilities.ts`), then hydrates the detection stores from the on-disk cache snapshot via `hydrateDetectionIntoStores()` (`src/stores/discovery/detection-adapter.ts`) so a cold start shows remembered runners immediately, and kicks off the live runner/model refresh in the background via `loadDetectionForCurrentConfig()` (`src/engine/detection/store-publication.ts`).
 
-It finishes by awaiting planner skill discovery via `discoverSkills()` (`src/engine/skill-discovery.ts`). Skill sources depend on the planner: `.claude/skills/`, `.splitbrief/skills/`, global tool skill dirs, `AGENTS.md`, or `CONVENTIONS.md`.
+It finishes by awaiting planner skill discovery via `discoverSkills(projectDir)` (`src/engine/skill-discovery.ts`). The sources are a fixed union that does not depend on the planner — the project and global roots listed in `src/core/skills/scan-paths.ts`, plus `<project>/AGENTS.md`. Discovery also re-runs whenever the skills overlay opens (`src/app/refresh-skills.ts`).
 
 ---
 
@@ -103,9 +103,7 @@ After initialization, `runWorkflow()` installs a queue handler (for messages the
 
 `runPlanningPhases()` (`src/engine/orchestrator/run/phases.ts`) delegates to `runPlanningPhase()` (`src/engine/orchestrator/planning/run.ts`), which resolves the workflow mode and dispatches to the mode-specific handler:
 
-**instant** — `runInstantPlanning()` (`src/engine/orchestrator/planning/instant.ts`). One planner call. Produces tasks directly — no spec, no plan, no approval gates.
-
-**quick** — `runQuickPlanning()` (`src/engine/orchestrator/planning/quick.ts`). One planner call. Tasks only, no supporting documents.
+**quick** — `runQuickPlanning()` (`src/engine/orchestrator/planning/quick.ts`). One planner call. Tasks only, no supporting documents, no approval gates. When the mode advisor classifies the prompt as `trivial`, `runPlanningPhase()` sets `trivial: true` on the phase options and the quick prompt drops its codebase-review step and caps the brief count.
 
 **standard** — `runFullPlanning()` (`src/engine/orchestrator/planning/full.ts`). Four planner calls: research, spec, plan, tasks. The spec goes through an approval loop — the user can approve, comment (triggers regeneration), or reject. After tasks are generated, they pass through the brief quality gate, then `runBriefsApprovalLoop()` enters `reviewing-briefs` before implementation. The brief review surface is contract-first: it leads with `CONTRACT READY` or `CONTRACT BLOCKED`, the durable cause, and the valid actions. Score and task count are diagnostic only.
 
@@ -160,7 +158,7 @@ The loop iterates tasks in order (tasks are already topologically sorted by `dep
 1. Transitions state to `START_TASK` and refreshes the file's current code from disk
 2. Runs the tiered file-write approval gate, classifying declared changed paths by scope/risk (in-scope, out-of-scope, control-plane, package change) and gating those writes at the configured tier
 3. Runs pre-task hooks if configured
-4. Calls `runImplementation()` (`src/engine/orchestrator/task/run-implementation.ts`) — the implementer receives the task brief and produces code. An implementer whose `capabilities.writesFiles` is `direct` (the `cli`, `agent`, and `agent-sdk` kinds) is pointed at the run's isolated worktree, not the project directory; one whose `writesFiles` is `extracted-code` (the `api` and `shell` kinds) returns the file body and never touches the filesystem itself. For a modify task, the extracted-code branch refuses a marker-less whole-file replacement that would discard most of the existing file: the file stays untouched, and the task fails with a message carrying the kept-of-had line counts and a literal SEARCH/REPLACE template so the retry can apply an exact patch
+4. Calls `runImplementation()` (`src/engine/orchestrator/task/run-implementation.ts`) — the implementer receives the task brief and produces code. An implementer whose `capabilities.writesFiles` is `direct` (the `cli` and `agent` kinds) is pointed at the run's isolated worktree, not the project directory; one whose `writesFiles` is `extracted-code` (the `api` and `shell` kinds) returns the file body and never touches the filesystem itself. For a modify task, the extracted-code branch refuses a marker-less whole-file replacement that would discard most of the existing file: the file stays untouched, and the task fails with a message carrying the kept-of-had line counts and a literal SEARCH/REPLACE template so the retry can apply an exact patch
 5. Applies changed files via `applyChangedFiles()` (`src/engine/orchestrator/task/apply-changed-files.ts`) → `gateAndPromoteChangedFiles()` (`src/engine/orchestrator/approval/gate-and-promote.ts`). It diffs the working directory against the task-start snapshot, so the gate sees everything that actually changed and not only the brief's declared file. Files written in isolation are then promoted into the real project directory; files SPLITBRIEF wrote from an `extracted-code` response are already there, admitted by the pre-write gate inside `runImplementation()`. Only a changed set discovered inside isolation is promoted: if isolation reports no changes and the changed set falls back to the real project, those changes are the user's own edits — they are gated but never promoted, and left alone on denial (see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)). Promotion is hash-guarded — if a file changed underneath SPLITBRIEF between snapshot and write, the task stops with a promote conflict instead of overwriting it
 6. Runs validation in the real project directory: typecheck, then lint, then test (`wctx.validator.runValidation()`, built by `createValidator()` in `src/engine/orchestrator/validation/run.ts`). The pipeline stops at the first failure attributable to the task; a stage already red at baseline continues so the stages behind it still get a verdict.
 7. On pass: commits (if per-task commit strategy is configured), transitions to `VALIDATION_PASS`, records evidence, runs drift chain analysis
@@ -266,7 +264,7 @@ After validation, the CLI routes to headless (`--json`), RPC (`--rpc`), or inter
 
 Inside `initializeWorkflow()` (`src/engine/orchestrator/run/init.ts`), context rebuild follows the capability matrix:
 
-1. **Native session resume** -- if the planner has `supportsSessionResume` and `plannerSessionId` is set, the factory passes the session ID to the backend (Claude Code `--session-id`, Agent SDK `options.resume`). The prior conversation survives.
+1. **Native session resume** -- if the planner has `supportsSessionResume` and `plannerSessionId` is set, the factory passes the session ID to the backend (Claude Code `--session-id`). The prior conversation survives.
 2. **Auto-compaction + transcript rebuild** -- if `supportsSessionResume` is false, `autoCompactResumeContext()` (`src/engine/orchestrator/resume-context.ts`) checks whether the JSONL log exceeds `compactionThreshold`. If so, it summarizes old messages via `planner.summarize()`. Then `applyRebuiltContext()` rebuilds a messages array from `session.jsonl` and injects it as `resumeHolder.messages` for the next planner call.
 3. **Handoff fallback** -- if `persistTranscript` is false and native resume failed, no transcript exists to rebuild from. The orchestrator warns the user and continues with spec/plan/tasks artifacts only.
 
@@ -274,7 +272,7 @@ The orchestrator then publishes `workflow_resumed` and picks up from the saved p
 
 ### Related commands
 
-**`splitbrief spec <feature>`** (`src/cli/commands/spec.ts`) -- runs the planner for the selected workflow mode and exits without implementation. The mode decides which planning phases run: `standard` and `speckit` write the research, spec, plan and tasks artifacts; `instant` and `quick` make a single planner call that writes `tasks.md`. Because the command never implements, the approval gates of a full run do not apply to it.
+**`splitbrief spec <feature>`** (`src/cli/commands/spec.ts`) -- runs the planner for the selected workflow mode and exits without implementation. The mode decides which planning phases run: `standard` and `speckit` write the research, spec, plan and tasks artifacts; `quick` makes a single planner call that writes `tasks.md`. Because the command never implements, the approval gates of a full run do not apply to it.
 
 **`splitbrief continue [alias]`** (registered in `src/cli/commands/continue/register.ts`) -- continues a session by numeric alias from `splitbrief ps`, by session ID, or by active/single-running discovery. It attaches when the target is running and resumes saved state otherwise.
 

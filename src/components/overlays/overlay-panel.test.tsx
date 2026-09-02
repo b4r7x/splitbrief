@@ -66,6 +66,23 @@ describe('OverlayPanel title', () => {
     expect(frame).toContain(dimOpen);
     expect(frame).not.toContain(accentOpen);
   });
+
+  it('drops the blank row under the title when titleSpacing is tight', () => {
+    const rowsBelowTitle = (spacing: 'gap' | 'tight') => {
+      const lines = renderPanelLines(
+        <OverlayPanel title="Help" titleSpacing={spacing} density="roomy">
+          <Text>body</Text>
+        </OverlayPanel>,
+      );
+      const titleIndex = lines.findIndex((line) => line.includes('Help'));
+      const bodyIndex = lines.findIndex((line) => line.includes('body'));
+      expect(titleIndex).toBeGreaterThanOrEqual(0);
+      return bodyIndex - titleIndex;
+    };
+
+    expect(rowsBelowTitle('gap')).toBe(2);
+    expect(rowsBelowTitle('tight')).toBe(1);
+  });
 });
 
 describe('OverlayPanel inner row capacity', () => {

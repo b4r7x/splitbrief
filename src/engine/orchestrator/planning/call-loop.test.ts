@@ -19,7 +19,6 @@ import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { HEARTBEAT_THRESHOLD_MS } from './heartbeat.js';
 import { HEARTBEAT_INTERVAL_MS } from '../../constants.js';
 import { runPlannerCallInContinuationLoop } from './call-loop.js';
-import { zeroTaskRetryPrompt } from '../../spec/prompts/zero-task-retry.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import type { Config } from '../../../core/schemas/config.js';
 import {
@@ -110,7 +109,6 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
     const { projectDir, sessionId } = setupSession();
     const planner = makePlanner({
       plan: vi.fn().mockRejectedValue(new Error('planner crashed')),
-      quickPlan: vi.fn().mockRejectedValue(new Error('planner crashed')),
     });
     const { bus, events } = makeBusRecorder();
     const wctx = makeWctx(projectDir, sessionId, {
@@ -118,8 +116,8 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
       config: makeConfig({
         planner: {
           kind: 'api',
-          provider: 'openrouter',
-          apiBase: 'https://openrouter.ai/api/v1',
+          provider: 'custom-endpoint',
+          apiBase: 'https://api.example.com/v1',
           apiKey: 'test-key',
           model: 'test',
         },
@@ -131,7 +129,6 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
       state: planningState(),
       planner,
       feature: 'test feature',
-      mode: 'quick',
     }).catch((err: Error) => err);
 
     await vi.advanceTimersByTimeAsync(0);
@@ -151,32 +148,30 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
     const { projectDir, sessionId } = setupSession();
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner({
-      quickPlan: vi
-        .fn()
-        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
-          callbacks.onCallEvent?.({
-            type: 'call_started',
-            ts: Date.now(),
-            callId: 'planner-call-1',
-            role: 'planner',
-            backendKind: 'cli',
-          });
-          await new Promise((resolve) => setTimeout(resolve, HEARTBEAT_THRESHOLD_MS));
-          return {
-            spec: '',
-            plan: '',
-            tasks: [makeTask()],
-            usage: null,
-          };
-        }),
+      plan: vi.fn().mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+        callbacks.onCallEvent?.({
+          type: 'call_started',
+          ts: Date.now(),
+          callId: 'planner-call-1',
+          role: 'planner',
+          backendKind: 'cli',
+        });
+        await new Promise((resolve) => setTimeout(resolve, HEARTBEAT_THRESHOLD_MS));
+        return {
+          spec: '',
+          plan: '',
+          tasks: [makeTask()],
+          usage: null,
+        };
+      }),
     });
     const wctx = makeWctx(projectDir, sessionId, {
       bus,
       config: makeConfig({
         planner: {
           kind: 'api',
-          provider: 'openrouter',
-          apiBase: 'https://openrouter.ai/api/v1',
+          provider: 'custom-endpoint',
+          apiBase: 'https://api.example.com/v1',
           apiKey: 'test-key',
           model: 'test',
         },
@@ -188,7 +183,6 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
       state: planningState(),
       planner,
       feature: 'test feature',
-      mode: 'quick',
     });
 
     await vi.advanceTimersByTimeAsync(0);
@@ -207,32 +201,30 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
     const { projectDir, sessionId } = setupSession();
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner({
-      quickPlan: vi
-        .fn()
-        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
-          callbacks.onCallEvent?.({
-            type: 'call_started',
-            ts: Date.now(),
-            callId: 'planner-call-1',
-            role: 'planner',
-            backendKind: 'cli',
-          });
-          await new Promise((resolve) => setTimeout(resolve, HEARTBEAT_THRESHOLD_MS + 100));
-          return {
-            spec: '',
-            plan: '',
-            tasks: [makeTask()],
-            usage: { inputTokens: 100, outputTokens: 50 },
-          };
-        }),
+      plan: vi.fn().mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+        callbacks.onCallEvent?.({
+          type: 'call_started',
+          ts: Date.now(),
+          callId: 'planner-call-1',
+          role: 'planner',
+          backendKind: 'cli',
+        });
+        await new Promise((resolve) => setTimeout(resolve, HEARTBEAT_THRESHOLD_MS + 100));
+        return {
+          spec: '',
+          plan: '',
+          tasks: [makeTask()],
+          usage: { inputTokens: 100, outputTokens: 50 },
+        };
+      }),
     });
     const wctx = makeWctx(projectDir, sessionId, {
       bus,
       config: makeConfig({
         planner: {
           kind: 'api',
-          provider: 'openrouter',
-          apiBase: 'https://openrouter.ai/api/v1',
+          provider: 'custom-endpoint',
+          apiBase: 'https://api.example.com/v1',
           apiKey: 'test-key',
           model: 'test',
         },
@@ -244,7 +236,6 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
       state: planningState(),
       planner,
       feature: 'test feature',
-      mode: 'quick',
     });
 
     await vi.advanceTimersByTimeAsync(0);
@@ -272,7 +263,7 @@ describe('runPlannerCallInContinuationLoop — signal propagation', () => {
       resolveActive = resolve;
     });
     const planner = makePlanner({
-      quickPlan: vi.fn().mockImplementation(({ callbacks }: { callbacks: PlannerCallbacks }) => {
+      plan: vi.fn().mockImplementation(({ callbacks }: { callbacks: PlannerCallbacks }) => {
         capturedSignal = callbacks.signal;
         resolveActive();
         return new Promise((_resolve, reject) => {
@@ -294,7 +285,6 @@ describe('runPlannerCallInContinuationLoop — signal propagation', () => {
       state: planningState(),
       planner,
       feature: 'test feature',
-      mode: 'quick',
     });
 
     await active;
@@ -304,113 +294,17 @@ describe('runPlannerCallInContinuationLoop — signal propagation', () => {
   });
 });
 
-describe('runPlannerCallInContinuationLoop — quick zero-task recovery', () => {
-  it('retries the quick single call exactly once when it returns zero tasks', async () => {
+describe('runPlannerCallInContinuationLoop — zero-task result', () => {
+  it('makes one call and leaves the zero-task warning to the caller', async () => {
     const { projectDir, sessionId } = setupSession();
-    const quickPlan = vi
-      .fn()
-      .mockResolvedValueOnce({ spec: '', plan: '', tasks: [], usage: null })
-      .mockResolvedValueOnce({ spec: '', plan: '', tasks: [makeTask()], usage: null });
-    const planner = makePlanner({ quickPlan });
-    const wctx = makeWctx(projectDir, sessionId);
-
-    const { result } = await runPlannerCallInContinuationLoop({
-      wctx,
-      state: planningState(),
-      planner,
-      feature: 'test feature',
-      mode: 'quick',
-    });
-
-    expect(quickPlan).toHaveBeenCalledTimes(2);
-    expect(result.tasks).toHaveLength(1);
-  });
-
-  it('returns the tokens of both calls and the phases of the terminal attempt only', async () => {
-    const { projectDir, sessionId } = setupSession();
-    const quickPlan = vi
-      .fn()
-      .mockResolvedValueOnce({
-        spec: '',
-        plan: '',
-        tasks: [],
-        usage: { inputTokens: 30, outputTokens: 15 },
-        phases: [phaseResult('tasks.md', '# first tasks'), phaseResult('spec.md', '# first spec')],
-      })
-      .mockResolvedValueOnce({
-        spec: '',
-        plan: '',
-        tasks: [makeTask()],
-        usage: { inputTokens: 12, outputTokens: 7 },
-        phases: [phaseResult('tasks.md', '# retry tasks')],
-      });
-    const planner = makePlanner({ quickPlan });
-    const wctx = makeWctx(projectDir, sessionId);
-
-    const { result } = await runPlannerCallInContinuationLoop({
-      wctx,
-      state: planningState(),
-      planner,
-      feature: 'test feature',
-      mode: 'quick',
-    });
-
-    expect(result.usage).toEqual({ inputTokens: 42, outputTokens: 22 });
-    expect(
-      result.phases?.map((phase) => ({
-        logicalName: phase.artifact.logicalName,
-        text: phase.artifact.text,
-      })),
-    ).toEqual([{ logicalName: 'tasks.md', text: '# retry tasks' }]);
-  });
-
-  it('sends a corrective retry prompt carrying the first attempt’s parse diagnostics', async () => {
-    const { projectDir, sessionId } = setupSession();
-    const parseDiagnostic =
-      'No Task Brief was parsed: the output contains a ``` code fence, but neither the fenced content nor the text around it has a --- frontmatter block with an id: field.';
-    const prompts: string[] = [];
-    const quickPlan = vi
-      .fn()
-      .mockImplementation(
-        async ({ feature, callbacks }: { feature: string; callbacks: PlannerCallbacks }) => {
-          prompts.push(feature);
-          if (prompts.length === 1) {
-            callbacks.onWarning?.(parseDiagnostic);
-            return { spec: '', plan: '', tasks: [], usage: null };
-          }
-          return { spec: '', plan: '', tasks: [makeTask()], usage: null };
-        },
-      );
-    const planner = makePlanner({ quickPlan });
-    const { bus, events } = makeBusRecorder();
-    const wctx = makeWctx(projectDir, sessionId, { bus });
-
-    const { result } = await runPlannerCallInContinuationLoop({
-      wctx,
-      state: planningState(),
-      planner,
-      feature: 'test feature',
-      mode: 'quick',
-    });
-
-    expect(result.tasks).toHaveLength(1);
-    expect(prompts[0]).toBe('test feature');
-    expect(prompts[1]).toBe(zeroTaskRetryPrompt('test feature', [parseDiagnostic]));
-    expect(
-      events.filter((e) => e.type === 'warning' && 'message' in e && e.message === parseDiagnostic),
-    ).toHaveLength(1);
-  });
-
-  it('leaves the zero-task warning to the caller that persists the planner text', async () => {
-    const { projectDir, sessionId } = setupSession();
-    const quickPlan = vi.fn().mockResolvedValue({
+    const plan = vi.fn().mockResolvedValue({
       spec: '',
       plan: '',
       tasks: [],
       usage: null,
       phases: [phaseResult('tasks.md', '# empty')],
     });
-    const planner = makePlanner({ quickPlan });
+    const planner = makePlanner({ plan });
     const { bus, events } = makeBusRecorder();
     const wctx = makeWctx(projectDir, sessionId, { bus });
 
@@ -419,10 +313,9 @@ describe('runPlannerCallInContinuationLoop — quick zero-task recovery', () => 
       state: planningState(),
       planner,
       feature: 'test feature',
-      mode: 'quick',
     });
 
-    expect(quickPlan).toHaveBeenCalledTimes(2);
+    expect(plan).toHaveBeenCalledTimes(1);
     expect(result.tasks).toHaveLength(0);
     expect(
       events.find(
@@ -435,10 +328,10 @@ describe('runPlannerCallInContinuationLoop — quick zero-task recovery', () => 
 describe('runPlannerCallInContinuationLoop — runner auth', () => {
   it('runs a legacy CLI planner config on its descriptor default auth channel', async () => {
     const { projectDir, sessionId } = setupSession();
-    const quickPlan = vi
+    const plan = vi
       .fn()
       .mockResolvedValue({ spec: '', plan: '', tasks: [makeTask()], usage: null });
-    const planner = makePlanner({ quickPlan });
+    const planner = makePlanner({ plan });
     const current = makeConfig();
     const config = {
       ...current,
@@ -451,10 +344,9 @@ describe('runPlannerCallInContinuationLoop — runner auth', () => {
       state: planningState(),
       planner,
       feature: 'test feature',
-      mode: 'quick',
     });
 
-    expect(quickPlan).toHaveBeenCalled();
+    expect(plan).toHaveBeenCalled();
     // The default channel is the non-bridging one, so no host login state is
     // copied into the sandbox for a configuration that selected nothing.
     expect(existsSync(join(projectDir, SANDBOX_DIR, 'home', '.codex'))).toBe(false);
@@ -465,15 +357,13 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
   it('publishes marker-free planner text', async () => {
     const { projectDir, sessionId } = setupSession();
     const planner = makePlanner({
-      quickPlan: vi
-        .fn()
-        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
-          callbacks.onOutput('before ');
-          callbacks.onOutput('<!-- Q:{"id":"q1","type"');
-          callbacks.onOutput(':"choice","text":"Pick","options":["a","b"]} -->');
-          callbacks.onOutput(' after');
-          return { spec: '', plan: '', tasks: [makeTask()], usage: null };
-        }),
+      plan: vi.fn().mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+        callbacks.onOutput('before ');
+        callbacks.onOutput('<!-- Q:{"id":"q1","type"');
+        callbacks.onOutput(':"choice","text":"Pick","options":["a","b"]} -->');
+        callbacks.onOutput(' after');
+        return { spec: '', plan: '', tasks: [makeTask()], usage: null };
+      }),
     });
     const { bus, events } = makeBusRecorder();
     const wctx = makeWctx(projectDir, sessionId, { bus });
@@ -483,7 +373,6 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
       state: planningState(),
       planner,
       feature: 'test feature',
-      mode: 'quick',
     });
 
     const publishedText = events
@@ -495,45 +384,37 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
     expect(publishedText).toContain('after');
   });
 
-  it.each([{ mode: 'quick' as const }, { mode: 'speckit' as const }])(
-    'collects questions for mode $mode via planner callback',
-    async ({ mode }) => {
-      const { projectDir, sessionId } = setupSession();
-      const question: ClarificationQuestion = {
-        id: 'q1',
-        type: 'choice',
-        text: 'Pick',
-        options: ['a', 'b'],
-      };
-      const emitQuestions = vi
-        .fn()
-        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
-          callbacks.onQuestion?.([question]);
-          return { spec: '', plan: '', tasks: [makeTask()], usage: null };
-        });
-      const planner = makePlanner({
-        plan: emitQuestions,
-        quickPlan: emitQuestions,
-      });
-      const wctx = makeWctx(projectDir, sessionId);
-      const collectedQuestions: ClarificationQuestion[] = [];
+  it('collects questions via the planner callback', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const question: ClarificationQuestion = {
+      id: 'q1',
+      type: 'choice',
+      text: 'Pick',
+      options: ['a', 'b'],
+    };
+    const planner = makePlanner({
+      plan: vi.fn().mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+        callbacks.onQuestion?.([question]);
+        return { spec: '', plan: '', tasks: [makeTask()], usage: null };
+      }),
+    });
+    const wctx = makeWctx(projectDir, sessionId);
+    const collectedQuestions: ClarificationQuestion[] = [];
 
-      await runPlannerCallInContinuationLoop({
-        wctx,
-        state: planningState(),
-        planner,
-        feature: 'test feature',
-        mode,
-        collectedQuestions,
-      });
+    await runPlannerCallInContinuationLoop({
+      wctx,
+      state: planningState(),
+      planner,
+      feature: 'test feature',
+      collectedQuestions,
+    });
 
-      expect(collectedQuestions).toEqual([
-        { id: 'q1', type: 'choice', text: 'Pick', options: ['a', 'b'] },
-      ]);
-    },
-  );
+    expect(collectedQuestions).toEqual([
+      { id: 'q1', type: 'choice', text: 'Pick', options: ['a', 'b'] },
+    ]);
+  });
 
-  it('deduplicates IDs across retry callbacks before applying the question cap', async () => {
+  it('deduplicates IDs across callbacks before applying the question cap', async () => {
     const { projectDir, sessionId } = setupSession();
     const firstQuestion: ClarificationQuestion = {
       id: 'q1',
@@ -550,17 +431,13 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
       type: 'input',
       text: id,
     }));
-    const quickPlan = vi
-      .fn()
-      .mockImplementationOnce(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+    const planner = makePlanner({
+      plan: vi.fn().mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
         callbacks.onQuestion?.([firstQuestion, firstQuestion]);
-        return { spec: '', plan: '', tasks: [], usage: null };
-      })
-      .mockImplementationOnce(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
         callbacks.onQuestion?.([duplicateQuestion, ...distinctQuestions]);
         return { spec: '', plan: '', tasks: [makeTask()], usage: null };
-      });
-    const planner = makePlanner({ quickPlan });
+      }),
+    });
     const wctx = makeWctx(projectDir, sessionId);
     const collectedQuestions: ClarificationQuestion[] = [];
 
@@ -569,7 +446,6 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
       state: planningState(),
       planner,
       feature: 'test feature',
-      mode: 'quick',
       collectedQuestions,
     });
 
@@ -582,17 +458,15 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
     const sinks = createTestSinks();
     let callCount = 0;
     const planner = makePlanner({
-      quickPlan: vi
-        .fn()
-        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
-          callCount++;
-          if (callCount === 1) {
-            callbacks.onOutput(marker);
-            sinks.abortTurn();
-            throw new DOMException('The user aborted a request.', 'AbortError');
-          }
-          return { spec: '', plan: '', tasks: [makeTask()], usage: null };
-        }),
+      plan: vi.fn().mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+        callCount++;
+        if (callCount === 1) {
+          callbacks.onOutput(marker);
+          sinks.abortTurn();
+          throw new DOMException('The user aborted a request.', 'AbortError');
+        }
+        return { spec: '', plan: '', tasks: [makeTask()], usage: null };
+      }),
     });
     const continuationPrompts: string[] = [];
     const wctx = makeWctx(projectDir, sessionId, {
@@ -610,7 +484,6 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
       state: planningState(),
       planner,
       feature: 'test feature',
-      mode: 'quick',
     });
 
     expect(continuationPrompts).toEqual([marker]);
@@ -620,12 +493,10 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
   it('releases held planner text when the planner call throws', async () => {
     const { projectDir, sessionId } = setupSession();
     const planner = makePlanner({
-      quickPlan: vi
-        .fn()
-        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
-          callbacks.onOutput('Findings so far. <!-- Q:{"id":"q1","text":"Which file');
-          throw new Error('planner crashed');
-        }),
+      plan: vi.fn().mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+        callbacks.onOutput('Findings so far. <!-- Q:{"id":"q1","text":"Which file');
+        throw new Error('planner crashed');
+      }),
     });
     const { bus, events } = makeBusRecorder();
     const wctx = makeWctx(projectDir, sessionId, { bus });
@@ -636,7 +507,6 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
         state: planningState(),
         planner,
         feature: 'test feature',
-        mode: 'quick',
       }),
     ).rejects.toThrow('planner crashed');
 
@@ -653,17 +523,15 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
     const sinks = createTestSinks();
     let callCount = 0;
     const planner = makePlanner({
-      quickPlan: vi
-        .fn()
-        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
-          callCount++;
-          if (callCount === 1) {
-            callbacks.onOutput('Partial findings. <!-- Q:{"id":"q1","text":"Which file');
-            sinks.abortTurn();
-            throw new DOMException('The user aborted a request.', 'AbortError');
-          }
-          return { spec: '', plan: '', tasks: [makeTask()], usage: null };
-        }),
+      plan: vi.fn().mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+        callCount++;
+        if (callCount === 1) {
+          callbacks.onOutput('Partial findings. <!-- Q:{"id":"q1","text":"Which file');
+          sinks.abortTurn();
+          throw new DOMException('The user aborted a request.', 'AbortError');
+        }
+        return { spec: '', plan: '', tasks: [makeTask()], usage: null };
+      }),
     });
     const { bus, events } = makeBusRecorder();
     const wctx = makeWctx(projectDir, sessionId, {
@@ -677,7 +545,6 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
       state: planningState(),
       planner,
       feature: 'test feature',
-      mode: 'quick',
     });
 
     const publishedText = events

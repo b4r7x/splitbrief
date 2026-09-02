@@ -24,6 +24,7 @@ import {
   PLANNER_TOOL_IDS,
   PROVIDER_IDS,
   WorkflowModeSchema,
+  normalizeWorkflowMode,
   PlannerApiProviderIdSchema,
   PlannerCliToolIdSchema,
 } from './enums.js';
@@ -195,11 +196,28 @@ describe('synthetic implementer-only CLI descriptor', () => {
 });
 
 describe('WorkflowModeSchema', () => {
-  it.each(['instant', 'quick', 'standard', 'speckit'])('accepts "%s"', (input) => {
+  it.each(['quick', 'standard', 'speckit'])('accepts "%s"', (input) => {
     expect(WorkflowModeSchema.parse(input)).toBe(input);
+  });
+  it('parses the retired instant name as quick', () => {
+    expect(WorkflowModeSchema.parse('instant')).toBe('quick');
+  });
+  it('still rejects a value that was never a mode', () => {
+    expect(WorkflowModeSchema.safeParse('instantaneous').success).toBe(false);
   });
   it.each(['full', 'spec-kit', 'bogus', ''])('rejects "%s"', (input) => {
     expect(WorkflowModeSchema.safeParse(input).success).toBe(false);
+  });
+});
+
+describe('normalizeWorkflowMode', () => {
+  it.each([
+    { raw: '  INSTANT ', expected: 'quick' },
+    { raw: 'Speckit', expected: 'speckit' },
+    { raw: 'nope', expected: undefined },
+    { raw: undefined, expected: undefined },
+  ])('normalizes $raw', ({ raw, expected }) => {
+    expect(normalizeWorkflowMode(raw)).toBe(expected);
   });
 });
 

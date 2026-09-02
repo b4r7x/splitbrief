@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { computePerTaskOutOfBounds, analyzeDriftChain } from './chain.js';
 import type { PerTaskOutOfBoundsInput } from './chain.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { ACCEPTED_SCOPE_CASES } from '#testing/helpers/factories/scope-attribution-cases.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { DriftChainState } from '../../../core/schemas/drift-chain.js';
@@ -32,85 +33,27 @@ function outOfBounds(
 }
 
 describe('computePerTaskOutOfBounds', () => {
-  it.each([
-    {
-      label: 'exact primary',
-      task: makeTask({ file: 'src/primary.ts' }),
-      changedFile: 'src/primary.ts',
-      accepted: true,
+  it.each(ACCEPTED_SCOPE_CASES)(
+    'classifies $label paths with attribution parity',
+    ({ task, changedFile, accepted }) => {
+      const result = outOfBounds([makeTask(task)], [changedFile]);
+      expect(result.has(changedFile)).toBe(!accepted);
     },
-    {
-      label: 'glob primary',
-      task: makeTask({ file: 'src/primary/*.ts' }),
-      changedFile: 'src/primary/matched.ts',
-      accepted: true,
-    },
-    {
-      label: 'exact in-bounds',
-      task: makeTask({ file: 'src/primary.ts', scope: { inBounds: ['src/in-bounds.ts'] } }),
-      changedFile: 'src/in-bounds.ts',
-      accepted: true,
-    },
-    {
-      label: 'glob in-bounds',
-      task: makeTask({ file: 'src/primary.ts', scope: { inBounds: ['src/in-bounds/**'] } }),
-      changedFile: 'src/in-bounds/matched.ts',
-      accepted: true,
-    },
-    {
-      label: 'exact approved',
-      task: makeTask({
-        file: 'src/primary.ts',
-        scope: { approvedOutOfBounds: ['generated/exact.ts'] },
-      }),
-      changedFile: 'generated/exact.ts',
-      accepted: true,
-    },
-    {
-      label: 'glob approved',
-      task: makeTask({
-        file: 'src/primary.ts',
-        scope: { approvedOutOfBounds: ['generated/**'] },
-      }),
-      changedFile: 'generated/matched.ts',
-      accepted: true,
-    },
-    {
-      label: 'truly untargeted',
-      task: makeTask({ file: 'src/primary.ts' }),
-      changedFile: 'unrelated/extra.ts',
-      accepted: false,
-    },
-  ])('classifies $label paths with attribution parity', ({ task, changedFile, accepted }) => {
-    const result = outOfBounds([task], [changedFile]);
-    expect(result.has(changedFile)).toBe(!accepted);
-  });
+  );
 
-  it('own file only → empty set', () => {
-    const result = outOfBounds([makeTask({ file: 'src/a.ts' })], ['src/a.ts']);
-    expect(result.size).toBe(0);
-  });
-
-  it('own file + extra file → extra file in set', () => {
-    const result = outOfBounds([makeTask({ file: 'src/a.ts' })], ['src/a.ts', 'src/b.ts']);
-    expect(result).toEqual(new Set(['src/b.ts']));
-  });
-
-  it('file matching approvedOutOfBounds → excluded from result', () => {
-    const task = makeTask({
+  it('excludes matched scope paths while still flagging their untargeted siblings', () => {
+    const approved = makeTask({
       file: 'src/a.ts',
       scope: { outOfBounds: ['src/secrets'], approvedOutOfBounds: ['src/secrets/safe.ts'] },
     });
-    const result = outOfBounds([task], ['src/a.ts', 'src/secrets/safe.ts', 'src/secrets/leak.ts']);
-    expect(result.has('src/secrets/safe.ts')).toBe(false);
-    expect(result.has('src/secrets/leak.ts')).toBe(true);
-  });
+    expect(
+      outOfBounds([approved], ['src/a.ts', 'src/secrets/safe.ts', 'src/secrets/leak.ts']),
+    ).toEqual(new Set(['src/secrets/leak.ts']));
 
-  it('file matching an inBounds glob → excluded from result', () => {
-    const task = makeTask({ file: 'src/a.ts', scope: { inBounds: ['src/feature/**'] } });
-    const result = outOfBounds([task], ['src/a.ts', 'src/feature/widget.ts', 'src/other/leak.ts']);
-    expect(result.has('src/feature/widget.ts')).toBe(false);
-    expect(result.has('src/other/leak.ts')).toBe(true);
+    const inBounds = makeTask({ file: 'src/a.ts', scope: { inBounds: ['src/feature/**'] } });
+    expect(
+      outOfBounds([inBounds], ['src/a.ts', 'src/feature/widget.ts', 'src/other/leak.ts']),
+    ).toEqual(new Set(['src/other/leak.ts']));
   });
 
   it("another brief's target file → excluded even without a dependsOn edge", () => {
@@ -331,6 +274,7 @@ describe('analyzeDriftChain — score formula (deterministic)', () => {
     const update = analyzeDriftChain(state, taskId('T002'), new Set(['src/x.ts', 'src/y.ts']), 0.6);
     const score = update.state.activeChain.score;
     expect(score).toBeCloseTo(0.66, 10);
+    expect(update.emitted).toBeDefined();
   });
 
   it('length 3, 4/6 overlap, 6 unique files: approximate score', () => {
@@ -397,25 +341,6 @@ describe('analyzeDriftChain — emit behavior', () => {
     // T002: overlapping with T001 to extend chain, threshold very low to emit on T002
     const update = analyzeDriftChain(state, taskId('T002'), new Set(['src/b.ts', 'src/c.ts']), 0.0);
     expect(update.emitted?.representativePath).toBe('src/b.ts');
-  });
-});
-
-describe('analyzeDriftChain — threshold', () => {
-  it('score < threshold → no emit', () => {
-    const state = makeState();
-    // length=1, 1 unique file: score = 1/5*0.3 + 1/10*0.2 = 0.06 + 0.02 = 0.08
-    const update = analyzeDriftChain(state, taskId('T001'), new Set(['src/a.ts']), 0.6);
-    expect(update.emitted).toBeUndefined();
-  });
-
-  it('score >= threshold → emit', () => {
-    let state = makeState();
-    const files = new Set(['src/x.ts', 'src/y.ts']);
-    state = analyzeDriftChain(state, taskId('T001'), files, 0.6).state;
-    // T002 will produce score 0.66 (length=2, overlap=1.0, unique=2)
-    const update = analyzeDriftChain(state, taskId('T002'), files, 0.6);
-    expect(update.emitted).toBeDefined();
-    expect(update.state.activeChain.score).toBeGreaterThanOrEqual(0.6);
   });
 });
 

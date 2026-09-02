@@ -24,7 +24,6 @@ import { handleRetryAndEscalation } from './handle.js';
 vi.setConfig({ testTimeout: 60_000 });
 
 let dirs: string[] = [];
-let savedOpenRouterKey: string | undefined;
 
 const preparedIntermediateFactory = makePreparedImplementerFactory({
   preparationId: 'tier0-intermediate-preparation',
@@ -34,19 +33,13 @@ const preparedIntermediateFactory = makePreparedImplementerFactory({
       kind: 'api',
       slot: { role: 'intermediate' },
       preparationId: 'tier0-intermediate-preparation',
-      provider: 'openrouter',
-      endpointOrigin: 'https://openrouter.ai',
+      provider: 'ollama',
+      endpointOrigin: 'http://localhost:11434',
     },
   ],
 });
 
-beforeEach(() => {
-  savedOpenRouterKey = process.env.OPENROUTER_API_KEY;
-});
-
 afterEach(() => {
-  if (savedOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
-  else process.env.OPENROUTER_API_KEY = savedOpenRouterKey;
   for (const d of dirs) cleanupTempDir(d);
   dirs = [];
 });
@@ -160,7 +153,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
         config: makeNoValidationConfig({
           workflow: { maxRetries: 1 },
           escalation: {
-            intermediateProvider: 'openrouter',
+            intermediateProvider: 'ollama',
             intermediateModel: 'x-ai/grok-4',
             enabled: false,
           },
@@ -192,7 +185,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
       },
       implementer: {
         kind: 'cli' as const,
-        tool: 'aider' as const,
+        tool: 'opencode' as const,
         model: 'gpt-4',
         authChannel: 'provider-dependent' as const,
       },
@@ -266,7 +259,6 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
   });
 
   it('intermediate retry succeeds via fetch stub → result carries the intermediate provider/model identity, tokens in implementer category', async () => {
-    process.env.OPENROUTER_API_KEY = 'sk-or-test';
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();
     const { bus, events: busEvents } = makeBusRecorder();
@@ -299,7 +291,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
         config: makeNoValidationConfig({
           workflow: { maxRetries: 1 },
           escalation: {
-            intermediateProvider: 'openrouter',
+            intermediateProvider: 'ollama',
             intermediateModel: 'x-ai/grok-4-fast',
             enabled: true,
           },
@@ -317,17 +309,17 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
 
     expect(result.completed).toBe(true);
     expect(result.method).toBe('escalated-intermediate');
-    // The intermediate tier is a paid call to a separately configured provider/model;
-    // its identity must travel on the result so booking/pricing never default to the
+    // The intermediate tier is a separately configured provider/model; its
+    // identity must travel on the result so booking/pricing never default to the
     // primary implementer (regression for F-418).
     if (result.completed) {
-      expect(result.tool).toBe('openrouter');
+      expect(result.tool).toBe('ollama');
       expect(result.model).toBe('x-ai/grok-4-fast');
     }
 
     const escalateTier0 = busEvents.find((e) => e.type === 'escalate' && e.tier === 0);
     expect(escalateTier0).toBeDefined();
-    expect(escalateTier0).toMatchObject({ type: 'escalate', tier: 0, tool: 'openrouter' });
+    expect(escalateTier0).toMatchObject({ type: 'escalate', tier: 0, tool: 'ollama' });
 
     // Tier 0 succeeded, so Tier 1 never fires.
     expect(busEvents.find((e) => e.type === 'escalate' && e.tier === 1)).toBeUndefined();
@@ -339,7 +331,6 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
   });
 
   it('intermediate retry fails via fetch rejection → falls through to Tier 1', async () => {
-    process.env.OPENROUTER_API_KEY = 'sk-or-test';
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();
     const { bus, events: busEvents } = makeBusRecorder();
@@ -375,7 +366,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
         config: makeNoValidationConfig({
           workflow: { maxRetries: 1 },
           escalation: {
-            intermediateProvider: 'openrouter',
+            intermediateProvider: 'ollama',
             intermediateModel: 'x-ai/grok-4-fast',
             enabled: true,
           },

@@ -1,4 +1,4 @@
-import type { SeatPickerRole } from '../runners/cli-tool-catalog.js';
+import type { SeatPickerRole } from '../runners/seat-roles.js';
 import { includes } from '../../utils/type-guards.js';
 
 export const ALL_SCREENS = ['home', 'workflow', 'summary', 'setup'] as const;

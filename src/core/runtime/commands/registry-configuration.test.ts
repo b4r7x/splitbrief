@@ -2,7 +2,7 @@ import { beforeEach, describe, it, expect } from 'vitest';
 import { createRuntimeCommands } from './registry.js';
 import { makeCtx, noop, runCommandInTest } from '#testing/helpers/runtime-commands.js';
 import type { DiscoveryRefreshSummary, RuntimeConfigSaveResult } from './types.js';
-import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 
 function failedRefreshSummary(
   status: 'fresh' | 'partial' | 'stale' | 'failed' | 'not-run' | 'uninitialized' | 'superseded',
@@ -153,7 +153,31 @@ describe('/mode command', () => {
     },
   );
 
-  it('rejects invalid mode and surfaces an error', async () => {
+  it('accepts the retired instant name as quick and says so', async () => {
+    let savedMode: string | undefined;
+    let feedback: string | undefined;
+    const commands = createRuntimeCommands(
+      makeCtx({
+        setWorkflowMode: (m) => {
+          savedMode = m;
+          return Promise.resolve({ kind: 'saved', ok: true });
+        },
+        setFeedbackMessage: (m) => {
+          feedback = m;
+        },
+      }),
+    );
+    await runCommandInTest({
+      commands: commands,
+      raw: '/mode instant',
+      screen: 'home',
+      onError: noop,
+    });
+    expect(savedMode).toBe('quick');
+    expect(feedback).toBe('instant was merged into quick; workflow mode set to: quick');
+  });
+
+  it('still rejects a value that was never a mode', async () => {
     let savedMode: string | undefined;
     let error: string | undefined;
     const commands = createRuntimeCommands(
@@ -175,6 +199,7 @@ describe('/mode command', () => {
     });
     expect(savedMode).toBeUndefined();
     expect(error).toMatch(/invalid/i);
+    expect(error).toMatch(/turbo/);
   });
 });
 
@@ -285,12 +310,12 @@ describe('/refresh command', () => {
 });
 
 describe('/crew command', () => {
-  it('opens the settings overlay focused on the seat it names', () => {
-    const focused: Array<string | undefined> = [];
+  it('opens the seat picker for a named seat and settings for a bare call', () => {
+    const opened: Array<{ type: string; focus?: string | undefined }> = [];
     const commands = createRuntimeCommands(
       makeCtx({
         openOverlay: (type, focus) => {
-          focused.push(`${type}:${focus ?? ''}`);
+          opened.push({ type, focus });
         },
       }),
     );
@@ -298,8 +323,14 @@ describe('/crew command', () => {
     runCommandInTest({ commands: commands, raw: '/crew', screen: 'home', onError: noop });
     runCommandInTest({ commands: commands, raw: '/crew review', screen: 'home', onError: noop });
     runCommandInTest({ commands: commands, raw: '/planner', screen: 'home', onError: noop });
+    runCommandInTest({ commands: commands, raw: '/implementer', screen: 'home', onError: noop });
 
-    expect(focused).toEqual(['settings:seat:plan', 'settings:seat:review', 'settings:seat:plan']);
+    expect(opened).toEqual([
+      { type: 'settings', focus: 'seat:plan' },
+      { type: 'reviewer-picker', focus: undefined },
+      { type: 'planner-picker', focus: undefined },
+      { type: 'implementer-picker', focus: undefined },
+    ]);
   });
 
   it('refuses a seat the crew does not have', () => {

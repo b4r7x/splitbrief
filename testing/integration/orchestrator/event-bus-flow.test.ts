@@ -2,10 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { TASK_MARKDOWN, CODE_RESPONSE } from '#testing/helpers/faux/shell-runner.js';
+import { makeShellRunnerConfig } from '#testing/helpers/faux/shell-runner.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
@@ -29,23 +28,7 @@ describe('EventBus end-to-end flow', { timeout: 90_000 }, () => {
     const recorded: EngineEvent[] = [];
     const { callbacks } = makeCallbacks();
 
-    const config = makeConfig({
-      planner: {
-        kind: 'shell',
-        command: 'node',
-        args: ['-e', `process.stdout.write(${JSON.stringify(TASK_MARKDOWN)})`],
-      },
-      implementer: {
-        kind: 'shell',
-        command: 'node',
-        args: ['-e', `process.stdout.write(${JSON.stringify(CODE_RESPONSE)})`],
-        model: 'fake-model',
-        contextLength: 4096,
-        temperature: 0,
-      },
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick', persistTranscript: false, maxRetries: 1 },
-    });
+    const config = makeShellRunnerConfig();
     const feature = 'add foo';
     const sessionId = 'event-bus-flow-session';
     const preparationId = 'event-bus-flow-preparation';

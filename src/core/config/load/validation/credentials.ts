@@ -12,7 +12,7 @@ import {
 } from '../../credentials.js';
 import { apiBaseValidationError } from '../../api-base.js';
 import type { ConfigError } from './types.js';
-import type { ActiveRunnerRole } from '../../../runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole } from '../../../runners/seat-roles.js';
 
 function missingApiKeyError(opts: {
   role: ActiveRunnerRole;
@@ -20,7 +20,7 @@ function missingApiKeyError(opts: {
   config: RunnerCredentialConfig;
 }): ConfigError | undefined {
   const { role, path, config } = opts;
-  if (config.kind === 'api' || config.kind === 'agent-sdk') {
+  if (config.kind === 'api') {
     const envVar = config.apiKey ? parseApiKeyEnvRef(config.apiKey) : undefined;
     if (envVar && !process.env[envVar]) {
       return missingEnvRefError(path, envVar);
@@ -32,10 +32,6 @@ function missingApiKeyError(opts: {
   const credentialTarget = missing.envVar
     ? `${path}.apiKey or ${missing.envVar} env var`
     : `${path}.apiKey`;
-
-  if (config.kind === 'agent-sdk') {
-    return { path: `${path}.apiKey`, message: `Agent SDK requires ${credentialTarget}` };
-  }
 
   return {
     path: `${path}.apiKey`,

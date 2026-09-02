@@ -140,7 +140,7 @@ describe('WorkflowScreen review editing', () => {
         expect(ui.lastFrame() ?? '').toContain(REVIEW_HINT);
       });
       const frame = ui.lastFrame() ?? '';
-      // The Ctrl+C cluster left the resting InputFooter; it now lives only in the armed FeedbackRow.
+      // Ctrl+C is hinted only by the armed FeedbackRow, never by the resting InputFooter.
       expect(frame).not.toContain('Ctrl+C');
       expect(frame).not.toContain('tab sections');
 

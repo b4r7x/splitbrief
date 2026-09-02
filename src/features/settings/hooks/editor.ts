@@ -11,6 +11,8 @@ import {
   updateActiveRunner,
 } from '../../../core/config/accessors/active-runner.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
+import { seatEffortChannel } from '../../../core/runners/capabilities.js';
+import { variantChoicesForModelId } from '../../../core/runners/variant-vocabulary.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
 import { configError } from '../../../core/config/errors.js';
 import { useFilterableList, type PageSize } from '../../../hooks/use-filterable-list.js';
@@ -80,6 +82,11 @@ function nextEffort(current: EffortLevel | undefined): EffortLevel | undefined {
   return EFFORT_CYCLE[(EFFORT_CYCLE.indexOf(current) + 1) % EFFORT_CYCLE.length];
 }
 
+function nextVariant(choices: readonly string[], current: string | undefined): string | undefined {
+  const cycle: readonly (string | undefined)[] = [undefined, ...choices];
+  return cycle[(cycle.indexOf(current) + 1) % cycle.length];
+}
+
 /** An unset effort must leave no key behind, so the cleared shape is re-parsed rather than widened. */
 function runnerWithEffort<T extends PlannerConfig | ImplementerConfig>(
   existing: T,
@@ -87,6 +94,15 @@ function runnerWithEffort<T extends PlannerConfig | ImplementerConfig>(
 ): unknown {
   if (effort !== undefined) return { ...existing, effort };
   const { effort: _cleared, ...rest } = existing;
+  return rest;
+}
+
+function runnerWithVariant<T extends PlannerConfig | ImplementerConfig>(
+  existing: T,
+  variant: string | undefined,
+): unknown {
+  if (variant !== undefined) return { ...existing, variant };
+  const { variant: _cleared, ...rest } = existing;
   return rest;
 }
 
@@ -106,6 +122,25 @@ function configWithSeatEffort(
     config: input.config,
     role,
     updater: (existing) => PlannerConfigSchema.parse(runnerWithEffort(existing, input.effort)),
+  });
+}
+
+function configWithSeatVariant(
+  input: Readonly<{ config: Config; seatId: CrewSeatId; variant: string | undefined }>,
+): Config {
+  const role = CREW_SEAT_ROLES[input.seatId];
+  if (role === 'implementer') {
+    return updateActiveRunner({
+      config: input.config,
+      role,
+      updater: (existing) =>
+        ImplementerConfigSchema.parse(runnerWithVariant(existing, input.variant)),
+    });
+  }
+  return updateActiveRunner({
+    config: input.config,
+    role,
+    updater: (existing) => PlannerConfigSchema.parse(runnerWithVariant(existing, input.variant)),
   });
 }
 
@@ -172,12 +207,24 @@ export function useSettingsEditor({
   const cycleEffort = (seatId: CrewSeatId) => {
     enqueueSave(async () => {
       const current = getCurrentConfig();
-      const seatEffort = readActiveRunner({
-        config: current,
-        role: CREW_SEAT_ROLES[seatId],
-      }).effort;
+      const role = CREW_SEAT_ROLES[seatId];
+      const runner = readActiveRunner({ config: current, role });
+      const channel = seatEffortChannel({ runner, role });
+      if (channel === 'effort-flag') {
+        await persist(
+          configWithSeatEffort({ config: current, seatId, effort: nextEffort(runner.effort) }),
+        );
+        return;
+      }
+      if (channel !== 'variant') return;
+      const choices = variantChoicesForModelId(runner.model);
+      if (choices.length === 0) return;
       await persist(
-        configWithSeatEffort({ config: current, seatId, effort: nextEffort(seatEffort) }),
+        configWithSeatVariant({
+          config: current,
+          seatId,
+          variant: nextVariant(choices, runner.variant),
+        }),
       );
     });
   };

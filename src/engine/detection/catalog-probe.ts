@@ -10,12 +10,12 @@ import type {
 import type { ProbeOutcome } from '../../core/discovery/runner-evidence.js';
 import {
   CLI_TOOL_CATALOG,
-  classifyCliAdmittedVersion,
   cliAuthChannelHostStateAccess,
   selectCliAuthChannel,
   type CliAuthChannel,
   type CliToolId,
 } from '../../core/runners/cli-tool-catalog.js';
+import { classifyCliAdmittedVersion } from '../../core/runners/cli-version.js';
 import { createBoundedOutput, type BoundedOutput } from '../../lib/process/bounded-output.js';
 import { killProcess } from '../../lib/process/registry.js';
 import {
@@ -25,11 +25,8 @@ import {
 } from '../../lib/process/spawn/lifecycle.js';
 import { DISCOVERY_SUBPROCESS_TIMEOUT_MS } from '../constants.js';
 import { resolveCustomExecutable } from '../runners/resolve-cli-executable.js';
-import {
-  bridgedCliStatePresent,
-  createSandboxEnv,
-  prependCliExecutableDirectory,
-} from '../runners/sandbox-env.js';
+import { createSandboxEnv, prependCliExecutableDirectory } from '../runners/sandbox-env.js';
+import { bridgedCliStatePresent } from '../runners/sandbox-state-bridge.js';
 import { authChannelRequiresCredential } from '../runners/cli-tools/readiness-probe.js';
 import { isCanonicalCliDeclaredProbe } from '../runners/cli-tools/registry.js';
 import { throwIfAborted } from '../../utils/abort.js';

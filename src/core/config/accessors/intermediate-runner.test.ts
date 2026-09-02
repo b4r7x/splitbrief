@@ -14,7 +14,7 @@ describe('resolveIntermediateRunner', () => {
       },
       escalation: {
         enabled: true,
-        intermediateProvider: 'deepseek',
+        intermediateProvider: 'lm-studio',
         intermediateModel: 'deepseek-v4-flash',
       },
     });
@@ -22,9 +22,9 @@ describe('resolveIntermediateRunner', () => {
     expect(resolveIntermediateRunner(config, { contextLength: 1_000_000 })).toEqual({
       runner: expect.objectContaining({
         kind: 'api',
-        provider: 'deepseek',
-        service: 'deepseek',
-        offering: 'payg',
+        provider: 'lm-studio',
+        service: 'lm-studio',
+        offering: 'local',
         model: 'deepseek-v4-flash',
         contextLength: 1_000_000,
         timeout: 42_000,
@@ -67,7 +67,7 @@ describe('resolveIntermediateRunner', () => {
         makeNoValidationConfig({
           escalation: {
             enabled: false,
-            intermediateProvider: 'deepseek',
+            intermediateProvider: 'lm-studio',
             intermediateModel: 'deepseek-v4-flash',
           },
         }),

@@ -206,7 +206,7 @@ describe('attachCommand', () => {
         startTimeMs: 1,
         lastAliveMs: Date.now(),
         sessionId: 'solo-session',
-        mode: 'instant',
+        mode: 'quick',
         feature: 'solo feature',
         authToken: 'test-auth-token',
       },

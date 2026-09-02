@@ -16,6 +16,7 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { handleSessionSelect, sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 import { makeResumeAuthorityDeps } from '#testing/helpers/factories/state-authority.js';
+import { buildPaletteResults } from './results.js';
 import { buildPaletteSources } from './sources.js';
 
 const noop = () => {};
@@ -164,6 +165,34 @@ describe('buildPaletteSources command items', () => {
     ]);
   });
 
+  it('shows a closed-argument command its grammar hint instead of every option', () => {
+    const items = buildCommandSources([
+      {
+        kind: 'arg',
+        name: '/skills',
+        description: 'Select planner skills',
+        category: 'navigate',
+        args: { kind: 'closed', options: ['a', 'b', 'c'], hint: '<thing …>' },
+        validScreens: ['home'],
+        handler: noop,
+      },
+      {
+        kind: 'arg',
+        name: '/scroll',
+        description: 'Scroll the transcript',
+        category: 'view',
+        args: { kind: 'closed', options: ['a', 'b', 'c'] },
+        validScreens: ['home'],
+        handler: noop,
+      },
+    ]);
+
+    expect(items.map((item) => item.description)).toEqual([
+      expect.stringMatching(/^Select planner skills\s+<thing …>$/),
+      expect.stringMatching(/^Scroll the transcript\s+\[a\|b\|c\]$/),
+    ]);
+  });
+
   it('runs a no-argument command through the runtime command callback', () => {
     const calls: string[] = [];
     const items = buildCommandSources(
@@ -195,31 +224,63 @@ describe('buildPaletteSources registry rows', () => {
     expect(labels.every((label) => label.startsWith('/'))).toBe(true);
   });
 
-  it('lists an alias as its own row that runs the command it stands for', () => {
+  it('folds a bare alias onto its command row instead of listing it twice', () => {
     const calls: string[] = [];
     const items = buildRegistrySources((raw) => calls.push(raw));
 
-    const config = items.find((item) => item.label === '/config');
-    expect(config?.description).toMatch(/\/settings$/);
+    const settings = items.filter((item) => item.label === '/settings (/config)');
+    expect(settings).toHaveLength(1);
+    expect(items.some((item) => item.label === '/config')).toBe(false);
 
-    const planner = items.find((item) => item.label === '/planner');
-    expect(planner?.description).toMatch(/\/crew plan$/);
-    if (planner?.action.kind === 'run') void planner.action.run();
-    expect(calls).toEqual(['/crew plan']);
+    const action = settings[0]?.action;
+    if (action?.kind === 'run') void action.run();
+    expect(calls).toEqual(['/settings']);
   });
 
-  it('prefills an alias whose expansion still needs an argument and runs the ones that do not', () => {
-    const calls: string[] = [];
-    const items = buildRegistrySources((raw) => calls.push(raw));
+  it('reaches an argument-bearing alias through its command row instead of a row of its own', () => {
+    const items = buildRegistrySources();
 
-    const detach = items.find((item) => item.label === '/detach');
-    expect(detach?.description).toMatch(/\/image remove$/);
-    expect(detach?.action).toEqual({ kind: 'prefill', text: '/image remove ' });
+    for (const alias of ['/accept-run', '/reject-run', '/planner', '/implementer', '/reviewer']) {
+      expect(items.some((item) => item.label.includes(alias))).toBe(false);
+    }
 
-    const acceptRun = items.find((item) => item.label === '/accept-run');
-    expect(acceptRun?.action.kind).toBe('run');
-    if (acceptRun?.action.kind === 'run') void acceptRun.action.run();
-    expect(calls).toEqual(['/run accept']);
+    expect(items.find((item) => item.label === '/crew')?.description).toContain(
+      '/planner /implementer /reviewer',
+    );
+    expect(items.find((item) => item.label === '/run')?.description).toContain(
+      '/accept-run /reject-run',
+    );
+
+    expect(items.find((item) => item.label === '/run')?.action).toEqual({
+      kind: 'prefill',
+      text: '/run ',
+    });
+    expect(items.find((item) => item.label === '/crew')?.action).toEqual({
+      kind: 'prefill',
+      text: '/crew ',
+    });
+  });
+
+  it('matches an argument-bearing alias query to its command row', () => {
+    const commandItems = buildRegistrySources();
+
+    for (const { query, label } of [
+      { query: 'planner', label: '/crew' },
+      { query: 'implementer', label: '/crew' },
+      { query: 'reviewer', label: '/crew' },
+      { query: 'accept-run', label: '/run' },
+      { query: 'reject-run', label: '/run' },
+    ]) {
+      const results = buildPaletteResults({
+        query,
+        commandItems,
+        taskItems: [],
+        sessionItems: [],
+        customItems: [],
+        mruIds: [],
+      });
+      expect(results.some((result) => result.label === label)).toBe(true);
+    }
   });
 
   it('offers one prefill row for an argument command instead of one row per option', () => {

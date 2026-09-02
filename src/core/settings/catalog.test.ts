@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SETTINGS_DEFS, SETTINGS_SECTIONS } from './catalog.js';
-import { createDefaultConfig } from '../config/load/io.js';
+import { createDefaultConfig } from '../config/load/defaults.js';
 import { getConfigValue } from '../config/accessors/values.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 
@@ -77,10 +77,13 @@ describe('SETTINGS_DEFS workflow compaction', () => {
 });
 
 describe('SETTINGS_DEFS workflow.mode description', () => {
-  it('reports one planner call for instant and never claims zero', () => {
+  it("states each mode's real planner-call and gate cost", () => {
     const def = SETTINGS_DEFS.find((d) => d.id === 'workflow.mode');
     expect(def).toBeDefined();
-    expect(def?.description).toMatch(/instant \(1,/);
+    expect(def?.description).toMatch(/quick \(1 call/);
+    expect(def?.description).toContain('standard');
+    expect(def?.description).toContain('speckit');
+    expect(def?.description).not.toContain('instant');
     expect(def?.description).not.toContain('0 calls');
   });
 });

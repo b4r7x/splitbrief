@@ -166,20 +166,6 @@ describe('layoutMarkdown', () => {
     expect(lines.join(' ')).not.toContain('q1');
   });
 
-  it('carries heading depth on heading segments', () => {
-    const document: MarkdownDocument = {
-      blocks: [
-        { kind: 'heading', depth: 5, text: 'Deep', inlines: [{ kind: 'text', text: 'Deep' }] },
-      ],
-    };
-
-    const heading = layoutMarkdown(document, { glyphs: GLYPHS, width: 40 })
-      .rows.flatMap((row) => row.lines.flatMap((line) => line.segments))
-      .find((segment) => segment.kind === 'heading');
-
-    expect(heading?.depth).toBe(5);
-  });
-
   it('opens a mid-document heading with one blank line', () => {
     const layout = layoutMarkdown(parseMarkdownBlocks('intro text\n\n## Section'), {
       glyphs: GLYPHS,

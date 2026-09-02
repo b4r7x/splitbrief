@@ -3,11 +3,17 @@ import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import { adviseMode, formatAdvisoryText, type AdvisorResult } from './mode-advisor.js';
 
 describe('adviseMode — risk classification', () => {
-  it('typo in standard suggests instant (downgrade)', () => {
+  it('typo in standard suggests quick (downgrade)', () => {
     const result = adviseMode('fix typo in footer', 'standard');
     expect(result.kind).toBe('downgrade');
-    expect(result.suggestedMode).toBe('instant');
+    expect(result.suggestedMode).toBe('quick');
     expect(result.risk).toBe('trivial');
+  });
+
+  it('marks a trivial prompt so the quick planner gets its narrow-brief hint', () => {
+    const result = adviseMode('fix typo in README', 'quick');
+    expect(result.risk).toBe('trivial');
+    expect(result.kind).toBe('none');
   });
 
   it('auth/security prompt in quick suggests speckit (upgrade)', () => {
@@ -54,8 +60,8 @@ describe('adviseMode — risk classification', () => {
   });
 
   it('low confidence does NOT upgrade or downgrade', () => {
-    // normal risk → confidence 0.60 < 0.65, from 'instant' that would be an upgrade but confidence gate blocks it
-    const result = adviseMode('refactor user settings page', 'instant');
+    // normal risk → confidence 0.60 < 0.65, from 'quick' that would be an upgrade but confidence gate blocks it
+    const result = adviseMode('refactor user settings page', 'quick');
     expect(result.confidence).toBeLessThan(0.65);
     expect(result.kind).not.toBe('upgrade');
     expect(result.kind).not.toBe('downgrade');
@@ -64,8 +70,8 @@ describe('adviseMode — risk classification', () => {
 
 describe('adviseMode — trivial patterns', () => {
   it.each<[string, WorkflowMode, boolean, WorkflowMode]>([
-    ['fix typo in foo', 'standard', true, 'instant'],
-    ['rename foo to bar', 'standard', true, 'instant'],
+    ['fix typo in foo', 'standard', true, 'quick'],
+    ['rename foo to bar', 'standard', true, 'quick'],
     // Long oauth prompt correctly classifies as high risk → upgrade to speckit
     [
       'refactor the entire authentication subsystem to support OAuth 2.0 with PKCE, bearer tokens, and refresh rotation; also fix the typo in the login page header while we are at it',
@@ -73,7 +79,7 @@ describe('adviseMode — trivial patterns', () => {
       true,
       'speckit',
     ],
-    ['fix typo', 'instant', false, 'instant'],
+    ['fix typo', 'quick', false, 'quick'],
   ])(
     'prompt=%s mode=%s → expectAdvice=%s suggested=%s',
     (prompt, mode, expectAdvice, suggested) => {
@@ -96,7 +102,7 @@ describe('adviseMode — trivial patterns', () => {
   it('matches keywords case-insensitively', () => {
     const result = adviseMode('Fix TYPO here', 'standard');
     expect(result.kind).not.toBe('none');
-    expect(result.suggestedMode).toBe('instant');
+    expect(result.suggestedMode).toBe('quick');
   });
 });
 
@@ -155,7 +161,7 @@ describe('formatAdvisoryText', () => {
     const text = formatAdvisoryText(result);
     expect(text).toContain('advisor:');
     expect(text).toContain('likely');
-    expect(text).toContain('instant');
+    expect(text).toContain('quick');
     expect(text).not.toContain('\n');
     expect(text.length).toBeLessThan(80);
   });

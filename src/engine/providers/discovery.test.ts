@@ -15,7 +15,6 @@ let originalOpenAiApiKey: string | undefined;
 
 const VERSION_BY_COMMAND: Readonly<Record<string, string>> = {
   codex: '0.40.0',
-  aider: '0.86.0',
   opencode: '0.5.0',
   kilo: '0.1.0',
 };
@@ -108,7 +107,7 @@ function context(
 }
 
 function nativeContexts(): readonly RunnerDiscoveryContext[] {
-  return [context('codex'), context('aider'), context('opencode'), context('kilo-code')];
+  return [context('codex'), context('opencode'), context('kilo-code')];
 }
 
 async function exactResolver(options: Readonly<{ command: string; projectDir: string }>) {
@@ -156,7 +155,6 @@ afterEach(() => {
 describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
   it('uses the canonical exact-executable path and preserves native parser metadata', async () => {
     const codexLog = join(shimDir, 'codex.args');
-    const aiderLog = join(shimDir, 'aider.args');
     const opencodeLog = join(shimDir, 'opencode.args');
     const kiloLog = join(shimDir, 'kilo.args');
     const opencodeCwdLog = join(shimDir, 'opencode.cwd');
@@ -173,10 +171,6 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
           },
         ],
       }),
-    });
-    installCatalogShim('aider', {
-      logPath: aiderLog,
-      catalog: ['Available Models', '- GPT-4o (openai/gpt-4o)'].join('\n'),
     });
     installCatalogShim('opencode', {
       logPath: opencodeLog,
@@ -205,10 +199,6 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
         supportsReasoning: true,
       },
     ]);
-    expect(attemptFor(attempts, 'aider')?.outcome).toEqual({
-      kind: 'success',
-      value: [{ id: 'openai/gpt-4o', nativeOrder: 0 }],
-    });
     expect(successfulModels(attempts, 'opencode')?.map((model) => model.id)).toEqual([
       'anthropic/claude-3-5-sonnet',
       'openai/gpt-4o',
@@ -218,7 +208,6 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
       'kilo/openai/gpt-4o',
     ]);
     expect(loggedArgs(codexLog)).toEqual(['--version|', 'debug|models|--bundled|']);
-    expect(loggedArgs(aiderLog)).toEqual(['--version|', '--list-models||']);
     expect(loggedArgs(opencodeLog)).toEqual(['--version|', 'models|']);
     expect(loggedArgs(kiloLog)).toEqual(['--version|', 'models|']);
     const catalogCwd = readFileSync(opencodeCwdLog, 'utf8').trim();
@@ -229,7 +218,6 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
 
   it.each([
     ['codex', '0.39.9'],
-    ['aider', '0.85.9'],
     ['opencode', '0.4.9'],
     ['kilo-code', '0.0.9'],
   ] as const)(
@@ -272,49 +260,19 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
     expect(loggedArgs(logPath)).toEqual(['--version|', 'debug|models|--bundled|']);
   });
 
-  it.each([['aider', 'broken-version']] as const)(
-    'does not spawn a %s catalog for an unlabeled malformed version',
-    async (tool, version) => {
-      const logPath = join(shimDir, `${tool}.args`);
-      installCatalogShim(tool, { logPath, version, catalog: 'must-not-run/model' });
-
-      await discoverAllCliTools({
-        contexts: [context(tool)],
-        projectDir,
-        resolveExecutable: exactResolver,
-      });
-
-      expect(loggedArgs(logPath)).toEqual(['--version|']);
-    },
-  );
-
-  for (const tool of ['codex', 'aider', 'opencode', 'kilo-code'] as const) {
+  for (const tool of ['codex', 'opencode', 'kilo-code'] as const) {
     const command = tool === 'kilo-code' ? 'kilo' : tool;
-    const versionLabel = tool === 'codex' ? 'codex-cli' : tool === 'aider' ? 'aider' : undefined;
+    const versionLabel = tool === 'codex' ? 'codex-cli' : undefined;
     const canonicalVersionOutput = (version: string) =>
       versionLabel === undefined ? version : `${versionLabel} ${version}`;
-    const admittedVersion =
-      tool === 'codex'
-        ? '0.40.0'
-        : tool === 'aider'
-          ? '0.86.0'
-          : tool === 'opencode'
-            ? '0.5.0'
-            : '0.1.0';
-    const catalogArgv =
-      tool === 'codex'
-        ? 'debug|models|--bundled|'
-        : tool === 'aider'
-          ? '--list-models||'
-          : 'models|';
+    const admittedVersion = tool === 'codex' ? '0.40.0' : tool === 'opencode' ? '0.5.0' : '0.1.0';
+    const catalogArgv = tool === 'codex' ? 'debug|models|--bundled|' : 'models|';
     const catalog =
       tool === 'codex'
         ? JSON.stringify({ models: [{ id: 'admitted-model' }] })
-        : tool === 'aider'
-          ? '- OpenAI (openai/admitted-model)'
-          : tool === 'kilo-code'
-            ? 'kilo/provider/admitted-model'
-            : 'provider/admitted-model';
+        : tool === 'kilo-code'
+          ? 'kilo/provider/admitted-model'
+          : 'provider/admitted-model';
 
     for (const versionCase of [
       {
@@ -395,11 +353,9 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
 
   it('allows fixed refresh argv only on manual OpenCode and Kilo discovery', async () => {
     const codexLog = join(shimDir, 'codex.args');
-    const aiderLog = join(shimDir, 'aider.args');
     const opencodeLog = join(shimDir, 'opencode.args');
     const kiloLog = join(shimDir, 'kilo.args');
     installCatalogShim('codex', { logPath: codexLog, catalog: JSON.stringify({ models: [] }) });
-    installCatalogShim('aider', { logPath: aiderLog, catalog: '' });
     installCatalogShim('opencode', { logPath: opencodeLog, catalog: '' });
     installCatalogShim('kilo', { logPath: kiloLog, catalog: '' });
 
@@ -411,7 +367,6 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
     });
 
     expect(loggedArgs(codexLog)).toEqual(['--version|', 'debug|models|--bundled|']);
-    expect(loggedArgs(aiderLog)).toEqual(['--version|', '--list-models||']);
     expect(loggedArgs(opencodeLog)).toEqual(['--version|', 'models|--refresh|']);
     expect(loggedArgs(kiloLog)).toEqual(['--version|', 'models|--refresh|']);
   });

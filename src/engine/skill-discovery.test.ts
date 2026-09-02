@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SkillMeta } from '../core/skills/types.js';
@@ -32,226 +32,301 @@ const { discoverSkills, loadSkillContent, buildSkillsSection } = await import(
   './skill-discovery.js'
 );
 
+const OUTSIDE = join(import.meta.dirname, '.tmp-skills-outside');
+
+afterEach(() => {
+  rmSync(OUTSIDE, { recursive: true, force: true });
+});
+
+function projectRoot(tool: string): string {
+  return join(TMP, tool, 'skills');
+}
+
+function globalRoot(...segments: string[]): string {
+  return join(FAKE_HOME, ...segments, 'skills');
+}
+
+function writeFlatSkill(root: string, id: string, frontmatter: string, body = 'Content'): void {
+  mkdirSync(root, { recursive: true });
+  writeFileSync(join(root, `${id}.md`), `---\n${frontmatter}\n---\n${body}`);
+}
+
+function writeSkillDir(parent: string, id: string, frontmatter: string, body = 'Content'): string {
+  const dir = join(parent, id);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'SKILL.md'), `---\n${frontmatter}\n---\n${body}`);
+  return dir;
+}
+
 describe('discoverSkills', () => {
-  it('discovers project claude-code skills from flat .md files', async () => {
-    const skillsDir = join(TMP, '.claude', 'skills');
-    mkdirSync(skillsDir, { recursive: true });
-    writeFileSync(
-      join(skillsDir, 'test-skill.md'),
-      '---\nname: Test Skill\ndescription: A test\n---\nContent',
+  it('discovers project skills from every project root', async () => {
+    writeFlatSkill(projectRoot(SPLITBRIEF_DIR), 'sb-skill', 'name: SB\ndescription: d');
+    writeFlatSkill(projectRoot('.claude'), 'cc-skill', 'name: CC\ndescription: d');
+    writeFlatSkill(projectRoot('.agents'), 'ag-skill', 'name: AG\ndescription: d');
+
+    const skills = await discoverSkills(TMP);
+    expect(skills.map((s: SkillMeta) => s.id).sort()).toEqual(['ag-skill', 'cc-skill', 'sb-skill']);
+    expect(skills.every((s: SkillMeta) => s.scope === 'project')).toBe(true);
+  });
+
+  it('discovers global skills from every global root', async () => {
+    writeFlatSkill(globalRoot(SPLITBRIEF_DIR), 'g-sb', 'name: SB\ndescription: d');
+    writeFlatSkill(globalRoot('.claude'), 'g-cc', 'name: CC\ndescription: d');
+    writeFlatSkill(globalRoot('.agents'), 'g-ag', 'name: AG\ndescription: d');
+    writeFlatSkill(globalRoot('.codex'), 'g-cx', 'name: CX\ndescription: d');
+    writeFlatSkill(globalRoot('.config', 'opencode'), 'g-oc', 'name: OC\ndescription: d');
+
+    const skills = await discoverSkills(TMP);
+    expect(skills.map((s: SkillMeta) => s.id).sort()).toEqual([
+      'g-ag',
+      'g-cc',
+      'g-cx',
+      'g-oc',
+      'g-sb',
+    ]);
+    expect(skills.every((s: SkillMeta) => s.scope === 'global')).toBe(true);
+  });
+
+  it('project scope outranks global for the same id', async () => {
+    writeFlatSkill(globalRoot('.claude'), 'shared', 'name: Global Version\ndescription: g');
+    writeFlatSkill(projectRoot('.claude'), 'shared', 'name: Project Version\ndescription: p');
+
+    const skills = await discoverSkills(TMP);
+    expect(skills.length).toBe(1);
+    expect(skills[0]?.scope).toBe('project');
+    expect(skills[0]?.name).toBe('Project Version');
+  });
+
+  it('splitbrief outranks claude outranks agents within a scope', async () => {
+    writeFlatSkill(projectRoot(SPLITBRIEF_DIR), 'first', 'name: P Splitbrief\ndescription: d');
+    writeFlatSkill(projectRoot('.claude'), 'first', 'name: P Claude\ndescription: d');
+    writeFlatSkill(projectRoot('.agents'), 'first', 'name: P Agents\ndescription: d');
+    writeFlatSkill(projectRoot('.claude'), 'second', 'name: P Claude 2\ndescription: d');
+    writeFlatSkill(projectRoot('.agents'), 'second', 'name: P Agents 2\ndescription: d');
+
+    writeFlatSkill(globalRoot(SPLITBRIEF_DIR), 'g-first', 'name: G Splitbrief\ndescription: d');
+    writeFlatSkill(globalRoot('.claude'), 'g-first', 'name: G Claude\ndescription: d');
+    writeFlatSkill(globalRoot('.agents'), 'g-first', 'name: G Agents\ndescription: d');
+    writeFlatSkill(globalRoot('.codex'), 'g-second', 'name: G Codex\ndescription: d');
+    writeFlatSkill(
+      globalRoot('.config', 'opencode'),
+      'g-second',
+      'name: G Opencode\ndescription: d',
     );
 
-    const skills = await discoverSkills('claude-code', TMP);
-    const proj = skills.filter((s: SkillMeta) => s.scope === 'project');
-    expect(proj.length).toBe(1);
-    expect(proj[0]?.id).toBe('test-skill');
-    expect(proj[0]?.name).toBe('Test Skill');
+    const skills = await discoverSkills(TMP);
+    const byId = new Map(skills.map((s: SkillMeta) => [s.id, s.name]));
+    expect(skills.length).toBe(4);
+    expect(byId.get('first')).toBe('P Splitbrief');
+    expect(byId.get('second')).toBe('P Claude 2');
+    expect(byId.get('g-first')).toBe('G Splitbrief');
+    expect(byId.get('g-second')).toBe('G Codex');
+  });
+
+  it('orders project entries before global entries', async () => {
+    writeFlatSkill(globalRoot('.claude'), 'g-one', 'name: G One\ndescription: d');
+    writeFlatSkill(globalRoot('.agents'), 'g-two', 'name: G Two\ndescription: d');
+    writeFlatSkill(projectRoot('.claude'), 'p-one', 'name: P One\ndescription: d');
+
+    const skills = await discoverSkills(TMP);
+    expect(skills.map((s: SkillMeta) => s.scope)).toEqual(['project', 'global', 'global']);
   });
 
   it('tags discovered project skills with the project directory and reads them confined', async () => {
-    const skillsDir = join(TMP, '.claude', 'skills');
-    mkdirSync(skillsDir, { recursive: true });
-    writeFileSync(
-      join(skillsDir, 'confined.md'),
-      '---\nname: Confined\ndescription: Read via confinement\n---\nConfined body',
+    writeFlatSkill(
+      projectRoot('.claude'),
+      'confined',
+      'name: Confined\ndescription: Read via confinement',
+      'Confined body',
     );
 
-    const skills = await discoverSkills('claude-code', TMP);
-    const proj = skills.find((s: SkillMeta) => s.scope === 'project');
-    expect(proj?.projectDir).toBe(TMP);
+    const skills = await discoverSkills(TMP);
+    expect(skills[0]?.projectDir).toBe(TMP);
 
     const content = await loadSkillContent(skills);
     expect(content).toContain('### Confined');
     expect(content).toContain('Confined body');
   });
 
-  it('discovers claude-code skills from subdirectory SKILL.md', async () => {
-    const skillDir = join(TMP, '.claude', 'skills', 'my-skill');
-    mkdirSync(skillDir, { recursive: true });
-    writeFileSync(
-      join(skillDir, 'SKILL.md'),
-      '---\nname: My Skill\ndescription: Sub skill\n---\nContent',
-    );
+  it('keeps a SKILL.md that declares only a description, naming it after its directory', async () => {
+    writeSkillDir(projectRoot('.claude'), 'desc-only', 'description: only a description');
 
-    const skills = await discoverSkills('claude-code', TMP);
-    const proj = skills.filter((s: SkillMeta) => s.scope === 'project');
-    expect(proj.length).toBe(1);
-    expect(proj[0]?.id).toBe('my-skill');
-  });
-
-  it('discovers global claude-code skills', async () => {
-    const globalDir = join(FAKE_HOME, '.claude', 'skills');
-    mkdirSync(globalDir, { recursive: true });
-    writeFileSync(
-      join(globalDir, 'global-skill.md'),
-      '---\nname: Global Skill\ndescription: From home\n---\nContent',
-    );
-
-    const skills = await discoverSkills('claude-code', TMP);
+    const skills = await discoverSkills(TMP);
     expect(skills.length).toBe(1);
-    expect(skills[0]?.scope).toBe('global');
-    expect(skills[0]?.id).toBe('global-skill');
-  });
-
-  it('project skills override global skills with same id', async () => {
-    const globalDir = join(FAKE_HOME, '.claude', 'skills');
-    mkdirSync(globalDir, { recursive: true });
-    writeFileSync(
-      join(globalDir, 'shared.md'),
-      '---\nname: Global Version\ndescription: From home\n---\nGlobal',
-    );
-
-    const projDir = join(TMP, '.claude', 'skills');
-    mkdirSync(projDir, { recursive: true });
-    writeFileSync(
-      join(projDir, 'shared.md'),
-      '---\nname: Project Version\ndescription: From project\n---\nProject',
-    );
-
-    const skills = await discoverSkills('claude-code', TMP);
-    const shared = skills.filter((s: SkillMeta) => s.id === 'shared');
-    expect(shared.length).toBe(1);
-    expect(shared[0]?.scope).toBe('project');
-    expect(shared[0]?.name).toBe('Project Version');
-  });
-
-  it('merges global and project skills', async () => {
-    const globalDir = join(FAKE_HOME, '.claude', 'skills');
-    mkdirSync(globalDir, { recursive: true });
-    writeFileSync(
-      join(globalDir, 'only-global.md'),
-      '---\nname: Only Global\ndescription: G\n---\nContent',
-    );
-
-    const projDir = join(TMP, '.claude', 'skills');
-    mkdirSync(projDir, { recursive: true });
-    writeFileSync(
-      join(projDir, 'only-project.md'),
-      '---\nname: Only Project\ndescription: P\n---\nContent',
-    );
-
-    const skills = await discoverSkills('claude-code', TMP);
-    expect(skills.length).toBe(2);
-    expect(skills.find((s: SkillMeta) => s.id === 'only-project')?.scope).toBe('project');
-    expect(skills.find((s: SkillMeta) => s.id === 'only-global')?.scope).toBe('global');
-  });
-
-  it('discovers codex AGENTS.md', async () => {
-    writeFileSync(
-      join(TMP, 'AGENTS.md'),
-      '---\nname: Agent Rules\ndescription: Root rules\n---\nContent',
-    );
-
-    const skills = await discoverSkills('codex', TMP);
-    const proj = skills.filter((s: SkillMeta) => s.scope === 'project');
-    expect(proj.length).toBe(1);
-    expect(proj[0]?.id).toBe('agents-root');
-  });
-
-  it('discovers aider CONVENTIONS.md', async () => {
-    writeFileSync(
-      join(TMP, 'CONVENTIONS.md'),
-      '---\nname: Conventions\ndescription: Project conventions\n---\nContent',
-    );
-
-    const skills = await discoverSkills('aider', TMP);
-    expect(skills.length).toBe(1);
-    expect(skills[0]?.id).toBe('conventions');
-    expect(skills[0]?.scope).toBe('project');
-  });
-
-  it('surfaces a non-ENOENT CONVENTIONS.md read error without crashing discovery', async () => {
-    // A directory at the expected file path makes readFile fail with EISDIR (non-ENOENT).
-    const convPath = join(TMP, 'CONVENTIONS.md');
-    mkdirSync(convPath, { recursive: true });
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-
-    try {
-      const skills = await discoverSkills('aider', TMP);
-      expect(skills).toEqual([]);
-      const warned = stderrSpy.mock.calls.some((c) => String(c[0]).includes('CONVENTIONS.md'));
-      expect(warned).toBe(true);
-    } finally {
-      stderrSpy.mockRestore();
-    }
-  });
-
-  it('falls back to .splitbrief/skills for shell planner', async () => {
-    const skillsDir = join(TMP, SPLITBRIEF_DIR, 'skills');
-    mkdirSync(skillsDir, { recursive: true });
-    writeFileSync(
-      join(skillsDir, 'custom.md'),
-      '---\nname: Custom\ndescription: Custom skill\n---\nContent',
-    );
-
-    const skills = await discoverSkills('shell', TMP);
-    const proj = skills.filter((s: SkillMeta) => s.scope === 'project');
-    expect(proj.length).toBe(1);
-    expect(proj[0]?.id).toBe('custom');
-  });
-
-  it('discovers skills from symlinked directories', async () => {
-    const realDir = join(TMP, '__real-skill');
-    mkdirSync(realDir, { recursive: true });
-    writeFileSync(
-      join(realDir, 'SKILL.md'),
-      '---\nname: Symlinked\ndescription: Via symlink\n---\nContent',
-    );
-
-    const globalDir = join(FAKE_HOME, '.claude', 'skills');
-    mkdirSync(globalDir, { recursive: true });
-    symlinkSync(realDir, join(globalDir, 'symlinked-skill'));
-
-    const skills = await discoverSkills('claude-code', TMP);
-    expect(skills.length).toBe(1);
-    expect(skills[0]?.id).toBe('symlinked-skill');
-    expect(skills[0]?.scope).toBe('global');
-  });
-
-  it('returns empty array when no skills exist', async () => {
-    expect(await discoverSkills('claude-code', TMP)).toEqual([]);
-  });
-
-  it('skips files without valid frontmatter', async () => {
-    const skillsDir = join(TMP, '.claude', 'skills');
-    mkdirSync(skillsDir, { recursive: true });
-    writeFileSync(join(skillsDir, 'bad.md'), '# No frontmatter');
-    writeFileSync(join(skillsDir, 'good.md'), '---\nname: Good\ndescription: Valid\n---\nContent');
-
-    const skills = await discoverSkills('claude-code', TMP);
-    const proj = skills.filter((s: SkillMeta) => s.scope === 'project');
-    expect(proj.length).toBe(1);
-    expect(proj[0]?.name).toBe('Good');
-  });
-
-  it('skips skill files when frontmatter omits name', async () => {
-    const skillsDir = join(TMP, '.claude', 'skills');
-    mkdirSync(skillsDir, { recursive: true });
-    writeFileSync(
-      join(skillsDir, 'no-name.md'),
-      '---\ndescription: Missing name field\n---\nContent',
-    );
-    writeFileSync(
-      join(skillsDir, 'named.md'),
-      '---\nname: Named\ndescription: Has name\n---\nContent',
-    );
-
-    const skills = await discoverSkills('claude-code', TMP);
-    const proj = skills.filter((s: SkillMeta) => s.scope === 'project');
-    expect(proj.map((s) => s.id)).toEqual(['named']);
-    expect(proj[0]?.name).toBe('Named');
-    expect(proj[0]?.description).toBe('Has name');
+    expect(skills[0]?.id).toBe('desc-only');
+    expect(skills[0]?.name).toBe('desc-only');
+    expect(skills[0]?.description).toBe('only a description');
   });
 
   it('uses empty description when frontmatter omits description', async () => {
-    const skillsDir = join(TMP, '.claude', 'skills');
-    mkdirSync(skillsDir, { recursive: true });
-    writeFileSync(join(skillsDir, 'no-desc.md'), '---\nname: No Desc\n---\nContent');
+    writeFlatSkill(projectRoot('.claude'), 'no-desc', 'name: No Desc');
 
-    const skills = await discoverSkills('claude-code', TMP);
-    const skill = skills.find((s: SkillMeta) => s.id === 'no-desc');
-    expect(skill?.name).toBe('No Desc');
-    expect(skill?.description).toBe('');
+    const skills = await discoverSkills(TMP);
+    expect(skills[0]?.name).toBe('No Desc');
+    expect(skills[0]?.description).toBe('');
+  });
+
+  it('skips files without any frontmatter block', async () => {
+    const root = projectRoot('.claude');
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, 'bad.md'), '# No frontmatter');
+    writeFlatSkill(root, 'good', 'name: Good\ndescription: Valid');
+
+    const skills = await discoverSkills(TMP);
+    expect(skills.map((s: SkillMeta) => s.id)).toEqual(['good']);
+  });
+
+  it('keeps a skill whose frontmatter is not valid YAML, warning about the fallback', async () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    try {
+      writeSkillDir(
+        projectRoot('.claude'),
+        'jargon-leak',
+        'name: Jargon Leak\ndescription: Use when auditing prose. Triggers: "jargon", "buzzword"',
+      );
+
+      const skills = await discoverSkills(TMP);
+      expect(skills.map((s: SkillMeta) => s.id)).toEqual(['jargon-leak']);
+      expect(skills[0]?.name).toBe('Jargon Leak');
+      expect(skills[0]?.description).toBe(
+        'Use when auditing prose. Triggers: "jargon", "buzzword"',
+      );
+      expect(stderr).toHaveBeenCalled();
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it('finds a nested plugin-style skill', async () => {
+    writeSkillDir(
+      join(projectRoot('.claude'), 'pack'),
+      'nested-skill',
+      'name: Nested\ndescription: d',
+    );
+
+    const skills = await discoverSkills(TMP);
+    expect(skills.map((s: SkillMeta) => s.id)).toEqual(['nested-skill']);
+  });
+
+  it('finds a skill nested at the deepest scanned level', async () => {
+    writeSkillDir(
+      join(projectRoot('.claude'), 'a', 'b', 'c'),
+      'deep-skill',
+      'name: Deep\ndescription: d',
+    );
+
+    const skills = await discoverSkills(TMP);
+    expect(skills.map((s: SkillMeta) => s.id)).toEqual(['deep-skill']);
+  });
+
+  it('stops before a skill nested one level past the scan depth', async () => {
+    writeSkillDir(
+      join(projectRoot('.claude'), 'a', 'b', 'c', 'd'),
+      'too-deep',
+      'name: Too Deep\ndescription: d',
+    );
+
+    expect(await discoverSkills(TMP)).toEqual([]);
+  });
+
+  it('stops descending into a directory that is itself a skill', async () => {
+    const outer = writeSkillDir(projectRoot('.claude'), 'outer', 'name: Outer\ndescription: d');
+    writeSkillDir(outer, 'inner', 'name: Inner\ndescription: d');
+
+    const skills = await discoverSkills(TMP);
+    expect(skills.map((s: SkillMeta) => s.id)).toEqual(['outer']);
+  });
+
+  it('ignores nested loose .md files', async () => {
+    const root = projectRoot('.claude');
+    writeFlatSkill(root, 'flat', 'name: Flat\ndescription: d');
+    writeFlatSkill(join(root, 'pack'), 'README', 'name: Readme\ndescription: d');
+
+    const skills = await discoverSkills(TMP);
+    expect(skills.map((s: SkillMeta) => s.id)).toEqual(['flat']);
+  });
+
+  it('skips node_modules and dot-directories inside a root', async () => {
+    const root = projectRoot('.claude');
+    writeSkillDir(join(root, 'node_modules'), 'vendored', 'name: Vendored\ndescription: d');
+    writeSkillDir(join(root, '.hidden'), 'buried', 'name: Buried\ndescription: d');
+    writeSkillDir(root, 'visible', 'name: Visible\ndescription: d');
+
+    const skills = await discoverSkills(TMP);
+    expect(skills.map((s: SkillMeta) => s.id)).toEqual(['visible']);
+  });
+
+  it('follows a symlinked skill directory in a global root', async () => {
+    const realDir = writeSkillDir(join(TMP, '__real'), 'target', 'name: Symlinked\ndescription: d');
+    const root = globalRoot('.claude');
+    mkdirSync(root, { recursive: true });
+    symlinkSync(realDir, join(root, 'symlinked-skill'));
+
+    const skills = await discoverSkills(TMP);
+    expect(skills.map((s: SkillMeta) => s.id)).toEqual(['symlinked-skill']);
+    expect(skills[0]?.scope).toBe('global');
+  });
+
+  it('drops a project symlink that resolves outside the project', async () => {
+    const realDir = writeSkillDir(
+      OUTSIDE,
+      'escaped',
+      'name: Escaped\ndescription: d',
+      'Escaped body',
+    );
+    const root = projectRoot('.claude');
+    mkdirSync(root, { recursive: true });
+    symlinkSync(realDir, join(root, 'linked-out'));
+
+    expect(await discoverSkills(TMP)).toEqual([]);
+  });
+
+  it('drops a project skill root that is itself a symlink out of the project', async () => {
+    mkdirSync(OUTSIDE, { recursive: true });
+    writeSkillDir(OUTSIDE, 'escaped', 'name: Escaped\ndescription: d', 'Escaped body');
+    mkdirSync(join(TMP, '.claude'), { recursive: true });
+    symlinkSync(OUTSIDE, projectRoot('.claude'));
+
+    expect(await discoverSkills(TMP)).toEqual([]);
+  });
+
+  it('keeps a project symlink that resolves inside the project confined', async () => {
+    const realDir = writeSkillDir(join(TMP, '__real'), 'inside', 'name: Inside\ndescription: d');
+    const root = projectRoot('.claude');
+    mkdirSync(root, { recursive: true });
+    symlinkSync(realDir, join(root, 'linked-in'));
+
+    const skills = await discoverSkills(TMP);
+    expect(skills.map((s: SkillMeta) => s.id)).toEqual(['linked-in']);
+    expect(skills[0]?.projectDir).toBe(TMP);
+  });
+
+  it('emits the AGENTS.md pseudo-entry when the file exists', async () => {
+    writeFileSync(
+      join(TMP, 'AGENTS.md'),
+      '---\nname: Agent Rules\ndescription: Root rules\n---\nC',
+    );
+
+    const skills = await discoverSkills(TMP);
+    expect(skills.map((s: SkillMeta) => s.id)).toEqual(['agents-root']);
+    expect(skills[0]?.scope).toBe('project');
+    expect(skills[0]?.name).toBe('Agent Rules');
+  });
+
+  it('lets a real skill named agents-root win over the AGENTS.md pseudo-entry', async () => {
+    writeFileSync(
+      join(TMP, 'AGENTS.md'),
+      '---\nname: Agent Rules\ndescription: Root rules\n---\nC',
+    );
+    writeFlatSkill(projectRoot('.claude'), 'agents-root', 'name: Real Root\ndescription: d');
+
+    const skills = await discoverSkills(TMP);
+    expect(skills.map((s: SkillMeta) => s.id)).toEqual(['agents-root']);
+    expect(skills[0]?.name).toBe('Real Root');
+  });
+
+  it('returns an empty array when nothing exists', async () => {
+    expect(await discoverSkills(TMP)).toEqual([]);
   });
 });
 
@@ -400,7 +475,7 @@ describe('buildSkillsSection', () => {
     ];
 
     const section = await buildSkillsSection(skills);
-    expect(section.startsWith('## Active Project Skills')).toBeTruthy();
+    expect(section).toMatch(/^## Active Project Skills/);
     expect(section).toContain('### Test');
     expect(section).toContain('Body');
   });

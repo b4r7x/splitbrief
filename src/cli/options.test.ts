@@ -136,9 +136,31 @@ describe('runner selection help', () => {
     expect(idsListedInHelp(label)).toEqual(admitted);
   });
 
-  it('offers ollama-cloud for both roles', () => {
-    expect(idsListedInHelp('Planner tool')).toContain('ollama-cloud');
-    expect(idsListedInHelp('Implementer provider')).toContain('ollama-cloud');
+  it('lists the surviving ids, and no removed one', () => {
+    expect(idsListedInHelp('Planner tool')).toEqual([
+      'claude-code',
+      'codex',
+      'opencode',
+      'copilot',
+      'kilo-code',
+      'cursor',
+      'command-code',
+      'shell',
+      'agent',
+    ]);
+    expect(idsListedInHelp('Implementer provider')).toEqual([
+      'claude-code',
+      'codex',
+      'opencode',
+      'copilot',
+      'kilo-code',
+      'cursor',
+      'command-code',
+      'ollama',
+      'lm-studio',
+      'shell',
+      'agent',
+    ]);
   });
 });
 

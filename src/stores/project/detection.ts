@@ -1,13 +1,11 @@
+import type { DetectionLanePublication } from '../../engine/detection/lane-channel.js';
+import type { DetectionServiceResult } from '../../engine/detection/service.js';
+import { modelCacheStore } from '../discovery/model-cache/state.js';
 import type {
-  DetectionLanePublication,
-  DetectionServiceResult,
-} from '../../engine/detection/service.js';
-import {
-  modelCacheStore,
-  type DetectionStoreHydration,
-  type DiscoveryRefreshRequest,
-  type DiscoverySourceContexts,
-} from '../discovery/model-cache.js';
+  DetectionStoreHydration,
+  DiscoveryRefreshRequest,
+  DiscoverySourceContexts,
+} from '../discovery/model-cache/types.js';
 import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
 import type { ConfiguredProviderRuntime } from '../../engine/detection/provider-outcomes.js';
 

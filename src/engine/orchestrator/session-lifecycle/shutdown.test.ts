@@ -190,37 +190,7 @@ describe('shutdownWorkflow — interrupted-task rollback', () => {
     expect(existsSync(join(projectDir, 'src/b.ts'))).toBe(false);
   });
 
-  it('restores a pre-dirty attributed file to its exact pre-task content', async () => {
-    const projectDir = createTempDir('session-lifecycle-test');
-    dirs.push(projectDir);
-    createTestGitRepo(projectDir, { 'src/a.ts': 'committed a\n' });
-    const sessionId = 'sess-dirty';
-    ensureSessionDir(projectDir, sessionId);
-
-    writeProjectFile(projectDir, 'src/a.ts', 'user edit a\n');
-    const task = makeTask({
-      id: 'T001',
-      action: 'modify',
-      file: 'src/a.ts',
-      scope: { inBounds: ['src/generated.ts'] },
-    });
-    const trackedState = await stateWithActiveTaskSnapshot(projectDir, [task]);
-
-    writeProjectFile(projectDir, 'src/a.ts', 'agent a\n');
-    writeProjectFile(projectDir, 'src/generated.ts', 'agent generated\n');
-
-    await shutdownWorkflow({
-      projectDir,
-      sessionId,
-      getTrackedState: () => trackedState,
-      getCurrentTask: () => ({ file: 'src/a.ts', action: 'modify' }),
-    });
-
-    expect(readFileSync(join(projectDir, 'src/a.ts'), 'utf-8')).toBe('user edit a\n');
-    expect(existsSync(join(projectDir, 'src/generated.ts'))).toBe(false);
-  });
-
-  it('restores from an active task snapshot after state is reloaded', async () => {
+  it('restores a pre-dirty attributed file to its exact pre-task content after state is reloaded', async () => {
     const projectDir = createTempDir('session-lifecycle-test');
     dirs.push(projectDir);
     createTestGitRepo(projectDir, { 'src/a.ts': 'committed a\n' });

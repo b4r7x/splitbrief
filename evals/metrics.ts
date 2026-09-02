@@ -243,6 +243,80 @@ export function collectGreenRunAggregates(comparisons: ScenarioComparison[]): Gr
   return { greenRunsWithFindings, greenRunsCriticalFindings };
 }
 
+function sum(values: number[]): number {
+  return values.reduce((total, value) => total + value, 0);
+}
+
+function sumOrNull(values: number[]): number | null {
+  return values.length > 0 ? sum(values) : null;
+}
+
+function average(values: number[]): number {
+  return values.length > 0 ? sum(values) / values.length : 0;
+}
+
+function roundTenth(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+export function aggregateComparisons(comparisons: ScenarioComparison[]): EvalReport['aggregate'] {
+  const pricedBaselines = comparisons.filter(
+    (comparison) => comparison.baseline.cost.pricingAvailable,
+  );
+  const pricedRouted = comparisons.filter((comparison) => comparison.routed.cost.pricingAvailable);
+  const pricedPairs = comparisons.filter(
+    (comparison) =>
+      comparison.baseline.cost.pricingAvailable && comparison.routed.cost.pricingAvailable,
+  );
+  const greenRuns = collectGreenRunAggregates(comparisons);
+
+  return {
+    avgCostSavingsPercent:
+      pricedPairs.length > 0
+        ? roundTenth(average(pricedPairs.map((comparison) => comparison.costSavingsPercent)))
+        : null,
+    avgQualityRetentionPercent: roundTenth(
+      average(comparisons.map((comparison) => comparison.qualityRetentionPercent)),
+    ),
+    totalBaselineCostUSD: sumOrNull(
+      pricedBaselines.map((comparison) => comparison.baselineCostUSD),
+    ),
+    totalRoutedCostUSD: sumOrNull(pricedRouted.map((comparison) => comparison.routedCostUSD)),
+    totalSavingsUSD: sumOrNull(pricedPairs.map((comparison) => comparison.savingsUSD)),
+    scenariosRun: comparisons.length,
+    scenariosWhereRoutedMatchedBaseline: comparisons.filter(
+      (comparison) => comparison.qualityRetentionPercent >= 100,
+    ).length,
+    avgBaselineFirstPassRatePercent: roundTenth(
+      average(comparisons.map((comparison) => comparison.baseline.outcome.firstPassRate)) * 100,
+    ),
+    avgRoutedFirstPassRatePercent: roundTenth(
+      average(comparisons.map((comparison) => comparison.routed.outcome.firstPassRate)) * 100,
+    ),
+    totalRetryAttempts: sum(
+      comparisons.map(
+        (comparison) =>
+          comparison.baseline.outcome.retryAttempts + comparison.routed.outcome.retryAttempts,
+      ),
+    ),
+    totalEscalations: sum(
+      comparisons.map(
+        (comparison) =>
+          comparison.baseline.outcome.escalationAttempts +
+          comparison.routed.outcome.escalationAttempts,
+      ),
+    ),
+    totalEscalationCompletions: sum(
+      comparisons.map(
+        (comparison) =>
+          comparison.baseline.outcome.escalatedTasks + comparison.routed.outcome.escalatedTasks,
+      ),
+    ),
+    greenRunsWithFindings: greenRuns.greenRunsWithFindings,
+    greenRunsCriticalFindings: greenRuns.greenRunsCriticalFindings,
+  };
+}
+
 export function compareScenario(
   input: Readonly<{
     scenarioId: string;

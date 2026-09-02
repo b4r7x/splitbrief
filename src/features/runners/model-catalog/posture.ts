@@ -1,9 +1,5 @@
-import type {
-  CliModelPolicy,
-  CliToolDescriptor,
-  RunnerRole,
-} from '../../../core/runners/cli-tool-catalog.js';
-import type { RunnerBillingPosture } from '../../../core/runners/runner-billing.js';
+import type { CliModelPolicy, CliToolDescriptor } from '../../../core/runners/cli-tool-catalog.js';
+import type { RunnerRole } from '../../../core/runners/seat-roles.js';
 import { getRunnerTrustMeta } from '../../../core/runners/trust.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
 
@@ -105,14 +101,4 @@ export function trustPermissions(
     automaticApproval: trust.autoAllowFlags.length > 0,
     sandbox: 'none',
   };
-}
-
-export function metaModelPolicy(kind: 'custom-command' | 'agent-sdk'): PickerModelPolicy {
-  if (kind === 'agent-sdk') return 'per-call';
-  return 'none';
-}
-
-export function metaBilling(kind: 'custom-command' | 'agent-sdk'): RunnerBillingPosture {
-  if (kind === 'agent-sdk') return 'api-metered';
-  return 'unknown';
 }

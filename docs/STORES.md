@@ -83,7 +83,7 @@ src/stores/
 │   ├── skills.ts
 │   └── detection.ts
 └── discovery/                # External-world reads with TTL cache
-    ├── model-cache.ts
+    ├── model-cache/           # store entry state.ts + reconcile/lane helpers
     └── detection-adapter.ts
 ```
 
@@ -128,7 +128,7 @@ CLI (commander parses args)
   → initStores(projectDir, opts)
       1. configStore.load(projectDir, overrides)
       2. sessionsStore.load(scope, projectDir)
-      3. discoverSkills(plannerTool, projectDir) → skillsStore.setAvailable(skills)
+      3. discoverSkills(projectDir) → skillsStore.setAvailable(skills)
   → routerStore.init(route)           // set initial screen
   → render(<App />)                   // React starts here
 ```
@@ -136,6 +136,8 @@ CLI (commander parses args)
 **Why this matters:** If stores were loaded inside React hooks (e.g., in a `useEffect`), there would be a render cycle where the store is empty, requiring loading flags and conditional rendering. By loading before React boots, components always see initialized data.
 
 `configStore.useConfig()` includes a guard that throws if config is null — a fail-fast safety net for this contract.
+
+Step 3 also runs again after boot: both sites that open the skills overlay (`Ctrl+S` in `src/app/keys.ts`, and the `/skills` command through `ctx.refreshSkills()`) call `refreshSkills()` from `src/app/refresh-skills.ts`, which re-runs `discoverSkills(projectDir)` and feeds `skillsStore.setAvailable()`. It is a helper called from the open sites, not a mount-time effect inside the overlay.
 
 ## Consumption Patterns
 
@@ -215,7 +217,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `sessionsStore` | `project/sessions.ts` | `{ sessions, allSessions }` | `load()`, `loadAll()` |
 | `skillsStore` | `project/skills.ts` | `{ available: SkillMeta[], selected: Set<string> }` | `setAvailable()`, `setSelected()` |
 | `detectionStore` | `project/detection.ts` | `{ cliTools, implementers }` | `setDetection()` |
-| `modelCacheStore` | `discovery/model-cache.ts` | `{ providers: Map, modelsDevCatalog, ... }` | `setProviderModels()`, `invalidateAll()` |
+| `modelCacheStore` | `discovery/model-cache/state.ts` | `{ providers: Map, modelsDevCatalog, ... }` | `setProviderModels()`, `invalidateAll()` |
 
 ### Workflow actions module
 

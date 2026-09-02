@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultConfig } from '../../core/config/load/io.js';
+import { createDefaultConfig } from '../../core/config/load/defaults.js';
 import type { CustomCommandDefinition } from '../../core/config/custom-commands.js';
 import { ConfigSchema, type Config } from '../../core/schemas/config.js';
 import { resolveConfiguredCustomRunner } from './configured-custom.js';

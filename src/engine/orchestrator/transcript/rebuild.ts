@@ -1,7 +1,7 @@
 import { readCompactedMessages, readMessages } from '../../../core/sessions/log-reader.js';
 import type { SessionLogMessageEntry } from '../../../core/schemas/session-log.js';
 import { sessionDir } from '../../../core/paths.js';
-import { loadStateForResume } from '../../../core/state/persistence.js';
+import { loadStateForResume } from '../../../core/state/resume-authority.js';
 import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { ResumeLoadAuthority, StateAuthorityReceipt } from '../../../core/state/types.js';

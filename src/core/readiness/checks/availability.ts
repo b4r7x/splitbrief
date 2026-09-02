@@ -1,7 +1,7 @@
 import type { RunnerConfigSlot } from '../../config/accessors/runner-config.js';
 import { getApiProviderDescriptor } from '../../providers/api-provider-catalog.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import type { ActiveRunnerRole } from '../../runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole } from '../../runners/seat-roles.js';
 import type { ReadinessCheck } from '../types.js';
 
 export type RunnerAvailabilitySlot = Extract<RunnerConfigSlot, { role: ActiveRunnerRole }>;

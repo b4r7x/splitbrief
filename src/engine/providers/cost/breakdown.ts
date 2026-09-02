@@ -9,6 +9,12 @@ import {
   type ApiOffering,
 } from '../../../core/providers/api-provider-catalog.js';
 import { CLI_TOOL_CATALOG, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import { META_PROVIDER_IDS } from '../../../core/schemas/enums.js';
+import {
+  REMOVED_API_PROVIDER_IDS,
+  REMOVED_CLI_TOOL_IDS,
+  REMOVED_RUNNER_KINDS,
+} from '../../../core/schemas/runner-fields.js';
 import type { RunnerBillingPosture } from '../../../core/runners/runner-billing.js';
 import { normalizeProviderEndpoint } from '../../../core/providers/endpoint-policy.js';
 import { splitSeatTokenTotals } from '../../../core/providers/seat-totals.js';
@@ -31,6 +37,16 @@ type ResolveProviderRunMetadataOpts = {
   tool: string;
   normalizedEndpoint?: string | undefined;
 };
+
+// Meta seats and the identities this release removed carry no catalog
+// descriptor. A resumed run still names them, so they must stay out of the
+// custom-endpoint branch below rather than acquire an undated PAYG identity.
+const DESCRIPTORLESS_TOOL_IDS = new Set<string>([
+  ...META_PROVIDER_IDS,
+  ...REMOVED_API_PROVIDER_IDS,
+  ...REMOVED_CLI_TOOL_IDS,
+  ...REMOVED_RUNNER_KINDS,
+]);
 
 function isApiProviderId(tool: string): tool is keyof typeof API_PROVIDER_CATALOG {
   return Object.hasOwn(API_PROVIDER_CATALOG, tool);
@@ -85,7 +101,17 @@ export function resolveProviderRunMetadata(
     };
   }
 
-  return undefined;
+  if (DESCRIPTORLESS_TOOL_IDS.has(tool)) return undefined;
+
+  // Anything left is a user-declared custom endpoint: metered per token, with no
+  // catalog descriptor to date its identity against.
+  return {
+    service: tool,
+    offering: 'payg',
+    normalizedEndpoint: normalizedEndpoint ?? '',
+    billing: 'api-metered',
+    asOf: '',
+  };
 }
 
 export function describeOfferingBillingPresentation(

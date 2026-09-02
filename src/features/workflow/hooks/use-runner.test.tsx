@@ -162,11 +162,6 @@ describe('useWorkflowRunner', () => {
 
     const authority = received[0];
     expect(authority).toBe(prepared);
-    expect(authority?.config).toBe(prepared.config);
-    expect(authority?.session).toBe(prepared.session);
-    expect(authority?.session.active).toBe(prepared.session.active);
-    expect(authority?.report).toBe(prepared.report);
-    expect(authority?.gates).toBe(prepared.gates);
     expect(Object.isFrozen(authority?.config)).toBe(true);
     expect(runWorkflowStub).toHaveBeenCalledTimes(1);
 
@@ -192,9 +187,9 @@ describe('useWorkflowRunner', () => {
     inst.unmount();
   });
 
-  it("clears stale store state and applies the resume phase from startWorkflow's authoritative reset (F-078)", async () => {
-    // Seed the lifecycle store with stale data. The start effect no longer resets
-    // the stores itself; startWorkflow's own reset is the single authoritative reset.
+  it("clears stale store state and applies the resume phase from startWorkflow's authoritative reset", async () => {
+    // Seed the lifecycle store with stale data; startWorkflow's own reset is the
+    // single authoritative reset.
     lifecycleStore.__testReset({ cancelled: true, queueDepth: 7, phase: 'final-review' });
     const sessionId = '2026-08-14-resume-reset';
     const resume: WorkflowState = {
@@ -211,9 +206,8 @@ describe('useWorkflowRunner', () => {
 
     const inst = render(<Harness prepared={prepared} onComplete={() => {}} />);
 
-    // Stale fields were cleared (reset ran) and the resume phase was applied
-    // (reset received the resume state) — proving a single reset carries the
-    // resume state correctly without the removed effect-level reset.
+    // Stale fields are cleared (the reset ran) and the resume phase is applied
+    // (the reset received the resume state) — one reset carries both.
     await vi.waitFor(() => {
       const lifecycle = lifecycleStore.get();
       expect(lifecycle.cancelled).toBe(false);

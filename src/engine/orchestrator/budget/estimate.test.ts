@@ -14,6 +14,10 @@ import {
 } from '#testing/helpers/orchestrator-task-context.js';
 import { selectRoutingProfile } from '../task/routing-selection.js';
 import { estimateDeterministicCost } from './estimate.js';
+import { makePricedModelCache } from '#testing/helpers/factories/model-cache.js';
+
+// Pricing follows the model, so a metered seat needs a catalog to rate against.
+const pricedCache = makePricedModelCache();
 
 const context: ProjectContext = {
   name: 'test-project',
@@ -134,10 +138,10 @@ describe('estimateDeterministicCost', () => {
       makeConfig({
         planner: {
           kind: 'api',
-          provider: 'anthropic',
-          service: 'anthropic',
+          provider: 'custom-planner-api',
+          service: 'custom-planner-api',
           offering: 'payg',
-          apiBase: 'https://api.anthropic.com/v1',
+          apiBase: 'https://api.planner.example/v1',
           model: 'claude-opus-5',
         },
       }),
@@ -146,10 +150,10 @@ describe('estimateDeterministicCost', () => {
         profiles: {
           'cheap-worker': {
             kind: 'api',
-            provider: 'deepseek',
-            service: 'deepseek',
+            provider: 'custom-worker-api',
+            service: 'custom-worker-api',
             offering: 'payg',
-            apiBase: 'https://api.deepseek.com/v1',
+            apiBase: 'https://api.worker.example/v1',
             apiKey: 'test-key',
             model: 'deepseek-v4-flash',
             contextLength: 20_000,
@@ -163,7 +167,7 @@ describe('estimateDeterministicCost', () => {
       tasks: [makeTask()],
       context,
       config,
-      pricingCache: nullCache,
+      pricingCache: pricedCache,
     });
     const task = estimate.tasks[0];
 
@@ -212,10 +216,10 @@ describe('estimateDeterministicCost', () => {
       makeConfig({
         planner: {
           kind: 'api',
-          provider: 'openai',
-          service: 'openai',
+          provider: 'custom-openai-api',
+          service: 'custom-openai-api',
           offering: 'payg',
-          apiBase: 'https://api.openai.com/v1',
+          apiBase: 'https://api.openai.example/v1',
           model: 'gpt-5.4',
         },
       }),
@@ -224,10 +228,10 @@ describe('estimateDeterministicCost', () => {
         profiles: {
           'gpt-worker': {
             kind: 'api',
-            provider: 'openai',
-            service: 'openai',
+            provider: 'custom-openai-api',
+            service: 'custom-openai-api',
             offering: 'payg',
-            apiBase: 'https://api.openai.com/v1',
+            apiBase: 'https://api.openai.example/v1',
             apiKey: 'test-key',
             model: 'gpt-5.4',
             contextLength: 400_000,
@@ -265,10 +269,10 @@ describe('estimateDeterministicCost', () => {
       makeConfig({
         planner: {
           kind: 'api',
-          provider: 'anthropic',
-          service: 'anthropic',
+          provider: 'custom-planner-api',
+          service: 'custom-planner-api',
           offering: 'payg',
-          apiBase: 'https://api.anthropic.com/v1',
+          apiBase: 'https://api.planner.example/v1',
           model: 'claude-opus-5',
         },
       }),
@@ -308,11 +312,19 @@ describe('estimateDeterministicCost', () => {
 
   it('flags an unpriced planner without nulling the known implementer estimate', () => {
     const pricingCache: ModelCacheAccessor = {
-      getModelsDevCatalog: () => null,
-      getProviderModels: (providerId) =>
-        providerId === 'deepseek'
-          ? [{ id: 'priced-model', contextLength: 20_000, pricingInput: 1, pricingOutput: 2 }]
-          : null,
+      getModelsDevCatalog: () => ({
+        vendor: {
+          id: 'vendor',
+          models: {
+            'priced-model': {
+              id: 'priced-model',
+              cost: { input: 1, output: 2 },
+              limit: { context: 20_000 },
+            },
+          },
+        },
+      }),
+      getProviderModels: () => null,
     };
     const config = withProfiles(
       makeConfig({
@@ -323,10 +335,10 @@ describe('estimateDeterministicCost', () => {
         profiles: {
           'priced-worker': {
             kind: 'api',
-            provider: 'deepseek',
-            service: 'deepseek',
+            provider: 'custom-worker-api',
+            service: 'custom-worker-api',
             offering: 'payg',
-            apiBase: 'https://api.deepseek.com/v1',
+            apiBase: 'https://api.worker.example/v1',
             apiKey: 'test-key',
             model: 'priced-model',
             contextLength: 20_000,
@@ -359,18 +371,16 @@ describe('estimateDeterministicCost', () => {
     const pricingCache: ModelCacheAccessor = {
       getModelsDevCatalog: () => null,
       getProviderModels: (providerId) =>
-        providerId === 'deepseek'
-          ? [{ id: 'runtime-only', contextLength: 12_000, pricingInput: 1, pricingOutput: 2 }]
-          : null,
+        providerId === 'lm-studio' ? [{ id: 'runtime-only', contextLength: 12_000 }] : null,
     };
     const config = withProfiles(
       makeConfig({
         planner: {
           kind: 'api',
-          provider: 'anthropic',
-          service: 'anthropic',
+          provider: 'custom-planner-api',
+          service: 'custom-planner-api',
           offering: 'payg',
-          apiBase: 'https://api.anthropic.com/v1',
+          apiBase: 'https://api.planner.example/v1',
           model: 'claude-opus-5',
         },
       }),
@@ -379,11 +389,10 @@ describe('estimateDeterministicCost', () => {
         profiles: {
           'runtime-worker': {
             kind: 'api',
-            provider: 'deepseek',
-            service: 'deepseek',
-            offering: 'payg',
-            apiBase: 'https://api.deepseek.com/v1',
-            apiKey: 'test-key',
+            provider: 'lm-studio',
+            service: 'lm-studio',
+            offering: 'local',
+            apiBase: 'http://localhost:1234/v1',
             model: 'runtime-only',
             costTier: 'cheap',
           },
@@ -398,10 +407,13 @@ describe('estimateDeterministicCost', () => {
       pricingCache,
     });
 
+    // Runtime rows are keyed by a catalog provider, and every one of those is
+    // local, so a cached-provider context length always arrives on an unpriced
+    // seat. The context lane must still answer independently of the price lane.
     expect(estimate.tasks[0]).toMatchObject({
       selectedProfileId: 'runtime-worker',
       contextConfidence: 'context-cached-provider',
-      priceConfidence: 'price-known',
+      priceConfidence: 'price-unknown',
     });
   });
 
@@ -501,10 +513,10 @@ describe('estimateDeterministicCost', () => {
       profiles: {
         'tiny-worker': {
           kind: 'api',
-          provider: 'deepseek',
-          service: 'deepseek',
+          provider: 'custom-worker-api',
+          service: 'custom-worker-api',
           offering: 'payg',
-          apiBase: 'https://api.deepseek.com/v1',
+          apiBase: 'https://api.worker.example/v1',
           model: 'deepseek-v4-flash',
           contextLength: 10,
           costTier: 'cheap',
@@ -569,10 +581,10 @@ describe('estimateDeterministicCost', () => {
       profiles: {
         'other-worker': {
           kind: 'api',
-          provider: 'deepseek',
-          service: 'deepseek',
+          provider: 'custom-worker-api',
+          service: 'custom-worker-api',
           offering: 'payg',
-          apiBase: 'https://api.deepseek.com/v1',
+          apiBase: 'https://api.worker.example/v1',
           model: 'deepseek-v4-flash',
           contextLength: 20_000,
         },

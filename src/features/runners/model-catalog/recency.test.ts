@@ -42,6 +42,17 @@ describe('model recency ordering', () => {
     ]);
   });
 
+  it('keeps confirmed rows in the tool native order ahead of catalog rows', () => {
+    const sorted = sortModelsByRecency([
+      { id: 'zeta', nativeOrder: 2 },
+      { id: 'alpha', nativeOrder: 0 },
+      { id: 'mid', nativeOrder: 1 },
+      { id: 'catalog-only' },
+    ]);
+
+    expect(sorted.map((model) => model.id)).toEqual(['alpha', 'mid', 'zeta', 'catalog-only']);
+  });
+
   it('keeps stale membership facts intact while ordering rows', () => {
     const stale: ModelOption = {
       id: 'last-confirmed',

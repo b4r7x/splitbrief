@@ -1,3 +1,6 @@
+import type { Config } from '../../../src/core/schemas/config.js';
+import { makeConfig } from '../factories/config.js';
+
 export const TASK_MARKDOWN = [
   '---',
   'id: T001',
@@ -35,3 +38,35 @@ export const CODE_RESPONSE = [
   'export function hello() { return "hello"; }',
   '```',
 ].join('\n');
+
+export function makeShellRunnerConfig(overrides?: Parameters<typeof makeConfig>[0]): Config {
+  return makeConfig({
+    planner: {
+      kind: 'shell',
+      command: 'node',
+      args: ['-e', `process.stdout.write(${JSON.stringify(TASK_MARKDOWN)})`],
+    },
+    implementer: {
+      kind: 'shell',
+      command: 'node',
+      args: ['-e', `process.stdout.write(${JSON.stringify(CODE_RESPONSE)})`],
+      model: 'fake-model',
+      contextLength: 4096,
+      temperature: 0,
+    },
+    ...overrides,
+    validation: {
+      typecheck: false,
+      lint: false,
+      test: false,
+      testCommand: 'noop',
+      ...overrides?.validation,
+    },
+    workflow: {
+      mode: 'quick',
+      persistTranscript: false,
+      maxRetries: 1,
+      ...overrides?.workflow,
+    },
+  });
+}

@@ -73,7 +73,7 @@ describe('deriveCompilerClaim', () => {
     },
   );
 
-  it('derives for api and agent-sdk kinds', async () => {
+  it('derives for the api kind', async () => {
     const apiConfig = configWithPlanner({
       kind: 'api',
       provider: 'anthropic',
@@ -91,21 +91,6 @@ describe('deriveCompilerClaim', () => {
       expect(apiResult.claim.credentialChannel).toBe('api-key');
       expect(apiResult.claim.version).toBe('');
       expect(apiResult.operationId).toMatch(/^operation-/);
-    }
-
-    const agentSdkConfig = configWithPlanner({
-      kind: 'agent-sdk',
-      model: 'claude-3-7-sonnet-latest',
-      apiKey: 'test-key',
-    });
-    const agentSdkResult = await deriveCompilerClaim({ config: agentSdkConfig });
-    expect(agentSdkResult.kind).toBe('derived');
-    if (agentSdkResult.kind === 'derived') {
-      expect(agentSdkResult.claim.backend).toBe('agent-sdk');
-      expect(agentSdkResult.claim.terminalContract).toBe('agent-sdk-final-assistant-turn-v1');
-      expect(agentSdkResult.claim.credentialChannel).toBe('api-key');
-      expect(agentSdkResult.claim.version).toBe('');
-      expect(agentSdkResult.operationId).toMatch(/^operation-/);
     }
   });
 });
@@ -205,9 +190,9 @@ describe('deriveCompilerClaim — refusals', () => {
         'Compiler capability is not admitted for copilot: backend missing or unverified. no proven non-writing programmatic planner posture in V1.',
     },
     {
-      tool: 'aider',
+      tool: 'cursor',
       message:
-        'Compiler capability is not admitted for aider: backend missing or unverified. no proven read-only planner contract in V1.',
+        'Compiler capability is not admitted for cursor: backend missing or unverified. no proven compiler planner contract in V1.',
     },
   ] as const)('refuses the typed-unsupported $tool row', async ({ tool, message }) => {
     const config = configWithPlanner({ kind: 'cli', tool, model: 'auto' });

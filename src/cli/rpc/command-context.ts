@@ -20,13 +20,13 @@ import {
   clearGrantsByScope,
 } from '../../core/approval/store.js';
 import { attachImage, detachImage, listAttachments } from '../../stores/workflow/attachments.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { detectedModelFact, seatSupportsImages } from '../../core/runners/capabilities.js';
+import { transactConfigDocument } from '../../core/config/load/io.js';
 import {
   configRevisionsMatch,
   renderConfigDocumentEdits,
-  transactConfigDocument,
-} from '../../core/config/load/io.js';
+} from '../../core/config/load/document.js';
 import { toYaml } from '../../core/config/load/transform.js';
 import { defaultApprovalConfig } from '../../core/schemas/config.js';
 import { editsForSave, persistedConfigForSave } from '../../stores/project/config-persistence.js';
@@ -174,6 +174,14 @@ export function createRpcCommandContext(opts: {
     },
     refreshProjectFiles: () => {
       pushMessage('Project file refresh is not available in RPC mode.');
+    },
+    listSkills: () => [],
+    toggleSkill: () => ({
+      status: 'unavailable',
+      message: 'Skill selection is not available in RPC mode.',
+    }),
+    refreshSkills: () => {
+      pushMessage('Skill discovery is not available in RPC mode.');
     },
     getCurrentPhase: opts.getPhase,
     requestRewind: (request) => {

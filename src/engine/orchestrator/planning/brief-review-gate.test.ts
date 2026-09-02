@@ -61,10 +61,7 @@ function result(
     origin:
       continuation?.kind === 'approval'
         ? { mode: continuation.mode, entry: continuation.entry }
-        : {
-            mode: continuation?.kind === 'quick-start' ? 'quick' : 'instant',
-            entry: continuation?.entry ?? 'initial',
-          },
+        : { mode: 'quick', entry: continuation?.entry ?? 'initial' },
     continuation,
     activeBrief: brief,
     matchingReport: {

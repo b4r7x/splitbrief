@@ -5,10 +5,9 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { TASK_MARKDOWN, CODE_RESPONSE } from '#testing/helpers/faux/shell-runner.js';
+import { makeShellRunnerConfig } from '#testing/helpers/faux/shell-runner.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
@@ -142,24 +141,7 @@ describe('hooks integration flow', { timeout: 90_000 }, () => {
     const recorded: EngineEvent[] = [];
     const { callbacks } = makeCallbacks();
 
-    const config = makeConfig({
-      planner: {
-        kind: 'shell',
-        command: 'node',
-        args: ['-e', `process.stdout.write(${JSON.stringify(TASK_MARKDOWN)})`],
-      },
-      implementer: {
-        kind: 'shell',
-        command: 'node',
-        args: ['-e', `process.stdout.write(${JSON.stringify(CODE_RESPONSE)})`],
-        model: 'fake-model',
-        contextLength: 4096,
-        temperature: 0,
-      },
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick', persistTranscript: false, maxRetries: 1 },
-      hooks: DENY_PRE_TASK_HOOKS,
-    });
+    const config = makeShellRunnerConfig({ hooks: DENY_PRE_TASK_HOOKS });
 
     await runWorkflow({
       prepared: preparedExecution(projectDir, 'add foo', config),
@@ -189,24 +171,7 @@ describe('hooks integration flow', { timeout: 90_000 }, () => {
 
     const { callbacks } = makeCallbacks();
 
-    const config = makeConfig({
-      planner: {
-        kind: 'shell',
-        command: 'node',
-        args: ['-e', `process.stdout.write(${JSON.stringify(TASK_MARKDOWN)})`],
-      },
-      implementer: {
-        kind: 'shell',
-        command: 'node',
-        args: ['-e', `process.stdout.write(${JSON.stringify(CODE_RESPONSE)})`],
-        model: 'fake-model',
-        contextLength: 4096,
-        temperature: 0,
-      },
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick', persistTranscript: false, maxRetries: 1 },
-      hooks: postTaskMarkerHooks(projectDir),
-    });
+    const config = makeShellRunnerConfig({ hooks: postTaskMarkerHooks(projectDir) });
 
     await runWorkflow({
       prepared: preparedExecution(projectDir, 'add foo', config),

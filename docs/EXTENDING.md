@@ -18,8 +18,8 @@ Existing example to follow: `src/cli/commands/start/register.ts`.
 
 ## 2. New slash command
 
-1. Open `src/core/runtime/commands/registry.ts`
-2. Add a new entry to the array returned by `createRuntimeCommands(ctx)`
+1. Open the `src/core/runtime/commands/defs/<category>.ts` module for the command's category (`navigate` · `crew` · `workflow` · `view` · `io`)
+2. Add a new entry to the array returned by that module's `<category>Commands(ctx)`; `createRuntimeCommands` in `registry.ts` concatenates the five in `COMMAND_CATEGORIES` order
 3. Each entry needs:
    - `kind` — `'noarg'` or `'arg'`
    - `name` — the `/command` string
@@ -73,7 +73,7 @@ Factory: `src/stores/create-store.ts` (~45 LOC).
 
 ## 5. New planner/implementer backend
 
-Use an existing runner kind only (`cli`, `api`, `shell`, `agent`, `agent-sdk`). Do not add a sixth kind — see [section 14](#14-cli-and-provider-admission-checklists).
+Use an existing runner kind only (`cli`, `api`, `shell`, `agent`). Do not add a fifth kind — see [section 14](#14-cli-and-provider-admission-checklists).
 
 1. Pick the kind in config (`RunnerKindSchema` in `src/core/schemas/enums.ts`); factory dispatch lives in `src/engine/runners/factory.ts`
 2. Create `src/engine/planners/<name>.ts` implementing the `Planner` interface from `src/engine/planners/types.ts`
@@ -101,8 +101,8 @@ A *seat* is a place in the run where a runner is called. Adding one is not the s
 
 1. **Config schema.** Add the optional top-level block in `src/core/schemas/<seat>-config.ts` and wire it into `ConfigSchema`. Keep it the same discriminated union as an existing seat, `.strict()` on every variant, and do not bump `version`.
 2. **One resolver, and only one.** Add `src/core/config/accessors/<seat>-runner.ts` exporting a `resolve<Seat>Runner(config)` that returns the configured runner or the seat it falls back to, with the source tagged. Everything else in the codebase reads that resolver — it is the only module allowed to branch on `config.<seat>`.
-3. **Role union.** If the seat is user-selectable, add it to `ActiveRunnerRole` in `src/core/runners/cli-tool-catalog.ts`. That is the single role union; do not introduce a second one.
-4. **Slot and admission.** Add the slot variant to `RunnerConfigSlot` (`src/core/config/accessors/runner-config.ts`), then push the seat as a candidate in `prepareExecution()` (`src/engine/runners/prepare-execution.ts`) *only when it is configured*. Add the slot to `RunnerAvailabilitySlot` in `src/core/readiness/checks/availability.ts` — it is an explicit `Extract<…>` and does not widen on its own — and to the readiness checks that report per-seat availability and trust.
+3. **Role union.** If the seat is user-selectable, add it to `ActiveRunnerRole` in `src/core/runners/seat-roles.ts`. That is the single role union; do not introduce a second one.
+4. **Slot and admission.** Add the slot variant to `RunnerConfigSlot` (`src/core/config/accessors/runner-config.ts`), then push the seat as a candidate in `prepareExecution()` (`src/engine/runners/prepare-execution/prepare-execution.ts`) *only when it is configured*. Add the slot to `RunnerAvailabilitySlot` in `src/core/readiness/checks/availability.ts` — it is an explicit `Extract<…>` and does not widen on its own — and to the readiness checks that report per-seat availability and trust.
 5. **The port.** Define the narrowest interface the seat actually needs in `src/engine/<seat>s/types.ts`. Narrower is better: it lets an existing runner satisfy the seat structurally and hold it unadapted. Do not put tool or model fields on the port — identity for user-facing messages comes from the config accessor that resolved the seat.
 6. **The factory.** Add `create<Seat>()` to `src/engine/runners/factory.ts`, reusing the existing lazy backend loaders. Create the seat in `src/engine/orchestrator/run/init.ts`, reusing an already-built runner when the resolver says the seat falls back.
 7. **The call.** Give the seat its own call module (`src/engine/orchestrator/<seat>-call.ts`) rather than repointing an existing helper. Repointing a shared helper silently moves every other call site with it — count them first.
@@ -222,7 +222,7 @@ Canonical support matrices live in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND
 
 ### Architectural constraints
 
-- **One runner-kind set:** `cli`, `api`, `shell`, `agent`, `agent-sdk` (`RUNNER_KINDS` in `src/core/schemas/enums.ts`). New backends pick an existing kind; do not add a sixth runner kind.
+- **One runner-kind set:** `cli`, `api`, `shell`, `agent` (`RUNNER_KINDS` in `src/core/schemas/enums.ts`). New backends pick an existing kind; do not add a fifth runner kind.
 - **No argv DSL or plugin framework:** each CLI adapter owns its vendor argv grammar in a dedicated module. Do not build a generic argv insertion DSL or broad plugin loader.
 - **One OpenAI transport:** hosted API providers use `src/engine/providers/openai-stream/` only. Do not add a second generic OpenAI-compatible streaming transport.
 
@@ -237,7 +237,7 @@ Complete in order before registering in `CLI_PLANNER_ADAPTERS` / `CLI_IMPLEMENTE
 5. **Lossless transport** — `CliPromptTransport` (`stdin`, byte-limited `argv` with `<PROMPT>` sentinel, or mode-0600 `file`). The Task Brief reaches the child byte-for-byte or execution fails before spawn.
 6. **Args conflicts** — user `args` have a documented insertion position; conflicts with prompt transport, output protocol, permission mode, model policy, or terminal behavior are rejected pre-spawn.
 7. **Parser/terminal** — structured protocols require the documented terminal event; text protocols may use process exit plus direct-change proof only when the admitted fixture documents no stable terminal envelope.
-8. **Env** — `src/engine/runners/sandbox-env.ts` allowlists runtime env plus only the descriptor auth channel; never copy ambient secrets. A private HOME under `.splitbrief/sandbox/<role>/` is the default and the only thing a new tool should assume. The single sanctioned exception is a channel whose credential is an OS keychain item with no file to bridge: it declares `hostKeychainPlatforms` on the channel, `cliAuthChannelHostStateAccess()` maps that to `host-account`, and the child keeps the host `HOME`/`USER` while every other redirect stays. The Claude Code and Cursor Agent CLI `session` channels declare one today — see [WORKTREES.md](./WORKTREES.md#exception-one-keychain-backed-session-channels-on-macos).
+8. **Env** — `src/engine/runners/sandbox-env.ts` allowlists runtime env plus only the descriptor auth channel (the per-tool state allowlist itself lives in `src/engine/runners/sandbox-state-paths.ts`); never copy ambient secrets. A private HOME under `.splitbrief/sandbox/<role>/` is the default and the only thing a new tool should assume. The single sanctioned exception is a channel whose credential is an OS keychain item with no file to bridge: it declares `hostKeychainPlatforms` on the channel, `cliAuthChannelHostStateAccess()` maps that to `host-account`, and the child keeps the host `HOME`/`USER` while every other redirect stays. The Claude Code and Cursor Agent CLI `session` channels declare one today — see [WORKTREES.md](./WORKTREES.md#exception-one-keychain-backed-session-channels-on-macos).
 9. **Direct-change proof** — direct writers receive staged-cwd instructions; successful completion requires a real staged change, not stdout extraction alone.
 10. **Common/live/eval gates** — pass the common CLI contract suite, any required credentialed live smoke, and implementation-quality/privacy evaluation before registration.
 11. **Late registry/docs** — register in `src/engine/runners/cli-tools/registry.ts` and update [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) only after every gate above passes.
@@ -260,7 +260,7 @@ Complete in order before registering in `src/engine/providers/registry.ts`:
 3. **Credential** — `credentialEnv` and `credentialPrefix`; prefix or family mismatch fails before network access.
 4. **Billing/privacy/asOf** — dated `billing`, `dataUse`, privacy/terms URLs in the descriptor. No runtime fetch of pricing, terms, or marketing pages.
 5. **Policy** — `OpenAICompatPolicy` in `src/engine/providers/openai-compat-policy.ts` enables provider-specific request fields only when exact conformance fixtures prove them.
-6. **Production conformance** — credentialed harness in `src/engine/providers/conformance.ts` via `npx tsx scripts/provider-conformance.ts production …` reusing the same record as raw capture.
+6. **Production conformance** — credentialed harness in `src/engine/providers/conformance-production.ts` via `npx tsx scripts/provider-conformance.ts production …` reusing the same record as raw capture.
 7. **Eval** — implementation-quality/privacy evaluation verdict is applied to runtime recommendation state before docs label a model recommended.
 8. **Late registration** — register through `createUnregisteredOpenAICompatProvider` / `src/engine/providers/registry.ts` and document in [CONFIGURATION.md](./CONFIGURATION.md) and [API-KEYS.md](./API-KEYS.md) only after every gate above passes.
 

@@ -185,7 +185,6 @@ describe('createTaskImplementer configured profile admission', () => {
     const runners: ImplementerConfig[] = [
       { kind: 'cli', tool: 'codex', authChannel: 'session' },
       makeNoValidationConfig().implementer,
-      { kind: 'agent-sdk', model: 'claude-sonnet-4-20250514' },
       { kind: 'shell', command: process.execPath, model: 'shell-model' },
       { kind: 'agent', command: process.execPath, model: 'agent-model' },
     ];
@@ -222,9 +221,7 @@ describe('createTaskImplementer configured profile admission', () => {
                     provider: runner.provider,
                     endpointOrigin: new URL(runner.apiBase).origin,
                   }
-                : runner.kind === 'agent-sdk'
-                  ? { kind: 'agent-sdk' as const, provider: 'anthropic' as const }
-                  : { kind: runner.kind, command: { kind: 'validated-config' as const } }),
+                : { kind: runner.kind, command: { kind: 'validated-config' as const } }),
           });
           return existingImplementer;
         },

@@ -9,6 +9,16 @@ import type { ProviderRunMetadata } from '../../../core/schemas/summary.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { CostBreakdownSchema } from '../../../core/schemas/summary.js';
+import { makePricedModelCache } from '#testing/helpers/factories/model-cache.js';
+
+// Pricing follows the model, so a metered seat needs a catalog to rate against;
+// every case runs with the same one, which also lets the local and CLI cases
+// prove they stay unpriced despite rates being available.
+const cache = makePricedModelCache();
+
+function breakdown(opts: Parameters<typeof calculateCostBreakdown>[0]) {
+  return calculateCostBreakdown(opts, cache);
+}
 
 describe('calculateCostBreakdown', () => {
   it('all local (0 escalations) yields 100% localCompletionRate and positive savings', () => {
@@ -18,13 +28,13 @@ describe('calculateCostBreakdown', () => {
       implementerInput: 1_000_000,
       implementerOutput: 500_000,
     });
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 5,
       escalatedCount: 0,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
     });
     expect(result.localCompletionRate).toBe(1);
@@ -38,11 +48,11 @@ describe('calculateCostBreakdown', () => {
       escalationInput: 1_000_000,
       escalationOutput: 500_000,
     });
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 3,
       escalatedCount: 3,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
     });
@@ -56,11 +66,11 @@ describe('calculateCostBreakdown', () => {
       escalationInput: 100_000,
       escalationOutput: 50_000,
     });
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 7,
       escalatedCount: 2,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
     });
@@ -69,11 +79,11 @@ describe('calculateCostBreakdown', () => {
 
   it('zero tasks yields 0% localCompletionRate without division by zero', () => {
     const usage = makeUsage();
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 0,
       escalatedCount: 0,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
     });
@@ -89,13 +99,13 @@ describe('calculateCostBreakdown', () => {
       implementerInput: 100,
       implementerOutput: 50,
     });
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 1,
       escalatedCount: 0,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
     });
     expect(result.savingsAmount).toBeCloseTo(0.000672, 10);
@@ -110,7 +120,7 @@ describe('calculateCostBreakdown', () => {
       implementerOutput: 200_000,
     });
 
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 5,
       escalatedCount: 0,
@@ -133,16 +143,17 @@ describe('calculateCostBreakdown', () => {
       implementerOutput: 500_000,
     });
 
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 5,
       escalatedCount: 0,
       plannerTool: 'claude-code',
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
+      implementerModel: 'deepseek-v4-flash',
     });
 
     expect(result.providerCosts).toEqual({
-      deepseek: {
+      'custom-worker-api': {
         inputTokens: 1_000_000,
         outputTokens: 500_000,
         cost: result.actualImplementerCost,
@@ -162,12 +173,12 @@ describe('calculateCostBreakdown', () => {
       implementerOutput: 200_000,
     });
 
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 3,
       escalatedCount: 1,
-      plannerTool: 'anthropic',
-      implementerTool: 'deepseek',
+      plannerTool: 'custom-planner-api',
+      implementerTool: 'custom-worker-api',
       plannerModel: 'claude-sonnet-5',
       implementerModel: 'deepseek-v4-flash',
     });
@@ -185,12 +196,12 @@ describe('calculateCostBreakdown', () => {
     );
 
     expect(result.providerCosts).toEqual({
-      anthropic: {
+      'custom-planner-api': {
         inputTokens: 100_000,
         outputTokens: 50_000,
         cost: result.actualPlannerCost,
       },
-      deepseek: {
+      'custom-worker-api': {
         inputTokens: 500_000,
         outputTokens: 200_000,
         cost: result.actualImplementerCost,
@@ -204,13 +215,13 @@ describe('calculateCostBreakdown', () => {
       implementerOutput: 1_000_000,
     });
 
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 1,
       escalatedCount: 0,
-      plannerTool: 'deepseek',
+      plannerTool: 'custom-worker-api',
       plannerModel: 'deepseek-v4-flash',
-      implementerTool: 'anthropic',
+      implementerTool: 'custom-planner-api',
       implementerModel: 'claude-sonnet-5',
     });
 
@@ -223,17 +234,17 @@ describe('calculateCostBreakdown', () => {
   it('all-planner baseline includes planner spend without changing savings amount', () => {
     const sharedImplementer = { implementerInput: 500_000, implementerOutput: 200_000 };
 
-    const low = calculateCostBreakdown({
+    const low = breakdown({
       tokenUsage: makeUsage({ plannerInput: 10_000, plannerOutput: 5_000, ...sharedImplementer }),
       totalTasks: 1,
       escalatedCount: 0,
-      plannerTool: 'anthropic',
-      implementerTool: 'deepseek',
+      plannerTool: 'custom-planner-api',
+      implementerTool: 'custom-worker-api',
       plannerModel: 'claude-sonnet-5',
       implementerModel: 'deepseek-v4-flash',
     });
 
-    const high = calculateCostBreakdown({
+    const high = breakdown({
       tokenUsage: makeUsage({
         plannerInput: 1_000_000,
         plannerOutput: 500_000,
@@ -241,8 +252,8 @@ describe('calculateCostBreakdown', () => {
       }),
       totalTasks: 1,
       escalatedCount: 0,
-      plannerTool: 'anthropic',
-      implementerTool: 'deepseek',
+      plannerTool: 'custom-planner-api',
+      implementerTool: 'custom-worker-api',
       plannerModel: 'claude-sonnet-5',
       implementerModel: 'deepseek-v4-flash',
     });
@@ -255,7 +266,7 @@ describe('calculateCostBreakdown', () => {
     );
   });
 
-  it('treats agent-sdk planner as unpriced-meta with no savings estimate', () => {
+  it('treats a shell planner as unpriced-meta with no savings estimate', () => {
     const usage = makeUsage({
       plannerInput: 100_000,
       plannerOutput: 50_000,
@@ -263,11 +274,11 @@ describe('calculateCostBreakdown', () => {
       implementerOutput: 200_000,
     });
 
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 3,
       escalatedCount: 0,
-      plannerTool: 'agent-sdk',
+      plannerTool: 'shell',
       implementerTool: 'ollama',
     });
 
@@ -285,18 +296,18 @@ describe('calculateCostBreakdown', () => {
       implementerOutput: 100_000,
     });
 
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 2,
       escalatedCount: 0,
-      plannerTool: 'deepseek',
-      implementerTool: 'deepseek',
+      plannerTool: 'custom-worker-api',
+      implementerTool: 'custom-worker-api',
       plannerModel: 'deepseek-v4-flash',
       implementerModel: 'deepseek-v4-flash',
     });
 
     expect(result.providerCosts).toEqual({
-      deepseek: {
+      'custom-worker-api': {
         inputTokens: 300_000,
         outputTokens: 150_000,
         cost: result.totalActualCost,
@@ -310,12 +321,12 @@ describe('calculateCostBreakdown', () => {
       implementerOutput: 1_000_000,
     });
 
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 2,
       escalatedCount: 0,
       plannerTool: 'claude-code',
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
       taskBreakdowns: [
         {
@@ -335,18 +346,18 @@ describe('calculateCostBreakdown', () => {
           implementerTokens: 1_000_000,
           escalationTokens: 0,
           retryCount: 0,
-          tool: 'deepseek',
+          tool: 'custom-worker-api',
           model: 'deepseek-v4-flash',
         },
       ],
     });
 
     expect(result.actualImplementerCost).toBeCloseTo(0.21, 10);
-    const deepseek = result.providerCosts?.['deepseek'];
-    if (!deepseek) throw new Error('expected deepseek provider costs');
-    expect(deepseek.inputTokens).toBeCloseTo(500_000, 10);
-    expect(deepseek.outputTokens).toBeCloseTo(500_000, 10);
-    expect(deepseek.cost).toBeCloseTo(0.21, 10);
+    const worker = result.providerCosts?.['custom-worker-api'];
+    if (!worker) throw new Error('expected worker endpoint provider costs');
+    expect(worker.inputTokens).toBeCloseTo(500_000, 10);
+    expect(worker.outputTokens).toBeCloseTo(500_000, 10);
+    expect(worker.cost).toBeCloseTo(0.21, 10);
     expect(result.hasPricedUsage).toBe(true);
     expect(result.hasUnpricedUsage).toBe(true);
   });
@@ -357,12 +368,12 @@ describe('calculateCostBreakdown', () => {
       implementerOutput: 1_000_000,
     });
 
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 1,
       escalatedCount: 0,
       plannerTool: 'claude-code',
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
       taskBreakdowns: [
         {
@@ -384,13 +395,49 @@ describe('calculateCostBreakdown', () => {
     expect(result.hasUnpricedUsage).toBe(true);
   });
 
-  it('resolves task-level auto models against the recorded task tool', () => {
+  // Only a runner with a bundled catalog default can resolve `auto`, and the
+  // two that have one (ollama, lm-studio) are local. So an `auto` task model on
+  // a metered endpoint resolves to nothing — and the leg it books must be
+  // unpriced, never quietly priced at the fallback seat's own model.
+  it('does not price a task-level auto model at the fallback seat when its tool has no default', () => {
     const usage = makeUsage({
       implementerInput: 500_000,
       implementerOutput: 500_000,
     });
 
-    const result = calculateCostBreakdown({
+    const result = breakdown({
+      tokenUsage: usage,
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'custom-worker-api',
+      implementerModel: 'deepseek-v4-flash',
+      taskBreakdowns: [
+        {
+          taskId: taskId('T001'),
+          taskTitle: 'paid auto task',
+          method: 'local',
+          implementerTokens: 1_000_000,
+          escalationTokens: 0,
+          retryCount: 0,
+          tool: 'custom-worker-api',
+          model: 'auto',
+        },
+      ],
+    });
+
+    expect(result.actualImplementerCost).toBe(0);
+    expect(result.isActualImplementerCostKnown).toBe(false);
+    expect(result.hasUnpricedUsage).toBe(true);
+  });
+
+  it('prices a task-level model against the recorded task tool, not the seat default', () => {
+    const usage = makeUsage({
+      implementerInput: 500_000,
+      implementerOutput: 500_000,
+    });
+
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 1,
       escalatedCount: 0,
@@ -400,19 +447,19 @@ describe('calculateCostBreakdown', () => {
       taskBreakdowns: [
         {
           taskId: taskId('T001'),
-          taskTitle: 'paid auto task',
+          taskTitle: 'paid task',
           method: 'local',
           implementerTokens: 1_000_000,
           escalationTokens: 0,
           retryCount: 0,
-          tool: 'deepseek',
-          model: 'auto',
+          tool: 'custom-worker-api',
+          model: 'deepseek-v4-flash',
         },
       ],
     });
 
     expect(result.actualImplementerCost).toBeCloseTo(0.21, 10);
-    expect(result.providerCosts?.['deepseek']?.cost).toBeCloseTo(0.21, 10);
+    expect(result.providerCosts?.['custom-worker-api']?.cost).toBeCloseTo(0.21, 10);
   });
 
   it('prices empty taskBreakdowns as residual at the primary implementer identity', () => {
@@ -421,22 +468,22 @@ describe('calculateCostBreakdown', () => {
       implementerOutput: 1_000_000,
     });
 
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 2,
       escalatedCount: 0,
       plannerTool: 'claude-code',
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
       taskBreakdowns: [],
     });
 
     expect(result.actualImplementerCost).toBeCloseTo(0.42, 10);
-    const deepseek = result.providerCosts?.['deepseek'];
-    if (!deepseek) throw new Error('expected deepseek provider costs');
-    expect(deepseek.inputTokens).toBeCloseTo(1_000_000, 10);
-    expect(deepseek.outputTokens).toBeCloseTo(1_000_000, 10);
-    expect(deepseek.cost).toBeCloseTo(0.42, 10);
+    const worker = result.providerCosts?.['custom-worker-api'];
+    if (!worker) throw new Error('expected worker endpoint provider costs');
+    expect(worker.inputTokens).toBeCloseTo(1_000_000, 10);
+    expect(worker.outputTokens).toBeCloseTo(1_000_000, 10);
+    expect(worker.cost).toBeCloseTo(0.42, 10);
     expect(result.hasPricedUsage).toBe(true);
     expect(result.isActualImplementerCostKnown).toBe(true);
   });
@@ -447,12 +494,12 @@ describe('calculateCostBreakdown', () => {
       implementerOutput: 1_000_000,
     });
 
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 2,
       escalatedCount: 0,
       plannerTool: 'claude-code',
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
       taskBreakdowns: [
         {
@@ -462,23 +509,23 @@ describe('calculateCostBreakdown', () => {
           implementerTokens: 500_000,
           escalationTokens: 0,
           retryCount: 0,
-          tool: 'anthropic',
+          tool: 'custom-planner-api',
           model: 'claude-sonnet-5',
         },
       ],
     });
 
-    const anthropic = result.providerCosts?.['anthropic'];
-    if (!anthropic) throw new Error('expected anthropic provider costs');
-    expect(anthropic.inputTokens).toBeCloseTo(250_000, 10);
-    expect(anthropic.outputTokens).toBeCloseTo(250_000, 10);
-    expect(anthropic.cost).toBeCloseTo(3, 10);
+    const plannerSeat = result.providerCosts?.['custom-planner-api'];
+    if (!plannerSeat) throw new Error('expected planner endpoint provider costs');
+    expect(plannerSeat.inputTokens).toBeCloseTo(250_000, 10);
+    expect(plannerSeat.outputTokens).toBeCloseTo(250_000, 10);
+    expect(plannerSeat.cost).toBeCloseTo(3, 10);
 
-    const deepseek = result.providerCosts?.['deepseek'];
-    if (!deepseek) throw new Error('expected deepseek residual provider costs');
-    expect(deepseek.inputTokens).toBeCloseTo(750_000, 10);
-    expect(deepseek.outputTokens).toBeCloseTo(750_000, 10);
-    expect(deepseek.cost).toBeCloseTo(0.315, 10);
+    const worker = result.providerCosts?.['custom-worker-api'];
+    if (!worker) throw new Error('expected worker endpoint residual provider costs');
+    expect(worker.inputTokens).toBeCloseTo(750_000, 10);
+    expect(worker.outputTokens).toBeCloseTo(750_000, 10);
+    expect(worker.cost).toBeCloseTo(0.315, 10);
 
     expect(result.actualImplementerCost).toBeCloseTo(3.315, 10);
   });
@@ -488,7 +535,7 @@ describe('calculateCostBreakdown', () => {
       implementerCacheRead: 1_000_000,
     });
 
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 1,
       escalatedCount: 0,
@@ -504,7 +551,7 @@ describe('calculateCostBreakdown', () => {
           implementerCacheReadTokens: 1_000_000,
           implementerCacheCreateTokens: 0,
           retryCount: 0,
-          tool: 'anthropic',
+          tool: 'custom-planner-api',
           model: 'claude-sonnet-5',
         },
       ],
@@ -515,7 +562,7 @@ describe('calculateCostBreakdown', () => {
     expect(result.hasPricedUsage).toBe(true);
     expect(result.hasUnpricedUsage).toBe(false);
     expect(result.providerCosts).toEqual({
-      anthropic: {
+      'custom-planner-api': {
         inputTokens: 0,
         outputTokens: 0,
         cacheReadTokens: 1_000_000,
@@ -530,11 +577,11 @@ describe('calculateCostBreakdown', () => {
       plannerOutput: 50_000,
     });
 
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 0,
       escalatedCount: 0,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
     });
@@ -550,15 +597,17 @@ describe('calculateCostBreakdown', () => {
 describe('offering billing metadata', () => {
   it('meters PAYG when usage exists', () => {
     const metadata = resolveProviderRunMetadata({
-      tool: 'deepseek',
-      normalizedEndpoint: 'https://api.deepseek.com/v1',
+      tool: 'custom-worker-api',
+      normalizedEndpoint: 'https://api.worker.com/v1',
     });
+    // A user-declared endpoint is metered per token, and carries no dated
+    // catalog fact to stamp its identity with.
     expect(metadata).toMatchObject({
-      service: 'deepseek',
+      service: 'custom-worker-api',
       offering: 'payg',
       billing: 'api-metered',
-      normalizedEndpoint: 'https://api.deepseek.com/v1',
-      asOf: '2026-07-31',
+      normalizedEndpoint: 'https://api.worker.com/v1',
+      asOf: '',
     });
 
     const presentation = describeOfferingBillingPresentation(metadata!, {
@@ -567,6 +616,12 @@ describe('offering billing metadata', () => {
     });
     expect(presentation.costLabel).toBe('$0.21');
     expect(presentation.billingLabel).toBe('api-metered');
+  });
+
+  it('claims no identity for a removed runner a resumed run still names', () => {
+    for (const tool of ['aider', 'agent-sdk', 'openrouter', 'anthropic', 'shell']) {
+      expect(resolveProviderRunMetadata({ tool })).toBeUndefined();
+    }
   });
 
   it('labels subscription-included quota without a PAYG charge', () => {
@@ -630,21 +685,21 @@ describe('offering billing metadata', () => {
       implementerOutput: 200_000,
     });
 
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 1,
       escalatedCount: 0,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
       implementerModel: 'qwen-local',
     });
 
-    expect(result.providerRunMetadata?.anthropic).toMatchObject({
-      service: 'anthropic',
+    expect(result.providerRunMetadata?.['custom-planner-api']).toMatchObject({
+      service: 'custom-planner-api',
       offering: 'payg',
       billing: 'api-metered',
-      asOf: '2026-07-31',
+      asOf: '',
     });
     expect(result.providerRunMetadata?.ollama).toMatchObject({
       service: 'ollama',
@@ -652,14 +707,14 @@ describe('offering billing metadata', () => {
       billing: 'local',
       asOf: '2026-07-31',
     });
-    expect(result.offeringPresentations?.anthropic?.costLabel).toMatch(/^\$/);
+    expect(result.offeringPresentations?.['custom-planner-api']?.costLabel).toMatch(/^\$/);
     expect(result.offeringPresentations?.ollama?.costLabel).toBe('local');
   });
 });
 
 describe('summary persistence', () => {
   it('keeps run metadata and offering presentations through the summary schema', () => {
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: makeUsage({
         plannerInput: 100_000,
         plannerOutput: 50_000,
@@ -669,7 +724,7 @@ describe('summary persistence', () => {
       totalTasks: 2,
       escalatedCount: 0,
       plannerTool: 'claude-code',
-      implementerTool: 'deepseek',
+      implementerTool: 'custom-worker-api',
       implementerModel: 'deepseek-v4-flash',
     });
 
@@ -696,12 +751,12 @@ describe('cache pricing', () => {
       plannerCacheRead: 1_000_000,
     });
 
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 3,
       escalatedCount: 0,
-      plannerTool: 'anthropic',
-      implementerTool: 'deepseek',
+      plannerTool: 'custom-planner-api',
+      implementerTool: 'custom-worker-api',
       plannerModel: 'claude-sonnet-5',
       implementerModel: 'deepseek-v4-flash',
     });
@@ -721,7 +776,7 @@ describe('cache pricing', () => {
     });
 
     // claude-code is unpriced-cli — no cacheReadPer1M
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 3,
       escalatedCount: 0,
@@ -741,12 +796,12 @@ describe('cache pricing', () => {
       implementerOutput: 200_000,
     });
 
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 3,
       escalatedCount: 0,
-      plannerTool: 'anthropic',
-      implementerTool: 'deepseek',
+      plannerTool: 'custom-planner-api',
+      implementerTool: 'custom-worker-api',
       plannerModel: 'claude-sonnet-5',
       implementerModel: 'deepseek-v4-flash',
     });
@@ -766,12 +821,12 @@ describe('cache pricing', () => {
       implementerCacheRead: 500_000,
     });
 
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: usage,
       totalTasks: 2,
       escalatedCount: 0,
-      plannerTool: 'anthropic',
-      implementerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
+      implementerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
       implementerModel: 'claude-sonnet-5',
     });
@@ -783,15 +838,15 @@ describe('cache pricing', () => {
 });
 
 describe('reviewer pricing', () => {
-  const anthropicPlanner = {
-    plannerTool: 'anthropic',
+  const meteredSeats = {
+    plannerTool: 'custom-planner-api',
     plannerModel: 'claude-sonnet-5',
-    implementerTool: 'deepseek',
+    implementerTool: 'custom-worker-api',
     implementerModel: 'deepseek-v4-flash',
   } as const;
 
   it('folds reviewer tokens into the planner line when no reviewer is configured', () => {
-    const withReviewerBucket = calculateCostBreakdown({
+    const withReviewerBucket = breakdown({
       tokenUsage: makeUsage({
         plannerInput: 100_000,
         plannerOutput: 40_000,
@@ -802,9 +857,9 @@ describe('reviewer pricing', () => {
       }),
       totalTasks: 4,
       escalatedCount: 0,
-      ...anthropicPlanner,
+      ...meteredSeats,
     });
-    const preChange = calculateCostBreakdown({
+    const preChange = breakdown({
       tokenUsage: makeUsage({
         plannerInput: 120_000,
         plannerOutput: 45_000,
@@ -813,14 +868,14 @@ describe('reviewer pricing', () => {
       }),
       totalTasks: 4,
       escalatedCount: 0,
-      ...anthropicPlanner,
+      ...meteredSeats,
     });
 
     expect(withReviewerBucket).toEqual(preChange);
   });
 
   it('prices a configured reviewer as its own line at the reviewer rates', () => {
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: makeUsage({
         plannerInput: 100_000,
         plannerOutput: 40_000,
@@ -829,27 +884,27 @@ describe('reviewer pricing', () => {
       }),
       totalTasks: 1,
       escalatedCount: 0,
-      plannerTool: 'anthropic',
+      plannerTool: 'custom-planner-api',
       plannerModel: 'claude-sonnet-5',
       implementerTool: 'ollama',
-      reviewerTool: 'deepseek',
+      reviewerTool: 'custom-worker-api',
       reviewerModel: 'deepseek-v4-flash',
     });
-    const reviewerAlone = calculateCostBreakdown({
+    const reviewerAlone = breakdown({
       tokenUsage: makeUsage({ plannerInput: 20_000, plannerOutput: 5_000 }),
       totalTasks: 1,
       escalatedCount: 0,
-      plannerTool: 'deepseek',
+      plannerTool: 'custom-worker-api',
       plannerModel: 'deepseek-v4-flash',
       implementerTool: 'ollama',
     });
 
-    expect(result.providerCosts?.deepseek).toEqual({
+    expect(result.providerCosts?.['custom-worker-api']).toEqual({
       inputTokens: 20_000,
       outputTokens: 5_000,
       cost: reviewerAlone.actualPlannerCost,
     });
-    expect(result.providerCosts?.anthropic?.inputTokens).toBe(100_000);
+    expect(result.providerCosts?.['custom-planner-api']?.inputTokens).toBe(100_000);
     expect(result.totalActualCost).toBeCloseTo(
       result.actualPlannerCost + result.actualImplementerCost + reviewerAlone.actualPlannerCost,
       10,
@@ -857,7 +912,7 @@ describe('reviewer pricing', () => {
   });
 
   it('suppresses the savings estimate when the configured reviewer is unpriced', () => {
-    const result = calculateCostBreakdown({
+    const result = breakdown({
       tokenUsage: makeUsage({
         plannerInput: 100_000,
         plannerOutput: 40_000,
@@ -868,7 +923,7 @@ describe('reviewer pricing', () => {
       }),
       totalTasks: 4,
       escalatedCount: 0,
-      ...anthropicPlanner,
+      ...meteredSeats,
       reviewerTool: 'opencode',
     });
 

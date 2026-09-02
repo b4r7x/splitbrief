@@ -90,12 +90,9 @@ describe('endpoint policy canary matrix', () => {
     expect(normalizeProviderEndpoint(policy, input)).toBe(expected);
   });
 
-  it('allows catalog fixed-origin and loopback providers through getProvider', () => {
-    const anthropic = getProvider('anthropic', {
-      apiBase: 'HTTPS://API.ANTHROPIC.COM:443/v1/',
-      apiKey: 'sk-ant-canary-endpoint-matrix-1a2b',
-    });
-    expect(anthropic.baseURL).toBe('https://api.anthropic.com/v1');
+  it('allows catalog loopback providers through getProvider', () => {
+    const lmStudio = getProvider('lm-studio', { apiBase: 'HTTP://LOCALHOST:1234/v1/' });
+    expect(lmStudio.baseURL).toBe('http://localhost:1234/v1');
 
     const ollama = getProvider('ollama', { apiBase: 'http://127.0.0.1:22000' });
     expect(ollama.baseURL).toBe('http://127.0.0.1:22000/v1');
@@ -126,9 +123,9 @@ describe('endpoint attack canary matrix', () => {
   });
 
   it('rejects a lookalike host through getProvider before env credential resolution', () => {
-    vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-canary-endpoint-matrix-lookalike-3e4f');
+    vi.stubEnv('LM_STUDIO_API_KEY', 'sk-canary-endpoint-matrix-lookalike-3e4f');
     expect(() =>
-      getProvider('anthropic', { apiBase: 'https://api.anthropic.com.evil.test/v1' }),
+      getProvider('lm-studio', { apiBase: 'http://localhost.evil.test:1234/v1' }),
     ).toThrow(expect.objectContaining({ kind: 'provider-endpoint-invalid' }));
   });
 
@@ -166,7 +163,7 @@ describe('redirect credential canary matrix', () => {
       requestedBaseURL: fixedOriginPolicy.baseURL,
       endpointPolicy: fixedOriginPolicy,
       credentialOverride: credential,
-      credentialPrefix: catalogDescriptor('openai').credentialPrefix,
+      credentialPrefix: catalogDescriptor('lm-studio').credentialPrefix,
     });
 
     await expect(
@@ -209,18 +206,14 @@ describe('credential prefix canary matrix', () => {
   });
 
   it.each([
-    ['sk-', 'tp-canary-endpoint-prefix-mismatch-5f6a', 'openai'],
-    ['tp-', 'sk-canary-endpoint-prefix-mismatch-6a7b', 'openai'],
-    ['sk-cp-', 'sk-canary-endpoint-prefix-mismatch-7b8c', 'deepseek'],
-  ])('rejects a %s credential family before network access', (prefix, credential, providerId) => {
-    const descriptor = catalogDescriptor(providerId as keyof typeof API_PROVIDER_CATALOG);
+    ['sk-', 'tp-canary-endpoint-prefix-mismatch-5f6a'],
+    ['tp-', 'sk-canary-endpoint-prefix-mismatch-6a7b'],
+    ['sk-cp-', 'sk-canary-endpoint-prefix-mismatch-7b8c'],
+  ])('rejects a %s credential family before network access', (prefix, credential) => {
     expect(() =>
       createProviderConnection({
-        requestedBaseURL:
-          descriptor.endpointPolicy.kind === 'fixed-origin'
-            ? descriptor.endpointPolicy.baseURL
-            : 'https://api.example.com/v1',
-        endpointPolicy: descriptor.endpointPolicy,
+        requestedBaseURL: 'https://api.example.com/v1',
+        endpointPolicy: fixedOriginPolicy,
         credentialOverride: credential,
         credentialPrefix: prefix,
       }),
@@ -228,18 +221,13 @@ describe('credential prefix canary matrix', () => {
   });
 
   it('never selects offering from credential presence or prefix', () => {
-    vi.stubEnv('OPENROUTER_API_KEY', 'tp-canary-endpoint-offering-8c9d');
-    vi.stubEnv('DEEPSEEK_API_KEY', 'sk-cp-canary-endpoint-offering-9d0e');
+    vi.stubEnv('CUSTOM_ENDPOINT_API_KEY', 'sk-cp-canary-endpoint-offering-9d0e');
 
-    const deepseekPolicy = catalogDescriptor('deepseek').endpointPolicy;
     const connection = createProviderConnection({
-      requestedBaseURL:
-        deepseekPolicy.kind === 'fixed-origin'
-          ? deepseekPolicy.baseURL
-          : 'https://api.deepseek.com/v1',
-      endpointPolicy: deepseekPolicy,
+      requestedBaseURL: 'https://api.example.com/v1',
+      endpointPolicy: { kind: 'fixed-origin', baseURL: 'https://api.example.com/v1' },
       offering: 'payg',
-      envKeyName: 'DEEPSEEK_API_KEY',
+      envKeyName: 'CUSTOM_ENDPOINT_API_KEY',
       credentialPrefix: 'sk-',
     });
 
@@ -251,13 +239,13 @@ describe('readonly provider bridge', () => {
   setupFetchMock();
 
   it('cannot mutate catalog descriptors or endpoint policies through exported references', () => {
-    const descriptor = API_PROVIDER_CATALOG.openai;
+    const descriptor = API_PROVIDER_CATALOG.ollama;
 
     expect(Object.isFrozen(API_PROVIDER_CATALOG)).toBe(true);
     expect(Object.isFrozen(descriptor)).toBe(true);
     expect(Object.isFrozen(descriptor.endpointPolicy)).toBe(true);
     expect(Reflect.set(descriptor, 'offering', 'coding-subscription')).toBe(false);
-    expect(API_PROVIDER_CATALOG.openai.offering).toBe('payg');
+    expect(API_PROVIDER_CATALOG.ollama.offering).toBe('local');
   });
 
   it('fails closed before reading credentials when the policy-owned transport bridge is absent', () => {

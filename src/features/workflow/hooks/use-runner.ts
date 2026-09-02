@@ -3,7 +3,7 @@ import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { Session } from '../../../core/schemas/session.js';
-import type { EngineEvent } from '../../../engine/events/types.js';
+import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
@@ -12,21 +12,17 @@ import { resetConversationRowsProjectionCache } from '../conversation-rows/proje
 import { resetEventBlockCache } from '../conversation-rows/block-cache.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
-import { reviewStore } from '../../../stores/workflow/review.js';
-import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { configStore } from '../../../stores/project/config.js';
 import { attachmentsStore } from '../../../stores/workflow/attachments.js';
-import {
-  runWorkflow,
-  WORKFLOW_REWIND_ABORT_REASON,
-} from '../../../engine/orchestrator/run/workflow.js';
+import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../engine/events/workflow-cancel.js';
 import type { WorkflowSinks } from '../../../engine/orchestrator/types.js';
 import { addTuiEvent, createTuiSink } from '../tui-sink.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import type { StreamingSink } from '../../../engine/orchestrator/task/streaming-feed.js';
 import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
-import type { ResumeLoadAuthority, StateAuthorityReceipt } from '../../../core/state/types.js';
+import type { StateAuthorityReceipt } from '../../../core/state/types.js';
 import {
   createAbortHandlerScope,
   setCancelHandler,
@@ -38,28 +34,19 @@ import {
 } from '../handlers.js';
 import { closeApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
 import { closeCostApprovalPrompt } from '../../../stores/cost-approval/prompt.js';
-import { loadStateForResume } from '../../../core/state/persistence.js';
-import {
-  acquireStateAuthority,
-  assertStateAuthority,
-  readStateAuthority,
-} from '../../../core/state/authority.js';
 import { readSession } from '../../../core/sessions/io.js';
-import { appendProtectedEngineEvent } from '../../../core/sessions/log-writer.js';
-import { RewindEventSchema } from '../../../core/state/rewind-event.js';
-import { transitionAndSave } from '../../../engine/orchestrator/state-ops.js';
-import { refreshWorkflowAuthority } from '../../../engine/orchestrator/run/authority.js';
 import { isResumable } from '../../../core/phases.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { nowIso } from '../../../utils/format-time.js';
 import type { UseInputModeResult } from './use-input-mode.js';
-import { buildRewindAction } from '../../../core/state/build-rewind-action.js';
 import { buildPromptCallbacks } from '../prompt-callbacks.js';
 import { createRecoveryDriver } from '../recovery-driver.js';
 import { enqueueUserMessage } from '../../../engine/orchestrator/queue/submit.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { createJsonlSink } from '../../../engine/events/sinks/jsonl.js';
-import { error } from '../../../utils/error.js';
+import { type ResumeHydration, hydrateResume, resumeFailureMessage } from '../resume-hydration.js';
+import { clearSessionScopedStores } from '../session-stores.js';
+import { type PendingRewind, buildRewindHandler } from '../rewind-handler.js';
 
 export type RunWorkflowFn = typeof runWorkflow;
 
@@ -85,93 +72,6 @@ export interface WorkflowCompletion {
 interface InlineResume {
   prepared: PreparedExecution;
   state: WorkflowState;
-}
-
-type ResumeHydration =
-  | Readonly<{
-      kind: 'loaded';
-      state: WorkflowState;
-      authority: StateAuthorityReceipt;
-    }>
-  | Readonly<{ kind: 'missing' }>
-  | Readonly<{
-      kind: 'invalid';
-      code: 'malformed' | 'future-version';
-      message: string;
-    }>;
-
-function fencedAuthority(
-  receipt: StateAuthorityReceipt,
-): Extract<ResumeLoadAuthority, { kind: 'fenced' }> {
-  return { kind: 'fenced', receipt, promotedFromVersion: null };
-}
-
-function resolveResumeAuthority(
-  ref: Parameters<typeof readStateAuthority>[0],
-  supplied: StateAuthorityReceipt | undefined,
-): ResumeLoadAuthority {
-  if (supplied !== undefined) {
-    assertStateAuthority({ ref, receipt: supplied });
-    return fencedAuthority(supplied);
-  }
-
-  const observed = readStateAuthority(ref);
-  if (observed !== null) {
-    try {
-      assertStateAuthority({ ref, receipt: observed });
-      return fencedAuthority(observed);
-    } catch {
-      // A dead owner is eligible for the normal authority takeover below.
-    }
-  }
-
-  const acquired = acquireStateAuthority({ ref, purpose: 'resume' });
-  if (acquired.kind === 'new-workflow') {
-    throw error(
-      'state-authority-invalid',
-      'A resume operation cannot consume a new-workflow authority candidate.',
-    );
-  }
-  return acquired;
-}
-
-function hydrateResume(
-  ref: Parameters<typeof readStateAuthority>[0],
-  supplied: StateAuthorityReceipt | undefined,
-): ResumeHydration {
-  const authority = resolveResumeAuthority(ref, supplied);
-  const result = loadStateForResume({ ref, authority });
-  if (result.kind === 'loaded') {
-    if (authority.kind !== 'fenced') {
-      return {
-        kind: 'invalid',
-        code: 'malformed',
-        message: 'A read-only resume permit cannot authorize a loaded workflow state.',
-      };
-    }
-    return { kind: 'loaded', state: result.state, authority: authority.receipt };
-  }
-  if (result.kind === 'missing') return { kind: 'missing' };
-  return { kind: 'invalid', code: result.code, message: result.message };
-}
-
-function resumeFailureMessage(result: Extract<ResumeHydration, { kind: 'invalid' }>): string {
-  return `Cannot resume: ${result.message}`;
-}
-
-function clearSessionScopedStores(): void {
-  resetWorkflow();
-  resetMarkdownConversationRowsCache();
-  resetConversationRowsProjectionCache();
-  resetEventBlockCache();
-  conversationScrollStore.reset();
-  reviewStore.clearReview();
-}
-
-interface PendingRewind {
-  prepared: PreparedExecution;
-  event: EngineEvent;
-  feedback: string | undefined;
 }
 
 interface UseWorkflowRunnerResult {
@@ -206,7 +106,7 @@ export function useWorkflowRunner({
       ? inlineResume.state
       : undefined;
 
-  const hydrate = (ref: Parameters<typeof readStateAuthority>[0]): ResumeHydration => {
+  const hydrate = (ref: SessionRef): ResumeHydration => {
     try {
       const result = hydrateResume(ref, authorityRef.current ?? authority);
       if (result.kind === 'loaded') authorityRef.current = result.authority;
@@ -277,48 +177,24 @@ export function useWorkflowRunner({
       inputMode.resetMode();
       controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
     });
-    setRewindHandler((request) => {
-      inputMode.resetMode();
-      const ref = session.ref;
-      const hydrated = hydrate(ref);
-      if (hydrated.kind === 'missing') return;
-      if (hydrated.kind === 'invalid') {
-        feedbackStore.setError(resumeFailureMessage(hydrated));
-        return;
-      }
-      const current = hydrated.state;
-
-      const { action, persistedAction, event } = buildRewindAction({
-        request,
-        ref,
-        state: current,
-        persistEvent: false,
-        persistTranscript: config.workflow.persistTranscript,
-      });
-      let next: WorkflowState;
-      try {
-        next = transitionAndSave(ref, current, persistedAction, {
-          authority: hydrated.authority,
-          expectedRevision: current.stateRevision,
-        });
-        authorityRef.current = refreshWorkflowAuthority(ref, hydrated.authority, next);
-      } catch (cause) {
-        feedbackStore.setError(toErrorMessage(cause));
-        return;
-      }
-      appendProtectedEngineEvent(ref, event, RewindEventSchema);
-      pendingRewindRef.current = {
+    setRewindHandler(
+      buildRewindHandler({
         prepared,
-        event,
-        feedback:
-          action.type === 'REWIND_TO_SPEC' || action.type === 'REWIND_TO_PLAN'
-            ? action.comment
-            : undefined,
-      };
-      controller.abort(WORKFLOW_REWIND_ABORT_REASON);
-      setInlineResume({ prepared, state: next });
-      setRunId((id) => id + 1);
-    });
+        controller,
+        hydrate,
+        resetMode: () => inputMode.resetMode(),
+        setAuthority: (receipt) => {
+          authorityRef.current = receipt;
+        },
+        setPendingRewind: (pending) => {
+          pendingRewindRef.current = pending;
+        },
+        onRewound: (next) => {
+          setInlineResume({ prepared, state: next });
+          setRunId((id) => id + 1);
+        },
+      }),
+    );
 
     try {
       let retryProfileOverride: string | undefined;

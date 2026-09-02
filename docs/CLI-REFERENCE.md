@@ -87,22 +87,22 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--mode <mode>` | enum | `standard` (or `workflow.mode` from config) | One of `instant`, `quick`, `standard`, `speckit`. See [WORKFLOW.md](./WORKFLOW.md). |
+| `--mode <mode>` | enum | `standard` (or `workflow.mode` from config) | One of `quick`, `standard`, `speckit`. The retired `instant` still parses and resolves to `quick` with a deprecation notice. See [WORKFLOW.md](./WORKFLOW.md). |
 | `--approve <level>` | enum | `default` | Spec/plan document gates: `none`, `spec`, `plan`, `all`, `default`. `default` follows the mode's built-in policy. |
-| `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `ollama-cloud`, `anthropic`, `openrouter`, `deepseek`, `openai`, `groq`, `together`, `shell`, `agent`, `agent-sdk`. The flag's help text is derived from `PLANNER_TOOL_IDS` (`src/core/schemas/enums.js`), so `splitbrief start --help` always prints the admitted set. |
+| `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `shell`, `agent`. The flag's help text is derived from `PLANNER_TOOL_IDS` (`src/core/schemas/enums.js`), so `splitbrief start --help` always prints the admitted set. |
 | `--planner-model <model>` | string | from config | Planner model identifier (for API planners). |
 | `--planner-command <cmd>` | string | from config | Custom planner command (when `--planner=shell`). |
 | `--planner-api-base <url>` | string | from config | Planner API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
-| `--planner-api-key-env <var>` | string | from config | Environment variable holding the planner API key; stored as an `env:<var>` reference. A bare name is normalized to `env:<var>`. Applies only to `api` and `agent-sdk` runners; ignored (with a stderr warning) otherwise. |
+| `--planner-api-key-env <var>` | string | from config | Environment variable holding the planner API key; stored as an `env:<var>` reference. A bare name is normalized to `env:<var>`. Applies only to `api` runners; ignored (with a stderr warning) otherwise. |
 | `--planner-args <arg>` | string | from config | Append one planner CLI/shell argument. Repeatable; each use adds another argument. Applies to `cli`, `shell`, and `agent` runners. |
 | `--planner-output-format <format>` | enum | from config | Planner output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
 | `--planner-context-length <tokens>` | number | from config | Planner context length in tokens. Consumed only by the `api` planner kind, where it sizes the request's `max_tokens` output budget; other kinds delegate the budget to their backend and ignore it. |
 | `--planner-effort <level>` | enum | — | Effort hint: `low`, `medium`, `high`, `xhigh`. Silently dropped on backends that don't support it. |
-| `--implementer <provider>` | string | from config | Implementer provider: `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `ollama`, `ollama-cloud`, `lm-studio`, `anthropic`, `openrouter`, `deepseek`, `openai`, `groq`, `together`, `shell`, `agent`, `agent-sdk`. The flag's help text is derived from the catalog's implementer role admission (`src/cli/options.ts`), so `splitbrief start --help` always prints the admitted set. |
+| `--implementer <provider>` | string | from config | Implementer provider: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `ollama`, `lm-studio`, `shell`, `agent`. The flag's help text is derived from the catalog's implementer role admission (`src/cli/options.ts`), so `splitbrief start --help` always prints the admitted set. |
 | `--implementer-model <model>` | string | from config | Implementer model identifier. |
 | `--implementer-command <cmd>` | string | from config | Custom implementer command (when `--implementer=shell`). |
 | `--implementer-api-base <url>` | string | from config | Implementer API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
-| `--implementer-api-key-env <var>` | string | from config | Environment variable holding the implementer API key; stored as an `env:<var>` reference. A bare name is normalized to `env:<var>`. Applies only to `api` and `agent-sdk` runners; ignored (with a stderr warning) otherwise. |
+| `--implementer-api-key-env <var>` | string | from config | Environment variable holding the implementer API key; stored as an `env:<var>` reference. A bare name is normalized to `env:<var>`. Applies only to `api` runners; ignored (with a stderr warning) otherwise. |
 | `--implementer-args <arg>` | string | from config | Append one implementer CLI/shell argument. Repeatable; each use adds another argument. Applies to `cli`, `shell`, and `agent` runners. |
 | `--implementer-output-format <format>` | enum | from config | Implementer output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
 | `--implementer-context-length <tokens>` | number | from config | Implementer context length in tokens. |
@@ -110,7 +110,7 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
 | `--reviewer-model <model>` | string | from config | Reviewer model identifier (for API reviewers). |
 | `--reviewer-command <cmd>` | string | from config | Custom reviewer command (when `--reviewer=shell`). |
 | `--reviewer-api-base <url>` | string | from config | Reviewer API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
-| `--reviewer-api-key-env <var>` | string | from config | Environment variable holding the reviewer API key; stored as an `env:<var>` reference. Applies only to `api` and `agent-sdk` runners; ignored (with a stderr warning) otherwise. |
+| `--reviewer-api-key-env <var>` | string | from config | Environment variable holding the reviewer API key; stored as an `env:<var>` reference. Applies only to `api` runners; ignored (with a stderr warning) otherwise. |
 | `--reviewer-args <arg>` | string | from config | Append one reviewer CLI/shell argument. Repeatable. Applies to `cli`, `shell`, and `agent` runners. |
 | `--reviewer-output-format <format>` | enum | from config | Reviewer output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
 | `--reviewer-context-length <tokens>` | number | from config | Reviewer context length in tokens. Consumed only by the `api` kind, where it sizes the request's `max_tokens` budget. |
@@ -198,7 +198,7 @@ splitbrief start "sensitive customer migration" --worktree
 - When `--worktree` is passed, the source working tree must be clean. The project directory is reassigned to the newly created worktree path before any state is written. With `--detach --worktree`, worktree selection happens before the detached server is spawned. A bare `--worktree` derives its slug from the feature only when transcript persistence is enabled; with `workflow.persistTranscript: false`, it uses an opaque `session-<hex>` slug so `.trees/<slug>` and `splitbrief/<slug>` do not reveal feature text. If worktree creation fails, the command exits `1` with the underlying message.
 - The `setupWorkflow()` step may show an interactive setup screen if config is incomplete; pass `--allow-hooks` in CI to skip the hook-trust prompt.
 - The `--reviewer-*` flags start from whatever runner currently holds the review seat — the `reviewer` block when config has one, the planner when it does not — and write the result back as the reviewer. If no `--reviewer-*` flag applies to the resolved runner kind, nothing is written and the planner keeps the review seat; a flag that names the planner's own tool still writes an explicit `reviewer` block, so the seat is admitted, priced and displayed on its own. The nine flags are declared once in `addWorkflowOptions()` (`src/cli/options.ts`), so `start`, `resume`, `continue`, `last` and `attach` all accept them — though on `attach` they are inert, since an attached client only views a workflow already running elsewhere.
-- Runner override flags are validated against the resolved runner kind. `--planner-api-base` / `--reviewer-api-base` / `--implementer-api-base` apply only to `api` runners, and `--planner-api-key-env` / `--reviewer-api-key-env` / `--implementer-api-key-env` apply only to `api` and `agent-sdk` runners. Passing one for an incompatible kind prints a warning to stderr (e.g. `--planner-api-base is ignored: the planner 'cli' runner does not use it.`) and the value is dropped rather than erroring.
+- Runner override flags are validated against the resolved runner kind. `--planner-api-base` / `--reviewer-api-base` / `--implementer-api-base` apply only to `api` runners, and `--planner-api-key-env` / `--reviewer-api-key-env` / `--implementer-api-key-env` apply only to `api` runners. Passing one for an incompatible kind prints a warning to stderr (e.g. `--planner-api-base is ignored: the planner 'cli' runner does not use it.`) and the value is dropped rather than erroring.
 
 ---
 
@@ -210,7 +210,7 @@ splitbrief start "sensitive customer migration" --worktree
 splitbrief spec <feature> [options]
 ```
 
-Run only the planner. Produces the planning artifacts for the selected mode in a fresh session folder, then exits without invoking the implementer. In `standard` and `speckit` that is `spec.md`, `plan.md`, and `tasks.md`; in `instant` and `quick`, a single planner call produces `tasks.md`. Useful for review-only flows, scripting, or bootstrapping a Handoff Pack.
+Run only the planner. Produces the planning artifacts for the selected mode in a fresh session folder, then exits without invoking the implementer. In `standard` and `speckit` that is `spec.md`, `plan.md`, and `tasks.md`; in `quick`, a single planner call produces `tasks.md`. Useful for review-only flows, scripting, or bootstrapping a Handoff Pack.
 
 Planner stream output is stripped of terminal control sequences before writing to stdout.
 
@@ -224,7 +224,7 @@ splitbrief spec <feature> [--mode <mode>] [--project <dir>] [--allow-hooks] [--a
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--mode <mode>` | enum | `standard` (or `workflow.mode` from config) | One of `instant`, `quick`, `standard`, `speckit`. Same validation and precedence as `splitbrief start`: the flag wins over `workflow.mode`, and an unrecognized value fails the command. See [WORKFLOW.md](./WORKFLOW.md). |
+| `--mode <mode>` | enum | `standard` (or `workflow.mode` from config) | One of `quick`, `standard`, `speckit`. Same validation and precedence as `splitbrief start`: the flag wins over `workflow.mode`, and an unrecognized value fails the command. See [WORKFLOW.md](./WORKFLOW.md). |
 | `--project <dir>` | path | cwd | Project directory. |
 | `--allow-hooks` | boolean | `false` | Trust the hook config without prompting (CI). |
 | `--allow-repo-runners` | boolean | `false` | Grant this run the planner runner command the project config declares. |
@@ -258,7 +258,7 @@ splitbrief spec --allow-hooks "tighten zod schemas"
 ### Files affected
 
 - **Reads:** `.splitbrief/config.yaml`, repo files passed to the planner, `~/.splitbrief/trust/hooks.json`.
-- **Writes:** the planning artifacts under `.splitbrief/sessions/<id>/` for the resolved mode (`research.md`, `spec.md`, `plan.md`, `tasks.md` in `standard` / `speckit`; `tasks.md` in `instant` / `quick`), and the `.splitbrief/active` pointer.
+- **Writes:** the planning artifacts under `.splitbrief/sessions/<id>/` for the resolved mode (`research.md`, `spec.md`, `plan.md`, `tasks.md` in `standard` / `speckit`; `tasks.md` in `quick`), and the `.splitbrief/active` pointer.
 - **On a failed planner call:** the session directory it allocated is removed again via the preparation rollback (including the `.splitbrief/active` pointer); no directory is left behind.
 
 ### See also
@@ -392,7 +392,7 @@ Other distinguishable runner outcomes (`spawn-not-found`, `protocol-failure`, `i
 
 - Missing config reports `splitbrief init`; legacy config warnings report `splitbrief init --reconfigure`, but `doctor` does not run setup commands.
 - Validation readiness is posture only. It reports disabled checks or missing npm scripts without running validation commands; the exception is `--probe-validation`, which runs the configured commands.
-- Runner availability is probed for the `api` and `agent-sdk` runners a run would call (`runners.availability.planner`, `runners.availability.implementer.<profile>`, and `runners.availability.reviewer` when a `reviewer` block is configured). Each probe is one model-list round trip against the endpoint the runner already targets, bounded by a 2s budget and run in parallel. An unreachable planner or default implementer is a blocker — the planning phase is paid for before the implementer is first used — while a non-default profile is a warning. A probe that could not run or overran its budget reports `not-probed` (info); it never reports available. When no probe runs at all, readiness says so and makes no claim (`runners.availability`).
+- Runner availability is probed for the `api` runners a run would call (`runners.availability.planner`, `runners.availability.implementer.<profile>`, and `runners.availability.reviewer` when a `reviewer` block is configured). Each probe is one model-list round trip against the endpoint the runner already targets, bounded by a 2s budget and run in parallel. An unreachable planner or default implementer is a blocker — the planning phase is paid for before the implementer is first used — while a non-default profile is a warning. A probe that could not run or overran its budget reports `not-probed` (info); it never reports available. When no probe runs at all, readiness says so and makes no claim (`runners.availability`).
 - The arg-vector preflight runs here too, so a blocker `start` would raise can be inspected without starting a run: a flag the installed binary's help does not advertise is a blocker (`runners.cli.<tool>.arg-vector.<role>`), a flag it marks deprecated is a warning, and a help text that cannot be read reports ok. See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).
 - A `shell` or `agent` runner reaches execution only through an owner-only trust receipt, so `doctor` replays that admission read-only (`runners.consent.planner`, `runners.consent.implementer.<profile>`, and `runners.consent.reviewer` when a `reviewer` block is configured) instead of only warning that the runner can execute commands. The verdict is reported for a run started the way `doctor` was started: on a TTY it is a warning naming the one-time confirmation `start` would prompt for, and with `--json` or a non-TTY stdin it is the blocker a non-interactive run receives. Nothing is written and no receipt is granted — `doctor` takes no `--allow-repo-runners`, so a run that passes that flag can be admitted where `doctor` reports a blocker, and the check's remediation names the flag.
 - Headless runner admission is replayed the same way: with `--json` or a non-TTY stdin, `doctor` runs the same `runners.preparation.*` checks `start --json` / `start --rpc` / `start --detach` would fail on when a configured CLI runner lacks a trusted readiness identity or would otherwise be refused headless admission. Each check's remediation names `--allow-unverified-auth` when that flag would admit the run; `doctor` accepts no override flags, so a headless run that passes `--allow-unverified-auth` can proceed where `doctor` reports a blocker. Interactive `doctor` on a TTY does not emit these preparation blockers — interactive `start` discloses and prompts instead.
@@ -1659,7 +1659,7 @@ Commands in this section share stable `stateId` / `state` identifiers and copyab
 | `--project <dir>` | most | cwd | Project directory. |
 | `-p, --project <dir>` | `export` | `.` / cwd | Short project-dir alias. |
 | `--session <id>` | `explain`, `handoff`, `snapshot *`, `mcp serve` | active session | Accepts a session ID or numeric alias from `splitbrief ps`. When omitted, the active session is read from `.splitbrief/active`. |
-| `--mode <mode>` | `start`, `spec`, `resume`, `continue`, `last` | `workflow.mode`, else `standard` | One of `instant`, `quick`, `standard`, `speckit`. Validated against the same enum everywhere; on the resume family it overrides the mode saved in `state.json` and prints a warning. |
+| `--mode <mode>` | `start`, `spec`, `resume`, `continue`, `last` | `workflow.mode`, else `standard` | One of `quick`, `standard`, `speckit`; the retired `instant` parses as `quick` with a deprecation notice. Validated against the same enum everywhere; on the resume family it overrides the mode saved in `state.json` and prints a warning. |
 | `--allow-hooks` | `start`, `resume`, `continue`, `last`, `spec` | `false` | Skip the hook-trust prompt. CI flag. |
 | `--allow-repo-runners` | `start`, `resume`, `continue`, `last`, `spec` | `false` | Trust repo-local shell/agent runner execution from project config. Separate from hook trust. |
 | `--allow-unverified-auth` | `start`, `resume`, `continue`, `last` | `false` | Let a headless run proceed with unverified CLI authentication. No effect on interactive runs, which disclose and prompt. |
@@ -1701,22 +1701,20 @@ When `start`, `resume`, or an interrupted resumable `continue` / `last` runs wit
 
 | Mode | Planner calls | Approval gates | Best for |
 |---|:---:|:---:|---|
-| `instant` | 1 | none | Trivial edits that need almost no ceremony. |
-| `quick` | 1 | none | Small tasks that still need a brief. |
+| `quick` | 1 | none | Trivial edits and small tasks that still need a brief. |
 | `standard` (default) | 4 | supporting spec + briefs | Ordinary feature work. |
 | `speckit` | 6–7 | supporting spec + plan + briefs | Large, risky, or externally visible work. |
 
-`--mode` is accepted by `start`, `spec`, `resume`, `continue`, and `last`. On `spec` it selects planning depth only — that command never implements and runs no approval gate. Detailed semantics in [WORKFLOW.md](./WORKFLOW.md).
+`--mode` is accepted by `start`, `spec`, `resume`, `continue`, and `last`. On `spec` it selects planning depth only — that command never implements and runs no approval gate. `--mode instant` is retired: it still parses, resolves to `quick`, and prints a deprecation notice on stderr. Detailed semantics in [WORKFLOW.md](./WORKFLOW.md).
 
 ### Runner kinds (`--planner` / `--implementer`)
 
 | `kind` | What it is | Examples |
 |---|---|---|
-| `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code` |
-| `api` | OpenAI-compatible HTTP endpoint | `ollama`, `ollama-cloud`, `lm-studio`, `anthropic`, `openrouter`, `deepseek`, `openai`, `groq`, `together` |
+| `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code` |
+| `api` | OpenAI-compatible HTTP endpoint | `ollama`, `lm-studio` |
 | `shell` | Arbitrary command (stdin → stdout), no shell/network sandbox | Custom scripts via `--planner-command` / `--implementer-command` |
 | `agent` | Subprocess that writes files directly, no stdout extraction or shell/network sandbox | Custom file-writing tools |
-| `agent-sdk` | Anthropic Agent SDK library call | Via `@anthropic-ai/claude-agent-sdk` |
 
 Schemas and YAML shape live in [ARCHITECTURE.md](./ARCHITECTURE.md) and [CONFIGURATION.md](./CONFIGURATION.md). Built-in CLI tools may run their own auto/permission modes according to their upstream behavior; SPLITBRIEF surfaces warnings but does not sandbox shell or network access.
 

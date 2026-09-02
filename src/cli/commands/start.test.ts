@@ -13,8 +13,8 @@ import { configStore } from '../../stores/project/config.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { sessionDir } from '../../core/paths.js';
-import type { SpawnServerOptions, SpawnServerResult } from '../../engine/ipc/spawn-server.js';
-import { buildServerArgs } from '../../engine/ipc/spawn-server.js';
+import type { SpawnServerResult } from '../../engine/ipc/detached-handshake.js';
+import { buildServerArgs, type SpawnServerOptions } from '../../engine/ipc/server-invocation.js';
 import {
   prepareExecutionMock,
   setupRunnerTrustIsolation,

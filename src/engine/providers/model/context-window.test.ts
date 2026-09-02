@@ -5,7 +5,7 @@ import { resolveRunnerContextWindow } from './context-window.js';
 
 describe('resolveRunnerContextWindow', () => {
   it('resolves a CLI tool under automatic model selection to the smallest bundled window', () => {
-    const result = resolveRunnerContextWindow({ providerId: 'aider', model: 'auto' });
+    const result = resolveRunnerContextWindow({ providerId: 'opencode', model: 'auto' });
 
     expect(result).toEqual({ contextLength: 272_000, source: 'automatic-catalog' });
   });
@@ -27,11 +27,11 @@ describe('resolveRunnerContextWindow', () => {
 
   it('prefers a cache-known model over the bundled row', () => {
     const catalog: ModelsDevCatalog = {
-      anthropic: {
-        id: 'anthropic',
+      ollama: {
+        id: 'ollama',
         models: {
-          'claude-sonnet-5': {
-            id: 'claude-sonnet-5',
+          'qwen3-coder:30b': {
+            id: 'qwen3-coder:30b',
             limit: { context: 400_000 },
           },
         },
@@ -39,7 +39,7 @@ describe('resolveRunnerContextWindow', () => {
     };
     const cache = makeModelCacheAccessor({ catalog });
 
-    const result = resolveRunnerContextWindow({ providerId: 'anthropic', model: 'auto', cache });
+    const result = resolveRunnerContextWindow({ providerId: 'ollama', model: 'auto', cache });
 
     expect(result).toEqual({ contextLength: 400_000, source: 'models-dev' });
   });

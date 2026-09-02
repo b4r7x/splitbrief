@@ -66,7 +66,9 @@ describe('createProductionDetectionDeps', () => {
       planner: { kind: 'cli', tool: 'codex', model: 'gpt-5.4' },
       implementer: {
         kind: 'api',
-        provider: 'openai',
+        provider: 'custom-private-provider',
+        service: 'custom-private-provider',
+        offering: 'payg',
         apiBase: 'https://gateway-a.example.test/v1',
         apiKey: 'sk-private-config-a',
         model: 'gpt-5.4',
@@ -76,7 +78,9 @@ describe('createProductionDetectionDeps', () => {
       planner: { kind: 'cli', tool: 'codex', model: 'gpt-5.4' },
       implementer: {
         kind: 'api',
-        provider: 'openai',
+        provider: 'custom-private-provider',
+        service: 'custom-private-provider',
+        offering: 'payg',
         apiBase: 'https://gateway-b.example.test/v1',
         apiKey: 'sk-private-config-b',
         model: 'gpt-5.4',
@@ -182,80 +186,6 @@ describe('createProductionDetectionDeps', () => {
       vi.unstubAllGlobals();
     }
   }, 20_000);
-
-  it('reuses an Anthropic API catalog for Agent SDK only when T003 credential-domain identity matches exactly', async () => {
-    const originalShared = process.env.R5_SHARED_ANTHROPIC_KEY;
-    const originalSdk = process.env.R5_SDK_ANTHROPIC_KEY;
-    const originalApi = process.env.R5_API_ANTHROPIC_KEY;
-    try {
-      process.env.R5_SHARED_ANTHROPIC_KEY = 'sk-ant-shared-key';
-      process.env.R5_SDK_ANTHROPIC_KEY = 'sk-ant-sdk-key';
-      process.env.R5_API_ANTHROPIC_KEY = 'sk-ant-api-key';
-      const calls: string[] = [];
-      vi.stubGlobal('fetch', (input: string | URL | Request) => {
-        calls.push(requestUrl(input));
-        return Promise.resolve(
-          new Response(JSON.stringify({ data: [], has_more: false }), { status: 200 }),
-        );
-      });
-      try {
-        const exact = makeConfig({
-          planner: {
-            kind: 'agent-sdk',
-            apiKey: 'env:R5_SHARED_ANTHROPIC_KEY',
-            model: 'claude-sonnet-4-6',
-          },
-          implementer: {
-            kind: 'api',
-            provider: 'anthropic',
-            apiBase: 'https://api.anthropic.com/v1',
-            apiKey: 'env:R5_SHARED_ANTHROPIC_KEY',
-            model: 'claude-sonnet-4-6',
-          },
-        });
-        const exactResult = await createProductionDetectionDeps({
-          config: exact,
-          projectDir: '/projects/exact-sdk-domain',
-        }).detectAll({ signal: new AbortController().signal });
-
-        expect(calls.filter((url) => url.startsWith('https://api.anthropic.com/'))).toHaveLength(1);
-        expect(
-          exactResult.configuredProviderOutcomes?.map((entry) => entry.connection.role).toSorted(),
-        ).toEqual(['implementer', 'planner']);
-
-        calls.length = 0;
-        const near = makeConfig({
-          planner: {
-            kind: 'agent-sdk',
-            apiKey: 'env:R5_SDK_ANTHROPIC_KEY',
-            model: 'claude-sonnet-4-6',
-          },
-          implementer: {
-            kind: 'api',
-            provider: 'anthropic',
-            apiBase: 'https://api.anthropic.com/v1',
-            apiKey: 'env:R5_API_ANTHROPIC_KEY',
-            model: 'claude-sonnet-4-6',
-          },
-        });
-        await createProductionDetectionDeps({
-          config: near,
-          projectDir: '/projects/near-sdk-domain',
-        }).detectAll({ signal: new AbortController().signal });
-
-        expect(calls.filter((url) => url.startsWith('https://api.anthropic.com/'))).toHaveLength(2);
-      } finally {
-        vi.unstubAllGlobals();
-      }
-    } finally {
-      if (originalShared === undefined) delete process.env.R5_SHARED_ANTHROPIC_KEY;
-      else process.env.R5_SHARED_ANTHROPIC_KEY = originalShared;
-      if (originalSdk === undefined) delete process.env.R5_SDK_ANTHROPIC_KEY;
-      else process.env.R5_SDK_ANTHROPIC_KEY = originalSdk;
-      if (originalApi === undefined) delete process.env.R5_API_ANTHROPIC_KEY;
-      else process.env.R5_API_ANTHROPIC_KEY = originalApi;
-    }
-  }, 20_000);
 });
 
 const HOST_DETECTION_ENV = [
@@ -280,16 +210,17 @@ const SEEDED_SESSION_STATE_PATHS = [
   '.config/kilo/auth.json',
   '.cursor/cli-config.json',
   '.cursor/agent-cli-state.json',
+  '.commandcode/auth.json',
 ] as const;
 
 const CLI_VERSION_LABELS: Record<CliToolId, string> = {
   'claude-code': 'claude ',
   codex: 'codex-cli ',
   opencode: '',
-  aider: 'aider ',
   copilot: 'copilot version ',
   'kilo-code': '',
   cursor: '',
+  'command-code': '',
 };
 
 const CLI_AUTH_STATUS_RESPONSES: Partial<Record<CliToolId, readonly string[]>> = {
@@ -308,6 +239,12 @@ const CLI_AUTH_STATUS_RESPONSES: Partial<Record<CliToolId, readonly string[]>> =
   cursor: [
     'if [ "$1" = "status" ]; then',
     `  printf '%s\\n' '{"loggedIn": true}'`,
+    '  exit 0',
+    'fi',
+  ],
+  'command-code': [
+    'if [ "$1" = "status" ]; then',
+    `  printf '%s\\n' '{"authenticated": true}'`,
     '  exit 0',
     'fi',
   ],
@@ -402,10 +339,10 @@ describe('all-admitted-tools auth channels', () => {
               'claude-code': 'authenticated',
               codex: 'authenticated',
               opencode: 'authenticated',
-              aider: 'not-checked',
               copilot: 'authenticated',
               'kilo-code': 'authenticated',
               cursor: 'authenticated',
+              'command-code': 'authenticated',
             },
           );
           const copilot = result.cliTools.find((detection) => detection.tool === 'copilot');

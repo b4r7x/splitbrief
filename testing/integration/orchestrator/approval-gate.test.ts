@@ -16,13 +16,23 @@ type ApprovalResolution = ApprovalReviewResult;
 
 const dirs: string[] = [];
 
+async function expectStillPending(promise: Promise<unknown>): Promise<void> {
+  const outcome = await Promise.race([
+    promise.then(() => 'settled'),
+    new Promise<string>((resolve) => {
+      setTimeout(() => resolve('pending'), 25);
+    }),
+  ]);
+  expect(outcome).toBe('pending');
+}
+
 beforeEach(() => resetAllStores());
 afterEach(() => {
   while (dirs.length) cleanupTempDir(dirs.pop() as string);
 });
 
 describe('spec approval gate suspends until externally resolved', () => {
-  it('awaits onApprovalNeeded, resumes on resolve, then emits spec-approved-equivalent state transition', async () => {
+  it('suspends until the approval promise resolves, then returns an accepted result', async () => {
     const projectDir = createTempDir('orch-int-approval');
     dirs.push(projectDir);
     const sessionId = 'sess-approval';
@@ -33,7 +43,11 @@ describe('spec approval gate suspends until externally resolved', () => {
     const approval = new Promise<ApprovalResolution>((resolve) => {
       approve = resolve;
     });
-    const onApprovalNeeded = (): Promise<ApprovalResolution> => approval;
+    const approvalArgs: unknown[] = [];
+    const onApprovalNeeded = (kind: unknown, input: unknown): Promise<ApprovalResolution> => {
+      approvalArgs.push(kind, input);
+      return approval;
+    };
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus, events } = makeBusRecorder();
 
@@ -52,13 +66,8 @@ describe('spec approval gate suspends until externally resolved', () => {
       persistTranscript: false,
     });
 
-    await Promise.resolve();
-    const resolved = { kind: 'none' } as { kind: 'none' | 'done' };
-    void loopPromise.then(() => {
-      resolved.kind = 'done';
-    });
-    await Promise.resolve();
-    expect(resolved.kind).toBe('none');
+    await expectStillPending(loopPromise);
+    expect(approvalArgs).toEqual(['spec', '/tmp/spec.md']);
 
     expect(approve).toBeDefined();
     approve?.({ approved: true });
@@ -66,6 +75,7 @@ describe('spec approval gate suspends until externally resolved', () => {
 
     expect(result.rejected).toBe(false);
     expect(result.regenerated).toBe(false);
+    expect(events.find((e) => e.type === 'spec_rejected')).toBeUndefined();
     expect(events.find((e) => e.type === 'planner_status' && e.status === 'done')).toBeUndefined();
   });
 });

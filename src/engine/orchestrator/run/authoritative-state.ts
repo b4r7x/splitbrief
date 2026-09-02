@@ -1,6 +1,6 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { acquireStateAuthority } from '../../../core/state/authority.js';
-import { loadStateForResume } from '../../../core/state/persistence.js';
+import { loadStateForResume } from '../../../core/state/resume-authority.js';
 import type {
   StateAuthorityAcquisitionResult,
   StateAuthorityReceipt,

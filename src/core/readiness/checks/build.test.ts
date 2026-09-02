@@ -69,11 +69,11 @@ function readyInput(overrides: Partial<BuildReadinessReportInput> = {}): BuildRe
     config: makeConfig({
       planner: {
         kind: 'api',
-        provider: 'openai',
-        service: 'openai',
+        provider: 'custom-endpoint',
+        service: 'example-llm',
         offering: 'payg',
-        apiBase: 'https://api.openai.com/v1',
-        model: 'gpt-5',
+        apiBase: 'https://api.example.test/v1',
+        model: 'acme/reasoner-1',
         contextLength: 128_000,
       },
     }),
@@ -174,11 +174,11 @@ describe('readiness checks', () => {
       ...makeConfig({
         planner: {
           kind: 'api',
-          provider: 'openai',
-          service: 'openai',
+          provider: 'custom-endpoint',
+          service: 'example-llm',
           offering: 'payg',
-          apiBase: 'https://api.openai.com/v1',
-          model: 'gpt-5',
+          apiBase: 'https://api.example.test/v1',
+          model: 'acme/reasoner-1',
           contextLength: 128_000,
         },
       }),
@@ -220,11 +220,11 @@ describe('readiness checks', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
-        provider: 'openai',
-        service: 'openai',
+        provider: 'custom-endpoint',
+        service: 'example-llm',
         offering: 'payg',
-        apiBase: 'https://api.openai.com/v1',
-        model: 'gpt-5',
+        apiBase: 'https://api.example.test/v1',
+        model: 'acme/reasoner-1',
         contextLength: 128_000,
       },
       implementer: { contextLength: 32_768 },

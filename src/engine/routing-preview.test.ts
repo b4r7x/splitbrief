@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Config } from '../core/schemas/config.js';
-import type { ModelCacheAccessor } from './providers/model/resolution.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { buildRoutingPreviewMetadata } from './routing-preview.js';
@@ -36,12 +35,12 @@ describe('buildRoutingPreviewMetadata', () => {
             model: 'cheap-model',
             costTier: 'cheap',
           },
-          'standard-cache-worker': {
+          'standard-worker': {
             kind: 'api',
-            provider: 'openrouter',
-            service: 'openrouter',
+            provider: 'custom-endpoint',
+            service: 'custom-endpoint',
             offering: 'payg',
-            apiBase: 'https://openrouter.ai/api/v1',
+            apiBase: 'https://custom-endpoint.example/v1',
             apiKey: 'test-key',
             model: 'runtime-standard',
             costTier: 'standard',
@@ -49,25 +48,10 @@ describe('buildRoutingPreviewMetadata', () => {
         },
       },
     };
-    const modelCache: ModelCacheAccessor = {
-      getModelsDevCatalog: () => null,
-      getProviderModels: (providerId) =>
-        providerId === 'openrouter'
-          ? [
-              {
-                id: 'runtime-standard',
-                contextLength: 50_000,
-                pricingInput: 1,
-                pricingOutput: 2,
-              },
-            ]
-          : null,
-    };
 
     const [metadata] = await buildRoutingPreviewMetadata([task], {
       config,
       projectDir,
-      modelCache,
       detectedContextLength,
     });
 
@@ -76,6 +60,8 @@ describe('buildRoutingPreviewMetadata', () => {
       workerProfile: 'cheap-detected-worker',
       selectedCostTier: 'cheap',
       contextLength: detectedContextLength,
+      costPosture:
+        'Selected cheap cost tier via cheapest-capable routing; rejected tiers: standard',
     });
   });
 

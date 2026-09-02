@@ -453,14 +453,15 @@ describe('createStagedProject — sensitive file exclusion', () => {
           makeConfig({
             implementer: {
               kind: 'api',
-              provider: 'openai',
-              apiBase: 'https://api.openai.com/v1',
+              provider: 'ollama',
+              apiBase: 'http://localhost:11434/v1',
               model: 'gpt-4',
             },
             planner: {
               kind: 'api',
-              provider: 'anthropic',
-              apiBase: 'https://api.anthropic.com/v1',
+              provider: 'custom-endpoint',
+              apiBase: 'https://api.example.com/v1',
+              apiKey: 'test-key',
               model: 'claude-sonnet',
             },
           }),
@@ -488,8 +489,8 @@ describe('createStagedProject — sensitive file exclusion', () => {
     try {
       createTestGitRepo(dir);
       touchedEnvKeys.push(
-        'OPENAI_API_KEY',
-        'ANTHROPIC_API_KEY',
+        'OLLAMA_LOCAL_API_KEY',
+        'CUSTOM_ENDPOINT_API_KEY',
         'GITHUB_TOKEN',
         'AWS_PROFILE',
         'AWS_WEB_IDENTITY_TOKEN_FILE',
@@ -497,8 +498,8 @@ describe('createStagedProject — sensitive file exclusion', () => {
         'SSH_AUTH_SOCK',
         'npm_config_userconfig',
       );
-      process.env.OPENAI_API_KEY = 'sk-openai';
-      process.env.ANTHROPIC_API_KEY = 'sk-anthropic';
+      process.env.OLLAMA_LOCAL_API_KEY = 'sk-ollama';
+      process.env.CUSTOM_ENDPOINT_API_KEY = 'sk-custom';
       process.env.GITHUB_TOKEN = 'gh-secret';
       process.env.AWS_PROFILE = 'prod';
       process.env.AWS_WEB_IDENTITY_TOKEN_FILE = '/tmp/aws-token';
@@ -509,22 +510,24 @@ describe('createStagedProject — sensitive file exclusion', () => {
       const config = makeConfig({
         implementer: {
           kind: 'api',
-          provider: 'openai',
-          apiBase: 'https://api.openai.com/v1',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          apiKey: 'env:OLLAMA_LOCAL_API_KEY',
           model: 'gpt-4',
         },
         planner: {
           kind: 'api',
-          provider: 'anthropic',
-          apiBase: 'https://api.anthropic.com/v1',
+          provider: 'custom-endpoint',
+          apiBase: 'https://api.example.com/v1',
+          apiKey: 'env:CUSTOM_ENDPOINT_API_KEY',
           model: 'claude-sonnet',
         },
       });
 
       const staged = await createStagedProject(dir, config);
       try {
-        expect(staged.sandboxEnv.OPENAI_API_KEY).toBe('sk-openai');
-        expect(staged.sandboxEnv.ANTHROPIC_API_KEY).toBeUndefined();
+        expect(staged.sandboxEnv.OLLAMA_LOCAL_API_KEY).toBe('sk-ollama');
+        expect(staged.sandboxEnv.CUSTOM_ENDPOINT_API_KEY).toBeUndefined();
         expect(staged.sandboxEnv.GITHUB_TOKEN).toBeUndefined();
         expect(staged.sandboxEnv.AWS_PROFILE).toBeUndefined();
         expect(staged.sandboxEnv.AWS_WEB_IDENTITY_TOKEN_FILE).toBeUndefined();
@@ -543,30 +546,32 @@ describe('createStagedProject — sensitive file exclusion', () => {
     const dir = createTempDir('staged-planner-auth-test');
     try {
       createTestGitRepo(dir);
-      touchedEnvKeys.push('OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GITHUB_TOKEN');
-      process.env.OPENAI_API_KEY = 'sk-openai';
-      process.env.ANTHROPIC_API_KEY = 'sk-anthropic';
+      touchedEnvKeys.push('OLLAMA_LOCAL_API_KEY', 'CUSTOM_ENDPOINT_API_KEY', 'GITHUB_TOKEN');
+      process.env.OLLAMA_LOCAL_API_KEY = 'sk-ollama';
+      process.env.CUSTOM_ENDPOINT_API_KEY = 'sk-custom';
       process.env.GITHUB_TOKEN = 'gh-secret';
 
       const config = makeConfig({
         implementer: {
           kind: 'api',
-          provider: 'openai',
-          apiBase: 'https://api.openai.com/v1',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          apiKey: 'env:OLLAMA_LOCAL_API_KEY',
           model: 'gpt-4',
         },
         planner: {
           kind: 'api',
-          provider: 'anthropic',
-          apiBase: 'https://api.anthropic.com/v1',
+          provider: 'custom-endpoint',
+          apiBase: 'https://api.example.com/v1',
+          apiKey: 'env:CUSTOM_ENDPOINT_API_KEY',
           model: 'claude-sonnet',
         },
       });
 
       const staged = await createStagedProject(dir, config, 'planner');
       try {
-        expect(staged.sandboxEnv.ANTHROPIC_API_KEY).toBe('sk-anthropic');
-        expect(staged.sandboxEnv.OPENAI_API_KEY).toBeUndefined();
+        expect(staged.sandboxEnv.CUSTOM_ENDPOINT_API_KEY).toBe('sk-custom');
+        expect(staged.sandboxEnv.OLLAMA_LOCAL_API_KEY).toBeUndefined();
         expect(staged.sandboxEnv.GITHUB_TOKEN).toBeUndefined();
       } finally {
         staged.cleanup();

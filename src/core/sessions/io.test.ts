@@ -227,8 +227,8 @@ describe('saveSummary', () => {
       implementerTokens: 500_000,
       escalationTokens: 0,
       retryCount: 0,
-      tool: 'deepseek',
-      model: 'deepseek-chat',
+      tool: 'custom-endpoint',
+      model: 'acme/reasoner-1',
     };
     const secondRow = {
       taskId: taskId('T002'),
@@ -237,8 +237,8 @@ describe('saveSummary', () => {
       implementerTokens: 300_000,
       escalationTokens: 0,
       retryCount: 0,
-      tool: 'deepseek',
-      model: 'deepseek-chat',
+      tool: 'custom-endpoint',
+      model: 'acme/reasoner-1',
     };
 
     const session = makeSession({
@@ -258,7 +258,7 @@ describe('saveSummary', () => {
     expect(breakdown.map((row) => row.taskId)).toEqual([taskId('T001'), taskId('T002')]);
     expect(breakdown.find((row) => row.taskId === taskId('T001'))).toMatchObject({
       implementerTokens: 500_000,
-      tool: 'deepseek',
+      tool: 'custom-endpoint',
     });
   });
 });

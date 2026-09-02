@@ -1,16 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { cursorDetectedModels } from '#testing/helpers/factories/cursor-models.js';
 import type { CliProviderAuthFact, DetectedModel } from '../../../core/discovery/detection.js';
+import type { CliEffortChannel } from '../../../core/runners/effort-channel.js';
 import type { ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
 import { buildRightModels, countModelOptions, modelRowMatchesId } from './catalog.js';
-import { isOptionFamily } from './option-axis.js';
+import { isOptionFamily, routePrefixesOf } from './option-axis.js';
 import type { PickerOption } from './options.js';
 import { deriveModelCatalogCapability } from './posture.js';
 import type { ModelOption } from './recency.js';
 
 function tool(
   id: string,
-  input: { providerDependent?: boolean; automatic?: boolean } = {},
+  input: {
+    providerDependent?: boolean;
+    automatic?: boolean;
+    effortChannel?: CliEffortChannel;
+  } = {},
 ): PickerOption {
   return {
     id,
@@ -30,6 +35,7 @@ function tool(
     status: { state: 'ready', remediation: null },
     available: true,
     ...(input.providerDependent === true ? { providerDependent: true } : {}),
+    ...(input.effortChannel === undefined ? {} : { effortChannel: input.effortChannel }),
   };
 }
 
@@ -73,6 +79,24 @@ function kiloModels(
   });
 }
 
+const LUNA_ROUTES: readonly DetectedModel[] = [
+  { id: 'openai/gpt-x-luna' },
+  { id: 'openai/gpt-x-luna-fast' },
+  { id: 'opencode-go/gpt-x-luna' },
+];
+
+function opencodeModels(
+  models: readonly DetectedModel[],
+  input: { effortChannel?: CliEffortChannel } = {},
+): ModelOption[] {
+  return buildRightModels({
+    role: 'planner',
+    customModels: [],
+    currentItem: tool('opencode', { providerDependent: true, ...input }),
+    cache: cliCache('opencode', models),
+  });
+}
+
 function findMergedRow(models: readonly ModelOption[]): ModelOption | undefined {
   return models.find((model) => model.variants !== undefined && model.variants.length === 2);
 }
@@ -109,6 +133,42 @@ describe('provider variant merge', () => {
     const models = kiloModels();
 
     expect(models).toHaveLength(2);
+    expect(countModelOptions(models)).toEqual({
+      confirmed: 3,
+      stale: 0,
+      suggestions: 0,
+      bundled: 0,
+      custom: 0,
+    });
+  });
+
+  it('collapses a provider-routed luna family into one row', () => {
+    const models = opencodeModels(LUNA_ROUTES.slice(0, 2));
+
+    expect(models).toHaveLength(1);
+    expect(models[0]?.variants?.map((variant) => variant.fullId)).toEqual([
+      'openai/gpt-x-luna',
+      'openai/gpt-x-luna-fast',
+    ]);
+  });
+
+  it('joins two routes of one option family under a single row', () => {
+    const models = opencodeModels(LUNA_ROUTES);
+
+    expect(models).toHaveLength(1);
+    const variants = models[0]?.variants ?? [];
+    expect(routePrefixesOf(variants)).toEqual(['openai', 'opencode-go']);
+    expect(variants.map((variant) => variant.fullId)).toEqual([
+      'openai/gpt-x-luna',
+      'openai/gpt-x-luna-fast',
+      'opencode-go/gpt-x-luna',
+    ]);
+  });
+
+  it('counts variants, not merged rows, after the collapse', () => {
+    const models = opencodeModels(LUNA_ROUTES);
+
+    expect(models).toHaveLength(1);
     expect(countModelOptions(models)).toEqual({
       confirmed: 3,
       stale: 0,
@@ -163,7 +223,7 @@ describe('provider variant merge', () => {
       role: 'planner',
       customModels: [],
       currentItem: tool('opencode', { providerDependent: true }),
-      cache: cliCache('opencode', [{ id: nativeId }], 'stale'),
+      cache: cliCache('opencode', [{ id: nativeId }, { id: 'anthropic/claude-sonnet-5' }], 'stale'),
     });
     const staleRow = findMergedRow(staleModels);
     expect(staleRow).toMatchObject({
@@ -172,7 +232,8 @@ describe('provider variant merge', () => {
       isStale: true,
       isDetected: false,
     });
-    expect(countModelOptions(staleModels)).toMatchObject({ confirmed: 0, stale: 1, bundled: 2 });
+    // A remembered exact list is still the authority: no bundled row joins it.
+    expect(countModelOptions(staleModels)).toMatchObject({ confirmed: 0, stale: 2, bundled: 0 });
 
     const freshModels = buildRightModels({
       role: 'planner',
@@ -261,6 +322,20 @@ describe('provider variant merge', () => {
     expect(modelRowMatchesId({ id: 'auto' }, 'auto')).toBe(true);
     expect(modelRowMatchesId({ id: 'auto' }, 'kilo/openrouter/auto')).toBe(false);
   });
+
+  it('keeps the recovery flag on the provider group the missing configured id joins', () => {
+    const models = buildRightModels({
+      role: 'planner',
+      customModels: [],
+      currentItem: { ...tool('opencode', { providerDependent: true }), isCurrent: true },
+      cache: cliCache('opencode', [{ id: 'opencode-go/gpt-x-luna' }]),
+      persistedModel: 'openai/gpt-x-luna',
+    });
+
+    const row = models.find((model) => modelRowMatchesId(model, 'openai/gpt-x-luna'));
+    expect(row?.variants).toHaveLength(2);
+    expect(row?.isRecovery).toBe(true);
+  });
 });
 
 describe('option family merge', () => {
@@ -302,10 +377,82 @@ describe('option family merge', () => {
       }
     }
   });
+
+  it('keeps grok-code-fast flat', () => {
+    const routed = opencodeModels([{ id: 'opencode/grok-code-fast' }]);
+
+    expect(routed.map((model) => model.id)).toEqual(['opencode/grok-code-fast']);
+    expect(isOptionFamily({ variants: routed[0]?.variants })).toBe(false);
+    expect(routed[0]?.variants?.map((variant) => variant.fullId)).toEqual([
+      'opencode/grok-code-fast',
+    ]);
+
+    const flat = buildRightModels({
+      role: 'planner',
+      customModels: [],
+      currentItem: tool('codex'),
+      cache: cliCache('codex', [{ id: 'opencode/grok-code-fast' }]),
+    });
+
+    expect(flat.map((model) => model.id)).toEqual(['opencode/grok-code-fast']);
+    expect(flat[0]?.variants).toBeUndefined();
+  });
+
+  it('attaches the OpenAI variant ladder to an opencode route and nothing to a cursor row', () => {
+    const listing: readonly DetectedModel[] = [
+      { id: 'openai/gpt-x-luna' },
+      { id: 'opencode-go/gpt-x-sol' },
+    ];
+    const variantSeat = opencodeModels(listing, { effortChannel: 'variant' });
+    const choicesOf = (models: readonly ModelOption[], id: string) =>
+      models.find((model) => model.id === id)?.variants?.find((variant) => variant.fullId === id)
+        ?.variantChoices;
+
+    expect(choicesOf(variantSeat, 'openai/gpt-x-luna')).toEqual([
+      'none',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+    ]);
+    expect(choicesOf(variantSeat, 'opencode-go/gpt-x-sol')).toBeUndefined();
+
+    const idSeat = buildRightModels({
+      role: 'planner',
+      customModels: [],
+      currentItem: tool('cursor', { effortChannel: 'model-id' }),
+      cache: cliCache('cursor', listing),
+    });
+
+    expect(
+      idSeat.every((model) =>
+        (model.variants ?? []).every((variant) => variant.variantChoices === undefined),
+      ),
+    ).toBe(true);
+  });
+
+  // A merged row spans two vocabularies: openai spells presets, openrouter spells none.
+  it('gives each route of a merged row its own preset vocabulary', () => {
+    const merged = opencodeModels(
+      [
+        { id: 'openai/gpt-x-luna' },
+        { id: 'openrouter/gpt-x-luna' },
+        { id: 'anthropic/gpt-x-luna' },
+      ],
+      { effortChannel: 'variant' },
+    ).find((model) => (model.variants?.length ?? 0) > 1);
+
+    expect(merged?.variants?.map((variant) => [variant.fullId, variant.variantChoices])).toEqual([
+      ['openai/gpt-x-luna', ['none', 'minimal', 'low', 'medium', 'high', 'xhigh']],
+      ['openrouter/gpt-x-luna', undefined],
+      ['anthropic/gpt-x-luna', ['high', 'max']],
+    ]);
+  });
 });
 
 describe('catalog suggestions and confirmed merge', () => {
-  it('tallies a model present in both confirmed runtime and catalog suggestions once in countModelOptions', () => {
+  it('renders only the confirmed native list while models.dev stays metadata', () => {
     const codexCatalog = {
       openai: {
         id: 'openai',
@@ -339,31 +486,26 @@ describe('catalog suggestions and confirmed merge', () => {
       cache,
     });
 
-    const distinctModelIds = models.filter((m) => m.id !== 'auto').map((m) => m.id);
-    const counts = countModelOptions(models);
-
-    expect(counts.confirmed).toBe(1);
-    expect(counts.suggestions).toBe(2);
-    expect(counts.confirmed + counts.suggestions).toBe(distinctModelIds.length);
-    expect(new Set(distinctModelIds).size).toBe(distinctModelIds.length);
+    expect(models.map((model) => model.id)).toEqual(['gpt-5-codex']);
+    expect(countModelOptions(models)).toMatchObject({ confirmed: 1, suggestions: 0 });
   });
 
-  it('collapses an aider provider-qualified runtime id with its unqualified catalog twin', () => {
+  it('collapses a provider-qualified runtime id with its unqualified catalog twin', () => {
     const cache: ModelCacheAccessor = {
       getModelsDevCatalog: () => ({
-        anthropic: {
-          id: 'anthropic',
-          name: 'Anthropic',
-          models: { 'claude-x': { id: 'claude-x', name: 'Claude X' } },
+        openai: {
+          id: 'openai',
+          name: 'OpenAI',
+          models: { 'gpt-5-codex': { id: 'gpt-5-codex', name: 'GPT-5 Codex' } },
         },
       }),
       getProviderModels: () => null,
       getScopedCliCatalogRuntime: (input) =>
-        input.tool === 'aider'
+        input.tool === 'codex'
           ? {
-              connection: { role: 'planner', tool: 'aider', contextKey: 'merge-test' },
+              connection: { role: 'planner', tool: 'codex', contextKey: 'merge-test' },
               state: 'fresh',
-              models: [{ id: 'anthropic/claude-x' }],
+              models: [{ id: 'openai/gpt-5-codex' }],
               fetchedAt: 1,
               validatedAt: 2,
             }
@@ -373,11 +515,12 @@ describe('catalog suggestions and confirmed merge', () => {
     const models = buildRightModels({
       role: 'planner',
       customModels: [],
-      currentItem: tool('aider'),
+      currentItem: tool('codex'),
       cache,
+      browseCatalog: true,
     });
 
-    expect(models.map((model) => model.id)).toEqual(['anthropic/claude-x']);
+    expect(models.map((model) => model.id)).toEqual(['openai/gpt-5-codex']);
     expect(models[0]).toMatchObject({ membership: 'confirmed', isDetected: true });
     expect(countModelOptions(models)).toMatchObject({ confirmed: 1, suggestions: 0 });
   });

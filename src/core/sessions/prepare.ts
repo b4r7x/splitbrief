@@ -1,13 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import {
-  linkSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { linkSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { confinedEnsureDir } from '../../lib/confined-fs.js';
 import { SECURE_DIR_MODE, SECURE_FILE_MODE, writeSecureFile } from '../../lib/fs.js';
@@ -15,13 +7,7 @@ import { assertWritablePathConfined } from '../../lib/path-confinement.js';
 import { isNodeError } from '../../lib/process/errors.js';
 import { isRecord } from '../../utils/type-guards.js';
 import type { DeepReadonly } from '../config/accessors/runner-config.js';
-import {
-  READINESS_FILE,
-  sessionDir,
-  SESSIONS_DIR,
-  SPLITBRIEF_DIR,
-  validateSessionId,
-} from '../paths.js';
+import { READINESS_FILE, sessionDir, SESSIONS_DIR, SPLITBRIEF_DIR } from '../paths.js';
 import { createStartReadinessRecord } from '../readiness/format.js';
 import type { ReadinessReport } from '../readiness/types.js';
 import type { Config } from '../schemas/config.js';
@@ -37,6 +23,7 @@ import {
   type PreparedNewSession,
   type SessionOwnershipReceipt,
 } from './active-pointer.js';
+import { sessionPreparationError } from './errors.js';
 import { isSessionLive } from './liveness.js';
 import { generateSessionId } from './session-id.js';
 import {
@@ -50,7 +37,6 @@ import {
   ownershipRelativePath,
   pathExists,
   removeOwnershipProofLocked,
-  sessionPreparationError,
   sessionRelativePath,
   OWNERSHIP_FILE,
   type SessionDirectoryIdentity,
@@ -130,56 +116,6 @@ function removeAllocatedDirectory(ref: SessionRef, identity: SessionDirectoryIde
     throw ownershipFailure(ref, 'the canonical session path was recreated');
   }
   rmSync(claimPath, { recursive: true });
-}
-
-function activeRecordNamesSession(ref: SessionRef): boolean {
-  const active = readActiveRecord(ref.projectDir);
-  if (active === null) return false;
-  const activeSessionId = active.kind === 'legacy' ? active.sessionId : active.receipt.sessionId;
-  return activeSessionId === ref.sessionId;
-}
-
-function isCollectableOrphanDirectory(ref: SessionRef, relativeDirectory: string): boolean {
-  const entries = readdirSync(join(ref.projectDir, relativeDirectory));
-  if (entries.length === 0) return true;
-  if (entries.length !== 1 || entries[0] !== READINESS_FILE) return false;
-  return lstatSync(join(ref.projectDir, relativeDirectory, READINESS_FILE)).isFile();
-}
-
-function discardOrphanSessionDirectoryLocked(ref: SessionRef): boolean {
-  if (activeRecordNamesSession(ref)) return false;
-  const original = sessionRelativePath(ref.sessionId);
-  const originalPath = join(ref.projectDir, original);
-  if (!pathExists(originalPath)) return false;
-  const identity = directoryIdentity(ref, original);
-  if (!isCollectableOrphanDirectory(ref, original)) return false;
-  const claim = claimRelativePath(ref, 'directory');
-  const claimPath = join(ref.projectDir, claim);
-  assertWritablePathConfined(original, ref.projectDir);
-  assertWritablePathConfined(claim, ref.projectDir);
-  renameSync(originalPath, claimPath);
-  directoryIdentity(ref, claim, identity);
-  if (!isCollectableOrphanDirectory(ref, claim)) {
-    if (pathExists(originalPath)) {
-      throw ownershipFailure(ref, 'the canonical session path was recreated');
-    }
-    renameSync(claimPath, originalPath);
-    return false;
-  }
-  if (pathExists(originalPath)) {
-    throw ownershipFailure(ref, 'the canonical session path was recreated');
-  }
-  rmSync(claimPath, { recursive: true });
-  return true;
-}
-
-export function discardOrphanSessionDirectory(ref: SessionRef): boolean {
-  try {
-    validateSessionId(ref.sessionId);
-    return withSessionMutationLock(ref.projectDir, () => discardOrphanSessionDirectoryLocked(ref));
-  } catch (cause) {
-    throw sessionPreparationError.io('discard-orphan-session', ref, cause);
-  }
 }
 
 export function rollbackPreparedSessionLocked(

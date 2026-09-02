@@ -15,8 +15,8 @@ describe('runWorkflowLoop', () => {
       kind: 'api' as const,
       slot: { role: 'planner' as const },
       preparationId: 'detached-preparation',
-      provider: 'openai',
-      endpointOrigin: 'https://api.openai.com',
+      provider: 'custom-endpoint',
+      endpointOrigin: 'https://custom-endpoint.example',
     };
     const receipt = {
       version: 1 as const,

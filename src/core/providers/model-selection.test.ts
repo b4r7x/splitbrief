@@ -17,9 +17,8 @@ describe('resolveAutoModel', () => {
 
   it.each([
     ['claude-sonnet-5', undefined, 'claude-sonnet-5'],
-    ['auto', 'openai', 'gpt-5.6-sol'],
-    ['auto', 'anthropic', 'claude-sonnet-5'],
-    ['auto', 'agent-sdk', 'claude-sonnet-5'],
+    ['auto', 'ollama', 'qwen3-coder:30b'],
+    ['auto', 'lm-studio', 'qwen2.5-coder-7b'],
   ])('resolves %j (tool=%j) to %j', (model, tool, expected) => {
     expect(resolveAutoModel(model, tool as string | undefined)).toBe(expected);
   });
@@ -37,13 +36,13 @@ describe('resolveAutoModel', () => {
 describe('resolveCliModel', () => {
   // CLI automatic mode is structural: it must stay independent of catalog data
   // so a bundled row gaining isDefault can never start passing --model.
-  it.each(CLI_TOOL_IDS)('resolves auto to no model for %s regardless of catalog', () => {
-    expect(resolveCliModel('auto')).toBeUndefined();
+  it.each(CLI_TOOL_IDS)('resolves auto to no model for %s regardless of catalog', (tool) => {
+    expect(resolveCliModel('auto', tool)).toBeUndefined();
   });
 });
 
 describe('hasAutomaticModelDefault', () => {
-  it.each([...KNOWN_API_PROVIDER_IDS, 'agent-sdk'])('reports a default for %s', (providerId) => {
+  it.each(KNOWN_API_PROVIDER_IDS)('reports a default for %s', (providerId) => {
     expect(hasAutomaticModelDefault(providerId)).toBe(true);
   });
 
