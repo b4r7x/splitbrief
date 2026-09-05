@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import chalk from 'chalk';
 import { Text } from 'ink';
 import { createElement } from 'react';
 import { glyph } from '../../src/lib/glyphs.js';
@@ -50,6 +51,7 @@ describe('visual capture environment', () => {
     const environment = environmentSnapshot();
     const dateNow = Date.now;
     const random = Math.random;
+    const colorLevel = chalk.level;
     const terminal = terminalSizeStore.get();
     const columns = process.stdout.columns;
     const rows = process.stdout.rows;
@@ -60,6 +62,7 @@ describe('visual capture environment', () => {
     expect(environmentSnapshot()).toEqual(environment);
     expect(Date.now).toBe(dateNow);
     expect(Math.random).toBe(random);
+    expect(chalk.level).toBe(colorLevel);
     expect(terminalSizeStore.get()).toEqual(terminal);
     expect(process.stdout.columns).toBe(columns);
     expect(process.stdout.rows).toBe(rows);
@@ -68,6 +71,7 @@ describe('visual capture environment', () => {
 
   it('does not write terminal setup sequences and restores idempotently', async () => {
     const write = vi.spyOn(process.stdout, 'write');
+    const colorLevel = chalk.level;
 
     await withCaptureEnvironment({ viewport: VIEWPORT }, (scope) => {
       scope.restore();
@@ -75,10 +79,11 @@ describe('visual capture environment', () => {
     });
 
     expect(write).not.toHaveBeenCalled();
+    expect(chalk.level).toBe(colorLevel);
     write.mockRestore();
   });
 
-  it.each(PROFILES)('keeps %s output homogeneous and geometry stable', async (profile) => {
+  it.each(PROFILES)('matches %s profile styling and keeps geometry stable', async (profile) => {
     const rendered = await withCaptureEnvironment({ viewport: VIEWPORT, profile }, () => {
       const ui = renderFeature(
         createElement(
@@ -108,21 +113,37 @@ describe('visual capture environment', () => {
     expect(rendered.frame).toContain('NOW retry');
     expect(rendered.geometry).toEqual(['CONTRACT BLOCKED | BECAUSE QUALITY | NOW retry ✓'.length]);
     if (profile === 'ascii-mono') {
-      expect(rendered.frame).toBe(stripAnsiStyles(rendered.frame));
       expect([...rendered.glyph].every((character) => character.charCodeAt(0) < 128)).toBe(true);
       expect([...rendered.frame].every((character) => character.charCodeAt(0) < 128)).toBe(true);
     } else {
       expect(rendered.glyph).toBe('✓');
     }
-    if (profile === 'unicode-mono') {
+    if (profile === 'unicode-color') {
+      expect(rendered.frame).not.toBe(stripAnsiStyles(rendered.frame));
+    } else {
       expect(rendered.frame).toBe(stripAnsiStyles(rendered.frame));
     }
+  });
+
+  it.each([
+    ['unicode-color', 3],
+    ['unicode-mono', 0],
+    ['ascii-mono', 0],
+  ] as const)('applies the %s colour level its envelope declares', async (profile, expected) => {
+    const applied = await withCaptureEnvironment({ viewport: VIEWPORT, profile }, (scope) => ({
+      level: chalk.level,
+      declared: scope.determinism.colorLevel,
+    }));
+
+    expect(applied.level).toBe(expected);
+    expect(applied.declared).toBe(expected);
   });
 
   it.each(PROFILES)('restores nested %s success and failure scopes exactly', async (profile) => {
     const before = environmentSnapshot();
     const dateNow = Date.now;
     const random = Math.random;
+    const colorLevel = chalk.level;
     const terminal = terminalSizeStore.get();
     const columns = process.stdout.columns;
     const rows = process.stdout.rows;
@@ -132,6 +153,7 @@ describe('visual capture environment', () => {
       const outerEnvironment = environmentSnapshot();
       const outerDateNow = Date.now;
       const outerRandom = Math.random;
+      const outerColorLevel = chalk.level;
       const outerTerminal = terminalSizeStore.get();
 
       await withCaptureEnvironment({ viewport: VIEWPORT, profile }, (inner) => {
@@ -142,6 +164,7 @@ describe('visual capture environment', () => {
       expect(environmentSnapshot()).toEqual(outerEnvironment);
       expect(Date.now).toBe(outerDateNow);
       expect(Math.random).toBe(outerRandom);
+      expect(chalk.level).toBe(outerColorLevel);
       expect(terminalSizeStore.get()).toEqual(outerTerminal);
 
       await expect(
@@ -150,6 +173,7 @@ describe('visual capture environment', () => {
         }),
       ).rejects.toThrow('nested capture failed');
       expect(environmentSnapshot()).toEqual(outerEnvironment);
+      expect(chalk.level).toBe(outerColorLevel);
       outer.restore();
       outer.restore();
     });
@@ -157,6 +181,7 @@ describe('visual capture environment', () => {
     expect(environmentSnapshot()).toEqual(before);
     expect(Date.now).toBe(dateNow);
     expect(Math.random).toBe(random);
+    expect(chalk.level).toBe(colorLevel);
     expect(terminalSizeStore.get()).toEqual(terminal);
     expect(process.stdout.columns).toBe(columns);
     expect(process.stdout.rows).toBe(rows);

@@ -167,7 +167,7 @@ describe('parseIpcServerArgs launch contract', () => {
   // the detached child acts on it.
   it.each([
     { field: 'approve', value: 'yolo' },
-    { field: 'plannerEffort', value: 'max' },
+    { field: 'plannerEffort', value: 'ultra' },
     { field: 'reviewerEffort', value: 'ludicrous' },
   ])('rejects an out-of-vocabulary $field override', ({ field, value }) => {
     expect(

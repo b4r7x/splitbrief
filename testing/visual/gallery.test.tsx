@@ -62,6 +62,38 @@ describe('production App gallery mount', () => {
     }
   });
 
+  it('captures colour under the unicode-color profile', async () => {
+    const scenario = requireScenario('overlay-planner-picker');
+    const checkpoint = requireCheckpoint(scenario);
+    const captureViewport = viewport({ cols: 120, rows: 40 });
+    const handle = await mountGalleryScenario({
+      scenario,
+      checkpoint,
+      viewport: captureViewport,
+      profile: 'unicode-color',
+    });
+
+    try {
+      const frame = await handle.waitForCheckpoint();
+      const provenance = ArtifactProvenanceSchema.parse({
+        scenarioId: scenario.id,
+        scenarioTitle: scenario.title,
+        fixtureVersion: scenario.fixtureVersion,
+        checkpointId: checkpoint.id,
+        viewport: captureViewport,
+      });
+      const grid = await parseTerminalFrame({
+        ansi: frame,
+        identity: createFrameIdentity(provenance),
+        projectRoot: process.cwd(),
+      });
+
+      expect(grid.cells.flat().some((cell) => cell.foreground.kind !== 'default')).toBe(true);
+    } finally {
+      await handle.unmount();
+    }
+  });
+
   it('times out with capture identity and always unmounts', async () => {
     const terminalBefore = terminalSizeStore.get();
     const scenario = requireScenario('home-empty');

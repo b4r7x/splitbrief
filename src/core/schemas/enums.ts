@@ -210,6 +210,8 @@ export const RUNNER_KINDS = ['cli', 'api', 'shell', 'agent'] as const;
 const RunnerKindSchema = z.enum(RUNNER_KINDS);
 export type RunnerKind = z.infer<typeof RunnerKindSchema>;
 
-export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh'] as const;
+// The one effort vocabulary, in the order GitHub Copilot's own `--effort` help prints it
+// (`copilot --help` 1.0.77): every tool's ladder is a subset of these seven tokens.
+export const EFFORT_LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 export const EffortLevelSchema = z.enum(EFFORT_LEVELS);
 export type EffortLevel = z.infer<typeof EffortLevelSchema>;

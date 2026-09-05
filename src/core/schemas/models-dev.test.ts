@@ -105,4 +105,22 @@ describe('ModelsDevCatalogSchema', () => {
       reasoning_options: [{ type: 'effort', values: ['low', 'high'] }],
     });
   });
+
+  it('drops a non-string rung instead of rejecting the catalog', () => {
+    const catalog = ModelsDevCatalogSchema.parse({
+      sarvam: {
+        id: 'sarvam',
+        models: {
+          'sarvam-105b': {
+            id: 'sarvam-105b',
+            reasoning_options: [{ type: 'effort', values: [null, 'low', 'medium', 'high'] }],
+          },
+        },
+      },
+    });
+
+    expect(catalog['sarvam']?.models['sarvam-105b']?.reasoning_options).toEqual([
+      { type: 'effort', values: ['low', 'medium', 'high'] },
+    ]);
+  });
 });

@@ -147,6 +147,120 @@ describe('native CLI model catalogs', () => {
     );
   });
 
+  // Captured verbatim with `opencode models openai --verbose` and
+  // `opencode models opencode-go --verbose` on opencode 1.18.15.
+  it('reads the per-model ladder, catalog name and context window from a verbose listing', () => {
+    const stdout = readFileSync(
+      join(import.meta.dirname, '../../../testing/fixtures/opencode/models-verbose.txt'),
+      'utf-8',
+    );
+
+    const catalog = parseOpenCodeNativeModelCatalog(stdout);
+    if (catalog === null) throw new Error('Expected the verbose OpenCode listing to parse');
+
+    const lunaLadder = ['none', 'low', 'medium', 'high', 'xhigh', 'max'];
+    expect(catalog.models).toEqual([
+      {
+        selectionId: 'openai/gpt-5.6-luna',
+        nativeOrder: 0,
+        displayName: 'GPT-5.6 Luna',
+        contextWindow: 500_000,
+        nativeReasoningEfforts: lunaLadder,
+      },
+      {
+        selectionId: 'openai/gpt-5.6-luna-fast',
+        nativeOrder: 1,
+        displayName: 'GPT-5.6 Luna Fast',
+        contextWindow: 500_000,
+        nativeReasoningEfforts: lunaLadder,
+      },
+      {
+        selectionId: 'opencode-go/gpt-5.6-luna',
+        nativeOrder: 2,
+        displayName: 'GPT-5.6 Luna',
+        contextWindow: 1_050_000,
+        nativeReasoningEfforts: lunaLadder,
+      },
+      {
+        selectionId: 'opencode-go/minimax-m3',
+        nativeOrder: 3,
+        displayName: 'MiniMax-M3',
+        contextWindow: 1_000_000,
+        nativeReasoningEfforts: ['none', 'thinking'],
+      },
+      {
+        selectionId: 'opencode-go/qwen3.7-max',
+        nativeOrder: 4,
+        displayName: 'Qwen3.7 Max',
+        contextWindow: 1_000_000,
+        nativeReasoningEfforts: [],
+      },
+    ]);
+
+    // The two claims made about `openai/gpt-5.6-luna`: `max` is offered, `minimal` is not.
+    expect(catalog.models[0]?.nativeReasoningEfforts).toContain('max');
+    expect(catalog.models[0]?.nativeReasoningEfforts).not.toContain('minimal');
+  });
+
+  it('keeps bare id rows beside verbose block rows in one listing', () => {
+    expect(
+      parseOpenCodeNativeModelCatalog(
+        [
+          'opencode-go/qwen3.7-max',
+          'openai/gpt-5.6-luna',
+          '{',
+          '  "name": "GPT-5.6 Luna",',
+          '  "variants": { "none": {}, "max": {} }',
+          '}',
+          'anthropic/claude-sonnet-4-6',
+        ].join('\n'),
+      ),
+    ).toEqual({
+      tool: 'opencode',
+      models: [
+        { selectionId: 'opencode-go/qwen3.7-max', nativeOrder: 0 },
+        {
+          selectionId: 'openai/gpt-5.6-luna',
+          nativeOrder: 1,
+          displayName: 'GPT-5.6 Luna',
+          nativeReasoningEfforts: ['none', 'max'],
+        },
+        { selectionId: 'anthropic/claude-sonnet-4-6', nativeOrder: 2 },
+      ],
+    });
+  });
+
+  it('keeps a row whose verbose block publishes no context window', () => {
+    // `kilo models --verbose` (kilo 7.0.49) published `"limit": { "context": 0 }`
+    // for four image models on 2026-09-05; the row is real, the window is not.
+    expect(
+      parseKiloNativeModelCatalog(
+        [
+          'openai/gpt-image-2',
+          '{',
+          '  "name": "gpt-image-2",',
+          '  "limit": { "context": 0, "input": 0, "output": 0 }',
+          '}',
+        ].join('\n'),
+      ),
+    ).toEqual({
+      tool: 'kilo-code',
+      models: [{ selectionId: 'openai/gpt-image-2', nativeOrder: 0, displayName: 'gpt-image-2' }],
+    });
+  });
+
+  it('fails closed when a verbose block is truncated, is not JSON, or drifts in shape', () => {
+    expect(
+      parseOpenCodeNativeModelCatalog('openai/gpt-5.6-luna\n{\n  "name": "GPT-5.6 Luna",'),
+    ).toBeNull();
+    expect(parseKiloNativeModelCatalog('kilo/openai/gpt-5.6-luna\n{\n  "name": ,\n}')).toBeNull();
+    expect(
+      parseOpenCodeNativeModelCatalog(
+        'openai/gpt-5.6-luna\n{\n  "limit": { "context": "500000" }\n}',
+      ),
+    ).toBeNull();
+  });
+
   it('parses Cursor id-dash-name rows from the admitted listing fixture', () => {
     const stdout = readFileSync(
       join(import.meta.dirname, '../../../testing/fixtures/cursor/list-models.txt'),

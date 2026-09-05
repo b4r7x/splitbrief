@@ -404,14 +404,14 @@ function declaredCatalogProbe(tool: CliToolId): CliCatalogProbe {
       });
     case 'opencode':
       return structuralCatalogProbe({
-        command: ['opencode', 'models'],
-        manualCommand: ['opencode', 'models', '--refresh'],
+        command: ['opencode', 'models', '--verbose'],
+        manualCommand: ['opencode', 'models', '--verbose', '--refresh'],
         parser: parseOpenCodeNativeModelCatalog,
       });
     case 'kilo-code':
       return structuralCatalogProbe({
-        command: ['kilo', 'models'],
-        manualCommand: ['kilo', 'models', '--refresh'],
+        command: ['kilo', 'models', '--verbose'],
+        manualCommand: ['kilo', 'models', '--verbose', '--refresh'],
         parser: parseKiloNativeModelCatalog,
       });
     case 'cursor':

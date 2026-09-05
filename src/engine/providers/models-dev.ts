@@ -96,6 +96,20 @@ function mergePricingTiers(
   return [...byKey.values()].sort((a, b) => a.thresholdTokens - b.thresholdTokens);
 }
 
+/**
+ * models.dev publishes the ladder as options, not as a list. Only an `effort` entry names
+ * rungs; `budget_tokens` is a token budget and `toggle` is a boolean, and neither names a
+ * level. Scored against `opencode models --verbose` (opencode 1.18.15, capture of
+ * 2026-09-04) over all 73 models it serves: these two arms agree with the tool on more rows
+ * than a `toggle -> none|thinking` third arm on every census — 51 vs 42 against the
+ * models.dev catalog of 2026-09-05, and the counts move with that catalog.
+ */
+function reasoningEffortsOf(options: ModelsDevModel['reasoning_options']): string[] | undefined {
+  if (options === undefined) return undefined;
+  const effort = options.find((option) => option.type === 'effort');
+  return effort?.values === undefined ? [] : [...effort.values];
+}
+
 function modelToDetected(providerId: string, model: ModelsDevModel): DetectedModel {
   const inputRaw = model.cost?.input;
   const outputRaw = model.cost?.output;
@@ -181,6 +195,11 @@ function modelToDetected(providerId: string, model: ModelsDevModel): DetectedMod
     result.updatedDate = model.last_updated;
   }
 
+  const reasoningEfforts = reasoningEffortsOf(model.reasoning_options);
+  if (reasoningEfforts !== undefined) {
+    result.nativeReasoningEfforts = reasoningEfforts;
+  }
+
   return result;
 }
 
@@ -211,6 +230,7 @@ function mergeDetectedModel(
   const maximumInputTokens = incoming.maximumInputTokens ?? current.maximumInputTokens;
   const maximumOutputTokens = incoming.maximumOutputTokens ?? current.maximumOutputTokens;
   const inputModalities = incoming.inputModalities ?? current.inputModalities;
+  const nativeReasoningEfforts = incoming.nativeReasoningEfforts ?? current.nativeReasoningEfforts;
   const outputModalities = incoming.outputModalities ?? current.outputModalities;
   const supportsToolCalls = incoming.supportsToolCalls ?? current.supportsToolCalls;
   const supportsStructuredOutput =
@@ -239,6 +259,9 @@ function mergeDetectedModel(
     ...(maximumInputTokens !== undefined ? { maximumInputTokens } : {}),
     ...(maximumOutputTokens !== undefined ? { maximumOutputTokens } : {}),
     ...(inputModalities !== undefined ? { inputModalities: [...inputModalities] } : {}),
+    ...(nativeReasoningEfforts !== undefined
+      ? { nativeReasoningEfforts: [...nativeReasoningEfforts] }
+      : {}),
     ...(outputModalities !== undefined ? { outputModalities: [...outputModalities] } : {}),
     ...(supportsToolCalls !== undefined ? { supportsToolCalls } : {}),
     ...(supportsStructuredOutput !== undefined ? { supportsStructuredOutput } : {}),

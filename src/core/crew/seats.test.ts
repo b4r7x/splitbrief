@@ -108,6 +108,16 @@ describe('deriveCrewSeats', () => {
     expect(plan.effortValue).toBe('high');
   });
 
+  it("reads a cursor seat's minimal rung out of its model id", () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'cursor', model: 'gemini-3.6-flash-minimal' },
+    });
+    const plan = seatOf(deriveCrewSeats({ config }), 'plan');
+
+    expect(plan.channel).toBe('model-id');
+    expect(plan.effortValue).toBe('minimal');
+  });
+
   it('leaves a cursor seat whose id spells no effort with no value', () => {
     const config = makeConfig({
       planner: { kind: 'cli', tool: 'cursor', model: 'composer-2.5' },

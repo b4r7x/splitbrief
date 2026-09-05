@@ -87,7 +87,7 @@
     "fzf": "^0.5.2",
     "ink": "^6.8.0",
     "lowlight": "^3.3.0",
-    "openai": "^6.0.0",
+    "openai": "^6.49.0",
     "react": "^19.0.0",
     "simple-git": "^3.0.0",
     "web-tree-sitter": "^0.26.8",

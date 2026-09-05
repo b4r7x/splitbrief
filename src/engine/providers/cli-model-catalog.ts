@@ -67,6 +67,20 @@ const CodexNativeCatalogSchema = z
 
 type CodexNativeModel = z.infer<typeof CodexNativeModelSchema>;
 
+// `opencode models --verbose` and `kilo models --verbose` print a
+// provider-qualified id, then the model's JSON object closed by a `}` at
+// column 0. Verified against opencode 1.18.15 and kilo 7.0.49.
+const VerboseModelBlockSchema = z
+  .object({
+    name: z.string().trim().min(1).optional(),
+    limit: z
+      .object({ context: z.number().int().nonnegative().optional() })
+      .passthrough()
+      .optional(),
+    variants: z.record(z.string(), z.unknown()).optional(),
+  })
+  .passthrough();
+
 function distinct<T>(
   values: readonly (T | undefined)[],
   equals: (a: T, b: T) => boolean = (a, b) => a === b,
@@ -140,14 +154,39 @@ function isProviderQualifiedSelectionId(value: string): boolean {
   return PROVIDER_QUALIFIED_SELECTION_ID_PATTERN.test(value);
 }
 
+function catalogLines(stdout: string): readonly string[] {
+  return stripTerminalControls(stdout, { preserveLineBreaks: true }).split('\n');
+}
+
 function cleanCatalogLines(stdout: string): readonly string[] {
-  return stripTerminalControls(stdout, { preserveLineBreaks: true })
-    .split('\n')
-    .map((line) => line.trim());
+  return catalogLines(stdout).map((line) => line.trim());
 }
 
 function isCatalogHeading(value: string): boolean {
   return value.length === 0 || CATALOG_HEADING_PATTERN.test(value) || /^=+$/.test(value);
+}
+
+function verboseBlockFields(
+  json: string,
+): Omit<NativeCliModelCatalogEntry, 'nativeOrder' | 'selectionId'> | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  const block = VerboseModelBlockSchema.safeParse(parsed);
+  if (!block.success) return null;
+
+  // `kilo models --verbose` published `"limit": { "context": 0 }` for four image
+  // models on 2026-09-05 (kilo 7.0.49): no text window, not a zero-token one.
+  const context = block.data.limit?.context;
+  const variants = block.data.variants;
+  return {
+    ...(block.data.name === undefined ? {} : { displayName: block.data.name }),
+    ...(context === undefined || context === 0 ? {} : { contextWindow: context }),
+    ...(variants === undefined ? {} : { nativeReasoningEfforts: Object.keys(variants) }),
+  };
 }
 
 function parseProviderQualifiedLines(
@@ -156,11 +195,24 @@ function parseProviderQualifiedLines(
     stdout: string;
   }>,
 ): NativeCliModelCatalog | null {
+  const lines = catalogLines(input.stdout);
   const entries: Omit<NativeCliModelCatalogEntry, 'nativeOrder'>[] = [];
-  for (const line of cleanCatalogLines(input.stdout)) {
-    if (isCatalogHeading(line)) continue;
-    if (!isProviderQualifiedSelectionId(line)) return null;
-    entries.push({ selectionId: line });
+  let index = 0;
+  while (index < lines.length) {
+    const selectionId = lines[index]?.trim() ?? '';
+    index += 1;
+    if (isCatalogHeading(selectionId)) continue;
+    if (!isProviderQualifiedSelectionId(selectionId)) return null;
+    if (lines[index] !== '{') {
+      entries.push({ selectionId });
+      continue;
+    }
+    const close = lines.indexOf('}', index + 1);
+    if (close === -1) return null;
+    const fields = verboseBlockFields(lines.slice(index, close + 1).join('\n'));
+    if (fields === null) return null;
+    entries.push({ selectionId, ...fields });
+    index = close + 1;
   }
   return catalogFromEntries({ tool: input.tool, entries });
 }

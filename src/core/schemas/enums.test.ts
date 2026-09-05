@@ -17,6 +17,8 @@ import {
 import { PlannerConfigSchema } from './planner-config.js';
 import {
   CliToolIdSchema,
+  EFFORT_LEVELS,
+  EffortLevelSchema,
   ImplementerApiProviderIdSchema,
   ImplementerCliToolIdSchema,
   IsolationStrategySchema,
@@ -227,5 +229,17 @@ describe('IsolationStrategySchema', () => {
   });
   it.each(['clone', 'none', 'bogus', ''])('rejects "%s"', (input) => {
     expect(IsolationStrategySchema.safeParse(input).success).toBe(false);
+  });
+});
+
+describe('EffortLevelSchema', () => {
+  it('spells the seven tokens weakest to strongest', () => {
+    expect(EFFORT_LEVELS).toEqual(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+  });
+  it.each(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])('accepts "%s"', (input) => {
+    expect(EffortLevelSchema.parse(input)).toBe(input);
+  });
+  it.each(['ultra', 'default', 'auto', ''])('rejects "%s"', (input) => {
+    expect(EffortLevelSchema.safeParse(input).success).toBe(false);
   });
 });

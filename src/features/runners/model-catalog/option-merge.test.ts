@@ -81,6 +81,23 @@ describe('mergeOptionFamilies', () => {
     expect(tagOf(luna[0], 'gpt-5.6-luna-medium-fast')).toBe('Fast');
   });
 
+  it('folds the cursor gemini flash family, minimal rung included', () => {
+    const flash = mergeOptionFamilies(
+      cursorModelOptions().filter((row) => row.id.startsWith('gemini-3.6-flash')),
+    );
+
+    expect(flash).toHaveLength(1);
+    expect(flash[0]?.variants?.map((variant) => variant.fullId)).toEqual([
+      'gemini-3.6-flash-minimal',
+      'gemini-3.6-flash-low',
+      'gemini-3.6-flash-medium',
+      'gemini-3.6-flash-high',
+    ]);
+    expect(flash.some((row) => row.variants === undefined && row.id.endsWith('-minimal'))).toBe(
+      false,
+    );
+  });
+
   it('merges composer-2.5 with composer-2.5-fast', () => {
     const merged = mergeOptionFamilies([{ id: 'composer-2.5' }, { id: 'composer-2.5-fast' }]);
 

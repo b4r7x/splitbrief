@@ -569,8 +569,11 @@ The flags mean:
 - `--scenario <id>` selects a catalog scenario such as `home-empty`, `workflow-review`, or `overlay-help`.
 - `--viewport <cols>x<rows>` selects an exact terminal size. The catalog sizes are `120x40`, `80x24`, and `60x18`.
 - `--element <id>` selects a catalog-owned semantic crop such as `header`, `composer`, `sidebar`, or `approval-panel`. The element must belong to every selected scenario.
+- `--profile <name>` selects a terminal profile: `unicode-color` (the default), `unicode-mono`, or `ascii-mono`. One profile per run.
 - `--output <directory>` selects the artifact root. The default is `.test-artifacts/ui`.
 - `--list` prints scenario IDs, viewports, checkpoints, and element IDs, then exits without rendering.
+
+The profile owns the colour level of the capture, so `unicode-color` writes styled cells and `unicode-mono` writes none regardless of whether the launching shell has a TTY or a pipe on stdout.
 
 Repeat `--scenario`, `--viewport`, or `--element` to select more than one value. The command validates the complete selection before it mounts a fixture. With no filters, it captures every catalog scenario at all three viewports, including each full frame and every declared crop.
 

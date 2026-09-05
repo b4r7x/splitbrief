@@ -23,7 +23,7 @@ import {
   ImplementerConfigSchema,
   type ImplementerConfig,
 } from '../../../core/schemas/implementer-config.js';
-import { EFFORT_LEVELS, type EffortLevel } from '../../../core/schemas/enums.js';
+import type { EffortLevel } from '../../../core/schemas/enums.js';
 import { isTextEntryInput } from '../../../lib/terminal/text-entry.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
@@ -76,7 +76,15 @@ function getCurrentConfig(): Config {
   return current;
 }
 
-const EFFORT_CYCLE = [undefined, ...EFFORT_LEVELS] as const;
+// The five levels this cycle offers today, written out so widening the schema enum cannot
+// silently add `none`/`minimal` — tokens the two `effort-flag` tools reject.
+const EFFORT_CYCLE: readonly (EffortLevel | undefined)[] = [
+  undefined,
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+];
 
 function nextEffort(current: EffortLevel | undefined): EffortLevel | undefined {
   return EFFORT_CYCLE[(EFFORT_CYCLE.indexOf(current) + 1) % EFFORT_CYCLE.length];
