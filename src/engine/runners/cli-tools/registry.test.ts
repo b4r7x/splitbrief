@@ -225,7 +225,7 @@ describe('admitted readiness probe contracts', () => {
     if (manualCatalog.kind === 'not-run' || manualCatalog.manualCommand === undefined) return;
 
     expect(Reflect.set(manualCatalog.manualCommand, 0, 'attacker')).toBe(false);
-    expect(manualCatalog.manualCommand).toEqual(['opencode', 'models', '--refresh']);
+    expect(manualCatalog.manualCommand).toEqual(['opencode', 'models', '--verbose', '--refresh']);
   });
 
   it('binds the selected role to an admitted declared Codex status probe', () => {
@@ -349,13 +349,13 @@ describe('admitted readiness probe contracts', () => {
     });
     expect(opencode.declared.catalog).toMatchObject({
       kind: 'catalog',
-      command: ['opencode', 'models'],
-      manualCommand: ['opencode', 'models', '--refresh'],
+      command: ['opencode', 'models', '--verbose'],
+      manualCommand: ['opencode', 'models', '--verbose', '--refresh'],
     });
     expect(kilo.declared.catalog).toMatchObject({
       kind: 'catalog',
-      command: ['kilo', 'models'],
-      manualCommand: ['kilo', 'models', '--refresh'],
+      command: ['kilo', 'models', '--verbose'],
+      manualCommand: ['kilo', 'models', '--verbose', '--refresh'],
     });
     if (
       codex.declared.catalog.kind === 'not-run' ||

@@ -96,16 +96,19 @@ describe('streamCompletion request body', () => {
     expect(capturedBody?.temperature).toBe(0.2);
   });
 
-  it('clamps xhigh reasoning_effort to high under a clamping policy', async () => {
-    const capturedBody = await captureBody('reasoning-model', [{ role: 'user', content: 'hi' }], {
-      temperature: 0.2,
-      onProgress: () => {},
-      effort: 'xhigh',
-      policy: reasoningPolicy,
-    });
+  it.each(['xhigh', 'max'] as const)(
+    'clamps %s reasoning_effort to high under a clamping policy',
+    async (effort) => {
+      const capturedBody = await captureBody('reasoning-model', [{ role: 'user', content: 'hi' }], {
+        temperature: 0.2,
+        onProgress: () => {},
+        effort,
+        policy: reasoningPolicy,
+      });
 
-    expect(capturedBody?.reasoning_effort).toBe('high');
-  });
+      expect(capturedBody?.reasoning_effort).toBe('high');
+    },
+  );
 
   it('uses developer messages under a reasoning policy', async () => {
     const capturedBody = await captureBody(

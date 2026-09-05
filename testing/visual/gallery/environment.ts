@@ -1,3 +1,4 @@
+import chalk from 'chalk';
 import type { Viewport } from '../contracts/geometry.js';
 import { ViewportSchema } from '../contracts/geometry.js';
 import {
@@ -92,6 +93,9 @@ export function enterCaptureEnvironment(
   const savedTerminalSize = terminalSizeStore.get();
   const savedDateNow = Date.now;
   const savedRandom = Math.random;
+  // Chalk fixes its level from the launching process at import time, long before
+  // FORCE_COLOR is applied here, so the profile's level has to be set directly.
+  const savedColorLevel = chalk.level;
   const savedColumns = Object.getOwnPropertyDescriptor(process.stdout, 'columns');
   const savedRows = Object.getOwnPropertyDescriptor(process.stdout, 'rows');
   const savedIsTTY = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
@@ -102,6 +106,7 @@ export function enterCaptureEnvironment(
     restored = true;
     Date.now = savedDateNow;
     Math.random = savedRandom;
+    chalk.level = savedColorLevel;
     restoreEnvironment(savedEnvironment);
     restoreProperty(process.stdout, 'columns', savedColumns);
     restoreProperty(process.stdout, 'rows', savedRows);
@@ -120,6 +125,7 @@ export function enterCaptureEnvironment(
     });
     Date.now = () => Date.parse(FIXED_CLOCK);
     Math.random = createSeededRandom(RANDOM_SEED);
+    chalk.level = profileEnvironment.colorLevel;
   } catch (error) {
     restore();
     throw error;

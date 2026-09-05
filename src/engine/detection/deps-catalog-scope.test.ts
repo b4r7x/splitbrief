@@ -85,7 +85,9 @@ describe.runIf(process.platform !== 'win32')('native catalog discovery scope', (
       }),
     );
     expect(existsSync(argsLog)).toBe(true);
-    expect(readFileSync(argsLog, 'utf8').trim().split('\n')).toContain('models|--refresh|');
+    expect(readFileSync(argsLog, 'utf8').trim().split('\n')).toContain(
+      'models|--verbose|--refresh|',
+    );
   });
 
   it('probes a non-active opencode and keeps every provider variant of a duplicated model', async () => {

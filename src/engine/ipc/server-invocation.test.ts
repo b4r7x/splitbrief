@@ -189,7 +189,7 @@ describe('buildServerArgs transport policy', () => {
   // detached child, where the parent can only report a generic startup failure.
   it.each([
     ['approve', { approve: 'yolo' }, /Invalid approve: yolo/],
-    ['plannerEffort', { plannerEffort: 'max' }, /Invalid plannerEffort: max/],
+    ['plannerEffort', { plannerEffort: 'ultra' }, /Invalid plannerEffort: ultra/],
     ['reviewerEffort', { reviewerEffort: 'ludicrous' }, /Invalid reviewerEffort: ludicrous/],
   ])('rejects an out-of-vocabulary %s in the spawning parent', (_label, overrides, message) => {
     expect(() => buildServerArgs({ ...base, overrides })).toThrow(message);
@@ -199,7 +199,7 @@ describe('buildServerArgs transport policy', () => {
     ['approve', { approve: 'plan' }],
     ['plannerEffort', { plannerEffort: 'high' }],
     ['reviewerEffort', { reviewerEffort: 'low' }],
-  ])('carries a valid %s across the boundary', (field, overrides) => {
+  ])('carries a valid %s across the boundary', (_field, overrides) => {
     expect(buildServerArgs({ ...base, overrides }).overrides).toMatchObject(overrides);
   });
 });

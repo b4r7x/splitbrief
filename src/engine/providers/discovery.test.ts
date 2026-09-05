@@ -208,8 +208,8 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
       'kilo/openai/gpt-4o',
     ]);
     expect(loggedArgs(codexLog)).toEqual(['--version|', 'debug|models|--bundled|']);
-    expect(loggedArgs(opencodeLog)).toEqual(['--version|', 'models|']);
-    expect(loggedArgs(kiloLog)).toEqual(['--version|', 'models|']);
+    expect(loggedArgs(opencodeLog)).toEqual(['--version|', 'models|--verbose|']);
+    expect(loggedArgs(kiloLog)).toEqual(['--version|', 'models|--verbose|']);
     const catalogCwd = readFileSync(opencodeCwdLog, 'utf8').trim();
     expect(catalogCwd).not.toBe(shimDir);
     expect(existsSync(catalogCwd)).toBe(false);
@@ -266,7 +266,7 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
     const canonicalVersionOutput = (version: string) =>
       versionLabel === undefined ? version : `${versionLabel} ${version}`;
     const admittedVersion = tool === 'codex' ? '0.40.0' : tool === 'opencode' ? '0.5.0' : '0.1.0';
-    const catalogArgv = tool === 'codex' ? 'debug|models|--bundled|' : 'models|';
+    const catalogArgv = tool === 'codex' ? 'debug|models|--bundled|' : 'models|--verbose|';
     const catalog =
       tool === 'codex'
         ? JSON.stringify({ models: [{ id: 'admitted-model' }] })
@@ -367,8 +367,8 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
     });
 
     expect(loggedArgs(codexLog)).toEqual(['--version|', 'debug|models|--bundled|']);
-    expect(loggedArgs(opencodeLog)).toEqual(['--version|', 'models|--refresh|']);
-    expect(loggedArgs(kiloLog)).toEqual(['--version|', 'models|--refresh|']);
+    expect(loggedArgs(opencodeLog)).toEqual(['--version|', 'models|--verbose|--refresh|']);
+    expect(loggedArgs(kiloLog)).toEqual(['--version|', 'models|--verbose|--refresh|']);
   });
 
   it('uses only the selected channel while keeping ambient secrets and PATH shadows out', async () => {

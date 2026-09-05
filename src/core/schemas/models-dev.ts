@@ -60,6 +60,24 @@ export const ModelsDevModelSchema = z
       .optional(),
     release_date: z.string().optional(),
     last_updated: z.string().optional(),
+    reasoning_options: z
+      .array(
+        z
+          .object({
+            type: z.string(),
+            // A non-string is not a rung: models.dev ships `[null, 'low', 'medium', 'high']`
+            // on sarvam-105b/-30b (`curl -s https://models.dev/api.json`, 2026-09-05), and
+            // one bad element must not fail the whole catalog.
+            values: z
+              .array(z.unknown())
+              .transform((entries) => entries.filter((entry) => typeof entry === 'string'))
+              .optional(),
+            min: z.number().optional(),
+            max: z.number().optional(),
+          })
+          .passthrough(),
+      )
+      .optional(),
   })
   .passthrough();
 export type ModelsDevModel = z.infer<typeof ModelsDevModelSchema>;

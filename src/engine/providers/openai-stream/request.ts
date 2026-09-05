@@ -151,7 +151,8 @@ export function effortField(
 ): Pick<StreamRequestBody, 'reasoning_effort'> {
   if (effort === undefined || policy.effort === 'omit' || policy.reasoning === 'omit') return {};
   if (policy.effort === 'clamp-xhigh') {
-    return { reasoning_effort: effort === 'xhigh' ? 'high' : effort };
+    // The policy names a ceiling, not one token: `max` sits above `xhigh`.
+    return { reasoning_effort: effort === 'xhigh' || effort === 'max' ? 'high' : effort };
   }
   if (policy.effort === 'map-medium-to-high') {
     return { reasoning_effort: effort === 'medium' ? 'high' : effort };

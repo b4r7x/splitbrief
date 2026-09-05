@@ -352,6 +352,64 @@ describe('getModelsForProvider', () => {
     expect(model?.maxOutputTokens).toBe(32_768);
   });
 
+  it('maps models.dev reasoning_options into the model ladder', () => {
+    const catalog: ModelsDevCatalog = {
+      anthropic: {
+        id: 'anthropic',
+        models: {
+          'claude-opus-5': {
+            id: 'claude-opus-5',
+            reasoning_options: [
+              { type: 'effort', values: ['low', 'medium', 'high', 'xhigh', 'max'] },
+            ],
+          },
+          'claude-sonnet-5': {
+            id: 'claude-sonnet-5',
+            reasoning_options: [
+              { type: 'toggle' },
+              { type: 'effort', values: ['low', 'medium', 'high', 'xhigh', 'max'] },
+            ],
+          },
+          'claude-haiku-4-5': {
+            id: 'claude-haiku-4-5',
+            reasoning_options: [{ type: 'budget_tokens', min: 1024 }],
+          },
+          'toggle-only': { id: 'toggle-only', reasoning_options: [{ type: 'toggle' }] },
+          'empty-options': { id: 'empty-options', reasoning_options: [] },
+          'effort-without-values': {
+            id: 'effort-without-values',
+            reasoning_options: [{ type: 'effort' }],
+          },
+          'no-reasoning-options': { id: 'no-reasoning-options' },
+        },
+      },
+    };
+
+    const byId = new Map(
+      getModelsForProvider(catalog, 'anthropic').map((model) => [model.id, model]),
+    );
+
+    expect(byId.get('claude-opus-5')?.nativeReasoningEfforts).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+    expect(byId.get('claude-sonnet-5')?.nativeReasoningEfforts).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+    expect(byId.get('claude-haiku-4-5')?.nativeReasoningEfforts).toEqual([]);
+    expect(byId.get('toggle-only')?.nativeReasoningEfforts).toEqual([]);
+    expect(byId.get('empty-options')?.nativeReasoningEfforts).toEqual([]);
+    expect(byId.get('effort-without-values')?.nativeReasoningEfforts).toEqual([]);
+    expect(byId.get('no-reasoning-options')).not.toHaveProperty('nativeReasoningEfforts');
+  });
+
   it('preserves metadata through the live resolver without rewriting a provider-qualified ID', () => {
     const catalog: ModelsDevCatalog = {
       opencode: {
@@ -470,6 +528,37 @@ describe('getModelsForProvider', () => {
       supportsStructuredOutput: true,
       releaseDate: '2025-10-01',
       updatedDate: '2026-02-14',
+    });
+  });
+
+  it('keeps the reasoning ladder when sparse records for one identity merge', () => {
+    const catalog: ModelsDevCatalog = {
+      openai: {
+        id: 'openai',
+        models: {
+          'ladder-base': {
+            id: 'ladder',
+            reasoning_options: [{ type: 'effort', values: ['low'] }],
+          },
+          'ladder-details': {
+            id: 'ladder',
+            reasoning_options: [{ type: 'effort', values: ['medium', 'high'] }],
+          },
+          'silent-base': {
+            id: 'silent',
+            reasoning_options: [{ type: 'effort', values: ['low', 'high'] }],
+          },
+          'silent-details': { id: 'silent', name: 'Silent Details' },
+        },
+      },
+    };
+
+    const byId = new Map(getModelsForProvider(catalog, 'openai').map((model) => [model.id, model]));
+
+    expect(byId.get('ladder')?.nativeReasoningEfforts).toEqual(['medium', 'high']);
+    expect(byId.get('silent')).toMatchObject({
+      displayName: 'Silent Details',
+      nativeReasoningEfforts: ['low', 'high'],
     });
   });
 });
