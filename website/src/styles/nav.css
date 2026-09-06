@@ -1,0 +1,72 @@
+.nav {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--s-6);
+  align-items: baseline;
+  width: min(var(--content-max), 100% - 2 * var(--gutter));
+  height: 96px;
+  margin-inline: auto;
+  padding-block: var(--s-8);
+  font-size: var(--text-label);
+  line-height: 1.45;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+}
+
+.wordmark {
+  grid-column: 1 / 3;
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--ink);
+
+  sup {
+    position: relative;
+    top: -0.6em;
+    vertical-align: baseline;
+    font-size: 60%;
+    line-height: 0;
+    color: var(--ink-3);
+  }
+}
+
+.tagline {
+  grid-column: 3 / 5;
+}
+
+.links {
+  grid-column: 5 / 12;
+  justify-self: end;
+  display: flex;
+  gap: var(--s-6);
+  color: var(--ink-2);
+
+  a:hover {
+    color: var(--ink);
+  }
+
+  a:hover .bracket {
+    color: var(--blue);
+  }
+}
+
+.mark {
+  grid-column: 12 / 13;
+  justify-self: end;
+  width: 20px;
+  height: 20px;
+  translate: 0 6px;
+  background-image: radial-gradient(circle, var(--ink-2) 1.5px, transparent 2px);
+  background-size: 7px 7px;
+}
+
+@media (max-width: 767px) {
+  .wordmark {
+    grid-column: 1 / 5;
+  }
+
+  .tagline {
+    display: none;
+  }
+}

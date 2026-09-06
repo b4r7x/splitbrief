@@ -1,0 +1,184 @@
+.diagram {
+  position: relative;
+}
+
+.stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 760px;
+  height: 860px;
+  transform: scale(var(--fit, 1));
+  transform-origin: 0 0;
+  font-size: var(--text-label);
+  line-height: 1.45;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+
+  > * {
+    position: absolute;
+  }
+
+  .ghost,
+  .ghost-fallback,
+  .cross {
+    translate: -50% -50%;
+  }
+
+  .ghost--planner,
+  .ghost--planner + .ghost-fallback {
+    left: 14%;
+    top: 40%;
+    color: var(--blue);
+  }
+
+  .ghost--implementer,
+  .ghost--implementer + .ghost-fallback {
+    left: 67%;
+    top: 39%;
+    color: var(--green);
+  }
+
+  .ghost--reviewer,
+  .ghost--reviewer + .ghost-fallback {
+    left: 68%;
+    top: 72%;
+    color: var(--blue-dim);
+  }
+
+  .ghost-fallback {
+    font-size: 11px;
+    line-height: 11px;
+    letter-spacing: calc(7px - 0.6em);
+  }
+
+  .rain {
+    top: 6%;
+    width: 1px;
+    height: 11.5%;
+    background: repeating-linear-gradient(to bottom, var(--ink-4) 0 1px, transparent 1px 10px);
+  }
+
+  .rain--planner,
+  .tick--planner,
+  .label--planner {
+    left: 14%;
+  }
+
+  .rain--implementer,
+  .tick--implementer,
+  .label--implementer {
+    left: 67%;
+  }
+
+  .tick {
+    top: 18%;
+    width: 1px;
+    height: 28px;
+    background: var(--ink-3);
+  }
+
+  .label {
+    top: 18%;
+    margin-left: var(--s-3);
+    color: var(--ink);
+  }
+
+  .tick--reviewer,
+  .label--reviewer {
+    left: 76%;
+    top: 55%;
+  }
+
+  .seat {
+    font-size: var(--text-micro);
+
+    &::before {
+      content: "";
+      display: block;
+      width: 1px;
+      height: 12px;
+      margin-bottom: var(--s-2);
+      background: var(--ink-3);
+    }
+  }
+
+  .seat--planner {
+    left: 6%;
+    top: 60%;
+  }
+
+  .seat--implementer {
+    left: 84%;
+    top: 36%;
+  }
+
+  .seat--reviewer {
+    left: 82%;
+    top: 76%;
+  }
+
+  .route {
+    --dash-right: repeating-linear-gradient(to right, var(--ink-3) 0 4px, transparent 4px 8px);
+    --dash-left: repeating-linear-gradient(to left, var(--ink-3) 0 4px, transparent 4px 8px);
+    --dash-up: repeating-linear-gradient(to top, var(--ink-3) 0 4px, transparent 4px 8px);
+    background-repeat: no-repeat;
+  }
+
+  .route--a,
+  .route--b {
+    top: 46%;
+    height: 1px;
+  }
+
+  .route--a {
+    left: 27.8%;
+    width: 11.2%;
+    background-image: var(--dash-right);
+  }
+
+  .route--b {
+    left: 39%;
+    width: 16%;
+    background-image: var(--dash-left);
+  }
+
+  .route--c {
+    left: 39%;
+    top: 52%;
+    width: 19%;
+    height: 20%;
+    background-image: var(--dash-up), var(--dash-left), var(--dash-up), var(--dash-left);
+    background-size:
+      1px 69.8px,
+      76px 1px,
+      1px 103.2px,
+      68.4px 1px;
+    background-position:
+      0 0,
+      0 68.8px,
+      76px 68.8px,
+      76px bottom;
+  }
+
+  .cross {
+    left: 26%;
+    top: 63%;
+    font-size: 14px;
+    line-height: 1;
+  }
+
+  .scatter {
+    inset: 0;
+    font-size: var(--text-micro);
+    line-height: 1;
+    letter-spacing: 0;
+    color: var(--ink-4);
+
+    span {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+  }
+}

@@ -1,0 +1,71 @@
+.cta {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: max-content;
+  min-width: 264px;
+  height: 44px;
+  margin-top: var(--s-4);
+  padding-inline: var(--s-4) var(--s-3);
+  white-space: nowrap;
+  border: 1px solid var(--hair-strong);
+  box-shadow: var(--highlight);
+  font-size: var(--text-cta);
+  color: var(--ink);
+  transition: border-color 200ms ease-out;
+
+  &:hover {
+    border-color: var(--ink-3);
+  }
+
+  &:active,
+  &.copied {
+    border-color: var(--blue);
+  }
+}
+
+.cta-label {
+  display: grid;
+
+  > * {
+    grid-area: 1 / 1;
+  }
+
+  > [hidden] {
+    display: block;
+    visibility: hidden;
+  }
+}
+
+.prompt {
+  color: var(--ink-3);
+}
+
+.copy-glyph {
+  position: relative;
+  flex: none;
+  width: 14px;
+  height: 14px;
+
+  span {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border: 1px solid var(--ink-3);
+  }
+
+  span:first-child {
+    top: 0;
+    right: 0;
+  }
+
+  span:last-child {
+    bottom: 0;
+    left: 0;
+    background: var(--bg);
+  }
+}
+
+.cta.copied .copy-glyph span {
+  border-color: var(--blue);
+}
