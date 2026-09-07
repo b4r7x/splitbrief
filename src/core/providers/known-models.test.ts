@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   KNOWN_MODELS,
   PENDING_EVALUATION_CANDIDATE_IDS,
+  TOOL_EFFORT_LADDERS,
   type ModelRecommendation,
 } from './known-models.js';
 import {
@@ -12,6 +13,7 @@ import {
 import { AUTOMATIC_MODEL, normalizeConfiguredModel, resolveCliModel } from './automatic-model.js';
 import { resolveDefaultApiBase } from './catalog.js';
 import {
+  CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
   cliModelPolicyViolations,
   getCliModelPolicy,
@@ -289,4 +291,62 @@ describe('automatic-selection sentinel coherence', () => {
       expect(ImplementerConfigSchema.safeParse(runner).success, providerId).toBe(true);
     },
   );
+});
+
+describe('TOOL_EFFORT_LADDERS', () => {
+  it('carries a ladder for exactly the three tools whose own --effort flag documents one', () => {
+    expect(Object.keys(TOOL_EFFORT_LADDERS).sort()).toEqual([
+      'claude-code',
+      'command-code',
+      'copilot',
+    ]);
+  });
+
+  it('spells every ladder exactly as the tool it was transcribed from printed it', () => {
+    expect(TOOL_EFFORT_LADDERS['claude-code']?.levels).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+    expect(TOOL_EFFORT_LADDERS.copilot?.levels).toEqual([
+      'none',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+    expect(TOOL_EFFORT_LADDERS['command-code']?.levels).toEqual(['low', 'medium', 'high']);
+  });
+
+  it.each([
+    ['claude-code', 'claude --help'],
+    ['copilot', 'copilot --help'],
+    ['command-code', 'cmd --help'],
+  ] as const)('dates the command %s levels were read from', (tool, command) => {
+    expect(TOOL_EFFORT_LADDERS[tool]?.provenance).toContain(command);
+    expect(TOOL_EFFORT_LADDERS[tool]?.provenance).toMatch(/\d+(?:\.\d+)+ \(\d{4}-\d{2}-\d{2}\)/);
+  });
+
+  it('carries a ladder for every tool that spends its effort on its own flag', () => {
+    const flagTools = CLI_TOOL_IDS.filter(
+      (tool) => CLI_TOOL_CATALOG[tool].effortChannel === 'effort-flag',
+    );
+
+    for (const tool of flagTools) {
+      expect(TOOL_EFFORT_LADDERS[tool], tool).toBeDefined();
+    }
+  });
+
+  it('records the one ladder its tool documents as an example rather than a closed set', () => {
+    const openLadders = Object.entries(TOOL_EFFORT_LADDERS)
+      .filter(([, ladder]) => ladder?.exhaustive === false)
+      .map(([tool]) => tool);
+
+    expect(openLadders).toEqual(['command-code']);
+    expect(TOOL_EFFORT_LADDERS['command-code']?.provenance).toContain('depends on the model');
+  });
 });

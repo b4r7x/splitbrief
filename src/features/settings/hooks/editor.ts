@@ -23,7 +23,8 @@ import {
   ImplementerConfigSchema,
   type ImplementerConfig,
 } from '../../../core/schemas/implementer-config.js';
-import type { EffortLevel } from '../../../core/schemas/enums.js';
+import type { EffortLevel, ProviderId } from '../../../core/schemas/enums.js';
+import { TOOL_EFFORT_LADDERS } from '../../../core/providers/known-models.js';
 import { isTextEntryInput } from '../../../lib/terminal/text-entry.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
@@ -76,18 +77,15 @@ function getCurrentConfig(): Config {
   return current;
 }
 
-// The five levels this cycle offers today, written out so widening the schema enum cannot
-// silently add `none`/`minimal` — tokens the two `effort-flag` tools reject.
-const EFFORT_CYCLE: readonly (EffortLevel | undefined)[] = [
-  undefined,
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-];
-
-function nextEffort(current: EffortLevel | undefined): EffortLevel | undefined {
-  return EFFORT_CYCLE[(EFFORT_CYCLE.indexOf(current) + 1) % EFFORT_CYCLE.length];
+// The offer is the tool's own documented ladder, not a list of ours: `claude --effort`
+// takes low…max, `cmd --effort` documents low/medium/high. Unset heads the cycle so a
+// level can always be taken back.
+function nextEffort(tool: ProviderId, current: EffortLevel | undefined): EffortLevel | undefined {
+  const cycle: readonly (EffortLevel | undefined)[] = [
+    undefined,
+    ...(TOOL_EFFORT_LADDERS[tool]?.levels ?? []),
+  ];
+  return cycle[(cycle.indexOf(current) + 1) % cycle.length];
 }
 
 function nextVariant(choices: readonly string[], current: string | undefined): string | undefined {
@@ -219,8 +217,13 @@ export function useSettingsEditor({
       const runner = readActiveRunner({ config: current, role });
       const channel = seatEffortChannel({ runner, role });
       if (channel === 'effort-flag') {
+        if (runner.kind !== 'cli') return;
         await persist(
-          configWithSeatEffort({ config: current, seatId, effort: nextEffort(runner.effort) }),
+          configWithSeatEffort({
+            config: current,
+            seatId,
+            effort: nextEffort(runner.tool, runner.effort),
+          }),
         );
         return;
       }

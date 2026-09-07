@@ -68,7 +68,7 @@ const ENVIRONMENT_KEYS = [
   'FORCE_COLOR',
   'FORCE_HYPERLINK',
   'NO_COLOR',
-  'SPLITBRIEF_VISUAL_MOTION',
+  'SPLITBRIEF_REDUCE_MOTION',
 ] as const;
 
 type EnvironmentKey = (typeof ENVIRONMENT_KEYS)[number];
@@ -180,7 +180,7 @@ function applyEnvironment(profile: (typeof PROFILE_ENVIRONMENT)[TerminalProfile]
     FORCE_COLOR: profile.forceColor,
     FORCE_HYPERLINK: '0',
     NO_COLOR: profile.noColor,
-    SPLITBRIEF_VISUAL_MOTION: '0',
+    SPLITBRIEF_REDUCE_MOTION: '1',
   };
   for (const key of ENVIRONMENT_KEYS) {
     const value = values[key];

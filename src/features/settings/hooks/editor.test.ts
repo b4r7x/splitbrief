@@ -85,7 +85,18 @@ describe('useSettingsEditor', () => {
     ui.unmount();
   });
 
-  it('cycles an editable effort row through every level and back to unset', async () => {
+  async function walkEffort(ui: ReturnType<typeof renderFeature>, presses: number) {
+    const seen: unknown[] = [];
+    for (let press = 0; press < presses; press++) {
+      const previous = plannerEffort();
+      ui.stdin.write(' ');
+      for (let poll = 0; poll < 50 && plannerEffort() === previous; poll++) await tick(10);
+      seen.push(plannerEffort());
+    }
+    return seen;
+  }
+
+  it('cycles a claude-code seat through the levels its own effort flag documents', async () => {
     const config = makeConfig({ planner: CLI_PLANNER });
     seed(config);
     const items = crewItems(config);
@@ -96,17 +107,42 @@ describe('useSettingsEditor', () => {
     await flushEffects();
     expect(plannerEffort()).toBeUndefined();
 
-    const seen: unknown[] = [];
-    for (let press = 0; press < 5; press++) {
-      const previous = plannerEffort();
-      ui.stdin.write(' ');
-      for (let poll = 0; poll < 50 && plannerEffort() === previous; poll++) await tick(10);
-      seen.push(plannerEffort());
-    }
+    const seen = await walkEffort(ui, 6);
 
-    expect(seen).toEqual(['low', 'medium', 'high', 'xhigh', undefined]);
+    expect(seen).toEqual(['low', 'medium', 'high', 'xhigh', 'max', undefined]);
     const planner = configStore.get().config?.planner;
     expect(planner && 'effort' in planner).toBe(false);
+    ui.unmount();
+  });
+
+  it('never offers a command-code seat a level its own effort flag leaves undocumented', async () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'command-code' } });
+    seed(config);
+    const items = crewItems(config);
+
+    const ui = renderFeature(
+      createElement(Harness, { config, items, initialKey: 'effort:plan', activated: [] }),
+    );
+    await flushEffects();
+
+    const seen = await walkEffort(ui, 6);
+
+    expect(seen).toEqual(['low', 'medium', 'high', undefined, 'low', 'medium']);
+    ui.unmount();
+  });
+
+  it('clears a carried level its own effort flag never documents in a single press', async () => {
+    const config = makeConfig({ planner: { ...CLI_PLANNER, effort: 'none' } });
+    seed(config);
+    const items = crewItems(config);
+
+    const ui = renderFeature(
+      createElement(Harness, { config, items, initialKey: 'effort:plan', activated: [] }),
+    );
+    await flushEffects();
+    expect(plannerEffort()).toBe('none');
+
+    expect(await walkEffort(ui, 2)).toEqual([undefined, 'low']);
     ui.unmount();
   });
 

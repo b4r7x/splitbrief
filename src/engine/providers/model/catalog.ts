@@ -6,7 +6,7 @@ import {
   isSameCanonicalModel,
   type ModelIdentity,
 } from '../../../core/providers/canonical-model-id.js';
-import type { KnownModel } from '../../../core/providers/known-models.js';
+import { TOOL_EFFORT_LADDERS, type KnownModel } from '../../../core/providers/known-models.js';
 import { isProviderId, type ProviderId } from '../../../core/schemas/enums.js';
 import { getPricingMode, type PricingMode } from '../pricing-resolver.js';
 import type { ClaudeCodeModelOption } from '../../../core/providers/claude-code-options.js';
@@ -25,6 +25,7 @@ export type ResolvedModelSource =
   | 'models-dev'
   | 'runtime'
   | 'bundled-fallback'
+  | 'account-options'
   | 'configured-recovery';
 export type ResolvedModelMembership =
   | 'confirmed'
@@ -80,19 +81,30 @@ function exactModelsDevMetadata(
   return matches[0] ?? null;
 }
 
+/**
+ * The row's own owner is tried first, then any owner: a runner whose models.dev
+ * vendor is not its runner id (`copilot` → `github-copilot`) only ever matches
+ * on the second try, and an id two vendors both serve stays ambiguous there —
+ * so relaxing the owner can add metadata but never swap one row's for another's.
+ */
 function metadataForSelection(
   input: Readonly<{
     runnerId: ProviderId;
     selectionId: string;
-    sourceProviderId: string | undefined;
+    sourceProviderId: string;
     modelsDevEntries: readonly DetectedModel[];
   }>,
 ): DetectedModel | null {
-  const direct = exactModelsDevMetadata({
-    entries: input.modelsDevEntries,
-    selectionId: input.selectionId,
-    sourceProviderId: input.sourceProviderId,
-  });
+  const direct =
+    exactModelsDevMetadata({
+      entries: input.modelsDevEntries,
+      selectionId: input.selectionId,
+      sourceProviderId: input.sourceProviderId,
+    }) ??
+    exactModelsDevMetadata({
+      entries: input.modelsDevEntries,
+      selectionId: input.selectionId,
+    });
   if (direct !== null) return direct;
 
   const known = findKnownModel(input.runnerId, input.selectionId);
@@ -153,14 +165,13 @@ function runtimeEntry(
     nativeOrder: number;
     isStale: boolean;
     modelsDevEntries: readonly DetectedModel[];
-    matchMetadataAcrossOwners: boolean;
   }>,
 ): ResolvedModelCatalogEntry {
   const sourceProviderId = ownerFor(input.model, input.runtimeProviderId);
   const metadata = metadataForSelection({
     runnerId: input.runnerId,
     selectionId: input.model.id,
-    sourceProviderId: input.matchMetadataAcrossOwners ? undefined : sourceProviderId,
+    sourceProviderId,
     modelsDevEntries: input.modelsDevEntries,
   });
   const merged = mergeRuntimeMetadata(input.model, metadata);
@@ -262,7 +273,7 @@ function claudeCodeOptionEntry(
   const metadata = metadataForSelection({
     runnerId: input.runnerId,
     selectionId: input.option.id,
-    sourceProviderId: undefined,
+    sourceProviderId: input.runnerId,
     modelsDevEntries: input.modelsDevEntries,
   });
   const base: DetectedModel = {
@@ -277,7 +288,7 @@ function claudeCodeOptionEntry(
     runnerId: input.runnerId,
     sourceProviderId: input.runnerId,
     isDetected: false,
-    source: 'bundled-fallback',
+    source: 'account-options',
     membership: 'bundled-suggestion',
     canConfigure: true,
     pricingMode: getPricingMode(input.runnerId),
@@ -432,7 +443,6 @@ function resolveCatalogEntries(
       nativeOrder,
       isStale: runtimeSnapshot?.isStale ?? false,
       modelsDevEntries,
-      matchMetadataAcrossOwners: !lanes.modelsDev,
     });
     runtimeRows.push(row);
     indexCanonically(runtimeIndex, row);
@@ -499,16 +509,37 @@ function resolveCatalogEntries(
   return [configuredRecovery({ runnerId: providerId, selectionId: configured }), ...catalogRows];
 }
 
+/**
+ * A tool's own flag ladder is the floor for a row no catalog knows. A row that already
+ * carries a ladder keeps it — including an empty one, which means the model publishes
+ * no named levels (models.dev gives `claude-haiku-4-5` only a token budget).
+ */
+function withToolEffortFloor(
+  providerId: ProviderId,
+  entries: ResolvedModelCatalogEntry[],
+): ResolvedModelCatalogEntry[] {
+  const ladder = TOOL_EFFORT_LADDERS[providerId];
+  if (ladder === undefined) return entries;
+  return entries.map((entry) =>
+    entry.nativeReasoningEfforts === undefined
+      ? { ...entry, nativeReasoningEfforts: [...ladder.levels] }
+      : entry,
+  );
+}
+
 export function resolveModelCatalog(
   providerId: string,
   options: ResolveModelCatalogOptions = {},
 ): ResolvedModelCatalogEntry[] {
   if (!isProviderId(providerId)) return [];
-  return resolveCatalogEntries({
+  return withToolEffortFloor(
     providerId,
-    cache: options.cache ?? NULL_CACHE,
-    configuredSelectionId: options.configuredSelectionId,
-    role: options.role,
-    browseCatalog: options.browseCatalog,
-  });
+    resolveCatalogEntries({
+      providerId,
+      cache: options.cache ?? NULL_CACHE,
+      configuredSelectionId: options.configuredSelectionId,
+      role: options.role,
+      browseCatalog: options.browseCatalog,
+    }),
+  );
 }

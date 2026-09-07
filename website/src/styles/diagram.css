@@ -25,6 +25,16 @@
     translate: -50% -50%;
   }
 
+  .ghost {
+    z-index: 1;
+  }
+
+  .ghost-fallback {
+    font-size: 11px;
+    line-height: 11px;
+    letter-spacing: calc(7px - 0.6em);
+  }
+
   .ghost--planner,
   .ghost--planner + .ghost-fallback {
     left: 14%;
@@ -46,26 +56,11 @@
     color: var(--blue-dim);
   }
 
-  .ghost-fallback {
-    font-size: 11px;
-    line-height: 11px;
-    letter-spacing: calc(7px - 0.6em);
-  }
-
-  .rain {
-    top: 6%;
-    width: 1px;
-    height: 11.5%;
-    background: repeating-linear-gradient(to bottom, var(--ink-4) 0 1px, transparent 1px 10px);
-  }
-
-  .rain--planner,
   .tick--planner,
   .label--planner {
     left: 14%;
   }
 
-  .rain--implementer,
   .tick--implementer,
   .label--implementer {
     left: 67%;
@@ -80,6 +75,7 @@
 
   .label {
     top: 18%;
+    margin-top: calc(-1 * var(--s-1));
     margin-left: var(--s-3);
     color: var(--ink);
   }
@@ -119,9 +115,6 @@
   }
 
   .route {
-    --dash-right: repeating-linear-gradient(to right, var(--ink-3) 0 4px, transparent 4px 8px);
-    --dash-left: repeating-linear-gradient(to left, var(--ink-3) 0 4px, transparent 4px 8px);
-    --dash-up: repeating-linear-gradient(to top, var(--ink-3) 0 4px, transparent 4px 8px);
     background-repeat: no-repeat;
   }
 
@@ -134,13 +127,13 @@
   .route--a {
     left: 27.8%;
     width: 11.2%;
-    background-image: var(--dash-right);
+    background-image: repeating-linear-gradient(to right, var(--ink-3) 0 4px, transparent 4px 8px);
   }
 
   .route--b {
     left: 39%;
     width: 16%;
-    background-image: var(--dash-left);
+    background-image: repeating-linear-gradient(to left, var(--ink-3) 0 4px, transparent 4px 8px);
   }
 
   .route--c {
@@ -148,7 +141,11 @@
     top: 52%;
     width: 19%;
     height: 20%;
-    background-image: var(--dash-up), var(--dash-left), var(--dash-up), var(--dash-left);
+    background-image:
+      repeating-linear-gradient(to bottom, var(--ink-3) 0 4px, transparent 4px 8.225px),
+      repeating-linear-gradient(to right, var(--ink-3) 0 4px, transparent 4px 8px),
+      repeating-linear-gradient(to bottom, var(--ink-3) 0 4px, transparent 4px 8.267px),
+      repeating-linear-gradient(to right, var(--ink-3) 0 4px, transparent 4px 8.05px);
     background-size:
       1px 69.8px,
       76px 1px,
@@ -162,13 +159,14 @@
   }
 
   .cross {
-    left: 26%;
-    top: 63%;
+    left: 30%;
+    top: 70%;
     font-size: 14px;
     line-height: 1;
   }
 
-  .scatter {
+  .scatter,
+  .rain {
     inset: 0;
     font-size: var(--text-micro);
     line-height: 1;

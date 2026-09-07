@@ -9,6 +9,7 @@ import {
   CURSOR_CLI_ADMISSION_VERDICT,
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
+  hasNativeCliCatalog,
 } from '../../../core/runners/cli-tool-catalog.js';
 import { resolveRepoPath as productionResolveRepoPath } from '../../../core/runners/candidate-admission.js';
 import { COMPILER_SUPPORT_TABLE } from '../compiler-capability.js';
@@ -30,6 +31,7 @@ import { isDeclaredCliProbeContract } from './contract.js';
 import {
   nativeCliCatalogToDetectedModels,
   parseCommandCodeNativeModelCatalog,
+  parseCopilotHelpConfigCatalog,
   parseCursorModels,
 } from '../../providers/cli-model-catalog.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -44,6 +46,10 @@ const CURSOR_LIST_MODELS_COUNT = CURSOR_LIST_MODELS_FIXTURE.split(/\r?\n/u).filt
 ).length;
 const COMMAND_CODE_LIST_MODELS_FIXTURE = readFileSync(
   join(REPO_ROOT, 'testing/fixtures/command-code/list-models.txt'),
+  'utf8',
+);
+const COPILOT_HELP_CONFIG_FIXTURE = readFileSync(
+  join(REPO_ROOT, 'testing/fixtures/copilot/help-config.txt'),
   'utf8',
 );
 // Every CLI fixture opens with two provenance lines — the invocation and a
@@ -190,6 +196,24 @@ describe('admitted readiness probe contracts', () => {
         }
       }
     }
+  });
+
+  it('declares a catalog probe for exactly the tools admitted to execute one', () => {
+    const declaredKinds = Object.fromEntries(
+      CLI_TOOL_IDS.map((tool) => {
+        const probe = lookupCliReadinessProbe({ tool, role: 'planner' });
+        if (!isDeclaredCliProbeContract(probe)) {
+          throw new Error(`${tool} exposes no declared probe contract`);
+        }
+        return [tool, probe.declared.catalog.kind];
+      }),
+    );
+
+    expect(declaredKinds).toEqual(
+      Object.fromEntries(
+        CLI_TOOL_IDS.map((tool) => [tool, hasNativeCliCatalog(tool) ? 'catalog' : 'not-run']),
+      ),
+    );
   });
 
   it('owns and freezes every reachable declared catalog operation', () => {
@@ -492,6 +516,40 @@ describe('admitted readiness probe contracts', () => {
       kind: 'success',
       value: nativeCliCatalogToDetectedModels(catalog),
     });
+  });
+
+  it('binds Copilot to its own help-config listing as the declared catalog probe', () => {
+    const planner = lookupCliReadinessProbe({ tool: 'copilot', role: 'planner' });
+    expect(isDeclaredCliProbeContract(planner)).toBe(true);
+    if (!isDeclaredCliProbeContract(planner)) throw new Error('expected declared Copilot probe');
+
+    expect(planner.declared.catalog).toMatchObject({
+      kind: 'catalog',
+      command: ['copilot', 'help', 'config'],
+    });
+    if (planner.declared.catalog.kind === 'not-run') {
+      throw new Error('expected Copilot catalog probe');
+    }
+
+    const catalog = parseCopilotHelpConfigCatalog(COPILOT_HELP_CONFIG_FIXTURE);
+    if (catalog === null) throw new Error('copilot help-config fixture failed to parse');
+
+    const parsed = planner.declared.catalog.parse({
+      stdout: COPILOT_HELP_CONFIG_FIXTURE,
+      stderr: '',
+      exitCode: 0,
+      timedOut: false,
+      outputExceeded: false,
+    });
+
+    expect(parsed).toEqual({ kind: 'success', value: nativeCliCatalogToDetectedModels(catalog) });
+    if (parsed.kind !== 'success') throw new Error('expected the Copilot fixture to parse');
+
+    const ids = parsed.value.map((model) => model.id);
+    expect(ids).toHaveLength(25);
+    expect(ids[0]).toBe('claude-sonnet-5');
+    expect(ids.at(-1)).toBe('kimi-k2.7-code');
+    expect(ids).toContain('claude-opus-4.8-fast');
   });
 
   it('treats a Command Code exit code 3 as missing and the recorded status payload as verified', () => {

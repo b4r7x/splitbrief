@@ -42,6 +42,11 @@ function setEnv(key: string, value: string): void {
   process.env[key] = value;
 }
 
+function unsetEnv(key: string): void {
+  if (!originalEnvValues.has(key)) originalEnvValues.set(key, process.env[key]);
+  delete process.env[key];
+}
+
 afterEach(() => {
   for (const [key, value] of originalEnvValues) {
     if (value === undefined) delete process.env[key];
@@ -188,6 +193,31 @@ describe('createSandboxEnv', () => {
 
     expect(await bridgedCliStatePresent(env, 'claude-code')).toBe(false);
     expect(sandboxCredentialValues(env)).toEqual([]);
+  });
+
+  itUnix('points a Copilot child at the account package cache, not a redirect', async () => {
+    const redirectedHome = createTempDir('sandbox-copilot-redirected-home');
+    const relocated = createTempDir('sandbox-copilot-relocated-cache');
+    const projectDir = createTempDir('sandbox-copilot-cache');
+    dirs.push(redirectedHome, relocated, projectDir);
+    setEnv('HOME', redirectedHome);
+    unsetEnv('XDG_CACHE_HOME');
+    unsetEnv('COPILOT_CACHE_HOME');
+
+    const fromAccountHome = await createSandboxEnv({ projectDir, selectedCli: 'copilot' });
+    setEnv('COPILOT_CACHE_HOME', relocated);
+    const fromRelocatedCache = await createSandboxEnv({ projectDir, selectedCli: 'copilot' });
+    const otherTool = await createSandboxEnv({ projectDir, selectedCli: 'claude-code' });
+
+    // The launcher resolves the build it execs from this directory, so a
+    // sandbox-local one downgrades Copilot to the build embedded in it — and a
+    // directory derived from an already-redirected `$HOME` is sandbox-local by
+    // another name: it holds no package, so the launcher unpacks 67 MB into it.
+    expect(fromAccountHome.COPILOT_CACHE_HOME?.startsWith(userInfo().homedir)).toBe(true);
+    expect(fromAccountHome.COPILOT_CACHE_HOME?.startsWith(redirectedHome)).toBe(false);
+    expect(fromRelocatedCache.COPILOT_CACHE_HOME).toBe(relocated);
+    expect(otherTool.COPILOT_CACHE_HOME).toBeUndefined();
+    expect(fromAccountHome.XDG_CACHE_HOME).toBe(join(projectDir, SANDBOX_DIR, 'cache'));
   });
 
   itUnix('hands a host-account channel the real HOME and USER and nothing else', async () => {

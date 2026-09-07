@@ -5,6 +5,7 @@ import {
   nativeCliCatalogToDetectedModels,
   parseCodexNativeModelCatalog,
   parseCommandCodeNativeModelCatalog,
+  parseCopilotHelpConfigCatalog,
   parseCursorNativeModelCatalog,
   parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
@@ -382,5 +383,72 @@ describe('native CLI model catalogs', () => {
     if (detected === undefined) throw new Error('Expected one detected model');
 
     expect(detected.contextLength).toBe(contextWindow);
+  });
+
+  describe('parseCopilotHelpConfigCatalog', () => {
+    it('reads the model enum from the recorded help output in the order the tool prints it', () => {
+      const stdout = readFileSync(
+        join(import.meta.dirname, '../../../testing/fixtures/copilot/help-config.txt'),
+        'utf-8',
+      );
+      const catalog = parseCopilotHelpConfigCatalog(stdout);
+      if (catalog === null) throw new Error('Expected the copilot help config fixture to parse');
+
+      expect(catalog.tool).toBe('copilot');
+      expect(catalog.models.map((model) => model.selectionId)).toEqual([
+        'claude-sonnet-5',
+        'claude-sonnet-4.6',
+        'claude-sonnet-4.5',
+        'claude-haiku-4.5',
+        'claude-fable-5',
+        'claude-opus-5',
+        'claude-opus-4.8',
+        'claude-opus-4.8-fast',
+        'claude-opus-4.7',
+        'claude-opus-4.6',
+        'claude-opus-4.5',
+        'gpt-5.6-sol',
+        'gpt-5.6-terra',
+        'gpt-5.6-luna',
+        'gpt-5.5',
+        'gpt-5.4',
+        'gpt-5.3-codex',
+        'gpt-5.4-mini',
+        'gpt-5-mini',
+        'mai-code-1-flash-picker',
+        'gemini-3.1-pro-preview',
+        'gemini-3.6-flash',
+        'gemini-3.5-flash',
+        'grok-4.5',
+        'kimi-k2.7-code',
+      ]);
+      expect(catalog.models.map((model) => model.nativeOrder)).toEqual(
+        Array.from({ length: 25 }, (_, index) => index),
+      );
+    });
+
+    it('stops at the config key that follows the enum', () => {
+      const catalog = parseCopilotHelpConfigCatalog(
+        [
+          '  `model`: AI model to use for Copilot CLI.',
+          '    - "gpt-5.5"',
+          '  `contextTier`: context window tier for tiered-pricing models.',
+          '    - "long_context"',
+        ].join('\n'),
+      );
+
+      expect(catalog?.models.map((model) => model.selectionId)).toEqual(['gpt-5.5']);
+    });
+
+    it('returns null when the help output carries no readable model enum', () => {
+      expect(
+        parseCopilotHelpConfigCatalog(
+          'Configuration Settings:\n\n  `banner`: frequency of showing animated banner.',
+        ),
+      ).toBeNull();
+      expect(
+        parseCopilotHelpConfigCatalog('  `model`: AI model to use for Copilot CLI.'),
+      ).toBeNull();
+    });
   });
 });

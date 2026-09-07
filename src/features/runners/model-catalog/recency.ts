@@ -9,6 +9,7 @@ export interface ModelVariant {
   /** Pre-merge enumeration facts so counting can restate per-variant truth. */
   membership?: ResolvedModelMembership | undefined;
   isCustom?: boolean | undefined;
+  isAccountOption?: boolean | undefined;
   /**
    * Named presets the seat's tool offers for this route; synthetic, never
    * id-encoded. Vocabulary is per provider, so it belongs to the route rather
@@ -35,6 +36,8 @@ export interface ModelOption {
   nativeOrder?: number | undefined;
   /** The configured model the authoritative list does not contain. */
   isRecovery?: boolean | undefined;
+  /** The tool's own per-account option cache, never a documented alias. */
+  isAccountOption?: boolean | undefined;
   contextLength?: number | undefined;
   releaseDate?: string | undefined;
   /** Present on provider-merged rows and option-family rows (≥2 members). */

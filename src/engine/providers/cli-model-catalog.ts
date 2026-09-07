@@ -2,7 +2,13 @@ import { z } from 'zod';
 import type { DetectedModel } from '../../core/discovery/detection.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 
-export type NativeCliCatalogTool = 'codex' | 'opencode' | 'kilo-code' | 'cursor' | 'command-code';
+export type NativeCliCatalogTool =
+  | 'codex'
+  | 'opencode'
+  | 'kilo-code'
+  | 'cursor'
+  | 'command-code'
+  | 'copilot';
 
 export interface NativeCliModelCatalogEntry {
   readonly selectionId: string;
@@ -27,6 +33,11 @@ const CURSOR_MODEL_LINE = /^(\S+) - (.+)$/;
 // shape rejects the provider headings, the `cmd --model …` usage examples and
 // the trailing `Docs:` line, none of which are selectable.
 const COMMAND_CODE_MODEL_LINE = /^([a-z0-9][a-z0-9.-]*(?:\/[a-z0-9][a-z0-9.-]*)*) {2,}(.+)$/i;
+// `copilot help config` prints the `--model` enum as quoted bullets under its
+// `model` key, and a blank line separates the last bullet from the next config
+// key, so the first non-bullet line ends the enum rather than interrupting it.
+const COPILOT_MODEL_KEY_LINE = /^`model`:/;
+const COPILOT_MODEL_BULLET = /^-\s+"([^"]+)"$/;
 const NATIVE_DEFAULT_SUFFIX = /\s*\(default\)$/i;
 
 const CodexReasoningEffortSchema: z.ZodType<string> = z
@@ -290,6 +301,20 @@ export function parseCommandCodeNativeModelCatalog(stdout: string): NativeCliMod
     });
   }
   return entries.length === 0 ? null : catalogFromEntries({ tool: 'command-code', entries });
+}
+
+export function parseCopilotHelpConfigCatalog(stdout: string): NativeCliModelCatalog | null {
+  const lines = cleanCatalogLines(stdout);
+  const start = lines.findIndex((line) => COPILOT_MODEL_KEY_LINE.test(line));
+  if (start === -1) return null;
+
+  const entries: Omit<NativeCliModelCatalogEntry, 'nativeOrder'>[] = [];
+  for (const line of lines.slice(start + 1)) {
+    const selectionId = COPILOT_MODEL_BULLET.exec(line)?.[1];
+    if (selectionId === undefined) break;
+    entries.push({ selectionId });
+  }
+  return entries.length === 0 ? null : catalogFromEntries({ tool: 'copilot', entries });
 }
 
 export function nativeCliCatalogToDetectedModels(catalog: NativeCliModelCatalog): DetectedModel[] {

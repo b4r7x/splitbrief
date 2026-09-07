@@ -419,7 +419,7 @@ When you adjust a tool's adapter to track an upstream CLI change, bump that tool
 | `claude-code` | `claude` | planner, implementer | 2.0.0 | `semver` | 2026-07-31 | optional / optional | `native-aliases-and-custom` | subscription-included |
 | `codex` | `codex` | planner, implementer | 0.40.0 | `semver` | 2026-07-31 | optional / optional | `capability-gated-native` | subscription-included |
 | `opencode` | `opencode` | planner, implementer | 0.5.0 | `semver` | 2026-07-31 | optional / optional | `native-cli` | provider-dependent |
-| `copilot` | `copilot` | planner, implementer | 0.3.0 | `semver` | 2026-07-31 | optional / optional | `static-catalog-unverified` | subscription-included |
+| `copilot` | `copilot` | planner, implementer | 1.0.77 | `semver` | 2026-09-02 | optional / optional | `native-cli` (`copilot help config`) | subscription-included |
 | `kilo-code` | `kilo` | planner, implementer | 0.1.0 | `semver` | 2026-07-31 | optional / optional | `native-cli` | provider-dependent |
 | `cursor` | `cursor-agent` | planner, implementer | 2026.08.25-3e8eec8 | `calver` | 2026-08-27 | optional / optional | `native-cli` (`--list-models`) | subscription-included |
 | `command-code` | `cmd` | planner, implementer | 1.39.2 | `semver` | 2026-09-01 | optional / optional | `native-cli` (`--list-models`) | subscription-included |

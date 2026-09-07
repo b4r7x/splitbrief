@@ -14,6 +14,11 @@ async function settle(page: Page): Promise<void> {
   await page.clock.runFor(time);
   await page.evaluate((t) => {
     for (const animation of document.getAnimations()) {
+      const end = animation.effect?.getComputedTiming().endTime;
+      if (typeof end === 'number' && Number.isFinite(end)) {
+        animation.finish();
+        continue;
+      }
       animation.pause();
       animation.currentTime = t;
     }

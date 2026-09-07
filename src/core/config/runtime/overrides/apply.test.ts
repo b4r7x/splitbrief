@@ -40,9 +40,13 @@ describe('applyCLIOverrides — plannerEffort', () => {
     const result = applyCLIOverrides(baseConfig, { plannerEffort: 'high' });
     expect(result.planner.effort).toBe('high');
   });
-  it('throws on invalid effort value', () => {
-    expect(() => applyCLIOverrides(baseConfig, { plannerEffort: 'bogus' })).toThrow(
-      /Must be one of/,
+  it('accepts max, the top of the vocabulary', () => {
+    const result = applyCLIOverrides(baseConfig, { plannerEffort: 'max' });
+    expect(result.planner.effort).toBe('max');
+  });
+  it('refuses a level outside the vocabulary and names every level it takes', () => {
+    expect(() => applyCLIOverrides(baseConfig, { plannerEffort: 'ultra' })).toThrow(
+      'Must be one of: none, minimal, low, medium, high, xhigh, max',
     );
   });
   it('leaves config untouched when override absent', () => {

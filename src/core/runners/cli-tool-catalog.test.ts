@@ -21,6 +21,7 @@ import {
   cliToolSupportsRole,
   defaultCliAuthChannel,
   getCliModelPolicy,
+  hasNativeCliCatalog,
   selectCliAuthChannel,
   type CliModelPolicy,
 } from './cli-tool-catalog.js';
@@ -115,14 +116,24 @@ describe('CLI tool catalog', () => {
     });
   });
 
-  it('admits native catalog execution only for the five structurally declared CLIs', () => {
+  it('admits native catalog execution only for the six structurally declared CLIs', () => {
     expect(NATIVE_CLI_CATALOG_TOOL_IDS).toEqual([
       'codex',
       'opencode',
+      'copilot',
       'kilo-code',
       'cursor',
       'command-code',
     ]);
+    expect(hasNativeCliCatalog('copilot')).toBe(true);
+  });
+
+  it('leaves no tool declaring a static, unverifiable model catalog', () => {
+    const staticCatalogTools = CLI_TOOL_IDS.filter(
+      (id) => CLI_TOOL_CATALOG[id].modelDiscoveryMode === 'static-catalog-unverified',
+    );
+
+    expect(staticCatalogTools).toEqual([]);
   });
 
   it('declares project-internal state prefixes only for tools proven to rewrite them', () => {
@@ -504,6 +515,23 @@ describe('CLI tool catalog', () => {
     expect(descriptor.effortChannel).toBe('effort-flag');
     expect(descriptor.command).toBe('cmd');
     expect(descriptor.executableAliases).toEqual(['cmd']);
+  });
+
+  it('pins Copilot to the release its help-config listing was read from', () => {
+    const descriptor = CLI_TOOL_CATALOG.copilot;
+
+    expect(descriptor.modelDiscoveryMode).toBe('native-cli');
+    expect(descriptor.compatibility.testedVersion).toBe('1.0.77');
+    expect(descriptor.compatibility.evidence.asOf).toBe('2026-09-02');
+    // Older Copilot installs stay admitted: a reshaped listing falls back to
+    // the catalog lanes, so the tested bump is not a readiness change.
+    expect(descriptor.compatibility.minimumAdmittedVersion).toBe('0.3.0');
+    expect(
+      classifyCliAdmittedVersion({
+        installedVersion: '0.3.0',
+        minimumAdmittedVersion: descriptor.compatibility.minimumAdmittedVersion,
+      }),
+    ).toBe('compatible');
   });
 
   it('pins Command Code to the version its conformance transaction exercised', () => {

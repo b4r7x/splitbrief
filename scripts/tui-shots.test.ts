@@ -8,6 +8,7 @@ import {
   type TuiShotsCaptureResult,
   type TuiShotsDependencies,
 } from './tui-shots.js';
+import { VISUAL_FIXTURE_VERSION } from '../testing/visual/catalog.js';
 
 const temporaryRoots: string[] = [];
 
@@ -85,7 +86,7 @@ describe('tui-shots CLI behavior', () => {
       provenance: {
         scenarioId: 'home-empty',
         scenarioTitle: 'Home · empty project',
-        fixtureVersion: 1,
+        fixtureVersion: VISUAL_FIXTURE_VERSION,
         checkpointId: 'ready',
         viewport: { cols: 80, rows: 24 },
       },

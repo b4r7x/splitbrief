@@ -636,7 +636,7 @@ The gallery test owns the frame-geometry gate: it mounts the `workflow-implement
 
 ### Fixture-only CI policy
 
-CI uses synthetic fixtures only. It does not read live sessions, user prompts, provider credentials, real transcripts, or the contents of a developer's current project. The representative CI smoke captures a bounded fixture at `80x24`; the complete catalog remains a local command because it creates many raster files.
+CI uses synthetic fixtures only. It does not read live sessions, user prompts, provider credentials, real transcripts, or the contents of a developer's current project, and no captured fixture reads the operator's `~/.claude.json` model option cache — every visual fixture pins it before the first render. The representative CI smoke captures a bounded fixture at `80x24`; the complete catalog remains a local command because it creates many raster files.
 
 The fixtures still use the production app composition. They reset stores, seed bounded data, mount one scenario, wait for its semantic checkpoint, capture it, unmount it, and only then start the next scenario. This tests real screen and overlay composition without network access.
 

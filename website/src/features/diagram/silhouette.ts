@@ -24,9 +24,15 @@ export function eye(u: number, v: number): boolean {
   return inEye(u, v, 'left') || inEye(u, v, 'right');
 }
 
-export function pupilCell(seat: Seat, side: Side): Cell {
-  return {
-    c: Math.floor(EYE_X[side] * seat.cols) + seat.gaze.c,
-    r: Math.floor(EYE_Y * seat.rows) + seat.gaze.r,
-  };
+export function pupilCell(seat: Seat, side: Side, gaze: Cell = seat.gaze): Cell {
+  const r = Math.floor(EYE_Y * seat.rows) + gaze.r;
+  const v = (r + 0.5) / seat.rows;
+  let first = -1;
+  let last = -1;
+  for (let c = 0; c < seat.cols; c++) {
+    if (!inEye((c + 0.5) / seat.cols, v, side)) continue;
+    if (first < 0) first = c;
+    last = c;
+  }
+  return { c: Math.floor((first + last) / 2 + gaze.c / 2), r };
 }

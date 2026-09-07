@@ -1,7 +1,8 @@
 import { expect, test } from 'vitest';
+import { glyphIndex } from './atlas';
 import { density, glitchRow } from './density';
 import { SEATS, type Seat, type SeatName } from './seats';
-import { eye, pupilCell } from './silhouette';
+import { eye, inside, pupilCell } from './silhouette';
 
 const seats = Object.entries(SEATS);
 
@@ -40,6 +41,27 @@ test.each(seats)('the %s eyes are voids with exactly one pupil each', (_, seat) 
   }
 });
 
+test.each(seats)('the %s body never reaches the pupil glyph and weaves within a row', (_, seat) => {
+  const isBody = (c: number, r: number): boolean => {
+    const u = (c + 0.5) / seat.cols;
+    const v = (r + 0.5) / seat.rows;
+    return v >= 0.42 && v < 0.86 && inside(u, v) && !eye(u, v);
+  };
+  let pairs = 0;
+  let differing = 0;
+  for (let r = 0; r < seat.rows; r++) {
+    for (let c = 0; c < seat.cols; c++) {
+      if (!isBody(c, r)) continue;
+      expect(glyphIndex(density(seat, c, r, 0)), `cell ${c},${r}`).toBeLessThanOrEqual(7);
+      if (!isBody(c + 1, r)) continue;
+      pairs++;
+      if (glyphIndex(density(seat, c, r, 0)) !== glyphIndex(density(seat, c + 1, r, 0)))
+        differing++;
+    }
+  }
+  expect(differing / pairs).toBeGreaterThanOrEqual(0.4);
+});
+
 test('the core is denser than the rim and the rim fades into a faint halo', () => {
   const seat = SEATS.planner;
   const cells = grid(seat, 0);
@@ -49,9 +71,10 @@ test('the core is denser than the rim and the rim fades into a faint halo', () =
   const rim = cells.slice(13, 16).flatMap((row) => [...row.slice(0, 2), ...row.slice(28)]);
   expect(mean(core)).toBeGreaterThan(mean(rim) + 0.3);
   expect(density(seat, 0, 0, 0)).toBe(0);
-  const halo = density(seat, 8, 0, 0);
-  expect(halo).toBeGreaterThanOrEqual(0.08);
-  expect(halo).toBeLessThanOrEqual(0.18);
+  const halo = density(seat, 9, 0, 0);
+  expect(halo).toBeGreaterThanOrEqual(0.05);
+  expect(halo).toBeLessThanOrEqual(0.15);
+  expect(density(seat, 5, 0, 0)).toBe(0);
 });
 
 function glitches(seat: Seat): { start: number; end: number; row: number }[] {

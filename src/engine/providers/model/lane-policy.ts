@@ -41,9 +41,6 @@ export function modelRowLanes(
   if (discoveryMode === 'native-aliases-and-custom') {
     return { modelsDev: false, bundled: true, claudeCodeOptions: true };
   }
-  if (discoveryMode === 'static-catalog-unverified') {
-    return { modelsDev: false, bundled: true, claudeCodeOptions: false };
-  }
   if (discoveryMode !== undefined) {
     return {
       modelsDev: !input.hasRuntimeList,

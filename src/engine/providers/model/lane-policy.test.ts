@@ -25,9 +25,14 @@ describe('modelRowLanes', () => {
     expect(modelRowLanes({ providerId: 'claude-code', hasRuntimeList: true })).toEqual(lanes);
   });
 
-  it('gives copilot a bundled-only lane, never mixed with models.dev', () => {
-    expect(modelRowLanes({ providerId: 'copilot', hasRuntimeList: false })).toEqual({
+  it("lets copilot's own listing replace both catalog lanes, and restores them without one", () => {
+    expect(modelRowLanes({ providerId: 'copilot', hasRuntimeList: true })).toEqual({
       modelsDev: false,
+      bundled: false,
+      claudeCodeOptions: false,
+    });
+    expect(modelRowLanes({ providerId: 'copilot', hasRuntimeList: false })).toEqual({
+      modelsDev: true,
       bundled: true,
       claudeCodeOptions: false,
     });

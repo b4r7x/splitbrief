@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Command, InvalidArgumentError } from 'commander';
 import { IMPLEMENTER_API_PROVIDER_IDS } from '../core/providers/api-provider-catalog.js';
 import { IMPLEMENTER_CLI_TOOL_IDS } from '../core/runners/cli-tool-catalog.js';
-import { META_PROVIDER_IDS, PLANNER_TOOL_IDS } from '../core/schemas/enums.js';
+import { EFFORT_LEVELS, META_PROVIDER_IDS, PLANNER_TOOL_IDS } from '../core/schemas/enums.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
 import {
   addWorkflowOptions,
@@ -24,6 +24,13 @@ function idsListedInHelp(label: string): string[] {
   const help = addWorkflowOptions(new Command()).helpInformation().replace(/\s+/g, ' ');
   const listed = new RegExp(`${label} \\(([^)]+)\\)`).exec(help)?.[1];
   if (listed === undefined) throw new Error(`no "${label}" entry in --help`);
+  return listed.split(', ');
+}
+
+function levelsListedInHelp(seat: string): string[] {
+  const help = addWorkflowOptions(new Command()).helpInformation().replace(/\s+/g, ' ');
+  const listed = new RegExp(`${seat} effort hint: ([^.]+)\\.`).exec(help)?.[1];
+  if (listed === undefined) throw new Error(`no "${seat} effort hint" entry in --help`);
   return listed.split(', ');
 }
 
@@ -111,7 +118,7 @@ describe('--allow-repo-runners', () => {
   // The flag grants every shell/agent command the project config declares, not
   // only the repo-local ones, so the help must not say "repo-local".
   it('explains the headless grant it actually gives', () => {
-    const help = addWorkflowOptions(new Command()).helpInformation();
+    const help = addWorkflowOptions(new Command()).helpInformation().replace(/\s+/g, ' ');
 
     expect(help).toContain(
       'Grant this run the shell/agent runner commands the project config declares (headless use)',
@@ -161,6 +168,27 @@ describe('runner selection help', () => {
       'shell',
       'agent',
     ]);
+  });
+});
+
+describe('effort help', () => {
+  it.each(['Planner', 'Reviewer'])('%s effort hint enumerates every admitted level', (seat) => {
+    expect(levelsListedInHelp(seat)).toEqual([...EFFORT_LEVELS]);
+  });
+});
+
+describe('help layout', () => {
+  // Commander stops wrapping altogether once the widest term leaves a description fewer
+  // than minWidthToWrap columns, so one over-wide option added below un-wraps the whole
+  // list. Shared options only: an option a command declares for itself widens the same
+  // gutter and is out of this unit's reach.
+  it('wraps every shared workflow description inside an 80-column terminal', () => {
+    const command = addWorkflowOptions(new Command());
+    command.configureOutput({ getOutHelpWidth: () => 80 });
+
+    const lines = command.helpInformation().split('\n');
+
+    expect(lines.filter((line) => line.length > 80)).toEqual([]);
   });
 });
 

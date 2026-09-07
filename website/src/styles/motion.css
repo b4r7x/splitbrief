@@ -1,5 +1,104 @@
+@keyframes enter {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+.nav,
+.steps,
+.draft-mark,
+.hero .claim,
+.hero h1 .line,
+.lede,
+.cta,
+.works,
+.diagram {
+  animation: enter 480ms ease-out both;
+  animation-delay: calc(var(--enter) * 60ms);
+}
+
+.nav {
+  --enter: 0;
+}
+
+.steps,
+.draft-mark,
+.hero .claim {
+  --enter: 1;
+}
+
+.hero h1 .line:nth-child(1) {
+  --enter: 2;
+}
+
+.hero h1 .line:nth-child(2) {
+  --enter: 3;
+}
+
+.hero h1 .line:nth-child(3),
+.diagram {
+  --enter: 4;
+}
+
+.hero h1 .line:nth-child(4) {
+  --enter: 5;
+}
+
+.lede {
+  --enter: 6;
+}
+
+.cta {
+  --enter: 7;
+}
+
+.works {
+  --enter: 8;
+}
+
+.stage .packet,
+.stage .wake {
+  top: 0;
+  left: 0;
+  width: 7px;
+  height: 7px;
+  background: var(--white-spark);
+  opacity: 0;
+  offset-rotate: 0deg;
+}
+
+.fragments {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  font-size: var(--text-micro);
+  line-height: 1;
+  color: var(--ink-4);
+
+  .fragment {
+    position: absolute;
+    white-space: pre;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .packet {
+  .nav,
+  .steps,
+  .draft-mark,
+  .hero .claim,
+  .hero h1 .line,
+  .lede,
+  .cta,
+  .works,
+  .diagram {
+    animation: none;
+  }
+
+  .stage .packet,
+  .stage .wake {
     display: none;
   }
 }

@@ -554,7 +554,7 @@ describe('runner-owned catalog resolution', () => {
 
     expect(option).toMatchObject([
       {
-        source: 'bundled-fallback',
+        source: 'account-options',
         membership: 'bundled-suggestion',
         sourceProviderId: 'claude-code',
         displayName: 'Claude Opus 5 (Feb 2026)',
@@ -569,13 +569,128 @@ describe('runner-owned catalog resolution', () => {
     expect(rows.every((row) => row.membership === 'bundled-suggestion')).toBe(true);
   });
 
-  it('gives copilot one bundled list and never mixes models.dev rows into it', () => {
+  it('keeps each Claude alias on the ladder models.dev publishes for the model it resolves to', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        anthropic: {
+          id: 'anthropic',
+          models: {
+            'claude-opus-5': {
+              id: 'claude-opus-5',
+              reasoning_options: [
+                { type: 'effort', values: ['low', 'medium', 'high', 'xhigh', 'max'] },
+              ],
+            },
+            'claude-sonnet-5': {
+              id: 'claude-sonnet-5',
+              reasoning_options: [
+                { type: 'effort', values: ['low', 'medium', 'high', 'xhigh', 'max'] },
+              ],
+            },
+            'claude-fable-5': {
+              id: 'claude-fable-5',
+              reasoning_options: [{ type: 'effort', values: ['low', 'high'] }],
+            },
+            'claude-haiku-4-5': {
+              id: 'claude-haiku-4-5',
+              reasoning_options: [{ type: 'budget_tokens', min: 1024 }],
+            },
+          },
+        },
+      },
+    });
+
+    const rows = resolveModelCatalog('claude-code', { cache });
+    const ladderOf = (selectionId: string) =>
+      rows.find((row) => row.selectionId === selectionId)?.nativeReasoningEfforts;
+
+    expect(ladderOf('opus')).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+    expect(ladderOf('fable')).toEqual(['low', 'high']);
+    expect(ladderOf('haiku')).toEqual([]);
+  });
+
+  it('floors every Claude Code row with the tool flag ladder when no catalog answers', () => {
+    const rows = resolveModelCatalog('claude-code', {
+      cache: makeModelCacheAccessor(),
+      configuredSelectionId: 'claude-opus-5-20260201',
+    });
+
+    expect(rows.find((row) => row.source === 'configured-recovery')?.selectionId).toBe(
+      'claude-opus-5-20260201',
+    );
+    for (const row of rows) {
+      expect(row.nativeReasoningEfforts, row.selectionId).toEqual([
+        'low',
+        'medium',
+        'high',
+        'xhigh',
+        'max',
+      ]);
+    }
+  });
+
+  it('leaves a tool with no documented flag ladder exactly as its own sources answered', () => {
+    const cache = makeModelCacheAccessor({
+      providerModels: {
+        cursor: [{ id: 'gpt-5.6-sol-high', nativeReasoningEfforts: ['high'] }],
+        opencode: [{ id: 'openai/gpt-5.6-luna' }],
+      },
+    });
+
+    const opencodeRows = resolveModelCatalog('opencode', { cache });
+
+    for (const row of opencodeRows) {
+      expect(row.nativeReasoningEfforts, row.selectionId).toBeUndefined();
+    }
+
+    expect(
+      resolveModelCatalog('cursor', { cache }).map((row) => row.nativeReasoningEfforts),
+    ).toEqual([['high']]);
+  });
+
+  it("paints copilot's own listing and enriches it from github-copilot, with no bundled rows", () => {
     const cache = makeModelCacheAccessor({
       catalog: {
         'github-copilot': {
           id: 'github-copilot',
           models: {
-            'claude-sonnet-5': { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' },
+            'claude-sonnet-5': {
+              id: 'claude-sonnet-5',
+              name: 'Claude Sonnet 5',
+              limit: { context: 1_000_000, output: 64_000 },
+            },
+            'gemini-3-pro': { id: 'gemini-3-pro', name: 'Gemini 3 Pro' },
+          },
+        },
+      },
+      providerModels: {
+        copilot: [
+          { id: 'claude-sonnet-5', nativeOrder: 0 },
+          { id: 'claude-opus-4.8-fast', nativeOrder: 1 },
+        ],
+      },
+    });
+
+    const rows = resolveModelCatalog('copilot', { cache });
+
+    expect(rows.map((row) => [row.selectionId, row.membership])).toEqual([
+      ['claude-sonnet-5', 'confirmed'],
+      ['claude-opus-4.8-fast', 'confirmed'],
+    ]);
+    expect(rows[0]?.contextLength).toBe(1_000_000);
+    // The tool's enum is the row set: an id models.dev never heard of still
+    // paints, and an id only models.dev knows never joins.
+    expect(rows[1]?.contextLength).toBeUndefined();
+  });
+
+  it('falls back to the github-copilot catalog when copilot has listed nothing', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        'github-copilot': {
+          id: 'github-copilot',
+          models: {
+            'claude-opus-5': { id: 'claude-opus-5', name: 'Claude Opus 5' },
+            'gpt-5.6-sol': { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' },
             'gemini-3-pro': { id: 'gemini-3-pro', name: 'Gemini 3 Pro' },
           },
         },
@@ -584,10 +699,14 @@ describe('runner-owned catalog resolution', () => {
 
     const rows = resolveModelCatalog('copilot', { cache });
 
-    expect(rows.every((row) => row.membership === 'bundled-suggestion')).toBe(true);
-    expect(rows.map((row) => row.selectionId).sort()).toEqual(
-      ['claude-opus-5', 'gpt-5.6-sol'].sort(),
-    );
+    expect(rows.map((row) => row.selectionId).toSorted()).toEqual([
+      'claude-opus-5',
+      'gemini-3-pro',
+      'gpt-5.6-sol',
+    ]);
+    // The bundled pair is the offline floor, not a second lane: models.dev
+    // publishes both ids, so canonical dedupe leaves nothing bundled behind.
+    expect(rows.every((row) => row.membership === 'catalog-suggestion')).toBe(true);
   });
 
   it('collapses a :free catalog twin into its provider-qualified runtime row', () => {
@@ -850,5 +969,76 @@ describe('runner-owned catalog resolution', () => {
       ['gpt-5-codex', 'confirmed'],
       ['gpt-4o', 'catalog-suggestion'],
     ]);
+  });
+
+  it('keeps a runtime row enriched by its vendor while browsing, not only in the native lane', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        'github-copilot': {
+          id: 'github-copilot',
+          models: {
+            'gpt-5.6-sol': {
+              id: 'gpt-5.6-sol',
+              name: 'GPT-5.6 Sol',
+              limit: { context: 1_050_000 },
+            },
+            'gpt-4.1': { id: 'gpt-4.1', name: 'GPT-4.1', limit: { context: 128_000 } },
+          },
+        },
+      },
+      providerModels: { copilot: [{ id: 'gpt-5.6-sol' }] },
+    });
+
+    for (const browseCatalog of [false, true]) {
+      const rows = resolveModelCatalog('copilot', { cache, browseCatalog });
+
+      expect(rows.find((row) => row.selectionId === 'gpt-5.6-sol')).toMatchObject({
+        membership: 'confirmed',
+        displayName: 'GPT-5.6 Sol',
+        contextLength: 1_050_000,
+      });
+    }
+
+    expect(
+      resolveModelCatalog('copilot', { cache, browseCatalog: true }).map((row) => row.selectionId),
+    ).toEqual(['gpt-5.6-sol', 'gpt-4.1']);
+  });
+
+  it('leaves a runtime row unenriched when two models.dev vendors both serve its id', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        opencode: {
+          id: 'opencode',
+          models: {
+            'shared-model': {
+              id: 'shared-model',
+              name: 'Shared Model (opencode)',
+              limit: { context: 1_000_000 },
+            },
+          },
+        },
+        'opencode-go': {
+          id: 'opencode-go',
+          models: {
+            'shared-model': {
+              id: 'shared-model',
+              name: 'Shared Model (opencode-go)',
+              limit: { context: 128_000 },
+            },
+          },
+        },
+      },
+      providerModels: { opencode: [{ id: 'shared-model', providerId: 'third-vendor' }] },
+    });
+
+    for (const browseCatalog of [false, true]) {
+      const row = resolveModelCatalog('opencode', { cache, browseCatalog }).find(
+        (entry) => entry.source === 'runtime',
+      );
+
+      expect(row).toMatchObject({ selectionId: 'shared-model', membership: 'confirmed' });
+      expect(row?.displayName).toBeUndefined();
+      expect(row?.contextLength).toBeUndefined();
+    }
   });
 });

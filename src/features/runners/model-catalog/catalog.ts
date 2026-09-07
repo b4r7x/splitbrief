@@ -48,6 +48,7 @@ export function countModelOptions(models: readonly ModelOption[]): PickerModelCo
   const tally = (
     membership: ResolvedModelMembership | undefined,
     isCustom: boolean | undefined,
+    isAccountOption: boolean | undefined,
   ): void => {
     if (isCustom === true || membership === 'custom') custom += 1;
     switch (membership) {
@@ -61,7 +62,9 @@ export function countModelOptions(models: readonly ModelOption[]): PickerModelCo
         suggestions += 1;
         break;
       case 'bundled-suggestion':
-        bundled += 1;
+        // An account-cache option is one operator's saved selection, not a documented
+        // alias; an option merge folds it into a family row, so the marker rides the variant.
+        if (isAccountOption !== true) bundled += 1;
         break;
       case 'custom':
       case undefined:
@@ -71,11 +74,11 @@ export function countModelOptions(models: readonly ModelOption[]): PickerModelCo
 
   for (const model of models) {
     if (model.variants === undefined || model.variants.length === 0) {
-      tally(model.membership, model.isCustom);
+      tally(model.membership, model.isCustom, model.isAccountOption);
       continue;
     }
     for (const variant of model.variants) {
-      tally(variant.membership ?? model.membership, variant.isCustom);
+      tally(variant.membership ?? model.membership, variant.isCustom, variant.isAccountOption);
     }
   }
 
@@ -114,6 +117,7 @@ function toModelOption(entry: ReturnType<typeof resolveModelCatalog>[number]): M
     ...(entry.isStale ? { isStale: true } : {}),
     ...(entry.nativeOrder === undefined ? {} : { nativeOrder: entry.nativeOrder }),
     ...(entry.source === 'configured-recovery' ? { isRecovery: true } : {}),
+    ...(entry.source === 'account-options' ? { isAccountOption: true } : {}),
     contextLength: entry.contextLength,
     releaseDate: entry.releaseDate,
   };

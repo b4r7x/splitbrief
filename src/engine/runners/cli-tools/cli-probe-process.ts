@@ -15,7 +15,11 @@ import {
 } from '../../../lib/process/spawn/lifecycle.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 import { DISCOVERY_SUBPROCESS_TIMEOUT_MS } from '../../constants.js';
-import { createSandboxEnv, prependCliExecutableDirectory } from '../sandbox-env.js';
+import {
+  cliPackageCacheEnv,
+  createSandboxEnv,
+  prependCliExecutableDirectory,
+} from '../sandbox-env.js';
 import { bridgedCliStatePresent } from '../sandbox-state-bridge.js';
 import type { CliAuthProbe, CliProbeCommand, CliProbeOutput, CliVersionProbe } from './contract.js';
 
@@ -99,6 +103,10 @@ export async function probeEnvironment({
   return {
     env: {
       ...env,
+      // The version probe names no auth channel, so `createSandboxEnv` is not
+      // told which tool is about to run and cannot place the package cache
+      // itself. Without it the version this probe reads is a different build's.
+      ...cliPackageCacheEnv(tool),
       PATH: prependCliExecutableDirectory({
         executablePath: executable.path,
         safeRuntimePath: probeRuntimePath(),

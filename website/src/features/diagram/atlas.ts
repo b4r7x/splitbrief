@@ -3,7 +3,6 @@ import { CELL_HEIGHT, CELL_WIDTH, type Palette, type Seat } from './seats';
 export const GLYPHS = ' .:-=o0O@';
 
 export type Tint = 'blue' | 'blue-dim' | 'green' | 'green-dim' | 'spark';
-export type Colour = { readonly tint: Tint; readonly alpha: number };
 
 export type Atlas = {
   readonly image: OffscreenCanvas;
@@ -45,16 +44,15 @@ function alphaFor(d: number): number {
   return 0.6 + d * 0.4;
 }
 
-export function colourFor(seat: Seat, d: number, sparkHash: number): Colour {
-  const alpha = alphaFor(d);
+export function tintFor(seat: Seat, d: number, sparkHash: number): Tint {
   if (seat.palette === 'mixed') {
-    if (sparkHash < 0.55) return { tint: 'blue-dim', alpha };
-    if (sparkHash < 0.9) return { tint: 'green-dim', alpha };
-    return { tint: 'spark', alpha };
+    if (sparkHash < 0.55) return 'blue-dim';
+    if (sparkHash < 0.9) return 'green-dim';
+    return 'spark';
   }
-  if (sparkHash < SPARK_SHARE) return { tint: 'spark', alpha };
+  if (sparkHash < SPARK_SHARE) return 'spark';
   const lab = LAB[seat.palette];
-  return { tint: d < 0.3 ? lab.dim : lab.accent, alpha };
+  return d < 0.3 ? lab.dim : lab.accent;
 }
 
 export function buildAtlas(seat: Seat, dpr: number): Atlas {
@@ -65,7 +63,7 @@ export function buildAtlas(seat: Seat, dpr: number): Atlas {
   const ctx = image.getContext('2d');
   if (!ctx) throw new Error('atlas canvas has no 2d context');
   const style = getComputedStyle(document.documentElement);
-  ctx.font = `${CELL_HEIGHT * dpr}px "JetBrains Mono"`;
+  ctx.font = `${CELL_HEIGHT * dpr}px "JetBrains Mono", ui-monospace, monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   tints.forEach((tint, row) => {

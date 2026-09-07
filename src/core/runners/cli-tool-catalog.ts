@@ -466,13 +466,13 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     internalStatePaths: [],
     compatibility: compatibility({
       installUrl: 'https://github.com/github/copilot-cli',
-      testedVersion: '0.3.0',
+      testedVersion: '1.0.77',
       minimumAdmittedVersion: '0.3.0',
       versionScheme: 'semver',
-      asOf: '2026-07-31',
+      asOf: '2026-09-02',
     }),
     authDiscoveryMode: 'static-unverified',
-    modelDiscoveryMode: 'static-catalog-unverified',
+    modelDiscoveryMode: 'native-cli',
     mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
   }),
   'kilo-code': activeCliToolDeclaration({
@@ -832,6 +832,7 @@ export const CLI_COMPILER_EVIDENCE: Readonly<Record<CliToolId, CliCompilerEviden
 export const NATIVE_CLI_CATALOG_TOOL_IDS = Object.freeze([
   'codex',
   'opencode',
+  'copilot',
   'kilo-code',
   'cursor',
   'command-code',

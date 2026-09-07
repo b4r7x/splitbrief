@@ -87,7 +87,7 @@ const SHIM_PROFILES: Record<ImplementerCliToolId, ContractShimProfile> = {
   },
   copilot: {
     transport: 'argv',
-    versionLine: canonicalVersionLine('copilot', '0.3.0'),
+    versionLine: canonicalVersionLine('copilot', '1.0.77'),
     successLines: ['ok'],
     authArgv: ['auth', 'status'],
   },

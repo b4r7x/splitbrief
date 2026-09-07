@@ -64,6 +64,7 @@ export function HomeSeatBlock({ rows, width }: { rows: number; width: number }) 
             planner: config.planner,
             build: resolveImplementerProfiles(config).defaultProfile.config,
             reviewer: configuredReviewerRunner(config),
+            budget: width,
             displayNames,
           })}
         </Text>

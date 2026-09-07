@@ -90,17 +90,6 @@ describe('formatModelCatalogGuidance', () => {
     expect(guidance.detail).not.toContain('ctrl+r');
   });
 
-  it('says a copilot list is unverified rather than calling it aliases', () => {
-    const guidance = formatModelCatalogGuidance(
-      { ...readyCliTool(), id: 'copilot', displayName: 'GitHub Copilot CLI' },
-      { ...zeroCounts, bundled: 2 },
-      { kind: 'unsupported' } satisfies ModelCatalogDiagnostic,
-    );
-
-    expect(guidance.detail).toBe('a static list is offered — not verified against your account');
-    expect(guidance.detail).not.toContain('alias');
-  });
-
   it('keeps the alias wording for claude-code', () => {
     const guidance = formatModelCatalogGuidance(
       { ...readyCliTool(), id: 'claude-code', displayName: 'Claude Code CLI' },
@@ -408,21 +397,6 @@ describe('formatPickerByline', () => {
     expect(failed).toContain('ctrl+r');
     expect(failed.indexOf('ctrl+r')).toBeLessThan(failed.indexOf('Network'));
     expect(byline()).not.toContain('Loading models…');
-  });
-
-  it('counts copilot bundled rows as static models rather than aliases', () => {
-    const line = formatPickerByline({
-      toolName: 'GitHub Copilot CLI',
-      version: undefined,
-      counts: { confirmed: 0, stale: 0, suggestions: 0, bundled: 2, custom: 0 },
-      lane: 'ready',
-      diagnostic: { kind: 'unsupported' },
-      capabilities: [],
-      toolId: 'copilot',
-    });
-
-    expect(line).toContain('2 static models');
-    expect(line).not.toContain('alias');
   });
 
   it('still counts claude-code bundled rows as known aliases', () => {
