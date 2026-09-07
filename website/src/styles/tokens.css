@@ -1,0 +1,43 @@
+:root {
+  --bg: #0b0c0e;
+  --bg-vignette: radial-gradient(120% 90% at 60% 20%, #101216 0%, #0b0c0e 55%, #08090a 100%);
+  --ink: #ece9e2;
+  --ink-2: #b9b6ae;
+  --ink-3: #84827c;
+  --ink-4: #4a4946;
+  --hair: rgb(255 255 255 / 0.12);
+  --hair-strong: rgb(255 255 255 / 0.22);
+  --highlight: inset 0 1px 0 rgb(255 255 255 / 0.05);
+  --blue: #6e97ea;
+  --blue-dim: #3a5aa0;
+  --green: #58c48f;
+  --green-dim: #2f7a58;
+  --white-spark: #f4f2ec;
+  --focus: #6e97ea;
+  --selection: rgb(110 151 234 / 0.35);
+
+  --font-display: "Bodoni Moda", "Bodoni Moda Fallback", Georgia, "Times New Roman", serif;
+  --font-mono:
+    "JetBrains Mono", "JetBrains Mono Fallback", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-wide: "Space Mono", "Space Mono Fallback", ui-monospace, monospace;
+
+  --text-display: clamp(3.25rem, 5.4vw, 4.9rem);
+  --text-wide: clamp(1.375rem, 2.1vw, 1.9rem);
+  --text-body: 0.9375rem;
+  --text-label: 0.75rem;
+  --text-micro: 0.6875rem;
+  --text-cta: 0.875rem;
+
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-12: 48px;
+  --s-16: 64px;
+  --s-24: 96px;
+  --s-32: 128px;
+  --gutter: clamp(20px, 4.4vw, 64px);
+  --content-max: 1312px;
+}
