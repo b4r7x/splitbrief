@@ -1,4 +1,5 @@
 import { mkdirSync, rmSync } from 'node:fs';
+import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state.js';
 import type { RouteData } from '../../../src/stores/navigation/router.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';
@@ -8,6 +9,7 @@ import { composerDraftStore } from '../../../src/stores/ui/composer-draft.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import type { CliToolDetection } from '../../../src/core/discovery/detection.js';
+import type { ClaudeCodeModelOption } from '../../../src/core/providers/claude-code-options.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import type { ModelsDevRefreshOutcome } from '../../../src/engine/detection/models-dev-lane.js';
 import type { Config } from '../../../src/core/schemas/config.js';
@@ -37,6 +39,14 @@ const VISUAL_DETECTION_CONTEXTS = {
 
 /** Frames are byte-compared, so every lane is stamped with a fixed instant. */
 export const VISUAL_PUBLISHED_AT = 1_786_000_000_000;
+
+/**
+ * The one entry Claude Code's per-account `~/.claude.json` option cache really
+ * holds; pinned so a capture is the same on a developer's machine and on CI.
+ */
+export const CLAUDE_CODE_OPTION_CACHE: readonly ClaudeCodeModelOption[] = [
+  { id: 'claude-fable-5-1[1m]', displayName: 'Fable' },
+];
 
 const VISUAL_FIXTURE_WORK_DIR = `.test-artifacts/ui-fixture-worker-${process.pid}`;
 export const VISUAL_FIXTURE_PROJECT_DIR = `${VISUAL_FIXTURE_WORK_DIR}/ui-fixture-project`;
@@ -89,6 +99,7 @@ export function setupVisualFixture(context: FixtureContext): void {
   removeFixtureProject();
   mkdirSync(VISUAL_FIXTURE_PROJECT_DIR, { recursive: true });
   resetVisualFixtureStores();
+  modelCacheStore.__testSetClaudeCodeModelOptions(CLAUDE_CODE_OPTION_CACHE);
   seedVisualConfig();
   terminalSizeStore.__testReset({
     cols: context.viewport.cols,

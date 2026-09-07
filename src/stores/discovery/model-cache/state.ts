@@ -80,6 +80,9 @@ function initialState(): ModelCacheState {
 
 const store = createStore<ModelCacheState>(initialState);
 let activeContexts: DiscoverySourceContexts | null = null;
+/** Pinned by the visual harness so a capture never depends on the operator's
+ *  `~/.claude.json`; the reader below memoises, so the seam has to be here. */
+let claudeCodeModelOptionsOverride: readonly ClaudeCodeModelOption[] | null = null;
 let nextPublicationId = 0;
 
 function publicationIsCurrent(current: ModelCacheState, request: DiscoveryRefreshRequest): boolean {
@@ -116,6 +119,7 @@ function commit(next: ModelCacheState): void {
 function resetAll(): void {
   activeContexts = null;
   nextPublicationId = 0;
+  claudeCodeModelOptionsOverride = null;
   store.reset();
 }
 
@@ -422,7 +426,11 @@ export const modelCacheStore = {
     return store.get().modelsDevCatalog;
   },
 
+  __testSetClaudeCodeModelOptions(options: readonly ClaudeCodeModelOption[]): void {
+    claudeCodeModelOptionsOverride = options;
+  },
+
   getClaudeCodeModelOptions(): readonly ClaudeCodeModelOption[] {
-    return readClaudeCodeModelOptions();
+    return claudeCodeModelOptionsOverride ?? readClaudeCodeModelOptions();
   },
 };

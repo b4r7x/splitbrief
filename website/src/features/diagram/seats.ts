@@ -14,7 +14,6 @@ export type Seat = {
   readonly frequency: number;
   readonly tickRate: number;
   readonly glitchMs: number;
-  readonly gain: number;
   readonly gaze: Cell;
   readonly seed: number;
 };
@@ -29,7 +28,6 @@ export const SEATS: Readonly<Record<SeatName, Seat>> = {
     frequency: 6,
     tickRate: 12,
     glitchMs: 160,
-    gain: 1,
     gaze: { c: 1, r: 0 },
     seed: 1,
   },
@@ -42,7 +40,6 @@ export const SEATS: Readonly<Record<SeatName, Seat>> = {
     frequency: 12,
     tickRate: 12,
     glitchMs: 90,
-    gain: 1,
     gaze: { c: -1, r: 0 },
     seed: 2,
   },
@@ -51,11 +48,10 @@ export const SEATS: Readonly<Record<SeatName, Seat>> = {
     rows: 18,
     palette: 'mixed',
     period: 9,
-    phase: 4.2,
+    phase: 1,
     frequency: 4,
     tickRate: 8,
     glitchMs: 0,
-    gain: 0.85,
     gaze: { c: -1, r: -1 },
     seed: 3,
   },

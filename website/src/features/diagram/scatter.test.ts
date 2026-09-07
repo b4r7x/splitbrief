@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest';
 import { type GhostBox, type Rect, scatterPoints } from './scatter';
-import { CELL_HEIGHT, CELL_WIDTH } from './seats';
-import { SEATS } from './seats';
+import { CELL_HEIGHT, CELL_WIDTH, SEATS } from './seats';
 import { inside } from './silhouette';
 
 const ghosts: GhostBox[] = [
@@ -11,9 +10,12 @@ const ghosts: GhostBox[] = [
 ];
 const plannerLabel: Rect = { left: 106.4, top: 154.8, width: 96, height: 40 };
 const card: Rect = { left: 254.4, top: 343.6, width: 84, height: 104 };
-const field = { ghosts, exclusions: [plannerLabel, card] };
+const planSeat: Rect = { left: 45.6, top: 516, width: 64, height: 84 };
+const cross: Rect = { left: 221, top: 595, width: 14, height: 14 };
+const field = { ghosts, exclusions: [plannerLabel, card, planSeat, cross] };
 
 const BAND = { x0: 0, y0: 51.6, x1: 182.4, y1: 223.6, spread: 24 };
+const TRAIL: Rect = { left: 0, top: 516, width: 296.4, height: 344 };
 const REACH = 30;
 
 function inGhost(box: GhostBox, x: number, y: number): boolean {
@@ -49,26 +51,40 @@ function nearGhost(box: GhostBox, x: number, y: number): boolean {
 test('the same field scatters the same glyphs every time', () => {
   const points = scatterPoints(field);
   expect(points).toEqual(scatterPoints(field));
-  expect(points.length).toBeGreaterThanOrEqual(80);
-  expect(points.length).toBeLessThanOrEqual(100);
+  expect(points.length).toBeGreaterThanOrEqual(110);
+  expect(points.length).toBeLessThanOrEqual(130);
   for (const point of points) expect('.:·').toContain(point.glyph);
 });
 
-test('no glyph lands inside a ghost, on the planner label, or on the card', () => {
+test('no glyph lands inside a ghost or on the labels, card, and crosshair it must clear', () => {
   for (const { x, y } of scatterPoints(field)) {
     for (const box of ghosts) expect(inGhost(box, x, y), `${x},${y}`).toBe(false);
-    expect(inRect(plannerLabel, x, y), `${x},${y}`).toBe(false);
-    expect(inRect(card, x, y), `${x},${y}`).toBe(false);
+    for (const rect of field.exclusions) expect(inRect(rect, x, y), `${x},${y}`).toBe(false);
   }
 });
 
-test('every glyph sits in the diagonal band or within 30px of a ghost rim', () => {
+test('every glyph sits in the diagonal band, the lower-left trail, or a ghost halo', () => {
   const points = scatterPoints(field);
   for (const { x, y } of points) {
-    expect(inBand(x, y) || ghosts.some((box) => nearGhost(box, x, y)), `${x},${y}`).toBe(true);
+    const placed =
+      inBand(x, y) || inRect(TRAIL, x, y) || ghosts.some((box) => nearGhost(box, x, y));
+    expect(placed, `${x},${y}`).toBe(true);
   }
   expect(points.filter(({ x, y }) => inBand(x, y)).length).toBeGreaterThanOrEqual(50);
   for (const box of ghosts) {
     expect(points.filter(({ x, y }) => nearGhost(box, x, y)).length).toBeGreaterThanOrEqual(10);
   }
+});
+
+test('the lower-left trail is lighter than the band and uses only . and :', () => {
+  const points = scatterPoints(field);
+  const trail = points.filter(({ x, y }) => inRect(TRAIL, x, y));
+  const band = points.filter(({ x, y }) => inBand(x, y));
+  expect(trail.length).toBeGreaterThanOrEqual(20);
+  expect(trail.length).toBeLessThanOrEqual(30);
+  for (const point of trail) expect('.:').toContain(point.glyph);
+  const perPixel = (count: number, area: number): number => count / area;
+  expect(perPixel(trail.length, TRAIL.width * TRAIL.height)).toBeLessThan(
+    perPixel(band.length, 48 * Math.hypot(182.4, 172)) / 4,
+  );
 });

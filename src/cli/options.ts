@@ -72,7 +72,11 @@ export function assertWorktreeStartOnly(opts: { worktree?: string }): void {
 }
 
 export function addWorkflowOptions(cmd: Command): Command {
+  // At 80 columns the widest term (37) leaves descriptions 39 — one short of commander's
+  // default minWidthToWrap of 40, below which it emits every description unwrapped and the
+  // terminal breaks them mid-word. 32, not 39, so a term up to 44 columns still wraps.
   return cmd
+    .configureHelp({ minWidthToWrap: 32 })
     .option('--approve <level>', 'Approval gates: none, spec, plan, all, default (follows mode)')
     .option('--model <model>', 'Override implementer model (alias for --implementer-model)')
     .option('--provider <provider>', 'Override implementer provider (alias for --implementer)')
@@ -152,11 +156,11 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--budget <amount>', 'Maximum budget in dollars (e.g., 2.00)', parseBudgetOption)
     .option(
       '--planner-effort <level>',
-      'Planner effort hint: low, medium, high, xhigh. Dropped on unsupported backends.',
+      "Planner effort hint: none, minimal, low, medium, high, xhigh, max. The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it.",
     )
     .option(
       '--reviewer-effort <level>',
-      'Reviewer effort hint: low, medium, high, xhigh. Dropped on unsupported backends.',
+      "Reviewer effort hint: none, minimal, low, medium, high, xhigh, max. The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it.",
     )
     .option('--allow-hooks', 'Trust hook config without prompting (use in CI)', false)
     .option('--allow-repo-runners', ALLOW_REPO_RUNNERS_HELP, false)

@@ -147,6 +147,39 @@ function hostAccountState(): Readonly<Record<string, string>> {
   return { HOME: home, USERPROFILE: home, USER: userInfo().username };
 }
 
+function copilotPackageCacheHome(): string {
+  const configured = process.env.COPILOT_CACHE_HOME;
+  if (configured !== undefined) return configured;
+  // The account's own home, read from the passwd database. `homedir()` returns
+  // `$HOME`, which follows any redirect already in place, and naming a
+  // redirected home produces the exact outcome this function exists to prevent:
+  // a cache holding no package, into which the launcher unpacks a fresh 67 MB
+  // copy of the build embedded in it.
+  const home = userInfo().homedir;
+  if (process.platform === 'darwin') return join(home, 'Library', 'Caches', 'copilot');
+  if (process.platform === 'win32') {
+    return join(process.env.LOCALAPPDATA ?? join(home, '.cache'), 'copilot');
+  }
+  return join(process.env.XDG_CACHE_HOME ?? join(home, '.cache'), 'copilot');
+}
+
+/**
+ * Where a tool's launcher finds the versioned package it execs, for the one
+ * tool that resolves it through the host HOME. The Copilot launcher reads
+ * `$COPILOT_CACHE_HOME/pkg` first and the platform cache directory next, and
+ * falls back to the older build embedded in the launcher when neither holds
+ * one — so a redirected HOME silently downgrades the tool. Measured 2026-09-07
+ * against an installed 1.0.77: `HOME=$(mktemp -d) copilot --version` prints
+ * 1.0.37 and its `help config` lists 17 models instead of 25, after extracting
+ * 67 MB into the scratch home. Naming the host cache keeps every sandboxed
+ * child — probe and runner alike — on the build the user installed. The
+ * directory holds the tool's own program, never its credentials, so this widens
+ * nothing a bridged-files channel may read.
+ */
+export function cliPackageCacheEnv(tool: CliToolId | undefined): Readonly<Record<string, string>> {
+  return tool === 'copilot' ? { COPILOT_CACHE_HOME: copilotPackageCacheHome() } : {};
+}
+
 /**
  * Serializes sandbox creation for one (projectDir, role, tool) root. Concurrent
  * acquisitions of the same root — exactly what concurrent batches do — would
@@ -233,6 +266,7 @@ export async function createSandboxEnv(options: {
         XDG_DATA_HOME: data,
         APPDATA: config,
         LOCALAPPDATA: data,
+        ...cliPackageCacheEnv(selectedCli),
         npm_config_cache: npmCache,
         PIP_CACHE_DIR: pipCache,
         CARGO_HOME: cargoHome,

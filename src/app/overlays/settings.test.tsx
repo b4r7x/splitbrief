@@ -139,7 +139,7 @@ describe('SettingsOverlay', () => {
     ui.unmount();
   });
 
-  it('renders 6 crew rows and cycling effort changes only that row with zero geometry jumps', async () => {
+  it('renders 6 crew rows and cycling effort moves the row and its seat mirror, nothing else', async () => {
     seed({
       planner: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4' },
       reviewer: API_REVIEWER,
@@ -174,13 +174,17 @@ describe('SettingsOverlay', () => {
         changedIndices.push(i);
       }
     }
-    expect(changedIndices).toHaveLength(1);
-    const changedIndex = changedIndices[0] ?? -1;
-    expect(changedIndex).toBeGreaterThanOrEqual(0);
-    expect(beforeLines[changedIndex]).toContain('effort');
-    expect(afterLines[changedIndex]).toContain('effort');
-    expect(beforeLines[changedIndex]).toContain('auto');
-    expect(afterLines[changedIndex]).toContain('low');
+    expect(changedIndices).toHaveLength(2);
+    const seatIndex = changedIndices[0] ?? -1;
+    const effortIndex = changedIndices[1] ?? -1;
+    expect(effortIndex).toBe(seatIndex + 1);
+    expect(beforeLines[seatIndex]).toContain('PLAN');
+    expect(beforeLines[seatIndex]).not.toContain('low');
+    expect(afterLines[seatIndex]).toContain('low');
+    expect(beforeLines[effortIndex]).toContain('effort');
+    expect(afterLines[effortIndex]).toContain('effort');
+    expect(beforeLines[effortIndex]).toContain('auto');
+    expect(afterLines[effortIndex]).toContain('low');
 
     ui.unmount();
   });

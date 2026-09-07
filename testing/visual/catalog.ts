@@ -12,7 +12,7 @@ import { CATALOG_SCHEMA_VERSION } from './contracts/schema-versions.js';
 const CHECKPOINT_TIMEOUT_MS = 10_000;
 
 export const VISUAL_CATALOG_VERSION = CATALOG_SCHEMA_VERSION;
-export const VISUAL_FIXTURE_VERSION = 1;
+export const VISUAL_FIXTURE_VERSION = 2;
 export const REQUIRED_VIEWPORTS: readonly Viewport[] = Object.freeze([
   viewport({ cols: 120, rows: 40 }),
   viewport({ cols: 80, rows: 24 }),

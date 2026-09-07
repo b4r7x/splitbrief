@@ -178,6 +178,7 @@ function toOptionVariant(row: ModelOption, familyDisplay: string): ModelVariant 
     ...(row.displayName !== undefined ? { displayName: row.displayName } : {}),
     ...(row.membership === undefined ? {} : { membership: row.membership }),
     ...(row.isCustom ? { isCustom: true } : {}),
+    ...(row.isAccountOption ? { isAccountOption: true } : {}),
   };
 }
 

@@ -27,6 +27,8 @@ const SEAT_GAP = 2;
 export interface HeaderLayout {
   contentWidth: number;
   railWidth: number;
+  /** The cells left for the seat line once the rail and the clock are paid for. */
+  seatRoom: number;
   showElapsed: boolean;
   showSeats: boolean;
 }
@@ -92,7 +94,7 @@ export function getHeaderLayout(input: {
   const showSeats = seatCells > 0 && seatRoom >= seatCells;
   const tailWidth = elapsedWidth + (showSeats ? seatCells + SEAT_GAP : 0);
   const railWidth = tailWidth > 0 ? Math.max(0, contentWidth - tailWidth - gap) : contentWidth;
-  return { contentWidth, railWidth, showElapsed, showSeats };
+  return { contentWidth, railWidth, seatRoom, showElapsed, showSeats };
 }
 
 export function Header({ startedAt, railForm }: HeaderProps) {
@@ -117,11 +119,15 @@ export function Header({ startedAt, railForm }: HeaderProps) {
     events: eventsState.events,
   });
 
+  // The room does not depend on the line, so the first pass measures it, the
+  // line is cut to it, and the second pass lays the bar out around what fits.
+  const { seatRoom } = getHeaderLayout({ cols, railCells });
   const seatLine = config
     ? formatCollapsedSeatLine({
         planner: config.planner,
         build: resolveImplementerProfiles(config).defaultProfile.config,
         reviewer: configuredReviewerRunner(config),
+        budget: seatRoom,
         displayNames,
       })
     : '';

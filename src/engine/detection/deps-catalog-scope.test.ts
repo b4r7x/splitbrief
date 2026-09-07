@@ -139,12 +139,10 @@ describe.runIf(process.platform !== 'win32')('native catalog discovery scope', (
     expect(existsSync(opencodeArgsLog)).toBe(true);
 
     expect(forTool('codex').map((attempt) => attempt.connection.role)).toContain('planner');
-    for (const tool of ['kilo-code']) {
+    for (const tool of ['kilo-code', 'copilot']) {
       expect(forTool(tool).map((attempt) => attempt.outcome.kind)).toEqual(['not-run', 'not-run']);
       expect(existsSync(join(shimDir, `${tool}.args`))).toBe(false);
     }
-    for (const tool of ['claude-code', 'copilot']) {
-      expect(forTool(tool)).toEqual([]);
-    }
+    expect(forTool('claude-code')).toEqual([]);
   });
 });

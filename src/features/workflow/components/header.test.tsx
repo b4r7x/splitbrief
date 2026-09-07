@@ -98,8 +98,15 @@ describe('Header — seat line', () => {
     expect(frame).toContain('PLAN');
     expect(frame).toContain('BUILD');
     expect(frame).toContain('REVIEW');
-    expect(frame).toContain('Qwen 7B');
+    expect(frame).toContain('Qwen 2.5 Coder 7B');
     expect(frame.slice(frame.indexOf('PLAN'))).not.toContain(glyph('connectorSame'));
+  });
+
+  it('gives up one seat name to the tight bar instead of hiding all three', async () => {
+    const frame = await seatFrame(110);
+
+    expect(frame).toContain('PLAN');
+    expect(frame).toContain('Qwen 2.5 Coder 7B');
   });
 
   it('says the review seat borrows the planner when no reviewer is configured', async () => {

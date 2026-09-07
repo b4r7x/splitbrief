@@ -18,10 +18,12 @@ export type ScatterPoint = { readonly x: number; readonly y: number; readonly gl
 const SEED = 11;
 const GLYPHS = '.:·';
 const BAND = { x0: 0, y0: 51.6, x1: 182.4, y1: 223.6, spread: 24, count: 60 };
+const TRAIL = { x0: 0, y0: 516, x1: 296.4, y1: 860, count: 30, glyphs: '.:' };
 const HALO = { reach: 30, step: 5, count: 13 };
 const BAND_LAYER = 0;
+const TRAIL_LAYER = -1;
 
-function ghostRect(box: GhostBox): Rect {
+export function ghostRect(box: GhostBox): Rect {
   return {
     left: box.left,
     top: box.top,
@@ -63,8 +65,8 @@ function clear(field: Field, x: number, y: number): boolean {
   );
 }
 
-function glyphAt(k: number, layer: number): string {
-  return GLYPHS.charAt(Math.floor(hash(SEED, k, 2, layer) * GLYPHS.length));
+function glyphAt(k: number, layer: number, glyphs: string): string {
+  return glyphs.charAt(Math.floor(hash(SEED, k, 2, layer) * glyphs.length));
 }
 
 function band(field: Field): ScatterPoint[] {
@@ -77,7 +79,17 @@ function band(field: Field): ScatterPoint[] {
     const across = (hash(SEED, k, 1, BAND_LAYER) * 2 - 1) * BAND.spread;
     const x = BAND.x0 + along * dx - (dy / length) * across;
     const y = BAND.y0 + along * dy + (dx / length) * across;
-    if (clear(field, x, y)) points.push({ x, y, glyph: glyphAt(k, BAND_LAYER) });
+    if (clear(field, x, y)) points.push({ x, y, glyph: glyphAt(k, BAND_LAYER, GLYPHS) });
+  }
+  return points;
+}
+
+function trail(field: Field): ScatterPoint[] {
+  const points: ScatterPoint[] = [];
+  for (let k = 0; points.length < TRAIL.count && k < TRAIL.count * 3; k++) {
+    const x = TRAIL.x0 + hash(SEED, k, 0, TRAIL_LAYER) * (TRAIL.x1 - TRAIL.x0);
+    const y = TRAIL.y0 + hash(SEED, k, 1, TRAIL_LAYER) * (TRAIL.y1 - TRAIL.y0);
+    if (clear(field, x, y)) points.push({ x, y, glyph: glyphAt(k, TRAIL_LAYER, TRAIL.glyphs) });
   }
   return points;
 }
@@ -88,13 +100,19 @@ function halo(field: Field, box: GhostBox, layer: number): ScatterPoint[] {
   for (let k = 0; points.length < HALO.count && k < HALO.count * 40; k++) {
     const x = rect.left - HALO.reach + hash(SEED, k, 0, layer) * (rect.width + 2 * HALO.reach);
     const y = rect.top - HALO.reach + hash(SEED, k, 1, layer) * (rect.height + 2 * HALO.reach);
-    if (nearRim(box, x, y) && clear(field, x, y)) points.push({ x, y, glyph: glyphAt(k, layer) });
+    if (nearRim(box, x, y) && clear(field, x, y)) {
+      points.push({ x, y, glyph: glyphAt(k, layer, GLYPHS) });
+    }
   }
   return points;
 }
 
 export function scatterPoints(field: Field): ScatterPoint[] {
-  return [...band(field), ...field.ghosts.flatMap((box, i) => halo(field, box, i + 1))];
+  return [
+    ...band(field),
+    ...trail(field),
+    ...field.ghosts.flatMap((box, i) => halo(field, box, i + 1)),
+  ];
 }
 
 export function scatterFragment(points: readonly ScatterPoint[]): DocumentFragment {

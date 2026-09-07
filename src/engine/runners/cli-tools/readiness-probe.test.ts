@@ -238,6 +238,29 @@ describe('CLI readiness probe', () => {
     expect(result.status).toBe('untrusted');
   });
 
+  itUnix('lets a Copilot probe read the host package cache the launcher execs from', async () => {
+    const executable = await nodeExecutable();
+    const hostCache = '/host-copilot-cache';
+    vi.stubEnv('COPILOT_CACHE_HOME', hostCache);
+    const versionScript = `console.log(process.env.COPILOT_CACHE_HOME === ${JSON.stringify(hostCache)} ? 'copilot 0.40.0' : 'copilot unseen')`;
+
+    const copilot = await probeCliReadiness({
+      tool: 'copilot',
+      executable,
+      probe: declaredProbe({ versionScript }),
+    });
+    const codex = await probeCliReadiness({
+      tool: 'codex',
+      executable,
+      probe: declaredProbe({ versionScript }),
+    });
+
+    // Without it the probe reports the build embedded in the launcher, not the
+    // one the user installed — a version and a model list nothing else agrees with.
+    expect(copilot.installedVersion).toBe('0.40.0');
+    expect(codex.installedVersion).toBeNull();
+  });
+
   it('fails closed on Windows before spawning a probe or its descendants', async () => {
     await withTempDir('readiness-probe-windows', async (directory) => {
       const executable = await nodeExecutable();

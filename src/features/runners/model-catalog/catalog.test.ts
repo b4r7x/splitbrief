@@ -6,7 +6,10 @@ import {
 import { buildRightModels, countModelOptions, resolveAndSort } from './catalog.js';
 import type { PickerOption } from './options.js';
 import { deriveModelCatalogCapability } from './posture.js';
-import type { ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
+import {
+  getBundledModels,
+  type ModelCacheAccessor,
+} from '../../../engine/providers/model/resolution.js';
 import { runnerRoleForActiveRole } from '../../../core/runners/seat-roles.js';
 
 function pickerItem(
@@ -572,6 +575,58 @@ describe('one authoritative row per model', () => {
       'sonnet[1m]',
       'opus[1m]',
     ]);
+  });
+
+  it('leaves the account option row out of the documented alias count', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => null,
+      getClaudeCodeModelOptions: () => [{ id: 'claude-fable-5-1[1m]', displayName: 'Fable' }],
+    };
+
+    const models = resolveAndSort('claude-code', 'planner', cache);
+
+    expect(models.map((model) => model.id)).toContain('claude-fable-5-1[1m]');
+    expect(countModelOptions(models).bundled).toBe(getBundledModels('claude-code').length);
+  });
+
+  it('leaves an account option out of the alias count after it merges into a family', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => null,
+      getClaudeCodeModelOptions: () => [{ id: 'opus-high', displayName: 'Opus High' }],
+    };
+
+    const models = buildRightModels({
+      role: 'planner',
+      customModels: [],
+      currentItem: cliItem('claude-code', 'optional', false),
+      cache,
+    });
+
+    const opus = models.find((model) => model.id === 'opus');
+    expect(opus?.variants?.map((variant) => variant.fullId)).toEqual(['opus', 'opus-high']);
+    expect(countModelOptions(models).bundled).toBe(getBundledModels('claude-code').length);
+  });
+
+  it('still counts an account option the operator also saved as a custom model', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => null,
+      getClaudeCodeModelOptions: () => [{ id: 'claude-fable-5-1[1m]', displayName: 'Fable' }],
+    };
+
+    const models = buildRightModels({
+      role: 'planner',
+      customModels: ['claude-fable-5-1[1m]'],
+      currentItem: cliItem('claude-code', 'optional', false),
+      cache,
+    });
+
+    expect(models.find((model) => model.id === 'claude-fable-5-1[1m]')?.isCustom).toBe(true);
+    const counts = countModelOptions(models);
+    expect(counts.custom).toBe(1);
+    expect(counts.bundled).toBe(getBundledModels('claude-code').length);
   });
 
   it('carries the native order of a confirmed row into the picker option', () => {

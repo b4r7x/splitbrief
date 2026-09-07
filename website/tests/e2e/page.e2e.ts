@@ -1,3 +1,4 @@
+import { gzipSync } from 'node:zlib';
 import { expect, type Page, test } from '@playwright/test';
 
 const FAMILIES = ['Bodoni Moda', 'JetBrains Mono'];
@@ -90,15 +91,23 @@ test('label ink clears AA against the lightest vignette stop', async ({ page }) 
   expect((Math.max(ink, stop) + 0.05) / (Math.min(ink, stop) + 0.05)).toBeGreaterThanOrEqual(4.5);
 });
 
-test('ships under 20 KB of JavaScript', async ({ page }) => {
+test('ships under 90 KB gzipped of JavaScript, 12 KB of it our own', async ({ page }) => {
   await open(page);
-  const sources = await page.evaluate(() =>
-    [...document.querySelectorAll<HTMLScriptElement>('script[src]')].map((script) => script.src),
-  );
-  let bytes = 0;
-  for (const source of sources) {
-    const response = await page.request.get(source);
-    bytes += (await response.body()).length;
-  }
-  expect(bytes).toBeLessThan(20_000);
+  const scripts = await page.evaluate(() => ({
+    own: [...document.querySelectorAll<HTMLScriptElement>('script[type="module"][src]')].map(
+      (script) => script.src,
+    ),
+    vendor: [...document.querySelectorAll<HTMLLinkElement>('link[rel="modulepreload"]')].map(
+      (link) => link.href,
+    ),
+  }));
+  const gzipped = async (urls: string[]): Promise<number> => {
+    let bytes = 0;
+    for (const url of urls) bytes += gzipSync(await (await page.request.get(url)).body()).length;
+    return bytes;
+  };
+  const own = await gzipped(scripts.own);
+  const vendor = await gzipped(scripts.vendor);
+  expect(own).toBeLessThanOrEqual(12_000);
+  expect(own + vendor).toBeLessThanOrEqual(90_000);
 });

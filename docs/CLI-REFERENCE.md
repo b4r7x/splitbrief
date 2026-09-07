@@ -97,7 +97,7 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
 | `--planner-args <arg>` | string | from config | Append one planner CLI/shell argument. Repeatable; each use adds another argument. Applies to `cli`, `shell`, and `agent` runners. |
 | `--planner-output-format <format>` | enum | from config | Planner output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
 | `--planner-context-length <tokens>` | number | from config | Planner context length in tokens. Consumed only by the `api` planner kind, where it sizes the request's `max_tokens` output budget; other kinds delegate the budget to their backend and ignore it. |
-| `--planner-effort <level>` | enum | — | Effort hint: `low`, `medium`, `high`, `xhigh`. Silently dropped on backends that don't support it. |
+| `--planner-effort <level>` | enum | — | Planner effort hint: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it. |
 | `--implementer <provider>` | string | from config | Implementer provider: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `ollama`, `lm-studio`, `shell`, `agent`. The flag's help text is derived from the catalog's implementer role admission (`src/cli/options.ts`), so `splitbrief start --help` always prints the admitted set. |
 | `--implementer-model <model>` | string | from config | Implementer model identifier. |
 | `--implementer-command <cmd>` | string | from config | Custom implementer command (when `--implementer=shell`). |
@@ -114,7 +114,7 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
 | `--reviewer-args <arg>` | string | from config | Append one reviewer CLI/shell argument. Repeatable. Applies to `cli`, `shell`, and `agent` runners. |
 | `--reviewer-output-format <format>` | enum | from config | Reviewer output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
 | `--reviewer-context-length <tokens>` | number | from config | Reviewer context length in tokens. Consumed only by the `api` kind, where it sizes the request's `max_tokens` budget. |
-| `--reviewer-effort <level>` | enum | — | Reviewer effort hint: `low`, `medium`, `high`, `xhigh`. Requires the review seat to have its own runner: with no `reviewer` block in config and no `--reviewer`, the run is refused with a message naming `--reviewer`. On a configured reviewer whose backend has no reasoning control, it is dropped with a stderr warning. |
+| `--reviewer-effort <level>` | enum | — | Reviewer effort hint: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. The seat's tool accepts a subset and reports what it rejects. Requires the review seat to have its own runner: with no `reviewer` block in config and no `--reviewer`, the run is refused with a message naming `--reviewer`. On a configured reviewer whose backend has no reasoning control, it is dropped with a stderr warning. |
 | `--model <model>` | string | — | Alias for `--implementer-model`. |
 | `--provider <provider>` | string | — | Alias for `--implementer`. |
 | `--budget <amount>` | float | — | Maximum budget in USD (e.g. `2.00`). Workflow warns/pauses before the cap, stops when exceeded, and pauses when paid usage has unknown pricing. |

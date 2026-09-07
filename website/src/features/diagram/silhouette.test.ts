@@ -35,21 +35,23 @@ test('the planner skirt ends in at least four scallops', () => {
 });
 
 const pupilRows: [SeatName, { left: Cell; right: Cell }][] = [
-  ['planner', { left: { c: 11, r: 10 }, right: { c: 20, r: 10 } }],
-  ['implementer', { left: { c: 7, r: 8 }, right: { c: 16, r: 8 } }],
+  ['planner', { left: { c: 10, r: 10 }, right: { c: 20, r: 10 } }],
+  ['implementer', { left: { c: 8, r: 8 }, right: { c: 16, r: 8 } }],
   ['reviewer', { left: { c: 6, r: 6 }, right: { c: 13, r: 6 } }],
 ];
 
 test.each(pupilRows)(
-  'the %s pupils sit one cell off the eye centres, toward the card',
+  'the %s pupils sit half a cell off the void centres, toward the card, clear of the walls',
   (name, expected) => {
     const seat = SEATS[name];
     const left = pupilCell(seat, 'left');
     const right = pupilCell(seat, 'right');
     expect({ left, right }).toEqual(expected);
     for (const pupil of [left, right]) {
-      const { u, v } = centre(seat, pupil.c, pupil.r);
-      expect(eye(u, v)).toBe(true);
+      for (const dc of [-1, 0, 1]) {
+        const { u, v } = centre(seat, pupil.c + dc, pupil.r);
+        expect(eye(u, v), `cell ${pupil.c + dc},${pupil.r}`).toBe(true);
+      }
     }
   },
 );

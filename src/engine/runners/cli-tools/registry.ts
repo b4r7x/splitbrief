@@ -4,6 +4,7 @@ import {
   nativeCliCatalogToDetectedModels,
   parseCodexNativeModelCatalog,
   parseCommandCodeNativeModelCatalog,
+  parseCopilotHelpConfigCatalog,
   parseCursorNativeModelCatalog,
   parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
@@ -424,8 +425,12 @@ function declaredCatalogProbe(tool: CliToolId): CliCatalogProbe {
         command: ['cmd', '--list-models'],
         parser: parseCommandCodeNativeModelCatalog,
       });
-    case 'claude-code':
     case 'copilot':
+      return structuralCatalogProbe({
+        command: ['copilot', 'help', 'config'],
+        parser: parseCopilotHelpConfigCatalog,
+      });
+    case 'claude-code':
       return { kind: 'not-run' };
   }
 }

@@ -1,17 +1,19 @@
 import { hash } from '../../lib/noise';
 import { prefersReducedMotion } from '../../lib/reduced-motion';
-import { buildAtlas, colourFor, GLYPHS, glyphIndex } from './atlas';
-import { density, glitchRow } from './density';
+import { buildAtlas, GLYPHS, glyphIndex, tintFor } from './atlas';
+import { density, glitchRow, type Pose } from './density';
 import { CELL_HEIGHT, CELL_WIDTH, type Seat } from './seats';
+import { createTicker } from './ticker';
 
 export type Ghost = {
-  renderFrame(t: number): void;
+  renderFrame(t: number, pose?: Pose): void;
   start(): void;
   stop(): void;
 };
 
 const SPARK_LAYER = -1;
 const MAX_DPR = 2;
+const REST: Pose = {};
 
 function context2d(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
   const ctx = canvas.getContext('2d');
@@ -19,7 +21,15 @@ function context2d(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
   return ctx;
 }
 
-export function createGhost({ canvas, seat }: { canvas: HTMLCanvasElement; seat: Seat }): Ghost {
+export function createGhost({
+  canvas,
+  seat,
+  pose,
+}: {
+  canvas: HTMLCanvasElement;
+  seat: Seat;
+  pose?: () => Pose;
+}): Ghost {
   const dpr = Math.min(MAX_DPR, devicePixelRatio);
   const ctx = context2d(canvas);
   canvas.width = seat.cols * CELL_WIDTH * dpr;
@@ -29,29 +39,25 @@ export function createGhost({ canvas, seat }: { canvas: HTMLCanvasElement; seat:
 
   let atlas = buildAtlas(seat, dpr);
   let lastT: number | undefined;
-  let frame: number | undefined;
-  let origin: number | undefined;
-  let tick = -1;
-  let visible = true;
-  let observer: IntersectionObserver | undefined;
+  const ticker = createTicker(canvas, seat.tickRate, (t) => renderFrame(t, pose?.()));
 
   document.fonts.ready.then(() => {
     atlas = buildAtlas(seat, dpr);
     if (lastT !== undefined) renderFrame(lastT);
   });
 
-  function renderFrame(t: number): void {
+  function renderFrame(t: number, current: Pose = REST): void {
     lastT = t;
-    const shifted = glitchRow(seat, t);
+    const shifted = glitchRow(seat, t, current.jolt);
     const { image, tileWidth, tileHeight } = atlas;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     for (let r = 0; r < seat.rows; r++) {
       const shift = r === shifted ? tileWidth : 0;
       for (let c = 0; c < seat.cols; c++) {
-        const index = glyphIndex(density(seat, c, r, t));
+        const index = glyphIndex(density(seat, c, r, t, current));
         if (index === 0) continue;
         const spark = hash(seat.seed, c, r, SPARK_LAYER);
-        const row = atlas.row(colourFor(seat, index / (GLYPHS.length - 1), spark).tint);
+        const row = atlas.row(tintFor(seat, index / (GLYPHS.length - 1), spark));
         ctx.drawImage(
           image,
           index * tileWidth,
@@ -67,52 +73,13 @@ export function createGhost({ canvas, seat }: { canvas: HTMLCanvasElement; seat:
     }
   }
 
-  function loop(now: number): void {
-    frame = requestAnimationFrame(loop);
-    origin ??= now;
-    const next = Math.floor(((now - origin) / 1000) * seat.tickRate);
-    if (next === tick) return;
-    tick = next;
-    renderFrame(tick / seat.tickRate);
-  }
-
-  function pause(): void {
-    if (frame === undefined) return;
-    cancelAnimationFrame(frame);
-    frame = undefined;
-  }
-
-  function resume(): void {
-    if (frame === undefined && visible && !document.hidden) frame = requestAnimationFrame(loop);
-  }
-
-  function onVisibility(): void {
-    if (document.hidden) pause();
-    else resume();
-  }
-
   function start(): void {
-    if (observer) return;
     if (prefersReducedMotion()) {
       renderFrame(0);
       return;
     }
-    observer = new IntersectionObserver((entries) => {
-      for (const entry of entries) visible = entry.isIntersecting;
-      if (visible) resume();
-      else pause();
-    });
-    observer.observe(canvas);
-    document.addEventListener('visibilitychange', onVisibility);
-    resume();
+    ticker.start();
   }
 
-  function stop(): void {
-    pause();
-    observer?.disconnect();
-    observer = undefined;
-    document.removeEventListener('visibilitychange', onVisibility);
-  }
-
-  return { renderFrame, start, stop };
+  return { renderFrame, start, stop: ticker.stop };
 }

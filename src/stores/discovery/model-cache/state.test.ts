@@ -5,6 +5,7 @@ import type {
   DetectedModel,
   ProviderDetection,
 } from '../../../core/discovery/detection.js';
+import { readClaudeCodeModelOptions } from '../../../core/providers/claude-code-options.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import { createDetectionService, type DetectionDeps } from '../../../engine/detection/service.js';
 import { resolveModelCatalog } from '../../../engine/providers/model/catalog.js';
@@ -538,6 +539,30 @@ describe('modelCacheStore', () => {
 
   it('returns null for Models.dev catalog before anything is cached', () => {
     expect(modelCacheStore.getModelsDevCatalog()).toBeNull();
+  });
+
+  it('returns the pinned Claude Code options instead of reading the account cache', () => {
+    const pinned = [
+      { id: 'seam-a', displayName: 'Seam A' },
+      { id: 'seam-b', displayName: 'Seam B' },
+    ];
+    modelCacheStore.__testSetClaudeCodeModelOptions(pinned);
+
+    expect(modelCacheStore.getClaudeCodeModelOptions()).toEqual(pinned);
+  });
+
+  it('drops the pinned options on reset so production reads the account cache again', () => {
+    // Synthetic ids no `~/.claude.json` can hold, so the reset is falsifiable on
+    // a machine with an account cache and on one without.
+    const pinned = [{ id: 'seam-a' }, { id: 'seam-b' }];
+    modelCacheStore.__testSetClaudeCodeModelOptions(pinned);
+
+    modelCacheStore.reset();
+
+    expect(modelCacheStore.getClaudeCodeModelOptions()).not.toEqual(pinned);
+    // `toBe`, not `toEqual`: a severed `?? []` deep-equals the reader's own result on
+    // any machine with no account cache; the reader memoises, so identity holds on both.
+    expect(modelCacheStore.getClaudeCodeModelOptions()).toBe(readClaudeCodeModelOptions());
   });
 
   it('marks a remembered Models.dev catalog stale with the snapshot timestamps, not the read time', () => {
