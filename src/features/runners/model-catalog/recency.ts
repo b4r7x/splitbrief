@@ -6,6 +6,8 @@ export interface ModelVariant {
   providerPrefix: string;
   tag: string;
   displayName?: string | undefined;
+  /** The context window this spelling carries, when the listing states one per spelling. */
+  contextLength?: number | undefined;
   /** Pre-merge enumeration facts so counting can restate per-variant truth. */
   membership?: ResolvedModelMembership | undefined;
   isCustom?: boolean | undefined;
@@ -21,6 +23,8 @@ export interface ModelVariant {
 export interface ModelOption {
   id: string;
   displayName?: string | undefined;
+  /** One line the row's metadata column carries in place of the context size. */
+  detail?: string | undefined;
   isDefault?: boolean | undefined;
   isDetected?: boolean | undefined;
   /** Membership remains visible after engine catalog projection. */
@@ -39,6 +43,8 @@ export interface ModelOption {
   /** The tool's own per-account option cache, never a documented alias. */
   isAccountOption?: boolean | undefined;
   contextLength?: number | undefined;
+  /** A vendor-supplied flag about the model that is not part of its name, e.g. `no ZDR`. */
+  vendorTag?: string | undefined;
   /**
    * The effort ladder this model's own source publishes — the tool's `--verbose`
    * listing, models.dev `reasoning_options`, or the tool's documented flag ladder.

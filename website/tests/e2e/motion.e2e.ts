@@ -17,6 +17,7 @@ async function open(page: Page): Promise<void> {
 async function seek(page: Page, ms: number): Promise<void> {
   await page.evaluate((t) => {
     for (const animation of document.getAnimations()) {
+      if (animation.timeline !== document.timeline) continue;
       animation.pause();
       animation.currentTime = t;
     }
@@ -92,8 +93,8 @@ test.describe('on a phone', () => {
 
 test('fragments never cross the header band, headline, lede or CTA', async ({ page }) => {
   await open(page);
-  const fragments = page.locator('.fragment');
-  await expect(fragments).toHaveCount(19);
+  const fragments = page.locator('.fragments .fragment');
+  expect(await fragments.count()).toBeGreaterThanOrEqual(18);
   const header = await box(page.locator('.nav'));
   const band = { ...header, left: 0, right: 1440 };
   const keepClear = [

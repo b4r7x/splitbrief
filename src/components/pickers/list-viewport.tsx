@@ -17,8 +17,8 @@ interface ListRowContext {
 }
 
 export interface ListDecorationsConfig<T> {
-  hasBefore: (item: T, index: number) => boolean;
-  renderBefore: (item: T, ctx: ListRowContext) => ReactNode;
+  hasBefore?: ((item: T, index: number) => boolean) | undefined;
+  renderBefore?: ((item: T, ctx: ListRowContext) => ReactNode) | undefined;
   hasAfter: (item: T, index: number) => boolean;
   renderAfter: (item: T, ctx: ListRowContext) => ReactNode;
 }
@@ -139,7 +139,7 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
             return (
               <Box key={`${slot.kind}-${slot.itemIndex}`}>
                 {slot.kind === 'before'
-                  ? decorations.renderBefore(item, ctx)
+                  ? (decorations.renderBefore?.(item, ctx) ?? null)
                   : decorations.renderAfter(item, ctx)}
               </Box>
             );

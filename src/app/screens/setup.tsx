@@ -5,7 +5,6 @@ import { ListViewport } from '../../components/pickers/list-viewport.js';
 import { SOFT_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
 import { glyph } from '../../lib/glyphs.js';
-import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 import type { CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
 import { type CrewRow, crewRowKey } from '../../core/crew/rows.js';
@@ -16,13 +15,12 @@ import { BootManifest } from '../../features/runners/boot-manifest.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import {
   CREW_MARKER_GUTTER,
-  CREW_RAIL_WIDTH,
   planSeatBlock,
   type SeatBlockLayout,
 } from '../../features/crew/format.js';
 import { crewActivate } from '../../features/crew/rows.js';
 import { PresetRowView } from '../../features/crew/preset-row.js';
-import { CrewRowView, CrewSpine, CrewVerdictLine } from '../../features/crew/row-view.js';
+import { CrewRowView, CrewVerdictLine } from '../../features/crew/row-view.js';
 import { useCrew } from '../../features/crew/use-crew.js';
 import { useFilterableList } from '../../hooks/use-filterable-list.js';
 import { refreshPickerDetection } from '../../features/runners/refresh-detection.js';
@@ -60,8 +58,8 @@ type SetupItem =
   | Readonly<{ kind: 'continue'; key: string }>;
 
 /**
- * The panel yields in one order until it fits: the cross-lab verdict and the rail spines first
- * (inside `planSeatBlock`), then the section headers, then the blank rows between blocks, then the
+ * The panel yields in one order until it fits: the cross-lab verdict first (inside
+ * `planSeatBlock`), then the section headers, then the blank rows between blocks, then the
  * ready-made crews.
  */
 const LADDER = [
@@ -135,7 +133,7 @@ function sectionOf(item: SetupItem): string {
 /** Continue sits on the same left column as the preset and seat labels. */
 function continueText(isCursor: boolean): string {
   const gutter = isCursor ? `${glyph('liveBar')} ` : ' '.repeat(CREW_MARKER_GUTTER);
-  return `${gutter}${' '.repeat(CREW_RAIL_WIDTH)}Continue`;
+  return `${gutter}Continue`;
 }
 
 interface SetupScreenProps {
@@ -241,7 +239,6 @@ function CrewStep({ note, onContinue, onExit }: CrewStepProps) {
     0,
     ...presets.map((preset) => getTerminalCellWidth(preset.label)),
   );
-  const planner = readActiveRunner({ config, role: 'planner' });
 
   const list = useFilterableList<SetupItem>({
     items,
@@ -265,7 +262,7 @@ function CrewStep({ note, onContinue, onExit }: CrewStepProps) {
     <OverlayPanel
       title="Set up your crew"
       density={CREW_PANEL_DENSITY}
-      hint={`↑↓ navigate${SOFT_SEP}⏎ select${SOFT_SEP}esc quit`}
+      hint={`↑↓ navigate${SOFT_SEP}⏎ change seat${SOFT_SEP}esc quit`}
     >
       {note !== undefined && (
         <Box marginBottom={1}>
@@ -286,12 +283,6 @@ function CrewStep({ note, onContinue, onExit }: CrewStepProps) {
           headerFor: (label) => showHeaders && label !== CONTINUE_SECTION,
         }}
         decorations={{
-          hasBefore: (item, index) =>
-            layout.spines &&
-            item.kind === 'crew' &&
-            item.row.kind === 'seat' &&
-            list.filtered[index - 1]?.kind === 'crew',
-          renderBefore: () => <CrewSpine />,
           hasAfter: (item, index) =>
             layout.verdict && item.kind === 'crew' && list.filtered[index + 1]?.kind !== 'crew',
           renderAfter: () =>
@@ -315,7 +306,6 @@ function CrewStep({ note, onContinue, onExit }: CrewStepProps) {
                   layout={layout}
                   isCursor={ctx.isCursor}
                   width={innerWidth}
-                  planner={planner}
                 />
               );
             case 'continue':

@@ -13,8 +13,10 @@ import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { TwoColumnPicker } from './two-column-picker/picker.js';
+import { seatAxisFocus, seatAxisFocusSeat } from '../../core/navigation/types.js';
 import { usePickerCatalog } from './use-picker-catalog.js';
-import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
+import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
+import { PICKER_ROLE_SEAT_IDS, type ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import type { PickerOption } from './model-catalog/options.js';
 import type { RightRow } from './model-catalog/rows.js';
 import type { ModelOption } from './model-catalog/recency.js';
@@ -227,12 +229,16 @@ describe('usePickerCatalog', () => {
 
     const reviewer = renderFeature(<CurrentSelectionProbe role="reviewer" />);
     await tick(20);
-    expect(reviewer.lastFrame()).toContain('Reviewer|claude-code|reviewer-model');
+    expect(reviewer.lastFrame()).toContain(
+      `${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS.reviewer]}|claude-code|reviewer-model`,
+    );
     reviewer.unmount();
 
     const planner = renderFeature(<CurrentSelectionProbe role="planner" />);
     await tick(20);
-    expect(planner.lastFrame()).toContain('Planner|codex|planner-model');
+    expect(planner.lastFrame()).toContain(
+      `${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS.planner]}|codex|planner-model`,
+    );
     planner.unmount();
   });
 
@@ -650,7 +656,7 @@ describe('usePickerCatalog', () => {
         (row): row is Extract<RightRow, { kind: 'axis' }> =>
           row.kind === 'axis' && row.axis === 'effort',
       );
-      return <Text>{catalog.variantDraft ?? 'none'}</Text>;
+      return <Text>{catalog.effortDraft ?? 'none'}</Text>;
     }
 
     const ui = renderFeature(<VariantProbe />);
@@ -659,7 +665,7 @@ describe('usePickerCatalog', () => {
     expect(ui.lastFrame()).toContain('max');
     expect(variantRow).toMatchObject({ axis: 'effort', value: 'max' });
 
-    pickerViewStore.setVariantDraft('high');
+    pickerViewStore.setEffortDraft('high');
     await tick(20);
 
     expect(variantRow).toMatchObject({ axis: 'effort', value: 'high' });
@@ -912,5 +918,116 @@ describe('usePickerCatalog right-column entry point', () => {
 
     expect(seen?.leftId).toBe('codex');
     ui.unmount();
+  });
+});
+
+describe('usePickerCatalog seat-axis landing', () => {
+  let landing: {
+    rightIndex: number;
+    rowKind: string | undefined;
+    axisName: string | undefined;
+    modelId: string | undefined;
+    focusModels: boolean;
+    axisIndex: number;
+    modelIndex: number;
+  } | null = null;
+
+  function AxisProbe() {
+    const catalog = usePickerCatalog('planner', 0, null);
+    const row = catalog.rightRows[catalog.initialRightIndex];
+    landing = {
+      rightIndex: catalog.initialRightIndex,
+      rowKind: row?.kind,
+      axisName: row?.kind === 'axis' ? row.axis : undefined,
+      modelId: row?.kind === 'model' ? row.model.id : undefined,
+      focusModels: catalog.focusModels,
+      axisIndex: catalog.rightRows.findIndex((r) => r.kind === 'axis' && r.axis === 'effort'),
+      modelIndex: catalog.rightRows.findIndex(
+        (r) => r.kind === 'model' && r.model.id === catalog.currentModel,
+      ),
+    };
+    return <Text>probe</Text>;
+  }
+
+  beforeEach(() => {
+    landing = null;
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', model: 'opus' },
+      }),
+    });
+    detectionStore.reset();
+    modelCacheStore.reset();
+    overlayStore.reset();
+    pickerViewStore.reset();
+    seedDetections();
+  });
+
+  it('lands on the effort axis when the token names this picker seat', () => {
+    pickerViewStore.expand('opus');
+    overlayStore.setFocus(seatAxisFocus('plan'));
+    const ui = renderFeature(<AxisProbe />);
+
+    expect(landing?.axisIndex).toBeGreaterThanOrEqual(0);
+    expect(landing?.rightIndex).toBe(landing?.axisIndex);
+    expect(landing?.rowKind).toBe('axis');
+    expect(landing?.axisName).toBe('effort');
+    expect(landing?.focusModels).toBe(true);
+    ui.unmount();
+  });
+
+  it('falls back to the persisted model row when there is no axis row', () => {
+    overlayStore.setFocus(seatAxisFocus('plan'));
+    const ui = renderFeature(<AxisProbe />);
+
+    expect(landing?.axisIndex).toBe(-1);
+    expect(landing?.rowKind).toBe('model');
+    expect(landing?.modelId).toBe('opus');
+    expect(landing?.rightIndex).toBe(landing?.modelIndex);
+    expect(landing?.focusModels).toBe(true);
+    ui.unmount();
+  });
+
+  it('a token naming another seat changes nothing', () => {
+    pickerViewStore.expand('opus');
+    overlayStore.setFocus(seatAxisFocus('build'));
+    const ui = renderFeature(<AxisProbe />);
+
+    expect(landing?.axisIndex).toBeGreaterThanOrEqual(0);
+    expect(landing?.rightIndex).not.toBe(landing?.axisIndex);
+    expect(landing?.rightIndex).toBe(landing?.modelIndex);
+    expect(landing?.rowKind).toBe('model');
+    expect(landing?.modelId).toBe('opus');
+    expect(landing?.focusModels).toBe(false);
+    ui.unmount();
+  });
+
+  it('a token that merely ends in :effort changes nothing', () => {
+    pickerViewStore.expand('opus');
+    // 'effort:plan' is Settings' own crew-row key, not this grammar.
+    overlayStore.setFocus('effort:plan');
+    const ui = renderFeature(<AxisProbe />);
+
+    expect(landing?.axisIndex).toBeGreaterThanOrEqual(0);
+    expect(landing?.rightIndex).not.toBe(landing?.axisIndex);
+    expect(landing?.rightIndex).toBe(landing?.modelIndex);
+    expect(landing?.rowKind).toBe('model');
+    expect(landing?.focusModels).toBe(false);
+    ui.unmount();
+  });
+
+  it('the helpers spell and parse one grammar', () => {
+    expect(seatAxisFocus('plan')).toBe('seat:plan:effort');
+    expect(seatAxisFocusSeat('seat:plan:effort')).toBe('plan');
+    expect(seatAxisFocusSeat('seat:build:effort')).toBe('build');
+  });
+
+  it('the helpers reject every token that is not ours', () => {
+    expect(seatAxisFocusSeat(undefined)).toBeUndefined();
+    expect(seatAxisFocusSeat('effort:plan')).toBeUndefined();
+    expect(seatAxisFocusSeat('tool:claude-code')).toBeUndefined();
+    expect(seatAxisFocusSeat('seat:plan')).toBeUndefined();
+    expect(seatAxisFocusSeat('seat::effort')).toBeUndefined();
   });
 });

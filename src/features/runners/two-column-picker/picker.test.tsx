@@ -1183,4 +1183,43 @@ describe('TwoColumnPicker', () => {
     });
     expect(display.map((slot) => slot.kind)).toEqual(['header', 'row', 'row', 'row', 'row']);
   });
+
+  it('renders launcher without dot lead while non-cursor model row has dot lead', async () => {
+    const DOT_LEAD = '· ';
+    const ui = renderFeature(
+      <TwoColumnPicker<Tool, Model>
+        title="Picker"
+        initialColumn="right"
+        leftProps={{
+          items: TOOLS,
+          getKey: (t) => t.id,
+          renderRow: (t) => <Text>{t.displayName}</Text>,
+        }}
+        rightProps={{
+          items: MODELS_BY_TOOL.alpha ?? [],
+          getKey: (m) => m.id,
+          renderRow: (m, { isCursor }) => (
+            <ListRow
+              label={m.displayName}
+              state={isCursor ? 'active' : 'default'}
+              defaultLead="dot"
+            />
+          ),
+          customRow: { onSelect: () => {} },
+        }}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    await flushEffects();
+
+    const lines = (ui.lastFrame() ?? '').split('\n');
+    const launcherLine = lines.find((line) => line.includes('+ Add custom model…')) ?? '';
+    const realModelLine = lines.find((line) => line.includes('alpha-2')) ?? '';
+
+    const rightCell = (line: string) => line.split('│')[3]?.trimStart() ?? '';
+    expect(rightCell(launcherLine).startsWith(DOT_LEAD)).toBe(false);
+    expect(rightCell(realModelLine).startsWith(DOT_LEAD)).toBe(true);
+    ui.unmount();
+  });
 });

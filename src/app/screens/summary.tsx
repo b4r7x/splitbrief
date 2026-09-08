@@ -21,6 +21,7 @@ import { getSummaryDetailViewportHeight } from '../../features/summary/detail-la
 import {
   formatImplementerSummary,
   formatPlannerSummary,
+  formatReviewerSummary,
   formatRouteSummary,
   getSummaryHeading,
 } from '../../features/summary/presentation.js';
@@ -31,6 +32,7 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 import { clamp } from '../../utils/math.js';
 import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
+import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
 import { overlayWidth } from '../../core/navigation/overlay-rect.js';
 
 interface SummaryScreenProps {
@@ -68,6 +70,7 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
   const plannerSummary = formatPlannerSummary(summary);
   const implementerSummary = formatImplementerSummary(summary);
   const routeSummary = formatRouteSummary(summary, implementerSummary);
+  const reviewerSummary = formatReviewerSummary(summary);
   const heading = getSummaryHeading(status, theme);
   const bylineMetaText = [mode, formatTime(summary.totalTime)]
     .filter((part): part is string => part !== null && part !== undefined && part !== '')
@@ -88,6 +91,7 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
     isSmall,
     summary,
     implementerSummary,
+    reviewerSummary,
     routeSummary,
   });
   const detailViewportHeight = Math.min(detailHeight, getScrollableDocumentLineCount(detailRows));
@@ -142,6 +146,12 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
               {implementerSummary !== null && (
                 <Text color={theme.implementer}>{implementerSummary}</Text>
               )}
+              {reviewerSummary !== null && summary.reviewerTool !== undefined && (
+                <Text color={theme.textDim}>{arrowSep()}</Text>
+              )}
+              {reviewerSummary !== null && summary.reviewerTool !== undefined && (
+                <Text color={theme.reviewer}>{reviewerSummary}</Text>
+              )}
               {routeSummary !== null && bylineMetaText !== '' && (
                 <Text color={theme.textDim}>{SOFT_SEP}</Text>
               )}
@@ -162,16 +172,23 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
               </Text>
             </LabeledRow>
             {isSmall && plannerSummary && (
-              <LabeledRow label="Planner" labelWidth={labelWidth}>
+              <LabeledRow label={CREW_SEAT_LABELS.plan} labelWidth={labelWidth}>
                 <Text color={theme.planner} wrap="truncate-end">
                   {plannerSummary}
                 </Text>
               </LabeledRow>
             )}
             {isSmall && implementerSummary && (
-              <LabeledRow label="Implementer" labelWidth={labelWidth}>
+              <LabeledRow label={CREW_SEAT_LABELS.build} labelWidth={labelWidth}>
                 <Text color={theme.implementer} wrap="truncate-end">
                   {implementerSummary}
+                </Text>
+              </LabeledRow>
+            )}
+            {isSmall && reviewerSummary && (
+              <LabeledRow label={CREW_SEAT_LABELS.review} labelWidth={labelWidth}>
+                <Text color={theme.reviewer} wrap="truncate-end">
+                  {reviewerSummary}
                 </Text>
               </LabeledRow>
             )}

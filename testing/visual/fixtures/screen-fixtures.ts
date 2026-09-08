@@ -143,6 +143,7 @@ function createRouteFixture(route: () => RouteData): FixtureLifecycle {
 interface HomeFixtureOptions {
   readonly config?: VisualConfigOverrides;
   readonly cold?: boolean;
+  readonly detecting?: boolean;
 }
 
 const HOME_FIXTURE_SKILLS = new Set(['brief-discipline', 'repo-conventions']);
@@ -154,6 +155,9 @@ export function createHomeFixture(options: HomeFixtureOptions = {}): FixtureLife
       if (options.config !== undefined) seedVisualConfig(options.config);
       skillsStore.setSelected(HOME_FIXTURE_SKILLS);
       if (options.cold !== true) publishFreshDiscovery();
+      if (options.detecting === true) {
+        detectionStore.beginRefresh({ contexts: VISUAL_DETECTION_CONTEXTS });
+      }
       routerStore.init({ screen: 'home' });
     },
     teardown: teardownVisualFixture,
@@ -363,6 +367,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
     () => createHomeFixture({ config: { reviewer: HOME_REVIEWER_API_SEAT } }),
   ],
   [scenarioId('home-cold'), () => createHomeFixture({ cold: true })],
+  [scenarioId('home-cold-detecting'), () => createHomeFixture({ cold: true, detecting: true })],
   [scenarioId('workflow-command-argument'), createCommandArgumentFixture],
   [scenarioId('setup-initial'), createSetupFixture],
 ]);

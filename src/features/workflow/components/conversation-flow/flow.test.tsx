@@ -12,6 +12,7 @@ import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../../stores/workflow/tasks.js';
 import { addEvent } from '../../../../stores/workflow/actions/event.js';
 import { taskId } from '../../../../core/schemas/task.js';
+import { CREW_SEAT_LABELS } from '../../../../core/crew/identity.js';
 import type { EngineEvent } from '../../../../engine/events/types.js';
 import { glyph } from '../../../../lib/glyphs.js';
 import { displayActivityLabel } from '../../display/activity-label-display.js';
@@ -300,7 +301,9 @@ describe('ConversationFlow', () => {
     const frame = ui.lastFrame() ?? '';
 
     const activityHeader =
-      frame.split('\n').find((candidate) => candidate.includes('Plan activity')) ?? '';
+      frame
+        .split('\n')
+        .find((candidate) => candidate.includes(`${CREW_SEAT_LABELS.plan} activity`)) ?? '';
     expect(activityHeader).toContain('1 update');
     expect(activityHeader).toContain('OpenAI Codex CLI');
     expectActivityLine(frame, 'READ', 'CLAUDE.md :1-260');
@@ -725,7 +728,7 @@ describe('ConversationFlow', () => {
     const running = renderConversation(events, 12, 90);
     const runningFrame = running.lastFrame() ?? '';
     expect(runningFrame).toContain(LIVE_MARK);
-    expect(runningFrame).toContain('Plan activity');
+    expect(runningFrame).toContain(`${CREW_SEAT_LABELS.plan} activity`);
     expectActivityLine(runningFrame, 'READ', 'src/a.ts');
     running.unmount();
   });
@@ -740,7 +743,7 @@ describe('ConversationFlow', () => {
     const ui = renderConversation(events, 12, 90);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('Plan activity');
+    expect(frame).toContain(`${CREW_SEAT_LABELS.plan} activity`);
     expect(frame).not.toContain('Researching…');
     ui.unmount();
   });
@@ -751,7 +754,7 @@ describe('ConversationFlow', () => {
     const ui = renderConversation(events, 12, 90);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('Plan activity');
+    expect(frame).toContain(`${CREW_SEAT_LABELS.plan} activity`);
     expect(frame).toContain('src/only.ts');
     ui.unmount();
   });

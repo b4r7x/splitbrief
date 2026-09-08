@@ -24,8 +24,6 @@ type OptionAxis =
   | { readonly axis: 'fast'; readonly values: readonly OptionFast[] }
   | { readonly axis: 'thinking'; readonly values: readonly OptionThinking[] };
 
-const OPTION_SUMMARY_SEP = ' · ';
-
 function effortOf(tokens: readonly string[]): OptionEffort {
   for (const token of tokens) {
     if (includes(EFFORT_ORDER, token)) return token;
@@ -195,15 +193,4 @@ export function stepOptionAxis(
 
 export function formatAxisValue(axis: OptionAxisName, selection: OptionSelection): string {
   return selection[axis];
-}
-
-export function formatOptionSummary(
-  id: string,
-  variants: readonly ModelVariant[],
-  providerPrefix = '',
-): string {
-  const selection = parseOptionSelection(id);
-  return optionAxesOf(variants, providerPrefix)
-    .map((axis) => formatAxisValue(axis.axis, selection))
-    .join(OPTION_SUMMARY_SEP);
 }

@@ -10,8 +10,10 @@ import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { realPickerOption } from '#testing/helpers/runner-picker.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
+import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import type { SeatPickerRole } from '../../core/runners/seat-roles.js';
 import type { Config } from '../../core/schemas/config.js';
 import { INHERIT_PLANNER_OPTION_ID, type RunnerPickerOption } from './model-catalog/options.js';
@@ -69,7 +71,7 @@ function ConfirmVariantProbe({
   const actions = usePickerActions({ role, catalog });
 
   useInput(() => {
-    void actions.confirmProviderVariant(modelId, variant);
+    void actions.confirmProviderSelection(modelId, variant);
   });
 
   return <Text>{catalog.roleLabel}</Text>;
@@ -176,7 +178,8 @@ describe('usePickerActions', () => {
     ui.stdin.write('\r');
 
     await vi.waitFor(() => {
-      expect(feedbackStore.get().message).toContain('same as planner');
+      expect(feedbackStore.get().message).toContain(CREW_SEAT_LABELS.review);
+      expect(feedbackStore.get().message).toContain(PLANNER_INHERITANCE.sentence);
     });
     expect(configStore.get().config?.reviewer).toBeUndefined();
     ui.unmount();
@@ -327,7 +330,7 @@ describe('usePickerActions', () => {
     await vi.waitFor(() => {
       expect(feedbackStore.get().message).toContain('high');
     });
-    expect(feedbackStore.get().message).toContain('Planner set to:');
+    expect(feedbackStore.get().message).toContain(`${CREW_SEAT_LABELS.plan} set to:`);
     ui.unmount();
   });
 
@@ -350,7 +353,9 @@ describe('usePickerActions', () => {
     ui.stdin.write('\r');
 
     await vi.waitFor(() => {
-      expect(messages.some((message) => message.startsWith('Planner set to:'))).toBe(true);
+      expect(
+        messages.some((message) => message.startsWith(`${CREW_SEAT_LABELS.plan} set to:`)),
+      ).toBe(true);
     });
     stopWatching();
 
@@ -374,6 +379,134 @@ describe('usePickerActions', () => {
     await vi.waitFor(() => {
       expect(feedbackStore.get().message).toContain('cleared');
     });
+    ui.unmount();
+  });
+
+  it('names the kept level once, as one identity string', async () => {
+    seed(makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'opus' } }));
+
+    const messages: string[] = [];
+    const stopWatching = feedbackStore.subscribe(() => {
+      const message = feedbackStore.get().message;
+      if (message !== null) messages.push(message);
+    });
+
+    const ui = renderFeature(
+      <ConfirmVariantProbe role="planner" toolId="claude-code" modelId="opus" variant="high" />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(
+        messages.some((message) => message.startsWith(`${CREW_SEAT_LABELS.plan} set to:`)),
+      ).toBe(true);
+    });
+    stopWatching();
+
+    expect(
+      messages.filter((message) => message.startsWith(`${CREW_SEAT_LABELS.plan} set to:`)),
+    ).toEqual([`${CREW_SEAT_LABELS.plan} set to: Claude Code CLI · Opus · high`]);
+    expect(configStore.get().config?.planner).toMatchObject({
+      tool: 'claude-code',
+      effort: 'high',
+    });
+    expect(configStore.get().config?.planner).not.toHaveProperty('variant');
+    ui.unmount();
+  });
+
+  it('leaves a dropped level out of the save line', async () => {
+    seed(makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'opus' } }));
+
+    const messages: string[] = [];
+    const stopWatching = feedbackStore.subscribe(() => {
+      const message = feedbackStore.get().message;
+      if (message !== null) messages.push(message);
+    });
+
+    const ui = renderFeature(
+      <ConfirmVariantProbe
+        role="planner"
+        toolId="claude-code"
+        modelId="opus"
+        variant="ludicrous"
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(
+        messages.some((message) => message.startsWith(`${CREW_SEAT_LABELS.plan} set to:`)),
+      ).toBe(true);
+    });
+    stopWatching();
+
+    expect(
+      messages.filter((message) => message.startsWith(`${CREW_SEAT_LABELS.plan} set to:`)),
+    ).toEqual([`${CREW_SEAT_LABELS.plan} set to: Claude Code CLI · Opus`]);
+    expect(messages.some((message) => message.includes('Effort ludicrous'))).toBe(true);
+    expect(configStore.get().config?.planner).not.toHaveProperty('effort');
+    ui.unmount();
+  });
+
+  it("drops a carried variant the confirmed row's own ladder does not spell", async () => {
+    seed(
+      makeConfig({
+        implementer: {
+          kind: 'cli',
+          tool: 'opencode',
+          model: 'anthropic/claude-sonnet-5',
+          variant: 'max',
+        },
+      }),
+    );
+    const request = detectionStore.beginRefresh({
+      contexts: { readiness: 'r', modelsDev: 'm', cliModels: 'c' },
+    });
+    detectionStore.publish({
+      request,
+      result: {
+        providers: [],
+        cliTools: [cliDetectionFor('ready', 'opencode')],
+        catalog: {},
+        cliModels: [
+          {
+            connection: { role: 'implementer', tool: 'opencode', contextKey: 'c' },
+            outcome: {
+              kind: 'success',
+              value: [
+                {
+                  id: 'openai/gpt-5.5',
+                  nativeReasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh'],
+                },
+              ],
+            },
+          },
+        ],
+        generation: 1,
+      },
+    });
+
+    const ui = renderFeature(
+      <ConfirmOnKeyProbe
+        role="implementer"
+        selection={realPickerOption('implementer', 'opencode')}
+        model="openai/gpt-5.5"
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(configStore.get().config?.implementer).toMatchObject({
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'openai/gpt-5.5',
+      });
+    });
+    expect(configStore.get().config?.implementer).not.toHaveProperty('variant');
+    expect(feedbackStore.get().message).toContain('max');
     ui.unmount();
   });
 });

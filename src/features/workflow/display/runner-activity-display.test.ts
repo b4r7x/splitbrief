@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RUNNER_CALL_ROLES } from '../../../core/runner-call-contract.js';
+import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
 import {
   cleanRunnerActivityText,
   runnerActivityDiagnosticPreview,
@@ -133,9 +133,15 @@ describe('cleanRunnerActivityText', () => {
 });
 
 describe('runnerActivityRoleLabel', () => {
-  it('activity role labels are Title Case', () => {
-    for (const role of RUNNER_CALL_ROLES) {
-      expect(runnerActivityRoleLabel(role)).toMatch(/^[A-Z]/);
-    }
+  it('returns seat constants for seat roles', () => {
+    expect(runnerActivityRoleLabel('planner')).toBe(CREW_SEAT_LABELS.plan);
+    expect(runnerActivityRoleLabel('implementer')).toBe(CREW_SEAT_LABELS.build);
+    expect(runnerActivityRoleLabel('review')).toBe(CREW_SEAT_LABELS.review);
+  });
+
+  it('returns Title Case labels for non-seat roles', () => {
+    expect(runnerActivityRoleLabel('summary')).toBe('Summary');
+    expect(runnerActivityRoleLabel('compaction')).toBe('Compaction');
+    expect(runnerActivityRoleLabel('escalation')).toBe('Escalation');
   });
 });

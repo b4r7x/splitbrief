@@ -10,7 +10,8 @@ import {
   deriveModelCatalogCapability,
   type RunnerPermissionPosture,
 } from '../../src/features/runners/model-catalog/posture.js';
-import { buildRightRows } from '../../src/features/runners/model-catalog/rows.js';
+import { isAutomaticModel } from '../../src/core/providers/automatic-model.js';
+import { buildRightRows, type RightRow } from '../../src/features/runners/model-catalog/rows.js';
 import type { ModelOption } from '../../src/features/runners/model-catalog/recency.js';
 import type { PickerActions } from '../../src/features/runners/use-picker-actions.js';
 import type { PickerCatalog } from '../../src/features/runners/use-picker-catalog.js';
@@ -54,7 +55,7 @@ export function cliTool(
 export function makeActions(): PickerActions {
   return {
     confirm: async () => {},
-    confirmProviderVariant: async () => {},
+    confirmProviderSelection: async () => {},
     leftChange: () => {},
     deleteRight: async () => {},
     chooseContract: () => {},
@@ -108,7 +109,9 @@ type DerivedCatalogField =
   | 'customModels'
   | 'discovery'
   | 'browseCatalog'
-  | 'variantDraft'
+  | 'effortDraft'
+  | 'modelRowCount'
+  | 'optionDraftId'
   | 'setCurrentItem';
 
 type CatalogFixture = Omit<PickerCatalog, DerivedCatalogField> &
@@ -118,6 +121,12 @@ type CatalogFixture = Omit<PickerCatalog, DerivedCatalogField> &
     /** Seeds the derived rows so an expanded model brings its route rows. */
     expandedModelId?: string | null | undefined;
   };
+
+function countModelRows(rows: readonly RightRow[]): number {
+  return rows.filter(
+    (row) => row.kind === 'model' && row.provenance !== 'Custom' && !isAutomaticModel(row.model.id),
+  ).length;
+}
 
 /**
  * A `PickerCatalog` for a view test: the fixture states the facts it is about
@@ -136,7 +145,7 @@ export function pickerCatalog(fixture: CatalogFixture): PickerCatalog {
       persistedModel: base.persistedModel,
       customModels: base.customModels ?? [],
       browseCatalog: base.browseCatalog ?? false,
-      effortDraft: base.variantDraft ?? null,
+      effortDraft: base.effortDraft ?? null,
     });
   const persisted = base.persistedModel;
   const initialRightIndex =
@@ -166,7 +175,9 @@ export function pickerCatalog(fixture: CatalogFixture): PickerCatalog {
     customModels: base.customModels ?? [],
     discovery: base.discovery ?? { cold: false, refreshing: false },
     browseCatalog: base.browseCatalog ?? false,
-    variantDraft: base.variantDraft ?? null,
+    effortDraft: base.effortDraft ?? null,
+    modelRowCount: base.modelRowCount ?? countModelRows(rightRows),
+    optionDraftId: base.optionDraftId ?? null,
     setCurrentItem: base.setCurrentItem ?? (() => {}),
   };
 }

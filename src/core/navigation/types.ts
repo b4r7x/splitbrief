@@ -16,6 +16,23 @@ export function seatPickerOverlayFor(role: SeatPickerRole): (typeof SEAT_PICKER_
   return `${role}-picker`;
 }
 
+const SEAT_AXIS_FOCUS_PREFIX = 'seat:';
+const SEAT_AXIS_FOCUS_SUFFIX = ':effort';
+
+/** The focus token a crew row hands the overlay so Enter lands on the seat's effort axis. */
+export function seatAxisFocus(seatId: string): string {
+  return `${SEAT_AXIS_FOCUS_PREFIX}${seatId}${SEAT_AXIS_FOCUS_SUFFIX}`;
+}
+
+/** The seat the token names, or undefined when the token is not one of ours. */
+export function seatAxisFocusSeat(focus: string | undefined): string | undefined {
+  if (focus === undefined) return undefined;
+  if (!focus.startsWith(SEAT_AXIS_FOCUS_PREFIX) || !focus.endsWith(SEAT_AXIS_FOCUS_SUFFIX)) {
+    return undefined;
+  }
+  return focus.slice(SEAT_AXIS_FOCUS_PREFIX.length, -SEAT_AXIS_FOCUS_SUFFIX.length) || undefined;
+}
+
 export const ACTIVE_OVERLAYS = [
   'help',
   'command-palette',

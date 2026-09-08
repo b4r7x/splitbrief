@@ -170,7 +170,7 @@ export const CREW_COMMAND_SEATS = CREW_SEAT_IDS;
 export const REMOVED_COMMANDS: Readonly<Record<string, string>> = {
   '/attach': 'images are attached with /image <path>',
   '/detach': 'images are removed with /image remove <index|id>',
-  '/effort': 'effort lives on the seat: /crew plan',
+  '/effort': 'effort is chosen with the model: /crew plan, then ⏎',
   '/repomap': 'the repo map rebuilds itself on each planning run, with no manual step',
   '/resume': 'a paused workflow resumes from its approval prompt',
 };

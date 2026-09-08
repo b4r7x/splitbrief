@@ -20,17 +20,14 @@ describe('buildSettingsItems', () => {
     const config = makeConfig();
     const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });
 
-    expect(items.slice(0, 6).map((item) => [item.kind, item.key])).toEqual([
+    expect(items.slice(0, 3).map((item) => [item.kind, item.key])).toEqual([
       ['crew', 'seat:plan'],
-      ['crew', 'effort:plan'],
       ['crew', 'seat:build'],
-      ['crew', 'effort:build'],
       ['crew', 'seat:review'],
-      ['crew', 'effort:review'],
     ]);
-    expect(items.slice(0, 6).map(settingsItemSection)).toEqual(Array(6).fill('Crew'));
+    expect(items.slice(0, 3).map(settingsItemSection)).toEqual(Array(3).fill('Crew'));
 
-    const settingSections = items.slice(6).map(settingsItemSection);
+    const settingSections = items.slice(3).map(settingsItemSection);
     expect(settingSections.filter((section, at) => section !== settingSections[at - 1])).toEqual([
       'Tuning',
       'Workflow',
@@ -71,47 +68,6 @@ describe('settingsItemDescription', () => {
 
     expect(settingsItemDescription({ item: itemAt(items, 'seat:plan'), config })).toContain(
       'compiles every brief',
-    );
-  });
-
-  it('tells an inherited effort row apart from an editable one', () => {
-    const config = makeConfig({
-      planner: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4', effort: 'high' },
-    });
-    const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });
-
-    expect(settingsItemDescription({ item: itemAt(items, 'effort:review'), config })).toContain(
-      "Inherited with the planner's setup",
-    );
-    expect(settingsItemDescription({ item: itemAt(items, 'effort:plan'), config })).not.toContain(
-      'Inherited',
-    );
-  });
-
-  it("names no tool but the seat's own on a variant-channel effort row", () => {
-    // opencode and kilo-code share this channel, so the copy may not name either of them: a kilo
-    // seat that reads `opencode run --variant` is telling the user to run the wrong binary.
-    for (const tool of ['opencode', 'kilo-code'] as const) {
-      const config = makeConfig({
-        implementer: { kind: 'cli', tool, model: 'openai/gpt-5.6-luna' },
-      });
-      const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });
-      const description = settingsItemDescription({ item: itemAt(items, 'effort:build'), config });
-
-      expect(description, tool).toContain('--variant');
-      expect(description, tool).not.toContain('opencode');
-      expect(description, tool).not.toContain('kilo');
-    }
-  });
-
-  it('sends a model-id effort row to the seat picker', () => {
-    const config = makeConfig({
-      implementer: { kind: 'cli', tool: 'cursor', model: 'gpt-5.6-luna-high' },
-    });
-    const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });
-
-    expect(settingsItemDescription({ item: itemAt(items, 'effort:build'), config })).toContain(
-      'spelled by the model id',
     );
   });
 

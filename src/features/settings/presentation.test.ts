@@ -54,9 +54,9 @@ describe('matchesFilter', () => {
   const matching = (query: string): readonly string[] =>
     items.filter((item) => matchesFilter(item, query)).map((item) => item.key);
 
-  it('reaches a seat and its own effort row by the seat word, never another seat', () => {
+  it('reaches a seat by its seat word, never another seat', () => {
     const matched = matching('plan');
-    expect(matched).toEqual(expect.arrayContaining(['seat:plan', 'effort:plan']));
+    expect(matched).toEqual(expect.arrayContaining(['seat:plan']));
     expect(matched).not.toContain('seat:build');
   });
 

@@ -8,6 +8,7 @@ import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { realPickerOption } from '#testing/helpers/runner-picker.js';
+import { PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
@@ -98,7 +99,9 @@ function makeCatalog(input: {
     currentCommandKind: undefined,
     customModels: [],
     discovery: { cold: false, refreshing: false },
-    variantDraft: null,
+    effortDraft: null,
+    modelRowCount: (input.rightRows ?? []).filter((row) => row.kind === 'model').length,
+    optionDraftId: null,
     setCurrentItem: () => {},
   };
 }
@@ -106,7 +109,7 @@ function makeCatalog(input: {
 function makeActions(): PickerActions {
   return {
     confirm: async () => {},
-    confirmProviderVariant: async () => {},
+    confirmProviderSelection: async () => {},
     leftChange: () => {},
     deleteRight: async () => {},
     chooseContract: () => {},
@@ -139,6 +142,7 @@ function optionAxisRow(input: {
     choices: [],
     steps: input.steps ?? true,
     last: input.last ?? false,
+    tree: { depth: 1, parentContinues: false },
   };
 }
 
@@ -173,12 +177,12 @@ describe('PickerView terminal panes', () => {
     await flushEffects();
     const frame = frameText(ui);
 
-    expect(frame).toContain("Planner's setup");
+    expect(frame).toContain(PLANNER_INHERITANCE.sentence);
     expect(frame).toContain('Claude Code CLI · Claude Sonnet 4');
-    expect(frame).toContain('subscription · Network · Shell');
+    expect(frame).toContain('subscription · network · shell');
     const hintRow = frame.split('\n').find((row) => row.includes('↑↓ select')) ?? '';
     expect(hintRow.trim().startsWith('↑↓ select')).toBe(true);
-    expect(hintRow).toContain("use planner's setup");
+    expect(hintRow).toContain(PLANNER_INHERITANCE.sentence);
     ui.unmount();
   });
 
@@ -191,7 +195,7 @@ describe('PickerView terminal panes', () => {
     const model = { id: 'gpt-5.6', variants };
     const confirmed: string[] = [];
     const actions = makeActions();
-    actions.confirmProviderVariant = async (fullId: string) => {
+    actions.confirmProviderSelection = async (fullId: string) => {
       confirmed.push(fullId);
     };
     const catalog = makeCatalog({
@@ -224,7 +228,7 @@ describe('PickerView terminal panes', () => {
     const model = { id: 'gpt-5.6', variants };
     const confirmed: string[] = [];
     const actions = makeActions();
-    actions.confirmProviderVariant = async (fullId: string) => {
+    actions.confirmProviderSelection = async (fullId: string) => {
       confirmed.push(fullId);
     };
     const ui = mount(
@@ -266,9 +270,9 @@ describe('PickerView terminal panes', () => {
         kind: 'route' as const,
         model,
         variant,
-        tagWidth: 11,
         last: index === variants.length - 1,
         auth: { kind: 'unchecked' as const },
+        tree: { depth: 1, parentContinues: false } as const,
       })),
     ];
     const ui = mount(
@@ -311,7 +315,14 @@ describe('PickerView terminal panes', () => {
     const model = { id: 'openrouter/gemini-3-flash', variants: [variant] };
     const rows: RightRow[] = [
       { kind: 'model', model, provenance: 'Detected', section: '', expanded: true },
-      { kind: 'route', model, variant, tagWidth: 10, last: true, auth: { kind: 'needs-sign-in' } },
+      {
+        kind: 'route',
+        model,
+        variant,
+        last: true,
+        auth: { kind: 'needs-sign-in' },
+        tree: { depth: 1, parentContinues: false },
+      },
     ];
     const ui = mount(
       <PickerView
@@ -430,11 +441,9 @@ describe('PickerView option-axis confirm and cycle', () => {
     initialRightIndex: number;
     fast?: string;
     withSibling?: boolean;
-    notice?: Extract<RightRow, { kind: 'notice' }>;
   }) {
     const cursor = { ...cliTool('cursor', 'Cursor Agent CLI'), providerDependent: false };
     const rightRows = axisRows(input.fast ?? 'off', input.withSibling ?? false);
-    if (input.notice !== undefined) rightRows.push(input.notice);
     return mount(
       <PickerView
         role="planner"
@@ -483,7 +492,7 @@ describe('PickerView option-axis confirm and cycle', () => {
   it('confirms the composed optionDraftId on the expanded option parent', async () => {
     const confirmed: string[] = [];
     const actions = makeActions();
-    actions.confirmProviderVariant = async (fullId: string) => {
+    actions.confirmProviderSelection = async (fullId: string) => {
       confirmed.push(fullId);
     };
     pickerViewStore.expand(luna.id, 'gpt-5.6-luna-high-fast');
@@ -515,7 +524,7 @@ describe('PickerView option-axis confirm and cycle', () => {
   it('composes the same variant id from an axis child as from the parent row', async () => {
     const fromAxis: string[] = [];
     const axisActions = makeActions();
-    axisActions.confirmProviderVariant = async (fullId: string) => {
+    axisActions.confirmProviderSelection = async (fullId: string) => {
       fromAxis.push(fullId);
     };
     pickerViewStore.expand(luna.id, 'gpt-5.6-luna-high');
@@ -529,7 +538,7 @@ describe('PickerView option-axis confirm and cycle', () => {
 
     const fromParent: string[] = [];
     const parentActions = makeActions();
-    parentActions.confirmProviderVariant = async (fullId: string) => {
+    parentActions.confirmProviderSelection = async (fullId: string) => {
       fromParent.push(fullId);
     };
     pickerViewStore.expand(luna.id, 'gpt-5.6-luna-high-fast');
@@ -550,7 +559,7 @@ describe('PickerView option-axis confirm and cycle', () => {
   it('confirms the drafted variant from the first axis child, with no step of its own', async () => {
     const confirmed: string[] = [];
     const actions = makeActions();
-    actions.confirmProviderVariant = async (fullId: string) => {
+    actions.confirmProviderSelection = async (fullId: string) => {
       confirmed.push(fullId);
     };
     pickerViewStore.expand(luna.id, 'gpt-5.6-luna-high');
@@ -589,7 +598,7 @@ describe('PickerView option-axis confirm and cycle', () => {
   it('cycles rather than confirms when an axis row is clicked', async () => {
     const confirmed: string[] = [];
     const actions = makeActions();
-    actions.confirmProviderVariant = async (fullId: string) => {
+    actions.confirmProviderSelection = async (fullId: string) => {
       confirmed.push(fullId);
     };
     pickerViewStore.expand(luna.id, 'gpt-5.6-luna-high');
@@ -611,7 +620,7 @@ describe('PickerView option-axis confirm and cycle', () => {
   it('confirms the drafted variant when the expanded parent row is clicked', async () => {
     const confirmed: string[] = [];
     const actions = makeActions();
-    actions.confirmProviderVariant = async (fullId: string) => {
+    actions.confirmProviderSelection = async (fullId: string) => {
       confirmed.push(fullId);
     };
     pickerViewStore.expand(luna.id, 'gpt-5.6-luna-high-fast');
@@ -714,7 +723,7 @@ describe('PickerView option-axis confirm and cycle', () => {
   it('confirms the drafted variant when an axis with nowhere to step is clicked', async () => {
     const confirmed: string[] = [];
     const actions = makeActions();
-    actions.confirmProviderVariant = async (fullId: string) => {
+    actions.confirmProviderSelection = async (fullId: string) => {
       confirmed.push(fullId);
     };
     pickerViewStore.expand(sparse.id, 'gpt-5-high');
@@ -728,43 +737,6 @@ describe('PickerView option-axis confirm and cycle', () => {
     expect(confirmed).toEqual(['gpt-5-high']);
     expect(pickerViewStore.get().optionDraftId).toBe('gpt-5-high');
     ui.unmount();
-  });
-
-  it('gives a catalog notice its own Enter verb inside an open option family', async () => {
-    pickerViewStore.expand(luna.id, 'gpt-5.6-luna-high');
-    const failed = renderAxisPicker({
-      actions: makeActions(),
-      initialRightIndex: 3,
-      notice: { kind: 'notice', lane: 'failed', text: 'Could not load models', action: 'refresh' },
-    });
-    await flushEffects();
-    const onFailed = frameText(failed)
-      .split('\n')
-      .find((row) => row.includes('esc collapse'));
-
-    // The open expansion is an option family, so the column holds no route to choose.
-    expect(onFailed).toContain('⏎ retry');
-    expect(onFailed).not.toContain('choose route');
-    failed.unmount();
-
-    const pending = renderAxisPicker({
-      actions: makeActions(),
-      initialRightIndex: 3,
-      notice: { kind: 'notice', lane: 'pending', text: 'Loading models…' },
-    });
-    await flushEffects();
-    const onPending = frameText(pending)
-      .split('\n')
-      .find((row) => row.includes('esc collapse'));
-
-    // Enter does nothing on the pending lane, so the byline promises no ⏎ at all —
-    // and it opens on the first real key instead of echoing the notice row above it
-    // behind a leading separator.
-    expect(onPending?.trim()).toMatch(/^esc collapse/);
-    expect(onPending).not.toContain('Loading models…');
-    expect(onPending).not.toContain('choose route');
-    expect(onPending).not.toContain('⏎');
-    pending.unmount();
   });
 
   it('leaves the drafted variant alone on a terminal too short to draw a row', async () => {
@@ -887,7 +859,7 @@ describe('PickerView hybrid route and axis expansion', () => {
     const confirmed: string[] = [];
     const confirmFrom = async (initialRightIndex: number) => {
       const actions = makeActions();
-      actions.confirmProviderVariant = async (fullId: string) => {
+      actions.confirmProviderSelection = async (fullId: string) => {
         confirmed.push(fullId);
       };
       pickerViewStore.expand(hybrid.id, DRAFTED);
@@ -921,7 +893,7 @@ describe('PickerView hybrid route and axis expansion', () => {
     const square: ModelOption = { ...hybrid, variants: squareVariants };
     const confirmed: string[] = [];
     const actions = makeActions();
-    actions.confirmProviderVariant = async (fullId: string) => {
+    actions.confirmProviderSelection = async (fullId: string) => {
       confirmed.push(fullId);
     };
 

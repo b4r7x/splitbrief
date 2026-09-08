@@ -794,4 +794,68 @@ describe('toModelOption displayName precedence', () => {
     const sonnet = models.find((m) => m.id === 'claude-sonnet-4-6');
     expect(sonnet?.displayName).toBe('ModelsDev Sonnet');
   });
+
+  it("carries the runtime model's own detail line", () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => ({
+        ollama: {
+          id: 'ollama',
+          models: {
+            'claude-sonnet-4-6': {
+              id: 'claude-sonnet-4-6',
+              name: 'ModelsDev Sonnet',
+            },
+          },
+        },
+      }),
+      getProviderModels: () => null,
+      getScopedProviderRuntime: () => ({
+        connection: { role: 'implementer', provider: 'ollama', contextKey: 'implementer-context' },
+        state: 'fresh',
+        catalog: 'populated',
+        models: [
+          {
+            id: 'claude-sonnet-4-6',
+            displayName: 'Provider Sonnet',
+            detail: 'forces the 1M window',
+          },
+        ],
+        fetchedAt: 1,
+        validatedAt: 2,
+      }),
+    };
+
+    const models = resolveAndSort('ollama', 'implementer', cache);
+    const sonnet = models.find((m) => m.id === 'claude-sonnet-4-6');
+    expect(sonnet?.detail).toBe('forces the 1M window');
+  });
+
+  it('omits detail when the runtime model has none', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => ({
+        ollama: {
+          id: 'ollama',
+          models: {
+            'claude-sonnet-4-6': {
+              id: 'claude-sonnet-4-6',
+              name: 'ModelsDev Sonnet',
+            },
+          },
+        },
+      }),
+      getProviderModels: () => null,
+      getScopedProviderRuntime: () => ({
+        connection: { role: 'implementer', provider: 'ollama', contextKey: 'implementer-context' },
+        state: 'fresh',
+        catalog: 'populated',
+        models: [{ id: 'claude-sonnet-4-6', displayName: 'Provider Sonnet' }],
+        fetchedAt: 1,
+        validatedAt: 2,
+      }),
+    };
+
+    const models = resolveAndSort('ollama', 'implementer', cache);
+    const sonnet = models.find((m) => m.id === 'claude-sonnet-4-6');
+    expect(sonnet === undefined ? false : 'detail' in sonnet).toBe(false);
+  });
 });

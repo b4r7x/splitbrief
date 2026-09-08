@@ -112,7 +112,7 @@ describe('Header — seat line', () => {
   it('says the review seat borrows the planner when no reviewer is configured', async () => {
     const frame = await seatFrame(160);
 
-    expect(frame).toContain(PLANNER_INHERITANCE.short);
+    expect(frame).toContain(PLANNER_INHERITANCE.mark);
   });
 
   it('names the reviewer seat with its own runner when a reviewer is configured', async () => {
@@ -123,7 +123,7 @@ describe('Header — seat line', () => {
 
     expect(frame).toContain('REVIEW');
     expect(frame).toContain('Codex');
-    expect(frame).not.toContain(PLANNER_INHERITANCE.short);
+    expect(frame).not.toContain(PLANNER_INHERITANCE.mark);
   });
 
   it('sanitizes hostile model ids in the visible seat line', async () => {

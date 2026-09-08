@@ -22,6 +22,11 @@ function sorted(values: Iterable<string>): string[] {
   return [...values].sort();
 }
 
+/** Scenarios whose surface cannot mount at the default matrix and say so in the catalog. */
+const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new Map([
+  ['home-cold-detecting', ['80x40']],
+]);
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -83,7 +88,7 @@ describe('visual catalog', () => {
       (candidate) => !candidate.id.startsWith('workflow-brief-recovery-'),
     )) {
       expect(scenario.viewports.map(formatViewport)).toEqual(
-        REQUIRED_VIEWPORTS.map(formatViewport),
+        SCENARIO_VIEWPORT_EXCEPTIONS.get(scenario.id) ?? REQUIRED_VIEWPORTS.map(formatViewport),
       );
     }
 

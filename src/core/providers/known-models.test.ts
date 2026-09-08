@@ -165,6 +165,35 @@ describe('KNOWN_MODELS claude-code aliases', () => {
   });
 });
 
+describe('KNOWN_MODELS copilot bundled floor', () => {
+  const copilot = KNOWN_MODELS.copilot ?? [];
+
+  it("reads both rows from the github-copilot catalog, whose limits differ from the vendor's", () => {
+    expect(
+      copilot.map(({ name, catalogProvider, catalogModelId }) => ({
+        name,
+        catalogProvider,
+        catalogModelId,
+      })),
+    ).toEqual([
+      { name: 'claude-opus-5', catalogProvider: 'github-copilot', catalogModelId: 'claude-opus-5' },
+      { name: 'gpt-5.6-sol', catalogProvider: 'github-copilot', catalogModelId: 'gpt-5.6-sol' },
+    ]);
+  });
+
+  it('keeps a window on both rows because bundledMinimumWindow is the whole auto path', () => {
+    expect(copilot.map(({ name, contextLength }) => [name, contextLength])).toEqual([
+      ['claude-opus-5', 1_000_000],
+      ['gpt-5.6-sol', 1_050_000],
+    ]);
+  });
+
+  it('carries the window models.dev publishes, not the 272 000 pricing-tier boundary', () => {
+    expect(copilot.find((model) => model.name === 'gpt-5.6-sol')?.contextLength).toBe(1_050_000);
+    expect(copilot.every((model) => model.contextLength !== 272_000)).toBe(true);
+  });
+});
+
 describe('KNOWN_MODELS recommendation metadata', () => {
   it('resolves every pending-evaluation candidate to a bundled row', () => {
     for (const candidate of PENDING_EVALUATION_CANDIDATE_IDS) {

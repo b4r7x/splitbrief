@@ -5,7 +5,6 @@ import {
   composeOptionId,
   cycleOptionAxis,
   formatAxisValue,
-  formatOptionSummary,
   isOptionFamily,
   optionAxesOf,
   parseOptionSelection,
@@ -172,14 +171,11 @@ describe('composeOptionId and cycleOptionAxis', () => {
   });
 
   it('treats an unlabeled id as auto, not empty', () => {
-    const variants = [variant('gpt-5.6-luna'), variant('gpt-5.6-luna-high')];
-
     expect(parseOptionSelection('gpt-5.6-luna')).toEqual({
       effort: 'auto',
       fast: 'off',
       thinking: 'off',
     });
-    expect(formatOptionSummary('gpt-5.6-luna', variants)).toBe('auto');
   });
 
   it('heads the effort ladder with auto and cycles back onto the bare id', () => {

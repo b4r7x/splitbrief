@@ -8,10 +8,9 @@ import {
   getRunnerCatalogDisplayName,
   type RunnerConfig,
 } from '../config/accessors/runner-config.js';
-import { formatModelName } from '../model-display.js';
+import { formatModelName, peelDisplayLabel } from '../model-display.js';
 import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../providers/automatic-model.js';
 import {
-  optionTokensOfModelId,
   peelAxisTokensFromModelId,
   runnerEffortChannel,
   seatAxisWords,
@@ -36,12 +35,12 @@ export const AUTO_MODEL_WORD = 'auto';
 export const PLANNER_INHERITANCE = Object.freeze({
   sentence: 'same as planner',
   mark: '= planner',
-  short: '= plan',
 });
 
 /** The one middle dot that joins the parts of every crew identity, on the row and in the fold marker. */
 export const CREW_IDENTITY_SEPARATOR = ' · ';
 const CLAUDE_BRAND = 'Claude';
+const HANGING_SEPARATOR = /[ ·]+$/u;
 
 function modelWord(runner: RunnerConfig, displayName?: string | undefined): string {
   const configured = 'model' in runner ? runner.model : undefined;
@@ -50,7 +49,9 @@ function modelWord(runner: RunnerConfig, displayName?: string | undefined): stri
     runner.kind === 'cli' ? runner.tool : undefined,
   );
   if (model === undefined || model === AUTOMATIC_MODEL) return AUTO_MODEL_WORD;
-  if (runnerEffortChannel(runner) === 'model-id' && optionTokensOfModelId(model).length > 0) {
+  if (runnerEffortChannel(runner) === 'model-id') {
+    const peeled = displayName ? peelDisplayLabel(displayName) : '';
+    if (peeled !== '') return peeled;
     return formatModelName(peelAxisTokensFromModelId(model));
   }
   if (displayName) return displayName;
@@ -78,13 +79,6 @@ export function formatShortSeatIdentity(
   const stripped = words[0] === CLAUDE_BRAND ? words.slice(1) : words;
   const rest = stripped.length === 0 ? words : stripped;
   return rest.join(' ');
-}
-
-export function formatInheritedIdentity(
-  planner: RunnerConfig,
-  plannerDisplayName?: string | undefined,
-): string {
-  return `${PLANNER_INHERITANCE.mark}${CREW_IDENTITY_SEPARATOR}${formatSeatIdentity(planner, plannerDisplayName)}`;
 }
 
 type CollapsedSeat = Readonly<{ label: string; identity: string; named: boolean }>;
@@ -151,7 +145,7 @@ export function formatCollapsedSeatLine(
   const reviewerName = input.displayNames?.reviewer ?? input.displayNames?.review ?? plannerName;
   const review =
     input.reviewer === undefined
-      ? PLANNER_INHERITANCE.short
+      ? PLANNER_INHERITANCE.mark
       : formatShortSeatIdentity(input.reviewer, reviewerName);
   const seats = [
     {
@@ -170,12 +164,16 @@ export function formatCollapsedSeatLine(
   return fitCollapsedSeats(seats, input.budget ?? Number.POSITIVE_INFINITY);
 }
 
+/** When the cut ends in the ellipsis, the trailing separator run goes with it. */
+export function cutSeatIdentity(identity: string, budget: number): string {
+  const truncated = truncateTerminalDisplayText(identity, budget);
+  if (!truncated.endsWith(ELLIPSIS)) return truncated;
+  return `${truncated.slice(0, -ELLIPSIS.length).replace(HANGING_SEPARATOR, '')}${ELLIPSIS}`;
+}
+
 /** A seat row cuts its full identity to the block budget; it never falls back to the short form. */
 export function fitSeatIdentity(
   input: Readonly<{ runner: RunnerConfig; budget: number; displayName?: string | undefined }>,
 ): string {
-  return truncateTerminalDisplayText(
-    formatSeatIdentity(input.runner, input.displayName),
-    input.budget,
-  );
+  return cutSeatIdentity(formatSeatIdentity(input.runner, input.displayName), input.budget);
 }

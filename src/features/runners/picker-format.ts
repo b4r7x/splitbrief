@@ -1,8 +1,8 @@
 import { SOFT_SEP } from '../../components/separators.js';
 import { countNoun } from '../../utils/pluralize.js';
 import type { ProbeOutcomeKind } from '../../core/discovery/runner-evidence.js';
-import { CLI_TOOL_CATALOG, isCliToolId } from '../../core/runners/cli-tool-catalog.js';
-import type { RunnerBillingPosture } from '../../core/runners/runner-billing.js';
+import { isCliToolId, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { billingWord, type RunnerBillingPosture } from '../../core/runners/runner-billing.js';
 import type { PickerModelCounts } from './model-catalog/catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
 import type { RunnerPermissionPosture } from './model-catalog/posture.js';
@@ -10,9 +10,20 @@ import type { PickerOptionStatus } from './model-catalog/status.js';
 import {
   CATALOG_FETCH_FAILED,
   CATALOG_LANE_PENDING,
+  effortLadderFor,
+  type CatalogLane,
   type RouteAuthState,
 } from './model-catalog/rows.js';
 import { assertNever } from '../../utils/type-guards.js';
+import { formatContextLength } from '../../core/formatting.js';
+import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { UNSET_EFFORT_WORD } from '../../core/runners/effort-channel.js';
+import {
+  formatAxisValue,
+  optionAxesOf,
+  parseOptionSelection,
+} from './model-catalog/option-axis.js';
+import type { ModelOption } from './model-catalog/recency.js';
 
 const DETECTING_MODELS_COPY = 'Detecting models…';
 
@@ -48,29 +59,14 @@ export function formatPickerStatusLabel(status: PickerOptionStatus): string | un
   }
 }
 
-export function formatBillingLabel(billing: RunnerBillingPosture): string {
-  switch (billing) {
-    case 'local':
-      return 'Local billing';
-    case 'subscription-included':
-      return 'Subscription included';
-    case 'api-metered':
-      return 'API metered';
-    case 'provider-dependent':
-      return 'Provider dependent';
-    case 'unknown':
-      return 'Billing unknown';
-  }
-}
-
 export function formatPermissionLabels(permissions: RunnerPermissionPosture): string[] {
   const labels: string[] = [];
-  if (permissions.directWrite) labels.push('Direct write');
-  if (permissions.network) labels.push('Network');
-  if (permissions.shell) labels.push('Shell');
-  if (permissions.automaticApproval) labels.push('Auto approval');
-  if (permissions.sandbox === 'cli-managed') labels.push('CLI sandbox');
-  else if (permissions.sandbox === 'mode-dependent') labels.push('Sandbox varies');
+  if (permissions.directWrite) labels.push('direct write');
+  if (permissions.network) labels.push('network');
+  if (permissions.shell) labels.push('shell');
+  if (permissions.automaticApproval) labels.push('auto approval');
+  if (permissions.sandbox === 'cli-managed') labels.push('cli sandbox');
+  else if (permissions.sandbox === 'mode-dependent') labels.push('sandbox varies');
   return labels;
 }
 
@@ -160,14 +156,11 @@ function readyModelGuidance(
   }
 
   const liveLane = hasLiveCatalogLane(counts);
-  const bundledOffered = counts.bundled > 0 && !liveLane;
   return zeroConfirmedGuidance({
     diagnostic,
     toolName: item.displayName,
-    toolId: item.id,
     offersRows:
       counts.suggestions + counts.stale + counts.custom + (liveLane ? 0 : counts.bundled) > 0,
-    staticRowsOffered: bundledOffered,
   });
 }
 
@@ -175,22 +168,11 @@ function hasLiveCatalogLane(counts: PickerModelCounts): boolean {
   return counts.confirmed > 0 || counts.stale > 0 || counts.suggestions > 0;
 }
 
-/** The tool ships a curated list it cannot verify against the user's account. */
-function isStaticCatalogTool(toolId: string | undefined): boolean {
-  return (
-    toolId !== undefined &&
-    isCliToolId(toolId) &&
-    CLI_TOOL_CATALOG[toolId].modelDiscoveryMode === 'static-catalog-unverified'
-  );
-}
-
-/** No confirmed model: the real diagnostic leads, and its remedy never over-promises. */
+/** No confirmed model: the byline owns the diagnostic, so the placeholder never repeats it. */
 function zeroConfirmedGuidance(input: {
   diagnostic: ModelCatalogDiagnostic | undefined;
   toolName: string;
-  toolId: string;
   offersRows: boolean;
-  staticRowsOffered: boolean;
 }): { headline: string; detail: string | undefined } {
   if (input.diagnostic === undefined) {
     return input.offersRows
@@ -198,22 +180,9 @@ function zeroConfirmedGuidance(input: {
       : { headline: 'No models detected', detail: 'Press ctrl+r to refresh detection' };
   }
   if (input.diagnostic.kind === 'unsupported') {
-    return {
-      headline: noListingSentence(input.toolName),
-      detail: staticRowsDetail(input.staticRowsOffered, input.toolId),
-    };
+    return { headline: noListingSentence(input.toolName), detail: undefined };
   }
-  return {
-    headline: 'No models listed',
-    detail: formatCatalogDiagnostic(input.diagnostic, input.toolName),
-  };
-}
-
-function staticRowsDetail(offered: boolean, toolId: string): string | undefined {
-  if (!offered) return undefined;
-  return isStaticCatalogTool(toolId)
-    ? 'a static list is offered — not verified against your account'
-    : 'aliases are offered';
+  return { headline: 'No models listed', detail: undefined };
 }
 
 const GATEWAY_ACCOUNT_NAMES: Record<string, string> = {
@@ -229,26 +198,26 @@ export function gatewayAccountName(toolId: string): string | undefined {
   return GATEWAY_ACCOUNT_NAMES[toolId];
 }
 
-/** The route's own sign-in fact: a word every reader can act on, glyph optional. */
-export function formatRouteAuth(input: { auth: RouteAuthState; floor: boolean }): {
+/** The route's own sign-in fact: words only, and whether it reads as a dim state. */
+export function formatRouteAuth(input: { auth: RouteAuthState }): {
   word: string | undefined;
-  glyph: 'configured' | 'missing' | 'unknown' | undefined;
+  dim: boolean;
 } {
   const { auth } = input;
   switch (auth.kind) {
     case 'unchecked':
-      return { word: undefined, glyph: undefined };
+      return { word: undefined, dim: false };
     case 'configured':
       return {
         word: `signed in${SOFT_SEP}${credentialSourceWord(auth)}`,
-        glyph: input.floor ? undefined : 'configured',
+        dim: false,
       };
     case 'needs-sign-in':
-      return { word: 'needs sign-in', glyph: input.floor ? undefined : 'missing' };
+      return { word: 'needs sign-in', dim: true };
     case 'unknown':
       return auth.reason === 'empty'
-        ? { word: 'needs sign-in', glyph: input.floor ? undefined : 'missing' }
-        : { word: 'state unknown', glyph: input.floor ? undefined : 'unknown' };
+        ? { word: 'needs sign-in', dim: true }
+        : { word: 'sign-in unknown', dim: true };
     default:
       return assertNever(auth);
   }
@@ -307,34 +276,224 @@ export function formatRouteRemedy(input: {
   }
 }
 
-/** Counts by provenance lead; the capability strip is the part truncation may cut. */
-export function formatPickerByline(input: {
+export interface ListingSource {
+  readonly source: string;
+  /** The noun the tool's own list uses for one row. */
+  readonly rowNoun: string;
+  /** The same noun for more than one row; `alias` does not take a bare `s`. */
+  readonly rowNounPlural: string;
+  readonly unverifiedForPlan: boolean;
+}
+
+/**
+ * Where each tool's rows really come from, in the tool's own words. Checked against
+ * `declaredCatalogProbe` (`engine/runners/cli-tools/registry.ts`) and the tools themselves on
+ * 2026-09-09: claude-code 2.1.265 prints no alias table, copilot 1.0.77 prints its 25-id enum,
+ * cursor-agent 2026.09.08-6caf4ff prints 223 model rows.
+ */
+const LISTING_SOURCES: Readonly<Record<CliToolId, ListingSource>> = {
+  'claude-code': {
+    source: "from Claude's documented aliases",
+    rowNoun: 'alias',
+    rowNounPlural: 'aliases',
+    unverifiedForPlan: false,
+  },
+  copilot: {
+    source: 'from copilot help config',
+    rowNoun: 'model',
+    rowNounPlural: 'models',
+    unverifiedForPlan: true,
+  },
+  cursor: {
+    source: 'from cursor-agent --list-models',
+    rowNoun: 'model',
+    rowNounPlural: 'models',
+    unverifiedForPlan: false,
+  },
+  opencode: {
+    source: 'from opencode models --verbose',
+    rowNoun: 'model',
+    rowNounPlural: 'models',
+    unverifiedForPlan: false,
+  },
+  'kilo-code': {
+    source: 'from kilo models --verbose',
+    rowNoun: 'model',
+    rowNounPlural: 'models',
+    unverifiedForPlan: false,
+  },
+  codex: {
+    source: 'from codex debug models --bundled',
+    rowNoun: 'model',
+    rowNounPlural: 'models',
+    unverifiedForPlan: false,
+  },
+  'command-code': {
+    source: 'from cmd --list-models',
+    rowNoun: 'model',
+    rowNounPlural: 'models',
+    unverifiedForPlan: false,
+  },
+};
+
+/** A provider that is not a CLI tool lists through the shared catalog, which knows no account. */
+const CATALOG_LISTING_SOURCE: ListingSource = {
+  source: 'from models.dev',
+  rowNoun: 'model',
+  rowNounPlural: 'models',
+  unverifiedForPlan: true,
+};
+
+export function pickerListingSource(toolId: string | undefined): ListingSource {
+  if (toolId !== undefined && isCliToolId(toolId)) return LISTING_SOURCES[toolId];
+  return CATALOG_LISTING_SOURCE;
+}
+
+function laneStatus(lane: CatalogLane): string | undefined {
+  if (lane === 'pending') return CATALOG_LANE_PENDING;
+  if (lane === 'failed') return `${CATALOG_FETCH_FAILED}${SOFT_SEP}ctrl+r`;
+  return undefined;
+}
+
+/**
+ * The byline sheds its cheapest fact first so the billing word is the last segment standing:
+ * capability words, then the version the tool row already prints, then the clause that qualifies
+ * the source, then the provenance itself.
+ */
+function fitToolsByline(input: {
   toolName: string;
   version: string | undefined;
-  counts: PickerModelCounts;
-  lane: 'ready' | 'pending' | 'failed';
-  diagnostic?: ModelCatalogDiagnostic | undefined;
+  count: string;
+  provenance: string | undefined;
+  trust: string | undefined;
   capabilities: readonly string[];
-  toolId?: string | undefined;
+  billing: string | undefined;
+  budget: number;
 }): string {
-  const parts = [input.toolName];
-  if (input.version !== undefined) parts.push(input.version);
-  if (input.diagnostic?.kind === 'unsupported') parts.push('no listing command');
-  if (input.counts.bundled > 0 && !hasLiveCatalogLane(input.counts)) {
-    parts.push(bundledLaneCount(input.counts.bundled, input.toolId));
+  const compose = (kept: number, version: boolean, trust: boolean, provenance: boolean): string =>
+    [
+      input.toolName,
+      version ? input.version : undefined,
+      input.count,
+      provenance ? input.provenance : undefined,
+      provenance && trust ? input.trust : undefined,
+      ...input.capabilities.slice(0, kept),
+      input.billing,
+    ]
+      .filter((part): part is string => part !== undefined)
+      .join(SOFT_SEP);
+  const rungs: string[] = [];
+  for (let kept = input.capabilities.length; kept >= 0; kept--) {
+    rungs.push(compose(kept, true, true, true));
   }
-  if (input.counts.suggestions > 0) parts.push(countNoun(input.counts.suggestions, 'model'));
-  if (input.counts.confirmed > 0) parts.push(`${input.counts.confirmed} detected`);
-  if (input.lane === 'pending') parts.push(CATALOG_LANE_PENDING);
-  if (input.lane === 'failed') parts.push(`${CATALOG_FETCH_FAILED}${SOFT_SEP}ctrl+r`);
-  parts.push(...input.capabilities);
+  rungs.push(compose(0, false, true, true));
+  rungs.push(compose(0, false, false, true));
+  const floor = compose(0, false, false, false);
+  return rungs.find((line) => getTerminalCellWidth(line) <= input.budget) ?? floor;
+}
+
+/** The catalog status the byline must show whichever column has focus, or undefined when there is none. */
+export function bylineDiagnostic(input: {
+  diagnostic: ModelCatalogDiagnostic | undefined;
+  modelCount: number;
+  toolName: string;
+}): string | undefined {
+  const { diagnostic } = input;
+  if (diagnostic === undefined) return undefined;
+  // An alias lane by design is not a failure: claude-code lists rows and still reports `unsupported`.
+  if (input.modelCount > 0 && diagnostic.kind === 'unsupported') return undefined;
+  return formatCatalogDiagnostic(diagnostic, input.toolName);
+}
+
+/**
+ * The Tools column answers for the tool. A catalog diagnostic is the whole line: it measures more
+ * than the panel is wide, so there is nothing it could be joined to.
+ */
+export function formatToolsByline(input: {
+  toolName: string;
+  version: string | undefined;
+  modelCount: number;
+  rowNoun: string;
+  rowNounPlural: string;
+  source: string | undefined;
+  unverifiedForPlan: boolean;
+  diagnostic: ModelCatalogDiagnostic | undefined;
+  lane: CatalogLane;
+  capabilities: readonly string[];
+  billing: RunnerBillingPosture;
+  budget: number;
+}): string {
+  const status = bylineDiagnostic({
+    diagnostic: input.diagnostic,
+    modelCount: input.modelCount,
+    toolName: input.toolName,
+  });
+  if (status !== undefined) return status;
+
+  const lane = laneStatus(input.lane);
+  const provenance = lane ?? input.source;
+  // The lane status replaces the source, so a lane that is not ready carries no trust clause.
+  const trust =
+    lane === undefined && input.unverifiedForPlan ? 'not verified for your plan' : undefined;
+  return fitToolsByline({
+    toolName: input.toolName,
+    version: input.version,
+    count: countNoun(input.modelCount, input.rowNoun, input.rowNounPlural),
+    provenance,
+    trust,
+    capabilities: input.capabilities,
+    billing: billingWord(input.billing),
+    budget: input.budget,
+  });
+}
+
+/** The Models column answers for the highlighted row: its label, its exact id, what it has chosen, its size. */
+export function formatModelsByline(input: {
+  label: string;
+  id: string;
+  axes: readonly string[];
+  contextLength: number | undefined;
+  autoRow?: { toolName: string } | undefined;
+}): string {
+  if (input.autoRow !== undefined) {
+    return [input.label, 'no --model flag', `${input.autoRow.toolName} runs its own default`].join(
+      SOFT_SEP,
+    );
+  }
+  const parts = [input.label];
+  if (input.id !== '' && input.id !== input.label) parts.push(input.id);
+  parts.push(...input.axes);
+  const size = formatContextLength(input.contextLength);
+  if (size !== '') parts.push(size);
   return parts.join(SOFT_SEP);
 }
 
-function bundledLaneCount(count: number, toolId: string | undefined): string {
-  return isStaticCatalogTool(toolId)
-    ? countNoun(count, 'static model')
-    : countNoun(count, 'known alias', 'known aliases');
+/**
+ * The ladder is the authoritative effort where a route publishes one; the id's tokens are not a
+ * second one, and an axis the row has not moved from its default states nothing.
+ */
+export function modelBylineAxes(input: {
+  model: ModelOption;
+  id: string;
+  effortDraft: string | null;
+}): string[] {
+  const variants = input.model.variants ?? [];
+  const providerPrefix =
+    variants.find((variant) => variant.fullId === input.id)?.providerPrefix ?? '';
+  const ladder = effortLadderFor(input.model, input.id);
+  const selection = parseOptionSelection(input.id);
+  const words: string[] = [];
+  const draft = input.effortDraft ?? '';
+  if (ladder.length > 0 && ladder.includes(draft)) words.push(`effort ${draft}`);
+  for (const axis of optionAxesOf(variants, providerPrefix)) {
+    if (axis.axis === 'effort') {
+      if (ladder.length > 0) continue;
+      if (selection.effort !== UNSET_EFFORT_WORD) words.push(`effort ${selection.effort}`);
+      continue;
+    }
+    if (formatAxisValue(axis.axis, selection) === 'on') words.push(axis.axis);
+  }
+  return words;
 }
 
 export function formatNeedsSignInSaveFeedback(input: {

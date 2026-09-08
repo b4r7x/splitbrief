@@ -118,11 +118,11 @@ describe('formatToolModel', () => {
   });
 
   it('returns display name + separator + model for known tool', () => {
-    expect(formatToolModel('ollama', 'qwen2.5-coder:7b')).toBe('Ollama \u00b7 qwen2.5-coder:7b');
+    expect(formatToolModel('ollama', 'qwen2.5-coder:7b')).toBe('Ollama \u00b7 Qwen 2.5 Coder 7B');
   });
 
   it('passes through raw tool name + model for unknown tool', () => {
-    expect(formatToolModel('my-provider', 'some-model')).toBe('my-provider \u00b7 some-model');
+    expect(formatToolModel('my-provider', 'some-model')).toBe('my-provider \u00b7 Some Model');
   });
 
   it('returns just the display name when only tool is provided', () => {
@@ -130,6 +130,12 @@ describe('formatToolModel', () => {
   });
 
   it('returns just the model when only model is provided', () => {
-    expect(formatToolModel(undefined, 'gpt-4o')).toBe('gpt-4o');
+    expect(formatToolModel(undefined, 'gpt-4o')).toBe('GPT-4o');
+  });
+
+  it('redacts a credential-shaped model id before prettifying it', () => {
+    const line = formatToolModel('ollama', 'model sk-abcdefghijklmnopqrstuvwxyz');
+    expect(line).toContain('***REDACTED***');
+    expect(line.toLowerCase()).not.toContain('abcdefghijklmnopqrstuvwxyz');
   });
 });

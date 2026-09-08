@@ -1,15 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
+  bylineDiagnostic,
   formatCatalogDiagnostic,
-  formatPickerByline,
+  formatModelCatalogGuidance,
+  formatModelsByline,
+  formatPermissionLabels,
   formatRouteAuth,
   formatRouteRemedy,
-  formatModelCatalogGuidance,
+  formatToolsByline,
+  modelBylineAxes,
+  pickerListingSource,
   type ModelCatalogDiagnostic,
 } from './picker-format.js';
 import { SOFT_SEP } from '../../components/separators.js';
 import type { PickerOption } from './model-catalog/options.js';
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
+import { mergeOptionFamilies } from './model-catalog/option-merge.js';
+import { getTerminalCellWidth } from '../../utils/display-text.js';
+import type { ModelOption } from './model-catalog/recency.js';
 
 const zeroCounts = { confirmed: 0, stale: 0, suggestions: 0, bundled: 0, custom: 0 };
 
@@ -72,32 +80,13 @@ describe('formatModelCatalogGuidance', () => {
     ).toContain('1 model detected');
   });
 
-  it('states the real diagnostic when nothing is confirmed', () => {
-    const guidance = formatModelCatalogGuidance(readyCliTool(), { ...zeroCounts, bundled: 5 }, {
-      kind: 'not-probed',
-    } satisfies ModelCatalogDiagnostic);
-
-    expect(guidance.detail).toBe(formatCatalogDiagnostic({ kind: 'not-probed' }, 'Codex'));
-  });
-
   it('leads with the no-listing sentence for a tool that cannot list models', () => {
     const guidance = formatModelCatalogGuidance(readyCliTool(), { ...zeroCounts, bundled: 3 }, {
       kind: 'unsupported',
     } satisfies ModelCatalogDiagnostic);
 
     expect(guidance.headline).toContain('does not support model listing');
-    expect(guidance.detail).toBe('aliases are offered');
-    expect(guidance.detail).not.toContain('ctrl+r');
-  });
-
-  it('keeps the alias wording for claude-code', () => {
-    const guidance = formatModelCatalogGuidance(
-      { ...readyCliTool(), id: 'claude-code', displayName: 'Claude Code CLI' },
-      { ...zeroCounts, bundled: 9 },
-      { kind: 'unsupported' } satisfies ModelCatalogDiagnostic,
-    );
-
-    expect(guidance.detail).toBe('aliases are offered');
+    expect(guidance.detail).toBeUndefined();
   });
 
   it('does not claim aliases are offered when a live catalog lane hides bundled rows', () => {
@@ -109,17 +98,6 @@ describe('formatModelCatalogGuidance', () => {
 
     expect(guidance.headline).toContain('does not support model listing');
     expect(guidance.detail ?? '').not.toContain('aliases');
-  });
-
-  it('does not promise a different result after a malformed listing', () => {
-    const guidance = formatModelCatalogGuidance(readyCliTool(), zeroCounts, {
-      kind: 'probe-failed',
-      failure: 'malformed',
-    } satisfies ModelCatalogDiagnostic);
-
-    const detail = guidance.detail ?? '';
-    expect(detail).toContain('will not help');
-    expect(detail).not.toContain('retry');
   });
 
   it('keeps the refresh remediation for a truly empty catalog', () => {
@@ -225,44 +203,49 @@ describe('formatCatalogDiagnostic', () => {
 
 describe('formatRouteAuth', () => {
   it('claims nothing when the tool cannot report sign-in state', () => {
-    expect(formatRouteAuth({ auth: { kind: 'unchecked' }, floor: false })).toEqual({
+    expect(formatRouteAuth({ auth: { kind: 'unchecked' } })).toEqual({
       word: undefined,
-      glyph: undefined,
+      dim: false,
     });
   });
 
-  it('keeps the word and drops the glyph at the viewport floor', () => {
-    const auth = { kind: 'configured', source: 'oauth' } as const;
-
-    const roomy = formatRouteAuth({ auth, floor: false });
-    const floor = formatRouteAuth({ auth, floor: true });
-
-    expect(roomy.glyph).toBe('configured');
-    expect(floor.glyph).toBeUndefined();
-    expect(floor.word).toBe(roomy.word);
+  it('names a configured route by credential source', () => {
+    expect(formatRouteAuth({ auth: { kind: 'configured', source: 'oauth' } })).toEqual({
+      word: 'signed in · oauth',
+      dim: false,
+    });
+    expect(formatRouteAuth({ auth: { kind: 'configured', source: 'api' } }).word).toBe(
+      'signed in · api key',
+    );
   });
 
   it('distinguishes a configured route, a missing one and an unreadable one', () => {
     const configured = formatRouteAuth({
       auth: { kind: 'configured', source: 'oauth' },
-      floor: false,
     });
-    const missing = formatRouteAuth({ auth: { kind: 'needs-sign-in' }, floor: false });
+    const missing = formatRouteAuth({ auth: { kind: 'needs-sign-in' } });
     const unknown = formatRouteAuth({
       auth: { kind: 'unknown', reason: 'timeout' },
-      floor: false,
     });
 
-    expect(new Set([configured.glyph, missing.glyph, unknown.glyph]).size).toBe(3);
+    expect(configured.word).toBe('signed in · oauth');
+    expect(configured.dim).toBe(false);
+    expect(missing.word).toBe('needs sign-in');
+    expect(missing.dim).toBe(true);
+    expect(unknown.word).toBe('sign-in unknown');
+    expect(unknown.dim).toBe(true);
     expect(new Set([configured.word, missing.word, unknown.word]).size).toBe(3);
   });
 
   it('reads a listing that named no provider as needing sign-in, not as unknown', () => {
-    const empty = formatRouteAuth({ auth: { kind: 'unknown', reason: 'empty' }, floor: false });
-    const missing = formatRouteAuth({ auth: { kind: 'needs-sign-in' }, floor: false });
-    const timeout = formatRouteAuth({ auth: { kind: 'unknown', reason: 'timeout' }, floor: false });
+    const empty = formatRouteAuth({ auth: { kind: 'unknown', reason: 'empty' } });
+    const missing = formatRouteAuth({ auth: { kind: 'needs-sign-in' } });
+    const timeout = formatRouteAuth({ auth: { kind: 'unknown', reason: 'timeout' } });
 
     expect(empty.word).toBe(missing.word);
+    expect(empty.dim).toBe(true);
+    expect(timeout.word).toBe('sign-in unknown');
+    expect(timeout.dim).toBe(true);
     expect(empty.word).not.toBe(timeout.word);
   });
 
@@ -270,7 +253,6 @@ describe('formatRouteAuth', () => {
     expect(
       formatRouteAuth({
         auth: { kind: 'configured', source: 'env', envVar: 'OPENAI_API_KEY' },
-        floor: false,
       }).word,
     ).toContain('OPENAI_API_KEY');
   });
@@ -339,81 +321,324 @@ describe('formatRouteRemedy', () => {
   });
 });
 
-describe('formatPickerByline', () => {
-  const byline = (over: Partial<Parameters<typeof formatPickerByline>[0]> = {}): string =>
-    formatPickerByline({
-      toolName: 'Claude Code CLI',
-      version: '2.4.0',
-      counts: { ...zeroCounts, bundled: 3, suggestions: 10 },
+const COPILOT_IDS = [
+  'claude-sonnet-5',
+  'claude-sonnet-4.6',
+  'claude-sonnet-4.5',
+  'claude-haiku-4.5',
+  'claude-fable-5',
+  'claude-opus-5',
+  'claude-opus-4.8',
+  'claude-opus-4.8-fast',
+  'claude-opus-4.7',
+  'claude-opus-4.6',
+  'claude-opus-4.5',
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
+  'gpt-5.5',
+  'gpt-5.4',
+  'gpt-5.3-codex',
+  'gpt-5.4-mini',
+  'gpt-5-mini',
+  'mai-code-1-flash-picker',
+  'gemini-3.1-pro-preview',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+  'grok-4.5',
+  'kimi-k2.7-code',
+] as const;
+
+describe('formatToolsByline', () => {
+  const byline = (over: Partial<Parameters<typeof formatToolsByline>[0]> = {}): string =>
+    formatToolsByline({
+      toolName: 'GitHub Copilot CLI',
+      version: '1.0.77',
+      modelCount: 24,
+      rowNoun: 'model',
+      rowNounPlural: 'models',
+      source: 'from copilot help config',
+      unverifiedForPlan: true,
+      diagnostic: undefined,
       lane: 'ready',
-      diagnostic: { kind: 'unsupported' },
-      capabilities: ['Network', 'Shell', 'Subscription included'],
+      capabilities: ['network', 'shell'],
+      billing: 'subscription-included',
+      budget: 200,
       ...over,
     });
 
-  it('keeps every count ahead of the capability strip that truncation cuts', () => {
-    const aliases = byline({
-      counts: { ...zeroCounts, bundled: 3 },
-      diagnostic: undefined,
-    });
-    const catalog = byline({ counts: { ...zeroCounts, suggestions: 10, confirmed: 126 } });
+  const segments = (line: string): string[] => line.split(SOFT_SEP);
 
-    expect(aliases.indexOf('3 known aliases')).toBeGreaterThan(-1);
-    expect(aliases.indexOf('3 known aliases')).toBeLessThan(aliases.indexOf('Network'));
-    expect(catalog.indexOf('10 models')).toBeGreaterThan(-1);
-    expect(catalog.indexOf('10 models')).toBeLessThan(catalog.indexOf('Network'));
-    expect(catalog.indexOf('126 detected')).toBeLessThan(catalog.indexOf('Network'));
+  it('uses the singular noun for a single row', () => {
+    const single = byline({ modelCount: 1 });
+    expect(single).toContain('1 model');
+    expect(single).not.toContain('1 models');
+    expect(byline({ modelCount: 1, rowNoun: 'alias', rowNounPlural: 'aliases' })).toContain(
+      '1 alias',
+    );
+    expect(byline({ modelCount: 9, rowNoun: 'alias', rowNounPlural: 'aliases' })).toContain(
+      '9 aliases',
+    );
   });
 
-  it('never counts hidden bundled rows among the models the byline offers', () => {
+  it('shows the catalog status whichever column has focus', () => {
+    expect(
+      bylineDiagnostic({
+        diagnostic: { kind: 'probe-failed', failure: 'malformed' },
+        modelCount: 1,
+        toolName: 'Kilo Code CLI',
+      }),
+    ).toBe(
+      formatCatalogDiagnostic({ kind: 'probe-failed', failure: 'malformed' }, 'Kilo Code CLI'),
+    );
+    expect(
+      bylineDiagnostic({
+        diagnostic: { kind: 'unsupported' },
+        modelCount: 9,
+        toolName: 'Claude Code CLI',
+      }),
+    ).toBeUndefined();
+    expect(
+      bylineDiagnostic({
+        diagnostic: undefined,
+        modelCount: 0,
+        toolName: 'X',
+      }),
+    ).toBeUndefined();
+  });
+
+  it('carries the source phrase and the row noun ahead of the capability words', () => {
+    const parts = segments(byline());
+    expect(parts).toContain('24 models');
+    expect(parts.some((s) => s.startsWith('from copilot help config'))).toBe(true);
+    expect(parts.indexOf('24 models')).toBeLessThan(parts.indexOf('network'));
+  });
+
+  it('counts the row model, not the ids the tool printed', () => {
+    const folded = mergeOptionFamilies(COPILOT_IDS.map((id) => ({ id })));
+    expect(COPILOT_IDS.length).toBe(25);
+    expect(folded.length).toBe(24);
+    const line = byline({ modelCount: folded.length });
+    expect(line).toContain('24 models');
+    expect(line).not.toContain('25 models');
+  });
+
+  it('makes a diagnostic the whole line', () => {
+    const diagnostic: ModelCatalogDiagnostic = {
+      kind: 'probe-failed',
+      failure: 'malformed',
+    };
     const line = byline({
-      counts: { ...zeroCounts, confirmed: 3, bundled: 5 },
-      diagnostic: undefined,
+      diagnostic,
+      toolName: 'Kilo Code CLI',
+      billing: 'provider-dependent',
     });
-
-    expect(line).toContain('3 detected');
-    expect(line).not.toMatch(/\b8\b/);
-    expect(line).not.toContain('5 known aliases');
+    expect(line).toBe(formatCatalogDiagnostic(diagnostic, 'Kilo Code CLI'));
+    expect(line).not.toContain('provider');
+    expect(line).not.toContain('network');
+    expect(line).not.toContain('24 models');
   });
 
-  it('separates counts by provenance instead of summing them', () => {
-    const line = byline({ counts: { ...zeroCounts, bundled: 3, suggestions: 10, confirmed: 126 } });
-
-    expect(line).toContain('126 detected');
-    expect(line).not.toContain('13 ');
+  it('shows a diagnostic when no row survives', () => {
+    const diagnostic: ModelCatalogDiagnostic = { kind: 'unsupported' };
+    expect(byline({ diagnostic, modelCount: 0 })).toBe(
+      formatCatalogDiagnostic(diagnostic, 'GitHub Copilot CLI'),
+    );
   });
 
-  it('states the missing listing command only for a tool that has none', () => {
-    expect(byline()).toContain('no listing command');
-    expect(byline({ diagnostic: undefined })).not.toContain('no listing command');
+  it('keeps the source phrase for an alias lane whose confirmed count is always zero', () => {
+    const line = byline({
+      toolName: 'Claude Code CLI',
+      version: '2.1.265',
+      modelCount: 9,
+      rowNoun: 'aliases',
+      rowNounPlural: 'aliases',
+      source: "from Claude's documented aliases",
+      unverifiedForPlan: false,
+      diagnostic: { kind: 'unsupported' },
+    });
+    expect(line).toContain('9 aliases');
+    expect(line).toContain("from Claude's documented aliases");
+    expect(line).not.toContain('does not support model listing');
   });
 
-  it('reports the catalog lane with its retry key, ahead of the capabilities', () => {
+  it('drops capability words so the billing word stays whole', () => {
+    const line = byline({ budget: 76 });
+    expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(76);
+    expect(line.endsWith('subscription')).toBe(true);
+    expect(line).toContain('subscription');
+    expect(line).not.toContain('shell');
+    const wide = byline({ budget: 200 });
+    expect(wide).toContain('network');
+    expect(wide).toContain('shell');
+    expect(wide).toContain('from copilot help config');
+    expect(wide).toContain('not verified for your plan');
+  });
+
+  it('drops the last capability word first', () => {
+    const capabilities = ['network', 'shell', 'auto approval'] as const;
+    const twoCapsLine = byline({ capabilities: ['network', 'shell'] });
+    const budget = getTerminalCellWidth(twoCapsLine);
+    const line = byline({ capabilities, budget });
+    const parts = segments(line);
+    const surviving = parts.filter((s) => (capabilities as readonly string[]).includes(s));
+    expect(surviving).toEqual(['network', 'shell']);
+  });
+
+  it('contributes no segment when the billing posture is unresolved', () => {
+    const line = byline({ billing: 'unknown', budget: 200 });
+    expect(line.endsWith(SOFT_SEP)).toBe(false);
+    expect(line).not.toContain('unknown');
+    expect(segments(line).every((part) => part.length > 0)).toBe(true);
+  });
+
+  it('attaches the trust clause to the source phrase', () => {
+    expect(byline()).toContain('from copilot help config · not verified for your plan');
+    expect(byline({ unverifiedForPlan: false })).not.toContain('not verified');
+  });
+
+  it('replaces the source segment with the catalog lane', () => {
     const pending = byline({ lane: 'pending' });
-    const failed = byline({ lane: 'failed' });
-
     expect(pending).toContain('Loading models…');
+    expect(pending).not.toContain('from copilot help config');
+    expect(pending).toContain('24 models');
+    expect(pending).toContain('subscription');
+
+    const failed = byline({ lane: 'failed' });
     expect(failed).toContain('Could not load models');
     expect(failed).toContain('ctrl+r');
-    expect(failed.indexOf('ctrl+r')).toBeLessThan(failed.indexOf('Network'));
-    expect(byline()).not.toContain('Loading models…');
-  });
-
-  it('still counts claude-code bundled rows as known aliases', () => {
-    const line = formatPickerByline({
-      toolName: 'Claude Code CLI',
-      version: undefined,
-      counts: { confirmed: 0, stale: 0, suggestions: 0, bundled: 2, custom: 0 },
-      lane: 'ready',
-      diagnostic: { kind: 'unsupported' },
-      capabilities: [],
-      toolId: 'claude-code',
-    });
-
-    expect(line).toContain('known aliases');
+    expect(failed).toContain('24 models');
+    expect(failed).toContain('subscription');
   });
 
   it('omits the version when the tool did not report one', () => {
-    expect(byline({ version: undefined })).not.toContain('2.4.0');
+    expect(byline({ version: undefined })).not.toContain('1.0.77');
+  });
+
+  it('keeps the source phrase and drops the version before it', () => {
+    const withoutVersion = 'Claude Code CLI · 10 aliases · Loading models… · subscription';
+    const budget = getTerminalCellWidth(withoutVersion);
+    const line = formatToolsByline({
+      toolName: 'Claude Code CLI',
+      version: '2.0.0',
+      modelCount: 10,
+      rowNoun: 'alias',
+      rowNounPlural: 'aliases',
+      source: "from Claude's documented aliases",
+      unverifiedForPlan: false,
+      diagnostic: undefined,
+      lane: 'pending',
+      capabilities: ['network', 'shell'],
+      billing: 'subscription-included',
+      budget,
+    });
+    expect(line).toBe(withoutVersion);
+    expect(line).not.toContain('2.0.0');
+    expect(line).toContain('Loading models…');
+  });
+});
+
+describe('formatPermissionLabels', () => {
+  it('lowercases every capability word', () => {
+    const all = formatPermissionLabels({
+      directWrite: true,
+      network: true,
+      shell: true,
+      automaticApproval: true,
+      sandbox: 'cli-managed',
+    });
+    expect(all.length).toBe(5);
+    for (const word of all) expect(word).toBe(word.toLowerCase());
+    const modeDependent = formatPermissionLabels({
+      directWrite: false,
+      network: false,
+      shell: false,
+      automaticApproval: false,
+      sandbox: 'mode-dependent',
+    });
+    expect(modeDependent[modeDependent.length - 1]).toBe('sandbox varies');
+  });
+});
+
+describe('pickerListingSource', () => {
+  it('names the listing each tool really has', () => {
+    expect(pickerListingSource('copilot')).toEqual({
+      source: 'from copilot help config',
+      rowNoun: 'model',
+      rowNounPlural: 'models',
+      unverifiedForPlan: true,
+    });
+    expect(pickerListingSource('claude-code').rowNounPlural).toBe('aliases');
+    expect(pickerListingSource('claude-code').source).not.toContain('--help');
+    expect(pickerListingSource('cursor').unverifiedForPlan).toBe(false);
+    expect(pickerListingSource('opencode').unverifiedForPlan).toBe(false);
+    expect(pickerListingSource('kilo-code').unverifiedForPlan).toBe(false);
+    expect(pickerListingSource('codex').unverifiedForPlan).toBe(false);
+    expect(pickerListingSource('anthropic')).toEqual({
+      source: 'from models.dev',
+      rowNoun: 'model',
+      rowNounPlural: 'models',
+      unverifiedForPlan: true,
+    });
+    expect(pickerListingSource(undefined)).toEqual(pickerListingSource('anthropic'));
+  });
+});
+
+describe('formatModelsByline', () => {
+  it("spells the row's label, its exact id, its chosen axes and its size", () => {
+    expect(
+      formatModelsByline({
+        label: 'GPT-5.6 Sol',
+        id: 'gpt-5.6-sol-high-fast',
+        axes: ['effort high', 'fast'],
+        contextLength: undefined,
+      }),
+    ).toBe('GPT-5.6 Sol · gpt-5.6-sol-high-fast · effort high · fast');
+    expect(
+      formatModelsByline({
+        label: 'GPT-5.6 Sol',
+        id: 'gpt-5.6-sol-high-fast',
+        axes: ['effort high', 'fast'],
+        contextLength: 1_000_000,
+      }).endsWith(' · 1M'),
+    ).toBe(true);
+  });
+
+  it('names the tool on the Auto row', () => {
+    expect(
+      formatModelsByline({
+        label: 'Auto',
+        id: '',
+        axes: [],
+        contextLength: undefined,
+        autoRow: { toolName: 'Cursor Agent CLI' },
+      }),
+    ).toBe('Auto · no --model flag · Cursor Agent CLI runs its own default');
+  });
+});
+
+describe('modelBylineAxes', () => {
+  it('states only the axes the row has actually chosen', () => {
+    const sol: ModelOption = {
+      id: 'gpt-5.6-sol',
+      variants: [
+        { fullId: 'gpt-5.6-sol', providerPrefix: '', tag: 'gpt-5.6-sol' },
+        { fullId: 'gpt-5.6-sol-high', providerPrefix: '', tag: 'gpt-5.6-sol-high' },
+        { fullId: 'gpt-5.6-sol-high-fast', providerPrefix: '', tag: 'gpt-5.6-sol-high-fast' },
+      ],
+    };
+    expect(modelBylineAxes({ model: sol, id: 'gpt-5.6-sol-high-fast', effortDraft: null })).toEqual(
+      ['effort high', 'fast'],
+    );
+    expect(modelBylineAxes({ model: sol, id: 'gpt-5.6-sol', effortDraft: null })).toEqual([]);
+  });
+
+  it("prefers the tool's own ladder over the id's tokens", () => {
+    const option: ModelOption = { id: 'opus', effortChoices: ['low', 'medium', 'high'] };
+    expect(modelBylineAxes({ model: option, id: 'opus', effortDraft: 'high' })).toEqual([
+      'effort high',
+    ]);
+    expect(modelBylineAxes({ model: option, id: 'opus', effortDraft: null })).toEqual([]);
+    expect(modelBylineAxes({ model: option, id: 'opus', effortDraft: 'ultra' })).toEqual([]);
   });
 });

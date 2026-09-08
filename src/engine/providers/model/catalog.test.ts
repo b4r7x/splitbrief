@@ -962,6 +962,40 @@ describe('runner-owned catalog resolution', () => {
     expect(rows.every((row) => row.membership === 'catalog-suggestion')).toBe(true);
   });
 
+  it('leaves the offline copilot shape unchanged when the bundled floor changes vendor — regression guard', () => {
+    // Regression guard: it passes before this sprint's change too.
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        'github-copilot': {
+          id: 'github-copilot',
+          models: {
+            'claude-opus-5': {
+              id: 'claude-opus-5',
+              name: 'Claude Opus 5',
+              limit: { context: 1_000_000, output: 64_000 },
+            },
+            'gpt-5.6-sol': {
+              id: 'gpt-5.6-sol',
+              name: 'GPT-5.6 Sol',
+              limit: { context: 1_050_000, output: 128_000 },
+            },
+          },
+        },
+      },
+    });
+
+    const rows = resolveModelCatalog('copilot', { cache });
+
+    expect(
+      rows.map((row) => [row.selectionId, row.source, row.membership, row.contextLength]),
+    ).toEqual([
+      ['claude-opus-5', 'models-dev', 'catalog-suggestion', 1_000_000],
+      ['gpt-5.6-sol', 'models-dev', 'catalog-suggestion', 1_050_000],
+    ]);
+    expect(rows.filter((row) => row.source === 'bundled-fallback')).toEqual([]);
+    expect(rows.map((row) => row.maxOutputTokens)).toEqual([64_000, 128_000]);
+  });
+
   it('collapses a :free catalog twin into its provider-qualified runtime row', () => {
     const cache = makeModelCacheAccessor({
       catalog: {

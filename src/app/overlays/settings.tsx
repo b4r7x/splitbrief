@@ -11,7 +11,6 @@ import {
 import { ListRow } from '../../components/list-row.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
 import { SETTINGS_DEFS } from '../../core/settings/catalog.js';
-import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 import type { PageNavigationContext } from '../../hooks/use-filterable-list.js';
 import { displayValue } from '../../features/settings/presentation.js';
 import {
@@ -22,7 +21,7 @@ import {
 } from '../../features/settings/items.js';
 import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { hintFor, useSettingsEditor } from '../../features/settings/hooks/editor.js';
-import { CrewRowView, CrewSpine, CrewVerdictLine } from '../../features/crew/row-view.js';
+import { CrewRowView, CrewVerdictLine } from '../../features/crew/row-view.js';
 import { planSeatBlock } from '../../features/crew/format.js';
 import { crewActivate, crewVerdict } from '../../features/crew/rows.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -44,7 +43,7 @@ const CREW_BLOCK_RESERVED_ROWS = 2;
 const FOCUS_FILTER_PREFIX = 'filter:';
 
 function isReviewSeat(item: SettingsItem): boolean {
-  return item.kind === 'crew' && item.row.kind === 'seat' && item.row.id === 'review';
+  return item.kind === 'crew' && item.row.id === 'review';
 }
 
 export function SettingsOverlay() {
@@ -70,27 +69,19 @@ export function SettingsOverlay() {
     innerWidth: rect.innerWidth,
     rowBudget: listBudget - CREW_BLOCK_RESERVED_ROWS,
   });
-  const planner = readActiveRunner({ config, role: 'planner' });
-  /** The rail never scrolls out from under a seat row that matches. */
+  /** Keeps the crew block pinned at the head of the list. */
   const pinnedHead = items.filter((item) => item.kind === 'crew').length;
 
   const listSection = { by: settingsItemSection, gapBetweenSections: true as const };
-  /** Spines are the block's own gap rows, so a filtered list — no longer the block — loses them. */
-  const decorationsFor = (list: SettingsItem[]) => ({
-    before: (item: SettingsItem, index: number) =>
-      layout.spines &&
-      list.length === items.length &&
-      item.kind === 'crew' &&
-      item.row.kind === 'seat' &&
-      list[index - 1]?.kind === 'crew',
+  const decorations = {
     after: (item: SettingsItem) => layout.verdict && isReviewSeat(item),
-  });
+  };
   const windowInput = (list: SettingsItem[], selectedIndex: number) => ({
     items: list,
     selectedIndex,
     rowBudget: listBudget,
     section: listSection,
-    decorations: decorationsFor(list),
+    decorations,
     pinnedHead,
   });
   const getPageSize = ({ filtered, selectedIndex }: PageNavigationContext<SettingsItem>) =>
@@ -136,7 +127,6 @@ export function SettingsOverlay() {
 
   const verdictLine =
     verdict === undefined ? null : <CrewVerdictLine verdict={verdict} width={rect.innerWidth} />;
-  const decorations = decorationsFor(filtered);
 
   return (
     <OverlayPanel title="Settings" hint={hintText} density={PANEL_DENSITY}>
@@ -156,8 +146,6 @@ export function SettingsOverlay() {
           renderHeader: (section) => <Text color={t.textDim}>{section}</Text>,
         }}
         decorations={{
-          hasBefore: decorations.before,
-          renderBefore: () => <CrewSpine />,
           hasAfter: decorations.after,
           renderAfter: () => verdictLine,
         }}
@@ -169,7 +157,6 @@ export function SettingsOverlay() {
                 layout={layout}
                 isCursor={isCursor}
                 width={rect.innerWidth}
-                planner={planner}
               />
             );
           }

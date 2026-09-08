@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { cursorModelOptions } from '#testing/helpers/factories/cursor-models.js';
 import { EFFORT_AXIS_TOKENS } from '../../../core/runners/effort-channel.js';
 import { mergeOptionFamilies, peelOptionSuffix } from './option-merge.js';
-import type { ModelOption } from './recency.js';
+import type { ModelOption, ModelVariant } from './recency.js';
 
 function lunaFixtureRows(): ModelOption[] {
   return cursorModelOptions().filter((row) => row.id.startsWith('gpt-5.6-luna'));
@@ -10,6 +10,18 @@ function lunaFixtureRows(): ModelOption[] {
 
 function tagOf(row: ModelOption | undefined, fullId: string): string | undefined {
   return row?.variants?.find((variant) => variant.fullId === fullId)?.tag;
+}
+
+function variantOf(row: ModelOption | undefined, fullId: string): ModelVariant | undefined {
+  return row?.variants?.find((variant) => variant.fullId === fullId);
+}
+
+function fixtureFamily(
+  familyId: string,
+  ctx?: Parameters<typeof mergeOptionFamilies>[1],
+): ModelOption | undefined {
+  const rows = cursorModelOptions().filter((row) => peelOptionSuffix(row.id).familyId === familyId);
+  return mergeOptionFamilies(rows, ctx)[0];
 }
 
 describe('peelOptionSuffix', () => {
@@ -77,17 +89,19 @@ describe('mergeOptionFamilies', () => {
     );
     expect(luna[0]?.variants?.every((variant) => variant.providerPrefix === '')).toBe(true);
     expect(tagOf(luna[0], 'gpt-5.6-luna-high')).toBe('1M High');
-    expect(tagOf(luna[0], 'gpt-5.6-luna-high-fast')).toBe('High Fast');
+    expect(tagOf(luna[0], 'gpt-5.6-luna-high-fast')).toBe('1M High Fast');
     expect(tagOf(luna[0], 'gpt-5.6-luna-xhigh')).toBe('1M Extra High');
-    expect(tagOf(luna[0], 'gpt-5.6-luna-medium-fast')).toBe('Fast');
+    expect(tagOf(luna[0], 'gpt-5.6-luna-medium-fast')).toBe('1M Fast');
   });
 
-  it('folds the cursor gemini flash family, minimal rung included', () => {
+  it('folds the cursor gemini flash family from testing/fixtures/cursor/list-models.txt into one row, minimal rung included', () => {
     const flash = mergeOptionFamilies(
       cursorModelOptions().filter((row) => row.id.startsWith('gemini-3.6-flash')),
     );
 
     expect(flash).toHaveLength(1);
+    expect(flash[0]?.variants).toHaveLength(4);
+    expect(peelOptionSuffix('gemini-3.6-flash-minimal').familyId).toBe('gemini-3.6-flash');
     expect(flash[0]?.variants?.map((variant) => variant.fullId)).toEqual([
       'gemini-3.6-flash-minimal',
       'gemini-3.6-flash-low',
@@ -228,5 +242,57 @@ describe('mergeOptionFamilies', () => {
       { id: 'composer-2.5-fast', contextLength: 128_000 },
     ]);
     expect(merged[0]?.contextLength).toBe(128_000);
+  });
+});
+
+describe('cursor family truth, built from testing/fixtures/cursor/list-models.txt', () => {
+  it('carries the family context length only when every member spells 1M', () => {
+    const opus = fixtureFamily('claude-opus-5');
+    expect(opus?.contextLength).toBe(1_000_000);
+    expect(opus?.variants?.every((variant) => variant.contextLength === 1_000_000)).toBe(true);
+
+    const sol = fixtureFamily('gpt-5.6-sol');
+    expect(sol?.contextLength).toBe(1_000_000);
+
+    const gpt55 = fixtureFamily('gpt-5.5');
+    expect(gpt55?.contextLength).toBeUndefined();
+    expect(variantOf(gpt55, 'gpt-5.5-high')?.contextLength).toBe(1_000_000);
+    expect(variantOf(gpt55, 'gpt-5.5-high-fast')?.contextLength).toBeUndefined();
+
+    const composer = fixtureFamily('composer-2.5');
+    expect(composer?.contextLength).toBeUndefined();
+    expect(composer?.variants?.every((variant) => variant.contextLength === undefined)).toBe(true);
+  });
+
+  it('moves the (NO ZDR) flag out of the family name and into the vendor tag', () => {
+    const fable = fixtureFamily('claude-fable-5');
+    expect(fable?.displayName).toBe('Claude Fable 5');
+    expect(fable?.displayName).not.toContain('(');
+    expect(fable?.vendorTag).toBe('no ZDR');
+    expect(fixtureFamily('claude-opus-5')?.vendorTag).toBeUndefined();
+  });
+
+  it('saves the bare family id unless a persisted or custom spelling names a member', () => {
+    expect(fixtureFamily('gpt-5.3-codex')?.id).toBe('gpt-5.3-codex');
+    expect(fixtureFamily('gpt-5.3-codex', { persistedModel: 'gpt-5.3-codex-xhigh' })?.id).toBe(
+      'gpt-5.3-codex-xhigh',
+    );
+    expect(fixtureFamily('gpt-5.3-codex', { customModels: ['gpt-5.3-codex-high'] })?.id).toBe(
+      'gpt-5.3-codex-high',
+    );
+  });
+
+  it('lets an engine-supplied context length outrank the word in the display name', () => {
+    const engine = mergeOptionFamilies([
+      { id: 'acme-1-high', displayName: 'Acme 1 1M High', contextLength: 200_000 },
+      { id: 'acme-1-low', displayName: 'Acme 1 1M Low', contextLength: 200_000 },
+    ]);
+    expect(engine[0]?.contextLength).toBe(200_000);
+
+    const display = mergeOptionFamilies([
+      { id: 'acme-1-high', displayName: 'Acme 1 1M High' },
+      { id: 'acme-1-low', displayName: 'Acme 1 1M Low' },
+    ]);
+    expect(display[0]?.contextLength).toBe(1_000_000);
   });
 });

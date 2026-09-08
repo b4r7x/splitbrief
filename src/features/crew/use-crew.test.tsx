@@ -10,7 +10,7 @@ import { useCrew } from './use-crew.js';
 
 function CrewProbe() {
   const crew = useCrew();
-  const seats = crew.rows.flatMap((row) => (row.kind === 'seat' ? [row] : []));
+  const seats = crew.rows;
   const review = seats.find((row) => row.id === 'review');
   const source = review !== undefined && 'source' in review.seat ? review.seat.source : 'missing';
 

@@ -4,29 +4,13 @@ import { reportConfigSaveFailure } from '../../../stores/project/save-feedback.j
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import type { SettingDef } from '../../../core/settings/catalog.js';
 import { matchesFilter } from '../presentation.js';
-import { settingsItemDescription, type SettingsItem } from '../items.js';
+import type { SettingsItem } from '../items.js';
 import { getConfigValue, applyEdits } from '../../../core/config/accessors/values.js';
-import {
-  readActiveRunner,
-  updateActiveRunner,
-} from '../../../core/config/accessors/active-runner.js';
-import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
-import { seatEffortChannel } from '../../../core/runners/capabilities.js';
-import { opencodeVariantChoices } from '../../../core/runners/variant-vocabulary.js';
-import type { CrewSeatId } from '../../../core/crew/identity.js';
 import { configError } from '../../../core/config/errors.js';
 import { useFilterableList, type PageSize } from '../../../hooks/use-filterable-list.js';
 import { useEditBuffer } from './buffer.js';
 import type { Config } from '../../../core/schemas/config.js';
-import { PlannerConfigSchema, type PlannerConfig } from '../../../core/schemas/planner-config.js';
-import {
-  ImplementerConfigSchema,
-  type ImplementerConfig,
-} from '../../../core/schemas/implementer-config.js';
-import type { EffortLevel, ProviderId } from '../../../core/schemas/enums.js';
-import { TOOL_EFFORT_LADDERS } from '../../../core/providers/known-models.js';
 import { isTextEntryInput } from '../../../lib/terminal/text-entry.js';
-import { assertNever } from '../../../utils/type-guards.js';
 
 export type CrewSettingsItem = Extract<SettingsItem, { kind: 'crew' }>;
 
@@ -52,32 +36,11 @@ interface SettingsEditorState {
   activate: (index: number) => void;
 }
 
-/**
- * A seat can have a channel and still hold no ladder here: kilo and the id-spelled tools
- * publish their levels per model, and only the picker reads that. The row keeps its value and
- * points at the one place that can move it — without promising the current model offers levels,
- * because this hook cannot see the per-model ladder and some models publish none.
- */
-const EFFORT_SET_WITH_THE_MODEL =
-  "This seat's effort travels with its model — pick a model that offers levels in the seat picker (⏎ on the seat).";
-
-/** Enter is advertised only on the rows where it does something. */
+/** Enter is advertised on every row: a crew row opens its seat's picker. */
 export function hintFor(item: SettingsItem): string {
-  if (item.kind === 'setting') {
-    const kind = item.def.kind;
-    return kind === 'string' || kind === 'number' ? '⏎ edit' : 'space toggle';
-  }
-  switch (item.row.kind) {
-    case 'seat':
-      return '⏎ change seat';
-    case 'effort':
-      if (item.row.inherited || !item.row.deliverable || !item.row.editable) {
-        return '';
-      }
-      return 'space cycle';
-    default:
-      return assertNever(item.row);
-  }
+  if (item.kind === 'crew') return '⏎ change seat';
+  const kind = item.def.kind;
+  return kind === 'string' || kind === 'number' ? '⏎ edit' : 'space toggle';
 }
 
 function getCurrentConfig(): Config {
@@ -86,81 +49,8 @@ function getCurrentConfig(): Config {
   return current;
 }
 
-// The offer is the tool's own documented ladder, not a list of ours: `claude --effort`
-// takes low…max, `cmd --effort` documents low/medium/high. Unset heads the cycle so a
-// level can always be taken back.
-function nextEffort(tool: ProviderId, current: EffortLevel | undefined): EffortLevel | undefined {
-  const cycle: readonly (EffortLevel | undefined)[] = [
-    undefined,
-    ...(TOOL_EFFORT_LADDERS[tool]?.levels ?? []),
-  ];
-  return cycle[(cycle.indexOf(current) + 1) % cycle.length];
-}
-
-function nextVariant(choices: readonly string[], current: string | undefined): string | undefined {
-  const cycle: readonly (string | undefined)[] = [undefined, ...choices];
-  return cycle[(cycle.indexOf(current) + 1) % cycle.length];
-}
-
-/** An unset effort must leave no key behind, so the cleared shape is re-parsed rather than widened. */
-function runnerWithEffort<T extends PlannerConfig | ImplementerConfig>(
-  existing: T,
-  effort: EffortLevel | undefined,
-): unknown {
-  if (effort !== undefined) return { ...existing, effort };
-  const { effort: _cleared, ...rest } = existing;
-  return rest;
-}
-
-function runnerWithVariant<T extends PlannerConfig | ImplementerConfig>(
-  existing: T,
-  variant: string | undefined,
-): unknown {
-  if (variant !== undefined) return { ...existing, variant };
-  const { variant: _cleared, ...rest } = existing;
-  return rest;
-}
-
-function configWithSeatEffort(
-  input: Readonly<{ config: Config; seatId: CrewSeatId; effort: EffortLevel | undefined }>,
-): Config {
-  const role = CREW_SEAT_ROLES[input.seatId];
-  if (role === 'implementer') {
-    return updateActiveRunner({
-      config: input.config,
-      role,
-      updater: (existing) =>
-        ImplementerConfigSchema.parse(runnerWithEffort(existing, input.effort)),
-    });
-  }
-  return updateActiveRunner({
-    config: input.config,
-    role,
-    updater: (existing) => PlannerConfigSchema.parse(runnerWithEffort(existing, input.effort)),
-  });
-}
-
-function configWithSeatVariant(
-  input: Readonly<{ config: Config; seatId: CrewSeatId; variant: string | undefined }>,
-): Config {
-  const role = CREW_SEAT_ROLES[input.seatId];
-  if (role === 'implementer') {
-    return updateActiveRunner({
-      config: input.config,
-      role,
-      updater: (existing) =>
-        ImplementerConfigSchema.parse(runnerWithVariant(existing, input.variant)),
-    });
-  }
-  return updateActiveRunner({
-    config: input.config,
-    role,
-    updater: (existing) => PlannerConfigSchema.parse(runnerWithVariant(existing, input.variant)),
-  });
-}
-
 function cyclesInPlace(item: SettingsItem): boolean {
-  if (item.kind === 'crew') return item.row.kind === 'effort';
+  if (item.kind === 'crew') return false;
   return item.def.kind === 'boolean' || item.def.kind === 'enum';
 }
 
@@ -219,53 +109,8 @@ export function useSettingsEditor({
     });
   };
 
-  const cycleEffort = (seatId: CrewSeatId) => {
-    enqueueSave(async () => {
-      const current = getCurrentConfig();
-      const role = CREW_SEAT_ROLES[seatId];
-      const runner = readActiveRunner({ config: current, role });
-      const channel = seatEffortChannel({ runner, role });
-      if (channel === 'effort-flag') {
-        if (runner.kind !== 'cli') return;
-        await persist(
-          configWithSeatEffort({
-            config: current,
-            seatId,
-            effort: nextEffort(runner.tool, runner.effort),
-          }),
-        );
-        return;
-      }
-      if (channel !== 'variant') return;
-      const choices = opencodeVariantChoices(runner);
-      if (choices.length === 0) return;
-      await persist(
-        configWithSeatVariant({
-          config: current,
-          seatId,
-          variant: nextVariant(choices, runner.variant),
-        }),
-      );
-    });
-  };
-
   const runItemAction = (item: SettingsItem) => {
-    if (item.kind === 'setting') {
-      toggleSetting(item.def);
-      return;
-    }
-    const row = item.row;
-    if (row.kind !== 'effort') return;
-    if (row.inherited) {
-      feedbackStore.setMessage(settingsItemDescription({ item, config }));
-      return;
-    }
-    if (!row.deliverable) return;
-    if (!row.editable) {
-      feedbackStore.setMessage(EFFORT_SET_WITH_THE_MODEL);
-      return;
-    }
-    cycleEffort(row.seatId);
+    if (item.kind === 'setting') toggleSetting(item.def);
   };
 
   const runSelect = (item: SettingsItem) => {

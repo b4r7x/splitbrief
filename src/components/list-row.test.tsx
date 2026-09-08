@@ -244,6 +244,86 @@ describe('ListRow', () => {
     expect(frame).not.toContain('\x1b[31m');
     expect(frame.split('\n')).toHaveLength(1);
   });
+
+  it('keeps the same frame length when a tree lead is paid for from the label budget', () => {
+    const withoutTree = stripAnsiStyles(
+      frameOf(<ListRow label="effort" selected={false} trailing={' '} width={40} />, 40).split(
+        '\n',
+      )[0] ?? '',
+    );
+    const withTree = stripAnsiStyles(
+      frameOf(
+        <ListRow label="effort" treeLead="├─ " selected={false} trailing={' '} width={40} />,
+        40,
+      ).split('\n')[0] ?? '',
+    );
+
+    expect(withTree.length).toBe(withoutTree.length);
+    expect(withoutTree.endsWith('  ')).toBe(true);
+    expect(withTree.endsWith('  ')).toBe(true);
+  });
+
+  it('draws the tree lead between the gutter and the label', () => {
+    const frame = stripAnsiStyles(
+      frameOf(<ListRow label="effort" treeLead="AB " width={40} />, 40).split('\n')[0] ?? '',
+    );
+
+    expect(frame).toContain('AB ');
+    expect(frame.indexOf('effort')).toBeGreaterThan(frame.indexOf('AB'));
+  });
+
+  it('truncates long metadata instead of overflowing when a tree lead is present', () => {
+    const line = stripAnsiStyles(
+      frameOf(
+        <ListRow
+          label="effort"
+          treeLead="│  ├─ "
+          metadata="a very long description that cannot possibly fit on one short row"
+          width={24}
+        />,
+        24,
+      ).split('\n')[0] ?? '',
+    );
+
+    expect(line.length).toBeLessThanOrEqual(24);
+    expect(line).toContain('…');
+  });
+
+  it('keeps a tree row metadata visible at a 21-cell width', () => {
+    const withTree = stripAnsiStyles(
+      frameOf(
+        <ListRow
+          label="effort"
+          treeLead="│  ├─ "
+          metadata="high"
+          selected={false}
+          trailing={' '}
+          width={21}
+        />,
+        21,
+      ).split('\n')[0] ?? '',
+    );
+    const withoutTree = stripAnsiStyles(
+      frameOf(
+        <ListRow label="effort" metadata="high" selected={false} trailing={' '} width={21} />,
+        21,
+      ).split('\n')[0] ?? '',
+    );
+
+    expect(withTree).toContain('h');
+    expect(withoutTree).toContain('high');
+  });
+
+  it('does not change cell text when metadataColor is set', () => {
+    const withoutColor = stripAnsiStyles(
+      frameOf(<ListRow label="tool" metadata="warn" width={40} />, 40),
+    );
+    const withColor = stripAnsiStyles(
+      frameOf(<ListRow label="tool" metadata="warn" metadataColor="#ffcc00" width={40} />, 40),
+    );
+
+    expect(withColor).toBe(withoutColor);
+  });
 });
 
 describe('ListGroupHeader', () => {

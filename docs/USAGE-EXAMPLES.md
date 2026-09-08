@@ -1637,8 +1637,8 @@ Captured on the workflow screen. Start typing to fuzzy-filter the list. Enter on
 - The palette is disabled while another overlay (help, settings, skills) is active.
 - Commands whose `validScreens` excludes your current screen are hidden from the list.
 - With an empty query the rows are grouped under the five command categories — `Navigate`, `Crew`, `Workflow`, `View`, `Input & output`. The headers collapse when the panel has fewer than 12 list slots (60x18), and the panel itself grows with the terminal instead of sitting at a fixed width.
-- `/crew [plan|build|review]` opens Settings on the Crew section with that seat focused (no argument means `plan`); the seat's tool, model and effort are all changed from there. The old per-seat names survive one release as alias rows: `/planner` → `/crew plan`, `/implementer` → `/crew build`, `/reviewer` → `/crew review`.
-- Effort is no longer its own command — it is a row on the seat inside Crew, and it appears only for a seat whose tool and model can deliver it. Which backends those are: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [CONFIGURATION.md](./CONFIGURATION.md).
+- `/crew` opens Settings on the Crew section with `plan` focused; `/crew plan`, `/crew build` and `/crew review` skip Settings and open that seat's picker; the seat's tool and model are changed from there, and its effort travels with the model. The old per-seat names survive one release as alias rows: `/planner` → `/crew plan`, `/implementer` → `/crew build`, `/reviewer` → `/crew review`.
+- Effort is no longer its own command — it is chosen with the model in the seat picker, and the crew row mirrors it read-only. Which backends can spend a level: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [CONFIGURATION.md](./CONFIGURATION.md).
 - `Ctrl+K` is handled by `src/app/keys.ts`.
 
 **See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).

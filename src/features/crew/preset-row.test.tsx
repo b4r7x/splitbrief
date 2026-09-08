@@ -36,7 +36,7 @@ async function lineFor(width: number, cols: number, isCursor = true): Promise<st
 
 describe('crew preset row', () => {
   it('renders the whole description when the panel has room for it', async () => {
-    // Setup at 120x40: inner 102 − label column 4 − label 25 − gap 2 = 71 cells for 70 characters.
+    // Setup at 120x40: inner 102 − label column 2 − label 25 − gap 2 = 73 cells for 70 characters.
     expect(getTerminalCellWidth(DESCRIPTION)).toBe(70);
 
     const line = await lineFor(102, 120);

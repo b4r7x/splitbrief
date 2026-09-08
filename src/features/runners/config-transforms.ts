@@ -5,7 +5,6 @@ import {
   type ImplementerConfig,
 } from '../../core/schemas/implementer-config.js';
 import { SOFT_SEP } from '../../components/separators.js';
-import { opencodeVariantChoices } from '../../core/runners/variant-vocabulary.js';
 import { buildRunnerConfig } from '../../core/config/runtime/build-runner.js';
 import { updateActiveRunner } from '../../core/config/accessors/active-runner.js';
 import {
@@ -36,12 +35,8 @@ export function inheritsPlannerSeat(config: Config, role: SeatPickerRole): boole
   return seatPickerLane(role) === 'reviewer' && resolveReviewerRunner(config).source === 'planner';
 }
 
-/**
- * A seat commit reports the effort level it had to drop, because nothing else
- * can, and the variant it kept, so the save line names what was saved rather
- * than what was asked for.
- */
-export type SeatCommitResult = Readonly<{ config: Config; notice?: string; variant?: string }>;
+/** A seat commit reports the effort level it had to drop, because nothing else can, and the axis value it kept — whichever field that landed in — so the save line names what was saved rather than what was asked for. */
+export type SeatCommitResult = Readonly<{ config: Config; notice?: string; effort?: string }>;
 
 function effortClearedNotice(effort: string, runner: PlannerConfig | ImplementerConfig): string {
   return `Effort ${effort} cleared: ${getRunnerCatalogDisplayName(runner)} has no effort channel`;
@@ -68,26 +63,32 @@ function effortUnknownNotice(effort: string, model: string): string {
 function draftedLevel(
   next: PlannerConfig | ImplementerConfig,
   role: ActiveRunnerRole,
-  level: string | undefined,
-): Readonly<{ effort?: string; variant?: string }> {
+  level: string | null | undefined,
+): Readonly<{ effort?: string | null; variant?: string | null }> {
   if (level === undefined) return {};
   return seatEffortChannel({ runner: next, role }) === 'effort-flag'
     ? { effort: level }
     : { variant: level };
 }
 
-/**
- * The tool publishes its own levels as an example rather than an accept-list, so on
- * this seat no supplied ladder rejects the level the seat carries.
- */
-function ladderIsOpen(runner: PlannerConfig | ImplementerConfig): boolean {
-  return runner.kind === 'cli' && TOOL_EFFORT_LADDERS[runner.tool]?.exhaustive === false;
+/** A tool that publishes its levels as an example rather than an accept-list may be handed its own floor back: that list orders the offer and must not reject what the seat carries. A real per-model ladder from the same tool is authoritative and does reject. */
+function ladderIsOpen(
+  runner: PlannerConfig | ImplementerConfig,
+  choices: readonly string[] | undefined,
+): boolean {
+  if (runner.kind !== 'cli' || choices === undefined) return false;
+  const toolLadder = TOOL_EFFORT_LADDERS[runner.tool];
+  if (toolLadder?.exhaustive !== false) return false;
+  return (
+    choices.length === toolLadder.levels.length &&
+    choices.every((choice) => includes(toolLadder.levels, choice))
+  );
 }
 
 function decideEffort<T extends PlannerConfig | ImplementerConfig>(
   input: Readonly<{
     next: T;
-    requested: string | undefined;
+    requested: string | null | undefined;
     carried: EffortLevel | undefined;
     effortChoices: readonly string[] | undefined;
     role: ActiveRunnerRole;
@@ -95,6 +96,10 @@ function decideEffort<T extends PlannerConfig | ImplementerConfig>(
   }>,
 ): Readonly<{ runner: T; notice?: string }> {
   const { next, role, parse } = input;
+  if (input.requested === null) {
+    const { effort: _effort, ...rest } = next;
+    return { runner: parse(rest) };
+  }
   const effort = input.requested ?? next.effort ?? input.carried;
   if (effort === undefined) return { runner: next };
   if (seatEffortChannel({ runner: next, role }) === 'effort-flag') {
@@ -102,7 +107,7 @@ function decideEffort<T extends PlannerConfig | ImplementerConfig>(
     // the schema cannot spell — a tool may publish one — is outside every ladder there is.
     if (
       !includes(EFFORT_LEVELS, effort) ||
-      (!ladderIsOpen(next) &&
+      (!ladderIsOpen(next, input.effortChoices) &&
         input.effortChoices !== undefined &&
         !input.effortChoices.includes(effort))
     ) {
@@ -121,7 +126,7 @@ function decideEffort<T extends PlannerConfig | ImplementerConfig>(
 function decideVariant<T extends PlannerConfig | ImplementerConfig>(
   input: Readonly<{
     next: T;
-    requested: string | undefined;
+    requested: string | null | undefined;
     carried: string | undefined;
     carriedModel: string | undefined;
     effortChoices: readonly string[] | undefined;
@@ -130,6 +135,10 @@ function decideVariant<T extends PlannerConfig | ImplementerConfig>(
   }>,
 ): Readonly<{ runner: T; notice?: string }> {
   const { next, requested, role, parse } = input;
+  if (requested === null) {
+    const { variant: _variant, ...rest } = next;
+    return { runner: parse(rest) };
+  }
   const variant = requested ?? next.variant ?? input.carried;
   if (variant === undefined) return { runner: next };
   if (seatEffortChannel({ runner: next, role }) !== 'variant') {
@@ -141,16 +150,8 @@ function decideVariant<T extends PlannerConfig | ImplementerConfig>(
   // name, and an unchanged model, keep whatever the seat already spelled.
   // No open ladder reaches here: the open ones are command-code's and codex's, and both spend
   // their effort on a flag, never on a variant.
-  //
-  // The ladder is the caller's when it supplies one, and opencode's own vocabulary otherwise.
-  // That fallback is load-bearing today: no production call site passes `effortChoices` yet, so
-  // without it this guard never fires and a carried preset the new model does not spell is
-  // written to config and handed to `opencode run --variant <name>`. It is scoped to opencode
-  // because `opencodeVariantChoices` returns `[]` for every other tool by design — kilo publishes
-  // its presets per model — and an empty list here would drop a kilo seat's variant on every
-  // model change. Sprint 27 deletes `variant-vocabulary.ts` (D-3); by then the callers must
-  // supply the ladder.
-  const knownChoices = input.effortChoices ?? opencodeVariantChoices(next);
+  // The ladder is the caller's; an unknown or empty one answers nothing and keeps the variant.
+  const knownChoices = input.effortChoices ?? [];
   if (
     requested === undefined &&
     next.model !== input.carriedModel &&
@@ -177,8 +178,8 @@ export interface PlannerTierSelectionInput {
   role: PlannerTierRole;
   selection: RunnerPickerOption;
   model: { id: string } | null;
-  /** The level the picker drafted; the seat channel picks the field that spends it. */
-  variant?: string | undefined;
+  /** The level the picker drafted: a token to save, null to clear, absent to leave alone. */
+  effort?: string | null | undefined;
   /** The chosen model's own effort ladder. Absent means unknown — never a reason to clear. */
   effortChoices?: readonly string[] | undefined;
 }
@@ -194,7 +195,7 @@ export function commitPlannerTierSelection(input: PlannerTierSelectionInput): Se
       ...(input.model !== null && { model: input.model.id }),
       existing,
     });
-    const drafted = draftedLevel(next, input.role, input.variant);
+    const drafted = draftedLevel(next, input.role, input.effort);
     const effort = decideEffort({
       next,
       requested: drafted.effort,
@@ -213,13 +214,13 @@ export function commitPlannerTierSelection(input: PlannerTierSelectionInput): Se
       parse,
     });
     notice = joinNotices(effort.notice, variant.notice);
-    kept = variant.runner.variant;
+    kept = variant.runner.variant ?? variant.runner.effort;
     return variant.runner;
   });
   return {
     config,
     ...(notice !== undefined && { notice }),
-    ...(kept !== undefined && { variant: kept }),
+    ...(kept !== undefined && { effort: kept }),
   };
 }
 
@@ -227,8 +228,8 @@ export interface ImplementerSelectionInput {
   config: Config;
   selection: RunnerPickerOption;
   model: { id: string } | null;
-  /** The level the picker drafted; the seat channel picks the field that spends it. */
-  variant?: string | undefined;
+  /** The level the picker drafted: a token to save, null to clear, absent to leave alone. */
+  effort?: string | null | undefined;
   /** The chosen model's own effort ladder. Absent means unknown — never a reason to clear. */
   effortChoices?: readonly string[] | undefined;
 }
@@ -244,7 +245,7 @@ export function commitImplementerSelection(input: ImplementerSelectionInput): Se
       ...(input.model !== null && { model: input.model.id }),
       existing,
     });
-    const drafted = draftedLevel(next, 'implementer', input.variant);
+    const drafted = draftedLevel(next, 'implementer', input.effort);
     const effort = decideEffort({
       next,
       requested: drafted.effort,
@@ -263,13 +264,13 @@ export function commitImplementerSelection(input: ImplementerSelectionInput): Se
       parse,
     });
     notice = joinNotices(effort.notice, variant.notice);
-    kept = variant.runner.variant;
+    kept = variant.runner.variant ?? variant.runner.effort;
     return variant.runner;
   });
   return {
     config: updated,
     ...(notice !== undefined && { notice }),
-    ...(kept !== undefined && { variant: kept }),
+    ...(kept !== undefined && { effort: kept }),
   };
 }
 

@@ -6,7 +6,7 @@ export type ModelRecommendation = 'recommended' | 'compatible-only';
  * The models.dev vendor whose catalog row carries a bundled model's pricing and
  * limits. A catalog identity only — never a runner the user can configure.
  */
-export type CatalogVendorId = 'anthropic' | 'openai' | 'openrouter';
+export type CatalogVendorId = 'anthropic' | 'openai' | 'openrouter' | 'github-copilot';
 
 export interface KnownModel {
   name: string;
@@ -211,18 +211,21 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
     }),
   ],
   copilot: [
+    // Both rows keep their window: bundledMinimumWindow (context-window.ts) floors an
+    // offline `auto` seat on these numbers.
     compatibleModel({
       name: 'claude-opus-5',
       contextLength: 1_000_000,
-      catalogProvider: 'anthropic',
+      catalogProvider: 'github-copilot',
       catalogModelId: 'claude-opus-5',
-      provenance: 'Minimal bundled fallback (2026-08)',
+      provenance: 'Offline floor for the copilot help config listing (2026-09-02)',
     }),
     compatibleModel({
       name: 'gpt-5.6-sol',
-      contextLength: 272_000,
-      catalogProvider: 'openai',
-      provenance: 'Minimal bundled fallback (2026-08)',
+      contextLength: 1_050_000,
+      catalogProvider: 'github-copilot',
+      catalogModelId: 'gpt-5.6-sol',
+      provenance: 'Offline floor for the copilot help config listing (2026-09-02)',
     }),
   ],
   ollama: [

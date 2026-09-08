@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
 import type { Section } from '../../../core/sections/event-sections.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
@@ -122,7 +123,7 @@ describe('buildConversationRows', () => {
     const text = rows.map(rowText).join('\n');
 
     expect(renderableCount).toBe(3);
-    expect(text).toContain(`Plan activity  3 updates  [${CODEX_LABEL}]`);
+    expect(text).toContain(`${CREW_SEAT_LABELS.plan} activity  3 updates  [${CODEX_LABEL}]`);
     expect(text).not.toContain('sed -n');
     expect(text).toContain(activityLine('READ', 'CLAUDE.md :1-240'));
     expect(text).toContain(activityLine('RUN', 'wc -l CLAUDE.md'));
@@ -178,7 +179,7 @@ describe('buildConversationRows', () => {
     const text = rows.map(rowText).join('\n');
 
     expect(renderableCount).toBe(2);
-    expect(text).toContain(`Plan activity  2 updates  [${CODEX_LABEL}]`);
+    expect(text).toContain(`${CREW_SEAT_LABELS.plan} activity  2 updates  [${CODEX_LABEL}]`);
     expect(text.match(/npm run typecheck/g)).toHaveLength(1);
     expect(text).toContain(activityLine('READ', 'src/app.ts'));
     expect(text).not.toContain('+  ');
@@ -209,7 +210,7 @@ describe('buildConversationRows', () => {
     const text = rows.map(rowText).join('\n');
 
     expect(renderableCount).toBe(4);
-    expect(text).toContain(`Plan activity  4 updates  [${CODEX_LABEL}]`);
+    expect(text).toContain(`${CREW_SEAT_LABELS.plan} activity  4 updates  [${CODEX_LABEL}]`);
     expect(text).not.toContain('a.ts');
     expect(text).toContain('b.ts');
     expect(text).toContain('c.ts');
@@ -264,7 +265,9 @@ describe('buildConversationRows', () => {
     });
     const text = rows.map(rowText).join('\n');
 
-    expect(text).toContain(`Plan activity  5 updates  1 warn  [${CODEX_LABEL}]`);
+    expect(text).toContain(
+      `${CREW_SEAT_LABELS.plan} activity  5 updates  1 warn  [${CODEX_LABEL}]`,
+    );
     expect(text).toContain(activityLine('WARN', 'stderr'));
     expect(text).toContain(activityLine('READ', 'c.ts'));
     expect(text).toContain(activityLine('READ', 'd.ts'));
@@ -311,9 +314,9 @@ describe('buildConversationRows', () => {
     const text = rows.map(rowText).join('\n');
 
     expect(text).toContain('runner ***REDACTED***');
-    expect(text).toContain('model sk-***REDACTED***');
+    expect(text).toContain('Model sk ***REDACTED***');
     expect(text).not.toContain('eyJhbGci');
-    expect(text).not.toContain('abcdefghijklmnopqrstuvwxyz');
+    expect(text.toLowerCase()).not.toContain('abcdefghijklmnopqrstuvwxyz');
   });
 
   it('renders user interruption as warning copy without internal runner codes', () => {
@@ -418,8 +421,8 @@ describe('buildConversationRows', () => {
     const text = rows.map(rowText).join('\n');
 
     expect(renderableCount).toBe(4);
-    expect(text.match(/Plan activity/g)).toHaveLength(1);
-    expect(text).toContain(`Plan activity  4 updates  [${CODEX_LABEL}]`);
+    expect(text.match(new RegExp(`${CREW_SEAT_LABELS.plan} activity`, 'g'))).toHaveLength(1);
+    expect(text).toContain(`${CREW_SEAT_LABELS.plan} activity  4 updates  [${CODEX_LABEL}]`);
     expect(text).not.toContain('a.ts');
     expect(text).toContain('b.ts');
     expect(text).toContain('c.ts');
@@ -455,7 +458,7 @@ describe('buildConversationRows', () => {
     });
     const text = rows.map(rowText).join('\n');
 
-    expect(text.match(/Plan activity/g)).toHaveLength(2);
+    expect(text.match(new RegExp(`${CREW_SEAT_LABELS.plan} activity`, 'g'))).toHaveLength(2);
     expect(text).toContain('Status update.');
     expect(text).not.toContain('a.ts');
     expect(text).toContain('d.ts');
@@ -531,8 +534,8 @@ describe('buildConversationRows', () => {
     });
     const singleText = single.rows.map(rowText).join('\n');
 
-    expect(singleText.match(/Plan activity/g)).toHaveLength(1);
-    expect(singleText).toContain(`Plan activity  8 updates  [${CODEX_LABEL}]`);
+    expect(singleText.match(new RegExp(`${CREW_SEAT_LABELS.plan} activity`, 'g'))).toHaveLength(1);
+    expect(singleText).toContain(`${CREW_SEAT_LABELS.plan} activity  8 updates  [${CODEX_LABEL}]`);
     expect(single.renderableCount).toBe(8);
 
     const continued: EngineEvent[] = [
@@ -564,7 +567,7 @@ describe('buildConversationRows', () => {
     const resumedText = resumed.rows.map(rowText).join('\n');
 
     expect(resumedText).toContain('Draft plan ready.');
-    expect(resumedText.match(/Plan activity/g)).toHaveLength(3);
+    expect(resumedText.match(new RegExp(`${CREW_SEAT_LABELS.plan} activity`, 'g'))).toHaveLength(3);
   });
 
   it('planner and implementer calls coalesce identically', () => {
@@ -609,10 +612,14 @@ describe('buildConversationRows', () => {
     const plannerText = planner.rows.map(rowText).join('\n');
     const implementerText = implementer.rows.map(rowText).join('\n');
 
-    expect(plannerText.match(/Plan activity/g)).toHaveLength(1);
-    expect(implementerText.match(/Implementer activity/g)).toHaveLength(1);
-    expect(plannerText).toContain(`Plan activity  6 updates  [${CODEX_LABEL}]`);
-    expect(implementerText).toContain(`Implementer activity  6 updates  [${CLAUDE_CODE_LABEL}]`);
+    expect(plannerText.match(new RegExp(`${CREW_SEAT_LABELS.plan} activity`, 'g'))).toHaveLength(1);
+    expect(
+      implementerText.match(new RegExp(`${CREW_SEAT_LABELS.build} activity`, 'g')),
+    ).toHaveLength(1);
+    expect(plannerText).toContain(`${CREW_SEAT_LABELS.plan} activity  6 updates  [${CODEX_LABEL}]`);
+    expect(implementerText).toContain(
+      `${CREW_SEAT_LABELS.build} activity  6 updates  [${CLAUDE_CODE_LABEL}]`,
+    );
     expect(plannerText).toContain('+3 more');
     expect(implementerText).toContain('+3 more');
     expect(implementer.renderableCount).toBe(planner.renderableCount);
