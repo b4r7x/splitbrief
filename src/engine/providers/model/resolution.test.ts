@@ -109,18 +109,114 @@ describe('exact model resolution', () => {
     ]);
   });
 
-  it('keeps the configured selection byte-for-byte unless it is the exact auto sentinel', () => {
+  it('keeps the configured selection byte-for-byte unless it means automatic', () => {
     expect(getEffectiveModelId('claude-code', 'opus')).toBe('opus');
+    expect(getEffectiveModelId('claude-code', 'claude-fable-5-1[1m]')).toBe('claude-fable-5-1[1m]');
     expect(getEffectiveModelId('ollama', '  qwen3-coder:30b  ')).toBe('  qwen3-coder:30b  ');
-    expect(getEffectiveModelId('ollama', 'AUTO')).toBe('AUTO');
     expect(getEffectiveModelId('ollama', 'auto')).toBe('qwen3-coder:30b');
     expect(getEffectiveModelId('ollama', '   ')).toBe('qwen3-coder:30b');
+    // "Means automatic" is `normalizeConfiguredModel`'s answer, the same one the catalog lane and
+    // the crew identity use — case-insensitive, and provider-aware for claude-code's legacy
+    // `default`. This cascade used to compare the sentinel exactly and provider-blind, which left a
+    // seat still carrying `default` resolving to a model literally named `default`: with the
+    // `default` row deleted it then had no context window at all and budgeted at the 32,768
+    // fallback while an identical `auto` seat got its real window (REQ-D09).
+    expect(getEffectiveModelId('ollama', 'AUTO')).toBe('qwen3-coder:30b');
+    expect(getEffectiveModelId('claude-code', 'default')).toBe(
+      getEffectiveModelId('claude-code', 'auto'),
+    );
   });
 
   it('uses runner aliases as explicit metadata relationships without rewriting the alias', () => {
     expect(findKnownModel('claude-code', 'opus')?.catalogModelId).toBe('claude-opus-5');
     expect(findKnownModel('claude-code', 'OPUS')).toBeUndefined();
     expect(getEffectiveModelId('claude-code', 'opus')).toBe('opus');
+  });
+
+  // SPEC-D7: only the models.dev lookup reads through a `[1m]` window suffix. `findKnownModel` is
+  // a `.find` over aliases declared plain-first, so a suffix-blind comparator here would answer
+  // `opus[1m]` with the `opus` row and hide the 1M sibling's own facts. Extend the list when the
+  // claude-alias sprint adds `fable[1m]`.
+  it.each(['opus', 'opus[1m]', 'sonnet', 'sonnet[1m]'])(
+    'answers the claude-code alias %s with the bundled row of that exact name',
+    (alias) => {
+      expect(findKnownModel('claude-code', alias)?.name).toBe(alias);
+    },
+  );
+
+  it('resolves a window-suffixed selection onto the models.dev row it strips to', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        anthropic: {
+          id: 'anthropic',
+          models: {
+            'claude-fable-5-1': {
+              id: 'claude-fable-5-1',
+              name: 'Claude Fable 5.1',
+              limit: { context: 1_000_000 },
+              release_date: '2026-09-01',
+            },
+          },
+        },
+      },
+    });
+
+    expect(
+      resolveExactModelsDevModel({
+        providerId: 'claude-code',
+        selectionId: 'claude-fable-5-1[1m]',
+        cache,
+      }),
+    ).toMatchObject({
+      kind: 'found',
+      model: { id: 'claude-fable-5-1', contextLength: 1_000_000, releaseDate: '2026-09-01' },
+    });
+    expect(
+      resolveExactModelsDevModel({
+        providerId: 'claude-code',
+        selectionId: 'claude-fable-5[1m]',
+        cache,
+      }),
+    ).toEqual({ kind: 'not-found' });
+  });
+
+  // This lookup feeds `resolveRunnerContextWindow` and the escalation budget, so the window it
+  // reports must stay sourceable — it is the matched models.dev row's own published number.
+  // Nothing here may synthesise a window from the suffix string.
+  it('reports the matched models.dev window for a suffixed selection, never a synthesised one', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        anthropic: {
+          id: 'anthropic',
+          models: {
+            'claude-haiku-4-5': {
+              id: 'claude-haiku-4-5',
+              name: 'Claude Haiku 4.5',
+              limit: { context: 200_000 },
+              release_date: '2025-10-01',
+            },
+          },
+        },
+      },
+    });
+
+    expect(
+      resolveExactModelsDevModel({
+        providerId: 'claude-code',
+        selectionId: 'claude-haiku-4-5[1m]',
+        cache,
+      }),
+    ).toMatchObject({
+      kind: 'found',
+      model: { id: 'claude-haiku-4-5', contextLength: 200_000, releaseDate: '2025-10-01' },
+    });
+    expect(
+      resolveExactModelsDevModel({
+        providerId: 'claude-code',
+        selectionId: 'claude-haiku-4-5',
+        cache,
+      }),
+    ).toMatchObject({ kind: 'found', model: { contextLength: 200_000 } });
   });
 
   it('reports owner-ambiguous exact runtime IDs instead of choosing or normalizing one', () => {

@@ -568,17 +568,58 @@ describe('usePickerCatalog', () => {
 
     const ui = renderFeature(<AxisProbe />);
     await tick(20);
-    expect(ui.lastFrame()).toContain('effort=High,speed=Standard');
+    expect(ui.lastFrame()).toContain('effort=high,fast=off');
 
     pickerViewStore.setOptionDraftId('zeta-max-fast');
     await tick(20);
-    expect(ui.lastFrame()).toContain('effort=Max,speed=Fast');
+    expect(ui.lastFrame()).toContain('effort=max,fast=on');
+    ui.unmount();
+  });
+
+  it('raises no effort axis on an api seat, whose channel has no field to write one', async () => {
+    // The provider publishes a ladder, but an api seat drops the level on save, so
+    // offering one here would draft a value the commit cannot keep.
+    const zeta = [{ id: 'zeta', nativeReasoningEfforts: ['low', 'high'] }];
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        implementer: {
+          kind: 'api',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'zeta',
+        },
+      }),
+    });
+    detectionStore.setDetection({
+      cliTools: [],
+      providers: [{ provider: 'ollama', available: true, isLocal: true, models: zeta }],
+    });
+    modelCacheStore.setProviderModels('ollama', zeta);
+    pickerViewStore.expand('zeta');
+
+    function LadderProbe() {
+      const catalog = usePickerCatalog('implementer', 0, 'ollama');
+      return (
+        <Text>
+          {catalog.rightRows
+            .filter((row) => row.kind === 'axis')
+            .map((row) => row.axis)
+            .join(',') || 'no-axis-rows'}
+        </Text>
+      );
+    }
+
+    const ui = renderFeature(<LadderProbe />);
+    await tick(20);
+
+    expect(ui.lastFrame()).toContain('no-axis-rows');
     ui.unmount();
   });
 
   it('passes the drafted variant through to the row builder', async () => {
-    // The variant axis is synthetic: nothing in the model id spells it, so the
-    // store's draft is the only thing that can put a value on the row.
+    // The variant axis is synthetic: nothing in the model id spells it, so the model's
+    // own published ladder raises the row and the store's draft puts a value on it.
     const request = detectionStore.beginRefresh({
       contexts: { readiness: 'r', modelsDev: 'm', cliModels: 'c' },
     });
@@ -591,7 +632,10 @@ describe('usePickerCatalog', () => {
         cliModels: [
           {
             connection: { role: 'planner', tool: 'opencode', contextKey: 'c' },
-            outcome: { kind: 'success', value: [{ id: 'anthropic/claude-sonnet-4' }] },
+            outcome: {
+              kind: 'success',
+              value: [{ id: 'anthropic/claude-sonnet-4', nativeReasoningEfforts: ['high', 'max'] }],
+            },
           },
         ],
         generation: 1,
@@ -604,7 +648,7 @@ describe('usePickerCatalog', () => {
       const catalog = usePickerCatalog('planner', 0, 'opencode');
       variantRow = catalog.rightRows.find(
         (row): row is Extract<RightRow, { kind: 'axis' }> =>
-          row.kind === 'axis' && row.axis === 'variant',
+          row.kind === 'axis' && row.axis === 'effort',
       );
       return <Text>{catalog.variantDraft ?? 'none'}</Text>;
     }
@@ -613,12 +657,12 @@ describe('usePickerCatalog', () => {
     await tick(20);
 
     expect(ui.lastFrame()).toContain('max');
-    expect(variantRow).toMatchObject({ axis: 'variant', value: 'max' });
+    expect(variantRow).toMatchObject({ axis: 'effort', value: 'max' });
 
     pickerViewStore.setVariantDraft('high');
     await tick(20);
 
-    expect(variantRow).toMatchObject({ axis: 'variant', value: 'high' });
+    expect(variantRow).toMatchObject({ axis: 'effort', value: 'high' });
     ui.unmount();
   });
 

@@ -374,8 +374,8 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     category: 'cli',
     roles: ALL_ROLES,
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
-    supportsEffort: false,
-    effortChannel: 'none',
+    supportsEffort: true,
+    effortChannel: 'effort-flag',
     auth: authPolicy('api-key-or-session', [
       authChannel({
         id: 'session',
@@ -450,8 +450,8 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     category: 'cli',
     roles: ALL_ROLES,
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
-    supportsEffort: false,
-    effortChannel: 'none',
+    supportsEffort: true,
+    effortChannel: 'effort-flag',
     auth: authPolicy('session', [
       authChannel({
         id: 'session',
@@ -484,7 +484,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     roles: ALL_ROLES,
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: false,
-    effortChannel: 'none',
+    effortChannel: 'variant',
     auth: authPolicy('provider-dependent', [
       authChannel({
         id: 'provider-dependent',
@@ -681,8 +681,8 @@ const BASE_CLI_TOOL_TRUST = Object.freeze({
     tier2AutoAllowFlags: ['--force'],
   }),
   'command-code': cliToolTrust({
-    implementerAutoAllowFlags: ['--permission-mode auto-accept'],
-    tier2AutoAllowFlags: ['--permission-mode auto-accept'],
+    implementerAutoAllowFlags: ['--yolo'],
+    tier2AutoAllowFlags: ['--yolo'],
   }),
 } satisfies Record<CliToolId, CliToolTrustMetadata>);
 

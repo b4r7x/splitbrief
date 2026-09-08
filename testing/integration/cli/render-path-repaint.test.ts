@@ -84,13 +84,13 @@ vi.mock('fullscreen-ink', () => ({
 /** The terminal the frames are painted into; a `layoutRows` below it leaves a short frame. */
 const STDOUT_ROWS = 40;
 
-/** Effort × speed × thinking over one family, the shape an expanded picker row draws. */
+/** Effort × fast × thinking over one family, the shape an expanded picker row draws. */
 function optionFamilyFixture(): ModelOption {
   const [family, ...rest] = mergeOptionFamilies(
     ['high', 'medium'].flatMap((effort) =>
-      ['', '-fast'].flatMap((speed) =>
+      ['', '-fast'].flatMap((fast) =>
         ['', '-thinking'].map((thinking) => ({
-          id: `claude-sonnet-5-${effort}${speed}${thinking}`,
+          id: `claude-sonnet-5-${effort}${fast}${thinking}`,
           membership: 'confirmed' as const,
           contextLength: 200_000,
         })),
@@ -105,7 +105,7 @@ function optionFamilyFixture(): ModelOption {
 
 const FAMILY = optionFamilyFixture();
 const VARIANTS = FAMILY.variants ?? [];
-const CYCLES: readonly OptionAxisName[] = ['effort', 'thinking', 'speed'];
+const CYCLES: readonly OptionAxisName[] = ['effort', 'thinking', 'fast'];
 const FIRST_DRAFT = 'claude-sonnet-5-high';
 const LAST_DRAFT = CYCLES.reduce((draft, axis) => {
   const next = cycleOptionAxis(VARIANTS, draft, axis);
@@ -390,11 +390,7 @@ describe('render path repaint', () => {
   });
 
   it('cycles the fixture family across all three option axes', () => {
-    expect(optionAxesOf(VARIANTS).map((axis) => axis.axis)).toEqual([
-      'effort',
-      'speed',
-      'thinking',
-    ]);
+    expect(optionAxesOf(VARIANTS).map((axis) => axis.axis)).toEqual(['effort', 'fast', 'thinking']);
     expect(LAST_DRAFT).toBe('claude-sonnet-5-medium-fast-thinking');
   });
 

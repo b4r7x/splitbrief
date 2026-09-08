@@ -28,6 +28,37 @@ export function pointAt(points: Polyline, distance: number): Point {
   return last;
 }
 
+export function parsePath(d: string): Polyline {
+  const points: Point[] = [];
+  for (const [, x, y] of d.matchAll(/(-?\d*\.?\d+)[\s,]+(-?\d*\.?\d+)/g)) {
+    points.push({ x: Number(x), y: Number(y) });
+  }
+  const [first, ...rest] = points;
+  if (!first) throw new Error(`route path has no points: ${d}`);
+  return [first, ...rest];
+}
+
+function reversed(points: Polyline): Polyline {
+  const [first, ...rest] = points;
+  const [head, ...tail] = [...rest].reverse();
+  return head ? [head, ...tail, first] : points;
+}
+
+function pushedStart(points: Polyline, by: number): Polyline {
+  const [first, second, ...rest] = points;
+  if (!second) return points;
+  const step = Math.hypot(second.x - first.x, second.y - first.y);
+  const start = {
+    x: first.x - ((second.x - first.x) / step) * by,
+    y: first.y - ((second.y - first.y) / step) * by,
+  };
+  return [start, second, ...rest];
+}
+
+export function extend(points: Polyline, by: number): Polyline {
+  return reversed(pushedStart(reversed(pushedStart(points, by)), by));
+}
+
 export function offsetPath(points: Polyline): string {
   const moves = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`);
   return `path("${moves.join(' ')}")`;

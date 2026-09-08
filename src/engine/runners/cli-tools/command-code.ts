@@ -65,8 +65,7 @@ function plannerBaseArgs(input: CommandCodePlannerBuildInput): string[] {
     '--trust',
     '--skip-onboarding',
     '--no-auto-update',
-    '--permission-mode',
-    input.mode === 'plan' ? 'plan' : 'auto-accept',
+    ...(input.mode === 'plan' ? ['--permission-mode', 'plan'] : ['--yolo']),
     ...(input.model === undefined ? [] : ['-m', input.model]),
     ...(input.effort === undefined ? [] : ['--effort', input.effort]),
     input.prompt,
@@ -81,8 +80,10 @@ function implementerBaseArgs(input: CommandCodeImplementerBuildInput): string[] 
     '--trust',
     '--skip-onboarding',
     '--no-auto-update',
-    '--permission-mode',
-    'auto-accept',
+    // `--permission-mode auto-accept` still prompts for every write and shell call in
+    // `-p` mode (cmd 1.50.1 answers "requires permissions. Use --yolo"); `--yolo` is the
+    // headless write flag.
+    '--yolo',
     ...(input.model === undefined ? [] : ['-m', input.model]),
     ...(input.effort === undefined ? [] : ['--effort', input.effort]),
     input.prompt,
@@ -268,7 +269,7 @@ export type RawCommandCodeCliContract = Readonly<{
   rawInvocation: readonly string[];
   promptTransport: 'argv';
   expectedRawTerminal: 'result';
-  asOf: '2026-09-01';
+  asOf: '2026-09-08';
 }>;
 
 export type CommandCodeCliConformanceCandidate = Readonly<{
@@ -296,13 +297,12 @@ function commandCodeRawContract(role: 'planner' | 'implementer'): RawCommandCode
       '--trust',
       '--skip-onboarding',
       '--no-auto-update',
-      '--permission-mode',
-      role === 'planner' ? 'plan' : 'auto-accept',
+      ...(role === 'planner' ? ['--permission-mode', 'plan'] : ['--yolo']),
       CLI_PROMPT_SENTINEL,
     ],
     promptTransport: 'argv',
     expectedRawTerminal: 'result',
-    asOf: '2026-09-01',
+    asOf: '2026-09-08',
   };
 }
 

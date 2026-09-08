@@ -26,6 +26,7 @@ const KILO_PROTECTED_FLAGS = new Set([
   '--model',
   '--output-format',
   '--prompt',
+  '--variant',
   '-m',
   'plan',
   'run',
@@ -146,6 +147,7 @@ function plannerBaseArgs(input: KiloPlannerBuildInput): string[] {
   return [
     'run',
     ...(input.model === undefined ? [] : ['--model', input.model]),
+    ...(input.variant === undefined ? [] : ['--variant', input.variant]),
     '--format',
     'json',
     ...(input.mode === 'plan' ? ['--agent', 'plan'] : ['--agent', 'code', '--auto']),
@@ -157,6 +159,7 @@ function implementerBaseArgs(input: KiloImplementerBuildInput): string[] {
   return [
     'run',
     ...(input.model === undefined ? [] : ['--model', input.model]),
+    ...(input.variant === undefined ? [] : ['--variant', input.variant]),
     '--agent',
     'code',
     '--auto',

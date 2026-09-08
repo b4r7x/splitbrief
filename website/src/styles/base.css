@@ -135,6 +135,12 @@ canvas {
   outline-offset: 3px;
 }
 
+section > :is(.eyebrow, .claim) {
+  font-size: var(--text-label);
+  line-height: 1.45;
+  letter-spacing: 0.08em;
+}
+
 .dash::after {
   content: "";
   display: block;
@@ -145,14 +151,14 @@ canvas {
 }
 
 .rule {
+  width: min(var(--content-max), 100% - 2 * var(--gutter));
+  margin: 0 auto;
   border: 0;
   border-top: 1px solid var(--hair);
-  margin: 0;
 }
 
 .rule--short {
-  width: calc(100% / 12 * 8);
-  margin-inline: auto;
+  width: calc(min(var(--content-max), 100% - 2 * var(--gutter)) / 12 * 8 - var(--s-6) / 3);
 }
 
 .visually-hidden {

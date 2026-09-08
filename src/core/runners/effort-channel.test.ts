@@ -149,7 +149,7 @@ describe('runnerEffortChannel', () => {
     expect(runnerEffortChannel({ kind: 'cli', tool: 'claude-code' })).toBe('effort-flag');
     expect(runnerEffortChannel({ kind: 'cli', tool: 'opencode' })).toBe('variant');
     expect(runnerEffortChannel({ kind: 'cli', tool: 'cursor' })).toBe('model-id');
-    expect(runnerEffortChannel({ kind: 'cli', tool: 'codex' })).toBe('none');
+    expect(runnerEffortChannel({ kind: 'cli', tool: 'codex' })).toBe('effort-flag');
     expect(
       runnerEffortChannel({
         kind: 'api',
@@ -187,7 +187,15 @@ describe('seatAxisWords', () => {
 
   it('says nothing for a seat whose channel carries no effort, whatever the config holds', () => {
     expect(
-      seatAxisWords({ kind: 'cli', tool: 'codex', model: 'gpt-5-codex', effort: 'high' }),
+      seatAxisWords({
+        kind: 'api',
+        provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
+        apiBase: 'http://127.0.0.1:11434/v1',
+        model: 'qwen3-coder:30b',
+        effort: 'high',
+      }),
     ).toEqual([]);
     expect(seatAxisWords({ kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4' })).toEqual(
       [],

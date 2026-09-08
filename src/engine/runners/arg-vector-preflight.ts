@@ -20,10 +20,55 @@ import { resolveCliExecutableAliases, sanitizedRuntimePath } from './resolve-cli
 
 const HELP_TIMEOUT_MS = 5_000;
 const LONG_FLAG_PATTERN = /--[a-z0-9][a-z0-9-]*/gi;
+const SHORT_FLAG_PATTERN = /(?<![\w-])-[a-z](?![\w-])/gi;
+const EMITTED_LONG_FLAG_PATTERN = /^--[a-z0-9][a-z0-9-]*/i;
+const EMITTED_SHORT_FLAG_PATTERN = /^-[a-z]$/i;
 const OPTION_ENTRY_PATTERN = /^\s*--?[a-z0-9]/i;
 const OPTION_TOKEN_PATTERN = /^[-<[]/;
 const SUBCOMMAND_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
 const PREFLIGHT_SESSION_ID = '00000000-0000-4000-8000-000000000000';
+
+type FlagFamily = Readonly<{
+  emitted: RegExp;
+  advertised: RegExp;
+  foldCase: boolean;
+  bareToken: boolean;
+}>;
+
+/**
+ * Long flags are lowercase by convention and a help text may spell one in any
+ * case, so that family folds case. Short-flag case is load-bearing — codex
+ * advertises `-c, --config` and `-C, --cd` as two different flags — so that
+ * family is compared verbatim. Neither family reads a bare `-<digit>`: that is
+ * a configured value (`--max-turns -1`), not a flag.
+ *
+ * A short flag is a bare token: the same two characters read as prose inside a
+ * description — codex's own `--enable` entry says "Equivalent to `-c
+ * features.<name>=true`" — and as a configured value (`--title -x`). That
+ * family therefore takes its advertised set from option-entry lines only and
+ * skips an argv element whose predecessor is itself a flag. A `--long` token
+ * names itself in both positions, so that family reads the whole help text and
+ * every argv element.
+ *
+ * That skip cannot tell a value from a short flag that follows a boolean one, and
+ * it under-checks rather than fabricating a blocker on a vector the binary accepts:
+ * an adapter whose short flag must be compared places it at the head of its vector
+ * or after a flag's value, never directly after another flag.
+ */
+const FLAG_FAMILIES: readonly FlagFamily[] = Object.freeze([
+  {
+    emitted: EMITTED_LONG_FLAG_PATTERN,
+    advertised: LONG_FLAG_PATTERN,
+    foldCase: true,
+    bareToken: false,
+  },
+  {
+    emitted: EMITTED_SHORT_FLAG_PATTERN,
+    advertised: SHORT_FLAG_PATTERN,
+    foldCase: false,
+    bareToken: true,
+  },
+]);
 
 export type ArgVectorPreflightOutcome =
   | Readonly<{ ok: true }>
@@ -35,34 +80,61 @@ export type ArgVectorPreflightOutcome =
  * not mention at all is reported as unsupported; a flag whose help entry is
  * marked deprecated is reported separately and does not block.
  *
- * The comparison is conservative on purpose: a help text that carries no
- * recognisable long flags (terse or unparsable output) reports ok rather than
- * fabricating blockers from missing negative evidence.
+ * Short flags are compared alongside long ones: codex delivers the seat's
+ * reasoning effort as `-c model_reasoning_effort=<level>`, so a long-flag-only
+ * comparison would leave that tool's whole effort channel unchecked. The
+ * `key=value` payload is not compared — no admitted tool's help enumerates the
+ * config keys it accepts, and codex parses the value as TOML at run time.
+ *
+ * The comparison is conservative on purpose, per family: a help text that
+ * carries no recognisable flag of one shape (terse or unparsable output)
+ * reports ok for that shape rather than fabricating blockers from missing
+ * negative evidence.
  */
 export function checkRunnerArgVector(input: {
   argv: readonly string[];
   helpText: string;
 }): ArgVectorPreflightOutcome {
-  const emitted = emittedLongFlags(input.argv);
-  if (emitted.length === 0) return { ok: true };
-  const advertised = advertisedLongFlags(input.helpText);
-  if (advertised.size === 0) return { ok: true };
-  const unsupported = emitted.filter((flag) => !advertised.has(flag));
-  const deprecated = deprecatedLongFlags(
-    input.helpText,
-    emitted.filter((flag) => advertised.has(flag)),
-  );
+  const families = FLAG_FAMILIES.map((family) => compareFlagFamily(input, family));
+  const unsupported = families.flatMap((family) => family.unsupported);
+  const deprecated = families.flatMap((family) => family.deprecated);
   if (unsupported.length === 0 && deprecated.length === 0) return { ok: true };
   return { ok: false, unsupported, deprecated };
 }
 
-function emittedLongFlags(argv: readonly string[]): string[] {
+function compareFlagFamily(
+  input: Readonly<{ argv: readonly string[]; helpText: string }>,
+  family: FlagFamily,
+): { unsupported: string[]; deprecated: string[] } {
+  const emitted = emittedFlags(input.argv, family);
+  const advertised = advertisedFlags(input.helpText, family);
+  if (emitted.length === 0 || advertised.size === 0) return { unsupported: [], deprecated: [] };
+  return {
+    unsupported: emitted.filter((flag) => !advertised.has(flag)),
+    deprecated: deprecatedFlags(
+      input.helpText,
+      emitted.filter((flag) => advertised.has(flag)),
+      family,
+    ),
+  };
+}
+
+/** A flag the adapter emits: a leading long flag, or a lone short one carrying its value next. */
+function emittedFlags(argv: readonly string[], family: FlagFamily): string[] {
   const flags: string[] = [];
-  for (const arg of argv) {
-    const match = /^--[a-z0-9][a-z0-9-]*/i.exec(arg);
-    if (match !== null) flags.push(match[0].toLowerCase());
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === undefined) continue;
+    const previous = argv[index - 1];
+    if (family.bareToken && previous?.startsWith('-')) continue;
+    const match = family.emitted.exec(arg);
+    if (match !== null) flags.push(normalizeFlag(match[0], family));
   }
   return flags;
+}
+
+function normalizeFlag(flag: string, family: FlagFamily): string {
+  return family.foldCase ? flag.toLowerCase() : flag;
 }
 
 /**
@@ -164,12 +236,20 @@ export function semanticConfiguredArgViolations(args: readonly string[]): readon
   return violations;
 }
 
-function advertisedLongFlags(helpText: string): Set<string> {
+function advertisedFlags(helpText: string, family: FlagFamily): Set<string> {
+  const scanned = family.bareToken ? optionEntryLines(helpText) : helpText;
   const flags = new Set<string>();
-  for (const match of helpText.matchAll(LONG_FLAG_PATTERN)) {
-    flags.add(match[0].toLowerCase());
+  for (const match of scanned.matchAll(family.advertised)) {
+    flags.add(normalizeFlag(match[0], family));
   }
   return flags;
+}
+
+function optionEntryLines(helpText: string): string {
+  return helpText
+    .split(/\r?\n/)
+    .filter((line) => OPTION_ENTRY_PATTERN.test(line))
+    .join('\n');
 }
 
 /**
@@ -179,19 +259,23 @@ function advertisedLongFlags(helpText: string): Set<string> {
  * a neighbouring entry, or the flag's name quoted inside someone else's
  * description, is not evidence about this flag.
  */
-function deprecatedLongFlags(helpText: string, flags: readonly string[]): string[] {
+function deprecatedFlags(helpText: string, flags: readonly string[], family: FlagFamily): string[] {
   const lines = helpText.split(/\r?\n/);
   return flags.filter((flag) =>
-    lines.some((line, index) => declaresFlag({ line, flag }) && entryIsDeprecated(lines, index)),
+    lines.some(
+      (line, index) => declaresFlag({ line, flag, family }) && entryIsDeprecated(lines, index),
+    ),
   );
 }
 
-function declaresFlag(input: Readonly<{ line: string; flag: string }>): boolean {
-  const { line, flag } = input;
+function declaresFlag(
+  input: Readonly<{ line: string; flag: string; family: FlagFamily }>,
+): boolean {
+  const { line, flag, family } = input;
   if (!OPTION_ENTRY_PATTERN.test(line)) return false;
   for (const token of line.trim().split(/\s+/)) {
     if (!OPTION_TOKEN_PATTERN.test(token)) return false;
-    if (token.replace(/[,=].*$/, '').toLowerCase() === flag) return true;
+    if (normalizeFlag(token.replace(/[,=].*$/, ''), family) === flag) return true;
   }
   return false;
 }

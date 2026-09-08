@@ -77,84 +77,91 @@ describe('KNOWN_MODELS cheap and local provider metadata', () => {
 describe('KNOWN_MODELS claude-code aliases', () => {
   const claudeCode = KNOWN_MODELS['claude-code'] ?? [];
 
-  it('offers every documented Claude Code alias', () => {
+  it('offers every alias the installed build validates, and nothing that is not one', () => {
     expect(claudeCode.map((model) => model.name)).toEqual([
-      'default',
-      'best',
-      'fable',
-      'opus',
       'sonnet',
+      'opus',
+      'fable',
       'haiku',
       'opusplan',
+      'best',
       'sonnet[1m]',
       'opus[1m]',
+      'fable[1m]',
     ]);
   });
 
   it('points each Claude Code alias at the anthropic catalog row it is enriched from', () => {
     expect(
-      claudeCode.map(({ name, catalogProvider, catalogModelId, contextLength }) => ({
+      claudeCode.map(({ name, catalogProvider, catalogModelId }) => ({
         name,
         catalogProvider,
         catalogModelId,
-        contextLength,
       })),
     ).toEqual([
-      {
-        name: 'default',
-        catalogProvider: 'anthropic',
-        catalogModelId: 'claude-sonnet-5',
-        contextLength: 1_000_000,
-      },
-      {
-        name: 'best',
-        catalogProvider: 'anthropic',
-        catalogModelId: 'claude-opus-5',
-        contextLength: 1_000_000,
-      },
-      {
-        name: 'fable',
-        catalogProvider: 'anthropic',
-        catalogModelId: 'claude-fable-5',
-        contextLength: 1_000_000,
-      },
-      {
-        name: 'opus',
-        catalogProvider: 'anthropic',
-        catalogModelId: 'claude-opus-5',
-        contextLength: 1_000_000,
-      },
-      {
-        name: 'sonnet',
-        catalogProvider: 'anthropic',
-        catalogModelId: 'claude-sonnet-5',
-        contextLength: 1_000_000,
-      },
-      {
-        name: 'haiku',
-        catalogProvider: 'anthropic',
-        catalogModelId: 'claude-haiku-4-5',
-        contextLength: 200_000,
-      },
-      {
-        name: 'opusplan',
-        catalogProvider: 'anthropic',
-        catalogModelId: 'claude-opus-5',
-        contextLength: 1_000_000,
-      },
-      {
-        name: 'sonnet[1m]',
-        catalogProvider: 'anthropic',
-        catalogModelId: 'claude-sonnet-5',
-        contextLength: 1_000_000,
-      },
-      {
-        name: 'opus[1m]',
-        catalogProvider: 'anthropic',
-        catalogModelId: 'claude-opus-5',
-        contextLength: 1_000_000,
-      },
+      { name: 'sonnet', catalogProvider: 'anthropic', catalogModelId: 'claude-sonnet-5' },
+      { name: 'opus', catalogProvider: 'anthropic', catalogModelId: 'claude-opus-5' },
+      { name: 'fable', catalogProvider: 'anthropic', catalogModelId: 'claude-fable-5-1' },
+      { name: 'haiku', catalogProvider: 'anthropic', catalogModelId: 'claude-haiku-4-5' },
+      { name: 'opusplan', catalogProvider: 'anthropic', catalogModelId: 'claude-opus-5' },
+      { name: 'best', catalogProvider: 'anthropic', catalogModelId: 'claude-opus-5' },
+      { name: 'sonnet[1m]', catalogProvider: 'anthropic', catalogModelId: 'claude-sonnet-5' },
+      { name: 'opus[1m]', catalogProvider: 'anthropic', catalogModelId: 'claude-opus-5' },
+      { name: 'fable[1m]', catalogProvider: 'anthropic', catalogModelId: 'claude-fable-5-1' },
     ]);
+  });
+
+  // Every alias carries the window its baked catalog record publishes, because that is what a
+  // row shows and what an `auto` seat floors to before models.dev loads. Strip them and the
+  // picker paints nine blank size cells on a cold start — three of them under a label that
+  // says `(1M context)` — and an offline seat on `opus` budgets for Haiku's window.
+  it('carries the window Claude bakes for the model each alias resolves to', () => {
+    expect(claudeCode.map(({ name, contextLength }) => [name, contextLength])).toEqual([
+      ['sonnet', 1_000_000],
+      ['opus', 1_000_000],
+      ['fable', 1_000_000],
+      ['haiku', 200_000],
+      ['opusplan', 1_000_000],
+      ['best', 1_000_000],
+      ['sonnet[1m]', 1_000_000],
+      ['opus[1m]', 1_000_000],
+      ['fable[1m]', 1_000_000],
+    ]);
+  });
+
+  it('labels every alias with a word of its own', () => {
+    const labels = claudeCode.map((model) => model.displayName);
+
+    expect(labels).toEqual([
+      'Sonnet 5',
+      'Opus 5',
+      'Fable 5.1',
+      'Haiku 4.5',
+      'Opus Plan Mode',
+      'Best',
+      'Sonnet 5 (1M context)',
+      'Opus (1M context)',
+      'Fable 5.1 (1M context)',
+    ]);
+    expect(new Set(labels).size).toBe(claudeCode.length);
+  });
+
+  it('glosses the behavioural and window aliases, and leaves the plain ones their window', () => {
+    const glossed = claudeCode.filter((model) => model.detail !== undefined);
+
+    expect(glossed.map((model) => model.name)).toEqual([
+      'opusplan',
+      'best',
+      'sonnet[1m]',
+      'opus[1m]',
+      'fable[1m]',
+    ]);
+    for (const model of glossed) {
+      expect(model.detail?.trim(), model.name).toBeTruthy();
+    }
+    expect(
+      claudeCode.filter((model) => model.detail === undefined).map((model) => model.name),
+    ).toEqual(['sonnet', 'opus', 'fable', 'haiku']);
   });
 });
 
@@ -231,7 +238,6 @@ describe('automatic-selection sentinel coherence', () => {
   it('ships no catalog row that normalizes to the automatic sentinel', () => {
     for (const [providerId, models] of Object.entries(KNOWN_MODELS)) {
       for (const model of models ?? []) {
-        if (providerId === 'claude-code' && model.name === 'default') continue;
         expect(
           normalizeConfiguredModel(model.name, providerId),
           `${providerId}/${model.name}`,
@@ -294,9 +300,10 @@ describe('automatic-selection sentinel coherence', () => {
 });
 
 describe('TOOL_EFFORT_LADDERS', () => {
-  it('carries a ladder for exactly the three tools whose own --effort flag documents one', () => {
+  it('carries a ladder for exactly the four tools that publish their own effort levels', () => {
     expect(Object.keys(TOOL_EFFORT_LADDERS).sort()).toEqual([
       'claude-code',
+      'codex',
       'command-code',
       'copilot',
     ]);
@@ -341,12 +348,16 @@ describe('TOOL_EFFORT_LADDERS', () => {
     }
   });
 
-  it('records the one ladder its tool documents as an example rather than a closed set', () => {
+  it('records the ladders their tools document as examples rather than closed sets', () => {
     const openLadders = Object.entries(TOOL_EFFORT_LADDERS)
       .filter(([, ladder]) => ladder?.exhaustive === false)
       .map(([tool]) => tool);
 
-    expect(openLadders).toEqual(['command-code']);
+    // Both are per model: command-code says so in its own help text, and codex publishes a
+    // different set per model — one of which names a rung (`ultra`) EFFORT_LEVELS cannot hold,
+    // so this ladder may order an offer but must never reject a carried value.
+    expect(openLadders).toEqual(['codex', 'command-code']);
     expect(TOOL_EFFORT_LADDERS['command-code']?.provenance).toContain('depends on the model');
+    expect(TOOL_EFFORT_LADDERS.codex?.provenance).toContain('supported_reasoning_levels');
   });
 });

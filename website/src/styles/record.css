@@ -1,0 +1,118 @@
+.record {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--s-6);
+  align-items: start;
+  width: min(var(--content-max), 100% - 2 * var(--gutter));
+  margin-inline: auto;
+  padding-bottom: var(--s-24);
+
+  > .eyebrow {
+    grid-area: 1 / 1 / 2 / 8;
+    color: var(--ink-3);
+  }
+
+  > .claim {
+    grid-area: 1 / 11 / 3 / 13;
+    color: var(--ink);
+  }
+
+  .statement {
+    grid-area: 2 / 1 / 3 / 6;
+    max-width: 34rem;
+    margin-top: var(--s-4);
+  }
+
+  .tree {
+    grid-area: 3 / 1 / 4 / 8;
+    margin-top: var(--s-8);
+    font: inherit;
+    font-size: var(--text-label);
+    line-height: 18px;
+    white-space: pre;
+  }
+
+  .note {
+    color: var(--ink-3);
+  }
+
+  .fine {
+    grid-area: 4 / 1 / 5 / 6;
+    margin-top: var(--s-8);
+    font-size: var(--text-label);
+    line-height: 1.45;
+    text-wrap: balance;
+    color: var(--ink-3);
+  }
+
+  .requirements {
+    display: block;
+    margin-top: var(--s-2);
+    letter-spacing: 0.08em;
+  }
+
+  .commands {
+    grid-area: 3 / 11 / 4 / 13;
+    margin-top: var(--s-8);
+    font-size: var(--text-label);
+    line-height: 18px;
+  }
+
+  .commands > span {
+    display: block;
+    padding-left: 2ch;
+    text-indent: -2ch;
+    white-space: pre-wrap;
+    text-wrap: balance;
+  }
+}
+
+@media (max-width: 1099px) {
+  .record {
+    > .eyebrow {
+      grid-area: 1 / 1 / 2 / 10;
+    }
+
+    > .claim {
+      grid-area: 1 / 10 / 2 / 13;
+    }
+
+    .statement {
+      grid-area: 2 / 1 / 3 / 9;
+    }
+
+    .tree {
+      grid-area: 3 / 1 / 4 / 13;
+    }
+
+    .fine {
+      grid-area: 4 / 1 / 5 / 9;
+    }
+
+    .commands {
+      grid-area: 4 / 10 / 5 / 13;
+    }
+  }
+}
+
+@media (max-width: 767px) {
+  .record {
+    > .eyebrow,
+    > .claim,
+    .statement,
+    .tree,
+    .fine,
+    .commands {
+      grid-area: auto / 1 / auto / -1;
+    }
+
+    .note {
+      display: block;
+      margin-left: 12ch;
+      padding-left: 3ch;
+      text-indent: -3ch;
+      white-space: normal;
+      text-wrap: pretty;
+    }
+  }
+}

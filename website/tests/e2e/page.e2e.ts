@@ -1,15 +1,21 @@
 import { gzipSync } from 'node:zlib';
-import { expect, type Page, test } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 
-const FAMILIES = ['Bodoni Moda', 'JetBrains Mono'];
+const FAMILIES = ['Bodoni Moda', 'JetBrains Mono', 'Space Mono'];
 const LEDE =
-  'splitbrief runs two coding tools against one job. The stronger one plans and reviews, the cheaper one executes — and splitbrief holds the contract between them.';
+  'splitbrief runs two coding tools against one job — three when another lab reviews. The stronger one plans and reviews, the cheaper one executes — and splitbrief holds the contract between them.';
 
 async function open(page: Page): Promise<void> {
   await page.goto('/');
   await page.evaluate(async () => {
     await document.fonts.ready;
   });
+}
+
+async function box(locator: Locator): Promise<{ width: number; height: number }> {
+  const rect = await locator.boundingBox();
+  if (!rect) throw new Error(`${locator} has no box`);
+  return { width: Math.round(rect.width), height: Math.round(rect.height) };
 }
 
 function luminance(hex: string): number {
@@ -41,17 +47,11 @@ async function fontLoaded(page: Page, family: string): Promise<boolean> {
   );
 }
 
-test('the display and mono families are loaded', async ({ page }) => {
+test('the three families are loaded', async ({ page }) => {
   await open(page);
   for (const family of FAMILIES) {
     expect(await fontLoaded(page, family), family).toBe(true);
   }
-});
-
-test('the wide family is loaded', async ({ page }) => {
-  test.skip(true, 'Space Mono has no consumer until manifesto.css lands (T-007)');
-  await open(page);
-  expect(await fontLoaded(page, 'Space Mono')).toBe(true);
 });
 
 test('loads with zero console errors', async ({ page }) => {
@@ -73,6 +73,47 @@ test('no horizontal scroll at 390 and 360', async ({ page }) => {
     );
     expect(overflow, `${width}px`).toBe(0);
   }
+});
+
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('the diagram becomes the compact vertical stage with the ghosts on one spine', async ({
+    page,
+  }) => {
+    await open(page);
+    const stage = await box(page.locator('.stage'));
+    expect([stage.width, stage.height]).toEqual([350, 980]);
+    await expect(page.locator('.route-lines--compact')).toBeVisible();
+    await expect(page.locator('.route-lines--wide')).toBeHidden();
+    const centres = await page.locator('canvas').evaluateAll((canvases) =>
+      canvases.map((canvas) => {
+        const rect = canvas.getBoundingClientRect();
+        return Math.round(rect.left + rect.width / 2);
+      }),
+    );
+    expect(new Set(centres).size).toBe(1);
+  });
+
+  test('every link and the CTA offers a 44px target and a 2px focus ring', async ({ page }) => {
+    await open(page);
+    for (const target of await page.locator('.links a, .cta, .foot-link a').all()) {
+      const rect = await box(target);
+      expect(rect.height, (await target.textContent()) ?? '').toBeGreaterThanOrEqual(44);
+    }
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    const ring = await page.evaluate(() => {
+      const focused = document.activeElement;
+      const style = focused ? getComputedStyle(focused) : undefined;
+      return {
+        text: focused?.textContent?.trim(),
+        visible: focused?.matches(':focus-visible'),
+        outline: `${style?.outlineWidth} ${style?.outlineStyle}`,
+      };
+    });
+    expect(ring).toEqual({ text: '[ docs ]', visible: true, outline: '2px solid' });
+  });
 });
 
 test('label ink clears AA against the lightest vignette stop', async ({ page }) => {

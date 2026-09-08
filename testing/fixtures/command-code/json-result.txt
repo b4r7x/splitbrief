@@ -1,4 +1,4 @@
-cmd -p --output-format json --trust --skip-onboarding --no-auto-update --permission-mode auto-accept "Reply with exactly: ok"
+cmd -p --output-format json --trust --skip-onboarding --no-auto-update --yolo "Reply with exactly: ok"
 # version: 1.39.2
 {"type":"event","event":{"type":"run_start","sessionId":"cbb9c239-83c1-4e53-aa48-b0efeb5589d1"}}
 {"type":"event","event":{"type":"turn_start","turnNumber":1}}

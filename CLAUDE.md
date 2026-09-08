@@ -74,6 +74,7 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Work with workflow hooks | [docs/HOOKS-CONFIG.md](./docs/HOOKS-CONFIG.md) |
 | Enable OpenTelemetry | [docs/OTEL.md](./docs/OTEL.md) |
 | Tune the planner repo-map | [docs/REPOMAP.md](./docs/REPOMAP.md) |
+| Install the pipeline as agent skills | [docs/SKILLS.md](./docs/SKILLS.md) — the four skills, grammar, sync script |
 | Look up release history | [CHANGELOG.md](./CHANGELOG.md) |
 
 Reference also: `.specify/memory/constitution.md` — 6 constitutional principles (linked from VISION).

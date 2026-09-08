@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cursorModelOptions } from '#testing/helpers/factories/cursor-models.js';
+import { EFFORT_AXIS_TOKENS } from '../../../core/runners/effort-channel.js';
 import { mergeOptionFamilies, peelOptionSuffix } from './option-merge.js';
 import type { ModelOption } from './recency.js';
 
@@ -98,6 +99,30 @@ describe('mergeOptionFamilies', () => {
     );
   });
 
+  // The peel reads the ladder itself, so a new rung needs no second edit here. This case
+  // is what a hand-maintained word list lost when the ladder gained `minimal`.
+  it('peels every rung of the effort ladder off a display name', () => {
+    for (const rung of EFFORT_AXIS_TOKENS) {
+      const merged = mergeOptionFamilies([
+        { id: `acme-1-${rung}`, displayName: `Acme 1 ${rung}` },
+        { id: `acme-1-${rung}-fast`, displayName: `Acme 1 ${rung} Fast` },
+      ]);
+
+      expect(merged[0]?.displayName).toBe('Acme 1');
+    }
+  });
+
+  // A guard, green before this sprint: `peelDisplayLabel` reads `Extra High` as one
+  // option word, and nothing may quietly reduce it to peeling `High` off `Extra`.
+  it('peels a two-word Extra High display name back to the family name', () => {
+    const merged = mergeOptionFamilies([
+      { id: 'gpt-5.5-extra-high', displayName: 'GPT-5.5 Extra High' },
+      { id: 'gpt-5.5-extra-high-fast', displayName: 'GPT-5.5 Extra High Fast' },
+    ]);
+
+    expect(merged[0]?.displayName).toBe('GPT-5.5');
+  });
+
   it('merges composer-2.5 with composer-2.5-fast', () => {
     const merged = mergeOptionFamilies([{ id: 'composer-2.5' }, { id: 'composer-2.5-fast' }]);
 
@@ -108,7 +133,7 @@ describe('mergeOptionFamilies', () => {
       'composer-2.5',
       'composer-2.5-fast',
     ]);
-    expect(merged[0]?.variants?.map((variant) => variant.tag)).toEqual(['', 'Fast']);
+    expect(merged[0]?.variants?.map((variant) => variant.tag)).toEqual(['', 'fast']);
   });
 
   it('leaves a unique gpt-5.2 row ungrouped', () => {
@@ -158,10 +183,7 @@ describe('mergeOptionFamilies', () => {
       'gpt-5.5-extra-high',
       'gpt-5.5-extra-high-fast',
     ]);
-    expect(merged[0]?.variants?.map((variant) => variant.tag)).toEqual([
-      'Extra High',
-      'Extra High Fast',
-    ]);
+    expect(merged[0]?.variants?.map((variant) => variant.tag)).toEqual(['xhigh', 'xhigh fast']);
   });
 
   it('never merges Auto and prefers persisted as representative', () => {

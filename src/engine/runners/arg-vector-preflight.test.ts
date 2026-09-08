@@ -3,6 +3,8 @@ import { delimiter, join } from 'node:path';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import type { EffortLevel } from '../../core/schemas/enums.js';
+import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import {
   checkRunnerArgVector,
   collectArgVectorPreflightChecks,
@@ -10,6 +12,23 @@ import {
 } from './arg-vector-preflight.js';
 
 const CLI_HELP_FIXTURES = join(import.meta.dirname, '../../../testing/fixtures/cli-help');
+
+const CODEX_HELP = [
+  'Usage: codex exec [OPTIONS]',
+  '  -c, --config <key=value>              Override a configuration value',
+  '          Examples: - `-c model="o3"` - `-c shell_environment_policy.inherit=all`',
+  '      --enable <FEATURE>                Enable a feature (repeatable)',
+  '          Equivalent to `-c features.<name>=true`',
+  '  --model <MODEL>                       Model to use',
+  '  --json                                Emit JSON output',
+  '  --sandbox <SANDBOX_MODE>              Sandbox policy',
+  '  --ask-for-approval <APPROVAL_POLICY>  Approval policy',
+  '  --ignore-user-config                  Do not load the user config',
+  '  --ignore-rules                        Do not load rules files',
+  '  --ephemeral                           Run without persisting sessions',
+  '  --skip-git-repo-check                 Allow running outside a git repo',
+  '  -C, --cd <DIR>                        Working directory',
+].join('\n');
 
 describe('checkRunnerArgVector', () => {
   it('reports a flag the installed binary does not advertise as unsupported', () => {
@@ -93,6 +112,77 @@ describe('checkRunnerArgVector', () => {
       helpText: 'Usage: codex exec [OPTIONS]\n  --cd <DIR>  Working directory',
     });
     expect(outcome).toEqual({ ok: false, unsupported: ['--model'], deprecated: [] });
+  });
+
+  it('compares the short flag codex spends its reasoning effort on', () => {
+    const argv = ['--model', 'gpt-5', '-c', 'model_reasoning_effort=high', 'exec', '--json'];
+
+    expect(checkRunnerArgVector({ argv, helpText: CODEX_HELP })).toEqual({ ok: true });
+    expect(
+      checkRunnerArgVector({
+        argv,
+        helpText: [
+          'Usage: codex exec [OPTIONS]',
+          '  -p, --profile <PROFILE>  Configuration profile',
+          '  --model <MODEL>          Model to use',
+          '  --json                   Emit JSON output',
+        ].join('\n'),
+      }),
+    ).toEqual({ ok: false, unsupported: ['-c'], deprecated: [] });
+  });
+
+  it('reports ok for a help text that advertises no short flag at all', () => {
+    const outcome = checkRunnerArgVector({
+      argv: ['-c', 'model_reasoning_effort=high', 'exec', '--json'],
+      helpText: 'Usage: codex exec [OPTIONS]\n  --json  Emit JSON output',
+    });
+    expect(outcome).toEqual({ ok: true });
+  });
+
+  it('holds a short flag apart from its upper-case namesake', () => {
+    const configOnly = [
+      'Usage: codex exec [OPTIONS]',
+      '  -c, --config <key=value>  Override a configuration value',
+      '  --json                    Emit JSON output',
+    ].join('\n');
+
+    expect(checkRunnerArgVector({ argv: ['-C', '/tmp', '--json'], helpText: configOnly })).toEqual({
+      ok: false,
+      unsupported: ['-C'],
+      deprecated: [],
+    });
+    expect(checkRunnerArgVector({ argv: ['-C', '/tmp', '--json'], helpText: CODEX_HELP })).toEqual({
+      ok: true,
+    });
+  });
+
+  it('reads a bare configured value as a value, not as a short flag', () => {
+    const helpText = [
+      CODEX_HELP,
+      '  --max-turns <N>                       Turn cap',
+      '  --title <TITLE>                       Session title',
+    ].join('\n');
+
+    expect(
+      checkRunnerArgVector({ argv: ['exec', '--json', '--max-turns', '-1'], helpText }),
+    ).toEqual({ ok: true });
+    expect(checkRunnerArgVector({ argv: ['exec', '--json', '--title', '-x'], helpText })).toEqual({
+      ok: true,
+    });
+  });
+
+  it('does not take a short flag quoted in a description as evidence the binary has it', () => {
+    const outcome = checkRunnerArgVector({
+      argv: ['--model', 'gpt-5', '-c', 'model_reasoning_effort=high', 'exec'],
+      helpText: [
+        'Usage: codex exec [OPTIONS]',
+        '  -p, --profile <PROFILE>               Configuration profile',
+        '  --model <MODEL>                       Model to use',
+        '      --enable <FEATURE>                Enable a feature (repeatable)',
+        '          Equivalent to `-c features.<name>=true`',
+      ].join('\n'),
+    });
+    expect(outcome).toEqual({ ok: false, unsupported: ['-c'], deprecated: [] });
   });
 });
 
@@ -245,20 +335,7 @@ describe('collectArgVectorPreflightChecks', () => {
       config,
       projectDir: '/project',
       roles: ['planner', 'implementer', 'reviewer'],
-      runHelp: runHelp(
-        [
-          'Usage: codex exec [OPTIONS]',
-          '  --model <MODEL>                   Model to use',
-          '  --json                            Emit JSON output',
-          '  --sandbox <SANDBOX_MODE>          Sandbox policy',
-          '  --ask-for-approval <APPROVAL_POLICY>  Approval policy',
-          '  --ignore-user-config              Do not load the user config',
-          '  --ignore-rules                    Do not load rules files',
-          '  --ephemeral                       Run without persisting sessions',
-          '  --skip-git-repo-check             Allow running outside a git repo',
-          '  --cd <DIR>                        Working directory',
-        ].join('\n'),
-      ),
+      runHelp: runHelp(CODEX_HELP),
     });
 
     expect(checks).toEqual([
@@ -448,6 +525,78 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     ]);
   });
 
+  it('carries the codex planner effort into every emitted vector as a config override', async () => {
+    const checks = await collectArgVectorPreflightChecks({
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'codex', model: 'gpt-5', effort: 'high' },
+      }),
+      projectDir: '/project',
+      roles: ['planner'],
+      runHelp: async () => CODEX_HELP,
+    });
+
+    expect(checks[0]).toMatchObject({
+      id: 'runners.cli.codex.arg-vector.planner',
+      severity: 'ok',
+    });
+    expect(checks[0]?.details).toEqual([
+      'Emitted argv: --model gpt-5 -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd . <PROMPT>',
+      'Emitted argv: --model gpt-5 -c model_reasoning_effort=high --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --json --skip-git-repo-check --cd . <PROMPT>',
+      'Emitted argv: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec resume --model gpt-5 --ignore-user-config --ignore-rules --json 00000000-0000-4000-8000-000000000000 <PROMPT>',
+    ]);
+  });
+
+  it('blocks a codex binary whose help dropped the config-override entry but still quotes it', async () => {
+    const checks = await collectArgVectorPreflightChecks({
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'codex', model: 'gpt-5', effort: 'high' },
+      }),
+      projectDir: '/project',
+      roles: ['planner'],
+      runHelp: async () =>
+        CODEX_HELP.split('\n')
+          .filter((line) => !line.includes('-c, --config'))
+          .concat('  -p, --profile <PROFILE>                Configuration profile')
+          .join('\n'),
+    });
+
+    expect(checks[0]).toMatchObject({
+      id: 'runners.cli.codex.arg-vector.planner',
+      severity: 'blocker',
+      metadata: { unsupported: ['-c'] },
+    });
+  });
+
+  // A short flag whose predecessor is itself a flag is read as that flag's value and skipped, so
+  // `-c` is compared today only because the adapter puts it at the head of the resume vector and
+  // after the `--model` value on the others. Walking the vectors the adapter really builds fails
+  // on the vector that stopped being compared, rather than on an argv snapshot that merely moved.
+  it('compares the config override in every codex vector the adapter builds', async () => {
+    const checks = await collectArgVectorPreflightChecks({
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'codex', model: 'gpt-5', effort: 'high' },
+      }),
+      projectDir: '/project',
+      roles: ['planner'],
+      runHelp: async () => CODEX_HELP,
+    });
+    const withoutConfigEntry = CODEX_HELP.split('\n')
+      .filter((line) => !line.includes('-c, --config'))
+      .join('\n');
+    const vectors = (checks[0]?.details ?? []).map((detail) =>
+      detail.replace('Emitted argv: ', '').split(' '),
+    );
+
+    expect(vectors).toHaveLength(3);
+    for (const argv of vectors) {
+      expect(checkRunnerArgVector({ argv, helpText: withoutConfigEntry }), argv.join(' ')).toEqual({
+        ok: false,
+        unsupported: ['-c'],
+        deprecated: [],
+      });
+    }
+  });
+
   const opencodeHelp = (...extra: string[]) =>
     [
       'Usage: opencode run [message..]',
@@ -591,9 +740,14 @@ describe('collectArgVectorPreflightChecks — default help invocation', () => {
     chmodSync(path, 0o755);
   }
 
-  function plannerChecks(projectDir: string, tool: 'codex' | 'opencode' = 'codex') {
+  function plannerChecks(
+    projectDir: string,
+    planner: Readonly<{ tool: CliToolId; model?: string; effort?: EffortLevel }> = {
+      tool: 'codex',
+    },
+  ) {
     return collectArgVectorPreflightChecks({
-      config: makeConfig({ planner: { kind: 'cli', tool } }),
+      config: makeConfig({ planner: { kind: 'cli', ...planner } }),
       projectDir,
       roles: ['planner'],
     });
@@ -660,7 +814,7 @@ describe('collectArgVectorPreflightChecks — default help invocation', () => {
     expect(topLevel).toContain('opencode run [message..]');
     expect(topLevel).not.toContain('--format');
 
-    const checks = await plannerChecks(project, 'opencode');
+    const checks = await plannerChecks(project, { tool: 'opencode' });
 
     expect(checks).toEqual([
       expect.objectContaining({
@@ -672,6 +826,35 @@ describe('collectArgVectorPreflightChecks — default help invocation', () => {
     expect(helpInvocations(log)).toEqual(['--help', 'run --help']);
   });
 
+  // Command Code is the other tool whose emitted vector carries short flags — `-p` at index 0
+  // and `-m` before the model — so widening the comparison to short flags put its whole
+  // invocation at risk of a fabricated blocker. This is its real vector against its own help.
+  it("accepts Command Code's short flags against the help the binary itself prints", async () => {
+    const project = tempDir('preflight-project');
+    const toolDir = tempDir('preflight-tools');
+    const log = join(toolDir, 'invocations');
+    writeHelpStub(join(toolDir, 'cmd'), log, { '--help': 'command-code-help.txt' });
+    vi.stubEnv('PATH', `${toolDir}${delimiter}${process.env.PATH ?? ''}`);
+
+    const checks = await plannerChecks(project, {
+      tool: 'command-code',
+      model: 'claude-opus-5',
+      effort: 'high',
+    });
+
+    expect(checks).toEqual([
+      expect.objectContaining({
+        id: 'runners.cli.command-code.arg-vector.planner',
+        severity: 'ok',
+        metadata: expect.objectContaining({ checked: 'help' }),
+      }),
+    ]);
+    expect(helpInvocations(log)).toEqual(['--help']);
+  });
+
+  // The seat carries an effort so the recorded help — where `-c, --config <key=value>` stands
+  // alone on its entry line and the description follows indented — is what the short-flag
+  // comparison is pinned against, not only the hand-written CODEX_HELP above.
   it('probes the plan, escalate and resume argv against one fetch of each clap help', async () => {
     const project = tempDir('preflight-project');
     const toolDir = tempDir('preflight-tools');
@@ -682,7 +865,7 @@ describe('collectArgVectorPreflightChecks — default help invocation', () => {
     });
     vi.stubEnv('PATH', `${toolDir}${delimiter}${process.env.PATH ?? ''}`);
 
-    const checks = await plannerChecks(project);
+    const checks = await plannerChecks(project, { tool: 'codex', effort: 'high' });
 
     expect(checks).toEqual([
       expect.objectContaining({
@@ -692,9 +875,9 @@ describe('collectArgVectorPreflightChecks — default help invocation', () => {
       }),
     ]);
     expect(checks[0]?.details).toEqual([
-      'Emitted argv: --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd . <PROMPT>',
-      'Emitted argv: --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --json --skip-git-repo-check --cd . <PROMPT>',
-      'Emitted argv: --sandbox read-only --ask-for-approval never exec resume --ignore-user-config --ignore-rules --json 00000000-0000-4000-8000-000000000000 <PROMPT>',
+      'Emitted argv: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd . <PROMPT>',
+      'Emitted argv: -c model_reasoning_effort=high --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --json --skip-git-repo-check --cd . <PROMPT>',
+      'Emitted argv: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec resume --ignore-user-config --ignore-rules --json 00000000-0000-4000-8000-000000000000 <PROMPT>',
     ]);
     expect(helpInvocations(log)).toEqual(['--help', 'exec --help']);
   });

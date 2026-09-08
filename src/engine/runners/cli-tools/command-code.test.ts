@@ -109,7 +109,7 @@ describe('Command Code role adapters', () => {
     ]);
   });
 
-  it('write-enables only the implementer seat with --permission-mode auto-accept', () => {
+  it('write-enables only the implementer seat with --yolo', () => {
     const args = implementerArgs();
     expect(args).toEqual([
       '-p',
@@ -118,13 +118,12 @@ describe('Command Code role adapters', () => {
       '--trust',
       '--skip-onboarding',
       '--no-auto-update',
-      '--permission-mode',
-      'auto-accept',
+      '--yolo',
       PROMPT,
     ]);
   });
 
-  it('escalates a planner call to auto-accept only in escalate mode', () => {
+  it('escalates a planner call to --yolo only in escalate mode', () => {
     expect(plannerArgs('escalate')).toEqual([
       '-p',
       '--output-format',
@@ -132,8 +131,7 @@ describe('Command Code role adapters', () => {
       '--trust',
       '--skip-onboarding',
       '--no-auto-update',
-      '--permission-mode',
-      'auto-accept',
+      '--yolo',
       PROMPT,
     ]);
   });

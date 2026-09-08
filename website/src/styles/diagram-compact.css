@@ -1,0 +1,75 @@
+@container hero (max-width: 700px) {
+  .diagram {
+    max-width: 350px;
+    aspect-ratio: 350 / 980;
+  }
+
+  .stage {
+    width: 350px;
+    height: 980px;
+
+    .route-lines--wide {
+      display: none;
+    }
+
+    .route-lines--compact {
+      display: block;
+    }
+
+    .ghost--planner,
+    .ghost--planner + .ghost-fallback {
+      left: 38%;
+      top: 15%;
+    }
+
+    .ghost--implementer,
+    .ghost--implementer + .ghost-fallback {
+      left: 38%;
+      top: 61.5%;
+    }
+
+    .ghost--reviewer,
+    .ghost--reviewer + .ghost-fallback {
+      left: 38%;
+      top: 89%;
+    }
+
+    .tick,
+    .label,
+    .seat {
+      left: 71.4%;
+    }
+
+    .tick--planner,
+    .label--planner {
+      top: 4%;
+    }
+
+    .tick--implementer,
+    .label--implementer {
+      top: 52.2%;
+    }
+
+    .tick--reviewer,
+    .label--reviewer {
+      top: 82%;
+    }
+
+    .seat--planner {
+      top: 17.7%;
+    }
+
+    .seat--implementer {
+      top: 62.5%;
+    }
+
+    .seat--reviewer {
+      top: 87.8%;
+    }
+
+    .cross {
+      left: 80%;
+      top: 40%;
+    }
+  }
+}

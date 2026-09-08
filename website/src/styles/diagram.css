@@ -114,48 +114,18 @@
     top: 76%;
   }
 
-  .route {
-    background-repeat: no-repeat;
+  .route-lines {
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    fill: none;
+    stroke: var(--ink-3);
+    stroke-dasharray: 4 4;
+    shape-rendering: crispEdges;
   }
 
-  .route--a,
-  .route--b {
-    top: 46%;
-    height: 1px;
-  }
-
-  .route--a {
-    left: 27.8%;
-    width: 11.2%;
-    background-image: repeating-linear-gradient(to right, var(--ink-3) 0 4px, transparent 4px 8px);
-  }
-
-  .route--b {
-    left: 39%;
-    width: 16%;
-    background-image: repeating-linear-gradient(to left, var(--ink-3) 0 4px, transparent 4px 8px);
-  }
-
-  .route--c {
-    left: 39%;
-    top: 52%;
-    width: 19%;
-    height: 20%;
-    background-image:
-      repeating-linear-gradient(to bottom, var(--ink-3) 0 4px, transparent 4px 8.225px),
-      repeating-linear-gradient(to right, var(--ink-3) 0 4px, transparent 4px 8px),
-      repeating-linear-gradient(to bottom, var(--ink-3) 0 4px, transparent 4px 8.267px),
-      repeating-linear-gradient(to right, var(--ink-3) 0 4px, transparent 4px 8.05px);
-    background-size:
-      1px 69.8px,
-      76px 1px,
-      1px 103.2px,
-      68.4px 1px;
-    background-position:
-      0 0,
-      0 68.8px,
-      76px 68.8px,
-      76px bottom;
+  .route-lines--compact {
+    display: none;
   }
 
   .cross {

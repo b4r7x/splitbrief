@@ -79,6 +79,10 @@ function kiloModels(
   });
 }
 
+// The six rungs `opencode models openai --verbose` (2026-09-04) publishes for
+// `openai/gpt-5.6-luna` — the ladder the retired provider table both truncated and invented in.
+const LUNA_LADDER = ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+
 const LUNA_ROUTES: readonly DetectedModel[] = [
   { id: 'openai/gpt-x-luna' },
   { id: 'openai/gpt-x-luna-fast' },
@@ -398,10 +402,10 @@ describe('option family merge', () => {
     expect(flat[0]?.variants).toBeUndefined();
   });
 
-  it('attaches the OpenAI variant ladder to an opencode route and nothing to a cursor row', () => {
+  it('gives each route the ladder its own model publishes', () => {
     const listing: readonly DetectedModel[] = [
-      { id: 'openai/gpt-x-luna' },
-      { id: 'opencode-go/gpt-x-sol' },
+      { id: 'openai/gpt-x-luna', nativeReasoningEfforts: LUNA_LADDER },
+      { id: 'opencode-go/gpt-x-sol', nativeReasoningEfforts: ['high', 'max'] },
     ];
     const variantSeat = opencodeModels(listing, { effortChannel: 'variant' });
     const choicesOf = (models: readonly ModelOption[], id: string) =>
@@ -410,14 +414,65 @@ describe('option family merge', () => {
 
     expect(choicesOf(variantSeat, 'openai/gpt-x-luna')).toEqual([
       'none',
-      'minimal',
       'low',
       'medium',
       'high',
       'xhigh',
+      'max',
     ]);
-    expect(choicesOf(variantSeat, 'opencode-go/gpt-x-sol')).toBeUndefined();
+    expect(choicesOf(variantSeat, 'opencode-go/gpt-x-sol')).toEqual(['high', 'max']);
+    expect(
+      variantSeat.flatMap((model) => model.variants ?? []).flatMap((v) => v.variantChoices ?? []),
+    ).not.toContain('minimal');
+  });
 
+  // `kilo models --verbose` (7.0.49, 2026-09-08): kilo publishes `variants` per model, and two
+  // routes of one nvidia provider disagree — `none, low, medium` against `instant, thinking` —
+  // so no per-provider table can spell this listing, whichever id segment it keys on.
+  it('gives each kilo route the presets kilo itself publishes for it', () => {
+    const rows = buildRightModels({
+      role: 'planner',
+      customModels: [],
+      currentItem: tool('kilo-code', { providerDependent: true, effortChannel: 'variant' }),
+      cache: cliCache('kilo-code', [
+        { id: 'kilo/cohere/north-mini-code:free', nativeReasoningEfforts: ['instant', 'thinking'] },
+        {
+          id: 'kilo/nvidia/nemotron-3-super-120b-a12b:free',
+          nativeReasoningEfforts: ['none', 'low', 'medium'],
+        },
+        {
+          id: 'kilo/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+          nativeReasoningEfforts: ['instant', 'thinking'],
+        },
+        { id: 'kilo/google/lyria-3-pro-preview' },
+      ]),
+    });
+    const choicesOf = (id: string) =>
+      rows
+        .find((row) => modelRowMatchesId(row, id))
+        ?.variants?.find((variant) => variant.fullId === id)?.variantChoices;
+
+    expect(choicesOf('kilo/cohere/north-mini-code:free')).toEqual(['instant', 'thinking']);
+    expect(choicesOf('kilo/nvidia/nemotron-3-super-120b-a12b:free')).toEqual([
+      'none',
+      'low',
+      'medium',
+    ]);
+    expect(choicesOf('kilo/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free')).toEqual([
+      'instant',
+      'thinking',
+    ]);
+    expect(choicesOf('kilo/google/lyria-3-pro-preview')).toBeUndefined();
+  });
+
+  // A cursor seat spells its effort inside the model id and an api seat has no field for
+  // one at all: a ladder either place would draft a level the save drops, so the rows
+  // arrive carrying none — on the route and on the row alike.
+  it('carries no ladder at all on a seat whose effort travels another way', () => {
+    const listing: readonly DetectedModel[] = [
+      { id: 'gpt-x-luna-high', nativeReasoningEfforts: LUNA_LADDER },
+      { id: 'gpt-x-luna-high-fast', nativeReasoningEfforts: LUNA_LADDER },
+    ];
     const idSeat = buildRightModels({
       role: 'planner',
       customModels: [],
@@ -425,29 +480,159 @@ describe('option family merge', () => {
       cache: cliCache('cursor', listing),
     });
 
+    const routes = idSeat.flatMap((model) => model.variants ?? []);
+    expect(routes.map((variant) => variant.fullId)).toEqual([
+      'gpt-x-luna-high',
+      'gpt-x-luna-high-fast',
+    ]);
+    expect(routes.every((variant) => variant.variantChoices === undefined)).toBe(true);
+    expect(idSeat.every((model) => model.effortChoices === undefined)).toBe(true);
+
+    const noneSeat = buildRightModels({
+      role: 'planner',
+      customModels: [],
+      currentItem: tool('ollama', { effortChannel: 'none' }),
+      cache: {
+        getModelsDevCatalog: () => null,
+        getProviderModels: () => [{ id: 'qwen3-coder:30b', nativeReasoningEfforts: LUNA_LADDER }],
+        getScopedCliCatalogRuntime: () => null,
+      },
+    });
+
+    expect(noneSeat.map((model) => model.id)).toEqual(['qwen3-coder:30b']);
+    expect(noneSeat.map((model) => model.effortChoices)).toEqual([undefined]);
     expect(
-      idSeat.every((model) =>
+      noneSeat.every((model) =>
         (model.variants ?? []).every((variant) => variant.variantChoices === undefined),
       ),
     ).toBe(true);
   });
 
-  // A merged row spans two vocabularies: openai spells presets, openrouter spells none.
-  it('gives each route of a merged row its own preset vocabulary', () => {
+  it('puts a flag seat ladder on the row, which has no routes to hang one on', () => {
+    const claudeLadder = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+    const flagSeat = buildRightModels({
+      role: 'planner',
+      customModels: [],
+      currentItem: tool('claude-code', { effortChannel: 'effort-flag' }),
+      cache: cliCache('claude-code', [
+        { id: 'opus', nativeReasoningEfforts: claudeLadder },
+        { id: 'sonnet', nativeReasoningEfforts: claudeLadder },
+      ]),
+    });
+
+    const ladderOf = (id: string) => flagSeat.find((model) => model.id === id)?.effortChoices;
+    expect(ladderOf('opus')).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+    expect(ladderOf('sonnet')).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+    expect(flagSeat.every((model) => model.variants === undefined)).toBe(true);
+  });
+
+  // `claude-opus-4.8` and `claude-opus-4.8-fast` are one row on a flag seat, and a flag
+  // seat has no route to hang a ladder on: the merge must not swallow what both published.
+  it('keeps a merged flag-seat row on the ladder its members publish', () => {
+    const flagSeat = buildRightModels({
+      role: 'planner',
+      customModels: [],
+      currentItem: tool('copilot', { effortChannel: 'effort-flag' }),
+      cache: cliCache('copilot', [
+        { id: 'claude-opus-4.8', nativeReasoningEfforts: ['low', 'medium', 'high'] },
+        { id: 'claude-opus-4.8-fast', nativeReasoningEfforts: ['low', 'medium', 'high'] },
+      ]),
+    });
+
+    const merged = flagSeat.find((model) => (model.variants?.length ?? 0) > 1);
+    expect(merged?.variants?.map((variant) => variant.fullId)).toEqual([
+      'claude-opus-4.8',
+      'claude-opus-4.8-fast',
+    ]);
+    expect(merged?.effortChoices).toEqual(['low', 'medium', 'high']);
+  });
+
+  // The same pair really disagrees: models.dev carries `claude-opus-4.8` and not
+  // `claude-opus-4.8-fast`, so the sibling falls back to copilot's seven-rung tool floor.
+  it('offers a merged flag-seat row the rungs every member accepts', () => {
+    const flagSeat = buildRightModels({
+      role: 'planner',
+      customModels: [],
+      currentItem: tool('copilot', { effortChannel: 'effort-flag' }),
+      cache: cliCache('copilot', [
+        {
+          id: 'claude-opus-4.8',
+          nativeReasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+        },
+        {
+          id: 'claude-opus-4.8-fast',
+          nativeReasoningEfforts: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+        },
+      ]),
+    });
+
+    const merged = flagSeat.find((model) => (model.variants?.length ?? 0) > 1);
+    expect(merged?.variants?.map((variant) => variant.fullId)).toEqual([
+      'claude-opus-4.8',
+      'claude-opus-4.8-fast',
+    ]);
+    // Answering with the sibling's seven would offer two the representative rejects, so the row
+    // offers the intersection: every rung here is accepted by whichever member the selection
+    // resolves to. Answering `undefined` instead would strip this row's effort control entirely
+    // while its unmerged neighbours keep theirs — this is the real Copilot shape, where
+    // models.dev enriches `claude-opus-4.8` and the sibling falls back to copilot's tool floor.
+    expect(merged?.effortChoices).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+  });
+
+  it('leaves a merged flag-seat row silent when its members share no rung at all', () => {
+    const flagSeat = buildRightModels({
+      role: 'planner',
+      customModels: [],
+      currentItem: tool('copilot', { effortChannel: 'effort-flag' }),
+      cache: cliCache('copilot', [
+        { id: 'claude-opus-4.8', nativeReasoningEfforts: ['low', 'medium'] },
+        { id: 'claude-opus-4.8-fast', nativeReasoningEfforts: ['xhigh', 'max'] },
+      ]),
+    });
+
+    const merged = flagSeat.find((model) => (model.variants?.length ?? 0) > 1);
+    expect(merged?.variants).toHaveLength(2);
+    // An empty intersection is not an offer: there is no rung the row could send that both
+    // members accept, so it must stay silent rather than invent one.
+    expect(merged?.effortChoices).toBeUndefined();
+  });
+
+  it('distinguishes a differing token from a differing length when merging ladders', () => {
+    // Guards the half of the old identity check that no test reached: two ladders of equal
+    // length whose tokens differ must not be treated as agreeing.
+    const flagSeat = buildRightModels({
+      role: 'planner',
+      customModels: [],
+      currentItem: tool('copilot', { effortChannel: 'effort-flag' }),
+      cache: cliCache('copilot', [
+        { id: 'claude-opus-4.8', nativeReasoningEfforts: ['low', 'medium', 'high'] },
+        { id: 'claude-opus-4.8-fast', nativeReasoningEfforts: ['low', 'medium', 'max'] },
+      ]),
+    });
+
+    const merged = flagSeat.find((model) => (model.variants?.length ?? 0) > 1);
+    expect(merged?.effortChoices).toEqual(['low', 'medium']);
+  });
+
+  // A merged row spans three models: two publish a ladder, the third publishes none.
+  it('gives each route of a merged row its own published ladder', () => {
     const merged = opencodeModels(
       [
-        { id: 'openai/gpt-x-luna' },
-        { id: 'openrouter/gpt-x-luna' },
-        { id: 'anthropic/gpt-x-luna' },
+        { id: 'openai/gpt-x-luna', nativeReasoningEfforts: LUNA_LADDER },
+        { id: 'openrouter/gpt-x-luna', nativeReasoningEfforts: [] },
+        { id: 'anthropic/gpt-x-luna', nativeReasoningEfforts: ['high', 'max'] },
       ],
       { effortChannel: 'variant' },
     ).find((model) => (model.variants?.length ?? 0) > 1);
 
     expect(merged?.variants?.map((variant) => [variant.fullId, variant.variantChoices])).toEqual([
-      ['openai/gpt-x-luna', ['none', 'minimal', 'low', 'medium', 'high', 'xhigh']],
+      ['openai/gpt-x-luna', ['none', 'low', 'medium', 'high', 'xhigh', 'max']],
       ['openrouter/gpt-x-luna', undefined],
       ['anthropic/gpt-x-luna', ['high', 'max']],
     ]);
+    // The routes disagree, so the row itself answers nothing: a row-level ladder here
+    // would offer openai's rungs on the route that publishes none.
+    expect(merged?.effortChoices).toBeUndefined();
   });
 });
 

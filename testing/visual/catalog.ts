@@ -400,6 +400,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: 'Settings',
       },
       {
+        id: 'overlay-settings-crew-kilo-copilot',
+        title: 'Overlay · settings · Kilo plan seat, Copilot build seat',
+        marker: 'Settings',
+      },
+      {
         id: 'overlay-settings-floor-full',
         title: 'Overlay · settings · full crew at the floor',
         marker: 'Settings',

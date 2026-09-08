@@ -77,6 +77,7 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
 function plannerBaseArgs(input: CodexPlannerBuildInput): string[] {
   if (input.sessionId !== null && input.mode === 'plan') {
     return [
+      ...(input.effort === undefined ? [] : ['-c', `model_reasoning_effort=${input.effort}`]),
       '--sandbox',
       'read-only',
       '--ask-for-approval',
@@ -95,6 +96,7 @@ function plannerBaseArgs(input: CodexPlannerBuildInput): string[] {
   const escalate = input.mode === 'escalate';
   return [
     ...(input.model === undefined ? [] : ['--model', input.model]),
+    ...(input.effort === undefined ? [] : ['-c', `model_reasoning_effort=${input.effort}`]),
     '--sandbox',
     escalate ? 'workspace-write' : 'read-only',
     '--ask-for-approval',
@@ -112,12 +114,13 @@ function plannerBaseArgs(input: CodexPlannerBuildInput): string[] {
 
 /**
  * REQ-048 implementer vector: global workspace-write + never approval inside
- * the disposable staged checkout; no added roots, no config override, exact
- * staged `--cd`.
+ * the disposable staged checkout; no added roots, the reasoning effort as the
+ * only config override, exact staged `--cd`.
  */
 function implementerBaseArgs(input: CodexImplementerBuildInput): string[] {
   return [
     ...(input.model === undefined ? [] : ['--model', input.model]),
+    ...(input.effort === undefined ? [] : ['-c', `model_reasoning_effort=${input.effort}`]),
     '--sandbox',
     'workspace-write',
     '--ask-for-approval',

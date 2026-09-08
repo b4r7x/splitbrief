@@ -170,6 +170,56 @@ describe('Kilo Code role adapters', () => {
     });
   });
 
+  it('sends the reasoning preset the seat configured, beside the model, on both roles', () => {
+    const planner = kiloPlannerAdapter.buildArgs({
+      prompt: PROMPT,
+      model: 'openai/gpt-5.6',
+      projectDir: PROJECT_DIR,
+      configuredArgs: [],
+      mode: 'plan',
+      sessionId: null,
+      effort: undefined,
+      variant: 'max',
+    });
+    expect(planner).toContain('--variant');
+    expect(planner[planner.indexOf('--variant') + 1]).toBe('max');
+
+    const implementer = kiloImplementerAdapter.buildArgs({
+      prompt: PROMPT,
+      model: 'openai/gpt-5.6',
+      projectDir: PROJECT_DIR,
+      configuredArgs: [],
+      variant: 'max',
+    });
+    expect(implementer).toContain('--variant');
+    expect(implementer[implementer.indexOf('--variant') + 1]).toBe('max');
+  });
+
+  it('sends no variant flag on either role when the seat spends none', () => {
+    expect(plannerArgs('openai/gpt-5.6', 'plan', [])).not.toContain('--variant');
+    expect(implementerArgs('openai/gpt-5.6', [])).not.toContain('--variant');
+  });
+
+  it('refuses a configured --variant that would outrank the seat', () => {
+    const base = kiloPlannerAdapter.buildArgs({
+      prompt: PROMPT,
+      model: 'openai/gpt-5.6',
+      projectDir: PROJECT_DIR,
+      configuredArgs: [],
+      mode: 'plan',
+      sessionId: null,
+      effort: undefined,
+      variant: 'max',
+    });
+
+    expect(
+      kiloPlannerAdapter.validateArgs({
+        invocationArgs: [...base, '--variant', 'minimal'],
+        baseArgs: base,
+      }),
+    ).toEqual({ valid: false, conflicts: ['--variant'] });
+  });
+
   it.each(ROLE_SEATS)(
     'pins the %s effective role in its own base vector',
     (_seat, _adapter, base, agent) => {

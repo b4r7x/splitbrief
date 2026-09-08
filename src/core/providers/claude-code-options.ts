@@ -7,6 +7,7 @@ import { join } from 'node:path';
 export interface ClaudeCodeModelOption {
   readonly id: string;
   readonly displayName?: string | undefined;
+  readonly description?: string | undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -41,7 +42,12 @@ export function loadClaudeCodeModelOptions(homeDir: string): readonly ClaudeCode
     if (id === undefined || seen.has(id)) continue;
     seen.add(id);
     const label = nonEmptyString(entry.label);
-    options.push({ id, ...(label === undefined ? {} : { displayName: label }) });
+    const description = nonEmptyString(entry.description);
+    options.push({
+      id,
+      ...(label === undefined ? {} : { displayName: label }),
+      ...(description === undefined ? {} : { description }),
+    });
   }
   return options;
 }

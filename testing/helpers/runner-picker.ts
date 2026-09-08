@@ -136,7 +136,7 @@ export function pickerCatalog(fixture: CatalogFixture): PickerCatalog {
       persistedModel: base.persistedModel,
       customModels: base.customModels ?? [],
       browseCatalog: base.browseCatalog ?? false,
-      variantDraft: base.variantDraft ?? null,
+      effortDraft: base.variantDraft ?? null,
     });
   const persisted = base.persistedModel;
   const initialRightIndex =

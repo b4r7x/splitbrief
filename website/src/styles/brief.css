@@ -56,3 +56,10 @@
     color: var(--blue);
   }
 }
+
+@container hero (max-width: 700px) {
+  .brief {
+    left: 38%;
+    top: 39%;
+  }
+}

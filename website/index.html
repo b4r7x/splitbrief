@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>splitbrief — one plans, one executes, one contract</title>
-<meta name="description" content="splitbrief runs two coding tools against one job. The stronger one plans and reviews, the cheaper one executes — and splitbrief holds the contract between them.">
+<meta name="description" content="splitbrief runs two coding tools against one job — three when another lab reviews. The stronger one plans and reviews, the cheaper one executes — and splitbrief holds the contract between them.">
 <meta name="theme-color" content="#0b0c0e">
 <link rel="icon" href="data:,">
 <script>document.documentElement.classList.replace('no-js','js')</script>
@@ -39,7 +39,7 @@
       <span class="line line--stanza">A SYSTEM</span>
       <span class="line">IS BETTER.</span>
     </h1>
-    <p class="lede dash"><strong>splitbrief</strong> runs two coding tools against one job.<br>The stronger one plans and reviews, the cheaper one executes&nbsp;— and splitbrief holds the contract between them.</p>
+    <p class="lede dash"><strong>splitbrief</strong> runs two coding tools against one job&nbsp;— <br>three when another lab reviews. The stronger one plans and reviews, the cheaper one executes&nbsp;— and splitbrief holds the contract between them.</p>
     <button class="cta" type="button">
       <span class="cta-label" aria-live="polite">
         <span class="cta-idle"><span class="prompt">$</span> npm install -g splitbrief</span>
@@ -47,9 +47,9 @@
       </span>
       <span class="copy-glyph" aria-hidden="true"><span></span><span></span></span>
     </button>
-    <div class="works">
+    <div class="works dash">
       <p class="eyebrow">WORKS WITH</p>
-      <ul class="dash">
+      <ul>
         <li>CLAUDE CODE</li>
         <li>CODEX</li>
         <li>OPENCODE</li>
@@ -60,6 +60,16 @@
     </div>
     <div class="diagram">
       <div class="stage">
+        <svg class="route-lines route-lines--wide" viewBox="0 0 760 860" aria-hidden="true">
+          <path class="route route--a" d="M 211.4 395.6 L 242.4 395.6"/>
+          <path class="route route--b" d="M 350.4 395.6 L 418.2 395.6"/>
+          <path class="route route--c" d="M 296.4 447.6 L 296.4 516 L 372.4 516 L 372.4 619.2 L 439.8 619.2"/>
+        </svg>
+        <svg class="route-lines route-lines--compact" viewBox="0 0 350 980" aria-hidden="true">
+          <path class="route route--a" d="M 133 284.5 L 133 330.2"/>
+          <path class="route route--b" d="M 133 434.2 L 133 481.7"/>
+          <path class="route route--c" d="M 133 723.7 L 133 773.2"/>
+        </svg>
         <span class="tick tick--planner" aria-hidden="true"></span>
         <p class="label label--planner">CLAUDE<br>+ FABLE</p>
         <canvas class="ghost ghost--planner" role="img" aria-label="Planner daemon: Claude Code with Fable" width="210" height="275"></canvas>
@@ -91,7 +101,6 @@
   ..:     ---.   :--   ..::.
 </pre>
         <p class="seat seat--planner dash"><b>PLAN</b><br>ANALYZE<br>DECOMPOSE<br>ROUTE</p>
-        <span class="route route--a" aria-hidden="true"></span>
         <figure class="brief">
           <figcaption>tasks.md</figcaption>
           <p class="eyebrow">TASK BRIEF</p>
@@ -101,7 +110,6 @@
             <li><span>T3</span> jwt.test.ts</li>
           </ol>
         </figure>
-        <span class="route route--b" aria-hidden="true"></span>
         <span class="tick tick--implementer" aria-hidden="true"></span>
         <p class="label label--implementer">OPENCODE<br>+ DEEPSEEK</p>
         <canvas class="ghost ghost--implementer" role="img" aria-label="Implementer daemon: OpenCode with DeepSeek" width="182" height="242"></canvas>
@@ -130,7 +138,6 @@
   ::     :- ...--.    ::
 </pre>
         <p class="seat seat--implementer dash"><b>IMPLEMENT</b><br>GENERATE<br>ITERATE<br>TEST</p>
-        <span class="route route--c" aria-hidden="true"></span>
         <span class="tick tick--reviewer" aria-hidden="true"></span>
         <p class="label label--reviewer">CODEX<br>+ GPT-5.6°</p>
         <canvas class="ghost ghost--reviewer" role="img" aria-label="Reviewer daemon: Codex with GPT-5.6" width="154" height="198"></canvas>
@@ -183,24 +190,131 @@
         <tr><td>05</td><td>claude + opus</td><td>copilot + gpt-5-mini</td><td>codex + gpt-5.6°</td><td>// tests</td></tr>
       </tbody>
     </table>
-    <p class="claim dash"><b>DIFFERENT LABS.<br>ONE SHARED BRIEF.</b></p>
+    <p class="claim dash"><b>MIX THE LABS.<br>ONE SHARED BRIEF.</b></p>
   </section>
+  <section class="brief-sheet">
+    <h2 class="eyebrow">BEFORE ANY CODE</h2>
+    <p class="claim dash">ONE FILE.<br>ONE BRIEF.<br>NOTHING ELSE.</p>
+    <figure class="sheet">
+      <figcaption>tasks.md</figcaption>
+      <p class="eyebrow">TASK BRIEF</p>
+      <pre>
+<span class="mark">---</span>
+<span class="key">id:</span> T002
+<span class="key">title:</span> Add the auth guard
+<span class="key">action:</span> create
+<span class="key">file:</span> src/auth/guard.ts
+<span class="key">depends_on:</span> [T001]
+<span class="mark">---</span>
+
+<b>### Description</b>
+Guard a route with the JWT helper from T001. Reject a missing or expired token before the handler runs.
+
+<b>### Signature</b>
+<span class="mark">```typescript</span>
+export function requireAuth(req: Request): Claims | AuthError
+<span class="mark">```</span>
+
+<b>### Implementation Steps</b>
+1. Read the bearer token from the Authorization header
+2. Verify it with verifyToken from src/auth/jwt.ts
+3. Return the claims, or an AuthError naming the reason
+
+<b>### Tests</b>
+- requireAuth returns the claims for a valid token
+- requireAuth rejects a missing token
+- requireAuth rejects an expired token
+
+<b>### Scope</b>
+<span class="mark">**</span>In bounds:<span class="mark">**</span> src/auth/guard.ts
+<span class="mark">**</span>Out of bounds:<span class="mark">**</span> src/auth/jwt.ts — do not change the helper
+
+<b>### Escalation</b>
+- Stop and ask if verifyToken's signature differs from this brief
+
+<b>### Evidence</b>
+- npm test -- src/auth passes
+
+<b>### Constraints</b>
+- No new dependency</pre>
+    </figure>
+    <p class="statement">The planner writes one brief per file. The implementer sees only its own brief — not the spec, not the plan, not the other tasks — and runs it in fresh context, with no memory of the last one.</p>
+    <p class="statement dash">A brief that fails its checks never reaches an implementer. It reads <b>CONTRACT BLOCKED</b> until you retry, edit, or reject.</p>
+  </section>
+  <hr class="rule">
   <section class="manifesto">
     <h2><span class="muted">//</span> YOU DESCRIBE<br>THE GOAL.<br><b>SPLITBRIEF</b> HOLDS<br>THE REST.</h2>
     <p class="dash">From research to Task Briefs to review, the stronger tool thinks and the cheaper one types. splitbrief validates every task — typecheck, lint, test — retries, escalates, and keeps the evidence.</p>
     <ol class="dash">
       <li><span>01</span> HIGHER QUALITY</li>
       <li><span>02</span> LOWER SPEND</li>
-      <li><span>03</span> REAL EVIDENCE</li>
+      <li><span>03</span> EVIDENCE ON DISK</li>
       <li><span>04</span> YOUR TOOLS</li>
       <li><span>05</span> YOUR RULES</li>
     </ol>
+  </section>
+  <section class="ladder">
+    <h2 class="eyebrow">AFTER EVERY TASK</h2>
+    <p class="claim dash">NOT ITS OWN JUDGE.</p>
+    <figure class="run">
+      <figcaption class="bar">
+        <span class="phases">●&nbsp;Spec&nbsp;› ●&nbsp;Plan&nbsp;› ●&nbsp;Briefs&nbsp;→ <span class="now">◉&nbsp;Build</span>&nbsp;→ ○&nbsp;Verify</span>
+        <span class="seats"><span>PLAN Fable</span> · <span>BUILD DeepSeek</span> · <span>REVIEW GPT-5.6</span></span>
+      </figcaption>
+      <ol class="transcript"><li class="task"><span class="dim">*</span> <b>T2 Add the auth guard</b>  src/auth/guard.ts<span class="tail dim"> (create) · OpenCode CLI · DeepSeek</span></li
+      ><li class="activity gap"><span class="dim">●</span> Implementer activity  2 updates<span class="tail dim">  [OpenCode CLI · DeepSeek]</span></li
+      ><li class="item">  <span class="dim">├</span> Read    src/auth/jwt.ts</li
+      ><li class="item">  <span class="dim">└</span> Write   src/auth/guard.ts</li
+      ><li class="validate gap"><span class="dim">validate</span>  <span class="ok">✓</span> typecheck  <span class="ok">✓</span> lint  <span class="fail">✗</span> test</li
+      ><li class="error"><b>error</b>  test</li
+      ><li class="output"><b>FAIL</b>  src/auth/guard.test.ts &gt; requireAuth &gt; rejects an expired token</li
+      ><li class="pad" aria-hidden="true"></li
+      ><li class="pointer"><span class="mark">└ </span><span class="dim">run npm test</span></li
+      ><li class="retry gap">retry  attempt 2/3</li
+      ><li class="activity gap"><span class="dim">●</span> Implementer activity  1 update<span class="tail dim">  [OpenCode CLI · DeepSeek]</span></li
+      ><li class="item">  <span class="dim">└</span> Write   src/auth/guard.ts</li
+      ><li class="validate gap"><span class="dim">validate</span>  <span class="ok">✓</span> typecheck  <span class="ok">✓</span> lint  <span class="ok">✓</span> test</li></ol>
+    </figure>
+    <ol class="rungs">
+      <li><span>01</span><span>TYPECHECK → LINT → TEST</span></li>
+      <li><span>02</span><span>RETRY ×3 WITH THE ERROR</span></li>
+      <li><span>03</span><span>MID-TIER MODEL</span></li>
+      <li><span>04</span><span>A HINT FROM THE PLANNER</span></li>
+      <li><span>05</span><span>THE PLANNER WRITES IT°</span></li>
+      <li><span>06</span><span>YOU DECIDE</span><small>retry&nbsp;· a&nbsp;bigger&nbsp;worker&nbsp;· skip&nbsp;· pause&nbsp;· abort</small></li>
+    </ol>
+    <p class="statement">Correctness is not the implementer's to judge. After every task splitbrief runs typecheck, lint and test in your project and stops at the first failure the task caused. A stage that was already red before the run does not count against it.</p>
+    <p class="statement dash">A failed task retries with the error attached, up to three times. Then it escalates: a mid&#8209;tier model if you have one, a hint from the planner, and finally the planner writes the code itself. If that fails too, you decide.</p>
+    <p class="fine">° That last tier is the one path where the tool that wrote the code also reviews it.</p>
+  </section>
+  <section class="record">
+    <h2 class="eyebrow">AFTER THE RUN</h2>
+    <p class="claim dash">THE EVIDENCE.<br>ON DISK.<br>IN YOUR REPO.</p>
+    <p class="statement dash">Every run is a session folder in your project. The state, the log, the briefs, the evidence and the review are files you can open, diff, and resume from.</p>
+    <pre class="tree">
+.splitbrief/
+├── config.yaml
+├── active                     <span class="note">// the current session
+</span>└── sessions/
+    └── 2026-04-14-add-user-auth/
+        ├── state.json         <span class="note">// the source of truth for resume
+</span>        ├── session.jsonl      <span class="note">// every event and message, append-only
+</span>        ├── research.md
+        ├── spec.md
+        ├── plan.md
+        ├── tasks.md           <span class="note">// every brief, one per file
+</span>        ├── evidence.json      <span class="note">// what was to be proved, and what was observed
+</span>        ├── review.md          <span class="note">// the reviewer's read
+</span>        ├── summary.json
+        └── snapshots/</pre>
+    <p class="fine dash">Early software, pre-1.0. Cost is reported per run, never promised. Two numbers will decide whether the split is worth it&nbsp;— first-pass rate, and how much the cross-lab review catches that validation did not. Neither is measured yet.<br><span class="requirements">NODE&nbsp;22+&nbsp;· A&nbsp;GIT&nbsp;REPO&nbsp;WITH&nbsp;ONE&nbsp;COMMIT&nbsp;· MACOS&nbsp;AND&nbsp;LINUX</span></p>
+    <p class="commands dash"><span><span class="prompt">$</span> splitbrief init</span><span><span class="prompt">$</span> splitbrief start "add user auth"</span></p>
   </section>
   <hr class="rule rule--short">
 </main>
 <footer class="foot">
   <p class="dash">BUILT FOR<br>PEOPLE WHO<br>ACTUALLY BUILD</p>
-  <p class="foot-link"><span class="tick" aria-hidden="true"></span><a href="https://github.com/b4r7x/splitbrief">[ github.com/b4r7x/splitbrief ]</a></p>
+  <p class="foot-link"><span class="tick" aria-hidden="true"></span><a href="https://github.com/b4r7x/splitbrief"><span class="bracket">[</span> github.com/b4r7x/splitbrief <span class="bracket">]</span></a></p>
   <p class="dash"><b>SAME TOOLS.<br>BETTER OUTPUT.</b></p>
 </footer>
 </body>

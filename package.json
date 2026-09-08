@@ -57,9 +57,11 @@
     "eval:record": "tsx evals/cli.ts --record",
     "eval:replay": "tsx evals/cli.ts --replay",
     "check:invariants": "tsx scripts/check-invariants.ts",
+    "skills:sync": "tsx scripts/sync-skills.ts",
+    "skills:check": "tsx scripts/sync-skills.ts --check",
     "knip": "knip",
-    "release-check": "npm run format:check && npm run typecheck && npm run lint && npm test && npm run test:e2e && npm run check:invariants",
-    "test-ci": "npm run format:check && npm run typecheck && npm run lint && npm run test:coverage && npm run test:e2e && npm run check:invariants"
+    "release-check": "npm run format:check && npm run typecheck && npm run lint && npm test && npm run test:e2e && npm run check:invariants && npm run skills:check",
+    "test-ci": "npm run format:check && npm run typecheck && npm run lint && npm run test:coverage && npm run test:e2e && npm run check:invariants && npm run skills:check"
   },
   "keywords": [
     "ai",

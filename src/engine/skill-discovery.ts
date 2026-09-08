@@ -242,12 +242,22 @@ export async function discoverSkills(projectDir: string): Promise<SkillMeta[]> {
   const seen = new Set<string>();
   const skills: SkillMeta[] = [];
   for (const skill of ordered) {
-    if (seen.has(skill.id)) continue;
+    if (seen.has(skill.id) || ORCHESTRATION_SKILL_IDS.has(skill.id)) continue;
     seen.add(skill.id);
     skills.push(skill);
   }
   return skills;
 }
+
+// The portable splitbrief skills tell a host session to spawn its own implementer and
+// reviewer; injected into this planner they would describe the pipeline it is already
+// running. The repo's own dev skills (`splitbrief-dev`, …) are not in this set.
+const ORCHESTRATION_SKILL_IDS = new Set([
+  'splitbrief',
+  'splitbrief-brief',
+  'splitbrief-run',
+  'splitbrief-review',
+]);
 
 export async function loadSkillContent(skills: SkillMeta[]): Promise<string> {
   if (skills.length === 0) return '';

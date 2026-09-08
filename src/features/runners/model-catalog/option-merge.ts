@@ -16,7 +16,7 @@ interface OptionMergeContext {
 }
 
 const EFFORT_TOKENS = new Set<string>(EFFORT_AXIS_TOKENS);
-const DISPLAY_OPTION_WORDS = new Set(['fast', 'thinking', 'none', 'low', 'medium', 'high', 'max']);
+const DISPLAY_OPTION_WORDS = new Set<string>([...EFFORT_AXIS_TOKENS, 'fast', 'thinking']);
 const DISPLAY_CONTEXT_WORDS = new Set(['1m', '1.0m', '1.1m']);
 const TRAILING_PARENS_RE = /(\s*\([^()]*\))$/;
 
@@ -122,33 +122,6 @@ function familyDisplayName(rows: readonly ModelOption[], familyId: string): stri
   return formatModelName(familyId);
 }
 
-export function prettyOptionTokens(tokens: readonly string[]): string {
-  return tokens
-    .map((token) => {
-      switch (token) {
-        case 'fast':
-          return 'Fast';
-        case 'thinking':
-          return 'Thinking';
-        case 'none':
-          return 'None';
-        case 'low':
-          return 'Low';
-        case 'medium':
-          return 'Medium';
-        case 'high':
-          return 'High';
-        case 'xhigh':
-          return 'Extra High';
-        case 'max':
-          return 'Max';
-        default:
-          return token;
-      }
-    })
-    .join(' ');
-}
-
 function displayRemainder(displayName: string, familyDisplay: string): string {
   const familyCore = splitTrailingParens(familyDisplay).core;
   const nameCore = splitTrailingParens(displayName).core;
@@ -167,7 +140,7 @@ function optionTag(
     const remainder = displayRemainder(row.displayName, familyDisplay);
     if (remainder !== '') return remainder;
   }
-  return prettyOptionTokens(tokens);
+  return tokens.join(' ');
 }
 
 function toOptionVariant(row: ModelOption, familyDisplay: string): ModelVariant {
@@ -246,7 +219,7 @@ interface OptionFamilyGroup {
 type MergeSlot = Readonly<{ kind: 'row'; row: ModelOption }> | OptionFamilyGroup;
 
 /**
- * Collapses combinatorial effort/speed/thinking ids into one row per family.
+ * Collapses combinatorial effort/fast/thinking ids into one row per family.
  * Groups of size 1 stay flat; a family never spans two provider routes.
  */
 export function mergeOptionFamilies(

@@ -135,8 +135,11 @@ describe('effort channel projection', () => {
     expect(seatRow('planner', 'cursor').effortChannel).toBe('model-id');
   });
 
-  it('gives a channel-less tool and an api provider no channel', () => {
-    expect(seatRow('planner', 'codex').effortChannel).toBeUndefined();
+  it("names the codex option's effort-flag channel", () => {
+    expect(seatRow('planner', 'codex').effortChannel).toBe('effort-flag');
+  });
+
+  it('gives an api provider no channel', () => {
     expect(seatRow('implementer', 'ollama').effortChannel).toBeUndefined();
   });
 });

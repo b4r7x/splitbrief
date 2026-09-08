@@ -8,6 +8,13 @@ export type CliEffortChannel = 'effort-flag' | 'variant' | 'model-id' | 'none';
 
 export const EFFORT_AXIS_TOKENS = EFFORT_LEVELS;
 
+/**
+ * One word for an effort nobody set, on every surface that shows one: SPLITBRIEF
+ * sends no flag and the tool applies its own default. The id-spelled axis also
+ * steps through it to reach the bare id, so the two senses share the one word.
+ */
+export const UNSET_EFFORT_WORD = 'auto';
+
 function idTokens(model: string): readonly string[] {
   const id = model.trim();
   return id

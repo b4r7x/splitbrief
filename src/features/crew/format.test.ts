@@ -161,8 +161,8 @@ describe('formatCrewRow', () => {
     );
   });
 
-  it('still prints n/a for a tool with no effort channel', () => {
-    const rows = crewOf({ implementer: { kind: 'cli', tool: 'codex' } });
+  it('still prints n/a for a seat with no effort channel', () => {
+    const rows = crewOf({ implementer: CUSTOM_ENDPOINT });
     const row = rows.find(
       (candidate) => candidate.kind === 'effort' && candidate.seatId === 'build',
     );

@@ -6,6 +6,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { configStore } from '../../../stores/project/config.js';
+import { feedbackStore } from '../../../stores/ui/feedback.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { SettingDef } from '../../../core/settings/catalog.js';
 import { buildSettingsItems, type SettingsItem } from '../items.js';
@@ -163,9 +164,18 @@ describe('useSettingsEditor', () => {
     ui.unmount();
   });
 
-  it('leaves the config untouched when space lands on an undeliverable effort row', async () => {
+  // Every cli tool now carries a channel, so an undeliverable seat is an api one. Its row is
+  // dimmed and reads `n/a`, which says everything a message would: it stays silent.
+  it('says nothing when space lands on an undeliverable effort row', async () => {
     const config = makeConfig({
-      implementer: { kind: 'cli', tool: 'codex' },
+      implementer: {
+        kind: 'api',
+        provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
+        apiBase: 'http://127.0.0.1:11434/v1',
+        model: 'qwen2.5-coder:7b',
+      },
     });
     seed(config);
     const items = crewItems(config);
@@ -179,6 +189,31 @@ describe('useSettingsEditor', () => {
     await tick(30);
 
     expect(JSON.stringify(configStore.get().config)).toBe(before);
+    expect(feedbackStore.get().message).toBeNull();
+    ui.unmount();
+  });
+
+  // The row is live and undimmed because kilo really does spend effort, but its presets come
+  // from `kilo models --verbose` per model, which only the picker reads. Silence here would read
+  // as a swallowed key.
+  it('sends a kilo seat to the picker instead of swallowing the press', async () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'kilo-code', model: 'openai/gpt-5.6' },
+    });
+    seed(config);
+    const items = crewItems(config);
+    const before = JSON.stringify(configStore.get().config);
+
+    const ui = renderFeature(
+      createElement(Harness, { config, items, initialKey: 'effort:build', activated: [] }),
+    );
+    await flushEffects();
+    ui.stdin.write(' ');
+    await tick(30);
+
+    expect(JSON.stringify(configStore.get().config)).toBe(before);
+    expect(feedbackStore.get().message).toContain('seat picker');
+    expect(feedbackStore.get().isError).toBe(false);
     ui.unmount();
   });
 

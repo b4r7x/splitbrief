@@ -45,7 +45,11 @@ export const VISUAL_PUBLISHED_AT = 1_786_000_000_000;
  * holds; pinned so a capture is the same on a developer's machine and on CI.
  */
 export const CLAUDE_CODE_OPTION_CACHE: readonly ClaudeCodeModelOption[] = [
-  { id: 'claude-fable-5-1[1m]', displayName: 'Fable' },
+  {
+    id: 'claude-fable-5-1[1m]',
+    displayName: 'Fable',
+    description: 'Fable 5.1 · Most capable for your hardest and longest-running tasks',
+  },
 ];
 
 const VISUAL_FIXTURE_WORK_DIR = `.test-artifacts/ui-fixture-worker-${process.pid}`;

@@ -239,7 +239,7 @@ export function usePickerCatalog(
         customModels,
         browseCatalog,
         optionDraftId,
-        variantDraft,
+        effortDraft: variantDraft,
       }),
     };
   };

@@ -27,7 +27,7 @@ describe('seatEffortChannel', () => {
     expect(seatEffortChannel({ runner: claudeCode, role: 'implementer' })).toBe('effort-flag');
     expect(seatEffortChannel({ runner: opencode, role: 'planner' })).toBe('variant');
     expect(seatEffortChannel({ runner: cursor, role: 'planner' })).toBe('model-id');
-    expect(seatEffortChannel({ runner: codex, role: 'planner' })).toBe('none');
+    expect(seatEffortChannel({ runner: codex, role: 'planner' })).toBe('effort-flag');
   });
 
   it('gives an api, shell and agent seat no channel', () => {

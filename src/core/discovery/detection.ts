@@ -33,6 +33,7 @@ export const DetectedModelSchema = z
     providerId: z.string().min(1).optional(),
     modelId: z.string().min(1).optional(),
     displayName: z.string().min(1).optional(),
+    detail: z.string().min(1).optional(),
     lifecycle: z.string().min(1).optional(),
     releaseDate: z.string().optional(),
     updatedDate: z.string().optional(),

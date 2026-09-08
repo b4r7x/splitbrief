@@ -86,6 +86,8 @@ describe('Codex role adapters', () => {
       effort: 'high',
     });
     expect(resumed).toEqual([
+      '-c',
+      'model_reasoning_effort=high',
       '--sandbox',
       'read-only',
       '--ask-for-approval',
@@ -158,6 +160,60 @@ describe('Codex role adapters', () => {
       '/project',
       PROMPT,
     ]);
+  });
+
+  it('spends the configured effort as a config override ahead of exec on every vector', () => {
+    const seat = {
+      prompt: PROMPT,
+      model: 'gpt-5',
+      projectDir: '/project',
+      configuredArgs: [],
+      effort: 'high',
+    } as const;
+    const vectors = {
+      'plan · resumed': codexPlannerAdapter.buildArgs({
+        ...seat,
+        mode: 'plan',
+        sessionId: 'session-1',
+      }),
+      'plan · fresh': codexPlannerAdapter.buildArgs({ ...seat, mode: 'plan', sessionId: null }),
+      escalate: codexPlannerAdapter.buildArgs({ ...seat, mode: 'escalate', sessionId: null }),
+      implementer: codexImplementerAdapter.buildArgs(seat),
+    };
+
+    for (const [vector, args] of Object.entries(vectors)) {
+      expect(args, vector).toContain('-c');
+      expect(args[args.indexOf('-c') + 1], vector).toBe('model_reasoning_effort=high');
+      expect(args.indexOf('-c'), vector).toBeLessThan(args.indexOf('exec'));
+    }
+  });
+
+  it('overrides no configuration when the seat spends no effort', () => {
+    const seat = {
+      prompt: PROMPT,
+      model: 'gpt-5',
+      projectDir: '/project',
+      configuredArgs: [],
+      effort: undefined,
+    } as const;
+    const vectors = {
+      'plan · resumed': codexPlannerAdapter.buildArgs({
+        ...seat,
+        mode: 'plan',
+        sessionId: 'session-1',
+      }),
+      'plan · fresh': codexPlannerAdapter.buildArgs({ ...seat, mode: 'plan', sessionId: null }),
+      escalate: codexPlannerAdapter.buildArgs({ ...seat, mode: 'escalate', sessionId: null }),
+      implementer: codexImplementerAdapter.buildArgs(seat),
+    };
+
+    for (const [vector, args] of Object.entries(vectors)) {
+      expect(args, vector).not.toContain('-c');
+      expect(
+        args.some((arg) => arg.startsWith('model_reasoning_effort=')),
+        vector,
+      ).toBe(false);
+    }
   });
 
   it('preserves implementer workspace-write, cd, model, and prompt placement', () => {
