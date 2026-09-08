@@ -1,8 +1,9 @@
 import type { RunnerConfig } from '../../core/config/accessors/runner-config.js';
 import { CREW_LABEL_WIDTH, formatInheritedIdentity } from '../../core/crew/identity.js';
 import type { CrewLabVerdict } from '../../core/crew/labs.js';
-import { UNSET_EFFORT_WORD, type CrewRow } from '../../core/crew/rows.js';
+import type { CrewRow } from '../../core/crew/rows.js';
 import type { CrewSeat } from '../../core/crew/seats.js';
+import { UNSET_EFFORT_WORD } from '../../core/runners/effort-channel.js';
 import type { RunnerBillingPosture } from '../../core/runners/runner-billing.js';
 import { truncateTerminalDisplayText } from '../../utils/display-text.js';
 import { assertNever } from '../../utils/type-guards.js';

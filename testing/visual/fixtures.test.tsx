@@ -8,6 +8,8 @@ import { App } from '../../src/app/root.js';
 import { ACTIVE_OVERLAYS } from '../../src/core/navigation/types.js';
 import { ConfigSchema } from '../../src/core/schemas/config.js';
 import { ModelsDevCatalogSchema } from '../../src/core/schemas/models-dev.js';
+import { parseCopilotHelpConfigCatalog } from '../../src/engine/providers/cli-model-catalog.js';
+import { getModelsForProvider } from '../../src/engine/providers/models-dev.js';
 import { resolveModelCatalog } from '../../src/engine/providers/model/catalog.js';
 import { modelCacheStore } from '../../src/stores/discovery/model-cache/state.js';
 import { detectionStore } from '../../src/stores/project/detection.js';
@@ -169,6 +171,11 @@ describe('visual fixture seeds', () => {
         expect(pinned, fixtureCase.scenarioId).toHaveLength(1);
         expect(pinned[0]?.id, fixtureCase.scenarioId).toBe('claude-fable-5-1[1m]');
         expect(pinned[0]?.displayName, fixtureCase.scenarioId).toBe('Fable');
+        // The sentence Claude stores beside the label: it is what the alias row this entry
+        // folds into carries as its detail, so a dropped description is invisible without it.
+        expect(pinned[0]?.description, fixtureCase.scenarioId).toContain(
+          'Fable 5.1 · Most capable',
+        );
         // A machine whose own `~/.claude.json` holds that entry passes the field
         // assertions unpinned; the harness's own constant is the one value no
         // account cache can hand back, on any machine.
@@ -182,18 +189,22 @@ describe('visual fixture seeds', () => {
     }
   });
 
-  it('turns the pinned option into exactly one catalog row with no context length', async () => {
+  // The pinned option spells `fable[1m]` the way Claude's own cache spells it, so it folds into
+  // that alias row. This fixture seeds no models.dev catalog, which is the cold start every
+  // session opens on: the row still paints a window, the one Claude bakes for `claude-fable-5-1`.
+  it('folds the pinned option into its alias row and keeps that row its window', async () => {
     const lifecycle = requireOverlayFixture('overlay-planner-picker')();
     try {
       await lifecycle.setup(fixtureContext('overlay-planner-picker'));
 
-      const rows = resolveModelCatalog('claude-code', { cache: modelCacheStore }).filter(
-        (entry) => entry.id === 'claude-fable-5-1[1m]',
-      );
+      const entries = resolveModelCatalog('claude-code', { cache: modelCacheStore });
+      const rows = entries.filter((entry) => entry.selectionId === 'fable[1m]');
 
+      expect(entries.filter((entry) => entry.id === 'claude-fable-5-1[1m]')).toEqual([]);
       expect(rows).toHaveLength(1);
-      expect(rows[0]?.displayName).toBe('Fable');
-      expect(rows[0]?.contextLength).toBeUndefined();
+      expect(rows[0]?.displayName).toBe('Fable 5.1 (1M context)');
+      expect(rows[0]?.detail).toBe(CLAUDE_CODE_OPTION_CACHE[0]?.description);
+      expect(rows[0]?.contextLength).toBe(1_000_000);
     } finally {
       await lifecycle.teardown();
     }
@@ -250,11 +261,12 @@ describe('visual fixture seeds', () => {
   });
 
   it('covers every Copilot model the tool serves in the models.dev slice', () => {
-    // The enum `copilot help config` prints, read back from the recorded output itself
-    // (`testing/fixtures/copilot/help-config.txt`, GitHub Copilot CLI 1.0.77), so a recapture of
-    // the tool moves this contract with it instead of leaving a copy behind. The rows transcribe
-    // models.dev's `github-copilot` provider: 33 models covering 24 of these 25 ids, with
-    // `claude-opus-4.8-fast` the fixture's one "served by the tool, unknown to the catalog" row.
+    // The enum `copilot help config` prints, read back from the recorded output
+    // (`testing/fixtures/copilot/help-config.txt`, GitHub Copilot CLI 1.0.77) through the parser
+    // the runner registry reads that listing with, so a recapture of the tool moves this contract
+    // with it and the extraction keeps one home. The rows transcribe models.dev's `github-copilot`
+    // provider: 33 models covering 24 of these 25 ids, with `claude-opus-4.8-fast` the fixture's
+    // one "served by the tool, unknown to the catalog" row.
     // That provider has since dropped `claude-sonnet-4.5`, `claude-opus-4.6`, `claude-opus-4.5`
     // and `gemini-3.1-pro-preview`, so regenerating the block from a live fetch widens that hole
     // from one id to five. Those four keep the dates `github-copilot` itself published, which for
@@ -264,15 +276,29 @@ describe('visual fixture seeds', () => {
     // Copilot model resolved from here reports no `supportsImages` (`modelToDetected`). That is
     // inert: `seatSupportsImages` returns `true` for every `cli` runner before it reads the fact,
     // and `detectedModelFact` yields nothing off a non-`api` seat.
-    const served = readFileSync(
-      join(import.meta.dirname, '../fixtures/copilot/help-config.txt'),
-      'utf8',
-    ).match(/(?<=^ *- ")[^"]+(?="$)/gm);
-    if (served === null) throw new Error('copilot help-config fixture listed no models');
+    const listing = parseCopilotHelpConfigCatalog(
+      readFileSync(join(import.meta.dirname, '../fixtures/copilot/help-config.txt'), 'utf8'),
+    );
+    if (listing === null) throw new Error('copilot help-config fixture listed no models');
+    const served = listing.models.map((model) => model.selectionId);
+    // Read the block the way production does. `getModelsForProvider` iterates
+    // `Object.values(provider.models)` and keys identity on `model.id`, never on the JSON map key,
+    // so asserting over `Object.keys` would pass a row whose own `id` is a typo. `byId` is what
+    // ships; the map key is only a lookup convenience for the field assertions below.
+    const byId = new Map(
+      getModelsForProvider(MODELS_DEV_SLICE, 'copilot').map((model) => [model.id, model]),
+    );
     const copilot = MODELS_DEV_SLICE['github-copilot']?.models ?? {};
+    expect(Object.keys(copilot).sort()).toEqual([...byId.keys()].sort());
 
-    expect(served.filter((id) => copilot[id] === undefined)).toEqual(['claude-opus-4.8-fast']);
-    expect(Object.keys(copilot).filter((id) => !served.includes(id))).toEqual([]);
+    expect(served.filter((id) => !byId.has(id))).toEqual(['claude-opus-4.8-fast']);
+    expect([...byId.keys()].filter((id) => !served.includes(id))).toEqual([]);
+
+    // done-criterion 3's fields, read as production reads them: the picker's context column comes
+    // from `contextLength`, not from `limit.context`, so a typo in either limit key lands here.
+    expect(byId.get('gpt-5.5')?.contextLength).toBe(1_050_000);
+    expect(byId.get('gpt-5.5')?.maxOutputTokens).toBe(128_000);
+    expect([...byId.values()].filter((model) => model.contextLength === undefined)).toEqual([]);
 
     // Rungs, not row counts: the ladders are transcribed per model, so an approximated
     // block passes membership and fails here.
@@ -282,30 +308,34 @@ describe('visual fixture seeds', () => {
     expect(effort('gpt-5.6-luna')).toEqual(['none', 'low', 'medium', 'high', 'xhigh', 'max']);
     expect(copilot['kimi-k2.7-code']?.reasoning_options).toEqual([]);
 
+    // models.dev's own casing, split two ways for the same word: normalising either renames a row.
+    expect(copilot['gpt-5.4-mini']?.name).toBe('GPT-5.4 mini');
+    expect(copilot['gpt-5-mini']?.name).toBe('GPT-5 Mini');
+
     // `release_date` orders the browse lane (`compareSuggestions`, `sortModelsByRecency`), so a row
     // without one is ordered by the id heuristic instead of by recency.
     const undated = Object.keys(copilot).filter((id) => copilot[id]?.release_date === undefined);
     expect(undated).toEqual([]);
   });
 
-  it('resolves the seeded slice into the duplicated Claude alias rows the picker draws', async () => {
+  it('resolves the seeded slice into one distinctly labelled row per Claude alias', async () => {
     const lifecycle = requireOverlayFixture('overlay-planner-picker-no-listing')();
     try {
       await lifecycle.setup(fixtureContext('overlay-planner-picker-no-listing'));
 
       const entries = resolveModelCatalog('claude-code', { cache: modelCacheStore });
-      const census = (name: string): number =>
-        entries.filter((entry) => entry.displayName === name).length;
 
-      expect(census('Claude Opus 5')).toBe(4);
-      expect(census('Claude Sonnet 5')).toBe(3);
-      expect(census('Claude Fable 5')).toBe(1);
-      expect(census('Claude Haiku 4.5 (latest)')).toBe(1);
+      // The slice answers all four models the nine aliases resolve to, so every row carries a
+      // window and no two share a label — the defect the screenshot showed was four rows reading
+      // `Claude Opus 5` beside a bare `Fable` with an empty size column.
+      expect(entries).toHaveLength(9);
+      expect(new Set(entries.map((entry) => entry.displayName)).size).toBe(9);
+      expect(entries.filter((entry) => entry.contextLength === undefined)).toEqual([]);
 
-      const pinned = entries.filter((entry) => entry.id === 'claude-fable-5-1[1m]');
-      expect(pinned).toHaveLength(1);
-      expect(pinned[0]?.displayName).toBe('Fable');
-      expect(pinned[0]?.contextLength).toBeUndefined();
+      expect(entries.filter((entry) => entry.id === 'claude-fable-5-1[1m]')).toEqual([]);
+      const pinned = entries.find((entry) => entry.selectionId === 'fable[1m]');
+      expect(pinned?.detail).toBe(CLAUDE_CODE_OPTION_CACHE[0]?.description);
+      expect(pinned?.contextLength).toBe(1_000_000);
     } finally {
       await lifecycle.teardown();
     }

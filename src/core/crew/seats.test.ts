@@ -130,7 +130,14 @@ describe('deriveCrewSeats', () => {
 
   it('refuses effort on a build seat no implementer adapter can deliver it to', () => {
     const config = makeConfig({
-      implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' },
+      implementer: {
+        kind: 'api',
+        provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
+        apiBase: 'http://127.0.0.1:11434/v1',
+        model: 'qwen3-coder:30b',
+      },
     });
     const build = seatOf(deriveCrewSeats({ config }), 'build');
 
@@ -156,5 +163,24 @@ describe('deriveCrewSeats', () => {
 
     expect(build.channel).toBe('none');
     expect(build.effortEditable).toBe(false);
+  });
+
+  // `kilo models --verbose` (7.0.49, 2026-09-08): `cohere/north-mini-code:free` publishes
+  // `instant`/`thinking`, `nemotron-3-super` publishes `none`/`low`/`medium` and
+  // `lyria-3-pro-preview` publishes none — three ladders no per-provider table can spell.
+  // The crew row reads config alone, so kilo's ladder is the picker's to offer, not its.
+  it.each([
+    ['kilo/cohere/north-mini-code:free'],
+    ['kilo/nvidia/nemotron-3-super-120b-a12b:free'],
+    ['kilo/google/lyria-3-pro-preview'],
+  ])('leaves a kilo seat on %s with its variant to read but not to step', (model) => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'kilo-code', model, variant: 'thinking' },
+    });
+    const plan = seatOf(deriveCrewSeats({ config }), 'plan');
+
+    expect(plan.channel).toBe('variant');
+    expect(plan.effortValue).toBe('thinking');
+    expect(plan.effortEditable).toBe(false);
   });
 });

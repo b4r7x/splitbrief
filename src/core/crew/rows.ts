@@ -1,5 +1,5 @@
 import { assertNever } from '../../utils/type-guards.js';
-import type { CliEffortChannel } from '../runners/effort-channel.js';
+import { UNSET_EFFORT_WORD, type CliEffortChannel } from '../runners/effort-channel.js';
 import type { Config } from '../schemas/config.js';
 import type { CrewSeatId } from './identity.js';
 import { deriveCrewSeats, type CrewSeat } from './seats.js';
@@ -19,8 +19,6 @@ export type CrewRow =
 
 export type CrewRowKey = `seat:${CrewSeatId}` | `effort:${CrewSeatId}`;
 
-/** An effort nobody set reads as this position, on the row and in the filter alike. */
-export const UNSET_EFFORT_WORD = 'auto';
 const IDENTITY_SEPARATORS = /[·\s]+/;
 
 export function crewRowKey(row: CrewRow): CrewRowKey {

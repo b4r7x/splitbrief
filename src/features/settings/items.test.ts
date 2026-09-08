@@ -88,15 +88,20 @@ describe('settingsItemDescription', () => {
     );
   });
 
-  it("names the tool's own variant vocabulary on a variant-channel effort row", () => {
-    const config = makeConfig({
-      implementer: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6-luna' },
-    });
-    const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });
+  it("names no tool but the seat's own on a variant-channel effort row", () => {
+    // opencode and kilo-code share this channel, so the copy may not name either of them: a kilo
+    // seat that reads `opencode run --variant` is telling the user to run the wrong binary.
+    for (const tool of ['opencode', 'kilo-code'] as const) {
+      const config = makeConfig({
+        implementer: { kind: 'cli', tool, model: 'openai/gpt-5.6-luna' },
+      });
+      const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });
+      const description = settingsItemDescription({ item: itemAt(items, 'effort:build'), config });
 
-    expect(settingsItemDescription({ item: itemAt(items, 'effort:build'), config })).toContain(
-      'opencode run --variant',
-    );
+      expect(description, tool).toContain('--variant');
+      expect(description, tool).not.toContain('opencode');
+      expect(description, tool).not.toContain('kilo');
+    }
   });
 
   it('sends a model-id effort row to the seat picker', () => {

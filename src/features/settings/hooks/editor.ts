@@ -12,7 +12,7 @@ import {
 } from '../../../core/config/accessors/active-runner.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { seatEffortChannel } from '../../../core/runners/capabilities.js';
-import { variantChoicesForModelId } from '../../../core/runners/variant-vocabulary.js';
+import { opencodeVariantChoices } from '../../../core/runners/variant-vocabulary.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
 import { configError } from '../../../core/config/errors.js';
 import { useFilterableList, type PageSize } from '../../../hooks/use-filterable-list.js';
@@ -51,6 +51,15 @@ interface SettingsEditorState {
   getValue: (def: SettingDef) => unknown;
   activate: (index: number) => void;
 }
+
+/**
+ * A seat can have a channel and still hold no ladder here: kilo and the id-spelled tools
+ * publish their levels per model, and only the picker reads that. The row keeps its value and
+ * points at the one place that can move it — without promising the current model offers levels,
+ * because this hook cannot see the per-model ladder and some models publish none.
+ */
+const EFFORT_SET_WITH_THE_MODEL =
+  "This seat's effort travels with its model — pick a model that offers levels in the seat picker (⏎ on the seat).";
 
 /** Enter is advertised only on the rows where it does something. */
 export function hintFor(item: SettingsItem): string {
@@ -228,7 +237,7 @@ export function useSettingsEditor({
         return;
       }
       if (channel !== 'variant') return;
-      const choices = variantChoicesForModelId(runner.model);
+      const choices = opencodeVariantChoices(runner);
       if (choices.length === 0) return;
       await persist(
         configWithSeatVariant({
@@ -251,7 +260,11 @@ export function useSettingsEditor({
       feedbackStore.setMessage(settingsItemDescription({ item, config }));
       return;
     }
-    if (!row.deliverable || !row.editable) return;
+    if (!row.deliverable) return;
+    if (!row.editable) {
+      feedbackStore.setMessage(EFFORT_SET_WITH_THE_MODEL);
+      return;
+    }
     cycleEffort(row.seatId);
   };
 

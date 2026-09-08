@@ -69,6 +69,19 @@ describe('discoverSkills', () => {
     expect(skills.every((s: SkillMeta) => s.scope === 'project')).toBe(true);
   });
 
+  it('hides the portable splitbrief pipeline skills but keeps the repo dev skills', async () => {
+    writeSkillDir(projectRoot('.claude'), 'splitbrief', 'name: splitbrief\ndescription: d');
+    writeSkillDir(projectRoot('.agents'), 'splitbrief-run', 'name: splitbrief-run\ndescription: d');
+    writeFlatSkill(
+      projectRoot('.claude'),
+      'splitbrief-dev',
+      'name: splitbrief-dev\ndescription: d',
+    );
+
+    const skills = await discoverSkills(TMP);
+    expect(skills.map((s: SkillMeta) => s.id)).toEqual(['splitbrief-dev']);
+  });
+
   it('discovers global skills from every global root', async () => {
     writeFlatSkill(globalRoot(SPLITBRIEF_DIR), 'g-sb', 'name: SB\ndescription: d');
     writeFlatSkill(globalRoot('.claude'), 'g-cc', 'name: CC\ndescription: d');

@@ -358,6 +358,16 @@ Two numbers decide whether this design earns its complexity: **first-pass rate**
 
 Neither is measured yet. The `evals/` harness can be driven from a cassette alone — `--replay` needs no API key and no base URL, because the endpoint and a placeholder credential are resolved from the provider catalog — but it has never produced a recorded run, which is also why every model in the bundled catalog is marked `compatible-only` — `recommended` is reserved for models with recorded evaluation metrics, and none exist. Until those numbers appear in this section, nothing in this README is a performance claim. Cost is reported, never promised: a run that recorded no priced usage reports that explicitly instead of a fabricated zero.
 
+## Use the pipeline as skills
+
+The same contract — brief, gates, drift, retry ladder, evidence-bound review — ships as four agent skills for any coding tool:
+
+```bash
+npx skills add b4r7x/splitbrief
+```
+
+Then, in Claude Code, Cursor, OpenCode, Codex, Copilot, Antigravity, Command Code, or Kilo: `splitbrief impl=opencode:opencode-go/kimi-k3 review=cursor:gpt-5.3-codex-high "add a /health endpoint"`. The session plans and compiles the briefs, spawns the implementer per brief, validates, and reviews. See [docs/SKILLS.md](https://github.com/b4r7x/splitbrief/blob/main/docs/SKILLS.md).
+
 ## Development
 
 ```bash

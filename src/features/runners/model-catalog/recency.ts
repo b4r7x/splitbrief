@@ -12,7 +12,7 @@ export interface ModelVariant {
   isAccountOption?: boolean | undefined;
   /**
    * Named presets the seat's tool offers for this route; synthetic, never
-   * id-encoded. Vocabulary is per provider, so it belongs to the route rather
+   * id-encoded. Vocabulary is per model, so it belongs to the route rather
    * than to the merged row.
    */
   variantChoices?: readonly string[] | undefined;
@@ -39,6 +39,14 @@ export interface ModelOption {
   /** The tool's own per-account option cache, never a documented alias. */
   isAccountOption?: boolean | undefined;
   contextLength?: number | undefined;
+  /**
+   * The effort ladder this model's own source publishes — the tool's `--verbose`
+   * listing, models.dev `reasoning_options`, or the tool's documented flag ladder.
+   * Empty means the model publishes none; absent means nothing has answered.
+   * A row's routes can publish their own (`ModelVariant.variantChoices`), so read a
+   * route's ladder through `effortLadderFor`: the route's first, this one second.
+   */
+  effortChoices?: readonly string[] | undefined;
   releaseDate?: string | undefined;
   /** Present on provider-merged rows and option-family rows (≥2 members). */
   variants?: readonly ModelVariant[] | undefined;

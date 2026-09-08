@@ -1,5 +1,4 @@
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
-import { variantChoicesForModelId } from '../../../core/runners/variant-vocabulary.js';
 import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
 import { AUTOMATIC_MODEL, isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
@@ -16,6 +15,8 @@ import {
   type ModelIdentity,
 } from '../../../core/providers/canonical-model-id.js';
 import { resolveModelDisplayName } from '../../../core/discovery/model-catalog.js';
+import type { CliEffortChannel } from '../../../core/runners/effort-channel.js';
+import { assertNever } from '../../../utils/type-guards.js';
 import { NULL_CACHE, type ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
 import type { PickerOption } from './options.js';
 import { mergeOptionFamilies } from './option-merge.js';
@@ -120,6 +121,9 @@ function toModelOption(entry: ReturnType<typeof resolveModelCatalog>[number]): M
     ...(entry.source === 'account-options' ? { isAccountOption: true } : {}),
     contextLength: entry.contextLength,
     releaseDate: entry.releaseDate,
+    ...(entry.nativeReasoningEfforts === undefined
+      ? {}
+      : { effortChoices: [...entry.nativeReasoningEfforts] }),
   };
 }
 
@@ -190,19 +194,72 @@ export function resolveAndSort(
 }
 
 /**
- * A merged row spans several routes and each provider spells its own presets, so
- * the ladder hangs off the route rather than off the row's representative id.
+ * A merged row spans several routes and each route is a different model with its own
+ * published ladder, so the ladder is looked up by the route's own id in the pre-merge
+ * rows rather than derived from the representative id or from a provider table.
  */
-function withVariantChoices(row: ModelOption): ModelOption {
+function withRouteEffortChoices(
+  row: ModelOption,
+  laddersById: ReadonlyMap<string, readonly string[]>,
+): ModelOption {
   const variants = row.variants;
   if (variants === undefined) return row;
   return {
     ...row,
     variants: variants.map((variant) => {
-      const variantChoices = variantChoicesForModelId(variant.fullId);
-      return variantChoices.length === 0 ? variant : { ...variant, variantChoices };
+      const choices = laddersById.get(variant.fullId) ?? [];
+      return choices.length === 0 ? variant : { ...variant, variantChoices: [...choices] };
     }),
   };
+}
+
+/**
+ * Neither merge pass carries the ladder, so a row merged from several members arrives
+ * without one even though its members published it. The row offers the rungs *every* member
+ * accepts — the intersection, in the first member's published order — because whichever member
+ * the selection resolves to must accept the rung. Demanding identical ladders instead would
+ * silence real rows: a Copilot family whose one sibling is enriched by models.dev (5 rungs) and
+ * whose other is filled from copilot's tool floor (7 rungs) would lose its effort control
+ * altogether, while its unmerged neighbour above keeps one.
+ */
+function withRowEffortChoices(
+  row: ModelOption,
+  laddersById: ReadonlyMap<string, readonly string[]>,
+): ModelOption {
+  if (row.effortChoices !== undefined) return row;
+  const ladders = (row.variants ?? []).map((variant) => laddersById.get(variant.fullId) ?? []);
+  const first = ladders[0] ?? [];
+  if (first.length === 0 || ladders.some((ladder) => ladder.length === 0)) return row;
+  const shared = first.filter((token) => ladders.every((ladder) => ladder.includes(token)));
+  if (shared.length === 0) return row;
+  return { ...row, effortChoices: shared };
+}
+
+/**
+ * A published ladder is an offer only where the seat can spend the rung it drafts:
+ * `variant` writes it to the seat's `variant`, per route; `effort-flag` to its `effort`,
+ * per row. A `model-id` seat spells its effort inside the model id and an api, shell or
+ * agent seat has no field for one, so their rows carry none. The answer is given here,
+ * where the ladder is attached, so no builder of picker rows can inherit one the save
+ * would drop.
+ */
+function withSpendableLadders(
+  rows: readonly ModelOption[],
+  channel: CliEffortChannel | undefined,
+  laddersById: ReadonlyMap<string, readonly string[]>,
+): ModelOption[] {
+  switch (channel) {
+    case 'variant':
+      return rows.map((row) => withRouteEffortChoices(row, laddersById));
+    case 'effort-flag':
+      return rows.map((row) => withRowEffortChoices(row, laddersById));
+    case 'model-id':
+    case 'none':
+    case undefined:
+      return rows.map(({ effortChoices: _unspendable, ...row }) => row);
+    default:
+      return assertNever(channel);
+  }
 }
 
 export function buildRightModels(params: {
@@ -255,8 +312,8 @@ export function buildRightModels(params: {
           providerAuth: params.providerAuth,
         })
       : families;
-  const rows =
-    params.currentItem.effortChannel === 'variant' ? routed.map(withVariantChoices) : routed;
+  const laddersById = new Map(merged.map((row) => [row.id, row.effortChoices ?? []]));
+  const rows = withSpendableLadders(routed, params.currentItem.effortChannel, laddersById);
   // Automatic selection is structural, never a catalog row: cursor's native list
   // ships its own `auto` line, which would otherwise duplicate the synthesized
   // option — same id, same list key.

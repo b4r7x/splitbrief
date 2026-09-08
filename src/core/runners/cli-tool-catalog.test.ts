@@ -162,7 +162,7 @@ describe('CLI tool catalog', () => {
       copilot: ['--allow-all', '--no-ask-user'],
       'kilo-code': ['--auto'],
       cursor: ['--force'],
-      'command-code': ['--permission-mode auto-accept'],
+      'command-code': ['--yolo'],
     } as const;
 
     for (const id of EXISTING_CLI_TOOL_IDS) {
@@ -566,10 +566,10 @@ describe('effort support', () => {
     );
     expect(channels).toEqual({
       'claude-code': 'effort-flag',
-      codex: 'none',
+      codex: 'effort-flag',
       opencode: 'variant',
-      copilot: 'none',
-      'kilo-code': 'none',
+      copilot: 'effort-flag',
+      'kilo-code': 'variant',
       cursor: 'model-id',
       'command-code': 'effort-flag',
     });

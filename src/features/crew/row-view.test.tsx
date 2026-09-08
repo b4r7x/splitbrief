@@ -159,7 +159,16 @@ describe('crew row view', () => {
   });
 
   it('still dims the effort row of a seat with no effort channel', async () => {
-    const config = makeConfig({ implementer: { kind: 'cli', tool: 'codex' } });
+    const config = makeConfig({
+      implementer: {
+        kind: 'api',
+        provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
+        apiBase: 'http://127.0.0.1:11434/v1',
+        model: 'qwen3-coder:30b',
+      },
+    });
     const effort = lineWith(await rawLinesFor({ config, width: 78 }), 'n/a');
 
     expect(effort).not.toContain(BOLD_OPEN);

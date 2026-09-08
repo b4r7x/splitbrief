@@ -155,9 +155,7 @@ describe('formatSeatIdentity', () => {
   });
 
   it('adds nothing on a channel that carries no effort, whatever the config holds', () => {
-    expect(
-      formatSeatIdentity({ kind: 'cli', tool: 'codex', model: 'gpt-5-codex', effort: 'high' }),
-    ).toBe('OpenAI Codex CLI · GPT-5 Codex');
+    expect(formatSeatIdentity({ ...build, effort: 'high' })).toBe('Ollama · Qwen 2.5 Coder 7B');
   });
 
   it('renders a hostile variant as measurable, control-free text', () => {

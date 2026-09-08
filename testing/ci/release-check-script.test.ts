@@ -12,7 +12,7 @@ const { scripts } = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'ut
 };
 
 const RELEASE_CHECK =
-  'npm run format:check && npm run typecheck && npm run lint && npm test && npm run test:e2e && npm run check:invariants';
+  'npm run format:check && npm run typecheck && npm run lint && npm test && npm run test:e2e && npm run check:invariants && npm run skills:check';
 const E2E_CONFIG = 'testing/e2e/vitest.e2e.config.ts';
 const LIVE_CONFIG = 'testing/e2e/vitest.live.config.ts';
 const REAL_CLI_MARKERS = ['SPLITBRIEF_REAL_CLI', 'live-harness'];

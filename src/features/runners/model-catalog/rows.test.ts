@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cursorModelOptions } from '#testing/helpers/factories/cursor-models.js';
 import { AUTOMATIC_MODEL } from '../../../core/providers/automatic-model.js';
+import { UNSET_EFFORT_WORD } from '../../../core/runners/effort-channel.js';
 import type { ModelOption, ModelVariant } from './recency.js';
 import { routeDraftOf, stepOptionAxis } from './option-axis.js';
 import { mergeOptionFamilies } from './option-merge.js';
@@ -13,7 +14,6 @@ import {
   rightRowKey,
   routeAuthStateFor,
   sectionOf,
-  UNSET_VARIANT_WORD,
 } from './rows.js';
 
 const BASE = {
@@ -75,8 +75,8 @@ function hybridModel(variantChoices?: readonly string[]): ModelOption {
   };
 }
 
-function variantRow(rows: readonly RightRow[]) {
-  return rows.find((row) => row.kind === 'axis' && row.axis === 'variant');
+function effortRow(rows: readonly RightRow[]) {
+  return rows.find((row) => row.kind === 'axis' && row.axis === 'effort');
 }
 
 describe('buildRightRows', () => {
@@ -174,21 +174,21 @@ describe('buildRightRows', () => {
     expect(rows.filter((row) => row.kind === 'route')).toHaveLength(0);
     expect(
       rows.filter((row) => row.kind === 'axis').map((row) => row.kind === 'axis' && row.axis),
-    ).toEqual(['effort', 'speed']);
+    ).toEqual(['effort', 'fast']);
     expect(
       rows.filter((row) => row.kind === 'axis').map((row) => row.kind === 'axis' && row.last),
     ).toEqual([false, true]);
 
     // The value column is the only place a cycled draft becomes visible, so it
     // follows the draft rather than the family's own id.
-    expect(axisValues(rows)).toEqual(['High', 'Standard']);
+    expect(axisValues(rows)).toEqual(['high', 'off']);
     const cycled = buildRightRows({
       ...BASE,
       models: [luna],
       expandedModelId: luna.id,
       optionDraftId: 'gpt-5.6-luna-max-fast',
     });
-    expect(axisValues(cycled)).toEqual(['Max', 'Fast']);
+    expect(axisValues(cycled)).toEqual(['max', 'on']);
   });
 
   it('expands a grok option family into axis rows, not routes', () => {
@@ -207,7 +207,7 @@ describe('buildRightRows', () => {
     expect(rows.filter((row) => row.kind === 'route')).toHaveLength(0);
     expect(
       rows.filter((row) => row.kind === 'axis').map((row) => row.kind === 'axis' && row.axis),
-    ).toEqual(['effort', 'speed']);
+    ).toEqual(['effort', 'fast']);
   });
 
   it('expands a two-route option family into each route followed by its own axis rows', () => {
@@ -222,12 +222,12 @@ describe('buildRightRows', () => {
     // The one-spelling route grows no axis of its own.
     expect(
       rows.filter((row) => row.kind === 'axis').map((row) => [row.providerPrefix, row.axis]),
-    ).toEqual([['openai', 'speed']]);
+    ).toEqual([['openai', 'fast']]);
   });
 
   // The blocker: axis rows locked to the drafted route made every option spelling
   // of every other route unreachable.
-  it('reaches every route-and-speed spelling of a two-route, two-speed row', () => {
+  it('reaches every route × fast spelling of a two-route row', () => {
     const variants: ModelVariant[] = [
       ...hybridVariants,
       { fullId: 'opencode-go/gpt-x-luna-fast', providerPrefix: 'opencode-go', tag: 'opencode-go' },
@@ -240,7 +240,7 @@ describe('buildRightRows', () => {
       if (row.kind === 'route') {
         reachable.add(routeDraftOf(model, row.variant.providerPrefix, null));
       }
-      if (row.kind === 'axis' && row.axis !== 'variant') {
+      if (row.kind === 'axis' && row.choices.length === 0) {
         const from = routeDraftOf(model, row.providerPrefix, null);
         reachable.add(from);
         const stepped = stepOptionAxis(model, row.axis, from, row.providerPrefix);
@@ -258,31 +258,38 @@ describe('buildRightRows', () => {
       ...BASE,
       models: [model],
       expandedModelId: model.id,
-      variantDraft: 'high',
+      effortDraft: 'high',
     });
 
     expect(rows.map((row) => row.kind)).toEqual(['model', 'route', 'axis', 'axis', 'route']);
     const axes = rows.filter((row) => row.kind === 'axis');
     expect(axes.map((row) => [row.axis, row.last])).toEqual([
-      ['speed', false],
-      ['variant', true],
+      ['effort', false],
+      ['fast', true],
     ]);
-    expect(axes[1]?.value).toBe('high');
+    expect(axes[0]?.value).toBe('high');
+    // The axis block belongs to the first route, so only the second route closes the model.
+    expect(rows.filter((row) => row.kind === 'route').map((row) => row.last)).toEqual([
+      false,
+      true,
+    ]);
   });
 
   // REQ-022: a route offers its provider's verbatim vocabulary or none at all.
-  it('offers no variant preset on a route that spells none', () => {
+  it('offers no effort row on a route with no ladder', () => {
     const model = hybridModel(OPENAI_VARIANT_PRESETS);
 
     const rows = buildRightRows({
       ...BASE,
       models: [model],
       expandedModelId: model.id,
-      variantDraft: 'minimal',
+      effortDraft: 'minimal',
     });
-    const variantRows = rows.filter((row) => row.kind === 'axis' && row.axis === 'variant');
+    const laddered = rows.filter(
+      (row) => row.kind === 'axis' && row.axis === 'effort' && row.choices.length > 0,
+    );
 
-    expect(variantRows.map((row) => row.kind === 'axis' && row.providerPrefix)).toEqual(['openai']);
+    expect(laddered.map((row) => row.kind === 'axis' && row.providerPrefix)).toEqual(['openai']);
     // A preset drafted elsewhere is not this route's, so nothing claims it here.
     expect(rows.some((row) => row.kind === 'axis' && row.providerPrefix === 'opencode-go')).toBe(
       false,
@@ -296,11 +303,11 @@ describe('buildRightRows', () => {
       ...BASE,
       models: [model],
       expandedModelId: model.id,
-      variantDraft: 'minimal',
+      effortDraft: 'minimal',
     });
-    const variantRow = rows.find((row) => row.kind === 'axis' && row.axis === 'variant');
+    const row = effortRow(rows);
 
-    expect(variantRow?.kind === 'axis' && variantRow.value).toBe(UNSET_VARIANT_WORD);
+    expect(row?.kind === 'axis' && row.value).toBe(UNSET_EFFORT_WORD);
   });
 
   it('states whether each ladder can step', () => {
@@ -309,16 +316,16 @@ describe('buildRightRows', () => {
     const rows = buildRightRows({ ...BASE, models: [model], expandedModelId: model.id });
     const axes = rows.filter((row) => row.kind === 'axis');
 
-    // Two speed spellings step; a lone preset still steps between unset and itself.
+    // A lone preset steps between unset and itself; two fast spellings step too.
     expect(axes.map((row) => [row.axis, row.steps])).toEqual([
-      ['speed', true],
-      ['variant', true],
+      ['effort', true],
+      ['fast', true],
     ]);
   });
 
   it('states a sparse grid axis as unable to step from the row it sits on', () => {
     // Nothing makes a catalog list a full grid: `gpt-5-high` has no fast twin, so
-    // the speed axis cannot move while the draft sits on it, while effort still can.
+    // the fast axis cannot move while the draft sits on it, while effort still can.
     const model: ModelOption = {
       id: 'gpt-5',
       membership: 'confirmed',
@@ -338,36 +345,122 @@ describe('buildRightRows', () => {
 
     expect(rows.filter((row) => row.kind === 'axis').map((row) => [row.axis, row.steps])).toEqual([
       ['effort', true],
-      ['speed', false],
+      ['fast', false],
     ]);
   });
 
-  it('shows an unset variant as unset', () => {
+  it('shows an undrafted ladder as unset', () => {
     const model = hybridModel(OPENAI_VARIANT_PRESETS);
 
     const rows = buildRightRows({
       ...BASE,
       models: [model],
       expandedModelId: model.id,
-      variantDraft: null,
+      effortDraft: null,
     });
 
-    const row = variantRow(rows);
-    expect(row?.kind === 'axis' && row.value).toBe(UNSET_VARIANT_WORD);
-    expect(OPENAI_VARIANT_PRESETS).not.toContain(UNSET_VARIANT_WORD);
+    const row = effortRow(rows);
+    expect(row?.kind === 'axis' && row.value).toBe(UNSET_EFFORT_WORD);
+    expect(OPENAI_VARIANT_PRESETS).not.toContain(UNSET_EFFORT_WORD);
   });
 
-  it('adds no variant row to a model that offers none', () => {
+  it('adds no effort row to a model that offers no ladder', () => {
     const model = hybridModel();
 
     const rows = buildRightRows({
       ...BASE,
       models: [model],
       expandedModelId: model.id,
-      variantDraft: 'high',
+      effortDraft: 'high',
     });
 
-    expect(variantRow(rows)).toBeUndefined();
+    expect(effortRow(rows)).toBeUndefined();
+  });
+
+  it('raises one effort row on a model whose ladder hangs off the row itself', () => {
+    const model: ModelOption = {
+      id: 'opus',
+      membership: 'confirmed',
+      effortChoices: ['low', 'medium', 'high', 'xhigh', 'max'],
+    };
+
+    const rows = buildRightRows({ ...BASE, models: [model], expandedModelId: model.id });
+
+    expect(rows.map((row) => row.kind)).toEqual(['model', 'axis']);
+    const row = effortRow(rows);
+    expect(row?.kind === 'axis' && row.last).toBe(true);
+    expect(row?.kind === 'axis' && row.value).toBe(UNSET_EFFORT_WORD);
+    expect(row?.kind === 'axis' && row.choices).toEqual(model.effortChoices);
+  });
+
+  it('adds no axis row to a model whose ladder is empty', () => {
+    const model: ModelOption = { id: 'haiku', membership: 'confirmed', effortChoices: [] };
+
+    const rows = buildRightRows({ ...BASE, models: [model], expandedModelId: model.id });
+
+    expect(rows.map((row) => row.kind)).toEqual(['model']);
+  });
+
+  it('replaces an id-spelled effort with the ladder the route publishes', () => {
+    const variants: ModelVariant[] = [
+      {
+        fullId: 'openai/gpt-x-luna',
+        providerPrefix: 'openai',
+        tag: 'openai',
+        variantChoices: ['low', 'high', 'max'],
+      },
+      { fullId: 'openai/gpt-x-luna-high', providerPrefix: 'openai', tag: 'openai' },
+    ];
+    const model: ModelOption = { id: 'openai/gpt-x-luna', membership: 'confirmed', variants };
+
+    const rows = buildRightRows({ ...BASE, models: [model], expandedModelId: model.id });
+
+    const axes = rows.filter((row) => row.kind === 'axis');
+    expect(axes.map((row) => row.axis)).toEqual(['effort']);
+    expect(axes[0]?.choices).toEqual(['low', 'high', 'max']);
+    // The ladder writes the config field, so the route confirms back to its head id.
+    expect(routeDraftOf(model, 'openai', undefined)).toBe('openai/gpt-x-luna');
+  });
+
+  it('keeps effort in one slot whether the ladder or the id spelled it', () => {
+    const family = mergeOptionFamilies(
+      cursorModelOptions().filter((row) => row.id.startsWith('gpt-5.6-luna')),
+    )[0];
+    if (family === undefined) throw new Error('expected luna family');
+    const axesOf = (rows: readonly RightRow[]) =>
+      rows.filter((row) => row.kind === 'axis').map((row) => row.axis);
+
+    const laddered = buildRightRows({
+      ...BASE,
+      models: [hybridModel(['high', 'max'])],
+      expandedModelId: 'openai/gpt-x-luna',
+    });
+    const idSpelled = buildRightRows({ ...BASE, models: [family], expandedModelId: family.id });
+
+    expect(axesOf(laddered)).toEqual(['effort', 'fast']);
+    expect(axesOf(idSpelled)).toEqual(['effort', 'fast']);
+  });
+
+  // The provider-merged row the picker draws: a bare id, two routes, no option suffixes to
+  // peel — so every axis row it shows comes from a route's own published ladder.
+  const routedModel = (variantChoices: readonly string[]): ModelOption => ({
+    id: 'gpt-5.6',
+    membership: 'confirmed',
+    variants: [
+      { fullId: 'openai/gpt-5.6', providerPrefix: 'openai', tag: 'openai', variantChoices },
+      { fullId: 'opencode-go/gpt-5.6', providerPrefix: 'opencode-go', tag: 'opencode-go' },
+    ],
+  });
+
+  it('draws one axis row carrying the ladder the drafted route publishes', () => {
+    const ladder = ['none', 'low', 'medium', 'high', 'xhigh', 'max'];
+    const model = routedModel(ladder);
+
+    const rows = buildRightRows({ ...BASE, models: [model], expandedModelId: model.id });
+
+    const axes = rows.filter((row) => row.kind === 'axis');
+    expect(axes).toHaveLength(1);
+    expect(axes[0]?.choices).toEqual(ladder);
   });
 
   it('keys an axis row by the route it steps inside', () => {
@@ -376,8 +469,8 @@ describe('buildRightRows', () => {
     const rows = buildRightRows({ ...BASE, models: [model], expandedModelId: model.id });
 
     expect(rows.filter((row) => row.kind === 'axis').map(rightRowKey)).toEqual([
-      'axis:openai/gpt-x-luna:openai:speed',
-      'axis:openai/gpt-x-luna:openai:variant',
+      'axis:openai/gpt-x-luna:openai:effort',
+      'axis:openai/gpt-x-luna:openai:fast',
     ]);
   });
 

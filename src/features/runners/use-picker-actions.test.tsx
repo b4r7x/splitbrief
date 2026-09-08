@@ -331,9 +331,10 @@ describe('usePickerActions', () => {
     ui.unmount();
   });
 
-  // A save line that names a preset the same commit dropped retracts itself one
-  // notice later, so it names what was kept instead.
-  it('leaves a dropped variant out of the confirmation message', async () => {
+  // The picker offers one ladder per row and the seat's channel picks the field that
+  // spends it, so a level drafted on a flag-channel tool is saved rather than announced
+  // as a drop. Naming it in the save line is `effort-commit-routing`'s (REQ-E17).
+  it('saves a drafted level to the effort field of a flag-channel seat', async () => {
     seed(makeConfig({ planner: { kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6' } }));
 
     const messages: string[] = [];
@@ -343,12 +344,7 @@ describe('usePickerActions', () => {
     });
 
     const ui = renderFeature(
-      <ConfirmVariantProbe
-        role="planner"
-        toolId="kilo-code"
-        modelId="openrouter/gpt-5.6"
-        variant="high"
-      />,
+      <ConfirmVariantProbe role="planner" toolId="codex" modelId="gpt-5-codex" variant="high" />,
     );
     await flushEffects();
     ui.stdin.write('\r');
@@ -358,12 +354,9 @@ describe('usePickerActions', () => {
     });
     stopWatching();
 
-    const saveLine = messages.find((message) => message.startsWith('Planner set to:'));
-    expect(saveLine).not.toContain('high');
-    // The drop is still news, it just arrives as the notice rather than as a claim
-    // the save line has to take back.
-    expect(messages[messages.length - 1]).toContain('Variant high cleared');
+    expect(configStore.get().config?.planner).toMatchObject({ tool: 'codex', effort: 'high' });
     expect(configStore.get().config?.planner).not.toHaveProperty('variant');
+    expect(messages.every((message) => !message.includes('cleared'))).toBe(true);
     ui.unmount();
   });
 
@@ -373,7 +366,7 @@ describe('usePickerActions', () => {
     );
 
     const ui = renderFeature(
-      <ConfirmOnKeyProbe role="planner" selection={realPickerOption('planner', 'codex')} />,
+      <ConfirmOnKeyProbe role="planner" selection={realPickerOption('planner', 'opencode')} />,
     );
     await flushEffects();
     ui.stdin.write('\r');

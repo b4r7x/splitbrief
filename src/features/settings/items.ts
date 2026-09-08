@@ -33,8 +33,10 @@ const EFFORT_DESCRIPTION = 'How hard this seat reasons; auto leaves the choice t
 const EFFORT_DESCRIPTIONS: Readonly<Record<CliEffortChannel, string>> = {
   'effort-flag': EFFORT_DESCRIPTION,
   none: EFFORT_DESCRIPTION,
+  // Shared by opencode and kilo-code since sprint 16 gave kilo the variant channel, so this names
+  // neither tool: each spells its own presets and delivers them on its own `--variant`.
   variant:
-    "How hard this seat reasons, in opencode's own vocabulary; delivered as `opencode run --variant <name>`.",
+    "How hard this seat reasons, in the tool's own vocabulary; delivered as a named preset on `--variant`.",
   'model-id':
     'How hard this seat reasons is spelled by the model id, so it is chosen with the model in the seat picker (⏎ on the seat).',
 };

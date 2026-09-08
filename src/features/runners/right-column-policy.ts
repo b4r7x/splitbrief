@@ -1,6 +1,7 @@
 import type { CliProviderAuth } from '../../core/discovery/detection.js';
 import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 import { seatPickerLane, type SeatPickerRole } from '../../core/runners/seat-roles.js';
+import { seatEffortChannel } from '../../core/runners/capabilities.js';
 import { configStore } from '../../stores/project/config.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { SOFT_SEP } from '../../components/separators.js';
@@ -15,7 +16,12 @@ import {
   stepOptionAxis,
 } from './model-catalog/option-axis.js';
 import type { ModelOption, ModelVariant } from './model-catalog/recency.js';
-import { offersVariantLadder, routeAuthStateFor, type RightRow } from './model-catalog/rows.js';
+import {
+  effortLadderFor,
+  offersEffortLadder,
+  routeAuthStateFor,
+  type RightRow,
+} from './model-catalog/rows.js';
 import type { CycleOutcome, RightActivation } from './two-column-picker/types.js';
 import type { PickerActions } from './use-picker-actions.js';
 
@@ -31,7 +37,7 @@ export interface RouteAuthContext {
  */
 function expansionDrafts(model: ModelOption): boolean {
   if (isOptionFamily(model)) return true;
-  if (offersVariantLadder(model)) return true;
+  if (offersEffortLadder(model)) return true;
   const variants = model.variants ?? [];
   return routePrefixesOf(variants).some((prefix) => optionAxesOf(variants, prefix).length > 0);
 }
@@ -42,27 +48,32 @@ function nextVariantDraft(choices: readonly string[], current: string | null): s
   return ladder[(ladder.indexOf(current) + 1) % ladder.length] ?? null;
 }
 
-/** The presets one route of a merged row spells; another route's ladder is not it. */
-function routeVariantChoices(model: ModelOption, fullId: string): readonly string[] {
-  return model.variants?.find((variant) => variant.fullId === fullId)?.variantChoices ?? [];
-}
-
-/** The variant the seat already runs; the ladder opens on it rather than on unset. */
-function configuredVariant(role: SeatPickerRole): string | null {
+/**
+ * The level the seat already runs, read from the field its own channel spends — the
+ * same answer the commit gives, so the ladder opens on what the crew row reads rather
+ * than on unset.
+ */
+function configuredLevel(role: SeatPickerRole): string | null {
   const config = configStore.get().config;
   if (config === null) return null;
-  return readActiveRunner({ config, role: seatPickerLane(role) }).variant ?? null;
+  const lane = seatPickerLane(role);
+  const runner = readActiveRunner({ config, role: lane });
+  return (
+    (seatEffortChannel({ runner, role: lane }) === 'effort-flag'
+      ? runner.effort
+      : runner.variant) ?? null
+  );
 }
 
-/** The seat's own preset opens the ladder, but only on a route whose vocabulary spells it. */
+/** The seat's own preset opens the ladder, but only where that ladder spells it. */
 export function seatVariantDraft(
   model: ModelOption,
   optionDraftId: string | undefined,
   role: SeatPickerRole,
 ): string | null {
-  const configured = configuredVariant(role);
+  const configured = configuredLevel(role);
   if (configured === null) return null;
-  const choices = routeVariantChoices(model, optionDraftOf(model, optionDraftId));
+  const choices = effortLadderFor(model, optionDraftOf(model, optionDraftId));
   return choices.includes(configured) ? configured : null;
 }
 
@@ -86,9 +97,9 @@ export function rightRowActivation(
       // One signed-in route among several needs no chooser, whichever of them
       // happens to spell a preset ladder.
       if (routes > 1) return soleConfigured === undefined ? 'expand' : 'confirm';
-      // A variant ladder is reachable only through the expansion, so a model that
+      // An effort ladder is reachable only through the expansion, so a model that
       // offers one opens even where its single route would otherwise just confirm.
-      return offersVariantLadder(row.model) ? 'expand' : 'confirm';
+      return offersEffortLadder(row.model) ? 'expand' : 'confirm';
     }
     default:
       return assertNever(row);
@@ -142,13 +153,14 @@ export function expandedRowHint(
 }
 
 /**
- * The drafted variant is part of the same selection as the drafted id: both are
- * in flight until Enter, so both are saved by it — but a preset reaches the save
- * only on the route that spells it.
+ * The drafted level rides with the drafted id: both are in flight until Enter, so both
+ * are saved by it. The ladder that decides what carries is the one the row offered, so
+ * every level the user can reach has somewhere to land; which field spends it is the
+ * seat channel's answer, given once at the commit.
  */
 function confirmDraft(model: ModelOption, fullId: string, actions: PickerActions) {
   const draft = pickerViewStore.get().variantDraft;
-  const carries = draft !== null && routeVariantChoices(model, fullId).includes(draft);
+  const carries = draft !== null && effortLadderFor(model, fullId).includes(draft);
   void actions.confirmProviderVariant(fullId, carries ? draft : undefined);
 }
 
@@ -233,7 +245,7 @@ export function cycleRightRow(row: RightRow): CycleOutcome {
     return row.kind === 'model' && row.expanded && expansionDrafts(row.model) ? 'held' : 'none';
   }
   if (!row.steps) return 'held';
-  if (row.axis === 'variant') {
+  if (row.choices.length > 0) {
     // A preset drafted on another route is not a rung of this ladder, so the
     // step starts from unset the way the row already reads.
     const draft = pickerViewStore.get().variantDraft;

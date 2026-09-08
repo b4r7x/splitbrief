@@ -17,7 +17,7 @@ import { TASK_BRIEF_HEADINGS } from '../headings.js';
 
 const H = TASK_BRIEF_HEADINGS;
 
-function briefContract(ctx: LanguageContext): string {
+export function briefContract(ctx: LanguageContext): string {
   return `Every brief must cover these nine semantic sections, even when one is brief:
 
 1. **Identity** — frontmatter \`id\`, \`title\`, \`action\`, \`file\`, \`depends_on\`.
@@ -31,7 +31,7 @@ function briefContract(ctx: LanguageContext): string {
 9. **Evidence** — \`${H.evidence.heading}\`: REQUIRED bullets describing the reviewable proof that should exist when the brief is done (passing tests, validation output, changed files, behavioral note).`;
 }
 
-function criticalRules(ctx: LanguageContext): string {
+export function criticalRules(ctx: LanguageContext): string {
   return `1. **Self-contained**: Each brief must inline ALL context needed. Include relevant current code for modify tasks, ${ctx.typeAnnotationStyle}, import paths, function signatures from dependencies, and expected patterns.
 
 2. **Atomic**: One brief = one file. Either create a new file or modify an existing one. Never split a single file across briefs or combine multiple files in one brief.

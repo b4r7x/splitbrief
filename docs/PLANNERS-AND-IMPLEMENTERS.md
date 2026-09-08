@@ -254,7 +254,9 @@ interface Implementer extends RunnerRuntime {
 
 `implement()` executes a single task. `retry()` re-executes with error context and escalating temperature. `unavailabilityReason()` -- optional, mirroring the Planner interface -- returns a human-readable cause for the most recent `isAvailable()` returning false (e.g. "the endpoint is unreachable"), which the unavailable-implementer recovery carries when the runner can state one.
 
-The implementer seat carries both effort channels to the wire, not just the flag one. `src/engine/implementers/cli.ts` hands the seat's `effort` and `variant` to the adapter's build-args input; `claude-code` emits `--effort <level>` (`src/engine/runners/cli-tools/claude-code.ts`) and `opencode` emits `--variant <name>` after the `--model` pair (`src/engine/runners/cli-tools/opencode.ts`). An adapter without a given channel ignores that field, so the caller never branches on tool. The arg-vector preflight (`src/engine/runners/arg-vector-preflight.ts`) replays both flags against the installed binary's own help output, so a flag the local build does not know is a pre-spawn failure rather than a mid-task one.
+The implementer seat carries both effort channels to the wire, not just the flag one. `src/engine/implementers/cli.ts` hands the seat's `effort` and `variant` to the adapter's build-args input. Six adapters emit: `claude-code`, `copilot` and `command-code` emit `--effort <level>`; `codex` emits `-c model_reasoning_effort=<level>`; `opencode` and `kilo-code` emit `--variant <name>` after the `--model` pair. An adapter without a given channel ignores that field, so the caller never branches on tool. The full channel matrix lives in [CONFIGURATION.md](./CONFIGURATION.md) under the `effort` field.
+
+The arg-vector preflight (`src/engine/runners/arg-vector-preflight.ts`) replays **long flags** against the installed binary's own help output, so a flag the local build does not know is a pre-spawn failure rather than a mid-task one. Codex is the exception and is **not** covered: its effort is the short `-c` plus a bare `key=value` token, and the preflight compares neither half, so a codex build that stopped accepting `model_reasoning_effort` would fail mid-task instead.
 
 ### Write modes
 
@@ -438,7 +440,7 @@ When you adjust a tool's adapter to track an upstream CLI change, bump that tool
 | `copilot` | no / yes | yes / yes | yes / yes | `--allow-all` | none / none | session | `GH_TOKEN`, `GITHUB_TOKEN` |
 | `kilo-code` | no / yes | yes / yes | yes / yes | `--auto` | none / none | provider-dependent | inherited from provider config |
 | `cursor` | no / yes | yes / yes | yes / yes | `--force` | none / none | `api-key-or-session`: session (host-cli-state), api-key | `CURSOR_API_KEY` (api-key channel) |
-| `command-code` | no / yes | yes / yes | yes / yes | `--permission-mode auto-accept` | none / none | session | — |
+| `command-code` | no / yes | yes / yes | yes / yes | `--yolo` | none / none | session | — |
 
 Session channels use `host-cli-state` bridging where noted in the catalog. SPLITBRIEF never copies credentials into argv. Subscription-included tools bill through the vendor login; provider-dependent tools inherit the upstream model provider's billing posture.
 
@@ -586,7 +588,7 @@ The role vector is pinned and effect-verified per backend (REQ-017). A role that
 | `claude-code` | `--permission-mode plan` (Read, Glob, Grep, Plan only) | `--permission-mode acceptEdits` |
 | `codex` | `--sandbox read-only --ask-for-approval never` exec, ambient config and rules ignored, ephemeral detached | `--sandbox workspace-write --ask-for-approval never` in the staged checkout |
 | `cursor` | `--print --output-format stream-json --mode plan --trust` | `--print --output-format stream-json --force --trust` |
-| `command-code` | `-p --output-format json --trust --skip-onboarding --permission-mode plan` | `-p --output-format json --trust --skip-onboarding --permission-mode auto-accept` |
+| `command-code` | `-p --output-format json --trust --skip-onboarding --permission-mode plan` | `-p --output-format json --trust --skip-onboarding --yolo` |
 
 A planner never gains canonical write authority. Candidates stay non-canonical until the authoritative generation commit; the fixed `tasks.md`, `brief-quality.json`, `spec.md`, and `plan.md` files are compatibility projections of that generation. See [WORKFLOW.md](./WORKFLOW.md) for the generation, permit, and disposition flow.
 

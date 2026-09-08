@@ -53,6 +53,18 @@ export function resolveRunnerContextWindow(
   }
 
   const known = findKnownModel(input.providerId, modelId);
+
+  // An alias is not a catalog id, so the lookups above cannot find it: `opus` is `claude-opus-5`
+  // in every catalog that publishes a window for it. A row that names the id it resolves to reads
+  // that row's window ahead of the one it declares, so a pinned seat and the picker row it was
+  // picked from can never print two windows for one model.
+  if (input.cache !== undefined && known?.catalogModelId !== undefined) {
+    const catalogRow = lookupModelsDevModel(input.providerId, known.catalogModelId, input.cache);
+    if (catalogRow?.contextLength !== undefined) {
+      return { contextLength: catalogRow.contextLength, source: 'models-dev' };
+    }
+  }
+
   if (known?.contextLength !== undefined) {
     return { contextLength: known.contextLength, source: 'known-catalog' };
   }

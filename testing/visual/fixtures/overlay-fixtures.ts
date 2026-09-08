@@ -437,6 +437,18 @@ const PLANNER_HIGH_EFFORT = {
   model: 'claude-sonnet-4',
   effort: 'high',
 } as const;
+/** Kilo spends its effort on `--variant`, Copilot on `--effort`: the two channels this crew block
+ * has no other scenario for. Neither seat sets a level, so both rows read the unset word. */
+const PLANNER_KILO_SEAT = {
+  kind: 'cli',
+  tool: 'kilo-code',
+  model: 'openai/gpt-5.6',
+} as const;
+const BUILD_COPILOT_SEAT = {
+  kind: 'cli',
+  tool: 'copilot',
+  model: 'gpt-5.6-luna',
+} as const;
 
 const createHelpFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'help', underlyingScreen: 'workflow' });
@@ -461,6 +473,12 @@ const createSettingsInheritedEffortFixture: FixtureFactory = () =>
     overlay: 'settings',
     seed: seedConfig({ planner: PLANNER_HIGH_EFFORT }),
     focus: 'effort:review',
+  });
+const createSettingsCrewKiloCopilotFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'settings',
+    seed: seedConfig({ planner: PLANNER_KILO_SEAT, implementer: BUILD_COPILOT_SEAT }),
+    focus: 'effort:plan',
   });
 const createSettingsFloorFullFixture: FixtureFactory = () =>
   createOverlayFixture({
@@ -581,6 +599,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-settings'), createSettingsFixture],
   [scenarioId('overlay-settings-crew-full'), createSettingsCrewFullFixture],
   [scenarioId('overlay-settings-inherited-effort'), createSettingsInheritedEffortFixture],
+  [scenarioId('overlay-settings-crew-kilo-copilot'), createSettingsCrewKiloCopilotFixture],
   [scenarioId('overlay-settings-floor-full'), createSettingsFloorFullFixture],
   [scenarioId('overlay-settings-filtered'), createSettingsFilteredFixture],
   [scenarioId('overlay-settings-filter-plan'), createSettingsFilterPlanFixture],

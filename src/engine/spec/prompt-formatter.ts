@@ -12,11 +12,17 @@ import { TASK_BRIEF_HEADINGS } from './headings.js';
 
 export { formatImplementerSystemPreamble };
 
-const CLOSING_CONSTRAINTS = [
+export const CLOSING_CONSTRAINTS = [
   'Do NOT invent new functions not described in the task',
   'Do NOT add features not described in the task',
   'Do NOT import packages not listed in the project dependencies',
 ];
+
+export const RETRY_FRAMINGS: Record<number, string> = {
+  1: 'Your previous attempt had an error. Fix it:',
+  2: 'Previous attempts failed. Here is the task rephrased differently:',
+  3: 'Multiple attempts have failed. Try a completely different approach:',
+};
 
 function resolveCodeContext(
   fileContent: string,
@@ -236,13 +242,7 @@ export function formatRetryPrompt(opts: {
     writesFiles = 'extracted-code',
   } = opts;
   const ctx = languageContext ?? buildLanguageContext(undefined);
-  const framings: Record<number, string> = {
-    1: 'Your previous attempt had an error. Fix it:',
-    2: 'Previous attempts failed. Here is the task rephrased differently:',
-    3: 'Multiple attempts have failed. Try a completely different approach:',
-  };
-
-  const framing = framings[attempt] ?? framings[3] ?? '';
+  const framing = RETRY_FRAMINGS[attempt] ?? RETRY_FRAMINGS[3] ?? '';
   const sections = buildTaskSections(task, context, writesFiles);
 
   sections.unshift(framing, '', 'Error from previous attempt:', error, '');

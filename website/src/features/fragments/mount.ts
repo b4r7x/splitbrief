@@ -10,6 +10,8 @@ export type Rect = {
 
 export type Viewport = { readonly width: number; readonly height: number };
 
+export type KeepClear = { readonly text: readonly Rect[]; readonly marks: readonly Rect[] };
+
 export type Placement = {
   readonly text: string;
   readonly x: number;
@@ -24,11 +26,14 @@ export type Fragments = {
   stop(): void;
 };
 
-const SEED = 23;
-const COUNT = 28;
+const PHONE = 768;
+const SEED = 8088;
 const TRIES = 2000;
-const TRAVEL = 120;
+const TRAVEL = 64;
 const MARGIN = 6;
+const TEXT_GAP = 24;
+const STRIPES = 4;
+const SPREAD = 60;
 const GLYPH = { width: 6.6, height: 11 };
 const DURATION = { min: 14, max: 28 };
 const OPACITY = { min: 0.18, max: 0.35 };
@@ -47,17 +52,30 @@ function overlaps(a: Rect, b: Rect): boolean {
   return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
 
-export function placeFragments(viewport: Viewport, exclusions: readonly Rect[]): Placement[] {
+export function placeFragments(viewport: Viewport, keepClear: KeepClear): Placement[] {
   const placed: Placement[] = [];
-  const taken: Rect[] = [...exclusions];
+  const taken: Rect[] = [
+    ...keepClear.marks,
+    ...keepClear.text.map((rect) => ({
+      left: rect.left - (TEXT_GAP - MARGIN),
+      top: rect.top,
+      right: rect.right + (TEXT_GAP - MARGIN),
+      bottom: rect.bottom,
+    })),
+  ];
+  const span = viewport.height - TRAVEL - GLYPH.height;
   let k = 0;
-  for (const text of [...POOL, ...POOL].slice(0, COUNT)) {
+  POOL.forEach((text, i) => {
     for (let tries = 0; tries < TRIES; tries++, k++) {
       const width = text.length * GLYPH.width;
       const x = MARGIN + hash(SEED, k, 0, 0) * (viewport.width - width - 2 * MARGIN);
-      const y = hash(SEED, k, 1, 0) * (viewport.height + TRAVEL - GLYPH.height);
+      const y =
+        tries < TRIES / 2
+          ? TRAVEL + (((i % STRIPES) + hash(SEED, k, 1, 0)) / STRIPES) * span
+          : TRAVEL + hash(SEED, k, 1, 0) * span;
       const band = travelBand(text, x, y);
       if (taken.some((rect) => overlaps(rect, band))) continue;
+      if (placed.some((other) => Math.hypot(other.x - x, other.y - y) < SPREAD)) continue;
       taken.push(band);
       placed.push({
         text,
@@ -69,7 +87,7 @@ export function placeFragments(viewport: Viewport, exclusions: readonly Rect[]):
       });
       break;
     }
-  }
+  });
   return placed;
 }
 
@@ -90,30 +108,36 @@ function hover(span: HTMLElement, placement: Placement): Animation {
   );
 }
 
-export function mountFragments(layer: HTMLElement, exclusions: () => readonly Rect[]): Fragments {
+export function mountFragments(layer: HTMLElement, keepClear: () => KeepClear): Fragments {
   let hovering: { span: HTMLElement; placement: Placement }[] = [];
   let running = false;
 
   function place(): void {
-    hovering = placeFragments({ width: innerWidth, height: innerHeight }, exclusions()).map(
-      (placement) => {
-        const span = document.createElement('span');
-        span.className = 'fragment';
-        span.textContent = placement.text;
-        span.style.left = `${placement.x}px`;
-        span.style.top = `${placement.y}px`;
-        span.style.opacity = String(placement.opacity);
-        return { span, placement };
-      },
-    );
+    hovering = (
+      innerWidth < PHONE
+        ? []
+        : placeFragments({ width: innerWidth, height: innerHeight }, keepClear())
+    ).map((placement) => {
+      const span = document.createElement('span');
+      span.className = 'fragment';
+      span.textContent = placement.text;
+      span.style.left = `${placement.x}px`;
+      span.style.top = `${placement.y}px`;
+      span.style.opacity = String(placement.opacity);
+      return { span, placement };
+    });
     layer.replaceChildren(...hovering.map(({ span }) => span));
     if (!running) return;
     layer.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 480, easing: 'ease-out' });
     for (const { span, placement } of hovering) hover(span, placement);
   }
 
+  let queued = 0;
   document.fonts.ready.then(place);
-  addEventListener('resize', place);
+  addEventListener('resize', () => {
+    cancelAnimationFrame(queued);
+    queued = requestAnimationFrame(place);
+  });
 
   return {
     start(): void {

@@ -41,3 +41,9 @@
   --gutter: clamp(20px, 4.4vw, 64px);
   --content-max: 1312px;
 }
+
+@media (max-width: 767px) {
+  :root {
+    --text-display: clamp(2.75rem, 13vw, 3.25rem);
+  }
+}

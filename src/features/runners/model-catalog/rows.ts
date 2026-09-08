@@ -4,6 +4,7 @@ import type {
   CliProviderAuth,
   CliProviderAuthUnreadableReason,
 } from '../../../core/discovery/detection.js';
+import { UNSET_EFFORT_WORD } from '../../../core/runners/effort-channel.js';
 import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
@@ -26,8 +27,12 @@ export type RouteAuthState =
   | { kind: 'unknown'; reason: CliProviderAuthUnreadableReason | 'empty' }
   | { kind: 'unchecked' };
 
-/** A steppable dimension of an expanded model: spelled by the id, or by the tool's variant flag. */
-export type RightAxisName = OptionAxisName | 'variant';
+/**
+ * A steppable dimension of an expanded model: spelled by the model id, or by the
+ * ladder the tool publishes for it. One vocabulary answers both, so the row model
+ * borrows the id parser's names rather than adding one of its own.
+ */
+export type RightAxisName = OptionAxisName;
 
 export type RightRow =
   | {
@@ -44,6 +49,8 @@ export type RightRow =
       auth: RouteAuthState;
       /** Widest tag among the sibling routes, so their auth words share one column. */
       tagWidth: number;
+      /** Picks the tree glyph that closes the model's route block. */
+      last: boolean;
     }
   | {
       kind: 'axis';
@@ -52,9 +59,9 @@ export type RightRow =
       /** The provider route the axis steps inside; empty on an option family. */
       providerPrefix: string;
       value: string;
-      /** The presets a variant axis cycles through; empty on an id-spelled axis. */
+      /** The ladder this axis steps through; empty when the axis is spelled by the model id. */
       choices: readonly string[];
-      /** Whether the ladder has anywhere to step; the cycle mark and the byline read this one value. */
+      /** Whether the ladder has anywhere to step, so no surface promises a key that cannot move. */
       steps: boolean;
       /** Picks the tree glyph that closes the parent's child block. */
       last: boolean;
@@ -78,9 +85,6 @@ export const CATALOG_FETCH_FAILED = 'Could not load models';
 
 /** One wording for the escape row that opens the unfiltered catalog. */
 export const BROWSE_CATALOG_TEXT = 'Browse the full catalog';
-
-/** One wording for a variant axis nobody has drafted yet. */
-export const UNSET_VARIANT_WORD = '—';
 
 const NOTICE_TEXT: Readonly<Record<'pending' | 'failed', string>> = {
   pending: CATALOG_LANE_PENDING,
@@ -114,29 +118,66 @@ export function routeAuthStateFor(input: {
   }
 }
 
-/** True when any route of the row carries the tool's own preset ladder. */
-export function offersVariantLadder(model: ModelOption): boolean {
-  return (model.variants ?? []).some((variant) => (variant.variantChoices ?? []).length > 0);
+/** True when any route of the row, or the row itself, carries the tool's own preset ladder. */
+export function offersEffortLadder(model: ModelOption): boolean {
+  return (
+    (model.variants ?? []).some((variant) => (variant.variantChoices ?? []).length > 0) ||
+    (model.effortChoices ?? []).length > 0
+  );
 }
 
 /**
- * The steppable dimensions of one route, closing with the tool's preset ladder
- * where that route spells one. A single draft serves every route, so it reads as
- * set only under the route whose vocabulary contains it.
+ * The preset ladder one route spells: the route's own, else the row's, else none. The
+ * offer and the commit both read it here, so a level the row lists is a level the save
+ * can spend. `catalog.ts` has already dropped the ladders the seat's channel cannot.
+ */
+export function effortLadderFor(
+  model: Pick<ModelOption, 'variants' | 'effortChoices'>,
+  fullId: string,
+): readonly string[] {
+  const route = model.variants?.find((variant) => variant.fullId === fullId);
+  const routeChoices = route?.variantChoices ?? [];
+  return routeChoices.length > 0 ? routeChoices : (model.effortChoices ?? []);
+}
+
+/**
+ * The steppable dimensions of one route: the ladder its model publishes in the
+ * `effort` slot, then the axes the id spells. A single draft serves every route, so
+ * it reads as set only under the route whose vocabulary contains it.
  */
 function axisRowsFor(input: {
   model: ModelOption;
   providerPrefix: string;
   optionDraftId: string | null | undefined;
-  variantDraft: string | null | undefined;
+  effortDraft: string | null | undefined;
 }): AxisRow[] {
   const { model, providerPrefix } = input;
   const variants = model.variants ?? [];
   const drafted = routeDraftOf(model, providerPrefix, input.optionDraftId);
   const selection = parseOptionSelection(drafted);
-  const axisRows: AxisRow[] = [];
+  const choices = effortLadderFor(model, drafted);
+  const rows: AxisRow[] = [];
+  // The ladder replaces the route's id-spelled effort rather than trailing its other
+  // axes, so `effort · fast · thinking` reads the same whichever channel spelled it.
+  if (choices.length > 0) {
+    const draft = input.effortDraft ?? '';
+    rows.push({
+      kind: 'axis',
+      model,
+      axis: 'effort',
+      providerPrefix,
+      value: choices.includes(draft) ? draft : UNSET_EFFORT_WORD,
+      choices,
+      // The ladder the picker walks is `[null, ...choices]`, so even a lone preset
+      // steps — between unset and itself.
+      steps: true,
+      last: false,
+    });
+  }
   for (const axis of optionAxesOf(variants, providerPrefix)) {
-    axisRows.push({
+    // The ladder is the authoritative effort for this route; the id's tokens are not a second one.
+    if (axis.axis === 'effort' && choices.length > 0) continue;
+    rows.push({
       kind: 'axis',
       model,
       axis: axis.axis,
@@ -147,23 +188,7 @@ function axisRowsFor(input: {
       last: false,
     });
   }
-  const choices = variants.find((variant) => variant.fullId === drafted)?.variantChoices ?? [];
-  if (choices.length > 0) {
-    const draft = input.variantDraft ?? '';
-    axisRows.push({
-      kind: 'axis',
-      model,
-      axis: 'variant',
-      providerPrefix,
-      value: choices.includes(draft) ? draft : UNSET_VARIANT_WORD,
-      choices,
-      // The ladder the picker walks is `[null, ...choices]`, so even a lone preset
-      // steps — between unset and itself.
-      steps: true,
-      last: false,
-    });
-  }
-  return axisRows.map((row, index) => ({ ...row, last: index === axisRows.length - 1 }));
+  return rows.map((row, index) => ({ ...row, last: index === rows.length - 1 }));
 }
 
 function provenanceFor(model: ModelOption, customModels: readonly string[]): ProvenanceWord {
@@ -221,7 +246,7 @@ export function buildRightRows(input: {
   customModels: readonly string[];
   browseCatalog: boolean;
   optionDraftId?: string | null;
-  variantDraft?: string | null;
+  effortDraft?: string | null;
 }): RightRow[] {
   const sectioned = input.models.length > SECTION_THRESHOLD;
   const automatic: ModelOption[] = [];
@@ -281,13 +306,14 @@ export function buildRightRows(input: {
         model,
         providerPrefix,
         optionDraftId: input.optionDraftId,
-        variantDraft: input.variantDraft,
+        effortDraft: input.effortDraft,
       });
-    if (isOptionFamily(model)) {
+    // An option family and a variant-less row both hold one route: their axes hang
+    // off the model itself rather than off a route row.
+    if (isOptionFamily(model) || variants.length === 0) {
       rows.push(...axesOf(''));
       return;
     }
-    if (variants.length === 0) return;
     const tagWidth = variants.reduce(
       (widest, variant) =>
         Math.max(widest, getTerminalCellWidth(sanitizeTerminalDisplayText(variant.tag))),
@@ -295,7 +321,8 @@ export function buildRightRows(input: {
     );
     // Each route carries its own axes: a row that spans two providers offers
     // every spelling of both, not just the drafted one's.
-    for (const prefix of routePrefixesOf(variants)) {
+    const routes = routePrefixesOf(variants);
+    for (const prefix of routes) {
       const variant = variants.find((entry) => entry.providerPrefix === prefix);
       if (variant === undefined) continue;
       rows.push({
@@ -303,6 +330,7 @@ export function buildRightRows(input: {
         model,
         variant,
         tagWidth,
+        last: prefix === routes[routes.length - 1],
         auth: routeAuthStateFor({
           hasOracle: input.hasOracle,
           variant,

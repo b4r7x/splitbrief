@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { formatModelName } from '../../../core/model-display.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import { resolveModelCatalog } from './catalog.js';
 import type { ModelCacheAccessor } from './resolution.js';
@@ -513,7 +514,11 @@ describe('runner-owned catalog resolution', () => {
         anthropic: {
           id: 'anthropic',
           models: {
-            'claude-opus-5': { id: 'claude-opus-5', name: 'Claude Opus 5' },
+            'claude-opus-5': {
+              id: 'claude-opus-5',
+              name: 'Claude Opus 5',
+              limit: { context: 1_000_000 },
+            },
             'claude-sonnet-5': { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' },
           },
         },
@@ -525,8 +530,8 @@ describe('runner-owned catalog resolution', () => {
     expect(rows.map((row) => row.selectionId).sort()).toEqual(
       [
         'best',
-        'default',
         'fable',
+        'fable[1m]',
         'haiku',
         'opus',
         'opus[1m]',
@@ -536,9 +541,163 @@ describe('runner-owned catalog resolution', () => {
       ].sort(),
     );
     expect(rows.every((row) => row.membership === 'bundled-suggestion')).toBe(true);
+    // Four aliases resolve to this one models.dev row, so the alias's own label has to survive
+    // the merge or all four paint `Claude Opus 5`. The number is still models.dev's.
     expect(rows.find((row) => row.selectionId === 'opus')).toMatchObject({
       source: 'bundled-fallback',
-      displayName: 'Claude Opus 5',
+      displayName: 'Opus 5',
+      contextLength: 1_000_000,
+    });
+  });
+
+  it('folds the account cache entry into the alias it names and leaves nine distinct rows', () => {
+    const cache = makeModelCacheAccessor({
+      claudeCodeOptions: [
+        {
+          id: 'claude-fable-5-1[1m]',
+          displayName: 'Fable',
+          description: 'Fable 5.1 · Most capable for your hardest and longest-running tasks',
+        },
+      ],
+      catalog: {
+        anthropic: {
+          id: 'anthropic',
+          models: {
+            'claude-opus-5': {
+              id: 'claude-opus-5',
+              name: 'Claude Opus 5',
+              limit: { context: 1_000_000 },
+            },
+            'claude-sonnet-5': {
+              id: 'claude-sonnet-5',
+              name: 'Claude Sonnet 5',
+              limit: { context: 1_000_000 },
+            },
+            'claude-fable-5-1': {
+              id: 'claude-fable-5-1',
+              name: 'Claude Fable 5.1',
+              limit: { context: 1_000_000 },
+            },
+            'claude-haiku-4-5': {
+              id: 'claude-haiku-4-5',
+              name: 'Claude Haiku 4.5 (latest)',
+              limit: { context: 200_000 },
+            },
+          },
+        },
+      },
+    });
+
+    const rows = resolveModelCatalog('claude-code', { cache });
+    const selectionIds = rows.map((row) => row.selectionId);
+
+    expect(rows).toHaveLength(9);
+    expect(new Set(rows.map((row) => row.displayName)).size).toBe(9);
+    expect(selectionIds).not.toContain('default');
+    expect(selectionIds).not.toContain('claude-fable-5-1[1m]');
+    expect(rows.filter((row) => row.contextLength === undefined)).toEqual([]);
+    expect(rows.find((row) => row.selectionId === 'fable[1m]')).toMatchObject({
+      displayName: 'Fable 5.1 (1M context)',
+      detail: 'Fable 5.1 · Most capable for your hardest and longest-running tasks',
+      contextLength: 1_000_000,
+    });
+  });
+
+  it('keeps an account option that several aliases could answer to as its own row', () => {
+    const cache = makeModelCacheAccessor({
+      claudeCodeOptions: [
+        { id: 'claude-opus-5', displayName: 'Claude Opus 5', description: 'the account entry' },
+      ],
+    });
+
+    const rows = resolveModelCatalog('claude-code', { cache });
+
+    // `opus`, `opusplan` and `best` all resolve to this id, so no single alias row is the one
+    // the entry names. Folding it would delete a selectable row and gloss whichever alias
+    // happened to be declared first.
+    expect(rows).toHaveLength(10);
+    expect(rows.find((row) => row.selectionId === 'claude-opus-5')).toMatchObject({
+      source: 'account-options',
+      detail: 'the account entry',
+    });
+    for (const alias of ['opus', 'opusplan', 'best']) {
+      expect(rows.find((row) => row.selectionId === alias)?.detail, alias).not.toBe(
+        'the account entry',
+      );
+    }
+  });
+
+  it('gives a configured full model id the catalog window but never the catalog name', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        anthropic: {
+          id: 'anthropic',
+          models: {
+            'claude-haiku-4-5': {
+              id: 'claude-haiku-4-5',
+              name: 'Claude Haiku 4.5 (latest)',
+              limit: { context: 200_000 },
+            },
+          },
+        },
+      },
+    });
+
+    // A full id is valid for the tool but is not one of the nine aliases, so it arrives through
+    // the recovery lane. The window is the hole worth closing — a blank size cell beside nine
+    // complete rows. The name is not: models.dev spells this model `Claude Haiku 4.5 (latest)`,
+    // which would stand one line above the `Haiku 4.5` alias row for the same model in a second
+    // vocabulary. Nameless, the row reads its own id in Claude's words.
+    const [recovered] = resolveModelCatalog('claude-code', {
+      cache,
+      configuredSelectionId: 'claude-haiku-4-5',
+    }).filter((row) => row.source === 'configured-recovery');
+
+    expect(recovered).toMatchObject({
+      selectionId: 'claude-haiku-4-5',
+      membership: 'custom',
+      contextLength: 200_000,
+    });
+    expect(recovered?.displayName).toBeUndefined();
+    expect(formatModelName(recovered?.id ?? '')).toBe('Claude Haiku 4.5');
+  });
+
+  it('reads an alias window from the catalog row it names and falls back to its own', () => {
+    const catalog: ModelsDevCatalog = {
+      anthropic: {
+        id: 'anthropic',
+        models: { 'claude-haiku-4-5': { id: 'claude-haiku-4-5', limit: { context: 500_000 } } },
+      },
+    };
+
+    // Each alias declares the window Claude bakes for it and models.dev re-publishes the same
+    // number, so the catalog — the copy that stays current — outranks the declaration. What the
+    // declaration is for is the other half of this case: the row before any catalog loads.
+    const withCatalog = resolveModelCatalog('claude-code', {
+      cache: makeModelCacheAccessor({ catalog }),
+    });
+    const offline = resolveModelCatalog('claude-code');
+
+    expect(withCatalog.find((row) => row.selectionId === 'haiku')?.contextLength).toBe(500_000);
+    expect(offline.find((row) => row.selectionId === 'haiku')?.contextLength).toBe(200_000);
+  });
+
+  // The cold start is the first frame of every session, byline `Loading models…`. A row whose
+  // size cell is blank there says nothing at all, and `Sonnet 5 (1M context)` beside a blank
+  // cell withholds the very number its own label promises.
+  it('gives every alias row a window before any catalog has loaded', () => {
+    const rows = resolveModelCatalog('claude-code');
+
+    expect(Object.fromEntries(rows.map((row) => [row.selectionId, row.contextLength]))).toEqual({
+      sonnet: 1_000_000,
+      opus: 1_000_000,
+      fable: 1_000_000,
+      haiku: 200_000,
+      opusplan: 1_000_000,
+      best: 1_000_000,
+      'sonnet[1m]': 1_000_000,
+      'opus[1m]': 1_000_000,
+      'fable[1m]': 1_000_000,
     });
   });
 
@@ -560,6 +719,100 @@ describe('runner-owned catalog resolution', () => {
         displayName: 'Claude Opus 5 (Feb 2026)',
       },
     ]);
+  });
+
+  it('gives a window-suffixed account option the window and the ladder of the row it strips to', () => {
+    const cache = makeModelCacheAccessor({
+      claudeCodeOptions: [{ id: 'claude-haiku-4-5[1m]', displayName: 'Haiku 1M' }],
+      catalog: {
+        anthropic: {
+          id: 'anthropic',
+          models: {
+            'claude-haiku-4-5': {
+              id: 'claude-haiku-4-5',
+              name: 'Claude Haiku 4.5',
+              limit: { context: 200_000 },
+              release_date: '2025-10-01',
+              reasoning_options: [{ type: 'budget_tokens', min: 1024 }],
+            },
+          },
+        },
+      },
+    });
+
+    const rows = resolveModelCatalog('claude-code', { cache });
+    const haiku = rows.filter((row) => row.selectionId === 'claude-haiku-4-5[1m]');
+
+    // No alias spells this id — `haiku` carries no window suffix — so the option keeps its row.
+    // The window is the matched row's own number, never one the suffix invents: a 200 000 base
+    // row stays 200 000, and the `[1m]` meaning belongs in the row's label. Haiku publishes no
+    // effort levels, so both rows for it must offer none: an option that took the tool's flag
+    // ladder here would offer an axis its sibling alias row correctly refuses.
+    expect(haiku).toMatchObject([
+      {
+        id: 'claude-haiku-4-5[1m]',
+        displayName: 'Haiku 1M',
+        contextLength: 200_000,
+        nativeReasoningEfforts: [],
+        releaseDate: '2025-10-01',
+      },
+    ]);
+    expect(rows.find((row) => row.selectionId === 'haiku')?.nativeReasoningEfforts).toEqual(
+      haiku[0]?.nativeReasoningEfforts,
+    );
+  });
+
+  it('keeps an account option distinct from the catalog row whose id it matches exactly', () => {
+    const cache = makeModelCacheAccessor({
+      claudeCodeOptions: [{ id: 'claude-opus-4-6' }],
+      catalog: {
+        anthropic: {
+          id: 'anthropic',
+          models: {
+            'claude-opus-4-6': {
+              id: 'claude-opus-4-6',
+              name: 'Claude Opus 4.6',
+              limit: { context: 1_000_000 },
+              release_date: '2026-02-04',
+            },
+          },
+        },
+      },
+    });
+
+    const option = resolveModelCatalog('claude-code', { cache }).filter(
+      (row) => row.source === 'account-options',
+    );
+
+    // The option keeps its own row and takes that row's published facts. The name is the one
+    // field it does not take: the cache did not label this entry, so the row is its own id
+    // rather than a second copy of the catalog row's name.
+    expect(option).toMatchObject([
+      { id: 'claude-opus-4-6', contextLength: 1_000_000, releaseDate: '2026-02-04' },
+    ]);
+    expect(option[0]?.displayName).toBeUndefined();
+  });
+
+  // The window suffix is what selects the window, so a persisted `[2m]` id is not the same
+  // selection as the bare row: it keeps its own recovery row instead of being silently satisfied.
+  it('keeps a configured window-suffixed selection distinct from the bare row it enriches from', () => {
+    const cache = makeModelCacheAccessor({
+      claudeCodeOptions: [{ id: 'claude-opus-4-6', displayName: 'Opus 4.6' }],
+    });
+
+    const suffixed = resolveModelCatalog('claude-code', {
+      cache,
+      configuredSelectionId: 'claude-opus-4-6[2m]',
+    });
+    const bare = resolveModelCatalog('claude-code', {
+      cache,
+      configuredSelectionId: 'claude-opus-4-6',
+    });
+
+    expect(suffixed.filter((row) => row.source === 'configured-recovery')).toMatchObject([
+      { selectionId: 'claude-opus-4-6[2m]' },
+    ]);
+    expect(bare.filter((row) => row.source === 'configured-recovery')).toEqual([]);
   });
 
   it('falls back to aliases alone when the Claude Code option cache is unreadable', () => {
@@ -587,8 +840,8 @@ describe('runner-owned catalog resolution', () => {
                 { type: 'effort', values: ['low', 'medium', 'high', 'xhigh', 'max'] },
               ],
             },
-            'claude-fable-5': {
-              id: 'claude-fable-5',
+            'claude-fable-5-1': {
+              id: 'claude-fable-5-1',
               reasoning_options: [{ type: 'effort', values: ['low', 'high'] }],
             },
             'claude-haiku-4-5': {

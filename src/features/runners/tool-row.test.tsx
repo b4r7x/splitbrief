@@ -34,6 +34,7 @@ function routeRow(auth: RouteAuthState): RightRow {
     model: { id: 'openai/gpt-5.6' },
     variant: { fullId: 'openai/gpt-5.6', providerPrefix: 'openai', tag: 'openai' },
     tagWidth: 6,
+    last: true,
     auth,
   };
 }
@@ -480,7 +481,7 @@ describe('runner row grammar', () => {
       await tick(20);
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('GPT-5.6 Luna');
-      expect(frame).toMatch(/High · Fast/);
+      expect(frame).toMatch(/high · on/);
       expect(frame).not.toMatch(/12 options/);
       expect(frame).not.toContain('options');
       expect(frame).not.toContain('providers');
@@ -497,6 +498,9 @@ describe('runner row grammar', () => {
           { fullId: 'gpt-5.6-luna-high-fast', providerPrefix: '', tag: 'High Fast' },
         ],
       };
+      // Both variants parse `effort: 'high'`, so `fast` is the family's only axis and
+      // the whole summary is that one word — matched whole, like its wider siblings.
+      const summary = /\boff\b/;
       const expanded = renderFeature(
         renderModelRow({
           row: { ...modelRow(luna, 'Detected'), expanded: true },
@@ -509,7 +513,7 @@ describe('runner row grammar', () => {
       await tick(20);
       const expandedFrame = expanded.lastFrame() ?? '';
       expect(expandedFrame).toContain('GPT-5.6 Luna');
-      expect(expandedFrame).not.toContain('Standard');
+      expect(expandedFrame).not.toMatch(summary);
       expect(expandedFrame).toContain(glyph('disclosureOpen'));
       expanded.unmount();
 
@@ -524,7 +528,7 @@ describe('runner row grammar', () => {
       );
       await tick(20);
       const collapsedFrame = collapsed.lastFrame() ?? '';
-      expect(collapsedFrame).toContain('Standard');
+      expect(collapsedFrame).toMatch(summary);
       expect(collapsedFrame).toContain(glyph('disclosureClosed'));
       collapsed.unmount();
     });
@@ -546,15 +550,15 @@ describe('runner row grammar', () => {
 
       // The three-axis summary and the context length together push the name under
       // its floor, so the context goes first and the name stays whole.
-      const tight = await frameAt(40);
+      const tight = await frameAt(35);
       expect(tight).toContain('Claude Opus 5');
-      expect(tight).toContain('Low · Standard · Off');
+      expect(tight).toContain('low · off · off');
       expect(tight).not.toContain('1M');
 
       // Narrower still, the summary cannot buy its place either.
-      const tighter = await frameAt(38);
+      const tighter = await frameAt(33);
       expect(tighter).toContain('Claude Opus 5');
-      expect(tighter).not.toContain('Standard');
+      expect(tighter).not.toContain('low · off · off');
       expect(tighter).toContain('1M');
     });
 
@@ -574,15 +578,15 @@ describe('runner row grammar', () => {
       const frameAt = (maxWidth: number): Promise<string> =>
         rowFrame(modelRow(grok, 'Stale'), maxWidth, 'cursor-grok-4.6-low');
 
-      const wide = await frameAt(48);
-      expect(wide).toContain('Low · Standard · Off');
+      const wide = await frameAt(43);
+      expect(wide).toContain('low · off · off');
       expect(wide).toContain('Stale');
       expect(wide).not.toContain('272K');
 
       const tight = await frameAt(26);
       expect(tight).toContain('Stale');
       expect(tight).not.toContain('272K');
-      expect(tight).not.toContain('Standard');
+      expect(tight).not.toContain('low · off · off');
 
       // Below the name floor the word still goes out: it costs the name cells, but
       // an empty column would leave the row with nothing to say it is stale.
@@ -610,17 +614,20 @@ describe('runner row grammar', () => {
       };
       const frameAt = (maxWidth: number): Promise<string> =>
         rowFrame(modelRow(grok, 'Stale'), maxWidth, 'cursor-grok-4.6-low');
+      // The two variants differ only in effort, so that is the family's only axis and
+      // the whole summary is the drafted variant's word — matched whole, like its siblings.
+      const summary = /\blow\b/;
 
       // Room for one of them: the word the row cannot recover elsewhere wins.
       const word = await frameAt(26);
       expect(word).toContain('Stale');
-      expect(word).not.toContain('Low');
+      expect(word).not.toMatch(summary);
 
       // Room for neither, though the summary alone would have fit: the word still goes
       // out, paid for out of the name's cells.
       const floored = await frameAt(23);
       expect(floored).toContain('Stale');
-      expect(floored).not.toContain('Low');
+      expect(floored).not.toMatch(summary);
       expect(floored).not.toContain('Cursor Grok');
     });
 
@@ -647,7 +654,7 @@ describe('runner row grammar', () => {
     });
 
     it('hangs axis rows off the parent and closes the block with the last-child glyph', async () => {
-      // The grid is full both ways, so effort and speed are both axes the row builder
+      // The grid is full both ways, so effort and fast are both axes the row builder
       // would emit and both ladders have somewhere to step.
       const luna: ModelOption = {
         id: 'gpt-5.6-luna-high',
@@ -671,16 +678,16 @@ describe('runner row grammar', () => {
       );
       const effort = renderFeature(
         renderModelRow({
-          row: axisRow(luna, 'effort', 'High'),
+          row: axisRow(luna, 'effort', 'high'),
           isCursor: false,
           maxWidth: width,
           currentModel: undefined,
           sectioned: false,
         }),
       );
-      const speed = renderFeature(
+      const fast = renderFeature(
         renderModelRow({
-          row: axisRow(luna, 'speed', 'Standard', true),
+          row: axisRow(luna, 'fast', 'off', true),
           isCursor: false,
           maxWidth: width,
           currentModel: undefined,
@@ -690,26 +697,26 @@ describe('runner row grammar', () => {
       await tick(20);
       const parentLine = stripAnsiStyles(parent.lastFrame() ?? '').split('\n')[0] ?? '';
       const effortLine = stripAnsiStyles(effort.lastFrame() ?? '').split('\n')[0] ?? '';
-      const speedLine = stripAnsiStyles(speed.lastFrame() ?? '').split('\n')[0] ?? '';
+      const fastLine = stripAnsiStyles(fast.lastFrame() ?? '').split('\n')[0] ?? '';
 
       expect(effortLine.startsWith(`  ${glyph('treeBranch')}${glyph('divider')} effort`)).toBe(
         true,
       );
-      expect(speedLine.startsWith(`  ${glyph('treeLast')}${glyph('divider')} speed`)).toBe(true);
+      expect(fastLine.startsWith(`  ${glyph('treeLast')}${glyph('divider')} fast`)).toBe(true);
       expect(effortLine).not.toContain(glyph('treeLast'));
 
       // The cycle affordance stands in the parent's disclosure column, so nothing shifts.
       expect(effortLine).toContain(glyph('connectorSame'));
-      expect(speedLine).toContain(glyph('connectorSame'));
+      expect(fastLine).toContain(glyph('connectorSame'));
       expect(effortLine.indexOf(glyph('connectorSame'))).toBe(
         parentLine.indexOf(glyph('disclosureOpen')),
       );
-      expect(speedLine.indexOf(glyph('connectorSame'))).toBe(
+      expect(fastLine.indexOf(glyph('connectorSame'))).toBe(
         effortLine.indexOf(glyph('connectorSame')),
       );
       parent.unmount();
       effort.unmount();
-      speed.unmount();
+      fast.unmount();
     });
 
     it('keeps the axis value whole in a column too narrow to also hold the cycle glyph', async () => {
@@ -722,22 +729,22 @@ describe('runner row grammar', () => {
         ],
       };
       const lineAt = (maxWidth: number): Promise<string> =>
-        rowLine(axisRow(luna, 'speed', 'Standard', true), maxWidth);
+        rowLine(axisRow(luna, 'fast', 'off', true), maxWidth);
 
       // A value the column truncated away is a value space cannot be seen to cycle.
       const floored = await lineAt(22);
-      expect(floored).toContain('Standard');
+      expect(floored).toContain('off');
       expect(floored).toContain(glyph('treeLast'));
       expect(floored).not.toContain(glyph('connectorSame'));
 
-      // 20 is the widest column where the check cells the floor gives back are the
-      // only thing keeping the value whole.
-      const narrow = await lineAt(20);
-      expect(narrow).toContain('Standard');
+      // Below the floor the check column's cells go back to the value: 14 still holds
+      // it whole, and 13 loses it.
+      const narrow = await lineAt(14);
+      expect(narrow).toContain('off');
       expect(narrow).not.toContain(glyph('connectorSame'));
 
       const roomy = await lineAt(23);
-      expect(roomy).toContain('Standard');
+      expect(roomy).toContain('off');
       expect(roomy).toContain(glyph('connectorSame'));
     });
 
@@ -751,7 +758,7 @@ describe('runner row grammar', () => {
         ],
       };
       const lineFor = (steps: boolean): Promise<string> =>
-        rowLine(axisRow(model, 'speed', 'Standard', true, steps), 60);
+        rowLine(axisRow(model, 'fast', 'off', true, steps), 60);
 
       const dead = await lineFor(false);
       const live = await lineFor(true);
@@ -759,7 +766,7 @@ describe('runner row grammar', () => {
       expect(dead).not.toContain(glyph('connectorSame'));
       expect(live).toContain(glyph('connectorSame'));
       // The mark goes but its cells stay, so the value column does not slide right.
-      expect(dead.indexOf('Standard')).toBe(live.indexOf('Standard'));
+      expect(dead.indexOf('off')).toBe(live.indexOf('off'));
     });
 
     it('renders axis rows with the axis label and current value', async () => {
@@ -773,7 +780,7 @@ describe('runner row grammar', () => {
       };
       const effort = renderFeature(
         renderModelRow({
-          row: axisRow(luna, 'effort', 'High'),
+          row: axisRow(luna, 'effort', 'high'),
           isCursor: false,
           maxWidth: 60,
           currentModel: undefined,
@@ -782,12 +789,12 @@ describe('runner row grammar', () => {
       );
       await tick(20);
       expect(effort.lastFrame() ?? '').toContain('effort');
-      expect(effort.lastFrame() ?? '').toContain('High');
+      expect(effort.lastFrame() ?? '').toContain('high');
       effort.unmount();
 
-      const speed = renderFeature(
+      const fast = renderFeature(
         renderModelRow({
-          row: axisRow(luna, 'speed', 'Fast'),
+          row: axisRow(luna, 'fast', 'on'),
           isCursor: false,
           maxWidth: 60,
           currentModel: undefined,
@@ -795,9 +802,9 @@ describe('runner row grammar', () => {
         }),
       );
       await tick(20);
-      expect(speed.lastFrame() ?? '').toContain('speed');
-      expect(speed.lastFrame() ?? '').toContain('Fast');
-      speed.unmount();
+      expect(fast.lastFrame() ?? '').toContain('fast');
+      expect(fast.lastFrame() ?? '').toContain('on');
+      fast.unmount();
     });
 
     it('renders a single-variant row without any provider annotation', async () => {
@@ -842,52 +849,6 @@ describe('runner row grammar', () => {
       await tick(20);
       expect(ui.lastFrame() ?? '').toContain(glyph('check'));
       ui.unmount();
-    });
-  });
-
-  describe('variant axis rows', () => {
-    beforeEach(() => {
-      forceUnicodeGlyphs();
-    });
-
-    const hybrid: ModelOption = {
-      id: 'openai/gpt-5.6-luna-high',
-      displayName: 'GPT-5.6 Luna',
-      variants: [
-        { fullId: 'openai/gpt-5.6-luna-high', providerPrefix: 'openai', tag: 'High' },
-        { fullId: 'openai/gpt-5.6-luna-low', providerPrefix: 'openai', tag: 'Low' },
-      ],
-    };
-
-    it('draws a variant axis row with the drafted preset', async () => {
-      const line = await rowLine(axisRow(hybrid, 'variant', 'xhigh', true), 60);
-      expect(line).toContain('variant');
-      expect(line).toContain('xhigh');
-    });
-
-    it('draws the cycle mark for a ladder that can step', async () => {
-      const line = await rowLine(axisRow(hybrid, 'variant', 'high', true), 60);
-      expect(line).toContain(glyph('connectorSame'));
-    });
-
-    it('drops the cycle mark for a ladder with nowhere to step', async () => {
-      const line = await rowLine(axisRow(hybrid, 'variant', 'max', true, false), 60);
-      expect(line).toContain('max');
-      expect(line).not.toContain(glyph('connectorSame'));
-    });
-
-    it('drops the mark but keeps the cells below the axis floor width', async () => {
-      const variant = await rowLine(axisRow(hybrid, 'variant', 'high', true), 22);
-      const effort = await rowLine(axisRow(hybrid, 'effort', 'High'), 22);
-      expect(variant).not.toContain(glyph('connectorSame'));
-      expect(variant.indexOf('high')).toBe(effort.indexOf('High'));
-    });
-
-    it('closes the child block on the last axis row', async () => {
-      const last = await rowLine(axisRow(hybrid, 'variant', 'high', true), 60);
-      const branch = await rowLine(axisRow(hybrid, 'variant', 'high'), 60);
-      expect(last.startsWith(`  ${glyph('treeLast')}${glyph('divider')} variant`)).toBe(true);
-      expect(branch.startsWith(`  ${glyph('treeBranch')}${glyph('divider')} variant`)).toBe(true);
     });
   });
 

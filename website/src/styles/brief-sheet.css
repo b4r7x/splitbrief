@@ -1,0 +1,128 @@
+.brief-sheet {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--s-6);
+  align-items: start;
+  width: min(var(--content-max), 100% - 2 * var(--gutter));
+  margin-inline: auto;
+  padding-top: var(--s-24);
+
+  > .eyebrow {
+    grid-area: 1 / 1 / 2 / 6;
+    color: var(--ink-3);
+  }
+
+  > .claim {
+    grid-area: 1 / 11 / 3 / 13;
+    color: var(--ink);
+  }
+
+  .sheet {
+    grid-area: 2 / 1 / 5 / 6;
+    height: 707px;
+    margin-top: var(--s-4);
+    padding: var(--s-6) var(--s-6) 0;
+    overflow: hidden;
+    border: 1px solid var(--hair-strong);
+    border-bottom: 0;
+    box-shadow: var(--highlight);
+    font-size: var(--text-label);
+    line-height: 18px;
+
+    figcaption {
+      font-weight: 500;
+      color: var(--ink);
+    }
+
+    .eyebrow {
+      letter-spacing: 0.08em;
+      color: var(--ink-3);
+    }
+
+    pre {
+      margin-top: var(--s-2);
+      padding-top: var(--s-2);
+      border-top: 1px solid var(--hair);
+      font: inherit;
+      white-space: pre-wrap;
+    }
+
+    .key {
+      color: var(--ink-3);
+    }
+
+    .mark {
+      color: var(--ink-3);
+    }
+  }
+
+  b {
+    font-weight: 500;
+  }
+
+  .statement {
+    grid-area: 2 / 7 / 3 / 11;
+    max-width: 34rem;
+    margin-top: calc(var(--s-8) + var(--s-1));
+  }
+
+  .statement + .statement {
+    grid-area: 4 / 7 / 5 / 11;
+    align-self: end;
+    margin-top: var(--s-12);
+    padding-bottom: var(--s-12);
+  }
+}
+
+@media (max-width: 1099px) {
+  .brief-sheet {
+    > .eyebrow {
+      grid-area: 1 / 1 / 2 / 10;
+    }
+
+    > .claim {
+      grid-area: 1 / 10 / 2 / 13;
+    }
+
+    .sheet {
+      grid-area: 2 / 1 / 5 / 8;
+    }
+
+    .statement {
+      grid-area: 2 / 8 / 3 / 13;
+    }
+
+    .statement + .statement {
+      grid-area: 4 / 8 / 5 / 13;
+    }
+  }
+}
+
+@media (max-width: 767px) {
+  .brief-sheet {
+    > .eyebrow,
+    > .claim,
+    .sheet,
+    .statement,
+    .statement + .statement {
+      grid-area: auto / 1 / auto / -1;
+    }
+
+    .sheet {
+      order: 1;
+      height: 689px;
+      margin-top: var(--s-12);
+    }
+
+    .statement + .statement {
+      margin-top: var(--s-6);
+      padding-bottom: 0;
+    }
+  }
+}
+
+@media (max-width: 374px) {
+  .brief-sheet .sheet {
+    height: 653px;
+  }
+}

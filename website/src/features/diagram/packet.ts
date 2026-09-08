@@ -1,11 +1,19 @@
 import type { Pose } from './density';
 import { find } from './find';
 import { poseAt } from './pose';
-import { responses } from './response';
-import { length, offsetPath, type Point, type Polyline, pointAt } from './route-geometry';
-import { type GhostBox, ghostRect, type Rect } from './scatter';
+import { reactions } from './response';
+import {
+  extend,
+  length,
+  offsetPath,
+  type Point,
+  type Polyline,
+  parsePath,
+  pointAt,
+} from './route-geometry';
+import { type GhostBox, ghostRect, type Rect, type Tier } from './scatter';
 import type { SeatName } from './seats';
-import { CUES, frame, LOOP, PERIOD } from './timeline';
+import { schedule, type Timeline } from './timeline';
 
 export type Packets = {
   pose(name: SeatName): Pose;
@@ -16,7 +24,6 @@ export type Packets = {
 type Leg = { readonly until: number; readonly distance: number };
 type Route = { readonly from: number; readonly via: readonly Leg[]; readonly end: Leg };
 
-const STAGE = { width: 760, height: 860 };
 const INSET = 8;
 const FADE = 0.12;
 const REST: Pose = {};
@@ -26,7 +33,12 @@ const WAKE = [
   { size: 3, lag: 0.36, opacity: 0.15 },
 ];
 
-function ride(route: Route, opacity: number): Keyframe[] {
+function drawn(routes: Element, name: string): Polyline {
+  return parsePath(find<SVGPathElement>(routes, `.route--${name}`).getAttribute('d') ?? '');
+}
+
+function ride(timeline: Timeline, route: Route, opacity: number): Keyframe[] {
+  const { frame, period } = timeline;
   const legs = [...route.via, route.end];
   return [
     frame(0, { offsetDistance: '0px', opacity: 0 }),
@@ -34,7 +46,7 @@ function ride(route: Route, opacity: number): Keyframe[] {
     frame(route.from + FADE, { opacity }),
     ...legs.map((leg) => frame(leg.until, { offsetDistance: `${leg.distance}px`, opacity })),
     frame(route.end.until + FADE, { opacity: 0 }),
-    frame(PERIOD, { offsetDistance: `${route.end.distance}px`, opacity: 0 }),
+    frame(period, { offsetDistance: `${route.end.distance}px`, opacity: 0 }),
   ];
 }
 
@@ -62,36 +74,41 @@ function wake(packet: HTMLElement, path: string, size: number): HTMLElement {
 
 export function mountPackets(
   stage: HTMLElement,
+  routes: Element,
   ghosts: Readonly<Record<SeatName, GhostBox>>,
-  card: Rect,
+  tier: Tier,
 ): Packets {
   const boxes: Record<SeatName, Rect> = {
     planner: ghostRect(ghosts.planner),
     implementer: ghostRect(ghosts.implementer),
     reviewer: ghostRect(ghosts.reviewer),
   };
-  const y = card.top + card.height / 2;
-  const implPath: Polyline = [
-    { x: boxes.planner.left + boxes.planner.width - INSET, y },
-    { x: boxes.implementer.left + INSET, y },
-  ];
-  const cardX = card.left + card.width / 2;
-  const revPath: Polyline = [
-    { x: cardX, y: card.top + card.height - INSET },
-    { x: cardX, y: STAGE.height * 0.6 },
-    { x: STAGE.width * 0.49, y: STAGE.height * 0.6 },
-    { x: STAGE.width * 0.49, y: STAGE.height * 0.72 },
-    { x: boxes.reviewer.left + INSET, y: STAGE.height * 0.72 },
-  ];
+  for (const stale of stage.querySelectorAll('.wake')) stale.remove();
+  const a = drawn(routes, 'a');
+  const b = drawn(routes, 'b');
+  const ab: Polyline = [a[0], ...a.slice(1), ...b];
+  const implPath = extend(ab, INSET);
+  const revPath = extend(drawn(routes, 'c'), INSET);
+  const entry = INSET + length(a);
+  const exit = entry + length(ab) - length(a) - length(b);
+  const timeline = schedule(
+    { entry, exit, implementer: length(implPath), reviewer: length(revPath) },
+    tier,
+  );
+  const { card, cues, handoff, period } = timeline;
   const impl: Route = {
     from: 0,
     via: [
-      { until: 1.2, distance: card.left - implPath[0].x },
-      { until: 1.8, distance: card.left + card.width - implPath[0].x },
+      { until: card.from, distance: entry },
+      { until: card.to, distance: exit },
     ],
-    end: { until: 3.4, distance: length(implPath) },
+    end: { until: cues.implementer.at, distance: length(implPath) },
   };
-  const rev: Route = { from: 3.4, via: [], end: { until: 7.4, distance: length(revPath) } };
+  const rev: Route = {
+    from: cues.implementer.at + handoff,
+    via: [],
+    end: { until: cues.reviewer.at, distance: length(revPath) },
+  };
   const riders = [
     { element: find<HTMLElement>(stage, '.packet--impl'), path: implPath, route: impl },
     { element: find<HTMLElement>(stage, '.packet--rev'), path: revPath, route: rev },
@@ -99,21 +116,21 @@ export function mountPackets(
     const css = offsetPath(path);
     element.style.setProperty('offset-path', css);
     return [
-      { element, frames: ride(route, 1), delay: 0 },
+      { element, frames: ride(timeline, route, 1), delay: 0 },
       ...WAKE.map((trail) => ({
         element: wake(element, css, trail.size),
-        frames: ride(route, trail.opacity),
+        frames: ride(timeline, route, trail.opacity),
         delay: trail.lag * 1000,
       })),
     ];
   });
-  const cues = responses(stage);
+  const answers = reactions(stage, timeline);
   let animations: Animation[] = [];
   let clock: Animation | undefined;
 
   function time(): number {
     const now = clock?.currentTime;
-    return typeof now === 'number' ? (now / 1000) % PERIOD : 0;
+    return typeof now === 'number' ? (now / 1000) % period : 0;
   }
 
   function target(t: number): Point | undefined {
@@ -126,21 +143,14 @@ export function mountPackets(
   function pose(name: SeatName): Pose {
     if (!clock) return REST;
     const t = time();
-    return poseAt({
-      cue: CUES[name],
-      t,
-      box: boxes[name],
-      seen: target(t),
-      glitchMs: ghosts[name].seat.glitchMs,
-    });
+    return poseAt({ cue: cues[name], t, period, box: boxes[name], seen: target(t) });
   }
 
   function start(): void {
     if (clock) return;
-    animations = [
-      ...riders.map(({ element, frames, delay }) => element.animate(frames, { ...LOOP, delay })),
-      ...cues.map(({ element, frames }) => element.animate(frames, LOOP)),
-    ];
+    animations = [...riders, ...answers].map(({ element, frames, delay }) =>
+      element.animate(frames, { ...timeline.loop, delay }),
+    );
     clock = animations[0];
   }
 

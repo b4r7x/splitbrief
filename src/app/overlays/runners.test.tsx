@@ -632,7 +632,11 @@ describe('ToolModelPicker model catalog', () => {
           id: 'anthropic',
           name: 'Anthropic',
           models: {
-            'claude-opus-5': { id: 'claude-opus-5', name: 'Claude Opus 5' },
+            'claude-opus-5': {
+              id: 'claude-opus-5',
+              name: 'Claude Opus 5',
+              limit: { context: 1_000_000 },
+            },
             'claude-sonnet-5': { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' },
           },
         },
@@ -641,13 +645,15 @@ describe('ToolModelPicker model catalog', () => {
       validatedAt: 100,
     });
 
-    // The alias is the row; models.dev only tells it what it is called.
+    // The alias is the row and keeps its own name; models.dev only tells it how large it is.
     await vi.waitFor(() => {
-      expect(checkedModelLines(frameText(ui)).join('')).toContain('Claude Opus 5');
+      expect(checkedModelLines(frameText(ui)).join('')).toContain('1M');
     });
 
     const after = checkedModelLines(frameText(ui));
     expect(after).toHaveLength(1);
+    expect(after.join('')).toContain('Opus 5');
+    expect(after.join('')).not.toContain('Claude Opus 5');
     expect(modelColumnLines(frameText(ui))).toHaveLength(aliasRowCount);
     ui.unmount();
   });

@@ -6,7 +6,8 @@
   width: min(var(--content-max), 100% - 2 * var(--gutter));
   min-height: calc(100vh - 96px);
   margin-inline: auto;
-  padding-block: var(--s-6) var(--s-16);
+  padding-block: var(--s-6) var(--s-12);
+  container: hero / inline-size;
 }
 
 .steps,
@@ -53,9 +54,6 @@
 .hero .claim {
   grid-area: 1 / 11 / 2 / 13;
   z-index: 1;
-  font-size: var(--text-label);
-  line-height: 1.45;
-  letter-spacing: 0.08em;
   color: var(--ink-2);
 }
 
@@ -118,7 +116,7 @@
   }
 
   .hero .claim {
-    grid-area: 1 / 7 / 2 / 13;
+    grid-area: 1 / 10 / 2 / 13;
   }
 
   .hero h1,
@@ -131,6 +129,31 @@
 
   .diagram {
     grid-row: auto;
-    margin-top: var(--s-12);
+    max-width: 760px;
+    margin-top: var(--s-6);
+  }
+
+  .works {
+    order: 1;
+  }
+}
+
+@media (max-width: 1249px) {
+  .lede br {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .hero .claim {
+    grid-area: 1 / 7 / 2 / 13;
+  }
+
+  .works ul {
+    display: grid;
+    grid-template-rows: repeat(3, auto);
+    grid-auto-flow: column;
+    column-gap: var(--s-8);
+    width: max-content;
   }
 }

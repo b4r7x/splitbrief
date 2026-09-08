@@ -1,27 +1,27 @@
-import { EFFORT_AXIS_TOKENS } from '../../../core/runners/effort-channel.js';
+import { EFFORT_AXIS_TOKENS, UNSET_EFFORT_WORD } from '../../../core/runners/effort-channel.js';
 import { assertNever, includes } from '../../../utils/type-guards.js';
-import { peelOptionSuffix, prettyOptionTokens } from './option-merge.js';
+import { peelOptionSuffix } from './option-merge.js';
 import type { ModelOption, ModelVariant } from './recency.js';
 
-const EFFORT_ORDER = EFFORT_AXIS_TOKENS;
-const SPEED_ORDER = ['standard', 'fast'] as const;
+const EFFORT_ORDER = [UNSET_EFFORT_WORD, ...EFFORT_AXIS_TOKENS] as const;
+const FAST_ORDER = ['off', 'on'] as const;
 const THINKING_ORDER = ['off', 'on'] as const;
 
 type OptionEffort = (typeof EFFORT_ORDER)[number];
-type OptionSpeed = (typeof SPEED_ORDER)[number];
+type OptionFast = (typeof FAST_ORDER)[number];
 type OptionThinking = (typeof THINKING_ORDER)[number];
 
-export type OptionAxisName = 'effort' | 'speed' | 'thinking';
+export type OptionAxisName = 'effort' | 'fast' | 'thinking';
 
 interface OptionSelection {
   readonly effort: OptionEffort;
-  readonly speed: OptionSpeed;
+  readonly fast: OptionFast;
   readonly thinking: OptionThinking;
 }
 
 type OptionAxis =
   | { readonly axis: 'effort'; readonly values: readonly OptionEffort[] }
-  | { readonly axis: 'speed'; readonly values: readonly OptionSpeed[] }
+  | { readonly axis: 'fast'; readonly values: readonly OptionFast[] }
   | { readonly axis: 'thinking'; readonly values: readonly OptionThinking[] };
 
 const OPTION_SUMMARY_SEP = ' · ';
@@ -30,14 +30,14 @@ function effortOf(tokens: readonly string[]): OptionEffort {
   for (const token of tokens) {
     if (includes(EFFORT_ORDER, token)) return token;
   }
-  return 'medium';
+  return UNSET_EFFORT_WORD;
 }
 
 export function parseOptionSelection(id: string): OptionSelection {
   const tokens = peelOptionSuffix(id).tokens;
   return {
     effort: effortOf(tokens),
-    speed: tokens.includes('fast') ? 'fast' : 'standard',
+    fast: tokens.includes('fast') ? 'on' : 'off',
     thinking: tokens.includes('thinking') ? 'on' : 'off',
   };
 }
@@ -65,20 +65,20 @@ export function optionAxesOf(
   providerPrefix = '',
 ): readonly OptionAxis[] {
   const efforts = new Set<string>();
-  const speeds = new Set<string>();
+  const fasts = new Set<string>();
   const thinkings = new Set<string>();
   for (const variant of variants) {
     if (variant.providerPrefix !== providerPrefix) continue;
     const selection = parseOptionSelection(variant.fullId);
     efforts.add(selection.effort);
-    speeds.add(selection.speed);
+    fasts.add(selection.fast);
     thinkings.add(selection.thinking);
   }
   const axes: OptionAxis[] = [];
   const effortValues = uniqueInOrder(efforts, EFFORT_ORDER);
   if (effortValues.length >= 2) axes.push({ axis: 'effort', values: effortValues });
-  const speedValues = uniqueInOrder(speeds, SPEED_ORDER);
-  if (speedValues.length >= 2) axes.push({ axis: 'speed', values: speedValues });
+  const fastValues = uniqueInOrder(fasts, FAST_ORDER);
+  if (fastValues.length >= 2) axes.push({ axis: 'fast', values: fastValues });
   const thinkingValues = uniqueInOrder(thinkings, THINKING_ORDER);
   if (thinkingValues.length >= 2) axes.push({ axis: 'thinking', values: thinkingValues });
   return axes;
@@ -131,7 +131,7 @@ export function composeOptionId(
     const parsed = parseOptionSelection(variant.fullId);
     return (
       parsed.effort === selection.effort &&
-      parsed.speed === selection.speed &&
+      parsed.fast === selection.fast &&
       parsed.thinking === selection.thinking
     );
   })?.fullId;
@@ -164,9 +164,9 @@ export function cycleOptionAxis(
         if (id !== undefined) return id;
       }
       return undefined;
-    case 'speed':
-      for (const value of nextValues(def.values, current.speed)) {
-        const id = composeOptionId(variants, { ...current, speed: value }, providerPrefix);
+    case 'fast':
+      for (const value of nextValues(def.values, current.fast)) {
+        const id = composeOptionId(variants, { ...current, fast: value }, providerPrefix);
         if (id !== undefined) return id;
       }
       return undefined;
@@ -194,16 +194,7 @@ export function stepOptionAxis(
 }
 
 export function formatAxisValue(axis: OptionAxisName, selection: OptionSelection): string {
-  switch (axis) {
-    case 'effort':
-      return prettyOptionTokens([selection.effort]);
-    case 'speed':
-      return selection.speed === 'fast' ? 'Fast' : 'Standard';
-    case 'thinking':
-      return selection.thinking === 'on' ? 'On' : 'Off';
-    default:
-      return assertNever(axis);
-  }
+  return selection[axis];
 }
 
 export function formatOptionSummary(

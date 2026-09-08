@@ -556,7 +556,7 @@ describe('one authoritative row per model', () => {
           models: {
             'claude-opus-5': { id: 'claude-opus-5', release_date: '2026-04-01' },
             'claude-sonnet-5': { id: 'claude-sonnet-5', release_date: '2026-03-01' },
-            'claude-fable-5': { id: 'claude-fable-5', release_date: '2026-05-01' },
+            'claude-fable-5-1': { id: 'claude-fable-5-1', release_date: '2026-05-01' },
             'claude-haiku-4-5': { id: 'claude-haiku-4-5', release_date: '2026-01-01' },
           },
         },
@@ -565,15 +565,15 @@ describe('one authoritative row per model', () => {
     };
 
     expect(resolveAndSort('claude-code', 'planner', cache).map((model) => model.id)).toEqual([
-      'default',
-      'best',
-      'fable',
-      'opus',
       'sonnet',
+      'opus',
+      'fable',
       'haiku',
       'opusplan',
+      'best',
       'sonnet[1m]',
       'opus[1m]',
+      'fable[1m]',
     ]);
   });
 
@@ -581,12 +581,34 @@ describe('one authoritative row per model', () => {
     const cache: ModelCacheAccessor = {
       getModelsDevCatalog: () => null,
       getProviderModels: () => null,
-      getClaudeCodeModelOptions: () => [{ id: 'claude-fable-5-1[1m]', displayName: 'Fable' }],
+      getClaudeCodeModelOptions: () => [
+        { id: 'claude-opus-5-20260201', displayName: 'Claude Opus 5 (Feb 2026)' },
+      ],
     };
 
     const models = resolveAndSort('claude-code', 'planner', cache);
 
-    expect(models.map((model) => model.id)).toContain('claude-fable-5-1[1m]');
+    expect(models.map((model) => model.id)).toContain('claude-opus-5-20260201');
+    expect(countModelOptions(models).bundled).toBe(getBundledModels('claude-code').length);
+  });
+
+  it('folds an account option that names an alias into that alias row', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => null,
+      getClaudeCodeModelOptions: () => [
+        {
+          id: 'claude-fable-5-1[1m]',
+          displayName: 'Fable',
+          description: 'Fable 5.1 · Most capable',
+        },
+      ],
+    };
+
+    const models = resolveAndSort('claude-code', 'planner', cache);
+
+    expect(models.map((model) => model.id)).not.toContain('claude-fable-5-1[1m]');
+    expect(models.map((model) => model.id)).toContain('fable[1m]');
     expect(countModelOptions(models).bundled).toBe(getBundledModels('claude-code').length);
   });
 

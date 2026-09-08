@@ -102,9 +102,16 @@ describe('deriveCrewRows', () => {
     });
   });
 
-  it('still says n/a on a channel-less tool', () => {
+  it('still says n/a on a channel-less seat', () => {
     const config = makeConfig({
-      implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' },
+      implementer: {
+        kind: 'api',
+        provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
+        apiBase: 'http://127.0.0.1:11434/v1',
+        model: 'qwen3-coder:30b',
+      },
     });
     const row = rowAt(deriveCrewRows({ config }), 'effort:build');
 

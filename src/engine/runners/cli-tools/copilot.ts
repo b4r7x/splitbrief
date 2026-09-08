@@ -23,12 +23,14 @@ const COPILOT_PROTECTED_FLAGS = new Set([
   '--allow-all',
   '--allow-all-tools',
   '--autopilot',
+  '--effort',
   '--model',
   '--mode',
   '--no-ask-user',
   '--output-format',
   '--plan',
   '--prompt',
+  '--reasoning-effort',
   '--yolo',
   '-p',
 ]);
@@ -109,6 +111,7 @@ function terminal(input: { events: readonly CliProtocolEvent[] }): CopilotTermin
 function plannerBaseArgs(input: CopilotPlannerBuildInput): string[] {
   return [
     ...(input.model === undefined ? [] : ['--model', input.model]),
+    ...(input.effort === undefined ? [] : ['--effort', input.effort]),
     '-p',
     input.prompt,
     ...(input.mode === 'plan'
@@ -122,6 +125,7 @@ function plannerBaseArgs(input: CopilotPlannerBuildInput): string[] {
 function implementerBaseArgs(input: CopilotImplementerBuildInput): string[] {
   return [
     ...(input.model === undefined ? [] : ['--model', input.model]),
+    ...(input.effort === undefined ? [] : ['--effort', input.effort]),
     '-p',
     input.prompt,
     '--allow-all',

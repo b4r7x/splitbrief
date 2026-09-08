@@ -19,7 +19,7 @@ import {
   getRuntimeModelSnapshot,
   type ModelCacheAccessor,
 } from './resolution.js';
-import { areExactModelSelectionIdsEqual } from './parsing.js';
+import { areExactModelSelectionIdsEqual, matchesModelsDevId } from './parsing.js';
 
 export type ResolvedModelSource =
   | 'models-dev'
@@ -74,7 +74,7 @@ function exactModelsDevMetadata(
 ): DetectedModel | null {
   const matches = input.entries.filter(
     (entry) =>
-      areExactModelSelectionIdsEqual({ left: entry.id, right: input.selectionId }) &&
+      matchesModelsDevId({ left: entry.id, right: input.selectionId }) &&
       (input.sourceProviderId === undefined || entry.providerId === input.sourceProviderId),
   );
   if (matches.length !== 1) return null;
@@ -226,11 +226,24 @@ function bundledSuggestion(
     model: input.model,
     modelsDevEntries: input.modelsDevEntries,
   });
+  // A row that names the catalog id it is enriched from has said where its numbers live, so the
+  // catalog's window wins there and the declared one is the offline answer only — what the row
+  // shows before a catalog loads and the floor `bundledMinimumWindow` reads (REQ-D26). Without
+  // this, a claude-code alias would print its own copy of a number models.dev is re-publishing,
+  // and the two would drift apart on their own schedules. A row that declares a window and names
+  // no catalog id keeps it: there the tool's own probe is the authority on what the tool accepts.
+  const declaredWindow =
+    input.model.catalogModelId !== undefined && metadata?.contextLength !== undefined
+      ? undefined
+      : input.model.contextLength;
   const base: DetectedModel = {
     id: input.model.name,
-    ...(input.model.contextLength === undefined
-      ? {}
-      : { contextLength: input.model.contextLength }),
+    // The alias is the only thing that tells these rows apart, so its own identity outranks the
+    // enrichment: four claude-code aliases resolve to one models.dev row and would otherwise all
+    // paint that row's name. Numbers still arrive from `metadata`.
+    ...(input.model.displayName === undefined ? {} : { displayName: input.model.displayName }),
+    ...(input.model.detail === undefined ? {} : { detail: input.model.detail }),
+    ...(declaredWindow === undefined ? {} : { contextLength: declaredWindow }),
     ...(input.model.maxOutputTokens === undefined
       ? {}
       : { maxOutputTokens: input.model.maxOutputTokens }),
@@ -276,14 +289,18 @@ function claudeCodeOptionEntry(
     sourceProviderId: input.runnerId,
     modelsDevEntries: input.modelsDevEntries,
   });
+  // The option takes every published fact of the row it strips to — window, effort ladder, output
+  // cap, release date — so one model never renders two rows that disagree. The name is the one
+  // thing it keeps: the cache's own word, or the id itself, never the catalog's.
+  const { displayName: _catalogName, ...facts } = metadata ?? {};
   const base: DetectedModel = {
     id: input.option.id,
     ...(input.option.displayName === undefined ? {} : { displayName: input.option.displayName }),
+    ...(input.option.description === undefined ? {} : { detail: input.option.description }),
   };
-  const merged = metadata === null ? base : { ...metadata, ...base };
   return stripUnpricedFields({
-    ...merged,
-    id: input.option.id,
+    ...facts,
+    ...base,
     selectionId: input.option.id,
     runnerId: input.runnerId,
     sourceProviderId: input.runnerId,
@@ -299,9 +316,23 @@ function configuredRecovery(
   input: Readonly<{
     runnerId: ProviderId;
     selectionId: string;
+    modelsDevEntries: readonly DetectedModel[];
   }>,
 ): ResolvedModelCatalogEntry {
+  // A configured id no lane lists is still a model the catalog may know — a full
+  // `claude-opus-5` beside the aliases, say — so it takes the catalog's window rather than
+  // rendering a blank size cell beside nine complete rows. The name it does not take: the id
+  // reads in the tool's own vocabulary through `formatModelName`, where models.dev's
+  // `Claude Haiku 4.5 (latest)` would print a second naming system one line above the `Haiku 4.5`
+  // alias row for the same model.
+  const metadata = metadataForSelection({
+    runnerId: input.runnerId,
+    selectionId: input.selectionId,
+    sourceProviderId: input.runnerId,
+    modelsDevEntries: input.modelsDevEntries,
+  });
   return stripUnpricedFields({
+    ...(metadata?.contextLength === undefined ? {} : { contextLength: metadata.contextLength }),
     id: input.selectionId,
     selectionId: input.selectionId,
     runnerId: input.runnerId,
@@ -409,6 +440,38 @@ function dedupeCanonically(
   return kept;
 }
 
+/**
+ * Claude writes its own account cache in resolved form — the model id the alias points at plus
+ * the alias's own window suffix (`fable[1m]` → `claude-fable-5-1[1m]`). An entry spelled that way
+ * names an alias the list already shows, so it folds into that row instead of painting a second —
+ * but only when one alias answers to it. Three aliases resolve to `claude-opus-5`, and folding
+ * into whichever is declared first would delete a selectable row and gloss an arbitrary sibling.
+ * The suffix is read off the alias verbatim rather than matched: which brackets exist is
+ * `parsing.ts`'s vocabulary, and a second copy of it here would be a build behind the day one
+ * more window ships.
+ */
+function aliasAnsweringToOptionId(
+  providerId: ProviderId,
+  optionId: string,
+): KnownModel | undefined {
+  const matches = getBundledModels(providerId).filter((model) => {
+    const bracket = model.name.indexOf('[');
+    const suffix = bracket === -1 ? '' : model.name.slice(bracket);
+    return (
+      `${model.catalogModelId ?? model.name}${suffix}`.toLowerCase() === optionId.toLowerCase()
+    );
+  });
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+function withAliasDetail(
+  entry: ResolvedModelCatalogEntry,
+  details: ReadonlyMap<string, string>,
+): ResolvedModelCatalogEntry {
+  const detail = details.get(entry.selectionId);
+  return detail === undefined ? entry : { ...entry, detail };
+}
+
 function resolveCatalogEntries(
   input: Readonly<{
     providerId: ProviderId;
@@ -483,9 +546,18 @@ function resolveCatalogEntries(
   }
 
   const claudeCodeOptionRows: ResolvedModelCatalogEntry[] = [];
+  const aliasDetails = new Map<string, string>();
   if (lanes.claudeCodeOptions) {
     for (const option of cache.getClaudeCodeModelOptions?.() ?? []) {
       if (indexNamesSameModel(runtimeIndex, { id: option.id, owner: providerId })) continue;
+      const alias = aliasAnsweringToOptionId(providerId, option.id);
+      if (
+        alias !== undefined &&
+        bundledKeys.has(entryKey({ owner: providerId, selectionId: alias.name }))
+      ) {
+        if (option.description !== undefined) aliasDetails.set(alias.name, option.description);
+        continue;
+      }
       claudeCodeOptionRows.push(
         claudeCodeOptionEntry({ runnerId: providerId, option, modelsDevEntries }),
       );
@@ -496,7 +568,7 @@ function resolveCatalogEntries(
     ...runtimeRows,
     ...dedupeCanonically([
       ...modelsDevRows.sort(compareSuggestions),
-      ...bundledRows.sort(compareSuggestions),
+      ...bundledRows.sort(compareSuggestions).map((row) => withAliasDetail(row, aliasDetails)),
       ...claudeCodeOptionRows,
     ]),
   ];
@@ -506,7 +578,10 @@ function resolveCatalogEntries(
   });
   if (configured === null || hasExactSelection(catalogRows, configured)) return catalogRows;
 
-  return [configuredRecovery({ runnerId: providerId, selectionId: configured }), ...catalogRows];
+  return [
+    configuredRecovery({ runnerId: providerId, selectionId: configured, modelsDevEntries }),
+    ...catalogRows,
+  ];
 }
 
 /**

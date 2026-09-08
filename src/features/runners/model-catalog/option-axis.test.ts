@@ -4,6 +4,7 @@ import type { ModelOption, ModelVariant } from './recency.js';
 import {
   composeOptionId,
   cycleOptionAxis,
+  formatAxisValue,
   formatOptionSummary,
   isOptionFamily,
   optionAxesOf,
@@ -32,11 +33,11 @@ const OPENAI_SPARSE_ROUTE = [
 const MIXED_ROUTES = [...OPENAI_SPARSE_ROUTE, routeVariant('opencode-go', 'fam-max-fast')];
 
 describe('optionAxesOf', () => {
-  it('exposes effort and speed on the luna fixture, never context or thinking', () => {
+  it('exposes effort and fast on the luna fixture, never context or thinking', () => {
     const luna = mergeOptionFamilies(lunaFixtureRows())[0];
     const axes = optionAxesOf(luna?.variants ?? []);
 
-    expect(axes.map((axis) => axis.axis)).toEqual(['effort', 'speed']);
+    expect(axes.map((axis) => axis.axis)).toEqual(['effort', 'fast']);
     expect(axes[0]?.axis === 'effort' && axes[0].values).toEqual([
       'none',
       'low',
@@ -45,24 +46,24 @@ describe('optionAxesOf', () => {
       'xhigh',
       'max',
     ]);
-    expect(axes[1]?.axis === 'speed' && axes[1].values).toEqual(['standard', 'fast']);
+    expect(axes[1]?.axis === 'fast' && axes[1].values).toEqual(['off', 'on']);
   });
 
   it('reads axes per route', () => {
     const openai = optionAxesOf(MIXED_ROUTES, 'openai');
 
-    expect(openai.map((axis) => axis.axis)).toEqual(['effort', 'speed']);
+    expect(openai.map((axis) => axis.axis)).toEqual(['effort', 'fast']);
     expect(openai[0]?.axis === 'effort' && openai[0].values).toEqual(['low', 'high']);
-    expect(openai[1]?.axis === 'speed' && openai[1].values).toEqual(['standard', 'fast']);
+    expect(openai[1]?.axis === 'fast' && openai[1].values).toEqual(['off', 'on']);
     expect(optionAxesOf(MIXED_ROUTES, 'opencode-go')).toEqual([]);
   });
 
-  it('shows only speed for composer-2.5 and composer-2.5-fast', () => {
+  it('shows only fast for composer-2.5 and composer-2.5-fast', () => {
     expect(
       optionAxesOf([variant('composer-2.5'), variant('composer-2.5-fast')]).map(
         (axis) => axis.axis,
       ),
-    ).toEqual(['speed']);
+    ).toEqual(['fast']);
   });
 
   it('gives every multi-member cursor family 1–3 axes and never context', () => {
@@ -80,7 +81,7 @@ describe('optionAxesOf', () => {
       expect(axes.length).toBeGreaterThanOrEqual(1);
       expect(axes.length).toBeLessThanOrEqual(3);
       expect(
-        axes.every((axis) => axis === 'effort' || axis === 'speed' || axis === 'thinking'),
+        axes.every((axis) => axis === 'effort' || axis === 'fast' || axis === 'thinking'),
       ).toBe(true);
       const thinkings = new Set(
         (family.variants ?? []).map((entry) => parseOptionSelection(entry.fullId).thinking),
@@ -90,18 +91,18 @@ describe('optionAxesOf', () => {
 
     expect(
       optionAxesOf(byFamilyId.get('gpt-5.6-luna')?.variants ?? []).map((axis) => axis.axis),
-    ).toEqual(['effort', 'speed']);
+    ).toEqual(['effort', 'fast']);
     expect(
       optionAxesOf(byFamilyId.get('composer-2.5')?.variants ?? []).map((axis) => axis.axis),
-    ).toEqual(['speed']);
+    ).toEqual(['fast']);
     expect(
       optionAxesOf(byFamilyId.get('cursor-grok-4.6')?.variants ?? []).map((axis) => axis.axis),
-    ).toEqual(['effort', 'speed']);
+    ).toEqual(['effort', 'fast']);
     expect(byFamilyId.has('cursor-grok-4.5')).toBe(true);
     expect(byFamilyId.has('cursor-grok-4.6')).toBe(true);
     expect(
       optionAxesOf(byFamilyId.get('claude-opus-5')?.variants ?? []).map((axis) => axis.axis),
-    ).toEqual(['effort', 'speed', 'thinking']);
+    ).toEqual(['effort', 'fast', 'thinking']);
 
     const leftoverFamilyIds = merged
       .filter((row) => !isOptionFamily(row))
@@ -111,13 +112,13 @@ describe('optionAxesOf', () => {
 });
 
 describe('composeOptionId and cycleOptionAxis', () => {
-  it('cycles speed from luna high onto the existing high-fast id', () => {
+  it('cycles fast from luna high onto the existing high-fast id', () => {
     const variants = mergeOptionFamilies(lunaFixtureRows())[0]?.variants ?? [];
 
-    expect(composeOptionId(variants, { effort: 'high', speed: 'fast', thinking: 'off' })).toBe(
+    expect(composeOptionId(variants, { effort: 'high', fast: 'on', thinking: 'off' })).toBe(
       'gpt-5.6-luna-high-fast',
     );
-    expect(cycleOptionAxis(variants, 'gpt-5.6-luna-high', 'speed')).toBe('gpt-5.6-luna-high-fast');
+    expect(cycleOptionAxis(variants, 'gpt-5.6-luna-high', 'fast')).toBe('gpt-5.6-luna-high-fast');
   });
 
   it('skips a missing combination and lands on the next legal id', () => {
@@ -129,7 +130,7 @@ describe('composeOptionId and cycleOptionAxis', () => {
     ];
 
     expect(
-      composeOptionId(variants, { effort: 'high', speed: 'fast', thinking: 'off' }),
+      composeOptionId(variants, { effort: 'high', fast: 'on', thinking: 'off' }),
     ).toBeUndefined();
     expect(cycleOptionAxis(variants, 'fam-low-fast', 'effort')).toBe('fam-max-fast');
   });
@@ -140,16 +141,16 @@ describe('composeOptionId and cycleOptionAxis', () => {
     expect(
       composeOptionId(
         OPENAI_SPARSE_ROUTE,
-        { effort: 'high', speed: 'fast', thinking: 'off' },
+        { effort: 'high', fast: 'on', thinking: 'off' },
         'openai',
       ),
     ).toBeUndefined();
 
     for (const effort of ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as const) {
-      for (const speed of ['standard', 'fast'] as const) {
+      for (const fast of ['off', 'on'] as const) {
         const id = composeOptionId(
           OPENAI_SPARSE_ROUTE,
-          { effort, speed, thinking: 'off' },
+          { effort, fast, thinking: 'off' },
           'openai',
         );
         if (id !== undefined) expect(existing).toContain(id);
@@ -159,25 +160,51 @@ describe('composeOptionId and cycleOptionAxis', () => {
 
   it('never borrows an id from another route', () => {
     expect(
-      composeOptionId(MIXED_ROUTES, { effort: 'max', speed: 'fast', thinking: 'off' }, 'openai'),
+      composeOptionId(MIXED_ROUTES, { effort: 'max', fast: 'on', thinking: 'off' }, 'openai'),
     ).toBeUndefined();
-    expect(cycleOptionAxis(MIXED_ROUTES, 'openai/fam-low', 'speed', 'openai')).toBe(
+    expect(cycleOptionAxis(MIXED_ROUTES, 'openai/fam-low', 'fast', 'openai')).toBe(
       'openai/fam-low-fast',
     );
-    for (const axis of ['effort', 'speed', 'thinking'] as const) {
+    for (const axis of ['effort', 'fast', 'thinking'] as const) {
       const id = cycleOptionAxis(MIXED_ROUTES, 'openai/fam-low-fast', axis, 'openai');
       if (id !== undefined) expect(id.startsWith('openai/')).toBe(true);
     }
   });
 
-  it('treats an unlabeled id as Medium, not empty', () => {
+  it('treats an unlabeled id as auto, not empty', () => {
     const variants = [variant('gpt-5.6-luna'), variant('gpt-5.6-luna-high')];
 
     expect(parseOptionSelection('gpt-5.6-luna')).toEqual({
-      effort: 'medium',
-      speed: 'standard',
+      effort: 'auto',
+      fast: 'off',
       thinking: 'off',
     });
-    expect(formatOptionSummary('gpt-5.6-luna', variants)).toBe('Medium');
+    expect(formatOptionSummary('gpt-5.6-luna', variants)).toBe('auto');
+  });
+
+  it('heads the effort ladder with auto and cycles back onto the bare id', () => {
+    const variants =
+      mergeOptionFamilies(
+        cursorModelOptions().filter((row) => peelOptionSuffix(row.id).familyId === 'gpt-5.1'),
+      )[0]?.variants ?? [];
+
+    expect(optionAxesOf(variants).find((axis) => axis.axis === 'effort')?.values).toEqual([
+      'auto',
+      'low',
+      'high',
+    ]);
+    expect(cycleOptionAxis(variants, 'gpt-5.1-high', 'effort')).toBe('gpt-5.1');
+  });
+});
+
+describe('formatAxisValue', () => {
+  it('spells each axis with its own lowercase value, never a neighbouring axis', () => {
+    const selection = parseOptionSelection('gpt-5.6-luna-high-fast');
+    const values = (['effort', 'fast', 'thinking'] as const).map((axis) =>
+      formatAxisValue(axis, selection),
+    );
+
+    expect(values).toEqual(['high', 'on', 'off']);
+    for (const value of values) expect(value).toMatch(/^[a-z]+$/);
   });
 });

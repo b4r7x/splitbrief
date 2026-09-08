@@ -49,6 +49,8 @@ src/
     └── editor/                              # inline spec/plan/brief editor (overlay entry: app/overlays/editor.tsx)
 ```
 
+Outside `src/`, the repo root also carries `skills/` — the pipeline packaged as agent skills for skills.sh (`skills/splitbrief/` is canonical; its `references/` library carries `<!-- generated -->` blocks rendered from the CLI's prompt builders and adapters by `scripts/skill-blocks.ts`, and is mirrored into the `splitbrief-brief`, `splitbrief-run`, and `splitbrief-review` siblings by `scripts/sync-skills.ts`, both gated by `npm run skills:check`). See [`SKILLS.md`](./SKILLS.md).
+
 The distinction between `lib/` (infrastructure wrappers around external systems) and `utils/` (pure primitives with zero domain and zero infra dependency) is the layering spine of the codebase. See [`LAYERS.md`](./LAYERS.md) for the full decision tree and anti-patterns.
 
 `help`, `sessions`, `setup`, and `skills` have **no `features/` folder** — they dissolved into a single page each (the page *is* the whole surface). The folders above keep only internals; their entry is a page in `src/app/`.
@@ -455,7 +457,7 @@ Tests follow a hybrid layout driven by **blast radius** — how many top-level f
 
 The three `testing/integration/` subfolders align with the three stable seams: commander (`cli/`), `runWorkflow()` (`orchestrator/`), and Ink screen + engine-written stores (`ui/`).
 
-`scripts/` is the second sanctioned colocated-test home alongside `src/`: tooling like `scripts/check-invariants.ts` and `scripts/import-boundaries.ts` keep their tests next to source (`check-invariants.test.ts`, `import-boundaries.test.ts`), which is why `vitest.config.ts` includes a `scripts/**/*.test.{ts,tsx}` glob.
+`scripts/` is the second sanctioned colocated-test home alongside `src/`: tooling like `scripts/check-invariants.ts`, `scripts/import-boundaries.ts`, `scripts/sync-skills.ts`, and `scripts/skill-blocks.ts` keep their tests next to source (`check-invariants.test.ts`, `import-boundaries.test.ts`, `sync-skills.test.ts`, `skill-blocks.test.ts`), which is why `vitest.config.ts` includes a `scripts/**/*.test.{ts,tsx}` glob.
 
 **Companion rules:**
 

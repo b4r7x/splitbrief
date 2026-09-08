@@ -16,7 +16,6 @@ import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { configStore } from '../../stores/project/config.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
-import { variantChoicesForModelId } from '../../core/runners/variant-vocabulary.js';
 import { buildRightModels, countModelOptions } from './model-catalog/catalog.js';
 import { BROWSE_CATALOG_TEXT, type RightRow } from './model-catalog/rows.js';
 import { PickerView } from './picker-view.js';
@@ -49,6 +48,9 @@ describe('PickerView model confirmation', () => {
       status: { state: 'ready', remediation: null },
       available: true,
       isCurrent: true,
+      // The seat's own channel, as the real item carries it: it decides whether the
+      // rows this fixture derives keep the ladder codex publishes.
+      effortChannel: 'effort-flag',
     },
     true,
   );
@@ -93,14 +95,17 @@ describe('PickerView model confirmation', () => {
     terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
     modelCacheStore.reset();
     overlayStore.reset();
+    pickerViewStore.reset();
   });
 
   // The synthesized Auto row sits at index 0, so any reset that ignores the
-  // configured model turns a confirmation into a silent rewrite to `auto`.
+  // configured model acts on `auto` instead. The configured model publishes an
+  // effort ladder, so Enter opens its expansion rather than saving it outright —
+  // an Auto row, which has none, would have been saved on the spot.
   it.each([
     ['enter on the tool, then enter on the model', ['\r', '\r']],
     ['arrow away and back, then enter twice', ['\u001B[B', '\u001B[A', '\r', '\r']],
-  ])('re-confirms the configured model after %s', async (_name, keys) => {
+  ])('re-opens the configured model after %s', async (_name, keys) => {
     const confirmed: Array<string | null> = [];
     const actions = makeActions();
     actions.confirm = async (_selection, model) => {
@@ -118,7 +123,8 @@ describe('PickerView model confirmation', () => {
       await flushEffects();
     }
 
-    expect(confirmed).toEqual(['gpt-5.4']);
+    expect(pickerViewStore.get().expandedModelId).toBe('gpt-5.4');
+    expect(confirmed).toEqual([]);
     ui.unmount();
   });
 });
@@ -681,8 +687,8 @@ describe('PickerView variant axis', () => {
     available: true,
   });
 
-  // The ladder under test is the tool's own vocabulary, not a fixture's copy of it.
-  const openaiPresets = variantChoicesForModelId('openai/gpt-5.6');
+  // The ladder `opencode models openai --verbose` publishes for this model.
+  const openaiPresets = ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 
   function opencodeModel(variantChoices: readonly string[]): ModelOption {
     return {
@@ -782,7 +788,8 @@ describe('PickerView variant axis', () => {
     ui.stdin.write('\r');
     await flushEffects();
 
-    expect(confirmed).toEqual([['openai/gpt-5.6', 'minimal']]);
+    // Two Space presses walk unset → none → low, the ladder's first two rungs.
+    expect(confirmed).toEqual([['openai/gpt-5.6', 'low']]);
     ui.unmount();
   });
 
@@ -890,8 +897,8 @@ describe('PickerView variant axis', () => {
 
     // The ladder belongs to the openai block; the openrouter route grows none.
     const lines = (ui.lastFrame() ?? '').split('\n');
-    expect(lines.filter((line) => line.includes('─ variant'))).toHaveLength(1);
-    expect(lines.findIndex((line) => line.includes('─ variant'))).toBeLessThan(
+    expect(lines.filter((line) => line.includes('─ effort'))).toHaveLength(1);
+    expect(lines.findIndex((line) => line.includes('─ effort'))).toBeLessThan(
       lines.findIndex((line) => line.includes('openrouter')),
     );
     ui.stdin.write('\r');
@@ -974,7 +981,7 @@ describe('PickerView variant axis', () => {
     const parent = lines.findIndex((line) => line.includes('GPT-5.6 Luna'));
 
     expect(frame).not.toContain('variant');
-    expect(lines.findIndex((line) => line.includes('─ speed'))).toBe(parent + 1);
+    expect(lines.findIndex((line) => line.includes('─ fast'))).toBe(parent + 1);
     expect(bylineOf(ui)).toContain(`space cycle${SOFT_SEP}⏎ confirm`);
     ui.unmount();
   });

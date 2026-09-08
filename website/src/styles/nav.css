@@ -42,6 +42,13 @@
   gap: var(--s-6);
   color: var(--ink-2);
 
+  a {
+    display: inline-block;
+    min-height: 44px;
+    padding-block: calc((44px - 1lh) / 2);
+    margin-block: calc((1lh - 44px) / 2);
+  }
+
   a:hover {
     color: var(--ink);
   }
@@ -51,7 +58,7 @@
   }
 }
 
-.mark {
+.nav .mark {
   grid-column: 12 / 13;
   justify-self: end;
   width: 20px;
@@ -61,12 +68,32 @@
   background-size: 7px 7px;
 }
 
-@media (max-width: 767px) {
-  .wordmark {
-    grid-column: 1 / 5;
+@media (max-width: 1099px) {
+  .tagline {
+    grid-column: 4 / 7;
+    white-space: nowrap;
   }
 
-  .tagline {
+  .links {
+    grid-column: 7 / 12;
+  }
+}
+
+@media (max-width: 767px) {
+  .nav {
+    display: flex;
+    justify-content: space-between;
+    column-gap: var(--s-4);
+  }
+
+  .tagline,
+  .nav .mark {
     display: none;
+  }
+
+  .links {
+    flex: none;
+    gap: var(--s-3);
+    white-space: nowrap;
   }
 }

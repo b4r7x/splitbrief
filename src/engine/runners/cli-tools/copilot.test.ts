@@ -146,6 +146,57 @@ describe('Copilot role adapters', () => {
     });
   });
 
+  it('sends the reasoning effort the seat configured, beside the model, on both roles', () => {
+    const planner = copilotPlannerAdapter.buildArgs({
+      prompt: PROMPT,
+      model: 'gpt-5.2',
+      projectDir: PROJECT_DIR,
+      configuredArgs: [],
+      mode: 'plan',
+      sessionId: null,
+      effort: 'high',
+    });
+    expect(planner).toContain('--effort');
+    expect(planner[planner.indexOf('--effort') + 1]).toBe('high');
+
+    const implementer = copilotImplementerAdapter.buildArgs({
+      prompt: PROMPT,
+      model: 'gpt-5.2',
+      projectDir: PROJECT_DIR,
+      configuredArgs: [],
+      effort: 'high',
+    });
+    expect(implementer).toContain('--effort');
+    expect(implementer[implementer.indexOf('--effort') + 1]).toBe('high');
+  });
+
+  it('sends no effort flag on either role when the seat spends none', () => {
+    expect(plannerArgs('plan', [])).not.toContain('--effort');
+    expect(implementerArgs()).not.toContain('--effort');
+  });
+
+  it.each([['--effort'], ['--reasoning-effort']])(
+    'refuses a configured %s that would outrank the seat',
+    (flag) => {
+      const base = copilotPlannerAdapter.buildArgs({
+        prompt: PROMPT,
+        model: undefined,
+        projectDir: PROJECT_DIR,
+        configuredArgs: [],
+        mode: 'plan',
+        sessionId: null,
+        effort: 'high',
+      });
+
+      expect(
+        copilotPlannerAdapter.validateArgs({
+          invocationArgs: [...base, flag, 'max'],
+          baseArgs: base,
+        }),
+      ).toEqual({ valid: false, conflicts: [flag] });
+    },
+  );
+
   it('uses plan mode for read-only calls and direct-write approval for full escalation', () => {
     const planArgs = plannerArgs('plan', []);
     expect(planArgs).toEqual([

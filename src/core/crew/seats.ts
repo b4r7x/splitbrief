@@ -5,7 +5,7 @@ import type { RunnerConfig } from '../config/accessors/runner-config.js';
 import { seatEffortChannel } from '../runners/capabilities.js';
 import type { ActiveRunnerRole } from '../runners/seat-roles.js';
 import { effortTokenOfModelId, type CliEffortChannel } from '../runners/effort-channel.js';
-import { variantChoicesForModelId } from '../runners/variant-vocabulary.js';
+import { opencodeVariantChoices } from '../runners/variant-vocabulary.js';
 import { runnerBillingPosture, type RunnerBillingPosture } from '../runners/runner-billing.js';
 import type { Config } from '../schemas/config.js';
 import type { EffortLevel } from '../schemas/enums.js';
@@ -55,15 +55,16 @@ function effortValueOf(
 }
 
 /**
- * A variant channel delivers only the presets its provider spells, so a seat
- * whose model has no vocabulary has nothing to step through.
+ * A variant channel delivers only the presets its own catalog spells, so a seat whose
+ * model has no vocabulary here has nothing to step through — which is every kilo seat:
+ * kilo publishes its presets per model, and only the picker reads that catalog.
  */
 function effortEditableOf(runner: RunnerConfig, channel: CliEffortChannel): boolean {
   switch (channel) {
     case 'effort-flag':
       return true;
     case 'variant':
-      return variantChoicesForModelId('model' in runner ? runner.model : undefined).length > 0;
+      return opencodeVariantChoices(runner).length > 0;
     case 'model-id':
     case 'none':
       return false;

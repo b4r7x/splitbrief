@@ -22,6 +22,10 @@ export interface KnownModel {
   aliases?: string[];
   catalogProvider?: CatalogVendorId;
   catalogModelId?: string;
+  /** The tool's own label for this selection, as its picker spells it. */
+  displayName?: string;
+  /** One line the row's metadata column carries beside the id. */
+  detail?: string;
   provenance?: string;
 }
 
@@ -49,6 +53,12 @@ export const TOOL_EFFORT_LADDERS: Readonly<Partial<Record<ProviderId, ToolEffort
       exhaustive: true,
       provenance: 'copilot --help 1.0.77 (2026-09-07): choices: "none", … , "max"',
     },
+    codex: {
+      levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+      exhaustive: false,
+      provenance:
+        'codex debug models --bundled 0.153.3 (2026-09-08): per-model supported_reasoning_levels, union minus the unrepresentable `ultra`',
+    },
     'command-code': {
       levels: ['low', 'medium', 'high'],
       exhaustive: false,
@@ -68,70 +78,102 @@ function compatibleModel(model: Omit<KnownModel, 'recommendation'>): KnownModel 
   return { ...model, recommendation: 'compatible-only' };
 }
 
+/**
+ * The nine labels below come from three sources, read off the newest installed build: the
+ * `/model` menu's own `label` where the binary carries one, the baked catalog's `display_name`
+ * otherwise (`fable[1m]` derived the way the binary derives it, `display_name + " (1M context)"`),
+ * and SPLITBRIEF's own title-cased alias for `best`, which has no label record in the binary.
+ * The row order is ours — plain aliases, then behavioural, then window variants; the binary ships
+ * no ordered menu record, and its alias validity array orders them differently.
+ *
+ * Each window is that same baked record's `context.window` — `1e6` for `claude-sonnet-5`,
+ * `claude-opus-5` and `claude-fable-5-1`, `200000` for `claude-haiku-4-5` — so it is Claude's
+ * own number beside Claude's own label, not one we typed. models.dev outranks it wherever it
+ * answers (`declaredWindow` in `engine/providers/model/catalog.ts`, the `catalogModelId` lookup
+ * in `context-window.ts`), which leaves these values doing exactly two jobs: what a row shows
+ * before a catalog loads, and what an `auto` seat floors to (REQ-D26).
+ */
+const CLAUDE_ALIAS_PROVENANCE =
+  'Claude Code 2.1.263 /model menu + baked catalog display_name & context.window + alias table (2026-09-08); code.claude.com/docs/en/model-config';
+
 export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
   'claude-code': [
     compatibleModel({
-      name: 'default',
+      name: 'sonnet',
+      displayName: 'Sonnet 5',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
       catalogModelId: 'claude-sonnet-5',
-      provenance: 'Claude Code model aliases (2026-08); code.claude.com/docs/en/model-config',
-    }),
-    compatibleModel({
-      name: 'best',
-      contextLength: 1_000_000,
-      catalogProvider: 'anthropic',
-      catalogModelId: 'claude-opus-5',
-      provenance: 'Claude Code model aliases (2026-08); code.claude.com/docs/en/model-config',
-    }),
-    compatibleModel({
-      name: 'fable',
-      contextLength: 1_000_000,
-      catalogProvider: 'anthropic',
-      catalogModelId: 'claude-fable-5',
-      provenance: 'Claude Code model aliases (2026-08); code.claude.com/docs/en/model-config',
+      provenance: CLAUDE_ALIAS_PROVENANCE,
     }),
     compatibleModel({
       name: 'opus',
+      displayName: 'Opus 5',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
       catalogModelId: 'claude-opus-5',
-      provenance: 'Claude Code model aliases (2026-08); code.claude.com/docs/en/model-config',
+      provenance: CLAUDE_ALIAS_PROVENANCE,
     }),
     compatibleModel({
-      name: 'sonnet',
+      name: 'fable',
+      displayName: 'Fable 5.1',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
-      catalogModelId: 'claude-sonnet-5',
-      provenance: 'Claude Code model aliases (2026-08); code.claude.com/docs/en/model-config',
+      catalogModelId: 'claude-fable-5-1',
+      provenance: CLAUDE_ALIAS_PROVENANCE,
     }),
     compatibleModel({
       name: 'haiku',
+      displayName: 'Haiku 4.5',
       contextLength: 200_000,
       catalogProvider: 'anthropic',
       catalogModelId: 'claude-haiku-4-5',
-      provenance: 'Claude Code model aliases (2026-08); code.claude.com/docs/en/model-config',
+      provenance: CLAUDE_ALIAS_PROVENANCE,
     }),
     compatibleModel({
       name: 'opusplan',
+      displayName: 'Opus Plan Mode',
+      detail: 'Opus 5 to plan, Sonnet 5 to build',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
       catalogModelId: 'claude-opus-5',
-      provenance: 'Claude Code model aliases (2026-08); code.claude.com/docs/en/model-config',
+      provenance: CLAUDE_ALIAS_PROVENANCE,
+    }),
+    compatibleModel({
+      name: 'best',
+      displayName: 'Best',
+      detail: 'latest Fable, else Opus',
+      contextLength: 1_000_000,
+      catalogProvider: 'anthropic',
+      catalogModelId: 'claude-opus-5',
+      provenance: CLAUDE_ALIAS_PROVENANCE,
     }),
     compatibleModel({
       name: 'sonnet[1m]',
+      displayName: 'Sonnet 5 (1M context)',
+      detail: 'forces the 1M window',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
       catalogModelId: 'claude-sonnet-5',
-      provenance: 'Claude Code model aliases (2026-08); code.claude.com/docs/en/model-config',
+      provenance: CLAUDE_ALIAS_PROVENANCE,
     }),
     compatibleModel({
       name: 'opus[1m]',
+      displayName: 'Opus (1M context)',
+      detail: 'forces the 1M window',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
       catalogModelId: 'claude-opus-5',
-      provenance: 'Claude Code model aliases (2026-08); code.claude.com/docs/en/model-config',
+      provenance: CLAUDE_ALIAS_PROVENANCE,
+    }),
+    compatibleModel({
+      name: 'fable[1m]',
+      displayName: 'Fable 5.1 (1M context)',
+      detail: 'forces the 1M window',
+      contextLength: 1_000_000,
+      catalogProvider: 'anthropic',
+      catalogModelId: 'claude-fable-5-1',
+      provenance: CLAUDE_ALIAS_PROVENANCE,
     }),
   ],
   codex: [
