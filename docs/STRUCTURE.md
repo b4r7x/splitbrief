@@ -49,7 +49,7 @@ src/
     └── editor/                              # inline spec/plan/brief editor (overlay entry: app/overlays/editor.tsx)
 ```
 
-Outside `src/`, the repo root also carries `skills/` — the pipeline packaged as agent skills for skills.sh (`skills/splitbrief/` is canonical; its `references/` library carries `<!-- generated -->` blocks rendered from the CLI's prompt builders and adapters by `scripts/skill-blocks.ts`, and is mirrored into the `splitbrief-brief`, `splitbrief-run`, and `splitbrief-review` siblings by `scripts/sync-skills.ts`, both gated by `npm run skills:check`). See [`SKILLS.md`](./SKILLS.md).
+Outside `src/`, the repo root also carries `skills/` — the pipeline packaged as agent skills for skills.sh (`skills/splitbrief/` is canonical; its `references/` library carries `<!-- generated -->` blocks rendered from the CLI's prompt builders and adapters by `scripts/skill-blocks.ts`, and is mirrored into the `splitbrief-brief`, `splitbrief-run`, and `splitbrief-review` siblings by `scripts/sync-skills.ts`, both gated by `npm run skills:check`), and `.claude-plugin/marketplace.json`, which declares the four as one Claude Code plugin and gives the skills.sh picker its group row. See [`SKILLS.md`](./SKILLS.md).
 
 The distinction between `lib/` (infrastructure wrappers around external systems) and `utils/` (pure primitives with zero domain and zero infra dependency) is the layering spine of the codebase. See [`LAYERS.md`](./LAYERS.md) for the full decision tree and anti-patterns.
 

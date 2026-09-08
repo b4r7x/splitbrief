@@ -366,6 +366,8 @@ The same contract â€” brief, gates, drift, retry ladder, evidence-bound review â
 npx skills add b4r7x/splitbrief
 ```
 
+Claude Code can also take the repo as a plugin marketplace: `/plugin marketplace add b4r7x/splitbrief`, then `/plugin install splitbrief@splitbrief`.
+
 Then, in Claude Code, Cursor, OpenCode, Codex, Copilot, Antigravity, Command Code, or Kilo: `splitbrief impl=opencode:opencode-go/kimi-k3 review=cursor:gpt-5.3-codex-high "add a /health endpoint"`. The session plans and compiles the briefs, spawns the implementer per brief, validates, and reviews. See [docs/SKILLS.md](https://github.com/b4r7x/splitbrief/blob/main/docs/SKILLS.md).
 
 ## Development

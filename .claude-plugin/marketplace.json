@@ -1,0 +1,27 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "splitbrief",
+  "description": "The SPLITBRIEF pipeline as agent skills: this session plans and compiles Product Task Briefs, a cheaper coding tool builds them, the project's own gates and a drift check judge every attempt, a bounded retry ladder escalates, and an evidence-bound review closes the run",
+  "owner": {
+    "name": "b4r7x"
+  },
+  "plugins": [
+    {
+      "name": "splitbrief",
+      "description": "Four skills, one pipeline. splitbrief: brief → run → review in one invocation, with impl=<tool>[:<model>][@<effort>] and review=<…> seats spawned headless. splitbrief-brief: compile briefs only. splitbrief-run: execute existing briefs with gates, drift and the retry ladder. splitbrief-review: evidence-bound review of a foreign build. Prompt blocks and tool argv are generated from the SPLITBRIEF CLI itself",
+      "version": "1.0.0",
+      "author": {
+        "name": "b4r7x"
+      },
+      "category": "development",
+      "strict": false,
+      "source": "./",
+      "skills": [
+        "./skills/splitbrief",
+        "./skills/splitbrief-brief",
+        "./skills/splitbrief-run",
+        "./skills/splitbrief-review"
+      ]
+    }
+  ]
+}

@@ -10,7 +10,12 @@ Non-interactive, one skill into several agents:
 
     npx skills add b4r7x/splitbrief -s splitbrief -a claude-code -a cursor -a opencode -a codex -a github-copilot -a antigravity -a command-code -a kilo -y
 
-skills.sh installs into each agent's own skills directory (`.claude/skills`, `.agents/skills`, `.commandcode/skills`, `.kilocode/skills`, …). Add `-g` for a user-wide install.
+skills.sh installs into each agent's own skills directory (`.claude/skills`, `.agents/skills`, `.commandcode/skills`, `.kilocode/skills`, …). Add `-g` for a user-wide install. The picker lists the four skills under one `Splitbrief` group row (from `.claude-plugin/marketplace.json`), so one tick selects the whole pipeline.
+
+Claude Code can also take the repo as a plugin marketplace, which installs all four at once and updates them together:
+
+    /plugin marketplace add b4r7x/splitbrief
+    /plugin install splitbrief@splitbrief
 
 ## The four skills
 
