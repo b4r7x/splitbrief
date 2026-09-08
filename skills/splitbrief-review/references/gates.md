@@ -4,7 +4,7 @@ Validation commands, baseline, narrowing, and the drift check. Loaded in Phase 0
 
 ## Resolution — first match per stage wins
 
-1. The project's instruction files (CLAUDE.md, AGENTS.md, .cursor/rules, copilot-instructions) naming a typecheck / lint / test command.
+1. A `## Gates` (or `Validation`) section in the task file itself — a sprint brief or a spec that names its own scoped test, typecheck, and lint commands — then the project's instruction files (CLAUDE.md, AGENTS.md, .cursor/rules, copilot-instructions) naming a typecheck / lint / test command. Source: `task-file` / `instructions`.
 2. Manifest scripts: `package.json` scripts named `typecheck`, `lint`, `test` (also `check`, `format:check`); `Makefile` / `justfile` targets with those names; `pyproject.toml` tool sections (pytest, ruff, mypy); `Cargo.toml`; `go.mod`.
 3. CI workflow steps: `run:` lines in `.github/workflows/*.yml` that call a test, lint, or type tool.
 4. Language defaults (table below).

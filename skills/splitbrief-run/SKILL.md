@@ -50,7 +50,7 @@ Phase 2 of the splitbrief pipeline (map: references/family-map.md). Input: a bri
     run dir: <the briefs' run dir, or the new .splitbrief/runs/<stamp>-<slug>/>
     gitignore: .splitbrief/ ignored   (or: NOT ignored — add it to .gitignore or expect the run dir in git status)
 
-5. `--ask` → wait. Otherwise write `plan.md` (append a `## run` section when `splitbrief-brief` already wrote one), `progress.md` (every brief `pending`; Status `pending` · `running` · `retrying (n)` · `done` · `escalated` · `halted`; Rung `—` · `retry` · `recipe-fix` · `hint` · `takeover`), `evidence.md` (one entry per attempt: command, exit + terminal record, completion report, gates + drift, outcome), and `.splitbrief/current-run` with the run dir path; then continue.
+5. `--ask` → wait. Otherwise write `plan.md` (append a `## run` section when the run dir already has one), `progress.md` (every brief `pending`; Status `pending` · `running` · `retrying (n)` · `done` · `escalated` · `halted`; Rung `—` · `retry` · `recipe-fix` · `hint` · `takeover`), `evidence.md` (one entry per attempt: command, exit + terminal record, completion report, gates + drift, outcome), and `.splitbrief/current-run` with the run dir path; then continue. **Resume:** when the run dir already has a `progress.md`, keep it — rows `done` stay done, every other row is re-run from the first one that is not `done`, attempt numbers continue, and the `## run` section records the new crew. This is how a halted run continues on another seat: `splitbrief-run impl=<next seat> <run dir>`.
 
 ## Phase 2 — Run
 
