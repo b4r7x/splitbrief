@@ -101,4 +101,21 @@ describe('resolveRunnerContextWindow', () => {
 
     expect(result).toEqual({ contextLength: 272_000, source: 'automatic-catalog' });
   });
+
+  // The floor rose deliberately (SPEC-D9) from 272 000, and neither number is copilot's true
+  // guaranteed minimum: models.dev `github-copilot` serves `claude-haiku-4.5` at 200 000, so the
+  // honest fix is a third bundled row — kept out of scope by decisions.md D-5.
+  it('floors a copilot/auto seat at the smaller of the two windows its bundled pair declares', () => {
+    const result = resolveRunnerContextWindow({ providerId: 'copilot', model: 'auto' });
+
+    expect(result).toEqual({ contextLength: 1_000_000, source: 'automatic-catalog' });
+  });
+
+  // The first run of every session reaches here: no catalog has loaded yet, so the bundled row
+  // is what answers — the price tier never carries the window.
+  it('answers a pinned copilot model from the window models.dev publishes, not its price tier', () => {
+    const result = resolveRunnerContextWindow({ providerId: 'copilot', model: 'gpt-5.6-sol' });
+
+    expect(result).toEqual({ contextLength: 1_050_000, source: 'known-catalog' });
+  });
 });

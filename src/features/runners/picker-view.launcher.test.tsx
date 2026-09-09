@@ -44,7 +44,7 @@ const launcher: PickerOption = {
 function makeActions(): PickerActions {
   return {
     confirm: async () => {},
-    confirmProviderVariant: async () => {},
+    confirmProviderSelection: async () => {},
     leftChange: () => {},
     deleteRight: async () => {},
     chooseContract: () => {},

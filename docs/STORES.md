@@ -267,14 +267,15 @@ Workflow sub-stores (`events`, `tasks`, `tokens`, `lifecycle`, `operations`) are
 
 ### Test escape hatches
 
-A small number of stores ship two test-only exports so tests can arrange specific starting states that no domain action produces.
+A small number of stores ship test-only exports so tests and visual fixtures can arrange starting states that no domain action produces. There are three kinds: a state reset, a raw setter, and a value pin.
 
 | Symbol | Shape | Who may import |
 |---|---|---|
-| `__testReset(next?)` on a store facade | Replaces current state with `{ ...initial, ...next }` | `*.test.ts` / `*.test.tsx` files only |
+| `__testReset(next?)` on a store facade | Replaces current state with `{ ...initial, ...next }` | `*.test.ts` / `*.test.tsx` files, and the visual-gallery fixtures under `testing/visual/fixtures/` (`screen-fixtures.ts` resets `terminalSizeStore` and `configStore`) |
 | `_<name>Internal = { set }` (e.g. `_lifecycleInternal`, `_operationsInternal`, `_eventsInternal`, `_tasksInternal`, `_tokensInternal`) | Exposes the raw store setter | `src/stores/workflow/actions/` for the production write path; tests that need to reach a state the public actions cannot produce (e.g. `src/app/keys.test.tsx` forcing a mid-workflow phase) |
+| `__testSetClaudeCodeModelOptions(options)` on `modelCacheStore` | A value pin, not a state reset: it stores an override that `getClaudeCodeModelOptions()` prefers over the real read | `*.test.ts` / `*.test.tsx` files, and `testing/visual/fixtures/screen-fixtures.ts`, which pins the Claude Code option cache so a capture does not read the developer's `~/.claude.json` |
 
-**Rule.** Production code outside `workflow/actions/` MUST NOT import either symbol. Reviewers reject PRs that add new call sites in `src/` outside that one module. Tests are the only other sanctioned caller.
+**Rule.** Production code outside `workflow/actions/` MUST NOT import any of these symbols. Reviewers reject PRs that add new call sites in `src/` outside that one module. Tests and the visual-gallery fixtures are the only other sanctioned callers.
 
 **Why they exist.** `lifecycleStore` (and the other workflow sub-stores) expose no public setter — `addEvent` is the engine-event ingress, and `markCancellationRequested` is the local-intent ingress. A test that needs to assert behaviour while the store is already at `phase: 'implementing'` cannot replay a full event stream to get there, so `__testReset` arranges the state directly. Similarly, `_lifecycleInternal.set` lets the dispatcher write one slice without exposing generic mutation publicly.
 

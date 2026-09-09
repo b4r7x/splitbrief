@@ -62,6 +62,7 @@ export const DetectedModelSchema = z
     nativeDefault: z.boolean().optional(),
     nativeHidden: z.boolean().optional(),
     nativeReasoningEfforts: z.array(z.string().trim().min(1)).readonly().optional(),
+    nativeDefaultReasoningEffort: z.string().trim().min(1).optional(),
   })
   .strict();
 export type DetectedModel = z.infer<typeof DetectedModelSchema>;

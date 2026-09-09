@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { ELLIPSIS, getTerminalCellWidth } from '../../utils/display-text.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
 import {
+  cutSeatIdentity,
   fitSeatIdentity,
   formatCollapsedSeatLine,
-  formatInheritedIdentity,
   formatSeatIdentity,
   formatShortSeatIdentity,
   PLANNER_INHERITANCE,
@@ -135,6 +135,42 @@ describe('formatSeatIdentity', () => {
     ).toBe('Cursor Agent CLI · Codex 5.3');
   });
 
+  it('spells a cursor family by its catalog name with the axis words peeled, never by the id', () => {
+    expect(
+      formatSeatIdentity(
+        { kind: 'cli', tool: 'cursor', model: 'gpt-5.3-codex-high' },
+        'Codex 5.3 High',
+      ),
+    ).toBe('Cursor Agent CLI · Codex 5.3 · high');
+    expect(
+      formatSeatIdentity(
+        { kind: 'cli', tool: 'cursor', model: 'claude-4.5-sonnet-thinking' },
+        'Claude Sonnet 4.5 Thinking',
+      ),
+    ).toBe('Cursor Agent CLI · Claude Sonnet 4.5 · thinking');
+    expect(
+      formatSeatIdentity(
+        { kind: 'cli', tool: 'cursor', model: 'claude-4-sonnet-thinking' },
+        'Claude Sonnet 4 Thinking',
+      ),
+    ).toBe('Cursor Agent CLI · Claude Sonnet 4 · thinking');
+  });
+
+  it('never carries a parenthesised vendor flag or a context word into the identity', () => {
+    expect(
+      formatSeatIdentity(
+        { kind: 'cli', tool: 'cursor', model: 'claude-fable-5-thinking-high' },
+        'Claude Fable 5 1M Thinking (NO ZDR)',
+      ),
+    ).toBe('Cursor Agent CLI · Claude Fable 5 · high · thinking');
+  });
+
+  it('falls back to the peeled id when the catalog name is nothing but axis words', () => {
+    expect(formatSeatIdentity({ kind: 'cli', tool: 'cursor', model: 'acme-1-high' }, 'High')).toBe(
+      'Cursor Agent CLI · Acme 1 · high',
+    );
+  });
+
   it('reads one string for the word and the peel, so a padded id still states its axes', () => {
     expect(
       formatSeatIdentity({
@@ -185,6 +221,15 @@ describe('formatShortSeatIdentity', () => {
     expect(formatShortSeatIdentity(openCodeMax)).toBe('GPT-5.6 Luna');
   });
 
+  it('peels the catalog name of a cursor seat the same way the full form does', () => {
+    expect(
+      formatShortSeatIdentity(
+        { kind: 'cli', tool: 'cursor', model: 'gpt-5.3-codex-high' },
+        'Codex 5.3 High',
+      ),
+    ).toBe('Codex 5.3');
+  });
+
   it('still names a model whose only word is the brand', () => {
     expect(formatShortSeatIdentity({ kind: 'cli', tool: 'claude-code', model: 'claude' })).toBe(
       'Claude',
@@ -192,19 +237,10 @@ describe('formatShortSeatIdentity', () => {
   });
 });
 
-describe('formatInheritedIdentity', () => {
-  it('marks the seat as the planner and still names what the planner runs', () => {
-    const identity = formatInheritedIdentity(planner);
-
-    expect(identity.startsWith(PLANNER_INHERITANCE.mark)).toBe(true);
-    expect(identity).toContain(formatSeatIdentity(planner));
-  });
-});
-
 describe('formatCollapsedSeatLine', () => {
-  it('states all three seats on one line, with the short inheritance mark', () => {
+  it('states all three seats on one line, with the inheritance mark', () => {
     expect(formatCollapsedSeatLine({ planner, build, reviewer: undefined })).toBe(
-      'PLAN Sonnet 4 · BUILD Qwen 2.5 Coder 7B · REVIEW = plan',
+      `PLAN Sonnet 4 · BUILD Qwen 2.5 Coder 7B · REVIEW ${PLANNER_INHERITANCE.mark}`,
     );
   });
 
@@ -222,7 +258,7 @@ describe('formatCollapsedSeatLine', () => {
         reviewer: undefined,
         displayNames: { planner: 'Claude Sonnet 5', build: 'Qwen 2.5 7B' },
       }),
-    ).toBe('PLAN Sonnet 5 · BUILD Qwen 2.5 7B · REVIEW = plan');
+    ).toBe(`PLAN Sonnet 5 · BUILD Qwen 2.5 7B · REVIEW ${PLANNER_INHERITANCE.mark}`);
   });
 
   it('states every seat when the budget holds them', () => {
@@ -272,7 +308,7 @@ describe('formatCollapsedSeatLine', () => {
       budget: 56,
     });
 
-    expect(line).toBe(`PLAN ${ELLIPSIS} · BUILD Sonnet 4 · REVIEW = plan`);
+    expect(line).toBe(`PLAN ${ELLIPSIS} · BUILD Sonnet 4 · REVIEW ${PLANNER_INHERITANCE.mark}`);
     expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(56);
   });
 
@@ -282,7 +318,7 @@ describe('formatCollapsedSeatLine', () => {
     expect(formatCollapsedSeatLine({ planner, build, reviewer, budget: 34 })).toContain('Sonnet 4');
     expect(formatCollapsedSeatLine({ planner, build, reviewer, budget: 27 })).toBe('');
     // The mark points at the planner's name, so it cannot stand in for one:
-    // an anonymous planner takes `= plan` down with it.
+    // an anonymous planner takes `= planner` down with it.
     expect(formatCollapsedSeatLine({ planner, build, reviewer: undefined, budget: 32 })).toBe('');
   });
 
@@ -321,5 +357,33 @@ describe('fitSeatIdentity', () => {
     expect(fitSeatIdentity({ runner: planner, budget: 80, displayName: 'Claude Sonnet 5' })).toBe(
       'Claude Code CLI · Claude Sonnet 5',
     );
+  });
+});
+
+describe('cutSeatIdentity', () => {
+  it('takes the trailing separator run with the cut when it ends in ellipsis', () => {
+    const cut = cutSeatIdentity('Claude Code CLI · Claude Sonnet 4 · high', 36);
+    expect(cut.endsWith('…')).toBe(true);
+    expect(cut).not.toMatch(/[ ·]…$/);
+  });
+
+  it('returns an identity that already fits unchanged', () => {
+    expect(cutSeatIdentity('Claude Code CLI · Claude Sonnet 4', 100)).toBe(
+      'Claude Code CLI · Claude Sonnet 4',
+    );
+  });
+
+  it('matches fitSeatIdentity for every budget from 4 to identity length', () => {
+    const identity = formatSeatIdentity(planner);
+    for (let budget = 4; budget <= identity.length; budget++) {
+      expect(fitSeatIdentity({ runner: planner, budget })).toBe(cutSeatIdentity(identity, budget));
+    }
+  });
+
+  it('never leaves a trailing separator before the ellipsis at any budget', () => {
+    const identity = formatSeatIdentity(planner);
+    for (let budget = 4; budget <= identity.length; budget++) {
+      expect(fitSeatIdentity({ runner: planner, budget })).not.toMatch(/[ ·]…$/);
+    }
   });
 });

@@ -28,6 +28,10 @@ export const BRIEF_RECOVERY_VIEWPORTS: readonly Viewport[] = Object.freeze([
   viewport({ cols: 40, rows: 16 }),
 ]);
 
+export const HOME_COLD_DETECTING_VIEWPORTS: readonly Viewport[] = Object.freeze([
+  viewport({ cols: 80, rows: 40 }),
+]);
+
 export const REQUIRED_WORKFLOW_CHECKPOINT_IDS = [
   'idle',
   'planning',
@@ -67,7 +71,7 @@ interface ScenarioInput {
   readonly surface: Surface;
   readonly checkpoint: CheckpointInput;
   readonly elements: readonly ElementInput[];
-  readonly viewports?: readonly Viewport[];
+  readonly viewports?: readonly Viewport[] | undefined;
 }
 
 function defineScenario(input: ScenarioInput): ScenarioDefinition {
@@ -113,6 +117,7 @@ const BRIEF_RECOVERY_SCENARIOS = [
 interface ScreenScenarioInput {
   readonly id: string;
   readonly title: string;
+  readonly viewports?: readonly Viewport[] | undefined;
 }
 
 const HOME_SCENARIOS: readonly ScreenScenarioInput[] = [
@@ -120,6 +125,11 @@ const HOME_SCENARIOS: readonly ScreenScenarioInput[] = [
   { id: 'home-reviewer', title: 'Home · reviewer seat configured' },
   { id: 'home-floor-collapsed', title: 'Home · one-token reviewer' },
   { id: 'home-cold', title: 'Home · detection still cold' },
+  {
+    id: 'home-cold-detecting',
+    title: 'Home · first tool check running',
+    viewports: HOME_COLD_DETECTING_VIEWPORTS,
+  },
 ];
 
 const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
@@ -128,6 +138,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: home.id,
       title: home.title,
       surface: screenSurface('home'),
+      viewports: home.viewports,
       checkpoint: {
         id: 'ready',
         title: 'Ready for a feature',
@@ -350,7 +361,7 @@ function overlayGroup(input: OverlayGroupInput): readonly ScenarioDefinition[] {
   );
 }
 
-const PICKER_TITLE_MARKER = 'Tool & model';
+const PICKER_TITLE_MARKER = 'Tools';
 
 const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> = {
   help: overlayGroup({
@@ -452,6 +463,16 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
+        id: 'overlay-picker-claude-effort',
+        title: 'Overlay · planner picker · Claude alias effort ladder',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-claude-effort-set',
+        title: 'Overlay · planner picker · Claude alias effort set',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
         id: 'overlay-picker-provider-expanded-empty',
         title: 'Overlay · planner picker · routes with no signed-in provider',
         marker: PICKER_TITLE_MARKER,
@@ -484,6 +505,36 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-planner-picker-malformed',
         title: 'Overlay · planner picker · malformed probe output',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-claude',
+        title: 'Overlay · planner picker · Claude Code alias rows',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-copilot',
+        title: 'Overlay · planner picker · GitHub Copilot models',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-cursor',
+        title: 'Overlay · planner picker · Cursor Agent families',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-cursor-expanded',
+        title: 'Overlay · planner picker · Cursor family axes expanded',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-opencode-expanded',
+        title: 'Overlay · planner picker · OpenCode routes and axes expanded',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-opencode-expanded-drafted',
+        title: 'Overlay · planner picker · OpenCode axis drafted',
         marker: PICKER_TITLE_MARKER,
       },
       {
@@ -525,12 +576,12 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-reviewer-picker-inherited',
         title: 'Overlay · reviewer picker · inherited from the planner',
-        marker: 'Reviewer',
+        marker: PICKER_TITLE_MARKER,
       },
       {
         id: 'overlay-reviewer-picker-tool',
         title: 'Overlay · reviewer picker · tool chosen',
-        marker: 'Reviewer',
+        marker: PICKER_TITLE_MARKER,
       },
     ],
   }),

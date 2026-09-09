@@ -1,16 +1,17 @@
-import { Text } from 'ink';
 import { ListRow } from '../../components/list-row.js';
 import { SOFT_SEP } from '../../components/separators.js';
-import { useTheme } from '../../components/theme.js';
-import { formatModelName } from '../../core/model-display.js';
+import { getTheme } from '../../components/theme.js';
 import { formatContextLength } from '../../core/formatting.js';
-import { glyph, spinnerFrames } from '../../lib/glyphs.js';
+import { formatModelName } from '../../core/model-display.js';
+import { isAutomaticModel } from '../../core/providers/automatic-model.js';
+import { glyph } from '../../lib/glyphs.js';
 import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import { modelRowMatchesId } from './model-catalog/catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
-import { formatOptionSummary, isOptionFamily, optionDraftOf } from './model-catalog/option-axis.js';
-import type { RightRow } from './model-catalog/rows.js';
+import { isOptionFamily, routePrefixesOf } from './model-catalog/option-axis.js';
+import { AUTO_ROW_METADATA, type RightRow, type TreeLead } from './model-catalog/rows.js';
 import { formatPickerStatusLabel, formatRouteAuth } from './picker-format.js';
+import { isExpandableRow, type RouteAuthContext } from './right-column-policy.js';
 
 interface ToolRowParams {
   item: PickerOption;
@@ -50,64 +51,33 @@ export function renderToolRow({
     <ListRow
       label={label}
       state={state}
-      defaultLead="dot"
+      defaultLead={isCommandBased && !showConfiguredCommand ? 'blank' : 'dot'}
       metadata={metadata}
+      metadataColor={statusLabel === undefined ? undefined : getTheme().warning}
       selected={isSelected || !!item.isCurrent}
       width={maxWidth}
     />
   );
 }
 
-/** Below this the route row drops its glyph and its indent; the tag never goes. */
-const ROUTE_FLOOR_WIDTH = 26;
-/** Below this the value truncates beside the cycle glyph, so it takes those cells instead. */
-const AXIS_FLOOR_WIDTH = 23;
-/** Below this many cells left for the name the chip loses its word. */
-const CHIP_NAME_FLOOR = 12;
+/** The label never drops below this many cells; the count pays first. */
+const NAME_MIN_CELLS = 12;
 /** What a model row spends beside its two columns: lead, metadata gap, disclosure, check. */
 const MODEL_ROW_CHROME = 7;
 
-const ROUTE_GLYPHS = {
-  configured: 'stageDone',
-  missing: 'stagePending',
-  unknown: 'statusWarning',
-} as const;
-
-function disclosureGlyph(expanded: boolean): string {
-  return glyph(expanded ? 'disclosureOpen' : 'disclosureClosed');
+/** The connector this row hangs from: three cells per level, the parent's spine when it continues. */
+function treeLead(tree: TreeLead, last: boolean): string {
+  const branch = `${glyph(last ? 'treeLast' : 'treeBranch')}${glyph('divider')} `;
+  if (tree.depth === 1) return branch;
+  return `${tree.parentContinues ? `${glyph('treeMid')}  ` : '   '}${branch}`;
 }
 
-function disclosureChip(count: number, expanded: boolean, maxWidth: number): string {
-  const disclosure = disclosureGlyph(expanded);
-  const full = `${count} providers ${disclosure}`;
-  const fits = maxWidth - getTerminalCellWidth(full) >= CHIP_NAME_FLOOR;
-  return fits ? full : `${count} ${disclosure}`;
-}
-
-// The summary is the cheap thing to lose: the disclosure spells it out again one keypress
-// away. A family row's provenance word is only ever "Stale", the row's one signal that the
-// model may no longer exist, so when no tail fits whole it goes out anyway for ListRow to
-// truncate — a clipped "Stal…" still flags the row, an empty column flags nothing.
-function optionChip(
-  parts: { summary: string; provenance: string; context: string },
-  expanded: boolean,
-  maxWidth: number,
-): { text: string; rest: string; trailing: string } | undefined {
-  const { summary, provenance, context } = parts;
-  const trailing = disclosureGlyph(expanded);
-  const tail = (...items: string[]): string => items.filter(Boolean).join(' ');
-  if (expanded) return { text: '', rest: tail(provenance, context), trailing };
-  if (summary === '') return undefined;
-  const room = maxWidth - CHIP_NAME_FLOOR - MODEL_ROW_CHROME;
-  const cells = (chip: { text: string; rest: string }): number =>
-    getTerminalCellWidth(tail(chip.text, chip.rest));
-  const whole = [
-    { text: summary, rest: tail(provenance, context) },
-    { text: summary, rest: provenance },
-    { text: '', rest: tail(provenance, context) },
-    { text: '', rest: provenance },
-  ].find((chip) => cells(chip) <= room);
-  return { ...(whole ?? { text: '', rest: provenance }), trailing };
+/** The label's budget is protected first: the count keeps its word or it goes; a bare digit is not a value. */
+function countChip(count: number, word: string, tail: string, maxWidth: number): string {
+  const spent = MODEL_ROW_CHROME + NAME_MIN_CELLS + getTerminalCellWidth(tail);
+  const room = maxWidth - spent - (tail === '' ? 0 : 1);
+  const full = `${count} ${word}`;
+  return getTerminalCellWidth(full) <= room ? full : '';
 }
 
 interface ModelRowParams {
@@ -117,7 +87,8 @@ interface ModelRowParams {
   currentModel: string | undefined;
   /** The section header already names the provenance, so the row must not repeat it. */
   sectioned: boolean;
-  optionDraftId?: string | null;
+  /** What the tool's credential listing says; the chevron rule needs it. */
+  auth: RouteAuthContext;
 }
 
 export function renderModelRow({
@@ -126,24 +97,45 @@ export function renderModelRow({
   maxWidth,
   currentModel,
   sectioned,
-  optionDraftId,
+  auth,
 }: ModelRowParams) {
-  if (row.kind === 'notice') return <NoticeRow row={row} isCursor={isCursor} />;
-  if (row.kind === 'action') return <ActionRow row={row} isCursor={isCursor} />;
-  if (row.kind === 'route') return <RouteRow row={row} isCursor={isCursor} width={maxWidth} />;
-  if (row.kind === 'axis') {
-    const floor = maxWidth < AXIS_FLOOR_WIDTH;
-    // The row states whether its ladder can move, so the mark and the byline never
-    // disagree. A ladder with nowhere to step drops the mark but keeps its cells, or
-    // the sibling rows' trailing column shifts under it.
+  if (row.kind === 'action') {
     return (
       <ListRow
-        label={`${glyph(row.last ? 'treeLast' : 'treeBranch')}${glyph('divider')} ${row.axis}`}
+        label={row.text}
+        state={isCursor ? 'active' : 'default'}
+        defaultLead="blank"
+        width={maxWidth}
+      />
+    );
+  }
+  if (row.kind === 'route') {
+    const { word, dim } = formatRouteAuth({ auth: row.auth });
+    return (
+      <ListRow
+        treeLead={treeLead(row.tree, row.last)}
+        label={sanitizeTerminalDisplayText(row.variant.tag)}
+        state={isCursor ? 'active' : 'default'}
+        defaultLead="blank"
+        metadata={word}
+        metadataColor={dim ? undefined : getTheme().text}
+        trailing={' '}
+        selected={currentModel !== undefined && row.variant.fullId === currentModel}
+        width={maxWidth}
+      />
+    );
+  }
+  if (row.kind === 'axis') {
+    // The cell stays even when the row cannot step, or the sibling rows' trailing column shifts under it.
+    return (
+      <ListRow
+        treeLead={treeLead(row.tree, row.last)}
+        label={row.axis}
         state={isCursor ? 'active' : 'default'}
         defaultLead="blank"
         metadata={row.value}
-        trailing={floor ? undefined : row.steps ? glyph('connectorSame') : ' '}
-        selected={floor ? undefined : false}
+        trailing={' '}
+        selected={false}
         width={maxWidth}
       />
     );
@@ -151,28 +143,19 @@ export function renderModelRow({
 
   const name = row.model.displayName ?? formatModelName(row.model.id);
   const variants = row.model.variants ?? [];
-  const routeCount = variants.length;
+  const routeCount = routePrefixesOf(variants).length;
   const provenance =
-    row.provenance === 'Default' || row.provenance === 'Stale'
-      ? row.provenance
-      : row.provenance === 'Custom' && !sectioned
-        ? row.provenance
-        : '';
-  const optionFamily = isOptionFamily(row.model);
-  const summary = optionFamily
-    ? formatOptionSummary(optionDraftOf(row.model, optionDraftId ?? currentModel), variants)
-    : '';
-  const contextStr = formatContextLength(row.model.contextLength);
-  const rest = [provenance, contextStr].filter(Boolean).join(' ');
-  const chip = optionFamily
-    ? optionChip({ summary, provenance, context: contextStr }, row.expanded, maxWidth)
-    : undefined;
-  const disclosure = optionFamily
-    ? (chip?.text ?? '')
+    row.provenance === 'Stale' || (row.provenance === 'Custom' && !sectioned) ? row.provenance : '';
+  const detail = isAutomaticModel(row.model.id)
+    ? AUTO_ROW_METADATA
+    : (row.model.detail ?? formatContextLength(row.model.contextLength));
+  const tail = [provenance, row.model.vendorTag ?? '', detail].filter(Boolean).join(' ');
+  const chip = isOptionFamily(row.model)
+    ? countChip(variants.length, 'options', tail, maxWidth)
     : routeCount > 1
-      ? disclosureChip(routeCount, row.expanded, maxWidth)
+      ? countChip(routeCount, 'providers', tail, maxWidth)
       : '';
-  const metadata = [disclosure, chip?.rest ?? rest].filter(Boolean).join(' ') || undefined;
+  const metadata = [chip, tail].filter(Boolean).join(' ') || undefined;
 
   return (
     <ListRow
@@ -180,73 +163,13 @@ export function renderModelRow({
       state={isCursor ? 'active' : 'default'}
       defaultLead="dot"
       metadata={metadata}
-      trailing={chip?.trailing}
+      trailing={
+        isExpandableRow(row, auth)
+          ? glyph(row.expanded ? 'disclosureOpen' : 'disclosureClosed')
+          : ' '
+      }
       selected={currentModel !== undefined && modelRowMatchesId(row.model, currentModel)}
       width={maxWidth}
     />
-  );
-}
-
-/** The highlight lead keeps the row's cell count, so the columns never shift. */
-function leadFor(isCursor: boolean, width: number): string {
-  return isCursor ? `${glyph('liveBar')}${' '.repeat(width - 1)}` : ' '.repeat(width);
-}
-
-function RouteRow({
-  row,
-  isCursor,
-  width,
-}: {
-  row: Extract<RightRow, { kind: 'route' }>;
-  isCursor: boolean;
-  width: number;
-}) {
-  const t = useTheme();
-  const floor = width < ROUTE_FLOOR_WIDTH;
-  const { word, glyph: mark } = formatRouteAuth({ auth: row.auth, floor });
-  const tag = sanitizeTerminalDisplayText(row.variant.tag);
-  const lead = leadFor(isCursor, floor ? 2 : 4);
-  const marker = mark === undefined ? '' : `${glyph(ROUTE_GLYPHS[mark])} `;
-  // The sibling routes share one word column, so a short tag is padded out to
-  // the widest of them; at the floor there is no room to spend on alignment.
-  const paddedTag =
-    floor || word === undefined
-      ? tag
-      : tag + ' '.repeat(Math.max(0, row.tagWidth - getTerminalCellWidth(tag)));
-  return (
-    <Text color={isCursor ? t.accent : t.textDim} wrap="truncate-end">
-      {`${lead}${marker}${paddedTag}${word === undefined ? '' : `  ${word}`}`}
-    </Text>
-  );
-}
-
-function NoticeRow({
-  row,
-  isCursor,
-}: {
-  row: Extract<RightRow, { kind: 'notice' }>;
-  isCursor: boolean;
-}) {
-  const t = useTheme();
-  const mark = row.lane === 'pending' ? (spinnerFrames()[0] ?? '') : glyph('statusFailed');
-  return (
-    <Text color={isCursor ? t.accent : t.textDim} dimColor wrap="truncate-end">
-      {`${leadFor(isCursor, 2)}${mark} ${row.text}`}
-    </Text>
-  );
-}
-
-function ActionRow({
-  row,
-  isCursor,
-}: {
-  row: Extract<RightRow, { kind: 'action' }>;
-  isCursor: boolean;
-}) {
-  const t = useTheme();
-  return (
-    <Text color={isCursor ? t.accent : t.text} wrap="truncate-end">
-      {`${leadFor(isCursor, 2)}${glyph('disclosureClosed')} ${row.text}`}
-    </Text>
   );
 }

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
 import type { Section } from '../../../core/sections/event-sections.js';
 import { taskId } from '../../../core/schemas/task.js';
@@ -429,9 +430,11 @@ describe('conversation rows projection cache', () => {
       ]),
     });
 
-    expect(implementer.rows.map(rowText).join('\n')).toContain('Implementer activity');
-    expect(implementer.rows.map(rowText).join('\n')).toContain('[OpenAI Codex CLI · xhigh]');
-    expect(planner.rows.map(rowText).join('\n')).toContain('Plan activity');
-    expect(planner.rows.map(rowText).join('\n')).toContain('[Claude Code CLI · sonnet]');
+    expect(implementer.rows.map(rowText).join('\n')).toContain(
+      `${CREW_SEAT_LABELS.build} activity`,
+    );
+    expect(implementer.rows.map(rowText).join('\n')).toContain('[OpenAI Codex CLI · Xhigh]');
+    expect(planner.rows.map(rowText).join('\n')).toContain(`${CREW_SEAT_LABELS.plan} activity`);
+    expect(planner.rows.map(rowText).join('\n')).toContain('[Claude Code CLI · Sonnet]');
   });
 });

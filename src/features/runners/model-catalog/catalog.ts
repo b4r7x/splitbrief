@@ -112,6 +112,7 @@ function toModelOption(entry: ReturnType<typeof resolveModelCatalog>[number]): M
   return {
     id: entry.id,
     ...(displayName !== entry.id ? { displayName } : {}),
+    ...(entry.detail === undefined ? {} : { detail: entry.detail }),
     isDefault: entry.isDefault,
     isDetected: entry.membership === 'confirmed',
     membership: entry.membership,

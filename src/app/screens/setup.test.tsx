@@ -356,7 +356,7 @@ describe('SetupScreen', () => {
 
     // Two ready tools and no escalation: the panel fits inside the 18-row viewport, frame included.
     expect(lines.length).toBeLessThanOrEqual(18);
-    expect(lines).toHaveLength(17);
+    expect(lines).toHaveLength(18);
   });
 
   it('says what escape does and does it', async () => {
@@ -420,7 +420,7 @@ describe('SetupScreen', () => {
     expect(frame).toContain(PRESET_SECTION);
   });
 
-  it('yields the ready-made crews, never a seat, and keeps a save error to one line at the smallest supported viewport', async () => {
+  it('yields the blank spacer rows, never a seat, and keeps a save error to one line at the smallest supported viewport', async () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18 });
     configStore.__testReset({
       projectDir: '/tmp/project',
@@ -462,8 +462,9 @@ describe('SetupScreen', () => {
     expect(lines.filter((line) => line.includes('Failed to save config'))).toHaveLength(1);
     expect(lines.join('\n')).not.toContain('splitbrief.yaml');
     expect(lines.join('\n')).toContain('Continue');
-    // The ready-made crews are the last block to yield; the three seats never do.
-    expect(lines.join('\n')).not.toContain('Claude crew, Codex review');
+    // The blank spacer rows are the last block to yield; the crews and the three seats never do.
+    expect(lines.length).toBeLessThanOrEqual(18);
+    expect(lines.join('\n')).toContain('Claude crew, Codex review');
     for (const seat of ['PLAN', 'BUILD', 'REVIEW']) expect(lines.join('\n')).toContain(seat);
   });
 

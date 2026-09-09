@@ -1,6 +1,10 @@
 import { Fragment, useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { BOOT_MANIFEST_TITLE, REFRESHING_TOOLS_TITLE } from '../../core/discovery/copy.js';
+import {
+  BOOT_MANIFEST_TITLE,
+  FIRST_RUN_NOTE,
+  REFRESHING_TOOLS_TITLE,
+} from '../../core/discovery/copy.js';
 import { CREW_SEAT_LABELS, formatShortSeatIdentity } from '../../core/crew/identity.js';
 import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
@@ -10,7 +14,7 @@ import { useTheme } from '../../components/theme.js';
 import { Composer } from '../../components/composer/composer.js';
 import { ScreenShell } from '../../components/screen-shell.js';
 import { SOFT_SEP } from '../../components/separators.js';
-import { HomeSeatBlock } from '../../features/home/components/seat-block.js';
+import { HomeSeatBlock, shedToFit } from '../../features/home/components/seat-block.js';
 import { RecentSessions } from '../../features/home/components/recent-sessions.js';
 import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -66,6 +70,8 @@ const defaultHomeScreenDeps: HomeScreenDeps = {
 const DISCOVERY_PANEL_MIN_ROWS = 24;
 /** Panel height plus one breathing row — the slack the box needs to render whole. */
 const DISCOVERY_PANEL_SLACK_ROWS = 5;
+/** `paddingX={2}` on both sides plus the round border on both — the cells the text cannot use. */
+const DISCOVERY_PANEL_CHROME_COLS = 6;
 
 /**
  * Cold-discovery box floating in the slack space between the content block and
@@ -73,7 +79,7 @@ const DISCOVERY_PANEL_SLACK_ROWS = 5;
  * has stalled), then vanishes without leaving a residue — the slack absorbs
  * both states, so nothing above or below ever moves.
  */
-function DiscoveryPanel() {
+function DiscoveryPanel({ width }: { width: number }) {
   const theme = useTheme();
   const config = configStore.useConfig();
   const displayNames = useCrewDisplayNames(config);
@@ -95,6 +101,11 @@ function DiscoveryPanel() {
   const plannerSeat = `${CREW_SEAT_LABELS.plan} ${formatShortSeatIdentity(config.planner, displayNames.plan)}`;
   const build = resolveImplementerProfiles(config).defaultProfile.config;
   const implementerSeat = `${CREW_SEAT_LABELS.build} ${formatShortSeatIdentity(build, displayNames.build)}`;
+  const notes = shedToFit({
+    lead: [plannerSeat, implementerSeat],
+    optional: [FIRST_RUN_NOTE],
+    width: width - DISCOVERY_PANEL_CHROME_COLS,
+  });
 
   return (
     <Box
@@ -121,7 +132,12 @@ function DiscoveryPanel() {
             <Text color={theme.planner}>{plannerSeat}</Text>
             <Text color={theme.textDim}>{SOFT_SEP}</Text>
             <Text color={theme.implementer}>{implementerSeat}</Text>
-            <Text color={theme.textDim}>{SOFT_SEP}first run, results are remembered</Text>
+            {notes.length > 0 && (
+              <Text color={theme.textDim}>
+                {SOFT_SEP}
+                {FIRST_RUN_NOTE}
+              </Text>
+            )}
           </Text>
         </Fragment>
       )}
@@ -314,7 +330,7 @@ export function HomeScreen({
             alignItems="center"
             overflow="hidden"
           >
-            {discoveryPanelFits && <DiscoveryPanel />}
+            {discoveryPanelFits && <DiscoveryPanel width={layout.width} />}
           </Box>
         </Box>
 

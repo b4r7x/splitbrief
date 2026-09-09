@@ -1,4 +1,5 @@
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
+import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
 import {
   API_PROVIDER_CATALOG,
   KNOWN_API_PROVIDER_IDS,
@@ -97,7 +98,7 @@ export function inheritPlannerOption(
 ): InheritPlannerOption {
   return {
     id: INHERIT_PLANNER_OPTION_ID,
-    displayName: 'Same as planner',
+    displayName: PLANNER_INHERITANCE.sentence,
     kind: 'inherit-planner',
     roles: input.planner.roles,
     modelPolicy: 'none',

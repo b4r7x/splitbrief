@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CREW_SEAT_LABELS } from '../../../../core/crew/identity.js';
 import { formatModelName } from '../../../../core/model-display.js';
 import { taskId } from '../../../../core/schemas/task.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
@@ -351,7 +352,7 @@ describe('event row dispatch', () => {
     });
 
     expect(rows.map(rowText)).toEqual([
-      'Implementer activity  1 update  [OpenAI Codex CLI]',
+      `${CREW_SEAT_LABELS.build} activity  1 update  [OpenAI Codex CLI]`,
       activityLine('RUN', 'npm run typecheck'),
     ]);
     expect(rows[0]?.kind).toBe('activity');
@@ -391,7 +392,7 @@ describe('event row dispatch', () => {
 
     expect(text).toBe(
       [
-        'Plan activity  1 update  [OpenAI Codex CLI]',
+        `${CREW_SEAT_LABELS.plan} activity  1 update  [OpenAI Codex CLI]`,
         activityLine('READ', 'CLAUDE.md :1-260'),
       ].join('\n'),
     );

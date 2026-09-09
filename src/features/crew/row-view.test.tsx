@@ -1,45 +1,30 @@
 import { Box } from 'ink';
 import type { ReactElement } from 'react';
-import { afterAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
-import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 import {
   CREW_LABEL_WIDTH,
   CREW_SEAT_LABELS,
   PLANNER_INHERITANCE,
-  formatInheritedIdentity,
 } from '../../core/crew/identity.js';
 import { crewRowKey, deriveCrewRows, type CrewRowKey } from '../../core/crew/rows.js';
 import type { Config } from '../../core/schemas/config.js';
+import { glyph, type GlyphName } from '../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
-import { planSeatBlock } from './format.js';
-import { CrewRowView, CrewSpine, CrewVerdictLine } from './row-view.js';
+import { CREW_IDENTITY_COLUMN, CREW_MARKER_GUTTER, planSeatBlock } from './format.js';
+import { CrewRowView, CrewVerdictLine } from './row-view.js';
 
-/** The label column starts here: cursor gutter (2) plus the rail glyph and its gap (2). */
-const LABEL_COLUMN = 4;
-
-/** A dimmed row drops the bold on its label, so the styling has to survive the frame. */
-const originalForceColor = vi.hoisted(() => {
-  const saved = process.env['FORCE_COLOR'];
-  process.env['FORCE_COLOR'] = '3';
-  return saved;
-});
-
-afterAll(() => {
-  if (originalForceColor === undefined) delete process.env['FORCE_COLOR'];
-  else process.env['FORCE_COLOR'] = originalForceColor;
-});
-
-const BOLD_OPEN = '\u001b[1m';
+/** The label column starts here: cursor gutter (2). */
+const LABEL_COLUMN = CREW_MARKER_GUTTER;
 
 type BlockProps = Readonly<{ config: Config; width: number; cursor?: CrewRowKey }>;
 
 function CrewBlock({ config, width, cursor }: BlockProps) {
   const rows = deriveCrewRows({ config });
   const layout = planSeatBlock({ rows, verdict: undefined, innerWidth: width, rowBudget: 20 });
-  const planner = readActiveRunner({ config, role: 'planner' });
 
   return (
     <Box flexDirection="column">
@@ -50,7 +35,6 @@ function CrewBlock({ config, width, cursor }: BlockProps) {
           layout={layout}
           isCursor={crewRowKey(row) === cursor}
           width={width}
-          planner={planner}
         />
       ))}
     </Box>
@@ -63,14 +47,6 @@ async function linesFor(props: BlockProps): Promise<string[]> {
   const frame = stripAnsiStyles(ui.lastFrame() ?? '');
   ui.unmount();
   return frame.split('\n').filter((line) => line.trim() !== '');
-}
-
-async function rawLinesFor(props: BlockProps): Promise<string[]> {
-  const ui = renderFeature(<CrewBlock {...props} />, { cols: 120, rows: 40 });
-  await flushEffects();
-  const frame = ui.lastFrame() ?? '';
-  ui.unmount();
-  return frame.split('\n');
 }
 
 async function firstLineOf(node: ReactElement): Promise<string> {
@@ -88,11 +64,13 @@ function lineWith(lines: readonly string[], token: string): string {
 }
 
 describe('crew row view', () => {
+  beforeAll(forceUnicodeGlyphs);
+
   it('ends every posture word on one column across the block', async () => {
     const lines = await linesFor({ config: makeConfig(), width: 78 });
 
     for (const label of Object.values(CREW_SEAT_LABELS)) {
-      // Width 78: identity column 14 + identity 50 + gap 2 + posture 12 = the row edge.
+      // Width 78: identity column 12 + identity 52 + gap 2 + posture 12 = the row edge.
       expect(getTerminalCellWidth(lineWith(lines, label).trimEnd())).toBe(78);
     }
   });
@@ -128,58 +106,40 @@ describe('crew row view', () => {
     const config = makeConfig();
     const lines = await linesFor({ config, width: 78 });
     const review = lineWith(lines, CREW_SEAT_LABELS.review);
+    const reviewRow = deriveCrewRows({ config }).find((row) => row.id === 'review');
+    if (reviewRow === undefined) throw new Error('no review seat');
 
     expect(review).toContain(PLANNER_INHERITANCE.mark);
-    expect(review).toContain(
-      formatInheritedIdentity(readActiveRunner({ config, role: 'planner' })),
-    );
+    expect(review).toContain(reviewRow.seat.model);
   });
 
   it('gives every row a word in the label column, never a glyph alone', async () => {
     const lines = await linesFor({ config: makeConfig(), width: 78 });
 
-    expect(lines.length).toBeGreaterThan(3);
+    expect(lines.length).toBe(3);
     for (const line of lines) {
       expect(line.slice(LABEL_COLUMN, LABEL_COLUMN + CREW_LABEL_WIDTH).trim()).not.toBe('');
     }
   });
 
-  it('no longer dims the effort row of a seat that has a real channel', async () => {
-    const config = makeConfig({
-      implementer: {
-        kind: 'cli',
-        tool: 'opencode',
-        model: 'openai/gpt-5.6-luna',
-        variant: 'xhigh',
-      },
-    });
-    const effort = lineWith(await rawLinesFor({ config, width: 78 }), 'xhigh');
+  it('renders no tree or connector glyphs when there is no cursor row', async () => {
+    const lines = await linesFor({ config: makeConfig(), width: 78 });
+    const frame = lines.join('\n');
+    const glyphNames: readonly GlyphName[] = ['stageDone', 'treeBranch', 'treeLast', 'treeMid'];
+    const tiers = ['unicode', 'ascii'] as const;
 
-    expect(effort).toContain(BOLD_OPEN);
+    for (const name of glyphNames) {
+      for (const tier of tiers) {
+        expect(frame).not.toContain(glyph(name, tier));
+      }
+    }
   });
 
-  it('still dims the effort row of a seat with no effort channel', async () => {
-    const config = makeConfig({
-      implementer: {
-        kind: 'api',
-        provider: 'ollama',
-        service: 'ollama',
-        offering: 'local',
-        apiBase: 'http://127.0.0.1:11434/v1',
-        model: 'qwen3-coder:30b',
-      },
-    });
-    const effort = lineWith(await rawLinesFor({ config, width: 78 }), 'n/a');
-
-    expect(effort).not.toContain(BOLD_OPEN);
-  });
-
-  it('hangs the verdict line off the same rail column as the spine', async () => {
-    const spine = await firstLineOf(<CrewSpine />);
+  it('hangs the verdict line off the identity column', async () => {
     const verdict = await firstLineOf(<CrewVerdictLine verdict="cross-lab" width={78} />);
 
     expect(getTerminalCellWidth(verdict.trimEnd())).toBeLessThanOrEqual(78);
-    expect(verdict.search(/\S/)).toBe(spine.search(/\S/));
+    expect(verdict.search(/\S/)).toBe(CREW_IDENTITY_COLUMN);
     expect(verdict.trim().split(/\s+/).length).toBeGreaterThan(1);
   });
 });

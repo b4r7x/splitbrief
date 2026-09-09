@@ -15,6 +15,7 @@ import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
+import { CREW_SEAT_LABELS } from '../../../src/core/crew/identity.js';
 import { loadConfig } from '../../../src/core/config/load/io.js';
 import {
   CLI_READINESS_STATES,
@@ -38,10 +39,7 @@ import {
 } from '../../../src/features/runners/model-catalog/options.js';
 import { deriveModelCatalogCapability } from '../../../src/features/runners/model-catalog/posture.js';
 import type { ModelOption } from '../../../src/features/runners/model-catalog/recency.js';
-import {
-  formatBillingLabel,
-  formatPickerStatusLabel,
-} from '../../../src/features/runners/picker-format.js';
+import { formatPickerStatusLabel } from '../../../src/features/runners/picker-format.js';
 import { PickerView } from '../../../src/features/runners/picker-view.js';
 import type { PickerActions } from '../../../src/features/runners/use-picker-actions.js';
 import type { PickerCatalog } from '../../../src/features/runners/use-picker-catalog.js';
@@ -66,7 +64,7 @@ function pickerItem(
 function makeActions(overrides: Partial<PickerActions> = {}): PickerActions {
   return {
     confirm: async () => {},
-    confirmProviderVariant: async () => {},
+    confirmProviderSelection: async () => {},
     leftChange: () => {},
     deleteRight: async () => {},
     chooseContract: () => {},
@@ -337,7 +335,7 @@ describe('runner picker semantics integration', () => {
             tool: 'codex',
           });
         });
-        expect(feedbackStore.get().message).toContain('Planner set to');
+        expect(feedbackStore.get().message).toContain(`${CREW_SEAT_LABELS.plan} set to`);
         ui.unmount();
       });
     });
@@ -486,8 +484,7 @@ describe('runner picker semantics integration', () => {
       expect(frame).not.toContain('Add custom model');
       ui.unmount();
 
-      // With the tool column focused the Auto row still says who picks the
-      // model: it is the only row, and it carries the default word.
+      // With the tool column focused the Auto row still names itself.
       const guidanceUi = renderFeature(
         <PickerView
           role="implementer"
@@ -498,7 +495,7 @@ describe('runner picker semantics integration', () => {
       await flushEffects();
       const guidanceFrame = frameText(guidanceUi);
       expect(guidanceFrame).toContain('Auto');
-      expect(guidanceFrame).toContain('Default');
+      expect(guidanceFrame).not.toContain('Default');
       guidanceUi.unmount();
     });
 
@@ -551,7 +548,7 @@ describe('runner picker semantics integration', () => {
       );
       await flushEffects();
       const discoveredFrame = frameText(discoveredUi);
-      expect(discoveredFrame).toContain('1 detected');
+      expect(discoveredFrame).toContain('1 model');
       expect(discoveredFrame).toContain('GPT-4o');
       discoveredUi.unmount();
     });
@@ -800,7 +797,9 @@ describe('runner picker semantics integration', () => {
 
       collectClickableZones(WIDE_VIEWPORT).get('runner-left:claude-code')?.();
       await flushEffects();
-      expect(frameText(ui)).toContain(formatBillingLabel('subscription-included'));
+      ui.stdin.write('\u001B[D');
+      await flushEffects();
+      expect(frameText(ui)).toContain('subscription');
 
       expect(leftToolZoneIds(WIDE_VIEWPORT)).toHaveLength(
         buildPickerOptions(

@@ -7,10 +7,10 @@ import {
   padTerminalDisplayTextEnd,
   truncateTerminalDisplayText,
 } from '../../utils/display-text.js';
-import { CREW_COLUMN_GAP, CREW_MARKER_GUTTER, CREW_RAIL_WIDTH } from './format.js';
+import { CREW_COLUMN_GAP, CREW_MARKER_GUTTER } from './format.js';
 
-/** Preset labels sit on the seat label edge: the marker gutter plus the rail column. */
-const LABEL_COLUMN = CREW_MARKER_GUTTER + CREW_RAIL_WIDTH;
+/** Preset labels sit on the seat label edge: the marker gutter. */
+const LABEL_COLUMN = CREW_MARKER_GUTTER;
 
 export type PresetRowViewProps = Readonly<{
   preset: CrewPreset;
@@ -30,7 +30,7 @@ export function PresetRowView({ preset, isCursor, width, labelWidth }: PresetRow
 
   return (
     <Box>
-      <Text color={t.accent}>{`${gutter}${' '.repeat(CREW_RAIL_WIDTH)}`}</Text>
+      <Text color={t.accent}>{gutter}</Text>
       <Text color={t.accent} bold={isCursor}>
         {padTerminalDisplayTextEnd(preset.label, labelWidth)}
       </Text>

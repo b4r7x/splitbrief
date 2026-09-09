@@ -17,6 +17,7 @@ export interface NativeCliModelCatalogEntry {
   readonly nativeDefault?: boolean | undefined;
   readonly nativeHidden?: boolean | undefined;
   readonly nativeReasoningEfforts?: readonly string[] | undefined;
+  readonly nativeDefaultReasoningEffort?: string | undefined;
   readonly contextWindow?: number | undefined;
 }
 
@@ -67,6 +68,8 @@ const CodexNativeModelSchema = z
     contextWindow: z.number().int().positive().optional(),
     reasoning_efforts: z.array(CodexReasoningEffortSchema).optional(),
     supported_reasoning_efforts: z.array(CodexReasoningEffortSchema).optional(),
+    supported_reasoning_levels: z.array(CodexReasoningEffortSchema).optional(),
+    default_reasoning_level: z.string().trim().min(1).optional(),
   })
   .passthrough();
 
@@ -133,8 +136,13 @@ function codexNativeEntry(
   const nativeDefault = distinct([input.model.is_default, input.model.isDefault]);
   const nativeHidden = distinct([input.model.hidden, input.model.is_hidden]);
   const contextWindow = distinct([input.model.context_window, input.model.contextWindow]);
+  const nativeDefaultReasoningEffort = input.model.default_reasoning_level;
   const nativeReasoningEfforts = distinct(
-    [input.model.reasoning_efforts, input.model.supported_reasoning_efforts],
+    [
+      input.model.reasoning_efforts,
+      input.model.supported_reasoning_efforts,
+      input.model.supported_reasoning_levels,
+    ],
     equalStringLists,
   );
   if (
@@ -155,6 +163,7 @@ function codexNativeEntry(
     ...(nativeDefault === undefined ? {} : { nativeDefault }),
     ...(nativeHidden === undefined ? {} : { nativeHidden }),
     ...(contextWindow === undefined ? {} : { contextWindow }),
+    ...(nativeDefaultReasoningEffort === undefined ? {} : { nativeDefaultReasoningEffort }),
     ...(nativeReasoningEfforts === undefined
       ? {}
       : { nativeReasoningEfforts: [...nativeReasoningEfforts] }),
@@ -325,6 +334,9 @@ export function nativeCliCatalogToDetectedModels(catalog: NativeCliModelCatalog)
     ...(model.nativeDefault === undefined ? {} : { nativeDefault: model.nativeDefault }),
     ...(model.nativeHidden === undefined ? {} : { nativeHidden: model.nativeHidden }),
     ...(model.contextWindow === undefined ? {} : { contextLength: model.contextWindow }),
+    ...(model.nativeDefaultReasoningEffort === undefined
+      ? {}
+      : { nativeDefaultReasoningEffort: model.nativeDefaultReasoningEffort }),
     ...(model.nativeReasoningEfforts === undefined
       ? {}
       : {

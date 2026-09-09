@@ -15,6 +15,18 @@ export const RUNNER_BILLING_POSTURES = [
 export const RunnerBillingPostureSchema = z.enum(RUNNER_BILLING_POSTURES);
 export type RunnerBillingPosture = z.infer<typeof RunnerBillingPostureSchema>;
 
+const BILLING_WORDS: Readonly<Record<RunnerBillingPosture, string | undefined>> = {
+  local: 'local',
+  'subscription-included': 'subscription',
+  'api-metered': 'metered',
+  'provider-dependent': 'provider',
+  unknown: undefined,
+};
+
+export function billingWord(posture: RunnerBillingPosture): string | undefined {
+  return BILLING_WORDS[posture];
+}
+
 export function runnerBillingPosture(runner: RunnerConfig): RunnerBillingPosture {
   switch (runner.kind) {
     case 'cli': {

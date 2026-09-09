@@ -10,6 +10,7 @@ import { cliProviderAuthFacts } from '../../core/discovery/detection.js';
 import { formatModelName } from '../../core/model-display.js';
 import type { CustomCommandRunnerKind } from '../../core/config/custom-commands.js';
 import { clearReviewerSeat } from '../../core/config/accessors/active-runner.js';
+import { PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 
 import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
@@ -30,6 +31,7 @@ import {
 import type { ModelOption } from './model-catalog/recency.js';
 import { formatNeedsSignInSaveFeedback, gatewayAccountName } from './picker-format.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
+import { effortLadderFor, type RightRow } from './model-catalog/rows.js';
 import {
   commitPlannerTierSelection,
   commitImplementerSelection,
@@ -43,7 +45,7 @@ import { pickerViewStore, type PickerSubView } from '../../stores/ui/picker-view
 
 export interface PickerActions {
   confirm(selection: PickerOption, model: ModelOption | null): Promise<void>;
-  confirmProviderVariant(fullId: string, variant?: string | undefined): Promise<void>;
+  confirmProviderSelection(fullId: string, effort?: string | null | undefined): Promise<void>;
   leftChange(item: PickerOption): void;
   browseCatalog(): void;
   deleteRight(item: ModelOption): Promise<void>;
@@ -99,6 +101,20 @@ function needsSignInVariantNote(item: RunnerPickerOption, fullId: string): strin
   });
 }
 
+/** The ladder the row published for this id; an empty one is unknown, never a reason to clear. */
+function rowEffortLadder(rows: readonly RightRow[], fullId: string): readonly string[] | undefined {
+  for (const row of rows) {
+    if (row.kind === 'action') continue;
+    const owns =
+      row.model.id === fullId ||
+      (row.model.variants ?? []).some((variant) => variant.fullId === fullId);
+    if (!owns) continue;
+    const choices = effortLadderFor(row.model, fullId);
+    if (choices.length > 0) return choices;
+  }
+  return undefined;
+}
+
 export function usePickerActions(opts: {
   role: SeatPickerRole;
   catalog: PickerCatalog;
@@ -127,15 +143,36 @@ export function usePickerActions(opts: {
   const commitSelection = (
     selection: RunnerPickerOption,
     model: { id: string } | null,
-    variant?: string | undefined,
+    effort?: string | null | undefined,
+    effortChoices?: readonly string[] | undefined,
   ): SeatCommitResult => {
     switch (seatRole) {
       case 'planner':
-        return commitPlannerTierSelection({ config, role: 'planner', selection, model, variant });
+        return commitPlannerTierSelection({
+          config,
+          role: 'planner',
+          selection,
+          model,
+          effort,
+          effortChoices,
+        });
       case 'reviewer':
-        return commitPlannerTierSelection({ config, role: 'reviewer', selection, model, variant });
+        return commitPlannerTierSelection({
+          config,
+          role: 'reviewer',
+          selection,
+          model,
+          effort,
+          effortChoices,
+        });
       case 'implementer':
-        return commitImplementerSelection({ config, selection, model, variant });
+        return commitImplementerSelection({
+          config,
+          selection,
+          model,
+          effort,
+          effortChoices,
+        });
       default:
         return assertNever(seatRole);
     }
@@ -152,16 +189,22 @@ export function usePickerActions(opts: {
     selection: RunnerPickerOption,
     modelId: string | null,
     note?: string | undefined,
-    variant?: string | undefined,
+    effort?: string | null | undefined,
+    effortChoices?: readonly string[] | undefined,
   ) => {
-    const seat = commitSelection(selection, modelId === null ? null : { id: modelId }, variant);
+    const seat = commitSelection(
+      selection,
+      modelId === null ? null : { id: modelId },
+      effort,
+      effortChoices,
+    );
     const label =
       modelId === null
         ? selection.displayName
         : `${selection.displayName}${SOFT_SEP}${formatModelName(modelId)}`;
-    // The line names what the commit kept: a variant the seat's tool cannot spell
+    // The line names what the commit kept: a level the seat's tool cannot spell
     // is dropped there, and announcing it would retract itself one line later.
-    const saved = seat.variant === undefined ? label : `${label}${SOFT_SEP}${seat.variant}`;
+    const saved = seat.effort === undefined ? label : `${label}${SOFT_SEP}${seat.effort}`;
     await commit(seat.config, `${catalog.roleLabel} set to: ${saved}`);
     // Both notices are news the save does not carry: neither may overwrite the
     // other, so they land as one line.
@@ -182,22 +225,37 @@ export function usePickerActions(opts: {
           return;
         }
         if (selection.kind === 'inherit-planner') {
-          await commit(clearReviewerSeat(config), `${catalog.roleLabel} set to: same as planner`);
+          await commit(
+            clearReviewerSeat(config),
+            `${catalog.roleLabel} set to: ${PLANNER_INHERITANCE.sentence}`,
+          );
           return;
         }
-        await saveModelSelection(selection, model?.id ?? null);
+        await saveModelSelection(
+          selection,
+          model?.id ?? null,
+          undefined,
+          undefined,
+          model === null ? undefined : rowEffortLadder(catalog.rightRows, model.id),
+        );
       });
     },
-    async confirmProviderVariant(fullId: string, variant?: string | undefined) {
+    async confirmProviderSelection(fullId: string, effort?: string | null | undefined) {
       const item = runnerItemOf(catalog.currentItem);
       if (item === undefined) return;
-      await saveModelSelection(item, fullId, needsSignInVariantNote(item, fullId), variant);
+      await saveModelSelection(
+        item,
+        fullId,
+        needsSignInVariantNote(item, fullId),
+        effort,
+        rowEffortLadder(catalog.rightRows, fullId),
+      );
     },
     leftChange(item: PickerOption) {
       // A catalog opened for one tool must not follow the cursor onto the next, and
       // neither may a preset drafted from the tool the cursor left.
       pickerViewStore.setBrowseCatalog(false);
-      pickerViewStore.setVariantDraft(null);
+      pickerViewStore.setEffortDraft(null);
       catalog.setCurrentItem(item);
     },
     browseCatalog() {

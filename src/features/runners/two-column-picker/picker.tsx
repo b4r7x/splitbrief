@@ -30,11 +30,12 @@ export interface PreviewContext<L, R> {
   leftItem: L | undefined;
   rightItem: R | null;
   isOnCustomItem: boolean;
+  /** Cells the byline may spend: the panel width the preview line is rendered at. */
+  bylineBudget: number;
 }
 
 export interface TwoColumnPickerProps<L extends FilterableItem, R extends { id: string }> {
   title: string;
-  subtitle?: string | undefined;
   stepLabel?: string | undefined;
   initialColumn?: 'left' | 'right' | undefined;
   leftProps: LeftColumnProps<L>;
@@ -80,14 +81,14 @@ function getHint(input: {
     const lead = nav.isOnCustomItem ? '⏎ add custom' : (input.expandedHint ?? '⏎ choose route');
     // An empty lead is a row with no verb of its own; it drops its slot rather
     // than opening the line with a separator that reads as a missing key.
-    const parts = [lead, 'esc collapse', '←→ column', '↑↓ select'].filter((part) => part !== '');
+    const parts = ['←→ column', '↑↓ select', lead, 'esc collapse'].filter((part) => part !== '');
     return `${parts.join(SOFT_SEP)}${refreshHint}`;
   }
   if (nav.isOnCustomItem) {
     return `←→ column${SOFT_SEP}↑↓ select${SOFT_SEP}⏎ add custom${SOFT_SEP}esc cancel${refreshHint}`;
   }
   if (nav.currentRightIsCustom) {
-    return `←→ column${SOFT_SEP}↑↓ select${SOFT_SEP}⏎ confirm${SOFT_SEP}ctrl+d delete${SOFT_SEP}esc cancel${refreshHint}`;
+    return `←→ column${SOFT_SEP}↑↓ select${SOFT_SEP}⏎ confirm${SOFT_SEP}esc cancel${SOFT_SEP}ctrl+d delete${refreshHint}`;
   }
   return `←→ column${SOFT_SEP}↑↓ select${SOFT_SEP}⏎ confirm${SOFT_SEP}esc cancel${refreshHint}`;
 }
@@ -174,7 +175,6 @@ export function buildRightDisplay<R extends { id: string }>(
 
 export function TwoColumnPicker<L extends FilterableItem, R extends { id: string }>({
   title,
-  subtitle,
   stepLabel,
   initialColumn = 'left',
   leftProps,
@@ -242,6 +242,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
           leftItem: nav.left.currentItem,
           rightItem: rightCurrent && isRealRightItem(rightCurrent) ? rightCurrent : null,
           isOnCustomItem: nav.isOnCustomItem,
+          bylineBudget: totalBoxWidth,
         });
   const previewText =
     rawPreview === undefined ? undefined : sanitizeTerminalDisplayText(rawPreview);
@@ -259,7 +260,6 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
       <Box width={totalBoxWidth} marginBottom={1} justifyContent="space-between">
         <Box>
           <Text color={t.accent}>{title}</Text>
-          {subtitle ? <Text color={t.textDim}>{`${SOFT_SEP}${subtitle}`}</Text> : null}
         </Box>
         {stepLabel ? <Text color={t.textDim}>{stepLabel}</Text> : null}
       </Box>
@@ -339,7 +339,6 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
                     <ListRow
                       label="+ Add custom model…"
                       state={isCursor ? 'active' : 'default'}
-                      defaultLead="dot"
                       width={maxWidth}
                     />
                   );

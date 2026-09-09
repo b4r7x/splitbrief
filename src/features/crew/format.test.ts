@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import type { RunnerConfig } from '../../core/config/accessors/runner-config.js';
-import { formatInheritedIdentity } from '../../core/crew/identity.js';
+import { PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import { deriveCrewRows, type CrewRow as CrewBlockRow } from '../../core/crew/rows.js';
-import type { CliEffortChannel } from '../../core/runners/effort-channel.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
-import { formatCrewRow, planSeatBlock, type SeatBlockLayout } from './format.js';
+import { billingWord } from '../../core/runners/runner-billing.js';
+import {
+  CREW_IDENTITY_COLUMN,
+  formatCrewRow,
+  planSeatBlock,
+  type SeatBlockLayout,
+} from './format.js';
 
 const WIDTHS = [120, 80, 60];
 
@@ -13,15 +17,12 @@ const ESCAPE = '\u001b';
 const BELL = '\u0007';
 const HOSTILE_MODEL = '\u001b[31mvendor/\u001b]0;pwned\u0007model\u001b[0m';
 
-const PLANNER: RunnerConfig = { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4' };
-
 function crewOf(overrides: Parameters<typeof makeConfig>[0]): readonly CrewBlockRow[] {
   return deriveCrewRows({ config: makeConfig(overrides) });
 }
 
-/** Three seats and one effort row: the catalogued config. */
+/** The catalogued config. */
 const CATALOGUED_CREW = crewOf({});
-/** Three seats and two effort rows. */
 const CUSTOM_ENDPOINT = {
   kind: 'api',
   provider: 'custom-endpoint',
@@ -31,28 +32,14 @@ const CUSTOM_ENDPOINT = {
 } as const;
 
 const DEEP_CREW = crewOf({ implementer: CUSTOM_ENDPOINT });
-/** Every row a crew can have: three seats and three effort rows. */
+/** Every row a crew can have. */
 const FULL_CREW = crewOf({ implementer: CUSTOM_ENDPOINT, reviewer: CUSTOM_ENDPOINT });
-
-function effortContent(channel: CliEffortChannel, value: string | undefined): string {
-  const row: CrewBlockRow = {
-    kind: 'effort',
-    seatId: 'build',
-    channel,
-    value,
-    editable: channel === 'effort-flag' || channel === 'variant',
-    inherited: false,
-    deliverable: channel !== 'none',
-  };
-  const layout = planSeatBlock({ rows: [row], verdict: undefined, innerWidth: 78, rowBudget: 12 });
-  return formatCrewRow({ row, layout, planner: PLANNER }).content;
-}
 
 function blockRows(
   rows: readonly CrewBlockRow[],
   layout: SeatBlockLayout,
 ): readonly ReturnType<typeof formatCrewRow>[] {
-  return rows.map((row) => formatCrewRow({ row, layout, planner: PLANNER }));
+  return rows.map((row) => formatCrewRow({ row, layout }));
 }
 
 describe('planSeatBlock', () => {
@@ -93,29 +80,29 @@ describe('planSeatBlock', () => {
     }
   });
 
-  it('yields the spines first when the rows overflow the budget', () => {
+  it('reserves 12 columns for the cursor gutter, label and gap', () => {
+    expect(CREW_IDENTITY_COLUMN).toBe(12);
     const layout = planSeatBlock({
-      rows: CATALOGUED_CREW,
+      rows: FULL_CREW,
       verdict: undefined,
-      innerWidth: 50,
-      rowBudget: 7,
+      innerWidth: 78,
+      rowBudget: 12,
     });
-
-    expect(layout).toMatchObject({ verdict: false, spines: false, rows: 6 });
+    expect(layout.identityWidth).toBe(52);
   });
 
-  it('yields the verdict before the spines', () => {
+  it('yields the verdict when rows overflow the budget', () => {
     const layout = planSeatBlock({
       rows: DEEP_CREW,
       verdict: 'cross-lab',
       innerWidth: 50,
-      rowBudget: 8,
+      rowBudget: 3,
     });
 
-    expect(layout).toMatchObject({ verdict: false, spines: true, rows: 8 });
+    expect(layout).toMatchObject({ verdict: false, rows: 3 });
   });
 
-  it('keeps the verdict and the spines while the budget allows them', () => {
+  it('keeps the verdict while the budget allows it', () => {
     const layout = planSeatBlock({
       rows: FULL_CREW,
       verdict: 'cross-lab',
@@ -123,7 +110,7 @@ describe('planSeatBlock', () => {
       rowBudget: 12,
     });
 
-    expect(layout).toMatchObject({ verdict: true, spines: true, rows: 9 });
+    expect(layout).toMatchObject({ verdict: true, rows: 4 });
   });
 });
 
@@ -132,10 +119,10 @@ describe('formatCrewRow', () => {
     'strips terminal control sequences from a seat identity at %i columns',
     (innerWidth) => {
       const rows = crewOf({ planner: { kind: 'cli', tool: 'claude-code', model: HOSTILE_MODEL } });
-      const row = rows.find((candidate) => candidate.kind === 'seat' && candidate.id === 'plan');
+      const row = rows.find((candidate) => candidate.id === 'plan');
       if (row === undefined) throw new Error('no plan seat');
       const layout = planSeatBlock({ rows, verdict: undefined, innerWidth, rowBudget: 12 });
-      const formatted = formatCrewRow({ row, layout, planner: PLANNER });
+      const formatted = formatCrewRow({ row, layout });
 
       expect(formatted.content).not.toContain(ESCAPE);
       expect(formatted.content).not.toContain(BELL);
@@ -145,9 +132,7 @@ describe('formatCrewRow', () => {
   );
 
   it('reads an inherited review seat off the planner', () => {
-    const row = CATALOGUED_CREW.find(
-      (candidate) => candidate.kind === 'seat' && candidate.id === 'review',
-    );
+    const row = CATALOGUED_CREW.find((candidate) => candidate.id === 'review');
     if (row === undefined) throw new Error('no review seat');
     const layout = planSeatBlock({
       rows: CATALOGUED_CREW,
@@ -156,80 +141,42 @@ describe('formatCrewRow', () => {
       rowBudget: 12,
     });
 
-    expect(formatCrewRow({ row, layout, planner: PLANNER }).content).toContain(
-      formatInheritedIdentity(PLANNER),
-    );
+    const formatted = formatCrewRow({ row, layout });
+    expect(formatted.content.startsWith(PLANNER_INHERITANCE.mark)).toBe(true);
+    expect(formatted.content).toContain(row.seat.model);
+    expect('branch' in formatted).toBe(false);
   });
 
-  it('still prints n/a for a seat with no effort channel', () => {
-    const rows = crewOf({ implementer: CUSTOM_ENDPOINT });
-    const row = rows.find(
-      (candidate) => candidate.kind === 'effort' && candidate.seatId === 'build',
-    );
-    if (row === undefined) throw new Error('no build effort row');
-    const layout = planSeatBlock({ rows, verdict: undefined, innerWidth: 78, rowBudget: 12 });
-    const formatted = formatCrewRow({ row, layout, planner: PLANNER });
-
-    expect(formatted.content).toBe('n/a');
-  });
-
-  it('prints an opencode seat its saved variant instead of n/a', () => {
-    expect(effortContent('variant', 'xhigh')).toBe('xhigh');
-  });
-
-  it('prints a cursor seat the effort its model id spells', () => {
-    expect(effortContent('model-id', 'high')).toBe('high');
-  });
-
-  it('prints auto for a deliverable channel with no value yet', () => {
-    expect(effortContent('variant', undefined)).toBe('auto');
-  });
-
-  it('renders inherited review effort with from planner suffix', () => {
-    const rows = crewOf({
-      planner: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4', effort: 'high' },
-    });
-    const row = rows.find(
-      (candidate) => candidate.kind === 'effort' && candidate.seatId === 'review',
-    );
-    if (row === undefined) throw new Error('no review effort row');
-    const layout = planSeatBlock({ rows, verdict: undefined, innerWidth: 78, rowBudget: 12 });
-    const formatted = formatCrewRow({ row, layout, planner: PLANNER });
-
-    expect(formatted.content).toContain('high · from planner');
-  });
-
-  it('renders auto from planner for an inherited review seat when planner effort is unset', () => {
-    const rows = crewOf({
-      planner: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4' },
-    });
-    const row = rows.find(
-      (candidate) => candidate.kind === 'effort' && candidate.seatId === 'review',
-    );
-    if (row === undefined) throw new Error('no review effort row');
-    const layout = planSeatBlock({ rows, verdict: undefined, innerWidth: 78, rowBudget: 12 });
-    const formatted = formatCrewRow({ row, layout, planner: PLANNER });
-
-    expect(formatted.content).toContain('auto · from planner');
-  });
-
-  it('closes every branch once the spines have yielded', () => {
-    const spined = planSeatBlock({
+  it('formats every posture cell with the word the one table returns', () => {
+    const layout = planSeatBlock({
       rows: FULL_CREW,
       verdict: undefined,
       innerWidth: 78,
       rowBudget: 12,
     });
-    const flat = planSeatBlock({
-      rows: FULL_CREW,
+
+    expect(FULL_CREW.some((row) => row.seat.posture === 'unknown')).toBe(true);
+    for (const row of FULL_CREW) {
+      const formatted = formatCrewRow({ row, layout });
+      expect(formatted.posture).toEqual(billingWord(row.seat.posture));
+      if (row.seat.posture === 'unknown') expect(formatted.posture).toBeUndefined();
+    }
+  });
+
+  it('renders a resolved posture as a non-empty lowercase word', () => {
+    const row = CATALOGUED_CREW.find((candidate) => candidate.id === 'plan');
+    if (row === undefined) throw new Error('no plan seat');
+    const layout = planSeatBlock({
+      rows: CATALOGUED_CREW,
       verdict: undefined,
       innerWidth: 78,
-      rowBudget: 7,
+      rowBudget: 12,
     });
 
-    expect(blockRows(FULL_CREW, spined).map((row) => row.branch)).toContain('mid');
-    for (const row of blockRows(FULL_CREW, flat)) {
-      expect(row.branch === 'node' || row.branch === 'last').toBe(true);
-    }
+    expect(row.seat.posture).not.toBe('unknown');
+    const formatted = formatCrewRow({ row, layout });
+    expect(formatted.posture).toEqual(billingWord(row.seat.posture));
+    expect(formatted.posture?.length).toBeGreaterThan(0);
+    expect(formatted.posture).toEqual(formatted.posture?.toLowerCase());
   });
 });

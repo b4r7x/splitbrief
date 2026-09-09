@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { DetectedModelSchema } from '../../core/discovery/detection.js';
 import {
   nativeCliCatalogToDetectedModels,
   parseCodexNativeModelCatalog,
@@ -10,6 +11,36 @@ import {
   parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
 } from './cli-model-catalog.js';
+
+// Two-model slice of `codex debug models --bundled` (codex-cli 0.153.3, captured 2026-09-08).
+const CODEX_BUNDLED_SLICE = {
+  models: [
+    {
+      slug: 'gpt-5.6-sol',
+      display_name: 'GPT-5.6-Sol',
+      default_reasoning_level: 'low',
+      supported_reasoning_levels: [
+        { effort: 'low', description: 'Fast responses with lighter reasoning' },
+        { effort: 'medium', description: 'Balances speed and reasoning depth for everyday tasks' },
+        { effort: 'high', description: 'Greater reasoning depth for complex problems' },
+        { effort: 'xhigh', description: 'Extra high reasoning depth for complex problems' },
+        { effort: 'max', description: 'Maximum reasoning depth for the hardest problems' },
+        { effort: 'ultra', description: 'Maximum reasoning with automatic task delegation' },
+      ],
+    },
+    {
+      slug: 'gpt-5.5',
+      display_name: 'GPT-5.5',
+      default_reasoning_level: 'medium',
+      supported_reasoning_levels: [
+        { effort: 'low', description: 'Fast responses with lighter reasoning' },
+        { effort: 'medium', description: 'Balances speed and reasoning depth for everyday tasks' },
+        { effort: 'high', description: 'Greater reasoning depth for complex problems' },
+        { effort: 'xhigh', description: 'Extra high reasoning depth for complex problems' },
+      ],
+    },
+  ],
+};
 
 describe('native CLI model catalogs', () => {
   it('preserves native Codex catalog facts while leaving version admission to canonical detection', () => {
@@ -449,6 +480,83 @@ describe('native CLI model catalogs', () => {
       expect(
         parseCopilotHelpConfigCatalog('  `model`: AI model to use for Copilot CLI.'),
       ).toBeNull();
+    });
+  });
+
+  describe('codex supported_reasoning_levels', () => {
+    it('reads the per-model ladder and default the bundled listing publishes', () => {
+      const catalog = parseCodexNativeModelCatalog(JSON.stringify(CODEX_BUNDLED_SLICE));
+      if (catalog === null) throw new Error('Expected the bundled Codex slice to parse');
+
+      expect(catalog.models[0]).toEqual({
+        selectionId: 'gpt-5.6-sol',
+        displayName: 'GPT-5.6-Sol',
+        nativeOrder: 0,
+        nativeReasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+        nativeDefaultReasoningEffort: 'low',
+      });
+      expect(catalog.models[1]).toEqual({
+        selectionId: 'gpt-5.5',
+        displayName: 'GPT-5.5',
+        nativeOrder: 1,
+        nativeReasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
+        nativeDefaultReasoningEffort: 'medium',
+      });
+    });
+
+    it('keeps the ultra rung the configurable effort enum cannot represent', () => {
+      // SPEC-D5: the parser reports what the tool publishes; gating is a different sprint's job.
+      const catalog = parseCodexNativeModelCatalog(JSON.stringify(CODEX_BUNDLED_SLICE));
+      if (catalog === null) throw new Error('Expected the bundled Codex slice to parse');
+
+      expect(catalog.models[0]?.nativeReasoningEfforts).toContain('ultra');
+    });
+
+    it('fails closed when the two reasoning sources disagree', () => {
+      expect(
+        parseCodexNativeModelCatalog(
+          JSON.stringify({
+            models: [
+              {
+                slug: 'gpt-5.6-sol',
+                reasoning_efforts: ['low', 'medium'],
+                supported_reasoning_levels: [{ effort: 'low' }, { effort: 'high' }],
+              },
+            ],
+          }),
+        ),
+      ).toBeNull();
+    });
+
+    it('reads a default with no ladder', () => {
+      const catalog = parseCodexNativeModelCatalog(
+        JSON.stringify({
+          models: [{ slug: 'gpt-5.5', default_reasoning_level: 'medium' }],
+        }),
+      );
+      if (catalog === null) throw new Error('Expected the default-only fixture to parse');
+
+      expect(catalog.models[0]?.nativeDefaultReasoningEffort).toBe('medium');
+      expect(catalog.models[0]).not.toHaveProperty('nativeReasoningEfforts');
+    });
+
+    it('carries the default through the strict DetectedModel boundary', () => {
+      const catalog = parseCodexNativeModelCatalog(JSON.stringify(CODEX_BUNDLED_SLICE));
+      if (catalog === null) throw new Error('Expected the bundled Codex slice to parse');
+
+      const [detected] = nativeCliCatalogToDetectedModels(catalog);
+      if (detected === undefined) throw new Error('Expected one detected model');
+
+      expect(detected).toEqual({
+        id: 'gpt-5.6-sol',
+        displayName: 'GPT-5.6-Sol',
+        nativeOrder: 0,
+        nativeReasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+        supportsReasoning: true,
+        nativeDefaultReasoningEffort: 'low',
+      });
+      const parsed = DetectedModelSchema.parse(detected);
+      expect(parsed.nativeDefaultReasoningEffort).toBe('low');
     });
   });
 });

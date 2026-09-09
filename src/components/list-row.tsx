@@ -14,7 +14,11 @@ interface ListRowProps {
   label: string;
   state?: ListRowState | undefined;
   defaultLead?: ListRowDefaultLead | undefined;
+  /** The connector drawn between the lead gutter and the label, in the border hue. */
+  treeLead?: string | undefined;
   metadata?: string | undefined;
+  /** Overrides the metadata hue; defaults to the dim text colour. */
+  metadataColor?: string | undefined;
   trailing?: string | undefined;
   trailingColor?: string | undefined;
   selected?: boolean | undefined;
@@ -24,6 +28,8 @@ interface ListRowProps {
 }
 
 const LEAD_BLANK = '  ';
+/** A tree row's value is the point of the row, so its connector never squeezes it to nothing. */
+const TREE_METADATA_FLOOR = 5;
 
 export function listRowLead(state: ListRowState): string {
   return state === 'active' || state === 'context' ? `${glyph('liveBar')} ` : LEAD_BLANK;
@@ -33,7 +39,9 @@ export function ListRow({
   label,
   state = 'default',
   defaultLead = 'blank',
+  treeLead,
   metadata,
+  metadataColor,
   trailing,
   trailingColor,
   selected,
@@ -50,19 +58,25 @@ export function ListRow({
   const cleanLabel = stripTerminalControls(label);
   const cleanMeta = metadata === undefined ? undefined : stripTerminalControls(metadata);
   const cleanTrailing = trailing === undefined ? undefined : stripTerminalControls(trailing);
+  const cleanTree = treeLead === undefined ? undefined : stripTerminalControls(treeLead);
   const hasMetadata = cleanMeta !== undefined && cleanMeta !== '';
   const hasTrailing = cleanTrailing !== undefined && cleanTrailing !== '';
+  const hasTree = cleanTree !== undefined && cleanTree !== '';
   const leadW = 2;
   const checkW = typeof selected === 'boolean' ? 2 : 0;
   const trailW = hasTrailing ? getTerminalCellWidth(cleanTrailing) + 1 : 0;
+  const treeW = hasTree ? getTerminalCellWidth(cleanTree) : 0;
+  const metaRoom =
+    width === undefined ? undefined : Math.max(0, width - leadW - treeW - checkW - trailW - 8);
+  const metaFloor =
+    width === undefined || !hasTree
+      ? 0
+      : Math.min(TREE_METADATA_FLOOR, Math.max(0, width - leadW - treeW - checkW - trailW - 1));
   const metaW =
-    width === undefined
+    metaRoom === undefined
       ? undefined
       : hasMetadata
-        ? Math.min(
-            getTerminalCellWidth(cleanMeta) + 1,
-            Math.max(0, width - leadW - checkW - trailW - 8),
-          )
+        ? Math.min(getTerminalCellWidth(cleanMeta) + 1, Math.max(metaRoom, metaFloor))
         : 0;
   const displayMeta =
     cleanMeta === undefined
@@ -73,11 +87,16 @@ export function ListRow({
   const labelW =
     width === undefined
       ? labelWidth
-      : (labelWidth ?? Math.max(1, width - leadW - (metaW ?? 0) - trailW - checkW));
+      : (labelWidth ?? Math.max(1, width - leadW - treeW - (metaW ?? 0) - trailW - checkW));
 
   return (
     <Box width={width} height={1} overflow="hidden" backgroundColor={backgroundColor}>
       <Text color={leadColor}>{lead}</Text>
+      {hasTree ? (
+        <Box width={treeW} flexShrink={0} backgroundColor={backgroundColor}>
+          <Text color={t.border}>{cleanTree}</Text>
+        </Box>
+      ) : null}
       <Box
         {...(labelW === undefined
           ? { flexGrow: 1, flexShrink: 1 }
@@ -97,7 +116,7 @@ export function ListRow({
           overflow="hidden"
           backgroundColor={backgroundColor}
         >
-          <Text color={t.textDim} wrap="truncate-end">
+          <Text color={metadataColor ?? t.textDim} wrap="truncate-end">
             {' '}
             {displayMeta}
           </Text>

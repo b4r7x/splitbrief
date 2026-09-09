@@ -68,20 +68,19 @@ describe('SettingsOverlay', () => {
     cleanupTempDir(projectDir);
   });
 
-  it('opens on the crew rail, above every tuning row', async () => {
+  it('opens on the crew block, above every tuning row', async () => {
     const ui = renderAt(120, 40);
     await flushEffects();
     const lines = frameLines(ui);
 
-    const rail = [
+    const crew = [
       indexOfLine(lines, 'PLAN'),
-      indexOfLine(lines, 'effort'),
       indexOfLine(lines, 'BUILD'),
       indexOfLine(lines, 'REVIEW'),
     ];
-    expect(rail).toEqual([...rail].toSorted((a, b) => a - b));
-    expect(rail[0]).toBeGreaterThan(indexOfLine(lines, 'Crew'));
-    for (const index of rail) expect(index).toBeLessThan(indexOfLine(lines, 'Temperature'));
+    expect(crew).toEqual([...crew].toSorted((a, b) => a - b));
+    expect(crew[0]).toBeGreaterThan(indexOfLine(lines, 'Crew'));
+    for (const index of crew) expect(index).toBeLessThan(indexOfLine(lines, 'Temperature'));
 
     ui.unmount();
   });
@@ -102,7 +101,7 @@ describe('SettingsOverlay', () => {
     ui.unmount();
   });
 
-  it.each(['seat:plan', 'effort:plan', 'seat:build', 'seat:review'])(
+  it.each(['seat:plan', 'seat:build', 'seat:review'])(
     'keeps all three seat rows on screen at 60x18 with the cursor on %s',
     async (focus) => {
       seed({ planner: PLANNER_WITH_EFFORT });
@@ -119,7 +118,7 @@ describe('SettingsOverlay', () => {
     },
   );
 
-  it('keeps the effort rows while hiding the YAML-only escalation tier at 60x18', async () => {
+  it('hides the YAML-only escalation tier at 60x18', async () => {
     seed({
       planner: PLANNER_WITH_EFFORT,
       reviewer: API_REVIEWER,
@@ -132,64 +131,46 @@ describe('SettingsOverlay', () => {
     await flushEffects();
     const lines = frameLines(ui);
 
-    expect(lines.filter((line) => line.includes('effort'))).toHaveLength(3);
     expect(lineWith(lines, 'escalate')).toBeUndefined();
     expect(lineWith(lines, 'REVIEW')).toBeDefined();
 
     ui.unmount();
   });
 
-  it('renders 6 crew rows and cycling effort moves the row and its seat mirror, nothing else', async () => {
+  it('renders 3 crew rows and Enter opens the seat picker with no geometry jump', async () => {
     seed({
       planner: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4' },
       reviewer: API_REVIEWER,
     });
-    overlayStore.open('settings', 'effort:plan');
+    overlayStore.open('settings', 'seat:plan');
     const ui = renderAt(120, 40);
     await flushEffects();
 
     const beforeLines = stripAnsiStyles(ui.lastFrame()).split('\n');
     const crewLinesBefore = beforeLines.filter(
-      (line) =>
-        line.includes('PLAN') ||
-        line.includes('BUILD') ||
-        line.includes('REVIEW') ||
-        line.includes('effort'),
+      (line) => line.includes('PLAN') || line.includes('BUILD') || line.includes('REVIEW'),
     );
-    expect(crewLinesBefore).toHaveLength(6);
+    expect(crewLinesBefore).toHaveLength(3);
 
-    ui.stdin.write(' ');
+    ui.stdin.write(ENTER);
     await vi.waitFor(() => {
-      const p = configStore.get().config?.planner;
-      expect(p && 'effort' in p ? p.effort : undefined).toBe('low');
+      expect(overlayStore.get().active).toBe('planner-picker');
+      expect(overlayStore.get().focus).toBe('seat:plan:effort');
     });
     await flushEffects();
 
     const afterLines = stripAnsiStyles(ui.lastFrame()).split('\n');
     expect(afterLines).toHaveLength(beforeLines.length);
 
-    const changedIndices: number[] = [];
-    for (let i = 0; i < beforeLines.length; i++) {
-      if (beforeLines[i] !== afterLines[i]) {
-        changedIndices.push(i);
-      }
-    }
-    expect(changedIndices).toHaveLength(2);
-    const seatIndex = changedIndices[0] ?? -1;
-    const effortIndex = changedIndices[1] ?? -1;
-    expect(effortIndex).toBe(seatIndex + 1);
-    expect(beforeLines[seatIndex]).toContain('PLAN');
-    expect(beforeLines[seatIndex]).not.toContain('low');
-    expect(afterLines[seatIndex]).toContain('low');
-    expect(beforeLines[effortIndex]).toContain('effort');
-    expect(afterLines[effortIndex]).toContain('effort');
-    expect(beforeLines[effortIndex]).toContain('auto');
-    expect(afterLines[effortIndex]).toContain('low');
+    const crewLinesAfter = afterLines.filter(
+      (line) => line.includes('PLAN') || line.includes('BUILD') || line.includes('REVIEW'),
+    );
+    expect(crewLinesAfter).toEqual(crewLinesBefore);
 
     ui.unmount();
   });
 
-  it('hides the crew rail behind a filter that only matches a tuning row', async () => {
+  it('hides the crew block behind a filter that only matches a tuning row', async () => {
     const ui = renderAt(120, 40);
     await flushEffects();
     ui.stdin.write('temp');
@@ -202,7 +183,7 @@ describe('SettingsOverlay', () => {
     ui.unmount();
   });
 
-  it('keeps one seat and its effort row under a seat filter', async () => {
+  it('keeps one seat under a seat filter', async () => {
     seed({ planner: PLANNER_WITH_EFFORT });
     const ui = renderAt(120, 40);
     await flushEffects();
@@ -211,7 +192,6 @@ describe('SettingsOverlay', () => {
     const lines = frameLines(ui);
 
     expect(lineWith(lines, 'PLAN')).toBeDefined();
-    expect(lineWith(lines, 'effort')).toBeDefined();
     expect(lineWith(lines, 'BUILD')).toBeUndefined();
     expect(lineWith(lines, 'REVIEW')).toBeUndefined();
 

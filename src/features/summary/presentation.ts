@@ -4,6 +4,7 @@ import type { Theme } from '../../components/theme.js';
 import type { GlyphName } from '../../lib/glyphs.js';
 import { arrowSep } from '../../components/separators.js';
 import { formatToolModel } from '../../core/model-display.js';
+import { PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import { uniqueSorted } from '../../utils/collections.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 import { assertNever } from '../../utils/type-guards.js';
@@ -61,15 +62,24 @@ export function formatPlannerSummary(summary: Summary): string | null {
   return stripTerminalControls(formatToolModel(summary.plannerTool, summary.plannerModel));
 }
 
+export function formatReviewerSummary(summary: Summary): string | null {
+  if (summary.reviewerTool) {
+    return stripTerminalControls(formatToolModel(summary.reviewerTool, summary.reviewerModel));
+  }
+  return summary.plannerTool ? PLANNER_INHERITANCE.sentence : null;
+}
+
 export function formatRouteSummary(
   summary: Summary,
   implementerSummary: string | null,
 ): string | null {
   const plannerSummary = formatPlannerSummary(summary);
   if (!plannerSummary && !implementerSummary) return null;
-  if (!plannerSummary) return implementerSummary;
-  if (!implementerSummary) return plannerSummary;
-  return `${plannerSummary}${arrowSep()}${implementerSummary}`;
+  const reviewer = summary.reviewerTool ? formatReviewerSummary(summary) : null;
+  const chain = [plannerSummary, implementerSummary, reviewer].filter(
+    (part): part is string => part !== null,
+  );
+  return chain.length === 0 ? null : chain.join(arrowSep());
 }
 
 export function compactPacketPath(path: string): string {

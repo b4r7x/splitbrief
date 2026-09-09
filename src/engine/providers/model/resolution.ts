@@ -82,7 +82,7 @@ const TOOL_MODELS_DEV_SOURCES: Partial<Record<ProviderId, readonly ModelsDevCata
         OPENAI_TOOL_MODEL_RE.test(modelId) && !OPENAI_NON_TOOL_MODEL_RE.test(modelId),
     },
   ],
-  copilot: [{ provider: 'copilot' }],
+  copilot: [{ provider: 'github-copilot' }],
   opencode: [{ provider: 'opencode' }],
   'kilo-code': [{ provider: 'kilo-code' }],
 };

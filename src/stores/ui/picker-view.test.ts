@@ -12,7 +12,7 @@ describe('pickerViewStore', () => {
       preservedLeftIndex: 0,
       expandedModelId: null,
       optionDraftId: null,
-      variantDraft: null,
+      effortDraft: null,
       draft: null,
       browseCatalog: false,
     });
@@ -83,32 +83,32 @@ describe('pickerViewStore', () => {
     expect(pickerViewStore.get().optionDraftId).toBeNull();
   });
 
-  it('seeds the variant draft when a model expands', () => {
+  it('seeds the effort draft when a model expands', () => {
     pickerViewStore.expand('openai/gpt-5.6-luna', 'openai/gpt-5.6-luna', 'high');
 
-    expect(pickerViewStore.get().variantDraft).toBe('high');
+    expect(pickerViewStore.get().effortDraft).toBe('high');
   });
 
-  it('clears the variant draft on collapse', () => {
+  it('clears the effort draft on collapse', () => {
     pickerViewStore.expand('openai/gpt-5.6-luna', undefined, 'high');
     pickerViewStore.collapse();
 
-    expect(pickerViewStore.get().variantDraft).toBeNull();
+    expect(pickerViewStore.get().effortDraft).toBeNull();
   });
 
-  it('no-ops when setVariantDraft is given the value it already holds', () => {
-    pickerViewStore.setVariantDraft('medium');
+  it('no-ops when setEffortDraft is given the value it already holds', () => {
+    pickerViewStore.setEffortDraft('medium');
     const drafted = pickerViewStore.get();
-    pickerViewStore.setVariantDraft('medium');
+    pickerViewStore.setEffortDraft('medium');
 
     expect(pickerViewStore.get()).toBe(drafted);
   });
 
-  it('leaves the variant draft alone when expand omits it', () => {
+  it('leaves the effort draft alone when expand omits it', () => {
     pickerViewStore.expand('openai/gpt-5.6-luna', undefined, 'xhigh');
     pickerViewStore.expand('anthropic/claude-sonnet-4');
 
-    expect(pickerViewStore.get().variantDraft).toBe('xhigh');
+    expect(pickerViewStore.get().effortDraft).toBe('xhigh');
   });
 
   it('keeps an expanded model while a sub-view opens and closes', () => {
@@ -141,7 +141,7 @@ describe('pickerViewStore', () => {
       preservedLeftIndex: 0,
       expandedModelId: null,
       optionDraftId: null,
-      variantDraft: null,
+      effortDraft: null,
       draft: null,
       browseCatalog: false,
     });

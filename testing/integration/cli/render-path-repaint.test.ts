@@ -115,7 +115,7 @@ const LAST_DRAFT = CYCLES.reduce((draft, axis) => {
 
 const actions: PickerActions = {
   confirm: async () => {},
-  confirmProviderVariant: async () => {},
+  confirmProviderSelection: async () => {},
   leftChange: () => {},
   deleteRight: async () => {},
   chooseContract: () => {},

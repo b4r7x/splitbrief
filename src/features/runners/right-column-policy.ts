@@ -43,7 +43,7 @@ function expansionDrafts(model: ModelOption): boolean {
 }
 
 /** Unset heads the ladder, so a drafted preset can always be taken back. */
-function nextVariantDraft(choices: readonly string[], current: string | null): string | null {
+function nextEffortDraft(choices: readonly string[], current: string | null): string | null {
   const ladder: readonly (string | null)[] = [null, ...choices];
   return ladder[(ladder.indexOf(current) + 1) % ladder.length] ?? null;
 }
@@ -53,25 +53,24 @@ function nextVariantDraft(choices: readonly string[], current: string | null): s
  * same answer the commit gives, so the ladder opens on what the crew row reads rather
  * than on unset.
  */
-function configuredLevel(role: SeatPickerRole): string | null {
+function configuredEffort(role: SeatPickerRole): string | null {
   const config = configStore.get().config;
   if (config === null) return null;
   const lane = seatPickerLane(role);
   const runner = readActiveRunner({ config, role: lane });
-  return (
-    (seatEffortChannel({ runner, role: lane }) === 'effort-flag'
-      ? runner.effort
-      : runner.variant) ?? null
-  );
+  const channel = seatEffortChannel({ runner, role: lane });
+  if (channel === 'effort-flag') return runner.effort ?? null;
+  if (channel === 'variant') return runner.variant ?? null;
+  return null;
 }
 
 /** The seat's own preset opens the ladder, but only where that ladder spells it. */
-export function seatVariantDraft(
+export function seatEffortDraft(
   model: ModelOption,
   optionDraftId: string | undefined,
   role: SeatPickerRole,
 ): string | null {
-  const configured = configuredLevel(role);
+  const configured = configuredEffort(role);
   if (configured === null) return null;
   const choices = effortLadderFor(model, optionDraftOf(model, optionDraftId));
   return choices.includes(configured) ? configured : null;
@@ -82,8 +81,6 @@ export function rightRowActivation(
   soleConfigured: ModelVariant | undefined,
 ): RightActivation {
   switch (row.kind) {
-    case 'notice':
-      return row.action === 'refresh' ? 'refresh' : 'none';
     case 'action':
     case 'route':
     case 'axis':
@@ -129,6 +126,11 @@ export function activationOfRightRow(row: RightRow, auth: RouteAuthContext): Rig
   return rightRowActivation(row, soleConfiguredRoute(row, auth));
 }
 
+/** A row the Enter key opens: the chevron and the verb are then the same fact. */
+export function isExpandableRow(row: RightRow, auth: RouteAuthContext): boolean {
+  return activationOfRightRow(row, auth) === 'expand' || (row.kind === 'model' && row.expanded);
+}
+
 /**
  * The expanded column's Enter verb belongs to the highlighted row: space steps an
  * axis in place, and a row outside the expansion still confirms or expands there.
@@ -139,11 +141,6 @@ export function expandedRowHint(
   auth: RouteAuthContext,
 ): string | undefined {
   if (row === undefined || row.kind === 'route') return undefined;
-  // A notice sits outside the expansion and must not borrow its verb: a picker of
-  // option families holds no route to choose. The failed lane retries on Enter; the
-  // pending one has no key at all, and repeating the row's own text in the key slot
-  // would read as an affordance, so it contributes nothing.
-  if (row.kind === 'notice') return row.action === 'refresh' ? '⏎ retry' : '';
   if (row.kind === 'action') return '⏎ browse';
   // A sparse variant grid leaves an axis with nowhere to step, and the byline
   // must not promise a key that cannot move; the row already carries that answer.
@@ -153,15 +150,19 @@ export function expandedRowHint(
 }
 
 /**
- * The drafted level rides with the drafted id: both are in flight until Enter, so both
- * are saved by it. The ladder that decides what carries is the one the row offered, so
- * every level the user can reach has somewhere to land; which field spends it is the
- * seat channel's answer, given once at the commit.
+ * The drafted level rides with the drafted id: both are in flight until Enter, so both are
+ * saved by it. Three states, not two: the token when this route's ladder spells it; `null` when
+ * the route has a ladder and the row is showing the unset word — nothing drafted, or a draft
+ * this ladder does not spell, the same condition `axisRowsFor` renders it by; `undefined` when
+ * the route has no ladder at all, so the field is left alone. Which field spends the token is
+ * the seat channel's answer, given once at the commit.
  */
 function confirmDraft(model: ModelOption, fullId: string, actions: PickerActions) {
-  const draft = pickerViewStore.get().variantDraft;
-  const carries = draft !== null && effortLadderFor(model, fullId).includes(draft);
-  void actions.confirmProviderVariant(fullId, carries ? draft : undefined);
+  const draft = pickerViewStore.get().effortDraft;
+  const choices = effortLadderFor(model, fullId);
+  const effort =
+    choices.length === 0 ? undefined : draft !== null && choices.includes(draft) ? draft : null;
+  void actions.confirmProviderSelection(fullId, effort);
 }
 
 export function confirmRow(
@@ -179,7 +180,6 @@ export function confirmRow(
     actions.browseCatalog();
     return;
   }
-  if (row.kind === 'notice') return;
   const draftId = pickerViewStore.get().optionDraftId;
   // A route confirms as it is drafted, and an axis row confirms its route's
   // drafted id rather than its own axis value.
@@ -197,7 +197,7 @@ export function confirmRow(
   }
   const sole = soleConfiguredRoute(row, deps.auth);
   if (sole !== undefined) {
-    void actions.confirmProviderVariant(sole.fullId);
+    void actions.confirmProviderSelection(sole.fullId);
     return;
   }
   void actions.confirm(left, row.model);
@@ -219,7 +219,6 @@ export function rightRowMatches(row: RightRow, query: string): boolean {
       false);
   switch (row.kind) {
     // The escape from an empty result cannot be the thing a query hides.
-    case 'notice':
     case 'action':
       return true;
     case 'route':
@@ -248,9 +247,9 @@ export function cycleRightRow(row: RightRow): CycleOutcome {
   if (row.choices.length > 0) {
     // A preset drafted on another route is not a rung of this ladder, so the
     // step starts from unset the way the row already reads.
-    const draft = pickerViewStore.get().variantDraft;
+    const draft = pickerViewStore.get().effortDraft;
     const current = draft !== null && row.choices.includes(draft) ? draft : null;
-    pickerViewStore.setVariantDraft(nextVariantDraft(row.choices, current));
+    pickerViewStore.setEffortDraft(nextEffortDraft(row.choices, current));
     return 'stepped';
   }
   // Stepping inside a route moves the draft onto it, so every route of a

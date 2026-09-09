@@ -5,7 +5,6 @@ import type {
   CliProviderAuthUnreadableReason,
 } from '../../../core/discovery/detection.js';
 import { UNSET_EFFORT_WORD } from '../../../core/runners/effort-channel.js';
-import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
   formatAxisValue,
@@ -34,6 +33,13 @@ export type RouteAuthState =
  */
 export type RightAxisName = OptionAxisName;
 
+export interface TreeLead {
+  /** Level 1 = a route, or the axes of a flat option family. Level 2 = the axes under a route. */
+  readonly depth: 1 | 2;
+  /** Depth 2 only: the level-1 parent above is not last, so its spine continues. */
+  readonly parentContinues: boolean;
+}
+
 export type RightRow =
   | {
       kind: 'model';
@@ -47,10 +53,9 @@ export type RightRow =
       model: ModelOption;
       variant: ModelVariant;
       auth: RouteAuthState;
-      /** Widest tag among the sibling routes, so their auth words share one column. */
-      tagWidth: number;
       /** Picks the tree glyph that closes the model's route block. */
       last: boolean;
+      tree: TreeLead;
     }
   | {
       kind: 'axis';
@@ -65,11 +70,11 @@ export type RightRow =
       steps: boolean;
       /** Picks the tree glyph that closes the parent's child block. */
       last: boolean;
+      tree: TreeLead;
     }
-  | { kind: 'notice'; lane: 'pending' | 'failed'; text: string; action?: 'refresh' }
   | { kind: 'action'; action: 'browse-catalog'; text: string };
 
-type AxisRow = Extract<RightRow, { kind: 'axis' }>;
+type AxisRow = Omit<Extract<RightRow, { kind: 'axis' }>, 'tree'>;
 
 /** Whether the catalog fetch that feeds suggestion rows has landed. */
 export type CatalogLane = 'ready' | 'pending' | 'failed';
@@ -83,13 +88,11 @@ export const CATALOG_LANE_PENDING = 'Loading models…';
 /** One wording for the failed lane; the picker byline appends its retry key to it. */
 export const CATALOG_FETCH_FAILED = 'Could not load models';
 
-/** One wording for the escape row that opens the unfiltered catalog. */
-export const BROWSE_CATALOG_TEXT = 'Browse the full catalog';
+/** One wording for the Auto row's metadata cell; the row model carries no size. */
+export const AUTO_ROW_METADATA = 'tool decides';
 
-const NOTICE_TEXT: Readonly<Record<'pending' | 'failed', string>> = {
-  pending: CATALOG_LANE_PENDING,
-  failed: CATALOG_FETCH_FAILED,
-};
+/** One wording for the escape row that opens the unfiltered catalog. */
+export const BROWSE_CATALOG_TEXT = 'Browse the full catalog…';
 
 export function routeAuthStateFor(input: {
   hasOracle: boolean;
@@ -311,38 +314,50 @@ export function buildRightRows(input: {
     // An option family and a variant-less row both hold one route: their axes hang
     // off the model itself rather than off a route row.
     if (isOptionFamily(model) || variants.length === 0) {
-      rows.push(...axesOf(''));
+      rows.push(
+        ...axesOf('').map((row) => ({
+          ...row,
+          tree: { depth: 1, parentContinues: false } as const,
+        })),
+      );
       return;
     }
-    const tagWidth = variants.reduce(
-      (widest, variant) =>
-        Math.max(widest, getTerminalCellWidth(sanitizeTerminalDisplayText(variant.tag))),
-      0,
-    );
     // Each route carries its own axes: a row that spans two providers offers
     // every spelling of both, not just the drafted one's.
     const routes = routePrefixesOf(variants);
     for (const prefix of routes) {
       const variant = variants.find((entry) => entry.providerPrefix === prefix);
       if (variant === undefined) continue;
+      const isLastRoute = prefix === routes[routes.length - 1];
       rows.push({
         kind: 'route',
         model,
         variant,
-        tagWidth,
-        last: prefix === routes[routes.length - 1],
+        last: isLastRoute,
+        tree: { depth: 1, parentContinues: false } as const,
         auth: routeAuthStateFor({
           hasOracle: input.hasOracle,
           variant,
           providerAuth: input.providerAuth,
         }),
       });
-      rows.push(...axesOf(prefix));
+      rows.push(
+        ...axesOf(prefix).map((row) => ({
+          ...row,
+          tree: { depth: 2, parentContinues: !isLastRoute } as const,
+        })),
+      );
     }
   };
 
   for (const model of automatic) {
-    rows.push({ kind: 'model', model, provenance: 'Default', section: '', expanded: false });
+    rows.push({
+      kind: 'model',
+      model,
+      provenance: provenanceFor(model, input.customModels),
+      section: '',
+      expanded: false,
+    });
   }
 
   for (const key of order) {
@@ -353,15 +368,6 @@ export function buildRightRows(input: {
 
   if (!input.browseCatalog && placements.some((placement) => placement.model.isRecovery === true)) {
     rows.push({ kind: 'action', action: 'browse-catalog', text: BROWSE_CATALOG_TEXT });
-  }
-
-  if (input.catalogLane !== 'ready') {
-    rows.push({
-      kind: 'notice',
-      lane: input.catalogLane,
-      text: NOTICE_TEXT[input.catalogLane],
-      ...(input.catalogLane === 'failed' ? { action: 'refresh' as const } : {}),
-    });
   }
 
   return rows;
@@ -375,8 +381,6 @@ export function rightRowKey(row: RightRow): string {
       return `route:${row.model.id}:${row.variant.fullId}`;
     case 'axis':
       return `axis:${row.model.id}:${row.providerPrefix}:${row.axis}`;
-    case 'notice':
-      return `notice:${row.lane}`;
     case 'action':
       return 'action:browse-catalog';
     default:

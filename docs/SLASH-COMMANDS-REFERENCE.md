@@ -101,7 +101,7 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 - **Shortcut**: `Ctrl+,` (`src/core/keybindings/registry.ts`).
 - **Aliases**: `/config`.
 - **Example**: `/settings`, `/config`
-- **Behavior**: Opens the `settings` overlay. **Crew is the first section**: the three seats (`PLAN`, `BUILD`, `REVIEW`), the escalation branch, and per-seat effort live there, not in separate per-seat sections. Everything below it is the ordinary settings list. Mutations are persisted to project config on save.
+- **Behavior**: Opens the `settings` overlay. **Crew is the first section**: the three seats (`PLAN`, `BUILD`, `REVIEW`) live there as read-only rows, not in separate per-seat sections; `Enter` on a seat opens that seat's picker, which is where its tool, model and effort are chosen. Everything below it is the ordinary settings list. Mutations are persisted to project config on save.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/navigate.ts`; opens overlay via `overlayStore.open`.
 - **See also**: `/crew`, `/mode`, `/skills`.
 
@@ -148,7 +148,7 @@ Commands that decide who does the work and how: the three seats, the workflow mo
 - **Screens**: all.
 - **Args**: optional. One of `plan`, `build`, `review` (the `CREW_SEAT_IDS` tuple in `src/core/crew/identity.ts`, re-exported for commands as `CREW_COMMAND_SEATS`). Any other value prints `"Unknown seat: <x>. Valid: plan, build, review"`.
 - **Example**: `/crew`, `/crew plan`, `/crew build`, `/crew review`
-- **Behavior**: Bare `/crew` opens the `settings` overlay focused on the Crew section with the cursor on `plan` (`seat:plan`). `/crew <seat>` — and the `/planner`, `/implementer`, `/reviewer` aliases, which carry their seat with them — skips Settings and opens that seat's picker overlay directly (`planner-picker`, `implementer-picker`, `reviewer-picker`, via `seatPickerOverlayFor` in `src/core/navigation/types.ts`). `Esc` from a directly-opened picker returns to the screen it was invoked from rather than to Settings: nothing was on the overlay stack when it opened, so `overlayStore.close()` pops an empty stack and lands back on `none`. Each seat row in the Crew section reads as one identity — tool then model, separated by ` · ` (for example `Claude Code CLI · Claude Sonnet 4`) — with the billing posture beside it. `Enter` on a seat there opens the same picker and returns to Crew with the seat updated. Per-seat reasoning effort is edited on the seat in the Crew section; there is no separate effort command. With no `reviewer` block configured, `REVIEW` reads as inherited from the planner. The escalation branch hangs under `BUILD` when the escalation tier is on.
+- **Behavior**: Bare `/crew` opens the `settings` overlay focused on the Crew section with the cursor on `plan` (`seat:plan`). `/crew <seat>` — and the `/planner`, `/implementer`, `/reviewer` aliases, which carry their seat with them — skips Settings and opens that seat's picker overlay directly (`planner-picker`, `implementer-picker`, `reviewer-picker`, via `seatPickerOverlayFor` in `src/core/navigation/types.ts`). `Esc` from a directly-opened picker returns to the screen it was invoked from rather than to Settings: nothing was on the overlay stack when it opened, so `overlayStore.close()` pops an empty stack and lands back on `none`. Each seat row in the Crew section reads as one identity — tool then model, separated by ` · ` (for example `Claude Code CLI · Claude Sonnet 4`) — with the billing posture beside it. `Enter` on a seat there opens the same picker and returns to Crew with the seat updated. Reasoning effort is chosen with the model in that picker (`Enter` on the row, or `/crew <seat>` directly) and the crew row mirrors it read-only; there is still no separate effort command. With no `reviewer` block configured, `REVIEW` reads as `same as planner`.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/crew.ts`; overlay routing via `seatPickerOverlayFor` in `src/core/navigation/types.ts`; Crew section at `src/features/crew/`, seat and preset models at `src/core/crew/`; effort delivery rules in [`CONFIGURATION.md`](./CONFIGURATION.md).
 - **See also**: `/settings`, `/refresh`.
 
@@ -394,7 +394,7 @@ These names no longer exist. Typing one prints `"<name> was removed: <pointer>"`
 |---|---|
 | `/attach` | `images are attached with /image <path>` — see [`/image`](#image-pathlistremove). |
 | `/detach` | `images are removed with /image remove <index\|id>` — see [`/image`](#image-pathlistremove). |
-| `/effort` | `effort lives on the seat: /crew plan` — reasoning effort is a per-seat field, edited in the Crew section; delivery per runner kind is documented in [`CONFIGURATION.md`](./CONFIGURATION.md). |
+| `/effort` | `effort is chosen with the model: /crew plan, then ⏎` — reasoning effort is chosen with the model in the seat picker; delivery per runner kind is documented in [`CONFIGURATION.md`](./CONFIGURATION.md). |
 | `/repomap` | `the repo map rebuilds itself on each planning run, with no manual step` — background on the map in [`REPOMAP.md`](./REPOMAP.md). |
 | `/resume` | `a paused workflow resumes from its approval prompt` — see [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) for `splitbrief resume`. |
 

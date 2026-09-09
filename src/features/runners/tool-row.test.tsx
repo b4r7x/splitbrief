@@ -2,13 +2,26 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { cursorModelOptions } from '#testing/helpers/factories/cursor-models.js';
+import { mergeOptionFamilies } from './model-catalog/option-merge.js';
 import type { PickerOption } from './model-catalog/options.js';
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
 import type { ModelOption } from './model-catalog/recency.js';
 import { glyph } from '../../lib/glyphs.js';
+import { getTheme } from '../../components/theme.js';
+import { ELLIPSIS } from '../../utils/display-text.js';
 import type { ProvenanceWord } from '../../core/providers/provenance.js';
-import type { RightAxisName, RightRow, RouteAuthState } from './model-catalog/rows.js';
+import {
+  AUTO_ROW_METADATA,
+  BROWSE_CATALOG_TEXT,
+  type RightAxisName,
+  type RightRow,
+  type RouteAuthState,
+  type TreeLead,
+} from './model-catalog/rows.js';
 import { renderModelRow, renderToolRow } from './tool-row.js';
+
+const AUTH = { hasOracle: false, providerAuth: undefined };
 
 function modelRow(
   model: ModelOption,
@@ -24,18 +37,22 @@ function axisRow(
   value: string,
   last = false,
   steps = true,
+  tree: TreeLead = { depth: 1, parentContinues: false },
 ): RightRow {
-  return { kind: 'axis', model, axis, providerPrefix: '', value, choices: [], steps, last };
+  return { kind: 'axis', model, axis, providerPrefix: '', value, choices: [], steps, last, tree };
 }
 
-function routeRow(auth: RouteAuthState): RightRow {
+function routeRow(
+  auth: RouteAuthState,
+  tree: TreeLead = { depth: 1, parentContinues: false },
+): RightRow {
   return {
     kind: 'route',
     model: { id: 'openai/gpt-5.6' },
     variant: { fullId: 'openai/gpt-5.6', providerPrefix: 'openai', tag: 'openai' },
-    tagWidth: 6,
     last: true,
     auth,
+    tree,
   };
 }
 
@@ -50,7 +67,14 @@ function pickerItem(
 
 async function rowFrame(row: RightRow, maxWidth: number, currentModel?: string): Promise<string> {
   const ui = renderFeature(
-    renderModelRow({ row, isCursor: false, maxWidth, currentModel, sectioned: false }),
+    renderModelRow({
+      row,
+      isCursor: false,
+      maxWidth,
+      currentModel,
+      sectioned: false,
+      auth: AUTH,
+    }),
   );
   await tick(20);
   const frame = ui.lastFrame() ?? '';
@@ -211,6 +235,44 @@ describe('runner row grammar', () => {
     ui.unmount();
   });
 
+  it('paints a status word with a warning metadata colour and leaves a version dim', () => {
+    const unavailable = pickerItem({
+      id: 'deepseek',
+      displayName: 'DeepSeek',
+      kind: 'api',
+      roles: ['implementer'],
+      modelPolicy: 'per-call',
+      billing: 'api-metered',
+      permissions: readyPermissions,
+      status: { state: 'unavailable', remediation: 'Start DeepSeek and refresh detection.' },
+      available: false,
+    });
+    const ready = pickerItem({
+      id: 'claude-code',
+      displayName: 'Claude Code',
+      kind: 'cli',
+      roles: ['planner', 'implementer'],
+      modelPolicy: 'optional',
+      billing: 'subscription-included',
+      permissions: readyPermissions,
+      status: { state: 'ready', remediation: null },
+      available: true,
+      version: '1.2.3',
+    });
+    const rowArgs = {
+      isCursor: false,
+      isSelected: false,
+      isContext: false,
+      maxWidth: 40,
+      currentCommand: undefined,
+      currentCommandKind: undefined,
+    } as const;
+    const unavailableColor = renderToolRow({ item: unavailable, ...rowArgs }).props.metadataColor;
+    const readyColor = renderToolRow({ item: ready, ...rowArgs }).props.metadataColor;
+    expect(unavailableColor).toBe(getTheme().warning);
+    expect(readyColor).not.toBe(unavailableColor);
+  });
+
   it('renders custom/default model provenance without parens badges', async () => {
     const customUi = renderFeature(
       renderModelRow({
@@ -219,6 +281,7 @@ describe('runner row grammar', () => {
         maxWidth: 40,
         currentModel: undefined,
         sectioned: false,
+        auth: AUTH,
       }),
     );
     await tick(20);
@@ -234,6 +297,7 @@ describe('runner row grammar', () => {
         maxWidth: 40,
         currentModel: undefined,
         sectioned: false,
+        auth: AUTH,
       }),
     );
     await tick(20);
@@ -253,6 +317,7 @@ describe('runner row grammar', () => {
         maxWidth: 60,
         currentModel: undefined,
         sectioned: false,
+        auth: AUTH,
       }),
     );
     await tick(20);
@@ -272,6 +337,7 @@ describe('runner row grammar', () => {
         maxWidth: 60,
         currentModel: undefined,
         sectioned: false,
+        auth: AUTH,
       }),
     );
     await tick(20);
@@ -287,6 +353,7 @@ describe('runner row grammar', () => {
         maxWidth: 60,
         currentModel: undefined,
         sectioned: false,
+        auth: AUTH,
       }),
     );
     await tick(20);
@@ -298,36 +365,113 @@ describe('runner row grammar', () => {
     forceUnicodeGlyphs();
     const ui = renderFeature(
       renderModelRow({
-        row: { kind: 'action', action: 'browse-catalog', text: 'Browse the full catalog' },
+        row: { kind: 'action', action: 'browse-catalog', text: BROWSE_CATALOG_TEXT },
         isCursor: false,
         maxWidth: 60,
         currentModel: undefined,
         sectioned: false,
+        auth: AUTH,
       }),
     );
     await tick(20);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('Browse the full catalog');
-    expect(frame).toContain(glyph('disclosureClosed'));
+    expect(frame).toContain(BROWSE_CATALOG_TEXT);
+    expect(frame).not.toContain(glyph('disclosureClosed'));
     expect(frame).not.toContain(glyph('statusFailed'));
     ui.unmount();
   });
 
-  it('keeps the Default word on the Auto row even inside a sectioned list', async () => {
-    const ui = renderFeature(
-      renderModelRow({
-        row: modelRow({ id: 'auto' }, 'Default'),
-        isCursor: false,
-        maxWidth: 40,
-        currentModel: 'auto',
-        sectioned: true,
-      }),
+  it('renders tool decides on the Auto row, not Default, inside a section and outside one', async () => {
+    for (const sectioned of [true, false]) {
+      const ui = renderFeature(
+        renderModelRow({
+          row: modelRow({ id: 'auto' }, 'Known'),
+          isCursor: false,
+          maxWidth: 40,
+          currentModel: 'auto',
+          sectioned,
+          auth: AUTH,
+        }),
+      );
+      await tick(20);
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('Auto');
+      expect(frame).toContain(AUTO_ROW_METADATA);
+      expect(frame).not.toContain('Default');
+      ui.unmount();
+    }
+  });
+
+  it('puts a detail string in the metadata cell, not the label', async () => {
+    const row = modelRow({ id: 'opus', displayName: 'Opus 5', detail: 'opus · 1M' }, 'Known');
+    const el = renderModelRow({
+      row,
+      isCursor: false,
+      maxWidth: 60,
+      currentModel: undefined,
+      sectioned: false,
+      auth: AUTH,
+    });
+    expect(el.props.label).toBe('Opus 5');
+    expect(el.props.metadata).toBe('opus · 1M');
+    expect(el.props.label).not.toContain('opus · 1M');
+    const line = await rowLine(row, 60);
+    expect(line).toContain('Opus 5');
+    expect(line).toContain('opus · 1M');
+  });
+
+  it('places the vendor tag left of the context size in the metadata cell', async () => {
+    const row = modelRow(
+      {
+        id: 'claude-fable-5.1',
+        displayName: 'Claude Fable 5.1',
+        vendorTag: 'no ZDR',
+        contextLength: 1_000_000,
+      },
+      'Known',
     );
-    await tick(20);
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Auto');
-    expect(frame).toContain('Default');
-    ui.unmount();
+    const el = renderModelRow({
+      row,
+      isCursor: false,
+      maxWidth: 80,
+      currentModel: undefined,
+      sectioned: false,
+      auth: AUTH,
+    });
+    expect(el.props.label).toBe('Claude Fable 5.1');
+    expect(el.props.label).not.toContain('no ZDR');
+    expect(el.props.label).not.toContain('1M');
+    const metadata = el.props.metadata ?? '';
+    expect(metadata).toContain('no ZDR');
+    expect(metadata).toContain('1M');
+    expect(metadata.indexOf('no ZDR')).toBeLessThan(metadata.indexOf('1M'));
+    const line = await rowLine(row, 80);
+    expect(line).toContain('no ZDR');
+    expect(line).toContain('1M');
+  });
+
+  it('falls back to the formatted context length, and leaves metadata empty when neither is present', () => {
+    const withSize = renderModelRow({
+      row: modelRow({ id: 'gpt-5.6', displayName: 'GPT-5.6', contextLength: 1_000_000 }, 'Known'),
+      isCursor: false,
+      maxWidth: 40,
+      currentModel: undefined,
+      sectioned: false,
+      auth: AUTH,
+    });
+    expect(withSize.props.metadata).toBe('1M');
+    expect(withSize.props.label).not.toContain('1M');
+
+    const empty = renderModelRow({
+      row: modelRow({ id: 'plain', displayName: 'Plain' }, 'Known'),
+      isCursor: false,
+      maxWidth: 40,
+      currentModel: undefined,
+      sectioned: false,
+      auth: AUTH,
+    });
+    expect(empty.props.metadata).toBeUndefined();
+    expect(empty.props.label).toBe('Plain');
   });
 
   it('drops the provenance word when the section header already carries it', async () => {
@@ -338,6 +482,7 @@ describe('runner row grammar', () => {
         maxWidth: 40,
         currentModel: undefined,
         sectioned: true,
+        auth: AUTH,
       }),
     );
     await tick(20);
@@ -345,53 +490,22 @@ describe('runner row grammar', () => {
     ui.unmount();
   });
 
-  it('renders a route row with its tag, and drops the glyph at the floor width', async () => {
-    const wide = renderFeature(
-      renderModelRow({
-        row: routeRow({ kind: 'configured', source: 'oauth' }),
-        isCursor: false,
-        maxWidth: 40,
-        currentModel: undefined,
-        sectioned: false,
-      }),
-    );
-    await tick(20);
-    const wideFrame = wide.lastFrame() ?? '';
-    expect(wideFrame).toContain('openai');
-    expect(wideFrame).toContain(glyph('stageDone'));
-    wide.unmount();
-
-    // 22 cells is the 60-column column width; below 26 the glyph and the indent go.
-    const floor = renderFeature(
-      renderModelRow({
-        row: routeRow({ kind: 'configured', source: 'oauth' }),
-        isCursor: false,
-        maxWidth: 22,
-        currentModel: undefined,
-        sectioned: false,
-      }),
-    );
-    await tick(20);
-    const floorFrame = floor.lastFrame() ?? '';
-    expect(floorFrame).toContain('openai');
-    expect(floorFrame).not.toContain(glyph('stageDone'));
-    floor.unmount();
+  it('renders a route row with its tag', async () => {
+    forceUnicodeGlyphs();
+    const line = await rowLine(routeRow({ kind: 'configured', source: 'oauth' }), 40);
+    expect(line).toContain('openai');
+    expect(line).toContain('signed in');
+    expect(line).not.toContain(glyph('stageDone'));
+    expect(line).not.toContain(glyph('stagePending'));
+    expect(line).not.toContain(glyph('statusWarning'));
+    expect(line.includes(glyph('treeBranch')) || line.includes(glyph('treeLast'))).toBe(true);
   });
 
   it('renders an unchecked route as the tag alone', async () => {
-    const ui = renderFeature(
-      renderModelRow({
-        row: routeRow({ kind: 'unchecked' }),
-        isCursor: false,
-        maxWidth: 40,
-        currentModel: undefined,
-        sectioned: false,
-      }),
-    );
-    await tick(20);
-    const frame = (ui.lastFrame() ?? '').trim();
-    expect(frame).toBe('openai');
-    ui.unmount();
+    forceUnicodeGlyphs();
+    const line = await rowLine(routeRow({ kind: 'unchecked' }), 40);
+    expect(line).toContain('openai');
+    expect(line).not.toContain('signed in');
   });
 
   it('renders one add-custom-command launcher instead of per-kind add rows', async () => {
@@ -425,6 +539,59 @@ describe('runner row grammar', () => {
     ui.unmount();
   });
 
+  it('renders the custom-command launcher without a dot lead, and a tool row with one', async () => {
+    const launcher = pickerItem({
+      id: 'custom-command',
+      displayName: 'Custom command',
+      kind: 'custom-command',
+      roles: ['planner', 'implementer'],
+      modelPolicy: 'none',
+      billing: 'unknown',
+      permissions: readyPermissions,
+      status: { state: 'ready', remediation: null },
+      available: true,
+    });
+    const tool = pickerItem({
+      id: 'claude-code',
+      displayName: 'Claude Code',
+      kind: 'cli',
+      roles: ['planner', 'implementer'],
+      modelPolicy: 'optional',
+      billing: 'subscription-included',
+      permissions: readyPermissions,
+      status: { state: 'ready', remediation: null },
+      available: true,
+    });
+    const rowArgs = {
+      isCursor: false,
+      isSelected: false,
+      isContext: false,
+      maxWidth: 40,
+      currentCommand: undefined,
+      currentCommandKind: undefined,
+    } as const;
+    expect(renderToolRow({ item: launcher, ...rowArgs }).props.defaultLead).toBe('blank');
+    expect(renderToolRow({ item: tool, ...rowArgs }).props.defaultLead).toBe('dot');
+    expect(
+      renderToolRow({
+        item: launcher,
+        ...rowArgs,
+        currentCommand: 'my-tool --json',
+        currentCommandKind: 'shell',
+      }).props.defaultLead,
+    ).toBe('dot');
+
+    const launcherUi = renderFeature(renderToolRow({ item: launcher, ...rowArgs }));
+    await tick(20);
+    expect(stripAnsiStyles(launcherUi.lastFrame() ?? '')).not.toContain('·');
+    launcherUi.unmount();
+
+    const toolUi = renderFeature(renderToolRow({ item: tool, ...rowArgs }));
+    await tick(20);
+    expect(stripAnsiStyles(toolUi.lastFrame() ?? '')).toContain('·');
+    toolUi.unmount();
+  });
+
   describe('merged provider rows', () => {
     beforeEach(() => {
       forceUnicodeGlyphs();
@@ -447,6 +614,7 @@ describe('runner row grammar', () => {
           maxWidth: 60,
           currentModel: undefined,
           sectioned: false,
+          auth: AUTH,
         }),
       );
       await tick(20);
@@ -459,7 +627,7 @@ describe('runner row grammar', () => {
       ui.unmount();
     });
 
-    it('signposts a multi-option family with the composed summary, not an options count', async () => {
+    it('signposts a multi-option family with its option count, not an axis value', async () => {
       const luna: ModelOption = {
         id: 'gpt-5.6-luna-high-fast',
         displayName: 'GPT-5.6 Luna',
@@ -476,20 +644,21 @@ describe('runner row grammar', () => {
           maxWidth: 60,
           currentModel: 'gpt-5.6-luna-high-fast',
           sectioned: false,
+          auth: AUTH,
         }),
       );
       await tick(20);
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('GPT-5.6 Luna');
-      expect(frame).toMatch(/high · on/);
-      expect(frame).not.toMatch(/12 options/);
-      expect(frame).not.toContain('options');
+      expect(frame).toContain('3 options');
+      expect(frame).not.toMatch(/\bhigh\b/);
+      expect(frame).not.toMatch(/\bon\b/);
       expect(frame).not.toContain('providers');
       expect(frame).not.toContain('Detected');
       ui.unmount();
     });
 
-    it('drops the summary from an expanded family and keeps it on a collapsed one', async () => {
+    it('keeps the count on an expanded family, so the chip is not an expansion-state signal', async () => {
       const luna: ModelOption = {
         id: 'gpt-5.6-luna-high',
         displayName: 'GPT-5.6 Luna',
@@ -498,9 +667,7 @@ describe('runner row grammar', () => {
           { fullId: 'gpt-5.6-luna-high-fast', providerPrefix: '', tag: 'High Fast' },
         ],
       };
-      // Both variants parse `effort: 'high'`, so `fast` is the family's only axis and
-      // the whole summary is that one word — matched whole, like its wider siblings.
-      const summary = /\boff\b/;
+      const count = /2 options/;
       const expanded = renderFeature(
         renderModelRow({
           row: { ...modelRow(luna, 'Detected'), expanded: true },
@@ -508,12 +675,13 @@ describe('runner row grammar', () => {
           maxWidth: 60,
           currentModel: 'gpt-5.6-luna-high',
           sectioned: false,
+          auth: AUTH,
         }),
       );
       await tick(20);
       const expandedFrame = expanded.lastFrame() ?? '';
       expect(expandedFrame).toContain('GPT-5.6 Luna');
-      expect(expandedFrame).not.toMatch(summary);
+      expect(expandedFrame).toMatch(count);
       expect(expandedFrame).toContain(glyph('disclosureOpen'));
       expanded.unmount();
 
@@ -524,16 +692,17 @@ describe('runner row grammar', () => {
           maxWidth: 60,
           currentModel: 'gpt-5.6-luna-high',
           sectioned: false,
+          auth: AUTH,
         }),
       );
       await tick(20);
       const collapsedFrame = collapsed.lastFrame() ?? '';
-      expect(collapsedFrame).toMatch(summary);
+      expect(collapsedFrame).toMatch(count);
       expect(collapsedFrame).toContain(glyph('disclosureClosed'));
       collapsed.unmount();
     });
 
-    it('keeps the model name whole by dropping the context length, then the summary', async () => {
+    it('keeps the model name whole by shrinking the count, never the reverse', async () => {
       const opus: ModelOption = {
         id: 'claude-opus-5-low',
         displayName: 'Claude Opus 5',
@@ -548,23 +717,17 @@ describe('runner row grammar', () => {
       const frameAt = (maxWidth: number): Promise<string> =>
         rowFrame(modelRow(opus, 'Detected'), maxWidth, 'claude-opus-5-low');
 
-      // The three-axis summary and the context length together push the name under
-      // its floor, so the context goes first and the name stays whole.
-      const tight = await frameAt(35);
-      expect(tight).toContain('Claude Opus 5');
-      expect(tight).toContain('low · off · off');
-      expect(tight).not.toContain('1M');
+      const wide = await frameAt(60);
+      expect(wide).toContain('Claude Opus 5');
+      expect(wide).toContain('4 options');
+      expect(wide).toContain('1M');
 
-      // Narrower still, the summary cannot buy its place either.
-      const tighter = await frameAt(33);
-      expect(tighter).toContain('Claude Opus 5');
-      expect(tighter).not.toContain('low · off · off');
-      expect(tighter).toContain('1M');
+      const narrow = await frameAt(30);
+      expect(narrow).toContain('Claude Opus 5');
+      expect(narrow).not.toContain('4 options');
     });
 
-    it('sheds the context length, then the summary, and clips the Stale word rather than drop it', async () => {
-      // A collapsed family carries no other staleness signal, and the disclosure
-      // spells the summary out again one keypress away, so the tail sheds in that order.
+    it('keeps Stale in the tail while the count pays first', async () => {
       const grok: ModelOption = {
         id: 'cursor-grok-4.6-low',
         displayName: 'Cursor Grok 4.6',
@@ -575,60 +738,55 @@ describe('runner row grammar', () => {
           { fullId: 'cursor-grok-4.6-thinking-high', providerPrefix: '', tag: 'Thinking' },
         ],
       };
-      const frameAt = (maxWidth: number): Promise<string> =>
-        rowFrame(modelRow(grok, 'Stale'), maxWidth, 'cursor-grok-4.6-low');
-
-      const wide = await frameAt(43);
-      expect(wide).toContain('low · off · off');
+      const wide = await rowFrame(modelRow(grok, 'Stale'), 60, 'cursor-grok-4.6-low');
+      expect(wide).toContain('3 options');
       expect(wide).toContain('Stale');
-      expect(wide).not.toContain('272K');
+      expect(wide).toContain('272K');
 
-      const tight = await frameAt(26);
-      expect(tight).toContain('Stale');
-      expect(tight).not.toContain('272K');
-      expect(tight).not.toContain('low · off · off');
-
-      // Below the name floor the word still goes out: it costs the name cells, but
-      // an empty column would leave the row with nothing to say it is stale.
-      const floored = await frameAt(21);
-      expect(floored).toContain('Stale');
-      expect(floored).not.toContain('Cursor Grok 4.6');
-
-      // Narrower still, ListRow clips it. A flagged row reads as flagged either way.
-      const clipped = await frameAt(18);
-      expect(clipped).toContain('St…');
-      expect(clipped).not.toContain('Stale');
+      const squeezed = renderModelRow({
+        row: modelRow(grok, 'Stale'),
+        isCursor: false,
+        maxWidth: 32,
+        currentModel: 'cursor-grok-4.6-low',
+        sectioned: false,
+        auth: AUTH,
+      }).props;
+      expect(squeezed.label).toBe('Cursor Grok 4.6');
+      expect(squeezed.metadata).toContain('Stale');
+      expect(squeezed.metadata).not.toContain('3 options');
     });
 
-    it('keeps the provenance word rather than fall back to a summary that would fit', async () => {
-      // One axis, so the summary is narrower than the word beside it: the only shape
-      // where a summary-only tail would fit a room the provenance word cannot.
-      const grok: ModelOption = {
-        id: 'cursor-grok-4.6-low',
-        displayName: 'Cursor Grok 4.6',
-        contextLength: 272_000,
+    it('drops the count rather than painting a bare digit when the noun no longer fits', () => {
+      const opus48: ModelOption = {
+        id: 'claude-opus-4-8',
+        displayName: 'Claude Opus 4.8',
+        contextLength: 200_000,
         variants: [
-          { fullId: 'cursor-grok-4.6-low', providerPrefix: '', tag: 'Low' },
-          { fullId: 'cursor-grok-4.6-max', providerPrefix: '', tag: 'Max' },
+          { fullId: 'claude-opus-4-8', providerPrefix: '', tag: '' },
+          { fullId: 'claude-opus-4-8-fast', providerPrefix: '', tag: 'Fast' },
         ],
       };
-      const frameAt = (maxWidth: number): Promise<string> =>
-        rowFrame(modelRow(grok, 'Stale'), maxWidth, 'cursor-grok-4.6-low');
-      // The two variants differ only in effort, so that is the family's only axis and
-      // the whole summary is the drafted variant's word — matched whole, like its siblings.
-      const summary = /\blow\b/;
+      const wide = renderModelRow({
+        row: modelRow(opus48, 'Detected'),
+        isCursor: false,
+        maxWidth: 60,
+        currentModel: undefined,
+        sectioned: false,
+        auth: AUTH,
+      }).props;
+      expect(wide.metadata).toContain('2 options');
+      expect(wide.metadata).toContain('200K');
 
-      // Room for one of them: the word the row cannot recover elsewhere wins.
-      const word = await frameAt(26);
-      expect(word).toContain('Stale');
-      expect(word).not.toMatch(summary);
-
-      // Room for neither, though the summary alone would have fit: the word still goes
-      // out, paid for out of the name's cells.
-      const floored = await frameAt(23);
-      expect(floored).toContain('Stale');
-      expect(floored).not.toMatch(summary);
-      expect(floored).not.toContain('Cursor Grok');
+      const squeezed = renderModelRow({
+        row: modelRow(opus48, 'Detected'),
+        isCursor: false,
+        maxWidth: 32,
+        currentModel: undefined,
+        sectioned: false,
+        auth: AUTH,
+      }).props;
+      expect(squeezed.metadata).toContain('200K');
+      expect(squeezed.metadata).not.toMatch(/\b2\b/);
     });
 
     it('leaves a non-family row to ListRow at a width that clips the family chip', async () => {
@@ -644,11 +802,13 @@ describe('runner row grammar', () => {
           maxWidth: 21,
           currentModel: undefined,
           sectioned: false,
+          auth: AUTH,
         }),
       );
       await tick(20);
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('Stale 2…');
+      expect(frame).toContain('Stale');
+      expect(frame).toContain('…');
       expect(frame).not.toContain(glyph('disclosureClosed'));
       ui.unmount();
     });
@@ -674,6 +834,7 @@ describe('runner row grammar', () => {
           maxWidth: width,
           currentModel: 'gpt-5.6-luna-high',
           sectioned: false,
+          auth: AUTH,
         }),
       );
       const effort = renderFeature(
@@ -683,6 +844,7 @@ describe('runner row grammar', () => {
           maxWidth: width,
           currentModel: undefined,
           sectioned: false,
+          auth: AUTH,
         }),
       );
       const fast = renderFeature(
@@ -692,6 +854,7 @@ describe('runner row grammar', () => {
           maxWidth: width,
           currentModel: undefined,
           sectioned: false,
+          auth: AUTH,
         }),
       );
       await tick(20);
@@ -705,21 +868,22 @@ describe('runner row grammar', () => {
       expect(fastLine.startsWith(`  ${glyph('treeLast')}${glyph('divider')} fast`)).toBe(true);
       expect(effortLine).not.toContain(glyph('treeLast'));
 
-      // The cycle affordance stands in the parent's disclosure column, so nothing shifts.
-      expect(effortLine).toContain(glyph('connectorSame'));
-      expect(fastLine).toContain(glyph('connectorSame'));
-      expect(effortLine.indexOf(glyph('connectorSame'))).toBe(
-        parentLine.indexOf(glyph('disclosureOpen')),
+      // The axis row spends its trailing cell on nothing, so the value column stops one
+      // cell short of the parent's disclosure and both axes end in the same column.
+      expect(effortLine).not.toContain(glyph('connectorSame'));
+      expect(fastLine).not.toContain(glyph('connectorSame'));
+      expect(effortLine.indexOf('high') + 'high'.length).toBe(
+        fastLine.indexOf('off') + 'off'.length,
       );
-      expect(fastLine.indexOf(glyph('connectorSame'))).toBe(
-        effortLine.indexOf(glyph('connectorSame')),
+      expect(parentLine.indexOf(glyph('disclosureOpen'))).toBeGreaterThan(
+        effortLine.indexOf('high') + 'high'.length,
       );
       parent.unmount();
       effort.unmount();
       fast.unmount();
     });
 
-    it('keeps the axis value whole in a column too narrow to also hold the cycle glyph', async () => {
+    it('keeps the axis value whole and never paints the filter arrow', async () => {
       const luna: ModelOption = {
         id: 'gpt-5.6-luna-high',
         displayName: 'GPT-5.6 Luna',
@@ -728,27 +892,14 @@ describe('runner row grammar', () => {
           { fullId: 'gpt-5.6-luna-high-fast', providerPrefix: '', tag: 'High Fast' },
         ],
       };
-      const lineAt = (maxWidth: number): Promise<string> =>
-        rowLine(axisRow(luna, 'fast', 'off', true), maxWidth);
+      const line = await rowLine(axisRow(luna, 'fast', 'off', true), 60);
 
-      // A value the column truncated away is a value space cannot be seen to cycle.
-      const floored = await lineAt(22);
-      expect(floored).toContain('off');
-      expect(floored).toContain(glyph('treeLast'));
-      expect(floored).not.toContain(glyph('connectorSame'));
-
-      // Below the floor the check column's cells go back to the value: 14 still holds
-      // it whole, and 13 loses it.
-      const narrow = await lineAt(14);
-      expect(narrow).toContain('off');
-      expect(narrow).not.toContain(glyph('connectorSame'));
-
-      const roomy = await lineAt(23);
-      expect(roomy).toContain('off');
-      expect(roomy).toContain(glyph('connectorSame'));
+      expect(line).toContain('off');
+      expect(line).toContain(glyph('treeLast'));
+      expect(line).not.toContain(glyph('connectorSame'));
     });
 
-    it('drops the cycle mark on an axis with nowhere to step and holds its cells', async () => {
+    it('renders the same cells whether or not the ladder can step', async () => {
       const model: ModelOption = {
         id: 'gpt-5',
         displayName: 'GPT-5',
@@ -764,8 +915,8 @@ describe('runner row grammar', () => {
       const live = await lineFor(true);
 
       expect(dead).not.toContain(glyph('connectorSame'));
-      expect(live).toContain(glyph('connectorSame'));
-      // The mark goes but its cells stay, so the value column does not slide right.
+      expect(live).not.toContain(glyph('connectorSame'));
+      // The trailing cell is blank either way, so the value column does not slide right.
       expect(dead.indexOf('off')).toBe(live.indexOf('off'));
     });
 
@@ -785,6 +936,7 @@ describe('runner row grammar', () => {
           maxWidth: 60,
           currentModel: undefined,
           sectioned: false,
+          auth: AUTH,
         }),
       );
       await tick(20);
@@ -799,12 +951,131 @@ describe('runner row grammar', () => {
           maxWidth: 60,
           currentModel: undefined,
           sectioned: false,
+          auth: AUTH,
         }),
       );
       await tick(20);
       expect(fast.lastFrame() ?? '').toContain('fast');
       expect(fast.lastFrame() ?? '').toContain('on');
       fast.unmount();
+    });
+
+    it('counts distinct provider routes, not variant spellings', async () => {
+      const threeSpellings: ModelOption = {
+        id: 'github-copilot/gpt-5.6',
+        contextLength: 128_000,
+        variants: [
+          { fullId: 'github-copilot/gpt-5.6', providerPrefix: 'github-copilot', tag: 'copilot' },
+          {
+            fullId: 'github-copilot/gpt-5.6-high',
+            providerPrefix: 'github-copilot',
+            tag: 'copilot',
+          },
+          {
+            fullId: 'kilo/openrouter/gpt-5.6',
+            providerPrefix: 'kilo/openrouter',
+            tag: 'openrouter',
+          },
+        ],
+      };
+      const frame = await rowFrame(modelRow(threeSpellings, 'Detected'), 60);
+
+      expect(frame).toContain('2 providers');
+      expect(frame).not.toContain('3 providers');
+    });
+
+    it('spells a Cursor family count from the factory, never from a pasted number', async () => {
+      const families = mergeOptionFamilies(cursorModelOptions()).filter(
+        (model) => (model.variants ?? []).length >= 2,
+      );
+      const family = families[0];
+      if (family === undefined) throw new Error('cursorModelOptions() merged into no family');
+      const count = (family.variants ?? []).length;
+
+      const frame = await rowFrame(modelRow(family, 'Detected'), 60);
+
+      expect(frame).toContain(`${count} options`);
+    });
+
+    it('gives a variant-less row with a ladder a disclosure chevron, and one without none', async () => {
+      const withLadder: ModelOption = {
+        id: 'opus',
+        displayName: 'Opus 5',
+        membership: 'confirmed',
+        contextLength: 1_000_000,
+        effortChoices: ['low', 'medium', 'high'],
+      };
+      const withoutLadder: ModelOption = {
+        id: 'haiku',
+        displayName: 'Haiku 4.5',
+        membership: 'confirmed',
+        contextLength: 200_000,
+        effortChoices: [],
+      };
+
+      const laddered = await rowFrame(modelRow(withLadder, 'Detected'), 60, 'opus');
+      const bare = await rowFrame(modelRow(withoutLadder, 'Detected'), 60, 'opus');
+
+      expect(laddered).toContain(glyph('disclosureClosed'));
+      expect(bare).not.toContain(glyph('disclosureClosed'));
+      expect(bare).not.toContain(glyph('disclosureOpen'));
+    });
+
+    it('opens the chevron on an expanded flag-channel row', async () => {
+      const withLadder: ModelOption = {
+        id: 'opus',
+        displayName: 'Opus 5',
+        membership: 'confirmed',
+        contextLength: 1_000_000,
+        effortChoices: ['low', 'medium', 'high'],
+      };
+      const frame = await rowFrame(
+        { ...modelRow(withLadder, 'Detected'), expanded: true },
+        60,
+        'opus',
+      );
+
+      expect(frame).toContain(glyph('disclosureOpen'));
+      expect(frame).not.toContain(glyph('disclosureClosed'));
+    });
+
+    it('puts the flag-channel chevron after the metadata and before the check', async () => {
+      const withLadder: ModelOption = {
+        id: 'opus',
+        displayName: 'Opus 5',
+        membership: 'confirmed',
+        contextLength: 1_000_000,
+        effortChoices: ['low', 'medium', 'high'],
+      };
+      const line = await rowLine(modelRow(withLadder, 'Detected'), 60, 'opus');
+
+      expect(line.indexOf('1M')).toBeGreaterThan(-1);
+      expect(line.indexOf(glyph('disclosureClosed'))).toBeGreaterThan(line.indexOf('1M'));
+      expect(line.indexOf(glyph('check'))).toBeGreaterThan(line.indexOf(glyph('disclosureClosed')));
+    });
+
+    it('still renders the option count on an expanded family', async () => {
+      const luna: ModelOption = {
+        id: 'gpt-5.6-luna-high',
+        displayName: 'GPT-5.6 Luna',
+        contextLength: 1_000_000,
+        variants: [
+          { fullId: 'gpt-5.6-luna-high', providerPrefix: '', tag: '1M High' },
+          { fullId: 'gpt-5.6-luna-high-fast', providerPrefix: '', tag: 'High Fast' },
+          { fullId: 'gpt-5.6-luna-low', providerPrefix: '', tag: 'Low' },
+        ],
+      };
+
+      const collapsed = await rowFrame(modelRow(luna, 'Detected'), 60, 'gpt-5.6-luna-high');
+      const expanded = await rowFrame(
+        { ...modelRow(luna, 'Detected'), expanded: true },
+        60,
+        'gpt-5.6-luna-high',
+      );
+
+      expect(collapsed).toContain('3 options');
+      expect(expanded).toContain('3 options');
+      expect(expanded).toContain('1M');
     });
 
     it('renders a single-variant row without any provider annotation', async () => {
@@ -827,6 +1098,7 @@ describe('runner row grammar', () => {
           maxWidth: 60,
           currentModel: undefined,
           sectioned: true,
+          auth: AUTH,
         }),
       );
       await tick(20);
@@ -844,6 +1116,7 @@ describe('runner row grammar', () => {
           maxWidth: 60,
           currentModel: 'kilo/openrouter/gpt-5.6',
           sectioned: false,
+          auth: AUTH,
         }),
       );
       await tick(20);
@@ -894,6 +1167,7 @@ describe('runner row grammar', () => {
         maxWidth: 40,
         currentModel: undefined,
         sectioned: false,
+        auth: AUTH,
       }),
     );
     await tick(20);
@@ -907,6 +1181,7 @@ describe('runner row grammar', () => {
         maxWidth: 40,
         currentModel: undefined,
         sectioned: false,
+        auth: AUTH,
       }),
     );
     await tick(20);
@@ -965,5 +1240,109 @@ describe('runner row grammar', () => {
     expect(stripAnsiStyles(defaultFrame)).toContain(glyph('check'));
     expect(stripAnsiStyles(defaultFrame)).toContain('Claude Code');
     defaultUi.unmount();
+  });
+
+  describe('expanded block tree', () => {
+    beforeEach(() => {
+      forceUnicodeGlyphs();
+    });
+
+    it('draws a parent spine on a depth-2 axis only while the parent continues', async () => {
+      const model: ModelOption = { id: 'gpt-5.6', displayName: 'GPT-5.6' };
+      const continued = await rowLine(
+        axisRow(model, 'fast', 'off', false, true, { depth: 2, parentContinues: true }),
+        60,
+      );
+      const closed = await rowLine(
+        axisRow(model, 'fast', 'off', false, true, { depth: 2, parentContinues: false }),
+        60,
+      );
+      const mid = glyph('treeMid');
+      const branch = glyph('treeBranch');
+      expect(continued.indexOf(mid)).toBeGreaterThan(-1);
+      expect(continued.indexOf(mid)).toBeLessThan(continued.indexOf(branch));
+      expect(closed).not.toContain(mid);
+      expect(closed).toContain(branch);
+    });
+
+    it('truncates a long route tag with the shared ellipsis at a narrow width', async () => {
+      const row: RightRow = {
+        kind: 'route',
+        model: { id: 'openai/gpt-5.6' },
+        variant: {
+          fullId: 'openai/gpt-5.6',
+          providerPrefix: 'openai',
+          tag: 'opencode-go-plus-a-long-provider-tag',
+        },
+        last: true,
+        auth: { kind: 'unchecked' },
+        tree: { depth: 1, parentContinues: false },
+      };
+      const line = await rowLine(row, 24);
+      expect(line).toContain(ELLIPSIS);
+      expect(line).not.toContain('opencode-go-plus-a-long-provider-tag');
+    });
+
+    it('checks only the persisted route among siblings', async () => {
+      const current = 'openai/gpt-5.6';
+      const marked = await rowLine(routeRow({ kind: 'unchecked' }), 40, current);
+      const sibling: RightRow = {
+        kind: 'route',
+        model: { id: 'openai/gpt-5.6' },
+        variant: {
+          fullId: 'opencode-go/gpt-5.6',
+          providerPrefix: 'opencode-go',
+          tag: 'opencode-go',
+        },
+        last: false,
+        auth: { kind: 'unchecked' },
+        tree: { depth: 1, parentContinues: false },
+      };
+      const unmarked = await rowLine(sibling, 40, current);
+      expect(marked).toContain(glyph('check'));
+      expect(unmarked).not.toContain(glyph('check'));
+    });
+
+    it('reserves the same trailing and check cells on axis, expandable, and non-expandable rows', async () => {
+      const family: ModelOption = {
+        id: 'gpt-5.6-luna-high',
+        displayName: 'GPT-5.6 Luna',
+        variants: [
+          { fullId: 'gpt-5.6-luna-high', providerPrefix: '', tag: '1M High' },
+          { fullId: 'gpt-5.6-luna-high-fast', providerPrefix: '', tag: 'High Fast' },
+        ],
+      };
+      const width = 60;
+      const axis = await rowLine(axisRow(family, 'effort', 'high'), width);
+      const expandable = await rowLine(modelRow(family, 'Detected'), width);
+      const auto = await rowLine(modelRow({ id: 'auto' }, 'Default'), width);
+      const lastPainted = (line: string): number => line.trimEnd().length;
+      // Ink trims reserved blank cells. Axis and Auto paint nothing there, so they
+      // share a last non-space column; the family paints the trailing chevron two
+      // cells further, which is the trailW the others leave blank.
+      expect(lastPainted(axis)).toBe(lastPainted(auto));
+      expect(lastPainted(expandable)).toBe(lastPainted(auto) + 2);
+      expect(expandable).toContain(glyph('disclosureClosed'));
+    });
+
+    it('puts the chevron in the trailing cell of an expanded family, exactly once', async () => {
+      const luna: ModelOption = {
+        id: 'gpt-5.6-luna-high',
+        displayName: 'GPT-5.6 Luna',
+        variants: [
+          { fullId: 'gpt-5.6-luna-high', providerPrefix: '', tag: '1M High' },
+          { fullId: 'gpt-5.6-luna-high-fast', providerPrefix: '', tag: 'High Fast' },
+        ],
+      };
+      const line = await rowLine(
+        { ...modelRow(luna, 'Detected'), expanded: true },
+        60,
+        'gpt-5.6-luna-high',
+      );
+      const open = glyph('disclosureOpen');
+      const closed = glyph('disclosureClosed');
+      expect(line.split(open).length - 1).toBe(1);
+      expect(line).not.toContain(closed);
+    });
   });
 });

@@ -22,6 +22,23 @@ import { homeConfigBlockRows } from '../layout.js';
 const CREW_HINT = '/crew to change';
 const LABEL_GAP = '  ';
 
+export function shedToFit(input: {
+  lead: readonly string[];
+  optional: readonly string[];
+  tail?: readonly string[];
+  width: number;
+}): readonly string[] {
+  const tail = input.tail ?? [];
+  const kept = [...input.optional];
+  while (
+    kept.length > 0 &&
+    getTerminalCellWidth([...input.lead, ...kept, ...tail].join(SOFT_SEP)) > input.width
+  ) {
+    kept.shift();
+  }
+  return kept;
+}
+
 function seatIdentity(seat: CrewSeat): string {
   return seat.id === 'review' && seat.source === 'planner'
     ? PLANNER_INHERITANCE.sentence
@@ -47,13 +64,12 @@ export function HomeSeatBlock({ rows, width }: { rows: number; width: number }) 
   // The hint is the point of the row, so it is the last thing to go: drop the
   // skills count, then the detection notice, until the line fits `width`.
   const mode = getWorkflowMode(config);
-  const optional = [`${skillCount} skills`, ...(coldDiscovery ? [DETECTING_TOOLS_STATUS] : [])];
-  while (
-    optional.length > 0 &&
-    getTerminalCellWidth([mode, ...optional, CREW_HINT].join(SOFT_SEP)) > width
-  ) {
-    optional.shift();
-  }
+  const optional = shedToFit({
+    lead: [mode],
+    optional: [`${skillCount} skills`, ...(coldDiscovery ? [DETECTING_TOOLS_STATUS] : [])],
+    tail: [CREW_HINT],
+    width,
+  });
   const status = [mode, ...optional, CREW_HINT].join(SOFT_SEP);
 
   return (

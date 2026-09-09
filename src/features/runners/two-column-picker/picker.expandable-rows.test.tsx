@@ -286,6 +286,113 @@ describe('TwoColumnPicker expandable right rows', () => {
     expect(collapses).toHaveLength(1);
     expect(cancels).toHaveLength(0);
   });
+
+  it('maintains fixed slot order for hint keys across default, expanded, and terminal-pane states', async () => {
+    const KEYS = ['←→', '↑↓', '⏎', 'esc'] as const;
+    const [k0, k1, k2, k3] = KEYS;
+
+    const uiDefault = mount(
+      <TwoColumnPicker<Tool, Route>
+        title="Planner"
+        initialColumn="right"
+        leftProps={{
+          items: TOOLS,
+          getKey: (t) => t.id,
+          renderRow: (t) => <Text>{t.displayName}</Text>,
+        }}
+        rightProps={{
+          items: ROWS,
+          getKey: (m) => m.id,
+          initialIndex: 1,
+          renderRow: (m, { isCursor }) => <Text>{`${isCursor ? '>' : ' '}${m.displayName}`}</Text>,
+        }}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    await flushEffects();
+
+    const defaultHint =
+      (uiDefault.lastFrame() ?? '').split('\n').find((line) => line.includes(k0)) ?? '';
+    const d0 = defaultHint.indexOf(k0);
+    const d1 = defaultHint.indexOf(k1);
+    const d2 = defaultHint.indexOf(k2);
+    const d3 = defaultHint.indexOf(k3);
+    expect(d0).toBeGreaterThanOrEqual(0);
+    expect(d1).toBeGreaterThan(d0);
+    expect(d2).toBeGreaterThan(d1);
+    expect(d3).toBeGreaterThan(d2);
+    uiDefault.unmount();
+
+    const uiExpanded = mount(
+      <TwoColumnPicker<Tool, Route>
+        title="Planner"
+        initialColumn="right"
+        leftProps={{
+          items: TOOLS,
+          getKey: (t) => t.id,
+          renderRow: (t) => <Text>{t.displayName}</Text>,
+        }}
+        rightProps={{
+          items: ROWS,
+          getKey: (m) => m.id,
+          isExpanded: true,
+          renderRow: (m, { isCursor }) => <Text>{`${isCursor ? '>' : ' '}${m.displayName}`}</Text>,
+        }}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    await flushEffects();
+
+    const expandedHint =
+      (uiExpanded.lastFrame() ?? '').split('\n').find((line) => line.includes(k0)) ?? '';
+    const e0 = expandedHint.indexOf(k0);
+    const e1 = expandedHint.indexOf(k1);
+    const e2 = expandedHint.indexOf(k2);
+    const e3 = expandedHint.indexOf(k3);
+    expect(e0).toBeGreaterThanOrEqual(0);
+    expect(e1).toBeGreaterThan(e0);
+    expect(e2).toBeGreaterThan(e1);
+    expect(e3).toBeGreaterThan(e2);
+    uiExpanded.unmount();
+
+    const uiTerminal = mount(
+      <TwoColumnPicker<Tool, Route>
+        title="Planner"
+        initialColumn="left"
+        leftProps={{
+          items: TOOLS,
+          getKey: (t) => t.id,
+          terminalPane: () => ({
+            label: 'Inherit',
+            verb: 'select',
+            lines: ['Terminal info'],
+          }),
+          renderRow: (t) => <Text>{t.displayName}</Text>,
+        }}
+        rightProps={{
+          items: ROWS,
+          getKey: (m) => m.id,
+          renderRow: (m) => <Text>{m.displayName}</Text>,
+        }}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    await flushEffects();
+
+    const terminalHint =
+      (uiTerminal.lastFrame() ?? '').split('\n').find((line) => line.includes(k1)) ?? '';
+    expect(terminalHint.indexOf(k0)).toBe(-1);
+    const t1 = terminalHint.indexOf(k1);
+    const t2 = terminalHint.indexOf(k2);
+    const t3 = terminalHint.indexOf(k3);
+    expect(t1).toBeGreaterThanOrEqual(0);
+    expect(t2).toBeGreaterThan(t1);
+    expect(t3).toBeGreaterThan(t2);
+    uiTerminal.unmount();
+  });
 });
 
 describe('TwoColumnPicker rows that cycle in place', () => {

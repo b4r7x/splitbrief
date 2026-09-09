@@ -16,6 +16,7 @@ interface SummaryDetailLayoutInput {
   isSmall: boolean;
   summary: Summary;
   implementerSummary: string | null;
+  reviewerSummary: string | null;
   routeSummary: string | null;
 }
 
@@ -29,11 +30,13 @@ function countHeroSavingsRows(costBreakdown: Summary['costBreakdown'], isSmall: 
 function countMetadataRows(
   summary: Summary,
   implementerSummary: string | null,
+  reviewerSummary: string | null,
   isSmall: boolean,
 ): number {
   let childRows = BASE_METADATA_ROWS;
   if (isSmall && summary.plannerTool) childRows += 1;
   if (isSmall && implementerSummary) childRows += 1;
+  if (isSmall && reviewerSummary) childRows += 1;
   if (summary.briefQuality) childRows += 1;
   if (summary.driftSummary) childRows += 1;
   if (summary.chainDriftSummary) childRows += 1;
@@ -52,11 +55,11 @@ function countHeaderRows(isSmall: boolean): number {
 }
 
 function countBodyChromeRows(input: SummaryDetailLayoutInput): number {
-  const { isSmall, summary, implementerSummary } = input;
+  const { isSmall, summary, implementerSummary, reviewerSummary } = input;
   let chrome =
     countHeaderRows(isSmall) +
     countProgressRows(summary) +
-    countMetadataRows(summary, implementerSummary, isSmall);
+    countMetadataRows(summary, implementerSummary, reviewerSummary, isSmall);
   chrome += countHeroSavingsRows(summary.costBreakdown, isSmall);
   chrome += LEDGER_DIVIDER_ROWS;
   return chrome;

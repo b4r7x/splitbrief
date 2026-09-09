@@ -5,8 +5,15 @@ import { sessionsRoot } from '../../../src/core/paths.js';
 import type {
   CliProviderAuth,
   CliProviderAuthUnreadableReason,
+  DetectedModel,
 } from '../../../src/core/discovery/detection.js';
+import {
+  nativeCliCatalogToDetectedModels,
+  parseCopilotHelpConfigCatalog,
+  parseOpenCodeNativeModelCatalog,
+} from '../../../src/engine/providers/cli-model-catalog.js';
 import { ModelsDevCatalogSchema } from '../../../src/core/schemas/models-dev.js';
+import { seatAxisFocus } from '../../../src/core/navigation/types.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { editorStore } from '../../../src/stores/ui/editor.js';
@@ -19,6 +26,7 @@ import { reviewStore } from '../../../src/stores/workflow/review.js';
 import { tokensStore } from '../../../src/stores/workflow/tokens.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { scenarioId } from '../contracts/identifiers.js';
+import { cursorDetectedModels } from '../../helpers/factories/cursor-models.js';
 import { cliDetectionFor } from '../../helpers/factories/detection.js';
 import { makeSession } from '../../helpers/factories/session.js';
 import { makeSummary, makeUsage } from '../../helpers/factories/summary.js';
@@ -49,6 +57,26 @@ function fixtureIds(name: string): string[] {
   return readFileSync(join(import.meta.dirname, '../../fixtures/', name), 'utf8')
     .split('\n')
     .filter((line) => line.trim() !== '');
+}
+
+function opencodeVerboseModels(): readonly DetectedModel[] {
+  const stdout = readFileSync(
+    join(import.meta.dirname, '../../fixtures/opencode/models-verbose.txt'),
+    'utf8',
+  );
+  const catalog = parseOpenCodeNativeModelCatalog(stdout);
+  if (catalog === null) throw new Error('opencode/models-verbose.txt did not parse');
+  return nativeCliCatalogToDetectedModels(catalog);
+}
+
+function copilotHelpConfigModels(): readonly DetectedModel[] {
+  const stdout = readFileSync(
+    join(import.meta.dirname, '../../fixtures/copilot/help-config.txt'),
+    'utf8',
+  );
+  const catalog = parseCopilotHelpConfigCatalog(stdout);
+  if (catalog === null) throw new Error('copilot/help-config.txt did not parse');
+  return nativeCliCatalogToDetectedModels(catalog);
 }
 
 function modelsDevSlice(): ReturnType<typeof ModelsDevCatalogSchema.parse> {
@@ -267,19 +295,27 @@ function seedConfig(overrides?: VisualConfigOverrides): OverlaySeed {
   return () => seedVisualConfig(overrides);
 }
 
-function seedOpencodeCatalog(): void {
+function seedOpencodeCatalog(extraModels: readonly DetectedModel[] = []): void {
   // OpenCode's routes are one fact: the `opencode` provider block of the
   // models.dev slice. A second hand-written list drifts from it silently, since
   // an unmatched id just renders without metadata.
   const routes = modelsDevSlice().opencode?.models;
   if (routes === undefined) throw new Error('models-dev-slice.json has no opencode provider');
   seedConfig({ planner: { kind: 'cli', tool: 'opencode', model: OPENCODE_ROUTED_MODEL } })();
+  const extras = new Map(extraModels.map((model) => [model.id, model]));
+  const routeIds = Object.keys(routes);
   publishVisualDiscovery({
     cliTools: [cliDetectionFor('ready', 'opencode')],
     cliModels: [
       catalogAttempt({
         tool: 'opencode',
-        outcome: { kind: 'success', value: Object.keys(routes).map((id) => ({ id })) },
+        outcome: {
+          kind: 'success',
+          value: [
+            ...routeIds.map((id) => extras.get(id) ?? { id }),
+            ...extraModels.filter((model) => routeIds.some((id) => model.id.startsWith(`${id}-`))),
+          ],
+        },
       }),
     ],
   });
@@ -289,8 +325,9 @@ function seedOpencodeCatalog(): void {
 function seedProviderAuth(
   arm: 'read' | 'empty' | 'unreadable',
   reason: CliProviderAuthUnreadableReason = 'parse-failure',
+  extraModels: readonly DetectedModel[] = [],
 ): void {
-  seedOpencodeCatalog();
+  seedOpencodeCatalog(extraModels);
   const providerAuth: CliProviderAuth =
     arm === 'read'
       ? { kind: 'read', facts: [{ provider: 'OpenAI', source: 'api' }] }
@@ -341,6 +378,25 @@ function seedClaudeCodeUnsupported(): void {
   });
 }
 
+function seedClaudeAliasRows(): void {
+  seedConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'opus' } })();
+  publishVisualDiscovery({
+    cliTools: [cliDetectionFor('ready', 'claude-code')],
+    modelsDev: { catalog: modelsDevSlice() },
+  });
+}
+
+function seedCopilotNativeListing(): void {
+  const models = copilotHelpConfigModels();
+  const persisted = models[0]?.id ?? 'gpt-5.6-luna';
+  seedConfig({ planner: { kind: 'cli', tool: 'copilot', model: persisted } })();
+  publishVisualDiscovery({
+    cliTools: [cliDetectionFor('ready', 'copilot')],
+    cliModels: [catalogAttempt({ tool: 'copilot', outcome: { kind: 'success', value: models } })],
+    modelsDev: { catalog: modelsDevSlice() },
+  });
+}
+
 function seedKiloConfirmed(): void {
   const ids = fixtureIds('kilo-models-7.0.49.txt');
   const persisted = ids[4] ?? ids[0] ?? 'kilo/kilo-auto/free';
@@ -364,13 +420,38 @@ function seedKiloMalformed(): void {
   });
 }
 
+/** The `(NO ZDR)` family the collapsed frame must show, and the family the expanded frame opens. */
+const CURSOR_NO_ZDR_MODEL = 'claude-fable-5-high';
+const CURSOR_FAMILY_MODEL = 'gpt-5.6-sol-high';
+const CURSOR_FAMILY_DRAFT = 'gpt-5.6-sol-xhigh-fast';
+
+function seedCursorConfirmed(persisted: string): void {
+  seedConfig({ planner: { kind: 'cli', tool: 'cursor', model: persisted } })();
+  publishVisualDiscovery({
+    cliTools: [cliDetectionFor('ready', 'cursor')],
+    cliModels: [
+      catalogAttempt({
+        tool: 'cursor',
+        outcome: { kind: 'success', value: cursorDetectedModels() },
+      }),
+    ],
+  });
+}
+
 function createOverlayFixture(options: {
   readonly overlay: OverlayType;
   readonly seed?: OverlaySeed;
   readonly underlyingScreen?: OverlayUnderlyingScreen;
   readonly focus?: string;
+  readonly effortDraftAfterMount?: string;
 }): FixtureLifecycle {
-  const { overlay, seed = EMPTY_SEED, underlyingScreen = 'home', focus } = options;
+  const {
+    overlay,
+    seed = EMPTY_SEED,
+    underlyingScreen = 'home',
+    focus,
+    effortDraftAfterMount,
+  } = options;
   let stopReseed: (() => void) | undefined;
   return {
     setup: (context) => {
@@ -391,6 +472,9 @@ function createOverlayFixture(options: {
       seedRunnerCatalog();
       seed();
       if (underlyingScreen === 'workflow') stopReseed = reseedAfterWorkflowReset(seed);
+      else if (effortDraftAfterMount !== undefined) {
+        stopReseed = restoreEffortDraftAfterMount(effortDraftAfterMount);
+      }
       overlayStore.open(overlay, focus);
     },
     teardown: () => {
@@ -411,6 +495,27 @@ function reseedAfterWorkflowReset(seed: OverlaySeed): () => void {
     seed();
   });
   return stop;
+}
+
+/**
+ * The picker's left column re-notifies its current item from a mount layout effect
+ * (`use-column-state.ts:74`), and `leftChange` clears the effort draft — so a level seeded
+ * before mount is wiped before the first paint. The first clear after setup is that wipe;
+ * re-apply the level there.
+ */
+function restoreEffortDraftAfterMount(level: string): () => void {
+  let stopped = false;
+  const stop = pickerViewStore.subscribe(() => {
+    if (stopped || pickerViewStore.get().effortDraft !== null) return;
+    stopped = true;
+    stop();
+    pickerViewStore.setEffortDraft(level);
+  });
+  return () => {
+    if (stopped) return;
+    stopped = true;
+    stop();
+  };
 }
 
 const REVIEWER_SEAT = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' } as const;
@@ -438,7 +543,7 @@ const PLANNER_HIGH_EFFORT = {
   effort: 'high',
 } as const;
 /** Kilo spends its effort on `--variant`, Copilot on `--effort`: the two channels this crew block
- * has no other scenario for. Neither seat sets a level, so both rows read the unset word. */
+ * has no other scenario for. */
 const PLANNER_KILO_SEAT = {
   kind: 'cli',
   tool: 'kilo-code',
@@ -472,13 +577,13 @@ const createSettingsInheritedEffortFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'settings',
     seed: seedConfig({ planner: PLANNER_HIGH_EFFORT }),
-    focus: 'effort:review',
+    focus: 'seat:review',
   });
 const createSettingsCrewKiloCopilotFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'settings',
     seed: seedConfig({ planner: PLANNER_KILO_SEAT, implementer: BUILD_COPILOT_SEAT }),
-    focus: 'effort:plan',
+    focus: 'seat:plan',
   });
 const createSettingsFloorFullFixture: FixtureFactory = () =>
   createOverlayFixture({
@@ -513,6 +618,25 @@ const createProviderExpandedReadFixture: FixtureFactory = () =>
     },
     focus: OPENCODE_FOCUS,
   });
+const createOpencodeExpandedFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedProviderAuth('read', 'parse-failure', opencodeVerboseModels());
+      pickerViewStore.expand(OPENCODE_ROUTED_MODEL, OPENCODE_ROUTED_MODEL);
+    },
+    focus: OPENCODE_FOCUS,
+  });
+const createOpencodeExpandedDraftedFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedProviderAuth('read', 'parse-failure', opencodeVerboseModels());
+      pickerViewStore.expand(OPENCODE_ROUTED_MODEL, OPENCODE_ROUTED_MODEL, 'max');
+    },
+    focus: OPENCODE_FOCUS,
+    effortDraftAfterMount: 'max',
+  });
 const createProviderExpandedEmptyFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
@@ -544,6 +668,33 @@ const createPlannerPickerColdFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'planner-picker', seed: seedModelsDevLane('uninitialized') });
 const createPlannerPickerNoListingFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'planner-picker', seed: seedClaudeCodeUnsupported });
+const createClaudeEffortFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'opus' } })();
+      seedClaudeCodeUnsupported();
+      pickerViewStore.expand('opus');
+    },
+    focus: 'tool:claude-code',
+  });
+const createClaudeEffortSetFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      // Without the config the persisted model stays the base planner's claude-sonnet-4 and both
+      // the check and the cursor land twelve rows below Opus.
+      seedConfig({
+        planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'high' },
+      })();
+      seedClaudeCodeUnsupported();
+      pickerViewStore.expand('opus', undefined, 'high');
+    },
+    // The token the hook reads for the seat-axis landing — NOT 'tool:claude-code'. The left column
+    // still lands on claude-code through the configured item, and the cursor lands on the effort axis.
+    focus: seatAxisFocus('plan'),
+    effortDraftAfterMount: 'high',
+  });
 const createPlannerPickerKiloFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
@@ -555,6 +706,33 @@ const createPlannerPickerMalformedFixture: FixtureFactory = () =>
     overlay: 'planner-picker',
     seed: seedKiloMalformed,
     focus: 'tool:kilo-code',
+  });
+const createPlannerPickerCursorFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => seedCursorConfirmed(CURSOR_NO_ZDR_MODEL),
+    focus: 'tool:cursor',
+  });
+const createCursorExpandedFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedCursorConfirmed(CURSOR_FAMILY_MODEL);
+      pickerViewStore.expand(CURSOR_FAMILY_MODEL, CURSOR_FAMILY_DRAFT);
+    },
+    focus: 'tool:cursor',
+  });
+const createPlannerPickerClaudeFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: seedClaudeAliasRows,
+    focus: 'tool:claude-code',
+  });
+const createPlannerPickerCopilotFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: seedCopilotNativeListing,
+    focus: 'tool:copilot',
   });
 const createContractChoiceFixture: FixtureFactory = () =>
   createOverlayFixture({
@@ -607,6 +785,10 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-planner-picker'), createPlannerPickerFixture],
   [scenarioId('overlay-planner-picker-catalog'), createPlannerPickerCatalogFixture],
   [scenarioId('overlay-picker-provider-expanded-read'), createProviderExpandedReadFixture],
+  [scenarioId('overlay-picker-opencode-expanded'), createOpencodeExpandedFixture],
+  [scenarioId('overlay-picker-opencode-expanded-drafted'), createOpencodeExpandedDraftedFixture],
+  [scenarioId('overlay-picker-claude-effort'), createClaudeEffortFixture],
+  [scenarioId('overlay-picker-claude-effort-set'), createClaudeEffortSetFixture],
   [scenarioId('overlay-picker-provider-expanded-empty'), createProviderExpandedEmptyFixture],
   [
     scenarioId('overlay-picker-provider-expanded-unreadable'),
@@ -617,6 +799,10 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-planner-picker-no-listing'), createPlannerPickerNoListingFixture],
   [scenarioId('overlay-planner-picker-kilo'), createPlannerPickerKiloFixture],
   [scenarioId('overlay-planner-picker-malformed'), createPlannerPickerMalformedFixture],
+  [scenarioId('overlay-planner-picker-claude'), createPlannerPickerClaudeFixture],
+  [scenarioId('overlay-planner-picker-copilot'), createPlannerPickerCopilotFixture],
+  [scenarioId('overlay-planner-picker-cursor'), createPlannerPickerCursorFixture],
+  [scenarioId('overlay-picker-cursor-expanded'), createCursorExpandedFixture],
   [scenarioId('overlay-picker-contract-choice'), createContractChoiceFixture],
   [scenarioId('overlay-picker-custom-command'), createCustomCommandFixture],
   [scenarioId('overlay-picker-custom-model'), createCustomModelFixture],

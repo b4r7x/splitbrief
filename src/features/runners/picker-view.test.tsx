@@ -18,6 +18,7 @@ import { configStore } from '../../stores/project/config.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { buildRightModels, countModelOptions } from './model-catalog/catalog.js';
 import { BROWSE_CATALOG_TEXT, type RightRow } from './model-catalog/rows.js';
+import { formatCatalogDiagnostic } from './picker-format.js';
 import { PickerView } from './picker-view.js';
 import type { PickerOption } from './model-catalog/options.js';
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
@@ -164,14 +165,15 @@ describe('PickerView previews', () => {
     );
     await flushEffects();
     const initialFrame = ui.lastFrame() ?? '';
-    expect(initialFrame).toContain('Planner');
-    expect(initialFrame).toContain('Tool & model');
+    expect(initialFrame).toContain('PLAN');
+    expect(initialFrame).toContain('tool, model, effort');
     expect(initialFrame).toContain('Tools');
     expect(initialFrame).toContain('Models');
     expect(initialFrame).toContain(`OpenCode${SOFT_SEP}1.0.0`);
-    expect(initialFrame).toContain('Direct write');
-    expect(initialFrame).toContain('Subscription included');
-    expect(initialFrame).toContain('1 detected');
+    expect(initialFrame).toContain('direct write');
+    expect(initialFrame).toContain('subscription');
+    expect(initialFrame).toContain('1 model');
+    expect(initialFrame).toContain('from opencode models --verbose');
 
     await flushEffects();
     ui.stdin.write('\u001B[C');
@@ -225,10 +227,13 @@ describe('PickerView previews', () => {
     );
     await flushEffects();
     const frame = ui.lastFrame() ?? '';
-    // The byline counts what the rows actually are; the suggestions are named
-    // as suggestions instead of being passed off as a detected catalog.
-    expect(frame).toContain('3 models');
+    expect(frame).toContain(
+      formatCatalogDiagnostic({ kind: 'probe-failed', failure: 'missing-credential' }, 'Codex'),
+    );
+    expect(frame).not.toContain('3 models');
     expect(frame).not.toContain('detected');
+    expect(frame).not.toContain('network');
+    expect(frame).not.toContain('local');
     ui.unmount();
   });
 
@@ -321,6 +326,7 @@ describe('PickerView previews', () => {
       modelCounts: zeroCounts,
     });
 
+    terminalSizeStore.__testReset({ cols: 160, rows: 40, isSmall: false });
     const ui = renderFeature(
       <PickerView role="implementer" catalog={catalog} actions={makeActions()} />,
     );
@@ -328,7 +334,7 @@ describe('PickerView previews', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Auth required');
     expect(frame).toContain('Set ANTHROPIC_API_KEY');
-    expect(frame).toContain('API metered');
+    expect(frame).toContain('metered');
     ui.unmount();
   });
 
@@ -428,14 +434,15 @@ describe('PickerView previews', () => {
       <PickerView role="reviewer" catalog={catalog} actions={makeActions()} />,
     );
     await flushEffects();
-    expect(ui.lastFrame() ?? '').toContain('Tool & model');
+    expect(ui.lastFrame() ?? '').toContain('REVIEW');
     ui.unmount();
 
     const implementerUi = renderFeature(
       <PickerView role="implementer" catalog={catalog} actions={makeActions()} />,
     );
     await flushEffects();
-    expect(implementerUi.lastFrame() ?? '').not.toContain('Tool & model');
+    expect(implementerUi.lastFrame() ?? '').toContain('BUILD');
+    expect(implementerUi.lastFrame() ?? '').not.toContain('REVIEW');
     implementerUi.unmount();
   });
 });
@@ -618,7 +625,7 @@ describe('PickerView browse-catalog escape', () => {
     actions.confirm = async (_selection, model) => {
       saved.push(model?.id ?? 'none');
     };
-    actions.confirmProviderVariant = async (fullId) => {
+    actions.confirmProviderSelection = async (fullId) => {
       saved.push(fullId);
     };
 
@@ -720,7 +727,7 @@ describe('PickerView variant axis', () => {
           roleLabel: 'Planner',
           modelCounts: { ...zeroCounts, confirmed: 1 },
           browseCatalog: false,
-          variantDraft: null,
+          effortDraft: null,
         })}
         actions={input.actions}
       />,
@@ -757,7 +764,7 @@ describe('PickerView variant axis', () => {
     for (let step = 0; step <= openaiPresets.length; step++) {
       ui.stdin.write(' ');
       await flushEffects();
-      walked.push(pickerViewStore.get().variantDraft);
+      walked.push(pickerViewStore.get().effortDraft);
     }
 
     // Unset heads the ladder and the walk returns to it, so a draft is never a trap.
@@ -767,10 +774,10 @@ describe('PickerView variant axis', () => {
   });
 
   it('confirms model and variant together', async () => {
-    const confirmed: Array<[string, string | undefined]> = [];
+    const confirmed: Array<[string, string | null | undefined]> = [];
     const actions = makeActions();
-    actions.confirmProviderVariant = async (fullId, variant) => {
-      confirmed.push([fullId, variant]);
+    actions.confirmProviderSelection = async (fullId, effort) => {
+      confirmed.push([fullId, effort]);
     };
     pickerViewStore.expand('openai/gpt-5.6');
     const ui = renderOpencode({
@@ -809,12 +816,12 @@ describe('PickerView variant axis', () => {
 
     ui.stdin.write(' ');
     await flushEffects();
-    expect(pickerViewStore.get().variantDraft).toBe('high');
+    expect(pickerViewStore.get().effortDraft).toBe('high');
 
     ui.stdin.write(' ');
     await flushEffects();
     // The preset can be taken back the way the byline says.
-    expect(pickerViewStore.get().variantDraft).toBeNull();
+    expect(pickerViewStore.get().effortDraft).toBeNull();
     expect(pickerViewStore.get().expandedModelId).toBe('openai/gpt-5.6');
     ui.unmount();
   });
@@ -822,7 +829,7 @@ describe('PickerView variant axis', () => {
   it('expands a single-variant model that offers presets', async () => {
     const confirmed: string[] = [];
     const actions = makeActions();
-    actions.confirmProviderVariant = async (fullId) => {
+    actions.confirmProviderSelection = async (fullId) => {
       confirmed.push(fullId);
     };
     const ui = renderOpencode({
@@ -842,7 +849,7 @@ describe('PickerView variant axis', () => {
     expect(pickerViewStore.get().expandedModelId).toBe('openai/gpt-5.6');
     // The ladder opens where the seat already stands, so a confirm that never
     // touches it saves the variant that was there.
-    expect(pickerViewStore.get().variantDraft).toBe('high');
+    expect(pickerViewStore.get().effortDraft).toBe('high');
     ui.unmount();
   });
 
@@ -865,14 +872,14 @@ describe('PickerView variant axis', () => {
   }
 
   it('drops a drafted preset when confirming a route that spells none', async () => {
-    const confirmed: Array<[string, string | undefined]> = [];
+    const confirmed: Array<[string, string | null | undefined]> = [];
     const actions = makeActions();
-    actions.confirmProviderVariant = async (fullId, variant) => {
-      confirmed.push([fullId, variant]);
+    actions.confirmProviderSelection = async (fullId, effort) => {
+      confirmed.push([fullId, effort]);
     };
     const model = mergedRoutes();
     pickerViewStore.expand(model.id);
-    pickerViewStore.setVariantDraft('minimal');
+    pickerViewStore.setEffortDraft('minimal');
     const ui = renderFeature(
       <PickerView
         role="planner"
@@ -888,7 +895,7 @@ describe('PickerView variant axis', () => {
           roleLabel: 'Planner',
           modelCounts: { ...zeroCounts, confirmed: 1 },
           browseCatalog: false,
-          variantDraft: 'minimal',
+          effortDraft: 'minimal',
         })}
         actions={actions}
       />,
@@ -930,7 +937,7 @@ describe('PickerView variant axis', () => {
           roleLabel: 'Planner',
           modelCounts: { ...zeroCounts, confirmed: 1 },
           browseCatalog: false,
-          variantDraft: null,
+          effortDraft: null,
         })}
         actions={makeActions()}
       />,
@@ -941,7 +948,7 @@ describe('PickerView variant axis', () => {
 
     // The seat runs `variant: high`, but this row has no ladder to open it on.
     expect(pickerViewStore.get().expandedModelId).toBe(model.id);
-    expect(pickerViewStore.get().variantDraft).toBeNull();
+    expect(pickerViewStore.get().effortDraft).toBeNull();
     ui.unmount();
   });
 
@@ -969,7 +976,7 @@ describe('PickerView variant axis', () => {
           roleLabel: 'Planner',
           modelCounts: { ...zeroCounts, confirmed: 1 },
           browseCatalog: false,
-          variantDraft: null,
+          effortDraft: null,
         })}
         actions={makeActions()}
       />,

@@ -9,6 +9,7 @@ import { routeDraftOf, stepOptionAxis } from './option-axis.js';
 import { mergeOptionFamilies } from './option-merge.js';
 import type { RightRow } from './rows.js';
 import {
+  AUTO_ROW_METADATA,
   BROWSE_CATALOG_TEXT,
   buildRightRows,
   rightRowKey,
@@ -88,7 +89,7 @@ describe('buildRightRows', () => {
 
     expect(sections(rows)).toEqual([]);
     expect(modelRows(rows).map((row) => row.provenance)).toEqual([
-      'Default',
+      'Known',
       'Known',
       'Known',
       'Known',
@@ -273,6 +274,92 @@ describe('buildRightRows', () => {
       false,
       true,
     ]);
+  });
+
+  const twoRouteLuna: ModelOption = {
+    id: 'openai/gpt-5.6-luna',
+    membership: 'confirmed',
+    variants: [
+      { fullId: 'openai/gpt-5.6-luna', providerPrefix: 'openai', tag: 'openai' },
+      { fullId: 'openai/gpt-5.6-luna-fast', providerPrefix: 'openai', tag: 'openai' },
+      { fullId: 'opencode-go/gpt-5.6-luna', providerPrefix: 'opencode-go', tag: 'opencode-go' },
+      {
+        fullId: 'opencode-go/gpt-5.6-luna-fast',
+        providerPrefix: 'opencode-go',
+        tag: 'opencode-go',
+      },
+    ],
+  };
+
+  it('continues the parent spine on axes under a non-last route', () => {
+    const rows = buildRightRows({
+      ...BASE,
+      models: [twoRouteLuna],
+      expandedModelId: twoRouteLuna.id,
+    });
+    const firstRouteAxes: Extract<RightRow, { kind: 'axis' }>[] = [];
+    const lastRouteAxes: Extract<RightRow, { kind: 'axis' }>[] = [];
+    let seenRoutes = 0;
+    for (const row of rows) {
+      if (row.kind === 'route') seenRoutes += 1;
+      if (row.kind !== 'axis') continue;
+      if (seenRoutes === 1) firstRouteAxes.push(row);
+      if (seenRoutes === 2) lastRouteAxes.push(row);
+    }
+
+    expect(firstRouteAxes.length).toBeGreaterThan(0);
+    expect(lastRouteAxes.length).toBeGreaterThan(0);
+    expect(firstRouteAxes.every((row) => row.tree.depth === 2)).toBe(true);
+    expect(firstRouteAxes.every((row) => row.tree.parentContinues === true)).toBe(true);
+    expect(lastRouteAxes.every((row) => row.tree.depth === 2)).toBe(true);
+    expect(lastRouteAxes.every((row) => row.tree.parentContinues === false)).toBe(true);
+  });
+
+  it('stamps both route rows at level 1 with no parent spine', () => {
+    const rows = buildRightRows({
+      ...BASE,
+      models: [twoRouteLuna],
+      expandedModelId: twoRouteLuna.id,
+    });
+
+    expect(rows.filter((row) => row.kind === 'route').map((row) => row.tree)).toEqual([
+      { depth: 1, parentContinues: false },
+      { depth: 1, parentContinues: false },
+    ]);
+  });
+
+  it("stamps a flat option family's axes at level 1 with no parent spine", () => {
+    const luna = mergeOptionFamilies(
+      cursorModelOptions().filter((row) => row.id.startsWith('gpt-5.6-luna')),
+    )[0];
+    if (luna === undefined) throw new Error('expected luna family');
+
+    const rows = buildRightRows({
+      ...BASE,
+      models: [luna],
+      expandedModelId: luna.id,
+    });
+    const axes = rows.filter((row) => row.kind === 'axis');
+
+    expect(axes.length).toBeGreaterThan(0);
+    expect(axes.every((row) => row.kind === 'axis' && row.tree.depth === 1)).toBe(true);
+    expect(axes.every((row) => row.kind === 'axis' && row.tree.parentContinues === false)).toBe(
+      true,
+    );
+  });
+
+  it('stamps a variant-less effort axis at level 1 with no parent spine', () => {
+    const model: ModelOption = {
+      id: 'opus',
+      membership: 'confirmed',
+      effortChoices: ['low', 'medium', 'high', 'xhigh', 'max'],
+    };
+
+    const rows = buildRightRows({ ...BASE, models: [model], expandedModelId: model.id });
+    const row = effortRow(rows);
+
+    expect(row?.kind === 'axis' && row.tree.depth).toBe(1);
+    expect(row?.kind === 'axis' && row.tree.parentContinues).toBe(false);
   });
 
   // REQ-022: a route offers its provider's verbatim vocabulary or none at all.
@@ -474,19 +561,20 @@ describe('buildRightRows', () => {
     ]);
   });
 
-  it('appends one notice row while the catalog lane is not ready', () => {
+  it('emits no notice row while the catalog lane is pending or failed', () => {
     const pending = buildRightRows({ ...BASE, models: [auto], catalogLane: 'pending' });
-    const notices = pending.filter((row) => row.kind === 'notice');
-
-    expect(notices).toHaveLength(1);
-    expect(notices[0]?.kind === 'notice' && notices[0].lane).toBe('pending');
-    expect(notices[0]?.kind === 'notice' && notices[0].text).toBe('Loading models…');
-    expect(pending[pending.length - 1]).toBe(notices[0]);
-
     const failed = buildRightRows({ ...BASE, models: [auto], catalogLane: 'failed' });
-    const failure = failed.find((row) => row.kind === 'notice');
-    expect(failure?.kind === 'notice' && failure.action).toBe('refresh');
-    expect(failure?.kind === 'notice' && failure.text).toBe('Could not load models');
+
+    expect(pending.map((row) => row.kind)).toEqual(['model']);
+    expect(failed.map((row) => row.kind)).toEqual(['model']);
+  });
+
+  it('stamps the automatic row through provenanceFor rather than Default', () => {
+    const rows = buildRightRows({ ...BASE, models: [auto, alias('Opus')] });
+    const automatic = rows.find((row) => row.kind === 'model' && row.model.id === auto.id);
+
+    expect(automatic?.kind === 'model' && automatic.provenance).toBe('Known');
+    expect(rows.some((row) => row.kind === 'model' && row.provenance === 'Default')).toBe(false);
   });
 
   it.each([
@@ -692,9 +780,26 @@ describe('buildRightRows', () => {
       models: [{ id: 'openai/gone', membership: 'stale', isRecovery: true }],
     });
     const action = rows.find((row) => row.kind === 'action');
+    const model = rows.find((row) => row.kind === 'model');
 
     expect(action).toBeDefined();
     expect(action === undefined ? undefined : rightRowKey(action)).toBe('action:browse-catalog');
+    expect(model === undefined ? undefined : rightRowKey(model)).toBe('model:openai/gone');
+  });
+
+  it('words the browse-catalog escape with the launcher ellipsis', () => {
+    const rows = buildRightRows({
+      ...BASE,
+      models: [{ id: 'openai/gone', membership: 'stale', isRecovery: true }],
+    });
+    const action = rows.find((row) => row.kind === 'action');
+
+    expect(BROWSE_CATALOG_TEXT.endsWith('\u2026')).toBe(true);
+    expect(action?.kind === 'action' && action.text).toBe(BROWSE_CATALOG_TEXT);
+  });
+
+  it('exports the Auto row metadata phrase', () => {
+    expect(AUTO_ROW_METADATA).toBe('tool decides');
   });
 });
 

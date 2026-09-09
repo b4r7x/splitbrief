@@ -9,15 +9,18 @@ import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { providerOracleCommand } from '../../engine/runners/cli-tools/provider-oracle.js';
 import { configStore } from '../../stores/project/config.js';
 
+import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
-import type { SeatPickerRole } from '../../core/runners/seat-roles.js';
-import type { RunnerBillingPosture } from '../../core/runners/runner-billing.js';
+import { PICKER_ROLE_SEAT_IDS, type SeatPickerRole } from '../../core/runners/seat-roles.js';
+import { billingWord } from '../../core/runners/runner-billing.js';
 import { includes } from '../../utils/type-guards.js';
 import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../utils/display-text.js';
 import { contractForRunnerKind } from '../../core/config/custom-commands.js';
 import { sortPickerOptions, type PickerOption } from './model-catalog/options.js';
 import { isCustomModel, type ModelVariant } from './model-catalog/recency.js';
-import { isOptionFamily, optionDraftOf } from './model-catalog/option-axis.js';
+import { formatModelName } from '../../core/model-display.js';
+import { isAutomaticModel } from '../../core/providers/automatic-model.js';
+import { isOptionFamily, optionDraftOf, routeDraftOf } from './model-catalog/option-axis.js';
 import {
   rightRowKey,
   sectionOf,
@@ -30,17 +33,20 @@ import {
   cycleRightRow,
   expandedRowHint,
   rightRowMatches,
-  seatVariantDraft,
+  seatEffortDraft,
   type RouteAuthContext,
 } from './right-column-policy.js';
 import { filterByFields } from '../../components/pickers/filtering.js';
 import {
-  formatBillingLabel,
+  bylineDiagnostic,
   formatModelCatalogGuidance,
+  formatModelsByline,
   formatPermissionLabels,
-  formatPickerByline,
   formatRouteRemedy,
+  formatToolsByline,
   isPickerItemDisabled,
+  modelBylineAxes,
+  pickerListingSource,
   type ModelCatalogDiagnostic,
 } from './picker-format.js';
 import { renderToolRow, renderModelRow } from './tool-row.js';
@@ -48,18 +54,6 @@ import type { PickerCatalog } from './use-picker-catalog.js';
 import type { PickerActions } from './use-picker-actions.js';
 import type { PickerModelCounts } from './model-catalog/catalog.js';
 import { refreshPickerDetection } from './refresh-detection.js';
-
-/**
- * The seat cards say how the seat is paid for in one lower-case word; the
- * capitalised billing labels belong to the byline, not to a card line.
- */
-const POSTURE_WORDS: Readonly<Record<RunnerBillingPosture, string | undefined>> = {
-  local: 'local',
-  'subscription-included': 'subscription',
-  'api-metered': 'metered',
-  'provider-dependent': 'provider',
-  unknown: undefined,
-};
 
 const MAX_STALE_MODEL_COPY_COUNT = 99;
 
@@ -82,7 +76,7 @@ function staleModelCopy(staleCount: number): string | undefined {
 }
 
 function postureLine(item: PickerOption): string {
-  return [POSTURE_WORDS[item.billing], ...formatPermissionLabels(item.permissions)]
+  return [billingWord(item.billing), ...formatPermissionLabels(item.permissions)]
     .filter(Boolean)
     .join(SOFT_SEP);
 }
@@ -121,16 +115,14 @@ interface PickerViewProps {
   actions: PickerActions;
 }
 
-function subtitleFor(role: SeatPickerRole): string {
-  if (role === 'implementer') return 'Model';
-  return 'Tool & model';
-}
-
 /**
  * The two-column picker keys its rows by `id`; a `RightRow` is a shape, not an
  * entity, so the row key it already publishes becomes that id.
  */
 type KeyedRightRow = RightRow & { id: string };
+
+/** The row kinds that carry a model, and so have a Models byline. */
+type ModelBylineRow = Extract<KeyedRightRow, { kind: 'model' | 'route' | 'axis' }>;
 
 function keyRows(rows: readonly RightRow[]): KeyedRightRow[] {
   return rows.map((row) => ({ ...row, id: rightRowKey(row) }));
@@ -141,7 +133,6 @@ export function PickerView({ role, catalog, actions }: PickerViewProps) {
   const { frame } = useSpinnerFrame(isRefreshing);
   const resolvedStepLabel = isRefreshing ? `${frame} refreshing…` : undefined;
   const projectDir = configStore.use((s) => s.projectDir);
-  const optionDraftId = pickerViewStore.use((s) => s.optionDraftId);
   const allowsCustom = catalog.currentItem?.modelCapability.allowsCustom ?? false;
 
   const toolId =
@@ -162,8 +153,8 @@ export function PickerView({ role, catalog, actions }: PickerViewProps) {
   const terminalPaneFor = (item: PickerOption): TerminalPane | undefined => {
     if (item.kind === 'inherit-planner') {
       return {
-        label: "Planner's setup",
-        verb: "use planner's setup",
+        label: PLANNER_INHERITANCE.sentence,
+        verb: PLANNER_INHERITANCE.sentence,
         lines: [
           'The review seat runs whatever the planner runs.',
           '',
@@ -254,30 +245,74 @@ export function PickerView({ role, catalog, actions }: PickerViewProps) {
         if (remedy !== undefined) return remedy;
       }
     }
-    const byline = formatPickerByline({
-      toolName: tool.displayName,
-      toolId,
-      version: tool.version,
-      counts: catalog.modelCounts,
-      lane: catalog.catalogLane,
-      diagnostic: catalog.catalogDiagnostic,
-      capabilities: [...formatPermissionLabels(tool.permissions), formatBillingLabel(tool.billing)],
-    });
     const stale = staleModelCopy(catalog.modelCounts.stale);
-    const trail = stale === undefined ? byline : `${byline}${SOFT_SEP}${stale}`;
-    // A status remediation leads: a runner the picker cannot run says how to fix
-    // it before it recites what it is, so right truncation cuts the byline
-    // before it ever reaches the actionable part. The retained-stale line is
-    // already a refresh instruction, so a remediation ahead of it would only
-    // push it off the end.
+    // A status remediation leads: a runner the picker cannot run says how to fix it before it
+    // recites what it is. The retained-stale line is already a refresh instruction, so a
+    // remediation ahead of it would only push it off the end.
     const reason = stale === undefined ? tool.status.remediation : null;
+    const spent = [reason, stale]
+      .filter((part): part is string => part !== null && part !== undefined)
+      .reduce((sum, part) => sum + getTerminalCellWidth(part) + getTerminalCellWidth(SOFT_SEP), 0);
+
+    const toolsByline = (): string => {
+      const listing = pickerListingSource(toolId);
+      return formatToolsByline({
+        toolName: tool.displayName,
+        version: tool.version,
+        modelCount: catalog.modelRowCount,
+        rowNoun: listing.rowNoun,
+        rowNounPlural: listing.rowNounPlural,
+        source: listing.source,
+        unverifiedForPlan: listing.unverifiedForPlan,
+        diagnostic: catalog.catalogDiagnostic,
+        lane: catalog.catalogLane,
+        capabilities: formatPermissionLabels(tool.permissions),
+        billing: tool.billing,
+        budget: Math.max(0, ctx.bylineBudget - spent),
+      });
+    };
+    const modelsByline = (current: ModelBylineRow): string => {
+      const model = current.model;
+      const label = model.displayName ?? formatModelName(model.id);
+      if (isAutomaticModel(model.id)) {
+        return formatModelsByline({
+          label,
+          id: '',
+          axes: [],
+          contextLength: undefined,
+          autoRow: { toolName: tool.displayName },
+        });
+      }
+      const id =
+        current.kind === 'route'
+          ? current.variant.fullId
+          : current.kind === 'axis'
+            ? routeDraftOf(model, current.providerPrefix, catalog.optionDraftId)
+            : optionDraftOf(model, catalog.optionDraftId);
+      return formatModelsByline({
+        label,
+        id,
+        axes: modelBylineAxes({ model, id, effortDraft: catalog.effortDraft }),
+        contextLength: model.contextLength,
+      });
+    };
+    const status = bylineDiagnostic({
+      diagnostic: catalog.catalogDiagnostic,
+      modelCount: catalog.modelRowCount,
+      toolName: tool.displayName,
+    });
+    if (status !== undefined) return status;
+    const byline =
+      ctx.activeColumn === 'right' && row !== null && row.kind !== 'action'
+        ? modelsByline(row)
+        : toolsByline();
+    const trail = stale === undefined ? byline : `${byline}${SOFT_SEP}${stale}`;
     return reason === null ? trail : `${reason}${SOFT_SEP}${trail}`;
   };
 
   return (
     <TwoColumnPicker<PickerOption, KeyedRightRow>
-      title={catalog.roleLabel}
-      subtitle={subtitleFor(role)}
+      title={`${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]]}${SOFT_SEP}tool, model, effort`}
       stepLabel={resolvedStepLabel}
       initialColumn={catalog.focusModels ? 'right' : 'left'}
       onConfirm={(left, row) => confirmRightRow(left, row, { actions, auth: authContext })}
@@ -322,7 +357,7 @@ export function PickerView({ role, catalog, actions }: PickerViewProps) {
           const draft = isOptionFamily(row.model)
             ? optionDraftOf(row.model, catalog.currentModel ?? catalog.persistedModel)
             : undefined;
-          pickerViewStore.expand(row.model.id, draft, seatVariantDraft(row.model, draft, role));
+          pickerViewStore.expand(row.model.id, draft, seatEffortDraft(row.model, draft, role));
         },
         onCollapse: () => pickerViewStore.collapse(),
         onCycle: cycleRightRow,
@@ -357,7 +392,7 @@ export function PickerView({ role, catalog, actions }: PickerViewProps) {
             maxWidth,
             currentModel: catalog.currentModel,
             sectioned: sectionOf(row) !== undefined,
-            optionDraftId,
+            auth: authContext,
           }),
       }}
     />

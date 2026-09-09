@@ -6,6 +6,8 @@ import { makeSummary } from '#testing/helpers/factories/summary.js';
 import type { Session } from '../../core/schemas/session.js';
 import type { CostBreakdown, Summary } from '../../core/schemas/summary.js';
 import { taskId } from '../../core/schemas/task.js';
+import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.js';
+import { arrowSep } from '../../components/separators.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { configStore } from '../../stores/project/config.js';
 import { routerStore } from '../../stores/navigation/router.js';
@@ -487,8 +489,8 @@ describe('SummaryScreen', () => {
     ui.unmount();
   });
 
-  it('summary runner rows label planner and implementer in sentence case on small terminals', () => {
-    terminalSizeStore.__testReset({ cols: 80, rows: 40, isSmall: true });
+  it('summary runner rows label planner and implementer on small terminals', () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
     showSummaryRoute({
       summary: makeSummary({
         plannerTool: 'codex',
@@ -500,9 +502,36 @@ describe('SummaryScreen', () => {
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('Planner');
-    expect(frame).toContain('Implementer');
+    expect(frame).toContain(CREW_SEAT_LABELS.plan);
+    expect(frame).toContain(CREW_SEAT_LABELS.build);
+    expect(frame).toContain(CREW_SEAT_LABELS.review);
+    expect(frame).toContain(PLANNER_INHERITANCE.sentence);
     expect((frame.match(/OpenAI Codex CLI/g) ?? []).length).toBe(1);
+
+    ui.unmount();
+  });
+
+  it('summary byline carries three identity segments for an own-reviewer run', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    showSummaryRoute({
+      summary: makeSummary({
+        plannerTool: 'claude-code',
+        plannerModel: 'claude-opus-5',
+        implementerTool: 'ollama',
+        implementerModel: 'qwen-small',
+        reviewerTool: 'codex',
+        reviewerModel: 'gpt-5-codex',
+      }),
+    });
+
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    const byline = frame.split('\n').find((line) => line.includes('Claude Code'));
+    expect(byline).toBeDefined();
+    const segments = (byline ?? '').split(arrowSep());
+    expect(segments).toHaveLength(3);
+    expect(segments[2]).toContain('OpenAI Codex CLI');
 
     ui.unmount();
   });
@@ -521,9 +550,11 @@ describe('SummaryScreen', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect((frame.match(/OpenAI Codex CLI/g) ?? []).length).toBe(1);
-    expect((frame.match(/qwen-small/g) ?? []).length).toBe(1);
-    expect(frame).not.toContain('Planner');
-    expect(frame).not.toContain('Implementer');
+    expect((frame.match(/Qwen Small/g) ?? []).length).toBe(1);
+    expect(frame).not.toContain(CREW_SEAT_LABELS.plan);
+    expect(frame).not.toContain(CREW_SEAT_LABELS.build);
+    expect(frame).not.toContain(CREW_SEAT_LABELS.review);
+    expect(frame).not.toContain(PLANNER_INHERITANCE.sentence);
 
     ui.unmount();
   });
