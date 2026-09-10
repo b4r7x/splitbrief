@@ -47,7 +47,7 @@ test.describe('reduced motion', () => {
     const diagram = page.locator('.diagram');
     const first = await diagram.screenshot();
     await page.clock.runFor(4000);
-    expect(await diagram.screenshot()).toEqual(first);
+    expect((await diagram.screenshot()).equals(first)).toBe(true);
     await expect(page.locator('.packet--impl')).toBeHidden();
     await expect(page.locator('.packet--rev')).toBeHidden();
   });
@@ -58,7 +58,7 @@ test('the ghosts breathe', async ({ page }) => {
   const diagram = page.locator('.diagram');
   const first = await diagram.screenshot();
   await page.clock.runFor(4000);
-  expect(await diagram.screenshot()).not.toEqual(first);
+  expect((await diagram.screenshot()).equals(first)).toBe(false);
 });
 
 test('the implementer packet rides route B at 2.0 s', async ({ page }) => {

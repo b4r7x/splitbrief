@@ -10,7 +10,7 @@
 <script>document.documentElement.classList.replace('no-js','js')</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400&amp;family=JetBrains+Mono:wght@400;500&amp;family=Space+Mono:wght@400&amp;display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
 <link rel="stylesheet" href="/src/styles/main.css">
 <script type="module" src="/src/main.ts"></script>
 </head>
@@ -25,11 +25,11 @@
   <span class="mark" aria-hidden="true"></span>
 </header>
 <main>
-  <section class="hero">
+  <section class="hero" id="top">
     <ol class="steps">
-      <li><span>01</span><span>PLAN</span></li>
-      <li><span>02</span><span>EXECUTE</span></li>
-      <li><span>03</span><span>REVIEW</span></li>
+      <li><span>01</span><a href="#top">HERO</a></li>
+      <li><span>02</span><a href="#briefs">BRIEFS</a></li>
+      <li><span>03</span><a href="#validation">VALIDATION</a></li>
     </ol>
     <span class="draft-mark" aria-hidden="true">/</span>
     <p class="claim dash">DIFFERENT LABS.<br>FEWER BLIND SPOTS.<br><b>REAL EVIDENCE.</b></p>
@@ -168,154 +168,170 @@
       </div>
     </div>
   </section>
-  <hr class="rule">
-  <section class="routes">
-    <h2 class="eyebrow">EXAMPLE ROUTES</h2>
-    <table>
-      <caption class="visually-hidden">Example routes: which tool plans, which implements, and which reviews, per kind of job</caption>
-      <thead>
-        <tr>
-          <th scope="col"><span class="visually-hidden">#</span></th>
-          <th scope="col"><span class="visually-hidden">PLAN</span></th>
-          <th scope="col"><span class="visually-hidden">IMPLEMENT</span></th>
-          <th scope="col"><span class="visually-hidden">REVIEW</span></th>
-          <th scope="col"><span class="visually-hidden">GOAL</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr><td>01</td><td>claude + fable</td><td>opencode + deepseek</td><td>codex + gpt-5.6°</td><td>// feature</td></tr>
-        <tr><td>02</td><td>codex + gpt-5.6</td><td>ollama + qwen3-coder</td><td>claude + sonnet°</td><td>// refactor</td></tr>
-        <tr><td>03</td><td>claude + sonnet</td><td>opencode + qwen3</td><td>codex + gpt-5-codex°</td><td>// bugfix</td></tr>
-        <tr><td>04</td><td>cursor + gpt-5.6</td><td>lm studio + devstral</td><td>claude + opus°</td><td>// docs</td></tr>
-        <tr><td>05</td><td>claude + opus</td><td>copilot + gpt-5-mini</td><td>codex + gpt-5.6°</td><td>// tests</td></tr>
-      </tbody>
-    </table>
-    <p class="claim dash"><b>MIX THE LABS.<br>ONE SHARED BRIEF.</b></p>
-  </section>
-  <section class="brief-sheet">
-    <h2 class="eyebrow">BEFORE ANY CODE</h2>
-    <p class="claim dash">ONE FILE.<br>ONE BRIEF.<br>NOTHING ELSE.</p>
-    <figure class="sheet">
-      <figcaption>tasks.md</figcaption>
-      <p class="eyebrow">TASK BRIEF</p>
-      <pre>
-<span class="mark">---</span>
-<span class="key">id:</span> T002
-<span class="key">title:</span> Add the auth guard
-<span class="key">action:</span> create
-<span class="key">file:</span> src/auth/guard.ts
-<span class="key">depends_on:</span> [T001]
-<span class="mark">---</span>
+  <div class="lower">
+    <span class="rail" aria-hidden="true"><span class="spark"></span></span>
+    <section class="s02" id="briefs">
+      <div class="aura" aria-hidden="true">
+        <canvas class="dots dots--skyline" data-seed="2" data-cols="44" data-rows="7" data-profile="skyline"></canvas>
+        <canvas class="dots dots--desk" data-seed="3" data-cols="10" data-rows="6" data-profile="column"></canvas>
+        <span class="stop">§02</span>
+      </div>
+      <div class="grid">
+        <div class="head">
+          <h2 class="title"><span class="eyebrow dash reveal" aria-hidden="true">02</span><span class="line reveal">Before any code</span></h2>
+          <p class="sub dash reveal"><span class="line">ONE FILE.</span><span class="line">ONE BRIEF.</span><span class="line">NOTHING ELSE.</span></p>
+          <p class="tick-list reveal"><span class="line">BRIEFS</span><br><span class="line">CONTRACTS</span><br><span class="line">CONTEXT</span><br><span class="line">CLARITY</span></p>
+        </div>
+        <figure class="panel editor reveal">
+          <figcaption class="bar reveal"><span class="name">tasks.md</span><span class="status"><span>Ln 1, Col 1</span><span>markdown</span></span></figcaption>
+          <ol class="lines">
+<li style="--row: 1"><span class="n">1</span><span class="t h"># TASK BRIEF</span></li>
+<li style="--row: 2"><span class="n">2</span><span class="t"></span></li>
+<li style="--row: 3"><span class="n">3</span><span class="t"><span class="k">id:</span> T002</span></li>
+<li style="--row: 4"><span class="n">4</span><span class="t"><span class="k">title:</span> Add the auth guard</span></li>
+<li style="--row: 5"><span class="n">5</span><span class="t"><span class="k">action:</span> create</span></li>
+<li style="--row: 6"><span class="n">6</span><span class="t"><span class="k">file:</span> src/auth/guard.ts</span></li>
+<li style="--row: 7"><span class="n">7</span><span class="t"><span class="k">depends_on:</span> [T001]</span></li>
+<li style="--row: 8"><span class="n">8</span><span class="t"></span></li>
+<li style="--row: 9"><span class="n">9</span><span class="t h">## Description</span></li>
+<li style="--row: 10"><span class="n">10</span><span class="t">Guard a route with the JWT helper from T001. Reject a missing</span></li>
+<li style="--row: 11"><span class="n">11</span><span class="t">or expired token before the handler runs.</span></li>
+<li style="--row: 12"><span class="n">12</span><span class="t"></span></li>
+<li style="--row: 13"><span class="n">13</span><span class="t h">## Signature</span></li>
+<li style="--row: 14"><span class="n">14</span><span class="t f">```typescript</span></li>
+<li style="--row: 15"><span class="n">15</span><span class="t">export function requireAuth(req: Request): Claims | AuthError</span></li>
+<li style="--row: 16"><span class="n">16</span><span class="t f">```</span></li>
+<li style="--row: 17"><span class="n">17</span><span class="t"></span></li>
+<li style="--row: 18"><span class="n">18</span><span class="t h">## Implementation Steps</span></li>
+<li style="--row: 19"><span class="n">19</span><span class="t"><span class="m">1.</span> Read the bearer token from the Authorization header</span></li>
+<li style="--row: 20"><span class="n">20</span><span class="t"><span class="m">2.</span> Verify it with verifyToken from src/auth/jwt.ts</span></li>
+<li style="--row: 21"><span class="n">21</span><span class="t"><span class="m">3.</span> Return the claims, or an AuthError naming the reason</span></li>
+<li style="--row: 22"><span class="n">22</span><span class="t"></span></li>
+<li style="--row: 23"><span class="n">23</span><span class="t h">## Tests</span></li>
+<li style="--row: 24"><span class="n">24</span><span class="t"><span class="m">-</span> requireAuth returns the claims for a valid token</span></li>
+<li style="--row: 25"><span class="n">25</span><span class="t"><span class="m">-</span> requireAuth rejects a missing token</span></li>
+<li style="--row: 26"><span class="n">26</span><span class="t"><span class="m">-</span> requireAuth rejects an expired token</span></li>
+<li style="--row: 27"><span class="n">27</span><span class="t"></span></li>
+<li style="--row: 28"><span class="n">28</span><span class="t h">## Scope</span></li>
+<li style="--row: 29"><span class="n">29</span><span class="t"><span class="m">-</span> In bounds: src/auth/guard.ts</span></li>
+<li style="--row: 30"><span class="n">30</span><span class="t"><span class="m">-</span> Out of bounds: src/auth/jwt.ts — do not change the helper</span></li>
+<li style="--row: 31"><span class="n">31</span><span class="t"></span></li>
+<li style="--row: 32"><span class="n">32</span><span class="t h">## Escalation</span></li>
+<li style="--row: 33"><span class="n">33</span><span class="t"><span class="m">-</span> Stop and ask if verifyToken's signature differs from this brief</span></li>
+<li style="--row: 34"><span class="n">34</span><span class="t"></span></li>
+<li style="--row: 35"><span class="n">35</span><span class="t h">## Evidence</span></li>
+<li style="--row: 36"><span class="n">36</span><span class="t"><span class="m">-</span> Include test output and typecheck logs in the task result</span></li>
+          </ol>
+        </figure>
+        <div class="notes">
+          <p class="dash reveal">The <b>planner</b> writes one brief per file. The <b>implementer</b> sees <b>only</b> its own <b>brief</b>&nbsp;— not the spec, not the plan, not the other tasks&nbsp;— and runs it in fresh context, with no memory of the last one.</p>
+          <p class="caps dash reveal">ONE FILE.<br>ONE BRIEF.<br>NOTHING ELSE.</p>
+          <p class="reveal">A brief that fails its checks never reaches an implementer. <b>splitbrief</b> validates every brief upfront&nbsp;— scope, file, dependencies, signature&nbsp;— and stops at the first domain or contract error.</p>
+          <p class="caps dash reveal">CLEAR INPUTS.<br>SAFER OUTPUTS.</p>
+          <span class="marg marg-a reveal" aria-hidden="true">// contracts over context</span>
+          <p class="marg-list reveal">SPEC<br>PLAN<br>BRIEFS<br>EXECUTE<br>REVIEW</p>
+          <span class="marg marg-b reveal" aria-hidden="true">less context<br>more progress.</span>
+        </div>
+      </div>
+    </section>
+    <section class="s03" id="validation">
+      <div class="aura" aria-hidden="true">
+        <canvas class="dots dots--skyline" data-seed="5" data-cols="36" data-rows="7" data-profile="skyline"></canvas>
+        <canvas class="dots dots--gutter" data-seed="6" data-cols="10" data-rows="10" data-profile="column"></canvas>
+        <span class="stop">T002</span>
+      </div>
+      <div class="grid">
+        <div class="head">
+          <h2 class="title"><span class="eyebrow dash reveal" aria-hidden="true">03</span><span class="line reveal">After every task</span></h2>
+          <p class="sub dash reveal"><span class="line">VALIDATE.</span><span class="line">RETRY.</span><span class="line">ESCALATE.</span><span class="line">KEEP THE EVIDENCE.</span></p>
+        </div>
+        <figure class="panel terminal reveal">
+          <figcaption class="bar reveal"><span class="name">splitbrief run</span><span class="status"><span>task: T002</span><span>14:28:16</span></span></figcaption>
+          <ol class="lines" style="--beat: 0">
+<li style="--row: 1"><span class="n">01</span><span class="t"><span class="mk">◆</span> Spec → Plan → Briefs → Build → Verify</span></li>
+<li style="--row: 2"><span class="n">02</span><span class="t"></span></li>
+<li style="--row: 3"><span class="n">03</span><span class="t"><span class="mk">▶</span> <span class="strong">T002 Add the auth guard</span>   <span class="dim">src/auth/guard.ts (create)</span></span></li>
+<li style="--row: 4"><span class="n">04</span><span class="t"></span></li>
+<li style="--row: 5"><span class="n">05</span><span class="t"><span class="mk">▶</span> Implementer activity  1/2<span class="tail dim">   [OpenCode CLI · DeepSeek]</span></span></li>
+<li style="--row: 6"><span class="n">06</span><span class="t">  <span class="mk">│</span> Read   <span class="dim">src/auth/jwt.ts</span></span></li>
+<li style="--row: 7"><span class="n">07</span><span class="t">  <span class="mk">│</span> Write  <span class="dim">src/auth/guard.ts</span></span></li>
+<li style="--row: 8"><span class="n">08</span><span class="t"></span></li>
+<li style="--row: 9"><span class="n">09</span><span class="t"><span class="ok">✓</span> typecheck   <span class="ok">✓</span> lint   <span class="fail">✗</span> test</span></li>
+<li style="--row: 10"><span class="n">10</span><span class="t"><span class="err">error</span>   <span class="dim">test/auth/guard.test.ts</span></span></li>
+<li style="--row: 11"><span class="n">11</span><span class="t"><span class="err">FAIL</span>    expected AuthError for expired token</span></li>
+<li style="--row: 12"><span class="n">12</span><span class="t"></span></li>
+<li style="--row: 13; --beat: 1"><span class="n">13</span><span class="t"><span class="mk">○</span> retry 2/3 — fixing implementation</span></li>
+<li style="--row: 14; --beat: 1"><span class="n">14</span><span class="t"><span class="mk">▶</span> Implementer activity  2/2<span class="tail dim">   [OpenCode CLI · DeepSeek]</span></span></li>
+<li style="--row: 15; --beat: 1"><span class="n">15</span><span class="t">  <span class="mk">│</span> Update <span class="dim">src/auth/guard.ts</span></span></li>
+<li style="--row: 16; --beat: 1"><span class="n">16</span><span class="t"></span></li>
+<li style="--row: 17; --beat: 1"><span class="n">17</span><span class="t"><span class="ok">✓</span> typecheck   <span class="ok">✓</span> lint   <span class="ok">✓</span> test</span></li>
+<li style="--row: 18; --beat: 1"><span class="n">18</span><span class="t"><span class="pass">PASS</span>    3/3 tests passing (412ms)</span></li>
+<li style="--row: 19; --beat: 1"><span class="n">19</span><span class="t"></span></li>
+<li style="--row: 20; --beat: 1"><span class="n">20</span><span class="t"><span class="ok">●</span> <span class="strong">Task complete</span>   <span class="dim">T002 (47s)</span></span></li>
+<li style="--row: 21; --beat: 1"><span class="n">21</span><span class="t">  <span class="mk">│</span> Evidence saved to <span class="dim">.splitbrief/sessions/2026-03-08-auth-guard/</span></span></li>
+          </ol>
+        </figure>
+        <div class="notes">
+          <p class="reveal">Correctness is not the implementer's to judge. After every task <b>splitbrief</b> runs typecheck, lint and test in your project and stops at the first failure.</p>
+          <p class="reveal">A failed task retries with the error attached, up to three times. Then it escalates: a mid‑tier model if configured, a hint from the planner, or a human review. Every run stores logs, results and evidence.</p>
+          <ol class="steps dash reveal">
+            <li><span>01</span><span>HIGHER QUALITY</span></li>
+            <li><span>02</span><span>LOWER SPEND</span></li>
+            <li><span>03</span><span>REAL EVIDENCE</span></li>
+            <li><span>04</span><span>YOUR TOOLS</span></li>
+            <li><span>05</span><span>YOUR RULES</span></li>
+          </ol>
+          <span class="marg marg-a reveal" aria-hidden="true">// not its own judge</span>
+          <p class="marg-list reveal">VALIDATE<br>RETRY<br>ESCALATE<br>EVIDENCE<br>IMPROVE</p>
+          <span class="marg marg-b marg--caps reveal" aria-hidden="true">A SMALLER LOOP<br>A HIGHER BAR<br>REAL PROGRESS</span>
+        </div>
+      </div>
+    </section>
+    <section class="s04" id="control">
+      <div class="aura" aria-hidden="true">
+        <canvas class="dots dots--skyline" data-seed="7" data-cols="60" data-rows="6" data-profile="ground"></canvas>
+        <canvas class="dots dots--desk" data-seed="8" data-cols="10" data-rows="8" data-profile="column"></canvas>
+        <span class="stop">auth-guard</span>
+      </div>
+      <div class="grid">
+        <div class="head">
+          <h2 class="title"><span class="eyebrow dash reveal" aria-hidden="true">04</span><span class="line reveal">For the whole run</span></h2>
+          <p class="sub dash reveal"><span class="line">NOTHING RUNS</span><span class="line">OUTSIDE</span><span class="line">WHAT YOU SET.</span></p>
+        </div>
 
-<b>### Description</b>
-Guard a route with the JWT helper from T001. Reject a missing or expired token before the handler runs.
+        <p class="breath"><span class="line muted reveal">YOU DESCRIBE</span><span class="line reveal">THE GOAL.</span><span class="line muted line--stanza reveal">SPLITBRIEF HOLDS</span><span class="line reveal">THE REST.</span></p>
 
-<b>### Signature</b>
-<span class="mark">```typescript</span>
-export function requireAuth(req: Request): Claims | AuthError
-<span class="mark">```</span>
+        <p class="lead dash reveal">You choose the tools, the models and the limits. <b>splitbrief</b> holds them for the whole run: every brief, every retry and every review runs inside the rules you set, and what it did is on disk when it stops.</p>
 
-<b>### Implementation Steps</b>
-1. Read the bearer token from the Authorization header
-2. Verify it with verifyToken from src/auth/jwt.ts
-3. Return the claims, or an AuthError naming the reason
+        <div class="callouts">
+          <p class="callout callout--tools dash reveal"><b>TOOLS</b><span class="kv"><span>planner</span><span>claude‑code</span><span>implementer</span><span>opencode</span><span>reviewer</span><span>codex°</span></span></p>
+          <p class="callout callout--models dash reveal"><b>MODELS</b>fable · deepseek<br>gpt-5.6 · qwen3<br>any lab in any seat<br>swap one mid-run</p>
+          <p class="callout callout--rules dash reveal"><b>RULES</b><span class="kv"><span>max_retries</span><span>3</span><span>max_budget</span><span>5.00 usd</span><span>pause_at</span><span>85 %</span><span>escalation</span><span>qwen3 → planner</span><span>snapshots</span><span>pre_task · post_task</span></span></p>
+        </div>
 
-<b>### Tests</b>
-- requireAuth returns the claims for a valid token
-- requireAuth rejects a missing token
-- requireAuth rejects an expired token
+        <p class="creed dash reveal">CONTRACTS OVER CONTEXT.<br>SMALLER LOOPS. BETTER OUTPUT.</p>
 
-<b>### Scope</b>
-<span class="mark">**</span>In bounds:<span class="mark">**</span> src/auth/guard.ts
-<span class="mark">**</span>Out of bounds:<span class="mark">**</span> src/auth/jwt.ts — do not change the helper
+        <pre class="tree"><span class="row root" style="--row: 1">.splitbrief/sessions/2026-03-08-auth-guard/</span>
+<span class="row" style="--row: 2">├── state.json        <span class="note">// resume from here</span></span>
+<span class="row" style="--row: 3">├── session.jsonl     <span class="note">// every event, append-only</span></span>
+<span class="row" style="--row: 4">├── spec.md</span>
+<span class="row" style="--row: 5">├── plan.md</span>
+<span class="row" style="--row: 6">├── tasks.md          <span class="note">// every brief, one per file</span></span>
+<span class="row" style="--row: 7">├── evidence.json     <span class="note">// what was proved, what was observed</span></span>
+<span class="row" style="--row: 8">├── review.md         <span class="note">// the reviewer's read</span></span>
+<span class="row" style="--row: 9">└── snapshots/</span></pre>
 
-<b>### Escalation</b>
-- Stop and ask if verifyToken's signature differs from this brief
-
-<b>### Evidence</b>
-- npm test -- src/auth passes
-
-<b>### Constraints</b>
-- No new dependency</pre>
-    </figure>
-    <p class="statement">The planner writes one brief per file. The implementer sees only its own brief — not the spec, not the plan, not the other tasks — and runs it in fresh context, with no memory of the last one.</p>
-    <p class="statement dash">A brief that fails its checks never reaches an implementer. It reads <b>CONTRACT BLOCKED</b> until you retry, edit, or reject.</p>
-  </section>
-  <hr class="rule">
-  <section class="manifesto">
-    <h2><span class="muted">//</span> YOU DESCRIBE<br>THE GOAL.<br><b>SPLITBRIEF</b> HOLDS<br>THE REST.</h2>
-    <p class="dash">From research to Task Briefs to review, the stronger tool thinks and the cheaper one types. splitbrief validates every task — typecheck, lint, test — retries, escalates, and keeps the evidence.</p>
-    <ol class="dash">
-      <li><span>01</span> HIGHER QUALITY</li>
-      <li><span>02</span> LOWER SPEND</li>
-      <li><span>03</span> EVIDENCE ON DISK</li>
-      <li><span>04</span> YOUR TOOLS</li>
-      <li><span>05</span> YOUR RULES</li>
-    </ol>
-  </section>
-  <section class="ladder">
-    <h2 class="eyebrow">AFTER EVERY TASK</h2>
-    <p class="claim dash">NOT ITS OWN JUDGE.</p>
-    <figure class="run">
-      <figcaption class="bar">
-        <span class="phases">●&nbsp;Spec&nbsp;› ●&nbsp;Plan&nbsp;› ●&nbsp;Briefs&nbsp;→ <span class="now">◉&nbsp;Build</span>&nbsp;→ ○&nbsp;Verify</span>
-        <span class="seats"><span>PLAN Fable</span> · <span>BUILD DeepSeek</span> · <span>REVIEW GPT-5.6</span></span>
-      </figcaption>
-      <ol class="transcript"><li class="task"><span class="dim">*</span> <b>T2 Add the auth guard</b>  src/auth/guard.ts<span class="tail dim"> (create) · OpenCode CLI · DeepSeek</span></li
-      ><li class="activity gap"><span class="dim">●</span> Implementer activity  2 updates<span class="tail dim">  [OpenCode CLI · DeepSeek]</span></li
-      ><li class="item">  <span class="dim">├</span> Read    src/auth/jwt.ts</li
-      ><li class="item">  <span class="dim">└</span> Write   src/auth/guard.ts</li
-      ><li class="validate gap"><span class="dim">validate</span>  <span class="ok">✓</span> typecheck  <span class="ok">✓</span> lint  <span class="fail">✗</span> test</li
-      ><li class="error"><b>error</b>  test</li
-      ><li class="output"><b>FAIL</b>  src/auth/guard.test.ts &gt; requireAuth &gt; rejects an expired token</li
-      ><li class="pad" aria-hidden="true"></li
-      ><li class="pointer"><span class="mark">└ </span><span class="dim">run npm test</span></li
-      ><li class="retry gap">retry  attempt 2/3</li
-      ><li class="activity gap"><span class="dim">●</span> Implementer activity  1 update<span class="tail dim">  [OpenCode CLI · DeepSeek]</span></li
-      ><li class="item">  <span class="dim">└</span> Write   src/auth/guard.ts</li
-      ><li class="validate gap"><span class="dim">validate</span>  <span class="ok">✓</span> typecheck  <span class="ok">✓</span> lint  <span class="ok">✓</span> test</li></ol>
-    </figure>
-    <ol class="rungs">
-      <li><span>01</span><span>TYPECHECK → LINT → TEST</span></li>
-      <li><span>02</span><span>RETRY ×3 WITH THE ERROR</span></li>
-      <li><span>03</span><span>MID-TIER MODEL</span></li>
-      <li><span>04</span><span>A HINT FROM THE PLANNER</span></li>
-      <li><span>05</span><span>THE PLANNER WRITES IT°</span></li>
-      <li><span>06</span><span>YOU DECIDE</span><small>retry&nbsp;· a&nbsp;bigger&nbsp;worker&nbsp;· skip&nbsp;· pause&nbsp;· abort</small></li>
-    </ol>
-    <p class="statement">Correctness is not the implementer's to judge. After every task splitbrief runs typecheck, lint and test in your project and stops at the first failure the task caused. A stage that was already red before the run does not count against it.</p>
-    <p class="statement dash">A failed task retries with the error attached, up to three times. Then it escalates: a mid&#8209;tier model if you have one, a hint from the planner, and finally the planner writes the code itself. If that fails too, you decide.</p>
-    <p class="fine">° That last tier is the one path where the tool that wrote the code also reviews it.</p>
-  </section>
-  <section class="record">
-    <h2 class="eyebrow">AFTER THE RUN</h2>
-    <p class="claim dash">THE EVIDENCE.<br>ON DISK.<br>IN YOUR REPO.</p>
-    <p class="statement dash">Every run is a session folder in your project. The state, the log, the briefs, the evidence and the review are files you can open, diff, and resume from.</p>
-    <pre class="tree">
-.splitbrief/
-├── config.yaml
-├── active                     <span class="note">// the current session
-</span>└── sessions/
-    └── 2026-04-14-add-user-auth/
-        ├── state.json         <span class="note">// the source of truth for resume
-</span>        ├── session.jsonl      <span class="note">// every event and message, append-only
-</span>        ├── research.md
-        ├── spec.md
-        ├── plan.md
-        ├── tasks.md           <span class="note">// every brief, one per file
-</span>        ├── evidence.json      <span class="note">// what was to be proved, and what was observed
-</span>        ├── review.md          <span class="note">// the reviewer's read
-</span>        ├── summary.json
-        └── snapshots/</pre>
-    <p class="fine dash">Early software, pre-1.0. Cost is reported per run, never promised. Two numbers will decide whether the split is worth it&nbsp;— first-pass rate, and how much the cross-lab review catches that validation did not. Neither is measured yet.<br><span class="requirements">NODE&nbsp;22+&nbsp;· A&nbsp;GIT&nbsp;REPO&nbsp;WITH&nbsp;ONE&nbsp;COMMIT&nbsp;· MACOS&nbsp;AND&nbsp;LINUX</span></p>
-    <p class="commands dash"><span><span class="prompt">$</span> splitbrief init</span><span><span class="prompt">$</span> splitbrief start "add user auth"</span></p>
-  </section>
-  <hr class="rule rule--short">
+        <span class="marg marg-a reveal" aria-hidden="true">// your tools, your models, your rules</span>
+        <p class="marg-list reveal">LIMITS<br>BUDGET<br>RETRIES<br>REVIEW<br>EVIDENCE</p>
+        <span class="marg marg-b reveal" aria-hidden="true">smaller loops<br>higher confidence.</span>
+      </div>
+    </section>
+  </div>
+  <hr class="rule rule--bleed">
 </main>
 <footer class="foot">
-  <p class="dash">BUILT FOR<br>PEOPLE WHO<br>ACTUALLY BUILD</p>
-  <p class="foot-link"><span class="tick" aria-hidden="true"></span><a href="https://github.com/b4r7x/splitbrief"><span class="bracket">[</span> github.com/b4r7x/splitbrief <span class="bracket">]</span></a></p>
-  <p class="dash"><b>SAME TOOLS.<br>BETTER OUTPUT.</b></p>
+  <p class="brand"><a class="wordmark" href="#top">splitbrief<sup aria-hidden="true">°</sup></a><span class="claim">BUILDS BETTER SOFTWARE.</span></p>
+  <p class="right"><span class="links"><a href="https://github.com/b4r7x/splitbrief/tree/main/docs"><span class="bracket">[</span> docs <span class="bracket">]</span></a><a href="https://github.com/b4r7x/splitbrief"><span class="bracket">[</span> github <span class="bracket">]</span></a></span><span class="seats">PLANS <span class="sep">/</span> EXECUTES <span class="sep">/</span> REVIEWS</span></p>
 </footer>
 </body>
 </html>

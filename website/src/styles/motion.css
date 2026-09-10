@@ -6,7 +6,7 @@
 }
 
 .nav,
-.steps,
+.hero .steps,
 .draft-mark,
 .hero .claim,
 .hero h1 .line,
@@ -22,7 +22,7 @@
   --enter: 0;
 }
 
-.steps,
+.hero .steps,
 .draft-mark,
 .hero .claim {
   --enter: 1;
@@ -86,7 +86,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .nav,
-  .steps,
+  .hero .steps,
   .draft-mark,
   .hero .claim,
   .hero h1 .line,

@@ -1,9 +1,9 @@
 import { hash } from '../../lib/noise';
 import { prefersReducedMotion } from '../../lib/reduced-motion';
+import { createTicker } from '../../lib/ticker';
 import { buildAtlas, GLYPHS, glyphIndex, tintFor } from './atlas';
 import { density, glitchRow, type Pose } from './density';
 import { CELL_HEIGHT, CELL_WIDTH, type Seat } from './seats';
-import { createTicker } from './ticker';
 
 export type Ghost = {
   renderFrame(t: number, pose?: Pose): void;

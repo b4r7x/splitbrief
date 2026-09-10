@@ -1,98 +1,165 @@
-# SPLITBRIEF website — handoff (2026-09-09 — built, validated, final sweep CLEAN)
+# SPLITBRIEF website — handoff (v2, 2026-09-10 — lower page built, final critique fixed, gates green)
 
-The site was built by an orchestrated pipeline (nuke-spec → nuke-exec): one fable implementer per batch, a fresh fable critic per phase, fix loop cap 2, evidence in a ledger. Everything a maintainer needs is in this folder and `DESIGN.md`; the local run dir `.nuke/2026-09-06-225118-spec-website/` (gitignored) holds the same ledger files plus every screenshot.
+The v1 page (nav, hero, diagram, motion) was built 2026-09-06…09 by a fable pipeline. **The v2 lower page —
+sections 02 · 03 · 04, the footer, the aura and the scroll choreography — was built 2026-09-09…10 by splitbrief:
+`cursor-grok-4.6-xhigh` and then `cursor-grok-4.6-xhigh-fast` implementers working one Task Brief at a time,
+`cursor-grok-4.6-high` in plan mode reviewing each run, and fable orchestrators compiling the briefs, running the
+gates and holding the evidence.** No fable seat edited `website/` source at any point; the docs in this folder and
+the `DESIGN.md` amendments are the only things a fable seat wrote.
 
 ## Read in this order
 
-1. `DESIGN.md` — the design contract (tokens, geometry, copy, ghost algorithm, motion, responsive tiers, file map §13, verification §14, the §15 extension). The sheet wins over the reference image. Every shipped deviation is recorded in the section it belongs to.
-2. `handoff/spec.md` — executor context (conventions, gates table, skill map), REQ-001..REQ-021, Phases 1–8 with tasks and mechanically checkable `Accept:` lines, execution protocol.
-3. `handoff/exec-progress.md` — the phase ledger; every phase is `done`. The Phase 8 row ends with the final sweep's record.
-4. `handoff/exec.md` — evidence per phase and cycle (gate outputs, critic verdicts, measurements).
-5. `handoff/requirements.md`, `handoff/plan.md`, `handoff/prompt.md` (the original brief), `handoff/extension-research.md` (the §15 research), `handoff/reference.png` (the visual target, 1024 wide).
+1. `DESIGN.md` — the design contract. §16 is the v2 lower page; §1–§14 are the hero and the shared rules. Every
+   deviation the build made is recorded in the section it belongs to as a dated `v2 build, 2026-09-…` note. The
+   sheet wins over the reference image; the dated notes win over the sheet's older prose.
+2. `handoff/spec.md` — the v2 build spec: executor context, the gate table, the crew and ladder, the rule that
+   turns a task into a brief, 62 tasks across six phases with mechanically checkable `Accept:` lines.
+3. `handoff/exec-progress.md` — the phase ledger, one row per stage.
+4. `handoff/exec.md` — the evidence: every gate output verbatim, every correction with its arithmetic, every
+   ruling. This is the file that explains why the build differs from the sheet anywhere.
+5. `handoff/residuals.md` — what is knowingly left open, including the owner's own three items.
+6. `handoff/requirements.md` (22 REQ, 9 non-goals, 26 decisions), `handoff/prompt.md`, `handoff/plan.md`,
+   `handoff/design-notes.md` and the two design critiques — how the design was arrived at.
+7. `handoff/a11y-p6.md` — Lighthouse, the CDP accessibility tree, contrast and focus order at the end of the build.
 
-## State at finish (2026-09-09)
+**The v1 build's own evidence is intact under `handoff/v1/`.** Nine of its files share a name with the v2 mirror
+(`spec.md`, `exec.md`, `exec-progress.md`, `requirements.md`, `plan.md`, `prompt.md`, `exec-plan.md`,
+`extension-research.md`, `reference.png`) and four are captures (`p2fix-fold.png`, `p6-390.png`, `p8e-*.png`);
+all thirteen moved down one level so the v2 files could take the names the spec's read order uses. Nothing was
+lost — the v1 `p6-390.png` is the v1 phase-6 phone capture and has nothing to do with this build's `p6` tag.
 
-| Phase | Result | Capture kept |
+**There are no `visual-diff-p<N>.md` or `critique-p<N>.md` files.** The owner ruled on 2026-09-09 that no per-phase
+fable critic or visual-diff task would run — one fable pass at the very end instead — so those tasks were skipped
+in every phase and the files were never written. `handoff/comps/visual-diff-comp.md` (the design comp's own 59-row
+geometry table) is the one file of that kind that exists.
+
+## State at finish
+
+| phase | what | result |
 |---|---|---|
-| 1 foundation (Vite 8 · TS 7 · Vitest 5 · Playwright 1.63 `channel: 'chrome'` · Biome 2.5; tokens, base, skeleton, e2e harness) | done — validator CLEAN after one fix cycle | — |
-| 2 nav + hero left column (Bodoni Moda `opsz 20`, calibrated fallback, CTA with clipboard) | done — accepted; re-checked inside the Phase 3 critique (8/10) | `handoff/p2fix-fold.png` |
-| 3 diagram, static (ghosts, card, routes, labels, rain, scatter, no-JS art) | done — 8/10 after one fix cycle | run dir `shots/p3fix-*` |
-| 4 motion (breath, rain drift, two packets at 55 px/s with wakes, seat responses, entrance, fragments; no GSAP) | done — 8/10 after one fix cycle | run dir `shots/p4fix-b-*` |
-| 5 routes · manifesto · footer | done — 8/10 after one fix cycle | run dir `shots/p5fix-*` |
-| 6 responsive tiers · a11y floor · craft pass (compact 350×980 stage) | done — 8/10 at 1440 and 390 after one fix cycle | `handoff/p6-390.png` |
-| 7 extension research + DESIGN §15 addendum | done — opus ACCEPT, fable SHIP (cycle 2) | `handoff/extension-research.md`, `DESIGN.md` §15 |
-| 8 extension build (T-011 markup · T-012 THE BRIEF 8/10 · T-013 THE LADDER 8/10 · T-014 THE RECORD 8/10 · T-015 integration) | done — final page 8/10 at 1440 and 390, SHIP; craft list applied by fix-final | `handoff/p8e-1440.png`, `handoff/p8e-fold.png`, `handoff/p8e-390.png` |
+| 1 foundation | markup v2, tokens, shared grammar, footer, capture harness, e2e split | done — P1a 13/13 and P1b 14/14 briefs, exit gates green, `p1` captures kept |
+| 2 · 3 · 4 sections | `s02.css`, `s03.css`, `s04.css` + `s04-tiers.css` and their three e2e files | done — one merged run, 8/8 briefs on one attempt each, every sheet diffed rule by rule against its contract with 0 deviations, review `pass_with_notes` |
+| 5 aura + scroll | rail, dot fields, fragments, stops, reveals, the spark, reduced motion | done — P5a 11/11 and P5b 21/21 briefs, every P5b brief on attempt 1, review `pass_with_notes` with no critical findings |
+| 6 tiers, craft, a11y, docs | `tiers.e2e.ts`, README v2, two capture-harness fixes, the traces placed first, the a11y and Lighthouse pass, these docs | done — 8/8 briefs, one ladder rung spent, exit gates green |
+| 3.5 independent review | four read-only grok seats over the whole `website/` delta, split by dimension | done — 12 candidates, 6 Major fixed, 5 to residuals, 1 rejected by measurement |
+| 4 final critique | one fresh critic on the rendered captures, then the fixes the owner's lane ruled in scope | done — 7/10 REVISE with 2 blocking became 6/6 briefs on one attempt each, 0 rungs, 0 reds waived; Corrections V, W, X |
 
-**Last gate run (final sweep, three consecutive runs identical):** `npm run typecheck` 0 · `npm run lint` "Checked 59 files … No fixes applied." · `npm test` 11 files, 45/45 · `npm run build` html 16.88 kB (gz 5.58) / css 21.38 kB (gz 5.30) / js 19.48 kB (gz 8.26) · `npm run e2e` 18 passed, 3 skipped (the `SHOT_DIR`-gated captures). A fresh copy without `node_modules`/`dist` passed `npm ci && npm run build && npm test && npm run e2e`. Headless load at 1440×900 and 390×844: 0 console errors, 0 warnings. `dependencies` is `{}`.
+Final gate output, on the tree as it stands:
 
-**Lighthouse (against `vite preview`, 2026-09-09):** desktop 100 / 100 / 100 / 91, mobile 97 / 100 / 100 / 91 (performance / accessibility / best practices / SEO). SEO 91 is the preview server's missing `robots.txt`, not the page.
+```
+$ npm run typecheck                exit 0
+$ npm run lint …                   exit 0   (2 inherited noDescendingSpecificity warnings, lower.css:107, reveal.css:9)
+$ npm test                         Test Files 12 passed · Tests 55 passed (55)
+$ npm run e2e                      55 passed · 11 skipped · 0 failed (20.3 s) — 66 of 66 reported, summary printed
+$ npm run build                    exit 0
+    dist/index.html                23.07 kB │ gzip: 6.03 kB
+    dist/assets/index-*.css        26.09 kB │ gzip: 6.44 kB
+    dist/assets/index-*.js         25.98 kB │ gzip: 10.44 kB   (budget: own ≤ 16 KB gz, total ≤ 90 KB)
+G-cap    PASS  no file over its approved cap · index.html markup 196 (cap 220), file 337 (cap 380)
+               no index.ts · hex only in tokens.css · quoted font-family only in base.css
+G-tree   PASS  nothing outside website/ changed since the P1a baseline · nothing staged
+HERO-JSON(p8)  empty diff vs p0 at 1440, vs p1 at 1440 and at 1920
+HERO-CROP(p1, p8)  [None, None] — byte-identical, unmasked, at both widths
+Lighthouse     desktop a11y 96 / performance 100 · mobile a11y 96 / performance 94 (see residuals R-P6-8)
+Rendered 1440  .s02 6 · .s03 4 · .s04 14 fragments · hero 19 · zero keep-clear violations of any class
+Traces         1440: .s04 only · 1600 and 1920: all three sections
+Dot fields     lit 37 / 6 / 37 / 8 / 37 / 8 = 133 cells, worst row 30.6 % against a 35 % cap,
+               area 10 241 px² against a 76 205 px² budget (Correction W raised the two relief profiles)
+REQ-015        PASS — 5 of 5 consecutive capture pairs, all 60 file comparisons BYTE-IDENTICAL
+               (Correction N's amplitude/extent tolerance was not needed at any width)
+```
 
-**Owner-ruled deviations from the first sheet (each recorded in its DESIGN section):**
-- Display face Bodoni Moda at `opsz 20` (Instrument Serif rejected by A/B); `--text-display: clamp(3.25rem, 5.4vw, 4.9rem)`.
-- Compact stage: one spine at 38 %, annotation rail at 71.4 %; route C runs implementer → reviewer there (§11), with a `HANDOFF` dwell before the reviewer leg.
-- Fragments: seed 8088 places 19 of 20 at 1440×900 (`worktree` is left out), 20 at 1024, 12 at 768, none below 768; travel 64 px; the header band, its quiet strip, the gutters, the label/seat blocks and the rain columns are keep-clear.
-- Lede: four lines with `— three when another lab reviews.`, the `<br>` after `job —` hidden below 1250.
-- Copy rulings: routes claim `MIX THE LABS. / ONE SHARED BRIEF.`; manifesto `03 EVIDENCE ON DISK`; ladder `if you have one`; `SAME TOOLS. / BETTER OUTPUT.` and `HIGHER QUALITY` kept as claims of intent; the CTA stays.
-- `span.mark` (sheet and transcript marginal glyphs) at `--ink-3`; the nav's dot grid is scoped to `.nav .mark`. `--ink-4` at 2.08:1 accepted as decorative.
-- Ladder: statements and fine print on cols 6–10 at ≤ 839; `li.retry` whole row `--ink-3`; rung labels may bleed ≤ 14 px into the col-4 gutter at 768–815.
-- Brief sheet below 768 takes `order: 1` (claim → statements → the sheet cut by the crop rule).
-- Record: phone notes as blocks at 12ch with a 3ch hang; `.requirements` a block with nbsp glue; `"add user auth"` hangs 2ch via `text-wrap: balance`.
-- Hero at 768–1099: the diagram before works-with (`order: 1`).
-- Card 108×104 (the 84 px sheet clipped `T3 jwt.test.ts`); reviewer gain ×0.7 removed.
-- `@types/node` as a devDependency; `index.html` exempt from the 200-line cap for the art and the §15 bodies (its markup stays ≤ 220 by the §13 awk count).
-- Shots and motion harness: the fake clock is installed and paused before `goto`, finished entrances drop to `animation: none` — two captures of one build are byte-identical.
+## Decisions
 
-**Residuals (known, not fixed):**
-- Laptop fold at 768–1099: the diagram's crown sits at y ≈ 1 030 (1024) / 1 000 (768); bringing it under a 900 px fold needs ≈ 130 px from the headline block — the owner's call.
-- 1024: one fragment sits ~30 px under the hero claim's dash.
-- Design-level notes from the final critic: the ghost skirts read arcade at 2×; the 6 s reviewer leg is the loop's longest wait; the manifesto list is the weakest `01` device on the page; the `°` motif has no key until the ladder's fine print.
-- `website/.claude/scheduled_tasks.lock` is a harness lock from the Sep-7 watchdog, excluded via `.git/info/exclude`; it is not part of the site.
+- **D-1** FHD = a capped container — (§11 v2): `--content-max` 1392 at ≥ 1600 with the aura full-bleed across 264 px gutters; the lower type steps one notch; the hero changes only its width (diagram…
+- **D-2** Reveals by IntersectionObserver one-shot + CSS, the spark alone on a scroll timeline — (§16.6): sections paint once on arrival and stay.
+- **D-3** Hybrid aura — CSS for the rail, spark, stops and reveals; JS for the seeded placer, the one-time dot draw + shimmer and the observer.
+- **D-4** One class, `.fragment`, for every hovering string — (the hero's existing name); §16's `.frag`, `.frag--gutter`, `.frag--glyph` are not created — the placer decides positions per tier on every resize, so CSS needs…
+- **D-5** The section pools and layer specs live in `features/fragments/pool.ts` — , not `features/aura/pool.ts`: a pool is placer data, and `aura/` must not import `fragments/`.
+- **D-6** `ticker.ts` is promoted to `src/lib/ticker.ts` — on its second consumer (the dot shimmer), one brief with the two import edits approved out of bounds.
+- **D-7** The pure placer moves to `features/fragments/place.ts` — (`mount.ts` keeps the DOM half; `mount.test.ts` becomes `place.test.ts`) so the hero and the three sections share one placer through `main.ts`;…
+- **D-8** Opacity channel — the placer's existing channel 3 (`hash(seed, k, 3, 0)`) scaled to the layer's range; §16.5's `hash(seed, i, 0, 3)` notation names the same channel.
+- **D-9** Pre-reveal state is `opacity: 0` only — ; the 8 px rise comes from the `enter` keyframes' `from` (with `fill-mode: both` it shows during the delay, so the render is §16.6's).
+- **D-10** The pre-reveal rule is scoped to `section:not(.is-in)` — so the animated element's base opacity is 1 once `.is-in` lands (an implicit `to` of 0 would hold the element invisible under `fill-mode: both`).
+- **D-11** The capture set is ten PNGs + two JSON per tag — `-1440`, `-fold`, `-390`, `-1920`, `-1920-fold`, `-1024`, `-768`, `-1920-s02`, `-1920-s03`, `-1920-s04` (a missing section skips its fold) and `-hero-1440.json`,…
+- **D-12** The hero stability check is two-fold — `diff` of the hero JSON against `p0` (P1 on), and a byte-identical crop of the hero region against `p1` (P2 on; `python3` + PIL…
+- **D-13** The hero fragment count floor is ≥ 18 at 1440×900 — (`motion.e2e.ts`), the exact count recorded in `DESIGN.md` §7.5 by the orchestrator after P1.
+- **D-14** `hero.css` scopes `.steps` and `.line` under `.hero`, and `motion.css` scopes its three `.steps` selectors the same way — (its `.line` rules already read `.hero h1 .line`): 03's `ol.steps` and 04's breath lines reuse the class names with their own rules (`s03.css`, `s04.css`).
+- **D-15** `.rule--bleed` lives in `footer.css` — (it is the footer's seam) and `footer.css` lands in P1 with the shell, not P4: ruling 2 replaces the footer with the hero's anchors, and P1's skeleton must not…
+- **D-16** The footer reuses `nav.css`'s unscoped `.wordmark` and `.links` rules — (§16.4: "the nav's wordmark verbatim", "the nav links' markup and states"); `footer.css` declares only what differs (`text-transform: none` on the wordmark and…
+- **D-17** `canvas.dots` are markup with `data-seed/cols/rows/profile` — and CSS positions (`sNN.css`), drawn by `dots.ts`; before P5 they are transparent boxes.
+- **D-18** Section keep-clear uses element boxes, not line boxes — the same-line rule against a paragraph's box is stricter than against its lines, so `aura.e2e.ts`'s line-box assertion holds a fortiori. **Superseded in the build:** `sectionKeepClear` walks every TEXT NODE under `.grid` and measures per line with `Range.getClientRects()`; element boxes are not stricter, they are differently shaped. See `DESIGN.md` §16.9's build note.
+- **D-19** e2e is split by concept into seven files — (`lower`, `s02`, `s03`, `s04`, `aura`, `scroll`, `tiers`, plus `frames` for captures) rather than §13's one `lower.e2e.ts`: §16.9's ten items exceed 200 lines,…
+- **D-20** Brief runs are capped at 12 — (splitbrief standard): P1 and P5 run as two sequential splitbrief runs each (P1a markup+styles, P1b markup+tests; P5a modules, P5b wiring); P2–P4 and P6 are one…
+- **D-21** The steps anchors get a 24 px hit box — (`padding-block: calc((24px - 1lh) / 2); margin-block: calc((1lh - 24px) / 2)`), not 44: the 18 px pitch is §4 geometry ruling 2 protects; 24 px is the WCAG…
+- **D-22** The 10 reasoned out-of-tolerance rows of `visual-diff-comp.md` are inherited — a site row that matches the comp's measured value within ±3 % is ✓ by that reason (tick-list pitch 16 at 1920; whole-pixel row pitch 14; 11 px row advance;…
+- **D-23** Product-true copy deviations from the reference stay — (§16.1–16.2): `typescript`, `Out of bounds:`, statement 2 by ruling F17, the session path on row 21, `▶` in `--ink-3` (F25, owner residual), `Build → Verify` and…
+- **D-24** The dot-field density cap is measured on lit cells — (count × 77 px² over the six specs < 3 % of the lower page's 1440 × 1764), not on canvas boxes (3.2 % — boxes are mostly empty).
+- **D-25** The transcript's `.s03 .aura { overflow: visible }` and the steps grammar live in `s03.css` — (their only consumer), `.aura`'s base in `aura.css`.
+- **D-26** Docs are written by Fable — (`HANDOFF.md`, `handoff/`, `DESIGN.md` amendments), `README.md` by the implementer from a brief: HANDOFF's "state at finish" needs the run's evidence, which only…
+
+## Residuals
+
+`handoff/residuals.md` is the list. The ones a maintainer meets first:
+
+- **Traces are placed everywhere except `.s02` and `.s03` at 1440** (R-P6-1), where an exhaustive origin scan shows
+  there is no legal position for one. Placing each layer's traces before its strings, and exempting panel lines from
+  the same-line rule, is what made them reachable; no clearance was weakened to get them.
+- **Mobile Lighthouse performance is 94**, one point under the floor, entirely from the render-blocking Google
+  Fonts stylesheet under a throttled profile (R-P6-8). Desktop is 100.
+- **The three owner items from stage 1** are still open by ruling: `▶` in `--ink-3`, the two phase vocabularies
+  (`Build → Verify` beside `EXECUTE / REVIEW`), and no closing call to action.
+- **`DESIGN.md` §16.8's page height at 1920 is 25 px high** (3 064 measured, 3 089 written) and the four spark
+  positions derived from it still pass on tolerance (R-P6-6).
+- **Two capture nondeterminisms are admitted deliberately**: the hero's three ghost canvases, and vignette
+  dithering on the mid-width captures, which is why "byte-identical" carries a two-part tolerance (R-P6-7).
+- **Five rows of the final critique are visual-design decisions, not defects**, and are held for the owner with
+  the critic's own reasoning in `handoff/residuals.md` (R-F-1 … R-F-5): section 03's left column has no tail
+  element where 02 has its tick-list, and the critic proposes a differently-shaped one; the three section-04
+  callouts do not share one internal grid, so their content edges do not align; `codex°` and `GPT-5.6°` set
+  footnote markers that no note on the page answers, while the same glyph is the wordmark's brand device;
+  section 04 has no hot spot across its 686 px, which §16.8 declares deliberate; and the nav's 3 × 3 dot mark
+  sits where a menu control sits. Each needs a decision only the owner should make, so none was built.
+- **The critique's stated cause for its second blocking row is wrong and is recorded as wrong.** It reads the 03
+  skyline as stopping short of the 03 → 04 border. Measured at 1440, exactly 44.0 px of that canvas paint inside
+  section 04, which is what §16.8 specifies. What was short was the field's density, and that is what
+  Correction W raised.
 
 ## How to run
 
-```bash
+```sh
 cd website
-npm install                 # or npm ci
-npm run dev                 # Vite dev server
-npm run build               # → dist/ (base './', deployable under any path; serve over HTTP, never file://)
-npm run preview             # serves dist/ on http://localhost:4173
-npm run typecheck && npm run lint && npm test && npm run build && npm run e2e   # the gate
-SHOT_DIR=/abs/dir SHOT_TAG=tag SHOT_TIME_MS=4000 npm run shots               # tag-1440.png, tag-fold.png, tag-390.png
-npm run render-static       # frame-0 ghost art for the three <pre class="ghost-fallback">
+npm install
+npm run dev                 # vite on :5173
+npm run build && npm run preview        # dist/ on :4173 — everything below expects this
+npm run typecheck && npm run lint && npm test && npm run e2e     # the gate, in that order
+SHOT_DIR=<dir> SHOT_TAG=<tag> npm run shots                      # 10 PNG + 2 hero JSON
+SHOT_DIR=<dir> SHOT_TAG=<tag> npx playwright test tests/e2e/frames.e2e.ts   # spark + transcript frames
+npm run render-static       # the frame-0 ghost art for the <pre class="ghost-fallback"> blocks
 ```
 
-Lighthouse: `npm run build && npm run preview`, then audit `http://localhost:4173/` (chrome-devtools `lighthouse_audit` or the DevTools panel), desktop and mobile. Chrome must be installed — Playwright runs on `channel: 'chrome'` and downloads no browser.
+Only one process can hold :4173 — `playwright.config.ts` sets `reuseExistingServer: false`, so a second runner
+aborts rather than sharing. Kill a stray `vite preview` before gating.
 
 ## Where things are
 
-| DESIGN.md | Files |
+| sheet section | files |
 |---|---|
-| §1 tokens | `src/styles/tokens.css` (the only sheet with hex, font names or the spacing scale) |
-| §2 skeleton, no-js swap | `index.html` (inline head script), `src/styles/base.css`, `src/styles/main.css` (layer order + imports) |
-| §3 nav | `src/styles/nav.css` |
-| §4 hero, CTA, diagram stage | `src/styles/hero.css`, `cta.css`, `diagram.css`; `src/features/copy-button.ts` (+ test); the two `route-lines` SVGs in `index.html` are the routes' single source |
-| §5 brief card | `src/styles/brief.css` |
-| §6 ghosts | `src/features/diagram/{seats,silhouette,density,atlas,ghost}.ts` (+ tests); `tools/render-static.ts` prints the fallback art |
-| §7 motion | `src/styles/motion.css`; `src/features/diagram/{ticker,packet,timeline,pose,response,route-geometry,rain,mount}.ts`; `src/features/fragments/{pool,mount}.ts`; `src/main.ts` (keep-clear measurement, reduced-motion start/stop); `src/lib/reduced-motion.ts`, `src/lib/noise.ts` |
-| §8 routes · §9 manifesto · §10 footer | `src/styles/routes.css`, `manifesto.css`, `footer.css` |
-| §11 responsive tiers | `src/styles/diagram-compact.css` (the container query) and each sheet's `@media` blocks |
-| §12 craft floor · §14 verification | `tests/e2e/page.e2e.ts`, `motion.e2e.ts`, `shots.e2e.ts`; `playwright.config.ts` |
-| §15.1 THE BRIEF · §15.2 THE LADDER · §15.3 THE RECORD | `src/styles/brief-sheet.css`, `ladder.css`, `record.css`; `tests/e2e/extension.e2e.ts`; §15.4 holds the measured heights |
-| §13 file map and rules | the tree above; gates in `handoff/spec.md` |
+| §1 tokens · §2 skeleton | `src/styles/tokens.css`, `src/styles/base.css`, `index.html` |
+| §3 nav · §4 hero · §5 card · §6 ghosts · §7 motion | `src/styles/{nav,hero,cta,diagram,brief,diagram-compact,motion}.css`, `src/features/diagram/*`, `src/lib/ticker.ts` |
+| §16.1 section 02 | `src/styles/s02.css`, `tests/e2e/s02.e2e.ts` |
+| §16.2 section 03 | `src/styles/s03.css`, `tests/e2e/s03.e2e.ts` |
+| §16.3 section 04 | `src/styles/s04.css` + `s04-tiers.css`, `tests/e2e/s04.e2e.ts` |
+| §16.4 footer | `src/styles/footer.css` (`.rule--bleed` included) |
+| §16 shared grammar · tiers | `src/styles/lower.css` + `lower-tiers.css`, `src/styles/panel.css`, `tests/e2e/lower.e2e.ts`, `tests/e2e/tiers.e2e.ts` |
+| §16.5 aura | `src/styles/aura.css`, `src/features/fragments/{place,pool,mount}.ts`, `src/features/aura/{dots,keep-clear}.ts`, `tests/e2e/aura.e2e.ts` |
+| §16.6 scroll | `src/styles/reveal.css`, `src/features/aura/reveal.ts`, `tests/e2e/scroll.e2e.ts` |
+| §14 captures | `tests/e2e/shots.e2e.ts`, `tests/e2e/frames.e2e.ts` |
+| composition | `src/main.ts`, `src/styles/main.css` (19 imports, layer order fixed) |
 
-## Decisions already made (do not reopen without the owner)
+## Next
 
-- Stack: Vite + TypeScript strict, Vitest colocated unit tests (pure modules only), Playwright on the installed Chrome for e2e/screenshots/motion, Biome. Vertical slices: `src/features/` (flat below 3 files), `src/styles/` one sheet per section, `src/lib/` only on a second consumer, `tests/e2e/*.e2e.ts`. ≤ 200 lines per file, no barrels, no cross-feature imports (gate rows in spec.md).
-- Copy: `splitbrief°`, ONE PLANS. / ONE EXECUTES. / ONE CONTRACT., `$ npm install -g splitbrief`, hero artifact `tasks.md` labelled TASK BRIEF, `°` = the seat that signs off, routes rows and all other strings in `DESIGN.md` verbatim (§15 included).
-- Display face: Bodoni Moda at `opsz 20` (measured against the reference; Instrument Serif rejected by A/B). `--text-display: clamp(3.25rem, 5.4vw, 4.9rem)`.
-- Motion concept (one): the system is alive and routing — ghost breath, rain into the ticks, two packets on `offset-path`, load entrance, seeded hovering fragments. `prefers-reduced-motion` = frame 0, no packets, static fragments. No GSAP shipped; JS budget ≤ 90 KB gz total, ≤ 12 KB gz own code (8.26 KB gz shipped).
-- Mobile: a compact vertical 350×980 stage, same 7×11 cell grid, fit-scaled — never a scaled-down desktop stage.
-- The three §15 sections are static: no keyframes, no transitions, no script (§7 stays five items).
-
-## Process rules that bind every future agent
-
-- Never `git add` / `git commit` / `git stage` unless the owner says so in that session (repo rule; a hook blocks it).
-- Only `website/**` changes.
-- Every visual task: shoot 1440-full / 1440-fold / 390-full, critique against `handoff/reference.png` naming the three worst things first, fix, re-shoot, `craft pass:` line, nuke-design tell-walk with a 1–10 score. A fresh critic must return ≥ 8/10 with zero `missed` on the phase surface; the orchestrator opens the fold PNG itself.
-- Skills to load per file type are in `handoff/spec.md` Executor context; tool configs come from context7 docs, never memory.
-- Log every usage-window cut and resume point in `handoff/exec-progress.md`.
+Run **nuke-verify** with `intent: handoff/spec.md` in a fresh session — that file is a copy of the run dir's
+`RUN/spec.md`, which is what `handoff/residuals.md` names; either path reaches the same spec. Then work the
+owner's follow-ups from `handoff/residuals.md`. Do not `git add` or `git commit` on this branch from an agent seat; the owner reviews and
+commits by hand.

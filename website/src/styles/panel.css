@@ -1,0 +1,115 @@
+.panel {
+  border: 1px solid var(--hair);
+  background: var(--panel);
+  box-shadow: var(--highlight);
+  font-size: var(--text-art);
+  line-height: var(--line-art);
+  letter-spacing: 0;
+  color: var(--ink-2);
+}
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--bar-h);
+  padding-inline: var(--s-3);
+  border-bottom: 1px solid var(--hair);
+  font-size: var(--text-art);
+}
+.bar .name {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.bar .name::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink-2);
+}
+.terminal .bar .name::before {
+  background: var(--green);
+}
+.bar .status {
+  display: flex;
+  gap: var(--s-4);
+  font-size: var(--text-micro);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.lines {
+  position: relative;
+  padding-block: var(--s-1);
+}
+.lines::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(2ch + var(--s-2));
+  width: 1px;
+  background: var(--hair);
+}
+.lines li {
+  display: grid;
+  grid-template-columns: calc(2ch + var(--s-2)) 1fr;
+}
+.lines .n {
+  padding-inline: var(--s-1);
+  text-align: right;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+.lines .t {
+  padding-left: var(--s-1);
+  padding-right: var(--s-3);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.lines .h {
+  color: var(--blue);
+  font-weight: 500;
+}
+.lines .k,
+.lines .f,
+.lines .m,
+.lines .mk,
+.lines .dim {
+  color: var(--ink-3);
+}
+.lines .ok {
+  color: var(--green);
+}
+.lines .fail {
+  color: var(--red);
+}
+.lines .strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+.lines .pass {
+  color: var(--green);
+  font-weight: 500;
+}
+.lines .err {
+  color: var(--red);
+  font-weight: 500;
+}
+@media (max-width: 767px) {
+  .lines .t {
+    text-indent: -2ch;
+    padding-left: calc(var(--s-1) + 2ch);
+  }
+  .bar {
+    padding-inline: var(--s-2);
+  }
+  .bar .status span:last-child {
+    display: none;
+  }
+  .lines .tail {
+    display: none;
+  }
+}

@@ -32,7 +32,10 @@ async function settle(page: Page): Promise<void> {
   // element a tier hides; finished, an entrance paints as its base style, so drop it from the cascade.
   await page.evaluate((t) => {
     for (const animation of document.getAnimations()) {
-      if (animation.timeline !== document.timeline) continue;
+      if (animation.timeline !== document.timeline) {
+        animation.pause();
+        continue;
+      }
       const end = animation.effect?.getComputedTiming().endTime;
       if (typeof end === 'number' && Number.isFinite(end)) {
         animation.finish();
@@ -44,6 +47,9 @@ async function settle(page: Page): Promise<void> {
       animation.pause();
       animation.currentTime = t;
     }
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.requestAnimationFrame = () => 0;
   }, time);
 }
 

@@ -1,3 +1,4 @@
+import { createTicker } from '../../lib/ticker';
 import { find } from './find';
 import { createGhost, type Ghost } from './ghost';
 import { mountPackets, type Packets } from './packet';
@@ -11,7 +12,6 @@ import {
   type Tier,
 } from './scatter';
 import { SEATS, type SeatName } from './seats';
-import { createTicker } from './ticker';
 
 export type Diagram = {
   start(): void;

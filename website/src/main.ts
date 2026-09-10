@@ -1,6 +1,11 @@
+import { fieldSpec, mountDots } from './features/aura/dots';
+import { sectionKeepClear } from './features/aura/keep-clear';
+import { mountReveal } from './features/aura/reveal';
 import { mountCopyButton } from './features/copy-button';
 import { mountDiagram } from './features/diagram/mount';
 import { type KeepClear, mountFragments, type Rect } from './features/fragments/mount';
+import type { Layer } from './features/fragments/place';
+import { BRIEFS, CONTROL, HERO, VALIDATION } from './features/fragments/pool';
 import { onReducedMotionChange, prefersReducedMotion } from './lib/reduced-motion';
 
 const cta = document.querySelector<HTMLButtonElement>('.cta');
@@ -11,10 +16,11 @@ layer.className = 'fragments';
 layer.setAttribute('aria-hidden', 'true');
 document.body.prepend(layer);
 const TEXT = [
-  '.steps span, .draft-mark, .claim, h1, .lede, .cta, .works, .label, .seat, .brief',
-  '.routes h2, .routes tbody tr, .manifesto h2, .manifesto p, .manifesto ol, .foot p',
+  '.hero .steps li > *, .draft-mark, .hero .claim, h1, .lede, .cta, .works, .label, .seat, .brief',
+  '.lower .grid :is(h2, p, li, pre), .foot p',
 ].join(', ');
-const MARKS = '.route, .cross, canvas, .scatter span';
+const MARKS =
+  '.route, .cross, canvas, .scatter span, .panel, .tree, .marg, .marg-list, .stop, .rail';
 const NAV_QUIET = 24;
 const RAIN = { top: 0.06, width: 42 };
 const nav = document.querySelector('.nav');
@@ -66,28 +72,52 @@ function atRest<T>(measure: () => T): T {
 }
 
 const keepClear = (): KeepClear =>
-  atRest(() => ({
-    text: boxes(TEXT),
-    marks: [
-      ...(nav
-        ? [
-            {
-              left: 0,
-              top: 0,
-              right: innerWidth,
-              bottom: nav.getBoundingClientRect().bottom + NAV_QUIET,
-            },
-          ]
-        : []),
-      ...(hero ? gutters(hero.getBoundingClientRect().left) : []),
-      ...blockAround('.label, .seat'),
-      ...rainColumns(),
-      ...boxes(MARKS),
-    ],
-  }));
+  atRest(() => {
+    const origin = layer.getBoundingClientRect();
+    const rel = (r: Rect): Rect => ({
+      left: r.left - origin.left,
+      top: r.top - origin.top,
+      right: r.right - origin.left,
+      bottom: r.bottom - origin.top,
+    });
+    return {
+      text: boxes(TEXT).map(rel),
+      panels: [],
+      marks: [
+        ...(nav
+          ? [
+              {
+                left: 0,
+                top: 0,
+                right: innerWidth,
+                bottom: nav.getBoundingClientRect().bottom + NAV_QUIET,
+              },
+            ]
+          : []),
+        ...(hero ? gutters(hero.getBoundingClientRect().left) : []),
+        ...blockAround('.label, .seat'),
+        ...rainColumns(),
+        ...boxes(MARKS),
+      ].map(rel),
+    };
+  });
 
 const diagram = document.querySelector<HTMLElement>('.diagram');
-const motion = [mountFragments(layer, keepClear), ...(diagram ? [mountDiagram(diagram)] : [])];
+const motion: { start(): void; stop(): void }[] = [
+  mountFragments(layer, keepClear, HERO),
+  ...(diagram ? [mountDiagram(diagram)] : []),
+];
+const LAYERS: Record<string, Layer> = { briefs: BRIEFS, validation: VALIDATION, control: CONTROL };
+const sections = [...document.querySelectorAll<HTMLElement>('.lower section')];
+const ink = getComputedStyle(document.documentElement).getPropertyValue('--ink-4').trim();
+for (const section of sections) {
+  const aura = section.querySelector<HTMLElement>('.aura');
+  const spec = LAYERS[section.id];
+  if (aura && spec) motion.push(mountFragments(aura, () => sectionKeepClear(section), spec));
+  for (const canvas of section.querySelectorAll<HTMLCanvasElement>('canvas.dots'))
+    motion.push(mountDots(canvas, fieldSpec(canvas), ink));
+}
+mountReveal(sections);
 
 function setMotion(reduced: boolean): void {
   for (const feature of motion) {

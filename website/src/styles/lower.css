@@ -1,0 +1,190 @@
+.lower {
+  position: relative;
+}
+
+.s02,
+.s03,
+.s04 {
+  position: relative;
+}
+
+.grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--s-6);
+  width: min(var(--content-max), 100% - 2 * var(--gutter));
+  margin-inline: auto;
+}
+
+.s02 .grid,
+.s03 .grid {
+  grid-template-columns: var(--head-w) var(--panel-w) minmax(0, 1fr);
+}
+
+.s02,
+.s03 {
+  border-top: 1px solid var(--hair);
+  padding-block: var(--s-6);
+}
+
+.grid > .head {
+  grid-column: 1;
+  padding-top: var(--s-2);
+}
+
+.grid > .panel {
+  grid-column: 2;
+  align-self: start;
+}
+
+.grid > .notes {
+  grid-column: 3;
+}
+
+.title {
+  font-size: var(--text-title);
+  line-height: 1.25;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  text-transform: uppercase;
+}
+
+.title .line {
+  display: block;
+}
+
+.lower .eyebrow {
+  display: block;
+  margin-bottom: var(--s-4);
+  font-size: var(--text-label);
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.sub {
+  margin-top: var(--s-2);
+  font-family: var(--font-display);
+  font-size: var(--text-serif-sub);
+  line-height: 1.08;
+  font-optical-sizing: none;
+  font-variation-settings: "opsz" 20;
+  color: var(--ink-3);
+}
+
+.sub .line {
+  display: block;
+  white-space: nowrap;
+}
+
+.tick-list {
+  margin-top: var(--s-12);
+  font-size: var(--text-micro);
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.tick-list::before {
+  content: "";
+  display: block;
+  width: 1px;
+  height: 12px;
+  margin-bottom: var(--s-1);
+  background: var(--ink-3);
+}
+
+.tick-list .line {
+  display: inline;
+}
+
+.notes {
+  position: relative;
+  padding-top: var(--s-2);
+  font-size: var(--text-note);
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+.notes p {
+  max-width: calc(41ch + 1px);
+}
+
+.notes p + p {
+  margin-top: var(--s-6);
+}
+
+.notes .caps {
+  margin-top: var(--s-6);
+  font-size: var(--text-note);
+  font-weight: 500;
+  line-height: 18px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.notes .caps + p {
+  margin-top: var(--s-8);
+}
+
+.marg {
+  position: absolute;
+  right: 0;
+  font-size: var(--text-micro);
+  line-height: 16px;
+  letter-spacing: 0;
+  color: var(--ink-4);
+  text-align: right;
+  white-space: nowrap;
+  text-shadow:
+    1px 0 var(--bg),
+    -1px 0 var(--bg),
+    0 1px var(--bg),
+    0 -1px var(--bg);
+}
+
+.marg-b {
+  right: var(--s-6);
+}
+
+.marg--caps {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.marg-list {
+  position: absolute;
+  left: calc(100% - var(--rail) + var(--s-2));
+  font-size: var(--text-micro);
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.marg-list::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--s-2) - 1px);
+  top: -16px;
+  width: 1px;
+  height: 12px;
+  background: var(--ink-3);
+}
+
+.marg-list::after {
+  content: "";
+  display: block;
+  width: 18px;
+  height: 1px;
+  margin-top: var(--s-4);
+  background: var(--ink-3);
+}
