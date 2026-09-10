@@ -1,77 +1,71 @@
+.rule--bleed {
+  width: 100%;
+  margin: 0;
+}
+
 .foot {
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
   column-gap: var(--s-6);
-  align-items: start;
   width: min(var(--content-max), 100% - 2 * var(--gutter));
   margin-inline: auto;
-  padding-block: var(--s-16) var(--s-12);
+  padding-block: var(--s-8);
   font-size: var(--text-label);
   line-height: 1.45;
   letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--ink-2);
-
-  > :first-child {
-    grid-column: 1 / 4;
-  }
-
-  > :last-child {
-    grid-column: 11 / 13;
-  }
 }
 
-.foot-link {
-  grid-column: 5 / 9;
-  text-align: center;
+.foot .brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-8);
+}
+
+.foot .wordmark {
+  text-transform: none;
+}
+
+.foot .claim {
+  color: var(--ink-2);
+}
+
+.foot .right {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-8);
+}
+
+.foot .links a {
+  text-transform: none;
+}
+
+.foot .seats {
   color: var(--ink-3);
-
-  .tick {
-    display: block;
-    width: 1px;
-    height: 48px;
-    margin-inline: auto;
-    background: var(--ink-3);
-  }
-
-  a {
-    display: inline-block;
-    min-height: 44px;
-    padding-block: calc((44px - 1lh) / 2);
-    margin-top: calc(var(--s-6) - (44px - 1lh) / 2);
-    overflow-wrap: anywhere;
-  }
-
-  a:hover {
-    color: var(--ink);
-  }
-
-  a:hover .bracket {
-    color: var(--blue);
-  }
 }
 
-@media (max-width: 1099px) {
-  .foot > :last-child {
-    grid-column: 10 / 13;
-  }
-
-  .foot-link {
-    grid-column: 4 / 10;
-  }
+.foot .sep {
+  color: var(--ink-4);
 }
 
-@media (max-width: 767px) {
+@media (max-width: 899px) {
   .foot {
-    row-gap: var(--s-8);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--s-4);
+    padding-block: var(--s-6) var(--s-8);
   }
 
-  .foot > :first-child,
-  .foot > :last-child,
-  .foot-link {
-    grid-column: 1 / -1;
+  .foot .brand {
+    flex-wrap: wrap;
+    row-gap: var(--s-2);
   }
 
-  .foot-link {
-    order: 1;
+  .foot .right {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--s-2);
   }
 }

@@ -1,308 +1,317 @@
-You are designing and implementing a highly art-directed landing page for a CLI product called "orch".
+# Owner prompt — website v2 continuation (verbatim, 2026-09-09)
 
-The product:
-orch is a local CLI orchestration tool for AI coding workflows.
-It connects multiple coding tools and models and routes work between them.
-A stronger, more expensive model can plan the work.
-A cheaper, faster model can implement it.
-A separate model can review, verify, or refine the result.
+Reference render: `reference-v2.png` (1122×1402 — hero + section 02 + section 03 + footer). Current site render: `current-1440.png`. The original hero reference: `reference-v1-hero.png`.
 
-This is NOT a generic SaaS landing page.
-This should feel like an experimental, premium, Awwwards-like developer product site.
+---
 
-## Core product idea
+Continue designing and implementing the landing page for "splitbrief".
 
-The user gives one goal.
-orch orchestrates multiple tools/models behind the scenes.
+Important: do NOT redesign the page from scratch.
+Treat the current hero and current visual direction as approved.
+Your job is to extend the page downward and make the rest of the page feel as art-directed, sparse, atmospheric, and premium as the hero.
 
-Typical flow:
-- planning: Claude Code + Fable
-- implementation: OpenCode + DeepSeek
+## Product understanding
+
+splitbrief is a local orchestration tool for AI coding workflows.
+
+Core concept:
+- one stronger model/tool plans the work
+- one cheaper/faster model executes the work
+- a separate model reviews, validates, or confirms the result
+- splitbrief holds the contract between them
+
+This is not just "multiple models".
+It is a structured execution system:
+- the planner writes one brief per file or task
+- the implementer only sees its own brief
+- the system validates after every task
+- if validation fails, it retries, escalates, or blocks progress
+- the user keeps control of tools, rules, and thresholds
+
+Typical route examples:
+- plan: Claude + Fable
+- implement: OpenCode + DeepSeek
 - review: Codex + GPT-5.6
 
-But do not hardcode only that one exact combination.
-You should understand the system and generate several plausible example routes in the UI.
-The examples should communicate the product logic clearly:
-smart / expensive model for planning,
-cheap / fast model for implementation,
-separate model for review or verification.
-
-Generate realistic-looking route examples and supporting microcopy yourself.
+But you may generate other believable combinations when useful.
 
 ---
 
-## Visual direction
+## Goal of this continuation
 
-Create a sparse, dark, atmospheric, highly designed interface.
+Preserve the approved mood and visual language from the current page,
+then extend the rest of the landing page in the same style.
 
-The page should feel like:
-- editorial
-- minimal
-- technical
-- terminal-native
-- slightly mysterious
-- precise
-- not flashy
-- not “AI startup”
+The problem to solve:
+the hero works reasonably well,
+but the lower sections often become generic, empty, or "sloppy".
+The continuation must feel deliberate, custom, and visually connected to the hero.
 
-Use:
+The lower sections should inherit:
+- the same typography logic
+- the same spacing rhythm
+- the same dark atmosphere
+- the same background language
+- the same restraint
+- the same "technical editorial" tone
+
+Do not let the rest of the page degrade into generic bordered boxes and random divider lines.
+
+---
+
+## Visual direction to preserve
+
+Keep the approved visual language:
+
 - near-black background
 - soft off-white text
-- restrained blue and green accents
-- maybe a tiny amount of muted gray
-- subtle ASCII particles / floating code fragments in the background
-- thin rules, tiny labels, elegant spacing
+- subtle blue and green accents
+- faint gray support tones
+- refined editorial serif for major statements
+- technical mono / bitmap / system type for labels and details
 - lots of negative space
+- delicate rules, tiny system annotations, restrained borders
+- ambient ASCII / code debris in the background
+- sparse but intentional terminal motifs
 
-Typography:
-- use a refined editorial serif for the main statement
-- use a bitmap / pixel / monospace style for technical labels and certain headings
-- strong contrast between large display typography and tiny system annotations
-
-The final result should feel custom-designed and memorable.
-
----
-
-## Hard constraints / avoid this
-
-Do NOT make it look like:
-- a generic AI SaaS homepage
-- a dashboard
-- a typical startup hero with centered headline + 2 buttons
-- a browser mockup
-- a card-heavy layout
-- a Bento grid
-- a bright cyberpunk page
-- a neon-glow overload
-- a template
-- a clone of “local ai code review”
-
-Also avoid:
-- big rounded panels everywhere
-- excessive badges
-- glassmorphism
-- gradient blobs
-- overdesigned pricing-section vibes
-- too many sections
-- “feature card” spam
-
-Keep it restrained and deliberate.
+The page should feel:
+- premium
+- quiet
+- sharp
+- systematic
+- slightly mysterious
+- not flashy
+- not cyberpunk-slop
+- not generic SaaS
 
 ---
 
-## Hero concept
+## Very important: background language
 
-The hero is the main priority.
+A major goal is to improve the background and make it feel intentional.
 
-Build a composition with:
-- large editorial statement on the left
-- an ASCII / route-system visual on the right
-- a central or slightly off-center `plan.md` artifact connecting the system
+Add subtle atmospheric background elements throughout the lower sections:
+- floating ASCII particles
+- faint dotted fields
+- minimal code fragments
+- ghosted microcopy
+- partial route annotations
+- quiet coordinates
+- tiny procedural symbols
+- light vertical and horizontal data traces
+- drifting fragments that feel related to planning / briefs / validation / execution
 
-The hero should communicate:
-a system is better than a single model.
+Examples of subtle background content:
+- `const brief = compile(spec)`
+- `brief -> implementer`
+- `retry(3) -> escalate`
+- `validate(task)`
+- `contract blocked`
+- `one file per brief`
+- `less context`
+- `more progress`
+- `evidence saved`
+- `spec / plan / briefs / execute / review`
 
-Possible tone of the main statement:
-"TWO MODELS ARE GOOD. A SYSTEM IS BETTER."
-or something equally strong and elegant.
-
-Do not make the hero look like a normal marketing block.
-It should feel more like a visual manifesto.
-
-Under the statement, include a short explanation:
-orch connects your preferred AI coding tools,
-routes work intelligently,
-and turns ideas into software faster and more cheaply.
-
-Also include one understated CLI CTA, such as:
-`$ npm install -g orch`
-
-Keep the CTA minimal and elegant.
-
----
-
-## ASCII “ghost” / daemon motif
-
-Introduce 2–3 abstract ASCII ghost / daemon entities.
-These are not cute mascots.
-They are atmospheric, symbolic system entities.
-
-They should feel like:
-- terminal spirits
-- routing daemons
-- execution agents
-- haunting software processes
-
-Each should be made from actual ASCII / terminal-like characters or convincingly rendered ASCII-style glyph structures.
-
-Recommended roles:
-1. Planner
-   - calm
-   - structured
-   - thoughtful
-   - blue accent
-   - labels such as THINK / PLAN / DECOMPOSE / ROUTE
-
-2. Implementer / Executor
-   - fast
-   - practical
-   - active
-   - green accent
-   - labels such as BUILD / ITERATE / EXECUTE / SHIP
-
-3. Reviewer / Verifier
-   - smaller or secondary
-   - subtle
-   - supports confirmation / validation
-   - labels such as REVIEW / VERIFY / CONFIRM
-
-Do not make them too large, cartoonish, or cheesy.
-They should feel like branded system spirits in a technical art direction.
+These must remain subtle and atmospheric.
+Do not fill the page with loud decorations.
+Do not make the background feel random.
+It should feel like one coherent system aura.
 
 ---
 
-## plan.md artifact
+## Hard constraints
 
-`plan.md` is the narrative center of the hero.
+Do NOT:
+- redesign the hero completely
+- switch to a different aesthetic
+- introduce big generic cards everywhere
+- introduce standard SaaS sections
+- create a pricing-table vibe
+- spam borders and rectangles
+- overuse rounded UI panels
+- make the lower sections feel heavier than the hero
+- add random icons or illustrations unrelated to the system
+- turn it into a dashboard
+- make the page too busy or too empty
 
-It should appear as a small but important artifact between the agents:
-- planner produces it
-- implementer receives it
-- reviewer validates the result downstream
-
-The UI should visually imply that the plan routes through the system.
-
-Inside or near `plan.md`, show believable example tasks, such as:
-- research
-- design
-- implement
-- test
-- review
-- ship
-
-Keep it concise and elegant.
-
----
-
-## Background atmosphere
-
-The page should include subtle floating technical fragments in the background:
-- tiny ASCII symbols
-- faint coordinates
-- partial code snippets
-- soft route lines
-- small annotations
-- minimal particle-like noise
-
-Examples of tone:
-- `const ideas = route(plan)`
-- `while (curiosity) build()`
-- `patches -> codex`
-- `real software`
-- `lower costs`
-- `higher quality`
-
-These should stay subtle and never overpower the composition.
+Avoid:
+- slop layouts
+- filler copy
+- repetitive section structures
+- generic "features" cards
+- loud gradients
+- glow effects
+- bento grids
+- fake-browser windows everywhere
 
 ---
 
-## Lower section / example routes
+## Structure to continue with
 
-Below the hero, include a restrained example-routes table.
+Use the hero as section 01, then continue the page with 2–3 highly art-directed supporting sections.
 
-This section should not feel like a bulky table component.
-It should feel like elegant system documentation.
+Suggested continuation:
 
-Use columns similar to:
-- goal
-- plan (strong)
-- implement (fast / cheap)
-- review (extra)
-- outcome
-- maybe time or success mark
+### Section 02 — BEFORE ANY CODE
+Purpose:
+Explain that the planner writes one brief per file / task, and that the implementer only sees its own brief.
 
-Generate the example rows yourself.
-The rows should communicate the product model-routing concept clearly.
+Design direction:
+- one large terminal / document block showing `tasks.md` or a task brief
+- one elegant text block explaining the concept
+- strong supporting manifesto phrase such as:
+  "ONE FILE. ONE BRIEF. NOTHING ELSE."
+- the section should feel spacious and clear, not crowded
 
-Include routes like:
-- Claude + Fable -> OpenCode + DeepSeek -> Codex + GPT-5.6
-- and other believable combinations
-
-But vary them intelligently.
-Do not make them repetitive or fake-looking.
-
-The examples should feel like realistic workflows for:
-- auth feature
-- bug investigation
-- docs / guides
-- refactor
+Content ideas:
+- task id
+- action
+- file path
+- dependencies
+- implementation steps
 - tests
-- API client
-- migration
-- UI pass
+- scope / boundaries
+- escalation conditions
+- evidence requirements
+
+The brief panel should look believable and useful, not decorative.
+
+### Section 03 — AFTER EVERY TASK
+Purpose:
+Explain that every task is validated after execution.
+
+Design direction:
+- a clean terminal log / validation transcript
+- visible progression like:
+  spec -> plan -> briefs -> build -> verify
+- show failure / retry / pass logic
+- use small accents of green and muted red/orange only when useful
+- preserve the same dark, quiet, technical mood
+
+Content ideas:
+- implementer writes file(s)
+- typecheck runs
+- lint runs
+- tests run
+- failure occurs
+- retry occurs
+- optional escalation occurs
+- evidence saved
+
+This section should explain the loop:
+validate -> retry -> escalate -> keep evidence.
+
+### Section 04 — CONTROL / RULES / OUTCOMES
+Purpose:
+Explain what the user controls and what splitbrief guarantees.
+
+Design direction:
+- not a normal feature grid
+- more like an editorial support section
+- combine small lists, rules, short manifesto lines, and compact system notes
+- this can be lighter and more typographic
+
+Possible content:
+- your tools
+- your models
+- your rules
+- spend limits
+- review thresholds
+- escalation behavior
+- evidence retention
+- contracts over context
+- smaller loops, better output
+
+A closing line can be something like:
+"YOU DESCRIBE THE GOAL. SPLITBRIEF HOLDS THE REST."
+or
+"SMALLER LOOPS. HIGHER CONFIDENCE."
 
 ---
 
 ## Layout guidance
 
-Overall layout should be asymmetrical and airy.
+Keep the page airy and asymmetric.
+Each section should feel related, but not mechanically identical.
 
-Suggested structure:
-1. Minimal top nav
-   - tiny brand: orch
-   - tiny links such as docs / github / x
-2. Hero manifesto statement
-3. ASCII orchestration diagram with plan.md
-4. Minimal install CTA
-5. Example routes section
-6. Small lower manifesto / support copy
+Use variation in composition:
+- one section can be text-left / panel-right
+- another can be panel-left / text-right
+- another can be more distributed and typographic
 
-The page should feel complete,
-but do not overbuild it.
-Fewer sections, stronger composition.
+Do not stack identical section templates.
+
+Spacing matters:
+- give sections room to breathe
+- preserve emptiness
+- use restraint
+- let micro-elements support the main story
 
 ---
 
-## Brand tone
+## Copy guidance
 
-Voice:
-- confident
-- technical
-- concise
+Tone:
 - calm
-- no startup cliché language
+- technical
+- direct
+- confident
+- no startup clichés
+- no hype language
 
-Avoid phrases like:
+Avoid words like:
 - revolutionary
 - seamless
-- cutting-edge
-- unlock your productivity
 - next-generation
-- supercharge your workflow
+- cutting-edge
+- unlock productivity
+- supercharge your team
 
 Prefer language like:
-- route work
-- structured plan
-- lower cost
-- real software
-- better output
-- shared direction
-- useful systems
-- orchestration
+- brief
+- contract
+- validate
+- retry
+- escalate
+- evidence
+- plan
+- execute
+- review
+- lower spend
+- real output
+- fewer blind spots
+
+Write concise, believable, tool-native copy.
 
 ---
 
-## Final quality check
+## Important design check
 
-Before finishing, check:
-- Does this look too much like a generic AI product page?
-- Does it rely too much on obvious terminal clichés?
-- Is it too close to an existing “local AI code review” aesthetic?
-- Is there enough whitespace and tension?
-- Does the page communicate the actual product clearly?
-- Do the route examples help explain the idea?
-- Are the ASCII entities elegant rather than gimmicky?
+Before finalizing, check:
 
-Refine until it feels like a premium, design-forward landing page for a real developer tool.
+- Does the continuation still feel like the same site as the hero?
+- Does the background feel intentional rather than empty or random?
+- Are the lower sections as art-directed as the hero?
+- Did the page avoid becoming "slop"?
+- Are the terminal/document panels believable and useful?
+- Do the sections explain the product clearly?
+- Is there enough variation without losing coherence?
+- Are borders/rules used sparingly and meaningfully?
 
-Produce the final landing page.
+Refine until the full page feels like one coherent, premium, design-forward landing page.
+
+Continue the current page and produce the next sections in the same style.
+
+---
+
+# Owner rulings (2026-09-09, on top of the prompt)
+
+1. **Page structure = the reference render:** hero → 02 BEFORE ANY CODE → 03 AFTER EVERY TASK → 04 CONTROL / RULES / OUTCOMES → footer. The current routes table, manifesto, ladder, record and brief-sheet sections are removed; the `.splitbrief/` evidence tree from the record folds into 04 as "evidence retention".
+2. **Hero untouched** except the nav step anchors (`01 HERO / 02 BRIEFS / 03 VALIDATION` per the render, linking to the sections) and the footer replaced by the render's (`splitbrief°` + `BUILDS BETTER SOFTWARE.` left · `[ docs ] [ github ]` + `PLANS / EXECUTES / REVIEWS` right).
+3. **Background and scroll:** the background is fuller and more alive than the current one — the aura is a system, animated, and the page is not a plain scrolling document: sections and their panels reveal and load with intent as the reader scrolls (scroll-driven choreography under one concept, `prefers-reduced-motion` honoured, no scroll-jacking, no layout thrash). The designer thinks this through and records the concept; the spec builds it.
+4. **No approval gates.** The whole route runs to a finished page; the owner tweaks afterwards.
+5. **FHD is a first-class tier:** the hero and every section must sit right inside a 1920×1080 fold, not merely scale up from 1440. Mobile (390) is a layout from the first phase, not a later pass; 1024 / 768 tiers hold.
+6. **Crew:** planner/orchestrator and critics are Fable (Claude Code session agents, one at a time); the implementer is `cursor-agent` with `cursor-grok-4.6-xhigh`, the code reviewer `cursor-grok-4.6-high` read-only, `--no-escalate` — Fable never writes site code. Opus is a Claude Code session agent (spec completeness review only), never a cursor seat.
+7. Repo rules stay: only `website/**` changes; never `git add` / `git commit` / `git stage`.
+8. **Visual comparison protocol is part of the spec (owner, 11:55).** After every phase the spec names a verification task that a Claude Code session agent OR a `cursor-agent` seat (when it can read images) performs the same way: open the phase's captures (1920-full, 1920-fold, 1440-full, 1440-fold, 390) and `reference-v2.png` (02, 03, footer) or the approved comp (04, aura), compare element by element against §16's geometry and copy tables, and write `visual-diff-<phase>.md` — one row per element: expected · measured · delta · verdict. Any delta beyond the tolerance §16 states (position ±3 %, size ±3 %, copy exact, colour by token) becomes a fix brief for the implementer; the phase re-enters the loop until every row is within tolerance or the fix cap is hit, in which case the residuals are listed and the owner runs further fix sessions from `visual-diff-<phase>.md`. A phase without its visual-diff file is not done.

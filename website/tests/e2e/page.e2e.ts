@@ -1,7 +1,7 @@
 import { gzipSync } from 'node:zlib';
 import { expect, type Locator, type Page, test } from '@playwright/test';
 
-const FAMILIES = ['Bodoni Moda', 'JetBrains Mono', 'Space Mono'];
+const FAMILIES = ['Bodoni Moda', 'JetBrains Mono'];
 const LEDE =
   'splitbrief runs two coding tools against one job — three when another lab reviews. The stronger one plans and reviews, the cheaper one executes — and splitbrief holds the contract between them.';
 
@@ -46,7 +46,7 @@ async function fontLoaded(page: Page, family: string): Promise<boolean> {
   );
 }
 
-test('the three families are loaded', async ({ page }) => {
+test('the two families are loaded', async ({ page }) => {
   await open(page);
   for (const family of FAMILIES) {
     expect(await fontLoaded(page, family), family).toBe(true);
@@ -158,4 +158,12 @@ test('ships under 90 KB gzipped of JavaScript, 16 KB of it our own', async ({ pa
   const vendor = await gzipped(scripts.vendor);
   expect(own).toBeLessThanOrEqual(16_000);
   expect(own + vendor).toBeLessThanOrEqual(90_000);
+});
+
+test('the hero fold at 1920', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await open(page);
+  expect(
+    await page.locator('.works').evaluate((el) => el.getBoundingClientRect().bottom),
+  ).toBeLessThanOrEqual(1080);
 });

@@ -91,7 +91,7 @@
     display: none;
   }
 
-  .links {
+  .nav .links {
     flex: none;
     gap: var(--s-3);
     white-space: nowrap;

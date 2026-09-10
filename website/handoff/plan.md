@@ -1,31 +1,51 @@
-# Nuke Preflight — nuke-spec (light) → nuke-exec
+# Nuke Itinerary — website v2: lower page after the reference render — 2026-09-09 11:41
+run_dir: .nuke/2026-09-09-114149-creative-website-v2 · pointer: .nuke/current-website-v2-run
+source: prompt.md (owner prompt + 7 rulings) · reference-v2.png (1122×1402) · current-1440.png · website/DESIGN.md (§0–§15) · website/HANDOFF.md
+scope: website/** only (zero changes outside) · mode: light everywhere · sequential — ONE agent at a time, never parallel (usage-window cuts must be resumable)
+decisions: structure = reference (hero → 02 → 03 → 04 → footer; routes/manifesto/ladder/record/brief-sheet removed) · hero untouched except nav anchors + footer · fuller animated aura + scroll choreography (one concept) · FHD 1920×1080 first-class tier + mobile from phase 1 · no approval gates · impl cursor:cursor-grok-4.6-xhigh · review cursor:cursor-grok-4.6-high · --no-escalate · critics fable fresh per phase · opus = session agent for spec completeness only
 
-feature: static marketing site for SPLITBRIEF under `website/` (separate from the CLI build), art-directed after `.nuke/website-prompt.md` + `reference.png` (the "orch" comp), with animated ASCII agent ghosts
-source: `.nuke/website-prompt.md` (product renamed orch → splitbrief), `reference.png` (visual target), README / docs/MENTAL-MODEL.md / docs/VISION.md (copy truth)
-scope area: `website/**` only — zero changes to `src/`, configs, or gates
-mode: light (spec) → exec sequential, one implementer at a time (user constraint: usage limits, 5h windows)
-run_dir: .nuke/2026-09-06-225118-spec-website
+| # | Stage | Skill(s) | Agent | Session | Expects | Status |
+|---|---|---|---|---|---|---|
+| 0 | materialize run dir, prompt, references, ledger | nuke-pilot | orchestrator | this | plan.md · exec-progress.md · exec.md | done |
+| 1 | design sheet v2: DESIGN.md §16 (02 / 03 / 04 / footer / aura system / scroll choreography / tiers incl. ≥1600 FHD + 390) with exact geometry at 1920 and 1440, copy verbatim, tokens reused; three-direction divergence for 04 + scroll concept recorded; static comp of 04 + aura rendered at 1920×1080, 1440×900, 390 | nuke-creative (light) + nuke-design (build half) + frontend-design | fable ×1 | this | `design-notes.md` · `comps/lower-page.html` + `comps/lower-{1920,1440,390}.png` + 1920 folds · `website/DESIGN.md` §16 (+ §2/§8/§9/§10/§15 marked) | pending |
+| 1r | fresh design critic: renders vs reference-v2 + prompt, tell-walk 1–10, ≥ 8 on the comp and on §16's completeness for a brief-only implementer | nuke-design (verification half) + nuke-creative | fable ×1 (fresh) | this | `design-critique-1.md`; fix cycle by a fresh designer if < 8, cap 2 | pending |
+| 2 | spec.md: REQ-###, phases P1–P6, ONE FILE PER TASK (splitbrief brief granularity), every Accept mechanically checkable, gates incl. shots at 1440 / fold / 390 / 1920 / 1920-fold, executor context self-contained (grok loads no skills — everything a brief needs is quoted from §16) | nuke-spec (light) | fable architect ×1 | this | `requirements.md` · `spec.md` | pending |
+| 2r | completeness review + fix in ONE pass (every REQ mapped, Accepts checkable, one file per task, §16 quoted not referenced): the reviewer edits spec.md directly, records what it changed | nuke-spec Phase 3 reviewer | fable ×1 (one-shot review+fix; owner 14:20) | this | `spec-review-1.md` · ACCEPT | pending |
+| 3.P1 | markup + old sections removed + nav anchors + footer + shots 1920 + e2e scaffolding + mobile order | splitbrief (`impl=cursor:cursor-grok-4.6-xhigh review=cursor:cursor-grok-4.6-high --no-escalate`) | fable orchestrator ×1 → grok per brief | this | `.splitbrief/runs/<ts>-web-v2-p1/` CLEAN · shots p1-* | pending |
+| 3.P1c | fresh critic on p1 shots (1920 / 1440 / 390) — ≥ 8 or fix briefs (cap 2) | nuke-design | fable ×1 | this | `critique-p1.md` | pending |
+| 3.P2 | section 02 BEFORE ANY CODE | splitbrief | fable → grok | this | run CLEAN · shots p2-* | pending |
+| 3.P2c | critic | nuke-design | fable | this | `critique-p2.md` | pending |
+| 3.P3 | section 03 AFTER EVERY TASK | splitbrief | fable → grok | this | run CLEAN · shots p3-* | pending |
+| 3.P3c | critic | nuke-design | fable | this | `critique-p3.md` | pending |
+| 3.P4 | section 04 CONTROL / RULES / OUTCOMES + footer | splitbrief | fable → grok | this | run CLEAN · shots p4-* | pending |
+| 3.P4c | critic | nuke-design | fable | this | `critique-p4.md` | pending |
+| 3.P5 | aura system v2 + scroll choreography (fragments pool v2, dotted fields, traces, keep-clear, reveals, reduced motion) | splitbrief | fable → grok | this | run CLEAN · shots p5-* (+ scrolled frames) | pending |
+| 3.P5c | critic (motion recording + stills) | nuke-design | fable | this | `critique-p5.md` | pending |
+| 3.P6 | tiers 1920 / 1440 / 1024 / 768 / 390 + craft pass + a11y floor | splitbrief | fable → grok | this | run CLEAN · shots p6-* | pending |
+| 3.P6c | critic — whole page, every tier | nuke-design | fable | this | `critique-p6.md` | pending |
+| 4 | nuke-verify vs spec.md (intent) + final sweep + HANDOFF.md/README/handoff mirror | nuke-verify | fable ×1 | this | `verify.md` CLEAN · HANDOFF.md | pending |
 
-## Clarifications (answered 2026-09-06)
-1. Install CTA → `$ npm install -g splitbrief` (future install line; package not on npm yet — accepted)
-2. Hero artifact → `tasks.md`, labelled TASK BRIEF (the product's contract; not plan.md)
-3. Wordmark + tagline → `splitbrief°` + ONE PLANS. / ONE EXECUTES. / ONE CONTRACT.
-4. Fonts → Google Fonts CDN: Instrument Serif (display), JetBrains Mono (labels/body), Space Mono (wide manifesto face)
+## Resume rule (binding for every session that picks this up)
+Read `.nuke/current-website-v2-run` → this dir → `exec-progress.md`. Take the first stage not `done`. Re-read `prompt.md` and `website/DESIGN.md` §16 before dispatching. A cut agent usually leaves finished work on disk: verify gates + shots + DESIGN diffs first, write the verified state into `exec-progress.md`, then dispatch a fresh agent FROM THAT STATE, never from zero. Log every usage-window cut with its reset time in the ledger.
 
-## Tiers (user-mandated)
-- spec phases (requirements / design / architect): in-session (fable)
-- spec completeness reviewer: opus (worker)
-- implementers: **fable** for every phase that touches the render (all of them — design quality is the ask); opus only for non-visual chores (screenshot script)
-- critics: fable, fresh context, judge screenshots vs `reference.png`
-- one agent at a time; the user's usage window may cut a run — progress lives in `exec-progress.md`, resume from first non-done phase
+## Process rules
+- One agent at a time. Agents return summaries + artifact paths; the orchestrator opens PNGs itself (Read) before marking a visual stage done.
+- Implementer = grok via `cursor-agent` only; Fable never edits `website/` source. A critic's findings become briefs, not edits.
+- Gates for every splitbrief run (from `website/`): `npm run typecheck` · `npm run lint` · `npm test` · `npm run build` · `npm run e2e` · `SHOT_DIR=<run>/shots SHOT_TAG=<tag> npm run shots` (1440-full · fold · 390 · **1920-full · 1920-fold**) · `git status --porcelain` shows only `website/` paths · `grep -ri orch website/index.html website/src -l` empty.
+- Never `git add` / `git commit` / `git stage`.
+- **Brief granularity (owner, 11:52):** one brief = one file, target ≤ 200 lines. One stylesheet per section, one feature module per file; `index.html` gets sequential briefs per section, each carrying the file's current code verbatim. A brief holds ONLY its own §16 slice, its strings verbatim, the current code verbatim and the neighbouring signatures it calls — never the whole sheet, never the spec. Constraints carry the coding standard explicitly (tokens only from tokens.css, no comments, no `!`/`as`/`any`, no barrels, no cross-feature imports, `text-wrap`, container queries, reduced-motion, line caps). Gates + drift after every brief. The spec's tasks are cut to this size so the orchestrator never has to re-split.
+- **Visual comparison protocol (owner, 11:55; prompt.md ruling 8):** every phase ends with `visual-diff-<phase>.md` (element · expected · measured · delta · verdict) written by the critic from the captures vs `reference-v2.png` / the comp per §16's tables; deltas beyond tolerance → fix briefs to grok; residuals after the cap are listed for the owner's follow-up sessions. The spec writes this task per phase so a Claude Code agent or a cursor-agent seat can run it verbatim.
+- **Owner ruling 15:35 — Fable usage budget:** NO per-phase Fable critic. Per-phase review = the cursor reviewer seat only (`cursor-grok-4.6-high`, read-only, evidence-bound) — it also performs the ruling-8 visual-diff when it can read the captures; otherwise the visual-diff waits for the end. ONE Fable critic/verify pass at the very end (after P6: nuke-verify + one render critique over the whole page, every tier → fix briefs to grok, cap 2). The phase-orchestrator Fable agents stay (they compile briefs and drive grok). Stages 3.P1c–3.P6c are folded into stage 4.
+- **Owner ruling 16:10 — phase orchestrators on Opus:** from P1b on, every phase/run orchestrator subagent (the one that compiles briefs, spawns `cursor-agent`, gates, drifts, reviews) runs on **opus**, not Fable. Pattern: one opus subagent per run (or per brief group when a run exceeds ~8 briefs) → it babysits grok brief by brief → hands back → the next opus subagent. Fable is reserved for the main session (routing, ledger, rulings) and the single end-of-build critique/verify pass. P1a stays on its running Fable agent.
+- **Owner ruling 17:10 — parallel grok where files are disjoint:** the one-implementer-at-a-time rule is lifted for briefs that touch DISJOINT files with no `depends_on` between them. The orchestrator may spawn up to 3 `cursor-agent` implementers at once on disjoint files; gates run once after the batch lands (typecheck/lint/test/e2e from `website/`), the drift check treats every file of the running batch as allowed; a red gate is attributed by re-running per file if needed. Same-file briefs (index.html ×N, main.css imports) stay sequential and go last in their run. Across phases: P2, P3, P4 run in PARALLEL as three runs (three opus orchestrators, disjoint sheets + e2e files), with each phase's `main.css` import brief serialized after all three land (one brief). P5a's pure modules may batch in parallel; P5b wiring stays sequential.
+- **Owner ruling 17:14 — widen parallelism:** no cap of 3. Any briefs (and any runs/phases) with no `depends_on` chain between them run concurrently — the ONLY serialization constraint is the same file (two implementers never write one file). Independent runs overlap freely: P2 / P3 / P4 / P5a-modules may all run at once once P1b's markup has landed; P5b wiring and P6 after their inputs. Each concurrent run has its own opus orchestrator and its own splitbrief run dir; gates are run per batch, drift allows every file of every running batch (register them in `.splitbrief/lanes.json` under `web-v2`).
+- **Orchestrator ruling 18:09 — cross-lane gate attribution:** `npm run lint` / `npm test` run whole-package, so with four concurrent lanes any lane can redden another's gate. A brief fails a gate ONLY on diagnostics whose file is in its own changed set; diagnostics on another lane's file are recorded `other-lane (blocked)` and the brief waits for that lane (never fails, never gets fixed by the wrong lane). Phase-exit gates and capture runs are taken in an announced quiet window: the orchestrator tells the other lanes, waits until every live run reports no brief in flight, then gates.
+- **Orchestrator ruling 18:20 — attribution for whole-page e2e failures:** the file-attribution rule keys on the file a diagnostic names, which works for lint/typecheck but not for an e2e test whose subject is the whole rendered page. For those, attribute to the lane owning the measured CAUSE (the elements/rules producing the failure), never to the owner of the spec file. When the cause is a wiring step another lane's brief will perform, the brief is `blocked — waiting on <lane>/<brief>`, no attempt charged, and the phase exit re-runs the gate. A red is never waived.
+- **Owner ruling 20:15 — implementer model:** every implementer spawned from now on uses `cursor-grok-4.6-xhigh-fast` (not `cursor-grok-4.6-xhigh`). Briefs already in flight finish on the model they started with. Reviewer seat stays `cursor-grok-4.6-high`.
 
-## Gates (website/ has none in the repo — bootstrapped by the spec)
-| path | check |
-|---|---|
-| `website/**` | `website/scripts/shot.sh <out>` renders 1440-full / 1440-fold / 390-full PNGs without error; `website/scripts/check.sh` — html validity (no unclosed tags via node DOM parse), no console errors in headless run, no horizontal overflow at 390 |
-
-## Tooling
-- screenshots: `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new` (v152) — verified working; `--virtual-time-budget=N` advances animations
-- chrome-devtools MCP available for interactive checks (mcp__chrome-devtools__*)
-
-estimate: 6 build phases × (1 implementer + 1 critic + ≤2 fix cycles) ≈ 14–24 agents, sequential
+## Owner ruling 23:25 — overnight autonomy + a nuke-review stage
+- The owner is asleep. Orchestrate to the end without questions; every decision that would have been a ruling is taken by the orchestrator on the evidence and recorded in exec.md.
+- Stage order to the finish: P5b exit (F002, captures, REQ-015, review) → P6 (tiers, craft, a11y, docs) → **stage 3.5 NEW: nuke-review by cursor grok agents** → stage 4 verify + one render critique + fixes → HANDOFF.
+- **Stage 3.5 (new):** run `nuke-review` over the whole `website/` diff with cursor-agent grok seats (read-only, `--mode plan`), split by dimension so each seat holds a small context: (a) correctness + logic, (b) structure + conventions vs DESIGN §13 and the repo rules, (c) CSS/render quality vs §16, (d) tests — do they assert the requirement or the implementation. Findings are collected into `RUN/nuke-review-findings.md`, deduped, and every Critical/Major becomes a splitbrief fix brief executed by `cursor-grok-4.6-xhigh-fast`; Minors go to residuals. Cap 2 fix cycles, then re-review the changed files only.
+- Fable is used ONLY for the single render critique in stage 4. Everything else is opus orchestration + grok implementers/reviewers.
+- **Owner ruling 23:30, CORRECTED 23:36 — the brief ceremony is dropped for NUKE-REVIEW ONLY:** findings from stage 3.5 are handed straight to a `cursor-agent` (`cursor-grok-4.6-xhigh-fast`) seat as a direct instruction in the spawn prompt (the finding text, the file, what to verify, the repo rules) — no nine-section Task Brief. All OTHER work, including the remaining P5b/P6 changes, keeps the normal splitbrief brief format. The orchestrator's first reading, that briefs were dropped everywhere, was wrong and is void.

@@ -1,0 +1,124 @@
+.aura {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+.dots {
+  position: absolute;
+  display: block;
+}
+.dots--skyline {
+  left: calc((100% - min(var(--content-max), 100% - 2 * var(--gutter))) / 2);
+}
+.dots--desk {
+  left: calc(
+    (100% + min(var(--content-max), 100% - 2 * var(--gutter))) /
+    2 -
+    var(--rail) +
+    var(--s-2)
+  );
+}
+.dots--gutter {
+  display: none;
+  left: calc((100% + min(var(--content-max), 100% - 2 * var(--gutter))) / 2 + var(--s-6));
+}
+.aura .fragment {
+  position: absolute;
+  font-size: var(--text-micro);
+  line-height: 16px;
+  color: var(--ink-4);
+  white-space: pre;
+}
+.stop {
+  position: absolute;
+  left: calc(
+    (100% + min(var(--content-max), 100% - 2 * var(--gutter))) /
+    2 -
+    var(--rail) +
+    var(--s-2)
+  );
+  font-size: var(--text-micro);
+  line-height: 16px;
+  letter-spacing: 0;
+  color: var(--ink-4);
+  white-space: nowrap;
+}
+.stop::before {
+  content: "";
+  position: absolute;
+  right: calc(100% + 5px);
+  top: 8px;
+  width: 6px;
+  height: 1px;
+  background: var(--ink-3);
+}
+.rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 0;
+  width: 1px;
+  right: calc((100% - min(var(--content-max), 100% - 2 * var(--gutter))) / 2 + var(--rail));
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, var(--ink-4) 0 4px, transparent 4px 8px);
+  container-type: size;
+  view-timeline: --rail block;
+}
+.rail .spark {
+  display: none;
+  position: absolute;
+  left: -2px;
+  top: 0;
+  width: 5px;
+  height: 5px;
+  background: var(--white-spark);
+  opacity: 0.85;
+}
+.rail .spark::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  bottom: 100%;
+  width: 1px;
+  height: 20px;
+  background: linear-gradient(to top, var(--ink-3), transparent);
+}
+@supports (animation-timeline: view()) {
+  .rail .spark {
+    display: block;
+    animation: ride linear both;
+    animation-timeline: --rail;
+    animation-range: contain 0% contain 100%;
+  }
+}
+@keyframes ride {
+  to {
+    translate: 0 calc(100cqh - 5px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rail .spark {
+    animation: none;
+    display: none;
+  }
+}
+@media (min-width: 1600px) {
+  .dots--gutter {
+    display: block;
+  }
+}
+@media (max-width: 1359px) {
+  .rail,
+  .stop,
+  .dots--desk {
+    display: none;
+  }
+}
+@media (max-width: 767px) {
+  canvas.dots,
+  .aura .fragment {
+    display: none;
+  }
+}

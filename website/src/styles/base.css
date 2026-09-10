@@ -16,15 +16,6 @@
   line-gap-override: 0%;
 }
 
-@font-face {
-  font-family: "Space Mono Fallback";
-  src: local("Menlo"), local("Courier New");
-  size-adjust: 101.65%;
-  ascent-override: 110.18%;
-  descent-override: 35.51%;
-  line-gap-override: 0%;
-}
-
 *,
 ::before,
 ::after {
@@ -33,6 +24,12 @@
 
 :root {
   color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
 }
 
 body {
@@ -117,10 +114,6 @@ button {
   cursor: pointer;
 }
 
-table {
-  border-collapse: collapse;
-}
-
 canvas {
   display: block;
 }
@@ -155,10 +148,6 @@ section > :is(.eyebrow, .claim) {
   margin: 0 auto;
   border: 0;
   border-top: 1px solid var(--hair);
-}
-
-.rule--short {
-  width: calc(min(var(--content-max), 100% - 2 * var(--gutter)) / 12 * 8 - var(--s-6) / 3);
 }
 
 .visually-hidden {

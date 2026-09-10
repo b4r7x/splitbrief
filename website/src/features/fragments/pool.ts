@@ -1,3 +1,5 @@
+import type { Layer } from './place';
+
 export const POOL: readonly string[] = [
   'brief -> implementer',
   'typecheck · lint · test',
@@ -20,3 +22,106 @@ export const POOL: readonly string[] = [
   'hash ok',
   'worktree',
 ];
+
+export const GUTTER_GLYPHS: readonly string[] = ['∴', '°', '×', '→'];
+
+export const POOL_BRIEFS: readonly string[] = [
+  'const brief = compile(spec)',
+  'one file per brief',
+  'brief -> implementer',
+  'depends_on: [T001]',
+  'fresh context',
+  'no memory of the last one',
+  'in bounds · out of bounds',
+  'stop and ask',
+  'contract blocked',
+  'T1 ✓',
+  'T2 ▸',
+  '( 39%, 46% )',
+  '//',
+  '∴',
+  '· · · · · · · · ln 36',
+  '· · · · · · · · · · · · col 1',
+  '· · · · · · · · · · T002',
+];
+
+export const POOL_VALIDATION: readonly string[] = [
+  'validate(task)',
+  'typecheck · lint · test',
+  'while (red) retry()',
+  'retry(3) -> escalate',
+  'first failure',
+  'attempt 2/3',
+  '412ms',
+  'evidence saved',
+  'not its own judge',
+  'promote(diff)',
+  'hash ok',
+  '→',
+  '×',
+  '· · · · · · · · · · · · 14:28:16',
+  '· · · · · · · · 47s',
+  '· · · · · · · · · · 3/3',
+];
+
+export const POOL_CONTROL: readonly string[] = [
+  'max_budget: 5.00',
+  'pause at 85 %',
+  'snapshot: pre_task',
+  'state.json',
+  'session.jsonl',
+  'append-only',
+  'less context',
+  'more progress',
+  'lower spend',
+  'fewer blind spots',
+  'real software',
+  'smaller loops',
+  'higher confidence',
+  '0x2f 0x62 0x72 0x69 0x65 0x66',
+  'seed 8088',
+  '[ 3 / 7 ]',
+  '°',
+  '∴',
+  'worktree',
+  '· · · · · · · · · · · · 85 %',
+  '· · · · · · · · 5.00 usd',
+  '· · · · · · · · · · 3 seats',
+];
+
+export const HERO: Layer = {
+  pool: POOL,
+  seed: 8088,
+  opacity: { min: 0.18, max: 0.35 },
+  lineGap: 0,
+  gutterGlyphs: [],
+  glyphHeight: 11,
+  textGap: { x: 18, y: 0 },
+};
+export const BRIEFS: Layer = {
+  pool: POOL_BRIEFS,
+  seed: 8152,
+  opacity: { min: 0.16, max: 0.28 },
+  lineGap: 96,
+  gutterGlyphs: GUTTER_GLYPHS,
+  glyphHeight: 16,
+  textGap: { x: 24, y: 24 },
+};
+export const VALIDATION: Layer = {
+  pool: POOL_VALIDATION,
+  seed: 9400,
+  opacity: { min: 0.16, max: 0.28 },
+  lineGap: 96,
+  gutterGlyphs: GUTTER_GLYPHS,
+  glyphHeight: 16,
+  textGap: { x: 24, y: 24 },
+};
+export const CONTROL: Layer = {
+  pool: POOL_CONTROL,
+  seed: 8490,
+  opacity: { min: 0.16, max: 0.28 },
+  lineGap: 96,
+  gutterGlyphs: GUTTER_GLYPHS,
+  glyphHeight: 16,
+  textGap: { x: 24, y: 24 },
+};

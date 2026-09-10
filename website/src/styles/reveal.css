@@ -1,0 +1,129 @@
+@media (prefers-reduced-motion: no-preference) {
+  html.js .lower section:not(.is-in) :is(.reveal, .lines li, .tree .row) {
+    opacity: 0;
+  }
+  html.js .lower .is-in .reveal {
+    animation: enter 480ms ease-out both;
+    animation-delay: calc(var(--enter) * 60ms);
+  }
+  .lower .reveal {
+    --enter: 0;
+  }
+  .lower .title .line,
+  .lower .panel {
+    --enter: 1;
+  }
+  .lower .sub,
+  .lower .bar {
+    --enter: 2;
+  }
+  .lower .tick-list {
+    --enter: 3;
+  }
+  .s02 .notes > p:nth-of-type(1) {
+    --enter: 4;
+  }
+  .s02 .notes > p:nth-of-type(2) {
+    --enter: 5;
+  }
+  .s02 .notes > p:nth-of-type(3) {
+    --enter: 6;
+  }
+  .s02 .notes > p:nth-of-type(4) {
+    --enter: 7;
+  }
+  .s03 .notes > p:nth-of-type(1) {
+    --enter: 4;
+  }
+  .s03 .notes > p:nth-of-type(2) {
+    --enter: 6;
+  }
+  .s03 .steps {
+    --enter: 7;
+  }
+  .s04 .breath .line:nth-child(1) {
+    --enter: 2;
+  }
+  .s04 .breath .line:nth-child(2) {
+    --enter: 3;
+  }
+  .s04 .breath .line:nth-child(3) {
+    --enter: 4;
+  }
+  .s04 .breath .line:nth-child(4) {
+    --enter: 5;
+  }
+  .s04 .lead {
+    --enter: 6;
+  }
+  .s04 .callout:nth-child(1) {
+    --enter: 6;
+  }
+  .s04 .callout:nth-child(2) {
+    --enter: 7;
+  }
+  .s04 .callout:nth-child(3) {
+    --enter: 8;
+  }
+  .s04 .creed {
+    --enter: 7;
+  }
+  .lower .marg,
+  .lower .marg-list {
+    --enter: 8;
+  }
+  html.js .lower .is-in .lines li {
+    animation: enter 240ms ease-out both;
+    animation-delay: calc(120ms + var(--row) * 12ms);
+  }
+  html.js .s03.is-in .lines li {
+    animation-delay: calc(120ms + var(--row) * 90ms + var(--beat) * 240ms);
+  }
+  html.js .lower .is-in .tree .row {
+    animation: enter 240ms ease-out both;
+    animation-delay: calc(360ms + var(--row) * 30ms);
+  }
+  html.js .lower .is-in .lines::before {
+    animation: draw 432ms linear both;
+    animation-delay: 120ms;
+    transform-origin: top;
+  }
+  html.js .s03.is-in .lines::before {
+    animation-duration: 2130ms;
+  }
+  html.js .lower .is-in :is(.tick-list, .marg-list, .callout)::before {
+    animation: tick 240ms ease-out both;
+    animation-delay: calc(var(--enter) * 60ms);
+    transform-origin: top;
+  }
+  html.js .lower .is-in .stop::before {
+    animation: flare 400ms linear both;
+  }
+  @keyframes draw {
+    from {
+      scale: 1 0;
+    }
+    to {
+      scale: 1 1;
+    }
+  }
+  @keyframes tick {
+    from {
+      scale: 1 0;
+    }
+    to {
+      scale: 1 1;
+    }
+  }
+  @keyframes flare {
+    0% {
+      background: var(--ink-3);
+    }
+    15% {
+      background: var(--white-spark);
+    }
+    100% {
+      background: var(--ink-3);
+    }
+  }
+}

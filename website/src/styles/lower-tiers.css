@@ -1,0 +1,87 @@
+@media (max-width: 1359px) {
+  .s02 .grid,
+  .s03 .grid {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+  }
+
+  .grid > .head {
+    grid-column: 1 / 7;
+    grid-row: 1;
+  }
+
+  .grid > .panel {
+    grid-column: 1 / 8;
+    grid-row: 2;
+    margin-top: var(--s-8);
+  }
+
+  .grid > .notes {
+    grid-column: 8 / 13;
+    grid-row: 2;
+    margin-top: var(--s-8);
+  }
+
+  .marg,
+  .marg-list {
+    display: none;
+  }
+
+  .tick-list {
+    margin-top: var(--s-6);
+  }
+}
+
+@media (max-width: 1023px) {
+  .grid > .panel {
+    grid-column: 1 / -1;
+  }
+
+  .grid > .notes {
+    grid-column: 1 / 9;
+    grid-row: 3;
+  }
+}
+
+@media (max-width: 767px) {
+  .s02,
+  .s03 {
+    padding-block: var(--s-6) var(--s-12);
+  }
+
+  .grid > .head,
+  .grid > .panel,
+  .grid > .notes {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+
+  .grid > .panel {
+    margin-top: var(--s-6);
+  }
+
+  .grid > .notes {
+    margin-top: var(--s-8);
+    padding-top: 0;
+  }
+
+  .notes p {
+    max-width: none;
+  }
+
+  .tick-list {
+    margin-top: var(--s-6);
+  }
+
+  .tick-list br {
+    display: none;
+  }
+
+  .tick-list br + .line::before {
+    content: " · ";
+    color: var(--ink-4);
+  }
+
+  .s02 .notes p.caps:nth-of-type(2) {
+    display: none;
+  }
+}

@@ -1,0 +1,29 @@
+.s02 .marg-a {
+  top: 96px;
+}
+.s02 .marg-list {
+  top: 169px;
+}
+.s02 .marg-b {
+  top: 422px;
+}
+.s02 .stop {
+  top: 17px;
+}
+.s02 .dots--skyline {
+  bottom: 24px;
+}
+.s02 .dots--desk {
+  top: 356px;
+}
+@media (min-width: 1600px) {
+  .s02 .marg-a {
+    top: 104px;
+  }
+  .s02 .marg-list {
+    top: 177px;
+  }
+  .s02 .marg-b {
+    top: 438px;
+  }
+}
