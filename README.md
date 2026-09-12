@@ -150,10 +150,11 @@ export SPLITBRIEF_CONTEXT_LENGTH=32768
 | `splitbrief spec "feature"` | Generate Task Brief transport and supporting planning artifacts only, no implementation |
 | `splitbrief init` | Create config, auto-detect available models |
 | `splitbrief doctor` | Check run readiness — config, runners, credentials, repo — without starting a workflow |
+| `splitbrief review` | Review the working-tree diff in one reviewer call — no session, no planning |
 | `splitbrief resume` | Resume an interrupted workflow |
 | `splitbrief status` | Show current workflow state |
 
-Those are the ones you need first. The full set — `ps`, `stats`, `export`, `explain`, `handoff`, `snapshot`, `approval`, `worktree`, `attach`, `detach`, `continue`, `last`, `mcp` — is in [docs/CLI-REFERENCE.md](./docs/CLI-REFERENCE.md).
+Those are the ones you need first. The full set — `approval`, `continue` — is in [docs/CLI-REFERENCE.md](./docs/CLI-REFERENCE.md).
 
 `start` and `spec` both take `--mode quick|standard|speckit`, which sets how much planning ceremony runs before the Task Briefs exist. The default is `standard`.
 
@@ -169,7 +170,7 @@ Those are the ones you need first. The full set — `ps`, `stats`, `export`, `ex
 | `/queue show` | Show queued messages |
 | `/queue clear` | Clear the message queue |
 
-Those are the ones you reach for mid-run. The full set — `/crew`, `/mode`, `/approval`, `/diff`, `/cost`, `/export`, `/handoff`, `/yolo` — is in [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md).
+Those are the ones you reach for mid-run. The full set — `/crew`, `/mode`, `/approval`, `/diff`, `/cost` — is in [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md).
 
 ## Configuration
 
@@ -204,7 +205,6 @@ workflow:
   approve: default
   git:
     commitStrategy: none
-  persistTranscript: true  # Save planner/user messages to session.jsonl for resume context
 ```
 
 `contextLength` should match the model's effective window after the provider itself is configured. 25% is reserved for output. Minimum 8192. Optional implementer profiles still keep one implementer role: SPLITBRIEF selects the cheapest capable profile for each Task Brief instead of becoming a multi-agent manager.
@@ -385,18 +385,16 @@ TypeScript 6.x, ESM only, Ink 6.8 + React 19 for the TUI. Tests are colocated wi
 
 ## Extensibility
 
-- **EventBus architecture** — engine emits typed `EngineEvent` values; UI, persistence, hooks, and observability subscribe as independent sinks. See [docs/ARCHITECTURE.md](https://github.com/b4r7x/splitbrief/blob/main/docs/ARCHITECTURE.md#eventbus).
-- **Workflow hooks** — fire shell commands or JS modules at workflow events (`pre_task`, `post_commit`, etc.). 2 built-ins: `prettier-on-change`, `block-secrets`. See [docs/HOOKS-CONFIG.md](https://github.com/b4r7x/splitbrief/blob/main/docs/HOOKS-CONFIG.md).
+- **EventBus architecture** — engine emits typed `EngineEvent` values; UI, persistence, and hooks subscribe as independent sinks. See [docs/ARCHITECTURE.md](https://github.com/b4r7x/splitbrief/blob/main/docs/ARCHITECTURE.md#eventbus).
+- **Workflow hooks** — fire shell commands at workflow events (`pre_task`, `post_commit`, etc.). See [docs/HOOKS-CONFIG.md](https://github.com/b4r7x/splitbrief/blob/main/docs/HOOKS-CONFIG.md).
 - **Repo-map context** — ranked symbol summary auto-injected into the planner prompt so it can compile a sharper Task Brief. Tree-sitter + PageRank + SQLite cache for fast incremental updates. See [docs/REPOMAP.md](https://github.com/b4r7x/splitbrief/blob/main/docs/REPOMAP.md).
 - **Headless mode** — `splitbrief start --json "feature"` emits each engine event as NDJSON to stdout and skips the TUI. Workflow review gates are auto-approved; file-write tiered sticky/confirm approvals fail closed unless their tiers allow the write.
-- **Advanced interop** — handoff packs and the MCP server expose read-only session artifacts for external tools; they are escape hatches, not the main execution path.
-- **OpenTelemetry** — opt-in span emission for workflow, phase, and task lifecycle with per-cost attributes. See [docs/OTEL.md](https://github.com/b4r7x/splitbrief/blob/main/docs/OTEL.md).
 
 ## Current state
 
 Primary development stack is TypeScript/JavaScript. Command-based validation also supports configured or detected Python, Go, and Rust pipelines.
 
-macOS and Linux only. Windows is not supported: the IPC server behind `splitbrief attach` / `splitbrief ps` and the snapshot path encoding both need POSIX semantics. Support is planned, not present.
+macOS and Linux only. Windows is not supported: the snapshot path encoding needs POSIX semantics. Support is planned, not present.
 
 ## Contributing
 

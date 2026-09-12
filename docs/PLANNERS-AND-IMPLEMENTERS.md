@@ -35,7 +35,7 @@ Non-CLI gates reuse the validation or admitted invocation already produced durin
 
 The reviewer joins that list when — and only when — `.splitbrief/config.yaml` carries a `reviewer` block: `prepareExecution()` adds it as a candidate under slot `{ role: 'reviewer' }`, and a failed admission is a blocker naming the Reviewer. With no block, `resolveReviewerRunner()` hands the seat to the planner and the planner instance is reused unchanged, so there is nothing extra to admit.
 
-Entry points express policy differences while sharing this boundary. Interactive CLI starts, Home, and Setup use disclosure/approval policy. JSON, RPC, and detached starts use headless policy, which denies unverified authentication unless the caller explicitly enables it. Resume reauthorizes the existing session's required runner contexts without creating another session. An attached TUI is only a client for a workflow already running elsewhere, so it uses an explicit attached route and does not perform local runner admission.
+Entry points express policy differences while sharing this boundary. Interactive CLI starts, Home, and Setup use disclosure/approval policy. JSON starts use headless policy, which denies unverified authentication unless the caller explicitly enables it. Resume reauthorizes the existing session's required runner contexts without creating another session.
 
 ---
 
@@ -98,7 +98,7 @@ The port carries no identity fields on purpose. No runner backend knows its own 
 
 ### Which calls the reviewer makes
 
-Exactly one: the final review of the run diff, dispatched from `runFinalReviewPhase()` (`src/engine/orchestrator/final-review.ts`) through `runReviewerCall()` (`src/engine/orchestrator/review-call.ts`). Every other strong-side call stays on the planner — the planning phases, `regenerate`, `escalateHint`, `escalateFull`, the planner estimate review, `summarize` / `summarizeStructured`, `injectUserTurn`, and brief recovery. `runPlannerReview` is still the planner's own review helper and still serves the estimate-review and planning-regeneration call sites; the reviewer has its own call path rather than changing that one.
+Exactly one: the final review of the run diff, dispatched from `runFinalReviewPhase()` (`src/engine/orchestrator/final-review.ts`) through `runReviewerCall()` (`src/engine/orchestrator/review-call.ts`). Every other strong-side call stays on the planner — the planning phases, `regenerate`, `escalateHint`, `escalateFull`, `summarize` / `summarizeStructured`, and `injectUserTurn`. `runPlannerReview` is still the planner's own review helper and still serves the speckit analysis and planning-regeneration call sites; the reviewer has its own call path rather than changing that one.
 
 A reviewer that fails mid-call is reported, not replaced: `reviewStatus: 'failed'`, the reviewer's display name in the error, final-review evidence recorded, summary still produced. There is deliberately no automatic fallback to the planner.
 
@@ -270,7 +270,7 @@ type ImplementerCapabilities = {
 
 It records **who holds the pen**, not which path is preferred.
 
-A brief **requires** a direct-write implementer only when its `scope.inBounds` / `scope.approvedOutOfBounds` bullets name a concrete path token beyond the task's own `file` — a token carrying a directory separator or a glob, extracted by `scopePathPatterns` in `src/utils/path-patterns.ts` (`requiredWriteModeForTask`, `src/engine/orchestrator/context-routing/decision.ts`). Scope bullets are prose: a bullet that only re-names the task file, or names no path token at all, does not widen the write scope, and the brief routes to an `extracted-code` implementer.
+A brief **requires** a direct-write implementer only when its `scope.inBounds` / `scope.approvedOutOfBounds` bullets name a concrete path token beyond the task's own `file` — a token carrying a directory separator or a glob, extracted by `scopePathPatterns` in `src/utils/path-patterns.ts` (`requiredWriteModeForTask`, `src/engine/orchestrator/context-routing/decision.ts`). Scope bullets are prose: a bullet that only re-names the task file, or names no path token at all, does not widen the write scope, and the brief routes to an `extracted-code` implementer. The same module ranks profile routes: when the implementer seat carries `model: auto:cheapest`, `compareProfileRouteRank` orders priced profiles by blended price ahead of cost tier (derivation under [Token accounting](#token-accounting)).
 
 | | `extracted-code` | `direct` |
 |---|---|---|
@@ -292,7 +292,7 @@ When a task ends, the changed set is computed against the baseline captured when
 
 The run-scoped handle (`createRunIsolation`, `src/engine/orchestrator/isolation/create.ts`) keeps the isolation directory alive across tasks and retries. A worktree workspace is reused between acquisitions through a marker carrying the session id, and each acquisition takes a fresh baseline so a later task reports only its own edits. The worktree is disposed when the run ends: if nothing unpromoted remains it is removed with force and its branch deleted, otherwise it is retained -- it holds work that was never promoted -- and the run reports the retention.
 
-A worktree isolates files, not the machine. It shares refs, git config, and hooks with the real repository, and it shares ports, databases, and environment with everything else running. It is not a security boundary. See [WORKTREES.md](./WORKTREES.md).
+A worktree isolates files, not the machine. It shares refs, git config, and hooks with the real repository, and it shares ports, databases, and environment with everything else running. It is not a security boundary.
 
 An isolation strategy that copies the project instead of checking it out must exclude build output and report artifacts as well as the VCS, dependency, and SPLITBRIEF directories. The staged copy derives its file list from git's own ignore rules, so gitignored `dist/`, `coverage/`, and tool output never enter the copy -- otherwise it would move hundreds of megabytes per run.
 
@@ -327,7 +327,7 @@ Wraps a backend-specific `invoke()` with:
 3. **Call backend `invoke()`** -- the actual model call. `InvokeOpts.callContext` identifies the runner call for adapters that can emit typed events directly. `InvokeOpts.sandboxEnv` carries the isolation directory's environment when the run is isolated.
 4. **Process output:**
    - `extracted-code` (`extractsCode: true`): extract code from response via `extractCode()`, run through tiered approval (`approveWrite`), apply to disk via `applyCode()`, compute diff. Between approval and apply, a plausibility guard (`src/engine/implementers/pipeline/extracted-code.ts`) refuses a marker-less modify response that would keep less than half of a baseline file of at least five non-empty lines: the file is left untouched and the task fails with the kept-of-had line counts plus a literal SEARCH/REPLACE template, so the retry has an exact-patch escape hatch.
-   - `direct` (`extractsCode: false`): detect file changes via `detectChanges()` against the baseline captured before the call. The isolated workspace declares which baseline that is rather than letting the detector sniff the directory: a linked worktree carries git metadata but is seeded with your uncommitted work, so it is compared by file-content hashes, and a retry that rewrites the file the previous attempt already wrote is seen as a change. No change at all is a `no-staged-change` failure, not a silent success: the detector's negative result carries the distinct `reason: 'no-files-changed'`, and the pipeline publishes one coded warning (`category: implementer`, `code: implementer_wrote_nothing`, `transcriptSafe: true`) naming the runner and the task. The warning lands in `session.jsonl` and in the review packet's warnings list, while the retry and escalation behaviour stays exactly as before — the task still fails.
+   - `direct` (`extractsCode: false`): detect file changes via `detectChanges()` against the baseline captured before the call. The isolated workspace declares which baseline that is rather than letting the detector sniff the directory: a linked worktree carries git metadata but is seeded with your uncommitted work, so it is compared by file-content hashes, and a retry that rewrites the file the previous attempt already wrote is seen as a change. No change at all is a `no-staged-change` failure, not a silent success: the detector's negative result carries the distinct `reason: 'no-files-changed'`, and the pipeline publishes one coded warning (`category: implementer`, `code: implementer_wrote_nothing`) naming the runner and the task. The warning lands in `session.jsonl` and in the review packet's warnings list, while the retry and escalation behaviour stays exactly as before — the task still fails.
 5. **Publish result** -- `publishDone` with diff metrics (lines added/removed, duration) or `publishFailed`.
 
 For retries, `buildRetryPrompt()` prepends the error message with escalating framing -- attempt 1 says "fix it", attempt 2 says "rephrase", attempt 3 says "try a completely different approach". Temperature increases by `retryTemperatureStep` per attempt.
@@ -353,13 +353,13 @@ Deltas are normalized in `src/engine/calls/usage.ts`, which handles delta, cumul
 
 Session totals (`TokenUsage`) carry four categories, not three: `planner*`, `implementer*`, `escalation*`, and `reviewer*` (`reviewerInput`, `reviewerOutput`, and the optional `reviewerCacheRead` / `reviewerCacheCreate`). `usageCategoryForRunnerCallRole()` (`src/engine/orchestrator/tokens.ts`) routes the `'review'` call role into the `reviewer` bucket; `'planner'`, `'summary'`, and `'compaction'` stay on the planner. Session state written before the reviewer bucket existed loads with those fields at `0`.
 
-Pricing follows the seat: with a `reviewer` block, the reviewer's tokens are priced at the reviewer runner's rates and shown as their own line in the summary and the cost drilldown; without one, they are priced at the planner's rates and folded into the planner line, exactly as before. `splitbrief stats` is unaffected either way — it aggregates by provider, not by role.
+Pricing follows the seat: with a `reviewer` block, the reviewer's tokens are priced at the reviewer runner's rates and shown as their own line in the summary and the cost drilldown; without one, they are priced at the planner's rates and folded into the planner line, exactly as before.
 
 CLI runners report usage through their protocol terminal: codex through its `turn.completed` record, claude-code and opencode through their streamed terminal events. Codex's `input_tokens` counts cached input, so the normalizer excludes `cached_input_tokens` from the reported input total and surfaces it as `cacheReadTokens`; claude-code's terminal `result` line takes precedence over mid-stream deltas. A CLI runner that completes without reporting usage records zero implementer tokens — by design for structurally unpriced runners, and never fabricated.
 
 Per-task usage is recorded as `TaskTokenUsage`, which tracks: implementer tokens, escalation tokens, retry count, cost, model used, context fit classification (`fits` / `tight` / `overflow`), and the `currentCodeContextMode` that was selected.
 
-A runner completing a task without reporting usage is recorded as zero tokens and surfaced, not hidden: `recordTaskUsage` (`src/engine/orchestrator/tokens.ts`) publishes exactly one warning with `category: 'cost'` and `code: 'implementer_usage_not_reported'` (`transcriptSafe: true`), naming the runner and the task, when neither the implementer nor the escalation delta is non-zero. The warning lands in `session.jsonl` and in the review packet's warnings list. An escalated task that spent planner tokens does not warn. SPLITBRIEF never invents a price or synthesises token counts for a runner that reported none — a CLI runner staying structurally unpriced is by design, and this warning is what makes a run that did real work distinguishable from a run whose runner reported nothing.
+A runner completing a task without reporting usage is recorded as zero tokens and surfaced, not hidden: `recordTaskUsage` (`src/engine/orchestrator/tokens.ts`) publishes exactly one warning with `category: 'cost'` and `code: 'implementer_usage_not_reported'`, naming the runner and the task, when neither the implementer nor the escalation delta is non-zero. The warning lands in `session.jsonl` and in the review packet's warnings list. An escalated task that spent planner tokens does not warn. SPLITBRIEF never invents a price or synthesises token counts for a runner that reported none — a CLI runner staying structurally unpriced is by design, and this warning is what makes a run that did real work distinguishable from a run whose runner reported nothing.
 
 **Token budget for implementer prompts** (`src/engine/spec/token-budget.ts`):
 
@@ -372,6 +372,10 @@ An omitted `contextLength` resolves to a single documented default for every run
 A boot-probed window applies only to the default implementer profile — the profile the probe ran for. A sibling profile that declares no `contextLength` still routes at the shared default.
 
 A CLI runner under `model: auto` — or with the model omitted — resolves to no model id, so its window is the smallest the bundled catalog guarantees for that tool (`resolveRunnerContextWindow`, `src/engine/providers/model/context-window.ts`); automatic selection never adds a `--model` flag.
+
+The implementer seat has one further `model` spelling with different mechanics: `auto:cheapest`. It is a routing marker, not a model id, and a CLI seat never transmits it: when no priced row is derived the adapter omits `--model` entirely and the tool's own default applies. An `api` seat has no literal model to send in that fallback path, so config load rejects the marker on every non-`cli` implementer variant and the BUILD picker offers the row on CLI columns only. Where `model: auto` leaves the choice to the tool, `auto:cheapest` has the router derive the profile list per task batch from priced discovered rows — the CLI catalog `cost` rows for opencode and kilo-code — and rank it by the blended `input + 4×output` price per 1M tokens. Unpriced rows are excluded rather than ranked last. Each derived profile is named `auto-<tool>-<model>`, carries the blended price as its `pricePer1M`, and the cheapest derived profile is the default; when discovery yields no priced row, derivation yields nothing, the configured profiles stand, and readiness warns that the seat will run the tool's own default model. A named profile under `implementerProfiles` cannot carry the marker — a profile must name a concrete model.
+
+Derived profiles meet the same comparator as configured ones: `compareProfileRouteRank` (`src/engine/orchestrator/context-routing/decision.ts`) ranks priced profiles by price ahead of cost tier, then context window, then name. A routed selection reports the price, not just the tier: `Selected cheapest priced profile at $X.XX/1M blended via auto-cheapest routing`.
 
 The window the router decides is the one the prompt budget uses: `configForProfile()` (`src/engine/orchestrator/task/routing.ts`) copies the decided `contextLength` into the config handed to the selected implementer when the profile declares none — a window the profile declared for itself is never overridden — so the wire carries the routed window rather than an unbudgeted whole-file prompt.
 
@@ -388,9 +392,9 @@ The 25% reserve is for output. The remaining budget goes to `currentCode`. If th
 
 ## Model catalog lanes
 
-Seat pickers prefer the native CLI catalog (`confirmed` / `stale`), then models.dev (`catalog-suggestion`). Bundled `KNOWN_MODELS` (`bundled-suggestion`) is an offline fallback only: `buildRightRows` (`src/features/runners/model-catalog/rows.ts`) hides those rows when any live lane is present, except the persisted model and custom rows. `resolveModelCatalog` (`src/engine/providers/model/catalog.ts`) still classifies bundled membership — the hide is a picker filter, not an engine-catalog drop.
+models.dev serves `api` runners only. A CLI tool's picker rows come from its own listing (`confirmed` / `stale`), from claude-code's local option cache, and — until a list lands — from the bundled `KNOWN_MODELS` aliases (`bundled-suggestion`); `buildRightRows` (`src/features/runners/model-catalog/rows.ts`) hides bundled rows when a live lane is present, except the persisted model and custom rows. An `api` runner also renders models.dev rows (`catalog-suggestion`) beside its runtime list. `resolveModelCatalog` (`src/engine/providers/model/catalog.ts`) still classifies bundled membership — the hide is a picker filter, not an engine-catalog drop.
 
-Pricing and context-window lookup stay on the existing ladder: cached models.dev first, then runtime metadata, then the bundled catalog (`resolvePricing` in `src/engine/providers/pricing-resolver.ts`, `resolveRunnerContextWindow` in `src/engine/providers/model/context-window.ts`).
+Pricing lookup keeps its ladder — cached models.dev first, then runtime metadata, then the bundled catalog (`resolvePricing` in `src/engine/providers/pricing-resolver.ts`) — and applies to api-priced runners. A CLI tool's context window comes from its own listing or the bundled table (`resolveRunnerContextWindow` in `src/engine/providers/model/context-window.ts`); an `api` runner's window keeps models.dev ahead of runtime metadata and the bundled catalog.
 
 ---
 
@@ -444,7 +448,7 @@ When you adjust a tool's adapter to track an upstream CLI change, bump that tool
 
 Session channels use `host-cli-state` bridging where noted in the catalog. SPLITBRIEF never copies credentials into argv. Subscription-included tools bill through the vendor login; provider-dependent tools inherit the upstream model provider's billing posture.
 
-The bridge copies files, so a channel whose credential is an OS keychain item reaches a staged runner another way. A channel declares those platforms in `hostKeychainPlatforms` (`src/core/runners/cli-tool-catalog.ts`), which today names macOS for the Claude Code and Cursor Agent CLI `session` channels: the subscription session lives in the login keychain, whose search list resolves through `HOME` and whose item is keyed on `USER`. `cliAuthChannelHostStateAccess()` maps that to `host-account`, and `createSandboxEnv()` then leaves `HOME`/`USER` at their host values and bridges no file — every other redirect stays. Readiness never infers such a credential from files: it runs the tool's own status command and reports what the child answers. See [docs/API-KEYS.md](./API-KEYS.md) and [docs/WORKTREES.md](./WORKTREES.md).
+The bridge copies files, so a channel whose credential is an OS keychain item reaches a staged runner another way. A channel declares those platforms in `hostKeychainPlatforms` (`src/core/runners/cli-tool-catalog.ts`), which today names macOS for the Claude Code and Cursor Agent CLI `session` channels: the subscription session lives in the login keychain, whose search list resolves through `HOME` and whose item is keyed on `USER`. `cliAuthChannelHostStateAccess()` maps that to `host-account`, and `createSandboxEnv()` then leaves `HOME`/`USER` at their host values and bridges no file — every other redirect stays. Readiness never infers such a credential from files: it runs the tool's own status command and reports what the child answers. See [docs/API-KEYS.md](./API-KEYS.md).
 
 ##### Readiness states
 
@@ -668,7 +672,6 @@ type Config = {
     maxRetries: number
     maxBudget?: number           // dollars
     budgetPauseThreshold?: number // 0–1
-    persistTranscript?: boolean
     compactionThreshold?: number
     git?: { commitStrategy?: CommitStrategy; createBranch?: boolean }
     // ... plus taskReview, briefReview, costGate, driftChainThreshold
@@ -677,8 +680,6 @@ type Config = {
   approval?: { enabled?: boolean; tiers?: TierMap; feedRejectionsToPlanner?: boolean; ... }
   codebase?: CodebaseConfig
   hooks?: HooksConfig
-  otel?: OtelConfig
-  snapshots?: { auto?: { preTask?: boolean; postTask?: boolean; preFinalReview?: boolean } }
   // ... plus theme, sessions, palette
 }
 ```

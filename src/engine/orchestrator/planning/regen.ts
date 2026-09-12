@@ -16,7 +16,7 @@ import { buildTasksPrompt } from '../../spec/prompts/tasks.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { buildProjectContextMarkdown } from '../../planners/context.js';
 import { publishPlannerStatus, publishWarning } from '../events.js';
-import { runPlannerReview, type BriefRecoveryReviewOptions } from '../planner-review.js';
+import { runPlannerReview } from '../planner-review.js';
 import {
   commitQueueMessagesDrained,
   readQueueForPrompt,
@@ -44,7 +44,6 @@ type RegenerateFromFeedbackCtx = {
   statusPhase?: Phase | undefined;
   statusSummary?: string | undefined;
   sinks?: WorkflowSinks | undefined;
-  briefRecovery?: BriefRecoveryReviewOptions | undefined;
 };
 
 type PlanRegenResult = {
@@ -194,13 +193,6 @@ async function runRegenerationReview(opts: {
         bus: opts.ctx.bus,
         signal: opts.ctx.signal,
         sinks,
-        ...(opts.ctx.briefRecovery === undefined
-          ? {}
-          : {
-              briefRecovery: true,
-              operationId: opts.ctx.briefRecovery.operationId,
-              noAutomaticContinuation: true,
-            }),
       },
       state,
       onStateChange: (s) => {
@@ -216,7 +208,6 @@ async function runRegenerationReview(opts: {
           state,
           metadata: opts.ctx.metadata,
           signal,
-          briefRecovery: opts.ctx.briefRecovery,
           ...(opts.kind === 'plan' ? { writeTo: PLAN_FILE } : { returnCandidate: true }),
         }),
     });
@@ -245,7 +236,6 @@ type RegenerateBaseOptions = {
 type RegenerateTasksOptions = RegenerateBaseOptions & {
   planOverride?: string | undefined;
   feedback?: string | undefined;
-  briefRecovery?: BriefRecoveryReviewOptions | undefined;
 };
 
 type RegeneratePlanAndTasksOptions = RegenerateBaseOptions & {
@@ -278,7 +268,6 @@ export async function regenerateTasks(opts: RegenerateTasksOptions): Promise<{
     statusPhase,
     statusSummary,
     sinks,
-    briefRecovery,
   } = opts;
   const result = await regenerateFromFeedback('tasks', {
     projectDir,
@@ -296,7 +285,6 @@ export async function regenerateTasks(opts: RegenerateTasksOptions): Promise<{
     statusPhase,
     statusSummary,
     sinks,
-    briefRecovery,
   });
   return { state: result.state, tasks: result.tasks, queuedMessages: result.queuedMessages };
 }

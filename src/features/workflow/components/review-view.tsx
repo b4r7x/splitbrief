@@ -2,6 +2,7 @@ import { Box, Text } from 'ink';
 import { useEffect } from 'react';
 import { renderReviewRows } from './review-rows-cache.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { projectRelativePathLabel } from '../../../utils/path-links.js';
 import { SOFT_SEP } from '../../../components/separators.js';
 import { getScrollViewportContentWidth } from '../../../components/scrollbar.js';
 import { ScrollIndicator } from '../../../components/scroll-indicator.js';
@@ -36,12 +37,13 @@ export function ReviewView({ height, width }: ReviewViewProps) {
   const scrollableWidth = Math.max(1, documentWidth - 2);
   const bodyWidth = Math.max(1, getScrollViewportContentWidth(scrollableWidth));
   const innerHeight = Math.max(0, containerHeight - REVIEW_FRAME_ROWS);
+  const projectDir = configStore.get().projectDir;
   const rows = renderReviewRows({
     source: content,
     width: bodyWidth,
     theme: t,
     decorateSegment: workflowMarkdownRenderSegments,
-    projectDir: configStore.get().projectDir,
+    projectDir,
   });
   const renderedLineCount = getScrollableDocumentLineCount(rows);
   const { contentHeight, showFooter } = getReviewContentLayout(innerHeight, renderedLineCount);
@@ -57,7 +59,10 @@ export function ReviewView({ height, width }: ReviewViewProps) {
 
   if (!source) return null;
 
-  const reviewLabel = source.kind === 'file' ? source.filePath : 'Custom planner artifact';
+  const reviewLabel =
+    source.kind === 'file'
+      ? projectRelativePathLabel({ path: source.filePath, rootDir: projectDir })
+      : 'Custom planner artifact';
 
   const remaining = Math.max(0, renderedLineCount - clampedOffset - contentHeight);
   const scrollIndicatorText = ` ↓ ${remaining} more`;

@@ -19,15 +19,6 @@ export const REQUIRED_VIEWPORTS: readonly Viewport[] = Object.freeze([
   viewport({ cols: 60, rows: 18 }),
 ]);
 
-export const BRIEF_RECOVERY_VIEWPORTS: readonly Viewport[] = Object.freeze([
-  viewport({ cols: 121, rows: 16 }),
-  viewport({ cols: 120, rows: 16 }),
-  viewport({ cols: 119, rows: 16 }),
-  viewport({ cols: 80, rows: 16 }),
-  viewport({ cols: 50, rows: 16 }),
-  viewport({ cols: 40, rows: 16 }),
-]);
-
 export const HOME_COLD_DETECTING_VIEWPORTS: readonly Viewport[] = Object.freeze([
   viewport({ cols: 80, rows: 40 }),
 ]);
@@ -102,17 +93,6 @@ function screenSurface(screen: Screen): Surface {
 function overlaySurface(overlay: OverlaySurface, underlyingScreen: Screen): Surface {
   return { kind: 'overlay', overlay, underlyingScreen };
 }
-
-const BRIEF_RECOVERY_SCENARIOS = [
-  ['workflow-brief-recovery-zero-task-blocked', 'Zero-task contract blocked', 'CONTRACT BLOCKED'],
-  ['workflow-brief-recovery-storage-blocked', 'Storage-blocked contract', 'BECAUSE STORAGE'],
-  ['workflow-brief-recovery-task-blocked', 'Task-specific contract blocked', 'QUALITY ISSUE'],
-  ['workflow-brief-recovery-retrying-queued', 'Retrying with queued input', 'RETRYING'],
-  ['workflow-brief-recovery-unresolved', 'Unresolved retry', 'RETRY UNRESOLVED'],
-  ['workflow-brief-recovery-ready', 'Ready after repair', 'CONTRACT READY'],
-  ['workflow-brief-recovery-provider-failed', 'Provider failure', 'PROVIDER REFUSAL'],
-  ['workflow-brief-recovery-budget-blocked', 'Budget blocked', 'BUDGET REFUSAL'],
-] as const satisfies readonly (readonly [string, string, string])[];
 
 interface ScreenScenarioInput {
   readonly id: string;
@@ -254,6 +234,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-usage-limit',
+      title: 'Workflow · quota halt and seat swap',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery',
+        title: 'Usage-limit recovery menu',
+        kind: 'question',
+        marker: 'switch BUILD to OpenCode CLI',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-command-argument',
       title: 'Workflow · command argument completion',
       surface: screenSurface('workflow'),
@@ -268,30 +264,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'completion', title: 'Command argument completion menu' },
       ],
     }),
-    ...BRIEF_RECOVERY_SCENARIOS.map(([id, title, marker]) =>
-      defineScenario({
-        id,
-        title: `Workflow · Brief recovery · ${title}`,
-        surface: screenSurface('workflow'),
-        viewports: BRIEF_RECOVERY_VIEWPORTS,
-        checkpoint: {
-          id: 'review',
-          title,
-          kind: 'review',
-          marker,
-        },
-        elements: [
-          { id: 'recovery-public-status', title: 'Recovery public status' },
-          { id: 'recovery-status', title: 'Recovery contract status' },
-          { id: 'recovery-evidence', title: 'Recovery evidence spine' },
-          { id: 'recovery-cause', title: 'Recovery cause explanation' },
-          { id: 'recovery-actions', title: 'Recovery action group' },
-          { id: 'recovery-composer', title: 'Recovery composer input' },
-          { id: 'recovery-body', title: 'Recovery workflow body' },
-          { id: 'recovery-sidebar', title: 'Recovery workflow sidebar' },
-        ],
-      }),
-    ),
   ],
   summary: [
     defineScenario({
@@ -416,6 +388,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: 'Settings',
       },
       {
+        id: 'overlay-settings-build-auto-cheapest',
+        title: 'Overlay · settings · build seat on price routing',
+        marker: 'Settings',
+      },
+      {
         id: 'overlay-settings-floor-full',
         title: 'Overlay · settings · full crew at the floor',
         marker: 'Settings',
@@ -428,6 +405,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-settings-filter-plan',
         title: 'Overlay · settings · filtered to plan',
+        marker: 'Settings',
+      },
+      {
+        id: 'overlay-settings-filter-workflow',
+        title: 'Overlay · settings · filtered to the workflow section',
         marker: 'Settings',
       },
     ],
@@ -493,6 +475,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
+        id: 'overlay-picker-browse-escape',
+        title: 'Overlay · implementer picker · browse the wider catalog',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
         id: 'overlay-planner-picker-no-listing',
         title: 'Overlay · planner picker · tool without model listing',
         marker: PICKER_TITLE_MARKER,
@@ -500,6 +487,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-planner-picker-kilo',
         title: 'Overlay · planner picker · Kilo Code catalog sections',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-kilo-free',
+        title: 'Overlay · planner picker · Kilo free routes named apart',
         marker: PICKER_TITLE_MARKER,
       },
       {
@@ -564,6 +556,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-implementer-picker',
         title: 'Overlay · implementer picker',
         marker: 'Add custom model',
+      },
+      {
+        id: 'overlay-build-picker-auto-cheapest',
+        title: 'Overlay · implementer picker · Auto cheapest capable row',
+        marker: PICKER_TITLE_MARKER,
       },
     ],
   }),

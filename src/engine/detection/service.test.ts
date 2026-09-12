@@ -191,7 +191,6 @@ describe('createDetectionService', () => {
       discoverAllCliTools: async () => [
         {
           connection: {
-            role: 'planner',
             tool: 'opencode',
             contextKey: 'service-opencode-catalog',
           },
@@ -209,7 +208,6 @@ describe('createDetectionService', () => {
       cliModels: [
         {
           connection: {
-            role: 'planner',
             tool: 'opencode',
             contextKey: 'service-opencode-catalog',
           },
@@ -533,7 +531,6 @@ describe('createDetectionService', () => {
       discoverAllCliTools: async () => [
         {
           connection: {
-            role: 'planner',
             tool: 'codex',
             contextKey: 'opaque-cli-executable-context',
           },
@@ -552,7 +549,6 @@ describe('createDetectionService', () => {
     expect(cache).not.toContain('opaque-cli-executable-context');
     expect(JSON.parse(cache).cliCatalogs).toEqual([
       {
-        role: 'planner',
         tool: 'codex',
         models: [{ id: rememberedModelId }],
         probedAt: expect.any(Number),
@@ -589,7 +585,7 @@ describe('createDetectionService', () => {
         sourceContexts: sourceContexts(),
         discoverAllCliTools: async () => [
           {
-            connection: { role: 'planner', tool: 'codex', contextKey: 'probe-cli-context' },
+            connection: { tool: 'codex', contextKey: 'probe-cli-context' },
             outcome: { kind: 'success', value: [{ id: `probe-model-${++probe}` }] },
           },
         ],
@@ -607,11 +603,38 @@ describe('createDetectionService', () => {
     );
     expect(cache.cliCatalogs).toEqual([
       {
-        role: 'planner',
         tool: 'codex',
         models: [{ id: 'probe-model-2' }],
         probedAt: expect.any(Number),
       },
+    ]);
+  });
+
+  it('reuses the cli-models snapshot inside its TTL instead of re-probing', async () => {
+    let probes = 0;
+    const deps = makeDeps({
+      sourceContexts: sourceContexts(),
+      discoverAllCliTools: async () => {
+        probes += 1;
+        return [
+          {
+            connection: { tool: 'codex', contextKey: 'ttl-cli-context' },
+            outcome: { kind: 'success', value: [{ id: `ttl-model-${probes}` }] },
+          },
+        ];
+      },
+    });
+
+    const first = await service.loadDetection({ deps, projectDir: tempDir });
+    const second = await service.loadDetection({ deps, projectDir: tempDir });
+
+    expect(probes).toBe(1);
+    expect(outcomes(second).cliModels).toMatchObject({ kind: 'fresh', origin: 'snapshot' });
+    expect(second.cliModels).toMatchObject([
+      { outcome: { kind: 'success', value: [{ id: 'ttl-model-1' }] } },
+    ]);
+    expect(first.cliModels).toMatchObject([
+      { outcome: { kind: 'success', value: [{ id: 'ttl-model-1' }] } },
     ]);
   });
 

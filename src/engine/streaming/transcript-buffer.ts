@@ -8,46 +8,41 @@ export function createTranscriptBuffer(opts: {
   projectDir: string;
   sessionId: string;
   phase: Phase | undefined;
-  persistTranscript: boolean;
 }): { append(chunk: string): void; flush(): void; flushInterrupted(): void } {
-  const { projectDir, sessionId, phase, persistTranscript } = opts;
+  const { projectDir, sessionId, phase } = opts;
   const ref: SessionRef = { projectDir, sessionId };
   let buffer = '';
-  const shouldPersist = persistTranscript && sessionId !== '';
+  const shouldPersist = sessionId !== '';
   return {
     append(text: string): void {
       if (!shouldPersist) return;
       buffer += text;
       if (Buffer.byteLength(buffer, 'utf8') > MAX_BUFFER_BYTES) {
-        appendMessage(
-          ref,
-          { role: 'assistant', ...(phase !== undefined && { phase }), text: buffer },
-          { persistTranscript: shouldPersist },
-        );
+        appendMessage(ref, {
+          role: 'assistant',
+          ...(phase !== undefined && { phase }),
+          text: buffer,
+        });
         buffer = '';
       }
     },
     flush(): void {
       if (!shouldPersist || buffer.length === 0) return;
-      appendMessage(
-        ref,
-        { role: 'assistant', ...(phase !== undefined && { phase }), text: buffer },
-        { persistTranscript: shouldPersist },
-      );
+      appendMessage(ref, {
+        role: 'assistant',
+        ...(phase !== undefined && { phase }),
+        text: buffer,
+      });
       buffer = '';
     },
     flushInterrupted(): void {
       if (!shouldPersist || buffer.length === 0) return;
-      appendMessage(
-        ref,
-        {
-          role: 'assistant',
-          ...(phase !== undefined && { phase }),
-          text: buffer,
-          interrupted: true,
-        },
-        { persistTranscript: shouldPersist },
-      );
+      appendMessage(ref, {
+        role: 'assistant',
+        ...(phase !== undefined && { phase }),
+        text: buffer,
+        interrupted: true,
+      });
       buffer = '';
     },
   };

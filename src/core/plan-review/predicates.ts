@@ -1,10 +1,5 @@
 import type { PlanReviewEstimateStatus, PlanTaskReviewMetadata } from './types.js';
 
-export const STALE_ESTIMATE_STATUSES = new Set<PlanReviewEstimateStatus | undefined>([
-  'missing-current-code',
-  'current-code-unavailable',
-]);
-
 export const BLOCKING_ESTIMATE_STATUSES = new Set<PlanReviewEstimateStatus | undefined>([
   'current-code-unavailable',
 ]);

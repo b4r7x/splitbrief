@@ -76,29 +76,16 @@ src/cli/
 ├── errors.ts          # cliError() factory + isCliError predicate — see ERRORS.md
 ├── headless.ts        # runHeadless(feature, dir, opts) — no-TUI workflow driver for `--json`
 ├── hook-trust-prompt.ts  # TTY hook disclosure + trust prompt (executable, resolved path, argv); refuses in non-TTY unless --allow-hooks
-├── …                  # plus leaf modules (crash-diagnostic, render-table, parse-at-files, …) — `rg --files src/cli` for the full set
+├── …                  # plus leaf modules (unknown-command, render-table, parse-at-files, …) — `rg --files src/cli` for the full set
 ├── commands/          # commander subcommand handlers — one file per subcommand, registered in cli.ts (thin — delegate to core). Listing is representative; `rg --files src/cli/commands` for the full set
 │   ├── start/
 │   ├── resume.ts
 │   ├── spec.ts
 │   ├── init.ts
 │   ├── status.ts
-│   └── …              # plus attach, continue, ps, doctor, mcp, and more — see the rg pointer above
-├── rpc/               # attached-client RPC: reader/writer framing, gates, command dispatch, run loop
-│   ├── run/
-│   │   ├── host.ts        # runRpc, transport lifetime, turn/restart loop
-│   │   ├── status.ts      # queue/gate/approval/status projection
-│   │   └── recovery.ts    # recovery command validation and prompt loop
-│   ├── dispatch.ts
-│   ├── gates.ts
-│   ├── reader.ts
-│   ├── writer.ts
-│   ├── callbacks.ts
-│   ├── command-context.ts
-│   ├── errors.ts          # rpcError factory + isTransportClosed predicate — see ERRORS.md
-│   └── types.ts
+│   └── …              # plus approval, continue, doctor, review, and more — see the rg pointer above
 └── sessions/          # session-id resolution for subcommands
-    ├── resolve.ts          # resolveSessionOrThrow(dir, opt) — ps alias / active pointer resolution
+    ├── resolve.ts          # assertSessionExists and session-id resolution
     ├── aliases.ts          # numeric alias ↔ session-id mapping from lockfiles
     └── single-running.ts   # findSingleRunningSession scan (single | none | multiple)
 ```
@@ -130,29 +117,21 @@ src/engine/events/
 ├── types.ts           # EngineEvent alias (z.infer of EngineEventSchema) + EventSink + EventBus ports
 └── sinks/
     ├── jsonl.ts       # appends every event to sessions/<id>/session.jsonl
-    ├── tree-recorder.ts # EventSink dispatcher; maps EngineEvents to session tree entries
-    ├── tree-recorder/
-    │   ├── persistence.ts       # tree init/resume, protected append/branch, disk commit
-    │   └── runner-invocation.ts # runner call payloads and warning aggregation for the tree
+    ├── logger.ts      # writes every event through the process logger
     ├── stdout-json.ts # NDJSON emitter for `splitbrief start --json`
-    └── otel.ts        # optional OpenTelemetry span emitter
+    └── stdout-text.ts # plain-line emitter for `splitbrief start --plain`
 ```
-The interactive TUI sink lives at `src/features/workflow/tui-sink.ts` because it forwards into workflow stores.
+The interactive TUI sink lives at `src/features/workflow/tui-sink.ts` because it forwards into workflow stores. Subscription happens in one place: `attachRunSinks()` in `src/engine/orchestrator/run/init-sinks.ts`.
 
 ### `src/engine/hooks/` — workflow hook runtime
 
 ```
 src/engine/hooks/
 ├── dispatch.ts        # runHook(entry, event, ctx) — subprocess for command hooks
-├── load-module.ts     # dynamic import() for `kind: module` hooks
 ├── substitute.ts      # ${event.<path>} regex substitution (no eval)
 ├── run-pre.ts         # sequential pre_* runner; deny short-circuits
 ├── sink.ts            # bus sink fan-out for post_*/on_* (fire-and-forget)
-├── types.ts           # HookOutcome, HookContext
-└── builtins/
-    ├── registry.ts
-    ├── prettier-on-change.ts
-    └── block-secrets.ts
+└── types.ts           # HookOutcome, HookContext
 ```
 
 ### `src/engine/codebase/` — repo-map pipeline
@@ -196,37 +175,32 @@ src/core/runtime/commands/
 │   ├── workflow.ts    # workflowCommands(ctx)
 │   ├── view.ts        # viewCommands(ctx)
 │   └── io.ts          # ioCommands(ctx)
-├── registry.ts        # createRuntimeCommands(ctx): concatenates defs/, filters for attached clients
+├── registry.ts        # createRuntimeCommands(ctx): concatenates defs/
 ├── dispatch.ts        # parses /name args, validates screen/phase, executes
 ├── lookup.ts          # exact, alias, and fuzzy command lookup
 └── types.ts           # RuntimeCommandDef, RuntimeCommandContext, CommandPaletteItem
 ```
 
-These are runtime commands, not a slash-only subsystem: the same registry backs composer `/` input, the command palette, and RPC command dispatch. `defs/` is split by `category`, and `registry.ts` concatenates the five modules in `COMMAND_CATEGORIES` order — the order `/help` and the palette already render. Colocated tests include `dispatch.test.ts`, `lookup.test.ts`, and split `registry-*.test.ts` suites (for example `registry-configuration.test.ts`, `registry-recovery.test.ts`, `registry-conversation.test.ts`) covering the phase / screen / arg matrix.
+These are runtime commands, not a slash-only subsystem: the same registry backs composer `/` input and the command palette. `defs/` is split by `category`, and `registry.ts` concatenates the five modules in `COMMAND_CATEGORIES` order — the order `/help` and the palette already render. Colocated tests include `dispatch.test.ts`, `lookup.test.ts`, and split `registry-*.test.ts` suites (for example `registry-configuration.test.ts`, `registry-recovery.test.ts`, `registry-conversation.test.ts`) covering the phase / screen / arg matrix.
 
 ### `src/core/sessions/` — session domain
 
 ```
 src/core/sessions/
-├── analytics.ts       # session analytics (cost, duration, tasks)
 ├── io.ts              # read/write session state + log files
 ├── active-pointer.ts  # active-session pointer (readActive, writeActive, clearActive)
 ├── liveness.ts        # inspectSessionLiveness / isSessionLive
-├── session-id.ts      # session id minting + transcript-policy slugs
-├── ownership-marker.ts # prepare/handoff ownership proof machinery
-├── detached-handoff.ts # detached handoff transfer/accept/settle/rollback
+├── lockfile.ts        # per-session lockfile (pid + heartbeat) and lockfile-status.ts
+├── session-id.ts      # session id minting
+├── ownership-marker.ts # prepare-time ownership proof machinery
 ├── log-reader.ts      # JSONL session log reader
+├── log-writer.ts      # appendEngineEvent and the on-disk log append path
 ├── guards.ts          # clearStaleSession and related session-state predicates
+├── orphans.ts         # collectable non-session directory sweep
 ├── compaction.ts      # session-log compaction
 ├── display.ts         # session display formatting
 ├── errors.ts          # session error factory + predicates — see ERRORS.md
-├── find-unused-id.ts  # findUnusedId(input) — first free session id (flat, not under id/)
-└── tree/              # session tree entry model
-    ├── io.ts          # append/read tree entries
-    ├── parse-entry.ts # parse a tree entry envelope
-    ├── payloads.ts    # entry payload Zod schemas
-    ├── schemas.ts     # TreeEntryEnvelope + EntryId schemas
-    └── store.ts       # in-memory tree store
+└── find-unused-id.ts  # findUnusedId(input) — first free session id (flat, not under id/)
 ```
 
 ### `src/utils/` — generic primitives
@@ -260,7 +234,6 @@ features/workflow/
 ├── hooks/                    # feature-local hooks
 │   ├── workflow-screen/      # screen model split by intent
 │   │   ├── use-model.ts      # public useWorkflowScreen + WorkflowScreenDeps
-│   │   ├── use-attachment.ts # IPC attach client
 │   │   ├── use-inline-edit.ts # inline field context + external-edit CAS
 │   │   ├── use-readiness.ts  # readiness collection + TUI persistence
 │   │   └── resume.ts         # cancelled-session resumability

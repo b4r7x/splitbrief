@@ -93,13 +93,6 @@ export function formatHookTrustDisclosure(projectDir: string, hooks: HooksConfig
 }
 
 function hookEntryLines(projectDir: string, entry: HookEntry): string[] {
-  if (entry.kind === 'module') {
-    return [
-      `    Module: ${escapeTrustLiteral(entry.path)}`,
-      `    Resolved: ${escapeTrustLiteral(resolve(projectDir, entry.path))}`,
-      `    On failure: ${entry.on_failure}`,
-    ];
-  }
   return [
     `    Executable: ${escapeTrustLiteral(entry.command)}`,
     `    Resolved: ${escapeTrustLiteral(resolveHookExecutable(projectDir, entry.command))}`,

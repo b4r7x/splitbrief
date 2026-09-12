@@ -1,28 +1,17 @@
-import type { Config } from '../../../core/schemas/config.js';
-import type { CompactTranscriptResult } from '../../../core/runtime/commands/types.js';
 import {
   compactTranscript,
-  DEFAULT_KEEP_RECENT_COUNT,
   type TranscriptCompactionResult,
 } from '../../../core/sessions/compaction.js';
 import { sessionDir } from '../../../core/paths.js';
-import { createPlanner } from '../../runners/factory.js';
-import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import type { Planner, PlannerSummaryMessage } from '../../planners/types.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import { accumulateTokenUsage } from '../../calls/usage.js';
-import type { EventBus } from '../../events/types.js';
-import { loadState } from '../../../core/state/persistence.js';
-import { addUsageAndSave } from '../state-ops.js';
-import {
-  resolveCompactionFormat,
-  type ResolvedCompactionFormat,
-  type StructuredSummary,
+import type {
+  ResolvedCompactionFormat,
+  StructuredSummary,
 } from '../../../core/schemas/compaction.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
 import { throwIfAborted } from '../../../utils/abort.js';
-import type { SessionRef } from '../../../core/types/session-ref.js';
-import type { RunnerGate } from '../../runners/prepared-execution.js';
 
 const MIN_COMPACTION_KEEP_RECENT = 1;
 
@@ -87,19 +76,6 @@ export type ResumeCompactionResult = TranscriptCompactionResult & {
   usage: TokenDelta | null;
 };
 
-function hasPreparedConfiguredPlanner(
-  gates: readonly RunnerGate[],
-  preparationId: string,
-): boolean {
-  return gates.some(
-    (gate) =>
-      gate.preparationId === preparationId &&
-      gate.slot.role === 'planner' &&
-      (gate.kind === 'shell' || gate.kind === 'agent') &&
-      gate.command.kind === 'configured-custom',
-  );
-}
-
 export async function compactResumeTranscript(opts: {
   projectDir: string;
   sessionId: string;
@@ -128,54 +104,4 @@ export async function compactResumeTranscript(opts: {
     ...(onFallback ? { onFallback } : {}),
   });
   return { ...result, usage };
-}
-
-export async function performManualCompaction(opts: {
-  config: Config;
-  ref: SessionRef;
-  preparationId: string;
-  gates: readonly RunnerGate[];
-  bus: EventBus;
-}): Promise<CompactTranscriptResult> {
-  const { config, ref } = opts;
-  const plannerName = getRunnerDisplayName(config.planner);
-  if (hasPreparedConfiguredPlanner(opts.gates, opts.preparationId)) {
-    return { status: 'unsupported', plannerName };
-  }
-  const planner = await createPlanner(config, {
-    preparedConfig: config,
-    projectDir: ref.projectDir,
-    preparationId: opts.preparationId,
-    gates: opts.gates,
-    slot: { role: 'planner' },
-  });
-  if (planner.capabilities.supportsSelfSummarisation !== true) {
-    return { status: 'unsupported', plannerName };
-  }
-  const threshold = config.workflow.compactionThreshold;
-  const keepRecentCount =
-    threshold !== undefined ? keepRecentCountForThreshold(threshold) : DEFAULT_KEEP_RECENT_COUNT;
-  const format = resolveCompactionFormat(config.workflow.compactionFormat, config.planner.kind);
-  let usage: TokenDelta | null = null;
-  const adapter = bindPlannerToProjectDir(planner, {
-    projectDir: ref.projectDir,
-    onUsage: (delta) => {
-      if (delta) usage = accumulateTokenUsage(usage, delta);
-    },
-  });
-  const result = await compactTranscript({
-    sessionDir: sessionDir(ref.projectDir, ref.sessionId),
-    keepRecentCount,
-    format,
-    planner: adapter,
-  });
-  bookCompactionUsage(ref, usage, opts.bus);
-  return { status: 'compacted', ...result };
-}
-
-function bookCompactionUsage(ref: SessionRef, usage: TokenDelta | null, bus: EventBus): void {
-  if (!usage) return;
-  const state = loadState(ref);
-  if (!state) return;
-  addUsageAndSave({ ...ref, bus }, state, 'planner', usage);
 }

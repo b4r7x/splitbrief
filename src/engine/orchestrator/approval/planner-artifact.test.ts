@@ -97,8 +97,6 @@ async function beginReview(
 ): Promise<ReviewLease> {
   return beginDeclaredArtifactReview({
     stagedProjectDir: fixture.staged.projectDir,
-    projectDir: fixture.projectDir,
-    sessionId: SESSION_ID,
     callId: CALL_ID,
     declaredRedactionValues: options.declaredRedactionValues ?? [],
     provenance: {
@@ -396,8 +394,6 @@ describe('declared artifact review lease', () => {
       await expect(
         beginDeclaredArtifactReview({
           stagedProjectDir: fixture.staged.projectDir,
-          projectDir: fixture.projectDir,
-          sessionId: SESSION_ID,
           callId: '../outside',
           declaredRedactionValues: [],
           provenance: {

@@ -1,5 +1,4 @@
 import type { InputMode } from '../../core/navigation/types.js';
-import type { IpcClientStatus } from '../../engine/ipc/client.js';
 import { SOFT_SEP } from '../../components/separators.js';
 import { REVIEW_HINT } from './review-commands.js';
 
@@ -16,8 +15,8 @@ export function resolveInputHint(input: InputHintInput): string {
   return '';
 }
 
-// Whatever the composer draft holds, `enter` still sends it — the typed review commands the
-// IPC/attach path relies on stay live even when the single-key shortcuts are off.
+// Whatever the composer draft holds, `enter` still sends it — the typed review commands stay
+// live even when the single-key shortcuts are off.
 export const REVIEW_TYPING_HINT = 'enter send';
 
 // A legend that ends in an ellipsis has cut a key in half and still claims to name it. Too narrow
@@ -60,30 +59,9 @@ export function resolveCancelledHints(canResumeCancelled: boolean): CancelledHin
     : { placeholder: 'esc for home…', byline: '/quit to exit' };
 }
 
-export function resolveAttachInputHint(status: IpcClientStatus): string {
-  if (status === 'connected') return 'Queue a message to the running workflow';
-  if (status === 'reconnecting') return 'Reconnecting to server…';
-  if (status === 'failed')
-    return 'Failed server connection lost — ctrl+d to exit, retry with resume';
-  if (status === 'detached') return 'Detached';
-  return 'Connecting to server…';
-}
-
-export function resolveAttachFeedbackHint(status: IpcClientStatus): string {
-  if (status === 'connected') return '';
-  return resolveAttachInputHint(status);
-}
-
 export interface ComposerBoxHintOverride {
   keys: string;
   cost: boolean;
-}
-
-// The attached client always offers `ctrl+d detach` on the composer line, but only the live
-// connected state shows the cost token; once it has detached the byline goes blank.
-export function resolveAttachBoxHint(status: IpcClientStatus): ComposerBoxHintOverride {
-  if (status === 'detached') return { keys: '', cost: false };
-  return { keys: 'ctrl+d detach', cost: status === 'connected' };
 }
 
 export type HintStateSeverity = 'error' | 'warning';

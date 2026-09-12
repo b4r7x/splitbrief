@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createEvidenceLedger } from './ledger-state.js';
 import { mutateEvidenceLedger, writeEvidenceLedger, readEvidenceLedger } from './ledger-storage.js';
-import {
-  persistRecoveryBudgetResource,
-  readRecoveryBudgetResources,
-} from './recovery-journal/budget-resources.js';
 import { evidenceError } from './errors.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { setupEvidenceTmpDir } from '#testing/helpers/evidence-test-setup.js';
@@ -104,44 +100,5 @@ describe('evidence ledger lock', () => {
 
     const read = readEvidenceLedger(ref);
     expect(read?.tasks[0]?.observedEvidence).toEqual(['outer', 'after']);
-  });
-});
-
-describe('provider-dependent budget resources in the evidence store', () => {
-  it('persists beside the ledger without disturbing it', () => {
-    const ref = { projectDir: tmpDir.get(), sessionId: 'sess-1' };
-    const ledger = createEvidenceLedger({
-      sessionId: 'sess-1',
-      feature: 'feat',
-      tasks: [makeTask()],
-    });
-    writeEvidenceLedger(ref, ledger);
-
-    persistRecoveryBudgetResource(ref, {
-      epochId: 'epoch-1',
-      operationId: 'operation-1',
-      kind: 'reservation',
-      resource: {
-        kind: 'provider-dependent',
-        accountingKey: 'session-1/epoch-1/operation-1',
-        pricingIdentity: 'opencode/auto',
-        envelope: {
-          version: 1,
-          dispatchLimit: 64,
-          callCount: 1,
-          totalPromptBytes: 1_000,
-          totalInputTokensUpperBound: 8_000,
-          totalOutputTokensUpperBound: 8_192,
-          totalNormalizedOutputBytes: 96 * 1_024,
-          totalDeclaredArtifactBytes: 96 * 1_024,
-          callsDigest: 'calls'.padEnd(64, '0'),
-        },
-        observedUsage: null,
-        resolvedPricing: null,
-      },
-    });
-
-    expect(readEvidenceLedger(ref)).toEqual(ledger);
-    expect(readRecoveryBudgetResources(ref, 'epoch-1', 'operation-1')).toHaveLength(1);
   });
 });

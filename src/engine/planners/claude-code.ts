@@ -163,12 +163,21 @@ export function createClaudeCodePlanner(opts: {
       return result;
     },
 
-    async invokeEscalate({ prompt, projectDir, callbacks, callContext, signal, sandboxEnv }) {
+    async invokeEscalate({
+      prompt,
+      projectDir,
+      callbacks,
+      callContext,
+      accessMode,
+      signal,
+      sandboxEnv,
+    }) {
       const effectiveSignal = composeAbortSignal(signal, timeout);
       const env = sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, runnerConfig, 'planner'));
       return runClaudeOneShot({
         prompt,
         projectDir,
+        mode: accessMode === 'write-files' ? 'escalate' : 'plan',
         onOutput: callbacks.onOutput,
         onCallEvent: callbacks.onCallEvent,
         callContext,

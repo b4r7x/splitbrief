@@ -207,13 +207,9 @@ describe('createSessionLogAppender', () => {
 });
 
 describe('appendMessage', () => {
-  it('writes kind:message entry with ISO ts when persistTranscript is true', () => {
+  it('writes kind:message entry with ISO ts', () => {
     const dir = makeTmp();
-    appendMessage(
-      { projectDir: dir, sessionId: SESSION_ID },
-      { role: 'user', text: 'add auth' },
-      { persistTranscript: true },
-    );
+    appendMessage({ projectDir: dir, sessionId: SESSION_ID }, { role: 'user', text: 'add auth' });
     const raw = readFileSync(
       join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
       'utf-8',
@@ -226,23 +222,11 @@ describe('appendMessage', () => {
     expect(entry.ts).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
-  it('does not write anything when persistTranscript is false', () => {
-    const dir = makeTmp();
-    appendMessage(
-      { projectDir: dir, sessionId: SESSION_ID },
-      { role: 'assistant', text: 'planner output' },
-      { persistTranscript: false },
-    );
-    const filePath = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl');
-    expect(existsSync(filePath)).toBe(false);
-  });
-
   it('includes optional fields when provided', () => {
     const dir = makeTmp();
     appendMessage(
       { projectDir: dir, sessionId: SESSION_ID },
       { role: 'assistant', phase: 'researching', text: 'hello', interrupted: true },
-      { persistTranscript: true },
     );
     const raw = readFileSync(
       join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
@@ -285,11 +269,7 @@ describe('session append symlink confinement', () => {
     symlinkSync(outsideLog, join(sessionPath, 'session.jsonl'));
 
     expect(() =>
-      appendMessage(
-        { projectDir: dir, sessionId: SESSION_ID },
-        { role: 'user', text: 'hi' },
-        { persistTranscript: true },
-      ),
+      appendMessage({ projectDir: dir, sessionId: SESSION_ID }, { role: 'user', text: 'hi' }),
     ).toThrow(/refusing to write through symlink/);
     expect(readFileSync(outsideLog, 'utf-8')).toBe('');
 

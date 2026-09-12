@@ -1,119 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { formatTasks } from '../../../engine/spec/formatter.js';
-import { STATE_FILE, TASKS_FILE } from '../../../core/paths.js';
-import { createInitialState } from '../../../core/state/machine.js';
-import { createBriefRecoveryState } from '../../../engine/orchestrator/planning/brief-recovery.js';
-import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
+import { TASKS_FILE } from '../../../core/paths.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { glyph } from '../../../lib/glyphs.js';
 import type { UseInputModeResult } from '../hooks/use-input-mode.js';
-import { getWorkflowContentWidth, getWorkflowSidebarWidth } from '../layout/rect.js';
 import { WorkflowBody } from './body.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
-import { configStore } from '../../../stores/project/config.js';
-import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { ReviewView } from './review-view.js';
-
-type WholeScreenRecoveryStatus = Extract<
-  BriefRecoveryProjectionV1['status'],
-  'checking' | 'blocked' | 'retrying' | 'unresolved' | 'ready' | 'readiness-blocked'
->;
-
-const WHOLE_SCREEN_WIDTHS = [121, 120, 119, 80, 50, 40] as const;
-
-const wholeScreenBrief = { revision: 1, hash: 'b'.repeat(64), path: TASKS_FILE };
-const wholeScreenReport = {
-  revision: 1,
-  hash: 'r'.repeat(64),
-  path: 'brief-quality.json',
-};
-
-const WHOLE_SCREEN_OUTCOME: Record<WholeScreenRecoveryStatus, string> = {
-  checking: 'CHECKING CONTRACT',
-  blocked: 'CONTRACT BLOCKED',
-  retrying: 'RETRYING',
-  unresolved: 'RETRY UNRESOLVED',
-  ready: 'CONTRACT READY',
-  'readiness-blocked': 'READINESS BLOCKED',
-};
-
-const WHOLE_SCREEN_EPOCH = 'epoch-1';
-const WHOLE_SCREEN_OPERATION = 'operation-1';
-
-function wholeScreenAttempt(sessionId: string) {
-  return {
-    epochId: WHOLE_SCREEN_EPOCH,
-    operationId: WHOLE_SCREEN_OPERATION,
-    intentHash: wholeScreenBrief.hash,
-    kind: 'manual-retry' as const,
-    acceptedAt: '2026-01-01T00:00:00.000Z',
-    baseBrief: wholeScreenBrief,
-    baseReport: null,
-    frozenInputIds: [],
-    reservation: {
-      accountingKey: {
-        sessionId,
-        epochId: WHOLE_SCREEN_EPOCH,
-        operationId: WHOLE_SCREEN_OPERATION,
-        generation: 0,
-      },
-      amount: 0,
-      state: 'reserved' as const,
-      usageApplied: false,
-      appliedUsage: null,
-      history: [],
-    },
-    status: 'accepted' as const,
-    dispatchPossibility: 'none' as const,
-    automaticAllowanceConsumed: false,
-  };
-}
-
-function writeWholeScreenState(sessionDir: string, status: WholeScreenRecoveryStatus): void {
-  const sessionId = basename(sessionDir);
-  const recovery = createBriefRecoveryState(
-    {
-      sessionId,
-      origin: { mode: 'standard', entry: 'initial' },
-      continuation: { version: 1, kind: 'approval', mode: 'standard', entry: 'initial' },
-      activeBrief: wholeScreenBrief,
-      report: {
-        briefHash: wholeScreenBrief.hash,
-        report: wholeScreenReport,
-        ruleVersion: 'brief-quality-v1',
-        issues: [],
-        errorCount: 0,
-      },
-      qualityPolicyVersion: 'brief-quality-v1',
-    },
-    { epochId: WHOLE_SCREEN_EPOCH, recoveryRevision: 1 },
-  );
-  const state = {
-    ...createInitialState('whole-screen fixture'),
-    stateRevision: 1,
-    stateFence: { token: 1, ownerId: 'review-view-test' },
-    phase: 'reviewing-briefs' as const,
-    briefRecovery:
-      status === 'retrying'
-        ? {
-            ...recovery,
-            status,
-            attempts: { [WHOLE_SCREEN_OPERATION]: wholeScreenAttempt(sessionId) },
-            activeOperationId: WHOLE_SCREEN_OPERATION,
-          }
-        : { ...recovery, status },
-  };
-  writeFileSync(join(sessionDir, STATE_FILE), JSON.stringify(state), 'utf8');
-}
 
 function reviewInputMode(): UseInputModeResult {
   return {
@@ -125,18 +26,6 @@ function reviewInputMode(): UseInputModeResult {
     resolve: vi.fn(),
     resetMode: vi.fn(),
   };
-}
-
-function rightPaneBottomRow(frame: string, startColumn: number): number {
-  const rows = stripAnsiStyles(frame)
-    .split('\n')
-    .flatMap((line, row) => {
-      const corner = line[startColumn];
-      return (corner === '+' || corner === '└') && /[-─]{2,}/u.test(line.slice(startColumn))
-        ? [row]
-        : [];
-    });
-  return rows.length > 0 ? (rows[rows.length - 1] ?? -1) : -1;
 }
 
 describe('ReviewView', () => {
@@ -340,61 +229,33 @@ describe('ReviewView', () => {
     expect(frame.split('\n').every((line) => getTerminalCellWidth(line) <= 24)).toBe(true);
   });
 
-  it.each(['checking', 'blocked', 'retrying', 'unresolved', 'ready', 'readiness-blocked'] as const)(
-    'keeps the whole workflow body bounded for %s at every recovery width',
-    async (status) => {
-      const file = join(tmp, TASKS_FILE);
-      configStore.__testReset({ config: makeConfig(), projectDir: tmp });
-      writeFileSync(
-        file,
-        formatTasks([makeTask({ id: 'T001', title: 'whole-screen task' })]),
-        'utf8',
-      );
+  it('the reviewing-briefs phase renders the ordinary review view with the tasks.md path', async () => {
+    const file = join(tmp, TASKS_FILE);
+    writeFileSync(
+      file,
+      formatTasks([makeTask({ id: 'T001', title: 'Whole-screen task' })]),
+      'utf8',
+    );
+    reviewStore.setReviewFile(file);
 
-      writeWholeScreenState(tmp, status);
+    ui = renderFeature(
+      <WorkflowBody
+        showSidebar={false}
+        sidebarWidth={0}
+        inputMode={reviewInputMode()}
+        reviewFilePath={file}
+        contentHeight={16}
+        contentWidth={80}
+      />,
+    );
 
-      try {
-        for (const cols of WHOLE_SCREEN_WIDTHS) {
-          const contentHeight = 16;
-          terminalSizeStore.__testReset({ cols, rows: 24 });
-          const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible: true });
-          const showSidebar = sidebarWidth > 0;
-          const contentWidth = getWorkflowContentWidth({ cols, sidebarVisible: true });
-          const rendered = renderFeature(
-            <WorkflowBody
-              showSidebar={showSidebar}
-              sidebarWidth={sidebarWidth}
-              inputMode={reviewInputMode()}
-              reviewFilePath={file}
-              phase="reviewing-briefs"
-              contentHeight={contentHeight}
-              contentWidth={contentWidth}
-            />,
-            { cols, rows: 24 },
-          );
+    await vi.waitFor(() => {
+      const frame = stripAnsiStyles(ui?.lastFrame() ?? '');
+      expect(frame).toContain(TASKS_FILE);
+      expect(frame).toContain('Whole-screen task');
+    });
 
-          await vi.waitFor(() => {
-            expect(stripAnsiStyles(rendered.lastFrame() ?? '')).toContain(
-              WHOLE_SCREEN_OUTCOME[status],
-            );
-          });
-
-          const frame = stripAnsiStyles(rendered.lastFrame() ?? '');
-          const lines = frame.split('\n');
-          expect(lines.length).toBeLessThanOrEqual(contentHeight);
-          expect(lines.every((line) => getTerminalCellWidth(line) <= cols)).toBe(true);
-          if (showSidebar) {
-            expect(frame).toContain('No tasks yet');
-            expect(rightPaneBottomRow(frame, sidebarWidth + 2)).toBe(contentHeight - 1);
-          } else {
-            expect(frame).not.toContain('No tasks yet');
-            expect(rightPaneBottomRow(frame, 0)).toBe(contentHeight - 1);
-          }
-          rendered.unmount();
-        }
-      } finally {
-        configStore.__testReset();
-      }
-    },
-  );
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame.split('\n').length).toBeLessThanOrEqual(16);
+  });
 });

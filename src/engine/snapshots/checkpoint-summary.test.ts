@@ -240,7 +240,7 @@ describe('listCheckpointSummaries', () => {
     });
   });
 
-  it('builds exact ID-based diff and restore commands even when a name is present', async () => {
+  it('carries no CLI command strings for a checkpoint', async () => {
     await writeSnapshot({
       id: 'snap-command-id',
       name: 'pre-task-9',
@@ -248,7 +248,8 @@ describe('listCheckpointSummaries', () => {
 
     const summaries = await listCheckpointSummaries(tmp, 'sess-01');
 
-    expect(summaries[0]?.diffCommand).toBe('splitbrief snapshot diff snap-command-id');
-    expect(summaries[0]?.restoreCommand).toBe('splitbrief snapshot restore snap-command-id');
+    expect(summaries[0]?.id).toBe('snap-command-id');
+    expect(Object.keys(summaries[0] ?? {})).not.toContain('diffCommand');
+    expect(Object.keys(summaries[0] ?? {})).not.toContain('restoreCommand');
   });
 });

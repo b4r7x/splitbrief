@@ -13,10 +13,10 @@ describe('config persistence', () => {
     const result = persistedConfigForSave({
       persisted,
       effective,
-      updated: { ...effective, plannerEstimateReview: true },
+      updated: { ...effective, escalation: { enabled: true } },
     });
 
-    expect(result.plannerEstimateReview).toBe(true);
+    expect(result.escalation?.enabled).toBe(true);
     expect(result.implementer.model).toBe(persisted.implementer.model);
   });
 

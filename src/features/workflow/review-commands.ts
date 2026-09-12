@@ -1,5 +1,4 @@
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
-import type { BriefReviewCommandAction } from '../../core/schemas/brief-review-command.js';
 import { SOFT_SEP } from '../../components/separators.js';
 import { assertNever } from '../../utils/type-guards.js';
 
@@ -13,7 +12,7 @@ export const REVIEW_UNKNOWN_COMMAND_MESSAGE =
 const APPROVE_ALIASES = new Set(['approve', 'yes', 'y', 'ok', 'lgtm', 'continue']);
 const REJECT_ALIASES = new Set(['quit', 'reject', 'no', 'n', 'q']);
 
-type LocalBriefReviewAction = Extract<BriefReviewCommandAction, 'approve' | 'reject' | 'status'>;
+type LocalBriefReviewAction = 'approve' | 'reject' | 'status';
 
 export type LegacyReviewCommand =
   | { readonly action: 'revise'; readonly comment: string }

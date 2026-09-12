@@ -3,7 +3,6 @@ import { join } from 'node:path';
 import type { Session } from '../schemas/session.js';
 import type { SessionRef } from '../types/session-ref.js';
 import type { WorkflowState } from '../schemas/workflow.js';
-import type { Config } from '../schemas/config.js';
 import { SessionSchema } from '../schemas/session.js';
 import { parsePersistedSession } from './summary-parser.js';
 import { sessionDir, sessionsRoot, isValidSessionId } from '../paths.js';
@@ -12,8 +11,6 @@ import { isENOENT } from '../../lib/process/errors.js';
 import { loadState } from '../state/persistence.js';
 import { sessionError } from './errors.js';
 import { writeSecureFile } from '../../lib/fs.js';
-import { TRANSCRIPT_OMITTED_FEATURE, isOpaqueSessionId } from './session-id.js';
-import { readSessionLockfileData } from './lockfile-status.js';
 
 function readSummaryFile(filePath: string, sessionId: string): Session | null {
   try {
@@ -59,19 +56,11 @@ export function readSession(ref: SessionRef): Session | null {
   return readSummaryFile(join(sessionDir(projectDir, sessionId), 'summary.json'), sessionId);
 }
 
-function recoveredFeature(projectDir: string, sessionId: string, state: WorkflowState): string {
-  const lockfile = readSessionLockfileData({ sessionDir: sessionDir(projectDir, sessionId) });
-  if (lockfile.kind === 'valid' && lockfile.data.feature === TRANSCRIPT_OMITTED_FEATURE) {
-    return TRANSCRIPT_OMITTED_FEATURE;
-  }
-  return isOpaqueSessionId(sessionId) ? TRANSCRIPT_OMITTED_FEATURE : state.feature;
-}
-
-function stateToSession(projectDir: string, sessionId: string, state: WorkflowState): Session {
+function stateToSession(sessionId: string, state: WorkflowState): Session {
   const startedAt = Date.parse(state.startedAt);
   return {
     id: sessionId,
-    feature: recoveredFeature(projectDir, sessionId, state),
+    feature: state.feature,
     startedAt: Number.isNaN(startedAt) ? 0 : startedAt,
     completedAt: null,
     stateVersion: state.stateVersion,
@@ -83,33 +72,7 @@ function stateToSession(projectDir: string, sessionId: string, state: WorkflowSt
 function recoverSession(projectDir: string, sessionId: string): Session | null {
   const state = loadState({ projectDir, sessionId });
   if (!state) return null;
-  return stateToSession(projectDir, sessionId, state);
-}
-
-export function readSessionPersistTranscript(ref: SessionRef): boolean {
-  const { projectDir, sessionId } = ref;
-  if (isOpaqueSessionId(sessionId)) return false;
-
-  const sessDir = sessionDir(projectDir, sessionId);
-  const summary = readSummaryFile(join(sessDir, 'summary.json'), sessionId);
-  if (summary?.feature === TRANSCRIPT_OMITTED_FEATURE) return false;
-
-  const lockfile = readSessionLockfileData({ sessionDir: sessDir });
-  if (lockfile.kind === 'valid' && lockfile.data.feature === TRANSCRIPT_OMITTED_FEATURE) {
-    return false;
-  }
-
-  return true;
-}
-
-export function configForSessionTranscriptPolicy(
-  config: Config,
-  ref: SessionRef | undefined,
-): Config {
-  if (!ref) return config;
-  const persistTranscript = config.workflow.persistTranscript && readSessionPersistTranscript(ref);
-  if (persistTranscript === config.workflow.persistTranscript) return config;
-  return { ...config, workflow: { ...config.workflow, persistTranscript } };
+  return stateToSession(sessionId, state);
 }
 
 function isValidSessionDirectory(sessionId: string): boolean {

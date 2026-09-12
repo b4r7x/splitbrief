@@ -10,7 +10,7 @@ import {
 } from './events.js';
 import type { ActionClass } from '../../../core/schemas/enums.js';
 import { taskScopePatterns } from '../task-scope.js';
-import { isConfiguredHeadless, type GateActionInput, type GateDecision } from './types.js';
+import type { GateActionInput, GateDecision } from './types.js';
 
 function mergeGrant(grants: ApprovalGrant[], grant: ApprovalGrant): ApprovalGrant[] | null {
   const alwaysExists = grants.some(
@@ -50,7 +50,6 @@ export async function gateStickyTier(args: StickyTierInput): Promise<GateDecisio
     taskId,
     bus,
     callbacks,
-    config,
   } = input;
   const tier = 'sticky' as const;
 
@@ -89,7 +88,7 @@ export async function gateStickyTier(args: StickyTierInput): Promise<GateDecisio
 
   publishApprovalPrompted({ bus, phase, tier, actionClass, taskId });
 
-  if (!callbacks.onTieredApproval || isConfiguredHeadless(config)) {
+  if (!callbacks.onTieredApproval) {
     publishApprovalRejected({
       bus,
       phase,

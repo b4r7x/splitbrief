@@ -1,12 +1,11 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { createHash } from 'node:crypto';
 import { existsSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { saveState, loadState } from './persistence.js';
-import { commitStateAuthorityFence, loadStateForResume } from './resume-authority.js';
 import { createInitialState } from './machine.js';
 import { taskId } from '../schemas/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeLegacyV3State } from '#testing/helpers/factories/workflow-state.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { SPLITBRIEF_DIR, SESSIONS_DIR } from '../paths.js';
@@ -31,29 +30,6 @@ vi.mock('node:fs', async (importOriginal) => {
 
 let tmp: string;
 const SESSION_ID = '2024-01-01-test-feature';
-
-function digest(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
-}
-
-function fencedAuthority(ref: { sessionId: string }, stateBytes: string, revision = 1) {
-  return {
-    kind: 'fenced' as const,
-    promotedFromVersion: null,
-    receipt: {
-      kind: 'usable' as const,
-      sessionId: ref.sessionId,
-      ownerId: 'owner-1',
-      pid: process.pid,
-      processStart: 'test-start',
-      runId: 'run-1',
-      acquisitionId: 'acquisition-1',
-      fence: 1,
-      stateRevision: revision,
-      stateDigest: digest(stateBytes),
-    },
-  };
-}
 
 afterEach(() => {
   fsControl.throwEnoentOnStatOnce = false;
@@ -278,107 +254,18 @@ describe('loadState', () => {
   });
 });
 
-describe('authority-bearing resume persistence', () => {
-  it('keeps loadState strict while the resume seam migrates v3', () => {
+describe('loadState v3 migration', () => {
+  it('loadState migrates a v3 snapshot to v4 without a recovery map', () => {
     const dir = makeTmp();
     const ref = { projectDir: dir, sessionId: SESSION_ID };
-    saveState(ref, makeLegacyV3State());
-    const statePath = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'state.json');
-    const stateBytes = readFileSync(statePath, 'utf8');
+    const task = makeTask({ id: 'T001' });
+    const legacy = { ...makeLegacyV3State('legacy-migration'), tasks: [task] };
+    saveState(ref, legacy);
 
-    expect(loadState(ref)).toBeNull();
-    const result = loadStateForResume({ ref, authority: fencedAuthority(ref, stateBytes) });
+    const loaded = loadState(ref);
 
-    expect(result.kind).toBe('loaded');
-    if (result.kind !== 'loaded') return;
-    expect(result.migrated).toBe(true);
-    expect(result.state.stateVersion).toBe(4);
-    expect(result.state.briefRecovery?.status).toBe('storage-blocked');
-    expect(loadState(ref)?.briefRecovery?.status).toBe('storage-blocked');
-  });
-
-  it('maps a valid legacy Brief/report pair to Contract Ready or Blocked', () => {
-    const dir = makeTmp();
-    const ref = { projectDir: dir, sessionId: SESSION_ID };
-    const state = makeLegacyV3State('legacy-artifacts');
-    saveState(ref, state);
-    const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
-    const brief = '# Task Briefs\n';
-    const report = JSON.stringify({ version: 1, passed: true, score: 1, issues: [] });
-    writeFileSync(join(stateDir, 'tasks.md'), brief);
-    writeFileSync(join(stateDir, 'brief-quality.json'), report);
-    const statePath = join(stateDir, 'state.json');
-    const stateBytes = readFileSync(statePath, 'utf8');
-
-    const result = loadStateForResume({ ref, authority: fencedAuthority(ref, stateBytes) });
-
-    expect(result.kind).toBe('loaded');
-    if (result.kind !== 'loaded') return;
-    expect(result.state.briefRecovery?.status).toBe('ready');
-    const recovery = result.state.briefRecovery;
-    if (
-      recovery === undefined ||
-      recovery === null ||
-      recovery.status === 'storage-blocked' ||
-      recovery.status === 'rejected' ||
-      recovery.activeBrief === null
-    )
-      return;
-    expect(recovery.activeBrief.path).toBe('tasks.md');
-    expect(recovery.matchingReport?.report.path).toBe('brief-quality.json');
-  });
-
-  it('returns a digest-bound read-only error without rewriting future bytes', () => {
-    const dir = makeTmp();
-    const ref = { projectDir: dir, sessionId: SESSION_ID };
-    const state = { ...makeLegacyV3State('future-state'), stateVersion: 5 };
-    const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
-    mkdirSync(stateDir, { recursive: true });
-    const statePath = join(stateDir, 'state.json');
-    writeFileSync(statePath, `${JSON.stringify(state)}\n`);
-    const before = readFileSync(statePath);
-    const result = loadStateForResume({
-      ref,
-      authority: {
-        kind: 'read-only',
-        permit: {
-          kind: 'read-only-permit',
-          sessionId: SESSION_ID,
-          acquisitionId: 'acquisition-future',
-          rawStateDigest: digest(before.toString('utf8')),
-        },
-      },
-    });
-
-    expect(result).toMatchObject({ kind: 'invalid', code: 'future-version' });
-    expect(readFileSync(statePath)).toEqual(before);
-  });
-
-  it('commits v3 promotion and the first fence through one synchronous CAS', () => {
-    const dir = makeTmp();
-    const ref = { projectDir: dir, sessionId: SESSION_ID };
-    saveState(ref, makeLegacyV3State('fenced-promotion'));
-    const result = commitStateAuthorityFence({
-      ref,
-      candidate: {
-        kind: 'candidate',
-        sessionId: SESSION_ID,
-        ownerId: 'owner-1',
-        pid: process.pid,
-        processStart: 'test-start',
-        runId: 'run-1',
-        acquisitionId: 'acquisition-fence',
-        fence: 0,
-        stateRevision: 0,
-        stateDigest: null,
-      },
-      nextFence: 1,
-    });
-
-    expect(result.kind).toBe('fenced');
-    if (result.kind !== 'fenced') return;
-    expect(result.promotedFromVersion).toBe(3);
-    expect(result.receipt.fence).toBe(1);
-    expect(loadState(ref)?.stateVersion).toBe(4);
+    expect(loaded?.stateVersion).toBe(4);
+    expect(loaded?.tasks).toEqual([task]);
+    expect(loaded).not.toHaveProperty('briefRecovery');
   });
 });

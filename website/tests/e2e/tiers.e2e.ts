@@ -115,11 +115,31 @@ test('the phone column at 390', async ({ page }) => {
   ).toBe(true);
 });
 
-test('the FHD row', async ({ page }) => {
-  await at(page, 1600, 900);
-  const head = await box(page.locator('.s02 .head'));
-  const panel = await box(page.locator('.s02 .panel'));
-  expect(Math.abs(head.w - 330)).toBeLessThanOrEqual(1);
-  expect(Math.abs(panel.w - 517)).toBeLessThanOrEqual(1);
-  await expect(page.locator('.dots--gutter')).toBeVisible();
+test('wide tiers preserve panel sizing and never enlarge the Canvas cells', async ({ page }) => {
+  const rows = [
+    { width: 1599, head: 310, panel: 494 },
+    { width: 1600, head: 330, panel: 520 },
+    { width: 1920, head: 330, panel: 624 },
+    { width: 2560, head: 330, panel: 624 },
+  ];
+  let wideGhosts: { width: number; height: number }[] | undefined;
+  for (const row of rows) {
+    await at(page, row.width, 1080);
+    const head = await box(page.locator('.s02 .head'));
+    const panel = await box(page.locator('.s02 .panel'));
+    expect(Math.abs(head.w - row.head)).toBeLessThanOrEqual(1);
+    expect(Math.abs(panel.w - row.panel)).toBeLessThanOrEqual(1);
+    await expect(page.locator('.dots--gutter')).toBeVisible({ visible: row.width >= 1600 });
+    const ghosts = await page.locator('canvas.ghost').evaluateAll((canvases) =>
+      canvases.map((canvas) => {
+        const rect = canvas.getBoundingClientRect();
+        return { width: rect.width, height: rect.height };
+      }),
+    );
+    expect(ghosts).toHaveLength(3);
+    if (row.width >= 1600) {
+      if (wideGhosts) expect(ghosts).toEqual(wideGhosts);
+      wideGhosts = ghosts;
+    }
+  }
 });

@@ -3,7 +3,6 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SPEC_FILE, sessionDir } from '../../../src/core/paths.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
-import { saveState } from '../../../src/core/state/persistence.js';
 import type { WorkflowMode } from '../../../src/core/schemas/enums.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
@@ -49,11 +48,6 @@ const SEVEN_MARKERS = Array.from(
 );
 const ANSWER = 'use-jwt-for-auth';
 const FLAVORS = ['conversational', 'command'] as const;
-const PRODUCER_HANDOFF_PHASE: Record<WorkflowMode, WorkflowState['phase']> = {
-  quick: 'idle',
-  standard: 'reviewing-plan',
-  speckit: 'analyzing',
-};
 
 let dirs: string[] = [];
 afterEach(() => {
@@ -130,10 +124,8 @@ function makeMarkerPlanner(opts: {
   return { planner, planningInputs, reviewPrompts };
 }
 
-function entryState(mode: WorkflowMode, feature: string): WorkflowState {
-  const initial = createInitialState(feature);
-  if (mode === 'standard' || mode === 'speckit') return transition(initial, { type: 'START' });
-  return initial;
+function entryState(feature: string): WorkflowState {
+  return transition(createInitialState(feature), { type: 'START' });
 }
 
 async function runMode(opts: {
@@ -161,7 +153,7 @@ async function runMode(opts: {
       sinks: TEST_WORKFLOW_SINKS,
     },
     planner: opts.planner,
-    state: opts.state ?? entryState(opts.mode, feature),
+    state: opts.state ?? entryState(feature),
     feature,
   });
   return { result, events, ...project };
@@ -204,8 +196,8 @@ function modeSuite(mode: WorkflowMode): void {
 
     expect(onQuestionAsked).toHaveBeenNthCalledWith(1, expect.objectContaining({ id: 'q1' }), 1, 2);
     expect(onQuestionAsked).toHaveBeenNthCalledWith(2, expect.objectContaining({ id: 'q2' }), 2, 2);
-    expect(result.disposition).toBe('parked');
-    expect(result.state.phase).toBe(PRODUCER_HANDOFF_PHASE[mode]);
+    expect(result.disposition).toBe('ready-for-tasks');
+    expect(result.state.phase).toBe('implementing');
     expectMarkerFreePlannerText(events);
   });
 
@@ -216,12 +208,12 @@ function modeSuite(mode: WorkflowMode): void {
     const { result, events } = await runMode({ mode, planner, onQuestionAsked });
 
     expect(onQuestionAsked).toHaveBeenCalledTimes(5);
-    expect(result.disposition).toBe('parked');
-    expect(result.state.phase).toBe(PRODUCER_HANDOFF_PHASE[mode]);
+    expect(result.disposition).toBe('ready-for-tasks');
+    expect(result.state.phase).toBe('implementing');
     expectMarkerFreePlannerText(events);
   });
 
-  it('persists the answer under ## Clarifications and feeds it into the next planner input', async () => {
+  it('persists the answer under ## Clarifications and feeds it back inside the same turn', async () => {
     const { planner, planningInputs, reviewPrompts } = makeMarkerPlanner({
       flavor: 'conversational',
       markers: TWO_MARKERS,
@@ -230,7 +222,7 @@ function modeSuite(mode: WorkflowMode): void {
 
     const first = await runMode({ mode, planner, onQuestionAsked });
 
-    expect(first.result.disposition).toBe('parked');
+    expect(first.result.disposition).toBe('ready-for-tasks');
     const specContent = readFileSync(
       join(sessionDir(first.projectDir, first.sessionId), SPEC_FILE),
       'utf8',
@@ -238,23 +230,12 @@ function modeSuite(mode: WorkflowMode): void {
     expect(specContent).toContain('## Clarifications');
     expect(specContent).toContain(ANSWER);
 
-    if (mode === 'standard' || mode === 'speckit') {
-      expect(reviewPrompts.some((prompt) => prompt.includes(ANSWER))).toBe(true);
-    } else {
-      const secondState = transition(first.result.state, { type: 'CANCEL' });
-      saveState({ projectDir: first.projectDir, sessionId: first.sessionId }, secondState);
-      const second = await runMode({
-        mode,
-        planner,
-        project: { projectDir: first.projectDir, sessionId: first.sessionId },
-        state: secondState,
-        feature: 'follow-up tweak',
-      });
-      expect(second.result.disposition).toBe('parked');
-      expect(planningInputs).toHaveLength(2);
-      expect(planningInputs[0]).not.toContain(ANSWER);
-      expect(planningInputs[1]).toContain(ANSWER);
-    }
+    // Every mode now finishes the turn: the answer is queued and the brief quality
+    // gate drains the queue into one regeneration before it gates, so the answer
+    // reaches the planner in the same turn instead of waiting for the next one.
+    expect(reviewPrompts.some((prompt) => prompt.includes(ANSWER))).toBe(true);
+    expect(planningInputs).toHaveLength(1);
+    expect(planningInputs[0]).not.toContain(ANSWER);
     expectMarkerFreePlannerText(first.events);
   });
 
@@ -266,8 +247,8 @@ function modeSuite(mode: WorkflowMode): void {
     const { result, events } = await runMode({ mode, planner, onQuestionAsked });
 
     expect(onQuestionAsked).toHaveBeenCalledTimes(2);
-    expect(result.disposition).toBe('parked');
-    expect(result.state.phase).toBe(PRODUCER_HANDOFF_PHASE[mode]);
+    expect(result.disposition).toBe('ready-for-tasks');
+    expect(result.state.phase).toBe('implementing');
     expectMarkerFreePlannerText(events);
   });
 }

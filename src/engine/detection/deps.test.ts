@@ -101,10 +101,11 @@ describe('createProductionDetectionDeps', () => {
     expect(contextsA.cliModels).not.toBe(contextsB.cliModels);
     expect(JSON.stringify(contextsA)).not.toContain('sk-private-config-a');
     expect(JSON.stringify(contextsB)).not.toContain('sk-private-config-b');
-    // The salted readiness/cliModels lanes key pre-widening snapshots out.
+    // The salted readiness/cliModels lanes key pre-change snapshots out.
     expect(contextsA.readiness).toContain(encodeURIComponent('readiness:all-tools:'));
     expect(contextsA.modelsDev).not.toContain('all-tools');
-    expect(contextsA.cliModels).toContain(encodeURIComponent('cliModels:all-tools:'));
+    expect(contextsA.cliModels).toContain(encodeURIComponent('cliModels:per-tool:'));
+    expect(contextsA.cliModels).not.toContain(encodeURIComponent('cliModels:all-tools:'));
   });
 
   it('probes only the configured built-in API endpoint with its raw override held closure-local', async () => {

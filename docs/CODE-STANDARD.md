@@ -107,7 +107,7 @@ This is the single most violated standard in the codebase, so the bar is explici
 |---|---|
 | **≥ 4 parameters (any function)** | Single options object. |
 | **≥ 3 parameters AND exported / crosses a module boundary** | Single options object. |
-| **A bare `boolean` parameter** | Banned regardless of count — boolean trap. Use a named option field (`{ persistTranscript: true }`) or a string-union literal. |
+| **A bare `boolean` parameter** | Banned regardless of count — boolean trap. Use a named option field (`{ requireNonEmpty: true }`) or a string-union literal. |
 | **Two adjacent same-typed params** (two `string`, two `number`, two callbacks, two same-shape objects) | Banned regardless of count — silent transposition hazard. Name them in an options object. |
 
 The boolean-trap and transposition-hazard rows are **count-independent hard flags**: `createOpenAICompatProvider(id, baseURL, apiKeyEnv, false, overrides)` is a violation because of the bare `false` and the three adjacent strings, not because of arity.
@@ -206,7 +206,7 @@ Run top to bottom on any diff. The mechanical rows are mostly covered by `npm ru
 **Comments & hygiene**
 - [ ] No decorative banners; comments explain non-obvious *why*, invariants, or workarounds only ([STRUCTURE.md](./STRUCTURE.md#no-decorative-comments)).
 - [ ] No defensive check on a statically non-nullable value; no never-triggering fallback; no empty `catch {}` without a one-line justification ([ERRORS.md](./ERRORS.md)).
-- [ ] `npm run test-ci` (format:check → typecheck → lint → test:coverage → e2e → invariants) is green.
+- [ ] `npm run test-ci` (format:check → typecheck → lint → test:coverage → e2e → invariants → skills:check) is green.
 
 ---
 

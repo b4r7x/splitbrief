@@ -6,11 +6,12 @@ import { EFFORT_LEVELS, META_PROVIDER_IDS, PLANNER_TOOL_IDS } from '../core/sche
 import type { WorkflowOpts } from '../core/types/config-options.js';
 import {
   addWorkflowOptions,
-  assertModeFlagsExclusive,
   parseBudgetOption,
+  parseGitRefOption,
   parseNumberOption,
   parseOutputFormatOption,
   parsePositiveIntegerOption,
+  parseSeatSpecOption,
 } from './options.js';
 import { runCommand } from '#testing/helpers/commander.js';
 
@@ -90,18 +91,32 @@ describe('parseOutputFormatOption', () => {
   });
 });
 
-describe('assertModeFlagsExclusive', () => {
-  it('throws when both --json and --rpc are set', () => {
-    expect(() => assertModeFlagsExclusive({ json: true, rpc: true })).toThrow(/--json and --rpc/);
+describe('parseSeatSpecOption', () => {
+  it.each([
+    { spec: 'codex', expected: { tool: 'codex' } },
+    { spec: 'codex@high', expected: { tool: 'codex', effort: 'high' } },
+    {
+      spec: 'cmd:deepseek/deepseek-v4-flash',
+      expected: { tool: 'cmd', model: 'deepseek/deepseek-v4-flash' },
+    },
+    {
+      spec: 'opencode:opencode-go/kimi-k3@high',
+      expected: { tool: 'opencode', model: 'opencode-go/kimi-k3', effort: 'high' },
+    },
+    {
+      spec: 'cursor:gpt-5.3-codex-high',
+      expected: { tool: 'cursor', model: 'gpt-5.3-codex-high' },
+    },
+  ])('reads $spec', ({ spec, expected }) => {
+    expect(parseSeatSpecOption(spec)).toEqual(expected);
   });
 
-  it.each([
-    { json: true, rpc: false },
-    { json: false, rpc: true },
-    { json: false, rpc: false },
-    {},
-  ])('accepts %o', (opts) => {
-    expect(() => assertModeFlagsExclusive(opts)).not.toThrow();
+  it('splits on the first colon, so a model id may carry its own', () => {
+    expect(parseSeatSpecOption('api:openai:gpt-5')).toEqual({ tool: 'api', model: 'openai:gpt-5' });
+  });
+
+  it.each(['', '@high', ':model', 'codex:', 'codex@'])('rejects %j', (spec) => {
+    expect(() => parseSeatSpecOption(spec)).toThrow(InvalidArgumentError);
   });
 });
 
@@ -252,7 +267,7 @@ describe('reviewer seat flags', () => {
 });
 
 describe('removed --auto flag', () => {
-  it.each(['start', 'spec', 'resume', 'continue', 'last'])(
+  it.each(['start', 'spec', 'resume', 'continue'])(
     'rejects --auto on the %s command',
     async (command) => {
       const { exitCode, stderr } = await runCommand([command, '--auto', 'add health endpoint']);
@@ -261,4 +276,39 @@ describe('removed --auto flag', () => {
       expect(stderr).toMatch(/unknown option.*--auto/i);
     },
   );
+});
+
+describe('--plain and --json exclusivity', () => {
+  it.each(['start', 'resume', 'continue'])(
+    'rejects both output modes on the %s command with exit code 2',
+    async (command) => {
+      const { exitCode, stderr } = await runCommand([command, '--plain', '--json']);
+
+      expect(exitCode).toBe(2);
+      expect(stderr).toContain('--plain and --json cannot be combined');
+    },
+  );
+
+  it('accepts --plain on its own', () => {
+    const command = addWorkflowOptions(new Command());
+    command.parse(['node', 'splitbrief', '--plain']);
+
+    expect(command.opts().plain).toBe(true);
+    expect(command.opts().json).toBe(false);
+  });
+});
+
+describe('parseGitRefOption', () => {
+  it('returns a trimmed ref', () => {
+    expect(parseGitRefOption(' main ')).toBe('main');
+  });
+
+  it('rejects an option-shaped ref that git would read as a flag', () => {
+    expect(() => parseGitRefOption('--output=/tmp/steal.txt')).toThrow(InvalidArgumentError);
+    expect(() => parseGitRefOption('-p')).toThrow("cannot start with '-'");
+  });
+
+  it('rejects an empty ref', () => {
+    expect(() => parseGitRefOption('   ')).toThrow(InvalidArgumentError);
+  });
 });

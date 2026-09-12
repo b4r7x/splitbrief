@@ -116,7 +116,7 @@ describe('crewRowFilterText', () => {
     });
     const text = crewRowFilterText(rowAt(deriveCrewRows({ config }), 'seat:build'));
 
-    expect(text).toContain('qwen 2.5');
+    expect(text).toContain('qwen2.5');
   });
 
   it('matches an effort level from the seat identity', () => {

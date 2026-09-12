@@ -11,6 +11,8 @@ export type PaletteAction =
 export interface PaletteCommandItem {
   label: string;
   description: string;
+  /** The argument grammar, carried apart from the description so a row can drop it whole. */
+  hint: string | null;
   shortcut: string | null;
   category: CommandCategory;
   action: PaletteAction;
@@ -20,6 +22,7 @@ interface PaletteCandidateBase {
   id: string;
   label: string;
   description: string;
+  hint: string | null;
   shortcut: string | null;
   action: PaletteAction;
 }
@@ -58,6 +61,7 @@ function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
       id: 'command:' + item.label,
       label: item.label,
       description: item.description,
+      hint: item.hint,
       source: 'command',
       category: item.category,
       shortcut: item.shortcut,
@@ -70,6 +74,7 @@ function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
       id: 'task:' + item.id,
       label: item.title,
       description: 'task ' + item.id,
+      hint: null,
       source: 'task',
       category: null,
       shortcut: null,
@@ -82,6 +87,7 @@ function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
       id: 'session:' + item.id,
       label: item.feature,
       description: item.status,
+      hint: null,
       source: 'session',
       category: null,
       shortcut: null,
@@ -94,6 +100,7 @@ function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
       id: 'custom:' + item.id,
       label: item.label,
       description: item.description,
+      hint: null,
       source: 'custom',
       category: null,
       shortcut: null,
@@ -166,7 +173,11 @@ export function buildPaletteResults(inputs: PaletteInputs): PaletteResult[] {
   const scored: RankedPaletteResult[] = [];
 
   for (const [candidateOrder, candidate] of candidates.entries()) {
-    const target = [candidate.label, candidate.description, candidate.source].join(' ');
+    // The grammar is part of the target even though it is a cell of its own: typing `speckit`
+    // still has to find `/mode`.
+    const target = [candidate.label, candidate.description, candidate.hint ?? '', candidate.source]
+      .filter((part) => part !== '')
+      .join(' ');
     const match = fuzzyMatchExtended(terms, target);
     if (match === null) continue;
     scored.push({

@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -6,7 +5,6 @@ import {
   readdirSync,
   renameSync,
   rmSync,
-  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
@@ -25,12 +23,6 @@ import { activeFile, LOCKFILE, READINESS_FILE, sessionDir, STATE_FILE } from '..
 import { createInitialState } from '../state/machine.js';
 import { readActive, writeActive, type PreparedNewSession } from './active-pointer.js';
 import {
-  acceptDetachedSessionHandoff,
-  rollbackDetachedSessionHandoff,
-  settleDetachedSessionHandoff,
-  transferPreparedSessionToDetached,
-} from './detached-handoff.js';
-import {
   createSessionPreparationCandidate,
   prepareNewSession,
   releasePreparedSession,
@@ -41,7 +33,6 @@ import {
 
 const tempDirs: string[] = [];
 const OWNERSHIP_FILE = '.prepare-owner.json';
-const DETACHED_HANDOFF_FILE = '.detached-handoff.json';
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
@@ -89,7 +80,6 @@ function prepareInput(
     candidate: createSessionPreparationCandidate({
       projectDir: project,
       feature: 'remember runner readiness',
-      persistTranscript: true,
       sessionId,
     }),
   };
@@ -118,7 +108,6 @@ describe('prepareNewSession', () => {
     const candidate = createSessionPreparationCandidate({
       projectDir: project,
       feature: 'candidate only',
-      persistTranscript: true,
       sessionId,
     });
 
@@ -272,7 +261,6 @@ describe('prepareNewSession', () => {
     const ownership = createSessionPreparationCandidate({
       projectDir: project,
       feature: 'unused candidate',
-      persistTranscript: true,
       sessionId: '2026-08-03-absent-candidate',
     });
 
@@ -515,306 +503,6 @@ describe('prepareNewSession', () => {
     expect(releaseLocked).toBe(true);
     expect(existsSync(marker)).toBe(false);
     expect(readActive(project)).toBe(sessionId);
-  });
-
-  it('transfers exact rollback authority to a durable detached handoff before release', () => {
-    const project = projectDir();
-    const sessionId = '2026-08-03-detached-handoff';
-    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
-    const directory = sessionDir(project, sessionId);
-
-    transferPreparedSessionToDetached(session);
-
-    expect(existsSync(join(directory, OWNERSHIP_FILE))).toBe(true);
-    expect(existsSync(join(directory, DETACHED_HANDOFF_FILE))).toBe(true);
-    expect(() => rollbackPreparedSession(session)).toThrowError(
-      expect.objectContaining({
-        kind: 'session-prepare-io',
-        data: { operation: 'rollback-session', sessionId },
-      }),
-    );
-
-    expect(acceptDetachedSessionHandoff(session)).toBe(true);
-
-    expect(existsSync(join(directory, OWNERSHIP_FILE))).toBe(false);
-    expect(existsSync(join(directory, DETACHED_HANDOFF_FILE))).toBe(false);
-    expect(existsSync(directory)).toBe(true);
-    expect(readActive(project)).toBe(sessionId);
-  });
-
-  it('rolls back the exact detached handoff after the parent transfers ownership', () => {
-    const project = projectDir();
-    const sessionId = '2026-08-03-detached-handoff-rollback';
-    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
-
-    transferPreparedSessionToDetached(session);
-    rollbackDetachedSessionHandoff(session);
-
-    expect(existsSync(sessionDir(project, sessionId))).toBe(false);
-    expect(readActive(project)).toBeNull();
-  });
-
-  it('leaves a canonical proof when the transfer process crashes after the atomic handoff', () => {
-    const project = projectDir();
-    const sessionId = '2026-08-03-detached-handoff-crash';
-    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
-    const script = `
-      import { transferPreparedSessionToDetached } from ${JSON.stringify(new URL('./detached-handoff.ts', import.meta.url).href)};
-      const projectDir = process.env['SPLITBRIEF_TEST_HANDOFF_PROJECT'];
-      const sessionId = process.env['SPLITBRIEF_TEST_HANDOFF_SESSION'];
-      const generation = process.env['SPLITBRIEF_TEST_HANDOFF_GENERATION'];
-      if (projectDir === undefined || sessionId === undefined || generation === undefined) process.exit(72);
-      transferPreparedSessionToDetached(
-        {
-          ref: { projectDir, sessionId },
-          ownership: { version: 1, sessionId, generation },
-        },
-        {
-          _beforeMutation: (boundary) => {
-            if (boundary === 'ownership-captured') process.exit(73);
-          },
-        },
-      );
-      process.exit(74);
-    `;
-
-    const crashed = spawnSync(process.execPath, ['--import', 'tsx', '--eval', script], {
-      env: {
-        ...process.env,
-        SPLITBRIEF_TEST_HANDOFF_PROJECT: project,
-        SPLITBRIEF_TEST_HANDOFF_SESSION: sessionId,
-        SPLITBRIEF_TEST_HANDOFF_GENERATION: session.ownership.generation,
-      },
-      stdio: 'pipe',
-    });
-
-    expect(crashed.status).toBe(73);
-    expect(existsSync(join(sessionDir(project, sessionId), OWNERSHIP_FILE))).toBe(true);
-    expect(existsSync(join(sessionDir(project, sessionId), DETACHED_HANDOFF_FILE))).toBe(true);
-
-    rollbackDetachedSessionHandoff(session);
-    expect(existsSync(sessionDir(project, sessionId))).toBe(false);
-    expect(readActive(project)).toBeNull();
-  });
-
-  it('atomically rolls back the original owner when detached handoff times out', () => {
-    const project = projectDir();
-    const sessionId = '2026-08-03-detached-handoff-timeout';
-    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
-
-    expect(settleDetachedSessionHandoff(session)).toBe('rolled-back');
-
-    expect(existsSync(sessionDir(project, sessionId))).toBe(false);
-    expect(readActive(project)).toBeNull();
-  });
-
-  it.each([
-    ['same-byte', false],
-    ['new-generation', true],
-  ] as const)('preserves a %s owner replacement during detached transfer', (_, newer) => {
-    const project = projectDir();
-    const sessionId = `2026-08-03-detached-owner-${newer ? 'newer' : 'same'}`;
-    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
-    const directory = sessionDir(project, sessionId);
-    const marker = join(directory, OWNERSHIP_FILE);
-    const original = readFileSync(marker, 'utf8');
-    const replacement = newer
-      ? `${JSON.stringify({
-          ...JSON.parse(original),
-          generation: '55555555-5555-4555-8555-555555555555',
-        })}\n`
-      : original;
-
-    expect(() =>
-      transferPreparedSessionToDetached(session, {
-        _beforeMutation: (boundary) => {
-          if (boundary !== 'ownership-claim') return;
-          renameSync(marker, `${marker}.displaced`);
-          writeFileSync(marker, replacement, { mode: 0o600 });
-        },
-      }),
-    ).toThrowError(
-      expect.objectContaining({
-        kind: 'session-prepare-io',
-        data: { operation: 'transfer-detached-session', sessionId },
-      }),
-    );
-    expect(readFileSync(marker, 'utf8')).toBe(replacement);
-    expect(readFileSync(`${marker}.displaced`, 'utf8')).toBe(original);
-    const preserved = readdirSync(join(project, '.splitbrief', 'sessions')).filter((name) =>
-      name.includes('.owner.'),
-    );
-    expect(preserved).toHaveLength(1);
-    expect(readFileSync(join(project, '.splitbrief', 'sessions', preserved[0]!), 'utf8')).toBe(
-      replacement,
-    );
-    expect(existsSync(join(directory, DETACHED_HANDOFF_FILE))).toBe(false);
-  });
-
-  it('preserves a handoff replacement claimed during failed transfer cleanup', () => {
-    const project = projectDir();
-    const sessionId = '2026-08-03-detached-recovery-replacement';
-    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
-    const directory = sessionDir(project, sessionId);
-    const marker = join(directory, OWNERSHIP_FILE);
-    const handoff = join(directory, DETACHED_HANDOFF_FILE);
-    const replacement = readFileSync(marker, 'utf8');
-
-    expect(() =>
-      transferPreparedSessionToDetached(session, {
-        _beforeMutation: (boundary) => {
-          if (boundary === 'ownership-claim') {
-            renameSync(marker, `${marker}.displaced`);
-            writeFileSync(marker, replacement, { mode: 0o600 });
-          }
-          if (boundary === 'detached-recovery-claim') {
-            renameSync(handoff, `${handoff}.displaced`);
-            writeFileSync(handoff, replacement, { mode: 0o600 });
-          }
-        },
-      }),
-    ).toThrowError(
-      expect.objectContaining({
-        kind: 'session-prepare-io',
-        data: { operation: 'transfer-detached-session', sessionId },
-      }),
-    );
-
-    expect(acceptDetachedSessionHandoff(session)).toBe(false);
-    expect(existsSync(handoff)).toBe(false);
-    expect(readFileSync(marker, 'utf8')).toBe(replacement);
-    expect(readFileSync(`${handoff}.displaced`, 'utf8')).toBe(replacement);
-    expect(
-      readdirSync(join(project, '.splitbrief', 'sessions')).filter((name) =>
-        name.includes('.owner.'),
-      ),
-    ).toHaveLength(1);
-  });
-
-  it('does not delete an owner replacement introduced immediately before alias cleanup', () => {
-    const project = projectDir();
-    const sessionId = '2026-08-03-detached-alias-replacement';
-    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
-    const directory = sessionDir(project, sessionId);
-    const marker = join(directory, OWNERSHIP_FILE);
-    const handoff = join(directory, DETACHED_HANDOFF_FILE);
-    const replacement = `${JSON.stringify({
-      ...JSON.parse(readFileSync(marker, 'utf8')),
-      generation: '55555555-5555-4555-8555-555555555555',
-    })}\n`;
-    transferPreparedSessionToDetached(session);
-
-    expect(() =>
-      acceptDetachedSessionHandoff(session, {
-        _beforeMutation: (boundary) => {
-          if (boundary !== 'detached-alias-claim') return;
-          renameSync(marker, `${marker}.displaced`);
-          writeFileSync(marker, replacement, { mode: 0o600 });
-        },
-      }),
-    ).toThrowError(
-      expect.objectContaining({
-        kind: 'session-prepare-io',
-        data: { operation: 'accept-detached-session', sessionId },
-      }),
-    );
-
-    expect(existsSync(handoff)).toBe(true);
-    expect(() => acceptDetachedSessionHandoff(session)).toThrowError(
-      expect.objectContaining({
-        kind: 'session-prepare-io',
-        data: { operation: 'accept-detached-session', sessionId },
-      }),
-    );
-    const preserved = readdirSync(join(project, '.splitbrief', 'sessions')).filter((name) =>
-      name.includes('.owner.'),
-    );
-    expect(preserved).toHaveLength(1);
-    expect(readFileSync(join(project, '.splitbrief', 'sessions', preserved[0]!), 'utf8')).toBe(
-      replacement,
-    );
-  });
-
-  it('accepts the exact committed handoff while preserving a later foreign owner', () => {
-    const project = projectDir();
-    const sessionId = '2026-08-03-detached-owner-after-link';
-    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
-    const directory = sessionDir(project, sessionId);
-    const marker = join(directory, OWNERSHIP_FILE);
-    const replacement = `${JSON.stringify({
-      ...JSON.parse(readFileSync(marker, 'utf8')),
-      generation: '55555555-5555-4555-8555-555555555555',
-    })}\n`;
-
-    transferPreparedSessionToDetached(session, {
-      _beforeMutation: (boundary) => {
-        if (boundary !== 'ownership-captured') return;
-        unlinkSync(marker);
-        writeFileSync(marker, replacement, { mode: 0o600 });
-      },
-    });
-    expect(acceptDetachedSessionHandoff(session)).toBe(true);
-
-    expect(existsSync(marker)).toBe(false);
-    expect(existsSync(join(directory, DETACHED_HANDOFF_FILE))).toBe(false);
-    const preserved = readdirSync(join(project, '.splitbrief', 'sessions')).filter((name) =>
-      name.includes('.owner.'),
-    );
-    expect(preserved).toHaveLength(1);
-    expect(readFileSync(join(project, '.splitbrief', 'sessions', preserved[0]!), 'utf8')).toBe(
-      replacement,
-    );
-    expect(readActive(project)).toBe(sessionId);
-  });
-
-  it('rejects handoff acceptance after a newer same-session activation', () => {
-    const project = projectDir();
-    const sessionId = '2026-08-03-detached-active-generation';
-    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
-    transferPreparedSessionToDetached(session);
-    writeFileSync(
-      activeFile(project),
-      `${JSON.stringify({
-        version: 1,
-        sessionId,
-        generation: '55555555-5555-4555-8555-555555555555',
-      })}\n`,
-      { mode: 0o600 },
-    );
-
-    expect(() => acceptDetachedSessionHandoff(session)).toThrowError(
-      expect.objectContaining({
-        kind: 'session-prepare-io',
-        data: { operation: 'accept-detached-session', sessionId },
-      }),
-    );
-    expect(existsSync(join(sessionDir(project, sessionId), DETACHED_HANDOFF_FILE))).toBe(true);
-  });
-
-  it('keeps original rollback authority when detached transfer fails before publication', () => {
-    const project = projectDir();
-    const sessionId = '2026-08-03-detached-handoff-failed';
-    const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
-    const directory = sessionDir(project, sessionId);
-
-    expect(() =>
-      transferPreparedSessionToDetached(session, {
-        _beforeMutation: (boundary) => {
-          if (boundary === 'ownership-captured') throw new Error('stop before transfer');
-        },
-      }),
-    ).toThrowError(
-      expect.objectContaining({
-        kind: 'session-prepare-io',
-        data: { operation: 'transfer-detached-session', sessionId },
-      }),
-    );
-    expect(existsSync(join(directory, OWNERSHIP_FILE))).toBe(true);
-    expect(existsSync(join(directory, DETACHED_HANDOFF_FILE))).toBe(false);
-    expect(acceptDetachedSessionHandoff(session)).toBe(false);
-
-    rollbackPreparedSession(session);
-    expect(existsSync(directory)).toBe(false);
   });
 
   it('a stale same-session generation cannot release clear or delete a newer generation', () => {

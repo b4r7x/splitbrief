@@ -97,8 +97,6 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
           operations.push('begin');
           const prepared = await beginDeclaredArtifactReview({
             ...artifactInput,
-            projectDir,
-            sessionId: 'planner-adapter-session',
             onApprovalNeeded: async () => ({ approved: true }),
           });
           return {

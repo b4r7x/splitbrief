@@ -19,8 +19,5 @@ workflow:
     commit_strategy: none
   mode: standard
   task_review: none
-  persist_transcript: true
   compaction_format: auto
 theme: terminal
-planner_estimate_review: false
-auto_split_overflow: false

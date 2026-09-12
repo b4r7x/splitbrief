@@ -72,28 +72,3 @@ describe('/approval command', () => {
     expect(error).toMatch(/Unknown approval command/i);
   });
 });
-
-describe('/yolo command', () => {
-  it('/yolo toggles approval enabled state', async () => {
-    let approvalEnabled = true;
-    let feedback: string | undefined;
-    const ctx = makeCtx({
-      getApprovalEnabled: () => approvalEnabled,
-      setApprovalEnabled: (value) => {
-        approvalEnabled = value;
-      },
-      setFeedbackMessage: (message) => {
-        feedback = message;
-      },
-    });
-    const commands = createRuntimeCommands(ctx);
-
-    await runCommandInTest({ commands, raw: '/yolo', screen: 'workflow', onError: noop });
-    expect(approvalEnabled).toBe(false);
-    expect(feedback).toMatch(/ON|enabled|disabled/i);
-
-    await runCommandInTest({ commands, raw: '/yolo', screen: 'workflow', onError: noop });
-    expect(approvalEnabled).toBe(true);
-    expect(feedback).toMatch(/OFF|restored/i);
-  });
-});

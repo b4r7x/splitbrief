@@ -252,7 +252,6 @@ describe('createImplementerBase — wrote-nothing warning', () => {
       taskId: 'T001',
       category: 'implementer',
       code: 'implementer_wrote_nothing',
-      transcriptSafe: true,
     });
     if (warnings[0]?.type === 'warning') {
       expect(warnings[0].message).toContain('T001');
@@ -263,7 +262,7 @@ describe('createImplementerBase — wrote-nothing warning', () => {
   it('lands the wrote-nothing warning in session.jsonl and the review packet warnings list', async () => {
     const sessionId = 't005-wrote-nothing';
     const bus = createEventBus();
-    bus.subscribe(createJsonlSink({ projectDir, sessionId, persistTranscript: false }));
+    bus.subscribe(createJsonlSink({ projectDir, sessionId }));
     const implementer = createImplementerBase(
       makeBaseConfig({
         extractsCode: false,

@@ -15,8 +15,6 @@ import {
 } from './events.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { taskId } from '../../core/schemas/task.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
-import { protectEngineEventForConsumer } from '../events/protection/protect.js';
 
 const TASK = taskId('T001');
 
@@ -334,7 +332,7 @@ describe('publish* payload forwarding', () => {
     expect((events[0] as { ts: number }).ts).toBeGreaterThan(0);
   });
 
-  it('publishWarning — preserves explicitly safe operational warning text under transcript-off', () => {
+  it('publishWarning — carries explicit operational warning safety metadata', () => {
     const { bus, events } = makeBusRecorder();
     publishWarning({
       bus: bus,
@@ -343,7 +341,6 @@ describe('publish* payload forwarding', () => {
       safety: {
         category: 'queue',
         code: 'queue_full',
-        transcriptSafe: true,
       },
     });
 
@@ -358,38 +355,7 @@ describe('publish* payload forwarding', () => {
       message: 'Queue full (50 messages).',
       category: 'queue',
       code: 'queue_full',
-      transcriptSafe: true,
     });
-    expect(
-      protectEngineEventForConsumer(warning, {
-        context: 'session-log',
-        persistTranscript: false,
-      }),
-    ).toMatchObject({
-      type: 'warning',
-      message: 'Queue full (50 messages).',
-      category: 'queue',
-      code: 'queue_full',
-      transcriptSafe: true,
-    });
-  });
-
-  it('publishWarning — omits unclassified warning text under transcript-off', () => {
-    const { bus, events } = makeBusRecorder();
-    publishWarning({ bus: bus, phase: 'implementing', message: 'private prompt detail' });
-
-    const warning = events[0];
-    if (warning === undefined) {
-      expect(warning).toBeDefined();
-      return;
-    }
-
-    expect(
-      protectEngineEventForConsumer(warning, {
-        context: 'session-log',
-        persistTranscript: false,
-      }),
-    ).toMatchObject({ type: 'warning', message: TRANSCRIPT_OMITTED_MESSAGE });
   });
 
   it('publishGitCommit — includes file when provided', () => {

@@ -12,7 +12,6 @@ import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare-execution.js';
-import { resolveHooksConfig } from '../../../src/engine/hooks/discover.js';
 import { releasePreparedSession } from '../../../src/core/sessions/prepare.js';
 import { createTestGitRepo } from '../../helpers/git.js';
 import { resetAllStores } from '../../helpers/stores.js';
@@ -112,7 +111,7 @@ export async function runE2eWorkflow(
 ): ReturnType<typeof runWorkflow> {
   const bus = createEventBus();
   const baseConfig = replaySafeConfig(loadAndOverrideConfig(ctx.projectDir, scenario.mode));
-  const hooks = await resolveHooksConfig(ctx.projectDir, baseConfig.hooks);
+  const hooks = baseConfig.hooks;
   if (hooks !== undefined) markHooksConfigTrusted(ctx.projectDir, hooks);
   const config = hooks === undefined ? baseConfig : ConfigSchema.parse({ ...baseConfig, hooks });
   const preparation = await prepareExecution({

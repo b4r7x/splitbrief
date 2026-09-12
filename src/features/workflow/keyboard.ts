@@ -4,11 +4,7 @@ import type { EngineEvent } from '../../engine/events/types.js';
 import { resolveScrollKey, type ScrollKeyAction } from '../../core/keybindings/scroll.js';
 import type { InputMode, OverlayType } from '../../core/navigation/types.js';
 import { normalizeKeySignature } from '../../core/keybindings/normalize.js';
-import {
-  resolveKeyOwner,
-  type FocusedKeySurface,
-  type KeyAttachState,
-} from '../../core/keybindings/resolver.js';
+import { resolveKeyOwner, type FocusedKeySurface } from '../../core/keybindings/resolver.js';
 
 export type WorkflowKeyAction =
   | { type: 'none' }
@@ -33,7 +29,6 @@ export interface WorkflowCtrlChordsInput {
   key: Key;
   inputMode?: InputMode | undefined;
   overlay?: OverlayType | undefined;
-  attachState?: KeyAttachState | undefined;
   composerFocus?: boolean | undefined;
   sections: Section<EngineEvent>[];
   findLatestDiff: (sections: Section<EngineEvent>[]) => string | null;
@@ -47,7 +42,6 @@ export function handleWorkflowCtrlChords(options: WorkflowCtrlChordsInput): Work
     inputMode: options.inputMode ?? 'normal',
     focus: 'workflow',
     overlay: options.overlay ?? 'none',
-    attachState: options.attachState ?? 'local',
     composerFocus: options.composerFocus ?? false,
     key: normalizeKeySignature({ input, key }),
   });
@@ -72,7 +66,6 @@ export interface ReviewScrollInput {
   key: Key;
   inputMode?: InputMode | undefined;
   overlay?: OverlayType | undefined;
-  attachState?: KeyAttachState | undefined;
   composerFocus?: boolean | undefined;
   focus?: FocusedKeySurface | undefined;
   reviewScrollOffset: number;
@@ -109,7 +102,6 @@ export function handleReviewScroll(options: ReviewScrollInput): WorkflowKeyActio
     inputMode: options.inputMode ?? 'review',
     focus: options.focus ?? 'review',
     overlay: options.overlay ?? 'none',
-    attachState: options.attachState ?? 'local',
     composerFocus: options.composerFocus ?? false,
     key: normalizeKeySignature({ input, key }),
   });
@@ -131,7 +123,6 @@ export interface ConversationScrollInput {
   key: Key;
   inputMode?: InputMode | undefined;
   overlay?: OverlayType | undefined;
-  attachState?: KeyAttachState | undefined;
   composerFocus?: boolean | undefined;
   renderableCount: number;
   maxOffset: number;
@@ -146,7 +137,6 @@ export function handleConversationScroll(options: ConversationScrollInput): Work
     inputMode: options.inputMode ?? 'normal',
     focus: 'workflow',
     overlay: options.overlay ?? 'none',
-    attachState: options.attachState ?? 'local',
     composerFocus: options.composerFocus ?? false,
     key: normalizeKeySignature({ input, key }),
   });

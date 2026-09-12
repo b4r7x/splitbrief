@@ -18,8 +18,6 @@ const checkpointSummary: CheckpointSummaryRollup = {
   preFinalReviewId: 'snap-pre-final',
   accepted: true,
   rejected: false,
-  diffCommand: 'splitbrief snapshot diff snap-post-2 --from-rollup',
-  restoreCommand: 'splitbrief snapshot restore snap-post-2 --from-rollup',
 };
 
 function CheckpointRows({
@@ -45,7 +43,7 @@ describe('buildCheckpointDetailRows', () => {
     terminalSizeStore.__testReset();
   });
 
-  it('renders checkpoint count, latest checkpoint, pre-final checkpoint, commands, and safety copy', () => {
+  it('renders checkpoint count, latest checkpoint, pre-final checkpoint, recovery route, and safety copy', () => {
     terminalSizeStore.__testReset({ cols: 160, isSmall: false });
 
     const ui = renderFeature(<CheckpointRows checkpointSummary={checkpointSummary} />);
@@ -59,8 +57,9 @@ describe('buildCheckpointDetailRows', () => {
     expect(frame).toContain('pre-final-review');
     expect(frame).toContain('snap-pre-final');
     expect(frame).toContain('run status: accepted');
-    expect(frame).toContain('splitbrief snapshot diff snap-post-2 --from-rollup');
-    expect(frame).toContain('splitbrief snapshot restore snap-post-2 --from-rollup');
+    expect(frame).toContain('recover: snap-post-2 via /run accept|reject');
+    expect(frame).not.toContain('snapshot diff');
+    expect(frame).not.toContain('snapshot restore');
     expect(frame).toContain('hash-guarded');
     expect(frame).toContain('conflicts skipped');
     expect(frame).toContain('--force');
@@ -89,21 +88,22 @@ describe('buildCheckpointDetailRows', () => {
     ui.unmount();
   });
 
-  it('uses ID-based fallback commands when command rollups are missing', () => {
+  it('omits the recovery route when no checkpoint id is persisted', () => {
+    terminalSizeStore.__testReset({ cols: 160, isSmall: false });
+
     const ui = renderFeature(
       <CheckpointRows
         checkpointSummary={{
           ...checkpointSummary,
-          diffCommand: null,
-          restoreCommand: null,
+          latestId: null,
+          latestRunCheckpointId: null,
         }}
       />,
     );
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('splitbrief snapshot diff snap-post-2');
-    expect(frame).toContain('splitbrief snapshot restore snap-post-2');
-    expect(frame).not.toContain('--from-rollup');
+    expect(frame).not.toContain('recover:');
+    expect(frame).toContain('hash-guarded');
 
     ui.unmount();
   });
@@ -125,7 +125,7 @@ describe('buildCheckpointDetailRows', () => {
 
     expect(frame).not.toContain(longName);
     expect(frame).toContain('latest: snap-post-2');
-    expect(frame).toContain('splitbrief snapshot diff snap-post-2');
+    expect(frame).toContain('recover:');
 
     ui.unmount();
   });
@@ -141,8 +141,6 @@ describe('buildCheckpointDetailRows', () => {
           latestName: `post${ESC}[31m-task`,
           preFinalReviewId: `snap-pre${ESC}]52;c;clip-pre${BEL}`,
           latestRunCheckpointId: `snaprun${ESC}]52;c;clip-run${BEL}-9`,
-          diffCommand: `splitbrief snapshot diff ${ESC}]52;c;clip-diff${BEL}snap-9`,
-          restoreCommand: null,
         }}
       />,
     );
@@ -152,7 +150,6 @@ describe('buildCheckpointDetailRows', () => {
     expect(frame).not.toContain('clip-id');
     expect(frame).not.toContain('clip-pre');
     expect(frame).not.toContain('clip-run');
-    expect(frame).not.toContain('clip-diff');
     expect(frame).not.toContain('52;c');
 
     ui.unmount();

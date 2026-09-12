@@ -22,7 +22,6 @@ export type CollectClarificationsOptions = {
     index: number,
     total: number,
   ) => Promise<string>;
-  persistTranscript: boolean;
   bus: EventBus;
   metadata?: SpecMetadata | null;
   planner?: Planner;
@@ -31,16 +30,7 @@ export type CollectClarificationsOptions = {
 export async function collectAndPersistClarifications(
   opts: CollectClarificationsOptions,
 ): Promise<WorkflowState> {
-  const {
-    questions,
-    projectDir,
-    sessionId,
-    onQuestionAsked,
-    persistTranscript,
-    bus,
-    metadata,
-    planner,
-  } = opts;
+  const { questions, projectDir, sessionId, onQuestionAsked, bus, metadata, planner } = opts;
   let state = opts.state;
   if (
     state.phase !== 'idle' &&
@@ -61,11 +51,7 @@ export async function collectAndPersistClarifications(
     if (answer === 'done') break;
     if (answer === 'skip' || answer === '') continue;
 
-    appendMessage(
-      { projectDir, sessionId },
-      { role: 'user', phase: state.phase, text: answer },
-      { persistTranscript },
-    );
+    appendMessage({ projectDir, sessionId }, { role: 'user', phase: state.phase, text: answer });
     clarifications.push({ question: question.text, answer });
 
     const message: QueuedMessage = {

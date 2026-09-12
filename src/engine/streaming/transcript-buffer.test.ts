@@ -30,7 +30,6 @@ function bufferFor(overrides: Partial<Options> = {}) {
     projectDir: tmp,
     sessionId: SESSION_ID,
     phase: 'planning',
-    persistTranscript: true,
     ...overrides,
   });
 }
@@ -53,17 +52,6 @@ describe('createTranscriptBuffer', () => {
         text: 'hello world',
       }),
     );
-  });
-
-  it('writes nothing when persistTranscript is false', () => {
-    const buf = bufferFor({ persistTranscript: false });
-
-    buf.append('ignored');
-    buf.flush();
-    buf.flushInterrupted();
-
-    const logPath = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, SESSION_LOG_FILE);
-    expect(existsSync(logPath)).toBe(false);
   });
 
   it('writes nothing when sessionId is empty', () => {

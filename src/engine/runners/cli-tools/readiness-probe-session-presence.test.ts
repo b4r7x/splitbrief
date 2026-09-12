@@ -416,6 +416,17 @@ describe.runIf(process.platform !== 'win32')('provider oracle three-way readines
     vi.stubEnv('XDG_DATA_HOME', join(hostHome, 'xdg-data'));
   }
 
+  /**
+   * A provider-dependent channel keeps every `*_API_KEY` the process carries,
+   * so a machine that has one of its own would hand these cases a credential
+   * they never seeded. Blank them to make "no state reaches the oracle" mean it.
+   */
+  function stubNoProviderKeys(): void {
+    for (const key of Object.keys(process.env)) {
+      if (key.endsWith('_API_KEY')) vi.stubEnv(key, '');
+    }
+  }
+
   it.each(['opencode', 'kilo-code'] as const)(
     'verifies %s from a clean oracle listing over bridged data-dir state and surfaces facts',
     async (tool) => {
@@ -492,6 +503,7 @@ describe.runIf(process.platform !== 'win32')('provider oracle three-way readines
       await withTempDir(`readiness-${tool}-oracle-absent`, async (hostHome) => {
         const executable = await oracleShim(hostHome, tool, reportBody(tool));
         stubHostState(hostHome);
+        stubNoProviderKeys();
 
         const result = await probeCliReadiness({
           tool,

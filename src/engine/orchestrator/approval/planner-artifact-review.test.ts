@@ -13,7 +13,6 @@ import { beginDeclaredArtifactReview } from './planner-artifact.js';
 import { createStagedProject } from './staged-project.js';
 import type { IsolatedWorkspace } from '../isolation/types.js';
 
-const SESSION_ID = 'immutable-artifact-review';
 const ATTEMPT_ID = createTaskCompilationAttemptId();
 const ARTIFACT_RELATIVE_PATH = `.splitbrief-runner/output/${ATTEMPT_ID}/result`;
 
@@ -54,8 +53,6 @@ async function withArtifactReview<T>(
   try {
     review = await beginDeclaredArtifactReview({
       stagedProjectDir: fixture.staged.projectDir,
-      projectDir: fixture.projectDir,
-      sessionId: SESSION_ID,
       callId: 'call-1',
       declaredRedactionValues: [],
       provenance: {

@@ -53,7 +53,7 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 ## **[Could]** Git-backed per-run code snapshot undo
 
-**Why we want it.** File-level run accept/reject now exists through `/accept-run` and `/reject-run confirm`, using hash-guarded snapshots. A future git-backed variant could additionally manage optional commit history for workflows whose human owner explicitly opts into git commits.
+**Why we want it.** File-level run accept/reject now exists through `/run accept` and `/run reject confirm`, using hash-guarded snapshots. A future git-backed variant could additionally manage optional commit history for workflows whose human owner explicitly opts into git commits.
 
 **What it would look like.**
 
@@ -69,23 +69,8 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 **Where to start when we do it.**
 
-- Build on the existing `/accept-run` / `/reject-run confirm` command path.
+- Build on the existing `/run accept` / `/run reject confirm` command path.
 - Extend `summary.json` with `snapshot: { method: 'stash' | 'copy', ref: string }`.
-
----
-
-## ~~**[Could]** Parallel sessions in the same project~~ ✅ Done
-
-**Why we wanted it.** Users sometimes want to run multiple SPLITBRIEF workflows against the same codebase at once — e.g., plan one feature while implementing another. The `.splitbrief/active` lock blocks concurrent runs in a single working tree.
-
-**What was built.**
-
-- `splitbrief start --worktree <name>` creates `.trees/<name>` on branch `splitbrief/<name>`, selects it as the run's project root, and starts the workflow there (`--worktree [name]` flag in `src/cli/options.ts`).
-- `splitbrief worktree list` shows every SPLITBRIEF-managed worktree with its branch, status, session, and phase; `splitbrief worktree switch <name>` prints the shell instructions to enter it, and `splitbrief worktree remove <name>` tears one down with live-session and dirty-tree guards (`src/cli/commands/worktree.ts`).
-- Each worktree gets its own isolated `.splitbrief/` (sessions, active pointer, snapshots, ledger), with config and hooks copied from the base checkout.
-- Full workflow and isolation caveats are documented in [WORKTREES.md](./WORKTREES.md).
-
-**Remaining.** Per-worktree environment isolation (ports, databases) is still the user's responsibility — see the mitigation recipes in WORKTREES.md.
 
 ---
 
@@ -93,7 +78,7 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 **Why we want it.** `session.jsonl` grows without bound over a session's lifetime. Long sessions with many regenerations, clarifications, and aborts can produce hundreds of KB of message content. On resume, rebuilding context from a 500KB transcript and feeding it into a planner that has an 8K or 32K context window won't fit.
 
-**Current baseline.** Manual compaction exists through `/compact-transcript`. Resume-time auto-compaction is available when `workflow.compactionThreshold` is set. Both paths ask planners with `supportsSelfSummarisation` to summarize older turns, append a summary entry to `session.jsonl`, and let resume rebuild context from the latest summary plus recent messages.
+**Current baseline.** Resume-time auto-compaction is available when `workflow.compactionThreshold` is set. It asks planners with `supportsSelfSummarisation` to summarize older turns, append a summary entry to `session.jsonl`, and let resume rebuild context from the latest summary plus recent messages.
 
 **What remains.**
 
@@ -103,7 +88,7 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 **Why deferred.**
 
-- Manual compaction and resume-time message-count compaction cover deliberate long-session cleanup.
+- Resume-time message-count compaction covers deliberate long-session cleanup.
 - Token-counting thresholds need to respect backend-specific context limits.
 - Queue-drain compaction must not surprise users during active planner turns.
 
@@ -188,22 +173,9 @@ Not yet designed. The interaction semantics are clear (see `docs/WORKFLOW.md` §
 
 ---
 
-## EventBus & OTel evolution (mixed)
-
-Follow-ups from the EventBus and OpenTelemetry work — see [ARCHITECTURE.md §Design decisions](./ARCHITECTURE.md#design-decisions--why-eventbus) and [OTEL.md §Design decisions](./OTEL.md#design-decisions). The bus is in; these are the rough edges that did not make the current release.
-
-- **[Should] Subprocess context propagation.** Planner and implementer spawns do not receive a `traceparent` today, so calls into Claude Code / Ollama / LM Studio appear as opaque windows inside the parent phase span. Fix: thread a W3C trace-context propagator through every runner adapter — as an environment variable for `cli` / `shell` / `agent` kinds, and as a request header for `api` kinds.
-- **[Should] CLI bootstrap UX.** Pre-registering a `NodeTracerProvider` from an external wrapper is defeated by ESM's dual-resolution of `@opentelemetry/api` (absolute path vs. bare specifier → distinct module-cache entries). Fix approach: a `--otel-exporter <console|otlp-http>` CLI flag, or a `SPLITBRIEF_OTEL_EXPORTER` env variable read inside `src/engine/orchestrator/run/init.ts` so the provider is registered in the same resolution context the sink imports from.
-- **[Could] Retry span semantics.** Today a task with two retries produces one span covering all attempts. Open question: model retries as sibling spans under a shared parent, or keep a single task span with a `splitbrief.task.retries` attribute. Ambiguous which users actually want — deferred until we see real trace consumption.
-- **[Could] Error status propagation.** `task_full_fail` marks only the task span `ERROR`; parent phase and workflow stay `OK`. OTel convention varies across backends (Honeycomb vs. Tempo bubble-up behavior differs). Needs a calibration pass before codifying.
-- **[Won't] Logs via `@opentelemetry/api-logs`.** Structured log records with trace correlation, replacing `console.*` inside the engine. Out of scope for now. Would land alongside a `/log` channel that exposes planner/implementer stdout as log records.
-- **[Could] Metric emission.** Counters (`task_completed{method=local|escalated|escalated-full}`), histograms (phase durations), gauges (tokens remaining against budget). Derivable from spans by most backends today; a future `otel.metrics.enabled` flag could emit them natively if derived metrics prove lossy.
-
----
-
 ## Hook system v2 (mixed)
 
-Follow-ups from the workflow hook system — see [HOOKS-CONFIG.md §Design decisions](./HOOKS-CONFIG.md#design-decisions). Today the system ships command-kind hooks, JS/TS module hooks, and `.splitbrief/hooks/` discovery.
+Follow-ups from the workflow hook system — see [HOOKS-CONFIG.md §Design decisions](./HOOKS-CONFIG.md#design-decisions). Today the system ships command-kind hooks and `.splitbrief/hooks/` discovery.
 
 - **[Could] Async fan-out within a single event.** Today hooks run sequentially in declaration order (order matters for `modify` patches). Opt-in parallel execution for events where ordering is irrelevant (`post_*`, `on_*`), with timeout aggregation and an explicit `parallel: true` flag on the entry.
 

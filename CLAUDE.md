@@ -27,8 +27,9 @@ npm run typecheck                # tsc --noEmit (src + test configs)
 npm run lint                     # Biome check
 npm run format                   # Biome format --write
 npm test                         # vitest run
-npm run release-check            # PR gate: format:check && typecheck && lint && test && test:e2e && invariants
+npm run release-check            # PR gate: format:check && typecheck && lint && test && test:e2e && invariants && skills:check
 npm run test-ci                  # exhaustive form: same, with test:coverage thresholds
+node scripts/dangling-imports.mjs  # audit: relative imports that resolve to nothing (exit 1 on findings)
 ```
 
 ## Documentation map
@@ -46,7 +47,13 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Understand planner/implementer/reviewer pipeline | [docs/PLANNERS-AND-IMPLEMENTERS.md](./docs/PLANNERS-AND-IMPLEMENTERS.md) — runner kinds, the three seats, Task Brief, token accounting |
 | Understand stores and UI | [docs/STORES-AND-UI.md](./docs/STORES-AND-UI.md) — store factory, screens, overlays |
 | Understand approval gates and recovery | [docs/APPROVAL-AND-RECOVERY.md](./docs/APPROVAL-AND-RECOVERY.md) — tiered approval, escalation, drift |
-| Understand supporting subsystems | [docs/SUBSYSTEMS.md](./docs/SUBSYSTEMS.md) — hooks, snapshots, IPC, repo-map, handoff, MCP |
+| Understand supporting subsystems | [docs/SUBSYSTEMS.md](./docs/SUBSYSTEMS.md) — hooks, snapshots, repo-map, runtime commands, detection, compaction, evidence ledger |
+| Understand how the code is laid out and what exists today | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — layer diagram and design rationale, plus a verified inventory of events, commands, paths and public API |
+| Look up a term used in `src/` or the docs | [docs/CONCEPTS.md](./docs/CONCEPTS.md) — concepts and glossary |
+| Read or change the Task Brief / `state.json` contract | [docs/TASK-CONTRACT.md](./docs/TASK-CONTRACT.md) — Product Task Brief v1, state v4 boundary, brief quality |
+| Find what a user-facing feature does and how to invoke it | [docs/FEATURES.md](./docs/FEATURES.md) — capability reference with config and on-screen output |
+| Touch the workflow conversation scroll | [docs/WORKFLOW-CONVERSATION-SCROLL.md](./docs/WORKFLOW-CONVERSATION-SCROLL.md) — the row-counted scroll model |
+| Upgrade across the 2026-04-20 EventBus release | [docs/MIGRATION.md](./docs/MIGRATION.md) — integrator API changes and config additions |
 | Add a command, event, store, or backend | [docs/EXTENDING.md](./docs/EXTENDING.md) — step-by-step recipes |
 | Get SPLITBRIEF running for the first time | [docs/GETTING-STARTED.md](./docs/GETTING-STARTED.md) — onboarding |
 | Look up a CLI command | [docs/CLI-REFERENCE.md](./docs/CLI-REFERENCE.md) — command reference |
@@ -63,16 +70,17 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Add a startup step | [docs/BOOTSTRAP.md](./docs/BOOTSTRAP.md) |
 | Create a new error type | [docs/ERRORS.md](./docs/ERRORS.md) |
 | Place a test | [docs/TESTING.md](./docs/TESTING.md) |
+| Cut a release | [docs/RELEASING.md](./docs/RELEASING.md) — the live release matrix and its manifest |
 | Enforce a cross-cutting rule | [docs/INVARIANTS.md](./docs/INVARIANTS.md) — pre-merge grep gates |
 | Orient yourself in the codebase | [docs/PRINCIPLES.md](./docs/PRINCIPLES.md) — one-page rule index |
 | Judge code against the SOTA review bar | [docs/CODE-STANDARD.md](./docs/CODE-STANDARD.md) — consolidated quality standard + reviewer checklist |
 | Check what has already been decided | `.specify/memory/constitution.md` — the ADRs of the 2026-08-04 realignment are folded into it, `docs/VISION.md` and the docs. `.nuke/2026-08-04-decisions.md` is the local decision record for that pass: untracked, present only in the working copy |
-| Check strategic direction | [docs/VISION.md](./docs/VISION.md), [docs/FUTURE.md](./docs/FUTURE.md) |
+| Check strategic direction | [docs/VISION.md](./docs/VISION.md), [docs/FUTURE.md](./docs/FUTURE.md), [docs/DIRECTION.md](./docs/DIRECTION.md) — how we build, [docs/COST-AWARE-IMPLEMENTER-DIRECTION.md](./docs/COST-AWARE-IMPLEMENTER-DIRECTION.md) — implementer direction |
+| Browse the whole docs folder | [docs/README.md](./docs/README.md) — the docs index, grouped by task |
 | Contribute to this project | [CONTRIBUTING.md](./CONTRIBUTING.md) |
 | Work with API keys | [docs/API-KEYS.md](./docs/API-KEYS.md) |
 | Debug a failing workflow | [docs/DEBUGGING.md](./docs/DEBUGGING.md) |
 | Work with workflow hooks | [docs/HOOKS-CONFIG.md](./docs/HOOKS-CONFIG.md) |
-| Enable OpenTelemetry | [docs/OTEL.md](./docs/OTEL.md) |
 | Tune the planner repo-map | [docs/REPOMAP.md](./docs/REPOMAP.md) |
 | Install the pipeline as agent skills | [docs/SKILLS.md](./docs/SKILLS.md) — the four skills, grammar, sync script |
 | Look up release history | [CHANGELOG.md](./CHANGELOG.md) |
@@ -93,7 +101,7 @@ These are the rules that apply everywhere; deeper specifications live in the lin
 - **Zero memoization.** No `useMemo`, `useCallback`, or `React.memo`. Store selectors make them unnecessary. See [STORES.md](./docs/STORES.md).
 - **No imperative handles.** No `forwardRef` / `useImperativeHandle`. Extract state to a store instead.
 - **Zero engine → React imports.** `src/engine/` must not import from `ink`, `react`, or `src/features/`, `src/components/`, `src/hooks/`.
-- **Zero failing gates.** `npm run release-check` (format:check → typecheck → lint → test → e2e → invariants) must pass before any PR; `npm run test-ci` is the exhaustive form that additionally enforces the coverage thresholds.
+- **Zero failing gates.** `npm run release-check` (format:check → typecheck → lint → test → e2e → invariants → skills:check) must pass before any PR; `npm run test-ci` is the exhaustive form that additionally enforces the coverage thresholds.
 - **Targeted edits only.** Do not rewrite entire files or modules. Provide targeted patches or unified diffs showing only the modified lines with 3 lines of context.
 
 ## Look-and-logic verification (binding for every user-visible change)
@@ -110,7 +118,7 @@ A change to anything a user sees — a screen, an overlay, a row, a byline, a pi
 ## Current TUI architecture
 
 - **Composer** lives in `src/components/composer/`. Do not recreate `input-bar` modules or compatibility shims.
-- **Runtime commands** live in `src/core/runtime/commands/`. They use slash names, but the registry backs composer `/` input, the command palette, and RPC dispatch. 27 commands in five categories; `/crew <seat>` replaces the per-seat commands.
+- **Runtime commands** live in `src/core/runtime/commands/`. They use slash names, and the registry backs both composer `/` input and the command palette. 23 commands in five categories; `/crew <seat>` is the only seat command.
 - **App shell** lives in `src/app/`: composition root `root.tsx` (mounts `<AppProvider><Router/>`), `router.tsx` (`renderScreen` + `renderOverlay` switches → `<Layout>`), `provider.tsx` (`AppProvider`; today only `ThemeProvider`), `layout.tsx` (header + body + footer), plus app-wide keys in `keys.ts` and runtime-command context in `command-context.ts`. The shell lives entirely under `src/app/`; there is no monolithic root component or layout file at the `src/` root.
 - **Screens and overlays are FLAT pages** under `src/app/screens/` (`home`, `workflow`, `summary`, `setup`) and `src/app/overlays/` (`help`, `palette`, `skills`, `sessions`, `settings`, `runners`, `editor`). Each page composes its feature; feature components/hooks/helpers stay in `src/features/<x>/` and are imported via `../../features/<x>/…`. `help`, `sessions`, `setup`, and `skills` are dissolved (pure-entry) — the page is the whole surface, no `features/<x>/` folder. Pages must not import each other (they coordinate via stores) or the shell modules; see [docs/INVARIANTS.md](./docs/INVARIANTS.md) gate 9.
 - **Command palette** lives in `src/features/palette/`; source assembly is `sources.ts`, ranking is `results.ts`, and the overlay entry is the page `src/app/overlays/palette.tsx`.
@@ -148,5 +156,5 @@ Set via `--mode`, config `workflow.mode`, or `/mode` at runtime. The retired `in
 
 ## Known limitations
 
-- macOS and Linux only — IPC attach/detach/ps and several path/sandbox semantics need POSIX; Windows support is planned but not available yet.
+- macOS and Linux only — several path and sandbox semantics need POSIX; Windows support is planned but not available yet.
 - Primary development stack is TypeScript / JavaScript. Command-based validation also supports configured or detected Python, Go, and Rust pipelines.

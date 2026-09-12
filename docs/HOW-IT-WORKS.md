@@ -8,25 +8,17 @@ This is the data flow from CLI entry to workflow completion. You've read the [me
 
 The user types `splitbrief start "add email validation"`. Execution begins in `src/cli.ts`, which creates a Commander program and registers subcommands. `start` is registered by `registerStartCommand()` in `src/cli/commands/start/register.ts` and is the default command — bare `splitbrief "feature"` hits the same path.
 
-The handler validates flag combinations first — `--json` and `--rpc` are mutually exclusive, `--detach` requires a feature argument. If the user provided `@file` arguments, `parseAtFiles()` (`src/cli/parse-at-files.ts`) reads them, inlines text files into `<user-context>`, and queues image files in the attachments store. Then the handler branches into one of four paths:
+If the user provided `@file` arguments, `parseAtFiles()` (`src/cli/parse-at-files.ts`) reads them, inlines text files into `<user-context>`, and queues image files in the attachments store. A headless run needs a feature argument — `--json` or `--plain` without one fails with `--<mode> requires a feature argument`. Then the handler branches into one of two paths:
 
 ```mermaid
 graph TD
-    CLI["splitbrief start 'feature'"] --> Validate[Validate flags + parse @files]
-    Validate --> Detach{"--detach?"}
-    Detach -->|yes| SpawnServer["spawnServer() → background process, exit"]
-    Detach -->|no| JSON{"--json?"}
-    JSON -->|yes| Headless["runHeadless() — NDJSON to stdout"]
-    JSON -->|no| RPC{"--rpc?"}
-    RPC -->|yes| RPCRun["runRpc() — bidirectional NDJSON"]
-    RPC -->|no| Interactive["setupWorkflow() → initStores() → renderApp()"]
+    CLI["splitbrief start 'feature'"] --> Validate[Parse @files]
+    Validate --> JSON{"--json or --plain?"}
+    JSON -->|yes| Headless["runHeadless() — NDJSON or plain lines to stdout"]
+    JSON -->|no| Interactive["setupWorkflow() → initStores() → renderApp()"]
 ```
 
-**`--detach`** spawns a background server via `spawnServer()` (`src/engine/ipc/spawn-server.ts`), prints the session ID and PID, then exits. The user attaches later with `splitbrief attach`.
-
-**`--json`** runs the workflow headless via `runHeadless()` (`src/cli/headless.ts`). Events stream as NDJSON to stdout. Workflow review gates are auto-approved; file-write tiered sticky/confirm approvals fail closed unless their tiers allow the write.
-
-**`--rpc`** runs via `runRpc()` (`src/cli/rpc/run/host.ts`). Bidirectional NDJSON — the caller sends gate responses, SPLITBRIEF sends events back. Gates are interactive.
+**`--json`** runs the workflow headless via `runHeadless()` (`src/cli/headless.ts`). Events stream as NDJSON to stdout. Workflow review gates are auto-approved; file-write tiered sticky/confirm approvals fail closed unless their tiers allow the write. **`--plain`** is the same headless run with the text rendering of that stream (`phase:`, `task <id>:`, `review:`, `done:`); the two cannot share stdout, so passing both exits `2`.
 
 **Interactive** (the default) is the path most users take. It calls `setupWorkflow()` (`src/cli/setup.ts`) to resolve the project directory, check for a git repo, and create a default config if none exists. If no config exists and no CLI overrides were provided, it returns `needsSetup: true` and the router opens the setup screen instead of the workflow.
 
@@ -78,12 +70,11 @@ The callbacks are how the engine asks for human decisions without importing Reac
 **Creates the EventBus** — `createEventBus()` in `src/engine/events/bus.ts`. The bus is a synchronous fan-out dispatcher: `publish(event)` iterates all subscribed sinks and calls each one. A throw in one sink is caught and swallowed — a crashing sink cannot tear down the engine mid-task.
 
 **Subscribes sinks** to the bus:
-- The TUI sink (`opts.tuiSink`) if provided — this is `createTuiSink()` from `src/features/workflow/tui-sink.ts`, which forwards events to `addEvent()` in the workflow store. The engine doesn't import it — it receives it as an opaque `EventSink` via the options, which is how the engine/UI boundary stays clean.
+- The TUI sink (`opts.tuiSink`) if provided — this is `addTuiEvent` from `src/features/workflow/tui-sink.ts`, which forwards events to `addEvent()` in the workflow store. The engine doesn't import it — it receives it as an opaque `EventSink` via the options, which is how the engine/UI boundary stays clean.
 - The JSONL sink (`createJsonlSink()`) appends every event to `session.jsonl`.
-- The tree recorder sink (`createTreeRecorderSink()`) tracks the event tree structure.
+- The logger sink (`createLoggerSink()`) writes every event through the process logger.
 - The stdout-JSON sink (headless only) writes NDJSON to stdout.
 - The hook sink (`createHookSink()`) dispatches user-configured hooks on matching events.
-- The OTel sink (opt-in) emits OpenTelemetry spans.
 
 **Creates the planner** via `createPlanner()` in `src/engine/runners/factory.ts`. The factory switches on `config.planner.kind` and lazy-loads the appropriate backend module. Backend modules are loaded with dynamic `import()` behind a memoizing `lazy()` wrapper — the module is only loaded when first needed, and subsequent calls return the same promise.
 
@@ -105,7 +96,7 @@ After initialization, `runWorkflow()` installs a queue handler (for messages the
 
 **quick** — `runQuickPlanning()` (`src/engine/orchestrator/planning/quick.ts`). One planner call. Tasks only, no supporting documents, no approval gates. When the mode advisor classifies the prompt as `trivial`, `runPlanningPhase()` sets `trivial: true` on the phase options and the quick prompt drops its codebase-review step and caps the brief count.
 
-**standard** — `runFullPlanning()` (`src/engine/orchestrator/planning/full.ts`). Four planner calls: research, spec, plan, tasks. The spec goes through an approval loop — the user can approve, comment (triggers regeneration), or reject. After tasks are generated, they pass through the brief quality gate, then `runBriefsApprovalLoop()` enters `reviewing-briefs` before implementation. The brief review surface is contract-first: it leads with `CONTRACT READY` or `CONTRACT BLOCKED`, the durable cause, and the valid actions. Score and task count are diagnostic only.
+**standard** — `runFullPlanning()` (`src/engine/orchestrator/planning/full.ts`). Four planner calls: research, spec, plan, tasks. The spec goes through an approval loop — the user can approve, comment (triggers regeneration), or reject. After tasks are generated, they pass through the brief quality gate, then `runBriefsApprovalLoop()` enters `reviewing-briefs` before implementation.
 
 **speckit** — `runSpeckitPlanning()` (`src/engine/orchestrator/planning/speckit.ts`). Adds clarification questions, a constitution check, and post-plan analysis on top of the standard flow.
 
@@ -115,17 +106,15 @@ During planning, the planner streams text. `planner_heartbeat` events (`src/engi
 
 Planning artifacts (`research.md`, `spec.md`, `plan.md`, `tasks.md`, plus speckit artifacts when produced) are written to the session folder at the end of each planning phase via `writeSpecFile()` in `src/core/paths-io.ts`.
 
-The Task Brief itself is published in authority order. The compiled candidate
-is evaluated, installed as an immutable Brief generation, and committed by the
-sole fenced owner commit; only after that commit are the fixed `tasks.md` and
-`brief-quality.json` files refreshed as compatibility projections of the
-generation (`publishBriefGeneration`,
-`src/engine/orchestrator/planning/brief-publication.ts`). A fault
-before the commit leaves the previous authoritative Brief and permit unchanged.
-Planning ends in exactly one of three dispositions: `ready-for-tasks`,
-`parked`, or `terminal`. A parked result retains the durable cause and a valid
-action set and makes zero implementer calls; a terminal result never enters
-execution.
+The Task Briefs land as two files. `tasks.md` is written with the other
+planning artifacts by `persistPhases()`
+(`src/engine/orchestrator/planning/io.ts`), and the brief quality gate writes
+`brief-quality.json` beside it (`writeBriefQualityReport`,
+`src/engine/spec/brief-quality-file.ts`) before the briefs approval loop opens.
+Planning ends in exactly one of two dispositions: `ready-for-tasks` or
+`terminal` (`PlanningPhaseResult`,
+`src/engine/orchestrator/planning/types.ts`). A terminal result carries the
+outcome — `cancelled`, `rejected` or `failed` — and never enters execution.
 
 ---
 
@@ -133,15 +122,8 @@ execution.
 
 After planning, `runTasksAndReview()` (`src/engine/orchestrator/run/phases.ts`) runs a cost prediction, optionally gates on cost, and enters the task loop via `runTaskLoop()` (`src/engine/orchestrator/task/loop.ts`).
 
-The task boundary is permit-gated. `runTasksAndReview()` requires
-`ready-for-tasks` plus a persisted execution permit matching the current epoch,
-authority revision, and authoritative generation digests. It re-reads the owner
-head and the persisted Brief artifacts before any implementer call
-(`revalidatePersistedExecutionPermit`,
-`src/engine/orchestrator/planning/handoff.ts`) — the planning result is only a
-proposal, and the persisted head and bytes decide whether the implementer may
-run. Only a current execution permit authorizes task execution; a parked or
-terminal result makes zero implementer or task-loop calls.
+`runTasksAndReview()` runs only on a `ready-for-tasks` disposition; a terminal
+result makes zero implementer or task-loop calls.
 
 Before the first task, the loop primes the validation baseline: `primeBaseline()` (`src/engine/orchestrator/validation/run.ts`) probes every enabled stage — typecheck, lint, test — once, on the real project directory, and publishes `validation_baseline` progress events (`running` while a stage is being probed, then `done`). The probe deliberately does not short-circuit: a stage that is red before any task ran is recorded as a pre-existing failure and published in the done event's `failing` set, and the stages themselves are never exempted from being probed. This is the user's proof of life before the first `task_started`, and the record the acceptance gate later consults to tell pre-existing failures apart from failures the task introduced.
 
@@ -170,13 +152,13 @@ Budget enforcement happens at task boundaries — `enforceBudget()` checks accum
 
 ## Isolation and promotion
 
-An implementer with `writesFiles: direct` is a subprocess that edits files wherever it is pointed, so it is not pointed at the project's working tree. When the run's implementer writes files directly, the run creates one git worktree and the implementer works there for every task: `createWorktree()` (`src/engine/worktree/create.ts`) adds a `splitbrief/<slug>` branch checked out under `$XDG_STATE_HOME/splitbrief/trees/<hash>/<slug>/` (`isolationWorktreePath`, `src/core/paths.ts` — default `~/.local/state/splitbrief/trees/...`, `<hash>` = first 12 hex chars of `sha256(realpath(git-common-dir))`), propagates `.splitbrief/config.yaml` and `.splitbrief/hooks/` into it, and initializes submodules. The isolation worktree is deliberately outside both `.git/` (direct-writing CLIs refuse paths there) and the project root: it is a second copy of the source tree that outlives every per-task validation, and a project-rooted test glob that walks into it validates both copies and records twice the tests — see [WORKTREES.md](./WORKTREES.md) §Run isolation. The project's dependencies are linked into the worktree, so `tsc`, the linter, and the test runner resolve there exactly as they do in the project. An implementer that can check its own work before handing it back needs fewer retries — but the verdict is the validation SPLITBRIEF runs after promotion, never the implementer's self-assessment.
+An implementer with `writesFiles: direct` is a subprocess that edits files wherever it is pointed, so it is not pointed at the project's working tree. When the run's implementer writes files directly, the run creates one git worktree and the implementer works there for every task: `createWorktree()` (`src/engine/orchestrator/isolation/create-worktree.ts`) adds a `splitbrief/<slug>` branch checked out under `$XDG_STATE_HOME/splitbrief/trees/<hash>/<slug>/` (`isolationWorktreePath`, `src/core/paths.ts` — default `~/.local/state/splitbrief/trees/...`, `<hash>` = first 12 hex chars of `sha256(realpath(git-common-dir))`), propagates `.splitbrief/config.yaml` and `.splitbrief/hooks/` into it, and initializes submodules. The isolation worktree is deliberately outside both `.git/` (direct-writing CLIs refuse paths there) and the project root: it is a second copy of the source tree that outlives every per-task validation, and a project-rooted test glob that walks into it validates both copies and records twice the tests — vitest reports `Tests 8 passed (8)` for a suite of 4, and the evidence ledger the review is told to trust records the inflated number. No exclusion flag fixes that for every language SPLITBRIEF validates — each runner spells it differently, and a configured `validation.testCommand` can be any command at all. `git worktree list` still shows the isolation worktree, which is how you find one that outlived its run. The project's dependencies are linked into the worktree, so `tsc`, the linter, and the test runner resolve there exactly as they do in the project. An implementer that can check its own work before handing it back needs fewer retries — but the verdict is the validation SPLITBRIEF runs after promotion, never the implementer's self-assessment.
 
-The worktree is where the work happens, not where it lands. `gateAndPromoteChangedFiles()` promotes approved files into the real project directory, and `runSingleTask()` runs validation against that directory with the project's real dependencies and real tooling. Isolation changes where the implementer works; it never changes where the work ends up.
+The worktree is where the work happens, not where it lands. After each task the changed set is computed against a baseline captured when that task acquired the workspace — not when the directory was first created — put through the approval gate, and written into the real project directory by `gateAndPromoteChangedFiles()`. Promotion is hash-guarded: if a file changed underneath SPLITBRIEF between the approval read and the write, it is not overwritten — the whole promotion is refused and reported as a conflict. `runSingleTask()` then runs validation against the project directory, with the project's real dependencies and real tooling. Isolation changes where the implementer works; it never changes where the work ends up.
 
-A run's isolation worktree is created once when the run starts, carrying a marker with the session id. A resumed run of the same session reuses that worktree — the marker, not the directory's existence, is what makes a trees-directory checkout the session's own, so a crashed run or a name collision is never adopted. When the run ends, the worktree is removed with force and its branch deleted if nothing unpromoted remains; a run that ends with work that was never promoted keeps the worktree so that work can be recovered.
+One worktree per run, not one per task: the isolation directory is created once when the run starts, carrying a marker with the session id, and every task in the run works in it. Tasks execute sequentially, so a later task sees what earlier ones did — the same thing it would see in your checkout. A resumed run of the same session reuses that worktree — the marker, not the directory's existence, is what makes a trees-directory checkout the session's own, so a crashed run or a name collision is never adopted. When the run ends, the worktree is removed with force and its branch deleted if nothing unpromoted remains; a run that ends with work that was never promoted keeps the worktree so that work can be recovered.
 
-The worktree is not a sandbox. It shares the repository's hooks, the project's `.splitbrief/config.yaml`, and the host's ports, sockets, and databases. Runner processes get an environment shaped by `createRunnerSandboxEnv()` (`src/engine/runners/sandbox-env.ts`), which is credential and path hygiene — not shell or network confinement. Those keychain-backed `session` channels keep the host `HOME` and `USER` on purpose: Claude Code and Cursor Agent CLI on macOS, whose credential is a login-keychain item with no file to copy. What that widens, and what it does not, is spelled out in [docs/WORKTREES.md](./WORKTREES.md).
+The worktree is not a sandbox. It shares the repository's hooks, the project's `.splitbrief/config.yaml`, and the host's ports, sockets, and databases. Runner processes get an environment shaped by `createRunnerSandboxEnv()` (`src/engine/runners/sandbox-env.ts`), which is credential and path hygiene — not shell or network confinement. Those keychain-backed `session` channels keep the host `HOME` and `USER` on purpose: Claude Code and Cursor Agent CLI on macOS, whose credential is a login-keychain item with no file to copy. What that widens, and what it does not, is spelled out in [docs/API-KEYS.md](./API-KEYS.md#what-a-host-account-child-can-and-cannot-reach).
 
 ---
 
@@ -189,9 +171,8 @@ graph LR
     Engine["Engine publishes event"] --> Bus["EventBus.publish()"]
     Bus --> TUI["tuiSink → addEvent()"]
     Bus --> JSONL["jsonlSink → session.jsonl"]
-    Bus --> Tree["treeRecorderSink"]
+    Bus --> Log["loggerSink"]
     Bus --> Hook["hookSink → user hooks"]
-    Bus --> OTel["otelSink (opt-in)"]
     TUI --> Events["eventsStore"]
     TUI --> Tasks["tasksStore"]
     TUI --> Tokens["tokensStore"]
@@ -216,15 +197,15 @@ React components subscribe to individual store slices via `store.use(selector)`.
 
 Every workflow run produces files on disk under `.splitbrief/sessions/<id>/`:
 
-**`state.json`** — the source of truth for resume. Overwritten on every phase transition via `transitionAndSave()` (`src/engine/orchestrator/state-ops.ts`), which calls `saveState()` (`src/core/state/persistence.ts`). Contains the current phase, task list with statuses, token usage, message queue, any pending recovery state, and the owner authority: `authorityRevision`, the authoritative `generation`, and the current execution `permit`.
+**`state.json`** — the source of truth for resume. Overwritten on every phase transition via `transitionAndSave()` (`src/engine/orchestrator/state-ops.ts`), which calls `saveState()` (`src/core/state/persistence.ts`). Contains the current phase, task list with statuses, token usage, message queue, and any pending recovery state.
 
 **`session.jsonl`** — the full event log, append-only. The JSONL sink writes every `EngineEvent` as it's published (`src/core/sessions/log-writer.ts`). This is the audit trail and the source for context rebuild when resuming with a stateless backend.
 
 **`research.md`, `spec.md`, `plan.md`, `tasks.md`** — planning artifacts, written once at the end of each planning phase when the selected mode produces them. The user reviews applicable artifacts during approval gates.
 
-**`summary.json`** — final cost, timing, task outcomes. Written once at workflow end by `saveFinalSession()` (`src/engine/orchestrator/session-lifecycle/finalize.ts`), which also updates cumulative stats and clears the `.splitbrief/active` lock file.
+**`summary.json`** — final cost, timing, task outcomes. Written once at workflow end by `saveFinalSession()` (`src/engine/orchestrator/session-lifecycle/finalize.ts`), which also clears the `.splitbrief/active` lock file.
 
-**`snapshots/`** — content-addressed working-tree snapshots for undo, created at configurable points (pre-task, post-task, pre-final-review).
+**`snapshots/`** — the content-addressed working-tree snapshot `/run accept` records, plus the run ledger marking the run accepted. There are no configurable trigger points and no pre-run baseline.
 
 **On interrupt** (SIGINT/SIGTERM), `withSignalHandlers()` (`src/engine/orchestrator/signals.ts`) runs `shutdownWorkflow()` (`src/engine/orchestrator/session-lifecycle/shutdown.ts`): it kills all child processes, saves the current state to `state.json`, and discards any in-progress file change. The `.splitbrief/active` marker is preserved when there's pending recovery or a rewind in progress, cleared otherwise. Continue later with `splitbrief continue <session-id>` when the saved state is resumable.
 
@@ -236,15 +217,15 @@ Every workflow run produces files on disk under `.splitbrief/sessions/<id>/`:
 
 When all tasks complete, `runTasksAndReview()` calls `runFinalReviewPhase()` (`src/engine/orchestrator/final-review.ts`).
 
-The function transitions state to `ALL_DONE`, optionally takes a pre-final-review snapshot, then asks the reviewer to read the full git diff against the spec. It computes brief drift — comparing what each task brief asked for against what actually changed — and includes that analysis in the review prompt. The call goes out through `runReviewerCall()` (`src/engine/orchestrator/review-call.ts`), which attributes the usage to the `reviewer` category and writes the response to `review.md` in the session folder.
+The function transitions state to `ALL_DONE`, then asks the reviewer to read the full git diff against the spec. It computes brief drift — comparing what each task brief asked for against what actually changed — and includes that analysis in the review prompt. The call goes out through `runReviewerCall()` (`src/engine/orchestrator/review-call.ts`), which attributes the usage to the `reviewer` category and writes the response to `review.md` in the session folder.
 
-This is the only call the reviewer makes. Planning, Task Brief compilation, `regenerate`, hint and full escalation, the planner estimate review, summarization, `injectUserTurn` and brief recovery all stay on the planner, whatever the `reviewer` block says. With no `reviewer` configured, the seat is the planner's own runner and the phase behaves exactly as it did before the seat became assignable.
+This is the only call the reviewer makes. Planning, Task Brief compilation, `regenerate`, hint and full escalation, summarization and `injectUserTurn` all stay on the planner, whatever the `reviewer` block says. With no `reviewer` configured, the seat is the planner's own runner and the phase behaves exactly as it did before the seat became assignable.
 
 When the reviewer call fails, the review is reported as failed (`reviewStatus: 'failed'`) with the reviewer's display name in the error, the final-review evidence is still recorded, and the summary is still built. SPLITBRIEF never falls back to the planner behind your back.
 
 Evidence recording happens throughout: the evidence ledger tracks approvals, rejections, validation outcomes, and the final review status. After the review, a review packet is written — a structured summary of all evidence for the session, carrying the parsed review verdict, criteria counts and finding counts in its final-review section.
 
-The function transitions to `REVIEW_DONE`, publishes `workflow_complete`, builds the final summary, and calls `callbacks.onComplete(summary)`. Back in `runWorkflow()`, `saveFinalSession()` writes `summary.json`, updates cumulative project stats, and clears `.splitbrief/active`.
+The function transitions to `REVIEW_DONE`, publishes `workflow_complete`, builds the final summary, and calls `callbacks.onComplete(summary)`. Back in `runWorkflow()`, `saveFinalSession()` writes `summary.json` and clears `.splitbrief/active`.
 
 In the TUI, `onComplete` causes the router to navigate to the summary screen, where the user sees cost breakdown, task outcomes, and the review. A configured reviewer gets its own priced line in the cost breakdown and its tool and model are recorded in the run summary; with no reviewer configured, review tokens are priced at the planner's rates and folded into the planner line, as before.
 
@@ -260,13 +241,13 @@ The CLI reads `.splitbrief/active` to find the session ID, loads `state.json` vi
 2. **Phase check** -- `isResumable(state)` (`src/core/phases.ts`) returns true for the `RESUMABLE_PHASES` set (`planning`, `implementing`, `final-review`) and for any phase with `awaitingContinue: true`. Every other phase -- including the review/gate phases, `analyzing`, `validating-task`, and `escalating` -- is resumable only through that override; terminal phases (`idle`, `complete`) never are.
 3. **Recovery check** -- if `pendingRecovery` is set, the orchestrator shows the recovery prompt before dispatching work.
 
-After validation, the CLI routes to headless (`--json`), RPC (`--rpc`), or interactive (TUI) mode, passing the loaded state as `resumeState`.
+After validation, the CLI routes to headless (`--json`) or interactive (TUI) mode, passing the loaded state as `resumeState`.
 
 Inside `initializeWorkflow()` (`src/engine/orchestrator/run/init.ts`), context rebuild follows the capability matrix:
 
 1. **Native session resume** -- if the planner has `supportsSessionResume` and `plannerSessionId` is set, the factory passes the session ID to the backend (Claude Code `--session-id`). The prior conversation survives.
 2. **Auto-compaction + transcript rebuild** -- if `supportsSessionResume` is false, `autoCompactResumeContext()` (`src/engine/orchestrator/resume-context.ts`) checks whether the JSONL log exceeds `compactionThreshold`. If so, it summarizes old messages via `planner.summarize()`. Then `applyRebuiltContext()` rebuilds a messages array from `session.jsonl` and injects it as `resumeHolder.messages` for the next planner call.
-3. **Handoff fallback** -- if `persistTranscript` is false and native resume failed, no transcript exists to rebuild from. The orchestrator warns the user and continues with spec/plan/tasks artifacts only.
+3. **Artifact fallback** -- if no transcript exists to rebuild from and native resume failed, the orchestrator warns the user and continues with spec/plan/tasks artifacts only.
 
 The orchestrator then publishes `workflow_resumed` and picks up from the saved phase.
 
@@ -274,7 +255,7 @@ The orchestrator then publishes `workflow_resumed` and picks up from the saved p
 
 **`splitbrief spec <feature>`** (`src/cli/commands/spec.ts`) -- runs the planner for the selected workflow mode and exits without implementation. The mode decides which planning phases run: `standard` and `speckit` write the research, spec, plan and tasks artifacts; `quick` makes a single planner call that writes `tasks.md`. Because the command never implements, the approval gates of a full run do not apply to it.
 
-**`splitbrief continue [alias]`** (registered in `src/cli/commands/continue/register.ts`) -- continues a session by numeric alias from `splitbrief ps`, by session ID, or by active/single-running discovery. It attaches when the target is running and resumes saved state otherwise.
+**`splitbrief continue [alias]`** (registered in `src/cli/commands/continue/register.ts`) -- continues a session by numeric alias, by session ID, or through the active pointer, resuming from its saved state.
 
 ---
 

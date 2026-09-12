@@ -6,11 +6,8 @@ import { defaultCliAuthChannel } from '../../../core/runners/cli-tool-catalog.js
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { error } from '../../../utils/error.js';
-import { addUsageAndSave, readWorkflowStateHead } from '../state-ops.js';
-import { attachWorkflowAuthority } from '../run/authority.js';
-import type { StateAuthorityReceipt } from '../../../core/state/types.js';
+import { addUsageAndSave } from '../state-ops.js';
 import { handlePlanningFailure } from './failure.js';
 
 let dirs: string[] = [];
@@ -26,23 +23,6 @@ function setupProject(): { projectDir: string; sessionId: string } {
   const sessionId = 'sess-planning-failure';
   ensureSessionDir(projectDir, sessionId);
   return { projectDir, sessionId };
-}
-
-function authorityForPersistedState(projectDir: string, sessionId: string): StateAuthorityReceipt {
-  const head = readWorkflowStateHead({ projectDir, sessionId });
-  if (head === null) throw new Error('Expected a persisted workflow state head.');
-  return {
-    kind: 'usable',
-    sessionId,
-    ownerId: head.state.stateFence?.ownerId ?? 'initial',
-    pid: process.pid,
-    processStart: 'planning-failure-test-process',
-    runId: 'planning-failure-test-run',
-    acquisitionId: 'planning-failure-test-acquisition',
-    fence: head.state.stateFence?.token ?? 0,
-    stateRevision: head.state.stateRevision ?? 0,
-    stateDigest: head.digest,
-  };
 }
 
 describe('handlePlanningFailure', () => {
@@ -77,20 +57,19 @@ describe('handlePlanningFailure', () => {
     expect(published?.type === 'error' && published.message).toContain('planner exploded');
   });
 
-  it('preserves persisted rewind state on abort instead of overwriting it with cancel', () => {
+  it('preserves the persisted rewind request when planning aborts', () => {
     const { projectDir, sessionId } = setupProject();
     const staleState = { ...createInitialState('feature'), phase: 'planning' as const };
     const persistedState = {
       ...staleState,
-      rewindPending: { target: 'plan' as const, comment: TRANSCRIPT_OMITTED_MESSAGE },
+      rewindPending: { target: 'plan' as const, comment: 'rewind to the plan' },
     };
     saveState({ projectDir, sessionId }, persistedState);
 
     const wctx = makeWctx({ projectDir, sessionId });
-    attachWorkflowAuthority(wctx, authorityForPersistedState(projectDir, sessionId));
 
     const result = handlePlanningFailure({
-      err: error('operation-aborted', 'workflow-rewind'),
+      err: error('operation-aborted', 'approval gate cancelled'),
       projectDir,
       sessionId,
       state: staleState,
@@ -100,13 +79,13 @@ describe('handlePlanningFailure', () => {
     expect(result).toMatchObject({ disposition: 'terminal', outcome: 'cancelled' });
     expect(result.state.rewindPending).toEqual({
       target: 'plan',
-      comment: TRANSCRIPT_OMITTED_MESSAGE,
+      comment: 'rewind to the plan',
     });
     expect(loadState({ projectDir, sessionId })?.rewindPending).toEqual({
       target: 'plan',
-      comment: TRANSCRIPT_OMITTED_MESSAGE,
+      comment: 'rewind to the plan',
     });
-    expect(loadState({ projectDir, sessionId })?.phase).toBe('planning');
+    expect(loadState({ projectDir, sessionId })?.phase).toBe('idle');
   });
 
   it('rebases cancellation after planner usage booking so the paid usage remains persisted', () => {

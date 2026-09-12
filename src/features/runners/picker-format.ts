@@ -26,6 +26,12 @@ import {
 import type { ModelOption } from './model-catalog/recency.js';
 
 const DETECTING_MODELS_COPY = 'Detecting models…';
+// Detection has not run yet, whichever path noticed it: one state, one sentence, naming the key
+// that runs it rather than asking for a selection the user has already made.
+const DETECTION_NOT_RUN_COPY = 'Model detection has not run yet. Press ctrl+r to refresh';
+// Detection has not run *and* the panel beside the byline is listing rows: those rows are the
+// bundled list, so the byline names which list the user is reading instead of denying it exists.
+const BUNDLED_LIST_COPY = `Bundled model list${SOFT_SEP}ctrl+r detects this tool's models`;
 
 /** Why a native CLI catalog probe produced no confirmed models. */
 export type ModelCatalogDiagnostic =
@@ -70,6 +76,11 @@ export function formatPermissionLabels(permissions: RunnerPermissionPosture): st
   return labels;
 }
 
+function isDetectionNotRun(diagnostic: ModelCatalogDiagnostic): boolean {
+  if (diagnostic.kind === 'not-probed') return true;
+  return diagnostic.kind === 'probe-failed' && diagnostic.failure === 'not-run';
+}
+
 function noListingSentence(toolName: string): string {
   return `${toolName} does not support model listing`;
 }
@@ -78,7 +89,7 @@ export function formatCatalogDiagnostic(
   diagnostic: ModelCatalogDiagnostic,
   toolName: string,
 ): string {
-  if (diagnostic.kind === 'not-probed') return 'Select this tool to detect its models';
+  if (diagnostic.kind === 'not-probed') return DETECTION_NOT_RUN_COPY;
   if (diagnostic.kind === 'unsupported') return noListingSentence(toolName);
   switch (diagnostic.failure) {
     case 'unsupported':
@@ -98,7 +109,7 @@ export function formatCatalogDiagnostic(
     case 'cancelled':
       return 'Model detection was cancelled. Press ctrl+r to retry';
     case 'not-run':
-      return 'Model detection has not run yet. Press ctrl+r to refresh';
+      return DETECTION_NOT_RUN_COPY;
   }
 }
 
@@ -402,6 +413,9 @@ export function bylineDiagnostic(input: {
   if (diagnostic === undefined) return undefined;
   // An alias lane by design is not a failure: claude-code lists rows and still reports `unsupported`.
   if (input.modelCount > 0 && diagnostic.kind === 'unsupported') return undefined;
+  // Rows are listed and detection has not run: they are the bundled list. Saying detection has not
+  // run would contradict the column beside it, so name the list the user is reading instead.
+  if (input.modelCount > 0 && isDetectionNotRun(diagnostic)) return BUNDLED_LIST_COPY;
   return formatCatalogDiagnostic(diagnostic, input.toolName);
 }
 
@@ -470,7 +484,9 @@ export function formatModelsByline(input: {
 
 /**
  * The ladder is the authoritative effort where a route publishes one; the id's tokens are not a
- * second one, and an axis the row has not moved from its default states nothing.
+ * second one, and an axis the row has not moved from its default states nothing. The words are the
+ * ones `formatSeatIdentity` states — bare, unlabelled — so the byline and the seat identity spell
+ * one selection one way.
  */
 export function modelBylineAxes(input: {
   model: ModelOption;
@@ -484,11 +500,11 @@ export function modelBylineAxes(input: {
   const selection = parseOptionSelection(input.id);
   const words: string[] = [];
   const draft = input.effortDraft ?? '';
-  if (ladder.length > 0 && ladder.includes(draft)) words.push(`effort ${draft}`);
+  if (ladder.length > 0 && ladder.includes(draft)) words.push(draft);
   for (const axis of optionAxesOf(variants, providerPrefix)) {
     if (axis.axis === 'effort') {
       if (ladder.length > 0) continue;
-      if (selection.effort !== UNSET_EFFORT_WORD) words.push(`effort ${selection.effort}`);
+      if (selection.effort !== UNSET_EFFORT_WORD) words.push(selection.effort);
       continue;
     }
     if (formatAxisValue(axis.axis, selection) === 'on') words.push(axis.axis);

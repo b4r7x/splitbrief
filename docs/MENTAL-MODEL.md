@@ -102,7 +102,7 @@ Every workflow run is a session. A session is a folder on disk under `.splitbrie
 - **summary.json** — Final cost, timing, outcomes. Written once at the end.
 - **snapshots/** — Content-addressed working-tree snapshots for undo.
 
-One foreground active session at a time per project directory. `.splitbrief/active` contains the current foreground session ID when the active pointer is present, while the per-session lockfile/heartbeat proves whether a process is still alive. Detached sessions use lockfiles. Isolated parallel sessions require git worktrees, which give each worktree its own `.splitbrief/`.
+One active session at a time per project directory. `.splitbrief/active` contains the current session ID when the active pointer is present, while the per-session lockfile/heartbeat proves whether a process is still alive. Isolated parallel sessions require git worktrees, which give each worktree its own `.splitbrief/`.
 
 `splitbrief resume` picks up the active interrupted workflow. If the active pointer is absent, use `splitbrief continue <session-id>` for a known resumable session. If the backend supports session persistence (Claude Code), it reconnects. Otherwise, it rebuilds context from the JSONL log.
 
@@ -158,7 +158,7 @@ The workflow pauses at defined points for human review:
 - **Spec gate** — After the planner writes the spec. Approve, comment (planner regenerates), or reject.
 - **Plan gate** — After the planner writes the plan (speckit mode by default).
 - **Briefs gate** — After Task Briefs pass the quality gate. The user reviews tasks.md before any code is written.
-- **Tiered approval** — During implementation, declared/promoted file-write requests are classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, or `package_change` and gated at three tiers: `auto` (allow silently), `sticky` (remember the user's choice), `confirm` (always ask). `network` is accepted only for config compatibility; it is not shell/network sandboxing.
+- **Tiered approval** — During implementation, declared/promoted file-write requests are classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, or `package_change` and gated at three tiers: `auto` (allow silently), `sticky` (remember the user's choice), `confirm` (always ask).
 - **Cost gate** — Before tasks start, if the predicted cost exceeds the budget.
 
 `--approve none` skips spec/plan document gates. Briefs review is separate and still runs in modes that produce reviewable briefs. `--approve all` enables spec and plan gates. The mode sets the default: quick skips spec/plan gates, standard gates on spec, speckit gates on spec and plan.

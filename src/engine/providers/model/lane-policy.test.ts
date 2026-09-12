@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CLI_TOOL_IDS } from '../../../core/runners/cli-tool-catalog.js';
 import { modelRowLanes } from './lane-policy.js';
 
 describe('modelRowLanes', () => {
@@ -10,9 +11,9 @@ describe('modelRowLanes', () => {
     });
   });
 
-  it('falls back to both catalog lanes when no native list has ever landed', () => {
+  it('falls back to the bundled lane when no native list has ever landed', () => {
     expect(modelRowLanes({ providerId: 'codex', hasRuntimeList: false })).toEqual({
-      modelsDev: true,
+      modelsDev: false,
       bundled: true,
       claudeCodeOptions: false,
     });
@@ -32,7 +33,7 @@ describe('modelRowLanes', () => {
       claudeCodeOptions: false,
     });
     expect(modelRowLanes({ providerId: 'copilot', hasRuntimeList: false })).toEqual({
-      modelsDev: true,
+      modelsDev: false,
       bundled: true,
       claudeCodeOptions: false,
     });
@@ -46,12 +47,27 @@ describe('modelRowLanes', () => {
     });
   });
 
-  it('reopens the models.dev lane while the user is browsing the catalog', () => {
+  it('browsing never reopens the models.dev lane for a CLI tool', () => {
     expect(
       modelRowLanes({ providerId: 'claude-code', hasRuntimeList: false, browseCatalog: true }),
-    ).toMatchObject({ modelsDev: true });
+    ).toMatchObject({ modelsDev: false });
     expect(
       modelRowLanes({ providerId: 'codex', hasRuntimeList: true, browseCatalog: true }),
+    ).toMatchObject({ modelsDev: false });
+    expect(
+      modelRowLanes({ providerId: 'ollama', hasRuntimeList: false, browseCatalog: true }),
     ).toMatchObject({ modelsDev: true });
   });
+
+  it.each(CLI_TOOL_IDS)(
+    'never offers models.dev rows for a CLI tool id in any state',
+    (providerId) => {
+      for (const hasRuntimeList of [true, false]) {
+        for (const browseCatalog of [undefined, true]) {
+          const lanes = modelRowLanes({ providerId, hasRuntimeList, browseCatalog });
+          expect(lanes.modelsDev).toBe(false);
+        }
+      }
+    },
+  );
 });

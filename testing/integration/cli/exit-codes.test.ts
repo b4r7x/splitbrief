@@ -48,21 +48,4 @@ describe('CLI exit codes', { timeout: 90_000 }, () => {
     expect(exitCode).toBe(1);
     expect(stderr).toMatch(/no session to continue/);
   });
-
-  it('last with no sessions exits 1', async () => {
-    writeValidConfig(tmp);
-
-    const { exitCode, stderr } = await runCommand(['last', '--project', tmp]);
-
-    expect(exitCode).toBe(1);
-    expect(stderr).toMatch(/no sessions found/);
-  });
-
-  it('stats with no data exits 0', async () => {
-    writeValidConfig(tmp);
-
-    const { exitCode } = await runCommand(['stats', '--project', tmp]);
-
-    expect(exitCode).toBe(0);
-  });
 });

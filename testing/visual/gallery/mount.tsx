@@ -14,7 +14,6 @@ import type { CheckpointPredicate, FixtureFactory, FixtureLifecycle } from '../f
 import { overlayFixtureRegistry } from '../fixtures/overlay-fixtures.js';
 import { screenFixtureRegistry } from '../fixtures/screen-fixtures.js';
 import { createWorkflowFixtureAppDeps } from '../fixtures/workflow/setup.js';
-import { briefRecoveryFixtureProjections } from '../fixtures/workflow/brief-recovery-projections.js';
 import { workflowFixtureProjections } from '../fixtures/workflow/projections.js';
 import { workflowFixtureRegistry } from '../fixtures/workflow/registry.js';
 import {
@@ -154,9 +153,7 @@ async function setupAndRender(options: {
       rows: options.viewport.rows,
       isSmall: options.viewport.cols < 120,
     });
-    const projection =
-      workflowFixtureProjections.get(options.scenario.id) ??
-      briefRecoveryFixtureProjections.get(options.scenario.id);
+    const projection = workflowFixtureProjections.get(options.scenario.id);
     const renderViewport: RenderViewport = {
       cols: options.viewport.cols,
       rows: options.viewport.rows,

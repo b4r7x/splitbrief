@@ -16,7 +16,7 @@ import {
   withPrependedPathDirectory,
 } from '../../runners/sandbox-env.js';
 import { clearBridgedCliState } from '../../runners/sandbox-state-bridge.js';
-import { removeWorktree } from '../../worktree/remove.js';
+import { removeWorktree } from './remove-worktree.js';
 import {
   getChangedFilesSinceSnapshot,
   getChangedFilesSnapshot,
@@ -274,7 +274,6 @@ export function createRunIsolation(opts: {
         projectDir,
         slug: basename(dir),
         git: worktreeGit,
-        force: true,
         deleteBranch: true,
         worktreeDir: dir,
         ...(warningPublisher !== undefined && { warningPublisher }),

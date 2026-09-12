@@ -9,11 +9,8 @@ import { getGitCommonDir } from '../../../lib/git/repository.js';
 import { lockSibling, withFileLock } from '../../../lib/file-lock.js';
 import { assertPathConfined } from '../../../lib/path-confinement.js';
 import { error } from '../../../utils/error.js';
-import { createWorktree } from '../../worktree/create.js';
-import {
-  assertIsolationDirReadable,
-  resolveConfinedIsolationWorktreePath,
-} from '../../worktree/path.js';
+import { createWorktree } from './create-worktree.js';
+import { assertIsolationDirReadable, resolveConfinedIsolationWorktreePath } from './path.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { writeCurrentFileContent } from '../approval/file-snapshots/contents.js';
 
@@ -238,7 +235,7 @@ export async function ensureIsolationWorktree(opts: {
     }
     reused = true;
   } else {
-    await createWorktree({ projectDir, slug, git, requireCleanSource: false, worktreeDir: wtPath });
+    await createWorktree({ projectDir, slug, git, worktreeDir: wtPath });
     onWorktreeCreated?.(wtPath);
     await writeIsolationMarker({ worktreePath: wtPath, sessionId, projectDir });
     const seeded = await seedIsolationWorktree(projectDir, wtPath);

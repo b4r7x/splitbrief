@@ -101,10 +101,10 @@ export function assertNoLiveSessionForCli(projectDir: string): void {
  * printed: withholding it on every headless run left `spec` telling the reader
  * to resolve blockers it had not printed.
  */
-export function preparedExecutionOrThrow(
-  outcome: PreparationOutcome,
+export function preparedExecutionOrThrow<Execution = PreparedExecution>(
+  outcome: PreparationOutcome<Execution>,
   stdout: 'prose' | 'structured',
-): PreparedExecution {
+): Execution {
   switch (outcome.kind) {
     case 'prepared':
       return outcome.execution;
@@ -131,6 +131,9 @@ export function cliPreparationPolicy(
 export function cliPreparationPolicy(
   input: CliPreparationPolicyInput & Readonly<{ purpose: 'new-workflow' | 'spec' }>,
 ): Extract<PreparationPolicy, { purpose: 'new-workflow' | 'spec' }>;
+export function cliPreparationPolicy(
+  input: CliPreparationPolicyInput & Readonly<{ purpose: 'review' }>,
+): Extract<PreparationPolicy, { purpose: 'review' }>;
 export function cliPreparationPolicy(input: CliPreparationPolicyInput): PreparationPolicy {
   return {
     purpose: input.purpose,
@@ -155,9 +158,8 @@ export async function prepareStartExecution(
     projectDir: string;
     feature: string;
     plannerContext?: string | undefined;
-    worktreeName?: string | undefined;
     opts: WorkflowOpts;
-    transport: 'interactive' | 'json' | 'rpc';
+    transport: 'interactive' | 'headless';
     defaultApprove?: 'none' | undefined;
     emitReadiness: (report: ReadinessReport) => void;
     prepare?: typeof prepareExecution | undefined;
@@ -174,9 +176,9 @@ export async function prepareStartExecution(
     opts: input.opts,
     ...(input.defaultApprove !== undefined && { defaultApprove: input.defaultApprove }),
   });
-  if (input.transport === 'json') assertHeadlessTaskReviewDisabled(config);
+  if (input.transport === 'headless') assertHeadlessTaskReviewDisabled(config);
   clearStaleSessionForCli(input.projectDir);
-  const interaction = input.transport === 'interactive' ? 'interactive' : 'headless';
+  const interaction = input.transport;
   const outcome = await (input.prepare ?? prepareExecution)({
     projectDir: input.projectDir,
     feature: input.feature,
@@ -188,7 +190,6 @@ export async function prepareStartExecution(
     }),
     signal: new AbortController().signal,
     ...(input.plannerContext !== undefined && { plannerContext: input.plannerContext }),
-    ...(input.worktreeName !== undefined && { worktreeName: input.worktreeName }),
   });
   if (outcome.kind !== 'aborted') {
     const report = outcome.kind === 'prepared' ? outcome.execution.report : outcome.report;

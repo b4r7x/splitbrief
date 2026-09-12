@@ -167,7 +167,7 @@ describe('pruneOrphanSessions', () => {
       ['lockfile', '2026-08-03-prune-lockfile'],
       ['state.json', '2026-08-03-prune-state'],
       ['.prepare-owner.json', '2026-08-03-prune-owner'],
-      ['.detached-handoff.json', '2026-08-03-prune-handoff'],
+      ['.stray-metadata.json', '2026-08-03-prune-metadata'],
       ['stray-editor-swap', '2026-08-03-prune-swap'],
     ];
     for (const [name, sessionId] of kept) {

@@ -94,7 +94,7 @@ test.describe('on a phone', () => {
 test('fragments never cross the header band, headline, lede or CTA', async ({ page }) => {
   await open(page);
   const fragments = page.locator('.fragments .fragment');
-  expect(await fragments.count()).toBeGreaterThanOrEqual(18);
+  expect(await fragments.count()).toBeGreaterThanOrEqual(16);
   const header = await box(page.locator('.nav'));
   const band = { ...header, left: 0, right: 1440 };
   const keepClear = [

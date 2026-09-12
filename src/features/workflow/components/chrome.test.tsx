@@ -4,6 +4,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
@@ -19,10 +20,14 @@ const RAIL_STAGES = ['Spec', 'Plan', 'Briefs', 'Build', 'Verify'];
 const WORKFLOW_ROUTE = {
   screen: 'workflow',
   execution: {
-    kind: 'attached',
-    feature: 'test feature',
-    sessionId: 'chrome-test-session',
-    attach: { sockPath: '/tmp/chrome-test.sock', authToken: 'test-token' },
+    kind: 'local',
+    prepared: makePreparedExecution({
+      projectDir: '/tmp/splitbrief-test',
+      sessionId: 'chrome-test-session',
+      feature: 'test feature',
+      config: makeConfig(),
+      gates: () => [],
+    }),
   },
 } satisfies RouteData;
 

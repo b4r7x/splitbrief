@@ -1,0 +1,103 @@
+kilo/kilo-auto/free
+{
+  "id": "kilo-auto/free",
+  "providerID": "kilo",
+  "name": "Auto Free",
+  "api": {
+    "id": "kilo-auto/free",
+    "url": "https://api.kilo.ai/api/openrouter/",
+    "npm": "@kilocode/kilo-gateway"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {
+    "description": "Rotates through available free models. Limited capability and no credits required. [Learn more](https://kilo.ai/docs/code-with-ai/agents/auto-model)\n\n**Warning** Prompts may be logged by the upstream provider and used to improve their services. Not suitable for production or sensitive data workloads."
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 256000,
+    "output": 10000
+  },
+  "capabilities": {
+    "temperature": true,
+    "reasoning": true,
+    "attachment": false,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2026-09-10",
+  "variants": {},
+  "recommendedIndex": 1
+}
+kilo/openrouter/free
+{
+  "id": "openrouter/free",
+  "providerID": "kilo",
+  "name": "OpenRouter Free Models Router",
+  "api": {
+    "id": "openrouter/free",
+    "url": "https://api.kilo.ai/api/openrouter/",
+    "npm": "@kilocode/kilo-gateway"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {
+    "description": "The simplest way to get free inference. openrouter/free is a router that selects free models at random from the models available on OpenRouter. The router smartly filters for models that..."
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 200000,
+    "output": 40000
+  },
+  "capabilities": {
+    "temperature": true,
+    "reasoning": true,
+    "attachment": true,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": true,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "release_date": "2026-09-10",
+  "variants": {}
+}

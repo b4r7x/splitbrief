@@ -2,8 +2,6 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type { Task } from '../../../core/schemas/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import {
@@ -80,47 +78,6 @@ describe('validateCommitAndAdvance — commit strategies', () => {
     expect(commitMessages).toEqual([
       expect.stringContaining(`feat(splitbrief): ${firstCommitTask(state).id}`),
     ]);
-  });
-
-  it('per-task commit omits the task title when transcript persistence is disabled', async () => {
-    const { projectDir, sessionId } = setupCommitProject();
-    const baseState = makeCommitState();
-    const privateTitle = 'private commit title sentinel';
-    const task: Task = { ...firstCommitTask(baseState), title: privateTitle };
-    const state: WorkflowState = { ...baseState, tasks: [task] };
-    const { bus, events } = makeBusRecorder();
-    const commitMessages: string[] = [];
-
-    const result = await validateCommitAndAdvance({
-      task,
-      acceptance: acceptedAcceptance,
-      projectDir,
-      sessionId,
-      config: makeConfig({
-        workflow: { git: { commitStrategy: 'per-task' }, persistTranscript: false },
-      }),
-      state,
-      bus,
-      method: 'local',
-      transitionType: 'VALIDATION_PASS',
-      taskChangedFiles: [task.file],
-      gitOps: makeGitOps({
-        commitChanges: async (_dir, message) => {
-          commitMessages.push(message);
-          return 'commit-sha';
-        },
-      }),
-    });
-
-    expect(result.completed).toBe(true);
-    expect(commitMessages).toEqual([`feat(splitbrief): ${task.id}`]);
-    expect(commitMessages[0]).not.toContain(privateTitle);
-
-    const gitEvent = events.find((e) => e.type === 'git_commit');
-    expect(gitEvent).toMatchObject({ type: 'git_commit', taskId: task.id });
-    const eventMessage = gitEvent && 'message' in gitEvent ? gitEvent.message : '';
-    expect(eventMessage).toBe(`feat(splitbrief): ${task.id}`);
-    expect(eventMessage).not.toContain(privateTitle);
   });
 
   it('per-task: refuses to commit while a git merge is in progress', async () => {

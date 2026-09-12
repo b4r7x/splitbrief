@@ -198,6 +198,10 @@ describe('native CLI model catalogs', () => {
         displayName: 'GPT-5.6 Luna',
         contextWindow: 500_000,
         nativeReasoningEfforts: lunaLadder,
+        supportsToolCalls: true,
+        outputModalities: ['text'],
+        pricingInput: 0,
+        pricingOutput: 0,
       },
       {
         selectionId: 'openai/gpt-5.6-luna-fast',
@@ -205,6 +209,10 @@ describe('native CLI model catalogs', () => {
         displayName: 'GPT-5.6 Luna Fast',
         contextWindow: 500_000,
         nativeReasoningEfforts: lunaLadder,
+        supportsToolCalls: true,
+        outputModalities: ['text'],
+        pricingInput: 0,
+        pricingOutput: 0,
       },
       {
         selectionId: 'opencode-go/gpt-5.6-luna',
@@ -212,6 +220,10 @@ describe('native CLI model catalogs', () => {
         displayName: 'GPT-5.6 Luna',
         contextWindow: 1_050_000,
         nativeReasoningEfforts: lunaLadder,
+        supportsToolCalls: true,
+        outputModalities: ['text'],
+        pricingInput: 0.2,
+        pricingOutput: 1.2,
       },
       {
         selectionId: 'opencode-go/minimax-m3',
@@ -219,6 +231,10 @@ describe('native CLI model catalogs', () => {
         displayName: 'MiniMax-M3',
         contextWindow: 1_000_000,
         nativeReasoningEfforts: ['none', 'thinking'],
+        supportsToolCalls: true,
+        outputModalities: ['text'],
+        pricingInput: 0.3,
+        pricingOutput: 1.2,
       },
       {
         selectionId: 'opencode-go/qwen3.7-max',
@@ -226,12 +242,168 @@ describe('native CLI model catalogs', () => {
         displayName: 'Qwen3.7 Max',
         contextWindow: 1_000_000,
         nativeReasoningEfforts: [],
+        supportsToolCalls: true,
+        outputModalities: ['text'],
+        pricingInput: 2.5,
+        pricingOutput: 7.5,
       },
     ]);
 
     // The two claims made about `openai/gpt-5.6-luna`: `max` is offered, `minimal` is not.
     expect(catalog.models[0]?.nativeReasoningEfforts).toContain('max');
     expect(catalog.models[0]?.nativeReasoningEfforts).not.toContain('minimal');
+  });
+
+  it('reads verbose capabilities into supportsToolCalls and outputModalities', () => {
+    const catalog = parseKiloNativeModelCatalog(
+      [
+        'kilo/google/lyria-3-pro-preview',
+        '{',
+        '  "name": "Lyria 3 Pro",',
+        '  "capabilities": { "toolcall": false, "output": { "text": false } }',
+        '}',
+        'kilo/z-ai/glm-5.3',
+        '{',
+        '  "name": "GLM-5.3",',
+        '  "capabilities": { "toolcall": true, "output": { "text": true } }',
+        '}',
+      ].join('\n'),
+    );
+    if (catalog === null) throw new Error('Expected the inline kilo listing to parse');
+
+    expect(catalog.models).toEqual([
+      {
+        selectionId: 'kilo/google/lyria-3-pro-preview',
+        nativeOrder: 0,
+        displayName: 'Lyria 3 Pro',
+        supportsToolCalls: false,
+        outputModalities: [],
+      },
+      {
+        selectionId: 'kilo/z-ai/glm-5.3',
+        nativeOrder: 1,
+        displayName: 'GLM-5.3',
+        supportsToolCalls: true,
+        outputModalities: ['text'],
+      },
+    ]);
+  });
+
+  it('carries verbose cost blocks as pricing on kilo entries and detected models', () => {
+    const catalog = parseKiloNativeModelCatalog(
+      [
+        'kilo/kilo-auto/pro',
+        '{',
+        '  "name": "Auto Pro",',
+        '  "cost": { "input": 0.25, "output": 1.5 },',
+        '  "limit": { "context": 200000 }',
+        '}',
+        'kilo/kilo-auto/free',
+        '{',
+        '  "name": "Auto Free",',
+        '  "cost": { "input": 0, "output": 0, "cache": { "read": 0, "write": 0 } }',
+        '}',
+      ].join('\n'),
+    );
+    if (catalog === null) throw new Error('Expected the inline kilo listing to parse');
+
+    expect(catalog.models).toEqual([
+      {
+        selectionId: 'kilo/kilo-auto/pro',
+        nativeOrder: 0,
+        displayName: 'Auto Pro',
+        contextWindow: 200000,
+        pricingInput: 0.25,
+        pricingOutput: 1.5,
+      },
+      {
+        selectionId: 'kilo/kilo-auto/free',
+        nativeOrder: 1,
+        displayName: 'Auto Free',
+        pricingInput: 0,
+        pricingOutput: 0,
+      },
+    ]);
+    expect(nativeCliCatalogToDetectedModels(catalog)).toEqual([
+      {
+        id: 'kilo/kilo-auto/pro',
+        nativeOrder: 0,
+        displayName: 'Auto Pro',
+        contextLength: 200000,
+        pricingInput: 0.25,
+        pricingOutput: 1.5,
+      },
+      {
+        id: 'kilo/kilo-auto/free',
+        nativeOrder: 1,
+        displayName: 'Auto Free',
+        pricingInput: 0,
+        pricingOutput: 0,
+      },
+    ]);
+  });
+
+  it('omits pricing only when a verbose block publishes no cost or a partial one', () => {
+    const catalog = parseKiloNativeModelCatalog(
+      [
+        'kilo/anthropic/claude-sonnet-4-6',
+        '{',
+        '  "name": "Claude Sonnet 4.6"',
+        '}',
+        'kilo/kilo-auto/partial',
+        '{',
+        '  "name": "Partial Price",',
+        '  "cost": { "input": 0.25 }',
+        '}',
+      ].join('\n'),
+    );
+    if (catalog === null) throw new Error('Expected the inline kilo listing to parse');
+
+    expect(catalog.models[0]).toEqual({
+      selectionId: 'kilo/anthropic/claude-sonnet-4-6',
+      nativeOrder: 0,
+      displayName: 'Claude Sonnet 4.6',
+    });
+    expect(catalog.models[1]).toEqual({
+      selectionId: 'kilo/kilo-auto/partial',
+      nativeOrder: 1,
+      displayName: 'Partial Price',
+      pricingInput: 0.25,
+    });
+  });
+
+  it('carries no pricing fields for the tools without verbose cost blocks', () => {
+    const codex = parseCodexNativeModelCatalog(JSON.stringify(CODEX_BUNDLED_SLICE));
+    if (codex === null) throw new Error('Expected the bundled Codex slice to parse');
+    const cursor = parseCursorNativeModelCatalog(
+      readFileSync(
+        join(import.meta.dirname, '../../../testing/fixtures/cursor/list-models.txt'),
+        'utf-8',
+      ),
+    );
+    if (cursor === null) throw new Error('Expected admitted Cursor fixture to parse');
+    const commandCode = parseCommandCodeNativeModelCatalog(
+      readFileSync(
+        join(import.meta.dirname, '../../../testing/fixtures/command-code/list-models.txt'),
+        'utf-8',
+      ),
+    );
+    if (commandCode === null) throw new Error('Expected the Command Code fixture to parse');
+    const copilot = parseCopilotHelpConfigCatalog(
+      readFileSync(
+        join(import.meta.dirname, '../../../testing/fixtures/copilot/help-config.txt'),
+        'utf-8',
+      ),
+    );
+    if (copilot === null) throw new Error('Expected the copilot help config fixture to parse');
+
+    for (const catalog of [codex, cursor, commandCode, copilot]) {
+      expect(
+        catalog.models.every(
+          (model) => model.pricingInput === undefined && model.pricingOutput === undefined,
+        ),
+      ).toBe(true);
+    }
   });
 
   it('keeps bare id rows beside verbose block rows in one listing', () => {
@@ -333,6 +505,13 @@ describe('native CLI model catalogs', () => {
     expect(catalog.models[0]).toEqual({
       selectionId: 'deepseek/deepseek-v4-pro',
       nativeOrder: 0,
+      detail: 'hybrid-attention long-context reasoning',
+    });
+    expect(catalog.models[1]).toEqual({
+      selectionId: 'deepseek/deepseek-v4-flash',
+      nativeOrder: 1,
+      detail: 'fast hybrid-attention reasoning',
+      nativeDefault: true,
     });
     // First-party ids drop the `provider/` prefix; both shapes are selectable.
     expect(catalog.models.some((model) => model.selectionId === 'claude-sonnet-5')).toBe(true);
@@ -348,6 +527,7 @@ describe('native CLI model catalogs', () => {
     ).toEqual({
       selectionId: 'deepseek/deepseek-v4-flash',
       nativeOrder: 1,
+      detail: 'fast hybrid-attention reasoning',
       nativeDefault: true,
     });
     expect(
@@ -358,9 +538,63 @@ describe('native CLI model catalogs', () => {
     expect(nativeCliCatalogToDetectedModels(catalog)[0]).toEqual({
       id: 'deepseek/deepseek-v4-pro',
       nativeOrder: 0,
+      detail: 'hybrid-attention long-context reasoning',
     });
     expect(parseCommandCodeNativeModelCatalog('Usage: cmd --list-models')).toBeNull();
     expect(parseCommandCodeNativeModelCatalog('Available models\n\n')).toBeNull();
+  });
+
+  it('accepts a cmd id that carries a `:` tag and keeps the blurb as detail', () => {
+    const catalog = parseCommandCodeNativeModelCatalog(
+      [
+        'Available models  ·  2 models',
+        '',
+        'Open Source',
+        '',
+        'meituan/longcat-2.0:free                 FREE trillion-parameter agentic coding with 1M context',
+        'deepseek/deepseek-v4-flash             fast hybrid-attention reasoning (default)',
+      ].join('\n'),
+    );
+    if (catalog === null) throw new Error('Expected the inline Command Code listing to parse');
+
+    expect(catalog.models).toEqual([
+      {
+        selectionId: 'meituan/longcat-2.0:free',
+        nativeOrder: 0,
+        detail: 'FREE trillion-parameter agentic coding with 1M context',
+      },
+      {
+        selectionId: 'deepseek/deepseek-v4-flash',
+        nativeOrder: 1,
+        detail: 'fast hybrid-attention reasoning',
+        nativeDefault: true,
+      },
+    ]);
+  });
+
+  it('carries detail and capability flags onto detected models', () => {
+    expect(
+      nativeCliCatalogToDetectedModels({
+        tool: 'command-code',
+        models: [
+          {
+            selectionId: 'x/y',
+            nativeOrder: 0,
+            detail: 'd',
+            supportsToolCalls: false,
+            outputModalities: [],
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        id: 'x/y',
+        nativeOrder: 0,
+        detail: 'd',
+        supportsToolCalls: false,
+        outputModalities: [],
+      },
+    ]);
   });
 
   it('leaves an unrelated trailing parenthetical on the display name', () => {

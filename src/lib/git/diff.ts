@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { getGitForDir, parseNulSeparated, runGit } from './client.js';
+import { getGitForDir, gitError, parseNulSeparated, runGit } from './client.js';
 
 const NULL_DEVICE = process.platform === 'win32' ? 'NUL' : '/dev/null';
 
@@ -49,9 +49,15 @@ export async function getDiffSince(
   baseRef: string,
   excludeUntracked?: (file: string) => boolean,
 ): Promise<string> {
+  // The ref is a positional argument of `git diff`, where a leading `-` is read as
+  // an option instead — `--output=<file>` would write the diff anywhere on disk.
+  // No ref can start with `-`, so refuse the shape before git sees it.
+  if (baseRef.startsWith('-')) {
+    throw gitError.commandFailed(`diff ${baseRef}`, "a git ref cannot start with '-'");
+  }
   return runGit(`diff ${baseRef}`, async () => {
     const git = getGitForDir(dir);
-    const [tracked, status] = await Promise.all([git.diff([baseRef]), git.status()]);
+    const [tracked, status] = await Promise.all([git.diff([baseRef, '--']), git.status()]);
     const untracked = await collectUntrackedDiffs(dir, status.not_added, excludeUntracked);
     return [tracked, ...untracked].filter(Boolean).join('\n');
   });

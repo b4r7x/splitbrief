@@ -1,5 +1,5 @@
-import { realpathSync, renameSync, symlinkSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
@@ -16,31 +16,21 @@ import { createInitialState } from '../../../core/state/machine.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
-import { stateAuthorityDirectory } from '../../../core/paths.js';
 import { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
-import type { StateAuthorityReceipt } from '../../../core/state/types.js';
 import type { EngineEvent, EventBus } from '../../events/types.js';
 import { createEventBus } from '../../events/bus.js';
-import { runPreHooks } from '../../hooks/run-pre.js';
 import { formatValidationError } from '../validation/format-error.js';
-import { loadState, saveState } from '../../../core/state/persistence.js';
-import { loadStateForResume } from '../../../core/state/resume-authority.js';
-import { acquireStateAuthority } from '../../../core/state/authority.js';
+import { loadState } from '../../../core/state/persistence.js';
+import { readSeatIdentities, writeSeatIdentities } from '../../../core/state/seats.js';
 import type { SummaryBase } from '../summary/build.js';
-import {
-  consumeNewWorkflowCandidate,
-  refreshWorkflowAuthority,
-  workflowAuthority,
-} from './authority.js';
 import { initializeWorkflow } from './init.js';
 import { createRunIsolation } from '../isolation/create.js';
 import type { RunIsolation } from '../isolation/types.js';
 import { parsePreparedConfig, type PreparedExecution } from '../../runners/prepared-execution.js';
-import { resolveHooksConfig } from '../../hooks/discover.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { installCompilerSeam } from '../../planners/base.js';
 import { recordRuntimeConformance } from '../../runners/runtime-conformance-cache.js';
@@ -66,7 +56,7 @@ async function preparedTestExecution(
     allowRepoRunners?: boolean;
   }>,
 ): Promise<Readonly<{ config: Config; execution: PreparedExecution }>> {
-  const hooks = await resolveHooksConfig(input.projectDir, input.inputConfig.hooks);
+  const hooks = input.inputConfig.hooks;
   if (hooks !== undefined && input.allowHooks) markHooksConfigTrusted(input.projectDir, hooks);
   const config = parsePreparedConfig(
     hooks === undefined ? input.inputConfig : { ...input.inputConfig, hooks },
@@ -117,12 +107,11 @@ async function preparedTestExecution(
   };
 }
 
-async function initializeFencedWorkflow(
+async function initializeTestWorkflow(
   input: Readonly<{
     projectDir: string;
     sessionId: string;
     feature: string;
-    authority?: StateAuthorityReceipt;
     savedState?: WorkflowState | undefined;
     newWorkflow?: boolean;
     reviewer?: Config['reviewer'];
@@ -149,9 +138,9 @@ async function initializeFencedWorkflow(
       test: false,
       testCommand: 'noop',
     },
-    workflow: { mode: 'quick', persistTranscript: false },
+    workflow: { mode: 'quick' },
     approval: { enabled: false, feedRejectionsToPlanner: true },
-    codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
+    codebase: { enabled: false, tokenBudget: 4000 },
     ...(input.reviewer === undefined ? {} : { reviewer: input.reviewer }),
     ...input.configOverrides,
   });
@@ -179,7 +168,6 @@ async function initializeFencedWorkflow(
     implementerTool: 'test-implementer',
     mode: 'quick',
   };
-  const authorityHolder = input.authority === undefined ? undefined : { current: input.authority };
   const tracked: { current: WorkflowState | undefined } = { current: undefined };
 
   const init = await initializeWorkflow({
@@ -201,18 +189,9 @@ async function initializeFencedWorkflow(
     metadata,
     setTrackedState: (state) => {
       tracked.current = state;
-      if (authorityHolder !== undefined) {
-        authorityHolder.current = refreshWorkflowAuthority(
-          { projectDir: input.projectDir, sessionId: input.sessionId },
-          authorityHolder.current,
-          state,
-        );
-      }
     },
     resumeHolder: { messages: [] },
     isolation: input.isolation ?? makeCopyingIsolation(input.projectDir, input.sessionId),
-    authority: input.authority,
-    authorityHolder,
     savedState: input.savedState,
     newWorkflow: input.newWorkflow,
   });
@@ -255,26 +234,12 @@ describe('initializeWorkflow', () => {
       const projectDir = realpathSync(tempDir);
       const feature = 'review seat';
       const sessionId = 'session-init-review-seat';
-      const ref = { projectDir, sessionId };
       ensureSessionDir(projectDir, sessionId);
 
-      const acquired = acquireStateAuthority({
-        ref,
-        purpose: 'new-workflow',
-        ownerId: 'seat-owner',
-        runId: 'seat-run',
-        acquisitionId: 'seat-acquisition',
-      });
-      if (acquired.kind !== 'new-workflow') throw new Error('expected a new workflow candidate');
-      const authority = consumeNewWorkflowCandidate(ref, acquired.candidate, feature);
-
-      const result = await initializeFencedWorkflow({
+      const result = await initializeTestWorkflow({
         projectDir,
         sessionId,
         feature,
-        authority,
-        savedState: loadState(ref) ?? undefined,
-        newWorkflow: true,
         ...(reviewer === undefined ? {} : { reviewer }),
       });
 
@@ -288,252 +253,6 @@ describe('initializeWorkflow', () => {
     });
   });
 
-  it('initializes a new workflow from the consumed candidate v4 head', async () => {
-    await withTempDir('splitbrief-init-authority-new-workflow', async (tempDir) => {
-      const projectDir = realpathSync(tempDir);
-      const feature = 'new fenced workflow';
-      const sessionId = 'session-init-authority-new';
-      const ref = { projectDir, sessionId };
-      ensureSessionDir(projectDir, sessionId);
-
-      const acquired = acquireStateAuthority({
-        ref,
-        purpose: 'new-workflow',
-        ownerId: 'new-owner',
-        runId: 'new-run',
-        acquisitionId: 'new-acquisition',
-      });
-      expect(acquired.kind).toBe('new-workflow');
-      if (acquired.kind !== 'new-workflow') return;
-
-      const authority = consumeNewWorkflowCandidate(ref, acquired.candidate, feature);
-      const initial = loadState(ref);
-      expect(initial).toMatchObject({
-        stateVersion: 4,
-        stateRevision: 1,
-        stateFence: { token: 1, ownerId: 'new-owner' },
-        feature,
-      });
-      if (initial === null) return;
-
-      const result = await initializeFencedWorkflow({
-        projectDir,
-        sessionId,
-        feature,
-        authority,
-        savedState: initial,
-        newWorkflow: true,
-      });
-
-      expect(result.init.ok).toBe(true);
-      if (!result.init.ok) return;
-      expect(result.init.state.stateVersion).toBe(4);
-      expect(result.init.state.stateRevision).toBe(2);
-      expect(result.init.state.stateFence).toEqual({
-        token: 1,
-        ownerId: 'new-owner',
-      });
-      expect(workflowAuthority(result.init.wctx)).toMatchObject({
-        ownerId: 'new-owner',
-        fence: 1,
-        stateRevision: 2,
-      });
-      expect(loadState(ref)).toMatchObject({
-        stateVersion: 4,
-        stateRevision: 2,
-        stateFence: { token: 1, ownerId: 'new-owner' },
-      });
-    });
-  });
-
-  it('refuses a candidate reached through a symlinked authority directory before any state is written', async () => {
-    await withTempDir('splitbrief-init-authority-symlink', async (tempDir) => {
-      const projectDir = realpathSync(tempDir);
-      const sessionId = 'session-init-authority-symlink';
-      const ref = { projectDir, sessionId };
-      ensureSessionDir(projectDir, sessionId);
-
-      const acquired = acquireStateAuthority({
-        ref,
-        purpose: 'new-workflow',
-        ownerId: 'symlink-owner',
-        runId: 'symlink-run',
-        acquisitionId: 'symlink-acquisition',
-      });
-      expect(acquired.kind).toBe('new-workflow');
-      if (acquired.kind !== 'new-workflow') return;
-
-      const directory = stateAuthorityDirectory(ref);
-      const relocated = `${directory}.relocated`;
-      renameSync(directory, relocated);
-      symlinkSync(relocated, directory);
-
-      expect(() =>
-        consumeNewWorkflowCandidate(ref, acquired.candidate, 'symlinked authority'),
-      ).toThrow(/not a real directory/u);
-      expect(loadState(ref)).toBeNull();
-    });
-  });
-
-  it('promotes a v3 head before initialization and resumes only migrated v4 state', async () => {
-    await withTempDir('splitbrief-init-authority-v3', async (tempDir) => {
-      const projectDir = realpathSync(tempDir);
-      const feature = 'promote legacy workflow';
-      const sessionId = 'session-init-authority-v3';
-      const ref = { projectDir, sessionId };
-      ensureSessionDir(projectDir, sessionId);
-      saveState(ref, {
-        ...createInitialState(feature),
-        stateVersion: 3,
-        phase: 'reviewing-briefs',
-      });
-
-      const acquired = acquireStateAuthority({
-        ref,
-        purpose: 'resume',
-        ownerId: 'resume-owner',
-        runId: 'resume-run',
-        acquisitionId: 'resume-acquisition',
-      });
-      expect(acquired.kind).toBe('fenced');
-      if (acquired.kind !== 'fenced') return;
-      expect(acquired.promotedFromVersion).toBe(3);
-
-      const migrated = loadState(ref);
-      expect(migrated).toMatchObject({
-        stateVersion: 4,
-        stateFence: { token: acquired.receipt.fence, ownerId: 'resume-owner' },
-      });
-      if (migrated === null) return;
-
-      const resume = loadStateForResume({
-        ref,
-        authority: {
-          kind: 'fenced',
-          receipt: acquired.receipt,
-          promotedFromVersion: acquired.promotedFromVersion,
-        },
-      });
-      expect(resume).toMatchObject({ kind: 'loaded', migrated: true });
-
-      const result = await initializeFencedWorkflow({
-        projectDir,
-        sessionId,
-        feature,
-        authority: acquired.receipt,
-        savedState: migrated,
-        newWorkflow: false,
-      });
-
-      expect(result.init.ok).toBe(true);
-      if (!result.init.ok) return;
-      expect(result.init.state.stateVersion).toBe(4);
-      expect(result.init.state.stateRevision).toBe(acquired.receipt.stateRevision);
-      expect(result.planner.plan).not.toHaveBeenCalled();
-      expect(result.implementer.implement).not.toHaveBeenCalled();
-      expect(workflowAuthority(result.init.wctx)).toMatchObject({
-        fence: acquired.receipt.fence,
-        stateRevision: acquired.receipt.stateRevision,
-      });
-    });
-  });
-
-  it('refuses a second initialization authority while the current owner is live', async () => {
-    await withTempDir('splitbrief-init-authority-live-owner', async (tempDir) => {
-      const projectDir = realpathSync(tempDir);
-      const feature = 'live owner';
-      const sessionId = 'session-init-authority-live';
-      const ref = { projectDir, sessionId };
-      ensureSessionDir(projectDir, sessionId);
-      saveState(ref, createInitialState(feature));
-
-      const owner = acquireStateAuthority({
-        ref,
-        purpose: 'resume',
-        ownerId: 'live-owner',
-        runId: 'live-run',
-        acquisitionId: 'live-acquisition',
-      });
-      expect(owner.kind).toBe('fenced');
-      if (owner.kind !== 'fenced') return;
-
-      const result = await initializeFencedWorkflow({
-        projectDir,
-        sessionId,
-        feature,
-        authority: owner.receipt,
-        savedState: loadState(ref) ?? undefined,
-        newWorkflow: false,
-      });
-      expect(result.init.ok).toBe(true);
-
-      expect(() =>
-        acquireStateAuthority({
-          ref,
-          purpose: 'resume',
-          ownerId: 'second-owner',
-          runId: 'second-run',
-          acquisitionId: 'second-acquisition',
-        }),
-      ).toThrow(/live|proven dead|claimed/u);
-    });
-  });
-
-  it('takes over only a proven-dead owner and rejects the stale owner thereafter', async () => {
-    await withTempDir('splitbrief-init-authority-takeover', async (tempDir) => {
-      const projectDir = realpathSync(tempDir);
-      const sessionId = 'session-init-authority-takeover';
-      const ref = { projectDir, sessionId };
-      ensureSessionDir(projectDir, sessionId);
-      saveState(ref, createInitialState('take over dead owner'));
-
-      const oldOwner = acquireStateAuthority({
-        ref,
-        purpose: 'resume',
-        ownerId: 'old-owner',
-        runId: 'old-run',
-        acquisitionId: 'old-acquisition',
-        pid: 2_147_483_646,
-        processStart: '1',
-      });
-      expect(oldOwner.kind).toBe('fenced');
-      if (oldOwner.kind !== 'fenced') return;
-
-      const successor = acquireStateAuthority({
-        ref,
-        purpose: 'resume',
-        ownerId: 'successor-owner',
-        runId: 'successor-run',
-        acquisitionId: 'successor-acquisition',
-      });
-      expect(successor.kind).toBe('fenced');
-      if (successor.kind !== 'fenced') return;
-      expect(successor.receipt.fence).toBe(oldOwner.receipt.fence + 1);
-
-      const current = loadState(ref);
-      expect(current).toMatchObject({
-        stateRevision: oldOwner.receipt.stateRevision + 1,
-        stateFence: {
-          token: successor.receipt.fence,
-          ownerId: 'successor-owner',
-        },
-      });
-      if (current === null) return;
-
-      await expect(
-        initializeFencedWorkflow({
-          projectDir,
-          sessionId,
-          feature: 'take over dead owner',
-          authority: oldOwner.receipt,
-          savedState: current,
-          newWorkflow: false,
-        }),
-      ).rejects.toThrow();
-      expect(loadState(ref)).toEqual(current);
-    });
-  });
-
   it('initializes the shared logger for a headless host before the event sink handles events', async () => {
     await withTempDir('splitbrief-init-headless-logger', async (projectDir) => {
       const feature = 'headless logger lifecycle';
@@ -542,11 +261,11 @@ describe('initializeWorkflow', () => {
       const bus = createEventBus();
       bus.subscribe((event) => events.push(event));
 
-      const { init } = await initializeFencedWorkflow({
+      const { init } = await initializeTestWorkflow({
         projectDir,
         sessionId,
         feature,
-        configOverrides: { workflow: { mode: 'quick', persistTranscript: true } },
+        configOverrides: { workflow: { mode: 'quick' } },
         headless: true,
         eventBus: bus,
       });
@@ -558,57 +277,11 @@ describe('initializeWorkflow', () => {
     });
   });
 
-  it('registers discovered pre-task modules when config has no hooks', async () => {
-    await withTempDir('splitbrief-init-hooks', async (projectDir) => {
-      const hooksDir = join(projectDir, '.splitbrief', 'hooks');
-      await mkdir(hooksDir, { recursive: true });
-      await writeFile(
-        join(hooksDir, 'pre-task.ts'),
-        'export default () => ({ kind: "deny", message: "blocked by discovered hook" });\n',
-      );
-
-      const feature = 'use discovered hook';
-      const sessionId = 'session-init-hooks';
-      const { init, tracked } = await initializeFencedWorkflow({
-        projectDir,
-        sessionId,
-        feature,
-      });
-
-      expect(init.ok).toBe(true);
-      expect(tracked.current?.feature).toBe(feature);
-      if (!init.ok) return;
-
-      const task = makeTask();
-      const preTaskPayload: EngineEvent = {
-        type: 'task_started',
-        ts: 1,
-        phase: 'implementing',
-        taskId: task.id,
-        title: task.title,
-        index: 0,
-        total: 1,
-        file: task.file,
-        action: task.action,
-      };
-      const result = await runPreHooks(init.wctx.config.hooks, 'pre_task', preTaskPayload, {
-        projectDir,
-        sessionId,
-      });
-
-      expect(result).toEqual({
-        allow: false,
-        reason: 'blocked by discovered hook',
-        warnings: [],
-      });
-    });
-  });
-
   it('persists the selected skill ids in the initial workflow state on a fresh run', async () => {
     await withTempDir('splitbrief-init-skills', async (projectDir) => {
       const feature = 'feature needing skills';
       const sessionId = 'session-init-skills';
-      const { init, tracked } = await initializeFencedWorkflow({
+      const { init, tracked } = await initializeTestWorkflow({
         projectDir,
         sessionId,
         feature,
@@ -642,7 +315,7 @@ describe('initializeWorkflow', () => {
       const sessionId = 'session-init-api-unavailable';
       const events: EngineEvent[] = [];
 
-      const { init } = await initializeFencedWorkflow({
+      const { init } = await initializeTestWorkflow({
         projectDir,
         sessionId,
         feature,
@@ -679,7 +352,7 @@ describe('initializeWorkflow', () => {
       const sessionId = 'session-init-resume-implementing';
       const events: EngineEvent[] = [];
 
-      const { init } = await initializeFencedWorkflow({
+      const { init } = await initializeTestWorkflow({
         projectDir,
         sessionId,
         feature,
@@ -699,46 +372,13 @@ describe('initializeWorkflow', () => {
     });
   });
 
-  it('recovers interrupted native delivery only when a saved workflow is resumed', async () => {
-    await withTempDir('splitbrief-init-resume-native-delivery', async (projectDir) => {
-      const feature = 'resume interrupted native delivery';
-      const sessionId = 'session-init-resume-native-delivery';
-      const savedState: WorkflowState = {
-        ...createInitialState(feature),
-        phase: 'implementing',
-        messageQueue: [
-          {
-            id: 'interrupted-native-message',
-            text: 'retry after process restart',
-            queuedAt: new Date(0).toISOString(),
-            phase: 'implementing',
-            deliveredViaNative: false,
-            nativeDeliveryState: 'injecting',
-          },
-        ],
-      };
-      const { init, tracked } = await initializeFencedWorkflow({
-        projectDir,
-        sessionId,
-        feature,
-        savedState,
-      });
-
-      expect(init.ok).toBe(true);
-      expect(tracked.current?.messageQueue[0]?.nativeDeliveryState).toBe('pending');
-      expect(loadState({ projectDir, sessionId })?.messageQueue[0]?.nativeDeliveryState).toBe(
-        'pending',
-      );
-    });
-  });
-
   it('cli planner without a reason keeps the install hint', async () => {
     await withTempDir('splitbrief-init-cli-unavailable', async (projectDir) => {
       const feature = 'needs an installed cli';
       const sessionId = 'session-init-cli-unavailable';
       const events: EngineEvent[] = [];
 
-      const { init } = await initializeFencedWorkflow({
+      const { init } = await initializeTestWorkflow({
         projectDir,
         sessionId,
         feature,
@@ -764,7 +404,7 @@ describe('initializeWorkflow', () => {
       const sessionId = 'session-init-cli-unavailable-reason';
       const events: EngineEvent[] = [];
 
-      const { init } = await initializeFencedWorkflow({
+      const { init } = await initializeTestWorkflow({
         projectDir,
         sessionId,
         feature,
@@ -791,7 +431,7 @@ describe('initializeWorkflow', () => {
     await withTempDir('splitbrief-init-baseline', async (projectDir) => {
       const feature = 'red-at-start project';
       const sessionId = 'session-init-baseline';
-      const { init, config } = await initializeFencedWorkflow({
+      const { init, config } = await initializeTestWorkflow({
         projectDir,
         sessionId,
         feature,
@@ -841,7 +481,7 @@ describe('initializeWorkflow', () => {
       const sessionId = 'session-init-isolation';
       const isolation = makeCopyingIsolation(projectDir, sessionId);
 
-      const { init } = await initializeFencedWorkflow({
+      const { init } = await initializeTestWorkflow({
         projectDir,
         sessionId,
         feature,
@@ -862,7 +502,7 @@ describe('initializeWorkflow', () => {
       const planner = makePlanner();
       installCompilerSeam(planner, makeCompilerSeam({ backend: 'opencode' }));
 
-      const { init } = await initializeFencedWorkflow({
+      const { init } = await initializeTestWorkflow({
         projectDir,
         sessionId,
         feature,
@@ -890,7 +530,7 @@ describe('initializeWorkflow', () => {
       const planner = makePlanner();
       installCompilerSeam(planner, makeCompilerSeam({ backend: 'opencode' }));
 
-      const { init } = await initializeFencedWorkflow({
+      const { init } = await initializeTestWorkflow({
         projectDir,
         sessionId,
         feature,
@@ -902,6 +542,62 @@ describe('initializeWorkflow', () => {
       expect(init.ok).toBe(true);
       const warnings = events.filter((e) => e.type === 'warning');
       expect(warnings).toHaveLength(0);
+    });
+  });
+});
+
+describe('initializeWorkflow — seat record', () => {
+  it('records the seats every run starts on, interactive included', async () => {
+    await withTempDir('splitbrief-init-seats', async (projectDir) => {
+      const sessionId = 'session-init-seats';
+
+      const { init } = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature: 'record the seats',
+      });
+
+      expect(init.ok).toBe(true);
+      const recorded = readSeatIdentities({ projectDir, sessionId });
+      expect(recorded).not.toBeNull();
+      expect(Object.values(recorded ?? {}).every((identity) => identity.length > 0)).toBe(true);
+    });
+  });
+
+  it("re-records the crew on resume and clears the moved plan seat's session", async () => {
+    await withTempDir('splitbrief-init-seat-change', async (projectDir) => {
+      const feature = 'resume on another crew';
+      const sessionId = 'session-init-seat-change';
+      const retired = 'Retired Tool · retired-model';
+      const events: EngineEvent[] = [];
+      ensureSessionDir(projectDir, sessionId);
+      writeSeatIdentities(
+        { projectDir, sessionId },
+        { plan: retired, build: retired, review: retired },
+      );
+
+      const { init, tracked } = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature,
+        savedState: {
+          ...createInitialState(feature),
+          phase: 'implementing',
+          plannerSessionId: 'session-minted-by-the-retired-tool',
+        },
+        eventSink: (e) => events.push(e),
+      });
+
+      expect(init.ok).toBe(true);
+      const warnings = events
+        .filter((e): e is Extract<EngineEvent, { type: 'warning' }> => e.type === 'warning')
+        .map((e) => e.message);
+      expect(warnings.join('\n')).toContain(`PLAN seat changed ${retired} →`);
+      expect(warnings.join('\n')).toContain('context will be rebuilt');
+      expect(warnings.join('\n')).toContain('BUILD seat changed');
+      expect(warnings.join('\n')).toContain('the rest of the run uses the new seat');
+      expect(readSeatIdentities({ projectDir, sessionId })?.plan).not.toBe(retired);
+      expect(tracked.current?.plannerSessionId).toBeNull();
     });
   });
 });

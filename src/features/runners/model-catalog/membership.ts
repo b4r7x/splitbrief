@@ -1,10 +1,13 @@
-import type { ResolvedModelMembership } from '../../../engine/providers/model/catalog.js';
+import {
+  CATALOG_SUGGESTION_MEMBERSHIP,
+  type ResolvedModelMembership,
+} from '../../../engine/providers/model/catalog.js';
 import type { ModelOption } from './recency.js';
 
 const MEMBERSHIP_RANK = {
   confirmed: 0,
   stale: 1,
-  'catalog-suggestion': 2,
+  [CATALOG_SUGGESTION_MEMBERSHIP]: 2,
   'bundled-suggestion': 3,
   custom: 4,
 } as const satisfies Record<ResolvedModelMembership, number>;

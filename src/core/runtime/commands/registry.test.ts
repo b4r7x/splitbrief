@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { ATTACHED_AVAILABLE_COMMANDS, createRuntimeCommands } from './registry.js';
+import { createRuntimeCommands } from './registry.js';
 import { ALL_SCREENS } from '../../navigation/types.js';
 import {
   COMMAND_CATEGORIES,
+  REMOVED_COMMANDS,
   type CommandCategory,
   type RuntimeCommandContext,
   type RuntimeCommandDef,
@@ -14,72 +15,13 @@ import { viewCommands } from './defs/view.js';
 import { ioCommands } from './defs/io.js';
 import { makeCtx, runCommandInTest } from '#testing/helpers/runtime-commands.js';
 
-const ATTACHED_LOCAL_ONLY = [
-  '/skills',
-  '/settings',
-  '/mode',
-  '/crew',
-  '/refresh',
-  '/revise-spec',
-  '/revise-plan',
-  '/redo-task',
-  '/handoff',
-  '/export',
-  '/compact-transcript',
-  '/image',
-  '/approval',
-  '/run',
-  '/yolo',
-  '/diff',
-  '/cost',
-] as const;
-
-// Registry order: categories concatenated as COMMAND_CATEGORIES lists them.
-const ATTACHED_AVAILABLE = [
-  '/help',
-  '/palette',
-  '/sessions',
-  '/home',
-  '/quit',
-  '/queue',
-  '/scroll',
-  '/activity',
-  '/sidebar',
-  '/copy',
-] as const;
-
-function names(ctxOverrides: Parameters<typeof makeCtx>[0]): string[] {
-  return createRuntimeCommands(makeCtx(ctxOverrides)).map((cmd) => cmd.name);
-}
-
-describe('createRuntimeCommands attached-client gating', () => {
-  it('exposes local-only workflow mutation commands for in-process clients', () => {
-    const exposed = names({ isAttached: false });
-    for (const name of ATTACHED_LOCAL_ONLY) {
-      expect(exposed).toContain(name);
-    }
-  });
-
-  it('hides local-only and config-mutating commands from attached clients', () => {
-    const exposed = names({ isAttached: true });
-    for (const name of ATTACHED_LOCAL_ONLY) {
-      expect(exposed).not.toContain(name);
-    }
-  });
-
-  it('keeps server-safe commands available for attached clients', () => {
-    const exposed = names({ isAttached: true });
-    expect(exposed).toEqual([...ATTACHED_AVAILABLE]);
-  });
-});
-
 describe('createRuntimeCommands registry shape', () => {
   const commands = createRuntimeCommands(makeCtx({}));
 
   it('registers the commands the reference documents, once each', () => {
     const registered = commands.map((cmd) => cmd.name);
-    expect(registered).toHaveLength(27);
-    expect(new Set(registered).size).toBe(27);
+    expect(registered).toHaveLength(23);
+    expect(new Set(registered).size).toBe(23);
   });
 
   it('files every command under the category its module owns, in category order', () => {
@@ -130,27 +72,14 @@ describe('createRuntimeCommands registry shape', () => {
   it('offers images only while the PLAN seat can receive them', () => {
     const image = commands.find((cmd) => cmd.name === '/image');
 
-    expect(
-      image?.guard?.({ phase: 'idle', attached: false, plannerSupportsImages: false }),
-    ).toBeTypeOf('string');
-    expect(
-      image?.guard?.({ phase: 'idle', attached: false, plannerSupportsImages: true }),
-    ).toBeUndefined();
+    expect(image?.guard?.({ phase: 'idle', plannerSupportsImages: false })).toBeTypeOf('string');
+    expect(image?.guard?.({ phase: 'idle', plannerSupportsImages: true })).toBeUndefined();
   });
 
-  it('offers no /attach or /detach alias on the image command', () => {
-    const image = commands.find((cmd) => cmd.name === '/image');
-    expect(image?.aliases ?? []).toHaveLength(0);
-
-    const aliasNames = commands.flatMap((cmd) => cmd.aliases?.map((alias) => alias.name) ?? []);
-    expect(aliasNames).not.toContain('/attach');
-    expect(aliasNames).not.toContain('/detach');
-  });
-
-  it('offers attached clients only names the registry still knows', () => {
-    const registered = new Set(commands.map((cmd) => cmd.name));
-    for (const name of ATTACHED_AVAILABLE_COMMANDS) {
-      expect(registered).toContain(name);
+  it('offers no command under a name a release removed', () => {
+    const names = commands.map((cmd) => cmd.name.toLowerCase());
+    for (const removed of Object.keys(REMOVED_COMMANDS)) {
+      expect(names).not.toContain(removed);
     }
   });
 });

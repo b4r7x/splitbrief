@@ -8,7 +8,6 @@ import {
   readSingleSessionArtifact,
   renderCalls,
   runHeadlessMock,
-  runRpcMock,
   runStart,
   setupStartCommandIntegration,
   writeConfigMarker,
@@ -212,67 +211,5 @@ describe('start command — readiness', () => {
     expect(runHeadlessMock).not.toHaveBeenCalled();
     expect(existsSync(activeFile(tmp))).toBe(false);
     expect(existsSync(sessionsRoot(tmp))).toBe(false);
-  });
-
-  it('emits readiness before RPC workflow execution and persists compact session evidence', async () => {
-    const tmp = getStartCommandTmp();
-    writeReadyReadinessFixtures(tmp);
-    const stdoutChunks: string[] = [];
-    let writesBeforeWorkflow = 0;
-    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
-      stdoutChunks.push(String(chunk));
-      return true;
-    });
-    runRpcMock.mockImplementation(async () => {
-      writesBeforeWorkflow = stdoutChunks.length;
-    });
-
-    await runStart(['--project', tmp, '--rpc', 'implement X']);
-
-    expect(writesBeforeWorkflow).toBeGreaterThan(0);
-    const firstLine = JSON.parse(stdoutChunks[0]?.trim() ?? '{}') as {
-      type?: string;
-      data?: { type?: string; report?: { status?: string } };
-    };
-    expect(firstLine.type).toBe('status');
-    expect(firstLine.data?.type).toBe('readiness_report');
-    // The fixture planner is a declared shell command, which always carries a
-    // trust-boundary warning now.
-    expect(firstLine.data?.report?.status).toBe('ready-with-warnings');
-
-    const readinessRecord = readSingleSessionArtifact(tmp, 'readiness.json') as {
-      type?: string;
-      status?: string;
-    };
-    expect(readinessRecord.type).toBe('start-readiness');
-    expect(readinessRecord.status).toBe('ready-with-warnings');
-  });
-
-  it('keeps task review available for RPC starts', async () => {
-    const tmp = getStartCommandTmp();
-    writeReadyReadinessFixtures(tmp);
-    enableTaskReview(tmp);
-    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-
-    await runStart(['--project', tmp, '--rpc', 'implement X']);
-
-    expect(prepareExecutionMock).toHaveBeenCalledOnce();
-    expect(runRpcMock).toHaveBeenCalledOnce();
-    expect(runRpcMock.mock.calls[0]?.[0].prepared.config.workflow.taskReview).toBe('every');
-  });
-
-  it('rejects --json and --rpc together before workflow execution', async () => {
-    const tmp = getStartCommandTmp();
-    let captured: unknown;
-    try {
-      await runStart(['--project', tmp, '--json', '--rpc', 'implement X']);
-    } catch (err) {
-      captured = err;
-    }
-
-    expect(isCliError(captured)).toBe(true);
-    expect((captured as Error).message).toContain('--json and --rpc cannot be combined');
-    expect(runHeadlessMock).not.toHaveBeenCalled();
-    expect(runRpcMock).not.toHaveBeenCalled();
   });
 });

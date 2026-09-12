@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { OverlayType, Screen, InputMode } from '../navigation/types.js';
 import { normalizeKeySignature, type KeyLike } from './normalize.js';
-import {
-  resolveKeyOwner,
-  type FocusedKeySurface,
-  type KeyAttachState,
-  type KeyOwner,
-} from './resolver.js';
+import { resolveKeyOwner, type FocusedKeySurface, type KeyOwner } from './resolver.js';
 
 interface MatrixCase {
   name: string;
@@ -16,7 +11,6 @@ interface MatrixCase {
   inputMode?: InputMode | undefined;
   focus?: FocusedKeySurface | undefined;
   overlay?: OverlayType | undefined;
-  attachState?: KeyAttachState | undefined;
   composerFocus?: boolean | undefined;
   expected: KeyOwner['owner'] | null;
   action?: KeyOwner['action'] | undefined;
@@ -28,7 +22,6 @@ function ownerFor(testCase: MatrixCase): KeyOwner | null {
     inputMode: testCase.inputMode ?? 'normal',
     focus: testCase.focus ?? 'workflow',
     overlay: testCase.overlay ?? 'none',
-    attachState: testCase.attachState ?? 'local',
     composerFocus: testCase.composerFocus ?? false,
     key: normalizeKeySignature({ input: testCase.input, key: testCase.key }),
   });
@@ -73,19 +66,11 @@ describe('resolveKeyOwner', () => {
       expected: null,
     },
     {
-      name: 'local Ctrl+D',
+      name: 'workflow Ctrl+D',
       input: 'd',
       key: { ctrl: true },
       expected: 'workflow',
       action: 'toggle-diff',
-    },
-    {
-      name: 'attached Ctrl+D',
-      input: 'd',
-      key: { ctrl: true },
-      attachState: 'attached',
-      expected: 'attached-client',
-      action: 'detach',
     },
     {
       name: 'review PageDown',

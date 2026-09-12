@@ -288,7 +288,7 @@ export async function withCliErrors<T>(fn: () => Promise<T> | T): Promise<T> {
 }
 ```
 
-`rethrowAsCli` passes a `CliError` through untouched and converts anything else into `cliError(message, 1)`. `withCliErrors(fn)` wraps a subcommand body so every escaping error reaches the top-level handler as a `CliError` with a clean message — this is the standard way commands such as `start`, `snapshot`, and `worktree` map failures to exit codes.
+`rethrowAsCli` passes a `CliError` through untouched and converts anything else into `cliError(message, 1)`. `withCliErrors(fn)` wraps a subcommand body so every escaping error reaches the top-level handler as a `CliError` with a clean message — this is the standard way commands such as `start`, `resume`, and `approval` map failures to exit codes.
 
 ---
 

@@ -1,4 +1,5 @@
 import { error, matches, type AppError } from '../../utils/error.js';
+import { SPLITBRIEF_IDENTITY } from '../identity.js';
 import type { SessionRef } from '../types/session-ref.js';
 
 export type SessionPreparationOperation =
@@ -7,10 +8,6 @@ export type SessionPreparationOperation =
   | 'publish-active'
   | 'release-session'
   | 'rollback-session'
-  | 'transfer-detached-session'
-  | 'accept-detached-session'
-  | 'settle-detached-session'
-  | 'rollback-detached-session'
   | 'discard-orphan-session';
 
 type SessionPreparationErrorData = Readonly<{
@@ -52,7 +49,7 @@ export const sessionError = {
   stillActive: (sessionId: string) =>
     error(
       'session-still-active',
-      `session '${sessionId}' is still active.\nUse 'splitbrief continue' to attach or resume it (or 'splitbrief attach' if it is running), or delete .splitbrief/active to discard it.`,
+      `session '${sessionId}' is still active.\nStop it, then run '${SPLITBRIEF_IDENTITY.executable} continue ${sessionId}' — or delete ${SPLITBRIEF_IDENTITY.stateDir}/active to discard it.`,
       { sessionId },
     ),
   invalidId: (sessionId: string) =>

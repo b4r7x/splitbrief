@@ -174,7 +174,6 @@ describe('runSinglePhasePlanning', () => {
           projectDir,
           callbacks: {
             onOutput: () => {},
-            persistTranscript: true,
             sessionId,
             signal: controller.signal,
           },

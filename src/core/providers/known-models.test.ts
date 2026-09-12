@@ -114,7 +114,7 @@ describe('KNOWN_MODELS claude-code aliases', () => {
   // Every alias carries the window its baked catalog record publishes, because that is what a
   // row shows and what an `auto` seat floors to before models.dev loads. Strip them and the
   // picker paints nine blank size cells on a cold start — three of them under a label that
-  // says `(1M context)` — and an offline seat on `opus` budgets for Haiku's window.
+  // says `(1M)` — and an offline seat on `opus` budgets for Haiku's window.
   it('carries the window Claude bakes for the model each alias resolves to', () => {
     expect(claudeCode.map(({ name, contextLength }) => [name, contextLength])).toEqual([
       ['sonnet', 1_000_000],
@@ -137,13 +137,20 @@ describe('KNOWN_MODELS claude-code aliases', () => {
       'Opus 5',
       'Fable 5.1',
       'Haiku 4.5',
-      'Opus Plan Mode',
+      'Opus 5 Plan Mode',
       'Best',
-      'Sonnet 5 (1M context)',
-      'Opus (1M context)',
-      'Fable 5.1 (1M context)',
+      'Sonnet 5 (1M)',
+      'Opus 5 (1M)',
+      'Fable 5.1 (1M)',
     ]);
     expect(new Set(labels).size).toBe(claudeCode.length);
+  });
+
+  it('versions every alias name except best', () => {
+    for (const model of claudeCode) {
+      if (model.name === 'best') continue;
+      expect(model.displayName, model.name).toMatch(/\d/);
+    }
   });
 
   it('glosses the behavioural and window aliases, and leaves the plain ones their window', () => {

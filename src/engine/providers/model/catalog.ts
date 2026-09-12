@@ -27,6 +27,9 @@ export type ResolvedModelSource =
   | 'bundled-fallback'
   | 'account-options'
   | 'configured-recovery';
+/** The models.dev catalog lane's membership — produced for `api` runners only (REQ-B08). */
+export const CATALOG_SUGGESTION_MEMBERSHIP = 'catalog-suggestion';
+
 export type ResolvedModelMembership =
   | 'confirmed'
   | 'stale'
@@ -46,6 +49,8 @@ export interface ResolvedModelCatalogEntry extends DetectedModel {
   readonly selectionId: string;
   readonly runnerId: ProviderId;
   readonly sourceProviderId: string;
+  /** The catalog id a documented alias resolves to; absent when the row's own id already is one. */
+  readonly catalogModelId?: string;
   readonly isDefault?: boolean;
   readonly isDetected?: boolean;
   readonly isCustom?: boolean;
@@ -59,6 +64,11 @@ export interface ResolvedModelCatalogEntry extends DetectedModel {
 
 function ownerFor(entry: DetectedModel, fallback: string): string {
   return entry.providerId ?? fallback;
+}
+
+function isChatCapable(model: DetectedModel): boolean {
+  if (model.supportsToolCalls === false) return false;
+  return model.outputModalities === undefined || model.outputModalities.includes('text');
 }
 
 function entryKey(input: Readonly<{ owner: string; selectionId: string }>): string {
@@ -206,7 +216,7 @@ function modelsDevSuggestion(
     sourceProviderId,
     isDetected: false,
     source: 'models-dev',
-    membership: 'catalog-suggestion',
+    membership: CATALOG_SUGGESTION_MEMBERSHIP,
     canConfigure: true,
     pricingMode: getPricingMode(input.runnerId),
   });
@@ -266,6 +276,11 @@ function bundledSuggestion(
     selectionId: input.model.name,
     runnerId: input.runnerId,
     sourceProviderId,
+    // A bundled row whose own id already is the catalog id would restate itself,
+    // so only a true alias carries the id it resolves to.
+    ...(input.model.catalogModelId !== undefined && input.model.catalogModelId !== input.model.name
+      ? { catalogModelId: input.model.catalogModelId }
+      : {}),
     ...(input.keepBundledDefault && input.model.isDefault ? { isDefault: true } : {}),
     isDetected: false,
     nativeOrder: input.nativeOrder,
@@ -274,6 +289,32 @@ function bundledSuggestion(
     canConfigure: true,
     pricingMode: getPricingMode(input.runnerId),
   });
+}
+
+const DESCRIPTION_SEGMENT = ' · ';
+
+function versionedOptionLabel(option: ClaudeCodeModelOption): string | undefined {
+  const label = option.displayName;
+  if (label === undefined) return undefined;
+  const first = option.description?.split(DESCRIPTION_SEGMENT)[0]?.trim();
+  if (first === undefined || first.length <= label.length) return label;
+  return first.toLowerCase().startsWith(label.toLowerCase()) ? first : label;
+}
+
+/**
+ * An account description that opens by naming the model restates the name its own row already
+ * prints, and the repeat is charged to the name column on every row that carries one. The
+ * leading segment goes; what is left is the only part of the cell the row had not said yet.
+ */
+function peelDescriptionNameRepeat(description: string, name: string): string {
+  const [lead, ...rest] = description.split(DESCRIPTION_SEGMENT);
+  if (lead === undefined || rest.length === 0) return description;
+  const head = lead.trim().toLowerCase();
+  const printed = name.trim().toLowerCase();
+  if (head === '' || printed === '') return description;
+  if (!head.startsWith(printed) && !printed.startsWith(head)) return description;
+  const peeled = rest.join(DESCRIPTION_SEGMENT).trim();
+  return peeled === '' ? description : peeled;
 }
 
 function claudeCodeOptionEntry(
@@ -291,12 +332,19 @@ function claudeCodeOptionEntry(
   });
   // The option takes every published fact of the row it strips to — window, effort ladder, output
   // cap, release date — so one model never renders two rows that disagree. The name is the one
-  // thing it keeps: the cache's own word, or the id itself, never the catalog's.
+  // thing it keeps: the cache's own word, versioned by its own description when that names the
+  // version, or the id itself, never the catalog's.
   const { displayName: _catalogName, ...facts } = metadata ?? {};
+  const label = versionedOptionLabel(input.option);
+  const description = input.option.description;
+  const detail =
+    description === undefined || label === undefined
+      ? description
+      : peelDescriptionNameRepeat(description, label);
   const base: DetectedModel = {
     id: input.option.id,
-    ...(input.option.displayName === undefined ? {} : { displayName: input.option.displayName }),
-    ...(input.option.description === undefined ? {} : { detail: input.option.description }),
+    ...(label === undefined ? {} : { displayName: label }),
+    ...(detail === undefined ? {} : { detail }),
   };
   return stripUnpricedFields({
     ...facts,
@@ -427,19 +475,6 @@ function indexNamesSameModel(index: CanonicalIndex, identity: ModelIdentity): bo
   return bucket.some((row) => isSameCanonicalModel(identityOf(row), identity));
 }
 
-function dedupeCanonically(
-  entries: readonly ResolvedModelCatalogEntry[],
-): ResolvedModelCatalogEntry[] {
-  const index: CanonicalIndex = new Map();
-  const kept: ResolvedModelCatalogEntry[] = [];
-  for (const entry of entries) {
-    if (indexNamesSameModel(index, identityOf(entry))) continue;
-    indexCanonically(index, entry);
-    kept.push(entry);
-  }
-  return kept;
-}
-
 /**
  * Claude writes its own account cache in resolved form — the model id the alias points at plus
  * the alias's own window suffix (`fable[1m]` → `claude-fable-5-1[1m]`). An entry spelled that way
@@ -464,12 +499,22 @@ function aliasAnsweringToOptionId(
   return matches.length === 1 ? matches[0] : undefined;
 }
 
+/**
+ * The account's description enriches an alias that has none. An alias that wrote its own detail
+ * keeps it: `forces the 1M window` is what tells a `[1m]` row from the plain one, while the
+ * account's sentence describes the model underneath and reads the same on both.
+ */
 function withAliasDetail(
   entry: ResolvedModelCatalogEntry,
   details: ReadonlyMap<string, string>,
 ): ResolvedModelCatalogEntry {
-  const detail = details.get(entry.selectionId);
-  return detail === undefined ? entry : { ...entry, detail };
+  if (entry.detail !== undefined) return entry;
+  const description = details.get(entry.selectionId);
+  if (description === undefined) return entry;
+  return {
+    ...entry,
+    detail: peelDescriptionNameRepeat(description, entry.displayName ?? entry.id),
+  };
 }
 
 function resolveCatalogEntries(
@@ -495,6 +540,7 @@ function resolveCatalogEntries(
   });
 
   runtime.forEach((model, nativeOrder) => {
+    if (!isChatCapable(model)) return;
     const owner = ownerFor(model, runtimeSnapshot?.providerId ?? providerId);
     const key = entryKey({ owner, selectionId: model.id });
     if (runtimeKeys.has(key)) return;
@@ -566,11 +612,9 @@ function resolveCatalogEntries(
 
   const catalogRows = [
     ...runtimeRows,
-    ...dedupeCanonically([
-      ...modelsDevRows.sort(compareSuggestions),
-      ...bundledRows.sort(compareSuggestions).map((row) => withAliasDetail(row, aliasDetails)),
-      ...claudeCodeOptionRows,
-    ]),
+    ...modelsDevRows.sort(compareSuggestions),
+    ...bundledRows.sort(compareSuggestions).map((row) => withAliasDetail(row, aliasDetails)),
+    ...claudeCodeOptionRows,
   ];
   const configured = configuredSelectionId({
     providerId,

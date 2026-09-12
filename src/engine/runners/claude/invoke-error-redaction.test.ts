@@ -58,6 +58,7 @@ describe('Claude invoke process diagnostics', () => {
     const caught = await runClaudeOneShot({
       prompt: 'prompt',
       projectDir,
+      mode: 'escalate',
       executable,
       onOutput: () => {},
       onCallEvent: (event) => events.push(event),
@@ -119,6 +120,7 @@ describe('Claude invoke process diagnostics', () => {
       runClaudeOneShot({
         prompt: 'prompt',
         projectDir,
+        mode: 'escalate',
         executable,
         envelope,
         authChannel: 'api-key',

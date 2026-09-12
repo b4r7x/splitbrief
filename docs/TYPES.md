@@ -116,7 +116,7 @@ Types should live where their domain meaning is created — not in a central `ty
 | `EngineEvent` (alias) | n/a (new) | `engine/events/types.ts` | `z.infer<typeof EngineEventSchema>`, carved out next to the event ports (see the colocation carve-out above); workflow sub-stores and all sinks consume it directly |
 | `EventBus`, `EventSink` | n/a (new) | `engine/events/types.ts` | Declared alongside the `EngineEvent` alias; schema-less ports for `createEventBus()` and sink subscribers |
 | `WorkflowCancelReason`, `WORKFLOW_CANCEL_REASONS` | `engine/orchestrator/types.ts` | `engine/events/workflow-cancel.ts` | Workflow cancellation is an engine event contract used by both schema validation and orchestrator abort handling; keeping it with events avoids schema → orchestrator ownership imports |
-| `RunnerCallEventSchema`, `RunnerCallResultSchema` | n/a (new) | `engine/calls/schema.ts` | Source of truth for normalized runner/backend call values crossing parser, provider, persistence, replay, IPC, hooks, OTel, RPC, and explicit `InvokeResult` projections |
+| `RunnerCallEventSchema`, `RunnerCallResultSchema` | n/a (new) | `engine/calls/schema.ts` | Source of truth for normalized runner/backend call values crossing parser, provider, persistence, replay, hooks, and explicit `InvokeResult` projections |
 | `RunnerRuntime`, `ToolUseInfo`, `ParsedLine`, `InvokeResult` | `core/types/runner.ts` | `engine/runners/types.ts` | Created by the runner factory — runner-domain |
 | `SkillMeta` | `core/types/app.ts` | `core/skills/types.ts` | Produced by `engine/skill-discovery.ts`, consumed by stores/features without importing `engine/` |
 | `Screen`, `InputMode`, `OverlayType` | `core/types/app.ts` | `core/navigation/types.ts` | Cross-cutting: many consumers across `app/` + `components/` + `core/` + `features/` + `stores/`. Also exports the runtime value `ALL_SCREENS` (tolerated under Case B — a folder `types.ts` co-located with the screaming type) |
@@ -140,10 +140,10 @@ Types should live where their domain meaning is created — not in a central `ty
 
 ## Schemas — `src/core/schemas/`
 
-`core/schemas/` is the home for **cross-cutting** boundary shapes — the validators that many folders consume (`Config`, `Task`, `Session`, `WorkflowState`, and friends). Its root is intentionally mostly flat because the folder is itself cohesive: "runtime data shapes." The sole current folder exception is `src/core/schemas/recovery/`, which keeps the coupled recovery schema, policy, IPC projection, and fact helpers together. A narrowly-scoped schema used by exactly one folder may instead colocate with that folder (e.g. `core/sessions/tree/schemas.ts`, `core/config/runtime/overrides/schema.ts`) rather than being hoisted here.
+`core/schemas/` is the home for **cross-cutting** boundary shapes — the validators that many folders consume (`Config`, `Task`, `Session`, `WorkflowState`, and friends). Its root is intentionally mostly flat because the folder is itself cohesive: "runtime data shapes." The sole current folder exception is `src/core/schemas/recovery/`, which keeps the coupled recovery schema, policy, and fact helpers together. A narrowly-scoped schema used by exactly one folder may instead colocate with that folder (e.g. `core/config/runtime/overrides/schema.ts`) rather than being hoisted here.
 
 ```
-src/core/schemas/          # ~40 flat leaves plus the intentional recovery/ exception
+src/core/schemas/          # ~30 flat leaves plus the intentional recovery/ exception
 ├── config.ts              # ConfigSchema + Config type
 ├── enums.ts               # PlannerKind, ImplementerKind, Mode enums
 ├── implementer-config.ts
@@ -159,10 +159,9 @@ src/core/schemas/          # ~40 flat leaves plus the intentional recovery/ exce
 ├── models-dev.ts          # models.dev catalog — remote JSON boundary
 ├── recovery/              # recovery's cohesive multi-module boundary; no recovery.ts facade
 │   ├── facts.ts           # RecoveryFact accessors
-│   ├── ipc.ts             # IPC recovery issue projection
 │   ├── policy.ts          # legal recovery actions and selection checks
 │   └── schemas.ts         # recovery Zod schemas + inferred types
-└── …                      # analyze, drift, evidence, snapshot, stats, hooks, … (flat leaves)
+└── …                      # analyze, drift, evidence, snapshot, hooks, … (flat leaves)
 ```
 
 **Inferred types co-locate with their schema.** Each file exports the schema *and* the inferred type:
@@ -185,7 +184,7 @@ Consumers import whichever they need (or both). They do **not** import `Task` fr
 
 **Enforcement — `core/types/` MUST NOT contain `z.infer`.** Inferred types live next to their schema in `core/schemas/`. `core/types/` is only for TS-only types with no runtime schema backing (e.g., `StateAction`, `ProjectContext`, `WorkflowOpts`). Anything derived from a Zod schema via `z.infer<>` belongs in the schema file.
 
-**Why the root is mostly flat**: schemas are a cohesive cross-cutting concern. Grouping unrelated domains further (e.g., `schemas/config/` vs `schemas/workflow/`) adds depth without separating them — every consumer of one schema tends to consume others. `src/core/schemas/recovery/` is the intentional exception because its schema, action policy, IPC projection, and fact helpers form one coupled recovery boundary. Keep other schema leaves flat unless they earn the same cohesive boundary.
+**Why the root is mostly flat**: schemas are a cohesive cross-cutting concern. Grouping unrelated domains further (e.g., `schemas/config/` vs `schemas/workflow/`) adds depth without separating them — every consumer of one schema tends to consume others. `src/core/schemas/recovery/` is the intentional exception because its schema, action policy, and fact helpers form one coupled recovery boundary. Keep other schema leaves flat unless they earn the same cohesive boundary.
 
 ---
 
@@ -257,7 +256,7 @@ A: Inline in `engine/providers/metadata.ts` (the producer). Consumers `import ty
 A: `src/core/schemas/config.ts` (or a new file in `core/schemas/` if the shape is large). Export both `SectionSchema` and `type Section = z.infer<typeof SectionSchema>`.
 
 **Q: I'm adding a 5-arm discriminated union for some new UI event.**
-A: Is it persisted (written to session log, IPC, etc.)? → schema, with its `z.infer` alias colocated. Is it in-memory only? → TS type, placed per the three-case rule. Note the engine→UI bus union is *not* in-memory only: `EngineEvent` is the `z.infer` of `EngineEventSchema` (`engine/events/schema.ts`) because engine events cross protected persistence/replay boundaries such as `session.jsonl`, IPC, stdout JSON, and RPC.
+A: Is it persisted (written to the session log, etc.)? → schema, with its `z.infer` alias colocated. Is it in-memory only? → TS type, placed per the three-case rule. Note the engine→UI bus union is *not* in-memory only: `EngineEvent` is the `z.infer` of `EngineEventSchema` (`engine/events/schema.ts`) because engine events cross persistence/replay boundaries such as `session.jsonl` and stdout JSON.
 
 **Q: Can I put `type Foo` and `type Bar` (unrelated) in the same `types.ts` because they are both used across my folder?**
 A: Yes — that is what `types.ts` is for. The folder is the naming context.

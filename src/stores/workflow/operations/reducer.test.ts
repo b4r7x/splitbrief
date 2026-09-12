@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { taskId } from '../../../core/schemas/task.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
-import { protectEngineEventForConsumer } from '../../../engine/events/protection/protect.js';
 import type { RunnerCallWarningInput } from '../../../engine/calls/types.js';
 import { normalizeRunnerCallWarning } from '../../../engine/calls/warnings.js';
 import { addEvent } from '../actions/event.js';
@@ -299,47 +297,6 @@ describe('operationsStore', () => {
     ]);
   });
 
-  it('groups transcript-off warnings by safe metadata without hidden message fingerprints', () => {
-    addEvent(runnerStarted());
-    const first = protectedRunnerWarning(
-      runnerWarning({
-        warning: {
-          code: 'provider_retry',
-          source: 'provider',
-          surface: 'status',
-          message: 'hidden retry detail one',
-        },
-      }),
-    );
-    const second = protectedRunnerWarning(
-      runnerWarning({
-        ts: 1_150,
-        sequence: 3,
-        warning: {
-          code: 'provider_retry',
-          source: 'provider',
-          surface: 'status',
-          message: 'hidden retry detail two',
-        },
-      }),
-    );
-
-    addEvent(first);
-    addEvent(second);
-
-    expect(operationsStore.get().byCallId.get('call-1')?.warnings).toEqual([
-      expect.objectContaining({
-        code: 'provider_retry',
-        fingerprint: expect.stringMatching(/^rw-safe:/),
-        count: 2,
-        latestMessage: TRANSCRIPT_OMITTED_MESSAGE,
-      }),
-    ]);
-    expect(JSON.stringify(operationsStore.get().byCallId.get('call-1')?.warnings)).not.toContain(
-      'hidden retry detail',
-    );
-  });
-
   it('does not merge different warnings that reuse a caller-supplied fingerprint', () => {
     addEvent(runnerStarted());
     addEvent(
@@ -525,16 +482,3 @@ describe('operationsStore', () => {
     expect(JSON.stringify(operation)).not.toContain('abcdefghijklmnopqrst');
   });
 });
-
-function protectedRunnerWarning(
-  event: EngineEventOf<'runner_call_warning'>,
-): EngineEventOf<'runner_call_warning'> {
-  const protectedEvent = protectEngineEventForConsumer(event, {
-    context: 'ipc',
-    persistTranscript: false,
-  });
-  if (protectedEvent?.type !== 'runner_call_warning') {
-    throw new Error('Expected protected runner_call_warning event');
-  }
-  return protectedEvent;
-}

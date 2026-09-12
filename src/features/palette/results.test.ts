@@ -26,6 +26,7 @@ describe('buildPaletteResults', () => {
           {
             label: '/run',
             description: 'Run it',
+            hint: null,
             shortcut: 'ctrl+r',
             category: 'workflow',
             action: run,
@@ -61,11 +62,26 @@ describe('buildPaletteResults', () => {
     const results = buildPaletteResults(
       makeInputs({
         commandItems: [
-          { label: '/copy', description: 'Copy', shortcut: null, category: 'io', action: run },
-          { label: '/crew', description: 'Crew', shortcut: null, category: 'crew', action: run },
+          {
+            label: '/copy',
+            description: 'Copy',
+            hint: null,
+            shortcut: null,
+            category: 'io',
+            action: run,
+          },
+          {
+            label: '/crew',
+            description: 'Crew',
+            hint: null,
+            shortcut: null,
+            category: 'crew',
+            action: run,
+          },
           {
             label: '/home',
             description: 'Home',
+            hint: null,
             shortcut: null,
             category: 'navigate',
             action: run,
@@ -73,6 +89,7 @@ describe('buildPaletteResults', () => {
           {
             label: '/help',
             description: 'Help',
+            hint: null,
             shortcut: null,
             category: 'navigate',
             action: run,
@@ -99,6 +116,7 @@ describe('buildPaletteResults', () => {
           {
             label: '/mode',
             description: 'Workflow mode',
+            hint: null,
             shortcut: null,
             category: 'crew',
             action: { kind: 'prefill', text: '/mode ' },
@@ -118,6 +136,7 @@ describe('buildPaletteResults', () => {
           {
             label: '/deploy',
             description: 'Ship to prod',
+            hint: null,
             shortcut: null,
             category: 'io',
             action: run,
@@ -125,6 +144,7 @@ describe('buildPaletteResults', () => {
           {
             label: '/run-task',
             description: 'run a task',
+            hint: null,
             shortcut: null,
             category: 'workflow',
             action: run,
@@ -132,6 +152,7 @@ describe('buildPaletteResults', () => {
           {
             label: '/run',
             description: 'exact match',
+            hint: null,
             shortcut: null,
             category: 'workflow',
             action: run,
@@ -151,6 +172,7 @@ describe('buildPaletteResults', () => {
           {
             label: '/run',
             description: 'exact',
+            hint: null,
             shortcut: null,
             category: 'workflow',
             action: run,
@@ -158,6 +180,7 @@ describe('buildPaletteResults', () => {
           {
             label: '/runner',
             description: 'runner cmd',
+            hint: null,
             shortcut: null,
             category: 'workflow',
             action: run,
@@ -165,6 +188,7 @@ describe('buildPaletteResults', () => {
           {
             label: '/run-task',
             description: 'run a task',
+            hint: null,
             shortcut: null,
             category: 'workflow',
             action: run,
@@ -186,6 +210,7 @@ describe('buildPaletteResults', () => {
       {
         label: '/run',
         description: 'run it',
+        hint: null,
         shortcut: null,
         category: 'workflow' as const,
         action: run,
@@ -193,6 +218,7 @@ describe('buildPaletteResults', () => {
       {
         label: '/deploy',
         description: 'deploy',
+        hint: null,
         shortcut: null,
         category: 'io' as const,
         action: run,

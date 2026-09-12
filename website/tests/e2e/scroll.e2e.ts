@@ -105,9 +105,9 @@ test('sections reveal once', async ({ page }) => {
 
 test('the spark rides the rail', async ({ page }) => {
   let armed = false;
-  for (const [width, height, ys] of [
-    [1440, 900, [617, 94, 444, 807]],
-    [1920, 1080, [642, 139, 502, 987]],
+  for (const [width, height] of [
+    [1440, 900],
+    [1920, 1080],
   ] as const) {
     await page.setViewportSize({ width, height });
     if (armed) {
@@ -123,18 +123,23 @@ test('the spark rides the rail', async ({ page }) => {
     expect(await page.locator('.spark').evaluate((el) => getComputedStyle(el).display)).toBe(
       supported ? 'block' : 'none',
     );
-    const max = await page.evaluate(() => document.documentElement.scrollHeight - innerHeight);
-    const samples: [number, number][] = [
-      [0.25, ys[0]],
-      [0.5, ys[1]],
-      [0.75, ys[2]],
-      [1, ys[3]],
-    ];
-    for (const [p, want] of samples) {
-      await page.evaluate((y) => scrollTo(0, y), p * max);
+    const rail = await page.locator('.rail').evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      document.documentElement.style.scrollBehavior = 'auto';
+      return { top: rect.top + scrollY, height: rect.height };
+    });
+    for (const progress of [0, 0.25, 0.5, 0.75, 1]) {
+      const scroll = rail.top + progress * (rail.height - height);
+      await page.evaluate((y) => scrollTo(0, y), scroll);
       await page.waitForTimeout(100);
-      const got = await page.locator('.spark').evaluate((el) => el.getBoundingClientRect().top);
-      expect(Math.abs(got - want)).toBeLessThanOrEqual(height * 0.03);
+      const spark = await page.locator('.spark').boundingBox();
+      if (!spark) throw new Error('spark has no box');
+      const actualScroll = await page.evaluate(() => scrollY);
+      const want = rail.top - actualScroll + progress * (rail.height - spark.height);
+      expect(Math.abs(spark.y - want)).toBeLessThanOrEqual(2);
+      const line = await page.locator('.rail').boundingBox();
+      if (!line) throw new Error('rail has no box');
+      expect(Math.abs(spark.x + spark.width / 2 - line.x - line.width / 2)).toBeLessThanOrEqual(1);
     }
   }
 });

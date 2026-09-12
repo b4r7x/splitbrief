@@ -192,7 +192,6 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {
         maxRetries: 1,
-        persistTranscript: true,
         compactionFormat: 'auto' as const,
         mode: 'standard' as const,
       },

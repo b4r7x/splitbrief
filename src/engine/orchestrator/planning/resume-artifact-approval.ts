@@ -33,7 +33,7 @@ export async function resumeArtifactApproval(opts: {
       bus,
       phase: state.phase,
       message: `Cannot resume ${phase}: ${filename} is missing from the session directory`,
-      safety: { category: 'planning', code: 'artifact_not_restorable', transcriptSafe: true },
+      safety: { category: 'planning', code: 'artifact_not_restorable' },
     });
     return { state, cancelled: true, regenerated: false };
   }
@@ -56,7 +56,6 @@ export async function resumeArtifactApproval(opts: {
     bus,
     state,
     signal: wctx.signal,
-    persistTranscript: config.workflow.persistTranscript,
     specMetadata: wctx.metadata,
     sinks: wctx.sinks,
   });

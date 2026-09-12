@@ -16,6 +16,8 @@ export interface RepoReadinessInput {
   commitStrategy?: CommitStrategy | undefined;
 }
 
+export const ACTIVE_SESSION_LIVE_CHECK = 'repo.active-session-live';
+
 export function buildRepoChecks(repo: RepoReadinessInput): ReadinessCheck[] {
   if (!repo.isGitRepo) {
     return [
@@ -90,7 +92,7 @@ export function buildRepoChecks(repo: RepoReadinessInput): ReadinessCheck[] {
 
   if (repo.activeSession) {
     checks.push({
-      id: repo.activeSessionLive ? 'repo.active-session-live' : 'repo.active-session-stale',
+      id: repo.activeSessionLive ? ACTIVE_SESSION_LIVE_CHECK : 'repo.active-session-stale',
       severity: repo.activeSessionLive ? 'blocker' : 'info',
       summary: repo.activeSessionLive
         ? `Active session ${repo.activeSession} is still live.`
@@ -118,4 +120,20 @@ export function buildRepoChecks(repo: RepoReadinessInput): ReadinessCheck[] {
   }
 
   return checks;
+}
+
+/**
+ * A read-only purpose starts nothing, claims no active pointer and writes no
+ * session state, so a run in progress elsewhere cannot refuse it. The live
+ * session is still worth reporting, so it is downgraded to the fact it is
+ * rather than dropped.
+ */
+export function exemptLiveSessionBlocker(check: ReadinessCheck): ReadinessCheck {
+  if (check.id !== ACTIVE_SESSION_LIVE_CHECK) return check;
+  return {
+    id: check.id,
+    severity: 'info',
+    summary: check.summary,
+    ...(check.metadata !== undefined && { metadata: check.metadata }),
+  };
 }

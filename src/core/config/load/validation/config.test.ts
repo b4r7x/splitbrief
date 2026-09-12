@@ -420,11 +420,11 @@ describe('validateConfig', () => {
     expect(data).toBeUndefined();
   });
 
-  it('keeps sessions.scope open for forward compatibility', () => {
-    const { errors, data } = validateConfig(makeConfig({ sessions: { scope: 'global' } }));
+  it('rejects the removed sessions.scope global value', () => {
+    const { errors, data } = validateConfig({ ...makeConfig(), sessions: { scope: 'global' } });
 
-    expect(errors).toEqual([]);
-    expect(data?.sessions?.scope).toBe('global');
+    expect(errors.some(({ path }) => path === 'sessions.scope')).toBe(true);
+    expect(data).toBeUndefined();
   });
 
   it('rejects {prompt} in command strings', () => {

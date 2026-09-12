@@ -226,6 +226,8 @@ export async function runClaudePlannerStream(
 export interface ClaudeOneShotOpts extends ClaudeEnvelopeCallOptions {
   prompt: string;
   projectDir: string;
+  /** A read-only call runs in the tool's plan permission mode; only a write-files escalation leaves it. */
+  mode: 'plan' | 'escalate';
   onOutput: (text: string) => void;
   onSessionId?: ((id: string) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
@@ -244,7 +246,7 @@ export interface ClaudeOneShotOpts extends ClaudeEnvelopeCallOptions {
 export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<RunnerCallResult> {
   const args = buildClaudeArgs({
     projectDir: opts.projectDir,
-    mode: 'escalate',
+    mode: opts.mode,
     model: opts.model,
     effort: opts.effort,
     configuredArgs: opts.configuredArgs,

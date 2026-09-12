@@ -131,6 +131,23 @@ describe('formatCrewRow', () => {
     },
   );
 
+  it('drops a whole axis word rather than cutting inside it', () => {
+    const rows = crewOf({
+      planner: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4', effort: 'high' },
+    });
+    const row = rows.find((candidate) => candidate.id === 'plan');
+    if (row === undefined) throw new Error('no plan seat');
+    const wide = planSeatBlock({ rows, verdict: undefined, innerWidth: 120, rowBudget: 12 });
+    const narrow = planSeatBlock({ rows, verdict: undefined, innerWidth: 46, rowBudget: 12 });
+
+    expect(formatCrewRow({ row, layout: wide }).content).toBe(
+      'Claude Code CLI · claude-sonnet-4 · high',
+    );
+    expect(formatCrewRow({ row, layout: narrow }).content).toBe(
+      'Claude Code CLI · claude-sonnet-4',
+    );
+  });
+
   it('reads an inherited review seat off the planner', () => {
     const row = CATALOGUED_CREW.find((candidate) => candidate.id === 'review');
     if (row === undefined) throw new Error('no review seat');
@@ -145,6 +162,21 @@ describe('formatCrewRow', () => {
     expect(formatted.content.startsWith(PLANNER_INHERITANCE.mark)).toBe(true);
     expect(formatted.content).toContain(row.seat.model);
     expect('branch' in formatted).toBe(false);
+  });
+
+  it('sheds the mirrored planner identity rather than printing a cut model id', () => {
+    const row = CATALOGUED_CREW.find((candidate) => candidate.id === 'review');
+    if (row === undefined) throw new Error('no review seat');
+    const layout = planSeatBlock({
+      rows: CATALOGUED_CREW,
+      verdict: undefined,
+      innerWidth: 56,
+      rowBudget: 12,
+    });
+
+    const { content } = formatCrewRow({ row, layout });
+    expect(content).not.toContain('…');
+    expect(content.startsWith(PLANNER_INHERITANCE.mark)).toBe(true);
   });
 
   it('formats every posture cell with the word the one table returns', () => {

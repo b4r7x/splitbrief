@@ -35,10 +35,6 @@ describe('buildRewindAction', () => {
       }),
     ]);
     expect(outcome.action).toEqual({ type: 'REWIND_TO_SPEC', comment: 'redo the spec' });
-    expect(outcome.persistedAction).toEqual({
-      type: 'REWIND_TO_SPEC',
-      comment: 'redo the spec',
-    });
     expect(outcome.event).toMatchObject({
       type: 'rewind_to_spec',
       phase: state.phase,
@@ -60,7 +56,6 @@ describe('buildRewindAction', () => {
       expect.objectContaining({ type: 'rewind_to_plan', phase: state.phase, data: {} }),
     ]);
     expect(outcome.action).toEqual({ type: 'REWIND_TO_PLAN' });
-    expect(outcome.persistedAction).toEqual({ type: 'REWIND_TO_PLAN' });
     expect(outcome.event).toMatchObject({ type: 'rewind_to_plan', phase: state.phase });
   });
 
@@ -83,7 +78,6 @@ describe('buildRewindAction', () => {
       }),
     ]);
     expect(outcome.action).toEqual({ type: 'RESET_TASK', taskId: 'T001' });
-    expect(outcome.persistedAction).toEqual({ type: 'RESET_TASK', taskId: 'T001' });
     expect(outcome.event).toMatchObject({
       type: 'task_reset',
       phase: state.phase,
@@ -105,41 +99,6 @@ describe('buildRewindAction', () => {
     expect(outcome.event).toMatchObject({ type: 'rewind_to_spec', comment: 'redo the spec' });
     expect(existsSync(join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE))).toBe(false);
   });
-
-  it.each([
-    ['spec', 'REWIND_TO_SPEC', 'rewind_to_spec'],
-    ['plan', 'REWIND_TO_PLAN', 'rewind_to_plan'],
-  ] as const)(
-    'omits %s rewind comments from directly appended events when transcript persistence is disabled',
-    (target, actionType, eventType) => {
-      const { projectDir, sessionId } = setupSession();
-      const state = makeImplState([makeTask()]);
-
-      const outcome = buildRewindAction({
-        request: { target, comment: 'private rewind feedback' },
-        ref: { projectDir, sessionId },
-        state,
-        persistTranscript: false,
-      });
-
-      expect(outcome.action).toEqual({ type: actionType, comment: 'private rewind feedback' });
-      expect(outcome.persistedAction).toEqual({
-        type: actionType,
-        comment: '[transcript omitted]',
-      });
-      expect(outcome.event).toMatchObject({
-        type: eventType,
-        comment: '[transcript omitted]',
-      });
-      expect(readSessionEvents(projectDir, sessionId)).toEqual([
-        expect.objectContaining({
-          type: eventType,
-          phase: state.phase,
-          data: { comment: '[transcript omitted]' },
-        }),
-      ]);
-    },
-  );
 
   it('protects rewind comments before direct session-log append when transcript persists', () => {
     const { projectDir, sessionId } = setupSession();

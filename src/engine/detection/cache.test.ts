@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -86,6 +86,28 @@ describe('detection cache', () => {
     ).resolves.toBeNull();
   });
 
+  it('warns and writes nothing when the snapshot fails schema validation', async () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    let written = '';
+    try {
+      // ':' is outside the accepted context-key alphabet.
+      await saveDetectionCache({
+        projectDir: tempDir,
+        snapshot: cacheSnapshot({ contextKey: 'readiness:not-a-persistable-key' }),
+      });
+      written = stderr.mock.calls.map(([chunk]) => String(chunk)).join('');
+    } finally {
+      stderr.mockRestore();
+    }
+
+    expect(written).toContain('detection cache: snapshot not remembered');
+    expect(written).toContain('contextKey');
+    expect(written).not.toContain('not-a-persistable-key');
+    await expect(
+      readFile(join(tempDir, SPLITBRIEF_DIR, 'detection-cache.json'), 'utf8'),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('serializes only non-sensitive readiness and stat fingerprint evidence', async () => {
     const providers: ProviderDetection[] = [
       {
@@ -127,7 +149,7 @@ describe('detection cache', () => {
     expect(raw).not.toContain('/private/local-cli-path-canary');
     expect(raw).not.toContain('credential-private-remediation-canary');
     expect(JSON.parse(raw)).toEqual({
-      version: 4,
+      version: 6,
       contextKey: CACHE_CONTEXT,
       fetchedAt: 1_786_000_000_000,
       validatedAt: 1_786_000_001_000,
@@ -174,6 +196,8 @@ describe('detection cache', () => {
                 contextLength: 131_072,
                 releaseDate: '2025-11-01',
                 pricingInput: 3,
+                pricingOutput: 12,
+                nativeHidden: false,
                 displayName: 'DeepSeek Chat',
               },
               { id: 'sk-credential-shaped-model' },
@@ -183,7 +207,6 @@ describe('detection cache', () => {
         ],
         cliCatalogs: [
           {
-            role: 'planner',
             tool: 'claude-code',
             models: [{ id: 'claude-fable-5', contextLength: 200_000, nativeDefault: true }],
             probedAt: 1_786_000_000_500,
@@ -195,8 +218,9 @@ describe('detection cache', () => {
     const raw = await readFile(join(tempDir, SPLITBRIEF_DIR, 'detection-cache.json'), 'utf8');
     expect(raw).not.toContain('sk-credential-shaped-model');
     expect(raw).not.toContain('model id with spaces');
-    expect(raw).not.toContain('pricingInput');
-    expect(raw).not.toContain('DeepSeek Chat');
+    expect(raw).toContain('pricingInput');
+    expect(raw).toContain('DeepSeek Chat');
+    expect(JSON.parse(raw).cliCatalogs[0]).not.toHaveProperty('role');
 
     await expect(
       loadDetectionCacheSnapshot({ projectDir: tempDir, contextKey: CACHE_CONTEXT }),
@@ -204,12 +228,20 @@ describe('detection cache', () => {
       providers: [
         {
           provider: 'ollama',
-          models: [{ id: 'deepseek/deepseek-chat', contextLength: 131_072 }],
+          models: [
+            {
+              id: 'deepseek/deepseek-chat',
+              contextLength: 131_072,
+              pricingInput: 3,
+              pricingOutput: 12,
+              nativeHidden: false,
+              displayName: 'DeepSeek Chat',
+            },
+          ],
         },
       ],
       cliCatalogs: [
         {
-          role: 'planner',
           tool: 'claude-code',
           models: [{ id: 'claude-fable-5', contextLength: 200_000, nativeDefault: true }],
           probedAt: 1_786_000_000_500,
@@ -224,7 +256,6 @@ describe('detection cache', () => {
       snapshot: cacheSnapshot({
         cliCatalogs: [
           {
-            role: 'planner',
             tool: 'codex',
             models: [{ id: 'model-with-odd-date', releaseDate: 'last tuesday' }],
             probedAt: 1_786_000_000_500,
@@ -238,6 +269,77 @@ describe('detection cache', () => {
       contextKey: CACHE_CONTEXT,
     });
     expect(snapshot?.cliCatalogs?.[0]?.models).toEqual([{ id: 'model-with-odd-date' }]);
+  });
+
+  it("remembers the tool's own name, detail, ladder and modality flags per model", async () => {
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({
+        cliCatalogs: [
+          {
+            tool: 'command-code',
+            models: [
+              {
+                id: 'zai-org/glm-5.2',
+                displayName: 'GLM-5.2',
+                detail: 'powerful coding with 1M context',
+                nativeReasoningEfforts: ['low', 'high'],
+                nativeDefaultReasoningEffort: 'high',
+                supportsToolCalls: true,
+                outputModalities: ['text'],
+              },
+            ],
+            probedAt: 1_786_000_000_500,
+          },
+        ],
+      }),
+    });
+
+    await expect(
+      loadRememberedPresentationSnapshot({ projectDir: tempDir, contextKey: CACHE_CONTEXT }),
+    ).resolves.toMatchObject({
+      snapshot: {
+        cliCatalogs: [
+          {
+            tool: 'command-code',
+            models: [
+              {
+                id: 'zai-org/glm-5.2',
+                displayName: 'GLM-5.2',
+                detail: 'powerful coding with 1M context',
+                nativeReasoningEfforts: ['low', 'high'],
+                nativeDefaultReasoningEffort: 'high',
+                supportsToolCalls: true,
+                outputModalities: ['text'],
+              },
+            ],
+          },
+        ],
+      },
+    });
+  });
+
+  it('drops a credential-shaped detail but keeps the row', async () => {
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({
+        cliCatalogs: [
+          {
+            tool: 'command-code',
+            models: [{ id: 'x/y', displayName: 'X Y', detail: 'uses api_key auth' }],
+            probedAt: 1_786_000_000_500,
+          },
+        ],
+      }),
+    });
+
+    const remembered = await loadRememberedPresentationSnapshot({
+      projectDir: tempDir,
+      contextKey: CACHE_CONTEXT,
+    });
+    const row = remembered?.snapshot.cliCatalogs?.[0]?.models[0];
+    expect(row).toMatchObject({ id: 'x/y', displayName: 'X Y' });
+    expect(row).not.toHaveProperty('detail');
   });
 
   it('hydrates cache rows that predate remembered catalogs with the field undefined', async () => {
@@ -457,7 +559,7 @@ describe('detection cache', () => {
     await writeFile(
       join(dir, 'detection-cache.json'),
       JSON.stringify({
-        version: 4,
+        version: 6,
         contextKey: CACHE_CONTEXT,
         fetchedAt: 1_786_000_000_000,
         validatedAt: 1_786_000_001_000,
@@ -525,7 +627,7 @@ describe('detection cache', () => {
     await writeFile(
       join(dir, 'detection-cache.json'),
       JSON.stringify({
-        version: 4,
+        version: 6,
         contextKey: CACHE_CONTEXT,
         fetchedAt: 1_786_000_000_000,
         validatedAt: 1_786_000_001_000,
@@ -566,7 +668,7 @@ describe('detection cache', () => {
     await writeFile(
       join(dir, 'detection-cache.json'),
       JSON.stringify({
-        version: 4,
+        version: 6,
         contextKey: CACHE_CONTEXT,
         fetchedAt: 1_786_000_000_000,
         validatedAt: 1_786_000_001_000,
@@ -614,6 +716,56 @@ describe('detection cache', () => {
       requestId: 27,
       providers: [],
       cliTools: [],
+    });
+    await writeFile(cachePath, payload, 'utf8');
+
+    await expect(
+      loadDetectionCacheSnapshot({ projectDir: tempDir, contextKey: CACHE_CONTEXT }),
+    ).resolves.toBeNull();
+    await expect(readFile(cachePath, 'utf8')).resolves.toBe(payload);
+  });
+
+  it('discards a version-5 role-keyed cache instead of migrating it', async () => {
+    const dir = join(tempDir, SPLITBRIEF_DIR);
+    await mkdir(dir, { recursive: true });
+    const cachePath = join(dir, 'detection-cache.json');
+    const payload = JSON.stringify({
+      version: 5,
+      contextKey: CACHE_CONTEXT,
+      fetchedAt: 1_786_000_000_000,
+      validatedAt: 1_786_000_001_000,
+      generation: 12,
+      requestId: 27,
+      providers: [],
+      cliTools: [],
+      cliCatalogs: [
+        { role: 'planner', tool: 'codex', models: [{ id: 'gpt-5.2-codex' }], probedAt: 40 },
+      ],
+    });
+    await writeFile(cachePath, payload, 'utf8');
+
+    await expect(
+      loadDetectionCacheSnapshot({ projectDir: tempDir, contextKey: CACHE_CONTEXT }),
+    ).resolves.toBeNull();
+    await expect(readFile(cachePath, 'utf8')).resolves.toBe(payload);
+  });
+
+  it('rejects a version-6 remembered catalog that still carries a role', async () => {
+    const dir = join(tempDir, SPLITBRIEF_DIR);
+    await mkdir(dir, { recursive: true });
+    const cachePath = join(dir, 'detection-cache.json');
+    const payload = JSON.stringify({
+      version: 6,
+      contextKey: CACHE_CONTEXT,
+      fetchedAt: 1_786_000_000_000,
+      validatedAt: 1_786_000_001_000,
+      generation: 12,
+      requestId: 27,
+      providers: [],
+      cliTools: [],
+      cliCatalogs: [
+        { role: 'planner', tool: 'codex', models: [{ id: 'gpt-5.2-codex' }], probedAt: 40 },
+      ],
     });
     await writeFile(cachePath, payload, 'utf8');
 

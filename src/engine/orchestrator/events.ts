@@ -38,7 +38,6 @@ type BusContext = {
 interface OperationalMessageSafety {
   readonly category: string;
   readonly code: string;
-  readonly transcriptSafe: true;
 }
 
 interface PublishOperationalMessageOptions extends BusContext {
@@ -419,7 +418,6 @@ export function publishError(options: PublishOperationalMessageOptions): void {
     ...(safety !== undefined && {
       category: safety.category,
       code: safety.code,
-      transcriptSafe: safety.transcriptSafe,
     }),
   });
 }
@@ -435,7 +433,6 @@ export function publishWarning(options: PublishOperationalMessageOptions): void 
     ...(safety !== undefined && {
       category: safety.category,
       code: safety.code,
-      transcriptSafe: safety.transcriptSafe,
     }),
   });
 }

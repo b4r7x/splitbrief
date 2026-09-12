@@ -110,7 +110,6 @@ describe('resume planning continuation with a direct-writing implementer', {
           mode: 'standard',
           approve: 'none',
           maxRetries: 1,
-          persistTranscript: true,
         },
       }),
     );

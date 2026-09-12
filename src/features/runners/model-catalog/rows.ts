@@ -1,10 +1,11 @@
-import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
+import { isAutoCheapestModel, isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import type { ProvenanceWord } from '../../../core/providers/provenance.js';
 import type {
   CliProviderAuth,
   CliProviderAuthUnreadableReason,
 } from '../../../core/discovery/detection.js';
 import { UNSET_EFFORT_WORD } from '../../../core/runners/effort-channel.js';
+import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/catalog.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
   formatAxisValue,
@@ -90,6 +91,14 @@ export const CATALOG_FETCH_FAILED = 'Could not load models';
 
 /** One wording for the Auto row's metadata cell; the row model carries no size. */
 export const AUTO_ROW_METADATA = 'tool decides';
+
+/**
+ * The one line the BUILD seat's price-routing row carries in its metadata cell. The row's name is
+ * `AUTO_CHEAPEST_MODEL_WORD`, so the picker and every seat identity spell the policy the same way;
+ * the name already says `cheapest`, so the cell adds only the basis and the granularity, short
+ * enough to print whole in what the protected label leaves it.
+ */
+export const AUTO_CHEAPEST_ROW_DETAIL = 'priced per brief';
 
 /** One wording for the escape row that opens the unfiltered catalog. */
 export const BROWSE_CATALOG_TEXT = 'Browse the full catalog…';
@@ -201,7 +210,7 @@ function provenanceFor(model: ModelOption, customModels: readonly string[]): Pro
       return 'Detected';
     case 'stale':
       return 'Stale';
-    case 'catalog-suggestion':
+    case CATALOG_SUGGESTION_MEMBERSHIP:
       return 'Catalog';
     case 'bundled-suggestion':
       return 'Known';
@@ -255,7 +264,7 @@ export function buildRightRows(input: {
   const automatic: ModelOption[] = [];
   let placements: Placement[] = [];
   for (const model of input.models) {
-    if (isAutomaticModel(model.id)) {
+    if (isAutomaticModel(model.id) || isAutoCheapestModel(model.id)) {
       automatic.push(model);
       continue;
     }
@@ -271,18 +280,21 @@ export function buildRightRows(input: {
     (placement) =>
       placement.model.membership === 'confirmed' ||
       placement.model.membership === 'stale' ||
-      placement.model.membership === 'catalog-suggestion',
+      placement.model.membership === CATALOG_SUGGESTION_MEMBERSHIP,
   );
   // Browsing widens the list. For claude-code and copilot the authoritative list
   // is itself bundled, so subtracting it here would delete what the escape was
   // opened from.
+  let widenable = false;
   if (hasLiveLane && !input.browseCatalog) {
-    placements = placements.filter(
+    const kept = placements.filter(
       (placement) =>
         placement.model.membership !== 'bundled-suggestion' ||
         placement.model.id === input.persistedModel ||
         placement.provenance === 'Custom',
     );
+    widenable = kept.length < placements.length;
+    placements = kept;
   }
 
   const order: PlacementGroup[] = [];
@@ -366,7 +378,9 @@ export function buildRightRows(input: {
     for (const placement of members) pushModel(placement, section);
   }
 
-  if (!input.browseCatalog && placements.some((placement) => placement.model.isRecovery === true)) {
+  // The escape is offered only where it delivers: rows this pass subtracted. A
+  // configured id no lane lists is a recovery row, not a wider catalog.
+  if (widenable) {
     rows.push({ kind: 'action', action: 'browse-catalog', text: BROWSE_CATALOG_TEXT });
   }
 

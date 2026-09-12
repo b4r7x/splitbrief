@@ -75,9 +75,8 @@ async function planWithCodebase(
     workflow: {
       mode: 'quick',
       approve: 'none',
-      persistTranscript: false,
     },
-    codebase: { enabled: opts.enabled, tokenBudget: 1000, cacheDir: '.splitbrief' },
+    codebase: { enabled: opts.enabled, tokenBudget: 1000 },
   });
 
   let state = createInitialState(opts.feature);

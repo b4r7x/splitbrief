@@ -189,15 +189,6 @@ describe('the hook trust prompt authorizes a command, not a label', () => {
     expect(disclosure).toMatch(/Resolved: "(\/.*prettier|\(not found on PATH\))"/);
   });
 
-  it('names the module file a module hook loads', () => {
-    const moduleHooks: HooksConfig = {
-      post_task: [{ kind: 'module', path: 'hooks/pwn.mjs', timeout_ms: 5000, on_failure: 'warn' }],
-    };
-    const disclosure = formatHookTrustDisclosure(tmp, moduleHooks);
-    expect(disclosure).toContain('Module: "hooks/pwn.mjs"');
-    expect(disclosure).toContain(`Resolved: "${join(tmp, 'hooks', 'pwn.mjs')}"`);
-  });
-
   it('cannot be redressed by control characters in the declared command', () => {
     const spoofed: HooksConfig = {
       pre_task: [

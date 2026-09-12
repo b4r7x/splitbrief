@@ -69,6 +69,7 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'ok' }) + '\\n');`
     await runClaudeOneShot({
       prompt: 'p',
       projectDir,
+      mode: 'escalate',
       authChannel: 'session',
       onOutput: () => {},
     });
@@ -85,6 +86,7 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'ok' }) + '\\n');`
     const result = await runClaudeOneShot({
       prompt: 'hi',
       projectDir,
+      mode: 'escalate',
       onOutput: () => {},
     });
 
@@ -98,6 +100,7 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'ok' }) + '\\n');`
     await runClaudeOneShot({
       prompt: 'escalate me',
       projectDir,
+      mode: 'escalate',
       onOutput: () => {},
       effort: 'xhigh',
     });

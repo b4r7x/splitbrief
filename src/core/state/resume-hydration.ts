@@ -1,30 +1,27 @@
 import type { SessionRef } from '../types/session-ref.js';
-import { acquireStateAuthority, releaseStateAuthority } from './authority.js';
-import { loadStateForResume } from './resume-authority.js';
+import { loadState } from './persistence.js';
+import { classifyStateVersion, readRawState } from './state-file.js';
 import type { ResumeLoadResult } from './types.js';
 
-export type OwnedResumeHydration = ResumeLoadResult & { readonly fenced: boolean };
+export type OwnedResumeState = ResumeLoadResult;
 
-export function loadOwnerWorkflowState(ref: SessionRef): OwnedResumeHydration {
-  let acquired: ReturnType<typeof acquireStateAuthority>;
-  try {
-    acquired = acquireStateAuthority({ ref, purpose: 'resume' });
-  } catch (cause) {
-    return {
-      kind: 'invalid',
-      code: 'malformed',
-      message: cause instanceof Error ? cause.message : 'State authority is unavailable.',
-      fenced: false,
-    };
-  }
+/**
+ * `loadState` collapses every unreadable file into null. This re-reads the raw
+ * bytes only on that path, so a loaded state costs one read and a rejected one
+ * can still say whether it was malformed or written by a newer version.
+ */
+export function loadOwnerWorkflowState(ref: SessionRef): OwnedResumeState {
+  const state = loadState(ref);
+  if (state !== null) return { kind: 'loaded', state };
 
-  if (acquired.kind === 'new-workflow') return { kind: 'missing', fenced: false };
-  if (acquired.kind !== 'fenced') {
-    return { ...loadStateForResume({ ref, authority: acquired }), fenced: false };
+  const raw = readRawState(ref);
+  if (raw.kind === 'missing') return { kind: 'missing' };
+  if (raw.kind === 'malformed') {
+    return { kind: 'invalid', code: 'malformed', message: raw.message };
   }
-  try {
-    return { ...loadStateForResume({ ref, authority: acquired }), fenced: true };
-  } finally {
-    releaseStateAuthority(ref, acquired.receipt);
+  const classification = classifyStateVersion(raw.raw.value);
+  if (classification.kind === 'malformed' || classification.kind === 'future-version') {
+    return { kind: 'invalid', code: classification.kind, message: classification.message };
   }
+  return { kind: 'invalid', code: 'malformed', message: 'State file could not be loaded.' };
 }

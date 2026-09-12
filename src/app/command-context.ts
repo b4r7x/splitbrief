@@ -1,11 +1,9 @@
-import { join } from 'node:path';
 import { useRef } from 'react';
 import { createRuntimeCommands } from '../core/runtime/commands/registry.js';
 import { executeRuntimeCommand } from '../core/runtime/commands/dispatch.js';
 import { requestRewind, requestClearQueue } from '../features/workflow/handlers.js';
 import { findLatestExpandableActivityBatchKey } from '../features/workflow/conversation-rows/activity-batch-key.js';
 import { findLatestRenderableDiffKey } from '../core/sections/event-sections.js';
-import { createTuiSink } from '../features/workflow/tui-sink.js';
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
 import { resolveCopyValue } from '../features/workflow/copy/resolve.js';
 import { getSections } from '../stores/workflow/actions/sections.js';
@@ -45,12 +43,7 @@ import { detectedModelFact, seatSupportsImages } from '../core/runners/capabilit
 import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { createCommandContext } from '../core/runtime/commands/context-factory.js';
 import { copyToClipboard } from '../lib/clipboard/clipboard.js';
-import { sessionDir } from '../core/paths.js';
-import { writeHandoffPack } from '../engine/handoff/write.js';
 import { acceptRunSnapshot, rejectRunSnapshot } from '../engine/snapshots/run/lifecycle.js';
-import { createEventBus } from '../engine/events/bus.js';
-import { performManualCompaction } from '../engine/orchestrator/transcript/compaction.js';
-import { writeSessionHtmlReport } from '../engine/export/collect.js';
 import {
   readApprovalsStore,
   mutateApprovalsStore,
@@ -87,9 +80,7 @@ const appCommandContextError = {
 
 function routeSessionId(route: RouteData, projectDir: string): string | null {
   if (route.screen === 'workflow') {
-    return route.execution.kind === 'local'
-      ? route.execution.prepared.session.ref.sessionId
-      : route.execution.sessionId;
+    return route.execution.prepared.session.ref.sessionId;
   }
   if (route.screen === 'summary' && route.sessionId) return route.sessionId;
   return readActive(projectDir);
@@ -214,13 +205,9 @@ export function buildCommandContext({
   workflow: WorkflowCommandPorts;
 }): RuntimeCommandContext {
   const route = routerStore.get();
-  const prepared =
-    route.screen === 'workflow' && route.execution.kind === 'local'
-      ? route.execution.prepared
-      : null;
+  const prepared = route.screen === 'workflow' ? route.execution.prepared : null;
   const projectDir = prepared?.session.ref.projectDir ?? configStore.get().projectDir;
   return createCommandContext({
-    isAttached: route.screen === 'workflow' && route.execution.kind === 'attached',
     projectDir: () => projectDir,
     getConfig: () => configStore.get().config,
     saveConfig: async (config): Promise<RuntimeConfigSaveResult> => {
@@ -248,10 +235,8 @@ export function buildCommandContext({
           };
       }
     },
-    setApprovalEnabled: configStore.setApprovalEnabled,
     getSessionId: () => routeSessionId(route, projectDir),
     noActiveSession: appCommandContextError.noActiveSession,
-    exportMissingSession: () => ({ status: 'error', error: 'No active session for /export' }),
     openOverlay: overlayStore.open,
     navigateHome: () => routerStore.navigate({ to: 'home' }),
     quit: exit,
@@ -281,15 +266,6 @@ export function buildCommandContext({
     plannerSupportsImages: () => plannerSupportsImages(configStore.get().config),
     detachImage,
     listAttachments,
-    writeHandoff: ({ projectDir, sessionId, target, taskId }) =>
-      writeHandoffPack({
-        projectDir,
-        sessionId,
-        target,
-        outDir: join(sessionDir(projectDir, sessionId), 'handoffs', target),
-        ...(taskId !== undefined && { selectedTaskIds: [taskId] }),
-        mode: 'overwrite',
-      }),
     listApprovals: (projectDir) => readApprovalsStore(projectDir).grants,
     clearApprovals: (projectDir, scope) => {
       let removed = 0;
@@ -302,24 +278,6 @@ export function buildCommandContext({
     },
     acceptRunSnapshot,
     rejectRunSnapshot,
-    compactTranscript: () => {
-      if (prepared === null) {
-        throw appCommandContextError.noActiveSession('/compact-transcript');
-      }
-      const bus = createEventBus();
-      bus.subscribe(
-        createTuiSink({ persistTranscript: prepared.config.workflow.persistTranscript }),
-      );
-      return performManualCompaction({
-        config: prepared.config,
-        ref: prepared.session.ref,
-        preparationId: prepared.preparationId,
-        gates: prepared.gates,
-        bus,
-      });
-    },
-    exportSession: async (projectDir, sessionId) =>
-      writeSessionHtmlReport(sessionDir(projectDir, sessionId), sessionId),
     scrollConversation: (target) => scrollConversation(target, workflow.readScrollMetrics),
     toggleLatestActivityBatch: () => toggleLatestActivityBatch(workflow.findLatestActivityBatchKey),
     toggleLatestDiff: () => toggleLatestDiff(workflow.findLatestDiffKey),
@@ -358,14 +316,12 @@ export function useRuntimeCommands({ exit, phase }: { exit: () => void; phase: P
   const commands = createRuntimeCommands(ctx);
   const runtimeChainRef = useRef(Promise.resolve());
   const handleRuntimeCommand = (raw: string, from: Screen) => {
-    const route = routerStore.get();
     const config = configStore.get().config;
     runtimeChainRef.current = runtimeChainRef.current
       .then(() =>
         executeRuntimeCommand(commands, raw, {
           screen: from,
           phase,
-          attached: route.screen === 'workflow' && route.execution.kind === 'attached',
           plannerSupportsImages: plannerSupportsImages(config),
           onError: feedbackStore.setError,
         }),

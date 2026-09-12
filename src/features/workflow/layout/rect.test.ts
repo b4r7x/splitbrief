@@ -237,6 +237,11 @@ describe('getReviewContentLayout', () => {
     expect(getReviewContentLayout(1, 20).contentHeight).toBe(0);
     expect(getReviewContentLayout(0, 0).contentHeight).toBe(0);
   });
+
+  it('keeps the document rows the footer would have counted when they are the only ones', () => {
+    expect(getReviewContentLayout(4, 20)).toEqual({ contentHeight: 2, showFooter: false });
+    expect(getReviewContentLayout(5, 20)).toEqual({ contentHeight: 1, showFooter: true });
+  });
 });
 
 describe('sidebar task list geometry', () => {

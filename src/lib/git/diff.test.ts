@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { getCurrentDiff, getDiffSince, getCommittedFilesSince } from './diff.js';
@@ -70,6 +70,16 @@ describe('getDiffSince', () => {
     const diff = await getDiffSince(dir, base);
     expect(diff).toContain('COMMITTED_BODY');
     expect(diff).toContain('UNTRACKED_BODY');
+  });
+
+  it('refuses an option-shaped base ref instead of letting git read it as a flag', async () => {
+    const dir = tracked(setupGitRepo());
+    const probe = join(dir, 'probe.txt');
+
+    await expect(getDiffSince(dir, `--output=${probe}`)).rejects.toThrow(
+      "a git ref cannot start with '-'",
+    );
+    expect(existsSync(probe)).toBe(false);
   });
 });
 

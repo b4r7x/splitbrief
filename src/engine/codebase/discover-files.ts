@@ -1,4 +1,4 @@
-import { extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { extname, join, relative, resolve } from 'node:path';
 import { readdir } from 'node:fs/promises';
 import { ALL_KNOWN_EXTENSIONS } from './languages.js';
 import { INTERNAL_SKIP_DIRS } from '../../core/paths.js';
@@ -11,7 +11,6 @@ const DEFAULT_EXCLUDE_FILE_PATTERNS = [/\.test\.tsx?$/];
 export interface DiscoverOptions {
   excludePatterns?: string[];
   includePatterns?: string[];
-  cacheDir: string;
 }
 
 type IncludeMatcher = (relPath: string, ext: string) => boolean;
@@ -74,23 +73,15 @@ function createIncludeMatcher(pattern: string): IncludeMatcher {
     (globExtension !== null ? ext === globExtension : ALL_KNOWN_EXTENSIONS.has(ext));
 }
 
-function buildExcludeDirNames(projectDir: string, cacheDir: string): Set<string> {
-  const names = new Set(DEFAULT_EXCLUDE_DIR_NAMES);
-  const cacheRelPath = normalizeRelativePath(relative(projectDir, cacheDir));
-  if (cacheRelPath && !cacheRelPath.startsWith('..') && !isAbsolute(cacheRelPath)) {
-    const topSegment = cacheRelPath.split('/')[0];
-    if (topSegment) names.add(topSegment);
-  }
-  return names;
-}
-
 function buildFileExcludePatterns(userPatterns?: string[]): RegExp[] {
   if (!userPatterns?.length) return DEFAULT_EXCLUDE_FILE_PATTERNS;
   return [...DEFAULT_EXCLUDE_FILE_PATTERNS, ...userPatterns.map((p) => new RegExp(p))];
 }
 
-export async function discoverFiles(projectDir: string, opts: DiscoverOptions): Promise<string[]> {
-  const excludeDirNames = buildExcludeDirNames(projectDir, opts.cacheDir);
+export async function discoverFiles(
+  projectDir: string,
+  opts: DiscoverOptions = {},
+): Promise<string[]> {
   const excludeFilePatterns = buildFileExcludePatterns(opts.excludePatterns);
   const userDirPatterns = opts.excludePatterns?.length
     ? opts.excludePatterns.map((p) => new RegExp(p))
@@ -104,7 +95,7 @@ export async function discoverFiles(projectDir: string, opts: DiscoverOptions): 
     const entries = await readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       if (entry.isDirectory()) {
-        if (excludeDirNames.has(entry.name)) continue;
+        if (DEFAULT_EXCLUDE_DIR_NAMES.has(entry.name)) continue;
         if (userDirPatterns.length > 0) {
           const dirRel = normalizeRelativePath(relative(projectDir, join(dir, entry.name)));
           if (userDirPatterns.some((re) => re.test(dirRel) || re.test(dirRel + '/'))) continue;

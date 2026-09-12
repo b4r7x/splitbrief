@@ -1,10 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSplitbriefDir, ensureSessionDir } from '../../core/paths-io.js';
+import { STATE_FILE, sessionDir } from '../../core/paths.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { saveState } from '../../core/state/persistence.js';
-import { acquireStateAuthority, releaseStateAuthority } from '../../core/state/authority.js';
 import { hydrateResume, resumeFailureMessage } from './resume-hydration.js';
 
 let projectDir: string;
@@ -24,25 +26,47 @@ describe('hydrateResume', () => {
     const ref = { projectDir, sessionId: '2026-09-01-no-state' };
     ensureSessionDir(projectDir, ref.sessionId);
 
-    expect(hydrateResume(ref, undefined)).toEqual({ kind: 'missing' });
+    expect(hydrateResume(ref)).toEqual({ kind: 'missing' });
   });
 
-  it('loads the saved state under a supplied fenced receipt', () => {
+  it('loads the saved state through the owner loader', () => {
     const ref = { projectDir, sessionId: '2026-09-01-loaded' };
     ensureSessionDir(projectDir, ref.sessionId);
     const saved = { ...createInitialState('add auth'), phase: 'reviewing-spec' as const };
     saveState(ref, saved);
-    const acquired = acquireStateAuthority({ ref, purpose: 'resume' });
-    if (acquired.kind !== 'fenced') throw new Error('expected a fenced authority');
 
-    const hydrated = hydrateResume(ref, acquired.receipt);
+    const hydrated = hydrateResume(ref);
 
     expect(hydrated.kind).toBe('loaded');
     if (hydrated.kind !== 'loaded') throw new Error('unreachable');
     expect(hydrated.state.phase).toBe('reviewing-spec');
-    expect(hydrated.authority).toEqual(acquired.receipt);
+  });
 
-    releaseStateAuthority(ref, acquired.receipt);
+  it('classifies a state file written by a newer version as invalid', () => {
+    const ref = { projectDir, sessionId: '2026-09-01-future' };
+    ensureSessionDir(projectDir, ref.sessionId);
+    const warn = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    writeFileSync(
+      join(sessionDir(projectDir, ref.sessionId), STATE_FILE),
+      JSON.stringify({ stateVersion: 99 }),
+    );
+
+    const hydrated = hydrateResume(ref);
+    warn.mockRestore();
+
+    expect(hydrated).toMatchObject({ kind: 'invalid', code: 'future-version' });
+  });
+
+  it('classifies an unparseable state file as invalid rather than missing', () => {
+    const ref = { projectDir, sessionId: '2026-09-01-corrupt' };
+    ensureSessionDir(projectDir, ref.sessionId);
+    const warn = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    writeFileSync(join(sessionDir(projectDir, ref.sessionId), STATE_FILE), '{ not json');
+
+    const hydrated = hydrateResume(ref);
+    warn.mockRestore();
+
+    expect(hydrated).toMatchObject({ kind: 'invalid', code: 'malformed' });
   });
 });
 

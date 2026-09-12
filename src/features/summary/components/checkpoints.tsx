@@ -4,7 +4,6 @@ import type { ScrollableDocumentRow } from '../../../components/scrollable-docum
 import type { Theme } from '../../../components/theme.js';
 import { stripTerminalControls, truncateTerminalDisplayText } from '../../../utils/display-text.js';
 import { countNoun } from '../../../utils/pluralize.js';
-import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 
 function uniqueParts(parts: (string | null)[]): string[] {
   const seen = new Set<string>();
@@ -35,16 +34,6 @@ function formatRunStatus(summary: CheckpointSummaryRollup): string | null {
   return null;
 }
 
-function commandFor(
-  command: string | null,
-  action: 'diff' | 'restore',
-  checkpointId: string | null,
-): string | null {
-  if (command) return stripTerminalControls(command);
-  if (!checkpointId) return null;
-  return `${SPLITBRIEF_IDENTITY.executable} snapshot ${action} ${stripTerminalControls(checkpointId)}`;
-}
-
 function checkpointSummaryText(
   summary: CheckpointSummaryRollup,
   latest: string,
@@ -62,12 +51,6 @@ export function buildCheckpointDetailRows(
 ): ScrollableDocumentRow[] {
   const latest = formatLatestCheckpoint(checkpointSummary, 88, isSmall);
   const runStatus = formatRunStatus(checkpointSummary);
-  const diffCommand = commandFor(checkpointSummary.diffCommand, 'diff', checkpointSummary.latestId);
-  const restoreCommand = commandFor(
-    checkpointSummary.restoreCommand,
-    'restore',
-    checkpointSummary.latestId,
-  );
   const summaryText = checkpointSummaryText(checkpointSummary, latest, isSmall);
   const safeLatestId = stripTerminalControls(checkpointSummary.latestId ?? 'n/a');
   const safePreFinalReviewId = checkpointSummary.preFinalReviewId
@@ -177,22 +160,12 @@ export function buildCheckpointDetailRows(
     }
   }
 
-  if (diffCommand) {
+  if (checkpointSummary.latestId) {
     rows.push({
-      key: 'checkpoints-diff',
+      key: 'checkpoints-recover',
       node: (
         <Text color={theme.textDim} wrap="truncate-end">
-          {'  '}diff: {diffCommand}
-        </Text>
-      ),
-    });
-  }
-  if (restoreCommand) {
-    rows.push({
-      key: 'checkpoints-restore',
-      node: (
-        <Text color={theme.textDim} wrap="truncate-end">
-          {'  '}restore: {restoreCommand}
+          {'  '}recover: {safeLatestId} via /run accept|reject
         </Text>
       ),
     });

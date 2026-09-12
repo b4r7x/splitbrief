@@ -8,6 +8,7 @@ import {
   buildDependencyBlockedRecoveryIssue,
   buildRetryExhaustedRecoveryIssue,
   buildRunnerUsageLimitRecoveryIssue,
+  switchSeatOffer,
 } from './task.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
@@ -145,6 +146,80 @@ describe('buildRunnerUsageLimitRecoveryIssue', () => {
     expect(issue.recommendedAction).toBe('route-bigger-worker');
     expect(issue.facts?.routeBiggerProfile).toBe('cloud-big');
     expectValidRecoveryIssue(issue);
+  });
+
+  it('offers the other detected ready tools as seats to switch to', () => {
+    const issue = buildRunnerUsageLimitRecoveryIssue({
+      task: makeTask({ id: 'T003' }),
+      runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
+      toolMessage: codexLimit,
+      createdAt,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'codex',
+        detectedTools: [
+          { tool: 'codex', ready: true },
+          { tool: 'claude-code', model: 'sonnet', ready: true },
+          { tool: 'opencode', ready: false },
+        ],
+      },
+    });
+
+    expect(issue.switchSeat).toEqual({
+      seat: 'build',
+      candidates: [{ tool: 'claude-code', model: 'sonnet' }],
+    });
+    expect(issue.details.join('\n')).not.toContain('claude-code');
+    expect(issue.resetAt).toMatch(/^2026-08-08T/);
+    expect(issue.availableActions).toContain('switch-seat');
+    expect(issue.recommendedAction).toBe('switch-seat');
+    expectValidRecoveryIssue(issue);
+  });
+
+  it('omits the seat switch when nothing else is detected ready', () => {
+    const issue = buildRunnerUsageLimitRecoveryIssue({
+      task: makeTask({ id: 'T003' }),
+      runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
+      toolMessage: codexLimit,
+      createdAt,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'codex',
+        detectedTools: [
+          { tool: 'codex', ready: true },
+          { tool: 'opencode', ready: false },
+        ],
+      },
+    });
+
+    expect(issue.switchSeat).toBeUndefined();
+    expect(issue.availableActions).not.toContain('switch-seat');
+    expectValidRecoveryIssue(issue);
+  });
+});
+
+describe('switchSeatOffer', () => {
+  it('offers only tools the seat can host', () => {
+    expect(
+      switchSeatOffer({
+        seat: 'build',
+        currentTool: 'codex',
+        detectedTools: [
+          { tool: 'a-tool-no-seat-hosts', ready: true },
+          { tool: 'claude-code', ready: true },
+        ],
+      }),
+    ).toEqual({ seat: 'build', candidates: [{ tool: 'claude-code' }] });
+  });
+
+  it('offers nothing when no ready tool can host the seat', () => {
+    expect(
+      switchSeatOffer({
+        seat: 'plan',
+        currentTool: 'codex',
+        detectedTools: [{ tool: 'a-tool-no-seat-hosts', ready: true }],
+      }),
+    ).toBeUndefined();
   });
 });
 

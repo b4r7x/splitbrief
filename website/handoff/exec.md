@@ -98,7 +98,7 @@ exit=0
   9 skipped
   18 passed (9.6s)
 ```
-accept: 6 PASS · 1 FAIL (FAIL  cmp p0-1440 t104-1440 silent  →  got [/Users/voitz/Projects/tiny-spec/.nuke/2026-09-09-114149-creative-website-v2/;)
+accept: 6 PASS · 1 FAIL (FAIL  cmp p0-1440 t104-1440 silent  →  got [<repo>/.nuke/2026-09-09-114149-creative-website-v2/;)
 drift: none (changed: ['website/src/main.ts', 'website/tests/e2e/motion.e2e.ts', 'website/tests/e2e/page.e2e.ts', 'website/tests/e2e/shots.e2e.ts'] — owned by T004) · n/a (hash baseline covers website/ only) · staged: none other-lane paths ignored
 outcome: attempt 1: gates PASS, HERO-JSON(t104) empty, cmp p0-1440/t104-1440 FAIL — the diff is the three ghost canvases and the same-code pair t103/p0 differs identically (harness nondeterminism in full-page captures); ruling requested from team-lead 16:40, run paused at T004
 **Capture-determinism finding (16:40):** on identical code the full-page captures differ between runs inside the three ghost canvases only — t103 vs p0 at 1440: bbox (624, 328, 1216, 834), 6904 px; at 768: (35, 1003, 227, 1254); fold / 1920 / 1920-fold / 1024 pairs byte-identical. T004's captures: t104-1440 == t103-1440, t104-fold == p0-fold, t104-1920 == p0-1920, t104-1024 == p0-1024; the p0 diff is the same canvas bbox. Candidate cause: the `fullPage` screenshot's viewport resize lands the ghosts' rAF ticker on a different frame under the fake clock. REQ-015 ("two capture sets byte-identical") will need a `shots.e2e.ts` fix in P1b (freeze the ghost canvases before the full-page capture). Ruling on T004's `cmp` Accept requested.
@@ -119,7 +119,7 @@ exit=0
   9 skipped
   18 passed (9.6s)
 ```
-accept: 6 PASS · 1 FAIL (FAIL  cmp p0-1440 t104-1440 silent  →  got [/Users/voitz/Projects/tiny-spec/.nuke/2026-09-09-114149-creative-website-v2/;)
+accept: 6 PASS · 1 FAIL (FAIL  cmp p0-1440 t104-1440 silent  →  got [<repo>/.nuke/2026-09-09-114149-creative-website-v2/;)
 drift: none (changed: ['website/src/main.ts', 'website/tests/e2e/motion.e2e.ts', 'website/tests/e2e/page.e2e.ts', 'website/tests/e2e/shots.e2e.ts'] — owned by T004) · n/a (hash baseline covers website/ only) · staged: none other-lane paths ignored
 outcome: done — by ruling 16:45 (cmp masked to the three .stage canvas boxes: identical outside the canvases)
 
@@ -372,9 +372,9 @@ drift: none (changed: ['website/index.html', 'website/src/main.ts', 'website/src
 outcome: done (ruling 17:4x — no comment; text-shadow wrapped by Biome)
 
 ## P1a — review cycle 2 (cursor-grok-4.6-high, --mode plan, exit 0, 17:41→17:45)
-packet: /Users/voitz/Projects/tiny-spec/.splitbrief/runs/2026-09-09-153506-web-v2-p1a/review-packet.md (300103 bytes; carries a Review Cycle Context section closing the three cycle-1 criticals and naming the P1b overlay on index.html / main.css / tokens.css / page.e2e.ts / shots.e2e.ts)
+packet: <repo>/.splitbrief/runs/2026-09-09-153506-web-v2-p1a/review-packet.md (300103 bytes; carries a Review Cycle Context section closing the three cycle-1 criticals and naming the P1b overlay on index.html / main.css / tokens.css / page.e2e.ts / shots.e2e.ts)
 verdict: pass · criteria 5 PASS / 0 FAIL · findings 0 critical / 0 warning / 6 note
-review: /Users/voitz/Projects/tiny-spec/.splitbrief/runs/2026-09-09-153506-web-v2-p1a/review.md (cycle 1 preserved as review-1.md)
+review: <repo>/.splitbrief/runs/2026-09-09-153506-web-v2-p1a/review.md (cycle 1 preserved as review-1.md)
 residuals: RUN/residuals.md R-1..R-6 — no fix briefs compiled (cap of 2 review cycles reached; nothing Critical to fix)
 outcome: P1a CLEAN — 13/13 briefs done, gates green, drift none, review pass
 
@@ -1131,7 +1131,7 @@ exit=0
   9 skipped
   39 passed (13.5s)
 ```
-accept: 4 PASS · 2 FAIL (FAIL  cmp d1 vs d2  →  /Users/voitz/Projects/tiny-spec/.nuke/2026-09-09-114149-creative-website-v2/shots/d1-1440.png /Us;FAIL  p0-fold vs d1-fold bbox  →  got [(0, 1, 1440, 900)] expected [None];)
+accept: 4 PASS · 2 FAIL (FAIL  cmp d1 vs d2  →  <repo>/.nuke/2026-09-09-114149-creative-website-v2/shots/d1-1440.png /Us;FAIL  p0-fold vs d1-fold bbox  →  got [(0, 1, 1440, 900)] expected [None];)
 drift: website/src/styles/s04-tiers.css
 outcome: done
 

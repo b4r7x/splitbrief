@@ -1,7 +1,6 @@
 import { createBusTextHandler, publishRunnerCallEvent, publishWarning } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { createSessionExpiredHandler } from '../resume-context.js';
-import { workflowAuthority } from '../run/authority.js';
 import { withContinuationLoop } from '../continuation.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { buildRejectionContext } from '../evidence/reporting.js';
@@ -108,12 +107,9 @@ export async function runPlannerCallInContinuationLoop(
             projectDir,
             sessionId,
             bus: wctx.bus,
-            config,
             resumeHolder,
-            authority: workflowAuthority(wctx),
           }),
           sessionId,
-          persistTranscript: config.workflow.persistTranscript,
           signal: callSignal,
           ...(priorMessages && priorMessages.length > 0 ? { priorMessages } : {}),
           ...(callAttachments ? { attachments: callAttachments } : {}),

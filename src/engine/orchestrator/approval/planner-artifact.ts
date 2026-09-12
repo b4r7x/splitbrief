@@ -29,8 +29,6 @@ const ARTIFACT_REVIEW_LABEL = 'Custom planner artifact';
 
 type BeginPlannerArtifactReviewInput = BeginDeclaredArtifactReviewInput &
   Readonly<{
-    projectDir: string;
-    sessionId: string;
     onApprovalNeeded: (
       type: 'artifact',
       review: ArtifactApprovalReview,

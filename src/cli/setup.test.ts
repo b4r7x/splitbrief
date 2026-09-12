@@ -260,7 +260,7 @@ describe('assertInteractiveTty', () => {
 
     let captured: unknown;
     try {
-      assertInteractiveTty('use --json or --detach');
+      assertInteractiveTty('use --json');
       throw new Error('expected assertInteractiveTty to throw');
     } catch (err) {
       captured = err;
@@ -268,14 +268,12 @@ describe('assertInteractiveTty', () => {
 
     expect(isCliError(captured)).toBe(true);
     expect((captured as { exitCode?: number }).exitCode).toBe(1);
-    expect((captured as Error).message).toBe(
-      'interactive mode needs a TTY — use --json or --detach',
-    );
+    expect((captured as Error).message).toBe('interactive mode needs a TTY — use --json');
   });
 
   it('returns without throwing when stdin is a TTY', () => {
     process.stdin.isTTY = true;
-    expect(() => assertInteractiveTty('use --json or --detach')).not.toThrow();
+    expect(() => assertInteractiveTty('use --json')).not.toThrow();
   });
 });
 

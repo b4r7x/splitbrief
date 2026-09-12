@@ -121,8 +121,6 @@ describe('configured direct planner terminal cleanup', () => {
         beginDeclaredArtifactReview: async (artifactInput) => {
           const prepared = await beginDeclaredArtifactReview({
             ...artifactInput,
-            projectDir,
-            sessionId: 'planner-adapter-session',
             onApprovalNeeded,
           });
           return {
@@ -283,8 +281,6 @@ describe('configured direct planner terminal cleanup', () => {
     let approvalRequests = 0;
     const review = await beginDeclaredArtifactReview({
       stagedProjectDir: stage.projectDir,
-      projectDir,
-      sessionId: 'planner-adapter-session',
       callId: 'hard-timeout',
       declaredRedactionValues: [],
       provenance: {

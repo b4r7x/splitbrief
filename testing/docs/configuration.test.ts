@@ -253,14 +253,11 @@ function wrapMinimalApiConfig(runnerYaml: string): unknown {
       approve: 'default',
       maxRetries: 3,
       git: { commitStrategy: 'none' },
-      persistTranscript: true,
       compactionFormat: 'auto',
       mode: 'standard',
       taskReview: 'none',
     },
     theme: 'terminal',
-    plannerEstimateReview: false,
-    autoSplitOverflow: false,
   };
 }
 
@@ -284,10 +281,10 @@ function collectRuntimeCompatibleOnlyDefaults() {
   );
 }
 
-// The verdict table at the end of §20 must name every excluded offering, so the
+// The verdict table at the end of §18 must name every excluded offering, so the
 // admitted scope stops where it begins.
 function admittedApiSection(doc: string): string {
-  const start = doc.indexOf('## 20. Admitted API providers');
+  const start = doc.indexOf('## 18. Admitted API providers');
   const end = doc.indexOf(EXCLUDED_OFFERINGS_HEADING);
   expect(start).toBeGreaterThanOrEqual(0);
   expect(end).toBeGreaterThan(start);

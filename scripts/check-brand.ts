@@ -49,7 +49,7 @@ const negativeContractLines = new Map<string, ReadonlySet<string>>([
       `{ kind: 'rejected', label: 'state', value: '${firstPriorState}/' }, ${negativeMarker}`,
       `{ kind: 'rejected', label: 'environment', value: '${firstPriorMachine.toUpperCase()}_API_KEY' }, ${negativeMarker}`,
       `{ kind: 'rejected', label: 'branch', value: '${firstPriorMachine}/example' }, ${negativeMarker}`,
-      `{ kind: 'rejected', label: 'protocol', value: '${secondPriorMachine.replace('-', '.')}' }, ${negativeMarker}`,
+      `{ kind: 'rejected', label: 'symbol', value: '${secondPriorMachine.replace('-', '.')}' }, ${negativeMarker}`,
     ]),
   ],
 ]);

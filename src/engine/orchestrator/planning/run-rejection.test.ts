@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { createInitialState } from '../../../core/state/machine.js';
+import { createInitialState, transition } from '../../../core/state/machine.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -57,7 +57,7 @@ describe('runPlanningPhase — planner rejection context', () => {
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       },
       planner: opts.planner,
-      state: { ...createInitialState(feature), phase: 'idle' },
+      state: transition(createInitialState(feature), { type: 'START' }),
       feature,
     });
     return result;
@@ -76,7 +76,7 @@ describe('runPlanningPhase — planner rejection context', () => {
       planner,
     });
 
-    expect(result.disposition).toBe('parked');
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(prompts).toEqual([expect.stringContaining('Previous rejections:')]);
     expect(prompts[0]).toContain(rejectionSummary);
     expect(prompts[0]).toContain(feature);
@@ -101,7 +101,7 @@ describe('runPlanningPhase — planner rejection context', () => {
       approval: { enabled: true, feedRejectionsToPlanner: true },
     });
 
-    expect(result.disposition).toBe('parked');
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(prompts).toEqual([expect.stringContaining('Previous rejections:')]);
     expect(prompts[0]).toContain(rejectionSummary);
     expect(prompts[0]).toContain(feature);
@@ -121,7 +121,7 @@ describe('runPlanningPhase — planner rejection context', () => {
       approval: { enabled: true, feedRejectionsToPlanner: false },
     });
 
-    expect(result.disposition).toBe('parked');
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).not.toContain('Previous rejections:');
     expect(prompts[0]).not.toContain(rejectionSummary);

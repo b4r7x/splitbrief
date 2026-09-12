@@ -18,23 +18,11 @@ export function optionalSectionsYaml(): Record<string, unknown> {
     codebase: {
       enabled: true,
       token_budget: 1234,
-      cache_dir: '.splitbrief-cache',
       include: ['src/**'],
       exclude: ['dist/**'],
     },
     hooks: {
-      builtin: { snapshots: false },
-    },
-    otel: {
-      enabled: true,
-      service_name: 'splitbrief-test',
-    },
-    snapshots: {
-      auto: {
-        pre_task: true,
-        post_task: false,
-        pre_final_review: true,
-      },
+      pre_task: [{ command: './scripts/pre-task.sh' }],
     },
     palette: {
       custom_actions: [
@@ -48,7 +36,6 @@ export function optionalSectionsYaml(): Record<string, unknown> {
     },
     approval: {
       enabled: true,
-      headless: true,
       tiers: {
         read: 'auto',
         write_in_scope: 'sticky',

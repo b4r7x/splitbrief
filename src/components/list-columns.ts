@@ -12,22 +12,15 @@ const LABEL_GAP = 1;
 const TRAILING_GAP = 1;
 // §Target frames: two cells separate a description from a right-aligned shortcut.
 const SHORTCUT_GAP = 2;
+// The same two cells separate a description from the argument grammar that follows it.
+const HINT_GAP = 2;
 
-// A bare alias rides on its command's row rather than claiming one of its own; an alias carrying
-// an argument stays off the label, because it is one option of the command rather than another
-// name for it — the palette shows and matches it from the row's description instead.
-export function commandDisplayName(command: RuntimeCommandDef): string {
-  const bare = (command.aliases ?? []).filter((alias) => alias.args === undefined);
-  if (bare.length === 0) return command.name;
-  return `${command.name} (${bare.map((alias) => alias.name).join(' ')})`;
-}
-
-// One label column for every row on every screen: the registry's widest display name, not the
+// One label column for every row on every screen: the registry's widest command name, not the
 // widest row that happens to be on screen, so the description column does not jump between screens.
 export function commandLabelWidth(commands: RuntimeCommandDef[]): number {
   let width = 0;
   for (const command of commands) {
-    width = Math.max(width, getTerminalCellWidth(commandDisplayName(command)));
+    width = Math.max(width, getTerminalCellWidth(command.name));
   }
   return width;
 }
@@ -39,6 +32,11 @@ export function descriptionColumn(input: {
   shortcut: string | null;
   innerWidth: number;
   labelWidth: number;
+  /**
+   * The argument grammar, a cell of its own: `[m…` carries nothing and reads as broken syntax, so
+   * it prints whole beside the whole description or it does not print.
+   */
+  hint?: string | null;
 }): string {
   const trailingCols =
     input.shortcut === null ? 0 : TRAILING_GAP + getTerminalCellWidth(input.shortcut);
@@ -47,5 +45,10 @@ export function descriptionColumn(input: {
     input.innerWidth - LEAD_COLS - input.labelWidth - LABEL_GAP - trailingCols,
   );
   const budget = input.shortcut === null ? field : Math.max(0, field - SHORTCUT_GAP + TRAILING_GAP);
-  return padTerminalDisplayTextEnd(truncateTerminalDisplayText(input.description, budget), field);
+  const withHint =
+    input.hint === null || input.hint === undefined || input.hint === ''
+      ? input.description
+      : `${input.description}${' '.repeat(HINT_GAP)}${input.hint}`;
+  const text = getTerminalCellWidth(withHint) <= budget ? withHint : input.description;
+  return padTerminalDisplayTextEnd(truncateTerminalDisplayText(text, budget), field);
 }

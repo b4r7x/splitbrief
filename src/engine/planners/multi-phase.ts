@@ -99,7 +99,6 @@ export async function runMultiPhasePlanning(
       projectDir,
       sessionId: callbacks.sessionId ?? '',
       phase: plannerPhase,
-      persistTranscript: callbacks.persistTranscript ?? true,
     });
 
     const priorMessages = !priorInjected ? callbacks.priorMessages : undefined;

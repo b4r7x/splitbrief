@@ -34,10 +34,11 @@ function toVariant(source: ProviderVariantSource): ModelVariant {
 
 function variantsOf(source: ProviderVariantSource): ModelVariant[] {
   if (source.row.variants === undefined) return [toVariant(source)];
+  const providerTag = compactProviderTag(source.prefix);
   return source.row.variants.map((variant) => ({
     ...variant,
     providerPrefix: source.prefix,
-    tag: compactProviderTag(source.prefix),
+    tag: variant.tag === '' ? providerTag : `${providerTag} · ${variant.tag}`,
   }));
 }
 
@@ -104,7 +105,6 @@ function mergeGroupRows(
       : {}),
     ...(membership === 'stale' ? { isStale: true } : {}),
     ...(rows.some((row) => row.isCustom) ? { isCustom: true } : {}),
-    ...(rows.some((row) => row.isRecovery) ? { isRecovery: true } : {}),
     ...(contextLength === undefined ? {} : { contextLength }),
     ...(releaseDate === undefined ? {} : { releaseDate }),
     variants,
@@ -120,14 +120,38 @@ interface ProviderVariantGroup {
 type MergeSlot = Readonly<{ kind: 'row'; row: ModelOption }> | ProviderVariantGroup;
 
 /**
+ * The tool's own listing decides. `kilo models --verbose` prints one bare id
+ * twice — `kilo/kilo-auto/free` as `Auto Free` and `kilo/openrouter/free` as
+ * `OpenRouter Free Models Router` — two different models, while a model
+ * reached through two providers carries the same name in both rows. A row
+ * with no name makes no claim.
+ */
+function conflictingFamilyIds(models: readonly ModelOption[]): Set<string> {
+  const nameByFamily = new Map<string, string>();
+  const conflicting = new Set<string>();
+  for (const row of models) {
+    if (modelProviderPrefix(row.id) === undefined) continue;
+    const name = row.displayName?.trim();
+    if (name === undefined || name === '') continue;
+    const familyId = peelOptionSuffix(modelBareId(row.id)).familyId;
+    const seen = nameByFamily.get(familyId);
+    if (seen === undefined) nameByFamily.set(familyId, name);
+    else if (seen !== name) conflicting.add(familyId);
+  }
+  return conflicting;
+}
+
+/**
  * Collapses rows of a provider-dependent tool whose bare ids share an option
  * family into one row per model, keeping each group at its most-recent member's
  * position. Unprefixed ids never join a group.
+ * Rows the tool names differently are different models; they never share a key.
  */
 export function mergeProviderVariants(
   models: readonly ModelOption[],
   ctx: ProviderMergeContext,
 ): ModelOption[] {
+  const conflicting = conflictingFamilyIds(models);
   const groups = new Map<string, ProviderVariantGroup>();
   const slots: MergeSlot[] = [];
   for (const row of models) {
@@ -136,7 +160,8 @@ export function mergeProviderVariants(
       slots.push({ kind: 'row', row });
       continue;
     }
-    const familyId = peelOptionSuffix(modelBareId(row.id)).familyId;
+    const bareFamilyId = peelOptionSuffix(modelBareId(row.id)).familyId;
+    const familyId = conflicting.has(bareFamilyId) ? row.id : bareFamilyId;
     const existing = groups.get(familyId);
     if (existing !== undefined) {
       existing.rest.push({ row, prefix });

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { runLegacyQualityGate } from '../../../src/engine/orchestrator/planning/brief-quality-gate.js';
+import { runQualityGateAndReport } from '../../../src/engine/orchestrator/planning/brief-quality-gate.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -24,7 +24,7 @@ function makeFullTask() {
   });
 }
 
-describe('runLegacyQualityGate', () => {
+describe('runQualityGateAndReport', () => {
   function setupDir() {
     const projectDir = createTempDir('brief-quality-test');
     dirs.push(projectDir);
@@ -38,7 +38,7 @@ describe('runLegacyQualityGate', () => {
     const { bus, events } = makeBusRecorder();
     const task = makeFullTask();
 
-    const { report, ok } = runLegacyQualityGate({
+    const { report, ok } = runQualityGateAndReport({
       tasks: [task],
       projectDir,
       sessionId,
@@ -66,7 +66,7 @@ describe('runLegacyQualityGate', () => {
     const { bus, events } = makeBusRecorder();
     const task = makeTask({ tests: [] });
 
-    const { report, ok } = runLegacyQualityGate({
+    const { report, ok } = runQualityGateAndReport({
       tasks: [task],
       projectDir,
       sessionId,

@@ -7,13 +7,13 @@ const contractCases = [
   { kind: 'canonical', label: 'state', value: '.splitbrief/' },
   { kind: 'canonical', label: 'environment', value: 'SPLITBRIEF_API_KEY' },
   { kind: 'canonical', label: 'branch', value: 'splitbrief/example' },
-  { kind: 'canonical', label: 'protocol', value: 'splitbrief.rpc' },
+  { kind: 'canonical', label: 'symbol', value: 'splitbrief.probeTimedOut' },
   { kind: 'rejected', label: 'display', value: 'Diptych' }, // brand-contract-negative
   { kind: 'rejected', label: 'machine', value: 'diptych' }, // brand-contract-negative
   { kind: 'rejected', label: 'state', value: '.diptych/' }, // brand-contract-negative
   { kind: 'rejected', label: 'environment', value: 'DIPTYCH_API_KEY' }, // brand-contract-negative
   { kind: 'rejected', label: 'branch', value: 'diptych/example' }, // brand-contract-negative
-  { kind: 'rejected', label: 'protocol', value: 'tiny.spec' }, // brand-contract-negative
+  { kind: 'rejected', label: 'symbol', value: 'tiny.spec' }, // brand-contract-negative
 ];
 
 describe('maintained tree brand contract', () => {

@@ -23,6 +23,7 @@ import { colorForTone } from '../display/tone-color.js';
 import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { glyph } from '../../../lib/glyphs.js';
+import { WORKFLOW_CANCEL_REASON_USER } from '../../../engine/events/workflow-cancel.js';
 import { formatStageLabel } from '../../../core/phase-display.js';
 import { buildInputFooterByline } from '../input-footer-byline.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
@@ -103,6 +104,13 @@ export function InputFooter({
     ? `${glyph('statusPending')} Interrupted — ⏎ retry${SOFT_SEP}type to steer`
     : `${glyph('statusPending')} Interrupted — finishing current step…`;
   const pausedLead = `${glyph('statusPending')} ${PAUSED_LIVE_STATUS_VERB}`;
+  // A run that ended without finishing must not reach the stageLead fallback: the pip there is
+  // `stageDone`, so the one line that survives at every width would report a completed-looking
+  // stage for a run that stopped. `user_cancelled` is the only reason the engine names.
+  const userCancelled = lifecycle.reason === WORKFLOW_CANCEL_REASON_USER;
+  const stoppedGlyph = glyph(userCancelled ? 'statusCancelled' : 'statusFailed');
+  const stoppedWord = userCancelled ? 'Cancelled' : 'Failed';
+  const stoppedLead = joinBylineParts([`${stoppedGlyph} ${stoppedWord}`, stageCore]);
   const stall = lifecycle.status === 'running' ? lifecycle.stall : null;
   // stall.since is the warning time; silentMs is the silence already elapsed when
   // the warning fired, so the byline shows the full span since the last output.
@@ -111,19 +119,26 @@ export function InputFooter({
   const stalledLead =
     stall !== null ? `${glyph('statusWarning')} Still working — silent ${stalledFor}` : '';
 
-  // One derivation encodes the interrupted → waiting → stalled → live priority
-  // order so the lead text, its color, and its hint can never drift apart.
-  const { lead, leadColor, hintText } = interrupted
-    ? { lead: interruptedLead, leadColor: t.warning, hintText: null }
-    : paused
-      ? { lead: pausedLead, leadColor: null, hintText: null }
-      : waiting
-        ? { lead: waitingLead, leadColor: null, hintText: null }
-        : stall !== null
-          ? { lead: stalledLead, leadColor: t.warning, hintText: stallRunnerHint(stall.runnerName) }
-          : liveStatus !== null
-            ? { lead: liveLead, leadColor: colorForTone(liveStatus.tone, t), hintText: null }
-            : { lead: stageLead, leadColor: null, hintText: null };
+  // One derivation encodes the stopped → interrupted → waiting → stalled → live
+  // priority order so the lead text, its color, and its hint can never drift apart.
+  const { lead, leadColor, hintText } =
+    lifecycle.status === 'cancelled'
+      ? { lead: stoppedLead, leadColor: userCancelled ? t.warning : t.error, hintText: null }
+      : interrupted
+        ? { lead: interruptedLead, leadColor: t.warning, hintText: null }
+        : paused
+          ? { lead: pausedLead, leadColor: null, hintText: null }
+          : waiting
+            ? { lead: waitingLead, leadColor: null, hintText: null }
+            : stall !== null
+              ? {
+                  lead: stalledLead,
+                  leadColor: t.warning,
+                  hintText: stallRunnerHint(stall.runnerName),
+                }
+              : liveStatus !== null
+                ? { lead: liveLead, leadColor: colorForTone(liveStatus.tone, t), hintText: null }
+                : { lead: stageLead, leadColor: null, hintText: null };
 
   const queuedText = lifecycle.queueDepth > 0 ? `${lifecycle.queueDepth} queued` : null;
 

@@ -1,31 +1,16 @@
 import type { PlanResult, Planner } from '../../planners/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
-import { publishPlannerStatus, publishWarning } from '../events.js';
-import { addUsageAndSave } from '../state-ops.js';
+import { publishWarning } from '../events.js';
+import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { collectAndPersistClarifications } from '../clarifications.js';
 import { drainAndFormat } from './queue-drain.js';
 import { handlePlanningFailure } from './failure.js';
 import { planningError } from './errors.js';
 import { persistPhases } from './io.js';
 import { runPlannerCallInContinuationLoop } from './call-loop.js';
-import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
+import type { PlanningPhaseOptions, PlanningProducerResult } from './types.js';
 import { withRewindFeedback } from './rewind-feedback.js';
-import { parkedResult } from './brief-quality-preparation.js';
-import { publishProducerGeneration } from './producer-publication.js';
-import { settleApprovedAdmission } from './approved-admission.js';
-import { planningResultForState, terminalPlanningResult } from './handoff.js';
 import { TASKS_FILE } from '../../../core/paths.js';
-import { PhaseSchema } from '../../../core/schemas/enums.js';
-import { labelError } from '../../../utils/format-errors.js';
-
-function syncRecoveryState(opts: PlanningPhaseOptions, state: typeof opts.state): void {
-  if (
-    opts.recovery !== undefined &&
-    (state.stateRevision ?? 0) > opts.recovery.authority.stateRevision
-  ) {
-    opts.recovery.writeState(state);
-  }
-}
 
 function plannerUsingQuickPlan(planner: Planner): Planner {
   return {
@@ -34,7 +19,9 @@ function plannerUsingQuickPlan(planner: Planner): Planner {
   };
 }
 
-export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
+export async function runQuickPlanning(
+  opts: PlanningPhaseOptions,
+): Promise<PlanningProducerResult> {
   const { wctx, planner } = opts;
   const { projectDir, sessionId, metadata, resumeHolder } = wctx;
   let { state } = opts;
@@ -71,7 +58,6 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
   }
 
   state = addUsageAndSave(wctx, state, 'planner', planResult.usage);
-  syncRecoveryState(opts, state);
 
   if (planResult.tasks.length === 0) {
     publishWarning({
@@ -79,11 +65,8 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
       phase: state.phase,
       message:
         'quick mode: the planner produced text but no parsable Task Brief; the failed attempt contributes no Brief generation',
-      safety: { category: 'planner', code: 'planner_returned_zero_tasks', transcriptSafe: true },
+      safety: { category: 'planner', code: 'planner_returned_zero_tasks' },
     });
-    if (opts.recovery === undefined) {
-      return parkedResult({ recovery: opts.recovery, sessionId, state });
-    }
     return handlePlanningFailure({
       err: planningError.zeroTasks(),
       projectDir,
@@ -93,11 +76,8 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
     });
   }
 
-  // The fixed tasks.md is a compatibility projection that may be refreshed
-  // only after the authoritative generation commit, so the publication seam
-  // writes it and the phase persistence here carries only the support
-  // documents. Without the owner binding, the producer publishes the
-  // generation itself and parks the committed authority.
+  // runPlanningPhase writes tasks.md after the brief quality gate, so the
+  // phase persistence here carries only the support documents.
   persistPhases({
     projectDir,
     sessionId,
@@ -114,107 +94,20 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
       sessionId,
       state,
       onQuestionAsked: wctx.callbacks.onQuestionAsked,
-      persistTranscript: wctx.config.workflow.persistTranscript,
       bus: wctx.bus,
       metadata,
       planner,
     });
-    syncRecoveryState(opts, state);
   }
 
-  if (opts.recovery === undefined) {
-    const published = publishProducerGeneration({
-      ref: { projectDir, sessionId },
-      state,
-      planResult,
-      bus: wctx.bus,
-      phase: state.phase,
-      metadata,
-    });
-    if (!published.ok) {
-      publishWarning({
-        bus: wctx.bus,
-        phase: state.phase,
-        message: `quick mode: the Task Brief could not be published; ${published.message}`,
-        safety: { category: 'planning', code: 'brief_publication_blocked', transcriptSafe: true },
-      });
-      return parkedResult({
-        recovery: opts.recovery,
-        sessionId,
-        state: { ...state, tasks: planResult.tasks },
-      });
-    }
-    state = {
-      ...state,
-      phase: PhaseSchema.parse(published.committed.recovery.phase),
-      briefRecovery: published.committed.recovery.briefRecovery,
-      authorityRevision: published.committed.authorityRevision,
-      generation: published.committed.generation,
-      permit: published.committed.permit,
-    };
-  }
-
-  // The workflow owner admits the quick Brief; the settlement then issues the
-  // execution permit for the approved generation and hands the exact persisted
-  // generation and permit to the task runner.
-  if (opts.recovery !== undefined) {
-    try {
-      const admission = await opts.recovery.controller.enterBriefAdmission(
-        opts.recovery.createAdmissionInput({
-          tasks: planResult.tasks,
-          state,
-          projectDir,
-          sessionId,
-        }),
-        opts.recovery.authority,
-      );
-      if (admission.kind === 'rejected') {
-        const rejected = opts.recovery.readState();
-        return terminalPlanningResult(rejected, 'rejected');
-      }
-      if (admission.kind !== 'ready') {
-        const parked = opts.recovery.readState();
-        return parkedResult({ recovery: opts.recovery, sessionId, state: parked });
-      }
-      const admitted = opts.recovery.readState();
-      const settled = settleApprovedAdmission({
-        ref: { projectDir, sessionId },
-        state: admitted,
-        tasks: planResult.tasks,
-        bus: wctx.bus,
-        writeState: opts.recovery.writeState,
-      });
-      if (!settled.ok) {
-        publishWarning({
-          bus: wctx.bus,
-          phase: state.phase,
-          message: `quick mode: the approved Task Briefs could not receive their execution permit; ${settled.message}`,
-          safety: { category: 'planning', code: 'brief_permit_refused', transcriptSafe: true },
-        });
-        return parkedResult({
-          recovery: opts.recovery,
-          sessionId,
-          state: opts.recovery.readState(),
-        });
-      }
-      state = settled.state;
-      publishPlannerStatus(wctx.bus, state, 'running');
-      return planningResultForState({ sessionId, state, tasks: planResult.tasks });
-    } catch (err) {
-      publishWarning({
-        bus: wctx.bus,
-        phase: state.phase,
-        message: labelError('quick mode: the Task Brief admission failed', err),
-        safety: { category: 'planning', code: 'brief_admission_failed', transcriptSafe: true },
-      });
-      const parked = opts.recovery.readState();
-      return parkedResult({ recovery: opts.recovery, sessionId, state: parked });
-    }
-  }
-
-  return parkedResult({
-    recovery: opts.recovery,
-    sessionId,
-    state: { ...state, tasks: planResult.tasks },
+  state = transitionAndSave({ projectDir, sessionId }, state, {
+    type: 'PLAN_DONE',
+    tasks: planResult.tasks,
   });
+
+  return {
+    disposition: 'tasks-ready',
+    state,
+    tasks: planResult.tasks,
+  };
 }

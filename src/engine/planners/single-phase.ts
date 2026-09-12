@@ -107,7 +107,6 @@ export async function runSinglePhasePlanning(
     projectDir,
     sessionId: callbacks.sessionId ?? '',
     phase: 'planning',
-    persistTranscript: callbacks.persistTranscript ?? true,
   });
   const { effectivePrompt, extras } = prepareInvokeArgs({
     prompt,

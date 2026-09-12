@@ -89,7 +89,6 @@ export function navigateCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
     {
       kind: 'noarg',
       name: '/settings',
-      aliases: [{ name: '/config' }],
       label: 'settings',
       description: 'Crew, validation, workflow',
       shortcut: getShortcutKey('settings'),

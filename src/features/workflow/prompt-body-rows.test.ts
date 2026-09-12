@@ -4,7 +4,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { PromptBody } from './components/prompt-body.js';
 import { QuestionPrompt } from './components/question-prompt.js';
-import { countPromptBodyRows, promptBodyRows } from './prompt-body-rows.js';
+import { clipPromptBodyRows, countPromptBodyRows, promptBodyRows } from './prompt-body-rows.js';
 import {
   getQuestionPromptRows,
   QUESTION_PROMPT_HORIZONTAL_CHROME,
@@ -86,5 +86,40 @@ describe('promptBodyRows', () => {
     expect(panelRows).toBe(count + 2);
     expect(panelFrameRows).toHaveLength(panelRows);
     expect(panelFrameRows[1]).toContain(passHeadlinePrefix());
+  });
+
+  it('keeps every action row when the panel is shorter than the prompt', () => {
+    const prompt = [
+      'recovery needed · Ollama hit its usage limit.',
+      '',
+      'resets 17:00',
+      'task T901 · Project deterministic workflow activity',
+      'files src/a.ts',
+      'worker local-fixture',
+      '',
+      '[r]  retry same worker',
+      '[w1]  switch BUILD to OpenCode CLI',
+      '[w2]  switch BUILD to OpenAI Codex CLI · gpt-5-codex',
+      '[a]  abort',
+    ].join('\n');
+    const rows = promptBodyRows(prompt, BODY_WIDTH);
+    const clipped = clipPromptBodyRows(rows, 7);
+
+    expect(clipped).toHaveLength(7);
+    expect(clipped.filter((row) => row.kind === 'action')).toHaveLength(4);
+    expect(clipped[0]?.kind).toBe('headline');
+    expect(clipped[1]).toMatchObject({ kind: 'facts-line' });
+    expect(clipped[2]?.kind).toBe('blank');
+
+    const rendered = renderedPromptBodyRows(prompt, 7);
+    expect(rendered.some((row) => row.includes('[a]  abort'))).toBe(true);
+    expect(rendered.some((row) => row.includes('resets 17:00'))).toBe(true);
+  });
+
+  it('leaves a prompt that fits its panel untouched', () => {
+    const prompt = 'recovery needed · halt\n\nresets 17:00\n\n[a]  abort';
+    const rows = promptBodyRows(prompt, BODY_WIDTH);
+
+    expect(clipPromptBodyRows(rows, rows.length + 4)).toEqual(rows);
   });
 });

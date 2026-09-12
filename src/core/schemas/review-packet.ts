@@ -107,8 +107,6 @@ const ReviewPacketCheckpointSchema = z.object({
   kind: z.enum(['manual', 'pre-task', 'post-task', 'pre-final-review', 'accepted-run', 'other']),
   inferredKind: z.enum(['pre-task', 'post-task', 'pre-final-review', 'accepted-run']).optional(),
   isRunCheckpoint: z.boolean(),
-  diffCommand: z.string(),
-  restoreCommand: z.string(),
 });
 
 const ReviewPacketRunLedgerSchema = z.object({

@@ -48,7 +48,6 @@ export function makeE2eScenarioConfig(
     workflow: {
       mode,
       maxRetries: 3,
-      persistTranscript: true,
       taskReview: 'none',
       compactionFormat: 'auto',
       ...overrides.workflow,

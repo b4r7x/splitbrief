@@ -346,8 +346,6 @@ describe('SummaryScreen', () => {
           preFinalReviewId: 'snap-pre-final',
           accepted: true,
           rejected: false,
-          diffCommand: 'splitbrief snapshot diff snap-post-1',
-          restoreCommand: 'splitbrief snapshot restore snap-post-1',
         },
         reviewPacket: {
           markdownPath: 'review-packet.md',
@@ -370,7 +368,8 @@ describe('SummaryScreen', () => {
     expect(frame).toContain('Checkpoints');
     expect(frame).toContain('2 checkpoints');
     expect(frame).toContain('snap-pre-final');
-    expect(frame).toContain('splitbrief snapshot diff snap-post-1');
+    expect(frame).toContain('recover: snap-post-1 via /run accept|reject');
+    expect(frame).not.toContain('snapshot diff');
     expect(frame).toContain('Review packet');
     expect(frame).toContain('.splitbrief/sessions/summary-session/review-packet.md');
     expect(frame).toContain('final review: written');
@@ -394,8 +393,6 @@ describe('SummaryScreen', () => {
           preFinalReviewId: 'snap-pre-final',
           accepted: null,
           rejected: null,
-          diffCommand: 'splitbrief snapshot diff snap-post-very-long-id',
-          restoreCommand: 'splitbrief snapshot restore snap-post-very-long-id',
         },
         reviewPacket: {
           markdownPath: 'review-packet.md',
@@ -452,8 +449,6 @@ describe('SummaryScreen', () => {
           preFinalReviewId: 'snap-pre-final',
           accepted: true,
           rejected: false,
-          diffCommand: 'splitbrief snapshot diff snap-post-final',
-          restoreCommand: 'splitbrief snapshot restore snap-post-final',
         },
         reviewPacket: {
           markdownPath: 'review-packet.md',
@@ -511,7 +506,7 @@ describe('SummaryScreen', () => {
     ui.unmount();
   });
 
-  it('summary byline carries three identity segments for an own-reviewer run', () => {
+  it('gives an own-reviewer run three labelled seat rows, not an arrow chain', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     showSummaryRoute({
       summary: makeSummary({
@@ -526,37 +521,40 @@ describe('SummaryScreen', () => {
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const rowFor = (label: string): string =>
+      frame.split('\n').find((line) => line.includes(label)) ?? '';
 
-    const byline = frame.split('\n').find((line) => line.includes('Claude Code'));
-    expect(byline).toBeDefined();
-    const segments = (byline ?? '').split(arrowSep());
-    expect(segments).toHaveLength(3);
-    expect(segments[2]).toContain('OpenAI Codex CLI');
+    expect(rowFor(CREW_SEAT_LABELS.plan)).toContain('Claude Code CLI');
+    expect(rowFor(CREW_SEAT_LABELS.build)).toContain('qwen-small');
+    expect(rowFor(CREW_SEAT_LABELS.review)).toContain('OpenAI Codex CLI');
+    expect(frame).not.toContain(arrowSep());
 
     ui.unmount();
   });
 
-  it('shows the planner-to-implementer route once on large terminals, in the byline only', () => {
-    terminalSizeStore.__testReset({ cols: 160, rows: 40, isSmall: false });
-    showSummaryRoute({
-      summary: makeSummary({
-        plannerTool: 'codex',
-        implementerTool: 'ollama',
-        implementerModel: 'qwen-small',
-      }),
-    });
+  it('names each seat once, on the same labelled rows, at every width', () => {
+    for (const cols of [160, 80]) {
+      terminalSizeStore.__testReset({ cols, rows: 40, isSmall: cols <= 80 });
+      showSummaryRoute({
+        summary: makeSummary({
+          plannerTool: 'codex',
+          implementerTool: 'ollama',
+          implementerModel: 'qwen-small',
+        }),
+      });
 
-    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect((frame.match(/OpenAI Codex CLI/g) ?? []).length).toBe(1);
-    expect((frame.match(/Qwen Small/g) ?? []).length).toBe(1);
-    expect(frame).not.toContain(CREW_SEAT_LABELS.plan);
-    expect(frame).not.toContain(CREW_SEAT_LABELS.build);
-    expect(frame).not.toContain(CREW_SEAT_LABELS.review);
-    expect(frame).not.toContain(PLANNER_INHERITANCE.sentence);
+      expect((frame.match(/OpenAI Codex CLI/g) ?? []).length, `at ${cols}`).toBe(1);
+      expect((frame.match(/qwen-small/g) ?? []).length, `at ${cols}`).toBe(1);
+      expect(frame, `at ${cols}`).toContain(CREW_SEAT_LABELS.plan);
+      expect(frame, `at ${cols}`).toContain(CREW_SEAT_LABELS.build);
+      expect(frame, `at ${cols}`).toContain(CREW_SEAT_LABELS.review);
+      expect(frame, `at ${cols}`).toContain(PLANNER_INHERITANCE.sentence);
 
-    ui.unmount();
+      ui.unmount();
+    }
   });
 
   it('exits to home when Enter is pressed on the empty composer', async () => {
@@ -683,8 +681,6 @@ describe('SummaryScreen', () => {
           preFinalReviewId: null,
           accepted: null,
           rejected: null,
-          diffCommand: null,
-          restoreCommand: null,
         },
         reviewPacket: {
           markdownPath: 'review-packet.md',

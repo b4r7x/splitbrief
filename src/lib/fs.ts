@@ -50,13 +50,6 @@ export const fsError = {
   symlinkWrite: (filePath: string) =>
     error('fs-symlink-write', `refusing to write through symlink: ${filePath}`, { filePath }),
   isSymlinkWrite: matches('fs-symlink-write'),
-  sockPathTooLong: (sockPath: string, bytes: number, maxBytes: number) =>
-    error(
-      'fs-sock-path-too-long',
-      `IPC socket path is ${bytes} bytes, exceeding the ${maxBytes}-byte unix-domain limit: ${sockPath}. Use a shorter project directory or worktree name.`,
-      { sockPath, bytes, maxBytes },
-    ),
-  isSockPathTooLong: matches('fs-sock-path-too-long'),
 } as const;
 
 export function rejectSymlinkTarget(filePath: string): void {

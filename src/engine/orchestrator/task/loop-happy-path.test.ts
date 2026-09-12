@@ -14,7 +14,6 @@ import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { runTaskLoop } from './loop.js';
-import { readRunSnapshotLedger } from '../../snapshots/run/ledger.js';
 
 let dirs: string[] = [];
 
@@ -156,50 +155,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     });
 
     expect(reentry.taskBreakdowns.map((b) => b.taskId)).toEqual(['T001', 'T002']);
-  });
-
-  it('auto.postTask=true causes snapshot_created event after successful task', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001' });
-    const state = makeImplState([task]);
-
-    const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async () => {
-        mkdirSync(join(projectDir, 'src'), { recursive: true });
-        writeFileSync(join(projectDir, task.file), 'implementation');
-        return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
-      }),
-    });
-
-    const { callbacks } = makeCallbacks();
-    const { bus, events } = makeBusRecorder();
-
-    await runTaskLoop({
-      wctx: makeWctx({
-        projectDir,
-        sessionId,
-        config: {
-          ...makeNoValidationConfig({ workflow: defaultWorkflow }),
-          snapshots: { auto: { postTask: true } },
-        },
-        callbacks,
-        implementer,
-        bus,
-      }),
-      initialState: state,
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
-
-    const snapshotEvent = events.find((e) => e.type === 'snapshot_created');
-    expect(snapshotEvent).toMatchObject({ type: 'snapshot_created', taskIndex: 0 });
-
-    const ledger = await readRunSnapshotLedger(projectDir, sessionId);
-    expect(ledger?.accepted).toBe(false);
-    expect(ledger?.rejected).toBe(false);
-    if (snapshotEvent?.type === 'snapshot_created') {
-      expect(ledger?.runSnapshotIds).toContain(snapshotEvent.snapshotId);
-    }
   });
 
   it('dispatches each task as a separate implementer call without prior task continuation text', async () => {

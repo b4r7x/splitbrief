@@ -1,8 +1,13 @@
+import type { RecoveryIssue } from '../../../../src/core/schemas/recovery/schemas.js';
 import type { Summary } from '../../../../src/core/schemas/summary.js';
 import { taskId } from '../../../../src/core/schemas/task.js';
+import type { WorkflowState } from '../../../../src/core/schemas/workflow.js';
+import { makeTask } from '../../../helpers/factories/task.js';
 import { makeUsage } from '../../../helpers/factories/summary.js';
+import { makeImplState } from '../../../helpers/factories/workflow-state.js';
 import type { EngineEvent } from '../../../../src/engine/events/types.js';
 import { getWorkflowPromptRows } from '../../../../src/features/workflow/prompt-rows/workflow.js';
+import { formatRecoveryPrompt } from '../../../../src/features/workflow/recovery-prompt.js';
 import type { ApprovalPromptState } from '../../../../src/stores/approval-prompt/prompt.js';
 import type { ScenarioId } from '../../contracts/identifiers.js';
 import { scenarioId } from '../../contracts/identifiers.js';
@@ -25,6 +30,13 @@ export const WORKFLOW_FIXTURE_REVIEW_FILE = 'testing/visual/fixtures/workflow/pr
 export const WORKFLOW_FIXTURE_REVIEW_PANEL_FILE =
   'testing/visual/fixtures/workflow/review-fixture.md';
 
+/**
+ * The quota halt the recovery scenario projects: 17:00 on the capture clock's own day
+ * (`FIXED_CLOCK`, `testing/visual/gallery/environment.ts`), so the rendered note is the
+ * same-day form — a bare clock — in every capture.
+ */
+export const WORKFLOW_FIXTURE_RESET_AT = Date.parse('2026-01-01T17:00:00.000Z');
+
 export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   idle: 'no events yet',
   planning: 'Planning deterministic visual fixtures',
@@ -36,6 +48,7 @@ export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   questionAnswer: 'Use the bounded synthetic answer.',
   success: 'Visual fixture workflow complete',
   failure: 'Synthetic runner failure: bounded fixture',
+  recovery: 'switch BUILD to OpenCode CLI',
 });
 
 export const WORKFLOW_SUCCESS_SUMMARY: Readonly<Summary> = Object.freeze({
@@ -95,6 +108,11 @@ export interface WorkflowFixtureProjection {
   readonly approval?: FixtureApproval;
   readonly review?: FixtureReview;
   readonly streaming?: FixtureStreaming;
+  /**
+   * The saved run the screen resumes; the production resume path hydrates it from disk, so a halt it
+   * carries is prompted by the real recovery driver instead of staged by the fixture.
+   */
+  readonly resumeState?: WorkflowState;
   readonly summary?: Readonly<Summary>;
 }
 
@@ -105,6 +123,7 @@ const WORKFLOW_REVIEW_ID = scenarioId('workflow-review');
 const WORKFLOW_QUESTION_ID = scenarioId('workflow-question');
 const SUMMARY_SUCCESS_ID = scenarioId('summary-success');
 const WORKFLOW_FAILURE_ID = scenarioId('workflow-failure');
+const WORKFLOW_RECOVERY_USAGE_LIMIT_ID = scenarioId('workflow-recovery-usage-limit');
 
 const idleProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_IDLE_ID,
@@ -362,6 +381,64 @@ const failureProjection: WorkflowFixtureProjection = {
   ],
 };
 
+const usageLimitRecoveryIssue: RecoveryIssue = {
+  id: 'rec_visual_usage_limit',
+  reason: 'runner-usage-limit',
+  phase: 'implementing',
+  status: 'awaiting-user',
+  taskId: WORKFLOW_FIXTURE_TASK_ID,
+  taskTitle: WORKFLOW_FIXTURE_TEXT.implementationTask,
+  files: [WORKFLOW_FIXTURE_REVIEW_FILE],
+  affectedTaskIds: [WORKFLOW_FIXTURE_TASK_ID],
+  message:
+    'Ollama hit its usage limit. The limit resets at Jan 1, 2026, 5:00 PM; wait for it, switch the seat to another tool, or abort.',
+  details: [
+    'Ollama reported: quota exhausted · resets 5pm',
+    'The run stopped instead of escalating.',
+  ],
+  attempts: 1,
+  maxAttempts: 3,
+  selectedImplementerProfile: 'local-fixture',
+  resetAt: new Date(WORKFLOW_FIXTURE_RESET_AT).toISOString(),
+  switchSeat: {
+    seat: 'build',
+    // Tool-only, because that is all a candidate can be today: the offer is built
+    // from the readiness snapshot (`loadSeatSwapContext`), and a `CliToolDetection`
+    // carries no model. A candidate that does name one is covered by the component
+    // test, not staged here as a state the engine cannot produce.
+    candidates: [{ tool: 'opencode' }, { tool: 'codex' }],
+  },
+  facts: { tool: 'Ollama' },
+  availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'abort-workflow'],
+  recommendedAction: 'switch-seat',
+  createdAt: new Date(FIXED_TS).toISOString(),
+};
+
+function haltedResumeState(issue: RecoveryIssue): WorkflowState {
+  return makeImplState(
+    [
+      makeTask({
+        id: WORKFLOW_FIXTURE_TASK_ID,
+        title: WORKFLOW_FIXTURE_TEXT.implementationTask,
+        file: WORKFLOW_FIXTURE_REVIEW_FILE,
+      }),
+    ],
+    { feature: WORKFLOW_FEATURE, pendingRecovery: issue },
+  );
+}
+
+const usageLimitRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_RECOVERY_USAGE_LIMIT_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  // A resumed run starts on an empty transcript — `resetWorkflow` rehydrates lifecycle, tasks and
+  // tokens from the saved state and nothing else — and this halt never reaches the run, so staged
+  // events could not survive to the frame. The phase and the task come from the resumed state.
+  events: [],
+  resumeState: haltedResumeState(usageLimitRecoveryIssue),
+};
+
 const projections = [
   idleProjection,
   planningProjection,
@@ -370,10 +447,18 @@ const projections = [
   questionProjection,
   successProjection,
   failureProjection,
+  usageLimitRecoveryProjection,
 ] as const;
 
 export const workflowFixtureProjections: ReadonlyMap<ScenarioId, WorkflowFixtureProjection> =
   new Map(projections.map((projection) => [projection.scenarioId, projection]));
+
+/** The text the question panel prints: a clarification prompt, or the halt the resumed state carries. */
+export function fixtureQuestionHint(projection: WorkflowFixtureProjection): string | null {
+  if (projection.question !== undefined) return projection.question.prompt;
+  const halt = projection.resumeState?.pendingRecovery;
+  return halt === undefined ? null : formatRecoveryPrompt(halt);
+}
 
 export function getWorkflowFixturePromptRows(
   projection: WorkflowFixtureProjection,
@@ -393,10 +478,7 @@ export function getWorkflowFixturePromptRows(
           },
           resolve: () => {},
         };
-  const questionHint =
-    projection.inputMode === 'question' && projection.question !== undefined
-      ? projection.question.prompt
-      : null;
+  const questionHint = projection.inputMode === 'question' ? fixtureQuestionHint(projection) : null;
   return getWorkflowPromptRows({
     approvalState,
     costApprovalState: { status: 'idle' },

@@ -3,7 +3,6 @@ import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { Session } from '../../../core/schemas/session.js';
-import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
@@ -16,13 +15,13 @@ import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js'
 import { configStore } from '../../../stores/project/config.js';
 import { attachmentsStore } from '../../../stores/workflow/attachments.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
+import type { SeatSwapChoice } from '../../../engine/orchestrator/run/seat-swap.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../engine/events/workflow-cancel.js';
 import type { WorkflowSinks } from '../../../engine/orchestrator/types.js';
-import { addTuiEvent, createTuiSink } from '../tui-sink.js';
+import { addTuiEvent } from '../tui-sink.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import type { StreamingSink } from '../../../engine/orchestrator/task/streaming-feed.js';
 import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
-import type { StateAuthorityReceipt } from '../../../core/state/types.js';
 import {
   createAbortHandlerScope,
   setCancelHandler,
@@ -44,7 +43,7 @@ import { createRecoveryDriver } from '../recovery-driver.js';
 import { enqueueUserMessage } from '../../../engine/orchestrator/queue/submit.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { createJsonlSink } from '../../../engine/events/sinks/jsonl.js';
-import { type ResumeHydration, hydrateResume, resumeFailureMessage } from '../resume-hydration.js';
+import { hydrateResume, resumeFailureMessage } from '../resume-hydration.js';
 import { clearSessionScopedStores } from '../session-stores.js';
 import { type PendingRewind, buildRewindHandler } from '../rewind-handler.js';
 
@@ -56,7 +55,6 @@ function isWorkflowAborted(controller: AbortController, ref: { current: boolean 
 
 interface UseWorkflowRunnerOptions {
   prepared?: PreparedExecution | undefined;
-  authority?: StateAuthorityReceipt | undefined;
   onComplete: (completion: WorkflowCompletion) => void;
   selectedSkills?: SkillMeta[] | undefined;
   inputMode: UseInputModeResult;
@@ -82,7 +80,6 @@ interface UseWorkflowRunnerResult {
 
 export function useWorkflowRunner({
   prepared,
-  authority,
   onComplete,
   selectedSkills,
   inputMode,
@@ -93,36 +90,15 @@ export function useWorkflowRunner({
   const [startedAt] = useState(() => nowIso());
   const [runId, setRunId] = useState(0);
   const [inlineResume, setInlineResume] = useState<InlineResume | undefined>(undefined);
-  const authorityRef = useRef<StateAuthorityReceipt | undefined>(authority);
-  const authoritySessionIdRef = useRef<string | undefined>(prepared?.session.ref.sessionId);
-
-  if (authoritySessionIdRef.current !== prepared?.session.ref.sessionId) {
-    authoritySessionIdRef.current = prepared?.session.ref.sessionId;
-    authorityRef.current = authority;
-  }
 
   const inlineState =
     inlineResume !== undefined && inlineResume.prepared === prepared
       ? inlineResume.state
       : undefined;
 
-  const hydrate = (ref: SessionRef): ResumeHydration => {
-    try {
-      const result = hydrateResume(ref, authorityRef.current ?? authority);
-      if (result.kind === 'loaded') authorityRef.current = result.authority;
-      return result;
-    } catch (cause) {
-      return {
-        kind: 'invalid',
-        code: 'malformed',
-        message: toErrorMessage(cause),
-      };
-    }
-  };
-
   const startWorkflow = useEffectEvent(async (controller: AbortController) => {
     if (prepared === undefined) return;
-    const { session, config } = prepared;
+    const { session } = prepared;
     const { sessionId } = session.ref;
     // A fresh abort-handler scope per run: a superseded run's late pops (its
     // aborted body settles after the rewind cleanup) drain its own scope and
@@ -135,19 +111,16 @@ export function useWorkflowRunner({
     };
     let stateForRun = inlineState;
     if (stateForRun === undefined && prepared.runtime.resumeState !== undefined) {
-      const hydrated = hydrate(session.ref);
+      const hydrated = hydrateResume(session.ref);
       if (hydrated.kind === 'invalid') {
         inputMode.resetMode();
         clearSessionScopedStores();
-        addTuiEvent(
-          {
-            type: 'error',
-            ts: Date.now(),
-            phase: lifecycleStore.get().phase,
-            message: resumeFailureMessage(hydrated),
-          },
-          { persistTranscript: config.workflow.persistTranscript },
-        );
+        addTuiEvent({
+          type: 'error',
+          ts: Date.now(),
+          phase: lifecycleStore.get().phase,
+          message: resumeFailureMessage(hydrated),
+        });
         return;
       }
       if (hydrated.kind === 'missing') {
@@ -168,9 +141,7 @@ export function useWorkflowRunner({
     resetConversationRowsProjectionCache();
     resetEventBlockCache();
     if (pendingRewind?.prepared === prepared) {
-      addTuiEvent(pendingRewind.event, {
-        persistTranscript: config.workflow.persistTranscript,
-      });
+      addTuiEvent(pendingRewind.event);
     }
     conversationScrollStore.reset();
     setCancelHandler(() => {
@@ -181,11 +152,8 @@ export function useWorkflowRunner({
       buildRewindHandler({
         prepared,
         controller,
-        hydrate,
+        hydrate: hydrateResume,
         resetMode: () => inputMode.resetMode(),
-        setAuthority: (receipt) => {
-          authorityRef.current = receipt;
-        },
         setPendingRewind: (pending) => {
           pendingRewindRef.current = pending;
         },
@@ -199,15 +167,19 @@ export function useWorkflowRunner({
     try {
       let retryProfileOverride: string | undefined;
       let retryProfileOverrideTaskId: TaskId | undefined;
+      let switchSeat: SeatSwapChoice | undefined;
+      // A taken seat swap re-prepares this session, and every later iteration belongs to
+      // the preparation the seats were actually built from — otherwise the next halt
+      // rebuilds the tool that hit its limit.
+      let preparedForRun = prepared;
       while (!isWorkflowAborted(controller, abortedRef)) {
-        const promptPendingRecovery = createRecoveryDriver({
-          prepared,
-          authority: authorityRef.current,
-          inputMode,
-          abortedRef,
-          setInlineResume: (state) => setInlineResume({ prepared, state }),
-        });
-        if (stateForRun?.pendingRecovery) {
+        if (stateForRun?.pendingRecovery !== undefined) {
+          const promptPendingRecovery = createRecoveryDriver({
+            prepared: preparedForRun,
+            inputMode,
+            abortedRef,
+            setInlineResume: (state) => setInlineResume({ prepared, state }),
+          });
           const recovery = await promptPendingRecovery({
             state: stateForRun,
             controller,
@@ -216,9 +188,9 @@ export function useWorkflowRunner({
           recoveryPromptAlreadyPublished = false;
           if (!recovery.shouldRun) return;
           stateForRun = recovery.state;
-          if (recovery.authority !== undefined) authorityRef.current = recovery.authority;
           retryProfileOverride = recovery.retryProfileOverride;
           retryProfileOverrideTaskId = recovery.retryProfileOverrideTaskId;
+          switchSeat = recovery.switchSeat;
         }
 
         const storeStreamingSink: StreamingSink = {
@@ -229,10 +201,10 @@ export function useWorkflowRunner({
 
         const detectedContextLength = configStore.getDetectedContextLength();
         const summary = await runWorkflowFn({
-          prepared,
+          prepared: preparedForRun,
           getApprovalEnabled: () => configStore.get().config?.approval?.enabled !== false,
           sinks,
-          tuiSink: createTuiSink({ persistTranscript: config.workflow.persistTranscript }),
+          tuiSink: addTuiEvent,
           modelCache: modelCacheStore,
           drainPendingAttachments: () => attachmentsStore.drain(),
           streamingSink: storeStreamingSink,
@@ -249,9 +221,14 @@ export function useWorkflowRunner({
           ...(detectedContextLength !== undefined && { detectedContextLength }),
           ...(retryProfileOverride !== undefined && { retryProfileOverride }),
           ...(retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
+          ...(switchSeat !== undefined && { switchSeat }),
+          onSeatSwapped: (swappedPrepared) => {
+            preparedForRun = swappedPrepared;
+          },
         });
         retryProfileOverride = undefined;
         retryProfileOverrideTaskId = undefined;
+        switchSeat = undefined;
 
         if (isWorkflowAborted(controller, abortedRef)) return;
 
@@ -261,19 +238,16 @@ export function useWorkflowRunner({
           return;
         }
 
-        const hydrated = hydrate(session.ref);
+        const hydrated = hydrateResume(session.ref);
         if (hydrated.kind === 'invalid') {
           inputMode.resetMode();
           clearSessionScopedStores();
-          addTuiEvent(
-            {
-              type: 'error',
-              ts: Date.now(),
-              phase: lifecycleStore.get().phase,
-              message: resumeFailureMessage(hydrated),
-            },
-            { persistTranscript: config.workflow.persistTranscript },
-          );
+          addTuiEvent({
+            type: 'error',
+            ts: Date.now(),
+            phase: lifecycleStore.get().phase,
+            message: resumeFailureMessage(hydrated),
+          });
           return;
         }
         const saved = hydrated.kind === 'loaded' ? hydrated.state : null;
@@ -304,15 +278,12 @@ export function useWorkflowRunner({
       }
     } catch (err) {
       if (!isWorkflowAborted(controller, abortedRef) && !lifecycleStore.get().cancelled) {
-        addTuiEvent(
-          {
-            type: 'error',
-            ts: Date.now(),
-            phase: lifecycleStore.get().phase,
-            message: toErrorMessage(err),
-          },
-          { persistTranscript: config.workflow.persistTranscript },
-        );
+        addTuiEvent({
+          type: 'error',
+          ts: Date.now(),
+          phase: lifecycleStore.get().phase,
+          message: toErrorMessage(err),
+        });
       }
     }
   });
@@ -335,9 +306,9 @@ export function useWorkflowRunner({
 
   const handleResume = (injectedText?: string) => {
     if (prepared === undefined) return;
-    const { session, config } = prepared;
+    const { session } = prepared;
     const { projectDir, sessionId } = session.ref;
-    const hydrated = hydrate(session.ref);
+    const hydrated = hydrateResume(session.ref);
     if (hydrated.kind === 'missing') {
       inputMode.resetMode();
       clearSessionScopedStores();
@@ -359,7 +330,6 @@ export function useWorkflowRunner({
       );
       return;
     }
-    const persistTranscript = config.workflow.persistTranscript;
     const text = injectedText?.trim();
     let next = saved;
     if (text) {
@@ -368,10 +338,10 @@ export function useWorkflowRunner({
         createJsonlSink({
           projectDir,
           sessionId,
-          persistTranscript,
+          onDegraded: (warning) => bus.publish(warning),
         }),
       );
-      bus.subscribe(createTuiSink({ persistTranscript }));
+      bus.subscribe(addTuiEvent);
       const queued = enqueueUserMessage({
         projectDir,
         sessionId,
@@ -379,7 +349,6 @@ export function useWorkflowRunner({
         text,
         phase: saved.phase,
         bus,
-        persistTranscript,
         enforcePhasePolicy: false,
       });
       next = queued.state;

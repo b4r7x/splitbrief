@@ -27,7 +27,6 @@ import { sessionPreparationError } from './errors.js';
 import { isSessionLive } from './liveness.js';
 import { generateSessionId } from './session-id.js';
 import {
-  assertHandedOffDirectory,
   assertNoNewerSameSessionActive,
   assertOwnedDirectory,
   assertOwnershipContext,
@@ -68,13 +67,9 @@ function abortBefore(input: PrepareNewSessionInput, boundary: SessionMutationBou
 function claimOwnedDirectoryLocked(
   session: NewSessionOwnership,
   options: SessionOwnershipMutationOptions,
-  proof: 'ownership' | 'detached-handoff' = 'ownership',
 ): string {
   const original = sessionRelativePath(session.ref.sessionId);
-  const snapshot =
-    proof === 'ownership'
-      ? assertOwnedDirectory(session, original)
-      : assertHandedOffDirectory(session, original);
+  const snapshot = assertOwnedDirectory(session, original);
   assertNoNewerSameSessionActive(session);
   const claim = claimRelativePath(session.ref, 'directory');
   const originalPath = join(session.ref.projectDir, original);
@@ -85,10 +80,7 @@ function claimOwnedDirectoryLocked(
   renameSync(originalPath, claimPath);
   options._beforeMutation?.('directory-captured');
 
-  const captured =
-    proof === 'ownership'
-      ? assertOwnedDirectory(session, claim, snapshot.directory)
-      : assertHandedOffDirectory(session, claim, snapshot.directory);
+  const captured = assertOwnedDirectory(session, claim, snapshot.directory);
   if (
     captured.marker.dev !== snapshot.marker.dev ||
     captured.marker.ino !== snapshot.marker.ino ||
@@ -121,13 +113,12 @@ function removeAllocatedDirectory(ref: SessionRef, identity: SessionDirectoryIde
 export function rollbackPreparedSessionLocked(
   session: NewSessionOwnership,
   options: SessionOwnershipMutationOptions = {},
-  proof: 'ownership' | 'detached-handoff' = 'ownership',
 ): void {
   assertOwnershipContext(session);
   const canonical = sessionDir(session.ref.projectDir, session.ref.sessionId);
   if (!pathExists(canonical)) return;
 
-  const claim = claimOwnedDirectoryLocked(session, options, proof);
+  const claim = claimOwnedDirectoryLocked(session, options);
   assertNoNewerSameSessionActive(session);
   const initialActive: ActiveSessionReceipt = session.ownership;
   clearActiveReceiptLocked(session.ref, initialActive);
@@ -141,7 +132,6 @@ export function createSessionPreparationCandidate(
   input: Readonly<{
     projectDir: string;
     feature: string;
-    persistTranscript: boolean;
     sessionId?: string | undefined;
   }>,
 ): SessionOwnershipReceipt {
@@ -149,11 +139,7 @@ export function createSessionPreparationCandidate(
     version: 1,
     sessionId:
       input.sessionId ??
-      generateSessionId({
-        projectDir: input.projectDir,
-        feature: input.feature,
-        persistTranscript: input.persistTranscript,
-      }),
+      generateSessionId({ projectDir: input.projectDir, feature: input.feature }),
     generation: randomUUID(),
   };
   assertSessionOwnershipReceipt(receipt);
@@ -212,7 +198,6 @@ export function prepareNewSession(input: PrepareNewSessionInput): PrepareNewSess
     createSessionPreparationCandidate({
       projectDir: input.projectDir,
       feature: input.feature,
-      persistTranscript: input.config.workflow.persistTranscript,
     });
   assertSessionOwnershipReceipt(ownership);
   const ref: SessionRef = { projectDir: input.projectDir, sessionId: ownership.sessionId };

@@ -206,7 +206,6 @@ describe('recordTaskUsage — usage-not-reported warning', () => {
       taskId: 'T001',
       category: 'cost',
       code: 'implementer_usage_not_reported',
-      transcriptSafe: true,
     });
     expect(String((warnings[0] as { message: unknown }).message)).toContain('codex');
     expect(String((warnings[0] as { message: unknown }).message)).toContain('T001');

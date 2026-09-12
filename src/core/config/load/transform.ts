@@ -16,7 +16,6 @@ function transformHookKey(key: string, path: readonly string[]): string {
     const hookEvent = camelToSnake(key);
     return HOOK_EVENT_KEYS.has(hookEvent) ? hookEvent : key;
   }
-  if (path.length === 2 && path[1] === 'builtin') return key;
   return camelToSnake(key);
 }
 

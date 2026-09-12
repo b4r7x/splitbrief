@@ -406,7 +406,7 @@ describe('usePickerActions', () => {
 
     expect(
       messages.filter((message) => message.startsWith(`${CREW_SEAT_LABELS.plan} set to:`)),
-    ).toEqual([`${CREW_SEAT_LABELS.plan} set to: Claude Code CLI · Opus · high`]);
+    ).toEqual([`${CREW_SEAT_LABELS.plan} set to: Claude Code CLI · opus · high`]);
     expect(configStore.get().config?.planner).toMatchObject({
       tool: 'claude-code',
       effort: 'high',
@@ -444,7 +444,7 @@ describe('usePickerActions', () => {
 
     expect(
       messages.filter((message) => message.startsWith(`${CREW_SEAT_LABELS.plan} set to:`)),
-    ).toEqual([`${CREW_SEAT_LABELS.plan} set to: Claude Code CLI · Opus`]);
+    ).toEqual([`${CREW_SEAT_LABELS.plan} set to: Claude Code CLI · opus`]);
     expect(messages.some((message) => message.includes('Effort ludicrous'))).toBe(true);
     expect(configStore.get().config?.planner).not.toHaveProperty('effort');
     ui.unmount();
@@ -472,7 +472,7 @@ describe('usePickerActions', () => {
         catalog: {},
         cliModels: [
           {
-            connection: { role: 'implementer', tool: 'opencode', contextKey: 'c' },
+            connection: { tool: 'opencode', contextKey: 'c' },
             outcome: {
               kind: 'success',
               value: [

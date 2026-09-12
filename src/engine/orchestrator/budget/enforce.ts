@@ -75,7 +75,7 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<{
       bus: bus,
       phase: 'implementing',
       message: `Budget tracking paused: ${costKnownness.unknownReason ?? 'pricing unknown'}; configure pricing or continue acknowledging unknown spend.`,
-      safety: { category: 'budget', code: 'tracking_paused', transcriptSafe: true },
+      safety: { category: 'budget', code: 'tracking_paused' },
     });
     return {
       stop: true,
@@ -102,7 +102,7 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<{
       bus: bus,
       phase: 'implementing',
       message: `Budget 80% reached: ${fmtBudgetRange(currentCost, maxBudget)} limit`,
-      safety: { category: 'budget', code: 'warning_threshold_reached', transcriptSafe: true },
+      safety: { category: 'budget', code: 'warning_threshold_reached' },
     });
     warningEmitted = true;
     if (result.action === 'warning') {
@@ -122,7 +122,7 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<{
       bus: bus,
       phase: 'implementing',
       message: `Budget ${formatPercent(effectivePauseThreshold * 100)} reached: ${fmtBudgetRange(currentCost, maxBudget)} limit — recovery decision required`,
-      safety: { category: 'budget', code: 'pause_threshold_reached', transcriptSafe: true },
+      safety: { category: 'budget', code: 'pause_threshold_reached' },
     });
     return {
       stop: true,
@@ -143,7 +143,7 @@ export async function enforceBudget(opts: EnforceBudgetOptions): Promise<{
       bus: bus,
       phase: 'implementing',
       message: `Budget exceeded: ${fmtBudgetRange(currentCost, maxBudget)} limit — recovery decision required`,
-      safety: { category: 'budget', code: 'budget_exceeded', transcriptSafe: true },
+      safety: { category: 'budget', code: 'budget_exceeded' },
     });
     return {
       stop: true,

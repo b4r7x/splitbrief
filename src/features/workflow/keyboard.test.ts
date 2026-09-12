@@ -367,19 +367,6 @@ describe('handleWorkflowCtrlChords', () => {
     ).toEqual({ type: 'open-cost-drilldown' });
   });
 
-  it('reserves attached Ctrl+D for the attach client instead of toggling diff', () => {
-    expect(
-      handleWorkflowCtrlChords({
-        input: 'd',
-        key: key({ ctrl: true }),
-        attachState: 'attached',
-        sections,
-        findLatestDiff: () => 'implementer_generate_done:1',
-        findLatestActivityBatch: () => null,
-      }),
-    ).toEqual({ type: 'none' });
-  });
-
   it('ignores plain a and A so they reach the composer as text', () => {
     for (const input of ['a', 'A']) {
       expect(

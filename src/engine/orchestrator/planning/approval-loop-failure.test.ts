@@ -9,7 +9,6 @@ import {
   makePassingPlanner,
   setupProject,
 } from '#testing/helpers/planning-phase.js';
-import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
 
 let dirs: string[] = [];
 
@@ -18,39 +17,12 @@ afterEach(() => {
   dirs = [];
 });
 
-function recoveryProjection(sessionId: string): BriefRecoveryProjectionV1 {
-  const brief = { revision: 0, hash: 'brief-hash', path: 'tasks.md' };
-  return {
-    version: 1,
-    sessionId,
-    stateRevision: 0,
-    recoveryRevision: 0,
-    epochId: 'epoch-1',
-    status: 'blocked',
-    origin: { mode: 'standard', entry: 'initial' },
-    continuation: { version: 1, kind: 'approval', mode: 'standard', entry: 'initial' },
-    activeBrief: brief,
-    matchingReport: {
-      briefHash: brief.hash,
-      report: { revision: 0, hash: 'report-hash', path: 'brief-quality.json' },
-      ruleVersion: 'brief-quality-v1',
-      issues: [],
-    },
-    blocker: null,
-    allowedActions: ['approve', 'reject'],
-    activeOperation: null,
-    latestAttempt: null,
-    queuedInputs: { ids: [], count: 0, carriedCount: 0, heldCount: 0, releasedCount: 0 },
-  };
-}
-
 describe('runBriefsApprovalLoop failure boundaries', () => {
-  it('fails closed when the recovery controller throws instead of prompting forever', async () => {
+  it('fails closed when the approval prompt throws instead of prompting forever', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
-    const onApprovalNeeded = vi.fn().mockResolvedValue({ approved: false });
+    const onApprovalNeeded = vi.fn().mockRejectedValue(new Error('storage unavailable'));
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const { bus } = makeBusRecorder();
-    const dispatchBriefAction = vi.fn().mockRejectedValue(new Error('storage unavailable'));
+    const { bus, events } = makeBusRecorder();
 
     const result = await runBriefsApprovalLoop({
       tasks: [],
@@ -62,26 +34,10 @@ describe('runBriefsApprovalLoop failure boundaries', () => {
       state: { ...createInitialState('feature'), phase: 'reviewing-briefs' },
       config: makeConfig({ workflow: { mode: 'standard', approve: 'none' } }),
       metadata: TEST_METADATA,
-      recovery: {
-        controller: { dispatchBriefAction, queueBriefInput: vi.fn() },
-        authority: {
-          kind: 'usable',
-          sessionId,
-          ownerId: 'test-owner',
-          pid: process.pid,
-          processStart: 'test-process',
-          runId: 'test-run',
-          acquisitionId: 'test-acquisition',
-          fence: 1,
-          stateRevision: 0,
-          stateDigest: 'test-state-digest',
-        },
-        projection: recoveryProjection(sessionId),
-      },
     });
 
-    expect(result).toMatchObject({ rejected: false, outcome: 'failed' });
+    expect(result).toMatchObject({ outcome: 'failed' });
     expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
-    expect(dispatchBriefAction).toHaveBeenCalledTimes(1);
+    expect(events.some((event) => event.type === 'error')).toBe(true);
   });
 });

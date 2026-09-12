@@ -222,7 +222,7 @@ export function recordTaskUsage(opts: RecordTaskUsageOptions): void {
       phase: state.phase,
       taskId: task.id,
       message: `${tool ?? 'implementer'} completed task ${task.id} without reporting token usage; the run records zero implementer tokens for it.`,
-      safety: { category: 'cost', code: 'implementer_usage_not_reported', transcriptSafe: true },
+      safety: { category: 'cost', code: 'implementer_usage_not_reported' },
     });
   }
   const usage: TaskTokenUsage = {

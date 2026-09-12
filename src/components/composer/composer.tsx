@@ -14,7 +14,6 @@ import { completionStore } from '../../stores/ui/completion.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { focusStore } from '../../stores/ui/focus.js';
 import { configStore } from '../../stores/project/config.js';
-import { routerStore } from '../../stores/navigation/router.js';
 import { useStores } from '../../stores/use-stores.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { InputMode } from '../../core/navigation/types.js';
@@ -122,7 +121,6 @@ export function Composer({
   const inputColumns = Math.max(1, (width ?? cols) - 4 - inputPaddingX * 2);
   const [value, setValue] = useState('');
   const [visibleRows, setVisibleRows] = useState(1);
-  const persistTranscript = config?.workflow.persistTranscript ?? true;
 
   const briefFocusHeld =
     focusStore.use((focus) => focus?.region === 'brief') && currentScreen === 'workflow';
@@ -133,7 +131,6 @@ export function Composer({
       value,
       setValue,
       currentScreen,
-      persistTranscript,
     });
 
   const handleDraftChange = (next: string) => {
@@ -184,11 +181,6 @@ export function Composer({
     });
 
   const handleFileDrop = (path: string) => {
-    const route = routerStore.get();
-    if (route.screen === 'workflow' && route.execution.kind === 'attached') {
-      feedbackStore.setError('Attachments are unavailable while attached.');
-      return;
-    }
     const result = attachImage({ path, projectDir, supportsImages: plannerSupportsImages });
     if (result.ok) {
       onReviewInteraction?.();
@@ -219,7 +211,7 @@ export function Composer({
       return;
     }
 
-    if (trimmed) inputHistoryStore.pushSubmission(trimmed, { currentScreen, persistTranscript });
+    if (trimmed) inputHistoryStore.pushSubmission(trimmed, { currentScreen });
 
     if (trimmed.startsWith('/')) {
       onRuntimeCommand(trimmed);

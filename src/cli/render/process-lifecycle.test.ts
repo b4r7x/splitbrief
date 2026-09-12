@@ -15,7 +15,6 @@ const lifecycleMocks = vi.hoisted(() => ({
   teardownStores: vi.fn<() => void | Promise<void>>(),
   killAllProcesses: vi.fn<() => Promise<void>>(),
   awaitActiveWorkflowShutdown: vi.fn<() => Promise<void>>(),
-  flushOtel: vi.fn<() => Promise<void>>(),
 }));
 
 vi.mock('../init-stores.js', () => ({ teardownStores: lifecycleMocks.teardownStores }));
@@ -25,14 +24,12 @@ vi.mock('../../lib/process/registry.js', () => ({
 vi.mock('../../engine/orchestrator/session-lifecycle/shutdown.js', () => ({
   awaitActiveWorkflowShutdown: lifecycleMocks.awaitActiveWorkflowShutdown,
 }));
-vi.mock('../../lib/otel.js', () => ({ flushOtel: lifecycleMocks.flushOtel }));
 
 describe('TUI cleanup', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     lifecycleMocks.killAllProcesses.mockResolvedValue(undefined);
     lifecycleMocks.awaitActiveWorkflowShutdown.mockResolvedValue(undefined);
-    lifecycleMocks.flushOtel.mockResolvedValue(undefined);
   });
 
   it('awaits every cleanup owner in order', async () => {
@@ -46,9 +43,6 @@ describe('TUI cleanup', () => {
     lifecycleMocks.awaitActiveWorkflowShutdown.mockImplementation(async () => {
       calls.push('workflow');
     });
-    lifecycleMocks.flushOtel.mockImplementation(async () => {
-      calls.push('telemetry');
-    });
     const cleanup = createTuiCleanup({
       restore: async () => {
         calls.push('terminal');
@@ -57,7 +51,7 @@ describe('TUI cleanup', () => {
 
     await cleanup();
 
-    expect(calls).toEqual(['stores', 'processes', 'workflow', 'terminal', 'telemetry']);
+    expect(calls).toEqual(['stores', 'processes', 'workflow', 'terminal']);
   });
 
   it('deduplicates concurrent cleanup with the same promise', async () => {
@@ -92,7 +86,6 @@ describe('TUI cleanup', () => {
     expect(lifecycleMocks.killAllProcesses).toHaveBeenCalledOnce();
     expect(lifecycleMocks.awaitActiveWorkflowShutdown).toHaveBeenCalledOnce();
     expect(restore).toHaveBeenCalledOnce();
-    expect(lifecycleMocks.flushOtel).toHaveBeenCalledOnce();
   });
 
   it('reports a live process group after running every later cleanup owner', async () => {
@@ -108,7 +101,6 @@ describe('TUI cleanup', () => {
 
     expect(lifecycleMocks.awaitActiveWorkflowShutdown).toHaveBeenCalledOnce();
     expect(restore).toHaveBeenCalledOnce();
-    expect(lifecycleMocks.flushOtel).toHaveBeenCalledOnce();
   });
 
   it('restores the terminal and exits when a process group cannot be reaped', async () => {
@@ -130,7 +122,6 @@ describe('TUI cleanup', () => {
     await handle('SIGTERM');
 
     expect(restore).toHaveBeenCalledOnce();
-    expect(lifecycleMocks.flushOtel).toHaveBeenCalledOnce();
     expect(reportCleanupFailure).toHaveBeenCalledWith(limitation);
     expect(exit).toHaveBeenCalledWith(143);
   });

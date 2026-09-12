@@ -152,7 +152,6 @@ describe('legacy shell planner compiler admission', () => {
             onOutput: () => {},
             onPhase: () => {},
             onWarning: () => {},
-            persistTranscript: false,
           },
           skillsContext: '',
           codebaseContext: '',

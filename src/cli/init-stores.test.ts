@@ -6,7 +6,7 @@ import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { CliToolDetection, ProviderDetection } from '../core/discovery/detection.js';
-import { initStores } from './init-stores.js';
+import { awaitBackgroundDiscovery, initStores } from './init-stores.js';
 import { configStore } from '../stores/project/config.js';
 import { detectionStore } from '../stores/project/detection.js';
 import { sessionsStore } from '../stores/project/sessions.js';
@@ -81,13 +81,24 @@ beforeEach(() => {
   fakeHome = createTempDir('init-stores-home');
   savedHome = process.env.HOME;
   process.env.HOME = fakeHome;
+  // Boot starts two lanes it never awaits, both writing caches under HOME. Left
+  // real they probe installed CLIs and race this file's teardown; the cases that
+  // assert on them re-stub these two seams themselves.
+  vi.spyOn(modelsDevCacheModule, 'loadModelsDevCatalogCache').mockResolvedValue(null);
+  vi.spyOn(detectionServiceModule, 'getDefaultDetectionService').mockReturnValue({
+    loadDetection: async () => ({ providers: [], cliTools: [], catalog: null, cliModels: [] }),
+    refreshDetection: vi.fn(),
+  });
   vi.mocked(globalThis.fetch).mockImplementation(async () => new Response('{}', { status: 200 }));
   savedContextLengthEnv = process.env.SPLITBRIEF_CONTEXT_LENGTH;
   delete process.env.SPLITBRIEF_CONTEXT_LENGTH;
   resetAllStores();
 });
 
-afterEach(() => {
+// Boot leaves the models.dev seed and the detection refresh running; both write
+// caches under HOME, so the fake home cannot be removed until they settle.
+afterEach(async () => {
+  await awaitBackgroundDiscovery();
   vi.restoreAllMocks();
   resetAllStores();
   if (savedContextLengthEnv === undefined) delete process.env.SPLITBRIEF_CONTEXT_LENGTH;

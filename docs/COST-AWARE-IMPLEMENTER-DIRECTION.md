@@ -96,7 +96,7 @@ Correctness is owned by two things:
 - SPLITBRIEF's deterministic validation pipeline — typecheck → lint → test, stopping at the first failure attributable to the task, run against the user's real project directory after changes are promoted (`src/engine/orchestrator/task/step.ts`),
 - the planner's review of the finished change.
 
-An implementer that can run a typecheck or a test in its own workspace is a bonus, not a requirement. It raises first-pass rate and shortens the retry loop; it never becomes the proof. When an implementer reports validation results through the MCP evidence-ledger tools, those land in the evidence trail as claims by the agent, not as a verdict.
+An implementer that can run a typecheck or a test in its own workspace is a bonus, not a requirement. It raises first-pass rate and shortens the retry loop; it never becomes the proof. Whatever an implementer reports about its own validation lands in the evidence trail as a claim by the agent, never as a verdict.
 
 This is where the cross-lab advantage lands in practice: the review that decides is done by a model that did not write the code.
 
@@ -192,7 +192,7 @@ The implemented behavior is:
 
 An implementer with `writesFiles: direct` needs somewhere to write that is not the user's working tree. That somewhere is a **git worktree, created once per run** — not a copy of the project per task.
 
-- One worktree per run, at `$XDG_STATE_HOME/splitbrief/trees/<hash>/<slug>/` (default `~/.local/state/...`) on a `splitbrief/<slug>` branch (`src/engine/worktree/create.ts`). Tasks share it. Outside `.git/` (direct-writing CLIs refuse paths there) and outside the project tree: it is a second copy of the source that survives every per-task validation, and a project-rooted test glob that reaches it counts every test twice.
+- One worktree per run, at `$XDG_STATE_HOME/splitbrief/trees/<hash>/<slug>/` (default `~/.local/state/...`) on a `splitbrief/<slug>` branch (`src/engine/orchestrator/isolation/create-worktree.ts`). Tasks share it. Outside `.git/` (direct-writing CLIs refuse paths there) and outside the project tree: it is a second copy of the source that survives every per-task validation, and a project-rooted test glob that reaches it counts every test twice.
 - Project dependencies are reachable inside the worktree. A checkout without `node_modules` is a checkout where nothing runs: no typecheck, no tests, no useful self-check by the implementer.
 - The worktree carries `.splitbrief/config.yaml` and `.splitbrief/hooks/` over from the real project, so hook and config behaviour matches.
 - Worktree is the default, not the only option. A user may configure a different isolation strategy.
@@ -266,7 +266,7 @@ Checkpoint restore must be hash-guarded so later user edits are not overwritten.
 
 In this repository, agents must never run `git add`, `git stage`, or `git commit`. Product support for commits may exist, but this codebase's working rule is manual commits only. Docs should keep this distinction explicit.
 
-## Tool calls and MCP
+## Tool calls
 
 Tools belong to the underlying runner. Truth belongs to SPLITBRIEF.
 
@@ -275,9 +275,7 @@ That means:
 - Claude Code, Codex, OpenCode, Kilo, or Copilot may use their own tools and MCP clients when they are the planner or implementer.
 - SPLITBRIEF should not become another tool-calling agent that independently reads, writes, browses, and shells around the worker.
 - SPLITBRIEF should run deterministic orchestration operations: file snapshots, git status/diff, validation commands, budget checks, drift checks, evidence writes, approval gates.
-- SPLITBRIEF's MCP server should keep project resources read-only. The current mutation surface is limited to evidence-ledger tools that let external agents report progress, evidence, validation results, completion, or errors.
-
-MCP is useful as a way for external tools to read SPLITBRIEF session artifacts. It should not become the main execution path.
+- SPLITBRIEF exposes no server of its own. It ships no MCP server, and an external agent reaches a run's artifacts by reading the session directory, not by calling into SPLITBRIEF.
 
 ## TUI direction
 
@@ -314,14 +312,12 @@ High-confidence cleanup:
 - Make the no-commit rule explicit for this repository, and separate it from optional product-level commit strategies.
 - Update stale config examples that use old snake_case or old config keys.
 - Reword Task Contract docs so external Kanban/Jira usage is not presented as the main purpose.
-- Keep MCP described as read-only project resources plus constrained evidence-ledger tools, not general writable tool execution.
 - Audit tests for behavior value, especially hook/wrapper tests and large UI tests that assert "no crash" rather than user-observable behavior.
 
 Lower-confidence cleanup that should not happen blindly:
 
 - Do not delete snapshots before deciding how checkpoint UX should work.
 - Do not delete worktree support: it is the default isolation path, not a hypothetical future need.
-- Do not delete handoff packs until the product decides whether external runner handoff remains a useful escape hatch.
 - Do not reintroduce inline Task Brief editing just because an external editor round-trip feels less integrated; preserve the simple review plus persisted `tasks.md` editor contract unless product direction changes.
 
 ## Implemented build order

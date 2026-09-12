@@ -68,7 +68,7 @@ const sameTargetCases: readonly (
   },
   {
     role: 'implementer',
-    keepsEffort: false,
+    keepsEffort: true,
     existing: {
       kind: 'cli',
       tool: 'codex',
@@ -157,19 +157,19 @@ const crossTargetCases: readonly CrossTargetCase[] = [
     label: 'subscription destination with an explicit model',
     optionId: 'codex',
     model: { id: 'gpt-5.4' },
-    expected: { kind: 'cli', tool: 'codex', model: 'gpt-5.4' },
+    expected: { kind: 'cli', tool: 'codex', model: 'gpt-5.4', effort: 'high' },
   },
   {
     label: 'subscription destination with the model omitted',
     optionId: 'copilot',
     model: null,
-    expected: { kind: 'cli', tool: 'copilot' },
+    expected: { kind: 'cli', tool: 'copilot', effort: 'high' },
   },
   {
     label: 'automatic selection as the explicit auto sentinel',
     optionId: 'copilot',
     model: { id: AUTOMATIC_MODEL },
-    expected: { kind: 'cli', tool: 'copilot', model: AUTOMATIC_MODEL },
+    expected: { kind: 'cli', tool: 'copilot', model: AUTOMATIC_MODEL, effort: 'high' },
   },
   {
     label: 'local destination',
@@ -303,7 +303,7 @@ function writeRunnerConfigYaml(
     planner: args.planner ?? { kind: 'cli', tool: 'claude-code' },
     implementer: args.implementer ?? { kind: 'cli', tool: 'codex', model: 'legacy-model' },
     validation: { typecheck: true, lint: true, test: true },
-    workflow: { max_retries: 3, persist_transcript: true, compaction_format: 'auto' },
+    workflow: { max_retries: 3, compaction_format: 'auto' },
     ...optionalSectionsYaml(),
     ...args.extra,
   };
@@ -364,7 +364,6 @@ describe('runner config roundtrip integration', () => {
           codebase: {
             enabled: true,
             token_budget: 4321,
-            cache_dir: '.splitbrief',
             include: ['src/**'],
             exclude: ['dist/**'],
           },
@@ -462,7 +461,7 @@ describe('runner config roundtrip integration', () => {
           model: 'existing-model',
           customModels: ['existing-model'],
         },
-        extra: { planner_estimate_review: false },
+        extra: { escalation: { enabled: false } },
       });
 
       configStore.load(dir);
@@ -472,7 +471,7 @@ describe('runner config roundtrip integration', () => {
 
       const updated: Config = {
         ...before,
-        plannerEstimateReview: true,
+        escalation: { enabled: true },
         implementer: {
           kind: 'api',
           provider: 'lm-studio',
@@ -503,7 +502,7 @@ describe('runner config roundtrip integration', () => {
       };
 
       const reloaded = await saveAndReload(dir, updated);
-      expect(reloaded.plannerEstimateReview).toBe(true);
+      expect(reloaded.escalation?.enabled).toBe(true);
       expect(resolvedDefaultProfile(reloaded)).toMatchObject({
         provider: 'lm-studio',
         apiBase: 'http://localhost:1234/v1',

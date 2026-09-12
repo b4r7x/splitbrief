@@ -72,7 +72,6 @@ function prepareNewExecution(sessionId: string): PreparedExecution {
     candidate: createSessionPreparationCandidate({
       projectDir,
       feature: 'ownership helper test',
-      persistTranscript: true,
       sessionId,
     }),
   });

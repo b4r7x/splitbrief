@@ -127,8 +127,6 @@ export interface PlannerCallbacks {
   onSessionExpired?: ((previousId: string) => void) | undefined;
   /** Session ID for agent planners that write files to the session directory. */
   sessionId?: string | undefined;
-  /** Whether to persist planner output as transcript messages (mirrors config.workflow.persistTranscript). */
-  persistTranscript?: boolean | undefined;
   /**
    * Prior conversation messages to inject into the first planner phase on resume.
    * Set by the orchestrator when the backend has no native session resume OR after a

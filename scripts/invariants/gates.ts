@@ -139,8 +139,8 @@ export const gates: readonly Gate[] = [
   {
     id: '17c',
     description:
-      'No incidental broad as-casts (type token must be followed by a terminator, excluding as const/as unknown/as Extract and sanctioned files)',
-    command: `{ rg -n -P "[)\\]}A-Za-z0-9_>'] as [A-Z][A-Za-z0-9_]*(?=\\s*[;),<\\].}>&|]|$|\\[)" src/ -g "*.ts" -g "*.tsx" -g "!**/*.test.ts" -g "!**/*.test.tsx" | rg -v "\\bas const\\b|\\bas unknown\\b| as Extract<" | rg -v "^src/(stores/use-stores|engine/hooks/substitute|utils/error|utils/type-guards)\\.ts:" || true; } | wc -l`,
+      'No incidental broad as-casts (type token must be followed by a terminator, excluding as const/as unknown/as Extract, comment lines, and sanctioned files)',
+    command: `{ rg -n -P "[)\\]}A-Za-z0-9_>'] as [A-Z][A-Za-z0-9_]*(?=\\s*[;),<\\].}>&|]|$|\\[)" src/ -g "*.ts" -g "*.tsx" -g "!**/*.test.ts" -g "!**/*.test.tsx" | rg -v "\\bas const\\b|\\bas unknown\\b| as Extract<" | rg -v -P "^[^:]+:\\d+:\\s*(?://|\\*|/\\*)" | rg -v "^src/(stores/use-stores|engine/hooks/substitute|utils/error|utils/type-guards)\\.ts:" || true; } | wc -l`,
     expected: 0,
   },
   {
@@ -237,9 +237,9 @@ export const gates: readonly Gate[] = [
   },
   {
     id: '31',
-    description: 'No vendor-ID JSX branches in seat-selection surfaces',
+    description: 'No vendor-ID JSX branches in seat-selection surfaces (comment lines excluded)',
     command:
-      "{ rg -i \"\\\\b(cursor|antigravity|mimo-token-plan|mistral|gemini|cerebras|zai|minimax|moonshot|dashscope|llama-cpp)\\\\b\" src/features/runners src/app/overlays/runners.tsx src/features/crew src/features/settings src/app/overlays/settings.tsx src/app/screens/setup.tsx --glob '*.tsx' --glob '!**/*.test.tsx' || true; } | wc -l",
+      "{ rg -i \"\\\\b(cursor|antigravity|mimo-token-plan|mistral|gemini|cerebras|zai|minimax|moonshot|dashscope|llama-cpp)\\\\b\" src/features/runners src/app/overlays/runners.tsx src/features/crew src/features/settings src/app/overlays/settings.tsx src/app/screens/setup.tsx --glob '*.tsx' --glob '!**/*.test.tsx' -n | rg -v -P '^[^:]+:\\d+:\\s*(?://|\\*|/\\*)' || true; } | wc -l",
     expected: 0,
   },
   {
@@ -267,66 +267,6 @@ export const gates: readonly Gate[] = [
     id: '35',
     description: 'Zero source index.ts barrels',
     command: "find src -name 'index.ts' | wc -l",
-    expected: 0,
-  },
-  {
-    id: '36',
-    description: 'T-065 direct state writes stay behind persistence/state-ops',
-    command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule direct-state | wc -l',
-    expected: 0,
-  },
-  {
-    id: '37',
-    description: 'T-065 raw state.json replacement stays in core state persistence',
-    command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule raw-state-writer | wc -l',
-    expected: 0,
-  },
-  {
-    id: '38',
-    description: 'T-065 recovery reducer is imported only by its controller',
-    command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule reducer-import | wc -l',
-    expected: 0,
-  },
-  {
-    id: '39',
-    description: 'T-065 BRIEFS_READY ownership is path-aware',
-    command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule briefs-ready | wc -l',
-    expected: 0,
-  },
-  {
-    id: '40',
-    description: 'T-065 quality evaluation is controller-owned',
-    command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule quality-gate | wc -l',
-    expected: 0,
-  },
-  {
-    id: '41',
-    description: 'T-065 continuation guard has one implementation',
-    command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule continuation | wc -l',
-    expected: 0,
-  },
-  {
-    id: '42',
-    description: 'T-065 recovery planner.review has one provider boundary',
-    command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule recovery-provider | wc -l',
-    expected: 0,
-  },
-  {
-    id: '43',
-    description: 'T-065 recovery continuation markers cannot re-enter review',
-    command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule recovery-marker | wc -l',
-    expected: 0,
-  },
-  {
-    id: '44',
-    description: 'T-065 client adapters use controller/projection seams',
-    command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule adapters | wc -l',
-    expected: 0,
-  },
-  {
-    id: '45',
-    description: 'T-065 hydration paths are exhaustively classified',
-    command: 'tsx scripts/check-invariants.ts --t065-scan src/ --rule hydration | wc -l',
     expected: 0,
   },
   {

@@ -63,7 +63,6 @@ describe('runApprovalLoop', () => {
       callbacks,
       bus,
       state: prepareState(),
-      persistTranscript: false,
     });
     expect(result.rejected).toBe(true);
     expect(events.some((e) => e.type === 'spec_rejected')).toBe(true);
@@ -92,7 +91,6 @@ describe('runApprovalLoop', () => {
       callbacks,
       bus,
       state: prepareState(),
-      persistTranscript: false,
       signal: controller.signal,
     });
     expect(result.rejected).toBe(false);
@@ -119,7 +117,6 @@ describe('runApprovalLoop', () => {
       callbacks,
       bus,
       state: prepareState(),
-      persistTranscript: false,
       signal: controller.signal,
     });
     expect(result.rejected).toBe(false);
@@ -158,7 +155,6 @@ describe('runApprovalLoop', () => {
       callbacks,
       bus,
       state: prepareState(),
-      persistTranscript: false,
     });
 
     expect(result.rejected).toBe(false);
@@ -211,7 +207,6 @@ describe('runApprovalLoop', () => {
           callbacks,
           bus,
           state: makeState(),
-          persistTranscript: false,
         }),
       ).rejects.toMatchObject({
         kind: 'planning-invalid-artifact',
@@ -271,7 +266,6 @@ describe('runApprovalLoop', () => {
         callbacks,
         bus,
         state: makeState(),
-        persistTranscript: false,
       });
 
       expect(result.regenerated).toBe(true);
@@ -293,7 +287,6 @@ describe('runApprovalLoop', () => {
       text: 'keep this brief-only and do not write spec.md',
       phase: 'researching',
       bus,
-      persistTranscript: false,
     });
     const onApprovalNeeded = vi.fn().mockResolvedValue({ approved: true });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
@@ -314,7 +307,6 @@ describe('runApprovalLoop', () => {
       callbacks,
       bus,
       state: queued.state,
-      persistTranscript: false,
     });
 
     expect(result.rejected).toBe(false);
@@ -359,7 +351,6 @@ describe('runApprovalLoop', () => {
       callbacks,
       bus,
       state: prepareState(),
-      persistTranscript: false,
     });
 
     expect(events.some((e) => e.type === 'planner_text' && e.text.includes('Requirement 1.'))).toBe(
@@ -408,7 +399,6 @@ describe('runApprovalLoop', () => {
       callbacks,
       bus,
       state: prepareState(),
-      persistTranscript: false,
     });
 
     expect(result.rejected).toBe(false);
@@ -432,7 +422,6 @@ describe('runApprovalLoop', () => {
       callbacks,
       bus,
       state: prepareState(),
-      persistTranscript: false,
     });
 
     expect(result.rejected).toBe(false);
@@ -459,7 +448,6 @@ describe('runApprovalLoop', () => {
       callbacks,
       bus,
       state: preparePlanState(),
-      persistTranscript: false,
     });
 
     expect(result.rejected).toBe(false);
@@ -513,7 +501,6 @@ describe('runApprovalLoop', () => {
       callbacks,
       bus,
       state: prepareState(),
-      persistTranscript: false,
       signal: workflowSignal,
       sinks,
     });

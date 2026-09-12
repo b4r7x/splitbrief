@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { spawnWithTimeout } from './progress.js';
 import { spawnWithStdin } from './line-stream.js';
 
@@ -344,28 +344,70 @@ describe('spawnWithStdin', () => {
   });
 });
 
+const pendingRuns: Array<{ controller: AbortController; settled: Promise<void> }> = [];
+
+// A run tracked here is aborted and awaited even when the test body itself
+// times out, so a child never outlives the file and an idle-timeout rejection
+// never surfaces as an unhandled rejection.
+function track<T>(controller: AbortController, run: Promise<T>): Promise<T> {
+  pendingRuns.push({
+    controller,
+    settled: run.then(
+      () => {},
+      () => {},
+    ),
+  });
+  return run;
+}
+
+afterEach(async () => {
+  const runs = pendingRuns.splice(0);
+  for (const entry of runs) entry.controller.abort();
+  await Promise.all(runs.map((entry) => entry.settled));
+});
+
+// The idle window arms at spawn, so any fixed `killMs` is really a fixed
+// budget for interpreter startup — the one thing a saturated box inflates. A
+// throwaway spawn measures what startup actually costs right now, and the
+// window is sized from that instead of from a guess.
+async function measureNodeStartupMs(): Promise<number> {
+  const started = Date.now();
+  await spawnWithStdin({
+    command: 'node',
+    args: ['-e', 'process.stdout.write("ready\\n")'],
+    cwd: '.',
+    onLine: () => {},
+  });
+  return Date.now() - started;
+}
+
 describe('idle watchdog', () => {
   it('idle kill terminates the process group and surfaces command-idle-timeout', {
     timeout: 60_000,
   }, async () => {
     const controller = new AbortController();
-    let promise: ReturnType<typeof spawnWithStdin> | undefined;
-    try {
-      let resolveGrandchild: (pid: number) => void = () => {};
-      const grandchildPid = new Promise<number>((resolve) => {
-        resolveGrandchild = resolve;
-      });
+    let resolveGrandchild: (pid: number) => void = () => {};
+    const grandchildPid = new Promise<number>((resolve) => {
+      resolveGrandchild = resolve;
+    });
 
-      // The child detaches a long-lived grandchild and prints its PID, then goes
-      // silent; the idle kill must take down the entire group, not just the child.
-      const childProgram = [
-        "const { spawn } = require('node:child_process');",
-        "const gc = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)'], { stdio: 'ignore' });",
-        'process.stdout.write(String(gc.pid) + "\\n");',
-        'setTimeout(() => {}, 60_000);',
-      ].join('');
+    // The child detaches a long-lived grandchild and prints its PID, then goes
+    // silent; the idle kill must take down the entire group, not just the child.
+    const childProgram = [
+      "const { spawn } = require('node:child_process');",
+      "const gc = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)'], { stdio: 'ignore' });",
+      'process.stdout.write(String(gc.pid) + "\\n");',
+      'setTimeout(() => {}, 60_000);',
+    ].join('');
 
-      promise = spawnWithStdin({
+    // The child pays for two interpreter startups before it can speak, so the
+    // window is four measured startups wide, never below the 5s floor.
+    const startupMs = await measureNodeStartupMs();
+    const killMs = Math.max(5000, startupMs * 4);
+
+    const run = track(
+      controller,
+      spawnWithStdin({
         command: 'node',
         args: ['-e', childProgram],
         cwd: '.',
@@ -374,47 +416,63 @@ describe('idle watchdog', () => {
           if (Number.isInteger(pid)) resolveGrandchild(pid);
         },
         signal: controller.signal,
-        idle: { warnMs: 250, killMs: 500 },
-      });
+        idle: { warnMs: 250, killMs },
+      }),
+    );
 
-      const pid = await grandchildPid;
-      await expect(promise).rejects.toMatchObject({ kind: 'command-idle-timeout' });
-
-      expect(isProcessAlive(pid)).toBe(false);
-    } finally {
-      controller.abort();
-      await promise?.catch(() => {});
+    // Racing the PID against the run keeps the one unbounded wait out of the
+    // test: a run that settles first means the kill beat the child's first
+    // line, and that reports itself instead of blocking on a PID that can no
+    // longer arrive.
+    const settledFirst = Symbol('run settled before the grandchild PID');
+    const pid = await Promise.race<number | symbol>([
+      grandchildPid,
+      run.then(
+        () => settledFirst,
+        () => settledFirst,
+      ),
+    ]);
+    if (typeof pid !== 'number') {
+      throw new Error(
+        `the run settled before the child printed its grandchild PID (killMs=${killMs}, measured startup=${startupMs}ms)`,
+      );
     }
+
+    await expect(run).rejects.toMatchObject({ kind: 'command-idle-timeout' });
+
+    expect(isProcessAlive(pid)).toBe(false);
   });
 
   it('output chunks reset the idle timers', { timeout: 60_000 }, async () => {
     const controller = new AbortController();
-    let promise: ReturnType<typeof spawnWithTimeout> | undefined;
-    try {
-      let childPid = 0;
-      let resolveStarted: () => void = () => {};
-      const started = new Promise<void>((resolve) => {
-        resolveStarted = resolve;
-      });
-      let tickAt = 0;
-      let resolveTick: () => void = () => {};
-      const tickSeen = new Promise<void>((resolve) => {
-        resolveTick = resolve;
-      });
-      let warnAt = 0;
-      let resolveWarn: () => void = () => {};
-      const onWarn = vi.fn(() => {
-        warnAt = Date.now();
-        resolveWarn();
-      });
+    let childPid = 0;
+    let resolveStarted: () => void = () => {};
+    const started = new Promise<void>((resolve) => {
+      resolveStarted = resolve;
+    });
+    let tickAt = 0;
+    let resolveTick: () => void = () => {};
+    const tickSeen = new Promise<void>((resolve) => {
+      resolveTick = resolve;
+    });
+    let warnAt = 0;
+    let resolveWarn: () => void = () => {};
+    const onWarn = vi.fn(() => {
+      warnAt = Date.now();
+      resolveWarn();
+    });
 
-      const childProgram = [
-        "process.stdout.write('started:' + process.pid + '\\n');",
-        'setTimeout(() => process.stdout.write("tick\\n"), 100);',
-        'setTimeout(() => {}, 60_000);',
-      ].join('');
+    // The tick answers a signal instead of a timer, so the second chunk is
+    // causally after the first one was observed rather than racing it.
+    const childProgram = [
+      "process.on('SIGUSR1', () => process.stdout.write('tick\\n'));",
+      "process.stdout.write('started:' + process.pid + '\\n');",
+      'setTimeout(() => {}, 60_000);',
+    ].join('');
 
-      promise = spawnWithTimeout({
+    const run = track(
+      controller,
+      spawnWithTimeout({
         command: 'node',
         args: ['-e', childProgram],
         cwd: process.cwd(),
@@ -431,56 +489,56 @@ describe('idle watchdog', () => {
           }
         },
         signal: controller.signal,
-        idle: { warnMs: 300, killMs: 600_000, onWarn },
-      });
+        idle: { warnMs: 1000, killMs: 600_000, onWarn },
+      }),
+    );
 
-      await started;
-      onWarn.mockClear();
-      const warned = new Promise<void>((resolve) => {
-        resolveWarn = resolve;
-      });
-      await tickSeen;
-      expect(onWarn).not.toHaveBeenCalled();
+    await started;
+    onWarn.mockClear();
+    const warned = new Promise<void>((resolve) => {
+      resolveWarn = resolve;
+    });
+    process.kill(childPid, 'SIGUSR1');
+    await tickSeen;
+    expect(onWarn).not.toHaveBeenCalled();
 
-      await warned;
-      expect(onWarn).toHaveBeenCalledTimes(1);
-      expect(warnAt - tickAt).toBeGreaterThanOrEqual(250);
+    await warned;
+    expect(onWarn).toHaveBeenCalledTimes(1);
+    expect(warnAt - tickAt).toBeGreaterThanOrEqual(900);
 
-      controller.abort();
-      await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
-      expect(isProcessAlive(childPid)).toBe(false);
-    } finally {
-      controller.abort();
-      await promise?.catch(() => {});
-    }
+    controller.abort();
+    await expect(run).rejects.toMatchObject({ name: 'AbortError' });
+    expect(isProcessAlive(childPid)).toBe(false);
   });
 
   it('onWarn fires once per silence episode and onClear fires on the next output', {
     timeout: 60_000,
   }, async () => {
     const controller = new AbortController();
-    let promise: ReturnType<typeof spawnWithStdin> | undefined;
-    try {
-      let resolveWarn: () => void = () => {};
-      const onWarn = vi.fn(() => resolveWarn());
-      const onClear = vi.fn();
-      let childPid = 0;
-      let resolveFirst: () => void = () => {};
-      const firstSeen = new Promise<void>((resolve) => {
-        resolveFirst = resolve;
-      });
-      let resolveSecond: () => void = () => {};
-      const secondSeen = new Promise<void>((resolve) => {
-        resolveSecond = resolve;
-      });
+    let resolveWarn: () => void = () => {};
+    const onWarn = vi.fn(() => resolveWarn());
+    const onClear = vi.fn();
+    let childPid = 0;
+    let resolveFirst: () => void = () => {};
+    const firstSeen = new Promise<void>((resolve) => {
+      resolveFirst = resolve;
+    });
+    let resolveSecond: () => void = () => {};
+    const secondSeen = new Promise<void>((resolve) => {
+      resolveSecond = resolve;
+    });
 
-      const childProgram = [
-        "process.stdout.write('one:' + process.pid + '\\n');",
-        'setTimeout(() => process.stdout.write("two\\n"), 180);',
-        'setTimeout(() => {}, 60_000);',
-      ].join('');
+    // The second line answers a signal the test sends after the first warn, so
+    // the two silence episodes cannot reorder under load.
+    const childProgram = [
+      "process.on('SIGUSR1', () => process.stdout.write('two\\n'));",
+      "process.stdout.write('one:' + process.pid + '\\n');",
+      'setTimeout(() => {}, 60_000);',
+    ].join('');
 
-      promise = spawnWithStdin({
+    const run = track(
+      controller,
+      spawnWithStdin({
         command: 'node',
         args: ['-e', childProgram],
         cwd: '.',
@@ -492,60 +550,59 @@ describe('idle watchdog', () => {
           if (line === 'two') resolveSecond();
         },
         signal: controller.signal,
-        idle: { warnMs: 75, killMs: 600_000, onWarn, onClear },
-      });
+        idle: { warnMs: 300, killMs: 600_000, onWarn, onClear },
+      }),
+    );
 
-      await firstSeen;
-      onWarn.mockClear();
-      onClear.mockClear();
-      const firstWarned = new Promise<void>((resolve) => {
-        resolveWarn = resolve;
-      });
-      await firstWarned;
-      expect(onWarn).toHaveBeenCalledTimes(1);
-      expect(onClear).not.toHaveBeenCalled();
+    await firstSeen;
+    onWarn.mockClear();
+    onClear.mockClear();
+    const firstWarned = new Promise<void>((resolve) => {
+      resolveWarn = resolve;
+    });
+    await firstWarned;
+    expect(onWarn).toHaveBeenCalledTimes(1);
+    expect(onClear).not.toHaveBeenCalled();
 
-      await secondSeen;
-      expect(onClear).toHaveBeenCalledTimes(1);
+    const secondWarned = new Promise<void>((resolve) => {
+      resolveWarn = resolve;
+    });
+    process.kill(childPid, 'SIGUSR1');
+    await secondSeen;
+    expect(onClear).toHaveBeenCalledTimes(1);
 
-      const secondWarned = new Promise<void>((resolve) => {
-        resolveWarn = resolve;
-      });
-      await secondWarned;
-      expect(onWarn).toHaveBeenCalledTimes(2);
+    await secondWarned;
+    expect(onWarn).toHaveBeenCalledTimes(2);
 
-      controller.abort();
-      await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
-      expect(isProcessAlive(childPid)).toBe(false);
-    } finally {
-      controller.abort();
-      await promise?.catch(() => {});
-    }
+    controller.abort();
+    await expect(run).rejects.toMatchObject({ name: 'AbortError' });
+    expect(isProcessAlive(childPid)).toBe(false);
   });
 
   it('output after the idle kill fires does not emit onClear or re-arm timers', {
     timeout: 60_000,
   }, async () => {
     const controller = new AbortController();
-    let promise: ReturnType<typeof spawnWithStdin> | undefined;
-    try {
-      const onWarn = vi.fn();
-      const onClear = vi.fn();
-      let childPid = 0;
-      let resolveReady: () => void = () => {};
-      const readySeen = new Promise<void>((resolve) => {
-        resolveReady = resolve;
-      });
+    const onWarn = vi.fn();
+    const onClear = vi.fn();
+    let childPid = 0;
+    let resolveReady: () => void = () => {};
+    const readySeen = new Promise<void>((resolve) => {
+      resolveReady = resolve;
+    });
 
-      const childProgram = [
-        "process.on('SIGTERM', () => {});",
-        "process.stdout.write('ready:' + process.pid + '\\n');",
-        'setTimeout(() => process.stdout.write("late\\n"), 650);',
-        'setTimeout(() => process.exit(0), 900);',
-        'setTimeout(() => {}, 60_000);',
-      ].join('');
+    // The late write happens inside the SIGTERM handler, which only the idle
+    // kill can trigger, so the output is strictly after the kill instead of
+    // depending on the child's timer landing later than the watchdog's.
+    const childProgram = [
+      "process.on('SIGTERM', () => { process.stdout.write('late\\n'); setTimeout(() => process.exit(0), 50); });",
+      "process.stdout.write('ready:' + process.pid + '\\n');",
+      'setTimeout(() => {}, 60_000);',
+    ].join('');
 
-      promise = spawnWithStdin({
+    const run = track(
+      controller,
+      spawnWithStdin({
         command: 'node',
         args: ['-e', childProgram],
         cwd: '.',
@@ -556,20 +613,17 @@ describe('idle watchdog', () => {
           }
         },
         signal: controller.signal,
-        idle: { warnMs: 100, killMs: 500, onWarn, onClear },
-      });
+        idle: { warnMs: 100, killMs: 5000, onWarn, onClear },
+      }),
+    );
 
-      await readySeen;
-      onWarn.mockClear();
-      onClear.mockClear();
-      await expect(promise).rejects.toMatchObject({ kind: 'command-idle-timeout' });
+    await readySeen;
+    onWarn.mockClear();
+    onClear.mockClear();
+    await expect(run).rejects.toMatchObject({ kind: 'command-idle-timeout' });
 
-      expect(onWarn).toHaveBeenCalledTimes(1);
-      expect(onClear).not.toHaveBeenCalled();
-      expect(isProcessAlive(childPid)).toBe(false);
-    } finally {
-      controller.abort();
-      await promise?.catch(() => {});
-    }
+    expect(onWarn).toHaveBeenCalledTimes(1);
+    expect(onClear).not.toHaveBeenCalled();
+    expect(isProcessAlive(childPid)).toBe(false);
   });
 });

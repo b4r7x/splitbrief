@@ -31,16 +31,22 @@ import { rowText } from '../conversation-rows/row-format/rows.js';
 import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { makePlannerText } from '#testing/helpers/events/planner.js';
 
 const WORKFLOW_ROUTE = {
   screen: 'workflow',
   execution: {
-    kind: 'attached',
-    feature: 'feat',
-    sessionId: 'mouse-pointer-session',
-    attach: { sockPath: '/tmp/mouse-pointer.sock', authToken: 'test-token' },
+    kind: 'local',
+    prepared: makePreparedExecution({
+      projectDir: '/tmp/mouse-pointer-test',
+      sessionId: 'mouse-pointer-session',
+      feature: 'feat',
+      config: makeConfig(),
+      gates: () => [],
+    }),
   },
 } as const;
 

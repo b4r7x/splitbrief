@@ -83,50 +83,6 @@ const FIXTURE: ModelsDevCatalog = {
       },
     },
   },
-  'github-copilot': {
-    id: 'github-copilot',
-    name: 'GitHub Copilot',
-    models: {
-      'claude-opus-4.6': {
-        id: 'claude-opus-4.6',
-        name: 'Claude Opus 4.6',
-        limit: { context: 1_000_000 },
-      },
-    },
-  },
-  kilo: {
-    id: 'kilo',
-    name: 'Kilo Code',
-    models: {
-      'kimi-k2.5': {
-        id: 'kimi-k2.5',
-        name: 'Kimi K2.5',
-        limit: { context: 256000 },
-      },
-    },
-  },
-  opencode: {
-    id: 'opencode',
-    name: 'OpenCode',
-    models: {
-      'claude-sonnet-4-6': {
-        id: 'claude-sonnet-4-6',
-        name: 'Claude Sonnet 4.6',
-        limit: { context: 1_000_000 },
-      },
-    },
-  },
-  'opencode-go': {
-    id: 'opencode-go',
-    name: 'OpenCode Go',
-    models: {
-      'gpt-5.4': {
-        id: 'gpt-5.4',
-        name: 'GPT-5.4',
-        limit: { context: 400000 },
-      },
-    },
-  },
 };
 
 type RequestRecord = Readonly<{
@@ -257,27 +213,18 @@ describe('getModelsForProvider', () => {
     expect(models.at(0)?.pricingTiers).toBeUndefined();
   });
 
-  it.each([
-    { providerId: 'lm-studio', modelId: 'qwen2.5-7b' },
-    { providerId: 'copilot', modelId: 'claude-opus-4.6' },
-    { providerId: 'kilo-code', modelId: 'kimi-k2.5' },
-  ] as const)('maps models.dev catalog aliases to $providerId', ({ providerId, modelId }) => {
-    const models = getModelsForProvider(FIXTURE, providerId);
-    expect(models).toHaveLength(1);
-    expect(models.at(0)?.id).toBe(modelId);
-  });
+  it.each([{ providerId: 'lm-studio', modelId: 'qwen2.5-7b' }] as const)(
+    'maps models.dev catalog aliases to $providerId',
+    ({ providerId, modelId }) => {
+      const models = getModelsForProvider(FIXTURE, providerId);
+      expect(models).toHaveLength(1);
+      expect(models.at(0)?.id).toBe(modelId);
+    },
+  );
 
   it('leaves maxOutputTokens undefined when limit.output is absent', () => {
     const models = getModelsForProvider(FIXTURE, 'ollama');
     expect(models.at(0)?.maxOutputTokens).toBeUndefined();
-  });
-
-  it('merges opencode and opencode-go provider IDs for opencode', () => {
-    const models = getModelsForProvider(FIXTURE, 'opencode');
-    expect(models).toHaveLength(2);
-    expect(models.map((model) => model.id)).toEqual(
-      expect.arrayContaining(['claude-sonnet-4-6', 'gpt-5.4']),
-    );
   });
 
   it('marks zero-cost local models as free', () => {
@@ -412,8 +359,8 @@ describe('getModelsForProvider', () => {
 
   it('preserves metadata through the live resolver without rewriting a provider-qualified ID', () => {
     const catalog: ModelsDevCatalog = {
-      opencode: {
-        id: 'opencode',
+      ollama: {
+        id: 'ollama',
         models: {
           'openai/gpt-5.4-20260101': {
             id: 'openai/gpt-5.4-20260101',
@@ -430,11 +377,11 @@ describe('getModelsForProvider', () => {
       },
     };
 
-    const [model] = getModelsDevEntries('opencode', makeModelCacheAccessor({ catalog }));
+    const [model] = getModelsDevEntries('ollama', makeModelCacheAccessor({ catalog }));
 
     expect(model).toMatchObject({
       id: 'openai/gpt-5.4-20260101',
-      providerId: 'opencode',
+      providerId: 'ollama',
       modelId: 'openai/gpt-5.4-20260101',
       displayName: 'GPT 5.4 Pinned',
       lifecycle: 'active',
@@ -448,40 +395,6 @@ describe('getModelsForProvider', () => {
       releaseDate: '2025-11-18',
       updatedDate: '2026-02-14',
     });
-  });
-
-  it('keeps equal model IDs from distinct models.dev providers separate', () => {
-    const catalog: ModelsDevCatalog = {
-      opencode: {
-        id: 'opencode',
-        models: {
-          shared: { id: 'shared', name: 'OpenCode Shared' },
-        },
-      },
-      'opencode-go': {
-        id: 'opencode-go',
-        models: {
-          shared: { id: 'shared', name: 'OpenCode Go Shared' },
-        },
-      },
-    };
-
-    const models = getModelsForProvider(catalog, 'opencode');
-
-    expect(models).toEqual([
-      expect.objectContaining({
-        id: 'shared',
-        providerId: 'opencode',
-        modelId: 'shared',
-        displayName: 'OpenCode Shared',
-      }),
-      expect.objectContaining({
-        id: 'shared',
-        providerId: 'opencode-go',
-        modelId: 'shared',
-        displayName: 'OpenCode Go Shared',
-      }),
-    ]);
   });
 
   it('merges sparse records for one exact source identity without discarding metadata', () => {

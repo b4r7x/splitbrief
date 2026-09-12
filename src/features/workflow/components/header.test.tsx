@@ -12,14 +12,22 @@ import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { configStore } from '../../../stores/project/config.js';
+import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
 import { getHeaderLayout, Header } from './header.js';
 
 const STARTED_AT = new Date(0).toISOString();
+/** Today's local 17:00: the note the bar shows for a same-day reset is the bare clock, in every timezone the suite runs in. */
+const RESET_AT = (() => {
+  const at = new Date();
+  at.setHours(17, 0, 0, 0);
+  return at.getTime();
+})();
 
 function resetStores(): void {
+  recoveryNoticeStore.reset();
   terminalSizeStore.reset();
   lifecycleStore.reset();
   tasksStore.__testReset();
@@ -98,7 +106,7 @@ describe('Header — seat line', () => {
     expect(frame).toContain('PLAN');
     expect(frame).toContain('BUILD');
     expect(frame).toContain('REVIEW');
-    expect(frame).toContain('Qwen 2.5 Coder 7B');
+    expect(frame).toContain('qwen2.5-coder:7b');
     expect(frame.slice(frame.indexOf('PLAN'))).not.toContain(glyph('connectorSame'));
   });
 
@@ -106,7 +114,7 @@ describe('Header — seat line', () => {
     const frame = await seatFrame(110);
 
     expect(frame).toContain('PLAN');
-    expect(frame).toContain('Qwen 2.5 Coder 7B');
+    expect(frame).toContain('qwen2.5-coder:7b');
   });
 
   it('says the review seat borrows the planner when no reviewer is configured', async () => {
@@ -122,7 +130,7 @@ describe('Header — seat line', () => {
     );
 
     expect(frame).toContain('REVIEW');
-    expect(frame).toContain('Codex');
+    expect(frame).toContain('gpt-5-codex');
     expect(frame).not.toContain(PLANNER_INHERITANCE.mark);
   });
 
@@ -138,8 +146,56 @@ describe('Header — seat line', () => {
     await tick();
     const rawFrame = instance.lastFrame() ?? '';
 
-    expect(stripAnsiStyles(rawFrame)).toContain('Qwen Coder');
+    expect(stripAnsiStyles(rawFrame)).toContain('qwen-coder');
     expect(rawFrame).not.toContain(hostileSequence);
+    instance.unmount();
+  });
+
+  it('marks the halted seat with the clock its quota resets on', async () => {
+    resetStores();
+    terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
+    configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
+    recoveryNoticeStore.open({ seat: 'build', resetAt: RESET_AT });
+
+    const instance = render(<Header startedAt={STARTED_AT} />);
+    await tick();
+    const frame = stripAnsiStyles(instance.lastFrame() ?? '');
+
+    expect(frame).toContain('BUILD qwen2.5-coder:7b (resets 17:00)');
+    expect(frame.indexOf('(resets 17:00)')).toBeGreaterThan(frame.indexOf('BUILD'));
+    instance.unmount();
+  });
+
+  it('takes the reset clock off the bar once the halt is resolved', async () => {
+    resetStores();
+    terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
+    configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
+    recoveryNoticeStore.open({ seat: 'build', resetAt: RESET_AT });
+
+    const instance = render(<Header startedAt={STARTED_AT} />);
+    await tick();
+    expect(stripAnsiStyles(instance.lastFrame() ?? '')).toContain('resets 17:00');
+
+    act(() => {
+      recoveryNoticeStore.clear();
+    });
+    await tick();
+
+    expect(stripAnsiStyles(instance.lastFrame() ?? '')).not.toContain('resets');
+    instance.unmount();
+  });
+
+  it('keeps the halted seat named and spends another seat when the note crowds the bar', async () => {
+    resetStores();
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
+    recoveryNoticeStore.open({ seat: 'build', resetAt: RESET_AT });
+
+    const instance = render(<Header startedAt={STARTED_AT} />);
+    await tick();
+    const frame = stripAnsiStyles(instance.lastFrame() ?? '');
+
+    expect(frame).toContain('BUILD qwen2.5-coder:7b (resets 17:00)');
     instance.unmount();
   });
 
@@ -234,14 +290,14 @@ describe('Header — rail and elapsed', () => {
     instance.unmount();
   });
 
-  it('renders elapsed time from replayed lifecycle start when attached to an older workflow', () => {
+  it('renders elapsed time from replayed lifecycle start when resuming an older workflow', () => {
     vi.useFakeTimers();
     vi.setSystemTime(61_000);
     addEvent({
       type: 'workflow_started',
       ts: 1_000,
       phase: 'planning',
-      feature: 'attached workflow',
+      feature: 'resumed workflow',
     });
 
     const instance = render(<Header startedAt={new Date(60_000).toISOString()} />);

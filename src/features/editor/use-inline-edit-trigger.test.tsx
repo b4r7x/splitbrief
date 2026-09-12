@@ -48,41 +48,35 @@ describe('useInlineEditTrigger', () => {
     feedbackStore.reset();
   });
 
-  it('opens a field session at the briefs gate when a brief is focused', async () => {
-    armReview('reviewing-briefs');
-    const token = reviewStore.setReviewFile('/tmp/TASKS.md');
-    focusStore.set('brief', 2);
+  it('opens the raw editor at the briefs gate for the brief file itself', async () => {
+    const projectDir = createTempDir('trigger-briefs');
+    try {
+      ensureSessionDir(projectDir, SESSION_ID);
+      const dir = sessionDir(projectDir, SESSION_ID);
+      const tasksPath = join(dir, 'tasks.md');
+      writeFileSync(tasksPath, '# tasks\n\nbrief body\n', 'utf-8');
 
-    const ui = renderFeature(<Host sessionDirPath="/tmp" />);
-    unmount = ui.unmount;
-    await flushEffects();
+      armReview('reviewing-briefs');
+      const token = reviewStore.setReviewFile(tasksPath);
 
-    ui.stdin.write(CTRL_E);
-    await tick();
+      const ui = renderFeature(<Host sessionDirPath={dir} />);
+      unmount = ui.unmount;
+      await flushEffects();
 
-    const state = editorStore.get();
-    expect(state.status).toBe('open');
-    // The briefs branch opens the FIELD surface with an empty buffer and no confined read; the
-    // captured review ownerToken becomes the field session's owner (CON-C / REQ-043).
-    expect(state.status === 'open' ? state.surface : null).toBe('field');
-    expect(state.status === 'open' ? state.ownerToken : null).toBe(token);
-    expect(state.status === 'open' ? state.filePath : 'x').toBeNull();
-  });
+      ui.stdin.write(CTRL_E);
+      await vi.waitFor(() => {
+        expect(overlayStore.get().active).toBe('editor');
+      });
 
-  it('does nothing at the briefs gate when no brief is focused', async () => {
-    armReview('reviewing-briefs');
-    reviewStore.setReviewFile('/tmp/TASKS.md');
-    focusStore.clear();
-
-    const ui = renderFeature(<Host sessionDirPath="/tmp" />);
-    unmount = ui.unmount;
-    await flushEffects();
-
-    ui.stdin.write(CTRL_E);
-    await tick();
-
-    expect(editorStore.get().status).toBe('closed');
-    expect(overlayStore.get().active).toBe('none');
+      // The briefs gate reviews one session artifact in the same framed document the spec and plan
+      // gates use, so Ctrl+E opens that file raw here too - there is no per-brief field surface.
+      const state = editorStore.get();
+      expect(state.status === 'open' ? state.surface : null).toBe('raw');
+      expect(state.status === 'open' ? state.ownerToken : null).toBe(token);
+      expect(state.status === 'open' ? state.value : null).toContain('brief body');
+    } finally {
+      cleanupTempDir(projectDir);
+    }
   });
 
   it('does nothing at the spec gate when no review file is set', async () => {

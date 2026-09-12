@@ -1,59 +1,15 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import type { WorkflowState, QueuedMessage } from '../../../core/schemas/workflow.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState } from '../../../core/state/persistence.js';
-import type {
-  BriefAdmissionInput,
-  BriefRecoveryController,
-  QueueBriefInput,
-  QueueResultV1,
-  StateAuthorityReceipt,
-} from '../../../core/schemas/brief-recovery.js';
-import { createBriefRecoveryState, inspectBriefRecovery } from '../planning/brief-recovery.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { setupProject, makeResearchingState } from '#testing/helpers/queue.js';
 import { createWriteSequencer } from '../serial-executor.js';
 import { transitionAndSave } from '../state-ops.js';
 import { createQueueHandler } from './submit.js';
-import { readQueueForPrompt, releaseQueueMessagesForPrompt } from './drain.js';
 
 let dirs: string[] = [];
-
-const recoveryBrief = { revision: 1, hash: 'brief-submit', path: 'tasks.md' } as const;
-
-function recoveryFor(sessionId: string) {
-  const input: BriefAdmissionInput = {
-    sessionId,
-    origin: { mode: 'standard', entry: 'initial' },
-    continuation: { version: 1, kind: 'approval', mode: 'standard', entry: 'initial' },
-    activeBrief: recoveryBrief,
-    report: {
-      briefHash: recoveryBrief.hash,
-      report: { revision: 1, hash: 'report-submit', path: 'brief-quality.json' },
-      ruleVersion: 'quality-v1',
-      issues: [],
-      errorCount: 0,
-    },
-    qualityPolicyVersion: 'quality-v1',
-  };
-  return createBriefRecoveryState(input, { epochId: 'epoch-submit' });
-}
-
-function authority(sessionId: string): StateAuthorityReceipt {
-  return {
-    kind: 'usable',
-    sessionId,
-    ownerId: 'owner-submit',
-    pid: 1,
-    processStart: 'process-submit',
-    runId: 'run-submit',
-    acquisitionId: 'acquisition-submit',
-    fence: 1,
-    stateRevision: 0,
-    stateDigest: 'digest-submit',
-  };
-}
 
 afterEach(() => {
   for (const d of dirs) cleanupTempDir(d);
@@ -75,7 +31,6 @@ describe('enqueue', () => {
         state = s;
       },
       bus,
-      persistTranscript: false,
       planner,
       serialize: createWriteSequencer(),
     });
@@ -104,7 +59,6 @@ describe('enqueue', () => {
         state = s;
       },
       bus,
-      persistTranscript: false,
       planner,
       serialize: createWriteSequencer(),
     });
@@ -146,7 +100,6 @@ describe('enqueue', () => {
         state = s;
       },
       bus,
-      persistTranscript: false,
       planner,
       serialize: createWriteSequencer(),
     });
@@ -159,96 +112,6 @@ describe('enqueue', () => {
     expect(injectedTurns).toHaveLength(1);
     expect(injectedTurns[0]?.text).toBe('inject me');
     expect(injectedTurns[0]?.dir).toBe(projectDir);
-  });
-
-  it('passes recovery ownership to the native adapter and keeps refused input queued', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const recovery = recoveryFor(sessionId);
-    let state: WorkflowState | undefined = {
-      ...makeResearchingState(),
-      phase: 'reviewing-briefs',
-      briefRecovery: recovery,
-    };
-    const { bus } = makeBusRecorder();
-    const planner = makePlanner({
-      capabilities: {
-        supportsConversationalPlanning: true,
-        supportsHintEscalation: false,
-        supportsSessionResume: true,
-        supportsEffort: false,
-        supportsImages: false,
-        supportsSelfSummarisation: false,
-      },
-      injectUserTurn: vi.fn(async () => ({ inputTokens: 17, outputTokens: 3 })),
-    });
-    const queueBriefInput = vi.fn(
-      async (input: QueueBriefInput): Promise<QueueResultV1> => ({
-        version: 1,
-        sessionId,
-        epochId: input.epochId,
-        kind: 'conflict',
-        code: 'brief_intent_conflict',
-        inputId: input.inputId,
-        reason: 'current epoch was edited before dispatch',
-        projection: inspectBriefRecovery({
-          sessionId,
-          stateRevision: recovery.recoveryRevision,
-          state: recovery,
-        }),
-      }),
-    );
-    const controller: BriefRecoveryController = {
-      inspectBriefRecovery: () =>
-        inspectBriefRecovery({
-          sessionId,
-          stateRevision: recovery.recoveryRevision,
-          state: recovery,
-        }),
-      enterBriefAdmission: async () => {
-        throw new Error('unused in queue submission');
-      },
-      dispatchBriefAction: async () => {
-        throw new Error('unused in queue submission');
-      },
-      queueBriefInput,
-      settlePlannerAttempt: async () => {
-        throw new Error('unused in queue submission');
-      },
-      migrateBriefRecovery: async () => {
-        throw new Error('unused in queue submission');
-      },
-    };
-    const handler = createQueueHandler({
-      projectDir,
-      sessionId,
-      getState: () => state,
-      setState: (s) => {
-        state = s;
-      },
-      bus,
-      persistTranscript: false,
-      planner,
-      serialize: createWriteSequencer(),
-      recovery: { controller, authority: authority(sessionId) },
-    });
-
-    const result = await handler('hold me', 'researching');
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(result.status).toBe('accepted');
-    expect(queueBriefInput).toHaveBeenCalledTimes(1);
-    expect(queueBriefInput.mock.calls[0]?.[0]).toMatchObject({
-      kind: 'native-injection',
-      source: 'native-injection',
-      epochId: 'epoch-submit',
-      operationId: null,
-    });
-    expect(planner.injectUserTurn).not.toHaveBeenCalled();
-    expect(state?.messageQueue[0]?.nativeDeliveryState).toBe('pending');
-
-    const prompt = readQueueForPrompt({ projectDir, sessionId, state: state! });
-    expect(prompt.messages).toHaveLength(1);
-    releaseQueueMessagesForPrompt({ projectDir, sessionId }, prompt.messages);
   });
 
   it('does not enqueue when state getter returns undefined', async () => {
@@ -276,7 +139,6 @@ describe('enqueue', () => {
       getState: () => undefined,
       setState,
       bus,
-      persistTranscript: false,
       planner,
       serialize: createWriteSequencer(),
     });
@@ -312,7 +174,6 @@ describe('enqueue', () => {
         state = s;
       },
       bus,
-      persistTranscript: false,
       planner,
       serialize: createWriteSequencer(),
     });
@@ -342,7 +203,6 @@ describe('enqueue', () => {
         state = s;
       },
       bus,
-      persistTranscript: false,
       planner,
       serialize: createWriteSequencer(),
     });
@@ -357,7 +217,6 @@ describe('enqueue', () => {
       type: 'warning',
       category: 'queue',
       code: 'phase_unavailable',
-      transcriptSafe: true,
       message:
         'Queue is only available while the planner is running; current phase is implementing.',
     });
@@ -396,7 +255,6 @@ describe('enqueue', () => {
         state = s;
       },
       bus,
-      persistTranscript: false,
       planner,
       serialize: createWriteSequencer(),
     });
@@ -432,7 +290,6 @@ describe('enqueue', () => {
         state = s;
       },
       bus,
-      persistTranscript: false,
       planner,
       serialize,
     });
@@ -467,7 +324,6 @@ describe('enqueue', () => {
         state = s;
       },
       bus,
-      persistTranscript: false,
       planner,
       serialize: createWriteSequencer(),
     });

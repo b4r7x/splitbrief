@@ -47,6 +47,11 @@ describe('displayValue', () => {
     expect(displayValue(getDef('implementer.timeout'), null)).toBe('auto (idle kill 30m)');
     expect(displayValue(getDef('implementer.contextLength'), undefined)).toBe('auto');
   });
+
+  it('reads the policy meaning of an unset gate level and commit strategy off the def', () => {
+    expect(displayValue(getDef('workflow.approve'), undefined)).toBe('follows mode');
+    expect(displayValue(getDef('workflow.git.commitStrategy'), undefined)).toBe('none');
+  });
 });
 
 describe('matchesFilter', () => {

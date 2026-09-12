@@ -3,9 +3,24 @@ import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import { calculateTaskUsageCost, isTaskUsageCostKnown } from '../../providers/cost/task-usage.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 
-export type BuildSummaryState = Pick<WorkflowState, 'tasks' | 'tokenUsage'>;
+/**
+ * The seat fields are the run's *pricing* identity — the seat the tokens were
+ * actually spent against. They are read here and never from the summary's own
+ * seat fields, which name the seat the run is on now (a seat swap moves one and
+ * not the other).
+ */
+export type BuildSummaryState = Pick<
+  WorkflowState,
+  | 'tasks'
+  | 'tokenUsage'
+  | 'plannerTool'
+  | 'plannerModel'
+  | 'implementerTool'
+  | 'implementerModel'
+  | 'reviewerTool'
+  | 'reviewerModel'
+>;
 
 export function countLocalAndEscalatedTasks(
   state: BuildSummaryState,
@@ -31,16 +46,6 @@ export function countLocalAndEscalatedTasks(
     else escalated += 1;
   }
   return { local, escalated };
-}
-
-export function projectTaskBreakdownForTranscriptPolicy(task: TaskTokenUsage): TaskTokenUsage {
-  const { routingReason, costPosture, ...base } = task;
-  return {
-    ...base,
-    taskTitle: TRANSCRIPT_OMITTED_MESSAGE,
-    ...(routingReason !== undefined && { routingReason: TRANSCRIPT_OMITTED_MESSAGE }),
-    ...(costPosture !== undefined && { costPosture: TRANSCRIPT_OMITTED_MESSAGE }),
-  };
 }
 
 type CostBreakdownInput = {

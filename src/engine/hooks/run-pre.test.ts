@@ -1,9 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 import { runPreHooks } from './run-pre.js';
-import type { HookCommandEntry, HookModuleEntry, HooksConfig } from '../../core/schemas/hooks.js';
+import type { HookCommandEntry, HooksConfig } from '../../core/schemas/hooks.js';
 import type { EngineEvent } from '../events/types.js';
 import { taskId } from '../../core/schemas/task.js';
 import { markHooksConfigTrusted } from '../../core/hooks/trust.js';
@@ -30,37 +30,6 @@ function ctx() {
 function trust(hooks: HooksConfig): HooksConfig {
   markHooksConfigTrusted(projectDir, hooks);
   return hooks;
-}
-
-function writeModuleHook(source: string, overrides?: Partial<HookModuleEntry>): HookModuleEntry {
-  mkdirSync(join(projectDir, 'hooks'), { recursive: true });
-  const path = `hooks/${overrides?.name ?? 'hook'}.mjs`;
-  writeFileSync(join(projectDir, path), source);
-  return {
-    kind: 'module',
-    path,
-    timeout_ms: 5000,
-    on_failure: 'warn',
-    ...overrides,
-  };
-}
-
-function sampleModuleHook(): HookModuleEntry {
-  return writeModuleHook(`
-export default async function hook(event) {
-  if (event.type === 'task_started' && event.title?.includes('forbidden')) {
-    return { kind: 'deny', message: 'forbidden by sample-module' };
-  }
-  return { kind: 'allow' };
-}
-`);
-}
-
-function throwingModuleHook(overrides?: Partial<HookModuleEntry>): HookModuleEntry {
-  return writeModuleHook(
-    "export default async function hook() { throw new Error('segfault'); }\n",
-    overrides,
-  );
 }
 
 const preTaskEvent: EngineEvent = {
@@ -123,18 +92,6 @@ describe('runPreHooks', () => {
     expect(result.reason).toBe('access denied');
   });
 
-  it('returns not-allow when a module pre-hook returns deny', async () => {
-    const hooks = trust({ pre_task: [sampleModuleHook()] });
-    const result = await runPreHooks(
-      hooks,
-      'pre_task',
-      { ...preTaskEvent, title: 'forbidden task' },
-      ctx(),
-    );
-    expect(result.allow).toBe(false);
-    expect(result.reason).toBe('forbidden by sample-module');
-  });
-
   it('uses default reason message when deny has no message', async () => {
     const hooks = trust({ pre_task: [denyViaStdout()] });
     const result = await runPreHooks(hooks, 'pre_task', preTaskEvent, ctx());
@@ -158,19 +115,6 @@ describe('runPreHooks', () => {
     const result = await runPreHooks(hooks, 'pre_task', preTaskEvent, ctx());
     expect(result.allow).toBe(false);
     expect(result.reason).toBe('ignored');
-  });
-
-  it('returns not-allow when crash+block', async () => {
-    const hooks = trust({ pre_task: [throwingModuleHook({ on_failure: 'block' })] });
-    const result = await runPreHooks(hooks, 'pre_task', preTaskEvent, ctx());
-    expect(result.allow).toBe(false);
-    expect(result.reason).toBe('segfault');
-  });
-
-  it('returns allow when crash+warn (not block)', async () => {
-    const hooks = trust({ pre_task: [throwingModuleHook({ on_failure: 'warn' })] });
-    const result = await runPreHooks(hooks, 'pre_task', preTaskEvent, ctx());
-    expect(result.allow).toBe(true);
   });
 
   it('short-circuits after first deny+block — skips remaining hooks', async () => {
@@ -211,49 +155,5 @@ describe('runPreHooks', () => {
 
     expect(result.allow).toBe(false);
     expect(result.reason).toContain('changed after trust');
-  });
-
-  it('surfaces a builtin warn message as a warning instead of failing open', async () => {
-    const hooks = trust({ builtin: { 'block-secrets': true } });
-    const commitEvent: EngineEvent = {
-      type: 'git_commit',
-      ts: 1,
-      phase: 'implementing',
-      taskId: taskId('T001'),
-      message: 'feat: x',
-      file: 'does-not-exist-anywhere.ts',
-    };
-    const result = await runPreHooks(hooks, 'pre_commit', commitEvent, ctx());
-    expect(result.allow).toBe(true);
-    expect(result.warnings).toBeDefined();
-    expect(result.warnings?.some((w) => w.includes('could not scan'))).toBe(true);
-  });
-
-  it('does not run user hooks after builtin block-secrets denies a commit', async () => {
-    const marker = join(projectDir, 'user-hook-ran');
-    const secretFile = join(projectDir, 'leak.ts');
-    writeFileSync(secretFile, 'const key = "AKIAIOSFODNN7EXAMPLE";\n');
-    const hooks = trust({
-      builtin: { 'block-secrets': true },
-      pre_commit: [
-        makeCommandHookEntry({
-          command: 'node',
-          args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran')`],
-        }),
-      ],
-    });
-    const commitEvent: EngineEvent = {
-      type: 'git_commit',
-      ts: 1,
-      phase: 'implementing',
-      taskId: taskId('T001'),
-      message: 'feat: add infra',
-      file: 'leak.ts',
-    };
-
-    const result = await runPreHooks(hooks, 'pre_commit', commitEvent, ctx());
-
-    expect(result.allow).toBe(false);
-    expect(existsSync(marker)).toBe(false);
   });
 });

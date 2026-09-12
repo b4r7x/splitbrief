@@ -37,9 +37,10 @@ npm run format                # Biome format --write
 npm test                      # vitest run
 npm run test:watch            # vitest watch mode
 npm run test:coverage         # tsx scripts/coverage-run.ts (vitest --coverage + run pruning)
-npm run release-check         # format:check -> typecheck -> lint -> vitest -> e2e -> invariants (no coverage)
+npm run release-check         # format:check -> typecheck -> lint -> vitest -> e2e -> invariants -> skills:check (no coverage)
 npm run test:e2e:live         # OPT-IN, costs money: real CLI calls (needs SPLITBRIEF_REAL_CLI_E2E=1)
-npm run test-ci               # format -> typecheck -> lint -> test:coverage -> e2e -> invariants
+npm run test:e2e:release      # OPT-IN release proof: full live matrix (needs SPLITBRIEF_RELEASE_LIVE=1; real CLI calls)
+npm run test-ci               # format -> typecheck -> lint -> test:coverage -> e2e -> invariants -> skills:check
 ```
 
 **Before submitting a PR, `npm run release-check` MUST pass** — it is the fast gate every PR is held to. `npm run test-ci` is the exhaustive form that additionally enforces the coverage thresholds, which CI also runs nightly.
@@ -101,9 +102,7 @@ Full config schemas and YAML examples: [docs/ARCHITECTURE.md](./docs/ARCHITECTUR
 
 ## Adding a hook
 
-User-extensible workflow hooks fire shell commands or JS modules at workflow events (`pre_task`, `post_commit`, etc.). See [docs/HOOKS-CONFIG.md §Writing your first hook](./docs/HOOKS-CONFIG.md#writing-your-first-hook) for the template, variable substitution, failure modes, and the trust-prompt security model.
-
-Built-in hook source lives under `src/engine/hooks/builtins/`. Adding a new built-in requires updating the registry (`src/engine/hooks/builtins/registry.ts`) and a colocated test.
+User-extensible workflow hooks fire shell commands at workflow events (`pre_task`, `post_commit`, etc.). Every hook is a `command` declared in the config's `hooks` section. See [docs/HOOKS-CONFIG.md §Writing your first hook](./docs/HOOKS-CONFIG.md#writing-your-first-hook) for the template, variable substitution, failure modes, and the trust-prompt security model.
 
 ## Release process
 

@@ -1,13 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-  generateSessionId,
-  generateOpaqueSessionSlug,
-  isOpaqueSessionId,
-  featureForTranscriptPolicy,
-  TRANSCRIPT_OMITTED_FEATURE,
-} from './session-id.js';
+import { generateSessionId } from './session-id.js';
 import { SPLITBRIEF_DIR } from '../paths.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
@@ -113,48 +107,14 @@ describe('generateSessionId', () => {
     expect(slug.length).toBeLessThanOrEqual(50);
   });
 
-  it('generates an opaque id with no feature text when persistTranscript is false', () => {
-    const dir = makeTmp();
-    const id = generateSessionId({
-      projectDir: dir,
-      feature: 'Add secret oauth login',
-      now: new Date('2026-04-14T10:00:00Z'),
-      persistTranscript: false,
-    });
-    expect(id).toMatch(/^2026-04-14-session-[a-f0-9]{12}$/);
-    expect(isOpaqueSessionId(id)).toBe(true);
-    expect(id).not.toContain('secret');
-    expect(id).not.toContain('oauth');
-  });
-
-  it('keeps the feature slug when persistTranscript is true', () => {
+  it('keeps the feature slug', () => {
     const dir = makeTmp();
     const id = generateSessionId({
       projectDir: dir,
       feature: 'Add email validator',
       now: new Date('2026-04-14T10:00:00Z'),
-      persistTranscript: true,
     });
     expect(id).toBe('2026-04-14-add-email-validator');
-    expect(isOpaqueSessionId(id)).toBe(false);
-  });
-});
-
-describe('transcript-policy session helpers', () => {
-  it('mints opaque slugs that round-trip through isOpaqueSessionId', () => {
-    const slug = generateOpaqueSessionSlug();
-    expect(slug).toMatch(/^session-[a-f0-9]{12}$/);
-    expect(isOpaqueSessionId(`2026-04-14-${slug}`)).toBe(true);
-    expect(isOpaqueSessionId(`2026-04-14-${slug}-2`)).toBe(true);
-  });
-
-  it('treats a feature-derived id as non-opaque', () => {
-    expect(isOpaqueSessionId('2026-04-14-add-email-validator')).toBe(false);
-  });
-
-  it('redacts the feature only when transcript persistence is off', () => {
-    expect(featureForTranscriptPolicy('secret feature', true)).toBe('secret feature');
-    expect(featureForTranscriptPolicy('secret feature', false)).toBe(TRANSCRIPT_OMITTED_FEATURE);
   });
 });
 

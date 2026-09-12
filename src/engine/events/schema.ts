@@ -21,7 +21,6 @@ import { CostPredictionSchema } from '../../core/schemas/summary.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from '../../core/schemas/tokens.js';
 import { RewindEventVariantSchemas } from '../../core/state/rewind-event.js';
 import { RunnerCallTextChannelSchema } from '../../core/runner-call-contract.js';
-import { briefRecoveryEventSchemas } from './brief-recovery-schema.js';
 import { WORKFLOW_CANCEL_REASONS } from './workflow-cancel.js';
 import { TASK_REVIEW_COMMANDS } from './workflow-events.js';
 import { isRecord } from '../../utils/type-guards.js';
@@ -64,13 +63,11 @@ function operationalMessageEvent<T extends 'warning' | 'error'>(type: T) {
     message: z.string(),
     category: z.undefined().optional(),
     code: z.undefined().optional(),
-    transcriptSafe: z.undefined().optional(),
   });
   const safe = phaseEvent(type).extend({
     message: z.string(),
     category: z.string().min(1).max(128),
     code: z.string().min(1).max(128),
-    transcriptSafe: z.literal(true),
   });
   return z.union([safe, base]);
 }
@@ -371,7 +368,6 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     errorCount: z.number(),
     warningCount: z.number(),
   }),
-  ...briefRecoveryEventSchemas,
   phaseEvent('brief_readiness_passed').extend({
     taskCount: z.number(),
   }),
@@ -625,14 +621,6 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   noPhaseEvent('approval_mode_changed').extend({
     mode: z.enum(['yolo', 'normal']),
   }),
-  phaseEvent('ipc_server_started').extend({ sockPath: z.string() }),
-  phaseEvent('ipc_client_attached'),
-  phaseEvent('ipc_client_detached'),
-  phaseEvent('ipc_reconnect_attempt').extend({
-    attempt: z.number(),
-    maxAttempts: z.number(),
-  }),
-  phaseEvent('ipc_reconnect_failed'),
   phaseEvent('replay_started').extend({
     totalEvents: z.number(),
     diagnostics: replayDiagnosticsSchema.optional(),

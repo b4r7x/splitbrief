@@ -2,7 +2,7 @@
 
 User-facing capability reference for SPLITBRIEF. For each feature: what it does, how to invoke it, when to reach for it, the relevant config, and the on-screen output where applicable. Deeper rationale lives in the linked specs and design docs.
 
-> **Cross-references.** Workflow phases: [WORKFLOW.md](./WORKFLOW.md). Config schema: [CONFIGURATION.md](./CONFIGURATION.md). Slash commands: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md). Architecture inventory: [ARCHITECTURE.md#part-2--current-state-the-what](./ARCHITECTURE.md#part-2--current-state-the-what). Hooks: [HOOKS-CONFIG.md](./HOOKS-CONFIG.md). Worktrees: [WORKTREES.md](./WORKTREES.md).
+> **Cross-references.** Workflow phases: [WORKFLOW.md](./WORKFLOW.md). Config schema: [CONFIGURATION.md](./CONFIGURATION.md). Slash commands: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md). Architecture inventory: [ARCHITECTURE.md#part-2--current-state-the-what](./ARCHITECTURE.md#part-2--current-state-the-what). Hooks: [HOOKS-CONFIG.md](./HOOKS-CONFIG.md).
 
 ---
 
@@ -145,23 +145,7 @@ Outcome events: `task_retry`, `task_escalating`, `hint_failed`, `task_full_fail`
 
 **How to use.** Always runs in every mode. Output is written to `.splitbrief/sessions/<id>/review.md`. Fires `workflow_complete` and writes `summary.json`.
 
-**When to use.** No opt-out — final review is the closing safety check before the workflow is marked complete. Pre-final-review snapshots can be enabled (see Snapshots below).
-
-### Run explain
-
-**What it does.** Reads existing session artifacts and explains routing choices, selected profiles, context fit and fallback, cost confidence, unknown pricing, retries, escalations, task review gates, final review status, and readiness warnings. It is artifact-only: no planner, implementer, provider, validation, or network calls.
-
-**How to use.**
-
-```bash
-splitbrief explain                         # active in-progress session
-splitbrief explain --session <id>          # completed or inactive session
-splitbrief explain --session <id> --json   # machine-readable
-```
-
-**When to use.** After a run, or while a run is paused, when you want to know why SPLITBRIEF picked a worker, why cost is partial or unknown, what retries/escalations happened, and which artifacts to inspect next.
-
-**Output.** Human output is compact and references artifact paths such as `summary.json`, `review-packet.json`, `readiness.json`, and `session.jsonl`. It does not embed full plans, Task Briefs, logs, diffs, or source code. JSON output is a single `{ type: "run_explain", explain: ... }` object.
+**When to use.** No opt-out — final review is the closing safety check before the workflow is marked complete.
 
 ---
 
@@ -171,7 +155,7 @@ splitbrief explain --session <id> --json   # machine-readable
 
 **What it does.** The Task Brief is a single-file, self-contained executable contract with nine semantic sections: Identity, Intent, Scope, Code Context, Implementation Plan, Validation, Constraints, Escalation, Evidence. Persisted as `Task[]` in `state.json`; transported as `tasks.md`.
 
-**How to use.** Briefs are written by the planner in every mode. External tools consume the active brief by reading `.splitbrief/sessions/<id>/tasks.md` or the task list in `.splitbrief/sessions/<id>/state.json`. Brief hash metadata is recorded in evidence, drift, and handoff/MCP artifacts when available; `state.json` task objects do not carry `briefHash`.
+**How to use.** Briefs are written by the planner in every mode. External tools consume the active brief by reading `.splitbrief/sessions/<id>/tasks.md` or the task list in `.splitbrief/sessions/<id>/state.json`. Brief hash metadata is recorded in evidence and drift artifacts when available; `state.json` task objects do not carry `briefHash`.
 
 **Example (truncated `tasks.md`):**
 
@@ -202,7 +186,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 | `research.md`, `clarifications.md`, `constitution-check.json`, `analyze.json` | `speckit` only |
 | `review.md`, `summary.json`, `evidence.json` | all modes |
 
-**How to use.** Files are auto-written at phase boundaries. Inspect them in-place or via `/handoff` (see below).
+**How to use.** Files are auto-written at phase boundaries. Inspect them in-place.
 
 ### Brief quality gate
 
@@ -234,7 +218,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 The review surface includes a compact execution-readiness scorecard: `ready`, `routing pending`, `split/overflow`, `risky/tight`, `stale/conflict`, and `missing checks`. Unknown, stale, pending, or missing routing/context fit does not count as ready.
 
-**How to use.** The brief review gate uses the simple review surface. `workflow.briefReview: rich` is deprecated and treated the same as `simple` for compatibility. The view exposes approve/comment/reject/edit text commands. Approve reads `.splitbrief/sessions/<id>/tasks.md`, parses it, and re-runs the brief quality gate before implementation. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` contract in the external editor, then return to the gate on parse or quality errors.
+**How to use.** The brief review gate uses the simple review surface. `simple` is the only accepted value: a legacy `workflow.briefReview: rich` fails config load. The view exposes approve/comment/reject/edit text commands. Approve reads `.splitbrief/sessions/<id>/tasks.md`, parses it, and re-runs the brief quality gate before implementation. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` contract in the external editor, then return to the gate on parse or quality errors.
 
 ```yaml
 workflow:
@@ -298,7 +282,7 @@ Events: `budget_warning` (80%), `budget_paused` (configured threshold), `budget_
 
 **How to use.** Always active in modes with approval gates (standard, speckit). The prompt renders automatically when briefs are ready.
 
-**Format.** `12 tasks | Est. $0.14 | All-planner: ~$1.20 | Saved: 88% | Approve? [Y/n]`
+**Format.** The totals line of the `Cost prediction` block: `Implementer: $0.14 All planner: $1.20 Savings: $1.06` (`Prompt input` / `All-planner prompt` / `Prompt saving` when the estimate covers prompt input only), followed by the `Planner: … Implementer: …` seat line.
 
 ### Hero savings stat (summary screen)
 
@@ -307,20 +291,6 @@ Events: `budget_warning` (80%), `budget_paused` (configured threshold), `budget_
 **Format.** `$0.12 actual vs $0.95 baseline · 87% saved`
 
 **How to use.** Always shown on the post-run summary screen when pricing data is available. When the implementer is unpriced (local/subscription), `local` replaces the dollar amount.
-
-### Cumulative stats (`splitbrief stats`)
-
-**What it does.** Tracks cumulative cost savings for saved session summaries with cost data in `.splitbrief/stats.json`. Shows total sessions, total spend, all-planner estimate, and aggregate savings percentage.
-
-**How to use.**
-
-```bash
-splitbrief stats
-splitbrief stats --json
-splitbrief stats --rebuild
-```
-
-**When to use.** To see the cumulative value of the planner/implementer split over time. Use `--rebuild` to reconstruct `.splitbrief/stats.json` from completed session history after the cache is deleted, corrupted, or copied between projects. Retention hook: "You've saved $47 across 23 sessions this month."
 
 ### Planner heartbeat
 
@@ -356,13 +326,14 @@ splitbrief stats --rebuild
 | `pause-run` | Leaves the active session resumable with the issue intact. |
 | `abort-workflow` | Ends through the normal intentional shutdown path without staging or committing. |
 | `route-bigger-worker` | Resets the current task and reruns it with the larger implementer profile named by the recovery issue. |
+| `switch-seat` | Offered for `runner-usage-limit` only: moves the quota-blocked seat to another ready detected tool and re-prepares the same session on it. |
 | `planner-split-rebase` | Legacy/manual only; new recovery prompts do not offer it, and old states block with `planner-proposal-required`. |
 
 **Resume/headless.** `splitbrief resume` shows pending recovery before any planner or implementer call. Headless JSON runs emit `recovery_required` with reason, task/files, available actions, and recommendation, then exit non-zero.
 
 ### Tiered approval gates (auto / sticky / confirm)
 
-**What it does.** Declared implementer file writes are classified before application: `auto` (proceed silently), `sticky` (prompt once per session per pattern; persisted to `.splitbrief/approvals.json`), `confirm` (always require typed confirmation phrase). The current classifier produces `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, and `package_change`; retained config keys such as `validation` and `network` do not sandbox shell commands or network access. Composes orthogonally with the document-level approval loop.
+**What it does.** Declared implementer file writes are classified before application: `auto` (proceed silently), `sticky` (prompt once per session per pattern; persisted to `.splitbrief/approvals.json`), `confirm` (always require typed confirmation phrase). The classifier produces `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, and `package_change`, and `approval.tiers` accepts exactly those five keys. There is no tier for shell commands or network access; SPLITBRIEF does not sandbox either. Composes orthogonally with the document-level approval loop.
 
 **How to use.** Defaults are deterministic; override via `approval:` config block. Inspect or clear sticky grants:
 
@@ -375,40 +346,15 @@ Or in the TUI: `/approval list` / `/approval clear`. Headless mode fails fast at
 
 **Events.** `approval_prompted`, `approval_granted`, `approval_rejected`, `approval_sticky_recorded`. Rejections are also written to the evidence ledger with a reason string.
 
-### Snapshots (`splitbrief snapshot create / list / restore / diff`) (advanced run safety)
+### Snapshots (advanced run safety)
 
-**What it does.** Content-addressed working-tree snapshots with a baseline + delta layout under `.splitbrief/sessions/<id>/snapshots/`. Restore is hash-guarded — files modified after the snapshot was taken are reported as conflicts and skipped unless `--force` is passed.
+**What it does.** `/run accept` writes a content-addressed snapshot of the working tree under `.splitbrief/sessions/<id>/snapshots/` (baseline + delta layout) and records the run as accepted in the run ledger. That accepted snapshot is the only snapshot a run writes.
 
-**How to use.**
+**How to use.** `/run accept` after a run. `/run reject confirm` is its counterpart command, but no phase records a pre-run baseline for it to roll back to, so it answers `No run snapshot to reject.` before an accept and `Run already accepted at snapshot <id>.` after one.
 
-```bash
-splitbrief snapshot create [--name "before-refactor"]
-splitbrief snapshot list
-splitbrief snapshot restore <id-or-name> [--force]
-splitbrief snapshot diff <id-or-name>          # exits non-zero when changes detected
-```
+**When to use.** To keep a record of the tree you accepted. It is not a run-undo: git is the layer that reverses a run, and SPLITBRIEF leaves the changes unstaged for exactly that reason.
 
-Manual snapshots require the CLI command above; there is no `/snapshot` slash command. Run-level TUI accept/reject is available through `/run accept` and `/run reject confirm`; reject is hash-guarded and preserves user edits as conflicts. Auto-triggers (`preTask`, `postTask`, `preFinalReview`) are configurable without manual invocation.
-
-**When to use.** Bookmark known-good states before risky refactors; recover from a planner that wandered. Layered on top of git — never replaces it.
-
-**Excluded paths.** `.git/`, `.splitbrief/`, `node_modules/`, `.trees/` are non-negotiably excluded (`ALWAYS_EXCLUDED` invariant in `engine/snapshots/files.ts`). Including them would cause exponential snapshot growth. `.trees/` exclusion also prevents `--worktree` checkouts from leaking into cross-worktree snapshots. The run's own isolation worktree lives outside the project tree entirely (`$XDG_STATE_HOME/splitbrief/trees/...`, default `~/.local/state/...`), so the snapshot walker never sees it.
-
-### Auto-snapshots
-
-**What it does.** Configurable triggers fire snapshots automatically at orchestrator boundaries.
-
-**How to use.** They all default to off:
-
-```yaml
-snapshots:
-  auto:
-    preTask: true              # before each task starts
-    postTask: true             # after each successful task (status === 'done')
-    preFinalReview: true       # before the final-review planner call
-```
-
-Auto-snapshot failures emit a `warning` event and do not abort the run. See [CONFIGURATION.md §snapshots](./CONFIGURATION.md#10-snapshots).
+**Excluded paths.** `.git/`, `.splitbrief/`, `node_modules/`, `.trees/` are non-negotiably excluded (`ALWAYS_EXCLUDED` invariant in `engine/snapshots/files.ts`). Including them would cause exponential snapshot growth. The run's own isolation worktree lives outside the project tree entirely (`$XDG_STATE_HOME/splitbrief/trees/...`, default `~/.local/state/...`), so the snapshot walker never sees it.
 
 ### Drift detection (final review)
 
@@ -439,222 +385,11 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 
 ---
 
-## Advanced handoff and interop
-
-### External agent handoff packs (advanced)
-
-**What it does.** Renders the compiled Task Brief into a self-contained folder another tool can consume. This is an advanced escape hatch for manual handoff; it is not the primary execution path and SPLITBRIEF never spawns an external agent for you. Built-in targets:
-
-| Target | Consumed by |
-|---|---|
-| `spec-kit` | GitHub Spec Kit folder convention |
-| `agents-md` | AGENTS.md / Cursor / opencode |
-| `claude-code` | Claude Code CLI prompt + commands |
-| `copilot-issue` | Single-file GitHub issue body (`issue.md`) |
-
-Each pack is an inert artifact.
-
-**How to use.**
-
-```bash
-splitbrief handoff spec-kit                          # default target
-splitbrief handoff claude-code --task T003           # single-task pack
-splitbrief handoff agents-md --out ./my-handoff      # custom output dir
-splitbrief handoff --list                            # list available targets
-```
-
-In the TUI: `/handoff <target> [task-id]` writes to `.splitbrief/sessions/<id>/handoffs/<target>/`.
-
-**Pack shape.** Most built-in targets write `manifest.json` (with `briefHash`), `spec.md`, `plan.md`, `constitution.md` (when `.specify/memory/constitution.md` is present), `tasks/T001.md`, `tasks/T002.md`, …, and `README.md`. `copilot-issue` is the exception: it writes `manifest.json` and one self-contained `issue.md` body with the selected tasks embedded.
-
-### Custom handoff renderers (advanced)
-
-**What it does.** Drop a `.js` or runtime-loadable `.ts` file at `.splitbrief/handoff-renderers/<name>.<ext>` exporting a default function. `splitbrief handoff --list` discovers it. Executing it requires `splitbrief handoff <name> --allow-custom-renderer` or `trust.customRenderers: true`.
-
-**How to use.**
-
-```js
-// .splitbrief/handoff-renderers/jira.js
-export default async function render(input) {
-  return { files: [{ path: 'JIRA.md', content: '...' }] };
-}
-```
-
-```bash
-splitbrief handoff jira --allow-custom-renderer
-```
-
-**When to use.** When you need to push the brief into a tool SPLITBRIEF does not ship a renderer for.
-
-### MCP resources and evidence tools server (advanced)
-
-**What it does.** A localhost-only HTTP MCP server exposing supported session resources via standard `resources/list` / `resources/read`: the sessions index, `manifest.json` when canonical `summary.json` and `state.json` exist, `summary.json`, `state.json`, `spec.md`, `plan.md`, `tasks`, individual `tasks/<id>` blocks, `evidence.json`, and `drift-report.json` when present. Missing concrete resources return resource-not-found; unavailable manifests are not advertised. Bound to `127.0.0.1`, Bearer-token authenticated (one-shot token printed at startup). With `workflow.persistTranscript: false`, the sessions index and `state.json` read resource replace transcript-sensitive feature, task, queued-message, and queued-question text.
-
-MCP also exposes constrained evidence tools: `report_evidence`, `report_progress`, `mark_task_done`, `report_validation_result`, and `report_error`. These tools only update `.splitbrief/sessions/<id>/evidence.json` for existing sessions and tasks; they do not run shells, write project files, or dispatch implementation work. General tool calls belong to the selected planner or implementer runner.
-
-**Transport.** Implements the MCP Streamable HTTP transport (`2025-11-25`). Accepts `POST /mcp` for requests and notifications. `GET /mcp` returns `405 Method Not Allowed` with an `Allow: POST` header (SSE not implemented). Non-local browser `Origin` headers are rejected with `403`. The server supports `MCP-Protocol-Version: 2025-11-25`; when the request header is missing, the server defaults to that current supported version and echoes it in the response header. Unsupported protocol-version headers return `400` with a JSON-RPC error. Notifications receive `202 Accepted` (no body); requests receive `200` with a JSON-RPC response body.
-
-**How to use.**
-
-```bash
-splitbrief mcp serve --port 4321 --session <id>
-splitbrief mcp serve --all-sessions               # expose every session in the project
-```
-
-External MCP-aware tools (Claude Code, Codex, Cursor) configure the URL plus the printed token. URI scheme is forward-compatible with the handoff pack paths. The bearer token is a one-shot random value generated in-memory at server startup (`src/engine/mcp/auth-token.ts` — `generateToken()`); it is never persisted to disk. Every `manifest.json` exposed by the server includes `briefHash`.
-
-**When to use.** Live mode for external agents that need to inspect SPLITBRIEF state without a copied handoff pack and report evidence back to the active ledger. MCP does not become SPLITBRIEF's project write path; implementation remains inside the configured planner or implementer runner.
-
----
-
-## Advanced worktrees and parallel sessions
-
-### `splitbrief start --worktree [name]`
-
-**What it does.** Creates an isolated git worktree at `.trees/<slug>` on a fresh `splitbrief/<slug>` branch and runs the session inside it. Each worktree has its own `.splitbrief/active` pointer and session directory, so sessions cannot conflict at the SPLITBRIEF level.
-
-**Name restrictions.** The `<name>` argument is validated before any worktree or branch is created. Names must match `[A-Za-z0-9_][A-Za-z0-9._-]{0,63}` — no `/`, `\`, `..`, no leading `.` or `-`, and no shell-sensitive characters. Invalid names (including names that contain path separators or would navigate outside `.trees/`) are rejected immediately with a descriptive error.
-
-**How to use.**
-
-```bash
-splitbrief start --worktree feature-a "add user auth"
-splitbrief start --worktree feature-b "refactor billing"
-```
-
-The source worktree must be clean before creation. `--detach` combination validation (missing feature, `--json`/`--rpc` conflict, Windows) runs **before** the worktree is created so a failed validation never leaves behind a `.trees/<slug>` directory or a `splitbrief/<slug>` branch. With `--detach --worktree`, worktree selection happens before the detached server is spawned.
-
-**When to use.** Isolate unrelated sessions in separate working directories; A/B-test two implementer model configs against the same brief; keep a long planner exploration alive while making quick edits elsewhere. This is not same-directory parallel writing, and same-checkout fan-out is out of scope.
-
-**Caveat.** Filesystem and SPLITBRIEF state are isolated; **runtime** isolation (ports, environment) is the user's responsibility. See [WORKTREES.md](./WORKTREES.md) for the isolation gap and mitigations.
-
-### `splitbrief worktree list / switch / remove`
-
-**What it does.** Manage worktrees registered under `.trees/`.
-
-**How to use.**
-
-```bash
-splitbrief worktree list                              # path, branch, status, session, phase, updated
-splitbrief worktree switch <name>                     # print cd instructions for the worktree
-splitbrief worktree remove <name> [--force] [--delete-branch]
-```
-
-`remove` refuses if the worktree has uncommitted changes or a live session, unless `--force` is passed. Forced removal prints specific warnings with the live session id when known and the uncommitted file count when known. Parallel `--parallel N` fan-out is deferred until isolated ownership boundaries are specified; same-directory parallel writes remain out of scope.
-
----
-
-## Advanced server-client architecture
-
-### `splitbrief start --detach`
-
-**What it does.** Spawns a background server process that owns the orchestrator and subprocess lifetime, then exits the foreground. Closing the terminal no longer kills the workflow.
-
-**How to use.**
-
-```bash
-splitbrief start --detach --mode speckit "long planner run"
-```
-
-Prints the session ID and exits. The server logs to `.splitbrief/sessions/<id>/server.log`. On spawn, writes `.splitbrief/sessions/<id>/lockfile.json` (heartbeat-tracked, see SCD-03).
-
-**Constraints.** `--detach` requires a feature argument (cannot be omitted). It cannot be combined with `--json` or `--rpc` (`start/register.ts` throws before worktree creation).
-
-### `splitbrief attach [session-id]`
-
-**What it does.** Connects a TUI client to a running background session over a per-session UNIX-domain socket (`ipc.sock`). Auto-resolves the session-id when exactly one is running. On attach, the client replays `session.jsonl` to rebuild full TUI state, then subscribes to the live event stream — no LLM call needed.
-
-**How to use.**
-
-```bash
-splitbrief attach                # picks the only running session
-splitbrief attach <id>           # explicit
-```
-
-(Not supported on Windows — attach requires Unix domain sockets.)
-
-### `splitbrief detach [session-id]`
-
-**What it does.** Sends the same detach request as the TUI Ctrl-D path, disconnecting an attached client without stopping the background server. If `session-id` is omitted, it targets the unique running session in the project and errors when there are zero or multiple running sessions.
-
-**How to use.**
-
-```bash
-splitbrief detach
-splitbrief detach <id>
-```
-
-Reattach with `splitbrief attach <id>`. The server remains visible in `splitbrief ps`.
-
-### `splitbrief ps`
-
-**What it does.** Lists running and recently-finished SPLITBRIEF workflows in the project. Status: `running | exited | crashed | unknown`. Shows pid, mode, elapsed time, feature name, sorted newest-first.
-
-```bash
-splitbrief ps
-```
-
-If a session crashed, `splitbrief attach` shows a crash diagnostic with last-alive time and signal/cause before offering resume.
-
-### Event replay on attach
-
-**What it does.** A freshly attached client reads `session.jsonl` from disk and reconstructs the TUI state before subscribing to the live stream. Replay never re-issues planner calls.
-
-### Session continuity (`splitbrief continue` / `splitbrief last`)
-
-**What it does.** One command for session lifecycle. `splitbrief continue` figures out the right thing for the active session, or for the only running session when there is no active pointer. `splitbrief last` targets the newest lockfile-backed session. Replaces the mental model of choosing between `ps`/`attach`/`detach`/`resume` for the common case.
-
-**How to use.**
-
-```bash
-splitbrief continue         # active session, or only running session
-splitbrief continue 1       # numeric alias from ps output
-splitbrief last             # always the most recent session
-```
-
-**When to use.** Any time you return to a terminal and want to pick up where you left off.
-
-### Numeric session aliases in `splitbrief ps`
-
-**What it does.** `splitbrief ps` output includes a `#` column with numeric aliases (1, 2, 3...). These aliases are accepted by `attach`, `continue`, and other session-targeting commands.
-
-**How to use.**
-
-```bash
-splitbrief ps               # shows #1, #2, #3...
-splitbrief attach 1         # instead of the full session ID
-splitbrief continue 2
-splitbrief handoff --session 1
-splitbrief snapshot list --session 1
-```
-
----
-
-## Session tree
-
-### Append-only JSONL tree model
-
-**What it does.** Session data is stored as append-only JSONL entries forming a tree: `{id, parentId, type, timestamp, ...payload}`. A `leafId` pointer tracks the active execution path. Recovery decisions create branches — nothing is deleted. Sessions survive crashes, branching is free, and the full audit trail is preserved.
-
-**Entry types.** Registered entry types: `session-start`, `plan-step`, `agent-invocation`, `recovery-decision`, `file-state`, `cost-checkpoint`, `branch-summary`.
-
-**How to use.** Automatic. The tree model underlies all session persistence. Implementation: `src/core/sessions/tree/`.
-
-### Branch summarization
-
-**What it does.** The tree schema can store `branch-summary` entries for summarized branch context. Current workflow recording preserves recovery decisions and branch history; it does not automatically call an LLM to summarize abandoned branches.
-
-**How to use.** No user action is needed for branch history. `branch-summary` is a schema-supported entry type for code paths that explicitly write branch summaries.
-
-**When to use.** Inspect branch history when diagnosing recovery decisions or comparing attempts.
-
----
-
 ## TUI features
 
 ### Slash commands palette
 
-**What it does.** Runtime commands use slash names (`/help`, `/mode`, etc.), but the same registry backs composer `/` input, the command palette, and RPC dispatch. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match. Every one of the 27 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output — and the palette and help overlay render those as section headers when no query is typed. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter.
+**What it does.** Runtime commands use slash names (`/help`, `/mode`, etc.), but the same registry backs composer `/` input and the command palette. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match. Every one of the 23 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output — and the palette and help overlay render those as section headers when no query is typed. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter.
 
 **Navigate**
 
@@ -685,9 +420,7 @@ splitbrief snapshot list --session 1
 | `/redo-task <task-id>` | Reset a task to pending and re-run it |
 | `/queue [show\|clear]` | Show or clear the message queue |
 | `/approval [list\|clear]` | List or clear sticky approval grants |
-| `/handoff <target> [task-id]` | Export handoff pack for an external agent |
 | `/run <accept\|reject>` | Accept or reject what this run wrote (rejection needs `/run reject confirm`) |
-| `/yolo` | Toggle file-write tiered approvals off/on |
 
 **View**
 
@@ -704,13 +437,9 @@ splitbrief snapshot list --session 1
 | Command | Purpose |
 |---|---|
 | `/copy [message\|brief\|path\|command\|cost]` | Copy to clipboard |
-| `/export` | Export session as HTML report |
-| `/compact-transcript` | Summarize older transcript turns |
 | `/image <path> \| list \| remove <index-or-id>` | Attach, list or remove images for the next planner call |
 
 **Capability-aware `/image`.** The command is offered only when the PLAN seat can actually receive images — `cli` seats can, an `api` seat depends on its model, `shell` and `agent` never can. On a seat without vision the row is hidden and typing the command answers `PLAN seat cannot see images — pick a vision model with /crew plan`, instead of dropping the attachment silently at call time.
-
-**Aliases.** `/config` runs `/settings`; `/planner`, `/implementer` and `/reviewer` run `/crew plan`, `/crew build` and `/crew review`. They are kept for one release. Bare aliases ride their primary row in the palette — `/settings` renders as `/settings (/config)`; argument-bearing aliases get no palette row of their own and stay reachable by typing them in the composer or over RPC. All of them are listed in full — together with the removed names and where each one went — in [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
 Full reference: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
@@ -725,9 +454,9 @@ Full reference: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 ```yaml
 palette:
   customActions:
-    - id: write-handoff
-      label: "Write Claude handoff"
-      command: /handoff claude-code
+    - id: quick-mode
+      label: "Switch to quick mode"
+      command: /mode quick
 ```
 
 ### Help overlay (`Ctrl+/`)
@@ -742,7 +471,7 @@ Sessions are execution records scoped to one workflow each. The brief review gat
 
 ### Settings overlay
 
-**What it does.** One overlay for crew, validation and workflow defaults. Open via `/settings` (Ctrl+,) or `/config`. Writes back to `.splitbrief/config.yaml`. Crew is its first section; there is no separate crew surface.
+**What it does.** One overlay for crew, validation and workflow defaults. Open via `/settings` (Ctrl+,). Writes back to `.splitbrief/config.yaml`. Crew is its first section; there is no separate crew surface.
 
 ### Settings ∋ Crew
 
@@ -756,7 +485,7 @@ Sessions are execution records scoped to one workflow each. The brief review gat
 
 **What it does.** Two-column pickers for workflow mode (`/mode` with no argument) and for a seat's tool and model (Enter on a seat row in Settings ∋ Crew). Filtered to detected/available tools.
 
-**Model rows.** One authoritative lane per tool renders the model rows. models.dev is metadata-only enrichment (context window, pricing, release date, display name) and never creates a row for a tool that has an authoritative lane of its own. `codex`, `opencode`, `kilo-code`, `cursor` and `command-code` render their own `--list-models`-style native output as `Detected` rows; rows remembered from an earlier run keep rendering, flagged `Stale`. `claude-code` has no listing command, so it renders one row per shipped alias — `sonnet`, `opus`, `fable`, `haiku`, `opusplan`, `best`, `sonnet[1m]`, `opus[1m]`, `fable[1m]` — each labelled with Claude's own menu word (`Sonnet 5`, `Opus Plan Mode`, `Fable 5.1 (1M context)`); `default` is not one of them, it is the Auto row; the local `~/.claude.json` `additionalModelOptionsCache` folds in by a specific rule — an entry merges into the one alias row whose resolved catalog id plus that alias's own bracket suffix it equals, case-insensitively, and whose key is already among the shipped aliases, lending its `description` to that row as `detail`; otherwise it renders as its own row under the cache's own label or, failing that, its id; and an unknown id you type through is passed to the CLI unvalidated, because Claude Code does not validate it either. `copilot` lists its own models non-interactively, so the picker renders the quoted ids `copilot help config` prints under its `model` key (25 on 1.0.77), enriched from models.dev `github-copilot`, with the tools-column byline `not verified for your plan`; the bundled rows stand in only when that listing is unavailable. Confirmed rows keep the tool's own order and are not re-sorted by release date. Dedup is by a suffix-aware canonical id, so a `:free` catalog twin folds into its provider-qualified runtime row; a display name is never a dedup key, so two genuinely different ids are never collapsed for printing the same. Context windows are floored and never carry an empty decimal: a 1,048,576-token window reads `1M`, 1,100,000 reads `1.1M`, 262,144 reads `262K`. When the configured model is absent from the authoritative list the picker keeps a recovery row for it and offers one explicit "Browse the full catalog" row; nothing speculative appears otherwise.
+**Model rows.** One authoritative lane per tool renders the model rows. models.dev is metadata-only enrichment (context window, pricing, release date, display name) and never creates a row for a tool that has an authoritative lane of its own. `codex`, `opencode`, `kilo-code`, `cursor` and `command-code` render their own `--list-models`-style native output as `Detected` rows; rows remembered from an earlier run keep rendering, flagged `Stale`. `claude-code` has no listing command, so it renders one row per shipped alias — `sonnet`, `opus`, `fable`, `haiku`, `opusplan`, `best`, `sonnet[1m]`, `opus[1m]`, `fable[1m]` — each labelled with Claude's own menu word (`Sonnet 5`, `Opus Plan Mode`, `Fable 5.1 (1M context)`); `default` is not one of them, it is the Auto row; the local `~/.claude.json` `additionalModelOptionsCache` folds in by a specific rule — an entry merges into the one alias row whose resolved catalog id plus that alias's own bracket suffix it equals, case-insensitively, and whose key is already among the shipped aliases, lending its `description` to that row as `detail`; otherwise it renders as its own row under the cache's own label or, failing that, its id; and an unknown id you type through is passed to the CLI unvalidated, because Claude Code does not validate it either. `copilot` lists its own models non-interactively, so the picker renders the quoted ids `copilot help config` prints under its `model` key (25 on 1.0.77), enriched from models.dev `github-copilot`, with the tools-column byline `not verified for your plan`; the bundled rows stand in only when that listing is unavailable. Confirmed rows keep the tool's own order and are not re-sorted by release date. Dedup is by a suffix-aware canonical id, so a `:free` catalog twin folds into its provider-qualified runtime row; a display name is never a dedup key, so two genuinely different ids are never collapsed for printing the same. Context windows are floored and never carry an empty decimal: a 1,048,576-token window reads `1M`, 1,100,000 reads `1.1M`, 262,144 reads `262K`. When the configured model is absent from the authoritative list the picker keeps a recovery row for it. The one explicit "Browse the full catalog" row is offered only where browsing actually widens the list — where the authoritative lane hid bundled rows, as for a local `api` provider with no inventory of its own — never beside a recovery row the escape cannot help; nothing speculative appears otherwise.
 
 **Option families.** Detected models whose ids differ only by effort, speed or thinking fold into one row that expands into an axis row per axis. Suffix peeling is provider-aware, so a provider-routed (`provider/model`) id folds into its family per route instead of keeping a row of its own, and a family that also spans providers expands into one provider route row per route, each followed by that route's own axis rows — so every spelling of every route stays reachable. A genuinely branded id with no sibling to fold with (`opencode/grok-code-fast`) stays flat, spelled exactly as the tool listed it. Only custom models keep their own rows. `space` cycles the axis under the cursor in place, moving the draft onto that axis's route, and `⏎` confirms the drafted id: its own route's from a route or axis row, the family's from the parent.
 
@@ -780,7 +509,7 @@ Sessions are execution records scoped to one workflow each. The brief review gat
 
 ### Lifecycle hook events
 
-**What it does.** Lifecycle hook events can fire user-declared shell commands or in-process JS modules. `pre_*` hooks block the next action; `post_*` and `on_*` are fire-and-forget.
+**What it does.** Lifecycle hook events fire user-declared shell commands. `pre_*` hooks block the next action; `post_*` and `on_*` are fire-and-forget.
 
 **How to use.** Declare in `.splitbrief/config.yaml` under `hooks:`. Full list:
 
@@ -794,7 +523,6 @@ Sessions are execution records scoped to one workflow each. The brief review gat
 | `pre_commit` | Before optional product-level commit |
 | `post_commit` | After optional product-level commit |
 | `pre_escalation` | Before planner escalation |
-| `pre_compact` | Reserved (FUTURE) |
 | `on_error` | Any unrecoverable engine error |
 | `on_complete` | `workflow_complete` event |
 
@@ -811,35 +539,6 @@ hooks:
 ```
 
 **Trust.** Hook configs are sha256-hashed and prompted on first use; in CI pass `--allow-hooks`. Each hook run inherits user shell privileges. Full reference: [HOOKS-CONFIG.md](./HOOKS-CONFIG.md).
-
-### Built-in hooks
-
-Built-ins ship, all off by default:
-
-- `prettier-on-change` — runs `npx prettier --write ${event.file}` on `post_task`.
-- `block-secrets` — scans `event.file` on `pre_commit` for AWS / GitHub PAT / OpenAI / Anthropic key patterns when optional commit hooks are in use.
-
-```yaml
-hooks:
-  builtin:
-    prettier-on-change: true
-    block-secrets: true
-```
-
-### Module hooks (`kind: module`)
-
-**What it does.** Run JS/TS modules in-process instead of spawning a subprocess. Default export must be `(event, ctx) => Promise<HookOutcome>`.
-
-```yaml
-hooks:
-  pre_task:
-    - kind: module
-      path: ./hooks/my-hook.js
-      timeout_ms: 5000
-      on_failure: block
-```
-
-Return shape: `{ kind: 'allow' | 'deny' | 'warn' | 'crash', message?: string }`.
 
 ---
 
@@ -865,31 +564,17 @@ splitbrief start --json --allow-hooks --mode quick "add lint rule for empty catc
 
 The first line is `{ type: "readiness_report", report: ... }`. After that, `stdoutJsonSink` in `src/engine/events/sinks/stdout-json.ts` emits one `EngineEvent` JSON object per line.
 
-### `splitbrief start --rpc`
-
-**What it does.** Runs without Ink like headless mode, but keeps stdin open for external controllers. Stdin accepts NDJSON commands: `approve`, `reject`, `regenerate`, `brief_review`, `message`, `recovery`, `status`, `abort`, and `slash`. Stdout emits NDJSON responses with `type: "ack"`, `"error"`, `"status"`, or `"event"`; event responses wrap the underlying `EngineEvent` in `data`. `brief_review` is prompt-scoped for the Task Brief gate and echoes optional `id` / `operationId` values in status, ack, or error data.
-
-**How to use.**
-
-```bash
-splitbrief start --rpc --allow-hooks "add lint rule for empty catch"
-```
-
-**When to use.** IDE integrations, editor extensions, service wrappers, and tests that need to drive approvals, clarifications, recovery, or status polling programmatically.
-
-`--rpc` requires a feature argument for new runs and is mutually exclusive with `--json` and `--detach`.
-
 ---
 
 ## Operational extras
 
 ### `splitbrief status` and `splitbrief init`
 
-**What it does.** `init` is the interactive setup that writes `.splitbrief/config.yaml` (or rewrites it with `--reconfigure`). `status` is read-only — prints the active session state without acquiring the lock; pass `--history` for cost rollups across sessions.
+**What it does.** `init` is the interactive setup that writes `.splitbrief/config.yaml` (or rewrites it with `--reconfigure`). `status` is read-only — prints the active session state without acquiring the lock.
 
 ```bash
 splitbrief init [--reconfigure]
-splitbrief status [--history]
+splitbrief status
 splitbrief doctor [--json]
 ```
 
@@ -913,26 +598,11 @@ For backends without native session resume, the planner context is rebuilt from 
 codebase:
   enabled: true
   tokenBudget: 4000
-  cacheDir: ".splitbrief"
   include: ["src/**/*.ts"]
   exclude: ["\\.test\\.tsx?$"]
 ```
 
 The map rebuilds itself on each planning run when the cache is stale; there is no manual rebuild step. Full details: [REPOMAP.md](./REPOMAP.md).
-
-### OpenTelemetry sink
-
-**What it does.** Maps workflow, phase, task, validation, warning, error, and cost events to OpenTelemetry spans. Other engine events are no-ops for tracing. Off by default.
-
-**How to use.**
-
-```yaml
-otel:
-  enabled: true
-  serviceName: splitbrief
-```
-
-Or per-run: `--otel-exporter console`. Full details: [OTEL.md](./OTEL.md).
 
 ### Image attachments
 
@@ -967,6 +637,5 @@ Offered only when the PLAN seat can receive images; on a seat without vision the
 - [CONFIGURATION.md](./CONFIGURATION.md) — every config field, default, and validation rule.
 - [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) — slash command reference, dispatch, phase guards.
 - [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — workflow hooks: events, schemas, trust, security.
-- [WORKTREES.md](./WORKTREES.md) — git worktree usage and the runtime isolation gap.
 - [ARCHITECTURE.md#part-2--current-state-the-what](./ARCHITECTURE.md#part-2--current-state-the-what) — code-level inventory, event union, persistence layout.
-- [API-KEYS.md](./API-KEYS.md), [OTEL.md](./OTEL.md), [REPOMAP.md](./REPOMAP.md), [DEBUGGING.md](./DEBUGGING.md).
+- [API-KEYS.md](./API-KEYS.md), [REPOMAP.md](./REPOMAP.md), [DEBUGGING.md](./DEBUGGING.md).

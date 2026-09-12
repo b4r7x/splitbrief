@@ -279,8 +279,6 @@ describe('configured custom runner factory behavior', () => {
       beginDeclaredArtifactReview: (input) =>
         beginDeclaredArtifactReview({
           ...input,
-          projectDir: fixture.projectDir,
-          sessionId,
           onApprovalNeeded: async () => ({ approved: true }),
         }),
     };
@@ -486,7 +484,7 @@ Preserve the declared-file receipt.
     const result = await planner.quickPlan({
       feature: 'preserve the declared artifact receipt',
       projectDir: fixture.projectDir,
-      callbacks: { onOutput: () => {}, persistTranscript: false },
+      callbacks: { onOutput: () => {} },
     });
     const artifact = result.phases?.[0]?.artifact;
 

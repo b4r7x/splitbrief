@@ -18,37 +18,34 @@ function applyTaskReviewRewind(opts: {
   state: WorkflowState;
   request: TaskReviewRequest;
   response: { action: 'redo-task' | 'revise-plan'; notes?: string | undefined };
-  persistTranscript: boolean;
   setRewindFeedback: WorkflowContext['setRewindFeedback'];
 }): WorkflowState {
-  const { ref, state, request, response, persistTranscript } = opts;
+  const { ref, state, request, response } = opts;
   if (response.action === 'redo-task') {
-    const { persistedAction } = buildRewindAction({
+    const { action } = buildRewindAction({
       request: { target: 'task', taskId: request.taskId },
       ref,
       state,
-      persistTranscript,
     });
-    let next = transitionAndSave(ref, state, persistedAction);
+    let next = transitionAndSave(ref, state, action);
     if (next.pendingRecovery?.taskId === request.taskId) {
       next = transitionAndSave(ref, next, { type: 'RESOLVE_PENDING_RECOVERY' });
     }
     return next;
   }
 
-  const { action, persistedAction } = buildRewindAction({
+  const { action } = buildRewindAction({
     request: {
       target: 'plan',
       ...(response.notes ? { comment: response.notes } : {}),
     },
     ref,
     state,
-    persistTranscript,
   });
   if (action.type === 'REWIND_TO_PLAN') {
     opts.setRewindFeedback?.(action.comment);
   }
-  return transitionAndSave(ref, state, persistedAction);
+  return transitionAndSave(ref, state, action);
 }
 
 export async function reviewTaskIfNeeded(opts: {
@@ -98,7 +95,6 @@ export async function reviewTaskIfNeeded(opts: {
         action: response.action,
         ...(response.notes !== undefined ? { notes: response.notes } : {}),
       },
-      persistTranscript: opts.wctx.config.workflow.persistTranscript,
       setRewindFeedback: opts.wctx.setRewindFeedback,
     });
     opts.setTrackedState(next);
@@ -116,7 +112,6 @@ export async function reviewTaskIfNeeded(opts: {
     text: formatTaskReviewNotes(request, notes),
     phase: opts.state.phase,
     bus: opts.wctx.bus,
-    persistTranscript: opts.wctx.config.workflow.persistTranscript,
     enforcePhasePolicy: false,
   });
   opts.setTrackedState(queued.state);

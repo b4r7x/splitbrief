@@ -11,9 +11,8 @@ import { withCliErrors } from '../errors.js';
 import { TASKS_FILE, sessionDir } from '../../core/paths.js';
 import { writeSpecFile } from '../../core/paths-io.js';
 import { ensureHooksTrusted } from '../hook-trust-prompt.js';
-import { resolveHooksConfig } from '../../engine/hooks/discover.js';
 import { warnStderr } from '../../lib/warn.js';
-import { stripTerminalControls } from '../../utils/display-text.js';
+import { sanitizeTerminalDisplayText, stripTerminalControls } from '../../utils/display-text.js';
 import {
   emitEffectiveConfigWarnings,
   resolveEffectiveConfig,
@@ -21,15 +20,8 @@ import {
 } from '../../core/config/runtime/effective-config.js';
 import { workflowOptsToCLIOverrides } from '../../core/config/runtime/overrides/from-options.js';
 import { assertNever } from '../../utils/type-guards.js';
-import type {
-  ArtifactApprovalReview,
-  CustomRunnerRuntimePort,
-} from '../../engine/runners/types.js';
-import { createStagedProject } from '../../engine/orchestrator/approval/staged-project.js';
-import {
-  beginDeclaredArtifactReview,
-  cleanupStaleArtifactReviews,
-} from '../../engine/orchestrator/approval/planner-artifact.js';
+import type { ArtifactApprovalReview } from '../../engine/runners/types.js';
+import { createCustomRunnerRuntime } from '../../engine/runners/custom-runner-runtime.js';
 import {
   promptCustomRunnerArtifactApproval,
   promptCustomRunnerDisclosure,
@@ -80,8 +72,11 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
       clearStaleSessionForCli(projectDir);
 
       const loaded = loadConfigOrExit(projectDir);
-      const mergedHooks = await resolveHooksConfig(projectDir, loaded.config.hooks);
-      await ensureHooksTrusted({ projectDir, hooks: mergedHooks, allowHooks: opts.allowHooks });
+      await ensureHooksTrusted({
+        projectDir,
+        hooks: loaded.config.hooks,
+        allowHooks: opts.allowHooks,
+      });
       const { config, warnings } = resolveEffectiveConfig({
         base: loaded.config,
         overrides: workflowOptsToCLIOverrides(opts),
@@ -116,35 +111,14 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
         'prose',
       );
       const sessionId = execution.session.ref.sessionId;
-      const sourceEnv = { ...process.env };
-      const authorizationPathEnv = process.env.PATH;
-      const authorizationPathExt = process.env.PATHEXT;
-      const onArtifactApprovalNeeded = (_type: 'artifact', review: ArtifactApprovalReview) =>
-        interaction === 'interactive'
-          ? promptForArtifactApproval(review)
-          : Promise.resolve({ approved: true as const });
-      const customRuntime: CustomRunnerRuntimePort = {
+      const customRuntime = createCustomRunnerRuntime({
+        projectDir,
         sessionId,
-        authorizationProjectDir: projectDir,
-        sourceEnv,
-        ...(authorizationPathEnv === undefined ? {} : { authorizationPathEnv }),
-        ...(authorizationPathExt === undefined ? {} : { authorizationPathExt }),
-        createStage: async (sourceProjectDir, _role) => {
-          const staged = await createStagedProject(sourceProjectDir);
-          return {
-            projectDir: staged.projectDir,
-            snapshot: staged.snapshot,
-            cleanup: staged.cleanup,
-          };
-        },
-        cleanupStaleArtifactReviews: () => cleanupStaleArtifactReviews({ projectDir, sessionId }),
-        beginDeclaredArtifactReview: (artifactInput) =>
-          beginDeclaredArtifactReview({
-            ...artifactInput,
-            projectDir,
-            sessionId,
-            onApprovalNeeded: onArtifactApprovalNeeded,
-          }),
+        sweepStaleReviews: true,
+        onArtifactApproval: (_type: 'artifact', review: ArtifactApprovalReview) =>
+          interaction === 'interactive'
+            ? promptForArtifactApproval(review)
+            : Promise.resolve({ approved: true as const }),
         admission: {
           interaction,
           allowRepoRunners: opts.allowRepoRunners,
@@ -152,7 +126,7 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
             ? { onTieredApproval: (request) => promptForDisclosure({ request }) }
             : {}),
         },
-      };
+      });
 
       let planner: Planner;
       try {
@@ -184,7 +158,9 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
             projectDir,
             callbacks: {
               onOutput(text: string) {
-                process.stdout.write(stripTerminalControls(text));
+                process.stdout.write(
+                  sanitizeTerminalDisplayText(text, { preserveLineBreaks: true }),
+                );
               },
               onPhase(phase: Phase) {
                 console.log(`\n${ansis.bold(`--- ${phase} ---`)}\n`);

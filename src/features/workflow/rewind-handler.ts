@@ -2,14 +2,12 @@ import type { EngineEvent } from '../../engine/events/types.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import type { StateAuthorityReceipt } from '../../core/state/types.js';
 import type { RewindTarget } from '../../core/state/build-rewind-action.js';
 import { buildRewindAction } from '../../core/state/build-rewind-action.js';
 import { transitionAndSave } from '../../engine/orchestrator/state-ops.js';
-import { refreshWorkflowAuthority } from '../../engine/orchestrator/run/authority.js';
 import { appendProtectedEngineEvent } from '../../core/sessions/log-writer.js';
 import { RewindEventSchema } from '../../core/state/rewind-event.js';
-import { WORKFLOW_REWIND_ABORT_REASON } from '../../engine/orchestrator/run/rewind-authority.js';
+import { WORKFLOW_REWIND_ABORT_REASON } from '../../core/phases.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { type ResumeHydration, resumeFailureMessage } from './resume-hydration.js';
@@ -25,7 +23,6 @@ interface RewindHandlerDeps {
   controller: AbortController;
   hydrate: (ref: SessionRef) => ResumeHydration;
   resetMode: () => void;
-  setAuthority: (receipt: StateAuthorityReceipt) => void;
   setPendingRewind: (pending: PendingRewind) => void;
   onRewound: (next: WorkflowState) => void;
 }
@@ -35,7 +32,6 @@ export function buildRewindHandler({
   controller,
   hydrate,
   resetMode,
-  setAuthority,
   setPendingRewind,
   onRewound,
 }: RewindHandlerDeps): (request: RewindTarget) => void {
@@ -50,20 +46,17 @@ export function buildRewindHandler({
     }
     const current = hydrated.state;
 
-    const { action, persistedAction, event } = buildRewindAction({
+    const { action, event } = buildRewindAction({
       request,
       ref,
       state: current,
       persistEvent: false,
-      persistTranscript: prepared.config.workflow.persistTranscript,
     });
     let next: WorkflowState;
     try {
-      next = transitionAndSave(ref, current, persistedAction, {
-        authority: hydrated.authority,
+      next = transitionAndSave(ref, current, action, {
         expectedRevision: current.stateRevision,
       });
-      setAuthority(refreshWorkflowAuthority(ref, hydrated.authority, next));
     } catch (cause) {
       feedbackStore.setError(toErrorMessage(cause));
       return;

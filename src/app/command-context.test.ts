@@ -35,8 +35,6 @@ import { conversationScrollStore } from '../stores/workflow/conversation-scroll.
 import { controlsStore } from '../stores/ui/controls.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
-import { routerStore } from '../stores/navigation/router.js';
-import { createRuntimeCommands } from '../core/runtime/commands/registry.js';
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
 import {
   buildCommandContext,
@@ -171,29 +169,6 @@ describe('buildCommandContext', () => {
       message: 'Sidebar is hidden on small terminals.',
     });
     expect(controlsStore.get().sidebarVisible).toBe(true);
-  });
-
-  it('is not attached for an in-process session', () => {
-    expect(build().isAttached).toBe(false);
-  });
-
-  it('hides local-only workflow mutation commands when attached', () => {
-    routerStore.init({
-      screen: 'workflow',
-      execution: {
-        kind: 'attached',
-        feature: 'feat',
-        sessionId: 's1',
-        attach: { sockPath: '/tmp/s.sock', authToken: 'tok' },
-      },
-    });
-
-    const names = createRuntimeCommands(build()).map((cmd) => cmd.name);
-
-    expect(names).not.toContain('/yolo');
-    expect(names).not.toContain('/revise-spec');
-    expect(names).not.toContain('/attach');
-    expect(names).toContain('/copy');
   });
 
   it('refreshDetection derives current settings instead of reusing prior service dependencies', async () => {

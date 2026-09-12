@@ -25,16 +25,14 @@ const contexts = {
 };
 
 function cliCatalogAttempt(input: {
-  role: 'planner' | 'implementer';
   tool: 'codex' | 'opencode';
   models?: readonly string[];
   failure?: Exclude<ProbeOutcomeKind, 'success'>;
 }): ScopedCliCatalogAttempt {
   return {
     connection: {
-      role: input.role,
       tool: input.tool,
-      contextKey: `${input.role}-${input.tool}-context`,
+      contextKey: `${input.tool}-context`,
     },
     outcome:
       input.failure === undefined
@@ -141,7 +139,7 @@ describe('usePickerCatalog catalog diagnostic', () => {
   });
 
   it('keeps a browsed unconfigured tool at not-probed after another tool was probed', () => {
-    publishCliCatalogs([cliCatalogAttempt({ role: 'planner', tool: 'codex', models: [] })]);
+    publishCliCatalogs([cliCatalogAttempt({ tool: 'codex', models: [] })]);
 
     const ui = renderFeature(<Probe role="planner" toolId="opencode" />);
 
@@ -150,7 +148,7 @@ describe('usePickerCatalog catalog diagnostic', () => {
   });
 
   it('clears the diagnostic after a successful probe, even an empty one', () => {
-    publishCliCatalogs([cliCatalogAttempt({ role: 'planner', tool: 'codex', models: [] })]);
+    publishCliCatalogs([cliCatalogAttempt({ tool: 'codex', models: [] })]);
 
     const ui = renderFeature(<Probe role="planner" toolId="codex" />);
 
@@ -161,7 +159,7 @@ describe('usePickerCatalog catalog diagnostic', () => {
   it.each(['missing-credential', 'malformed'] as const)(
     'surfaces a %s probe failure for the probed tool',
     (failure) => {
-      publishCliCatalogs([cliCatalogAttempt({ role: 'planner', tool: 'codex', failure })]);
+      publishCliCatalogs([cliCatalogAttempt({ tool: 'codex', failure })]);
 
       const ui = renderFeature(<Probe role="planner" toolId="codex" />);
 
@@ -169,15 +167,6 @@ describe('usePickerCatalog catalog diagnostic', () => {
       ui.unmount();
     },
   );
-
-  it('does not let another role supply the probe outcome', () => {
-    publishCliCatalogs([cliCatalogAttempt({ role: 'planner', tool: 'codex', failure: 'timeout' })]);
-
-    const ui = renderFeature(<Probe role="implementer" toolId="codex" />);
-
-    expect(captured).toEqual({ kind: 'not-probed' });
-    ui.unmount();
-  });
 
   it('reports a tool without a listing command as unsupported', () => {
     const ui = renderFeature(<Probe role="planner" toolId="claude-code" />);
@@ -203,9 +192,7 @@ describe('usePickerCatalog catalog diagnostic', () => {
         planner: { kind: 'cli', tool: 'opencode', model: 'opencode-go/deepseek-v4-flash' },
       }),
     });
-    publishCliCatalogs([
-      cliCatalogAttempt({ role: 'planner', tool: 'opencode', failure: 'malformed' }),
-    ]);
+    publishCliCatalogs([cliCatalogAttempt({ tool: 'opencode', failure: 'malformed' })]);
 
     const ui = renderFeature(<BylineProbe toolId="opencode" />);
 
@@ -240,6 +227,19 @@ describe('usePickerCatalog catalog diagnostic', () => {
 
     ui.unmount();
   });
+
+  it('shows one tool the same diagnostic in the planner and the implementer picker', () => {
+    publishCliCatalogs([cliCatalogAttempt({ tool: 'codex', failure: 'timeout' })]);
+
+    const plannerUi = renderFeature(<Probe role="planner" toolId="codex" />);
+    const plannerDiagnostic = captured;
+    plannerUi.unmount();
+
+    const implementerUi = renderFeature(<Probe role="implementer" toolId="codex" />);
+    expect(captured).toEqual(plannerDiagnostic);
+    expect(captured).toEqual({ kind: 'probe-failed', failure: 'timeout' });
+    implementerUi.unmount();
+  });
 });
 
 describe('usePickerCatalog provider variant threading', () => {
@@ -261,7 +261,6 @@ describe('usePickerCatalog provider variant threading', () => {
     publishCliCatalogs(
       [
         cliCatalogAttempt({
-          role: 'planner',
           tool: 'opencode',
           models: ['ollama-cloud/deepseek-v4-flash', 'opencode-go/deepseek-v4-flash'],
         }),

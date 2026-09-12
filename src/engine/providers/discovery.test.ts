@@ -120,11 +120,8 @@ async function exactResolver(options: Readonly<{ command: string; projectDir: st
 function attemptFor(
   attempts: readonly ScopedCliCatalogAttempt[],
   tool: CliToolId,
-  role: 'planner' | 'implementer' = 'planner',
 ): ScopedCliCatalogAttempt | undefined {
-  return attempts.find(
-    (attempt) => attempt.connection.tool === tool && attempt.connection.role === role,
-  );
+  return attempts.find((attempt) => attempt.connection.tool === tool);
 }
 
 function successfulModels(
@@ -199,6 +196,9 @@ describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
         supportsReasoning: true,
       },
     ]);
+    const codexAttempt = attemptFor(attempts, 'codex');
+    expect(codexAttempt).toBeDefined();
+    expect(Object.hasOwn(codexAttempt?.connection ?? {}, 'role')).toBe(false);
     expect(successfulModels(attempts, 'opencode')?.map((model) => model.id)).toEqual([
       'anthropic/claude-3-5-sonnet',
       'openai/gpt-4o',

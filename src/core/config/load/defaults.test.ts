@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'node
 import { join } from 'node:path';
 import YAML from 'yaml';
 import { initConfig, loadConfig } from './io.js';
-import { createDefaultConfig } from './defaults.js';
+import { createDefaultConfig, mergeWithDefaults } from './defaults.js';
 import { SPLITBRIEF_DIR } from '../../paths.js';
 import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner-fields.js';
 import { expectApi } from '#testing/helpers/config-narrowing.js';
@@ -21,6 +21,15 @@ afterAll(() => {
 });
 
 describe('config defaults', () => {
+  describe('mergeWithDefaults', () => {
+    it('carries a __proto__ key through as data instead of re-pointing the merged object', () => {
+      const merged = mergeWithDefaults({ ['__proto__']: { polluted: true } });
+
+      expect(Object.getPrototypeOf(merged)).toBe(Object.prototype);
+      expect(Object.hasOwn(merged, '__proto__')).toBe(true);
+    });
+  });
+
   describe('loadConfig', () => {
     it('returns defaults when no config file exists', () => {
       const dir = join(TMP, 'no-config');
@@ -171,15 +180,25 @@ describe('config defaults', () => {
       expect(loadConfig(dir).config).toEqual(createDefaultConfig());
     });
 
-    it('accepts and preserves a user-supplied sessions.scope for forward-compat', () => {
-      const dir = join(TMP, 'sessions-scope-forward-compat');
+    it('preserves a user-supplied sessions.scope', () => {
+      const dir = join(TMP, 'sessions-scope-project');
+      writeConfigYaml(dir, {
+        implementer: { model: 'codellama:13b' },
+        sessions: { scope: 'project' },
+      });
+
+      const { config } = loadConfig(dir);
+      expect(config.sessions?.scope).toBe('project');
+    });
+
+    it('rejects the removed sessions.scope global value', () => {
+      const dir = join(TMP, 'sessions-scope-global');
       writeConfigYaml(dir, {
         implementer: { model: 'codellama:13b' },
         sessions: { scope: 'global' },
       });
 
-      const { config } = loadConfig(dir);
-      expect(config.sessions?.scope).toBe('global');
+      expect(() => loadConfig(dir)).toThrow(/sessions\.scope/);
     });
 
     it('does not synthesize a sessions block when the user omits one', () => {

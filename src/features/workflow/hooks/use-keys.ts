@@ -1,7 +1,6 @@
 import { useInput, type Key } from 'ink';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { completionStore } from '../../../stores/ui/completion.js';
-import { routerStore } from '../../../stores/navigation/router.js';
 import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
@@ -19,7 +18,6 @@ import {
   type WorkflowKeyAction,
 } from '../keyboard.js';
 import { readConversationScrollSnapshot, readReviewContentHeight } from '../layout/snapshot.js';
-import type { KeyAttachState } from '../../../core/keybindings/resolver.js';
 import type { InputMode, OverlayType } from '../../../core/navigation/types.js';
 
 function applyAction(action: WorkflowKeyAction) {
@@ -64,7 +62,6 @@ function applyAction(action: WorkflowKeyAction) {
 interface ReviewScrollContext {
   inputMode: InputMode;
   overlay: OverlayType;
-  attachState: KeyAttachState;
   composerFocus: boolean;
 }
 
@@ -82,7 +79,6 @@ function getReviewScrollAction(
     key,
     inputMode: context.inputMode,
     overlay: context.overlay,
-    attachState: context.attachState,
     composerFocus: context.composerFocus,
     focus: context.inputMode === 'review' ? 'review' : 'workflow',
     reviewScrollOffset: clamp(review.scrollOffset, 0, maxOffset),
@@ -120,17 +116,15 @@ function getConversationScrollAction(
 }
 
 export function useWorkflowKeys({ isActive }: { isActive: boolean }) {
-  const [overlay, route, completion] = useStores(overlayStore, routerStore, completionStore);
+  const [overlay, completion] = useStores(overlayStore, completionStore);
   const { active: overlayActive } = overlay;
   const isOpen = overlayActive !== 'none';
-  const isAttachedClient = route.screen === 'workflow' && route.execution.kind === 'attached';
 
   useInput(
     (input, key) => {
       const sections = getSections();
       const inputMode = controlsStore.get().inputMode;
       const composerFocus = inputMode === 'normal' || inputMode === 'question';
-      const attachState = isAttachedClient ? 'attached' : 'local';
 
       if (inputMode === 'normal') {
         const chord = handleWorkflowCtrlChords({
@@ -138,7 +132,6 @@ export function useWorkflowKeys({ isActive }: { isActive: boolean }) {
           key,
           inputMode,
           overlay: overlayActive,
-          attachState,
           composerFocus,
           sections,
           findLatestDiff: findLatestRenderableDiffKey,
@@ -153,7 +146,6 @@ export function useWorkflowKeys({ isActive }: { isActive: boolean }) {
       const reviewScroll = getReviewScrollAction(input, key, {
         inputMode,
         overlay: overlayActive,
-        attachState,
         composerFocus,
       });
       if (reviewScroll.type !== 'none') {

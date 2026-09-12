@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Command } from 'commander';
-import { mkdirSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { realpathSync } from 'node:fs';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -11,30 +10,20 @@ import type { StartDeps } from './start/types.js';
 import { initStores } from '../init-stores.js';
 import { configStore } from '../../stores/project/config.js';
 import { routerStore } from '../../stores/navigation/router.js';
-import { SPLITBRIEF_DIR } from '../../core/paths.js';
-import { sessionDir } from '../../core/paths.js';
-import type { SpawnServerResult } from '../../engine/ipc/detached-handshake.js';
-import { buildServerArgs, type SpawnServerOptions } from '../../engine/ipc/server-invocation.js';
 import {
   prepareExecutionMock,
   setupRunnerTrustIsolation,
-  writeReadyReadinessFixtures,
   writeConfigMarker,
 } from '#testing/helpers/start-command.js';
 import { writeEmptyDetectionCache } from '#testing/helpers/write-empty-detection-cache.js';
-import { formatDetachedAttachHint } from './attach-hint.js';
 
 setupFetchMock();
 
-const spawnServerMock = vi.fn<(opts: SpawnServerOptions) => Promise<SpawnServerResult>>();
 const runHeadlessMock = vi.fn<StartDeps['runHeadless']>();
-const runRpcMock = vi.fn<StartDeps['runRpc']>();
 const renderAppFake: StartDeps['renderApp'] = async () => {};
 
 const fakeDeps: StartDeps = {
-  spawnServer: spawnServerMock,
   runHeadless: runHeadlessMock as unknown as StartDeps['runHeadless'],
-  runRpc: runRpcMock as unknown as StartDeps['runRpc'],
   initStores: async () => {},
   renderApp: renderAppFake,
   prepareExecution: prepareExecutionMock,
@@ -52,20 +41,8 @@ beforeEach(() => {
   resetAllStores();
   routerStore.init({ screen: 'home' });
   process.stdin.isTTY = true;
-  spawnServerMock.mockClear();
   runHeadlessMock.mockClear();
-  runRpcMock.mockClear();
-  spawnServerMock.mockImplementation(async (opts: SpawnServerOptions) => {
-    const preparedSessionDir = sessionDir(opts.projectDir, opts.candidate.sessionId);
-    mkdirSync(preparedSessionDir, { recursive: true });
-    writeFileSync(
-      join(preparedSessionDir, 'server-args.json'),
-      JSON.stringify(buildServerArgs(opts), null, 2),
-    );
-    return { ok: true, pid: 1234, sessionId: opts.candidate.sessionId };
-  });
   runHeadlessMock.mockResolvedValue(undefined);
-  runRpcMock.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -130,20 +107,19 @@ describe('start command — shorthand invocation', () => {
     expect(configStore.get().config?.workflow.mode).toBe('quick');
   }, 30_000);
 
-  it('interactive JSON and RPC starts consume prepared execution', async () => {
-    const projects = ['interactive', 'json', 'rpc'].map((mode) => {
+  it('interactive and JSON starts consume prepared execution', async () => {
+    const projects = ['interactive', 'json'].map((mode) => {
       const projectDir = realpathSync(createTempDir(`start-prepared-${mode}`));
       createTestGitRepo(projectDir);
       writeConfigMarker(projectDir);
       writeEmptyDetectionCache(projectDir);
       return projectDir;
-    }) as [string, string, string];
+    }) as [string, string];
     const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     try {
       for (const [mode, projectDir] of [
         ['interactive', projects[0]],
         ['json', projects[1]],
-        ['rpc', projects[2]],
       ] as const) {
         const program = new Command();
         program.exitOverride();
@@ -169,9 +145,6 @@ describe('start command — shorthand invocation', () => {
       });
       expect(runHeadlessMock.mock.calls.at(-1)?.[0]).toMatchObject({
         prepared: { purpose: 'new-workflow', runtime: { feature: 'json prepared feature' } },
-      });
-      expect(runRpcMock.mock.calls.at(-1)?.[0]).toMatchObject({
-        prepared: { purpose: 'new-workflow', runtime: { feature: 'rpc prepared feature' } },
       });
     } finally {
       stdout.mockRestore();
@@ -205,44 +178,5 @@ describe('start command — shorthand invocation', () => {
         runtime: { feature: 'headless prepared feature' },
       },
     });
-  }, 30_000);
-});
-
-describe('start command — detached', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('prints the full shell-safe attach Run line for project paths with spaces', async () => {
-    const spaced = join(tmp, 'my project');
-    mkdirSync(spaced, { recursive: true });
-    createTestGitRepo(spaced);
-    writeReadyReadinessFixtures(spaced);
-    writeEmptyDetectionCache(spaced);
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-
-    const program = new Command();
-    program.exitOverride();
-    registerStartCommand(program, fakeDeps);
-    await program.parseAsync([
-      'node',
-      'splitbrief',
-      '--project',
-      spaced,
-      '--detach',
-      'implement X',
-    ]);
-
-    const sessionIds = readdirSync(join(spaced, SPLITBRIEF_DIR, 'sessions'));
-    expect(sessionIds).toHaveLength(1);
-    const sessionId = sessionIds[0] ?? '';
-
-    const output = vi
-      .mocked(console.log)
-      .mock.calls.map((call) => call.join(' '))
-      .join('\n');
-    const expectedRun = `Run: ${formatDetachedAttachHint(spaced, sessionId)}`;
-    expect(output).toContain(expectedRun);
-    expect(output).not.toContain('cd ');
   }, 30_000);
 });

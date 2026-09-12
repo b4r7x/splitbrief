@@ -12,7 +12,7 @@ import { registerStartCommand } from '../../../src/cli/commands/start/register.j
 import type { StartDeps } from '../../../src/cli/commands/start/types.js';
 import { SPLITBRIEF_DIR, sessionDir } from '../../../src/core/paths.js';
 import { runHeadless } from '../../../src/cli/headless.js';
-import { readLockfile, checkServerStatus } from '../../../src/engine/ipc/lockfile.js';
+import { readLockfile, checkSessionLiveness } from '../../../src/core/sessions/lockfile.js';
 import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 
 setupStartCommandIntegration();
@@ -38,7 +38,7 @@ describe('start command — liveness record', () => {
     let midRunExitedAt: number | undefined;
     const planner = makePlanner({
       quickPlan: vi.fn().mockImplementation(async () => {
-        const lock = await readLockfile(sessionDir(tmp, onlySessionId(tmp)));
+        const lock = readLockfile(sessionDir(tmp, onlySessionId(tmp)));
         midRunPid = lock?.pid;
         midRunExitedAt = lock?.exitedAt;
         return {
@@ -83,13 +83,13 @@ describe('start command — liveness record', () => {
     expect(midRunPid).toBe(process.pid);
     expect(midRunExitedAt).toBeUndefined();
 
-    let status = await checkServerStatus(dir);
+    let status = checkSessionLiveness(dir);
     for (let i = 0; i < 50 && status.alive; i++) {
       await new Promise((resolve) => setTimeout(resolve, 10));
-      status = await checkServerStatus(dir);
+      status = checkSessionLiveness(dir);
     }
     expect(status.alive).toBe(false);
-    const lock = await readLockfile(dir);
+    const lock = readLockfile(dir);
     expect(lock?.exitedAt).toBeDefined();
   });
 });

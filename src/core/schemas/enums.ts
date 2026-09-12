@@ -77,9 +77,13 @@ const TASK_COMPLETION_METHODS = [
   'escalated-full',
   'failed',
   'skipped',
-  'mcp-tool',
 ] as const;
-export const TaskCompletionMethodSchema = z.enum(TASK_COMPLETION_METHODS);
+// 0.1.0 persisted 'mcp-tool' for a task the removed MCP tool marked done.
+// Nothing writes it any more, so reads map it onto the local completion it was.
+export const TaskCompletionMethodSchema = z.preprocess(
+  (value) => (value === 'mcp-tool' ? 'local' : value),
+  z.enum(TASK_COMPLETION_METHODS),
+);
 export type TaskCompletionMethod = z.infer<typeof TaskCompletionMethodSchema>;
 
 export const VALIDATION_STAGES = ['typecheck', 'lint', 'test'] as const;
@@ -105,6 +109,7 @@ export type RecoveryReason = z.infer<typeof RecoveryReasonSchema>;
 export const RECOVERY_ACTIONS = [
   'retry-same-worker',
   'route-bigger-worker',
+  'switch-seat',
   'planner-split-rebase',
   'continue',
   'skip-current-task',
@@ -117,6 +122,7 @@ export type RecoveryAction = z.infer<typeof RecoveryActionSchema>;
 export const PROMPTABLE_RECOVERY_ACTIONS: RecoveryAction[] = [
   'retry-same-worker',
   'route-bigger-worker',
+  'switch-seat',
   'continue',
   'skip-current-task',
   'pause-run',
@@ -177,6 +183,10 @@ export const APPROVE_LEVELS = ['none', 'spec', 'plan', 'all', 'default'] as cons
 export const ApproveLevelSchema = z.enum(APPROVE_LEVELS);
 export type ApproveLevel = z.infer<typeof ApproveLevelSchema>;
 
+const BRIEF_REVIEW_PROMPT_KINDS = ['spec', 'plan', 'briefs', 'artifact'] as const;
+const BriefReviewPromptKindSchema = z.enum(BRIEF_REVIEW_PROMPT_KINDS);
+export type BriefReviewPromptKind = z.infer<typeof BriefReviewPromptKindSchema>;
+
 const ACTION_CLASSES = [
   'read',
   'write_in_scope',
@@ -196,9 +206,6 @@ export type CommitStrategy = z.infer<typeof CommitStrategySchema>;
 export const ISOLATION_STRATEGIES = ['worktree', 'staged-copy'] as const;
 export const IsolationStrategySchema = z.enum(ISOLATION_STRATEGIES);
 export type IsolationStrategy = z.infer<typeof IsolationStrategySchema>;
-
-export const SESSION_SCOPES = ['project', 'global'] as const;
-export const SessionScopeSchema = z.enum(SESSION_SCOPES);
 
 const OUTPUT_FORMATS = ['stream-json', 'jsonl', 'text', 'opencode'] as const;
 export const OutputFormatSchema = z.enum(OUTPUT_FORMATS);

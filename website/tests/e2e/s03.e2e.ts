@@ -31,7 +31,7 @@ test('the 03 row at 1440 and 1920', async ({ page }) => {
     sh: number;
   }[] = [
     { w: 1440, h: 900, xs: [64, 398, 916], pw: 494, ph: 313, sh: 388 },
-    { w: 1920, h: 1080, xs: [264, 618, 1159], pw: 517, ph: 336, sh: 404 },
+    { w: 1920, h: 1080, xs: [128, 482, 1130], pw: 624, ph: 336, sh: 404 },
   ];
   for (const row of rows) {
     await page.setViewportSize({ width: row.w, height: row.h });
@@ -134,10 +134,10 @@ test('marginalia on their anchors', async ({ page }) => {
   expect(Math.abs(a.y - (notes.y + 78))).toBeLessThanOrEqual(1);
   expect(Math.abs(list.y - (notes.y + 122))).toBeLessThanOrEqual(1);
   expect(Math.abs(b.y - (notes.y + 284))).toBeLessThanOrEqual(1);
-  expect(Math.abs(a.x + a.w - 1656)).toBeLessThanOrEqual(1);
-  expect(Math.abs(b.x + b.w - 1632)).toBeLessThanOrEqual(1);
-  expect(Math.abs(list.x - 1584)).toBeLessThanOrEqual(1);
-  expect(Math.abs(stopWide.x - 1584)).toBeLessThanOrEqual(1);
+  expect(Math.abs(a.x + a.w - 1792)).toBeLessThanOrEqual(1);
+  expect(Math.abs(b.x + b.w - 1768)).toBeLessThanOrEqual(1);
+  expect(Math.abs(list.x - 1720)).toBeLessThanOrEqual(1);
+  expect(Math.abs(stopWide.x - 1720)).toBeLessThanOrEqual(1);
 });
 
 test('the 03 fold at 1920', async ({ page }) => {

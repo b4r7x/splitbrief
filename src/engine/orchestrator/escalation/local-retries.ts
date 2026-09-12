@@ -7,12 +7,6 @@ import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 import { runRetryStep } from './step.js';
 import { failedRetry, type EscalationContext, type RetryStepOutcome } from './types.js';
-import {
-  attachWorkflowAuthority,
-  deriveWorkflowAuthority,
-  workflowAuthority,
-  workflowMutationOptions,
-} from '../run/authority.js';
 
 function isAbortedOutcome(lastError: string, signal: AbortSignal | undefined): boolean {
   if (signal?.aborted) return true;
@@ -43,16 +37,11 @@ export async function runLocalRetries(
     current: WorkflowState,
     action: Parameters<typeof transitionAndSave>[2],
     extra: Parameters<typeof transitionAndSave>[3] = undefined,
-  ): WorkflowState => {
-    const authority = workflowAuthority(ctx);
-    const next = transitionAndSave(ctx, current, action, {
-      ...workflowMutationOptions(current, authority),
+  ): WorkflowState =>
+    transitionAndSave(ctx, current, action, {
+      expectedRevision: current.stateRevision,
       ...extra,
     });
-    if (authority !== undefined)
-      attachWorkflowAuthority(ctx, deriveWorkflowAuthority(authority, next));
-    return next;
-  };
 
   if (isAbortedOutcome(lastError, ctx.signal)) {
     return { state, task, lastError, attempts, result: failedRetry(attempts) };

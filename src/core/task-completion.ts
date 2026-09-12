@@ -6,7 +6,6 @@ export type TaskCompletionClass = 'local' | 'escalated' | 'failed' | 'skipped';
 export function classifyTaskCompletionMethod(method: TaskCompletionMethod): TaskCompletionClass {
   switch (method) {
     case 'local':
-    case 'mcp-tool':
       return 'local';
     case 'escalated-intermediate':
     case 'escalated-hint':

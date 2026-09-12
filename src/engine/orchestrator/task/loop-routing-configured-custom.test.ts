@@ -158,7 +158,7 @@ function configuredProfileConfig(
 
   return ConfigSchema.parse({
     ...makeNoValidationConfig({
-      workflow: { ...defaultWorkflow, persistTranscript: false },
+      workflow: { ...defaultWorkflow },
       approval: { enabled: false, feedRejectionsToPlanner: true },
     }),
     implementer: fallbackImplementer,

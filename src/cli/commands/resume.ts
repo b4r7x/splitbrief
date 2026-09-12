@@ -1,25 +1,21 @@
 import type { Command } from 'commander';
 import { loadOwnerWorkflowState } from '../../core/state/resume-hydration.js';
-import {
-  addWorkflowOptions,
-  assertModeFlagsExclusive,
-  assertWorktreeStartOnly,
-} from '../options.js';
+import { addWorkflowOptions } from '../options.js';
 import { canonicalizeProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
 import { readActive } from '../../core/sessions/active-pointer.js';
-import { checkServerStatus } from '../../engine/ipc/lockfile.js';
+import { checkSessionLiveness } from '../../core/sessions/lockfile.js';
 import { sessionDir } from '../../core/paths.js';
 import { resumeSavedSession } from './continue/resume.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 
 export interface ResumeDeps {
-  checkServerStatus: typeof checkServerStatus;
+  checkSessionLiveness: typeof checkSessionLiveness;
   resumeSavedSession: typeof resumeSavedSession;
 }
 
 const defaultResumeDeps: ResumeDeps = {
-  checkServerStatus,
+  checkSessionLiveness,
   resumeSavedSession,
 };
 
@@ -27,8 +23,6 @@ export async function resumeCommand(
   opts: { projectDir: string } & WorkflowOpts,
   deps: ResumeDeps = defaultResumeDeps,
 ): Promise<void> {
-  assertModeFlagsExclusive(opts);
-  assertWorktreeStartOnly(opts);
   const { projectDir } = opts;
 
   const sessionId = readActive(projectDir);
@@ -36,17 +30,17 @@ export async function resumeCommand(
     throw cliError('no active session to resume.');
   }
 
-  const status = await deps.checkServerStatus(sessionDir(projectDir, sessionId));
+  const status = deps.checkSessionLiveness(sessionDir(projectDir, sessionId));
   if (status.alive) {
     throw cliError(
-      `session '${sessionId}' is running — use \`splitbrief attach\` to view it or \`splitbrief continue\` to attach/resume.`,
+      `session '${sessionId}' is running — stop it before resuming, or use \`splitbrief continue\` once it has ended.`,
       1,
     );
   }
 
   if (status.processAlive) {
     throw cliError(
-      `server process ${status.data?.pid} exists but is unresponsive — kill it first`,
+      `session process ${status.data?.pid} exists but is unresponsive — kill it first`,
       1,
     );
   }

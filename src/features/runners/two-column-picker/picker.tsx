@@ -5,7 +5,7 @@ import { SOFT_SEP } from '../../../components/separators.js';
 import type { FilterableItem } from '../../../components/pickers/filtering.js';
 import { availableRows } from '../../../components/pickers/scroll-window.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
+import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { overlayWidth } from '../../../core/navigation/overlay-rect.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { SingleColumnPicker } from '../../../components/pickers/single-column.js';
@@ -94,6 +94,27 @@ function getHint(input: {
 }
 
 /**
+ * A value line breaks at its own separators — never inside a segment, and never leaving the
+ * separator hanging at a line end — so `Claude Code CLI · claude-sonnet-4` reads as two whole lines
+ * on a card too narrow for one.
+ */
+function wrapValueLine(text: string, width: number): string[] {
+  if (getTerminalCellWidth(text) <= width) return [text];
+  const lines: string[] = [];
+  let current = '';
+  for (const segment of text.split(SOFT_SEP)) {
+    const candidate = current === '' ? segment : `${current}${SOFT_SEP}${segment}`;
+    if (current !== '' && getTerminalCellWidth(candidate) > width) {
+      lines.push(current);
+      current = segment;
+      continue;
+    }
+    current = candidate;
+  }
+  return current === '' ? lines : [...lines, current];
+}
+
+/**
  * The read-only pane a terminal left row opens: fixed height matching
  * columnHeight so the right box never collapses.
  */
@@ -110,6 +131,9 @@ function TerminalPaneCard({
   // Only the widest viewport has room to spend a second row on a wrapped
   // sentence; below it the card truncates so the box keeps its line count.
   const wrap = contentWidth >= CARD_WRAP_MIN_WIDTH ? 'wrap' : 'truncate-end';
+  const rows = pane.lines.flatMap((line) =>
+    typeof line === 'string' ? [line] : wrapValueLine(line.whole, contentWidth),
+  );
   return (
     <Box
       flexDirection="column"
@@ -123,7 +147,7 @@ function TerminalPaneCard({
     >
       <Text color={t.text}>{sanitizeTerminalDisplayText(pane.label)}</Text>
       <Box height={1} />
-      {pane.lines.map((line, i) =>
+      {rows.map((line, i) =>
         line === '' ? (
           <Box key={`blank-${i}`} height={1} />
         ) : (

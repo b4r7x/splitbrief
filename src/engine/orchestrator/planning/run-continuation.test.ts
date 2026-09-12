@@ -90,7 +90,7 @@ describe('runPlanningPhase — abort + continuation', () => {
       sinks,
     });
 
-    expect(result.disposition).toBe('parked');
+    expect(result.disposition).toBe('ready-for-tasks');
     expect(continuationPrompts).toEqual([partialText]);
     expect(callCount).toBe(2);
   });

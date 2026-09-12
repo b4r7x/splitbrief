@@ -151,7 +151,7 @@ describe('runHeadless — recovery stops', () => {
       }),
     ).rejects.toMatchObject({
       exitCode: 1,
-      message: expect.stringContaining('Workflow did not complete — the run stopped early.'),
+      message: expect.stringContaining('Final review did not pass — workflow is incomplete.'),
     });
 
     const jsonLines = stdoutChunks
@@ -161,10 +161,7 @@ describe('runHeadless — recovery stops', () => {
       .filter((line) => line.trim().startsWith('{'))
       .map((line) => JSON.parse(line) as { type?: string; sessionId?: string });
     expect(jsonLines).toContainEqual(
-      expect.objectContaining({
-        type: 'error',
-        message: expect.stringContaining('status interrupted'),
-      }),
+      expect.objectContaining({ type: 'final_review_failed', sessionId }),
     );
   }, 20_000);
 });

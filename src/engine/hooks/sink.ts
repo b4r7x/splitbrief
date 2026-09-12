@@ -4,17 +4,15 @@ import type { EngineEvent, EventBus, EventSink } from '../events/types.js';
 import { eventPhase } from '../../core/event-phase.js';
 import { hookTrustRefusal, runTrustedHook } from './dispatch.js';
 import type { HookContext, HookOutcome } from './types.js';
-import { activeBuiltinsFor } from './builtins/registry.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 
 export function createHookSink(hooks: HooksConfig, ctx: HookContext, bus: EventBus): EventSink {
   return (event) => {
     const hookEvent = eventToHookKey(event);
     if (!hookEvent) return;
-    const builtins = activeBuiltinsFor(hookEvent, hooks);
     const entries = hooks[hookEvent] ?? [];
-    if (builtins.length === 0 && entries.length === 0) return;
-    void runBuiltinsAndEntriesAndReport({ hooks, builtins, entries, hookEvent, event, ctx, bus });
+    if (entries.length === 0) return;
+    void runEntriesAndReport({ hooks, entries, hookEvent, event, ctx, bus });
   };
 }
 
@@ -58,27 +56,23 @@ async function runAndReport(
   }
 }
 
-async function runBuiltinsAndEntriesAndReport(opts: {
+async function runEntriesAndReport(opts: {
   hooks: HooksConfig;
-  builtins: ReturnType<typeof activeBuiltinsFor>;
   entries: HookEntry[];
   hookEvent: HookEvent;
   event: EngineEvent;
   ctx: HookContext;
   bus: EventBus;
 }): Promise<void> {
-  const { hooks, builtins, entries, hookEvent, event, ctx, bus } = opts;
+  const { hooks, entries, hookEvent, event, ctx, bus } = opts;
   const phase = getEventPhase(event);
   const initialTrustRefusal = hookTrustRefusal(ctx.projectDir, hooks);
   if (initialTrustRefusal) {
     publishTrustRefusal(hookEvent, phase, bus, initialTrustRefusal);
     return;
   }
-  for (const builtin of builtins) {
-    await runAndReport(`[builtin ${builtin.name}]`, phase, bus, () => builtin.run(event, ctx));
-  }
   for (const entry of entries) {
-    const label = entry.name ?? (entry.kind === 'module' ? entry.path : entry.command);
+    const label = entry.name ?? entry.command;
     await runAndReport(`[hook ${hookEvent} ${label}]`, phase, bus, () =>
       runTrustedHook(entry, event, ctx, hooks),
     );

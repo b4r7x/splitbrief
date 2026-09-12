@@ -50,7 +50,7 @@ The middle layer. Zero React, zero Ink — pure logic in `src/engine/orchestrato
 - Disk writes (`tasks.md` as Task Brief transport, mode-dependent planning artifacts such as `research.md`, `spec.md`, and `plan.md`, `sessions/<id>/state.json`, `sessions/<id>/session.jsonl`).
 - Validation pipeline (`typecheck → lint → tests`).
 - Optional git checkpoint/commit strategy when explicitly configured.
-- Event emission through the EventBus to subscribed sinks: TUI, JSONL, session tree, stdout JSON, OTel, and hooks.
+- Event emission through the EventBus to subscribed sinks: TUI, JSONL, logger, stdout JSON, and hooks.
 
 ---
 
@@ -205,7 +205,7 @@ Skills are planner-only. The implementer never sees them — its prompts are der
 
 A **SPLITBRIEF session** is one self-contained piece of work from initial feature prompt to final summary. Every session lives in its own folder under `.splitbrief/sessions/<session-id>/`, where `<session-id>` has the form `<ISO-date>-<slug>` (e.g. `2026-04-14-add-email-validator`). Same-day slug collisions get a `-N` suffix (`2026-04-14-add-email-validator-2`).
 
-Foreground sessions are pointed to by `.splitbrief/active`, a plain text file containing the session-id. Only **one foreground session can be active at a time** in a given project directory — `splitbrief start` fails if `.splitbrief/active` already points at a live session. Detached sessions use lockfiles instead. Users who want to run truly parallel workflows should use separate git worktrees, which naturally isolate `.splitbrief/` per working directory.
+The active session is pointed to by `.splitbrief/active`, a plain text file containing the session-id. Only **one session can be active at a time** in a given project directory — `splitbrief start` fails if `.splitbrief/active` already points at a live session. Users who want to run truly parallel workflows should use separate git worktrees, which naturally isolate `.splitbrief/` per working directory.
 
 This is distinct from a **planner session** — e.g. the `session_id` Claude Code stream-json emits — which is a backend-specific conversation handle. Planner session ids are persisted inside `state.json` so they can be reused on resume (see `docs/WORKFLOW.md` §1.5). One SPLITBRIEF session may own several planner session ids over its lifetime (e.g. if the first expired and a fresh one was opened on resume).
 
@@ -259,8 +259,8 @@ The engine publishes every observable step as an `EngineEvent` on a single `Even
 
 - **EngineEvent** — the type-dispatched event contract (snake_case `type`, mandatory `ts: number`, usually `phase: Phase`) defined as `EngineEventSchema` in `src/engine/events/schema.ts`; the `EngineEvent` alias (`z.infer`) is re-exported from `src/engine/events/types.ts`. `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed` are phase-less. Single source of truth for every workflow event that crosses the engine boundary. Extended by adding a new Zod member to the contract — no separate registration step. The legacy `TuiEvent` / `OrchestratorEvent` types were removed in the 2026-04-20 release.
 - **EventBus** — synchronous pub/sub port declared in `src/engine/events/types.ts`, created by `createEventBus()`. `publish(event)` fans out to every subscribed sink inline, in registration order; a throw in one sink is caught and swallowed so it does not break fan-out to the others. Sinks that want operator-visible failures must publish their own warning before throwing.
-- **EventSink** — any subscriber that matches `(event: EngineEvent) => void`. Synchronous by contract, so ordering is preserved and a slow sink can delay later sinks. Shipped sinks: `jsonlSink`, `treeRecorderSink`, optional `tuiSink`, optional `stdoutJsonSink`, optional `otelSink`, and optional hook sink.
-- **Phase** — `'idle' | 'researching' | 'specifying' | 'reviewing-spec' | 'clarifying' | 'constitution-check' | 'planning' | 'reviewing-plan' | 'reviewing-briefs' | 'analyzing' | 'implementing' | 'validating-task' | 'escalating' | 'final-review' | 'complete'` (`src/core/schemas/enums.ts`). Phase-bearing `EngineEvent` variants carry the current `phase` so sinks (OTel span hierarchy, hook dispatcher, TUI router) can filter and group without having to reconstruct workflow position from event type alone.
+- **EventSink** — any subscriber that matches `(event: EngineEvent) => void`. Synchronous by contract, so ordering is preserved and a slow sink can delay later sinks. Shipped sinks: `jsonlSink`, `loggerSink`, optional `tuiSink`, optional `stdoutJsonSink`, and optional hook sink.
+- **Phase** — `'idle' | 'researching' | 'specifying' | 'reviewing-spec' | 'clarifying' | 'constitution-check' | 'planning' | 'reviewing-plan' | 'reviewing-briefs' | 'analyzing' | 'implementing' | 'validating-task' | 'escalating' | 'final-review' | 'complete'` (`src/core/schemas/enums.ts`). Phase-bearing `EngineEvent` variants carry the current `phase` so sinks (hook dispatcher, TUI router) can filter and group without having to reconstruct workflow position from event type alone.
 
 Gating callbacks (`onApprovalNeeded`, `onQuestionAsked`, `onContinuationNeeded`, `onCostApprovalNeeded`, `onUserEditConflict`, `onTieredApproval`, `onTaskReviewNeeded`) are a **separate** mechanism — they are discrete `await`-able request/response pairs supplied by the workflow host. `onComplete(summary)` is a synchronous completion notification. Budget pressure is not gated by a callback: it publishes `budget_*` events and pauses through the recovery channel. Use the bus for broadcast; use callbacks for gates.
 
@@ -270,15 +270,15 @@ Gating callbacks (`onApprovalNeeded`, `onQuestionAsked`, `onContinuationNeeded`,
 
 ## Hooks (workflow)
 
-Workflow lifecycle hooks let users run custom commands or in-process modules at well-known moments (pre/post task, pre/post commit, etc.). Built on top of the EventBus — `post_*`/`on_*` are a fire-and-forget sink; `pre_*` hooks run sequentially at the orchestrator call site and a `deny` outcome short-circuits the upcoming action. Hooks are declared under `hooks:` in `.splitbrief/config.yaml`. See [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — **not** to be confused with React hooks ([HOOKS.md](./HOOKS.md)).
+Workflow lifecycle hooks let users run custom commands at well-known moments (pre/post task, pre/post commit, etc.). Built on top of the EventBus — `post_*`/`on_*` are a fire-and-forget sink; `pre_*` hooks run sequentially at the orchestrator call site and a `deny` outcome short-circuits the upcoming action. Hooks are declared under `hooks:` in `.splitbrief/config.yaml`. See [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — **not** to be confused with React hooks ([HOOKS.md](./HOOKS.md)).
 
-- **HookEvent** — the lifecycle trigger keys (`src/core/schemas/hooks.ts`): `'pre_planning' | 'pre_task' | 'post_task' | 'pre_validation' | 'post_validation' | 'pre_commit' | 'post_commit' | 'pre_escalation' | 'pre_compact' | 'on_error' | 'on_complete'`. `pre_*` hooks block the upcoming action (a `deny` outcome short-circuits it); `post_*` and `on_*` hooks are fire-and-forget through the EventBus sink.
-- **HookEntry** — one configured hook: discriminated on `kind: 'command' | 'module'`. `command` entries carry `{ command, args, timeout_ms, on_failure }`; `module` entries carry `{ path, timeout_ms, on_failure }`. `on_failure` is one of `'block' | 'warn' | 'ignore'`. `timeout_ms` is bounded at 300_000 ms with a 30_000 ms default.
-- **HooksConfig** — the `hooks:` section of `.splitbrief/config.yaml`: a map from `HookEvent` to `HookEntry[]`, plus an optional `builtin: Record<string, boolean>` toggles block for shipped hooks (e.g. `prettier-on-change`, `block-secrets`).
+- **HookEvent** — the lifecycle trigger keys (`src/core/schemas/hooks.ts`): `'pre_planning' | 'pre_task' | 'post_task' | 'pre_validation' | 'post_validation' | 'pre_commit' | 'post_commit' | 'pre_escalation' | 'on_error' | 'on_complete'`. `pre_*` hooks block the upcoming action (a `deny` outcome short-circuits it); `post_*` and `on_*` hooks are fire-and-forget through the EventBus sink.
+- **HookEntry** — one configured hook, `kind: 'command'`, carrying `{ command, args, timeout_ms, on_failure }`. `on_failure` is one of `'block' | 'warn' | 'ignore'`. `timeout_ms` is bounded at 300_000 ms with a 30_000 ms default.
+- **HooksConfig** — the `hooks:` section of `.splitbrief/config.yaml`: a map from `HookEvent` to `HookEntry[]`.
 
 ## Hook trust
 
-First-time trust gate for hook configs. `src/core/hooks/trust-digest.ts` computes a hash from the hook section plus module hook file digests and `src/core/hooks/trust.ts` holds the grant against that hash; `src/cli/hook-trust-prompt.ts` prompts in a TTY the first time, showing each hook's executable, the absolute path it resolves to here, and its argv, then asking `Trust these hooks for this project? [y/N]`. Answering `y` writes a receipt to `~/.splitbrief/trust/hooks.json` keyed by the canonical path of this checkout, so the grant belongs to this machine and this checkout and a repository can neither ship nor forge one. Any edit to the hooks section or module hook files invalidates the hash and re-prompts. In CI (non-TTY), `--allow-hooks` is required — otherwise SPLITBRIEF refuses to start. This prevents silent RCE via a config or hook-file edit.
+First-time trust gate for hook configs. `src/core/hooks/trust-digest.ts` computes a hash from the hook section and `src/core/hooks/trust.ts` holds the grant against that hash; `src/cli/hook-trust-prompt.ts` prompts in a TTY the first time, showing each hook's executable, the absolute path it resolves to here, and its argv, then asking `Trust these hooks for this project? [y/N]`. Answering `y` writes a receipt to `~/.splitbrief/trust/hooks.json` keyed by the canonical path of this checkout, so the grant belongs to this machine and this checkout and a repository can neither ship nor forge one. Any edit to the hooks section invalidates the hash and re-prompts. In CI (non-TTY), `--allow-hooks` is required — otherwise SPLITBRIEF refuses to start. This prevents silent RCE via a config edit.
 
 ## Repo-map
 
@@ -318,8 +318,8 @@ Key rules:
 - `state.json` is what `splitbrief resume` reads to rebuild the in-memory `WorkflowState`. It is overwritten on every phase transition.
 - `summary.json` is written exactly once, at end-of-run.
 - `session.jsonl` is append-only and the single source of truth for history (see "Events & messages" below).
-- `tasks.md` is the human-readable Task Brief transport. `research.md`, `spec.md`, `plan.md`, and speckit artifacts are supporting artifacts written when the corresponding planner phase produces them. They are **always** written when produced, regardless of `workflow.persistTranscript`.
-- `.splitbrief/active` holds the session-id for foreground sessions that should block another same-directory `splitbrief start`. Detached sessions use lockfiles instead.
+- `tasks.md` is the human-readable Task Brief transport. `research.md`, `spec.md`, `plan.md`, and speckit artifacts are supporting artifacts written when the corresponding planner phase produces them. They are **always** written when produced.
+- `.splitbrief/active` holds the session-id of the session that should block another same-directory `splitbrief start`.
 
 ---
 
@@ -340,7 +340,7 @@ Entries come in three **kinds**, distinguished by the `kind` field:
 ```
 
 - `kind: "event"` — operational metadata. Workflow lifecycle, phase transitions, validation results, escalation triggers, artifact writes, errors. Small, always logged.
-- `kind: "message"` — conversation content. User prompts, planner text chunks, clarification Q&A, approval comments, planner reviews. Text-heavy, **opt-outable** via `workflow.persistTranscript: false` (default `true`).
+- `kind: "message"` — conversation content. User prompts, planner text chunks, clarification Q&A, approval comments, planner reviews. Text-heavy.
 - `kind: "summary"` — compaction output. Contains `text`, `summarizedUpTo`, optional `tokenEstimate`, and optional `structured` data. Resume uses the latest summary as a synthetic message, then loads later messages.
 
 Filtering happens at read time: `lines.filter(l => l.kind === 'message')`. There is no separate file for events vs. messages — this is deliberate. A log is a chronological stream, and splitting it would force consumers to merge-sort at every read while opening new crash-atomicity problems. This is the same design Claude Code uses (`~/.claude/projects/<cwd>/<id>.jsonl`), and the same pattern event-sourcing frameworks settle on.

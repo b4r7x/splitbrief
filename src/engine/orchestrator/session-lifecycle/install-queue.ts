@@ -28,7 +28,6 @@ export function installQueueHandler(opts: InstallQueueHandlerOpts): void {
       getState: opts.getTrackedState,
       setState: opts.setTrackedState,
       bus: opts.bus,
-      persistTranscript: opts.config.workflow.persistTranscript,
       planner: opts.planner,
       serialize,
       ...(opts.signal !== undefined && { signal: opts.signal }),

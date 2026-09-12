@@ -25,6 +25,7 @@ import {
   META_PROVIDER_IDS,
   PLANNER_TOOL_IDS,
   PROVIDER_IDS,
+  TaskCompletionMethodSchema,
   WorkflowModeSchema,
   normalizeWorkflowMode,
   PlannerApiProviderIdSchema,
@@ -241,5 +242,24 @@ describe('EffortLevelSchema', () => {
   });
   it.each(['ultra', 'default', 'auto', ''])('rejects "%s"', (input) => {
     expect(EffortLevelSchema.safeParse(input).success).toBe(false);
+  });
+});
+
+describe('TaskCompletionMethodSchema', () => {
+  it.each([
+    'local',
+    'escalated-intermediate',
+    'escalated-hint',
+    'escalated-full',
+    'failed',
+    'skipped',
+  ])('accepts "%s"', (input) => {
+    expect(TaskCompletionMethodSchema.parse(input)).toBe(input);
+  });
+  it('maps the 0.1.0 legacy "mcp-tool" method onto "local"', () => {
+    expect(TaskCompletionMethodSchema.parse('mcp-tool')).toBe('local');
+  });
+  it.each(['mcp', 'done', ''])('rejects "%s"', (input) => {
+    expect(TaskCompletionMethodSchema.safeParse(input).success).toBe(false);
   });
 });

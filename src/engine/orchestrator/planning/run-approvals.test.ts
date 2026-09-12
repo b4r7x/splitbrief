@@ -84,6 +84,20 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     }
   });
 
+  it('skipping the briefs approval loop still reaches implementing', async () => {
+    const { callbacks } = makeCallbacks();
+    const planner = makePassingPlanner();
+
+    const { result } = await runPhase({
+      planner,
+      callbacks,
+      config: makeConfig({ workflow: auto('standard') }),
+    });
+
+    expect(result.disposition).toBe('ready-for-tasks');
+    expect(result.state.phase).toBe('implementing');
+  });
+
   it('user comment → spec regenerated, workflow completes', async () => {
     const onApprovalNeeded = sequencedApproval([
       { approved: false, action: 'revise', comment: 'add auth section' },

@@ -32,7 +32,6 @@ function RowSegment({ segment }: { segment: ConversationRowSegment }) {
   );
 }
 
-const ACTIVE_DOT_GLYPH = `${glyph('statusInProgress')} `;
 const ACTIVE_DOT_INTERVAL_MS = 500;
 
 function ActiveDot({ theme, leadingWidth }: { theme: Theme; leadingWidth: number }) {
@@ -48,7 +47,7 @@ function ActiveDot({ theme, leadingWidth }: { theme: Theme; leadingWidth: number
   const lit = reduced || on;
   return (
     <Text color={lit ? theme.text : theme.textDim} bold={lit}>
-      {alignLeadingWithinWidth(ACTIVE_DOT_GLYPH, leadingWidth)}
+      {alignLeadingWithinWidth(`${glyph('statusInProgress')} `, leadingWidth)}
     </Text>
   );
 }

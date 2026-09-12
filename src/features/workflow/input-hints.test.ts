@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  resolveAttachBoxHint,
-  resolveAttachFeedbackHint,
-  resolveAttachInputHint,
   resolveCancelledHints,
   resolveInputHint,
   resolveReviewKeyLegend,
@@ -103,51 +100,6 @@ describe('resolveCancelledHints', () => {
       placeholder: 'esc for home…',
       byline: '/quit to exit',
     });
-  });
-});
-
-describe('resolveAttachInputHint', () => {
-  it('renders connection states as a single concrete dim line', () => {
-    expect(resolveAttachInputHint('connected')).toBe('Queue a message to the running workflow');
-    expect(resolveAttachInputHint('reconnecting')).toBe('Reconnecting to server…');
-    expect(resolveAttachInputHint('detached')).toBe('Detached');
-    expect(resolveAttachInputHint('connecting')).toBe('Connecting to server…');
-  });
-
-  it('leads the failed line with the error word in the project error voice', () => {
-    const hint = resolveAttachInputHint('failed');
-
-    expect(hint.startsWith('Failed ')).toBe(true);
-    expect(hint).toContain('ctrl+d to exit');
-  });
-});
-
-describe('resolveAttachFeedbackHint', () => {
-  it('blanks the feedback line when connected so the composer placeholder owns the hint', () => {
-    expect(resolveAttachFeedbackHint('connected')).toBe('');
-  });
-
-  it('keeps the connection status as the feedback byline while not connected', () => {
-    expect(resolveAttachFeedbackHint('reconnecting')).toBe('Reconnecting to server…');
-    expect(resolveAttachFeedbackHint('detached')).toBe('Detached');
-    expect(resolveAttachFeedbackHint('connecting')).toBe('Connecting to server…');
-    expect(resolveAttachFeedbackHint('failed').startsWith('Failed ')).toBe(true);
-  });
-});
-
-describe('resolveAttachBoxHint', () => {
-  it('shows the detach byline with the cost token only while connected', () => {
-    expect(resolveAttachBoxHint('connected')).toEqual({ keys: 'ctrl+d detach', cost: true });
-  });
-
-  it('keeps the detach byline but drops the cost token while not yet connected', () => {
-    expect(resolveAttachBoxHint('connecting')).toEqual({ keys: 'ctrl+d detach', cost: false });
-    expect(resolveAttachBoxHint('reconnecting')).toEqual({ keys: 'ctrl+d detach', cost: false });
-    expect(resolveAttachBoxHint('failed')).toEqual({ keys: 'ctrl+d detach', cost: false });
-  });
-
-  it('blanks the byline once detached so the composer shows no control', () => {
-    expect(resolveAttachBoxHint('detached')).toEqual({ keys: '', cost: false });
   });
 });
 

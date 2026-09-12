@@ -1,6 +1,6 @@
 import { sanitizeTerminalDiagnosticText } from '../../utils/display-text.js';
 import { isRecord } from '../../utils/type-guards.js';
-import { protectConsumerPayload } from '../../core/consumer-policy.js';
+import { boundConsumerPayload } from '../../core/payload-bounds.js';
 import type {
   TaskCompilationCallEnvelope,
   TaskCompilationFailureCode,
@@ -344,7 +344,7 @@ function boundRunnerCallStringPayload(
   label: string,
   code: string,
 ): RunnerCallBoundedValue<string> {
-  const bounded = protectConsumerPayload({
+  const bounded = boundConsumerPayload({
     context: 'session-log',
     payload: value,
     overrides: { maxBytes, maxStringBytes: maxBytes },
@@ -369,7 +369,7 @@ function boundRunnerCallPayload(
   label: string,
   code: string,
 ): RunnerCallBoundedValue<unknown> {
-  const bounded = protectConsumerPayload({
+  const bounded = boundConsumerPayload({
     context: 'session-log',
     payload: value,
     overrides: { maxBytes, maxStringBytes: maxBytes },

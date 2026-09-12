@@ -1,13 +1,11 @@
+import { existsSync } from 'node:fs';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { Session } from '../../../core/schemas/session.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
-import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
+import { DEFAULT_WORKFLOW_MODE, type Config } from '../../../core/schemas/config.js';
 import { createInitialState } from '../../../core/state/machine.js';
-import type { StateAuthorityReceipt } from '../../../core/state/types.js';
-import { releaseStateAuthority } from '../../../core/state/authority.js';
-import { featureForTranscriptPolicy } from '../../../core/sessions/session-id.js';
 import { pruneOrphanSessions } from '../../../core/sessions/orphans.js';
 import { recordRunnerPid, releaseRunnerPid } from '../../../core/sessions/runner-pids.js';
 import { runPricingIdentity } from '../../../core/providers/pricing-identity.js';
@@ -33,41 +31,50 @@ import { withShutdownHandlers } from '../session-lifecycle/shutdown.js';
 import { installQueueHandler } from '../session-lifecycle/install-queue.js';
 import { createRunIsolation } from '../isolation/create.js';
 
-import {
-  attachWorkflowAuthority,
-  refreshWorkflowAuthority,
-  type WorkflowAuthorityHolder,
-} from './authority.js';
 import { type RunWorkflowOptions, initializeWorkflow } from './init.js';
 import { clearBridgedCliState } from '../../runners/sandbox-state-bridge.js';
 import { getIsolationStrategy } from '../../../core/config/accessors/values.js';
 import { reapOrphanRunners } from './orphan-reaper.js';
 import { runPlanningPhases } from './phases.js';
 import { runTasksAndReview } from './task-execution.js';
-import { acquireAuthoritativeWorkflowState } from './authoritative-state.js';
 import {
   withPlannerCallPublishing,
   withReviewerCallPublishing,
   type PlannerCallPublisherContext,
 } from './call-publishing.js';
 import { acquireLiveness } from './liveness.js';
-import { createWorkflowRecoveryBinding } from './recovery-binding.js';
-import { WORKFLOW_REWIND_ABORT_REASON, reconcileRewindAuthority } from './rewind-authority.js';
-import { matchesPersistedExecutionPermit, parkedPlanningResult } from '../planning/handoff.js';
-
-function shouldPreserveActiveSession(
-  state: WorkflowState | undefined,
-  signal: AbortSignal | undefined,
-): boolean {
-  return (
-    signal?.reason === WORKFLOW_REWIND_ABORT_REASON || shouldPreserveActiveState(state ?? null)
-  );
-}
+import { readWorkflowStateHead } from '../state-ops.js';
+import { sessionDir } from '../../../core/paths.js';
 
 function resolveSessionStart(savedState: WorkflowState | undefined): number {
   if (!savedState) return Date.now();
   const original = Date.parse(savedState.startedAt);
   return Number.isNaN(original) ? Date.now() : original;
+}
+
+/**
+ * A new-workflow run applies START, which the state machine accepts only from
+ * `idle`. `prepareNewSession` allocates a session directory that cannot already
+ * exist (a non-recursive mkdir plus an exclusive ownership marker), and the only
+ * other path that carries a resume state — a seat swap — is typed `purpose:
+ * 'resume'`, so no caller can reach here over a started session. Refusing before
+ * the run touches liveness, isolation, or state keeps that an internal invariant
+ * instead of a transition error raised half-way into a session it then marks
+ * failed.
+ */
+function assertNewWorkflowSessionUnstarted(
+  ref: Readonly<{ projectDir: string; sessionId: string }>,
+): void {
+  // A run whose session directory has not been created yet holds no state, and
+  // reading the head would resolve a path that does not exist.
+  if (!existsSync(sessionDir(ref.projectDir, ref.sessionId))) return;
+  const head = readWorkflowStateHead(ref);
+  if (head === null || head.state.phase === 'idle') return;
+  throw error(
+    'workflow-session-already-started',
+    `Internal invariant: session ${ref.sessionId} already holds workflow state at phase ${head.state.phase}; a new-workflow run requires a freshly allocated session.`,
+    { sessionId: ref.sessionId, phase: head.state.phase },
+  );
 }
 
 export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
@@ -76,6 +83,9 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   const feature = runtime.feature;
   const projectDir = session.ref.projectDir;
   const sessionId = session.ref.sessionId;
+  if (opts.prepared.purpose === 'new-workflow') {
+    assertNewWorkflowSessionUnstarted({ projectDir, sessionId });
+  }
   const requestedSavedState = opts.savedState ?? runtime.resumeState;
   let savedState: WorkflowState | undefined;
   const { selectedSkills } = opts;
@@ -85,29 +95,29 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   // boundary on an interrupt nobody requested.
   opts.sinks.consumeBoundaryInterrupt?.();
   const startTime = resolveSessionStart(requestedSavedState);
-  const ident = runPricingIdentity(config);
-  const persistTranscript = config.workflow.persistTranscript;
-  const plannerTool = requestedSavedState?.plannerTool ?? ident.plannerTool;
-  const plannerModel = requestedSavedState?.plannerModel ?? ident.plannerModel;
-  const implementerTool = requestedSavedState?.implementerTool ?? ident.implementerTool;
-  const implementerModel = requestedSavedState?.implementerModel ?? ident.implementerModel;
-  const reviewerTool = requestedSavedState?.reviewerTool ?? ident.reviewerTool;
-  const reviewerModel = requestedSavedState?.reviewerModel ?? ident.reviewerModel;
-  const summaryBase: SummaryBase = {
-    feature,
-    startTime,
-    plannerTool,
-    ...(plannerModel !== undefined && { plannerModel }),
-    implementerTool,
-    ...(implementerModel !== undefined && { implementerModel }),
-    ...(reviewerTool !== undefined && { reviewerTool }),
-    ...(reviewerModel !== undefined && { reviewerModel }),
-    mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
-    projectDir,
-    sessionId,
-    persistTranscript,
-    ...(opts.modelCache !== undefined && { pricingCache: opts.modelCache }),
+  // The run's display identity is the seat it is on now, so it comes from the
+  // config and never from the saved state. The seat the tokens were spent
+  // against is recorded in the state, and `buildSummary` prices the run from
+  // there — a run that swapped seats mid-flight names the new one and is still
+  // costed against the old one.
+  const seatIdentityOf = (source: Config): SummaryBase => {
+    const ident = runPricingIdentity(source);
+    return {
+      feature,
+      startTime,
+      plannerTool: ident.plannerTool,
+      ...(ident.plannerModel !== undefined && { plannerModel: ident.plannerModel }),
+      implementerTool: ident.implementerTool,
+      ...(ident.implementerModel !== undefined && { implementerModel: ident.implementerModel }),
+      ...(ident.reviewerTool !== undefined && { reviewerTool: ident.reviewerTool }),
+      ...(ident.reviewerModel !== undefined && { reviewerModel: ident.reviewerModel }),
+      mode: source.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+      projectDir,
+      sessionId,
+      ...(opts.modelCache !== undefined && { pricingCache: opts.modelCache }),
+    };
   };
+  let summaryBase = seatIdentityOf(config);
 
   const metadata: SpecMetadata = {
     plannerTool: summaryBase.plannerTool,
@@ -117,6 +127,10 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
   };
 
+  // A seat swap re-prepares this same session, which mints a new active-pointer
+  // receipt; finalization must clear the pointer with the receipt that is
+  // actually on disk, not the one this run started with.
+  let activeSession = session.active;
   let trackedState: WorkflowState | undefined;
   let currentTask: Pick<Task, 'file' | 'action'> | undefined;
   let result: Summary | undefined;
@@ -126,25 +140,9 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   let workflowPhase: WorkflowState['phase'] | undefined;
   let cancellationPublished = false;
   let transientRewindFeedback = opts.rewindFeedback;
-  let stateAuthority: StateAuthorityReceipt | undefined;
-  let authorityHolder: WorkflowAuthorityHolder | undefined;
 
   const trackState = (state: WorkflowState): void => {
     trackedState = state;
-    if (
-      stateAuthority === undefined ||
-      authorityHolder === undefined ||
-      (state.stateRevision ?? 0) === authorityHolder.current.stateRevision
-    ) {
-      return;
-    }
-    authorityHolder.current = refreshWorkflowAuthority(
-      { projectDir, sessionId },
-      authorityHolder.current,
-      state,
-    );
-    stateAuthority = authorityHolder.current;
-    if (wctx !== undefined) attachWorkflowAuthority(wctx, stateAuthority);
   };
 
   const publishWorkflowCancellation = (reason: typeof WORKFLOW_CANCEL_REASON_USER): void => {
@@ -171,7 +169,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     sessionId,
     feature,
     mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
-    persistTranscript,
     signal: opts.signal,
   });
 
@@ -226,20 +223,15 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
         sessionId,
         getTrackedState: () => trackedState,
         getCurrentTask: () => currentTask,
-        authority: () => authorityHolder?.current,
       },
       async () => {
         try {
-          const authoritative = acquireAuthoritativeWorkflowState({
-            projectDir,
-            sessionId,
-            feature,
-            purpose: opts.prepared.purpose === 'new-workflow' ? 'new-workflow' : 'resume',
-          });
-          stateAuthority = authoritative.authority;
-          authorityHolder = { current: authoritative.authority };
-          savedState = authoritative.newWorkflow ? undefined : authoritative.state;
-          trackedState = authoritative.state;
+          const savedStateResult =
+            opts.prepared.purpose === 'new-workflow'
+              ? null
+              : readWorkflowStateHead({ projectDir, sessionId });
+          savedState = savedStateResult?.state;
+          trackedState = savedState ?? createInitialState(feature);
           const resumeHolder: ResumeContextHolder = { messages: [] };
           const init = await initializeWorkflow({
             opts,
@@ -250,10 +242,8 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             setTrackedState: trackState,
             resumeHolder,
             isolation,
-            authority: authoritative.authority,
-            authorityHolder,
-            savedState: authoritative.state,
-            newWorkflow: authoritative.newWorkflow,
+            savedState,
+            newWorkflow: opts.prepared.purpose === 'new-workflow',
           });
           if (!init.ok) {
             workflowBus = init.bus;
@@ -263,26 +253,27 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             return;
           }
 
+          activeSession = init.prepared.session.active;
+          // A seat swap re-prepared the run on a switched config; every summary
+          // from here on names the seat the run is actually running.
+          summaryBase = seatIdentityOf(init.prepared.config);
           workflowBus = init.wctx.bus;
           const callPublisher: PlannerCallPublisherContext = {
             bus: init.wctx.bus,
             getPhase: () => trackedState?.phase ?? createInitialState(feature).phase,
           };
           const publishingPlanner = withPlannerCallPublishing(init.wctx.planner, callPublisher);
-          wctx = attachWorkflowAuthority(
-            {
-              ...init.wctx,
-              planner: publishingPlanner,
-              reviewer:
-                init.wctx.reviewer === init.wctx.planner
-                  ? publishingPlanner
-                  : withReviewerCallPublishing(init.wctx.reviewer, callPublisher),
-              setRewindFeedback: (feedback) => {
-                transientRewindFeedback = feedback;
-              },
+          wctx = {
+            ...init.wctx,
+            planner: publishingPlanner,
+            reviewer:
+              init.wctx.reviewer === init.wctx.planner
+                ? publishingPlanner
+                : withReviewerCallPublishing(init.wctx.reviewer, callPublisher),
+            setRewindFeedback: (feedback) => {
+              transientRewindFeedback = feedback;
             },
-            authorityHolder.current,
-          );
+          };
           trackedState = init.state;
           const phaseTimings: Record<string, number> = {};
 
@@ -298,26 +289,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             ...(wctx.signal !== undefined && { signal: wctx.signal }),
           });
 
-          const recoveryOwner = authorityHolder;
-          const workflowContext = wctx;
-          const createRecovery = () =>
-            createWorkflowRecoveryBinding({
-              wctx: workflowContext,
-              getState: () => trackedState ?? init.state,
-              setState: (s) => {
-                trackedState = s;
-                recoveryOwner.current = refreshWorkflowAuthority(
-                  { projectDir, sessionId },
-                  recoveryOwner.current,
-                  s,
-                );
-                stateAuthority = recoveryOwner.current;
-                attachWorkflowAuthority(workflowContext, stateAuthority);
-              },
-              getAuthority: () => recoveryOwner.current,
-            });
-          let recovery = createRecovery();
-
           let stateForPlanning = init.state;
           let savedStateForPlanning = savedState;
           while (true) {
@@ -331,47 +302,36 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
               phaseTimings,
               startTime,
               setTrackedState: trackState,
-              recovery: recovery,
               ...(feedbackForPlanning !== undefined && { rewindFeedback: feedbackForPlanning }),
             });
-            const handoff =
-              planning.disposition === 'ready-for-tasks'
-                ? matchesPersistedExecutionPermit(planning, planning.state)
-                  ? planning
-                  : parkedPlanningResult(sessionId, planning.state, recovery.projection)
-                : planning;
-            trackState(handoff.state);
+            trackState(planning.state);
 
-            switch (handoff.disposition) {
+            switch (planning.disposition) {
               case 'terminal':
-                if (handoff.outcome === 'failed') sessionStatus = 'failed';
-                result = buildSummary({ ...summaryBase, state: handoff.state, phaseTimings });
-                return;
-              case 'parked':
-                result = buildSummary({ ...summaryBase, state: handoff.state, phaseTimings });
+                if (planning.outcome === 'failed') sessionStatus = 'failed';
+                result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings });
                 return;
               case 'ready-for-tasks':
                 break;
               default:
-                return assertNever(handoff);
+                return assertNever(planning);
             }
 
             if (opts.signal?.aborted) {
-              result = buildSummary({ ...summaryBase, state: handoff.state, phaseTimings });
+              result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings });
               return;
             }
 
             const taskRun = await runTasksAndReview({
               wctx,
-              state: handoff.state,
-              planning: handoff,
+              state: planning.state,
+              planning,
               summaryBase,
               phaseTimings,
               setTrackedState: trackState,
               setCurrentTask: (t) => {
                 currentTask = t;
               },
-              recovery: recovery,
             });
             result = taskRun.summary;
             sessionStatus = taskRun.completed ? 'complete' : 'interrupted';
@@ -386,31 +346,24 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             ) {
               stateForPlanning = taskRun.state;
               savedStateForPlanning = taskRun.state;
-              recovery = createRecovery();
               continue;
             }
             return;
           }
         } catch (err) {
           await killAllProcesses();
-          const rewind = reconcileRewindAuthority({
-            projectDir,
-            sessionId,
-            signal: opts.signal,
-            authority: stateAuthority,
-            holder: authorityHolder,
-          });
-          if (rewind.authority !== undefined) stateAuthority = rewind.authority;
-          if (rewind.state !== undefined) trackedState = rewind.state;
           if (opts.signal?.aborted) {
             sessionStatus = 'interrupted';
           } else {
-            if (wctx && trackedState)
-              publishError({
-                bus: wctx.bus,
-                phase: trackedState.phase,
-                message: toErrorMessage(err),
-              });
+            const bus = wctx?.bus ?? workflowBus;
+            if (bus && trackedState) {
+              publishError({ bus, phase: trackedState.phase, message: toErrorMessage(err) });
+            } else {
+              // A failure raised before the run has a bus has no event to carry
+              // it; without this the run returns an empty summary and says
+              // nothing about why.
+              warnError('workflow initialization', err);
+            }
             sessionStatus = 'failed';
           }
           result = buildSummary({
@@ -435,12 +388,12 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
         saveFinalSession({
           projectDir,
           sessionId,
-          active: session.active,
-          feature: featureForTranscriptPolicy(feature, persistTranscript),
+          active: activeSession,
+          feature,
           startTime,
           status: sessionStatus,
           summary,
-          preserveActive: shouldPreserveActiveSession(trackedState, opts.signal),
+          preserveActive: shouldPreserveActiveState(trackedState),
         });
         return summary;
       }
@@ -449,12 +402,12 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     saveFinalSession({
       projectDir,
       sessionId,
-      active: session.active,
-      feature: featureForTranscriptPolicy(feature, persistTranscript),
+      active: activeSession,
+      feature,
       startTime,
       status: sessionStatus,
       summary: result,
-      preserveActive: shouldPreserveActiveSession(trackedState, opts.signal),
+      preserveActive: shouldPreserveActiveState(trackedState),
     });
     return result;
   } finally {
@@ -473,14 +426,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     await isolation.dispose().catch((err: unknown) => {
       warnError('run isolation disposal', err);
     });
-    if (stateAuthority !== undefined) {
-      try {
-        if (trackedState !== undefined) trackState(trackedState);
-        releaseStateAuthority({ projectDir, sessionId }, stateAuthority);
-      } catch (err) {
-        warnError('workflow state authority cleanup', err);
-      }
-    }
     await releaseLiveness();
   }
 }

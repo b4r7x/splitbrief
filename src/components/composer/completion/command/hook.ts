@@ -8,29 +8,13 @@ import { suggestRuntimeCommand } from '../../../../core/runtime/commands/lookup.
 import { detectedModelFact, seatSupportsImages } from '../../../../core/runners/capabilities.js';
 import { configStore } from '../../../../stores/project/config.js';
 import { modelCacheStore } from '../../../../stores/discovery/model-cache/state.js';
-import { routerStore } from '../../../../stores/navigation/router.js';
 import { inputHistoryStore } from '../../../../stores/ui/input-history.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
 import type { CommandCompletionRow } from './menu.js';
 import { useCompletionSelection } from '../use-completion-selection.js';
 import { useCompletionNavigation } from '../use-completion-navigation.js';
 
-function matchingRows(cmd: RuntimeCommandDef, query: string): RuntimeCommandDef[] {
-  const rows: RuntimeCommandDef[] = [];
-  if (cmd.name.toLowerCase().startsWith(query)) rows.push(cmd);
-  for (const alias of cmd.aliases ?? []) {
-    if (!alias.name.toLowerCase().startsWith(query)) continue;
-    rows.push({
-      ...cmd,
-      name: alias.name,
-      description: `Alias for ${cmd.name}${alias.args ? ` ${alias.args}` : ''}`,
-    });
-  }
-  return rows;
-}
-
 interface UseCommandCompletionOptions {
-  // Pre-filtered by createRuntimeCommands (e.g. attached clients expose ATTACHED_AVAILABLE_COMMANDS).
   commands: RuntimeCommandDef[];
   currentScreen: Screen;
   value: string;
@@ -88,12 +72,8 @@ export function useCommandCompletion({
 }: UseCommandCompletionOptions): UseCommandCompletionResult {
   const phase = lifecycleStore.use((s) => s.phase);
   const config = configStore.use((s) => s.config);
-  const attached = routerStore.use(
-    (route) => route.screen === 'workflow' && route.execution.kind === 'attached',
-  );
   const guardContext: CommandGuardContext = {
     phase,
-    attached,
     plannerSupportsImages:
       config !== null &&
       seatSupportsImages({
@@ -116,17 +96,9 @@ export function useCommandCompletion({
   // Past the space the menu completes the second token of a closed argument set. It closes for
   // `free` args, for `noarg` commands, and when no option matches the typed prefix, so it never
   // swallows Enter for a line the composer must submit raw to dispatch.
-  // An alias with `args` carries a pre-filled argument that dispatch prepends to whatever follows,
-  // so only the command name and no-arg aliases open the option menu.
   const argCommand =
     hasArgs && !/\s/.test(argToken)
-      ? validCommands.find(
-          (cmd) =>
-            cmd.name.toLowerCase() === query ||
-            (cmd.aliases ?? []).some(
-              (alias) => alias.name.toLowerCase() === query && alias.args === undefined,
-            ),
-        )
+      ? validCommands.find((cmd) => cmd.name.toLowerCase() === query)
       : undefined;
   const closedArgs =
     argCommand?.kind === 'arg' && argCommand.args.kind === 'closed' ? argCommand.args : null;
@@ -146,7 +118,7 @@ export function useCommandCompletion({
   const argPrefix = argRows === null ? null : `${commandToken} `;
   const matchQuery = argRows === null ? query : argToken.toLowerCase();
   const filtered = showSuggestions
-    ? (argRows ?? validCommands.flatMap((cmd) => matchingRows(cmd, query)))
+    ? (argRows ?? validCommands.filter((cmd) => cmd.name.toLowerCase().startsWith(query)))
     : [];
 
   const fuzzyMatch =

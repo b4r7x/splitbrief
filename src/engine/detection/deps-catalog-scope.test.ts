@@ -76,10 +76,9 @@ describe.runIf(process.platform !== 'win32')('native catalog discovery scope', (
       signal: new AbortController().signal,
     });
 
-    const opencodePlanner = attempts.find(
-      (attempt) => attempt.connection.role === 'planner' && attempt.connection.tool === 'opencode',
-    );
-    expect(opencodePlanner).toEqual(
+    const opencodeAttempts = attempts.filter((attempt) => attempt.connection.tool === 'opencode');
+    expect(opencodeAttempts).toHaveLength(1);
+    expect(opencodeAttempts[0]).toEqual(
       expect.objectContaining({
         outcome: { kind: 'success', value: [{ id: 'openai/gpt-5.4', nativeOrder: 0 }] },
       }),
@@ -88,9 +87,15 @@ describe.runIf(process.platform !== 'win32')('native catalog discovery scope', (
     expect(readFileSync(argsLog, 'utf8').trim().split('\n')).toContain(
       'models|--verbose|--refresh|',
     );
+    expect(
+      readFileSync(argsLog, 'utf8')
+        .trim()
+        .split('\n')
+        .filter((line) => line === 'models|--verbose|--refresh|'),
+    ).toHaveLength(1);
   });
 
-  it('probes a non-active opencode and keeps every provider variant of a duplicated model', async () => {
+  it('probes each catalog-capable tool once and keeps every provider variant of a duplicated model', async () => {
     writeShim(shimDir, 'codex', [
       'if [ "$1" = "--version" ]; then',
       "  printf '%s\\n' 'codex-cli 0.146.0'",
@@ -123,26 +128,82 @@ describe.runIf(process.platform !== 'win32')('native catalog discovery scope', (
       attempts.filter((attempt) => attempt.connection.tool === tool);
 
     const opencodeAttempts = forTool('opencode');
-    expect(opencodeAttempts.map((attempt) => attempt.connection.role).toSorted()).toEqual([
-      'implementer',
-      'planner',
-    ]);
-    for (const attempt of opencodeAttempts) {
-      expect(attempt.outcome).toEqual({
-        kind: 'success',
-        value: [
-          { id: 'ollama-cloud/deepseek-v4-flash', nativeOrder: 0 },
-          { id: 'opencode-go/deepseek-v4-flash', nativeOrder: 1 },
-        ],
-      });
-    }
+    expect(opencodeAttempts).toHaveLength(1);
+    expect(opencodeAttempts[0]?.outcome).toEqual({
+      kind: 'success',
+      value: [
+        { id: 'ollama-cloud/deepseek-v4-flash', nativeOrder: 0 },
+        { id: 'opencode-go/deepseek-v4-flash', nativeOrder: 1 },
+      ],
+    });
     expect(existsSync(opencodeArgsLog)).toBe(true);
+    expect(
+      readFileSync(opencodeArgsLog, 'utf8')
+        .trim()
+        .split('\n')
+        .filter((line) => line === 'models|--verbose|'),
+    ).toHaveLength(1);
 
-    expect(forTool('codex').map((attempt) => attempt.connection.role)).toContain('planner');
+    expect(forTool('codex')).toHaveLength(1);
     for (const tool of ['kilo-code', 'copilot']) {
-      expect(forTool(tool).map((attempt) => attempt.outcome.kind)).toEqual(['not-run', 'not-run']);
+      expect(forTool(tool).map((attempt) => attempt.outcome.kind)).toEqual(['not-run']);
       expect(existsSync(join(shimDir, `${tool}.args`))).toBe(false);
     }
     expect(forTool('claude-code')).toEqual([]);
+  });
+
+  it('issues one version probe and at most one catalog probe per installed tool', async () => {
+    const versionShim = (name: string, version: string, catalogLines: readonly string[]) =>
+      writeShim(shimDir, name, [
+        'if [ "$1" = "--version" ]; then',
+        `  printf '%s\\n' '${version}'`,
+        '  exit 0',
+        'fi',
+        ...catalogLines,
+        'exit 0',
+      ]);
+    const logs = {
+      codex: versionShim('codex', 'codex-cli 0.146.0', []),
+      opencode: versionShim('opencode', '1.18.10', ["printf '%s\\n' 'openai/gpt-5.4'"]),
+      kilo: versionShim('kilo', '7.0.49', ["printf '%s\\n' 'kilo/openrouter/free'"]),
+      cmd: versionShim('cmd', '1.53.0', ["printf '%s\\n' 'deepseek/deepseek-v4-pro   fast'"]),
+      'cursor-agent': versionShim('cursor-agent', '2026.09.01-abc1234', [
+        "printf '%s\\n' 'gpt-5.4'",
+      ]),
+      copilot: versionShim('copilot', 'GitHub Copilot CLI 1.0.77.', [
+        "printf '%s\\n' 'model: gpt-5.4'",
+      ]),
+    } as const;
+
+    const deps = createProductionDetectionDeps({
+      config: makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
+      projectDir,
+    });
+    const attempts = await deps.discoverAllCliTools({
+      mode: 'automatic',
+      signal: new AbortController().signal,
+    });
+
+    expect(attempts).toHaveLength(6);
+    expect(attempts.map((attempt) => attempt.connection.tool).toSorted()).toEqual([
+      'codex',
+      'command-code',
+      'copilot',
+      'cursor',
+      'kilo-code',
+      'opencode',
+    ]);
+    for (const [name, log] of Object.entries(logs)) {
+      const lines = readFileSync(log, 'utf8').trim().split('\n');
+      expect(
+        lines.filter((line) => line === '--version|'),
+        name,
+      ).toHaveLength(1);
+      const catalogLines = lines.filter(
+        (line) =>
+          line.startsWith('models|') || line === '--list-models|' || line === 'help|config|',
+      );
+      expect(catalogLines.length, name).toBeLessThanOrEqual(1);
+    }
   });
 });

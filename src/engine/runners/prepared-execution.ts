@@ -75,8 +75,21 @@ export type PreparedExecution = Readonly<{
   }>;
 }>;
 
-export type PreparationOutcome =
-  | Readonly<{ kind: 'prepared'; execution: PreparedExecution }>
+/**
+ * A one-shot review admits the review seat and nothing else. It plans nothing,
+ * owns no session and writes no state, so its prepared record carries only what
+ * the reviewer construction reads — there is no session to release or roll back.
+ */
+export type PreparedReviewExecution = Readonly<{
+  purpose: 'review';
+  config: PreparedConfig;
+  preparationId: string;
+  report: ReadinessReport;
+  gates: ReadonlyArray<RunnerGate>;
+}>;
+
+export type PreparationOutcome<Execution = PreparedExecution> =
+  | Readonly<{ kind: 'prepared'; execution: Execution }>
   | Readonly<{ kind: 'blocked'; report: ReadinessReport }>
   | Readonly<{ kind: 'failed'; report?: ReadinessReport | undefined; error: Error }>
   | Readonly<{ kind: 'aborted' }>;

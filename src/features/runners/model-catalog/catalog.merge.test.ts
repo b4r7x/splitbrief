@@ -47,10 +47,10 @@ function cliCache(
   return {
     getModelsDevCatalog: () => null,
     getProviderModels: () => null,
-    getScopedCliCatalogRuntime: (input) =>
+    getCliCatalogRuntime: (input) =>
       input.tool === toolId
         ? {
-            connection: { role: 'planner', tool: input.tool, contextKey: 'merge-test' },
+            connection: { tool: input.tool, contextKey: 'merge-test' },
             state,
             models,
             fetchedAt: 1,
@@ -327,7 +327,7 @@ describe('provider variant merge', () => {
     expect(modelRowMatchesId({ id: 'auto' }, 'kilo/openrouter/auto')).toBe(false);
   });
 
-  it('keeps the recovery flag on the provider group the missing configured id joins', () => {
+  it('merges the missing configured id into the provider group it joins', () => {
     const models = buildRightModels({
       role: 'planner',
       customModels: [],
@@ -338,7 +338,6 @@ describe('provider variant merge', () => {
 
     const row = models.find((model) => modelRowMatchesId(model, 'openai/gpt-x-luna'));
     expect(row?.variants).toHaveLength(2);
-    expect(row?.isRecovery).toBe(true);
   });
 });
 
@@ -495,7 +494,7 @@ describe('option family merge', () => {
       cache: {
         getModelsDevCatalog: () => null,
         getProviderModels: () => [{ id: 'qwen3-coder:30b', nativeReasoningEfforts: LUNA_LADDER }],
-        getScopedCliCatalogRuntime: () => null,
+        getCliCatalogRuntime: () => null,
       },
     });
 
@@ -652,10 +651,10 @@ describe('catalog suggestions and confirmed merge', () => {
     const cache: ModelCacheAccessor = {
       getModelsDevCatalog: () => codexCatalog,
       getProviderModels: () => null,
-      getScopedCliCatalogRuntime: (input) =>
+      getCliCatalogRuntime: (input) =>
         input.tool === 'codex'
           ? {
-              connection: { role: 'planner', tool: 'codex', contextKey: 'merge-test' },
+              connection: { tool: 'codex', contextKey: 'merge-test' },
               state: 'fresh',
               models: [{ id: 'gpt-5-codex' }],
               fetchedAt: 1,
@@ -685,10 +684,10 @@ describe('catalog suggestions and confirmed merge', () => {
         },
       }),
       getProviderModels: () => null,
-      getScopedCliCatalogRuntime: (input) =>
+      getCliCatalogRuntime: (input) =>
         input.tool === 'codex'
           ? {
-              connection: { role: 'planner', tool: 'codex', contextKey: 'merge-test' },
+              connection: { tool: 'codex', contextKey: 'merge-test' },
               state: 'fresh',
               models: [{ id: 'openai/gpt-5-codex' }],
               fetchedAt: 1,

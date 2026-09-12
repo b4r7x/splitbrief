@@ -15,10 +15,9 @@ import {
   createSessionExpiredHandler,
 } from './resume-context.js';
 
-function workflowConfig(persistTranscript: boolean, compactionThreshold?: number) {
+function workflowConfig(compactionThreshold?: number) {
   return {
     maxRetries: 3,
-    persistTranscript,
     compactionFormat: 'auto' as const,
     ...(compactionThreshold !== undefined && { compactionThreshold }),
   };
@@ -110,7 +109,6 @@ describe('applyRebuiltContext', () => {
       projectDir,
       sessionId,
       bus,
-      config: { workflow: workflowConfig(true) },
       resumeHolder,
     });
 
@@ -119,29 +117,6 @@ describe('applyRebuiltContext', () => {
       { role: 'assistant', content: 'here is the spec' },
     ]);
     expect(events.find((e) => e.type === 'warning')).toBeUndefined();
-  });
-
-  it('emits the transcript-unavailable warning and leaves the resume holder untouched when persistTranscript is false', async () => {
-    const { projectDir, sessionId } = setupSession();
-    const { bus, events } = makeBusRecorder();
-    const resumeHolder: ResumeContextHolder = {
-      messages: [{ role: 'user', content: 'pre-existing' }],
-    };
-
-    await applyRebuiltContext({
-      projectDir,
-      sessionId,
-      bus,
-      config: { workflow: workflowConfig(false) },
-      resumeHolder,
-    });
-
-    expect(resumeHolder.messages).toEqual([{ role: 'user', content: 'pre-existing' }]);
-    const warning = events.find((e) => e.type === 'warning');
-    expect(warning).toBeDefined();
-    expect(warning && 'message' in warning ? warning.message : '').toMatch(
-      /expired|no transcript/i,
-    );
   });
 
   it('skips populating the holder when requireNonEmpty is set and no messages were rebuilt', async () => {
@@ -155,7 +130,6 @@ describe('applyRebuiltContext', () => {
       projectDir,
       sessionId,
       bus,
-      config: { workflow: workflowConfig(true) },
       resumeHolder,
       requireNonEmpty: true,
     });
@@ -173,7 +147,6 @@ describe('applyRebuiltContext', () => {
       projectDir,
       sessionId,
       bus,
-      config: { workflow: workflowConfig(true) },
       resumeHolder,
       requireNonEmpty: true,
     });
@@ -181,7 +154,7 @@ describe('applyRebuiltContext', () => {
     expect(resumeHolder.messages).toEqual([{ role: 'user', content: 'keep me' }]);
   });
 
-  it('tolerates a missing resumeHolder and still emits the fallback warning', async () => {
+  it('tolerates a missing resumeHolder', async () => {
     const { projectDir, sessionId } = setupSession();
     const { bus, events } = makeBusRecorder();
 
@@ -189,11 +162,10 @@ describe('applyRebuiltContext', () => {
       projectDir,
       sessionId,
       bus,
-      config: { workflow: workflowConfig(false) },
       resumeHolder: undefined,
     });
 
-    expect(events.some((e) => e.type === 'warning')).toBe(true);
+    expect(events.some((e) => e.type === 'warning')).toBe(false);
   });
 });
 
@@ -215,7 +187,7 @@ describe('autoCompactResumeContext', () => {
       projectDir,
       sessionId,
       bus,
-      config: { workflow: workflowConfig(true, 10), planner: cliPlannerConfig },
+      config: { workflow: workflowConfig(10), planner: cliPlannerConfig },
       state: createInitialState('resume'),
       planner: summarizingPlanner({
         summarize: async (messages, opts) => {
@@ -286,7 +258,7 @@ describe('autoCompactResumeContext', () => {
       projectDir,
       sessionId,
       bus,
-      config: { workflow: workflowConfig(true, 10), planner: cliPlannerConfig },
+      config: { workflow: workflowConfig(10), planner: cliPlannerConfig },
       state: createInitialState('resume'),
       signal: controller.signal,
       planner: summarizingPlanner(),
@@ -315,7 +287,7 @@ describe('autoCompactResumeContext', () => {
       projectDir,
       sessionId,
       bus,
-      config: { workflow: workflowConfig(true, 10), planner: apiPlannerConfig },
+      config: { workflow: workflowConfig(10), planner: apiPlannerConfig },
       state: createInitialState('resume'),
       planner: summarizingPlanner({
         summarizeStructured: async () => ({
@@ -351,7 +323,7 @@ describe('autoCompactResumeContext', () => {
       projectDir,
       sessionId,
       bus,
-      config: { workflow: workflowConfig(true, 10), planner: apiPlannerConfig },
+      config: { workflow: workflowConfig(10), planner: apiPlannerConfig },
       state: createInitialState('resume'),
       planner: summarizingPlanner({
         summarizeStructured: async () => ({ text: 'not json', structured: null, usage: null }),
@@ -371,7 +343,7 @@ describe('autoCompactResumeContext', () => {
       projectDir,
       sessionId,
       bus,
-      config: { workflow: workflowConfig(true, 10), planner: cliPlannerConfig },
+      config: { workflow: workflowConfig(10), planner: cliPlannerConfig },
       state: createInitialState('resume'),
       planner: summarizingPlanner({ supportsSelfSummarisation: false }),
     });
@@ -394,7 +366,6 @@ describe('createSessionExpiredHandler', () => {
       projectDir,
       sessionId,
       bus,
-      config: { workflow: workflowConfig(true) },
       resumeHolder,
     });
 

@@ -121,8 +121,8 @@ describe('ModelOption contract', () => {
         sourceProviderId: 'github-copilot',
         selectionId: 'gpt-5.4',
       },
-      kind: 'catalog-suggestion',
-      source: 'models-dev',
+      kind: 'bundled-suggestion',
+      source: 'bundled',
       canConfigure: true,
       provenance: [
         { kind: 'suggestion', source: 'models-dev' },

@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import type { Task } from '../../core/schemas/task.js';
 import { taskId, TaskIdSchema } from '../../core/schemas/task.js';
-import { BriefQualityIssueSchema } from '../../core/schemas/brief-recovery/primitives.js';
 import { CONCRETE_FILE_PATH_PATTERN } from '../../utils/path-patterns.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { clamp01 } from '../../utils/math.js';
@@ -21,10 +20,14 @@ const BRIEF_QUALITY_CODES = [
 
 export type BriefQualityCode = (typeof BRIEF_QUALITY_CODES)[number];
 
-const briefQualityIssueSchema = BriefQualityIssueSchema.extend({
-  code: z.enum(BRIEF_QUALITY_CODES),
-  taskId: TaskIdSchema,
-});
+const briefQualityIssueSchema = z
+  .object({
+    code: z.enum(BRIEF_QUALITY_CODES),
+    severity: z.enum(['error', 'warning']),
+    taskId: TaskIdSchema,
+    message: z.string().trim().min(1).max(4_096),
+  })
+  .strict();
 
 const briefQualityReportSchema = z.object({
   version: z.literal(1),
@@ -36,12 +39,6 @@ const briefQualityReportSchema = z.object({
 export type BriefQualityIssue = z.infer<typeof briefQualityIssueSchema>;
 
 export type BriefQualityReport = z.infer<typeof briefQualityReportSchema>;
-
-const BRIEF_QUALITY_ISSUE_CODES: ReadonlySet<string> = new Set(BRIEF_QUALITY_CODES);
-
-export function isBriefQualityCode(value: string): value is BriefQualityCode {
-  return BRIEF_QUALITY_ISSUE_CODES.has(value);
-}
 
 export function firstBriefError(report: BriefQualityReport): BriefQualityIssue | undefined {
   return report.issues.find((issue) => issue.severity === 'error');

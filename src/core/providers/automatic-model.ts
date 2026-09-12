@@ -5,6 +5,10 @@ export const AUTOMATIC_MODEL = 'auto';
 // choose", never a model literally named `default`.
 const LEGACY_CLAUDE_CODE_AUTOMATIC_MODEL = 'default';
 
+// The implementer seat's price-routing marker, not the tool-delegating `auto`;
+// profile derivation (not the CLI adapter) resolves it.
+export const AUTO_CHEAPEST_MODEL = 'auto:cheapest';
+
 export function normalizeConfiguredModel(
   model: string | undefined,
   providerId?: string,
@@ -24,6 +28,11 @@ export function isAutomaticModel(model: string | undefined, providerId?: string)
   return normalizeConfiguredModel(model, providerId) === AUTOMATIC_MODEL;
 }
 
+export function isAutoCheapestModel(model: string | undefined): boolean {
+  if (!model) return false;
+  return model.trim().toLowerCase() === AUTO_CHEAPEST_MODEL;
+}
+
 /**
  * CLI automatic selection is structural, not catalog-driven: it resolves to no
  * model at all so the adapter omits `--model` and the tool uses whatever its own
@@ -31,5 +40,5 @@ export function isAutomaticModel(model: string | undefined, providerId?: string)
  */
 export function resolveCliModel(model: string | undefined, tool?: string): string | undefined {
   const normalized = normalizeConfiguredModel(model, tool);
-  return normalized === AUTOMATIC_MODEL ? undefined : normalized;
+  return normalized === AUTOMATIC_MODEL || isAutoCheapestModel(model) ? undefined : normalized;
 }

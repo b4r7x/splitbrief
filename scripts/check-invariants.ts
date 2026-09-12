@@ -1,7 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { type Gate, gates } from './invariants/gates.js';
-import { type T065Rule, T065_RULES, scanT065Invariants } from './invariants/t065-scan.js';
 
 type ExecGateCommand = (command: string) => string;
 type LogLine = (line?: string) => void;
@@ -66,24 +65,6 @@ function isMainModule(): boolean {
 }
 
 if (isMainModule()) {
-  const scanIndex = process.argv.indexOf('--t065-scan');
-  if (scanIndex !== -1) {
-    const root = process.argv[scanIndex + 1];
-    const ruleIndex = process.argv.indexOf('--rule');
-    const requestedRule = ruleIndex === -1 ? 'all' : (process.argv[ruleIndex + 1] ?? 'all');
-    if (
-      root === undefined ||
-      (requestedRule !== 'all' && !T065_RULES.includes(requestedRule as T065Rule))
-    ) {
-      console.error('Usage: check-invariants.ts --t065-scan <src-root> [--rule <rule>]');
-      process.exit(2);
-    }
-    for (const finding of scanT065Invariants(root, requestedRule as T065Rule | 'all')) {
-      console.log(`${finding.path}:${finding.line}: ${finding.message}`);
-    }
-    process.exit(0);
-  }
-
   const failed = runInvariantGates();
 
   console.log();

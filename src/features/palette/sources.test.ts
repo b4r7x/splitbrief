@@ -9,14 +9,13 @@ import { WORKFLOW_MODES } from '../../core/schemas/enums.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { Screen } from '../../core/navigation/types.js';
 import { createInitialState } from '../../core/state/machine.js';
-import { loadState, saveState } from '../../core/state/persistence.js';
+import { saveState } from '../../core/state/persistence.js';
+import { loadOwnerWorkflowState } from '../../core/state/resume-hydration.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { handleSessionSelect, sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
-import { makeResumeAuthorityDeps } from '#testing/helpers/factories/state-authority.js';
-import { buildPaletteResults } from './results.js';
 import { buildPaletteSources } from './sources.js';
 
 const noop = () => {};
@@ -137,7 +136,7 @@ describe('buildPaletteSources command items', () => {
     ).toEqual(['/redo-task', '/visible']);
   });
 
-  it('shows the accepted values of an argument command in its description', () => {
+  it('carries the accepted values of an argument command as its own hint cell', () => {
     const items = buildCommandSources([
       {
         kind: 'arg',
@@ -159,9 +158,9 @@ describe('buildPaletteSources command items', () => {
       },
     ]);
 
-    expect(items.map((item) => item.description)).toEqual([
-      expect.stringMatching(/^Workflow mode\s+\[instant\|quick\]$/),
-      expect.stringMatching(/^Reset a task\s+<task-id>$/),
+    expect(items.map((item) => [item.description, item.hint])).toEqual([
+      ['Workflow mode', '[instant|quick]'],
+      ['Reset a task', '<task-id>'],
     ]);
   });
 
@@ -187,9 +186,9 @@ describe('buildPaletteSources command items', () => {
       },
     ]);
 
-    expect(items.map((item) => item.description)).toEqual([
-      expect.stringMatching(/^Select planner skills\s+<thing …>$/),
-      expect.stringMatching(/^Scroll the transcript\s+\[a\|b\|c\]$/),
+    expect(items.map((item) => [item.description, item.hint])).toEqual([
+      ['Select planner skills', '<thing …>'],
+      ['Scroll the transcript', '[a|b|c]'],
     ]);
   });
 
@@ -224,65 +223,6 @@ describe('buildPaletteSources registry rows', () => {
     expect(labels.every((label) => label.startsWith('/'))).toBe(true);
   });
 
-  it('folds a bare alias onto its command row instead of listing it twice', () => {
-    const calls: string[] = [];
-    const items = buildRegistrySources((raw) => calls.push(raw));
-
-    const settings = items.filter((item) => item.label === '/settings (/config)');
-    expect(settings).toHaveLength(1);
-    expect(items.some((item) => item.label === '/config')).toBe(false);
-
-    const action = settings[0]?.action;
-    if (action?.kind === 'run') void action.run();
-    expect(calls).toEqual(['/settings']);
-  });
-
-  it('reaches an argument-bearing alias through its command row instead of a row of its own', () => {
-    const items = buildRegistrySources();
-
-    for (const alias of ['/accept-run', '/reject-run', '/planner', '/implementer', '/reviewer']) {
-      expect(items.some((item) => item.label.includes(alias))).toBe(false);
-    }
-
-    expect(items.find((item) => item.label === '/crew')?.description).toContain(
-      '/planner /implementer /reviewer',
-    );
-    expect(items.find((item) => item.label === '/run')?.description).toContain(
-      '/accept-run /reject-run',
-    );
-
-    expect(items.find((item) => item.label === '/run')?.action).toEqual({
-      kind: 'prefill',
-      text: '/run ',
-    });
-    expect(items.find((item) => item.label === '/crew')?.action).toEqual({
-      kind: 'prefill',
-      text: '/crew ',
-    });
-  });
-
-  it('matches an argument-bearing alias query to its command row', () => {
-    const commandItems = buildRegistrySources();
-
-    for (const { query, label } of [
-      { query: 'planner', label: '/crew' },
-      { query: 'implementer', label: '/crew' },
-      { query: 'reviewer', label: '/crew' },
-      { query: 'accept-run', label: '/run' },
-      { query: 'reject-run', label: '/run' },
-    ]) {
-      const results = buildPaletteResults({
-        query,
-        commandItems,
-        taskItems: [],
-        sessionItems: [],
-        customItems: [],
-        mruIds: [],
-      });
-      expect(results.some((result) => result.label === label)).toBe(true);
-    }
-  });
-
   it('offers one prefill row for an argument command instead of one row per option', () => {
     const items = buildRegistrySources();
 
@@ -292,25 +232,6 @@ describe('buildPaletteSources registry rows', () => {
     for (const mode of WORKFLOW_MODES) {
       expect(items.some((item) => item.label === mode)).toBe(false);
     }
-  });
-});
-
-describe('buildPaletteSources attached-client boundary', () => {
-  it('omits local config mutation sources while attached', () => {
-    const sources = buildPaletteSources({
-      commands: [],
-      screen: 'workflow',
-      config: makeConfig(),
-      phase: 'implementing',
-      tasks: [],
-      sessions: [],
-      projectDir: '/tmp/splitbrief-test',
-      onRuntimeCommand: noop,
-      onSessionSelect: noopSessionSelect,
-      isAttached: true,
-    });
-
-    expect(sources.customItems).toEqual([]);
   });
 });
 
@@ -357,7 +278,7 @@ describe('buildPaletteSources session items', () => {
       onRuntimeCommand: noop,
       onSessionSelect: (selected, projectDir) =>
         handleSessionSelect(selected, projectDir, {
-          ...makeResumeAuthorityDeps((ref) => loadState(ref)),
+          loadResumeState: loadOwnerWorkflowState,
           prepareResume: async ({ ref, state }) => ({
             kind: 'prepared',
             execution: prepareWorkflowExecution({
@@ -400,7 +321,7 @@ describe('buildPaletteSources session items', () => {
       onRuntimeCommand: noop,
       onSessionSelect: (selected, projectDir) =>
         handleSessionSelect(selected, projectDir, {
-          ...makeResumeAuthorityDeps((ref) => loadState(ref)),
+          loadResumeState: loadOwnerWorkflowState,
           prepareResume: async () => {
             throw new Error('Preparation should not run without saved state');
           },

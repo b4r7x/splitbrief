@@ -4,6 +4,8 @@ import type { WorkflowState } from './schemas/workflow.js';
 
 type PhaseRole = 'planner' | 'implementer';
 
+export const WORKFLOW_REWIND_ABORT_REASON = 'workflow-rewind';
+
 const IMPLEMENTER_PHASES: ReadonlySet<Phase> = new Set([
   'implementing',
   'validating-task',

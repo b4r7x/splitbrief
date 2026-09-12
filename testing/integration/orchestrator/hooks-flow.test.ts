@@ -101,7 +101,7 @@ function preparedExecution(
     },
   );
   return {
-    purpose: 'new-workflow',
+    purpose: 'resume',
     config,
     preparationId,
     report: {

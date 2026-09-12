@@ -8,7 +8,6 @@ import {
 } from '../../../core/sessions/active-pointer.js';
 import { saveSummary } from '../../../core/sessions/io.js';
 import { isResumable } from '../../../core/phases.js';
-import { updateStats } from '../../../core/stats/persistence.js';
 import { warnError } from '../../../lib/warn.js';
 
 export type SaveFinalSessionOpts = {
@@ -22,7 +21,7 @@ export type SaveFinalSessionOpts = {
   preserveActive?: boolean | undefined;
 };
 
-export function shouldPreserveActiveState(state: WorkflowState | null): boolean {
+export function shouldPreserveActiveState(state: WorkflowState | null | undefined): boolean {
   if (!state) return false;
   return state.pendingRecovery !== undefined || isResumable(state);
 }
@@ -39,23 +38,6 @@ export function saveFinalSession(opts: SaveFinalSessionOpts): void {
       summary: opts.summary,
     };
     saveSummary({ projectDir: opts.projectDir, sessionId: opts.sessionId }, session);
-    if (
-      opts.status === 'complete' &&
-      opts.summary.costBreakdown &&
-      opts.summary.costBreakdown.isTotalActualCostKnown !== false
-    ) {
-      try {
-        updateStats(opts.projectDir, {
-          costBreakdown: opts.summary.costBreakdown,
-          totalTasks: opts.summary.totalTasks,
-          completedByLocal: opts.summary.completedByLocal,
-          escalatedToPlanner: opts.summary.escalatedToPlanner,
-          providerCosts: opts.summary.costBreakdown.providerCosts,
-        });
-      } catch {
-        // stats update is best-effort; don't fail session save
-      }
-    }
     if (!opts.preserveActive) {
       clearActiveReceipt({ projectDir: opts.projectDir, sessionId: opts.sessionId }, opts.active);
     }

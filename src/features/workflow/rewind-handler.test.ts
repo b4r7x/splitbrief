@@ -6,7 +6,6 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 
 const prepared = {
   session: { ref: { projectDir: '/tmp/nowhere', sessionId: 'rewind-handler-test' } },
-  config: { workflow: { persistTranscript: false } },
 } as unknown as PreparedExecution;
 
 function handlerFor(hydrated: ResumeHydration) {
@@ -19,7 +18,6 @@ function handlerFor(hydrated: ResumeHydration) {
     controller,
     hydrate: () => hydrated,
     resetMode,
-    setAuthority: vi.fn(),
     setPendingRewind,
     onRewound,
   });

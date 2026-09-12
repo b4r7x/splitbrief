@@ -37,7 +37,7 @@ The function is one sequential async procedure with four internal phases. Each p
 initStores(projectDir, opts)
 ├── initUIChrome()          # terminal resize subscription
 ├── loadProjectState()      # config, sessions, input-history persistence
-├── ensureHooksTrusted()    # resolve merged hooks, prompt for trust before discovery
+├── ensureHooksTrusted()    # prompt for hook trust before any subprocess discovery
 └── loadDiscovery()         # provider capabilities, skills, model catalog
 ```
 
@@ -47,7 +47,7 @@ initStores(projectDir, opts)
 |---|---|---|
 | `initUIChrome` | Subscribe to terminal resize | sync |
 | `loadProjectState` | `configStore.load()`, `sessionsStore.load()`, `installHistoryPersistence()` | sync |
-| `ensureHooksTrusted` | `resolveHooksConfig()` → prompt for hook trust before any subprocess discovery | async |
+| `ensureHooksTrusted` | reads `config.hooks` from `configStore` → prompts for hook trust before any subprocess discovery | async |
 | `loadDiscovery` | `detectCapabilities()` → `configStore.setContextLength()`, skills + detection + catalog in parallel | async |
 
 `detectCapabilities → setContextLength` is the canonical example of **cross-store orchestration**: reads from `configStore`, awaits a provider probe (`src/engine/providers/capabilities.ts`), writes back to `configStore`. This wiring has no natural home inside any single store — it lives in `initStores()`.

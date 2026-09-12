@@ -30,11 +30,7 @@ type SessionOwnershipMutationBoundary =
   | 'ownership-claim'
   | 'ownership-captured'
   | 'directory-claim'
-  | 'directory-captured'
-  | 'detached-alias-claim'
-  | 'detached-alias-captured'
-  | 'detached-recovery-claim'
-  | 'detached-recovery-captured';
+  | 'directory-captured';
 
 export type SessionOwnershipMutationOptions = Readonly<{
   _beforeMutation?: ((boundary: SessionOwnershipMutationBoundary) => void) | undefined;
@@ -71,7 +67,6 @@ export type SessionOwnershipProof = Readonly<{
 }>;
 
 export const OWNERSHIP_FILE = '.prepare-owner.json';
-export const DETACHED_HANDOFF_FILE = '.detached-handoff.json';
 const MAX_OWNERSHIP_BYTES = 512n;
 const DECIMAL_INTEGER = /^(0|[1-9]\d*)$/;
 
@@ -81,10 +76,6 @@ export function sessionRelativePath(sessionId: string, filename?: string): strin
 
 export function ownershipRelativePath(relativeDirectory: string): string {
   return join(relativeDirectory, OWNERSHIP_FILE);
-}
-
-export function detachedHandoffRelativePath(relativeDirectory: string): string {
-  return join(relativeDirectory, DETACHED_HANDOFF_FILE);
 }
 
 export function ownershipFailure(ref: SessionRef, reason: string): AppError {
@@ -122,18 +113,13 @@ export function directoryIdentity(
 function readOwnershipMarker(
   session: NewSessionOwnership,
   relativePath: string,
-  allowOwnerAlias = false,
 ): SessionMarkerSnapshot {
   assertExistingPathConfined(relativePath, session.ref.projectDir);
   const marker = join(session.ref.projectDir, relativePath);
   const descriptor = openSync(marker, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const stat = fstatSync(descriptor, { bigint: true });
-    if (
-      !stat.isFile() ||
-      (stat.nlink !== 1n && (!allowOwnerAlias || stat.nlink !== 2n)) ||
-      (stat.mode & 0o077n) !== 0n
-    ) {
+    if (!stat.isFile() || stat.nlink !== 1n || (stat.mode & 0o077n) !== 0n) {
       throw ownershipFailure(session.ref, 'the ownership marker is not a private regular file');
     }
     if (stat.size === 0n || stat.size > MAX_OWNERSHIP_BYTES) {
@@ -185,28 +171,6 @@ export function assertOwnedDirectory(
   };
 }
 
-export function assertHandedOffDirectory(
-  session: NewSessionOwnership,
-  relativeDirectory: string,
-  expected?: SessionDirectoryIdentity,
-  allowOwnerAlias = false,
-): SessionOwnershipSnapshot {
-  assertOwnershipContext(session);
-  const marker = readOwnershipMarker(
-    session,
-    detachedHandoffRelativePath(relativeDirectory),
-    allowOwnerAlias,
-  );
-  if (expected && (marker.proof.dev !== expected.dev || marker.proof.ino !== expected.ino)) {
-    throw ownershipFailure(session.ref, 'the detached handoff does not match this allocation');
-  }
-  return {
-    directory: directoryIdentity(session.ref, relativeDirectory, marker.proof),
-    marker: marker.marker,
-    bytes: marker.bytes,
-  };
-}
-
 export function pathExists(path: string): boolean {
   try {
     lstatSync(path);
@@ -221,48 +185,13 @@ export function claimRelativePath(ref: SessionRef, subject: 'directory' | 'owner
   return sessionRelativePath(`.${ref.sessionId}.${subject}.${randomUUID()}.claim`);
 }
 
-export function removeExactMarkerPathLocked(
-  input: Readonly<{
-    session: NewSessionOwnership;
-    source: string;
-    expected: SessionMarkerIdentity;
-    options: SessionOwnershipMutationOptions;
-    boundary: 'detached-alias' | 'detached-recovery';
-  }>,
-): void {
-  const claim = claimRelativePath(input.session.ref, 'owner');
-  const sourcePath = join(input.session.ref.projectDir, input.source);
-  const claimPath = join(input.session.ref.projectDir, claim);
-  assertWritablePathConfined(input.source, input.session.ref.projectDir);
-  assertWritablePathConfined(claim, input.session.ref.projectDir);
-  input.options._beforeMutation?.(`${input.boundary}-claim`);
-  renameSync(sourcePath, claimPath);
-  input.options._beforeMutation?.(`${input.boundary}-captured`);
-  if (pathExists(sourcePath)) {
-    const replacement = claimRelativePath(input.session.ref, 'owner');
-    assertWritablePathConfined(replacement, input.session.ref.projectDir);
-    renameSync(sourcePath, join(input.session.ref.projectDir, replacement));
-  }
-  const claimed = lstatSync(claimPath, { bigint: true });
-  if (claimed.dev === input.expected.dev && claimed.ino === input.expected.ino) {
-    unlinkSync(claimPath);
-  }
-}
-
 export function removeOwnershipProofLocked(
   session: NewSessionOwnership,
   options: SessionOwnershipMutationOptions = {},
-  proof: 'ownership' | 'detached-handoff' = 'ownership',
 ): void {
   const relativeDirectory = sessionRelativePath(session.ref.sessionId);
-  const marker =
-    proof === 'ownership'
-      ? ownershipRelativePath(relativeDirectory)
-      : detachedHandoffRelativePath(relativeDirectory);
-  const snapshot =
-    proof === 'ownership'
-      ? assertOwnedDirectory(session, relativeDirectory)
-      : assertHandedOffDirectory(session, relativeDirectory);
+  const marker = ownershipRelativePath(relativeDirectory);
+  const snapshot = assertOwnedDirectory(session, relativeDirectory);
   const claim = claimRelativePath(session.ref, 'owner');
   const markerPath = join(session.ref.projectDir, marker);
   const claimPath = join(session.ref.projectDir, claim);
@@ -318,17 +247,5 @@ export function assertNoNewerSameSessionActive(session: NewSessionOwnership): vo
     active.receipt.generation !== session.ownership.generation
   ) {
     throw ownershipFailure(session.ref, 'a newer activation owns this session ID');
-  }
-}
-
-export function assertExactActiveReceipt(session: NewSessionOwnership): void {
-  const active = readActiveRecord(session.ref.projectDir);
-  if (
-    active?.kind !== 'v1' ||
-    active.receipt.version !== session.ownership.version ||
-    active.receipt.sessionId !== session.ownership.sessionId ||
-    active.receipt.generation !== session.ownership.generation
-  ) {
-    throw ownershipFailure(session.ref, 'active ownership does not match this preparation');
   }
 }

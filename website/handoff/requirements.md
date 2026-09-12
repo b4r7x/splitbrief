@@ -1,7 +1,7 @@
 # Requirements — SPLITBRIEF website v2 (the lower page) — 2026-09-09
 
 source: `prompt.md` (owner prompt + rulings 1–8) · `website/DESIGN.md` §1 v2, §2, §3, §10, §11, §13 v2 delta, §14, §16.1–16.10 (the design — binding, not redesigned here) · `design-critique-2.md` (8/10 SHIP; residuals F21–F25 applied or owner-held) · `comps/visual-diff-comp.md` (59 rows, 10 out of tolerance with reasons — inherited) · `comps/lower-page.html` + `comps/lower-geometry.json` (the comp).
-run_dir: `.nuke/2026-09-09-114149-creative-website-v2` (RUN below). Repo: `/Users/voitz/Projects/tiny-spec`; site: `website/`.
+run_dir: `.nuke/2026-09-09-114149-creative-website-v2` (RUN below). Repo: `<repo>` (the SPLITBRIEF checkout root); site: `website/`.
 
 Every requirement below names its check. "§" is `website/DESIGN.md`. "Captures" are the §14 set as amended by Decision D-11 (ten PNGs + two JSON per tag). Tolerances are ruling 8's: position ±3 % of the viewport (x ±43 / ±58 px, y ±27 / ±32 px at 1440 / 1920; ±12 / ±25 at 390), size ±3 % of the expected dimension, copy exact, colour by token.
 

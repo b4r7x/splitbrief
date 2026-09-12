@@ -116,7 +116,7 @@ describe('start preparation', () => {
       projectDir,
       feature: 'fresh admission',
       opts: {},
-      transport: 'json',
+      transport: 'headless',
       emitReadiness: emit,
       prepare: (input) =>
         prepareExecution({
@@ -173,7 +173,7 @@ describe('start preparation', () => {
         projectDir,
         feature: 'blocked admission',
         opts: {},
-        transport: 'json',
+        transport: 'headless',
         emitReadiness: emit,
         prepare: async () => ({ kind: 'blocked', report }),
       }),
@@ -192,7 +192,7 @@ describe('start preparation', () => {
         projectDir,
         feature: 'failed readiness emission',
         opts: {},
-        transport: 'json',
+        transport: 'headless',
         emitReadiness: () => {
           throw new Error('output stream closed');
         },
@@ -248,6 +248,9 @@ describe('start preparation', () => {
     expect(
       cliPreparationPolicy({ purpose: 'spec', interaction: 'headless', opts: {} }),
     ).toMatchObject({ purpose: 'spec', interaction: 'headless', unverifiedAuth: 'denied' });
+    expect(
+      cliPreparationPolicy({ purpose: 'review', interaction: 'headless', opts: {} }),
+    ).toMatchObject({ purpose: 'review', interaction: 'headless', unverifiedAuth: 'denied' });
   });
 });
 

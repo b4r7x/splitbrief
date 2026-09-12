@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
-import { dirname, extname, join, relative, resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { assertExistingPathConfined } from '../../lib/path-confinement.js';
 import { canonicalJSON } from '../../utils/canonical-json.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
@@ -25,152 +25,9 @@ type HookFileDigest = {
 export function hashHooksConfig(projectDir: string, hooks: unknown): string {
   const json = canonicalJSON({
     hooks: hooks ?? null,
-    moduleDigests: collectModuleDigests(projectDir, hooks),
     commandScriptDigests: collectCommandScriptDigests(projectDir, hooks),
   });
   return `sha256:${sha256Hex(json)}`;
-}
-
-const STATIC_IMPORT_RE = /\b(?:import|export)\s+(?:[^'";]*?\s+from\s+)?['"]([^'"]+)['"]/g;
-const DYNAMIC_LOAD_RE = /\b(?:import|require)\s*\(\s*(['"])([^'"]*)\1\s*\)/g;
-const DYNAMIC_LOAD_HEAD_RE = /\b(?:import|require)\s*\(/g;
-
-const MODULE_EXTENSIONS = ['.js', '.ts', '.mjs', '.cjs', '.mts', '.cts'];
-
-const UNRESOLVABLE_DYNAMIC_DEP = 'unresolvable dynamic dependency';
-
-function isLocalModuleSpecifier(specifier: string): boolean {
-  return specifier.startsWith('./') || specifier.startsWith('../');
-}
-
-type ModuleImports = {
-  specifiers: string[];
-  hasUnresolvableDynamicDep: boolean;
-};
-
-function parseStaticModuleImports(content: string): ModuleImports {
-  const specifiers: string[] = [];
-  for (const match of content.matchAll(STATIC_IMPORT_RE)) {
-    const specifier = match[1];
-    if (specifier && isLocalModuleSpecifier(specifier)) specifiers.push(specifier);
-  }
-
-  let literalDynamic = 0;
-  for (const match of content.matchAll(DYNAMIC_LOAD_RE)) {
-    literalDynamic += 1;
-    const specifier = match[2];
-    if (specifier && isLocalModuleSpecifier(specifier)) specifiers.push(specifier);
-  }
-
-  const totalDynamic = [...content.matchAll(DYNAMIC_LOAD_HEAD_RE)].length;
-  return { specifiers, hasUnresolvableDynamicDep: totalDynamic > literalDynamic };
-}
-
-function resolveLocalModulePath(
-  projectDir: string,
-  fromRelativePath: string,
-  specifier: string,
-): string | null {
-  const fromDir = dirname(resolve(projectDir, fromRelativePath));
-  const base = resolve(fromDir, specifier);
-  const candidates: string[] = [];
-
-  if (specifier.endsWith('/')) {
-    for (const modExt of MODULE_EXTENSIONS) {
-      candidates.push(join(base, `index${modExt}`));
-    }
-  } else {
-    candidates.push(base);
-    if (extname(base).length === 0) {
-      for (const modExt of MODULE_EXTENSIONS) {
-        candidates.push(`${base}${modExt}`);
-        candidates.push(join(base, `index${modExt}`));
-      }
-    }
-  }
-
-  for (const candidate of candidates) {
-    try {
-      const relativePath = relative(projectDir, candidate);
-      if (relativePath.startsWith('..')) continue;
-      assertExistingPathConfined(relativePath, projectDir);
-      if (!existsSync(candidate)) continue;
-      if (lstatSync(candidate).isSymbolicLink()) continue;
-      return relativePath;
-    } catch {
-      // an unconfined, missing, or symlinked candidate is not a resolvable module path
-    }
-  }
-  return null;
-}
-
-type ModuleDependencies = {
-  paths: string[];
-  unresolvableDynamicDepPaths: string[];
-};
-
-function collectModuleDependencyPaths(projectDir: string, entryPath: string): ModuleDependencies {
-  const visited = new Set<string>();
-  const queue = [entryPath];
-  const paths: string[] = [];
-  const unresolvableDynamicDepPaths: string[] = [];
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current || visited.has(current)) continue;
-    visited.add(current);
-    paths.push(current);
-
-    let content: string;
-    try {
-      assertExistingPathConfined(current, projectDir);
-      const filePath = resolve(projectDir, current);
-      if (!existsSync(filePath)) continue;
-      const st = lstatSync(filePath);
-      if (st.isSymbolicLink()) continue;
-      content = readFileSync(filePath, 'utf8');
-    } catch {
-      continue;
-    }
-
-    const { specifiers, hasUnresolvableDynamicDep } = parseStaticModuleImports(content);
-    if (hasUnresolvableDynamicDep) unresolvableDynamicDepPaths.push(current);
-    for (const specifier of specifiers) {
-      const resolved = resolveLocalModulePath(projectDir, current, specifier);
-      if (resolved && !visited.has(resolved)) queue.push(resolved);
-    }
-  }
-
-  return { paths, unresolvableDynamicDepPaths };
-}
-
-function collectModuleDigests(projectDir: string, hooks: unknown): HookFileDigest[] {
-  const parsed = HooksConfigSchema.safeParse(hooks);
-  if (!parsed.success) return [];
-
-  const digests: HookFileDigest[] = [];
-  const seen = new Set<string>();
-  const flagged = new Set<string>();
-  for (const event of HookEventSchema.options) {
-    for (const entry of parsed.data[event] ?? []) {
-      if (entry.kind !== 'module') continue;
-      const { paths, unresolvableDynamicDepPaths } = collectModuleDependencyPaths(
-        projectDir,
-        entry.path,
-      );
-      for (const dependencyPath of paths) {
-        if (seen.has(dependencyPath)) continue;
-        seen.add(dependencyPath);
-        digests.push(hashHookFile(projectDir, dependencyPath));
-      }
-      for (const dependencyPath of unresolvableDynamicDepPaths) {
-        if (flagged.has(dependencyPath)) continue;
-        flagged.add(dependencyPath);
-        digests.push({ path: dependencyPath, error: UNRESOLVABLE_DYNAMIC_DEP });
-      }
-    }
-  }
-  return digests.toSorted((a, b) => a.path.localeCompare(b.path));
 }
 
 const PACKAGE_SCRIPT_ALIASES = new Set(['start', 'stop', 'restart', 'test']);

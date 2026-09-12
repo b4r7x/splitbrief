@@ -55,7 +55,8 @@
 
 @media (min-width: 1600px) {
   :root {
-    --content-max: 1392px;
+    --content-max: max(1664px, calc(100vw * 13 / 15));
+    --text-display: clamp(4.9rem, 5.4vw, 6.25rem);
     --text-note: 0.875rem;
     --text-serif-sub: 1.8125rem;
     --text-breath: 3.5rem;
@@ -63,7 +64,7 @@
     --line-art: 14px;
     --bar-h: 32px;
     --head-w: 330px;
-    --panel-w: 517px;
+    --panel-w: clamp(517px, 32.5vw, 624px);
   }
 }
 

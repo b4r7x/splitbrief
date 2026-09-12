@@ -9,9 +9,6 @@ import type { ApproveLevel } from '../../../core/schemas/enums.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
-import type { PhaseRecoveryBinding } from '../run/phases.js';
-import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
-import type { BriefGenerationRef, TaskExecutionPermit } from '../../../core/schemas/brief-owner.js';
 
 export type PlanningPhaseOptions = {
   wctx: PlannerCallbacksContext;
@@ -30,12 +27,6 @@ export type PlanningPhaseOptions = {
     state: WorkflowState;
     tasks: Task[];
   }) => Promise<{ state: WorkflowState; tasks: Task[]; cancelled?: boolean | undefined }>;
-  /**
-   * The workflow owner supplies recovery for the full planning lifecycle.
-   * Direct producer callers may intentionally omit it; producers then stop at
-   * their persisted handoff instead of constructing a synthetic owner.
-   */
-  recovery?: PhaseRecoveryBinding;
 };
 
 export type PlanningRunContext = {
@@ -46,18 +37,15 @@ export type PlanningRunContext = {
 };
 
 export type PlanningPhaseResult =
+  | Readonly<{ disposition: 'ready-for-tasks'; state: WorkflowState; tasks: readonly Task[] }>
   | Readonly<{
-      disposition: 'ready-for-tasks';
+      disposition: 'terminal';
       state: WorkflowState;
-      generation: BriefGenerationRef;
-      tasks: readonly Task[];
-      permit: TaskExecutionPermit;
-    }>
-  | Readonly<{
-      disposition: 'parked';
-      state: WorkflowState;
-      projection: BriefRecoveryProjectionV1;
-    }>
+      outcome: 'cancelled' | 'rejected' | 'failed';
+    }>;
+
+export type PlanningProducerResult =
+  | Readonly<{ disposition: 'tasks-ready'; state: WorkflowState; tasks: readonly Task[] }>
   | Readonly<{
       disposition: 'terminal';
       state: WorkflowState;
@@ -86,7 +74,6 @@ export type PlannerCallOptions = {
 
 export type BriefsApprovalLoopOptions = {
   tasks: Task[];
-  qualityValidatedTasks?: Task[] | undefined;
   planner: Planner;
   projectDir: string;
   sessionId: string;
@@ -104,7 +91,5 @@ export type BriefsApprovalLoopOptions = {
 export type BriefsApprovalLoopResult = {
   state: WorkflowState;
   tasks: Task[];
-  rejected: boolean;
   outcome: 'accepted' | 'aborted' | 'failed' | 'rejected';
-  aborted?: boolean | undefined;
 };

@@ -214,9 +214,9 @@ describe('configured custom workflow runtime', () => {
             makeConfig({
               implementer: { kind: 'cli', tool: 'codex', authChannel: 'session' },
               validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-              workflow: { mode: 'quick', persistTranscript: false },
+              workflow: { mode: 'quick' },
               approval: { enabled: false, feedRejectionsToPlanner: true },
-              codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
+              codebase: { enabled: false, tokenBudget: 4000 },
             }),
           );
           const dynamicConfig = ConfigSchema.parse({
@@ -340,7 +340,7 @@ describe('configured custom workflow runtime', () => {
         ...makeConfig({
           implementer: { kind: 'agent', command: 'cat', outputFormat: 'text', model: 'legacy' },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { mode: 'quick', persistTranscript: false },
+          workflow: { mode: 'quick' },
           approval: { enabled: false, feedRejectionsToPlanner: true },
         }),
         planner: runner(plannerCommand, 'configured planner'),

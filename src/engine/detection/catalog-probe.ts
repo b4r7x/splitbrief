@@ -25,7 +25,11 @@ import {
 } from '../../lib/process/spawn/lifecycle.js';
 import { DISCOVERY_SUBPROCESS_TIMEOUT_MS } from '../constants.js';
 import { resolveCustomExecutable } from '../runners/resolve-cli-executable.js';
-import { createSandboxEnv, prependCliExecutableDirectory } from '../runners/sandbox-env.js';
+import {
+  cliAuthChannelEnvKeys,
+  createSandboxEnv,
+  prependCliExecutableDirectory,
+} from '../runners/sandbox-env.js';
 import { bridgedCliStatePresent } from '../runners/sandbox-state-bridge.js';
 import { authChannelRequiresCredential } from '../runners/cli-tools/readiness-probe.js';
 import { isCanonicalCliDeclaredProbe } from '../runners/cli-tools/registry.js';
@@ -235,15 +239,16 @@ async function catalogProbeEnvironment(
 ): Promise<CatalogProbeEnvironment> {
   const channel = operation.authChannel;
   const hostState = channel === undefined ? 'none' : cliAuthChannelHostStateAccess(channel);
+  const preserveEnvKeys = cliAuthChannelEnvKeys(channel);
   const env = await createSandboxEnv({
     projectDir: neutralDir,
-    preserveEnvKeys: [...(channel?.env ?? [])],
+    preserveEnvKeys,
     selectedCli: hostState === 'none' ? undefined : operation.context.id,
     hostState,
   });
   const credentialMayBePresent =
     hostState === 'host-account' ||
-    (channel?.env ?? []).some((key) => (env[key] ?? '').trim().length > 0) ||
+    preserveEnvKeys.some((key) => (env[key] ?? '').trim().length > 0) ||
     (hostState === 'bridged-files' && (await bridgedCliStatePresent(env, operation.context.id)));
   return {
     env: {

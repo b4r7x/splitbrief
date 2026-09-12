@@ -61,9 +61,10 @@ function staleProviderModelCaches(
 }
 
 /**
- * A context change invalidates authority, not memory. Rows are keyed by
- * role + tool, so a remembered `implementer/opencode` catalog is still the right
- * data for `implementer/opencode` after the *planner* changes, and the models.dev
+ * A context change invalidates authority, not memory. CLI catalog rows are
+ * keyed by tool and executable context, and provider rows by role, so a
+ * remembered `opencode` catalog is still the right data for `opencode` after
+ * the *planner* changes, and the models.dev
  * catalog never depended on the runner context at all. Demote everything the new
  * context has not re-probed instead of dropping it, so the last known catalog
  * stays on screen while the lanes run. A `failed` row is the exception: it is a

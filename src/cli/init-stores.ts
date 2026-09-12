@@ -27,10 +27,25 @@ import { createLogger } from '../lib/logger.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
 import { cliError } from './errors.js';
 import { ensureHooksTrusted } from './hook-trust-prompt.js';
-import { resolveHooksConfig } from '../engine/hooks/discover.js';
 import { workflowOptsToCLIOverrides } from '../core/config/runtime/overrides/from-options.js';
 
 let historyPersistenceTeardown: (() => void) | null = null;
+const inFlightDiscovery = new Set<Promise<void>>();
+
+function trackDiscovery(work: Promise<void>): void {
+  inFlightDiscovery.add(work);
+  void work.finally(() => inFlightDiscovery.delete(work));
+}
+
+/**
+ * Settles the discovery work boot starts without awaiting — the models.dev
+ * catalog seed and the live detection refresh, both of which write caches under
+ * the state home. Boot never waits for it; a caller that is about to remove the
+ * state home does.
+ */
+export async function awaitBackgroundDiscovery(): Promise<void> {
+  while (inFlightDiscovery.size > 0) await Promise.all([...inFlightDiscovery]);
+}
 
 export function bootstrapStoresSync(projectDir: string, opts: WorkflowOpts = {}): void {
   initLogger(projectDir);
@@ -44,10 +59,9 @@ export async function bootstrapStoresHooks(
   opts: WorkflowOpts = {},
 ): Promise<void> {
   const storeConfig = configStore.get().config;
-  const mergedHooks = await resolveHooksConfig(projectDir, storeConfig?.hooks);
   await ensureHooksTrusted({
     projectDir,
-    hooks: mergedHooks,
+    hooks: storeConfig?.hooks,
     allowHooks: opts.allowHooks ?? false,
   });
 }
@@ -120,17 +134,21 @@ async function loadDiscovery(projectDir: string): Promise<void> {
   // models.dev is the only real model source, so the picker shows bundled
   // fallbacks until this lands. Nothing awaits it and it yields to any catalog
   // a live lane already delivered, so it races the refresh below safely.
-  void seedModelsDevCatalog().catch((err: unknown) => {
-    warnError('Could not read the remembered model catalog', err);
-  });
+  trackDiscovery(
+    seedModelsDevCatalog().catch((err: unknown) => {
+      warnError('Could not read the remembered model catalog', err);
+    }),
+  );
 
-  void loadDetectionForCurrentConfig({
-    service: getDefaultDetectionService(),
-    publication: detectionStore,
-    current,
-  }).catch((err: unknown) => {
-    warnError('Could not refresh runner discovery', err);
-  });
+  trackDiscovery(
+    loadDetectionForCurrentConfig({
+      service: getDefaultDetectionService(),
+      publication: detectionStore,
+      current,
+    }).catch((err: unknown) => {
+      warnError('Could not refresh runner discovery', err);
+    }),
+  );
 
   const skills = await discoverSkills(projectDir);
   skillsStore.setAvailable(skills);

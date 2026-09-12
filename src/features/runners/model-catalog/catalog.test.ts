@@ -10,6 +10,7 @@ import {
   getBundledModels,
   type ModelCacheAccessor,
 } from '../../../engine/providers/model/resolution.js';
+import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/catalog.js';
 import { runnerRoleForActiveRole } from '../../../core/runners/seat-roles.js';
 
 function pickerItem(
@@ -128,7 +129,7 @@ describe('right column models', () => {
       countModelOptions([
         { id: 'confirmed', membership: 'confirmed', isDetected: true },
         { id: 'stale', membership: 'stale', isStale: true, isDetected: false },
-        { id: 'suggestion', membership: 'catalog-suggestion' },
+        { id: 'suggestion', membership: CATALOG_SUGGESTION_MEMBERSHIP },
         { id: 'bundled', membership: 'bundled-suggestion' },
         { id: 'custom', membership: 'custom', isCustom: true },
         { id: 'custom-stale', membership: 'stale', isStale: true, isCustom: true },
@@ -373,7 +374,7 @@ describe('auto is a selection policy, never catalog data', () => {
     expect(ids).toContain('my-model');
   });
 
-  it('offers only the Auto row for backend-default and auto-only tools', () => {
+  it('offers only the policy rows for backend-default and auto-only tools', () => {
     for (const policy of ['backend-default', 'auto-only'] as const) {
       expect(
         buildRightModels({
@@ -381,7 +382,14 @@ describe('auto is a selection policy, never catalog data', () => {
           customModels: [],
           currentItem: cliItem('copilot', policy),
         }),
-      ).toEqual([{ id: 'auto' }]);
+      ).toEqual([
+        {
+          id: 'auto:cheapest',
+          displayName: 'Auto (cheapest capable)',
+          detail: 'priced per brief',
+        },
+        { id: 'auto' },
+      ]);
     }
   });
 
@@ -419,6 +427,61 @@ describe('auto is a selection policy, never catalog data', () => {
   it('never lets an auto row back into the resolved model catalog', () => {
     expect(resolveAndSort('copilot', 'implementer').map((model) => model.id)).not.toContain('auto');
     expect(resolveAndSort('codex', 'planner').map((model) => model.id)).not.toContain('auto');
+  });
+});
+
+describe('auto:cheapest is the BUILD seat price-routing row', () => {
+  it("the BUILD picker's first row is Auto (cheapest capable)", () => {
+    const models = buildRightModels({
+      role: 'implementer',
+      customModels: [],
+      currentItem: cliItem('claude-code', 'optional'),
+    });
+
+    expect(models[0]).toEqual({
+      id: 'auto:cheapest',
+      displayName: 'Auto (cheapest capable)',
+      detail: 'priced per brief',
+    });
+  });
+
+  it('an api, shell or agent BUILD column has no Auto (cheapest capable) row', () => {
+    for (const kind of ['api', 'shell', 'agent'] as const) {
+      const models = buildRightModels({
+        role: 'implementer',
+        customModels: ['my-model'],
+        currentItem: pickerItem(
+          {
+            id: kind,
+            displayName: kind,
+            kind,
+            roles: ['planner', 'implementer'],
+            modelPolicy: 'per-call',
+            billing: 'api-metered',
+            permissions: READY_CLI_PERMISSIONS,
+            status: { state: 'ready', remediation: null },
+            available: true,
+          },
+          true,
+        ),
+      });
+
+      expect(models.map((model) => model.id)).not.toContain('auto:cheapest');
+      expect(models[0]?.id).toBe('auto');
+    }
+  });
+
+  it('the PLAN and REVIEW pickers have no Auto (cheapest capable) row', () => {
+    for (const role of ['planner', 'reviewer'] as const) {
+      const models = buildRightModels({
+        role,
+        customModels: [],
+        currentItem: cliItem('claude-code', 'optional'),
+      });
+
+      expect(models.map((model) => model.id)).not.toContain('auto:cheapest');
+      expect(models[0]?.id).toBe('auto');
+    }
   });
 });
 
@@ -528,8 +591,8 @@ describe('one authoritative row per model', () => {
     const cache: ModelCacheAccessor = {
       getModelsDevCatalog: () => null,
       getProviderModels: () => null,
-      getScopedCliCatalogRuntime: () => ({
-        connection: { role: 'planner', tool: 'opencode', contextKey: 'routes-test' },
+      getCliCatalogRuntime: () => ({
+        connection: { tool: 'opencode', contextKey: 'routes-test' },
         state: 'fresh',
         models: [
           { id: 'anthropic/claude-sonnet-5' },
@@ -671,7 +734,7 @@ describe('one authoritative row per model', () => {
 });
 
 describe('the configured model that the list does not contain', () => {
-  it('marks the configured model absent from the list as a recovery row', () => {
+  it('recovers the configured model absent from the list as a custom row', () => {
     const models = buildRightModels({
       role: 'planner',
       customModels: ['some-unlisted-id'],
@@ -680,8 +743,8 @@ describe('the configured model that the list does not contain', () => {
     });
 
     expect(models.find((model) => model.id === 'some-unlisted-id')).toMatchObject({
-      isRecovery: true,
       isCustom: true,
+      membership: 'custom',
     });
   });
 
@@ -694,8 +757,8 @@ describe('the configured model that the list does not contain', () => {
       cache: {
         getModelsDevCatalog: () => null,
         getProviderModels: () => null,
-        getScopedCliCatalogRuntime: () => ({
-          connection: { role: 'planner', tool: 'opencode', contextKey: 'browsing-test' },
+        getCliCatalogRuntime: () => ({
+          connection: { tool: 'opencode', contextKey: 'browsing-test' },
           state: 'fresh',
           models: [{ id: 'anthropic/claude-sonnet-5' }],
           fetchedAt: 1,
@@ -704,11 +767,10 @@ describe('the configured model that the list does not contain', () => {
       },
     });
 
-    expect(models.some((model) => model.isRecovery === true)).toBe(false);
     expect(models.map((model) => model.id)).not.toContain('gpt-5.6-sol');
   });
 
-  it('reopens the catalog rows when browseCatalog is set', () => {
+  it('keeps a cli tool on its native rows even while the catalog is browsed', () => {
     const cache: ModelCacheAccessor = {
       getModelsDevCatalog: () => ({
         openai: {
@@ -718,8 +780,8 @@ describe('the configured model that the list does not contain', () => {
         },
       }),
       getProviderModels: () => null,
-      getScopedCliCatalogRuntime: () => ({
-        connection: { role: 'planner', tool: 'codex', contextKey: 'browse-test' },
+      getCliCatalogRuntime: () => ({
+        connection: { tool: 'codex', contextKey: 'browse-test' },
         state: 'fresh',
         models: [{ id: 'gpt-5-codex' }],
         fetchedAt: 1,
@@ -730,9 +792,11 @@ describe('the configured model that the list does not contain', () => {
     expect(resolveAndSort('codex', 'planner', cache).map((model) => model.id)).toEqual([
       'gpt-5-codex',
     ]);
+    // Browsing reopens the bundled lane, never models.dev: a CLI tool has no models.dev lane in
+    // any state (REQ-B08), so the hydrated `gpt-4o` row stays out of the column.
     expect(
       resolveAndSort('codex', 'planner', cache, { browseCatalog: true }).map((model) => model.id),
-    ).toContain('gpt-4o');
+    ).not.toContain('gpt-4o');
   });
 });
 

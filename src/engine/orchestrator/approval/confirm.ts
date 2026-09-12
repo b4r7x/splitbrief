@@ -6,7 +6,7 @@ import {
   publishApprovalRejected,
 } from './events.js';
 import type { ActionClass } from '../../../core/schemas/enums.js';
-import { isConfiguredHeadless, type GateActionInput, type GateDecision } from './types.js';
+import type { GateActionInput, GateDecision } from './types.js';
 
 export type ConfirmTierInput = {
   input: GateActionInput;
@@ -16,12 +16,12 @@ export type ConfirmTierInput = {
 
 export async function gateConfirmTier(args: ConfirmTierInput): Promise<GateDecision> {
   const { input, request, actionClass } = args;
-  const { actionDescription, phase, taskId, bus, callbacks, config } = input;
+  const { actionDescription, phase, taskId, bus, callbacks } = input;
   const tier = 'confirm' as const;
 
   publishApprovalPrompted({ bus, phase, tier, actionClass, taskId });
 
-  if (!callbacks.onTieredApproval || isConfiguredHeadless(config)) {
+  if (!callbacks.onTieredApproval) {
     publishApprovalRejected({
       bus,
       phase,

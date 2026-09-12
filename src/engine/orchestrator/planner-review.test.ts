@@ -82,45 +82,6 @@ describe('runPlannerReview candidate mode', () => {
     expect(existsSync(join(sessionDir(projectDir, sessionId), TASKS_FILE))).toBe(false);
   });
 
-  it('keeps the recovery provider output non-canonical when a candidate is requested', async () => {
-    const { projectDir, sessionId } = setupProjectDir();
-    const { bus, events } = makeBusRecorder();
-    const priorBriefs = '# Prior Task Briefs\n\nUnchanged.\n';
-    writeSpecFile({ projectDir, sessionId }, TASKS_FILE, priorBriefs, TEST_METADATA);
-    const priorBytes = readSpecFile({ projectDir, sessionId }, TASKS_FILE);
-    const dispatch = vi.fn().mockResolvedValue({
-      kind: 'completed',
-      requestId: 'request-candidate',
-      dispatchPossibility: 'possible',
-      remoteObservation: 'confirmed-final',
-      text: '# Recovered Task Briefs\n\nCandidate only.\n',
-      providerCode: null,
-      usage: null,
-    });
-    const planner = makePlanner();
-
-    const result = await runPlannerReview({
-      planner,
-      prompt: 'recover the briefs',
-      projectDir,
-      sessionId,
-      bus,
-      state: createInitialState('feature'),
-      returnCandidate: true,
-      briefRecovery: {
-        epochId: 'epoch-candidate',
-        operationId: 'operation-candidate',
-        requestId: 'request-candidate',
-        provider: { dispatch },
-      },
-    });
-
-    expect(dispatch).toHaveBeenCalledTimes(1);
-    expect(result.text).toBe('# Recovered Task Briefs\n\nCandidate only.\n');
-    expect(readSpecFile({ projectDir, sessionId }, TASKS_FILE)).toBe(priorBytes);
-    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
-  });
-
   it('still writes a spec when candidate mode is not requested', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { bus, events } = makeBusRecorder();

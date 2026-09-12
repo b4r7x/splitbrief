@@ -14,7 +14,7 @@ SPLITBRIEF is a CLI tool. CLI tools are loved when they respect the developer's 
 
 ### 2. Savings reported, not promised
 
-The post-run line — `$0.12 actual vs $0.95 baseline · 87% saved` — is a reported fact, not the argument for switching; that argument is the pairing and what the review catches (`VISION.md`). Report it honestly: the baseline reprices the implementer's tokens at planner rates, so it answers "what would this run have cost on the planner alone", not a measured A/B. When pricing for either side is unknown the estimate is suppressed rather than guessed (`hasSavingsEstimate: false`, `src/engine/providers/cost/breakdown.ts`). It stays prominent and copy-pasteable, and `splitbrief stats` keeps the cumulative view — it just stops being the headline.
+The post-run line — `$0.12 actual vs $0.95 baseline · 87% saved` — is a reported fact, not the argument for switching; that argument is the pairing and what the review catches (`VISION.md`). Report it honestly: the baseline reprices the implementer's tokens at planner rates, so it answers "what would this run have cost on the planner alone", not a measured A/B. When pricing for either side is unknown the estimate is suppressed rather than guessed (`hasSavingsEstimate: false`, `src/engine/providers/cost/breakdown.ts`). It stays prominent and copy-pasteable — it just stops being the headline.
 
 ### 3. Heartbeat over silence
 
@@ -22,7 +22,7 @@ Any wait > 5 seconds must show proof of life: token count incrementing, current 
 
 ### 4. One command for session continuity
 
-Users should never think about session lifecycle. `splitbrief continue` (or `splitbrief last`) figures out the right thing: attach if running, resume if interrupted. Kill the tmux-complexity of 5 separate session commands for the 90% case.
+Users should never think about session lifecycle. `splitbrief continue` figures out the right thing: it resolves the session by alias, id or the active pointer and resumes it from saved state. Kill the tmux-complexity of separate session commands for the 90% case.
 
 ### 5. Progressive disclosure everywhere
 
@@ -30,7 +30,7 @@ Default output is minimal. Details expand on keypress. Config starts at 3 lines 
 
 ### 6. Cost-gated approval
 
-Before implementation starts, show: "12 tasks | Est. $0.14 | All-planner: ~$1.20 | Approve? [Y/n]". This is the last cheap moment to cut scope; the numbers are there to inform that decision, not to congratulate the user.
+Before implementation starts the cost gate opens as a bordered panel: a `12 tasks` header, then one labelled row each for `est`, `all-planner` and `saving`, then the `y approve` / `x deny` options. When the estimate covers prompt input only, the labels say so and a scope note names what is tracked at runtime instead (`formatCostGateSummary`, `src/core/cost-gate-summary.ts`). This is the last cheap moment to cut scope; the numbers are there to inform that decision, not to congratulate the user.
 
 ### 7. Streaming partial output
 
@@ -114,21 +114,13 @@ Inline up to 2 repetitions. Extract on the 3rd. The routing decision spread (8 f
 
 All path-confinement checks (rejecting `..` traversals, absolute paths, Windows paths) must route through `assertPathConfined`. Duplicating the logic across files means inconsistent platform handling and silent security divergence.
 
-### AD-7: Append-only tree session model
+### AD-7: Append-only tree session model — superseded
 
-Session data should be append-only JSONL with `{id, parentId, type, timestamp}` entries forming a tree. A `leafId` pointer tracks the active execution path. Recovery decisions create branches — move the pointer backward and start a new child path. Nothing is deleted.
-
-Entry types: `plan-step`, `agent-invocation`, `recovery-decision`, `compaction`, `branch-summary`, `file-state`, `custom` (metadata not for LLM).
-
-Benefits:
-- Sessions survive crashes (append-only)
-- Branching is free (just move the pointer)
-- Full audit trail (every attempt preserved)
-- UUIDs as file names (time-sortable)
+Superseded: the append-only session tree was removed. A session is a JSONL event log plus `summary.json` under `.splitbrief/sessions/<id>/`.
 
 ### AD-8: Branch summarization on recovery
 
-When execution branches (recovery decision moves the leaf backward), call an LLM to summarize the abandoned branch using a structured format:
+When execution branches (a recovery decision sends execution back to an earlier point), call an LLM to summarize the abandoned branch using a structured format:
 
 ```
 ## Goal
@@ -142,25 +134,13 @@ Inject the summary with preamble: "A previous agent attempt was abandoned. Summa
 
 Track `readFiles` and `modifiedFiles` across compactions. Use an incremental UPDATE prompt: when compacting again, pass previous summary to LLM and ask to merge, not regenerate.
 
-### AD-9: Custom entries for heterogeneous orchestration state
+### AD-9: Custom entries for heterogeneous orchestration state — superseded
 
-The session tree won't be (user, assistant) pairs. It's heterogeneous:
-- `plan-step` definitions (what to do)
-- `agent-invocation` records (which agent, what prompt, exit code, tokens, duration)
-- `file-state` snapshots (files modified so far)
-- `recovery-rationale` (why we branched)
-- `cost-checkpoint` (accumulated spend at this point)
+Superseded with AD-7: there are no tree entry types; the session log records engine events.
 
-Each entry carries a `display` flag controlling what the user sees in TUI vs. internal bookkeeping. On session reload, walk entries by type to reconstruct orchestrator state.
+### AD-10: Tree navigation with active-path markers — superseded
 
-### AD-10: Tree navigation with active-path markers
-
-A plan-tree viewer showing execution history as a visual tree:
-- ASCII connectors (`├─`, `└─`, `│`) for parent-child
-- Active-path marker (`*`) on every entry from root to current leaf
-- Filter modes: all steps, failed-only, active-path-only
-- Labels (user bookmarks) for important decision points
-- Fold completed sub-trees to reduce noise
+Superseded with AD-7: there is no plan-tree viewer.
 
 ### AD-11: Unified autocomplete
 
@@ -173,7 +153,7 @@ All three use the same fuzzy ranking algorithm (AD-4).
 
 ### AD-12: Structured compaction for long plans (partial)
 
-Implemented for transcript compaction: `workflow.compactionFormat` supports `auto`, `freeform`, and `structured`; `auto` selects structured JSON for `api` planners and freeform for subprocess planners. Structured summaries use `Plan Goal / Steps Completed / Current Step / Files Modified / Constraints Discovered / Remaining Work`, update incrementally by merging with the previous structured summary, and fall back to freeform text on validation failure. Still future: tree-session compaction entries and read-file tracking across branches.
+Implemented for transcript compaction: `workflow.compactionFormat` supports `auto`, `freeform`, and `structured`; `auto` selects structured JSON for `api` planners and freeform for subprocess planners. Structured summaries use `Plan Goal / Steps Completed / Current Step / Files Modified / Constraints Discovered / Remaining Work`, update incrementally by merging with the previous structured summary, and fall back to freeform text on validation failure.
 
 ---
 
@@ -183,10 +163,8 @@ The niche has direct competitors now (`VISION.md`). Any single row here can be m
 
 | Feature | What it does |
 |---|---|
-| `ps` / `attach` / `detach` | Background sessions as first-class citizens |
 | `doctor` | Pre-flight readiness check with blockers/warnings/suggestions |
 | Recovery system | Typed `RecoveryIssue` → user chooses `RecoveryAction` (skip, retry, abort, switch-profile) |
-| `explain` | Post-hoc reasoning about routing/cost/review decisions |
 | Budget tracking | Real-time cost prediction, budget gates, `budget_exceeded` events |
 | Mode system | `quick`/`standard`/`speckit` — adjusts ceremony to task complexity |
 | Drift detection | Detects when implementation diverges from plan |
@@ -198,6 +176,8 @@ The niche has direct competitors now (`VISION.md`). Any single row here can be m
 ---
 
 ## Historical appendix (2026-05-01)
+
+Kept verbatim as a dated record. Some rows below name commands and features that have since been removed; they are history, not the current surface.
 
 Point-in-time tracker content captured during the 2026-05-01 audit. These tables are a snapshot, not durable direction — scores were self-assigned against a private audit with no checkable rubric, and the open/done status drifts as work lands. Live status belongs in the issue tracker; this section is kept only as a dated historical record. Durable direction is the UX Principles, Architecture Decisions, and Competitive Advantages above.
 
@@ -217,9 +197,9 @@ These were specced in DIRECTION but not yet built as of the audit. Each is a sta
 | First-run experience | 9/10 | `splitbrief "feature"` shorthand, `@file` syntax, `--help` with examples |
 | Core feedback loop | 9/10 | Planner heartbeat, streaming partial output from API implementers |
 | Error UX | 7/10 | Crash diagnostics excellent; recovery prompts lack consequence descriptions |
-| Session management | 9/10 | `continue`/`last`, numeric aliases in `ps` |
+| Session management | 9/10 | `splitbrief continue` resolves by numeric alias, id, or the active pointer (the separate `last`, `ps` and `attach` commands were retired) |
 | Planning phase UX | 9/10 | Per-task reject+regen, contextual footer keybindings |
-| Cost visibility | 9/10 | Hero savings stat, `splitbrief stats`, cost-gated approval |
+| Cost visibility | 9/10 | Hero savings stat on the summary screen, cost-gated approval (the separate `splitbrief stats` command was retired) |
 | Streaming output | 9/10 | Live partial output during API implementer generation |
 | Configuration | 6/10 | Progressive disclosure missing, three approval escape hatches |
 
@@ -231,10 +211,10 @@ These were specced in DIRECTION but not yet built as of the audit. Each is a sta
 | `@file` syntax | `splitbrief "refactor auth" @context.md @screenshot.png` enriches planner context | ✅ |
 | `--help` with 14 real examples | Not just flag descriptions — concrete command examples with explanations | ✅ |
 | `splitbrief continue` | Smart command: attaches if running, resumes if interrupted | ✅ |
-| `splitbrief last` | Attach or resume the most recent session | ✅ |
-| `splitbrief stats` | Cumulative savings across all sessions | ✅ |
+| `splitbrief last` | Attach or resume the most recent session | Retired — `splitbrief continue 1` targets the most recent session, and the bare form resumes the active pointer |
+| `splitbrief stats` | Cumulative savings across all sessions | Retired — per-run savings live on the summary screen |
 | Hero savings post-run | "$0.12 actual vs $0.95 all-planner — 87% saved" | ✅ |
-| Cost-gated approval | "12 tasks \| Est. $0.14 \| Approve? [Y/n]" before impl starts | ✅ |
+| Cost-gated approval | Task count, `est` / `all-planner` / `saving` rows and `y`/`x` options before implementation starts | ✅ |
 | Planner heartbeat | Token counter or phase hint during long waits | ✅ |
 | Streaming partial output | Last N lines from API implementer in real-time | ✅ |
 | Per-task reject + regen | Flag tasks, press `R` to send back to planner | ✅ |
@@ -242,42 +222,10 @@ These were specced in DIRECTION but not yet built as of the audit. Each is a sta
 | Recovery consequence text | "retry-task: re-runs prompt, costs ~$0.02" | — |
 | Auto-expand active diffs | Diffs expanded for running task, collapsed for completed | — |
 | Unify approval flags | `--auto` removed; `--approve none` and `--yolo` remain distinct concepts (document gates vs file-write gates) | ✅ |
-| Session numeric aliases | `splitbrief attach 1` instead of `splitbrief attach 20250412-143022-abc` | ✅ |
+| Session numeric aliases | `splitbrief continue 1` instead of the full `20250412-143022-abc` id | ✅ (on `continue`; the `attach` command was retired) |
 | HTML/Markdown session export | Export workflow results as shareable artifact | — |
 | External `$EDITOR` integration | Open editor for long feature descriptions | — |
 | Agent/profile cycling keybind | Ctrl+P cycles implementer profiles | — |
-
----
-
-## Session model (implemented 2026-05-01)
-
-The session model uses an append-only JSONL tree with typed entries. This is the foundation for intelligent recovery, cost tracking, and workflow visibility. Implementation: `src/core/sessions/tree/`.
-
-The `TreeRecorder` EventSink (`src/engine/events/sinks/tree-recorder.ts`) is registered in `run/init.ts` and actively records every workflow execution. It maps `EngineEvent` instances to tree entries and branches on recovery. This runs alongside the existing JSONL sink — the tree provides structured navigation while JSONL provides raw replay.
-
-### Data model
-
-```
-session-<uuid>.jsonl (append-only)
-├── entry: { id, parentId, type, timestamp, ...payload }
-├── entry: { id, parentId, type, timestamp, ...payload }
-└── ...
-
-Pointer: leafId → current active entry (tip of active branch)
-```
-
-### Tree operations
-
-| Operation | What happens |
-|---|---|
-| Normal execution | Append entry with `parentId = previousLeafId`, update leafId |
-| Recovery branch | Move leafId to decision point, append new entry from there |
-| Compaction | Append `compaction` entry with structured summary, update context window |
-| Resume | Walk from leafId to root, rebuild orchestrator state from entries |
-
-### Why tree, not linear
-
-Linear sessions lose context on recovery. When an agent attempt fails and we try a different approach, the linear model either keeps the failed context (wastes tokens) or deletes it (loses learning). The tree model preserves both paths. Branch summarization (AD-8) extracts the learning into a compact form for the new branch.
 
 ---
 

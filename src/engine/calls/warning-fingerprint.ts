@@ -19,15 +19,6 @@ export function runnerCallWarningFingerprint(opts: {
   return `rw:${sha256Hex(`${opts.source}\0${opts.code}\0${normalized}`).slice(0, 24)}`;
 }
 
-export function runnerCallWarningSafeFingerprint(opts: {
-  callId: string;
-  code: string;
-  source: string;
-  surface: string;
-}): string {
-  return `rw-safe:${sha256Hex(`${opts.callId}\0${opts.source}\0${opts.code}\0${opts.surface}`).slice(0, 24)}`;
-}
-
 export function normalizeRunnerCallWarningFingerprintText(message: string): string {
   return message
     .replace(ISO_TIMESTAMP_PATTERN, '<timestamp>')

@@ -5,76 +5,20 @@
 
 ## v4 contract boundary
 
-`state.json` is a versioned, fenced contract. The current persisted
-`stateVersion` is `4`; `stateRevision` and `stateFence` identify the state
-head. Only the state-operations/controller path may mutate it. Every mutation
-rebases complete state, supplies the expected revision, and refuses a stale,
-future, malformed, or owner-less write. All modes (`quick`,
-`standard`, and `speckit`) and all callers (TUI, RPC, IPC attach, and headless)
-consume the same v4 projection and command policy. Read-only integrations may
-observe state but never promote a local migration, retry a provider, or bypass
-the fence.
-
-The v4 Evidence Spine keeps the active Brief, quality report, input receipts,
-attempt and usage receipts, evidence head, outbox, and revisions durable. Its
-state moves through `checking`, `auto-repairing`, `blocked`,
-`storage-blocked`, `retrying`, `unresolved`, `ready`, `readiness-blocked`, or
-`rejected`. `CONTRACT READY` is a binary contract result. `CONTRACT BLOCKED`
-and `brief_contract_blocked` are refusal outcomes; a diagnostic score or
-warning cannot change them. `READINESS BLOCKED` is a separate readiness
-diagnostic and is not a quality override.
-
-The planner receives one bounded automatic `auto-repair`. After that repair,
-the user must explicitly choose `retry`, `edit`, or `reject`; there is no
-unbounded repair and no observational retry. Commands also include explicit
-`approve`, `comment`, `import`, and `resolve-unresolved` actions, while
-`status` is read-only. Retry carries identity and expected Brief/report
-revisions and does not fabricate a comment. If remote dispatch is ambiguous,
-the state is `UNRESOLVED`: held inputs and usage stay durable until an explicit
-rebind with acknowledged duplication risk or abandon. No action may override a
-failed quality contract.
+`state.json` is a versioned contract. The current persisted `stateVersion` is
+`4`, and `stateRevision` identifies the state head. Only the
+state-operations/controller path may mutate it. Every mutation rebases complete
+state, supplies the expected revision, and refuses a stale, future, or
+malformed write. All modes (`quick`, `standard`, and `speckit`) and all callers
+(TUI and headless) consume the same v4 projection and command policy. Read-only
+integrations may observe state but never promote a local migration, retry a
+provider, or bypass the revision check. The keys `stateFence`,
+`authorityRevision`, `generation`, `permit` and `briefRecovery` are legacy: a
+loaded state that still carries them has them stripped.
 
 A Task Brief may enter implementation only when the current deterministic Brief Quality report has zero errors.
 Warnings remain non-blocking, and an invalid brief must never be advanced through an approval override.
 The report is written to the session folder as `brief-quality.json`.
-Recovery leaves durable, inspectable evidence for the initial quality result, automatic repair exhaustion, each accepted manual retry, each provider failure, user edits or queued input, and conscious rejection.
-
-## Generation and execution permit
-
-Zero errors on the current deterministic quality report is the admission
-condition, not the execution authority. A passing candidate is installed as an
-immutable Brief generation (the Tasks, the matching quality report, a
-provenance manifest, and digests), made authoritative by the sole fenced owner
-commit, and only then are the fixed `tasks.md` and `brief-quality.json` files
-refreshed as compatibility projections of that generation. Readers that decide
-readiness or execution resolve the owner-committed generation and permit; the
-fixed files are projections, never authority.
-
-Only a current execution permit authorizes task execution. Approval of the
-briefs issues the permit through the same sole owner commit
-(`issueApprovedGenerationPermit`,
-`src/engine/orchestrator/planning/briefs-approval-queue.ts`), binding
-execution to the exact approved epoch, authority revision, generation, and
-quality digest. The refusal reasons are `no-authority`, `not-ready`,
-`epoch-mismatch`, `revision-mismatch`, `generation-mismatch`,
-`digest-mismatch`, and `uncommitted`; a repeated issuance of the same
-generation converges idempotently. A published but unapproved generation is
-explicitly non-executable.
-
-At the task boundary the orchestrator re-reads the owner head and the persisted
-Brief artifacts before any implementer call (`revalidatePersistedExecutionPermit`,
-`src/engine/orchestrator/planning/handoff.ts`). The planning result is only a
-proposal; execution proceeds only while a persisted permit matches the current
-epoch, authority revision, and generation digests. A mismatch parks or
-terminates the run with zero implementer calls.
-
-`state.json` carries the authority alongside `tasks`: `authorityRevision`
-(fenced owner authority counter), `generation` (a `BriefGenerationRef` with
-generation id, manifest, tasks, and quality digests plus program id), and
-`permit` (a `TaskExecutionPermit` with epoch, authority revision, generation
-digests, and approval evidence). Read-only consumers may read these fields for
-status; they must not use task count, score, or the fixed files to infer
-execution readiness.
 
 ### Tiered compiler admission
 
@@ -330,7 +274,7 @@ After each planning phase produces its Task Brief, the orchestrator runs a quali
 }
 ```
 
-`score` ranges from 0–1: `1 - (errorCount × 0.2) - (warningCount × 0.05)`, clamped to `[0, 1]`. A score never authorizes a quality override: any error keeps the result `CONTRACT BLOCKED`.
+`score` ranges from 0–1: `1 - (errorCount × 0.2) - (warningCount × 0.05)`, clamped to `[0, 1]`. A score never authorizes a quality override: any error keeps the brief out of implementation.
 
 ## Evidence ledger
 

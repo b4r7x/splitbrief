@@ -14,11 +14,16 @@ export interface NativeCliModelCatalogEntry {
   readonly selectionId: string;
   readonly nativeOrder: number;
   readonly displayName?: string | undefined;
+  readonly detail?: string | undefined;
   readonly nativeDefault?: boolean | undefined;
   readonly nativeHidden?: boolean | undefined;
   readonly nativeReasoningEfforts?: readonly string[] | undefined;
   readonly nativeDefaultReasoningEffort?: string | undefined;
   readonly contextWindow?: number | undefined;
+  readonly supportsToolCalls?: boolean | undefined;
+  readonly outputModalities?: readonly string[] | undefined;
+  readonly pricingInput?: number | undefined;
+  readonly pricingOutput?: number | undefined;
 }
 
 export interface NativeCliModelCatalog {
@@ -33,7 +38,8 @@ const CURSOR_MODEL_LINE = /^(\S+) - (.+)$/;
 // a run of spaces, and only first-party ids drop the `provider/` prefix. The id
 // shape rejects the provider headings, the `cmd --model …` usage examples and
 // the trailing `Docs:` line, none of which are selectable.
-const COMMAND_CODE_MODEL_LINE = /^([a-z0-9][a-z0-9.-]*(?:\/[a-z0-9][a-z0-9.-]*)*) {2,}(.+)$/i;
+const COMMAND_CODE_MODEL_LINE =
+  /^([a-z0-9][a-z0-9.-]*(?::[a-z0-9][a-z0-9.-]*)?(?:\/[a-z0-9][a-z0-9.-]*(?::[a-z0-9][a-z0-9.-]*)?)*) {2,}(.+)$/i;
 // `copilot help config` prints the `--model` enum as quoted bullets under its
 // `model` key, and a blank line separates the last bullet from the next config
 // key, so the first non-bullet line ends the enum rather than interrupting it.
@@ -92,6 +98,20 @@ const VerboseModelBlockSchema = z
       .passthrough()
       .optional(),
     variants: z.record(z.string(), z.unknown()).optional(),
+    capabilities: z
+      .object({
+        toolcall: z.boolean().optional(),
+        output: z.object({ text: z.boolean().optional() }).passthrough().optional(),
+      })
+      .passthrough()
+      .optional(),
+    cost: z
+      .object({
+        input: z.number().finite().nonnegative().optional(),
+        output: z.number().finite().nonnegative().optional(),
+      })
+      .passthrough()
+      .optional(),
   })
   .passthrough();
 
@@ -202,10 +222,18 @@ function verboseBlockFields(
   // models on 2026-09-05 (kilo 7.0.49): no text window, not a zero-token one.
   const context = block.data.limit?.context;
   const variants = block.data.variants;
+  const toolcall = block.data.capabilities?.toolcall;
+  const outputText = block.data.capabilities?.output?.text;
+  const costInput = block.data.cost?.input;
+  const costOutput = block.data.cost?.output;
   return {
     ...(block.data.name === undefined ? {} : { displayName: block.data.name }),
     ...(context === undefined || context === 0 ? {} : { contextWindow: context }),
     ...(variants === undefined ? {} : { nativeReasoningEfforts: Object.keys(variants) }),
+    ...(toolcall === undefined ? {} : { supportsToolCalls: toolcall }),
+    ...(outputText === undefined ? {} : { outputModalities: outputText ? ['text'] : [] }),
+    ...(costInput === undefined ? {} : { pricingInput: costInput }),
+    ...(costOutput === undefined ? {} : { pricingOutput: costOutput }),
   };
 }
 
@@ -302,10 +330,10 @@ export function parseCommandCodeNativeModelCatalog(stdout: string): NativeCliMod
     const selectionId = match?.[1];
     const blurb = match?.[2];
     if (selectionId === undefined || blurb === undefined) continue;
-    // The second column is a capability blurb, not a display name, so the row
-    // contributes no displayName and the picker falls back to the id.
+    const detail = blurb.replace(NATIVE_DEFAULT_SUFFIX, '').trim();
     entries.push({
       selectionId,
+      ...(detail.length === 0 ? {} : { detail }),
       ...(NATIVE_DEFAULT_SUFFIX.test(blurb) ? { nativeDefault: true } : {}),
     });
   }
@@ -331,6 +359,7 @@ export function nativeCliCatalogToDetectedModels(catalog: NativeCliModelCatalog)
     id: model.selectionId,
     nativeOrder: model.nativeOrder,
     ...(model.displayName === undefined ? {} : { displayName: model.displayName }),
+    ...(model.detail === undefined ? {} : { detail: model.detail }),
     ...(model.nativeDefault === undefined ? {} : { nativeDefault: model.nativeDefault }),
     ...(model.nativeHidden === undefined ? {} : { nativeHidden: model.nativeHidden }),
     ...(model.contextWindow === undefined ? {} : { contextLength: model.contextWindow }),
@@ -343,6 +372,14 @@ export function nativeCliCatalogToDetectedModels(catalog: NativeCliModelCatalog)
           nativeReasoningEfforts: [...model.nativeReasoningEfforts],
           supportsReasoning: model.nativeReasoningEfforts.length > 0,
         }),
+    ...(model.supportsToolCalls === undefined
+      ? {}
+      : { supportsToolCalls: model.supportsToolCalls }),
+    ...(model.outputModalities === undefined
+      ? {}
+      : { outputModalities: [...model.outputModalities] }),
+    ...(model.pricingInput === undefined ? {} : { pricingInput: model.pricingInput }),
+    ...(model.pricingOutput === undefined ? {} : { pricingOutput: model.pricingOutput }),
   }));
 }
 

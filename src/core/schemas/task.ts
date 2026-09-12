@@ -25,7 +25,6 @@ export const TaskIdSchema = z
   .brand<'TaskId'>();
 export type TaskId = z.infer<typeof TaskIdSchema>;
 export const taskId = (s: string): TaskId => TaskIdSchema.parse(s);
-export const taskIdToString = (id: TaskId): string => id;
 
 export function isTaskCompleted(status: Task['status']): boolean {
   return status === 'done' || status === 'escalated';

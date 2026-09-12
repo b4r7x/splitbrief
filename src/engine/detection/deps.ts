@@ -133,32 +133,31 @@ function admittedCliAuthChannels(
 }
 
 /**
- * The native-catalog lane probes every admitted catalog-capable tool, not just
- * the active roles' tools: each role keeps its real context for its own tool
- * and gains synthesized complete contexts (default channel, no model, no
- * credential domain) for the rest, so non-selected tools still surface their
- * provider/model space. Execution stays behind the same admission gates —
- * an unresolvable executable or incompatible version never spawns a probe.
+ * One context per catalog-capable tool: a model listing belongs to the
+ * executable and the user's credentials, not to the seat that will use it. A
+ * tool an active runner already uses contributes that runner's real context
+ * (planner first); every other tool gets a synthesized complete context on
+ * its default channel, with no model and no credential domain. Execution
+ * stays behind the same admission gates — an unresolvable executable or
+ * incompatible version never spawns a probe.
  */
 function catalogDiscoveryContexts(
   contexts: ActiveRunnerContexts,
 ): readonly RunnerDiscoveryContext[] {
-  const result: RunnerDiscoveryContext[] = [contexts.planner, contexts.implementer];
-  for (const role of ['planner', 'implementer'] as const) {
-    const active = contexts[role];
-    for (const tool of NATIVE_CLI_CATALOG_TOOL_IDS) {
-      if (active.kind === 'cli' && active.id === tool) continue;
-      result.push({
-        role,
-        kind: 'cli',
-        id: tool,
-        authChannel: defaultCliAuthChannel(tool).id,
-        credentialPresent: false,
-        configGeneration: active.configGeneration,
-      });
-    }
-  }
-  return result;
+  return NATIVE_CLI_CATALOG_TOOL_IDS.map((tool): RunnerDiscoveryContext => {
+    const active = [contexts.planner, contexts.implementer].find(
+      (context) => context.kind === 'cli' && context.id === tool,
+    );
+    if (active !== undefined) return active;
+    return {
+      role: 'implementer',
+      kind: 'cli',
+      id: tool,
+      authChannel: defaultCliAuthChannel(tool).id,
+      credentialPresent: false,
+      configGeneration: contexts.implementer.configGeneration,
+    };
+  });
 }
 
 function sourceContext(
@@ -169,15 +168,15 @@ function sourceContext(
   }>,
 ): string {
   const { planner, implementer } = input.contexts;
-  // The ':all-tools' salts key pre-widening disk snapshots out of the lanes:
-  // readiness gained all-admitted-tools auth probing, cliModels gained
-  // all-admitted-tools catalog contexts; a stale TTL-valid snapshot from
-  // before either widening must never hydrate into the new semantics.
+  // The salts key pre-change disk snapshots out of the lanes: readiness gained
+  // all-admitted-tools auth probing, cliModels moved from role-scoped to
+  // per-tool catalog contexts; a stale TTL-valid snapshot from before either
+  // change must never hydrate into the new semantics.
   const sourceLabel =
     input.source === 'readiness'
       ? 'readiness:all-tools'
       : input.source === 'cliModels'
-        ? 'cliModels:all-tools'
+        ? 'cliModels:per-tool'
         : input.source;
   return detectionContextKey({
     platform: process.platform,

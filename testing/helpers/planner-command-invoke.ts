@@ -106,8 +106,6 @@ export function runtimeFor(
       ((artifactInput) =>
         beginDeclaredArtifactReview({
           ...artifactInput,
-          projectDir: input.projectDir,
-          sessionId: 'planner-adapter-session',
           onApprovalNeeded,
         })),
   };

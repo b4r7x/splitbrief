@@ -10,6 +10,7 @@ import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
 import { getRunnerCommand } from '../../core/config/accessors/runner-config.js';
 import {
   AUTOMATIC_MODEL,
+  isAutoCheapestModel,
   isAutomaticModel,
   normalizeConfiguredModel,
 } from '../../core/providers/automatic-model.js';
@@ -99,7 +100,6 @@ function laneOf(source: DiscoverySourceRefresh): CatalogLane {
  * the honest answer is "unsupported" rather than silence.
  */
 function deriveCatalogDiagnostic(
-  role: SeatPickerRole,
   item: PickerOption | undefined,
 ): ModelCatalogDiagnostic | undefined {
   if (item === undefined || item.kind !== 'cli' || !includes(CLI_TOOL_IDS, item.id)) {
@@ -107,7 +107,7 @@ function deriveCatalogDiagnostic(
   }
   const tool = item.id;
   if (!hasNativeCliCatalog(tool)) return { kind: 'unsupported' };
-  const runtime = modelCacheStore.getScopedCliCatalogRuntime({ role: seatPickerLane(role), tool });
+  const runtime = modelCacheStore.getCliCatalogRuntime({ tool });
   if (runtime === null || runtime === undefined) return { kind: 'not-probed' };
   if (runtime.failure === undefined) return undefined;
   return { kind: 'probe-failed', failure: runtime.failure };
@@ -127,10 +127,14 @@ function rowIndexForModel(rows: readonly RightRow[], persistedModel: string | un
   return 0;
 }
 
-/** The models the tool's own listing produced: the Auto row is an affordance and a custom row is the user's. */
+/** The models the tool's own listing produced: an Auto row is an affordance, so is price routing, and a custom row is the user's. */
 function countModelRows(rows: readonly RightRow[]): number {
   return rows.filter(
-    (row) => row.kind === 'model' && row.provenance !== 'Custom' && !isAutomaticModel(row.model.id),
+    (row) =>
+      row.kind === 'model' &&
+      row.provenance !== 'Custom' &&
+      !isAutomaticModel(row.model.id) &&
+      !isAutoCheapestModel(row.model.id),
   ).length;
 }
 
@@ -273,7 +277,7 @@ export function usePickerCatalog(
   const seatAxisIndex = seatAxisFocused ? rowIndexForEffortAxis(rightRows) : -1;
   const modelCounts = countModelOptions(rightModels);
   const catalogDiagnostic =
-    modelCounts.confirmed > 0 ? undefined : deriveCatalogDiagnostic(role, currentItem);
+    modelCounts.confirmed > 0 ? undefined : deriveCatalogDiagnostic(currentItem);
 
   // Every reset of the model column must land on the configured model, or
   // moving the tool cursor and confirming silently rewrites it with the pinned

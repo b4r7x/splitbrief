@@ -1,4 +1,4 @@
-import { CONFIG_VERSION, ConfigSchema, type Config } from '../../schemas/config.js';
+import { CONFIG_VERSION, type Config } from '../../schemas/config.js';
 import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner-fields.js';
 import { getKnownProviderBaseURL } from '../../providers/catalog.js';
 import { API_PROVIDER_CATALOG } from '../../providers/api-provider-catalog.js';
@@ -33,13 +33,10 @@ export function createDefaultConfig(): Config {
       maxRetries: 3,
       git: { commitStrategy: 'none' },
       isolation: 'worktree',
-      persistTranscript: true,
       compactionFormat: 'auto',
       mode: 'standard',
       taskReview: 'none',
     },
-    plannerEstimateReview: false,
-    autoSplitOverflow: false,
   };
 }
 
@@ -66,18 +63,19 @@ const MERGE_HANDLED_KEYS = new Set([
   'implementerProfiles',
   'validation',
   'workflow',
-  'plannerEstimateReview',
-  'autoSplitOverflow',
 ]);
 
 export function mergeWithDefaults(loaded: Record<string, unknown>): Record<string, unknown> {
   const defaults = createDefaultConfig();
   const implementerDefaults: Record<string, unknown> = { ...defaults.implementer };
 
-  const passthrough: Record<string, unknown> = {};
-  for (const key of Object.keys(ConfigSchema.shape)) {
+  // Every remaining key is carried through, known or not: validation is what names a removed key,
+  // and a key dropped here would reach it as an absence. The accumulator has no prototype, so a
+  // `__proto__` key in the file is carried as data instead of re-pointing this object.
+  const passthrough: Record<string, unknown> = Object.create(null);
+  for (const [key, value] of Object.entries(loaded)) {
     if (MERGE_HANDLED_KEYS.has(key)) continue;
-    if (loaded[key] !== undefined) passthrough[key] = loaded[key];
+    if (value !== undefined) passthrough[key] = value;
   }
 
   return {
@@ -94,7 +92,5 @@ export function mergeWithDefaults(loaded: Record<string, unknown>): Record<strin
       ? { ...defaults.workflow, ...narrowRecord(loaded['workflow']) }
       : defaults.workflow,
     ...passthrough,
-    plannerEstimateReview: loaded['plannerEstimateReview'] ?? defaults.plannerEstimateReview,
-    autoSplitOverflow: loaded['autoSplitOverflow'] ?? defaults.autoSplitOverflow,
   };
 }

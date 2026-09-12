@@ -47,9 +47,9 @@ export function isInteractiveTty(): boolean {
   return Boolean(process.stdout.isTTY) && !process.env['CI'];
 }
 
-// The remedy is the caller's, not this helper's: `start` has `--json` and
-// `--detach`, `init` has `--yes`. Naming a flag the command does not define is
-// the failure this parameter exists to prevent.
+// The remedy is the caller's, not this helper's: `start` has `--json`, `init`
+// has `--yes`. Naming a flag the command does not define is the failure this
+// parameter exists to prevent.
 export function assertInteractiveTty(remedy: string): void {
   if (!process.stdin.isTTY) {
     throw cliError(`interactive mode needs a TTY — ${remedy}`, 1);

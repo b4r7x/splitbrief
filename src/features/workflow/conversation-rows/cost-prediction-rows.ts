@@ -2,7 +2,6 @@ import { formatCost } from '../../../core/formatting.js';
 import {
   formatCostPredictionUnknownReasons,
   hasDisplayableCostPrediction,
-  plannerEstimateReviewLine,
 } from '../layout/cost-chrome.js';
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
@@ -21,7 +20,6 @@ export function costPredictionRows(
   }
 
   const deterministic = prediction.deterministic;
-  const reviewLine = plannerEstimateReviewLine(prediction);
   const rows: ConversationRow[] = [
     row({ key: `${keyPrefix}-title`, text: 'Cost prediction', tone: 'text', bold: true }),
   ];
@@ -48,23 +46,6 @@ export function costPredictionRows(
         tone: 'textDim',
       }),
     );
-    if (reviewLine)
-      rows.push(
-        row({
-          key: `${keyPrefix}-review`,
-          text: reviewLine,
-          tone: 'textDim',
-        }),
-      );
-    const recommendation = prediction.plannerEstimateReview?.recommendedUserDecision;
-    if (recommendation)
-      rows.push(
-        row({
-          key: `${keyPrefix}-recommendation`,
-          text: `Recommended: ${recommendation}`,
-          tone: 'textDim',
-        }),
-      );
     return wrapRows(rows, width);
   }
 
@@ -92,23 +73,6 @@ export function costPredictionRows(
       tone: 'textDim',
     }),
   );
-  if (reviewLine)
-    rows.push(
-      row({
-        key: `${keyPrefix}-review`,
-        text: reviewLine,
-        tone: 'textDim',
-      }),
-    );
-  const recommendation = prediction.plannerEstimateReview?.recommendedUserDecision;
-  if (recommendation)
-    rows.push(
-      row({
-        key: `${keyPrefix}-recommendation`,
-        text: `Recommended: ${recommendation}`,
-        tone: 'textDim',
-      }),
-    );
   return wrapRows(rows, width);
 }
 

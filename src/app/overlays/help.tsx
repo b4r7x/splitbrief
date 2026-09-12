@@ -18,7 +18,6 @@ import { detectedModelFact, seatSupportsImages } from '../../core/runners/capabi
 import { COMMAND_CATEGORIES, COMMAND_CATEGORY_LABELS } from '../../core/runtime/commands/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
-import { routerStore } from '../../stores/navigation/router.js';
 import { configStore } from '../../stores/project/config.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -40,6 +39,8 @@ interface HelpRow {
   key: string;
   label: string;
   description: string;
+  /** The argument grammar, a cell of its own so the row can drop it whole rather than cut it. */
+  hint: string | null;
   shortcut: string | null;
   section: string;
 }
@@ -80,7 +81,6 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
   const inputMode = controlsStore.use((s) => s.inputMode);
   const config = configStore.use((s) => s.config);
   const phase = lifecycleStore.use((s) => s.phase);
-  const route = routerStore.use((s) => s);
 
   const commandItems = buildCommandItems({
     commands,
@@ -88,7 +88,6 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
     onRuntimeCommand: () => {},
     guardContext: {
       phase,
-      attached: route.screen === 'workflow' && route.execution.kind === 'attached',
       plannerSupportsImages:
         config !== null &&
         seatSupportsImages({
@@ -107,6 +106,7 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
           key: `command:${item.label}`,
           label: item.label,
           description: item.description,
+          hint: item.hint,
           shortcut: item.shortcut,
           section: COMMAND_CATEGORY_LABELS[category],
         })),
@@ -115,6 +115,7 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
       key: `shortcut:${shortcut.id}`,
       label: shortcut.key,
       description: shortcut.description,
+      hint: null,
       shortcut: null,
       section: SHORTCUTS_SECTION,
     })),
@@ -170,6 +171,7 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
                 label={row.label}
                 metadata={descriptionColumn({
                   description: row.description,
+                  hint: row.hint,
                   shortcut: row.shortcut,
                   innerWidth,
                   labelWidth: rowLabelWidth,

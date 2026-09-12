@@ -2,13 +2,11 @@ import { useEffect } from 'react';
 import { Box } from 'ink';
 import { ConversationFlow } from './conversation-flow/flow.js';
 import { Sidebar } from './sidebar.js';
-import { BriefReviewView } from './brief-review/view.js';
 import { ReviewView } from './review-view.js';
 import type { UseInputModeResult } from '../hooks/use-input-mode.js';
-import type { Phase } from '../../../core/schemas/enums.js';
-import type { BriefRecoveryProjectionV1 } from '../../../core/schemas/brief-recovery/document.js';
 import {
   getReviewColumnWidth,
+  REVIEW_MIN_ROWS,
   WORKFLOW_CONTENT_PADDING_X,
   WORKFLOW_SIDEBAR_GAP,
 } from '../layout/rect.js';
@@ -18,8 +16,6 @@ export function WorkflowBody({
   sidebarWidth,
   inputMode,
   reviewFilePath,
-  recovery,
-  phase,
   contentHeight,
   contentWidth,
   onScrollAbove,
@@ -29,14 +25,18 @@ export function WorkflowBody({
   sidebarWidth: number;
   inputMode: UseInputModeResult;
   reviewFilePath: string | null | undefined;
-  recovery?: BriefRecoveryProjectionV1 | null | undefined;
-  phase: Phase;
   contentHeight: number;
   contentWidth: number;
   onScrollAbove?: (label: string) => void;
   onScrollBelow?: (label: string) => void;
 }) {
-  const isConversationMode = inputMode.mode !== 'review';
+  // A region too short to seat a document row gets the conversation instead: the frame would paint
+  // an empty box over the approval panel it is meant to explain.
+  const showReview =
+    inputMode.mode === 'review' &&
+    (reviewFilePath ?? '') !== '' &&
+    contentHeight >= REVIEW_MIN_ROWS;
+  const isConversationMode = !showReview;
   const reviewWidth = getReviewColumnWidth(contentWidth);
   useEffect(() => {
     if (isConversationMode) return;
@@ -55,14 +55,7 @@ export function WorkflowBody({
         overflow="hidden"
         paddingX={WORKFLOW_CONTENT_PADDING_X}
       >
-        {inputMode.mode === 'review' && reviewFilePath && phase === 'reviewing-briefs' ? (
-          <BriefReviewView
-            filePath={reviewFilePath}
-            height={contentHeight}
-            width={reviewWidth}
-            recovery={recovery}
-          />
-        ) : inputMode.mode === 'review' && reviewFilePath ? (
+        {showReview ? (
           <ReviewView height={contentHeight} width={reviewWidth} />
         ) : (
           <ConversationFlow

@@ -6,19 +6,7 @@ import type { Session } from '../../core/schemas/session.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 
-export type WorkflowAttach = {
-  sockPath: string;
-  authToken: string;
-};
-
-export type WorkflowExecution =
-  | Readonly<{ kind: 'local'; prepared: PreparedExecution }>
-  | Readonly<{
-      kind: 'attached';
-      feature: string;
-      sessionId: string;
-      attach: WorkflowAttach;
-    }>;
+export type WorkflowExecution = Readonly<{ kind: 'local'; prepared: PreparedExecution }>;
 
 type WorkflowPayload = { execution: WorkflowExecution };
 type SummaryPayload = {

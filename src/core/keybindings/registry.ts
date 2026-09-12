@@ -46,12 +46,7 @@ const SHORTCUTS: ShortcutInfo[] = [
   { id: 'skills', key: 'ctrl+s', description: 'Skills picker', screens: ['home'] },
   { id: 'settings', key: 'ctrl+,', description: 'Settings', screens: ALL_SCREENS },
   { id: 'close-overlay', key: 'esc', description: 'Close overlay', screens: ALL_SCREENS },
-  {
-    id: 'toggle-diff',
-    key: 'ctrl+d',
-    description: 'Toggle diff; attached detaches',
-    screens: ['workflow'],
-  },
+  { id: 'toggle-diff', key: 'ctrl+d', description: 'Toggle diff', screens: ['workflow'] },
   {
     id: 'cost-drilldown',
     key: 'ctrl+g',
