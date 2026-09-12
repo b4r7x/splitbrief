@@ -3,7 +3,7 @@ import { expect, type Locator, type Page, test } from '@playwright/test';
 
 const FAMILIES = ['Bodoni Moda', 'JetBrains Mono'];
 const LEDE =
-  'splitbrief runs two coding tools against one job — three when another lab reviews. The stronger one plans and reviews, the cheaper one executes — and splitbrief holds the contract between them.';
+  'splitbrief runs two or more coding tools against one job. The stronger one plans and reviews, the cheaper one executes — and splitbrief holds the contract between them.';
 
 async function open(page: Page): Promise<void> {
   await page.goto('/');
@@ -90,7 +90,8 @@ test.describe('on a phone', () => {
   }) => {
     await open(page);
     const stage = await box(page.locator('.stage'));
-    expect([stage.width, stage.height]).toEqual([350, 980]);
+    // H06: three 210x275 canvases (the reference's equal figures) need a taller spine than 980.
+    expect([stage.width, stage.height]).toEqual([350, 1130]);
     await expect(page.locator('.route-lines--compact')).toBeVisible();
     await expect(page.locator('.route-lines--wide')).toBeHidden();
     const centres = await page.locator('canvas.ghost').evaluateAll((canvases) =>
@@ -157,6 +158,22 @@ test('H01 navigation follows the reference landmarks inside the current frame', 
     }));
     expect(tagline.lines).toBe(3);
     expect(Math.abs(tagline.pitch / (12 * scale) - 1)).toBeLessThanOrEqual(0.1);
+    // hero-header.png: the steps list is 16px mono on a 24px pitch at 1920 (5.65 src per glyph,
+    // 14.5 src rows), three rows on one rule; no stray mark above the claim.
+    const steps = await page.locator('.hero .steps li').evaluateAll((items) =>
+      items.map((item) => ({
+        size: Number.parseFloat(getComputedStyle(item).fontSize),
+        height: item.getBoundingClientRect().height,
+      })),
+    );
+    expect(steps).toHaveLength(3);
+    if (width === 1920) {
+      for (const step of steps) {
+        expect(Math.abs(step.size / 16 - 1)).toBeLessThanOrEqual(0.05);
+        expect(Math.abs(step.height / 24 - 1)).toBeLessThanOrEqual(0.05);
+      }
+    }
+    await expect(page.locator('.draft-mark')).toHaveCount(0);
     const brand = page.locator('.nav .wordmark');
     await brand.evaluate((element) => {
       element.style.transform = 'translateX(40px)';
@@ -331,19 +348,28 @@ test('H02 headline follows the crop with four unwrapped lines and a readable eye
     if (!label) throw new Error('eyebrow has no box');
     expect(label.y + label.height).toBeLessThan(lines[0]?.top ?? 0);
     expect(label.y).toBeGreaterThanOrEqual(frame.y);
-    const inks = await page.locator('.hero-eyebrow, .hero .line').evaluateAll((elements) =>
-      elements.map((element) => {
-        const channels = getComputedStyle(element).color.match(/\d+/g) ?? [];
-        return `#${channels
-          .slice(0, 3)
-          .map((value) => Number(value).toString(16).padStart(2, '0'))
-          .join('')}`;
-      }),
-    );
-    for (const [index, ink] of inks.entries()) {
+    // Functional copy against the vignette's lightest stop: AA is 4.5, or 3 from 24px up.
+    const inks = await page
+      .locator('.hero-eyebrow, .hero .line, .benefits li, .s04 .tools')
+      .evaluateAll((elements) =>
+        elements.map((element) => {
+          const style = getComputedStyle(element);
+          const channels = style.color.match(/\d+/g) ?? [];
+          return {
+            ink: `#${channels
+              .slice(0, 3)
+              .map((value) => Number(value).toString(16).padStart(2, '0'))
+              .join('')}`,
+            size: Number.parseFloat(style.fontSize),
+          };
+        }),
+      );
+    expect(inks).toHaveLength(9);
+    for (const { ink, size } of inks) {
       const ratio = (luminance(ink) + 0.05) / (luminance('#101216') + 0.05);
-      expect(ratio).toBeGreaterThanOrEqual(index === 0 ? 4.5 : 3);
+      expect(ratio, `${ink} at ${size}px`).toBeGreaterThanOrEqual(size >= 24 ? 3 : 4.5);
     }
+
     if (width === 1920) {
       await heading.evaluate((element) => {
         element.style.lineHeight = '140px';
@@ -405,6 +431,77 @@ test('the whole page shares the wide FHD grid', async ({ page }) => {
       `${width}px overflow`,
     ).toBe(0);
   }
+});
+
+test('H03 copy block follows the crop: lede measure, CTA, three benefits and the closing quote', async ({
+  page,
+}) => {
+  // hero-copy.png: lede 6.45 src px/char (18.4px at 1920), 31px pitch, three lines; CTA 226x34 src
+  // (386x58); benefits in one row of three, separated by hairlines, 14px; the dim two-line quote
+  // 34 src below the benefits; hero frame 664 src (1136px at 1920).
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await open(page);
+  const lede = page.locator('.lede');
+  const metrics = await lede.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const lines = new Set([...range.getClientRects()].map((r) => Math.round(r.top)));
+    return {
+      size: Number.parseFloat(style.fontSize),
+      lines: lines.size,
+      width: element.clientWidth,
+    };
+  });
+  expect(Math.abs(metrics.size / 18.4 - 1)).toBeLessThanOrEqual(0.05);
+  expect(metrics.lines).toBe(3);
+  expect(metrics.width).toBeLessThanOrEqual(680);
+  const cta = page.locator('.cta');
+  const before = await box(cta);
+  expect(Math.abs(before.width / 386 - 1)).toBeLessThanOrEqual(0.05);
+  expect(Math.abs(before.height / 58 - 1)).toBeLessThanOrEqual(0.05);
+  await cta.focus();
+  await expect(cta).toHaveCSS('outline-width', '2px');
+  await cta.click();
+  await expect(page.locator('.cta-notice')).toBeVisible();
+  expect(await box(cta)).toEqual(before);
+  const benefits = page.locator('.benefits li');
+  await expect(benefits).toHaveText([
+    'HIGHER QUALITY SOFTWARE',
+    'LOWER SPEND PER TASK',
+    'REAL EVIDENCE NOT VIBES',
+  ]);
+  const rows = await benefits.evaluateAll((items) =>
+    items.map((item) => Math.round(item.getBoundingClientRect().top)),
+  );
+  expect(new Set(rows).size).toBe(1);
+  const works = await page.locator('.works').boundingBox();
+  if (!works) throw new Error('works block has no box');
+  expect(works.y + works.height).toBeLessThanOrEqual(1080);
+  const quote = page.locator('.hero .quote');
+  await expect(quote).toHaveAttribute('aria-hidden', 'true');
+  await expect(quote).toContainText('“A SMALLER, CLEARER LOOP');
+  await expect(quote).toContainText('FOR LARGER THINGS.”');
+  const quoteBox = await quote.boundingBox();
+  const hero = await page.locator('.hero').boundingBox();
+  if (!quoteBox || !hero) throw new Error('quote or hero has no box');
+  expect(quoteBox.y - (works.y + works.height)).toBeGreaterThanOrEqual(48);
+  expect(quoteBox.y - (works.y + works.height)).toBeLessThanOrEqual(64);
+  expect(quoteBox.y + quoteBox.height).toBeLessThanOrEqual(hero.y + hero.height);
+  expect(Math.abs((hero.y + hero.height) / 1136 - 1)).toBeLessThanOrEqual(0.02);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page);
+  const stacked = await page.locator('.benefits li').evaluateAll((items) =>
+    items.map((item) => {
+      const r = item.getBoundingClientRect();
+      return { left: Math.round(r.left), top: Math.round(r.top), height: Math.round(r.height) };
+    }),
+  );
+  expect(new Set(stacked.map((item) => item.left)).size).toBe(1);
+  expect(stacked.map((item) => item.top)).toEqual(
+    [...stacked.map((item) => item.top)].sort((a, b) => a - b),
+  );
+  for (const item of stacked) expect(item.height).toBeLessThanOrEqual(24);
 });
 
 test('the hero fold at 1920', async ({ page }) => {

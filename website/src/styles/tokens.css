@@ -63,8 +63,9 @@
     --text-art: 0.75rem;
     --line-art: 14px;
     --bar-h: 32px;
-    --head-w: 330px;
-    --panel-w: clamp(517px, 32.5vw, 624px);
+    --text-label-wide: 0.875rem;
+    --head-w: 351px;
+    --panel-w: clamp(546px, 34.1vw, 655px);
   }
 }
 

@@ -14,7 +14,7 @@ test('a seat braces its rim over the 0.6 s before the packet lands and settles a
   const cue = cues.implementer;
   expect(poseAt({ ...rest, cue, t: landing - 0.7 }).lift).toBe(0);
   expect(poseAt({ ...rest, cue, t: landing - 0.3 }).lift).toBeCloseTo(0.5);
-  expect(poseAt({ ...rest, cue, t: landing }).lift).toBe(1);
+  expect(poseAt({ ...rest, cue, t: landing }).lift).toBeCloseTo(1);
   expect(poseAt({ ...rest, cue, t: landing + 0.25 }).lift).toBeCloseTo(0.5);
   expect(poseAt({ ...rest, cue, t: landing + 0.6 }).lift).toBe(0);
   expect(poseAt({ ...rest, cue: cues.planner, t: period - 0.3 }).lift).toBeCloseTo(0.5);

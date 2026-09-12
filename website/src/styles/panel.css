@@ -98,6 +98,41 @@
   color: var(--red);
   font-weight: 500;
 }
+@media (min-width: 1600px) {
+  .panel {
+    --text-art: clamp(0.7rem, 0.73vw, 0.875rem);
+    --line-art: calc(var(--text-art) * 1.215);
+    --bar-h: 40px;
+  }
+  .editor {
+    --line-art: calc(var(--text-art) * 1.236);
+  }
+  .panel .bar .name {
+    font-size: 1rem;
+  }
+  .panel .bar .name::before {
+    width: 10px;
+    height: 10px;
+  }
+  .panel .bar .status {
+    font-size: var(--text-art);
+  }
+  .panel .lines {
+    padding-block: var(--s-1) var(--s-2);
+  }
+  .panel .lines::before {
+    left: 6.3ch;
+  }
+  .panel .lines li {
+    grid-template-columns: 6.3ch 1fr;
+  }
+  .panel .lines .n {
+    padding-inline: 1ch;
+  }
+  .panel .lines .t {
+    padding-left: 2.7ch;
+  }
+}
 @media (max-width: 767px) {
   .lines .t {
     text-indent: -2ch;

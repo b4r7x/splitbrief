@@ -1,14 +1,15 @@
 import { hash, valueNoise } from '../../lib/noise';
 import type { Cell, Seat } from './seats';
-import { eye, inside, pupilCell } from './silhouette';
+import { CROWN, eye, inside, pupilCell, SKIRT } from './silhouette';
 
-const NOISE_SPAN = 4;
-const BODY_TOP = 0.42;
-const BODY_BOTTOM = 0.86;
-const CORE = { v: 0.6, rx: 0.5, ry: 0.85 };
+const NOISE_SPAN = 3;
+const CORE = { v: 0.55, rx: 0.5, ry: 0.85 };
 const BODY_PEAK = 0.875;
 const GLITCH_LAYER = -2;
+const GRAIN_LAYER = -3;
 const HALO_FLOOR = 0.05;
+// One breath for all three figures: rest is the bright state, one 8 % exhale per 5 s cycle.
+const BREATH = { period: 5, dip: 0.08 };
 const REST: Pose = {};
 
 export type Pose = {
@@ -51,19 +52,19 @@ export function density(seat: Seat, c: number, r: number, t: number, pose: Pose 
   if (!inside(u, v)) return isNearRim(seat, c, r) ? HALO_FLOOR + 0.1 * n : 0;
   if (eye(u, v)) return isPupil(seat, c, r, gaze) ? 1 : 0;
   const dist = Math.min(1, Math.hypot((u - 0.5) / CORE.rx, (v - CORE.v) / CORE.ry));
-  let d = 0.42 + 0.42 * (1 - dist ** 4);
-  if (r % 2 === 1) d *= 0.85;
-  if (c % 2 === 1) d *= 0.88;
-  if (!isSurrounded(seat, c, r)) d *= 0.45 + 0.45 * lift;
-  d *= gain * (0.82 + 0.18 * Math.sin((2 * Math.PI * t) / seat.period + seat.phase));
-  d += 0.18 * n;
-  return Math.min(BODY_PEAK, d);
+  let d = 0.56 + 0.3 * (1 - dist ** 3);
+  d += 0.28 * (n - 0.5) + 0.16 * (hash(seat.seed, c, r, GRAIN_LAYER) - 0.5);
+  if (v < CROWN) d *= 0.6 + 0.4 * (v / CROWN);
+  if (v >= SKIRT) d *= 1 - (0.75 * (v - SKIRT)) / (1 - SKIRT);
+  if (!isSurrounded(seat, c, r)) d *= 0.55 + 0.35 * lift;
+  d *= gain * (1 - BREATH.dip * Math.max(0, -Math.cos((2 * Math.PI * t) / BREATH.period)) ** 2);
+  return Math.min(BODY_PEAK, Math.max(0, d));
 }
 
 export function glitchRow(seat: Seat, t: number, jolt = false): number | undefined {
   if (seat.glitchMs === 0) return undefined;
-  const first = Math.ceil(BODY_TOP * seat.rows - 0.5);
-  const count = Math.ceil(BODY_BOTTOM * seat.rows - 0.5) - first;
+  const first = Math.ceil(CROWN * seat.rows - 0.5);
+  const count = Math.ceil(SKIRT * seat.rows - 0.5) - first;
   if (jolt) return first + Math.floor(hash(seat.seed, Math.floor(t), 2, GLITCH_LAYER) * count);
   let at = 0;
   for (let k = 0; ; k++) {

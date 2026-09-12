@@ -12,7 +12,9 @@ export type Atlas = {
 };
 
 const BASELINE = 9.5;
-const SPARK_SHARE = 0.12;
+const DIM = 0.2;
+const SPARK = { share: 0.05, floor: 0.6 };
+const BLUE_SHARE = 0.65;
 const TOKEN: Readonly<Record<Tint, string>> = {
   blue: '--blue',
   'blue-dim': '--blue-dim',
@@ -26,7 +28,7 @@ const LAB: Readonly<Record<'blue' | 'green', { dim: Tint; accent: Tint }>> = {
 };
 
 function tintsOf(palette: Palette): readonly Tint[] {
-  if (palette === 'mixed') return ['blue-dim', 'green-dim', 'spark'];
+  if (palette === 'mixed') return ['blue-dim', 'blue', 'green-dim', 'green', 'spark'];
   return [LAB[palette].dim, LAB[palette].accent, 'spark'];
 }
 
@@ -39,20 +41,16 @@ export function glyphFor(d: number): string {
 }
 
 function alphaFor(d: number): number {
-  if (d < 0.3) return 0.55;
+  if (d < DIM) return 0.55;
   if (d > 0.7) return 1;
-  return 0.6 + d * 0.4;
+  return 0.65 + d * 0.5;
 }
 
 export function tintFor(seat: Seat, d: number, sparkHash: number): Tint {
-  if (seat.palette === 'mixed') {
-    if (sparkHash < 0.55) return 'blue-dim';
-    if (sparkHash < 0.9) return 'green-dim';
-    return 'spark';
-  }
-  if (sparkHash < SPARK_SHARE) return 'spark';
-  const lab = LAB[seat.palette];
-  return d < 0.3 ? lab.dim : lab.accent;
+  if (d >= 1 || (d >= SPARK.floor && sparkHash < SPARK.share)) return 'spark';
+  const lab =
+    seat.palette === 'mixed' ? (sparkHash < BLUE_SHARE ? LAB.blue : LAB.green) : LAB[seat.palette];
+  return d < DIM ? lab.dim : lab.accent;
 }
 
 export function buildAtlas(seat: Seat, dpr: number): Atlas {

@@ -2,22 +2,23 @@ import type { Cell, Seat } from './seats';
 
 export type Side = 'left' | 'right';
 
-const CROWN = 0.42;
-const SKIRT = 0.86;
-const EYE_X: Readonly<Record<Side, number>> = { left: 0.34, right: 0.66 };
+export const CROWN = 0.32;
+export const SKIRT = 0.74;
+const STRANDS = 5;
+const EYE_X: Readonly<Record<Side, number>> = { left: 1 / 3, right: 2 / 3 };
 const EYE_Y = 0.4;
-const EYE_RX = 0.11;
-const EYE_RY = 0.13;
+const EYE_RX = 0.07;
+const EYE_RY = 0.062;
 
 export function inside(u: number, v: number): boolean {
   if (u < 0 || u > 1 || v < 0 || v > 1) return false;
   if (v < CROWN) return ((u - 0.5) / 0.5) ** 2 + ((v - CROWN) / CROWN) ** 2 <= 1;
   if (v < SKIRT) return true;
-  return v <= SKIRT + (1 - SKIRT) * Math.abs(Math.sin(u * 4 * Math.PI));
+  return (v - SKIRT) / (1 - SKIRT) <= Math.abs(Math.sin(u * STRANDS * Math.PI));
 }
 
 function inEye(u: number, v: number, side: Side): boolean {
-  return ((u - EYE_X[side]) / EYE_RX) ** 2 + ((v - EYE_Y) / EYE_RY) ** 2 <= 1;
+  return ((u - EYE_X[side]) / EYE_RX) ** 4 + ((v - EYE_Y) / EYE_RY) ** 4 <= 1;
 }
 
 export function eye(u: number, v: number): boolean {

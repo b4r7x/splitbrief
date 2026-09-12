@@ -9,6 +9,7 @@
   color: var(--ink-2);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  width: fit-content;
 }
 .s03 .steps li {
   display: flex;
@@ -27,36 +28,74 @@
 .s03 .notes p + p {
   margin-top: var(--s-2);
 }
-.s03 .aura {
-  overflow: visible;
-}
 .s03 .marg-a {
   top: 73px;
 }
 .s03 .marg-list {
-  top: 115px;
+  top: 91px;
+  padding: var(--s-6) 0 0 var(--s-2);
+}
+.s03 .marg-list::before {
+  top: 0;
+  left: 0;
 }
 .s03 .marg-b {
   top: 268px;
-}
-.s03 .stop {
-  top: 17px;
-}
-.s03 .dots--skyline {
-  bottom: -44px;
-}
-.s03 .dots--gutter {
-  top: 140px;
+  text-align: left;
 }
 @media (min-width: 1600px) {
+  .s03 {
+    padding-block: var(--s-6) var(--s-2);
+  }
+
+  .s03 .head {
+    padding-top: 0;
+  }
+  .s03 .eyebrow {
+    font-size: var(--text-label-wide);
+  }
+  .s03 .title {
+    font-size: 2rem;
+  }
+  .s03 .sub {
+    font-size: 2.0625rem;
+    line-height: 1.2;
+  }
+  .s03 .panel {
+    margin-top: var(--s-2);
+  }
+  .s03 .notes {
+    padding-top: var(--s-3);
+    font-size: 1rem;
+    line-height: 1.35;
+  }
+  .s03 .notes p {
+    max-width: calc(44ch + 1px);
+  }
+  .s03 .notes p + p {
+    margin-top: var(--s-3);
+  }
+  .s03 .notes .steps {
+    margin-top: var(--s-12);
+    font-size: var(--text-label-wide);
+    line-height: 23px;
+  }
+  .s03 .steps li > span:last-child {
+    padding-left: var(--s-6);
+  }
   .s03 .marg-a {
-    top: 78px;
+    top: 67px;
+    right: calc(-1 * var(--s-16));
   }
   .s03 .marg-list {
     top: 122px;
+    font-size: var(--text-label-wide);
+    line-height: 21px;
   }
   .s03 .marg-b {
-    top: 284px;
+    top: 329px;
+    font-size: var(--text-label-wide);
+    line-height: 21px;
   }
 }
 @media (max-width: 767px) {

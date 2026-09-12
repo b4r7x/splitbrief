@@ -1,76 +1,106 @@
-type Rect = {
-  readonly left: number;
-  readonly top: number;
-  readonly right: number;
-  readonly bottom: number;
-};
+import type { KeepClear, Rect } from '../fragments/place';
 
-const MARKS = '.panel, .tree, .marg, .marg-list, .stop, canvas.dots';
-const BLOCKS = '.tick-list, .marg-list, .steps, .callouts';
-const RAIL_PAD = 8;
-const SEAM = 16;
-const WIDE = 1600;
-const EDGE = 96;
-const CONTENT_PAD = 24;
+const TEXT = [
+  '.hero .steps li > *, .hero .claim, .hero-eyebrow, .lede, .cta, .works, .hero .quote, .label',
+  '.seat, .brief, .foot p',
+].join(', ');
+// The headline by its ink, line by line: the reference tucks a whisper beside its short lines.
+const LINES = '.hero h1, .lower .grid';
+const MARKS = '.route, .cross, canvas, .scatter span, .panel, .tree, .marg, .marg-list';
+const NAV_QUIET = 24;
+const RAIN = { top: 0.06, width: 42 };
 
-export function sectionKeepClear(section: HTMLElement): {
-  text: Rect[];
-  marks: Rect[];
-  panels: Rect[];
-} {
-  const layer = section.querySelector('.aura');
-  const origin = (layer ?? section).getBoundingClientRect();
-  const rel = (r: DOMRect): Rect => ({
-    left: r.left - origin.left,
-    top: r.top - origin.top,
-    right: r.right - origin.left,
-    bottom: r.bottom - origin.top,
-  });
-  const text: Rect[] = [];
-  const grid = section.querySelector('.grid');
-  if (grid === null) return { text, marks: [], panels: [] };
-  const walker = document.createTreeWalker(grid, NodeFilter.SHOW_TEXT);
-  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-    const range = document.createRange();
-    range.selectNodeContents(node);
-    for (const r of range.getClientRects()) if (r.width > 0 && r.height > 0) text.push(rel(r));
-  }
-  const C = grid.getBoundingClientRect().left - origin.left;
-  const E = grid.getBoundingClientRect().right - origin.left;
-  const railElement = document.querySelector('.rail');
-  const railX =
-    railElement === null
-      ? E - Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--rail'))
-      : railElement.getBoundingClientRect().left - origin.left;
-  const w = origin.width;
-  const h = origin.height;
-  const marks = [
-    ...[...section.querySelectorAll(MARKS)].map((element) => rel(element.getBoundingClientRect())),
-    { left: railX - RAIL_PAD, top: 0, right: railX + RAIL_PAD, bottom: h },
-    { left: 0, top: 0, right: w, bottom: SEAM },
-    { left: 0, top: h - SEAM, right: w, bottom: h },
-    ...[...section.querySelectorAll(BLOCKS)].map((element) => {
-      const rect = element.getBoundingClientRect();
-      const line = Number.parseFloat(getComputedStyle(element).lineHeight);
-      const box = rel(rect);
-      return {
-        left: box.left - rect.width,
-        top: box.top - line,
-        right: box.right + rect.width,
-        bottom: box.bottom + line,
-      };
-    }),
-    { left: C - CONTENT_PAD, top: 0, right: C, bottom: h },
-    { left: E, top: 0, right: E + CONTENT_PAD, bottom: h },
-    ...(innerWidth < WIDE
-      ? []
-      : [
-          { left: 0, top: 0, right: EDGE, bottom: h },
-          { left: w - EDGE, top: 0, right: w, bottom: h },
-        ]),
-  ];
-  const panels = [...section.querySelectorAll('.panel')].map((element) =>
-    rel(element.getBoundingClientRect()),
+export function pageRect(r: DOMRect): Rect {
+  return {
+    left: r.left + scrollX,
+    top: r.top + scrollY,
+    right: r.right + scrollX,
+    bottom: r.bottom + scrollY,
+  };
+}
+
+function boxes(selector: string): Rect[] {
+  return [...document.querySelectorAll(selector)].map((element) =>
+    pageRect(element.getBoundingClientRect()),
   );
-  return { text, marks, panels };
+}
+
+function lines(selector: string): Rect[] {
+  const out: Rect[] = [];
+  for (const root of document.querySelectorAll(selector)) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      for (const r of range.getClientRects())
+        if (r.width > 0 && r.height > 0) out.push(pageRect(r));
+    }
+  }
+  return out;
+}
+
+// A label's own rows stay clear for its width on either side (a neighbour there reads as a third
+// column of it); above and below, only the label's own column stays clear for one line.
+function blockAround(selector: string): Rect[] {
+  return [...document.querySelectorAll(selector)].flatMap((element) => {
+    const rect = pageRect(element.getBoundingClientRect());
+    const width = rect.right - rect.left;
+    const line = Number.parseFloat(getComputedStyle(element).lineHeight);
+    return [
+      { ...rect, left: rect.left - width, right: rect.right + width },
+      { ...rect, top: rect.top - line, bottom: rect.bottom + line },
+    ];
+  });
+}
+
+function rainColumns(): Rect[] {
+  const rain = document.querySelector<HTMLElement>('.rain');
+  if (!rain?.childElementCount) return [];
+  const stage = pageRect(rain.getBoundingClientRect());
+  const fit = (stage.right - stage.left) / rain.offsetWidth;
+  return [...document.querySelectorAll('.tick--planner, .tick--implementer')].map((tick) => {
+    const { left, right, top } = pageRect(tick.getBoundingClientRect());
+    const x = (left + right) / 2;
+    return {
+      left: x - (RAIN.width / 2) * fit,
+      top: stage.top + RAIN.top * (stage.bottom - stage.top),
+      right: x + (RAIN.width / 2) * fit,
+      bottom: top,
+    };
+  });
+}
+
+export function atRest<T>(measure: () => T): T {
+  const entering = document.getAnimations().flatMap((animation) => {
+    const end = animation.effect?.getComputedTiming().endTime;
+    if (typeof end !== 'number' || !Number.isFinite(end)) return [];
+    const was = animation.currentTime;
+    animation.currentTime = end;
+    return [{ animation, was }];
+  });
+  const result = measure();
+  for (const { animation, was } of entering) animation.currentTime = was;
+  return result;
+}
+
+export function pageKeepClear(): KeepClear {
+  const nav = document.querySelector('.nav');
+  return {
+    text: [...boxes(TEXT), ...lines(LINES)],
+    marks: [
+      ...(nav
+        ? [
+            {
+              left: 0,
+              top: 0,
+              right: document.documentElement.clientWidth,
+              bottom: pageRect(nav.getBoundingClientRect()).bottom + NAV_QUIET,
+            },
+          ]
+        : []),
+      ...blockAround('.label, .seat'),
+      ...rainColumns(),
+      ...boxes(MARKS),
+    ],
+  };
 }

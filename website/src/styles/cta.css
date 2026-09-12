@@ -69,3 +69,23 @@
 .cta.copied .copy-glyph span {
   border-color: var(--blue);
 }
+
+@media (min-width: 1600px) {
+  .cta {
+    gap: 22px;
+    height: 58px;
+    margin-top: var(--s-6);
+    padding-inline: var(--s-6) var(--s-4);
+    font-size: 1.15rem;
+  }
+
+  .copy-glyph {
+    width: 20px;
+    height: 20px;
+
+    span {
+      width: 14px;
+      height: 14px;
+    }
+  }
+}

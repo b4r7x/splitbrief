@@ -4,9 +4,9 @@
 
 .stage {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 760px;
+  top: 20px;
+  left: max(0px, 100% - 866px);
+  width: 848px;
   height: 860px;
   transform: scale(var(--fit, 1));
   transform-origin: 0 0;
@@ -37,81 +37,100 @@
 
   .ghost--planner,
   .ghost--planner + .ghost-fallback {
-    left: 14%;
-    top: 40%;
+    left: 14.8%;
+    top: 32%;
     color: var(--blue);
   }
 
   .ghost--implementer,
   .ghost--implementer + .ghost-fallback {
-    left: 67%;
-    top: 39%;
+    left: 66.9%;
+    top: 32%;
     color: var(--green);
   }
 
   .ghost--reviewer,
   .ghost--reviewer + .ghost-fallback {
-    left: 68%;
-    top: 72%;
+    left: 40.75%;
+    top: 83.5%;
     color: var(--blue-dim);
   }
 
   .tick--planner,
   .label--planner {
-    left: 14%;
+    left: 8.6%;
   }
 
   .tick--implementer,
   .label--implementer {
-    left: 67%;
+    left: 61.3%;
   }
 
   .tick {
-    top: 18%;
+    top: 9.5%;
     width: 1px;
-    height: 28px;
+    height: 38px;
     background: var(--ink-3);
   }
 
   .label {
-    top: 18%;
+    top: 9.5%;
     margin-top: calc(-1 * var(--s-1));
-    margin-left: var(--s-3);
-    color: var(--ink);
+    margin-left: var(--s-4);
+    font-size: 17px;
+    line-height: 22px;
+    letter-spacing: 0.01em;
+    color: var(--ink-2);
+  }
+
+  .label b,
+  .seat b {
+    font-weight: 500;
   }
 
   .tick--reviewer,
   .label--reviewer {
-    left: 76%;
-    top: 55%;
+    left: 34.3%;
+    top: 60%;
   }
 
   .seat {
-    font-size: var(--text-micro);
+    padding-left: 14px;
+    font-size: 16px;
+    line-height: 22px;
+    letter-spacing: 0.02em;
+    color: var(--ink-2);
 
     &::before {
       content: "";
       display: block;
       width: 1px;
-      height: 12px;
+      height: 17px;
       margin-bottom: var(--s-2);
+      margin-left: -14px;
       background: var(--ink-3);
+    }
+
+    &::after {
+      width: 20px;
+      margin-top: 20px;
+      margin-left: -14px;
     }
   }
 
   .seat--planner {
-    left: 6%;
-    top: 60%;
+    left: 0;
+    top: 78.2%;
   }
 
   .seat--implementer {
-    left: 84%;
-    top: 36%;
+    left: 86.8%;
+    top: 33.3%;
   }
 
   .seat--reviewer {
-    left: 82%;
-    top: 76%;
+    left: 68.2%;
+    top: 78.2%;
   }
 
   .route-lines {
@@ -119,8 +138,8 @@
     width: 100%;
     height: 100%;
     fill: none;
-    stroke: var(--ink-3);
-    stroke-dasharray: 4 4;
+    stroke: var(--ink-2);
+    stroke-dasharray: 6 4;
     shape-rendering: crispEdges;
   }
 
@@ -128,8 +147,20 @@
     display: none;
   }
 
+  .route-lines--wide .route--a,
+  .route-lines--wide .route--b,
+  .route-lines--wide .route--c {
+    marker-end: url("#route-arrow");
+  }
+
+  .route-lines marker path {
+    fill: var(--ink-2);
+    stroke: none;
+    shape-rendering: auto;
+  }
+
   .cross {
-    left: 30%;
+    left: 22.8%;
     top: 70%;
     font-size: 14px;
     line-height: 1;
@@ -148,5 +179,13 @@
       top: 0;
       left: 0;
     }
+  }
+
+  /* Pinned, not stretched: rainColumns() in features/aura/keep-clear.ts reads this box, and the
+     columns (rain.ts COLUMN) must end above the ticks at 10.5%. */
+  .rain {
+    top: -64px;
+    bottom: auto;
+    height: 860px;
   }
 }
